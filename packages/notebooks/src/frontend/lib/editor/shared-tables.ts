@@ -1,6 +1,6 @@
 /** Notebook presentation only. The public grid owns editing, focus, history and source writes. */
 import { type EditorState, type Extension, type Range, StateField } from "@codemirror/state";
-import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
+import { Decoration, type DecorationSet, EditorView, ViewPlugin } from "@codemirror/view";
 import { isFormula } from "@k2b/cloud/shared";
 import { i18n } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
@@ -28,7 +28,7 @@ const copyMessages = i18n.define({
 
 /** Padding belongs exclusively to the evaluated view. Original header indexes and source stay intact. */
 const presentationData = (table: Table): PrettyTableData => {
-  const width = Math.max(table.columns, ...table.lines.map((line) => line.cells.length));
+  const width = table.lines.reduce((width, line) => Math.max(width, line.cells.length), table.columns);
   const values = (line: Table["lines"][number] | undefined) =>
     Array.from({ length: width }, (_, column) => displayCell(line?.cells[column]?.text ?? ""));
   return { headers: values(table.lines[0]), rows: table.lines.slice(2).map(values), align: table.align };
@@ -59,8 +59,33 @@ const tableCaptions = StateField.define<DecorationSet>({
 });
 
 const presentationTheme = EditorView.theme({
-  ".ste-table .ste-cell > .md-table-cell": { padding: "0", minHeight: "0" },
-  ".ste-table tr:has([data-notebook-total]) > td": { borderTop: "1px solid var(--ui-border-strong)", fontWeight: "600" },
+  ".k2b-ste-table .cm-notebook-formula-editor": {
+    position: "absolute",
+    top: "0",
+    left: "0",
+    width: "100%",
+    minWidth: "100%",
+    maxWidth: "100%",
+    minHeight: "100%",
+    zIndex: "5",
+    background: "var(--k2b-surface)",
+  },
+  ".cm-notebook-active-result": {
+    position: "absolute",
+    bottom: "100%",
+    right: "0",
+    zIndex: "6",
+    padding: "2px 6px",
+    maxWidth: "18rem",
+    background: "var(--k2b-surface)",
+    border: "1px solid var(--k2b-border)",
+    borderRadius: "var(--k2b-radius-control)",
+    boxShadow: "var(--k2b-shadow-float)",
+    fontSize: "12px",
+  },
+
+  ".k2b-ste-table .k2b-ste-cell > .md-table-cell": { padding: "0", minHeight: "0" },
+  ".k2b-ste-table tr:has([data-notebook-total]) > td": { borderTop: "1px solid var(--ui-border-strong)", fontWeight: "600" },
   ".cm-notebook-table-caption": { margin: "0" },
   ".cm-notebook-formula-copy": {
     display: "inline-flex",
@@ -119,6 +144,69 @@ const copyButton = (element: HTMLElement, value: string, locale: string): HTMLBu
   return button;
 };
 
+/** The active formula stays over its reserved cell, with the evaluated result
+ * beside it. Reuse the same presentation as the inactive grid and exports. */
+const activeFormulaPreview = (options: PresentationOptions): Extension =>
+  ViewPlugin.define((view) => {
+    let cell: HTMLElement | null = null;
+    let result: HTMLElement | null = null;
+    let alive = true;
+    const clear = () => {
+      cell?.classList.remove("cm-notebook-formula-editor");
+      if (cell?.parentElement) cell.parentElement.style.removeProperty("height");
+      result?.remove();
+      result = null;
+      cell = null;
+    };
+    const paint = () =>
+      queueMicrotask(() => {
+        if (!alive) return;
+        const focused = view.dom.ownerDocument.activeElement;
+        const target = focused instanceof HTMLElement && focused.matches(".k2b-ste-cell") && view.dom.contains(focused) ? focused : null;
+        if (target !== cell) clear();
+        if (!target || !isFormula(target.textContent ?? "")) {
+          clear();
+          return;
+        }
+        const wrap = target.closest<HTMLElement>(".k2b-ste-table");
+        const table = wrap && findTables(view.state.doc.toString()).find((table) => table.from === view.posAtDOM(wrap));
+        const row = Number(target.dataset.r),
+          column = Number(target.dataset.c);
+        if (!table || row === 0) {
+          clear();
+          return;
+        }
+        if (!result) {
+          const parent = target.parentElement;
+          if (!parent) return;
+          parent.style.height = `${parent.getBoundingClientRect().height}px`;
+          result = parent.ownerDocument.createElement("div");
+          result.className = "cm-notebook-active-result";
+          result.setAttribute("role", "status");
+          result.contentEditable = "false";
+          parent.append(result);
+          target.classList.add("cm-notebook-formula-editor");
+          cell = target;
+        }
+        const locale = options.locale?.() ?? (target.ownerDocument.documentElement.lang || "en");
+        const presentation = createPrettyTablePresentation(presentationData(table), { notebookId: options.notebookId, locale });
+        result.innerHTML = presentation.cellHtml(row - 1, column);
+      });
+    view.contentDOM.addEventListener("focusin", paint);
+    view.contentDOM.addEventListener("focusout", paint);
+    return {
+      update(update) {
+        if (update.docChanged) paint();
+      },
+      destroy() {
+        alive = false;
+        view.contentDOM.removeEventListener("focusin", paint);
+        view.contentDOM.removeEventListener("focusout", paint);
+        clear();
+      },
+    };
+  });
+
 /** Spread renderCell into the parent's existing TableHost; add extension only in grid mode.
  * This factory does not install tableGrid, the old tablesExtension, or any key handlers. */
 export const createNotebookTablePresentation = (
@@ -129,7 +217,7 @@ export const createNotebookTablePresentation = (
 } => {
   const snapshots = new WeakMap<Table, { locale: string; presentation: ReturnType<typeof createPrettyTablePresentation> }>();
   return {
-    extension: [tableCaptions, presentationTheme],
+    extension: [tableCaptions, presentationTheme, activeFormulaPreview(options)],
     renderCell(element, _raw, table, row, column) {
       const locale = options.locale?.() ?? (element.ownerDocument.documentElement.lang || "en");
       let snapshot = snapshots.get(table);

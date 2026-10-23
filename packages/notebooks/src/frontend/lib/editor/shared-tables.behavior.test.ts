@@ -50,7 +50,7 @@ const mount = (doc: string, mode: "grid" | "source" = "grid", locale = "de") => 
 };
 
 const cell = (root: HTMLElement, row: number, column: number): HTMLElement => {
-  const element = root.querySelector<HTMLElement>(`.ste-cell[data-r="${row}"][data-c="${column}"]`);
+  const element = root.querySelector<HTMLElement>(`.k2b-ste-cell[data-r="${row}"][data-c="${column}"]`);
   if (!element) throw new Error(`Missing cell ${row}, ${column}`);
   return element;
 };
@@ -165,7 +165,7 @@ describe("Notebook shared table presentation", async () => {
       expect(captions).toHaveLength(1);
       expect(captions[0]?.textContent).toBe("@budget");
       expect(h.dom.root.querySelector(".cm-named-block-handle")).toBeNull();
-      expect(h.dom.root.querySelector(".ste-table")?.textContent).not.toContain("@budget");
+      expect(h.dom.root.querySelector(".k2b-ste-table")?.textContent).not.toContain("@budget");
       const at = doc.indexOf("budget");
       h.view.dispatch({ changes: { from: at, to: at + 6, insert: "plan" } });
       expect(h.dom.root.querySelector("[data-block-name=plan]")?.textContent).toBe("@plan");
@@ -180,7 +180,7 @@ describe("Notebook shared table presentation", async () => {
     const h = mount(doc, "source");
     const copy = spyOn(clipboard, "copy").mockResolvedValue(undefined);
     try {
-      expect(h.dom.root.querySelector(".ste-table, .cm-table-widget")).toBeNull();
+      expect(h.dom.root.querySelector(".k2b-ste-table, .cm-table-widget")).toBeNull();
       expect(h.dom.root.querySelectorAll(".cm-formula-preview")).toHaveLength(3);
       const chip = h.dom.root.querySelector<HTMLElement>(".cm-formula-preview")!;
       expect(chip.textContent).toBe(" → 3 ");

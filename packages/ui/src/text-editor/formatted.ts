@@ -10,7 +10,7 @@ import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate
 class BulletWidget extends WidgetType {
   override toDOM() {
     const el = document.createElement("span");
-    el.className = "ste-bullet";
+    el.className = "k2b-ste-bullet";
     el.textContent = "•";
     return el;
   }
@@ -22,7 +22,7 @@ class BulletWidget extends WidgetType {
 class RuleWidget extends WidgetType {
   override toDOM() {
     const el = document.createElement("span");
-    el.className = "ste-hr";
+    el.className = "k2b-ste-hr";
     return el;
   }
   override eq() {
@@ -59,7 +59,7 @@ const build = (view: EditorView): DecorationSet => {
         if (name === "FencedCode" || name === "CodeBlock") {
           for (let pos = node.from; pos <= node.to; ) {
             const line = state.doc.lineAt(pos);
-            out.push(lineClass("ste-codeblock").range(line.from));
+            out.push(lineClass("k2b-ste-codeblock").range(line.from));
             pos = line.to + 1;
           }
           if (name === "FencedCode" && !touches(state, node.from, node.to, focused)) {
@@ -72,7 +72,7 @@ const build = (view: EditorView): DecorationSet => {
         const heading = /^ATXHeading(\d)$/.exec(name);
         if (heading) {
           const line = state.doc.lineAt(node.from);
-          out.push(lineClass(`ste-h ste-h${heading[1]}`).range(line.from));
+          out.push(lineClass(`k2b-ste-h k2b-ste-h${heading[1]}`).range(line.from));
           if (!onLine(state, node.from, node.to, focused)) {
             const markNode = node.node.getChild("HeaderMark");
             if (markNode) {
@@ -85,7 +85,7 @@ const build = (view: EditorView): DecorationSet => {
         if (name === "Blockquote") {
           for (let pos = node.from; pos <= node.to; ) {
             const line = state.doc.lineAt(pos);
-            out.push(lineClass("ste-quote").range(line.from));
+            out.push(lineClass("k2b-ste-quote").range(line.from));
             pos = line.to + 1;
           }
           return;
@@ -106,14 +106,14 @@ const build = (view: EditorView): DecorationSet => {
           const bullet = /^[-*+]$/.test(state.sliceDoc(node.from, node.to));
           if (bullet && !onLine(state, node.from, node.to, focused))
             out.push(Decoration.replace({ widget: new BulletWidget() }).range(node.from, node.to));
-          else out.push(mark("ste-listmark").range(node.from, node.to));
+          else out.push(mark("k2b-ste-listmark").range(node.from, node.to));
           return;
         }
         const inline: Record<string, [string, string]> = {
-          StrongEmphasis: ["ste-strong", "EmphasisMark"],
-          Emphasis: ["ste-em", "EmphasisMark"],
-          Strikethrough: ["ste-strike", "StrikethroughMark"],
-          InlineCode: ["ste-code", "CodeMark"],
+          StrongEmphasis: ["k2b-ste-strong", "EmphasisMark"],
+          Emphasis: ["k2b-ste-em", "EmphasisMark"],
+          Strikethrough: ["k2b-ste-strike", "StrikethroughMark"],
+          InlineCode: ["k2b-ste-code", "CodeMark"],
         };
         const spec = inline[name];
         if (spec) {
@@ -131,11 +131,11 @@ const build = (view: EditorView): DecorationSet => {
           const marks = node.node.getChildren("LinkMark");
           const url = node.node.getChild("URL");
           if (marks.length >= 2) {
-            out.push(mark("ste-link").range(marks[0]!.to, marks[1]!.from));
+            out.push(mark("k2b-ste-link").range(marks[0]!.to, marks[1]!.from));
             if (!touches(state, node.from, node.to, focused)) {
               out.push(hide.range(marks[0]!.from, marks[0]!.to));
               out.push(hide.range(marks[1]!.from, node.to));
-            } else if (url) out.push(mark("ste-url").range(url.from, url.to));
+            } else if (url) out.push(mark("k2b-ste-url").range(url.from, url.to));
           }
           return false;
         }
@@ -166,5 +166,5 @@ export const formattedView = [
     },
     { decorations: (v) => v.decorations },
   ),
-  EditorView.contentAttributes.of({ class: "ste-formatted" }),
+  EditorView.contentAttributes.of({ class: "k2b-ste-formatted" }),
 ];

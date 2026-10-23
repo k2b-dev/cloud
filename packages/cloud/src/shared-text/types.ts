@@ -1,3 +1,4 @@
+import type { SharedTextStructuralHistory } from "./structural-history";
 export type SharedTextActor = { kind: "user" | "service_account"; id: string };
 
 /** Actor is optional so events retained from older deployments remain readable. */
@@ -9,6 +10,8 @@ export type SharedTextEvent = {
   actor?: SharedTextActor;
   /** Echoed only by authorized server actions, for the initiating browser's undo history. */
   actionId?: string;
+  /** Authored only by the server structural writer/admission boundary; retained with the event. */
+  history?: SharedTextStructuralHistory;
   /** Updates apply only to the store lineage from which they originated. */
   restoreRevision?: string;
 };
@@ -33,7 +36,13 @@ export type SharedTextSaveInput = {
 };
 export type SharedTextSnapshot = SharedTextStoredState;
 /** A disjoint edit in the original document's UTF-16 coordinates. */
-export type SharedTextChange = { from: number; to: number; insert: string };
+export type SharedTextChange = {
+  from: number;
+  to: number;
+  insert: string;
+  /** Authorized identity fence: recreate a nonempty range even when its text is equal. */
+  recreate?: true;
+};
 
 export type SharedTextActionReceipt = { actionId: string; update: Uint8Array };
 

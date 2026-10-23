@@ -7,6 +7,7 @@ import {
   pickedCompletion,
 } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
+import { type EditorView, ViewPlugin } from "@codemirror/view";
 import { fuzzy } from "@k2b/stdlib";
 import { buildAttachmentCompletionSource } from "../../../../lib/editor/attachment-autocomplete";
 import { codeFenceCompletionSource } from "../../../../lib/editor/code-fence-snippets";
@@ -75,11 +76,14 @@ const matchExact = (cmd: SlashCommand, typed: string): { params?: RegExpMatchArr
   const lower = typed.toLowerCase();
   if (lower === cmd.name.toLowerCase()) return { params: undefined };
   if (cmd.aliases?.some((a) => a.toLowerCase() === lower)) return { params: undefined };
-  if (cmd.params && lower.startsWith(cmd.name.toLowerCase())) {
-    const suffix = typed.slice(cmd.name.length);
-    if (suffix.length > 0) {
-      const m = cmd.params.exec(suffix);
-      if (m) return { params: m };
+  if (cmd.params) {
+    for (const name of [cmd.name, ...(cmd.aliases ?? [])]) {
+      if (!lower.startsWith(name.toLowerCase())) continue;
+      const suffix = typed.slice(name.length);
+      if (suffix.length > 0) {
+        const m = cmd.params.exec(suffix);
+        if (m) return { params: m };
+      }
     }
   }
   return null;
@@ -114,6 +118,35 @@ const getHaystack = (cmd: SlashCommand): string => {
  */
 const FUZZY_MIN_SCORE = 25;
 
+// CodeMirror accepts pointer-picked options on mousedown. Opening another
+// popover before mouseup lets that same press light-dismiss it in WebKit.
+const pointerCommands = new WeakMap<EditorView, (() => void)[]>();
+const pointerCommandTiming = ViewPlugin.define((view) => {
+  let alive = true;
+  const press = (event: MouseEvent) => {
+    if (event.button === 0 && event.target instanceof Element && event.target.closest(".cm-tooltip-autocomplete"))
+      pointerCommands.set(view, []);
+  };
+  const release = () => {
+    const pending = pointerCommands.get(view);
+    pointerCommands.delete(view);
+    if (pending?.length)
+      queueMicrotask(() => {
+        if (alive) for (const run of pending) run();
+      });
+  };
+  view.dom.addEventListener("mousedown", press, true);
+  view.dom.ownerDocument.addEventListener("mouseup", release, true);
+  return {
+    destroy() {
+      alive = false;
+      pointerCommands.delete(view);
+      view.dom.removeEventListener("mousedown", press, true);
+      view.dom.ownerDocument.removeEventListener("mouseup", release, true);
+    },
+  };
+});
+
 const buildCompletion = (cmd: SlashCommand, ctx: SlashCommandContext, parsedParams?: RegExpMatchArray): SlashCompletion => ({
   label: `/${cmd.name}`,
   displayLabel: cmd.label,
@@ -145,15 +178,19 @@ const buildCompletion = (cmd: SlashCommand, ctx: SlashCommandContext, parsedPara
       annotations: pickedCompletion.of(_completion),
       userEvent: "input.complete",
     });
-    // 2. Defer the command's own dispatch(es) to the next microtask.
+    // 2. Defer the command's dispatches until autocomplete has updated,
+    //    and until release when the option was picked with a pointer.
     //    Running them inline causes CM's autocomplete update + our
     //    `cmd.run` to interleave; for commands that open a modal
     //    (`/note`, `/switch`, `/table`) the resulting re-entrancy
     //    can pin the main thread long enough to trip the browser's
     //    "page unresponsive" warning.
-    queueMicrotask(() => {
+    const run = () => {
       void cmd.run(view, ctx, parsedParams);
-    });
+    };
+    const pending = pointerCommands.get(view);
+    if (pending) pending.push(run);
+    else queueMicrotask(run);
   },
 });
 
@@ -258,6 +295,7 @@ const iconRenderer = {
   render: (completion: Completion): Node => {
     const el = document.createElement("i");
     el.className = `ti ${resolveIcon(completion)} cm-slash-icon`;
+    el.setAttribute("aria-hidden", "true");
     return el;
   },
 };
@@ -315,7 +353,8 @@ const safe = (name: string, source: CompletionSource): CompletionSource => {
  * context so commands like `/note` and `/switch` know which notebook /
  * note they're operating on.
  */
-export const slashCommandsExtension = (ctx: SlashCommandContext): Extension =>
+export const slashCommandsExtension = (ctx: SlashCommandContext): Extension => [
+  pointerCommandTiming,
   autocompletion({
     // We use `override` to keep CM autocomplete fully under our
     // control (no built-in word completions). That means EVERY
@@ -367,4 +406,5 @@ export const slashCommandsExtension = (ctx: SlashCommandContext): Extension =>
     closeOnBlur: true,
     icons: false, // we render our own icon via addToOptions
     addToOptions: [iconRenderer, descRenderer],
-  });
+  }),
+];

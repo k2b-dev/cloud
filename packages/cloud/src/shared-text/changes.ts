@@ -14,6 +14,7 @@ export const validateChanges = (text: string, changes: readonly SharedTextChange
       change.from < 0 ||
       change.to < change.from ||
       change.to > text.length ||
+      (change.recreate === true && change.to === change.from) ||
       (previous && (change.from < previous.to || change.from === previous.from))
     )
       throw new RangeError("Shared text changes must have distinct, non-overlapping original-source ranges");
@@ -22,5 +23,5 @@ export const validateChanges = (text: string, changes: readonly SharedTextChange
     length += change.insert.length - (change.to - change.from);
   }
   if (length > maxLength) throw new RangeError("Shared text changes exceed maxLength");
-  return sorted.filter((change) => text.slice(change.from, change.to) !== change.insert);
+  return sorted.filter((change) => change.recreate === true || text.slice(change.from, change.to) !== change.insert);
 };

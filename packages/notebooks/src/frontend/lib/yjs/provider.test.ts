@@ -549,16 +549,20 @@ const localEditor = (onUnsentChange?: () => void) => {
 };
 
 describe("Yjs provider unconfirmed edits", () => {
-  test("notifies when a publish becomes pending and when its echo clears it", () => {
+  test("notifies after the native transaction when a publish is pending and when its echo clears it", async () => {
     let notifications = 0;
     using editor = localEditor(() => notifications++);
     readyReplay(editor.socket);
+    await Promise.resolve();
     notifications = 0;
     editor.doc.getText("content").insert(0, "keep this");
+    expect(notifications).toBe(0);
+    await Promise.resolve();
     expect(notifications).toBe(1);
     expect(editor.provider.hasUnsentChanges()).toBe(true);
     const payload = syncPublishes(editor.socket)[0]!;
     echo(editor.socket, payload);
+    await Promise.resolve();
     expect(notifications).toBe(2);
     expect(editor.provider.hasUnsentChanges()).toBe(false);
     echo(editor.socket, payload);
@@ -734,7 +738,7 @@ describe("Yjs provider unconfirmed edits", () => {
     }
   });
 
-  test("local edits made while terminated remain pending and resume publishes a covering state", () => {
+  test("local edits made while terminated remain pending and resume publishes a covering state", async () => {
     let notifications = 0;
     using editor = localEditor(() => notifications++);
     const server = new Y.Doc();
@@ -745,10 +749,13 @@ describe("Yjs provider unconfirmed edits", () => {
       echo(editor.socket, encoding.toBase64(serverState));
       readyReplay(editor.socket);
       expect(editor.provider.hasUnsentChanges()).toBe(false);
+      await Promise.resolve();
       notifications = 0;
       editor.socket.message({ type: notebooksYjs.wsType.error, payload: { code: "SESSION_EXPIRED", message: "expired" } });
       editor.doc.getText("content").insert(6, " local");
       expect(editor.provider.hasUnsentChanges()).toBe(true);
+      expect(notifications).toBe(0);
+      await Promise.resolve();
       expect(notifications).toBe(1);
       expect(syncPublishes(editor.socket)).toEqual([]);
 
@@ -957,13 +964,41 @@ describe("server table action receipts", () => {
       await action.applied;
       expect(socket.sent).toHaveLength(sent);
       expect(provider.canStructure()).toBe(true);
-      undoManager.undo();
+      expect(undoManager.undoStack).toHaveLength(0);
+      provider.setInverseHandler(async (request) => {
+        expect(request.action).toBe("undo");
+        expect(request.receiptCursor).toBe("s6t.fixture.2");
+        const vector = Y.encodeStateVector(server);
+        server.getText("codemirror").delete(4, 6);
+        socket.message({
+          type: notebooksYjs.wsType.syncPush,
+          payload: {
+            noteId: NOTE_ID,
+            updates: [
+              { cursor: "s6t.fixture.3", actionId: request.actionId, payload: encoding.toBase64(Y.encodeStateAsUpdate(server, vector)) },
+            ],
+          },
+        });
+      });
+      await provider.undo();
+      expect(doc.getText("codemirror").toString()).toBe("base");
+      expect(socket.sent).toHaveLength(sent); // Structural inverse never publishes raw sync bytes.
+      expect(provider.canStructure()).toBe(true);
+      doc.getText("codemirror").insert(4, " input");
+      const typed = JSON.parse(socket.sent.at(-1)!);
+      expect(provider.canStructure()).toBe(false);
+      socket.message({
+        type: notebooksYjs.wsType.syncPush,
+        payload: { noteId: NOTE_ID, updates: [{ cursor: "s6t.fixture.4", payload: typed.payload.payload }] },
+      });
+      expect(provider.canStructure()).toBe(true);
+      await provider.undo();
       expect(doc.getText("codemirror").toString()).toBe("base");
       expect(provider.canStructure()).toBe(false);
       const undo = JSON.parse(socket.sent.at(-1)!);
       socket.message({
         type: notebooksYjs.wsType.syncPush,
-        payload: { noteId: NOTE_ID, updates: [{ cursor: "s6t.fixture.3", payload: undo.payload.payload }] },
+        payload: { noteId: NOTE_ID, updates: [{ cursor: "s6t.fixture.5", payload: undo.payload.payload }] },
       });
       expect(provider.canStructure()).toBe(true);
     } finally {
@@ -1008,7 +1043,21 @@ describe("server table action receipts", () => {
       });
       await action.applied;
       next.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, cursor: "s6t.fixture.1", restoreRevision: "0" } });
-      undoManager.undo();
+      provider.setInverseHandler(async (request) => {
+        expect(request.receiptCursor).toBe("s6t.fixture.1");
+        const vector = Y.encodeStateVector(server);
+        server.getText("codemirror").delete(0, 5);
+        next.message({
+          type: notebooksYjs.wsType.syncPush,
+          payload: {
+            noteId: NOTE_ID,
+            updates: [
+              { cursor: "s6t.fixture.2", actionId: request.actionId, payload: encoding.toBase64(Y.encodeStateAsUpdate(server, vector)) },
+            ],
+          },
+        });
+      });
+      await provider.undo();
       expect(doc.getText("codemirror").toString()).toBe("");
     } finally {
       provider.dispose();
@@ -1240,6 +1289,120 @@ test("a populated document or initial cursor cannot initialize without its revis
     doc.getText("codemirror").delete(0, 5);
     expect(() => createYjsProvider(opts)).toThrow("initialRestoreRevision");
   } finally {
+    awareness.destroy();
+    doc.destroy();
+  }
+});
+
+test("stale ingress recovery preserves original payloads, cursors and readable input across replay/full-state resend", () => {
+  const doc = new Y.Doc(),
+    server = new Y.Doc();
+  doc.clientID = 101;
+  doc.getText("codemirror").insert(0, "original target");
+  Y.applyUpdate(server, Y.encodeStateAsUpdate(doc));
+  const awareness = new Awareness(doc);
+  const fatal: string[] = [];
+  const provider = createYjsProvider({
+    doc,
+    awareness,
+    noteId: NOTE_ID,
+    appUrl: "http://localhost",
+    initialCursor: "s6t.fixture.1",
+    initialRestoreRevision: "0",
+    onFatal: (error) => fatal.push(error.code),
+  });
+  try {
+    provider.connect();
+    const socket = FakeWebSocket.instances.at(-1)!;
+    socket.open();
+    socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, cursor: "s6t.fixture.1", restoreRevision: "0" } });
+    doc.getText("codemirror").insert(0, "UNCONFIRMED ");
+    const originalPayload = syncPublishes(socket)[0]!;
+    socket.open(); // Temporarily disconnected from replay coverage.
+    doc.getText("codemirror").insert(12, "OFFLINE ");
+    const readable = doc.getText("codemirror").toString();
+    const before = Y.encodeStateVector(server);
+    server.getText("codemirror").delete(0, server.getText("codemirror").length);
+    socket.message({
+      type: notebooksYjs.wsType.syncPush,
+      payload: {
+        noteId: NOTE_ID,
+        updates: [{ cursor: "s6t.fixture.2", payload: encoding.toBase64(Y.encodeStateAsUpdate(server, before)) }],
+      },
+    });
+    socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, cursor: "s6t.fixture.2", restoreRevision: "0" } });
+    const publishes = socket.sent.map((wire) => JSON.parse(wire)).filter((wire) => wire.type === notebooksYjs.wsType.syncPublish);
+    expect(publishes).toHaveLength(2);
+    expect(publishes.every((wire) => wire.payload.baseCursor === "s6t.fixture.1")).toBe(true);
+    expect(provider.recoveryInput().pending).toContainEqual({ payload: originalPayload, baseCursor: "s6t.fixture.1" });
+    expect(provider.recoveryInput().text).toBe(readable);
+    socket.message({ type: notebooksYjs.wsType.error, payload: { code: "RESYNC_REQUIRED", reopen: true, message: "Copy unsent input" } });
+    expect(fatal).toEqual(["RESYNC_REQUIRED"]);
+    expect(provider.hasUnsentChanges()).toBe(true);
+    expect(provider.recoveryInput().text).toBe(readable);
+    expect(provider.recoveryInput().pending).toContainEqual({ payload: originalPayload, baseCursor: "s6t.fixture.1" });
+    provider.resume();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  } finally {
+    provider.dispose();
+    awareness.destroy();
+    doc.destroy();
+    server.destroy();
+  }
+});
+
+test("delayed echoes stop at the existing payload budget with every pending byte recoverable", async () => {
+  const doc = new Y.Doc();
+  const awareness = new Awareness(doc);
+  const fatal: unknown[] = [];
+  let editing = false;
+  const provider = createYjsProvider({
+    doc,
+    awareness,
+    noteId: NOTE_ID,
+    appUrl: "http://localhost",
+    initialRestoreRevision: "0",
+    onFatal: (error) => {
+      expect(editing).toBe(false);
+      fatal.push(error);
+    },
+  });
+  try {
+    provider.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, restoreRevision: "0" } });
+    const text = doc.getText("codemirror");
+    const edits: string[] = [];
+    doc.on("update", (update: Uint8Array) => edits.push(encoding.toBase64(update)));
+    // Small document, growing unacknowledged log: bounded by the real transport
+    // envelope, rather than a test-only cap or a maximum action count.
+    for (let count = 0; count < 40 && !fatal.length; count++) {
+      editing = true;
+      text.insert(0, "x".repeat(500_000));
+      editing = false;
+      await Promise.resolve();
+      if (!fatal.length) {
+        editing = true;
+        text.delete(0, text.length);
+        editing = false;
+        await Promise.resolve();
+      }
+    }
+    expect(fatal).toHaveLength(1);
+    expect(provider.recoveryInput().pending.map((entry) => entry.payload)).toEqual(edits);
+    expect(provider.recoveryInput().text).toBe(text.toString());
+    expect(provider.hasUnsentChanges()).toBe(true);
+    expect(provider.canStructure()).toBe(false);
+    expect(provider.recoveryInput().pending.reduce((length, entry) => length + entry.payload.length, 0)).toBeGreaterThan(
+      2 * notebooksYjs.maxSyncPayloadLength,
+    );
+    const count = provider.recoveryInput().pending.length;
+    text.insert(0, "more");
+    expect(provider.recoveryInput().pending).toHaveLength(count);
+    expect(provider.recoveryInput().text).toBe(text.toString());
+  } finally {
+    provider.dispose();
     awareness.destroy();
     doc.destroy();
   }

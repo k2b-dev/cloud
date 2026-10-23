@@ -5,7 +5,7 @@ section: Data
 order: 430
 description: Let people and agents edit the same text through a retained log and application-owned snapshots.
 tags: [data, text, collaboration, sync, yjs]
-updated: 2026-10-19
+updated: 2026-10-22
 ---
 
 # Shared text documents
@@ -13,7 +13,7 @@ updated: 2026-10-19
 Use `@k2b/cloud/shared-text` for text that people and agents write at the same
 time. One retained log carries updates; a snapshot in the application's own
 Postgres table holds durable state. This is a server-only API. Callers must
-authorize access before calling `read`, `edit`, or `change`.
+authorize access before calling `read`, `edit`, `change`, `inverse`, or `accept`.
 
 ## Declare one log per kind of document
 
@@ -150,7 +150,11 @@ would destroy.
 `maxLength` is required and limits the resulting text in UTF-16 code units.
 Invalid ranges, split surrogate pairs, unpaired inserted surrogates, and an
 oversized result throw `RangeError` before publication. Empty or identical
-changes publish and save nothing. A reconstructed document with unresolved
+changes publish and save nothing by default. An authorized structural planner can
+set `recreate: true` on a nonempty range to replace its character identities even
+when its text stays identical. Column moves use this to invalidate anchors in
+both moved columns, including empty cells and identical separators. This is a
+server change option, not a browser-supplied action permission. A reconstructed document with unresolved
 Yjs dependencies returns `syncFailed` without calling the planner.
 
 Publication uses the captured **tenant head** as `expectedAfter`, including
@@ -194,7 +198,7 @@ These helpers check character identity, not document permissions or structural
 meaning. The application still rejects stale context and unconfirmed local
 anchors; never fall back to a submitted ordinal after resolution fails.
 
-## Plan table actions and track local undo
+## Plan table actions and undo them safely
 
 `captureTableAction(ytext, action, target)` captures structural character
 identities synchronously in the browser. Send the resulting `TableActionIntent`
@@ -206,18 +210,87 @@ a table expansion beyond the text budget raises `TableActionLimitError` before
 allocating the expanded grid. Some omitted outer boundaries cannot be anchored;
 these actions reject rather than choosing an adjacent cell.
 
-Pass an `actionId` to `change` to receive the same ID and exact update bytes in
-its log event and result receipt. A `persistFailed` result can still contain an
-accepted receipt. Do not publish again because the snapshot failed.
+For return focus, capture the selection with `captureTableFocus`. At the
+authorized planning head, call `prepareTableActionFocus` with that witness and
+the action. Apply the actual published receipt to a copy of that head, then
+call the returned function to capture the resulting cell's identities. Send
+those witnesses with the application response. After the live stream covers
+the receipt, `resolveTableFocus` resolves them against the browser's current
+document; a deleted target returns `null`. A speculative execution has different
+inserted identities and cannot supply the focus witnesses.
 
-The browser entry point exports `createSharedTextActionHistory(doc, undoManager)`.
-Call `begin(actionId)` before the request and apply incoming events through its
-`apply(bytes, actionId?)` in log order. Await the returned `applied` promise.
-This makes one accepted server action one local undo step, separate from peer
-changes. An HTTP receipt alone does not cover preceding log events; do not apply
-it ahead of the ordered stream. Cancel a known rejected action with the returned
-`cancel(error)`. An unknown outcome requires resynchronization, not an automatic
-retry. Dispose the tracker when the editor closes.
+Pass an `actionId` to `change` to receive the same ID and exact update bytes in
+its log event and result receipt. The event also records the server's structural
+provenance in the existing retained log. A `persistFailed` result can still
+contain an accepted receipt. Do not publish again because the snapshot failed.
+
+After authorizing the current document, call `documents.inverse(docId, {
+actor, actionId, receiptCursor, restoreRevision, maxLength, context?, signal?,
+validate? })` to reverse one of that actor's structural actions. `receiptCursor`
+identifies its retained event. The service checks the actor, document revision,
+surviving targets and publication head. An expired receipt or changed target
+rejects without changing content. Redo reverses the receipt produced by Undo.
+
+Undo retains an inserted column when other edits depend on it, including
+input (including whitespace) or alignment. Their text and alignment keep the original column target.
+The receipt records this result so the browser can explain why the column
+remains. If restoring a removed column would retarget rows accepted since
+Undo, Redo rejects without changing the canonical document. Ordinary typing
+continues to use the supplied Yjs UndoManager. Native Undo/Redo refuses to
+restore input into a row or column whose identities were removed or reassigned
+by a structural action; it leaves the document and history step unchanged.
+The controller follows identities restored by its own native reversals, so
+independent ordinary input steps remain undoable.
+
+The browser entry point exports `createSharedTextActionHistory(doc,
+undoManager, onChange?, onRetainedColumn?)`. Register an authorized inverse
+request handler with `setInverseHandler(handler)`. Route toolbar buttons,
+keyboard shortcuts and native history events through the controller's `undo()`
+and `redo()`, and use `canUndo()` and `canRedo()` for availability.
+
+Call `begin(actionId)` before a new structural request and apply incoming
+events through `apply(bytes, actionId?, cursor?, retained?)` in log order.
+A matching structural receipt requires its retained cursor. Await the returned
+`applied` promise. Server actions remain separate history steps; their updates
+must not enter the native typing UndoManager. An HTTP receipt alone does not
+cover preceding log events. Cancel a known rejection with `cancel(error)`;
+preserve uncertainty and reconcile an unknown outcome before retrying.
+Dispose the controller when the editor closes.
+
+## Admit delayed browser input before acknowledging it
+
+Use `documents.accept(docId, { actor, update, baseCursor, restoreRevision,
+originNodeId, originPeerId, maxLength?, signal? })` for browser updates when structural
+history is enabled. `baseCursor` is the state the browser had observed when it
+made the edit. Keep that cursor with pending bytes across reconnects; assigning
+a newer replay cursor to old input would erase the check's context.
+
+The service reconstructs current state and checks structural changes since
+that base before publishing against the captured document head. Ordinary
+Markdown input that changes table scaffolding receives a conservative server
+classification too. Stale input crossing such a change, or a retained event
+whose classification is unavailable, requires visible recovery. It returns
+`accepted` with a cursor only after publication. Queue a covering snapshot
+through the application's existing snapshot workflow.
+
+Pass the application's existing UTF-16 text limit as `maxLength`. Admission
+checks the final merged document before publication, including concurrent
+updates which each fit alone. Notebooks supplies its 2,097,152-unit limit.
+
+A pending deletion whose original target was recreated by a structural move
+or by a later structural Undo requires recovery. Admission resolves the inverse's
+exact retained source receipt; missing source provenance also requires recovery.
+An old-base full-state update containing those same deleted
+identities is ambiguous and also requires recovery; do not move its base cursor
+forward to bypass this check. Already-confirmed deletion retries and a full-state
+update based on the current head remain safe to accept.
+
+`recoveryRequired` publishes nothing. Preserve the unconfirmed bytes and readable
+local text, stop automatic resubmission, and offer recovery before reopening.
+This also covers missing provenance and an incompatible restored revision.
+`notFound` means the application store no longer has the document. Other
+publication errors propagate; a known head conflict may be revalidated, while
+an unknown publication outcome must be reconciled before another attempt.
 
 ## Respect restored document versions
 

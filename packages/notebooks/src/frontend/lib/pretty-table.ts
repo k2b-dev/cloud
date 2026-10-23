@@ -207,11 +207,13 @@ export const renderPrettyTableHtml = (data: PrettyTableData, options: PrettyTabl
     ? `<div class="md-block-handle" data-block-name="${escapeHtml(data.caption)}">@${escapeHtml(data.caption)}</div>`
     : "";
   const headerHtml = data.headers.map((_, i) => `<th scope="col">${presentation.headerHtml(i)}</th>`).join("");
+  // An all-empty GFM header is the approved header-off representation.
+  const head = data.headers.some((cell) => cell.trim()) ? `<thead><tr>${headerHtml}</tr></thead>` : "";
   const bodyHtml = presentation.rows
     .map((row, rowIndex) => {
       const cells = data.headers.map((_, colIdx) => `<td>${presentation.cellHtml(rowIndex, colIdx)}</td>`).join("");
       return row.isTotalRow ? `<tr class="md-table-total-row">${cells}</tr>` : `<tr>${cells}</tr>`;
     })
     .join("");
-  return `${caption}<div class="md-table-wrap"><table class="md-table"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
+  return `${caption}<div class="md-table-wrap"><table class="md-table">${head}<tbody>${bodyHtml}</tbody></table></div>`;
 };

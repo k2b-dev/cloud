@@ -13,12 +13,13 @@
  *    remote text for that cell waits until `compositionend`;
  *  - every structural action is one transaction, so one undo step.
  */
-import { isolateHistory } from "@codemirror/commands";
+import { history, historyKeymap, isolateHistory } from "@codemirror/commands";
 import { syntaxTree } from "@codemirror/language";
 import {
   type ChangeDesc,
   ChangeSet,
-  type EditorState,
+  Compartment,
+  EditorState,
   type Extension,
   Facet,
   Prec,
@@ -28,18 +29,51 @@ import {
 } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, keymap, ViewPlugin, WidgetType } from "@codemirror/view";
 import { inspectClipboard, parseClipboardHtml } from "./clipboard";
+import { clipboardLoading } from "./clipboard-loading";
 import { type InlineFormat, inlineFormat } from "./format";
 import { markdownLanguage } from "./language";
 import * as T from "./markdown-table";
+import { textEditorMessages } from "./messages";
 
 export type TableTarget = { tableFrom: number; rowFrom: number; columnFrom: number; row: number; column: number };
+/** Resolve a server-returned identity against the current document immediately before focus. */
+export type TableFocusTarget = () => TableTarget | null;
 export type TableHost = {
   undo: () => void;
   redo: () => void;
   boundary: () => void;
-  cellLabel: (row: number, column: number) => string;
+  cellLabel: (row: number, column: number, name?: string) => string;
+  sourceLabels?: () => {
+    edit: string;
+    valid: string;
+    invalid: string;
+    changed: string;
+    structural: string;
+    applying?: string;
+    applyFailed?: string;
+    done: string;
+    discard: string;
+    continue: string;
+    line?: (line: number) => string;
+    separator?: (header: number, separator: number) => string;
+    extra?: (line: number) => string;
+    complete?: string;
+  };
+  actionLabel?: (action: "rowMenu" | "columnMenu" | "addRow" | "addColumn" | "emptyCell") => string;
+  /** Respect a host's personal Tab-for-focus preference inside cells too. */
+  tabMovesFocus?: () => boolean;
   /** Capture durable anchors synchronously, then send the action to the owning server. */
-  structure?: { available: () => boolean; perform: (action: MenuAction, target: TableTarget) => Promise<void> };
+  structure?: {
+    available: () => boolean;
+    perform: (action: MenuAction, target: TableTarget) => Promise<TableFocusTarget | void>;
+    /** Resolves only after the confirmed update is applied; rejects without discarding the draft. */
+    replaceSource?: (
+      target: TableTarget,
+      expected: string,
+      source: string,
+      caret: { row: number; column: number },
+    ) => Promise<TableFocusTarget | void>;
+  };
   onError: (code: "structureUnavailable" | "structureFailed" | "pasteTooLarge" | "textTooLarge" | "cellRemoved") => void;
   onRecovery: (text: string) => void;
   /** Cell focus is separate from CodeMirror contentDOM focus; collaboration maps these offsets to its own cursor. */
@@ -58,6 +92,12 @@ export type MenuAction =
   | "colRight"
   | "deleteRow"
   | "deleteCol"
+  | "moveRowUp"
+  | "moveRowDown"
+  | "moveColLeft"
+  | "moveColRight"
+  | "toggleHeader"
+  | "deleteTable"
   | "alignLeft"
   | "alignCenter"
   | "alignRight";
@@ -104,18 +144,18 @@ export const tablesIn = (state: EditorState): T.Table[] => {
 };
 
 const currentTable = (view: EditorView, dom: HTMLElement): T.Table | null => {
-  if (!view.dom.contains(dom)) return null;
+  if (!dom.isConnected || !view.dom.contains(dom)) return null;
   const pos = view.posAtDOM(dom);
   return tablesIn(view.state).find((t) => pos >= t.from && pos <= t.to) ?? null;
 };
 const tableIndex = (view: EditorView, dom: HTMLElement): number => {
-  if (!view.dom.contains(dom)) return -1;
+  if (!dom.isConnected || !view.dom.contains(dom)) return -1;
   const pos = view.posAtDOM(dom);
   return tablesIn(view.state).findIndex((t) => pos >= t.from && pos <= t.to);
 };
 /** The grid element of the n-th table, looked up again: CodeMirror may have replaced it. */
 const findWrap = (view: EditorView, index: number): HTMLElement | null =>
-  [...view.contentDOM.querySelectorAll<HTMLElement>(".ste-table")].find((el) => tableIndex(view, el) === index) ?? null;
+  [...view.contentDOM.querySelectorAll<HTMLElement>(".k2b-ste-table")].find((el) => tableIndex(view, el) === index) ?? null;
 
 type Hit = { table: T.Table; r: number; c: number; cell: T.Cell };
 const cellAtPos = (state: EditorState, pos: number): Hit | null => {
@@ -172,8 +212,8 @@ const renderInline = (raw: string) => {
       StrongEmphasis: ["<strong>", "</strong>", ["EmphasisMark"]],
       Emphasis: ["<em>", "</em>", ["EmphasisMark"]],
       Strikethrough: ["<s>", "</s>", ["StrikethroughMark"]],
-      InlineCode: ['<code class="ste-code">', "</code>", ["CodeMark"]],
-      Link: ['<span class="ste-link">', "</span>", ["LinkMark", "URL", "LinkTitle"]],
+      InlineCode: ['<code class="k2b-ste-code">', "</code>", ["CodeMark"]],
+      Link: ['<span class="k2b-ste-link">', "</span>", ["LinkMark", "URL", "LinkTitle"]],
     };
     if (node.name === "Escape") return escapeHtml(text.slice(node.from + 1, node.to));
     const spec = tags[node.name];
@@ -196,7 +236,7 @@ const renderCell = (view: EditorView, element: HTMLElement, raw: string, table: 
   else element.innerHTML = renderInline(raw);
 };
 
-const cellAt = (dom: HTMLElement, r: number, c: number) => dom.querySelector<HTMLElement>(`[data-r="${r}"][data-c="${c}"]`);
+const cellAt = (dom: HTMLElement, r: number, c: number) => dom.querySelector<HTMLElement>(`.k2b-ste-cell[data-r="${r}"][data-c="${c}"]`);
 
 const caretOffset = (el: HTMLElement): number => {
   const sel = el.ownerDocument.getSelection();
@@ -233,7 +273,20 @@ const placeSelection = (el: HTMLElement, anchor: number, head = anchor) => {
 };
 const placeCaret = (el: HTMLElement, offset: number) => placeSelection(el, offset);
 
-const shapeOf = (t: T.Table) => `${T.rowCount(t)}x${Math.max(t.columns, ...t.lines.map((l) => l.cells.length))}`;
+const hasHeader = (t: T.Table) => t.lines[0]!.cells.some((cell) => cell.text.length > 0);
+const firstRow = (t: T.Table) => (hasHeader(t) ? 0 : 1);
+const shapeOf = (t: T.Table) => `${T.rowCount(t)}x${width(t)}:${firstRow(t)}`;
+const renderedDocuments = new WeakMap<HTMLElement, Text>();
+const measureScroll = (view: EditorView, wrap: HTMLElement) =>
+  view.requestMeasure({
+    key: wrap,
+    read: () => ({ left: wrap.scrollLeft, width: wrap.clientWidth, total: wrap.scrollWidth }),
+    write: ({ left, width, total }) => {
+      if (!wrap.isConnected) return;
+      wrap.toggleAttribute("data-scrolled", left > 0);
+      wrap.toggleAttribute("data-more", left + width < total - 1);
+    },
+  });
 
 class GridWidget extends WidgetType {
   constructor(
@@ -247,15 +300,25 @@ class GridWidget extends WidgetType {
   // is equal; app-owned formulas may also depend on cells outside this table.
   override toDOM(view: EditorView) {
     const wrap = document.createElement("div");
-    wrap.className = "ste-table";
+    wrap.className = "k2b-ste-table";
     wrap.contentEditable = "false";
     wrap.dataset.shape = shapeOf(this.table);
     wrap.append(buildGrid(view, this.table, wrap));
-    setEditable(wrap, !this.readOnly);
+    wrap.addEventListener("pointerleave", () => {
+      wrap.querySelectorAll<HTMLElement>(".k2b-ste-columnMenu").forEach((grip) => delete grip.dataset.hovered);
+    });
+    wrap.addEventListener("scroll", () => {
+      wrap.toggleAttribute("data-scrolled", wrap.scrollLeft > 0);
+      wrap.toggleAttribute("data-more", wrap.scrollLeft + wrap.clientWidth < wrap.scrollWidth - 1);
+    });
+    renderedDocuments.set(wrap, view.state.doc);
+    setEditable(wrap, !this.readOnly, view);
+    measureScroll(view, wrap);
     return wrap;
   }
   override updateDOM(dom: HTMLElement, view: EditorView) {
     const act = active.get(view);
+    measureScroll(view, dom);
     if (dom.dataset.shape !== shapeOf(this.table)) {
       const focused = dom.contains(document.activeElement) ? (document.activeElement as HTMLElement) : null;
       // Never rebuild under a running IME composition; the commit at compositionend refreshes.
@@ -264,42 +327,394 @@ class GridWidget extends WidgetType {
         return true;
       }
       const sync = syncs.get(view);
-      if (focused && sync && !targeted.has(view)) sync.refocusSelection = selectionOffsets(focused);
+      if (focused && sync?.el === focused && !targeted.has(view)) sync.refocusSelection = selectionOffsets(focused);
       dom.dataset.shape = shapeOf(this.table);
       delete dom.dataset.pendingShape;
       rebuilding.add(view);
-      dom.replaceChildren(buildGrid(view, this.table, dom));
+      const source = sources.get(dom)?.element;
+      if (source) {
+        // Keep the draft editor connected while the confirmed grid changes.
+        // Detaching it loses native focus before its receipt can return the
+        // caret to the cell selected in the draft.
+        for (const child of [...dom.childNodes]) if (child !== source) child.remove();
+        dom.insertBefore(buildGrid(view, this.table, dom), source);
+      } else dom.replaceChildren(buildGrid(view, this.table, dom));
+      renderedDocuments.set(dom, view.state.doc);
       rebuilding.delete(view);
-      setEditable(dom, !this.readOnly);
+      setEditable(dom, !this.readOnly, view);
+      dom.dispatchEvent(
+        new CustomEvent("k2b-ste-table-structure", {
+          bubbles: true,
+          detail: { rows: T.rowCount(this.table), columns: this.table.columns },
+        }),
+      );
       return true;
     }
-    patchGrid(view, this.table, dom);
-    setEditable(dom, !this.readOnly);
+    // Host formulas depend on document changes, not selection-only effects.
+    // Replacing an inactive cell's descendants during pointerdown removes the
+    // click target before the browser focuses it and can select the whole note.
+    const refreshPresentation = renderedDocuments.get(dom) !== view.state.doc;
+    patchGrid(view, this.table, dom, refreshPresentation);
+    renderedDocuments.set(dom, view.state.doc);
+    setEditable(dom, !this.readOnly, view);
     return true;
+  }
+  override destroy(dom: HTMLElement) {
+    const source = sources.get(dom);
+    if (source) {
+      const draft = source.editor.state.doc.toString();
+      if (draft !== source.base) queueMicrotask(() => source.recover(draft));
+      source.cleanup();
+      source.editor.destroy();
+      sources.delete(dom);
+    }
   }
   override ignoreEvent() {
     return true;
   }
   override get estimatedHeight() {
-    return T.rowCount(this.table) * 41 + 16;
+    return (T.rowCount(this.table) - firstRow(this.table)) * 41 + 16;
   }
 }
 
-const setEditable = (wrap: HTMLElement, on: boolean) => {
+type SourceSession = {
+  element: HTMLElement;
+  editor: EditorView;
+  base: string;
+  recover: (text: string) => void;
+  readOnly: Compartment;
+  cleanup: () => void;
+  pending: boolean;
+};
+const sources = new WeakMap<HTMLElement, SourceSession>();
+
+/** A local source draft for one table. Invalid drafts never replace shared text.
+ * Collaborative structure changes require the host's confirmed anchored action. */
+export const editTableSource = (view: EditorView, wrap: HTMLElement) => {
+  const table = currentTable(view, wrap);
+  if (!table || view.state.readOnly || sources.has(wrap)) return;
+  const host = view.state.facet(tableHost);
+  const en = textEditorMessages.resolve(["en"]).t;
+  const labels = host?.sourceLabels?.() ?? {
+    edit: en.editMarkdown,
+    valid: en.markdownValid,
+    invalid: en.markdownInvalid,
+    changed: en.markdownChanged,
+    structural: en.markdownStructural,
+    done: en.showTable,
+    discard: en.discardMarkdown,
+    continue: en.continueMarkdown,
+    line: en.markdownLine,
+    separator: (header, separator) => en.markdownSeparator({ header, separator }),
+    extra: en.markdownExtra,
+    complete: en.completeColumns,
+  };
+  const base = view.state.sliceDoc(table.from, table.to);
+  const original = active.get(view);
+  const originalCell = original && T.gridLine(table, original.r)?.cells[original.c];
+  const overlay = document.createElement("div");
+  overlay.className = "k2b-ste-table-source";
+  const bar = document.createElement("div");
+  bar.className = "k2b-ste-source-bar";
+  const status = document.createElement("span");
+  status.textContent = labels.valid;
+  status.setAttribute("role", "status");
+  const body = document.createElement("div");
+  body.className = "k2b-ste-source-body";
+  const error = document.createElement("div");
+  error.className = "k2b-ste-source-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+  const button = (label: string, run: () => void) => {
+    const element = document.createElement("button");
+    element.type = "button";
+    element.textContent = label;
+    element.onclick = run;
+    return element;
+  };
+  const close = (r: number, c: number, changed: number[] = [], restoreFocus = true) => {
+    sources.get(wrap)?.cleanup();
+    sources.delete(wrap);
+    source.destroy();
+    overlay.remove();
+    delete wrap.dataset.source;
+    wrap.style.removeProperty("height");
+    const current = currentTable(view, wrap);
+    if (current && restoreFocus)
+      move(view, wrap, Math.max(firstRow(current), Math.min(r, T.rowCount(current) - 1)), Math.min(c, current.columns - 1));
+    wrap
+      .querySelectorAll<HTMLElement>("tr")
+      .forEach((row) => row.toggleAttribute("data-source-changed", changed.includes(Number(row.dataset.r))));
+  };
+  const fail = (message: string, line?: number, complete?: () => void, focus = true) => {
+    error.hidden = false;
+    error.dataset.tone = complete ? "warning" : "error";
+    status.textContent = labels.edit;
+    const selectLine = () => {
+      const target = source.state.doc.line(Math.min(line ?? 1, source.state.doc.lines));
+      source.dispatch({ selection: { anchor: target.from, head: target.to }, scrollIntoView: true });
+      source.focus();
+    };
+    error.replaceChildren(
+      document.createTextNode(`${complete || line === undefined ? "" : (labels.line?.(line) ?? en.markdownLine(line))}${message}`),
+      ...(complete ? [button(labels.complete ?? en.completeColumns, complete)] : []),
+      button(labels.continue, selectLine),
+      button(labels.discard, () => close(original?.r ?? 0, original?.c ?? 0)),
+    );
+    if (focus) source.focus();
+  };
+  const parsed = () => {
+    const draft = source.state.doc.toString();
+    const tables = T.findTables(draft);
+    const next = tables[0];
+    return next &&
+      tables.length === 1 &&
+      next.from === 0 &&
+      next.to === draft.length &&
+      !T.inspectTableStructure(draft).extraCells &&
+      !T.inspectTableStructure(draft).missingSeparator
+      ? next
+      : null;
+  };
+  const apply = (): void => {
+    if (view.state.readOnly || sources.get(wrap)?.pending) return;
+    const current = currentTable(view, wrap);
+    const draft = source.state.doc.toString();
+    const candidate = T.findTables(draft)[0];
+    const extra = candidate?.lines.find((line) => line.cells.length > candidate.columns);
+    if (candidate && candidate.from === 0 && candidate.to === draft.length && extra) {
+      const line = source.state.doc.lineAt(extra.from).number;
+      return fail(labels.extra?.(line) ?? en.markdownExtra(line), line, () => {
+        source.dispatch({ changes: T.completeColumns(candidate) });
+        apply();
+      });
+    }
+    const next = parsed();
+    if (!next) {
+      // Count source cells for diagnostics only; the public GFM parser remains
+      // the authority for whether this draft can replace a table.
+      const split = (text: string) => {
+        const cells = [""];
+        for (let index = 0; index < text.length; index++) {
+          const char = text[index]!;
+          if (char === "\\" && index + 1 < text.length) cells[cells.length - 1] += char + text[++index];
+          else if (char === "|") cells.push("");
+          else cells[cells.length - 1] += char;
+        }
+        if (cells.length > 1 && !cells[0]!.trim()) cells.shift();
+        if (cells.length > 1 && !cells.at(-1)!.trim()) cells.pop();
+        return cells.map((cell) => cell.trim());
+      };
+      if (source.state.doc.lines > 1) {
+        const header = split(source.state.doc.line(1).text),
+          separator = split(source.state.doc.line(2).text);
+        if (separator.every((cell) => /^:?-+:?$/.test(cell)) && header.length !== separator.length)
+          return fail(
+            labels.separator?.(header.length, separator.length) ??
+              en.markdownSeparator({ header: header.length, separator: separator.length }),
+            2,
+          );
+        if (!separator.every((cell) => /^:?-+:?$/.test(cell))) return fail(labels.invalid, 2);
+      }
+      return fail(labels.invalid, candidate ? source.state.doc.lineAt(Math.min(candidate.to + 1, draft.length)).number : 1);
+    }
+    if (!current || view.state.sliceDoc(current.from, current.to) !== base) return fail(labels.changed);
+    let changes: T.Change[] = [];
+    let structural = false;
+    if (host?.structure) {
+      structural =
+        shapeOf(current) !== shapeOf(next) ||
+        view.state.sliceDoc(current.lines[1]!.from, current.lines[1]!.to) !== source.state.sliceDoc(next.lines[1]!.from, next.lines[1]!.to);
+      if (!structural) {
+        for (let r = 0; r < T.rowCount(next); r++) {
+          const old = T.gridLine(current, r)!;
+          const row = T.gridLine(next, r)!;
+          for (let c = 0; c < next.columns; c++) {
+            const before = old.cells[c],
+              after = row.cells[c];
+            if (!before || !after) {
+              structural = true;
+              break;
+            }
+            if (before.text !== after.text) changes.push(...T.cellChanges(before.text, T.displayCell(after.text), before.from));
+          }
+        }
+        // Formatting pipes and padding is structural even when dimensions match.
+        structural ||=
+          T.applyChanges(
+            base,
+            changes.map((change) => ({
+              ...change,
+              from: change.from - current.from,
+              to: change.to - current.from,
+            })),
+          ) !== draft;
+      }
+    } else changes = [{ from: current.from, to: current.to, insert: draft }];
+    const hit = cellAtPos(EditorState.create({ doc: source.state.doc }), source.state.selection.main.head);
+    const changed = Array.from({ length: T.rowCount(next) }, (_, row) => row).filter((row) => {
+      const before = T.gridLine(current, row),
+        after = T.gridLine(next, row);
+      return !before || !after || view.state.sliceDoc(before.from, before.to) !== source.state.sliceDoc(after.from, after.to);
+    });
+    if (structural) {
+      const structure = host?.structure;
+      if (!structure?.replaceSource) return fail(labels.structural);
+      if (!structure.available()) {
+        host?.onError("structureUnavailable");
+        return;
+      }
+      const session = sources.get(wrap)!;
+      session.pending = true;
+      // Keep native focus on the action while waiting. Disabling a focused
+      // button blurs it to body, losing the draft's focus ownership on receipt.
+      // The pending guard above prevents keyboard and pointer resubmission.
+      done.setAttribute("aria-disabled", "true");
+      overlay.setAttribute("aria-busy", "true");
+      status.textContent = labels.applying ?? en.applyingTable;
+      source.dispatch({ effects: readOnly.reconfigure(EditorState.readOnly.of(true)) });
+      // The host captures the table witnesses synchronously, before any await.
+      const target = {
+        tableFrom: current.from,
+        rowFrom: current.lines[0]!.from,
+        columnFrom: current.lines[0]!.cells[0]!.from,
+        row: 0,
+        column: 0,
+      };
+      const settled = () => {
+        if (sources.get(wrap) !== session) return false;
+        session.pending = false;
+        done.removeAttribute("aria-disabled");
+        overlay.removeAttribute("aria-busy");
+        source.dispatch({ effects: readOnly.reconfigure(EditorState.readOnly.of(view.state.readOnly)) });
+        return true;
+      };
+      try {
+        void structure.replaceSource(target, base, draft, { row: hit?.r ?? 0, column: hit?.c ?? 0 }).then(
+          (resolve) => {
+            if (settled()) {
+              const restoreFocus = overlay.contains(view.dom.ownerDocument.activeElement);
+              close(0, 0, changed, false);
+              if (restoreFocus && resolve) focusTableTarget(view, resolve());
+            }
+          },
+          () => {
+            if (settled())
+              fail(
+                labels.applyFailed ?? en.markdownApplyFailed,
+                undefined,
+                undefined,
+                overlay.contains(view.dom.ownerDocument.activeElement),
+              );
+          },
+        );
+      } catch {
+        if (settled()) fail(labels.applyFailed ?? en.markdownApplyFailed);
+      }
+      return;
+    }
+    if (changes.length && !dispatchChanges(view, changes, true)) return;
+    close(hit?.r ?? original?.r ?? 0, hit?.c ?? original?.c ?? 0, changed);
+  };
+  const readOnly = new Compartment();
+  const source = new EditorView({
+    parent: body,
+    state: EditorState.create({
+      doc: base,
+      selection: { anchor: Math.max(0, (originalCell?.from ?? table.from) - table.from) },
+      extensions: [
+        readOnly.of(EditorState.readOnly.of(false)),
+        history(),
+        keymap.of([
+          {
+            key: "Escape",
+            run: () => {
+              apply();
+              return true;
+            },
+          },
+          ...historyKeymap,
+        ]),
+        EditorView.lineWrapping,
+        EditorView.contentAttributes.of({ "aria-label": labels.edit }),
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            status.textContent = parsed() ? labels.valid : labels.invalid;
+            error.hidden = true;
+          }
+        }),
+      ],
+    }),
+  });
+  const done = button(labels.done, apply);
+  bar.append(status, done);
+  overlay.append(bar, body, error);
+  const beforeUnload = (event: BeforeUnloadEvent) => {
+    if (source.state.doc.toString() === base) return;
+    event.preventDefault();
+    event.returnValue = "";
+  };
+  view.dom.ownerDocument.defaultView?.addEventListener("beforeunload", beforeUnload);
+  sources.set(wrap, {
+    element: overlay,
+    pending: false,
+    editor: source,
+    base,
+    readOnly,
+    recover: (text) => host?.onRecovery(text),
+    cleanup: () => view.dom.ownerDocument.defaultView?.removeEventListener("beforeunload", beforeUnload),
+  });
+  wrap.style.height = `${wrap.getBoundingClientRect().height}px`;
+  wrap.dataset.source = "1";
+  wrap.querySelectorAll("tr").forEach((row) => row.removeAttribute("data-source-changed"));
+  wrap.append(overlay);
+  source.focus();
+};
+
+const setEditable = (wrap: HTMLElement, on: boolean, view: EditorView) => {
   wrap.dataset.readonly = on ? "0" : "1";
-  wrap.querySelectorAll<HTMLElement>(".ste-cell").forEach((cell) => {
-    if (!on) cell.contentEditable = "false";
-    else {
+  const source = sources.get(wrap);
+  if (source && source.editor.state.readOnly !== (!on || source.pending))
+    source.editor.dispatch({ effects: source.readOnly.reconfigure(EditorState.readOnly.of(!on || source.pending)) });
+  wrap.querySelectorAll<HTMLButtonElement>(".k2b-ste-grip, .k2b-ste-table-add button").forEach((button) => {
+    const structure = view.state.facet(tableHost)?.structure;
+    button.disabled = !on || (button.classList.contains("k2b-ste-addColumn") && !!structure && !structure.available());
+    button.hidden = !on;
+  });
+  wrap.querySelector("table")?.setAttribute("aria-readonly", String(!on));
+  wrap.querySelectorAll<HTMLElement>(".k2b-ste-cell").forEach((cell) => {
+    cell.setAttribute("aria-readonly", String(!on));
+    if (!on) {
+      cell.contentEditable = "false";
+      // Losing edit access must restore presentation and detach the mutable
+      // cell baseline before later remote updates reconcile the document.
+      if (cell.dataset.editing === "1") {
+        cell.dataset.editing = "0";
+        const table = currentTable(view, wrap);
+        if (table) renderCell(view, cell, cell.dataset.raw ?? "", table, Number(cell.dataset.r), Number(cell.dataset.c));
+      }
+      if (syncs.get(view)?.el === cell) syncs.delete(view);
+      if (missingCells.get(view)?.el === cell) missingCells.delete(view);
+    } else {
+      const wasReadOnly = cell.contentEditable === "false";
       cell.contentEditable = "plaintext-only";
       if (cell.contentEditable !== "plaintext-only") cell.contentEditable = "true";
+      // Regaining access while this cell still has focus must enter editing
+      // through the same handler as a click, before typing can replace a result.
+      if (wasReadOnly && cell === cell.ownerDocument.activeElement) {
+        cell.blur();
+        cell.focus({ preventScroll: true });
+      }
     }
   });
 };
 
 /** Grid width: the widest row, so text beyond the header's columns stays visible (never hidden). */
-const width = (t: T.Table) => Math.max(t.columns, ...t.lines.map((l) => l.cells.length));
-const cells = (t: T.Table) =>
-  Array.from({ length: T.rowCount(t) }, (_, r) => Array.from({ length: width(t) }, (_, c) => T.gridLine(t, r)?.cells[c]?.text ?? ""));
+const width = (t: T.Table) => t.lines.reduce((width, line) => Math.max(width, line.cells.length), t.columns);
+const cells = (t: T.Table) => {
+  const columns = width(t);
+  return Array.from({ length: T.rowCount(t) }, (_, r) => Array.from({ length: columns }, (_, c) => T.gridLine(t, r)?.cells[c]?.text ?? ""));
+};
 
 const focusCell = (el: HTMLElement, offset: number) => {
   el.dataset.editing = "1";
@@ -310,15 +725,18 @@ const focusCell = (el: HTMLElement, offset: number) => {
 const buildGrid = (view: EditorView, t: T.Table, wrap: HTMLElement) => {
   const table = document.createElement("table");
   const grid = cells(t);
+  wrap.dataset.header = String(hasHeader(t));
   grid.forEach((row, r) => {
+    if (r < firstRow(t)) return;
     const tr = document.createElement("tr");
+    tr.dataset.r = String(r);
     row.forEach((raw, c) => {
       const td = document.createElement(r === 0 ? "th" : "td");
       td.style.textAlign = t.align[c] ?? "left";
       // A cell beyond the header's columns: email renderers drop it, so it is marked for review.
       if (c >= t.columns && (T.gridLine(t, r)?.cells.length ?? 0) > c) td.dataset.extra = "1";
       const cell = document.createElement("div");
-      cell.className = "ste-cell";
+      cell.className = "k2b-ste-cell";
       cell.dataset.r = String(r);
       cell.dataset.c = String(c);
       cell.dataset.raw = raw;
@@ -327,25 +745,79 @@ const buildGrid = (view: EditorView, t: T.Table, wrap: HTMLElement) => {
       cell.spellcheck = true;
       cell.tabIndex = -1;
       cell.setAttribute("role", "textbox");
-      cell.setAttribute("aria-label", view.state.facet(tableHost)?.cellLabel(r, c) ?? `${r + 1}, ${c + 1}`);
+      cell.setAttribute(
+        "aria-label",
+        view.state.facet(tableHost)?.cellLabel(r, c, T.displayCell(grid[0]?.[c] ?? "")) ?? `${r + 1}, ${c + 1}`,
+      );
+      if (r === 1 && c === 0 && !raw)
+        cell.dataset.placeholder = view.state.facet(tableHost)?.actionLabel?.("emptyCell") ?? "Type or paste cells";
       renderCell(view, cell, raw, t, r, c);
       wire(view, cell, wrap);
+      td.setAttribute("role", r === 0 ? "columnheader" : "gridcell");
       td.append(cell);
+      const grip = (kind: "rowMenu" | "columnMenu") => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.tabIndex = -1;
+        button.className = `k2b-ste-grip k2b-ste-${kind}`;
+        button.setAttribute(
+          "aria-label",
+          view.state.facet(tableHost)?.actionLabel?.(kind) ?? (kind === "rowMenu" ? "Row menu" : "Column menu"),
+        );
+        button.setAttribute("aria-haspopup", "menu");
+        button.innerHTML = '<i class="ti ti-grip-vertical" aria-hidden="true"></i>';
+        button.onmousedown = (event) => event.preventDefault();
+        button.onclick = () => {
+          cell.focus({ preventScroll: true });
+          wrap.dispatchEvent(new CustomEvent("k2b-ste-cell-menu", { bubbles: true, detail: { cell, anchor: button } }));
+        };
+        td.append(button);
+      };
+      if (c === 0) grip("rowMenu");
+      if (r === firstRow(t)) grip("columnMenu");
       tr.append(td);
     });
+    tr.setAttribute("role", "row");
     table.append(tr);
   });
-  return table;
+  table.setAttribute("role", "grid");
+  // Exactly one grid entry point; internal movement uses the cell keys.
+  const first = table.querySelector<HTMLElement>(".k2b-ste-cell");
+  if (first) first.tabIndex = 0;
+  const footer = document.createElement("div");
+  footer.className = "k2b-ste-table-add";
+  for (const action of ["addRow", "addColumn"] as const) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `k2b-ste-${action}`;
+    const label = view.state.facet(tableHost)?.actionLabel?.(action) ?? (action === "addRow" ? "Row" : "Column");
+    button.textContent = action === "addRow" ? `+ ${label}` : "+";
+    if (action === "addColumn") button.setAttribute("aria-label", label);
+    button.onmousedown = (event) => event.preventDefault();
+    button.onclick = () => {
+      const current = currentTable(view, wrap);
+      if (current)
+        runTableAction(view, current.from, T.rowCount(current) - 1, current.columns - 1, action === "addRow" ? "rowBelow" : "colRight");
+    };
+    footer.append(button);
+  }
+  const fragment = document.createDocumentFragment();
+  fragment.append(table, footer);
+  return fragment;
 };
 
-const patchGrid = (view: EditorView, t: T.Table, dom: HTMLElement) => {
+const patchGrid = (view: EditorView, t: T.Table, dom: HTMLElement, refreshPresentation: boolean) => {
   const grid = cells(t);
-  dom.querySelectorAll<HTMLElement>(".ste-cell").forEach((el) => {
+  dom.querySelectorAll<HTMLElement>(".k2b-ste-cell").forEach((el) => {
     const r = Number(el.dataset.r);
     const c = Number(el.dataset.c);
     const raw = grid[r]?.[c] ?? "";
-    (el.parentElement as HTMLElement).style.textAlign = t.align[c] ?? "left";
-    if (el.dataset.raw === raw && !view.state.facet(tableHost)?.renderCell) return;
+    const parent = el.parentElement as HTMLElement;
+    parent.style.textAlign = t.align[c] ?? "left";
+    el.setAttribute("aria-label", view.state.facet(tableHost)?.cellLabel(r, c, T.displayCell(grid[0]?.[c] ?? "")) ?? `${r + 1}, ${c + 1}`);
+    if (c >= t.columns && (T.gridLine(t, r)?.cells.length ?? 0) > c) parent.dataset.extra = "1";
+    else delete parent.dataset.extra;
+    if (el.dataset.raw === raw && !(refreshPresentation && view.state.facet(tableHost)?.renderCell)) return;
     el.dataset.raw = raw;
     if (el.dataset.editing === "1") {
       // The focused cell is refreshed after the update, with mapped caret (see `followChanges`).
@@ -385,7 +857,7 @@ const recoverMissingCell = (view: EditorView, el: HTMLElement) => {
   if (input) view.state.facet(tableHost)?.onRecovery(input);
   view.state.facet(tableHost)?.onError("cellRemoved");
   el.dataset.editing = "0";
-  const wrap = el.closest<HTMLElement>(".ste-table");
+  const wrap = el.closest<HTMLElement>(".k2b-ste-table");
   const table = wrap && currentTable(view, wrap);
   if (table) renderCell(view, el, el.dataset.raw ?? "", table, Number(el.dataset.r), Number(el.dataset.c));
   el.blur();
@@ -519,10 +991,11 @@ const followChanges = EditorView.updateListener.of((update) => {
   if (update.docChanged) sync.desc = sync.desc.composeDesc(update.changes.desc);
   if (sync.committing || active.get(view)?.composing) return;
   const caretAt = (caret: number) => sync.desc.mapPos(sync.baseFrom + (T.cellDisplayMap(sync.base).offsets[caret] ?? sync.base.length), 1);
-  if (!sync.refocusSelection && sync.el.dataset.stale !== "1" && !update.docChanged) return;
+  const explicit = update.transactions.some((tr) => tr.selection !== undefined);
+  if (!sync.refocusSelection && sync.el.dataset.stale !== "1" && !update.docChanged && !explicit) return;
   const selected = sync.refocusSelection ?? (document.activeElement === sync.el ? selectionOffsets(sync.el) : (sync.selection ?? [0, 0]));
-  const anchor = caretAt(selected[0]),
-    head = caretAt(selected[1]);
+  const anchor = explicit ? update.state.selection.main.anchor : caretAt(selected[0]),
+    head = explicit ? update.state.selection.main.head : caretAt(selected[1]);
   const hadFocus = sync.refocusSelection !== null || document.activeElement === sync.el;
   sync.refocusSelection = null;
   const hit = cellAtPos(view.state, sync.desc.mapPos(sync.baseFrom, 1));
@@ -542,7 +1015,7 @@ const followChanges = EditorView.updateListener.of((update) => {
   };
   if (el !== sync.el && sync.el.isConnected) {
     sync.el.dataset.editing = "0";
-    const oldWrap = sync.el.closest<HTMLElement>(".ste-table");
+    const oldWrap = sync.el.closest<HTMLElement>(".k2b-ste-table");
     const oldTable = oldWrap && currentTable(view, oldWrap);
     if (oldTable) renderCell(view, sync.el, sync.el.dataset.raw ?? "", oldTable, Number(sync.el.dataset.r), Number(sync.el.dataset.c));
   }
@@ -562,7 +1035,97 @@ const move = (view: EditorView, wrap: HTMLElement, r: number, c: number, edge: "
   const index = active.get(view)?.index ?? -1;
   const target = wrap.isConnected ? wrap : findWrap(view, index);
   const el = target && cellAt(target, r, c);
-  if (el) focusCell(el, edge === "start" ? 0 : T.displayCell(el.dataset.raw ?? "").length);
+  if (el) {
+    focusCell(el, edge === "start" ? 0 : T.displayCell(el.dataset.raw ?? "").length);
+    if (target) {
+      target.querySelectorAll<HTMLElement>(".k2b-ste-cell").forEach((cell) => (cell.tabIndex = cell === el ? 0 : -1));
+      const bounds = target.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      const frozen = c > 0 ? (target.querySelector("tr > :first-child")?.getBoundingClientRect().width ?? 0) : 0;
+      if (box.left < bounds.left + frozen) target.scrollLeft -= bounds.left + frozen - box.left;
+      else if (box.right > bounds.right - 16) target.scrollLeft += box.right - bounds.right + 16;
+    }
+  }
+};
+
+/** Source identities, never visual row indexes, decide menu and shortcut boundaries. */
+const actionAllowed = (t: T.Table, r: number, c: number, action: MenuAction): boolean => {
+  if (!Number.isInteger(r) || !Number.isInteger(c) || r < 0 || r >= T.rowCount(t) || c < 0 || c >= width(t)) return false;
+  switch (action) {
+    case "rowAbove":
+    case "deleteRow":
+      return r > 0;
+    case "moveRowUp":
+      return r > 1;
+    case "moveRowDown":
+      return r > 0 && r < T.rowCount(t) - 1;
+    case "deleteCol":
+      return t.columns > 1 || c >= t.columns;
+    case "moveColLeft":
+    case "moveColRight":
+      return (
+        c < t.columns && (action === "moveColLeft" ? c > 0 : c < t.columns - 1) && t.lines.every((line) => line.cells.length === t.columns)
+      );
+    case "toggleHeader":
+      return hasHeader(t) || !!(t.lines[2]?.cells.some((cell) => cell.text) && t.lines[2].cells.length <= t.columns);
+    default:
+      return true;
+  }
+};
+
+export const tableActionEnabled = (view: EditorView, wrap: HTMLElement, action: MenuAction): boolean => {
+  const t = currentTable(view, wrap),
+    act = active.get(view);
+  if (!t || !act || view.state.readOnly || !actionAllowed(t, act.r, act.c, action)) return false;
+  const structure = view.state.facet(tableHost)?.structure;
+  return !structure || structure.available() || (action === "rowBelow" && act.r === T.rowCount(t) - 1);
+};
+
+/** Copy the visible table through the browser clipboard, with spreadsheet and rich-text payloads. */
+export const copyTable = async (view: EditorView, wrap: HTMLElement, format: "table" | "markdown"): Promise<void> => {
+  const t = currentTable(view, wrap);
+  if (!t) throw new Error("Table is no longer available");
+  if (format === "markdown") {
+    await navigator.clipboard.writeText(view.state.sliceDoc(t.from, t.to));
+    return;
+  }
+  // Reuse the host's presentation for values (including computed cells), even
+  // when the live cell currently exposes its editable source. Controls never
+  // become spreadsheet contents. Markdown copy above remains byte-exact.
+  const grid = cells(t)
+    .slice(firstRow(t))
+    .map((row, r) =>
+      row.map((raw, c) => {
+        const element = view.dom.ownerDocument.createElement("div");
+        renderCell(view, element, raw, t, r + firstRow(t), c);
+        element
+          .querySelectorAll('button, [role="button"], [aria-hidden="true"], [hidden], script, style, template')
+          .forEach((node) => node.remove());
+        return element.textContent ?? "";
+      }),
+    );
+  const text = grid
+    .map((row) => row.map((value) => (/[\t\r\n"]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value)).join("\t"))
+    .join("\n");
+  const html = `<table>${grid
+    .map(
+      (row, r) =>
+        `<tr>${row
+          .map((value) => {
+            const tag = hasHeader(t) && r === 0 ? "th" : "td";
+            return `<${tag}>${escapeHtml(value)}</${tag}>`;
+          })
+          .join("")}</tr>`,
+    )
+    .join("")}</table>`;
+  if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write)
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        "text/plain": new Blob([text], { type: "text/plain" }),
+        "text/html": new Blob([html], { type: "text/html" }),
+      }),
+    ]);
+  else await navigator.clipboard.writeText(text);
 };
 
 export const runMenuAction = (view: EditorView, wrap: HTMLElement, action: MenuAction) => {
@@ -571,12 +1134,34 @@ export const runMenuAction = (view: EditorView, wrap: HTMLElement, action: MenuA
   if (t && act) runTableAction(view, t.from, act.r, act.c, action);
 };
 
+/** No ordinal fallback: only a freshly resolved table/row/column can receive focus. */
+const focusTableTarget = (view: EditorView, target: TableTarget | null) => {
+  if (!target || !view.dom.isConnected || view.state.readOnly) return;
+  const tables = tablesIn(view.state);
+  const index = tables.findIndex((table) => table.from === target.tableFrom);
+  const table = tables[index];
+  if (
+    !table ||
+    target.row < firstRow(table) ||
+    T.gridLine(table, target.row)?.from !== target.rowFrom ||
+    table.lines[0]?.cells[target.column]?.from !== target.columnFrom
+  )
+    return;
+  const wrap = findWrap(view, index);
+  if (!wrap) return;
+  active.set(view, { index, r: target.row, c: target.column, composing: false });
+  move(view, wrap, target.row, target.column);
+  const selected = cellAt(wrap, target.row, target.column);
+  if (selected && view.dom.ownerDocument.activeElement !== selected)
+    wrap.dispatchEvent(new CustomEvent("k2b-ste-cell-focus", { bubbles: true, detail: { cell: selected } }));
+};
+
 /** Structural actions also work in source mode, without a mounted table widget. */
 export const runTableAction = (view: EditorView, tableFrom: number, r: number, c: number, action: MenuAction) => {
   const tables = tablesIn(view.state);
   const index = tables.findIndex((table) => table.from === tableFrom);
   const t = tables[index];
-  if (!t || view.state.readOnly) return;
+  if (!t || view.state.readOnly || !actionAllowed(t, r, c, action)) return;
   const host = view.state.facet(tableHost);
   // F3 A: only an append at the end is safe without the server.
   if (host?.structure && !(action === "rowBelow" && r === T.rowCount(t) - 1)) {
@@ -590,12 +1175,40 @@ export const runTableAction = (view: EditorView, tableFrom: number, r: number, c
       host.onError("structureFailed");
       return;
     }
+    // A new user gesture while waiting owns the caret. Remote redraws do not.
+    const interactionRoot = view.dom;
+    let follow = true,
+      settled = false;
+    const relinquish = () => {
+      follow = false;
+    };
+    const finish = () => {
+      settled = true;
+      interactionRoot.removeEventListener("pointerdown", relinquish, true);
+      interactionRoot.removeEventListener("keydown", relinquish, true);
+    };
+    queueMicrotask(() => {
+      if (settled) return;
+      interactionRoot.addEventListener("pointerdown", relinquish, true);
+      interactionRoot.addEventListener("keydown", relinquish, true);
+    });
     // Invocation is synchronous so a host can capture CRDT anchors before any await.
     try {
       void host.structure
         .perform(action, { tableFrom: t.from, rowFrom: row.from, columnFrom: column.from, row: r, column: c })
-        .catch(() => host.onError("structureFailed"));
+        .then((resolve) => {
+          const focused = view.dom.ownerDocument.activeElement;
+          const ownsFocus =
+            !focused ||
+            focused === view.dom.ownerDocument.body ||
+            view.dom.contains(focused) ||
+            focused.closest(".k2b-gesture-menu__sheet-menu");
+          if (follow && ownsFocus && resolve) focusTableTarget(view, resolve());
+        })
+        .catch(() => host.onError("structureFailed"))
+        .finally(finish);
     } catch {
+      finish();
       host.onError("structureFailed");
     }
     return;
@@ -608,11 +1221,22 @@ export const runTableAction = (view: EditorView, tableFrom: number, r: number, c
     colRight: () => T.insertColumn(t, c + 1),
     deleteRow: () => T.deleteRow(t, r),
     deleteCol: () => T.deleteColumn(t, c),
+    moveRowUp: () => T.moveRow(view.state.doc.toString(), t, r, r - 1),
+    moveRowDown: () => T.moveRow(view.state.doc.toString(), t, r, r + 1),
+    moveColLeft: () => T.moveColumn(t, c, c - 1),
+    moveColRight: () => T.moveColumn(t, c, c + 1),
+    toggleHeader: () => T.toggleHeader(view.state.doc.toString(), t),
+    deleteTable: () => T.deleteTable(t),
     alignLeft: () => T.setAlign(t, c, "left"),
     alignCenter: () => T.setAlign(t, c, "center"),
     alignRight: () => T.setAlign(t, c, "right"),
   };
   const next = {
+    moveRowUp: [r - 1, c],
+    moveRowDown: [r + 1, c],
+    moveColLeft: [r, c - 1],
+    moveColRight: [r, c + 1],
+    toggleHeader: [hasHeader(t) ? r + 1 : Math.max(0, r - 1), c],
     rowAbove: [r === 0 ? 1 : r, c],
     rowBelow: [r + 1, c],
     colLeft: [r, c],
@@ -621,11 +1245,23 @@ export const runTableAction = (view: EditorView, tableFrom: number, r: number, c
     deleteCol: [r, Math.max(0, c - 1)],
   } as Record<string, [number, number]>;
   if (!dispatchChanges(view, ops[action](), true)) return;
+  if (action === "deleteTable") {
+    active.delete(view);
+    syncs.delete(view);
+    view.focus();
+    view.dispatch({ selection: { anchor: Math.min(t.from, view.state.doc.length) } });
+    return;
+  }
   const target = next[action] ?? [r, c];
   const wrap = findWrap(view, index);
   if (wrap) {
     active.set(view, { index, r: target[0]!, c: target[1]!, composing: false });
     move(view, wrap, target[0]!, target[1]!);
+    // A modal sheet makes the grid inert. Still update its selected context
+    // from this synchronous local transaction; focus returns when it closes.
+    const selected = cellAt(wrap, target[0]!, target[1]!);
+    if (selected && view.dom.ownerDocument.activeElement !== selected)
+      wrap.dispatchEvent(new CustomEvent("k2b-ste-cell-focus", { bubbles: true, detail: { cell: selected } }));
   }
 };
 
@@ -637,7 +1273,7 @@ const pasteGrid = (view: EditorView, wrap: HTMLElement, startR: number, startC: 
   if (view.state.readOnly) return;
   if (cellCount > (view.state.facet(tableHost)?.maxPasteCells ?? MAX_PASTE_CELLS)) {
     view.state.facet(tableHost)?.onError("pasteTooLarge");
-    wrap.dispatchEvent(new CustomEvent("ste-paste-too-large", { bubbles: true, detail: { cells: cellCount, max: MAX_PASTE_CELLS } }));
+    wrap.dispatchEvent(new CustomEvent("k2b-ste-paste-too-large", { bubbles: true, detail: { cells: cellCount, max: MAX_PASTE_CELLS } }));
     return;
   }
   const host = view.state.facet(tableHost);
@@ -681,9 +1317,39 @@ const pasteGrid = (view: EditorView, wrap: HTMLElement, startR: number, startC: 
 const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
   const pos = () => ({ r: Number(el.dataset.r), c: Number(el.dataset.c) });
   el.addEventListener("focus", () => {
+    const grid = wrap.querySelector("table");
+    if (grid && !grid.hasAttribute("data-sized")) {
+      const widths = Array.from(grid.rows[0]?.cells ?? []).map((cell) => cell.getBoundingClientRect().width);
+      if (widths.every((width) => width > 0)) {
+        const columns = document.createElement("colgroup");
+        for (const width of widths) {
+          const column = document.createElement("col");
+          column.style.width = `${width}px`;
+          columns.append(column);
+        }
+        grid.prepend(columns);
+        grid.style.width = `${widths.reduce((sum, width) => sum + width, 0)}px`;
+        grid.style.tableLayout = "fixed";
+        grid.dataset.sized = "1";
+      }
+    }
     active.set(view, { index: tableIndex(view, wrap), ...pos(), composing: false });
+    wrap.querySelectorAll<HTMLElement>(".k2b-ste-cell").forEach((cell) => (cell.tabIndex = cell === el ? 0 : -1));
     wrap.dataset.activeR = el.dataset.r;
     wrap.dataset.activeC = el.dataset.c;
+    if (view.state.readOnly) {
+      // A read-only cell selects rendered text; it never enters source editing.
+      // Keyboard entry may have prepared editable text before focusing it.
+      if (el.dataset.editing === "1") {
+        el.dataset.editing = "0";
+        const table = currentTable(view, wrap);
+        if (table) renderCell(view, el, el.dataset.raw ?? "", table, Number(el.dataset.r), Number(el.dataset.c));
+      }
+      syncs.delete(view);
+      missingCells.delete(view);
+      wrap.dispatchEvent(new CustomEvent("k2b-ste-cell-focus", { bubbles: true, detail: { cell: el } }));
+      return;
+    }
     const t = currentTable(view, wrap);
     const cell = t && T.gridLine(t, Number(el.dataset.r))?.cells[Number(el.dataset.c)];
     missingCells.delete(view);
@@ -696,12 +1362,12 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
       el.dataset.editing = "1";
       const shown = T.displayCell(el.dataset.raw ?? "");
       // Only cells with formatting change their text; plain cells keep the caret where the tap put it.
-      if (el.textContent !== shown) {
+      if (el.textContent !== shown || el.childElementCount > 0) {
         el.textContent = shown;
         placeCaret(el, shown.length);
       }
     }
-    wrap.dispatchEvent(new CustomEvent("ste-cell-focus", { bubbles: true, detail: { cell: el } }));
+    wrap.dispatchEvent(new CustomEvent("k2b-ste-cell-focus", { bubbles: true, detail: { cell: el } }));
     queueCellSelection(view, el);
   });
   el.addEventListener("blur", () => {
@@ -709,38 +1375,42 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
     const sync = syncs.get(view);
     if (sync?.el === el) sync.selection = selectionOffsets(el);
     el.dataset.editing = "0";
-    const table = currentTable(view, wrap);
-    if (table) renderCell(view, el, el.dataset.raw ?? "", table, Number(el.dataset.r), Number(el.dataset.c));
     queueMicrotask(() => {
-      if (!wrap.contains(document.activeElement)) {
+      // Chromium blurs a focused cell while CodeMirror removes its widget.
+      // Wait for that update before consulting CodeMirror's DOM mapping. A
+      // removed widget has no mapping in the newly configured source view.
+      if (!wrap.isConnected) return;
+      const focused = el.ownerDocument.activeElement;
+      const table = currentTable(view, wrap);
+      // Read-only focus never changed presentation. Replacing it on blur would
+      // detach the text nodes held by the person's native selection.
+      if (table && !view.state.readOnly && el.dataset.editing !== "1")
+        renderCell(view, el, el.dataset.raw ?? "", table, Number(el.dataset.r), Number(el.dataset.c));
+      if (!wrap.contains(focused)) {
         delete wrap.dataset.activeR;
-        wrap.dispatchEvent(new CustomEvent("ste-cell-blur", { bubbles: true }));
-        if (
-          !(
-            document.activeElement instanceof HTMLElement &&
-            document.activeElement.classList.contains("ste-cell") &&
-            view.dom.contains(document.activeElement)
-          )
-        )
+        wrap.dispatchEvent(new CustomEvent("k2b-ste-cell-blur", { bubbles: true }));
+        if (!(focused instanceof HTMLElement && focused.classList.contains("k2b-ste-cell") && view.dom.contains(focused)))
           view.state.facet(tableHost)?.onCellSelection?.(null);
       }
     });
   });
   el.addEventListener("compositionstart", () => {
+    if (view.state.readOnly) return;
     const act = active.get(view);
     if (act) act.composing = true;
   });
   el.addEventListener("compositionend", () => {
+    if (view.state.readOnly) return;
     const act = active.get(view);
     if (act) act.composing = false;
     commitCell(view, el, wrap);
   });
   el.addEventListener("beforeinput", (event) => {
+    if (view.state.readOnly) {
+      event.preventDefault();
+      return;
+    }
     if (event.inputType === "historyUndo" || event.inputType === "historyRedo") {
-      if (view.state.readOnly) {
-        event.preventDefault();
-        return;
-      }
       event.preventDefault();
       const host = view.state.facet(tableHost);
       if (event.inputType === "historyUndo") host?.undo();
@@ -749,7 +1419,7 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
   });
   el.addEventListener("input", (event) => {
     // During composition the text is provisional; the browser owns the DOM.
-    if ((event as InputEvent).isComposing || active.get(view)?.composing) return;
+    if (view.state.readOnly || (event as InputEvent).isComposing || active.get(view)?.composing) return;
     commitCell(view, el, wrap);
   });
   el.addEventListener("paste", (event) => {
@@ -770,7 +1440,18 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
     if (grid?.length) pasteGrid(view, wrap, r, c, grid);
     else document.execCommand("insertText", false, text.replace(/\s*\r?\n\s*/g, " "));
   });
+  el.addEventListener("pointerenter", () => {
+    wrap.querySelectorAll<HTMLElement>(".k2b-ste-columnMenu").forEach((grip, column) => {
+      grip.toggleAttribute("data-hovered", column === Number(el.dataset.c));
+    });
+  });
+  el.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    el.focus({ preventScroll: true });
+    wrap.dispatchEvent(new CustomEvent("k2b-ste-cell-menu", { bubbles: true, detail: { cell: el, x: event.clientX, y: event.clientY } }));
+  });
   el.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented) return; // A host completion/snippet handled this key.
     const host = view.state.facet(tableHost);
     const t = currentTable(view, wrap);
     if (!t) return;
@@ -779,10 +1460,20 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
     if (event.isComposing) return;
     if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
       event.preventDefault();
-      wrap.dispatchEvent(new CustomEvent("ste-cell-menu", { bubbles: true, detail: { cell: el } }));
+      wrap.dispatchEvent(new CustomEvent("k2b-ste-cell-menu", { bubbles: true, detail: { cell: el } }));
       return;
     }
+    // Preserve native selection/copy/navigation for non-editable rendered text.
     if (view.state.readOnly) return;
+    if (mod && !event.shiftKey && event.key.toLowerCase() === "a") {
+      // Nested contenteditables do not scope native Select All consistently.
+      // Keep replacement and formatting inside this cell in every host.
+      event.preventDefault();
+      event.stopPropagation();
+      placeSelection(el, 0, el.textContent?.length ?? 0);
+      queueCellSelection(view, el);
+      return;
+    }
     if (mod && ["b", "i", "k"].includes(event.key.toLowerCase())) {
       event.preventDefault();
       const command = event.key.toLowerCase() === "b" ? "bold" : event.key.toLowerCase() === "i" ? "italic" : "link";
@@ -800,7 +1491,22 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
       host?.redo();
       return;
     }
+    if (event.altKey && !mod && !event.shiftKey) {
+      const actions: Record<string, MenuAction> = {
+        ArrowUp: "moveRowUp",
+        ArrowDown: "moveRowDown",
+        ArrowLeft: "moveColLeft",
+        ArrowRight: "moveColRight",
+      };
+      const action = actions[event.key];
+      if (action) {
+        event.preventDefault();
+        runTableAction(view, t.from, r, c, action);
+        return;
+      }
+    }
     if (event.key === "Tab") {
+      if (host?.tabMovesFocus?.()) return;
       event.preventDefault();
       const last = r === T.rowCount(t) - 1 && c === t.columns - 1;
       if (!event.shiftKey && last) {
@@ -809,27 +1515,46 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
         return;
       }
       const index = r * t.columns + c + (event.shiftKey ? -1 : 1);
-      if (index < 0) {
+      if (index < firstRow(t) * t.columns) {
         leave(view, wrap, "before");
         return;
       }
       move(view, wrap, Math.floor(index / t.columns), index % t.columns);
+      const next = findWrap(view, tableIndex(view, wrap));
+      const cell = next && cellAt(next, Math.floor(index / t.columns), index % t.columns);
+      if (cell) placeSelection(cell, 0, cell.textContent?.length ?? 0);
       return;
     }
     if (event.key === "Enter") {
       event.preventDefault();
       if (event.shiftKey) return; // a cell holds one line
       const last = T.rowCount(t) - 1;
-      dispatchChanges(view, T.insertRow(t, last), true);
-      move(view, wrap, last + 1, c);
+      if (r < last) move(view, wrap, r + 1, c);
+      else if (r > 1 && T.gridLine(t, last)?.cells.every((cell) => !T.displayCell(cell.text).trim())) {
+        // Match the list-like exit: remove the empty trailing row when allowed.
+        // F3 A keeps deletion server-only; offline we can still leave the table.
+        if (!host?.structure || host.structure.available()) runTableAction(view, t.from, r, c, "deleteRow");
+        leave(view, wrap, "after");
+      } else if (dispatchChanges(view, T.insertRow(t, last), true)) move(view, wrap, last + 1, c);
+      return;
+    }
+    if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && !event.shiftKey && !mod && !event.altKey) {
+      const [anchor, head] = selectionOffsets(el);
+      const right = event.key === "ArrowRight";
+      if (anchor !== head || head !== (right ? (el.textContent?.length ?? 0) : 0)) return;
+      event.preventDefault();
+      const next = r * t.columns + c + (right ? 1 : -1);
+      if (next >= firstRow(t) * t.columns && next < T.rowCount(t) * t.columns)
+        move(view, wrap, Math.floor(next / t.columns), next % t.columns, right ? "start" : "end");
+      else leave(view, wrap, right ? "after" : "before");
       return;
     }
     if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-      if (event.shiftKey || !atCellVisualEdge(el, event.key === "ArrowDown")) return;
+      if (event.shiftKey || event.altKey || mod || !atCellVisualEdge(el, event.key === "ArrowDown")) return;
       const next = r + (event.key === "ArrowUp" ? -1 : 1);
       event.preventDefault();
-      if (next >= 0 && next < T.rowCount(t)) move(view, wrap, next, c);
-      else leave(view, wrap, next < 0 ? "before" : "after");
+      if (next >= firstRow(t) && next < T.rowCount(t)) move(view, wrap, next, c);
+      else leave(view, wrap, next < firstRow(t) ? "before" : "after");
       return;
     }
     if (event.key === "Escape") {
@@ -845,6 +1570,11 @@ export const formatActiveCell = (view: EditorView, name: InlineFormat): boolean 
   const wrap = act && findWrap(view, act.index);
   const el = act && wrap && cellAt(wrap, act.r, act.c);
   const table = wrap && currentTable(view, wrap);
+  const source = wrap && sources.get(wrap);
+  if (source?.element.contains(view.dom.ownerDocument.activeElement)) {
+    if (!view.state.readOnly && !source.editor.state.readOnly) source.editor.dispatch(inlineFormat(source.editor.state, name));
+    return true;
+  }
   if (!el || !table || !act || view.state.readOnly) return false;
   const missing = missingCells.get(view);
   if (missing?.el === el && missing.changed) {
@@ -962,7 +1692,7 @@ const enterTable = (view: EditorView, down: boolean) => {
   );
   const table = tables[index];
   const wrap = findWrap(view, index);
-  const el = table && wrap && cellAt(wrap, down ? 0 : T.rowCount(table) - 1, 0);
+  const el = table && wrap && cellAt(wrap, down ? firstRow(table) : T.rowCount(table) - 1, 0);
   if (!el) return false;
   focusCell(el, 0);
   return true;
@@ -971,6 +1701,9 @@ const enterTable = (view: EditorView, down: boolean) => {
 const leave = (view: EditorView, wrap: HTMLElement, where: "before" | "after") => {
   const t = currentTable(view, wrap);
   if (!t) return;
+  // An EOF table needs an actual paragraph to receive the caret.
+  if (where === "after" && t.to === view.state.doc.length && !view.state.readOnly)
+    dispatchChanges(view, [{ from: t.to, to: t.to, insert: "\n\n" }]);
   const anchor = where === "before" ? Math.max(0, t.from - 1) : Math.min(view.state.doc.length, t.to + 1);
   view.focus();
   view.dispatch({ selection: { anchor }, scrollIntoView: true });
@@ -994,6 +1727,7 @@ const decorate = (state: EditorState): DecorationSet =>
   );
 
 export const tableGrid = (): Extension => [
+  clipboardLoading((view) => view.state.facet(tableHost)),
   Prec.highest(
     keymap.of([
       { key: "ArrowDown", run: (view) => enterTable(view, true) },

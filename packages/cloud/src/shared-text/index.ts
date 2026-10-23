@@ -12,11 +12,17 @@ export {
 export { sharedText } from "./log";
 export type { SharedTextSnapshotBacklog, SharedTextSnapshotRepair, SharedTextSnapshotRequest, SharedTextSnapshotStore } from "./snapshots";
 export { sharedTextSnapshotJobConfig } from "./snapshots";
+export { planStructuralInverse, type SharedTextStructuralHistory, validateStructuralIngress } from "./structural-history";
 export {
   captureTableAction,
+  captureTableFocus,
+  captureTableSource,
   planTableAction,
+  prepareTableActionFocus,
+  resolveTableFocus,
   type TableActionIntent,
   TableActionLimitError,
   TableActionRejectedError,
+  type TableFocusWitness,
 } from "./table-actions";
 export * from "./types";

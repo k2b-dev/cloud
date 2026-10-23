@@ -314,6 +314,12 @@ export const notebookWorkspaceMessages = i18n.define({
       contentCopyFailed: "Could not copy note content",
       copied: "Copied",
       loadActivityFailed: "Failed to load note activity",
+      tableActionUnknownTitle: "Table change not confirmed yet",
+      tableActionUnknownDetail:
+        "The server may have applied it. The table updates when the change arrives. Check the table before you change its rows or columns again.",
+      tableActionStopWaiting: "Stop waiting",
+      tableActionFailed: "The table change could not be applied. Check the table before trying again.",
+      tableColumnRetained: "Column kept because someone else wrote in it",
       historyIncompleteTitle: "Some note changes could not be recovered",
       historyIncompleteDetail:
         "This note may be incomplete. Available changes and the previous saved version were preserved. Contact your administrator before relying on this content.",
@@ -772,6 +778,12 @@ export const notebookWorkspaceMessages = i18n.define({
       contentCopyFailed: "Der Inhalt der Notiz konnte nicht kopiert werden",
       copied: "Kopiert",
       loadActivityFailed: "Die Aktivitäten der Notiz konnten nicht geladen werden",
+      tableActionUnknownTitle: "Tabellenänderung noch nicht bestätigt",
+      tableActionUnknownDetail:
+        "Der Server hat sie möglicherweise ausgeführt. Die Tabelle aktualisiert sich, sobald die Änderung eintrifft. Prüfe die Tabelle, bevor du wieder Zeilen oder Spalten änderst.",
+      tableActionStopWaiting: "Nicht mehr warten",
+      tableActionFailed: "Die Tabellenänderung konnte nicht ausgeführt werden. Prüfe die Tabelle, bevor du es erneut versuchst.",
+      tableColumnRetained: "Spalte bleibt, weil andere darin geschrieben haben",
       historyIncompleteTitle: "Einige Änderungen der Notiz konnten nicht wiederhergestellt werden",
       historyIncompleteDetail:
         "Diese Notiz ist möglicherweise unvollständig. Verfügbare Änderungen und die zuvor gespeicherte Version wurden erhalten. Wende dich an deine Administration, bevor du dich auf diesen Inhalt verlässt.",

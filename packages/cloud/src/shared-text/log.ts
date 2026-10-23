@@ -88,7 +88,25 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "de
       return 0;
     },
     withStore<Saved, Context>(store: SharedTextStore<Saved, Context>) {
-      return bindDocuments({ topic, replay }, store);
+      return bindDocuments(
+        {
+          topic,
+          replay,
+          maxEventBytes: topicConfig.maxPayloadBytes,
+          async *events(docId, after, until, signal) {
+            const handle = topic();
+            const exact = after === until;
+            const start = exact ? handle.cursorAt(handle.cursorSequence(until) - 1) : (after ?? handle.cursorAt(0));
+            let reached = false;
+            for await (const event of handle.replay({ tenantId: docId, after: start, until, signal })) {
+              reached = event.cursor === until;
+              if (!exact || event.cursor === until) yield event;
+            }
+            if (!reached) throw new Error("The structural receipt history is unavailable");
+          },
+        },
+        store,
+      );
     },
   };
 };

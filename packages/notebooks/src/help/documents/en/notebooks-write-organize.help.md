@@ -116,7 +116,9 @@ Lists in the note editor follow their structure. The keys work the same for bull
 - **Move list items:** On a Mac, use **Option+Up/Down**. On Windows and Linux, **Ctrl+Shift+Up/Down** does the same. On a Mac, **⌘+Shift+Up/Down** keeps selecting to the start or end of the note. If your selection covers more than one item, the selected lines move instead.
 - **Numbered lists:** When you add, remove, indent or move items, the list you changed is numbered again in the Markdown. It keeps its first number, also when you remove the first item. Other lists keep their numbers. One undo restores the change and its previous numbers.
 - **Toolbar:** Bullet list, Numbered list, and Checklist are directly in the toolbar, also on phones.
-- **Tables:** **Tab** selects the next cell, **Shift+Tab** the previous cell.
+- **Tables:** In **Formatted**, type directly in a table cell. **Tab** selects the next cell, **Shift+Tab** the previous cell. **Tab** in the last cell adds a row. **Enter** moves to the cell below, adds a row from a filled last row, or leaves an empty last row.
+- **Table menu:** To insert, delete or align rows and columns, right-click a cell, choose its row or column grip or the table button in the toolbar, or press **Shift+F10** in a cell. These changes need a connection. Without a connection, only **Row below** at the end of the table works.
+- **Formulas in cells:** Edit the formula directly in the cell, with function and column suggestions and a live result. The cell shows the result after you leave it.
 - **Suggestions:** If a suggestion list is open, **Tab** and **Enter** accept the highlighted suggestion.
 - **Leave the editor:** Press **Esc**, then **Tab** to move to the next control. Press **Esc**, then **Shift+Tab** to move back.
 - **Keep Tab for focus:** Open **Settings → Notebook → View & behavior** and turn on **Tab moves focus instead of indenting**. This browser stores the choice, and it applies immediately.

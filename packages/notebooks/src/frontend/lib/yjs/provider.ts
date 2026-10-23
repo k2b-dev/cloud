@@ -1,4 +1,4 @@
-import { createSharedTextActionHistory } from "@k2b/cloud/browser/shared-text";
+import { createSharedTextActionHistory, type SharedTextInverseRequest } from "@k2b/cloud/browser/shared-text";
 import { type NotebookPresenceParticipant, NotebookPresenceParticipantSchema } from "@k2b/cloud/contracts";
 import { encoding } from "@k2b/stdlib";
 import * as awarenessProtocol from "y-protocols/awareness";
@@ -45,6 +45,8 @@ export type YjsProviderOptions = {
   onReady?: () => void;
   /** Called when hasUnsentChanges() may have changed. */
   onUnsentChange?: () => void;
+  /** Undo kept an inserted column because another participant depends on it. */
+  onRetainedColumn?: () => void;
 };
 
 const WS_TYPE = notebooksYjs.wsType;
@@ -112,9 +114,28 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   let restoreRevision: string | null = opts.initialRestoreRevision ?? null;
   let localStateSent = false;
   let needsFullResync = false;
-  const unconfirmed = new Set<string>();
-  const pendingChanged = () => opts.onUnsentChange?.();
-  const actionHistory = opts.undoManager ? createSharedTextActionHistory(doc, opts.undoManager, pendingChanged) : null;
+  const unconfirmed = new Map<string, string | null>();
+  let unconfirmedBytes = 0;
+  const forgetPending = (payload: string) => {
+    if (unconfirmed.delete(payload)) unconfirmedBytes -= payload.length;
+  };
+  let unsentBase: string | null | undefined;
+  let recoveryText: string | undefined;
+  // Current resend groups reference original pending bytes. Rebuilding a
+  // generation releases old groups; only an echo releases the covered input.
+  const covering = new Map<string, string[]>();
+  let notifyingPending = false;
+  const pendingChanged = () => {
+    if (notifyingPending || isDisposed) return;
+    notifyingPending = true;
+    queueMicrotask(() => {
+      notifyingPending = false;
+      if (!isDisposed) opts.onUnsentChange?.();
+    });
+  };
+  const actionHistory = opts.undoManager
+    ? createSharedTextActionHistory(doc, opts.undoManager, pendingChanged, opts.onRetainedColumn)
+    : null;
 
   const errorMessageByCode: Record<YjsErrorCode, string> = {
     LOGIN_REQUIRED: "Login required",
@@ -142,11 +163,50 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     return false;
   };
 
-  const sendSyncPublish = (data: Uint8Array): boolean => {
+  const sendSyncPublish = (
+    data: Uint8Array,
+    baseCursor = unsentBase === undefined ? (unconfirmed.size ? unconfirmed.values().next().value! : lastCursor) : unsentBase,
+  ): boolean => {
     if (restoreRevision === null) return false;
     const payload = encoding.toBase64(data);
-    if (!sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload, restoreRevision })) return false;
-    unconfirmed.add(payload);
+    if (payload.length > notebooksYjs.maxSyncPayloadLength) {
+      // The exact unsent state remains in recoveryInput().state; sending an
+      // oversized update would only loop on the server's existing limit.
+      unsentBase = baseCursor;
+      needsFullResync = true;
+      needsReopen = true;
+      pendingChanged();
+      // Stop collecting immediately; notify/reconfigure the host only after
+      // the native edit which exceeded the budget has left EditorView.update.
+      replayReady = false;
+      queueMicrotask(() => {
+        if (!isDisposed)
+          terminate({ code: notebooksYjs.errorCode.backpressure, message: errorMessageByCode.BACKPRESSURE!, noteId: activeNoteId });
+      });
+      return false;
+    }
+    // Budget for an original transport envelope plus its covering reconnect
+    // envelope. Preserve the triggering update too, then stop through existing
+    // recovery. Echo delays cannot grow an unbounded original-payload queue.
+    if (!unconfirmed.has(payload) && unconfirmedBytes + payload.length > 2 * notebooksYjs.maxSyncPayloadLength) {
+      unconfirmed.set(payload, baseCursor);
+      unconfirmedBytes += payload.length;
+      unsentBase = baseCursor;
+      needsFullResync = true;
+      needsReopen = true;
+      pendingChanged();
+      // Stop collecting immediately; notify/reconfigure the host only after
+      // the native edit which exceeded the budget has left EditorView.update.
+      replayReady = false;
+      queueMicrotask(() => {
+        if (!isDisposed)
+          terminate({ code: notebooksYjs.errorCode.backpressure, message: errorMessageByCode.BACKPRESSURE!, noteId: activeNoteId });
+      });
+      return false;
+    }
+    if (!sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload, restoreRevision, baseCursor })) return false;
+    if (!unconfirmed.has(payload)) unconfirmedBytes += payload.length;
+    unconfirmed.set(payload, baseCursor);
     pendingChanged();
     return true;
   };
@@ -172,32 +232,32 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   const sendLocalStateIfNeeded = () => {
     if (!replayReady || localStateSent) return;
     if (needsFullResync) {
-      unconfirmed.clear();
-      pendingChanged();
+      // The full state keeps its original base; replay must never relabel stale
+      // unconfirmed input with the server's newly delivered cursor.
       const localState = Y.encodeStateAsUpdate(doc);
       if (localState.length > 0 && !sendSyncPublish(localState)) return;
+      covering.clear();
+      covering.set(encoding.toBase64(localState), [...unconfirmed.keys()]);
     } else {
-      if (unconfirmed.size > 1) {
-        // Merge consecutive updates into groups that stay within the server limit (a merge is never
-        // larger than its parts); an update that alone exceeds the limit stays as it is.
-        const groups: string[][] = [];
-        let size = Number.POSITIVE_INFINITY;
-        for (const update of unconfirmed) {
-          if (size + update.length > notebooksYjs.maxSyncPayloadLength) {
-            groups.push([]);
-            size = 0;
-          }
-          groups.at(-1)!.push(update);
-          size += update.length;
-        }
-        unconfirmed.clear();
-        for (const group of groups) {
-          unconfirmed.add(group.length === 1 ? group[0]! : encoding.toBase64(Y.mergeUpdates(group.map(encoding.fromBase64))));
-        }
-        pendingChanged();
+      // Preserve the existing payload-sized resend batches and original bytes.
+      const groups: { payloads: string[]; size: number; baseCursor: string | null }[] = [];
+      for (const [payload, baseCursor] of unconfirmed) {
+        if (!groups.length || groups.at(-1)!.size + payload.length > notebooksYjs.maxSyncPayloadLength)
+          groups.push({ payloads: [], size: 0, baseCursor });
+        const group = groups.at(-1)!;
+        group.payloads.push(payload);
+        group.size += payload.length;
       }
-      for (const payload of unconfirmed) {
-        if (restoreRevision === null || !sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload, restoreRevision })) return;
+      covering.clear();
+      for (const group of groups) {
+        const payload =
+          group.payloads.length === 1 ? group.payloads[0]! : encoding.toBase64(Y.mergeUpdates(group.payloads.map(encoding.fromBase64)));
+        covering.set(payload, group.payloads);
+        if (
+          restoreRevision === null ||
+          !sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload, restoreRevision, baseCursor: group.baseCursor })
+        )
+          return;
       }
     }
     localStateSent = true;
@@ -230,12 +290,15 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   const onDocUpdate = (update: Uint8Array, origin: unknown) => {
     if (isDisposed) return;
     if (origin === "remote" || actionHistory?.isRemoteOrigin(origin)) return;
+    recoveryText = doc.getText("codemirror").toString();
     if (isTerminated || !replayReady) {
+      if (unsentBase === undefined) unsentBase = unconfirmed.size ? unconfirmed.values().next().value : lastCursor;
       needsFullResync = true;
       pendingChanged();
       return;
     }
     if (!sendSyncPublish(update)) {
+      if (unsentBase === undefined) unsentBase = unconfirmed.size ? unconfirmed.values().next().value : lastCursor;
       needsFullResync = true;
       pendingChanged();
     }
@@ -451,7 +514,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       historyIncomplete?: unknown;
       snapshot?: unknown;
       restoreRevision?: unknown;
-      updates?: Array<{ cursor?: unknown; payload?: unknown; actionId?: unknown; restoreRevision?: unknown }>;
+      updates?: Array<{ cursor?: unknown; payload?: unknown; actionId?: unknown; retainedColumn?: unknown; restoreRevision?: unknown }>;
     };
 
     if (isTerminated || payload.noteId !== activeNoteId || !Array.isArray(payload.updates)) return true;
@@ -494,14 +557,31 @@ export function createYjsProvider(opts: YjsProviderOptions) {
           if (payload.snapshot === true && actionHistory?.hasPending())
             throw new Error("The table action could not be confirmed before reloading its history");
           const bytes = encoding.fromBase64(update.payload);
-          if (actionHistory) actionHistory.apply(bytes, typeof update.actionId === "string" ? update.actionId : undefined);
+          if (actionHistory)
+            actionHistory.apply(
+              bytes,
+              typeof update.actionId === "string" ? update.actionId : undefined,
+              typeof update.cursor === "string" ? update.cursor : undefined,
+              update.retainedColumn === true,
+            );
           else {
             Y.decodeUpdate(bytes);
             Y.applyUpdate(doc, bytes, "remote");
           }
-          if (unconfirmed.delete(update.payload)) {
+          const covered = covering.get(update.payload);
+          const echoed = unconfirmed.has(update.payload) || covered !== undefined;
+          if (covered) {
+            for (const payload of covered) forgetPending(payload);
+            covering.delete(update.payload);
+          } else forgetPending(update.payload);
+          if (echoed) {
+            if (!unconfirmed.size) covering.clear();
             failedConnects = 0;
             storageFailures = 0;
+            if (!unconfirmed.size && !needsFullResync) {
+              unsentBase = undefined;
+              recoveryText = undefined;
+            }
             pendingChanged();
           }
         } else {
@@ -609,6 +689,25 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       failedConnects = 0;
       connect();
     },
+    undo: () => {
+      if (actionHistory?.nextStructural("undo") && (isDisposed || isTerminated || !replayReady || needsFullResync || unconfirmed.size))
+        return Promise.reject(new Error("The editor must finish synchronizing before changing the table structure"));
+      return actionHistory?.undo() ?? Promise.resolve(null);
+    },
+    redo: () => {
+      if (actionHistory?.nextStructural("redo") && (isDisposed || isTerminated || !replayReady || needsFullResync || unconfirmed.size))
+        return Promise.reject(new Error("The editor must finish synchronizing before changing the table structure"));
+      return actionHistory?.redo() ?? Promise.resolve(null);
+    },
+    canUndo: () => actionHistory?.canUndo() ?? false,
+    canRedo: () => actionHistory?.canRedo() ?? false,
+    setInverseHandler: (handler: (request: SharedTextInverseRequest) => Promise<void>) => actionHistory?.setInverseHandler(handler),
+    recoveryInput: () => ({
+      state: Y.encodeStateAsUpdate(doc),
+      text: recoveryText ?? doc.getText("codemirror").toString(),
+      pending: [...unconfirmed].map(([payload, baseCursor]) => ({ payload, baseCursor })),
+      baseCursor: unsentBase,
+    }),
     /** Server actions wait for replay coverage and all local updates to be echoed. */
     canStructure: (): boolean =>
       !isDisposed &&

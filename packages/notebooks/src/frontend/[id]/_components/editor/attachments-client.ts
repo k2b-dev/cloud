@@ -8,6 +8,7 @@
 import type { EditorView } from "@codemirror/view";
 import { images } from "@k2b/stdlib/browser";
 import { apiClient } from "../../../../api/client";
+import { tableAround } from "../../../lib/editor/shared-editor";
 
 // =============================================================================
 // Auto-shrink oversize images
@@ -113,14 +114,20 @@ export const attachmentMarkdown = (att: AttachmentRef): string =>
 /**
  * Insert an attachment reference at the current cursor position. Images
  * get padded with newlines so they land on their own line — non-image
- * pills go inline.
+ * pills go inline. Inside a table, both kinds land in a paragraph after it.
+ * Resolve this against the live selection, including after an upload finishes.
  */
 export const insertAttachment = (view: EditorView, att: AttachmentRef): void => {
   if (view.state.readOnly) return;
   const md = attachmentMarkdown(att);
-  const { from, to } = view.state.selection.main;
+  const table = tableAround(view.state, view.state.selection.main.head);
+  const { from, to } = table ? { from: table.to, to: table.to } : view.state.selection.main;
   let text = md;
-  if (att.kind === "image") {
+  if (table) {
+    text = `\n\n${text}`;
+    // Keep the table and following content byte-for-byte; only add the missing paragraph boundary.
+    if (to < view.state.doc.length && view.state.sliceDoc(to, Math.min(to + 2, view.state.doc.length)) !== "\n\n") text += "\n";
+  } else if (att.kind === "image") {
     const lineStart = view.state.doc.lineAt(from).from;
     const before = view.state.sliceDoc(lineStart, from);
     const after = view.state.sliceDoc(from, view.state.doc.lineAt(from).to);

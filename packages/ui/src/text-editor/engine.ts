@@ -1,7 +1,8 @@
-import { history, historyKeymap, redo, standardKeymap, undo } from "@codemirror/commands";
+import { standardKeymap } from "@codemirror/commands";
 import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState, type Extension, Prec, Text } from "@codemirror/state";
 import { drawSelection, EditorView, keymap, placeholder } from "@codemirror/view";
+import { clipboardLoading } from "./clipboard-loading";
 import { commands } from "./format";
 import { formattedView } from "./formatted";
 import { markdown } from "./language";
@@ -18,15 +19,36 @@ export type TextEditorOptions = {
   placeholder?: string;
   label: string;
   extensions?: Extension;
-  host: Omit<TableHost, "undo" | "redo" | "boundary"> & Partial<Pick<TableHost, "undo" | "redo" | "boundary">>;
+  /**
+   * Replaces the built-in Markdown language, highlighting, formatted markers and
+   * formatting keys of the formatted and source modes. The engine keeps the
+   * table grid, clean paste, limits and history routing in every mode.
+   */
+  presentation?: (mode: Exclude<TextEditorMode, "plain">) => Extension;
+  /** The host owns history; collaboration bindings supply theirs. */
+  host: TableHost;
   onChange?: (text: string) => void;
   onDroppedImages?: (count: number, files: File[]) => void;
 };
+
+const builtInPresentation = (mode: Exclude<TextEditorMode, "plain">): Extension => [
+  markdown(),
+  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  mode === "formatted" ? formattedView : EditorView.contentAttributes.of({ class: "k2b-ste-source" }),
+  keymap.of([
+    { key: "Mod-b", run: commands.bold },
+    { key: "Mod-i", run: commands.italic },
+    { key: "Mod-k", run: commands.link },
+    { key: "Mod-Shift-x", run: commands.strike },
+  ]),
+];
 
 /** Shared engine; application extensions own transport, awareness and domain features. */
 export function createTextEditor(options: TextEditorOptions) {
   const modeSlot = new Compartment();
   const readOnlySlot = new Compartment();
+  const labelSlot = new Compartment();
+  const presentation = options.presentation ?? builtInPresentation;
   const runHistory = (view: EditorView, direction: "undo" | "redo") => {
     view.state.facet(tableHost)?.[direction]();
     // Consume even an empty or read-only history, so another binding cannot handle it again.
@@ -34,18 +56,11 @@ export function createTextEditor(options: TextEditorOptions) {
   };
   const modeExtensions = (mode: TextEditorMode): Extension =>
     mode === "plain"
-      ? [cleanPaste(options.onDroppedImages, true)]
+      ? [clipboardLoading(() => options.host), cleanPaste(options.onDroppedImages, true)]
       : [
-          markdown(),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-          mode === "formatted" ? [formattedView, tableGrid()] : EditorView.contentAttributes.of({ class: "ste-source" }),
+          presentation(mode),
+          mode === "formatted" ? tableGrid() : clipboardLoading(() => options.host),
           cleanPaste(options.onDroppedImages),
-          keymap.of([
-            { key: "Mod-b", run: commands.bold },
-            { key: "Mod-i", run: commands.italic },
-            { key: "Mod-k", run: commands.link },
-            { key: "Mod-Shift-x", run: commands.strike },
-          ]),
         ];
   const view = new EditorView({
     parent: options.parent,
@@ -55,7 +70,7 @@ export function createTextEditor(options: TextEditorOptions) {
         drawSelection(),
         EditorView.lineWrapping,
         placeholder(options.placeholder ?? ""),
-        EditorView.contentAttributes.of({ "aria-label": options.label }),
+        labelSlot.of(EditorView.contentAttributes.of({ "aria-label": options.label })),
         Prec.highest([
           keymap.of([
             { key: "Mod-z", run: (view) => runHistory(view, "undo"), shift: (view) => runHistory(view, "redo"), preventDefault: true },
@@ -69,25 +84,25 @@ export function createTextEditor(options: TextEditorOptions) {
             },
           }),
         ]),
-        ...(options.host.undo ? [] : [history(), keymap.of(historyKeymap)]),
         keymap.of(standardKeymap),
         tableHost.of({
           ...options.host,
           onDroppedImages: options.onDroppedImages,
           undo: () => {
-            if (view.state.readOnly) return;
-            if (options.host.undo) options.host.undo();
-            else undo(view);
+            if (!view.state.readOnly) options.host.undo();
           },
           redo: () => {
-            if (view.state.readOnly) return;
-            if (options.host.redo) options.host.redo();
-            else redo(view);
+            if (!view.state.readOnly) options.host.redo();
           },
-          boundary: options.host.boundary ?? (() => {}),
         }),
         EditorState.transactionFilter.of((tr) => {
-          if (tr.docChanged && tr.isUserEvent("input") && tr.newDoc.length > options.host.maxLength) {
+          // Only growth is refused: an over-limit text stays editable so it can be shortened.
+          if (
+            tr.docChanged &&
+            tr.isUserEvent("input") &&
+            tr.newDoc.length > options.host.maxLength &&
+            tr.newDoc.length > tr.startState.doc.length
+          ) {
             const inserted: string[] = [];
             tr.changes.iterChanges((_from, _to, _newFrom, _newTo, text) => {
               if (text.length) inserted.push(text.toString());
@@ -111,7 +126,10 @@ export function createTextEditor(options: TextEditorOptions) {
   });
   return {
     view,
+    /** Also re-reads `presentation`, so a host can refresh it, e.g. after a theme change. */
     setMode: (mode: TextEditorMode) => view.dispatch({ effects: modeSlot.reconfigure(modeExtensions(mode)) }),
+    setLabel: (label: string) =>
+      view.dispatch({ effects: labelSlot.reconfigure(EditorView.contentAttributes.of({ "aria-label": label })) }),
     setReadOnly: (readOnly: boolean) =>
       view.dispatch({ effects: readOnlySlot.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]) }),
     destroy: () => view.destroy(),

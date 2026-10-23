@@ -57,9 +57,9 @@ render(
             }
             if (scenario === "table")
               queueMicrotask(() => {
-                const cell = controller.view.contentDOM.querySelector<HTMLElement>('.ste-cell[data-r="1"][data-c="0"]');
+                const cell = controller.view.contentDOM.querySelector<HTMLElement>('.k2b-ste-cell[data-r="1"][data-c="0"]');
                 cell?.focus();
-                cell?.dispatchEvent(new CustomEvent("ste-cell-menu", { bubbles: true, detail: { cell } }));
+                cell?.dispatchEvent(new CustomEvent("k2b-ste-cell-menu", { bubbles: true, detail: { cell } }));
               });
           },
         });

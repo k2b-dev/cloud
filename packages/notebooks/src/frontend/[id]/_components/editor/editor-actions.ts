@@ -2,7 +2,6 @@ import { isolateHistory } from "@codemirror/commands";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { type ChangeSet, type ChangeSpec, EditorSelection, type EditorState, type SelectionRange } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { prompts } from "@k2b/ui";
 import type { SyntaxNode, Tree } from "@lezer/common";
 import { MARK_REGEX, TAG_REGEX } from "../../../lib/editor/_lib/inline-syntax";
 import { inCode } from "../../../lib/editor/_lib/list-item-line";
@@ -16,7 +15,7 @@ import { openNoteLinkPrompt } from "../search/openNoteSearchPrompt";
  * Editor-level actions used by the toolbar AND the slash-command palette.
  *
  * Pure DOM-aware operations on a `EditorView` — no SolidJS state. Some
- * actions open prompts (`prompts.form`, `openNoteLinkPrompt`) which are
+ * actions open prompts (`openNoteLinkPrompt`) which are
  * async; the editor stays non-modal while a prompt is open, so callers
  * should treat the editor's selection as a snapshot from before the prompt.
  */
@@ -464,47 +463,14 @@ const buildTable = (rows: number, cols: number, locale?: string): string => {
   return `${header}\n${sep}\n${body}`;
 };
 
-/**
- * Insert a markdown table at the cursor.
- *
- * Two paths:
- *
- *   1. **Modal path** — `insertTable(view)` with no dimensions opens
- *      a prompt asking for rows/cols (default 3×3). Used by the
- *      `/table` slash command and the toolbar button.
- *
- *   2. **Direct path** — `insertTable(view, { rows, cols })` skips
- *      the prompt entirely. Used by the `/table<R>x<C>` power
- *      command so `/table2x4` inserts a 2×4 table immediately.
- *
- * After the table is in the document, the caret pre-selects the first
- * header cell's placeholder text (`Header 1`) so the user can start
- * typing immediately to replace it.
- */
-export const insertTable = async (view: EditorView, dimensions?: { rows: number; cols: number }, locale?: string): Promise<void> => {
+/** Insert a sized table and select its first header placeholder. All interactive sizing uses the shared picker. */
+export const insertTable = async (view: EditorView, dimensions: { rows: number; cols: number }, locale?: string): Promise<void> => {
+  // Permissions can change while the shared picker is open.
+  if (view.state.readOnly) return;
   const resolvedLocale = locale ?? (typeof document === "undefined" ? "en" : document.documentElement.lang);
   const t = notebookWorkspaceMessages.resolve([resolvedLocale]).t;
-  let rows: number;
-  let cols: number;
-  if (dimensions) {
-    // Clamp to the same ranges the modal accepts — defends against a
-    // pathological `/table999x999` from someone testing edge cases.
-    rows = Math.max(1, Math.min(50, Math.floor(dimensions.rows)));
-    cols = Math.max(1, Math.min(20, Math.floor(dimensions.cols)));
-  } else {
-    const result = await prompts.form({
-      title: t.insertTable,
-      icon: "ti ti-table",
-      fields: {
-        rows: { type: "number", label: t.rows, default: 3, min: 1, max: 50, required: true },
-        cols: { type: "number", label: t.columns, default: 3, min: 1, max: 20, required: true },
-      },
-    });
-    // Sync can end while the dialog is open; a read-only note then takes no new text.
-    if (!result || view.state.readOnly) return;
-    rows = result.rows;
-    cols = result.cols;
-  }
+  const rows = Math.max(1, Math.min(50, Math.floor(dimensions.rows)));
+  const cols = Math.max(1, Math.min(20, Math.floor(dimensions.cols)));
 
   const block = buildTable(rows, cols, resolvedLocale);
   const { from } = view.state.selection.main;

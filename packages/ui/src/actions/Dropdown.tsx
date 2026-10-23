@@ -119,6 +119,8 @@ export type DropdownProps = {
    * Defaults to `menu`. A controlled menu (`open`) always stays a menu.
    */
   phone?: "menu" | "sheet";
+  /** Content above the phone sheet's menu. `close` dismisses it with normal history and focus restoration. */
+  sheetTop?: (close: () => void) => JSX.Element;
 };
 
 export type DropdownTriggerProps = Omit<
@@ -596,6 +598,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
         items: props.items,
         label: props.label ?? messages().dropdownMenu,
         locale: locale(),
+        top: props.sheetTop,
         signal: current.signal,
       }).finally(() => {
         sheet = undefined;

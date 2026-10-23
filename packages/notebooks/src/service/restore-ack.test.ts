@@ -153,7 +153,8 @@ if (process.env.NOTEBOOKS_RESTORE_ACK_CHILD !== "1") {
       withStore: () => ({}),
       replay: async (input: { doc: Y.Doc; restoreRevision: string; signal: AbortSignal }) => {
         expect(lockKind).toBe("exclusive");
-        expect(input.restoreRevision).toBe(row?.yjs_restore_revision);
+        if (!row) throw new Error("Restore replay requires the locked fixture row");
+        expect(input.restoreRevision).toBe(row.yjs_restore_revision);
         expect(input.signal).toBeInstanceOf(AbortSignal);
         for (const event of events) applySharedTextEvent(input.doc, event, "note", input.restoreRevision);
       },

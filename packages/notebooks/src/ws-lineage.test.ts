@@ -1,5 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import { applySharedTextEvent, isValidSharedTextUpdate, type SharedTextSyncEvent, toBase64 } from "@k2b/cloud/shared-text";
+import { ConflictError } from "@k2b/sync";
 import type { Context } from "hono";
 import { WSContext, type WSEvents } from "hono/ws";
 import { Awareness } from "y-protocols/awareness";
@@ -20,7 +21,7 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
 } else {
   let events: WSEvents | undefined;
   let revision = "0";
-  let state = new Uint8Array([0, 0]);
+  let state: Uint8Array = new Uint8Array([0, 0]);
   let exists = true;
   let permission = "write";
   let restoreAfterRead: (() => void) | null = null;
@@ -29,6 +30,10 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
   let replayEntries: Entry[] = [];
   let liveEntries: Entry[] = [];
   let echoPublications = false;
+  let admissionFailure: Error | null = null;
+  let recoverIngress = false;
+  let beforeAdmission: (() => void) | null = null;
+  const ingress: { baseCursor: string | null; update: Uint8Array }[] = [];
   let beforeDelivery: (() => Promise<void>) | null = null;
   const liveWaiters = new Set<() => void>();
   const appendLive = (entry: Entry) => {
@@ -86,6 +91,32 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
   mock.module("./service", () => ({
     notebooksService: {
       note: {
+        acceptYjsUpdate: async (input: {
+          actor: { kind: "user"; id: string };
+          update: Uint8Array;
+          baseCursor: string | null;
+          restoreRevision: string;
+          originNodeId: string;
+          originPeerId: string;
+          validate: () => Promise<boolean>;
+        }) => {
+          ingress.push({ baseCursor: input.baseCursor, update: input.update });
+          beforeAdmission?.();
+          if (!(await input.validate())) return { status: "recoveryRequired" };
+          if (admissionFailure) throw admissionFailure;
+          if (recoverIngress || input.restoreRevision !== revision) return { status: "recoveryRequired" };
+          const data: SharedTextSyncEvent = {
+            kind: "sync",
+            payload: toBase64(input.update),
+            actor: input.actor,
+            restoreRevision: input.restoreRevision,
+            originNodeId: input.originNodeId,
+            originPeerId: input.originPeerId,
+          };
+          published.push({ tenantId: "test-note", data });
+          if (echoPublications) appendLive({ cursor: "s6t.fixture.10", data });
+          return { status: "accepted", cursor: "s6t.fixture.10" };
+        },
         getByShortId: async () => note,
         get: async () => note,
         getAnchoredYjsState: async () => stored(),
@@ -199,6 +230,10 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     replayEntries = [];
     liveEntries = [];
     echoPublications = false;
+    admissionFailure = null;
+    recoverIngress = false;
+    beforeAdmission = null;
+    ingress.length = 0;
     beforeDelivery = null;
     published.length = 0;
     snapshots.length = 0;
@@ -281,9 +316,18 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
         state = restoredState;
       };
       socket.publish("0", toBase64(Y.encodeStateAsUpdate(original)));
-      await waitFor(() => published.length === 1);
+      await expectReopen(socket);
+      expect(published).toHaveLength(0);
       expect(revision).toBe("1");
-      const data = published[0]!.data;
+      // Old path published the now-stale delete. Retain that counterexample:
+      // even such an event cannot modify the replacement restore generation.
+      const data: SharedTextSyncEvent = {
+        kind: "sync",
+        payload: toBase64(Y.encodeStateAsUpdate(original)),
+        restoreRevision: "0",
+        originNodeId: "old-path",
+        originPeerId: null,
+      };
       expect(data.restoreRevision).toBe("0");
       Y.applyUpdate(replacement, state);
       expect(applySharedTextEvent(replacement, { cursor: "s6t.fixture.10", data }, "test-note", revision)).toBe(false);
@@ -354,11 +398,8 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
       echoPublications = true;
       socket.message(publication.type, publication.payload);
       await expectReopen(socket);
-      expect(published).toHaveLength(1);
-      const data = published[0]!.data;
-      expect(data.restoreRevision).toBe("0");
+      expect(published).toHaveLength(0);
       Y.applyUpdate(replacement, state);
-      expect(applySharedTextEvent(replacement, { cursor: "s6t.fixture.10", data }, "test-note", "1")).toBe(false);
       expect(replacement.getText("codemirror").toString()).toBe("TOKEN");
       expect(doc.getText("codemirror").toString()).toBe("AFTER");
       expect(provider.hasUnsentChanges()).toBe(true);
@@ -585,6 +626,59 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
       await waitFor(() => socket.closed.length > 0);
       expect(socket.sent.find((message) => message.type === "notes.yjs.error")?.payload.code).toBe("NOTE_NOT_FOUND");
       expect(published).toEqual([]);
+    } finally {
+      await socket.close();
+    }
+  });
+  test("admission rejection preserves exact pending bytes/base without publication or optimistic echo", async () => {
+    reset();
+    recoverIngress = true;
+    const socket = await openSocket();
+    try {
+      socket.replay("0", "s6t.fixture.9");
+      await socket.ready();
+      socket.message("notes.yjs.sync.publish", { restoreRevision: "0", payload: "AAA=", baseCursor: "s6t.fixture.3" });
+      await expectReopen(socket);
+      expect(ingress).toEqual([{ baseCursor: "s6t.fixture.3", update: new Uint8Array([0, 0]) }]);
+      expect(published).toHaveLength(0);
+      expect(socket.sent.filter((value) => value.type === "notes.yjs.sync.push")).toHaveLength(0);
+    } finally {
+      await socket.close();
+    }
+  });
+
+  test("an admission CAS race reconnects with STREAM_FAILED and never confirms rejected input", async () => {
+    reset();
+    admissionFailure = new ConflictError("head advanced");
+    const socket = await openSocket();
+    try {
+      socket.replay("0", "s6t.fixture.9");
+      await socket.ready();
+      socket.publish("0");
+      await waitFor(() => socket.closed.length > 0);
+      expect(socket.sent.filter((value) => value.type === "notes.yjs.error").map((value) => value.payload)).toEqual([
+        expect.objectContaining({ code: "STREAM_FAILED" }),
+      ]);
+      expect(published).toHaveLength(0);
+      expect(socket.sent.filter((value) => value.type === "notes.yjs.sync.push")).toHaveLength(0);
+    } finally {
+      await socket.close();
+    }
+  });
+
+  test("admission rechecks write permission after its replay awaits", async () => {
+    reset();
+    beforeAdmission = () => {
+      permission = "read";
+    };
+    const socket = await openSocket();
+    try {
+      socket.replay("0", "s6t.fixture.9");
+      await socket.ready();
+      socket.publish("0");
+      await waitFor(() => socket.sent.some((value) => value.type === "notes.yjs.error"));
+      expect(published).toHaveLength(0);
+      expect(socket.sent.find((value) => value.type === "notes.yjs.error")?.payload.code).toBe("ACCESS_DENIED");
     } finally {
       await socket.close();
     }

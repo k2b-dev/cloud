@@ -53,6 +53,12 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   mock.module("./service", () => ({
     notebooksService: {
       note: {
+        acceptYjsUpdate: async (input: { validate: () => Promise<boolean> }) => {
+          if (!(await input.validate())) return { status: "recoveryRequired" };
+          publishEntered.resolve();
+          const result = await published.promise;
+          return { status: "accepted", cursor: result.cursor };
+        },
         getByShortId: async () => note,
         get: async () => note,
         getYjsStateWithCursor: async () => ({ restoreRevision: "0" }),

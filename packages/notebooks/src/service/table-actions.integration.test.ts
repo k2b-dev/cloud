@@ -1,10 +1,19 @@
 import { expect, spyOn, test } from "bun:test";
-import { captureTableAction, captureTextAnchor, fromBase64, resolveTextAnchor, SHARED_TEXT_NAME } from "@k2b/cloud/shared-text";
-import { findTables } from "@k2b/ui/text-editor/model";
+import {
+  captureTableAction,
+  captureTableFocus,
+  captureTextAnchor,
+  fromBase64,
+  resolveTableFocus,
+  resolveTextAnchor,
+  SHARED_TEXT_NAME,
+} from "@k2b/cloud/shared-text";
+import { findTables, gridLine, setAlign } from "@k2b/ui/text-editor/model";
 import { sql } from "bun";
 import * as Y from "yjs";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
+import { decodeTableFocus } from "../lib/table-actions";
 
 // Real persistence/attribution coverage. Run only with the established explicit
 // test targets and heavy-test lock; the focused unit suites do not run this file.
@@ -65,10 +74,19 @@ if (process.env.NOTEBOOKS_TABLE_ACTION_INTEGRATION_CHILD !== "1") {
         actionId,
         restoreRevision: "0",
         intent,
+        focus: captureTableFocus(text, {
+          tableFrom: table.from,
+          rowFrom: table.lines[0]!.from,
+          columnFrom: table.lines[0]!.cells[0]!.from,
+          row: 0,
+          column: 0,
+        }),
       });
       expect(result).toMatchObject({ ok: true, data: { changed: true, receipt: { actionId } } });
       if (!result.ok || !result.data.receipt) throw new Error("Missing accepted action receipt");
       Y.applyUpdate(doc, fromBase64(result.data.receipt.update));
+      expect(result.data.focus).toBeTruthy();
+      expect(resolveTableFocus(text, decodeTableFocus(result.data.focus!))).toMatchObject({ row: 0, column: 1 });
       const at = resolveTextAnchor(text, untouched);
       expect(at).not.toBeNull();
       expect(text.toString()[at!]).toBe("b");
@@ -93,6 +111,126 @@ if (process.env.NOTEBOOKS_TABLE_ACTION_INTEGRATION_CHILD !== "1") {
         WHERE note_id = ${noteId}::uuid AND action = 'note.edited'
       `;
       expect(activities).toEqual([{ actor_kind: "service_account", actor_id: actor.id, last_occurred_at: new Date(requestedAt) }]);
+
+      // Durable author/peer boundary: accepted peer input and alignment retain
+      // their original inserted column even when the initiating tab closes.
+      const peer = new Y.Doc();
+      try {
+        Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+        const peerText = peer.getText(SHARED_TEXT_NAME);
+        const peerVector = Y.encodeStateVector(peer);
+        let peerTable = findTables(peerText.toString())[0]!;
+        peerText.insert(gridLine(peerTable, 1)!.cells[1]!.from, "CONFIRMED");
+        peerTable = findTables(peerText.toString())[0]!;
+        for (const change of setAlign(peerTable, 1, "center").toReversed()) peerText.insert(change.from, change.insert);
+        const peerActor = { kind: "service_account" as const, id: crypto.randomUUID() };
+        const accepted = await notes.acceptYjsUpdate({
+          noteId,
+          actor: peerActor,
+          update: Y.encodeStateAsUpdate(peer, peerVector),
+          baseCursor: result.data.cursor,
+          restoreRevision: "0",
+          originNodeId: "integration-peer",
+          originPeerId: "peer",
+        });
+        expect(accepted.status).toBe("accepted");
+        const inverse = await notes.tableAction({
+          notebookId,
+          noteId,
+          permission: "write",
+          actor,
+          createdBy: null,
+          actionId: crypto.randomUUID(),
+          restoreRevision: "0",
+          intent: { action: "undo", receiptCursor: result.data.cursor! },
+        });
+        expect(inverse).toMatchObject({ ok: true, data: { changed: true } });
+        doc.destroy(); // No author manager or document remains alive.
+        const reloaded = await notes.getYjsStateWithCursor({ noteId });
+        const reopened = new Y.Doc();
+        try {
+          Y.applyUpdate(reopened, reloaded!.yjsState!);
+          const canonical = reopened.getText(SHARED_TEXT_NAME).toString();
+          const retained = findTables(canonical)[0]!;
+          expect(retained.columns).toBe(3);
+          expect(gridLine(retained, 1)!.cells[1]!.text).toBe("CONFIRMED");
+          expect(retained.lines[1]!.cells[1]!.text).toBe(":---:");
+          const event = await Array.fromAsync(
+            topic.replay({
+              tenantId: noteId,
+              after: accepted.status === "accepted" ? accepted.cursor : undefined,
+              until: reloaded!.streamCursor!,
+            }),
+          );
+          expect(event.at(-1)?.data.history).toMatchObject({ retained: true, inverseOf: result.data.cursor });
+
+          // The original raw RED schedule kept a peer update until after Undo,
+          // then applied it to the post-Undo Y.Text and mis-targeted its cells.
+          // Production ingress must instead reject it with exact recovery data.
+          const t = findTables(canonical)[0]!;
+          const inserted = await notes.tableAction({
+            notebookId,
+            noteId,
+            permission: "write",
+            actor,
+            createdBy: null,
+            actionId: crypto.randomUUID(),
+            restoreRevision: "0",
+            intent: captureTableAction(reopened.getText(SHARED_TEXT_NAME), "colLeft", {
+              tableFrom: t.from,
+              rowFrom: t.lines[0]!.from,
+              columnFrom: t.lines[0]!.cells[0]!.from,
+              row: 0,
+              column: 0,
+            }),
+          });
+          if (!inserted.ok || !inserted.data.receipt) throw new Error("Missing inserted-column receipt");
+          Y.applyUpdate(reopened, fromBase64(inserted.data.receipt.update));
+          const late = new Y.Doc();
+          try {
+            Y.applyUpdate(late, Y.encodeStateAsUpdate(reopened));
+            const vector = Y.encodeStateVector(late),
+              text = late.getText(SHARED_TEXT_NAME);
+            text.insert(gridLine(findTables(text.toString())[0]!, 1)!.cells[0]!.from, "UNCONFIRMED");
+            const recovery = { update: Y.encodeStateAsUpdate(late, vector), text: text.toString(), baseCursor: inserted.data.cursor };
+            const undone = await notes.tableAction({
+              notebookId,
+              noteId,
+              permission: "write",
+              actor,
+              createdBy: null,
+              actionId: crypto.randomUUID(),
+              restoreRevision: "0",
+              intent: { action: "undo", receiptCursor: inserted.data.cursor! },
+            });
+            expect(undone.ok).toBe(true);
+            reopened.destroy();
+            const before = await notes.getCurrentWithContent({ id: noteId });
+            const head = await topic.latestCursor({ tenantId: noteId });
+            expect(
+              await notes.acceptYjsUpdate({
+                noteId,
+                actor: peerActor,
+                update: recovery.update,
+                baseCursor: recovery.baseCursor,
+                restoreRevision: "0",
+                originNodeId: "integration-peer",
+                originPeerId: "peer",
+              }),
+            ).toEqual({ status: "recoveryRequired" });
+            expect(await topic.latestCursor({ tenantId: noteId })).toBe(head);
+            expect((await notes.getCurrentWithContent({ id: noteId }))?.contentMd).toBe(before?.contentMd);
+            expect(recovery.text).toContain("UNCONFIRMED");
+            expect(recovery.update).toEqual(Y.encodeStateAsUpdate(late, vector));
+          } finally {
+            late.destroy();
+          }
+        } finally {
+          reopened.destroy();
+        }
+      } finally {
+        peer.destroy();
+      }
     } finally {
       doc.destroy();
       clock.mockRestore();

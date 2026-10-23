@@ -50,3 +50,24 @@ test("table-shaped plain text and fenced code remain visible", () => {
     expect(result.data.text).toContain("KEEP ME");
   }
 });
+
+test("a missing or damaged separator requires review instead of silently sending a paragraph", () => {
+  for (const body of ["| A | B |\n| KEEP ME | 2 |", "| A | B |\n| --x | --- |\n| KEEP ME | 2 |"]) {
+    const result = render(body);
+    expect(result).toMatchObject({ ok: false, error: { composeRender: { reason: "tableSeparatorNeedsReview" } } });
+    if (result.ok) throw new Error("Damaged table was sent without review");
+    expect(localizedComposeRenderMessage(result.error, "de")).toStartWith("Tabelle prüfen:");
+    expect(localizedComposeRenderMessage(result.error, "en")).toStartWith("Check table:");
+  }
+});
+
+test("literal pipe prose and code retain their existing rendering path", () => {
+  for (const body of [
+    "Use a | b to separate options.",
+    "| One literal line |",
+    "```text\n| A | B |\n| KEEP ME | 2 |\n```",
+    "\\| A \\| B \\|\n\\| KEEP ME \\| 2 \\|",
+  ]) {
+    expect(render(body).ok).toBe(true);
+  }
+});

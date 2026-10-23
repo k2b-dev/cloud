@@ -29,6 +29,8 @@ if (process.env.NOTEBOOKS_TABLE_ACTION_SERVICE_TEST !== "1") {
   const bound = binding.mock.results[0];
   if (!bound || bound.type !== "return") throw new Error("Missing document binding");
   const change = spyOn(bound.value, "change");
+  const inverse = spyOn(bound.value, "inverse");
+  const accept = spyOn(bound.value, "accept");
   const get = spyOn(notes, "get");
   const stored = spyOn(notes, "getYjsStateWithCursor");
   const noteId = "11111111-1111-4111-8111-111111111111";
@@ -68,6 +70,8 @@ if (process.env.NOTEBOOKS_TABLE_ACTION_SERVICE_TEST !== "1") {
     const text = doc.getText(SHARED_TEXT_NAME);
     text.insert(0, "| A | B |\n| --- | --- |\n| a | b |\n");
     intent = captureTableAction(text, "colRight", { tableFrom: 0, rowFrom: 0, columnFrom: 2, row: 0, column: 0 });
+    inverse.mockReset();
+    accept.mockReset().mockResolvedValue({ status: "recoveryRequired" });
     get.mockReset().mockResolvedValue(note);
     stored
       .mockReset()
@@ -80,7 +84,14 @@ if (process.env.NOTEBOOKS_TABLE_ACTION_SERVICE_TEST !== "1") {
   });
   afterEach(() => doc.destroy());
   afterAll(() => {
-    for (const spy of [change, get, stored, binding]) spy.mockRestore();
+    for (const spy of [inverse, accept, change, get, stored, binding]) spy.mockRestore();
+  });
+
+  test("ordinary socket admission enforces the approved merged document limit", async () => {
+    const update = Y.encodeStateAsUpdate(doc);
+    const request = { noteId, actor, update, baseCursor: null, restoreRevision: "0", originNodeId: "test", originPeerId: "peer" };
+    expect(await notes.acceptYjsUpdate(request)).toEqual({ status: "recoveryRequired" });
+    expect(accept).toHaveBeenCalledWith(noteId, { ...request, maxLength: 2_097_152 });
   });
 
   test("denies readers before loading or changing text", async () => {
@@ -242,5 +253,42 @@ if (process.env.NOTEBOOKS_TABLE_ACTION_SERVICE_TEST !== "1") {
       code: "table_action_outcome_unknown",
     });
     expect(change).toHaveBeenCalledTimes(1);
+  });
+  test("Undo/Redo uses authenticated receipt inversion and rechecks lock/lineage before publication", async () => {
+    inverse.mockImplementation(async (_id, options) => {
+      await options.validate?.();
+      return { status: "unchanged", text: "current" };
+    });
+    for (const action of ["undo", "redo"] as const) {
+      const result = await notes.tableAction({ ...input(), intent: { action, receiptCursor: "s6t.fixture.1" } });
+      expect(result).toMatchObject({ ok: true });
+      expect(inverse).toHaveBeenLastCalledWith(
+        noteId,
+        expect.objectContaining({
+          actor,
+          receiptCursor: "s6t.fixture.1",
+          restoreRevision: "0",
+          maxLength: 2_097_152,
+          actionId: input().actionId,
+        }),
+      );
+    }
+    expect(change).not.toHaveBeenCalled();
+    get
+      .mockReset()
+      .mockResolvedValueOnce(note)
+      .mockResolvedValue({ ...note, lockedAt: note.updatedAt });
+    expect(await notes.tableAction({ ...input(), intent: { action: "undo", receiptCursor: "s6t.fixture.1" } })).toMatchObject({
+      ok: false,
+      accepted: false,
+      code: "table_action_locked",
+    });
+    get.mockReset().mockResolvedValue(note);
+    stored.mockResolvedValue({ yjsState: null, streamCursor: null, restoreRevision: "1", contentMd: null, historyIncomplete: false });
+    expect(await notes.tableAction({ ...input(), intent: { action: "redo", receiptCursor: "s6t.fixture.1" } })).toMatchObject({
+      ok: false,
+      accepted: false,
+      code: "table_action_restore_conflict",
+    });
   });
 }

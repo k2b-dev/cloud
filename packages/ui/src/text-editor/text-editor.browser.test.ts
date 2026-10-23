@@ -27,7 +27,7 @@ beforeAll(async () => {
       new URL(req.url).pathname === "/harness.js"
         ? new Response(bundle, { headers: { "content-type": "application/javascript" } })
         : new Response(
-            `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:16px;font-family:Arial;--k2b-text:#18181b;--k2b-surface:#fff;--k2b-border:#ddd;--k2b-accent:#2563eb;--k2b-accent-subtle:#eff6ff;--k2b-font-sans:Arial} ${css}</style></head><body class="k2b-ui"><div id="root" class="ste-host"></div><button id="after-editor">After editor</button><script src="/harness.js"></script></body></html>`,
+            `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:16px;font-family:Arial;--k2b-text:#18181b;--k2b-surface:#fff;--k2b-border:#ddd;--k2b-accent:#2563eb;--k2b-accent-subtle:#eff6ff;--k2b-font-sans:Arial} ${css}</style></head><body class="k2b-ui"><div id="root" class="k2b-ste-host"></div><button id="after-editor">After editor</button><script src="/harness.js"></script></body></html>`,
             { headers: { "content-type": "text/html" } },
           ),
   });
@@ -46,14 +46,14 @@ for (const [name, options] of Object.entries(profiles))
       const page = await context.newPage();
       page.on("pageerror", (error) => pageErrors.push(error.message));
       await page.goto(server.url.href);
-      await page.waitForSelector(".ste-cell");
+      await page.waitForSelector(".k2b-ste-cell");
       return { context, page };
     };
     test("typing edits only its cell; Tab, Shift-Tab and Enter preserve the following paragraph", async () => {
       const { context, page } = await open();
       try {
         const before = await page.evaluate(() => window.sharedEditorHarness.text());
-        const cell = page.locator('.ste-cell[data-r="1"][data-c="0"]');
+        const cell = page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]');
         await cell.click();
         await page.keyboard.press("End");
         await page.keyboard.type(" stock  more");
@@ -62,7 +62,12 @@ for (const [name, options] of Object.entries(profiles))
         expect(await page.locator(":focus").getAttribute("data-c")).toBe("1");
         await page.keyboard.press("Shift+Tab");
         expect(await page.locator(":focus").getAttribute("data-c")).toBe("0");
+        const edited = await page.evaluate(() => window.sharedEditorHarness.text());
         await page.keyboard.press("Enter");
+        expect(await page.locator(":focus").getAttribute("data-r")).toBe("2");
+        expect(await page.evaluate(() => window.sharedEditorHarness.text())).toBe(edited);
+        await page.keyboard.press("Enter");
+        expect(await page.locator(":focus").getAttribute("data-r")).toBe("3");
         await page.keyboard.type("New");
         expect(await page.evaluate(() => window.sharedEditorHarness.text())).toContain("| Ink | 2 |\n| New  |   |\n\nAfter");
       } finally {
@@ -73,7 +78,7 @@ for (const [name, options] of Object.entries(profiles))
       const { context, page } = await open();
       try {
         await page.evaluate(() => window.sharedEditorHarness.load("Before\n\n| A | B |\n| --- | --- |\n| x |\n\nAfter"));
-        const missing = page.locator('.ste-cell[data-r="1"][data-c="1"]');
+        const missing = page.locator('.k2b-ste-cell[data-r="1"][data-c="1"]');
         await missing.click();
         await page.keyboard.type("saved");
         expect(await page.evaluate(() => window.sharedEditorHarness.text())).toContain("saved");
@@ -97,15 +102,15 @@ for (const [name, options] of Object.entries(profiles))
       const { context, page } = await open();
       try {
         await page.evaluate(() => window.sharedEditorHarness.load("| A | B | C |\n| --- | --- | --- |\n| a | b | c |"));
-        await page.locator('.ste-cell[data-r="1"][data-c="1"]').click();
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="1"]').click();
         await page.keyboard.press("End");
         await page.evaluate(() => window.sharedEditorHarness.swapColumn());
-        expect(await page.locator('.ste-cell[data-r="1"]').allTextContents()).toEqual(["b", "c", ""]);
+        expect(await page.locator('.k2b-ste-cell[data-r="1"]').allTextContents()).toEqual(["b", "c", ""]);
         expect(await page.locator(":focus").getAttribute("data-c")).toBe("0");
         await page.keyboard.type("!");
-        expect(await page.locator('.ste-cell[data-r="1"]').allTextContents()).toEqual(["b!", "c", ""]);
+        expect(await page.locator('.k2b-ste-cell[data-r="1"]').allTextContents()).toEqual(["b!", "c", ""]);
         await page.evaluate(() => window.sharedEditorHarness.action("deleteCol"));
-        expect(await page.locator('.ste-cell[data-r="1"]').allTextContents()).toEqual(["c", ""]);
+        expect(await page.locator('.k2b-ste-cell[data-r="1"]').allTextContents()).toEqual(["c", ""]);
       } finally {
         await context.close();
       }
@@ -114,7 +119,7 @@ for (const [name, options] of Object.entries(profiles))
       const { context, page } = await open();
       try {
         await page.evaluate(() => window.sharedEditorHarness.load("| A | B | C | D |\n| --- | --- | --- | --- |\n| a | b | c | d |"));
-        await page.locator('.ste-cell[data-r="1"][data-c="2"]').click();
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="2"]').click();
         await page.evaluate(() => {
           const cell = document.activeElement!;
           cell.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
@@ -127,12 +132,12 @@ for (const [name, options] of Object.entries(profiles))
           window.sharedEditorHarness.swapColumn();
           cell.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "日本" }));
         });
-        expect(await page.locator('.ste-cell[data-r="1"]').allTextContents()).toEqual(["b", "c日本", "d", ""]);
+        expect(await page.locator('.k2b-ste-cell[data-r="1"]').allTextContents()).toEqual(["b", "c日本", "d", ""]);
         expect(await page.locator(":focus").getAttribute("data-c")).toBe("1");
         await page.keyboard.type("!");
-        expect(await page.locator('.ste-cell[data-r="1"]').allTextContents()).toEqual(["b", "c日本!", "d", ""]);
+        expect(await page.locator('.k2b-ste-cell[data-r="1"]').allTextContents()).toEqual(["b", "c日本!", "d", ""]);
         await page.evaluate(() => window.sharedEditorHarness.action("deleteCol"));
-        expect(await page.locator('.ste-cell[data-r="1"]').allTextContents()).toEqual(["b", "d", ""]);
+        expect(await page.locator('.k2b-ste-cell[data-r="1"]').allTextContents()).toEqual(["b", "d", ""]);
       } finally {
         await context.close();
       }
@@ -142,7 +147,7 @@ for (const [name, options] of Object.entries(profiles))
       try {
         for (const composing of [false, true]) {
           await page.evaluate(() => window.sharedEditorHarness.load("| A | B | C |\n| --- | --- | --- |\n| x |"));
-          await page.locator('.ste-cell[data-r="1"][data-c="1"]').click();
+          await page.locator('.k2b-ste-cell[data-r="1"][data-c="1"]').click();
           await page.evaluate((composing) => {
             const cell = document.activeElement!;
             if (composing) {
@@ -159,7 +164,7 @@ for (const [name, options] of Object.entries(profiles))
           }, composing);
           expect(await page.evaluate(() => window.sharedEditorHarness.text())).toContain("| x |");
           expect(await page.evaluate(() => window.sharedEditorHarness.errors())).toContain(composing ? "recovery:新" : "recovery:new");
-          expect(await page.locator('.ste-cell[data-r="1"][data-c="1"]').textContent()).toBe("x");
+          expect(await page.locator('.k2b-ste-cell[data-r="1"][data-c="1"]').textContent()).toBe("x");
         }
       } finally {
         await context.close();
@@ -169,8 +174,8 @@ for (const [name, options] of Object.entries(profiles))
       const { context, page } = await open();
       try {
         await page.evaluate(() => window.sharedEditorHarness.load("Before\n\n| A | B |\n| --- | --- |\n| x |\n\nAfter"));
-        await page.locator('.ste-cell[data-r="1"][data-c="0"]').click();
-        await page.locator('.ste-cell[data-r="1"][data-c="1"]').click();
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').click();
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="1"]').click();
         await page.evaluate(() => window.sharedEditorHarness.format());
         await page.keyboard.type("new");
         const text = await page.evaluate(() => window.sharedEditorHarness.text());
@@ -185,7 +190,7 @@ for (const [name, options] of Object.entries(profiles))
     test("cell formatting and remote input preserve the selected range", async () => {
       const { context, page } = await open();
       try {
-        await page.locator('.ste-cell[data-r="1"][data-c="0"]').click();
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').click();
         await page.evaluate(() => {
           const cell = document.activeElement!;
           const range = document.createRange();
@@ -274,7 +279,7 @@ for (const [name, options] of Object.entries(profiles))
         });
         await page.keyboard.press("ArrowDown");
         expect(await page.locator(":focus").getAttribute("class")).toContain("cm-content");
-        await page.locator('.ste-cell[data-r="1"][data-c="0"]').click();
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').click();
         await page.evaluate(() => {
           const cell = document.activeElement!;
           const range = document.createRange();
@@ -307,11 +312,11 @@ for (const [name, options] of Object.entries(profiles))
             "| A | B |\n| --- | --- |\n| ***nested*** | `**literal**` |\n| \\*escaped\\* | <script>alert(1)</script> |",
           ),
         );
-        expect(await page.locator('.ste-cell[data-r="1"][data-c="0"] strong').textContent()).toBe("nested");
-        expect(await page.locator('.ste-cell[data-r="1"][data-c="0"] em').textContent()).toBe("nested");
-        expect(await page.locator('.ste-cell[data-r="1"][data-c="1"] code').textContent()).toBe("**literal**");
-        expect(await page.locator('.ste-cell[data-r="2"][data-c="0"]').textContent()).toBe("*escaped*");
-        expect(await page.locator('.ste-cell[data-r="2"][data-c="1"]').textContent()).toBe("<script>alert(1)</script>");
+        expect(await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"] strong').textContent()).toBe("nested");
+        expect(await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"] em').textContent()).toBe("nested");
+        expect(await page.locator('.k2b-ste-cell[data-r="1"][data-c="1"] code').textContent()).toBe("**literal**");
+        expect(await page.locator('.k2b-ste-cell[data-r="2"][data-c="0"]').textContent()).toBe("*escaped*");
+        expect(await page.locator('.k2b-ste-cell[data-r="2"][data-c="1"]').textContent()).toBe("<script>alert(1)</script>");
       } finally {
         await context.close();
       }
@@ -320,12 +325,12 @@ for (const [name, options] of Object.entries(profiles))
       const { context, page } = await open();
       try {
         await page.evaluate(() => window.sharedEditorHarness.load("| A | B |\n| --- | --- |\n| `a\\|b` | `a\\\\b` |"));
-        expect(await page.locator('.ste-cell[data-r="1"][data-c="0"] code').textContent()).toBe("a|b");
-        expect(await page.locator('.ste-cell[data-r="1"][data-c="1"] code').textContent()).toBe(String.raw`a\b`);
-        await page.locator('.ste-cell[data-r="1"][data-c="0"]').click();
-        expect(await page.locator('.ste-cell[data-r="1"][data-c="0"]').textContent()).toBe("`a|b`");
+        expect(await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"] code').textContent()).toBe("a|b");
+        expect(await page.locator('.k2b-ste-cell[data-r="1"][data-c="1"] code').textContent()).toBe(String.raw`a\b`);
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').click();
+        expect(await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').textContent()).toBe("`a|b`");
         await page.locator("#after-editor").focus();
-        expect(await page.locator('.ste-cell[data-r="1"][data-c="0"] code').textContent()).toBe("a|b");
+        expect(await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"] code').textContent()).toBe("a|b");
       } finally {
         await context.close();
       }
@@ -335,7 +340,7 @@ for (const [name, options] of Object.entries(profiles))
       try {
         const source = "Before\r\n\r\n| A | B |\r\n| --- | --- |\r\n| one\\|two | 1 |\r\n\r\nAfter";
         await page.evaluate((source) => window.sharedEditorHarness.load(source), source);
-        await page.locator('.ste-cell[data-r="1"][data-c="1"]').click();
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="1"]').click();
         await page.keyboard.press("End");
         await page.keyboard.type("2");
         expect(await page.evaluate(() => window.sharedEditorHarness.text())).toBe(source.replace("| 1 |", "| 12 |"));
@@ -349,7 +354,7 @@ for (const [name, options] of Object.entries(profiles))
         const original = "| A | B | C |\n| --- | --- | --- |\n| a | b | c |\n";
         const removed = "| A | C |\n| --- | --- |\n| a | c |\n";
         await page.evaluate((source) => window.sharedEditorHarness.load(source), original);
-        await page.locator('.ste-cell[data-r="1"][data-c="1"]').click();
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="1"]').click();
         await page.evaluate(() => {
           const cell = document.activeElement!;
           cell.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
@@ -360,7 +365,7 @@ for (const [name, options] of Object.entries(profiles))
         expect(await page.evaluate(() => window.sharedEditorHarness.text())).toBe(removed);
         expect(await page.evaluate(() => window.sharedEditorHarness.errors())).toContain("recovery:新");
         expect(await page.evaluate(() => window.sharedEditorHarness.errors())).toContain("cellRemoved");
-        expect(await page.locator('.ste-cell[data-r="1"]').allTextContents()).toEqual(["a", "c"]);
+        expect(await page.locator('.k2b-ste-cell[data-r="1"]').allTextContents()).toEqual(["a", "c"]);
       } finally {
         await context.close();
       }
@@ -370,7 +375,7 @@ for (const [name, options] of Object.entries(profiles))
       try {
         const source = "| A | B |\n| --- | --- |\n| x | y |";
         await page.evaluate((source) => window.sharedEditorHarness.load(source, false, source.length), source);
-        const cell = page.locator('.ste-cell[data-r="1"][data-c="0"]');
+        const cell = page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]');
         await cell.click();
         await page.keyboard.press("End");
         await page.keyboard.type("!");
@@ -384,11 +389,11 @@ for (const [name, options] of Object.entries(profiles))
     test("cell focus and typing publish the mapped Markdown selection", async () => {
       const { context, page } = await open();
       try {
-        await page.locator('.ste-cell[data-r="1"][data-c="0"]').click();
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').click();
         await page.keyboard.press("End");
         await page.keyboard.type("X");
         await page.waitForFunction(() => window.sharedEditorHarness.caret() === window.sharedEditorHarness.text().indexOf("PaperX") + 6);
-        expect(await page.locator(".ste-cell").first().getAttribute("tabindex")).toBe("-1");
+        expect(await page.locator(".k2b-ste-cell").first().getAttribute("tabindex")).toBe("-1");
         expect(await page.evaluate(() => window.sharedEditorHarness.cellSelection()?.head)).toBe(
           await page.evaluate(() => window.sharedEditorHarness.caret()),
         );
@@ -453,19 +458,23 @@ for (const [name, options] of Object.entries(profiles))
         expect(text).toContain("one");
         expect(text).not.toContain("javascript:");
         expect(await page.evaluate(() => window.sharedEditorHarness.errors())).toContain("images:1");
-        await page.locator('.ste-cell[data-r="1"][data-c="0"]').click();
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').click();
         await page.locator(":focus").evaluate(
           (el, html) => {
             const data = new DataTransfer();
             data.setData("text/html", html);
             el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
           },
-          html.replace("one", "cell-pasted-value"),
+          html.replace("<td>one</td>", "<td>cell-pasted-value</td>"),
         );
         expect(await page.evaluate(() => window.sharedEditorHarness.text())).toContain("cell-pasted-value");
         expect(await page.evaluate(() => window.sharedEditorHarness.errors().filter((error) => error === "images:1").length)).toBe(2);
         await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-        expect(await page.locator("#root script, #root iframe, #root img, #root [onerror]").count()).toBe(0);
+        expect(
+          await page
+            .locator("#root script, #root iframe, #root img:not(.cm-widgetBuffer), #root [src], #root [srcset], #root [onerror]")
+            .evaluateAll((nodes) => nodes.map((node) => node.outerHTML)),
+        ).toEqual([]);
         expect(await page.locator("body").getAttribute("data-clipboard-executed")).toBeNull();
         expect(requests).toEqual([]);
       } finally {
@@ -475,7 +484,7 @@ for (const [name, options] of Object.entries(profiles))
     test.skipIf(browserName !== "chromium")("real Chromium IME preserves concurrent cell input", async () => {
       const { context, page } = await open();
       try {
-        await page.locator('.ste-cell[data-r="1"][data-c="0"]').click();
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').click();
         await page.keyboard.press("End");
         const cdp = await context.newCDPSession(page);
         await cdp.send("Input.imeSetComposition", { text: "にほん", selectionStart: 3, selectionEnd: 3 });
@@ -495,7 +504,7 @@ for (const [name, options] of Object.entries(profiles))
     test("composition preserves a remote replacement of equal length", async () => {
       const { context, page } = await open();
       try {
-        await page.locator('.ste-cell[data-r="1"][data-c="0"]').click();
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').click();
         await page.evaluate(() => {
           const cell = document.activeElement!;
           cell.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
@@ -544,13 +553,45 @@ for (const [name, options] of Object.entries(profiles))
         await page.evaluate((source) => window.sharedEditorHarness.load(source), source);
         expect(await page.locator("[data-extra]").textContent()).toBe("EXTRA");
         await page.evaluate(() => window.sharedEditorHarness.mode("source"));
-        expect(await page.locator(".ste-table").count()).toBe(0);
+        expect(await page.locator(".k2b-ste-table").count()).toBe(0);
         await page.evaluate(() => {
           window.sharedEditorHarness.mode("formatted");
           window.sharedEditorHarness.readOnly(true);
         });
-        expect(await page.locator(".ste-cell").first().getAttribute("contenteditable")).toBe("false");
+        expect(await page.locator(".k2b-ste-cell").first().getAttribute("contenteditable")).toBe("false");
         expect(await page.evaluate(() => window.sharedEditorHarness.text())).toBe(source);
+      } finally {
+        await context.close();
+      }
+    });
+    test("Select All in a cell replaces only that cell", async () => {
+      const { context, page } = await open();
+      try {
+        const before = await page.evaluate(() => window.sharedEditorHarness.text());
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="1"]').click();
+        await page.keyboard.press("ControlOrMeta+a");
+        expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("4");
+        await page.keyboard.type("12");
+        expect(await page.evaluate(() => window.sharedEditorHarness.text())).toBe(before.replace("| Paper | 4 |", "| Paper | 12 |"));
+      } finally {
+        await context.close();
+      }
+    });
+    test("extra-cell markers follow header width without changing the grid shape", async () => {
+      const { context, page } = await open();
+      try {
+        await page.evaluate(() => window.sharedEditorHarness.load("| A | B |\n| --- | --- |\n| x | y | EXTRA |"));
+        expect(await page.locator("[data-extra]").textContent()).toBe("EXTRA");
+        await page.locator(".k2b-ste-cell").first().click();
+        await page.evaluate(() => window.sharedEditorHarness.action("completeColumns"));
+        expect(await page.locator("[data-extra]").count()).toBe(0);
+        expect(await page.locator(".k2b-ste-cell").last().textContent()).toBe("EXTRA");
+        await page.evaluate(() => {
+          const text = window.sharedEditorHarness.text();
+          const body = text.indexOf("\n", text.indexOf("\n") + 1) + 1;
+          window.sharedEditorHarness.remote(0, "| A | B |\n| --- | --- |\n", body);
+        });
+        expect(await page.locator("[data-extra]").textContent()).toBe("EXTRA");
       } finally {
         await context.close();
       }
@@ -580,7 +621,7 @@ for (const [name, options] of Object.entries(profiles))
     test("all cell clipboard routes preserve data and enforce table budgets", async () => {
       const { context, page } = await open();
       try {
-        const cell = page.locator('.ste-cell[data-r="1"][data-c="0"]');
+        const cell = page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]');
         await cell.click();
         await cell.evaluate((el) => {
           const data = new DataTransfer();
@@ -607,7 +648,7 @@ for (const [name, options] of Object.entries(profiles))
         await context.close();
       }
     });
-    test("arrows enter tables while Tab from prose leaves the editor", async () => {
+    test("arrows and native Tab enter the grid through one cell, respecting Tab-for-focus", async () => {
       const { context, page } = await open();
       try {
         await page.evaluate(() => window.sharedEditorHarness.selection(7));
@@ -616,7 +657,17 @@ for (const [name, options] of Object.entries(profiles))
         await page.keyboard.press("ArrowUp");
         expect(await page.locator(":focus").getAttribute("class")).toContain("cm-content");
         await page.keyboard.press("Tab");
-        expect(await page.locator(":focus").getAttribute("id")).toBe("after-editor");
+        expect(await page.locator(":focus").getAttribute("data-r")).toBe("0");
+        expect(await page.locator('.k2b-ste-cell[tabindex="0"]').count()).toBe(1);
+        await page.evaluate(() => window.sharedEditorHarness.tabMovesFocus(true));
+        const before = await page.evaluate(() => window.sharedEditorHarness.text());
+        await page.keyboard.press("Shift+Tab");
+        expect(await page.locator(":focus").getAttribute("class")).toContain("cm-content");
+        await page.keyboard.press("Tab");
+        expect(await page.locator(":focus").getAttribute("data-r")).toBe("0");
+        await page.keyboard.press("Tab");
+        expect(await page.evaluate(() => document.activeElement?.matches(".k2b-ste-cell"))).toBe(false);
+        expect(await page.evaluate(() => window.sharedEditorHarness.text())).toBe(before);
       } finally {
         await context.close();
       }
@@ -626,7 +677,7 @@ for (const [name, options] of Object.entries(profiles))
       try {
         const source = await page.evaluate(() => window.sharedEditorHarness.text());
         await page.evaluate((source) => window.sharedEditorHarness.load(source, true), source);
-        await page.locator('.ste-cell[data-r="1"][data-c="0"]').click();
+        await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').click();
         await page.evaluate(() => window.sharedEditorHarness.action("colRight"));
         expect(await page.evaluate(() => window.sharedEditorHarness.calls())).toEqual(["colRight"]);
         expect(await page.evaluate(() => window.sharedEditorHarness.text())).toBe(source);
@@ -634,7 +685,12 @@ for (const [name, options] of Object.entries(profiles))
         await page.evaluate(() => window.sharedEditorHarness.action("deleteRow"));
         expect(await page.evaluate(() => window.sharedEditorHarness.errors())).toContain("structureUnavailable");
         await page.keyboard.press("Enter");
-        expect(await page.locator('.ste-cell[data-r="3"]').count()).toBe(2);
+        expect(await page.locator(":focus").getAttribute("data-r")).toBe("2");
+        expect(await page.evaluate(() => window.sharedEditorHarness.text())).toBe(source);
+        await page.keyboard.press("Enter");
+        expect(await page.locator('.k2b-ste-cell[data-r="3"]').count()).toBe(2);
+        expect(await page.locator(":focus").getAttribute("data-r")).toBe("3");
+        expect(await page.evaluate(() => window.sharedEditorHarness.text())).toContain("\n\nAfter");
       } finally {
         await context.close();
       }

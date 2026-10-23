@@ -51,6 +51,7 @@ import { encodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, NOTE_PDF_OMISSIONS_H
 import { PRESENTATION_MODES } from "@/lib/presentation-mode";
 import {
   decodeTableActionIntent,
+  decodeTableFocus,
   NoteTableActionErrorSchema,
   NoteTableActionRequestSchema,
   NoteTableActionResponseSchema,
@@ -2189,6 +2190,8 @@ const app = new Hono<AuthContext>()
         noteId: noteCheck.data.id,
         permission,
         intent: decodeTableActionIntent(data.intent),
+        focus: data.focus ? decodeTableFocus(data.focus) : undefined,
+        caret: data.caret,
         restoreRevision: data.restoreRevision,
         actionId: data.actionId,
         createdBy: user?.id ?? null,
@@ -2217,6 +2220,7 @@ const app = new Hono<AuthContext>()
           accepted: result.accepted,
           cursor: result.cursor,
           receipt: result.receipt,
+          focus: result.focus,
         },
         result.status,
       );

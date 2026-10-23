@@ -184,6 +184,7 @@ export const notebooksService = {
     update: notes.update,
     editContent: notes.editContent,
     tableAction: notes.tableAction,
+    acceptYjsUpdate: notes.acceptYjsUpdate,
     remove: notes.remove,
     move: notes.move,
     resetOrder: notes.resetOrder,

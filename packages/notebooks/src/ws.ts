@@ -1,7 +1,8 @@
 import type { NotebookPresenceParticipant, User } from "@k2b/cloud/contracts";
 import { auth, getLocale } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
-import { CursorMismatchError, RetentionGapError, type TopicEvent, type TopicLiveEvent } from "@k2b/sync";
+import { fromBase64 } from "@k2b/cloud/shared-text";
+import { ConflictError, CursorMismatchError, RetentionGapError, type TopicEvent, type TopicLiveEvent } from "@k2b/sync";
 import { retry } from "@k2b/sync/retry";
 import type { ServerWebSocket } from "bun";
 import { Hono } from "hono";
@@ -84,6 +85,7 @@ const SyncPublishMessageSchema = z.object({
   payload: z.object({
     noteId: z.string().regex(SHORT_ID_REGEX),
     payload: z.string().min(1).max(notebooksYjs.maxSyncPayloadLength),
+    baseCursor: z.string().max(256).nullable().optional(),
     restoreRevision: RestoreRevisionSchema,
   }),
 });
@@ -167,6 +169,7 @@ type PushUpdate = {
   payload: string;
   originPeerId: string | null;
   actionId?: string;
+  retainedColumn?: boolean;
   restoreRevision?: string;
 };
 
@@ -729,6 +732,7 @@ const toPushUpdate = (event: TopicEvent<YjsTopicEvent> | TopicLiveEvent<YjsTopic
   payload: event.data.payload,
   originPeerId: event.data.originPeerId,
   ...(event.data.actionId ? { actionId: event.data.actionId } : {}),
+  ...(event.data.history?.retained ? { retainedColumn: true } : {}),
   ...(event.data.restoreRevision !== undefined ? { restoreRevision: event.data.restoreRevision } : {}),
 });
 
@@ -1150,21 +1154,24 @@ const handleSyncPublish = async (ctx: WsContext, payload: z.infer<typeof SyncPub
     return;
   }
 
-  // Topic keys stay UUID-backed below the public short-id boundary.
-  const noteTopic = createYjsTopic();
-  const published = await noteTopic.publish({
-    tenantId: noteId,
-    data: {
-      kind: "sync",
-      payload: payload.payload,
-      originNodeId: NODE_ID,
-      originPeerId: ctx.peerId,
-      // A restore can race the store read above. Consumers must fence these
-      // bytes by their originating document, never by a newer store revision.
-      restoreRevision: payload.restoreRevision,
-      actor: { kind: "user", id: ctx.user!.id },
-    },
+  // Decode alone cannot validate the target of a delayed edit. Admission and
+  // its CAS happen before the echo that acknowledges the person's bytes.
+  const published = await notebooksService.note.acceptYjsUpdate({
+    noteId,
+    update: fromBase64(payload.payload),
+    baseCursor: payload.baseCursor ?? null,
+    restoreRevision: payload.restoreRevision,
+    originNodeId: NODE_ID,
+    originPeerId: ctx.peerId,
+    actor: { kind: "user", id: ctx.user!.id },
+    signal: ctx.streamAbort?.signal,
+    validate: async () =>
+      (await revalidateNoteAccess(ctx)) && ctx.phase === "joined" && ctx.noteId === noteId && ensureWritableNote(ctx, payload.noteId),
   });
+  if (published.status !== "accepted") {
+    await requireReopen(ctx, payload.noteId);
+    return;
+  }
 
   markDirty(ctx, published.cursor);
 };
@@ -1362,6 +1369,17 @@ const app = new Hono().get(
                 currentCtx,
                 ERROR_CODE.storageExhausted,
                 currentCtx.messages.liveSyncStorageExhausted,
+                currentCtx.noteShortId ?? undefined,
+              );
+              return;
+            }
+            if (error instanceof ConflictError) {
+              // Nothing was acknowledged: replay the new head, then retry the
+              // same pending bytes with their original observed base cursor.
+              await fatal(
+                currentCtx,
+                ERROR_CODE.streamFailed,
+                currentCtx.messages.liveSyncStreamFailed,
                 currentCtx.noteShortId ?? undefined,
               );
               return;

@@ -1,4 +1,6 @@
+import { history, historyKeymap, redo, undo } from "@codemirror/commands";
 import { ChangeSet } from "@codemirror/state";
+import { keymap } from "@codemirror/view";
 import { createTextEditor } from "../src/text-editor/engine";
 import { commands, type InlineFormat } from "../src/text-editor/format";
 import { deleteColumn, findTables, insertColumn } from "../src/text-editor/markdown-table";
@@ -8,11 +10,13 @@ import { formatActiveCell, type MenuAction, runMenuAction } from "../src/text-ed
 let editor: ReturnType<typeof createTextEditor>;
 const errors: string[] = [];
 const calls: string[] = [];
+let tabMovesFocus = false;
 let cellSelection: { anchor: number; head: number } | null = null;
 const root = document.getElementById("root")!;
 const labels = textEditorMessages.resolve(["en"]).t;
 const load = (doc: string, collaborative = false, maxLength = 2097152, customHistory = false) => {
   editor?.destroy();
+  tabMovesFocus = false;
   errors.length = 0;
   calls.length = 0;
   editor = createTextEditor({
@@ -20,13 +24,19 @@ const load = (doc: string, collaborative = false, maxLength = 2097152, customHis
     doc,
     label: "Text",
     onDroppedImages: (count) => errors.push(`images:${count}`),
+    // The engine always routes history to its host; the standalone path uses CodeMirror's own.
+    extensions: customHistory ? [] : [history(), keymap.of(historyKeymap)],
     host: {
       cellLabel: (row, column) => labels.cellLabel({ row, column }),
       maxLength,
+      tabMovesFocus: () => tabMovesFocus,
       onCellSelection: (selection) => {
         cellSelection = selection;
       },
-      ...(customHistory ? { undo: () => calls.push("undo"), redo: () => calls.push("redo") } : {}),
+      boundary: () => {},
+      ...(customHistory
+        ? { undo: () => calls.push("undo"), redo: () => calls.push("redo") }
+        : { undo: () => undo(editor.view), redo: () => redo(editor.view) }),
       maxPasteCells: 2000,
       onRecovery: (text) => errors.push(`recovery:${text}`),
       onError: (code) => errors.push(code),
@@ -50,13 +60,16 @@ window.sharedEditorHarness = {
   text: () => editor.view.state.doc.toString(),
   errors: () => [...errors],
   cellSelection: () => cellSelection,
+  tabMovesFocus: (on: boolean) => {
+    tabMovesFocus = on;
+  },
   caret: () => editor.view.state.selection.main.head,
   calls: () => [...calls],
   mode: (mode: "source" | "formatted" | "plain") => editor.setMode(mode),
   readOnly: (on: boolean) => editor.setReadOnly(on),
   remote: (from: number, insert: string, to = from) => editor.view.dispatch({ changes: { from, to, insert } }),
   action: (action: MenuAction) => {
-    const wrap = root.querySelector<HTMLElement>(".ste-table");
+    const wrap = root.querySelector<HTMLElement>(".k2b-ste-table");
     if (wrap) runMenuAction(editor.view, wrap, action);
   },
   selection: (from: number, to = from) => {
@@ -90,6 +103,7 @@ declare global {
       load: (doc: string, collaborative?: boolean, maxLength?: number, customHistory?: boolean) => void;
       text: () => string;
       errors: () => string[];
+      tabMovesFocus: (on: boolean) => void;
       caret: () => number;
       cellSelection: () => { anchor: number; head: number } | null;
       calls: () => string[];

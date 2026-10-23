@@ -15,6 +15,44 @@ const grid = (doc: string) =>
     .map((line) => line.cells.map((cell) => T.displayCell(cell.text)));
 const edit = (raw: string, next: string) => T.applyChanges(raw, T.cellChanges(raw, next, 0));
 
+describe("table review state", () => {
+  const damaged = "| A | B |\n| separator replaced |\n| first | second |";
+  test("detects a lost separator even after GFM falls back to visible prose", () => {
+    for (const source of [damaged, damaged.replaceAll("\n", "\r\n"), `Before\n\n@costs\n${damaged}\n\nAfter`]) {
+      expect(T.findTables(source)).toHaveLength(0);
+      expect(T.inspectTableStructure(source)).toEqual({ extraCells: false, missingSeparator: true });
+    }
+  });
+  test("checks overflow but accepts valid optional pipes and short rows", () => {
+    expect(T.inspectTableStructure("A | B\n--- | ---\nfirst\n")).toEqual({ extraCells: false, missingSeparator: false });
+    expect(T.inspectTableStructure("| A | B |\n| --- | --- |\n| first | second | extra |")).toEqual({
+      extraCells: true,
+      missingSeparator: false,
+    });
+  });
+  test("leaves code, quotations, lists, ordinary prose and a single pipe row alone", () => {
+    const excluded = [
+      `\`\`\`md\n${damaged}\n\`\`\``,
+      damaged
+        .split("\n")
+        .map((line) => `    ${line}`)
+        .join("\n"),
+      damaged
+        .split("\n")
+        .map((line) => `> ${line}`)
+        .join("\n"),
+      damaged
+        .split("\n")
+        .map((line, i) => `${i ? "  " : "- "}${line}`)
+        .join("\n"),
+      "Choose left | right\nNext line | more text",
+      "| A | B |",
+      "\\| A | B \\|\n\\| C | D \\|",
+    ];
+    for (const source of excluded) expect(T.inspectTableStructure(source)).toEqual({ extraCells: false, missingSeparator: false });
+  });
+});
+
 describe("Lezer GFM table boundaries", () => {
   test("only top-level tables, excluding code, quotes and list markers", () => {
     const source = "| h |\n| --- |\n| x |";
@@ -404,4 +442,60 @@ test("repair counts quadratic grid padding before allocation and leaves over-bud
   expect(expanded.length).toBeGreaterThan(4096);
   expect(T.repairTables(source, expanded.length)).toEqual(changes);
   expect(T.repairTables(source, expanded.length - 1)).toEqual([]);
+});
+
+describe("approved table menu transformations", () => {
+  for (const newline of ["\n", "\r\n"]) {
+    test(`moving a body row preserves source outside the moved row (${JSON.stringify(newline)})`, () => {
+      const source = ["Before", "", "| Head |", "| :--- |", "| first \\| value |", "| second |", "", "After"].join(newline);
+      const moved = T.applyChanges(source, T.moveRow(source, table(source), 1, 2));
+      expect(grid(moved)).toEqual([["Head"], ["second"], ["first | value"]]);
+      expect(T.applyChanges(moved, T.moveRow(moved, table(moved), 2, 1))).toBe(source);
+      expect(T.moveRow(source, table(source), 1, 0)).toEqual([]);
+      expect(T.moveRow(source, table(source), 1, 3)).toEqual([]);
+    });
+
+    test(`header switch preserves every value and the original alignment (${JSON.stringify(newline)})`, () => {
+      const source = ["| Name | Hours |", "| :--- | ---: |", "| Ada | 3 |"].join(newline);
+      const off = T.applyChanges(source, T.toggleHeader(source, table(source)));
+      expect(grid(off)).toEqual([
+        ["", ""],
+        ["Name", "Hours"],
+        ["Ada", "3"],
+      ]);
+      expect(table(off).align).toEqual(["left", "right"]);
+      expect(T.applyChanges(off, T.toggleHeader(off, table(off)))).toBe(source);
+    });
+  }
+
+  test("column movement keeps escaped values, formulas, alignment and optional outer pipes", () => {
+    const source = "A | B | C\n--- | ---: | :---\none \\| two | =SUM(A) | keep";
+    const moved = T.applyChanges(source, T.moveColumn(table(source), 0, 1));
+    expect(grid(moved)).toEqual([
+      ["B", "A", "C"],
+      ["=SUM(A)", "one | two", "keep"],
+    ]);
+    expect(table(moved).align).toEqual(["right", null, "left"]);
+    expect(T.applyChanges(moved, T.moveColumn(table(moved), 1, 0))).toBe(source);
+    expect(T.moveColumn(table(source), 0, 2)).toEqual([]);
+    expect(T.moveColumn(table("| A | B |\n| --- | --- |\n| one |"), 0, 1)).toEqual([]);
+  });
+
+  test("enabling a header fills its missing cells without losing later columns", () => {
+    const source = "| | |\n| --- | --- |\n| Name |\n| Ada | 3 |";
+    const shown = T.applyChanges(source, T.toggleHeader(source, table(source)));
+    expect(grid(shown)).toEqual([
+      ["Name", ""],
+      ["Ada", "3"],
+    ]);
+    expect(T.inspectTableStructure(shown)).toEqual({ extraCells: false, missingSeparator: false });
+  });
+
+  test("deleting one table leaves neighboring prose and tables unchanged", () => {
+    const first = "| A |\n| --- |\n| value |";
+    const second = "| B |\n| --- |\n| keep |";
+    const source = `Before\n\n${first}\n\nBetween\n\n${second}\n\nAfter`;
+    const deleted = T.applyChanges(source, T.deleteTable(T.findTables(source)[0]!));
+    expect(deleted).toBe(`Before\n\n\n\nBetween\n\n${second}\n\nAfter`);
+  });
 });

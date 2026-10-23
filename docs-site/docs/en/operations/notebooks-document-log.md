@@ -106,6 +106,21 @@ When an installation is stopped longer than the age limit, positions can fall
 out of the window before the reconcile runs again. The next edit to such a note
 reports a gap and marks its history incomplete, even though no update was lost.
 
+## Upgrade readers before enabling table history
+
+Collaborative table actions now retain their structural history and restored
+document revision in log events. Upgrade every Notebook log reader and browser
+transport before enabling those actions. Older readers cannot enforce the
+revision and original-target checks; this requires no change to the stored
+Markdown format.
+
+Admission checks delayed browser updates against their original log position
+before acknowledging them. If the required history is missing or a moved cell
+cannot be targeted safely, the editor preserves unconfirmed input for visible
+recovery. The same recovery applies when concurrent edits would exceed the
+existing document text limit. See [Shared text documents](../data/shared-text-documents)
+for the admission and transport contract.
+
 ## Retire per-note topics from older releases
 
 The `notebooks:yjs-legacy-migration` schedule runs every five minutes.

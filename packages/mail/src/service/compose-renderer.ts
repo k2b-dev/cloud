@@ -1,6 +1,6 @@
 import { EMAIL_HTML_ALLOWED_ATTRIBUTES, EMAIL_HTML_SANITIZE_OPTIONS, EMAIL_HTML_TAGS, markdown } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { findTables } from "@k2b/ui/text-editor/model";
+import { inspectTableStructure } from "@k2b/ui/text-editor/model";
 import { convert } from "html-to-text";
 import juice from "juice";
 import { Tokenizer, TypeGuards } from "liquidjs";
@@ -766,9 +766,11 @@ export const renderComposeContent = (params: {
   // The editor deliberately shows cells beyond the header width. GFM's email
   // renderer drops them, even when they contain text. Refuse the same source
   // at the common preview/send boundary, including expanded signatures.
-  if (findTables(source).some((table) => table.lines.some((line) => line.cells.length > table.columns))) {
+  const tableProblems = inspectTableStructure(source);
+  if (tableProblems.extraCells) {
     return fail(composeRenderFailure("tableNeedsReview"));
   }
+  if (tableProblems.missingSeparator) return fail(composeRenderFailure("tableSeparatorNeedsReview"));
 
   try {
     const blankLineToken = `MAILBLANKLINE${crypto.randomUUID().replaceAll("-", "").toUpperCase()}`;

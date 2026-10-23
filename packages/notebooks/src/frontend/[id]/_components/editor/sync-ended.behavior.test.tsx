@@ -62,7 +62,7 @@ const routeGet = mock(async ({ query: { href } }: { query: { href: string } }) =
     kind: "ok",
     state: {
       href,
-      note: { id, title: id, lockedAt: null, historyIncomplete: false, yjsSnapshot: null },
+      note: { id, title: id, lockedAt: null, historyIncomplete: false, yjsSnapshot: null, yjsRestoreRevision: "0" },
       detail: detail(id),
     },
   });
@@ -159,7 +159,15 @@ const beforeUnloadPrevented = () => {
   window.dispatchEvent(event);
   return event.defaultPrevented;
 };
-const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = {}) => {
+const mountNoteEditor = ({
+  pending: initialPending = true,
+  readOnly = false,
+  recoveryText,
+}: {
+  pending?: boolean;
+  readOnly?: boolean;
+  recoveryText?: string;
+} = {}) => {
   let pending = initialPending;
   const dom = createDomTestHarness();
   delegateEvents(["click"], dom.document);
@@ -175,7 +183,36 @@ const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = 
     const dispose = mock(() => {});
     const reconnectNow = mock(() => {});
     providers.push({ opts, dispose, reconnectNow });
-    return { reconnectNow, connect: () => {}, resume: () => {}, dispose, hasUnsentChanges: () => pending };
+    return {
+      reconnectNow,
+      connect: () => {},
+      resume: () => {},
+      dispose,
+      hasUnsentChanges: () => pending,
+      restoreRevision: () => opts.initialRestoreRevision ?? null,
+      // This fixture never replays a connection, so server table actions stay unavailable.
+      canStructure: () => false,
+      canUndo: () => !!opts.undoManager?.undoStack.length,
+      canRedo: () => !!opts.undoManager?.redoStack.length,
+      undo: async () => {
+        opts.undoManager?.undo();
+        return null;
+      },
+      redo: async () => {
+        opts.undoManager?.redo();
+        return null;
+      },
+      setInverseHandler: () => {},
+      recoveryInput: () => ({
+        state: Y.encodeStateAsUpdate(opts.doc),
+        text: recoveryText ?? opts.doc.getText("codemirror").toString(),
+        pending: [],
+        baseCursor: null,
+      }),
+      beginAction: () => {
+        throw new Error("The editor must finish synchronizing before changing the table structure");
+      },
+    };
   });
   const confirmed = spyOn(prompts, "confirm").mockResolvedValue(false);
   routeGet.mockClear();
@@ -249,6 +286,25 @@ describe("sync ended editor recovery", () => {
     test.skip("runs with browser export conditions", () => {});
     return;
   }
+
+  test("ended sync copies the preserved input from before a conflicting remote merge", async () => {
+    const preserved = "| Item | New column |\n| --- | --- |\n| Paper | My offline input |";
+    using editor = mountNoteEditor({ recoveryText: preserved });
+    const copied = spyOn(loaded!.clipboard, "copy").mockResolvedValue(undefined);
+    const success = spyOn(loaded!.toast, "success").mockImplementation(() => ({ dismiss() {}, update() {} }));
+    try {
+      editor.end();
+      const copy = Array.from(editor.dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Copy text");
+      expect(copy).toBeDefined();
+      copy!.click();
+      await flush();
+      expect(copied).toHaveBeenCalledWith(preserved);
+      expect(editor.view().state.doc.toString()).toBe(markdown);
+    } finally {
+      copied.mockRestore();
+      success.mockRestore();
+    }
+  });
 
   test("a late panel receives sync and presence, requests reconnect and jumps without moving selection", async () => {
     using editor = mountNoteEditor({ pending: false });
@@ -324,6 +380,7 @@ describe("sync ended editor recovery", () => {
   test("soft requests ask before replacing the editor, cancel keeps text, confirm leaves once", async () => {
     using editor = mountNoteEditor();
     const instance = editor.providers[0]!;
+    expect(instance.opts.initialRestoreRevision).toBe("0");
     const view = editor.view();
     editor.end();
     let answer!: (leave: boolean) => void;
@@ -353,6 +410,7 @@ describe("sync ended editor recovery", () => {
     expect(instance.dispose).toHaveBeenCalledTimes(1);
     expect(window.location.pathname + window.location.search).toBe(otherHref);
     expect(editor.providers).toHaveLength(2);
+    expect(editor.providers[1]!.opts.initialRestoreRevision).toBe("0");
     // The old guard is removed along with its editor instance.
     await loaded!.navigateToNotebookNote("/app/notebooks/Book01/notes/Third1?mode=write");
     expect(editor.confirmed).toHaveBeenCalledTimes(2);

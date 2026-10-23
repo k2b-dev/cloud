@@ -4,11 +4,12 @@ import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server";
 import { logger, get as settingsGet, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
 import {
   planTableAction,
+  prepareTableActionFocus,
   SHARED_TEXT_NAME,
   type SharedTextEditResult,
-  type TableActionIntent,
   TableActionLimitError,
   TableActionRejectedError,
+  type TableFocusWitness,
 } from "@k2b/cloud/shared-text";
 import { type DateContext, dates, err, fail, fromBase64Strict, ok, type Result } from "@k2b/stdlib";
 import { ConflictError, RetentionGapError } from "@k2b/sync";
@@ -27,7 +28,13 @@ import { compareNoteOrder, isHandOrdered, sortNoteLevels } from "../lib/note-ord
 import { createInitialNoteMarkdown, deriveNoteTitle, hasUsableNoteTitle } from "../lib/note-title";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate } from "../lib/note-title-template";
 import { generateUniqueShortId } from "../lib/short-id";
-import { NOTE_TABLE_ACTION_MAX_LENGTH, type NoteTableActionErrorCode, type NoteTableActionResponse } from "../lib/table-actions";
+import {
+  encodeTableFocus,
+  NOTE_TABLE_ACTION_MAX_LENGTH,
+  type NoteTableActionErrorCode,
+  type NoteTableActionResponse,
+  type NoteTableIntent,
+} from "../lib/table-actions";
 import { buildNotebookVisibleAccessCondition, mayReadAcrossNotebooks } from "./access";
 import * as activity from "./activity";
 import { dataPropertiesForContent } from "./note-properties";
@@ -1442,6 +1449,7 @@ type NoteTableActionFailure = {
   accepted: boolean | null;
   cursor: string | null;
   receipt: NoteTableActionResponse["receipt"];
+  focus?: NoteTableActionResponse["focus"];
 };
 
 export type NoteTableActionResult = { ok: true; data: NoteTableActionResponse } | NoteTableActionFailure;
@@ -1463,7 +1471,9 @@ export const tableAction = async (params: {
   notebookId: string;
   noteId: string;
   permission: PermissionLevel;
-  intent: TableActionIntent;
+  intent: NoteTableIntent;
+  focus?: TableFocusWitness;
+  caret?: { row: number; column: number };
   restoreRevision: string;
   actionId: string;
   createdBy: string | null;
@@ -1490,57 +1500,93 @@ export const tableAction = async (params: {
   if (blocked) return blocked;
 
   let result: SharedTextEditResult<NoteTextSaved>;
+  let focusState: Uint8Array | undefined;
+  let focusPlan: ((after: Y.Text) => TableFocusWitness | null) | undefined;
   try {
-    result = await noteDocuments.change(
-      params.noteId,
-      {
+    if ("receiptCursor" in params.intent) {
+      result = await noteDocuments.inverse(params.noteId, {
         actor: params.actor,
         context: { createdBy: params.createdBy },
         signal: params.signal,
-        maxLength: NOTE_TABLE_ACTION_MAX_LENGTH,
         actionId: params.actionId,
-      },
-      async (current) => {
-        // Replay may have waited while the note was locked, moved, or recovered.
-        const blocked = await checkNote();
-        if (blocked) throw new NoteTableActionAbort(blocked);
-        const stored = await getYjsStateWithCursor({ noteId: params.noteId });
-        if (!stored) throw new NoteTableActionAbort(tableActionFailure("table_action_note_not_found", "Note not found", 404));
-        if (stored.historyIncomplete)
-          throw new NoteTableActionAbort(
-            tableActionFailure(
-              "table_action_history_incomplete",
-              "Note history is incomplete; table action rejected without changing text",
-              409,
-            ),
-          );
-        if (current.restoreRevision !== params.restoreRevision || stored.restoreRevision !== current.restoreRevision)
-          throw new NoteTableActionAbort(
-            tableActionFailure("table_action_restore_conflict", "Note was restored; table action rejected without changing text", 409),
-          );
-        const doc = new Y.Doc();
-        try {
-          Y.applyUpdate(doc, current.state());
-          const changes = planTableAction(doc.getText(SHARED_TEXT_NAME), params.intent, NOTE_TABLE_ACTION_MAX_LENGTH);
-          const length = changes.reduce((length, change) => length + change.insert.length - (change.to - change.from), current.text.length);
-          if (length > NOTE_TABLE_ACTION_MAX_LENGTH)
+        receiptCursor: params.intent.receiptCursor,
+        restoreRevision: params.restoreRevision,
+        maxLength: NOTE_TABLE_ACTION_MAX_LENGTH,
+        validate: async () => {
+          const blocked = await checkNote();
+          if (blocked) throw new NoteTableActionAbort(blocked);
+          const stored = await getYjsStateWithCursor({ noteId: params.noteId });
+          if (!stored || stored.restoreRevision !== params.restoreRevision)
+            throw new NoteTableActionAbort(
+              tableActionFailure("table_action_restore_conflict", "Note was restored; table action rejected without changing text", 409),
+            );
+        },
+      });
+    } else {
+      const intent = params.intent;
+      result = await noteDocuments.change(
+        params.noteId,
+        {
+          actor: params.actor,
+          context: { createdBy: params.createdBy },
+          signal: params.signal,
+          maxLength: NOTE_TABLE_ACTION_MAX_LENGTH,
+          actionId: params.actionId,
+        },
+        async (current) => {
+          // Replay may have waited while the note was locked, moved, or recovered.
+          const blocked = await checkNote();
+          if (blocked) throw new NoteTableActionAbort(blocked);
+          const stored = await getYjsStateWithCursor({ noteId: params.noteId });
+          if (!stored) throw new NoteTableActionAbort(tableActionFailure("table_action_note_not_found", "Note not found", 404));
+          if (stored.historyIncomplete)
             throw new NoteTableActionAbort(
               tableActionFailure(
-                "table_action_too_large",
-                "Table action exceeds the 2,097,152 UTF-16 code unit limit; existing text was preserved",
-                413,
+                "table_action_history_incomplete",
+                "Note history is incomplete; table action rejected without changing text",
+                409,
               ),
             );
-          return changes;
-        } finally {
-          doc.destroy();
-        }
-      },
-    );
+          if (current.restoreRevision !== params.restoreRevision || stored.restoreRevision !== current.restoreRevision)
+            throw new NoteTableActionAbort(
+              tableActionFailure("table_action_restore_conflict", "Note was restored; table action rejected without changing text", 409),
+            );
+          const doc = new Y.Doc();
+          try {
+            const state = current.state();
+            Y.applyUpdate(doc, state);
+            if (params.focus) {
+              focusState = state;
+              focusPlan = prepareTableActionFocus(doc.getText(SHARED_TEXT_NAME), intent, params.focus, params.caret);
+            }
+            const changes = planTableAction(doc.getText(SHARED_TEXT_NAME), intent, NOTE_TABLE_ACTION_MAX_LENGTH);
+            const length = changes.reduce(
+              (length, change) => length + change.insert.length - (change.to - change.from),
+              current.text.length,
+            );
+            if (length > NOTE_TABLE_ACTION_MAX_LENGTH)
+              throw new NoteTableActionAbort(
+                tableActionFailure(
+                  "table_action_too_large",
+                  "Table action exceeds the 2,097,152 UTF-16 code unit limit; existing text was preserved",
+                  413,
+                ),
+              );
+            return changes;
+          } finally {
+            doc.destroy();
+          }
+        },
+      );
+    }
   } catch (error) {
     if (error instanceof NoteTableActionAbort) return error.result;
-    if (error instanceof TableActionLimitError)
-      return tableActionFailure(error.code, "Table action exceeds the 2,097,152 UTF-16 code unit limit; existing text was preserved", 413);
+    if (error instanceof TableActionLimitError || error instanceof RangeError)
+      return tableActionFailure(
+        "table_action_too_large",
+        "Table action exceeds the 2,097,152 UTF-16 code unit limit; existing text was preserved",
+        413,
+      );
     if (error instanceof TableActionRejectedError) return tableActionFailure(error.code, error.message, 409);
     if (error instanceof ConflictError)
       return tableActionFailure(
@@ -1566,6 +1612,18 @@ export const tableAction = async (params: {
     return tableActionFailure("table_action_sync_failed", failure.ok ? "Failed to synchronize note stream" : failure.error, 409);
   }
   if (result.status === "unchanged") return { ok: true, data: { changed: false, cursor: null, receipt: null } };
+  let focus: NoteTableActionResponse["focus"] = null;
+  if (focusState && focusPlan && result.receipt) {
+    const doc = new Y.Doc();
+    try {
+      Y.applyUpdate(doc, focusState);
+      Y.applyUpdate(doc, result.receipt.update);
+      const target = focusPlan(doc.getText(SHARED_TEXT_NAME));
+      focus = target ? encodeTableFocus(target) : null;
+    } finally {
+      doc.destroy();
+    }
+  }
   const receipt = result.receipt ? { actionId: result.receipt.actionId, update: toBase64(result.receipt.update) } : null;
   if (result.status === "persistFailed" || !result.saved.ok) {
     const failure = result.status === "persistFailed" ? noteTextFailure(result) : result.saved;
@@ -1574,10 +1632,24 @@ export const tableAction = async (params: {
       accepted: true,
       cursor: result.cursor,
       receipt,
+      focus,
     };
   }
-  return { ok: true, data: { changed: true, cursor: result.cursor, receipt } };
+  return { ok: true, data: { changed: true, cursor: result.cursor, receipt, focus } };
 };
+
+/** Socket has authenticated actor/write access; canonical admission still fences targets and lineage. */
+export const acceptYjsUpdate = (params: {
+  noteId: string;
+  actor: { kind: "user" | "service_account"; id: string };
+  update: Uint8Array;
+  baseCursor: string | null;
+  restoreRevision: string;
+  originNodeId: string;
+  originPeerId: string | null;
+  signal?: AbortSignal;
+  validate?: () => Promise<boolean>;
+}) => noteDocuments.accept(params.noteId, { ...params, maxLength: NOTE_TABLE_ACTION_MAX_LENGTH });
 
 /**
  * Get the stored Yjs state for a note.

@@ -10,7 +10,8 @@ export const formatLabels = Facet.define<
   combine: (values) => values[0] ?? { link: "Link", column: (column) => `Column ${column}` },
 });
 
-export type InlineFormat = "bold" | "italic" | "code" | "strike" | "link";
+/** Named Markdown marks or an app's single-line paired delimiter (for example Notebook's `==`). */
+export type InlineFormat = "bold" | "italic" | "code" | "strike" | "link" | { marker: string };
 /** Pure transaction spec, also used when a missing table cell must be materialized atomically. */
 export const inlineFormat = (state: EditorState, name: InlineFormat): TransactionSpec => {
   if (name === "link") {
@@ -22,7 +23,9 @@ export const inlineFormat = (state: EditorState, name: InlineFormat): Transactio
       userEvent: "input.format",
     };
   }
-  const marker = { bold: "**", italic: "*", code: "`", strike: "~~" }[name];
+  const marker = typeof name === "string" ? { bold: "**", italic: "*", code: "`", strike: "~~" }[name] : name.marker;
+  // A host inline delimiter must not split a cell or introduce another row.
+  if (!marker || /[|\r\n]/.test(marker)) return {};
   return {
     ...state.changeByRange((range) => {
       const text = state.sliceDoc(range.from, range.to);
@@ -139,10 +142,10 @@ export const commands = {
     view.focus();
     queueMicrotask(() => {
       if (!view.dom.isConnected) return;
-      const table = [...view.contentDOM.querySelectorAll<HTMLElement>(".ste-table")].find(
+      const table = [...view.contentDOM.querySelectorAll<HTMLElement>(".k2b-ste-table")].find(
         (element) => view.posAtDOM(element) === line.to + lead.length,
       );
-      const cell = table?.querySelector<HTMLElement>('.ste-cell[data-r="0"][data-c="0"]');
+      const cell = table?.querySelector<HTMLElement>('.k2b-ste-cell[data-r="0"][data-c="0"]');
       if (!cell) return;
       cell.focus();
       const selection = cell.ownerDocument.getSelection();

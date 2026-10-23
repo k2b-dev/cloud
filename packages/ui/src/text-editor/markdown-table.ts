@@ -110,6 +110,35 @@ export const findTables = (doc: string): Table[] => {
 
 export const tableAt = (doc: string, pos: number): Table | null =>
   findTables(doc).find((table) => pos >= table.from && pos <= table.to) ?? null;
+
+/**
+ * Problems that must stay visible before formatted output is sent. A damaged
+ * separator makes GFM fall back to a paragraph: two adjacent pipe-framed rows
+ * there still need review. This only inspects top-level paragraph nodes, never
+ * code, quotations or lists, and does not repair or rewrite any text.
+ */
+export const inspectTableStructure = (doc: string): { extraCells: boolean; missingSeparator: boolean } => {
+  // Both GFM tables and the damaged pipe-framed rows below require a pipe.
+  // Avoid parsing large prose twice on every editor update and mail preview.
+  if (!doc.includes("|")) return { extraCells: false, missingSeparator: false };
+  const extraCells = findTables(doc).some((table) => table.lines.some((line) => line.cells.length > table.columns));
+  const normalized = doc.replace(/\r\n?/g, "\n");
+  const tree = gfm.parse(normalized);
+  let missingSeparator = false;
+  for (let node = tree.topNode.firstChild; node && !missingSeparator; node = node.nextSibling) {
+    if (node.name !== "Paragraph") continue;
+    let consecutive = 0;
+    for (const text of normalized.slice(node.from, node.to).split("\n")) {
+      const line = parseLine(text, 0, "");
+      consecutive = line.leadingPipe && line.trailingPipe ? consecutive + 1 : 0;
+      if (consecutive >= 2) {
+        missingSeparator = true;
+        break;
+      }
+    }
+  }
+  return { extraCells, missingSeparator };
+};
 export const gridLine = (table: Table, row: number): Line | undefined => (index(row) ? table.lines[row === 0 ? 0 : row + 1] : undefined);
 export const rowCount = (table: Table): number => table.lines.length - 1;
 
@@ -250,6 +279,62 @@ export const deleteRow = (table: Table, row: number): Change[] => {
     previous = table.lines[row];
   return row > 0 && line && previous ? [{ from: previous.to, to: line.to, insert: "" }] : [];
 };
+/** Move a body row, retaining every untouched row's original source and identities. */
+export const moveRow = (source: string, table: Table, row: number, to: number): Change[] => {
+  if (!index(row) || !index(to) || row === 0 || to === 0 || row === to) return [];
+  const line = gridLine(table, row),
+    target = gridLine(table, to),
+    previous = table.lines[row];
+  if (!line || !target || !previous) return [];
+  const insertAt = row < to ? target.to : table.lines[to]!.to;
+  return [
+    { from: previous.to, to: line.to, insert: "" },
+    { from: insertAt, to: insertAt, insert: source.slice(previous.to, line.to) },
+  ].sort((a, b) => a.from - b.from);
+};
+
+/** Swap adjacent columns, including their alignment, without rewriting other cells. */
+export const moveColumn = (table: Table, column: number, to: number): Change[] => {
+  if (!index(column) || !index(to) || Math.abs(column - to) !== 1 || column >= table.columns || to >= table.columns) return [];
+  // Complete ragged rows first, so a move cannot discard or invent a target.
+  if (table.lines.some((line) => line.cells.length !== table.columns)) return [];
+  return table.lines
+    .flatMap((line) => {
+      const a = line.cells[column]!,
+        b = line.cells[to]!;
+      return a.text === b.text
+        ? []
+        : [
+            { from: a.from, to: a.to, insert: b.text },
+            { from: b.from, to: b.to, insert: a.text },
+          ];
+    })
+    .sort((a, b) => a.from - b.from);
+};
+
+/** A hidden header is an empty GFM header; its former values become the first body row. */
+export const toggleHeader = (source: string, table: Table): Change[] => {
+  const header = table.lines[0]!,
+    separator = table.lines[1]!;
+  const newline = header.lineBreak || "\n";
+  const marker = source.slice(separator.from, separator.to);
+  if (header.cells.some((cell) => cell.text))
+    return [
+      { from: table.from, to: table.from, insert: `|${"   |".repeat(table.columns)}${newline}${marker}${newline}` },
+      { from: header.to, to: separator.to, insert: "" },
+    ];
+  const first = table.lines[2];
+  if (!first || !first.cells.some((cell) => cell.text) || first.cells.length > table.columns) return [];
+  const padding = appendCells(first, table.columns - first.cells.length)[0]?.insert ?? "";
+  return [
+    { from: table.from, to: first.from, insert: "" },
+    { from: first.to, to: first.to, insert: `${padding}${newline}${marker}` },
+  ];
+};
+
+/** Delete only the selected table; surrounding prose remains byte-for-byte intact. */
+export const deleteTable = (table: Table): Change[] => [{ from: table.from, to: table.to, insert: "" }];
+
 const width = (table: Table) => table.lines.reduce((max, line) => Math.max(max, line.cells.length), table.columns);
 
 /** Insert before `at`, including at the widest row's end; pad ragged rows without dropping cells. */

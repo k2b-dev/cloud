@@ -354,6 +354,15 @@ describe("Notebook Book HTML", () => {
     expect(html).toContain("</i>6</span>");
   });
 
+  test("header-off tables hide only the empty GFM header and preserve all body rows", () => {
+    const { html } = render("|   |   |\n| --- | ---: |\n| Item | Value |\n| Paper | 12 |");
+    expect(html).not.toContain("<thead>");
+    expect(html).not.toContain("<th ");
+    for (const value of ["Item", "Value", "Paper", "12"]) expect(html).toContain(`>${value}</span>`);
+    expect(html).toContain("md-align-right");
+    expect(render("|   | Value |\n| --- | --- |\n| Paper | 12 |").html).toContain("<thead>");
+  });
+
   test("formula values and table links remain escaped and use Book URLs", () => {
     const { html } = render("| Link | Tag |\n| --- | --- |\n| [Note](note://DEF456) | #team |");
     expect(html).toContain("/notes/DEF456?mode=book");

@@ -1,4 +1,4 @@
-import { fromBase64, type TableActionIntent, toBase64 } from "@k2b/cloud/shared-text";
+import { fromBase64, type TableActionIntent, type TableFocusWitness, toBase64 } from "@k2b/cloud/shared-text";
 import * as Y from "yjs";
 import { z } from "zod";
 
@@ -41,8 +41,38 @@ const RowSchema = z.discriminatedUnion("kind", [
 ]);
 const ColumnSchema = z.object({ hyphen: AnchorSchema, left: AnchorSchema, right: AnchorSchema }).strict();
 
+export const NoteTableFocusSchema = z.object({ table: TableSchema, row: RowSchema, column: ColumnSchema }).strict();
+export type EncodedTableFocus = z.infer<typeof NoteTableFocusSchema>;
+export const encodeTableFocus = (focus: TableFocusWitness): EncodedTableFocus => ({
+  table: { headerBreak: toBase64(focus.table.headerBreak), separatorHyphen: toBase64(focus.table.separatorHyphen) },
+  row:
+    focus.row.kind === "header"
+      ? focus.row
+      : { ...focus.row, beforeBreak: toBase64(focus.row.beforeBreak), inside: toBase64(focus.row.inside) },
+  column: { hyphen: toBase64(focus.column.hyphen), left: toBase64(focus.column.left), right: toBase64(focus.column.right) },
+});
+export const decodeTableFocus = (focus: EncodedTableFocus): TableFocusWitness => ({
+  table: { headerBreak: fromBase64(focus.table.headerBreak), separatorHyphen: fromBase64(focus.table.separatorHyphen) },
+  row:
+    focus.row.kind === "header"
+      ? focus.row
+      : { ...focus.row, beforeBreak: fromBase64(focus.row.beforeBreak), inside: fromBase64(focus.row.inside) },
+  column: { hyphen: fromBase64(focus.column.hyphen), left: fromBase64(focus.column.left), right: fromBase64(focus.column.right) },
+});
+
 export const EncodedTableActionIntentSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("completeColumns"), table: TableSchema }).strict(),
+  z.object({ action: z.enum(["moveRowUp", "moveRowDown"]), table: TableSchema, row: RowSchema, neighbor: RowSchema }).strict(),
+  z.object({ action: z.enum(["moveColLeft", "moveColRight"]), table: TableSchema, column: ColumnSchema, neighbor: ColumnSchema }).strict(),
+  z.object({ action: z.enum(["undo", "redo"]), receiptCursor: z.string().min(1).max(256) }).strict(),
+  z
+    .object({
+      action: z.literal("replaceSource"),
+      table: TableSchema,
+      expected: z.string().max(NOTE_TABLE_ACTION_MAX_LENGTH),
+      source: z.string().max(NOTE_TABLE_ACTION_MAX_LENGTH),
+    })
+    .strict(),
+  z.object({ action: z.enum(["completeColumns", "toggleHeader", "deleteTable"]), table: TableSchema }).strict(),
   z.object({ action: z.enum(["rowAbove", "rowBelow", "deleteRow"]), table: TableSchema, row: RowSchema }).strict(),
   z
     .object({
@@ -64,6 +94,14 @@ export const NoteTableActionRequestSchema = z
       .refine((value) => value.length <= 19 && /^(0|[1-9]\d*)$/.test(value) && BigInt(value) <= 9_223_372_036_854_775_807n),
     actionId: z.uuid(),
     intent: EncodedTableActionIntentSchema,
+    focus: NoteTableFocusSchema.optional(),
+    caret: z
+      .object({
+        row: z.number().int().nonnegative().max(NOTE_TABLE_ACTION_MAX_LENGTH),
+        column: z.number().int().nonnegative().max(NOTE_TABLE_ACTION_MAX_LENGTH),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -71,37 +109,37 @@ export type EncodedTableActionIntent = z.infer<typeof EncodedTableActionIntentSc
 export type NoteTableActionRequest = z.infer<typeof NoteTableActionRequestSchema>;
 
 /** Decode only schema-validated transport; planning still validates identity and current context. */
-export const decodeTableActionIntent = (intent: EncodedTableActionIntent): TableActionIntent => {
+export type NoteTableIntent = TableActionIntent | { action: "undo" | "redo"; receiptCursor: string };
+export const decodeTableActionIntent = (intent: EncodedTableActionIntent): NoteTableIntent => {
+  if ("receiptCursor" in intent) return intent;
   const table = { headerBreak: fromBase64(intent.table.headerBreak), separatorHyphen: fromBase64(intent.table.separatorHyphen) };
-  if (intent.action === "completeColumns") return { action: intent.action, table };
-  if ("row" in intent)
-    return {
-      action: intent.action,
-      table,
-      row:
-        intent.row.kind === "header"
-          ? intent.row
-          : {
-              kind: "body",
-              beforeBreak: fromBase64(intent.row.beforeBreak),
-              inside: fromBase64(intent.row.inside),
-              insideKind: intent.row.insideKind,
-            },
-    };
-  return {
-    action: intent.action,
-    table,
-    column: {
-      hyphen: fromBase64(intent.column.hyphen),
-      left: fromBase64(intent.column.left),
-      right: fromBase64(intent.column.right),
-    },
-  };
+  if ("source" in intent) return { action: intent.action, table, expected: intent.expected, source: intent.source };
+  if (!("row" in intent) && !("column" in intent)) return { action: intent.action, table };
+  const decodeRow = (row: z.infer<typeof RowSchema>) =>
+    row.kind === "header"
+      ? row
+      : { kind: "body" as const, beforeBreak: fromBase64(row.beforeBreak), inside: fromBase64(row.inside), insideKind: row.insideKind };
+  const decodeColumn = (column: z.infer<typeof ColumnSchema>) => ({
+    hyphen: fromBase64(column.hyphen),
+    left: fromBase64(column.left),
+    right: fromBase64(column.right),
+  });
+  if ("row" in intent) {
+    const row = decodeRow(intent.row);
+    return "neighbor" in intent
+      ? { action: intent.action, table, row, neighbor: decodeRow(intent.neighbor) }
+      : { action: intent.action, table, row };
+  }
+  const column = decodeColumn(intent.column);
+  return "neighbor" in intent
+    ? { action: intent.action, table, column, neighbor: decodeColumn(intent.neighbor) }
+    : { action: intent.action, table, column };
 };
 
 export const NoteTableActionReceiptSchema = z.object({ actionId: z.uuid(), update: z.string() });
 export const NoteTableActionResponseSchema = z.object({
   changed: z.boolean(),
+  focus: NoteTableFocusSchema.nullable().optional(),
   cursor: z.string().nullable(),
   receipt: NoteTableActionReceiptSchema.nullable(),
 });
@@ -132,6 +170,7 @@ export const NoteTableActionErrorSchema = z.object({
   message: z.string(),
   code: NoteTableActionErrorCodeSchema,
   accepted: z.boolean().nullable(),
+  focus: NoteTableFocusSchema.nullable().optional(),
   cursor: z.string().nullable(),
   receipt: NoteTableActionReceiptSchema.nullable(),
 });

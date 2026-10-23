@@ -85,6 +85,12 @@ describe("synchronous capture and reconstructed server planning", () => {
   test("all menu intents return the existing model's disjoint changes", () => {
     const expected: Record<MenuAction, (t: T.Table) => T.Change[]> = {
       completeColumns: T.completeColumns,
+      toggleHeader: (t) => T.toggleHeader(source, t),
+      deleteTable: T.deleteTable,
+      moveRowUp: (t) => T.moveRow(source, t, 2, 1),
+      moveRowDown: (t) => T.moveRow(source, t, 1, 2),
+      moveColLeft: (t) => T.moveColumn(t, 1, 0),
+      moveColRight: (t) => T.moveColumn(t, 1, 2),
       rowAbove: (t) => T.insertRow(t, 0),
       rowBelow: (t) => T.insertRow(t, 1),
       colLeft: (t) => T.insertColumn(t, 1),
@@ -97,6 +103,12 @@ describe("synchronous capture and reconstructed server planning", () => {
     };
     const actions: MenuAction[] = [
       "completeColumns",
+      "toggleHeader",
+      "deleteTable",
+      "moveRowUp",
+      "moveRowDown",
+      "moveColLeft",
+      "moveColRight",
       "rowAbove",
       "rowBelow",
       "colLeft",
@@ -109,10 +121,16 @@ describe("synchronous capture and reconstructed server planning", () => {
     ];
     for (const action of actions) {
       const { text } = document(source);
-      const intent = capture(text, action);
+      const intent = capture(text, action, action === "moveRowUp" ? 2 : 1);
       expect(intent).not.toBeInstanceOf(Promise);
       const changes = plan(text, intent);
-      expect(changes).toEqual(expected[action](table(text)));
+      if (action === "moveColLeft" || action === "moveColRight") {
+        // Server moves keep the model's exact text but must replace raw moved
+        // cell identities too; otherwise delayed input targets the neighbor.
+        expect(T.applyChanges(text.toString(), changes)).toBe(T.applyChanges(text.toString(), expected[action](table(text))));
+        expect(changes).toHaveLength(table(text).lines.length);
+        for (const change of changes) expect(change.to).toBeGreaterThan(change.from);
+      } else expect(changes).toEqual(expected[action](table(text)));
       apply(text, changes);
       expect(text.toString().startsWith("Before 🦉\n\n")).toBe(true);
       expect(text.toString().endsWith("\n\nAfter")).toBe(true);

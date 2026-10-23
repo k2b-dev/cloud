@@ -1,79 +1,25 @@
-import DOMPurify from "dompurify";
 import { findTables, parseTsv } from "./markdown-table";
 
-/** Parse only the HTML vocabulary that the Markdown converter consumes.
- * Resource attributes and active elements never reach a clipboard consumer.
- * The returned detached body is read as data and never mounted in the editor.
- */
-export const parseClipboardHtml = (html: string): HTMLElement => {
-  const body = DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: [
-      "p",
-      "div",
-      "span",
-      "u",
-      "font",
-      "abbr",
-      "acronym",
-      "cite",
-      "dfn",
-      "mark",
-      "q",
-      "small",
-      "sub",
-      "sup",
-      "big",
-      "tt",
-      "ins",
-      "time",
-      "var",
-      "samp",
-      "kbd",
-      "ruby",
-      "rt",
-      "rp",
-      "bdi",
-      "bdo",
-      "br",
-      "b",
-      "strong",
-      "i",
-      "em",
-      "s",
-      "del",
-      "a",
-      "code",
-      "pre",
-      "h1",
-      "h2",
-      "h3",
-      "h4",
-      "h5",
-      "h6",
-      "ul",
-      "ol",
-      "li",
-      "blockquote",
-      "hr",
-      "section",
-      "article",
-      "table",
-      "thead",
-      "tbody",
-      "tfoot",
-      "tr",
-      "th",
-      "td",
-      "img",
-    ],
-    ALLOWED_ATTR: ["href", "style"],
-    ALLOW_DATA_ATTR: false,
-    ALLOW_ARIA_ATTR: false,
-    RETURN_DOM: true,
-  });
-  if (!(body instanceof HTMLElement)) throw new TypeError("Clipboard HTML did not produce an HTML element");
-  return body;
+type HtmlClipboard = typeof import("./clipboard-html");
+let parser: HtmlClipboard | undefined;
+let loading: Promise<void> | undefined;
+export const htmlClipboardReady = () => parser !== undefined;
+export const loadHtmlClipboard = (): Promise<void> =>
+  (loading ??= import("./clipboard-html").then(
+    (module) => {
+      parser = module;
+    },
+    (error: unknown) => {
+      loading = undefined;
+      throw error;
+    },
+  ));
+const loaded = (): HtmlClipboard => {
+  if (!parser) throw new Error("HTML clipboard parser is not loaded");
+  return parser;
 };
+export const parseClipboardHtml = (html: string) => loaded().parseClipboardHtml(html);
+export const convertClipboardHtml = (html: string, code: boolean) => loaded().convertHtml(html, code);
 
 /** All clipboard entry paths share one preflight, before insertion or conversion. */
 export function inspectClipboard(

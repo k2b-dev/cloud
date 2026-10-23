@@ -1,8 +1,10 @@
 import { expect, spyOn, test } from "bun:test";
 import { ConflictError, type TopicPublish } from "@k2b/sync";
 import * as Y from "yjs";
+import { captureTextAnchor, resolveTextAnchor } from "./anchors";
 import { bindDocuments, createDoc } from "./documents";
 import { applySharedTextEvent, SHARED_TEXT_NAME, sharedTextNodeId, toBase64 } from "./events";
+import { createStructuralFixture } from "./structural-history.test-fixture";
 import type { SharedTextSaveInput, SharedTextStoredState, SharedTextSyncEvent } from "./types";
 
 const fixture = () => {
@@ -440,5 +442,123 @@ test("ordinary text edits keep their originating revision when a snapshot is res
     }
   } finally {
     old.destroy();
+  }
+});
+
+test("ordinary ingress accepts an idle shared-topic snapshot watermark and replays only its new tenant event", async () => {
+  const initial = new Y.Doc();
+  initial.clientID = 17;
+  initial.getText(SHARED_TEXT_NAME).insert(0, "base");
+  const stored: SharedTextStoredState = {
+    state: Y.encodeStateAsUpdate(initial),
+    text: "base",
+    cursor: "s6t.fixture.9",
+    restoreRevision: "0",
+  };
+  const client = createDoc(stored);
+  const before = Y.encodeStateVector(client);
+  client.getText(SHARED_TEXT_NAME).insert(4, " input");
+  const events: { cursor: string; data: SharedTextSyncEvent }[] = [];
+  const documents = bindDocuments(
+    {
+      topic: () => ({
+        latestCursor: async () => events.at(-1)?.cursor ?? null,
+        publish: async (input) => {
+          expect(input.expectedAfter).toBeNull(); // Snapshot covers other tenants' events.
+          const cursor = "s6t.fixture.10";
+          events.push({ cursor, data: input.data });
+          return { cursor, eventId: "event", messageId: "message", streamSequence: 10, duplicate: false };
+        },
+      }),
+      events: async function* () {
+        yield* events;
+      },
+      replay: async ({ doc }) => {
+        for (const event of events) applySharedTextEvent(doc, event, "idle", "0");
+        return [];
+      },
+    },
+    { load: async () => stored, save: async () => {} },
+  );
+  try {
+    expect(
+      await documents.accept("idle", {
+        actor: { kind: "user", id: "author" },
+        update: Y.encodeStateAsUpdate(client, before),
+        baseCursor: stored.cursor,
+        restoreRevision: "0",
+        originNodeId: "node",
+        originPeerId: "peer",
+      }),
+    ).toEqual({ status: "accepted", cursor: "s6t.fixture.10" });
+    const snapshot = (await documents.read("idle"))!;
+    const reloaded = createDoc(snapshot);
+    try {
+      expect(reloaded.getText(SHARED_TEXT_NAME).toString()).toBe("base input");
+    } finally {
+      reloaded.destroy();
+    }
+  } finally {
+    initial.destroy();
+    client.destroy();
+  }
+});
+
+test("only an explicit authorized recreation changes equal-text range identities", async () => {
+  const f = fixture();
+  f.setStored({ text: "abc", state: null, cursor: null, restoreRevision: "revision" });
+  const initial = createDoc((await f.documents.read("doc"))!);
+  const anchor = captureTextAnchor(initial.getText(SHARED_TEXT_NAME), 1);
+  initial.destroy();
+  const options = { actor: null, maxLength: 3, actionId: "identity-fence" };
+  expect((await f.documents.change("doc", options, () => [{ from: 1, to: 2, insert: "b" }])).status).toBe("unchanged");
+  expect(f.events).toHaveLength(0);
+  expect((await f.documents.change("doc", options, () => [{ from: 1, to: 2, insert: "b", recreate: true }])).status).toBe("edited");
+  const current = createDoc((await f.documents.read("doc"))!);
+  try {
+    expect(current.getText(SHARED_TEXT_NAME).toString()).toBe("abc");
+    expect(resolveTextAnchor(current.getText(SHARED_TEXT_NAME), anchor)).toBeNull();
+    expect(f.events[0]!.data.history!.patches[0]!.recreate).toBe(true);
+  } finally {
+    current.destroy();
+  }
+  await expect(f.documents.change("doc", options, () => [{ from: 0, to: 0, insert: "", recreate: true }])).rejects.toBeInstanceOf(
+    RangeError,
+  );
+  expect(f.events).toHaveLength(1);
+});
+
+test("admission validates the merged text limit before confirming individually legal concurrent input", async () => {
+  const f = createStructuralFixture("base");
+  try {
+    const baseCursor = f.peer.cursor;
+    const ownVector = Y.encodeStateVector(f.own.doc),
+      peerVector = Y.encodeStateVector(f.peer.doc);
+    f.own.text.insert(0, "AA");
+    f.peer.text.insert(4, "BB");
+    expect(f.own.text.length).toBe(6);
+    expect(f.peer.text.length).toBe(6);
+    const own = Y.encodeStateAsUpdate(f.own.doc, ownVector),
+      peer = Y.encodeStateAsUpdate(f.peer.doc, peerVector);
+    const options = { actor: f.own.actor, baseCursor, restoreRevision: "0", originNodeId: "fixture", originPeerId: "peer", maxLength: 6 };
+    expect((await f.documents().accept("fixture", { ...options, update: own })).status).toBe("accepted");
+    const count = f.events.length,
+      before = (await f.canonical()).text;
+    expect((await f.documents().accept("fixture", { ...options, actor: f.peer.actor, update: peer })).status).toBe("recoveryRequired");
+    expect(f.events).toHaveLength(count);
+    expect((await f.canonical()).text).toBe(before);
+    expect(f.peer.text.toString()).toBe("baseBB");
+    // The actual transport envelope/source remains available to the provider.
+    const probe = createDoc(f.stored());
+    try {
+      Y.applyUpdate(probe, peer);
+      expect(probe.getText(SHARED_TEXT_NAME).toString()).toContain("BB");
+    } finally {
+      probe.destroy();
+    }
+    for (const maxLength of [-1, 0.5, Number.NaN])
+      await expect(f.documents().accept("fixture", { ...options, update: peer, maxLength })).rejects.toThrow(RangeError);
+  } finally {
+    f.destroy();
   }
 });
