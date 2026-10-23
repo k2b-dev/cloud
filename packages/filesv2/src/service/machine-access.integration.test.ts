@@ -33,6 +33,7 @@ suite("Files machine storage through actual API tokens", () => {
   let runtime: ProcessSync | undefined;
   let gateway: Awaited<ReturnType<typeof activityFilegate>> | undefined;
   let admin: Extract<RequestActor, { kind: "user" }>;
+  let personalAccountId: string;
   let client: Filegate;
   let office: ReturnType<typeof Bun.serve> | undefined;
   let oauthPrivateKey: CryptoKey;
@@ -163,6 +164,9 @@ suite("Files machine storage through actual API tokens", () => {
     const user = await accounts.users.get({ id: adminId });
     if (!user) throw new Error("Missing administrator");
     admin = { kind: "user", user };
+    const personalAccount = await serviceAccounts.createUserDelegated({ name: "Personal Files fixture", delegatedUserId: user.id });
+    if (!personalAccount.ok) throw new Error("Delegated fixture account failed");
+    personalAccountId = personalAccount.data.id;
     await coreSettings.set("app.url", "http://files-machine.test");
     runtime = await startProcessSync({ application: "filesv2" });
     gateway = await activityFilegate();
@@ -508,11 +512,9 @@ suite("Files machine storage through actual API tokens", () => {
       const humanLease = await service.download(call(), { baseId: storage.baseId, path: "note.txt" });
       const humanBytes = await publicRequest(new URL(humanLease.url).pathname.replace("/share/filesv2", ""));
       expect(await humanBytes.text()).toBe("abc");
-      const delegated = await serviceAccounts.createUserDelegated({ name: "Personal Files fixture", delegatedUserId: admin.user.id });
-      if (!delegated.ok) throw new Error("Delegated fixture account failed");
       const personalKey = await serviceAccountCredentials.createApiToken({
-        serviceAccountId: delegated.data.id,
-        name: "Personal fixture",
+        serviceAccountId: personalAccountId,
+        name: `Personal ${kind} fixture`,
         scopes: [],
       });
       if (!personalKey.ok) throw new Error("Delegated fixture key failed");
@@ -529,7 +531,7 @@ suite("Files machine storage through actual API tokens", () => {
       const personalEditor = await data<OfficeEditorLaunch>(
         await request(personalKey.data.token, `${base}/editor`, "POST", { path: "template.odt" }),
       );
-      expect(verifyEditorToken(personalEditor.token)?.userId).toBe(delegated.data.id);
+      expect(verifyEditorToken(personalEditor.token)?.userId).toBe(personalAccountId);
       const personalInfo = await service.editorFileInfo(personalEditor.token, editorRef);
       expect(personalInfo.UserCanWrite).toBe(false);
       expect(personalInfo.UserId).toBe(admin.user.id);
@@ -587,10 +589,8 @@ suite("Files machine storage through actual API tokens", () => {
       });
       let personal: string | null = null;
       if (delegated) {
-        const account = await serviceAccounts.createUserDelegated({ name: "Share cleanup", delegatedUserId: admin.user.id });
-        if (!account.ok) throw new Error(account.error.code);
         const credential = await serviceAccountCredentials.createApiToken({
-          serviceAccountId: account.data.id,
+          serviceAccountId: personalAccountId,
           name: "Personal share cleanup",
           scopes: [],
         });
