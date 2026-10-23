@@ -12,7 +12,7 @@ describe("assistantHelp", () => {
     expect(assistantHelp.getMarkdown("assistant-overview")).toContain("chats started from another application");
     expect(assistantHelp.getMarkdown("assistant-overview")).toContain("attach supported files or Cloud resources");
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("The sidebar lists your active chats as plain rows");
-    expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("The sidebar at the right of a chat shows what the chat holds");
+    expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("The details at the right of a chat show what the chat holds");
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("A Project chat includes its inherited Project context");
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("Resource links open their owning app in a new tab");
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("**Always approve** is no longer offered");

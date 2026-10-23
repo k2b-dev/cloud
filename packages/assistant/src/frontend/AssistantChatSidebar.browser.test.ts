@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../ui/test/browser";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { emptySidebarSnapshot, fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source, upload } from "./AssistantChatSidebar.fixture";
 
@@ -142,7 +142,7 @@ const clientPage = async (width: number, closed = false, snapshot = sidebarSnaps
   page.setDefaultTimeout(4000);
   await page.addScriptTag({ content: script });
   await page.locator(".assistant-context-sidebar").waitFor({ state: "attached" });
-  await frames(page);
+  await settled(page);
   return page;
 };
 
@@ -165,8 +165,6 @@ const layout = (page: Page) =>
       firstResult: box(document.querySelector(".assistant-result")),
     };
   }, DETAIL);
-
-const frames = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 
 type HarnessWindow = { sidebar: { setSnapshot: (value: unknown) => void; next: unknown; actions: unknown[] } };
 /** A live update: the snapshot as the server sends it, a new object every time. */
@@ -224,7 +222,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
     try {
       const before = await layout(page);
       await details(page).getByRole("button", { name: "Chatdetails schließen" }).click();
-      await frames(page);
+      await settled(page);
       const closed = await layout(page);
       expect(closed.sidebar).toBeNull();
       expect(closed.timeline!.y).toBe(before.timeline!.y);
@@ -233,13 +231,13 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       expect(await page.evaluate(() => document.cookie)).toContain("assistant_context=closed");
 
       await detailsButton(page).click();
-      await frames(page);
+      await settled(page);
       expect(await layout(page)).toEqual(before);
       expect(await page.evaluate(() => document.cookie)).not.toContain("assistant_context=closed");
       // Escape in the column closes it like its close button.
       await details(page).getByRole("heading", { name: "In diesem Chat" }).focus();
       await page.keyboard.press("Escape");
-      await frames(page);
+      await settled(page);
       expect((await layout(page)).sidebar).toBeNull();
       expect(await page.evaluate(() => document.cookie)).toContain("assistant_context=closed");
     } finally {
@@ -255,7 +253,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       const before = await layout(page);
       await handle.focus();
       await page.keyboard.press("ArrowLeft");
-      await frames(page);
+      await settled(page);
       const after = await layout(page);
       expect(after.sidebar!.width).toBeGreaterThan(before.sidebar!.width);
       expect(after.sidebar!.x + after.sidebar!.width).toBe(before.sidebar!.x + before.sidebar!.width);
@@ -271,7 +269,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       const before = await layout(page);
       for (const park of ["Escape", "close"] as const) {
         await detailsButton(page).press("Enter");
-        await frames(page);
+        await settled(page);
         const open = await layout(page);
         expect(open.sidebar).toMatchObject({ width: 416 });
         expect(open.sidebar!.x + open.sidebar!.width).toBe(820 - 1);
@@ -280,7 +278,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
         expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("In diesem Chat");
         if (park === "Escape") await page.keyboard.press("Escape");
         else await details(page).getByRole("button", { name: "Chatdetails schließen" }).click();
-        await frames(page);
+        await settled(page);
         expect(await layout(page)).toEqual(before);
         expect(await page.evaluate(() => document.activeElement?.hasAttribute("data-app-workspace-detail-toggle"))).toBe(true);
         // Parking the drawer is not remembered.
@@ -297,14 +295,14 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       const before = await layout(page);
       for (const park of ["close", "Escape"] as const) {
         await detailsButton(page).click();
-        await frames(page);
+        await settled(page);
         expect((await layout(page)).sidebar).toEqual({ x: 0, y: 0, width: 390, height: 800 });
         await details(page).getByText("Umsatzbericht Q1-Q3.pdf").first().waitFor();
         expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("In diesem Chat");
         expect(await page.locator(".k2b-app-workspace__main").getAttribute("inert")).toBe("");
         if (park === "close") await details(page).getByRole("button", { name: "Chatdetails schließen" }).click();
         else await page.keyboard.press("Escape");
-        await frames(page);
+        await settled(page);
         expect(await layout(page)).toEqual(before);
         expect(await page.locator("[inert]").count()).toBe(0);
         expect(await page.evaluate(() => document.cookie)).not.toContain("assistant_context=closed");
@@ -346,6 +344,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       const heading = page.locator(".assistant-sidebar-results .k2b-detail-panel__section-header");
       const box = (await sidebar.boundingBox())!;
       await page.mouse.move(box.x + box.width / 2, box.y + 300);
+      await settled(page);
       const before = await layout(page);
       const headingBefore = await heading.boundingBox();
       const next = sidebarSnapshot();
@@ -357,7 +356,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
         (json) => (window as unknown as { sidebar: { setSnapshot: (value: unknown) => void } }).sidebar.setSnapshot(JSON.parse(json)),
         JSON.stringify(next),
       );
-      await frames(page);
+      await settled(page);
       expect(await layout(page)).toEqual(before);
       expect(await heading.boundingBox()).toEqual(headingBefore);
       expect(await page.locator(".assistant-result__title").first().textContent()).toBe("Umsatzbericht Q1-Q3.pdf");
@@ -366,7 +365,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
 
       // Leaving the sidebar takes over the new state.
       await page.mouse.move(100, 400);
-      await frames(page);
+      await settled(page);
       expect(await page.locator(".assistant-result__title").first().textContent()).toBe("Prognose Q4.xlsx");
       expect(await pending.count()).toBe(0);
     } finally {
@@ -403,6 +402,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
     const page = await clientPage(1280);
     try {
       await page.getByRole("button", { name: "„Umsatzbericht Q1-Q3.pdf“ im Chat zeigen" }).click();
+      await settled(page);
       const state = await page.evaluate(() => (window as unknown as { sidebar: { jumps: unknown[]; revealed: string | null } }).sidebar);
       expect(state.jumps).toEqual([{ messageSeq: 9, callId: "call-/Umsatzbericht Q1-Q3.pdf", presentationId: null }]);
       expect(state.revealed).toBe("Übergabe 9");
@@ -419,15 +419,15 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
     try {
       await detailsButton(page).click();
       await page.setViewportSize({ width: 1280, height: 800 });
-      await frames(page);
+      await settled(page);
       expect((await layout(page)).sidebar).toMatchObject({ width: 416 });
       await details(page).getByRole("button", { name: "Chatdetails schließen" }).click();
-      await frames(page);
+      await settled(page);
       expect((await layout(page)).sidebar).toBeNull();
       expect(await page.evaluate(() => document.cookie)).toContain("assistant_context=closed");
       // Narrow again, it stays closed until Details opens it.
       await page.setViewportSize({ width: 820, height: 800 });
-      await frames(page);
+      await settled(page);
       expect((await layout(page)).sidebar).toBeNull();
       expect(await detailsButton(page).getAttribute("aria-expanded")).toBe("false");
     } finally {
@@ -465,7 +465,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       // Every live update builds the groups from a new snapshot.
       await leaveSidebar(page);
       await push(page, snapshot);
-      await frames(page);
+      await settled(page);
       expect(await august.getAttribute("aria-expanded")).toBe("true");
       expect(await folder.getAttribute("aria-expanded")).toBe("true");
       expect(await sidebar.getByText("chart.png", { exact: true }).count()).toBe(1);
@@ -481,7 +481,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       await sidebar.getByRole("button", { name: "chart.png löschen" }).click();
       await page.getByRole("button", { name: "Löschen", exact: true }).click();
       await sidebar.getByText("chart.png", { exact: true }).waitFor({ state: "detached" });
-      await frames(page);
+      await settled(page);
       expect(await folder.getAttribute("aria-expanded")).toBe("true");
       expect(await august.getAttribute("aria-expanded")).toBe("true");
       expect(await sidebar.getByText("daten.csv", { exact: true }).count()).toBe(1);
@@ -500,13 +500,13 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       const next = sidebarSnapshot();
       next.results = [fileResult("/Prognose Q4.xlsx", { at: SIDEBAR_NOW, turn: "turn-4", seq: 12 }), ...next.results];
       await push(page, next);
-      await frames(page);
+      await settled(page);
       expect(await page.locator(".assistant-result__title").first().textContent()).toBe("Umsatzbericht Q1-Q3.pdf");
       expect(await page.locator('.assistant-sidebar-new[data-pending="true"]').textContent()).toBe("Neu · 1");
 
       // A touch on the chat ends the reading.
       await page.touchscreen.tap(100, 400);
-      await frames(page);
+      await settled(page);
       expect(await page.locator(".assistant-result__title").first().textContent()).toBe("Prognose Q4.xlsx");
     } finally {
       await page.close();
@@ -523,7 +523,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       next.files = [upload("/neu-hochgeladen.csv", SIDEBAR_NOW), ...next.files];
       next.fileCount += 1;
       await push(page, next);
-      await frames(page);
+      await settled(page);
       expect(await sidebar.getByText("neu-hochgeladen.csv", { exact: true }).count()).toBe(0);
       const update = page.locator('.assistant-sidebar-new[data-pending="true"]');
       expect(await update.textContent()).toBe("Aktualisieren");
@@ -552,7 +552,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       next.files = [upload("/neu-hochgeladen.csv", SIDEBAR_NOW), ...next.files];
       next.fileCount += 1;
       await push(page, next);
-      await frames(page);
+      await settled(page);
       expect(await sidebar.getByText("neu-hochgeladen.csv", { exact: true }).count()).toBe(1);
     } finally {
       await page.close();
@@ -588,7 +588,7 @@ describe(`Assistant chat sidebar in ${browserName}`, () => {
       // A new first page ends elsewhere: the loaded pages start over instead of leaving a gap.
       await leaveSidebar(page);
       await push(page, { ...snapshot, sourceCount: 151, sourceCursor: "cursor-2" });
-      await frames(page);
+      await settled(page);
       expect(await sidebar.getByText("Ältere Seite", { exact: true }).count()).toBe(0);
       await sidebar.getByRole("button", { name: "Weitere laden" }).click();
       await sidebar.getByText("Ältere Seite", { exact: true }).waitFor();
@@ -653,7 +653,7 @@ for (const theme of ["light", "dark"] as const)
       try {
         await page.evaluate((theme) => document.documentElement.classList.toggle("dark", theme === "dark"), theme);
         if (width < 1000) await detailsButton(page).click();
-        await frames(page);
+        await settled(page);
         const paint = await details(page).evaluate((aside) => {
           const sections = Array.from(
             aside.querySelectorAll(".k2b-detail-panel__group,.k2b-detail-panel__body > .k2b-detail-panel__section"),

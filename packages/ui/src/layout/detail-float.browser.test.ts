@@ -947,7 +947,7 @@ describe("floating workspace detail", () => {
       expect(await page.locator("body").getAttribute("data-toggle-clicks")).toBeNull();
       // Widening shows the column; narrowing again while working elsewhere waits again.
       await page.setViewportSize({ width: 1440, height: 900 });
-      await settlePanel(page);
+      await settled(page);
       expect(await detail.isVisible()).toBe(true);
       expect(await detail.getAttribute("data-workspace-detail-drawer")).toBeNull();
       await page.locator("#row-0").focus();
@@ -957,7 +957,7 @@ describe("floating workspace detail", () => {
       expect(await inert()).toBe(0);
       // Focus that left the column on purpose does not open the page.
       await page.setViewportSize({ width: 1440, height: 900 });
-      await settlePanel(page);
+      await settled(page);
       await page.locator("#close").focus();
       await page.locator("#close").evaluate((element) => (element as HTMLElement).blur());
       await page.setViewportSize({ width: 390, height: 844 });
@@ -966,7 +966,7 @@ describe("floating workspace detail", () => {
       expect(await inert()).toBe(0);
       // A column that narrows while focus is in it stays open as the page.
       await page.setViewportSize({ width: 1440, height: 900 });
-      await settlePanel(page);
+      await settled(page);
       await page.locator("#close").focus();
       await page.setViewportSize({ width: 390, height: 844 });
       await settled(page);
