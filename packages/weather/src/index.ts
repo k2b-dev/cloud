@@ -1,5 +1,4 @@
 import { type AppContext, type AuthContext, auth, middleware } from "@k2b/cloud/server";
-import { geoAllowlist } from "@k2b/cloud/server/services/geo";
 import { Hono } from "hono";
 import apiRoutes from "./api";
 import { currentWeatherWidgetHandler } from "./api/widgets";
@@ -31,10 +30,5 @@ export default await app.start({
   help: weatherHelp,
   openapi: apiRoutes,
   widgets: { current: currentWeatherWidgetHandler },
-  lifecycle: {
-    start: async () => {
-      geoAllowlist();
-    },
-  },
 });
 export type { ApiType } from "./api";

@@ -96,6 +96,7 @@ const request = (href = "https://cloud.example.test/app/assistant?project=projec
     await next();
   });
   app.get("/app/assistant", ...handler);
+  app.get("/app/assistant/panel", ...handler);
   return app.request(href);
 };
 
@@ -224,4 +225,43 @@ test("?approvals=1 renders the approvals view without selecting a chat, and the 
   const plain = await (await request("https://cloud.example.test/app/assistant")).text();
   expect(plain).not.toContain('href="/app/assistant?approvals=1"');
   expect(plain).not.toContain("What the Assistant wants to do for you.");
+});
+
+test("the panel starts without selecting an unrelated recent chat and renders no second shell", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  const lookup = spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null);
+  spies.push(lookup);
+  const response = await request("https://cloud.example.test/app/assistant/panel");
+  expect(response.status).toBe(200);
+  expect(response.headers.get("referrer-policy")).toBe("same-origin");
+  const html = await response.text();
+  expect(lookup).not.toHaveBeenCalled();
+  expect(html).toContain("cloud-panel-page");
+  expect(html).not.toContain('id="cloud-shell-data"');
+  expect(html).toContain('href="/app/assistant/panel?conversation=chat1"');
+  expect(html).toContain("Open full view");
+});
+
+test("a panel conversation selector does not bypass ownership or fall back to another chat", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  const lookup = spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null);
+  spies.push(lookup);
+  const response = await request("https://cloud.example.test/app/assistant/panel?conversation=foreign");
+  expect(response.status).toBe(404);
+  expect(lookup).toHaveBeenCalledWith({ shortId: "foreign", ownerUserId: user.id });
+  expect(await response.text()).not.toContain(chat.title);
 });
