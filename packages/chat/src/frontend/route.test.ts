@@ -65,3 +65,27 @@ test("thread views, the phone's thread page, and their deep links round-trip", (
   });
   expect(parseRoute(new URL("https://cloud.test/app/chat/c/Chat01/threads/m/Message001"))).toBeNull();
 });
+
+test("provider navigation stays below the panel route, including list, info, threads and message history", () => {
+  for (const panel of ["info", null] as const) {
+    const href = panelHref("Chat01", panel, "Message001", "all", "/app/chat/panel");
+    expect(href).toStartWith("/app/chat/panel/c/Chat01/m/Message001");
+    expect(parseRoute(new URL(href, "https://cloud.test"))).toEqual({
+      chatId: "Chat01",
+      view: "all",
+      threads: false,
+      messageId: "Message001",
+      panel,
+    });
+  }
+  expect(panelHref("Chat01", null, null, "Thr001", "/app/chat/panel")).toBe("/app/chat/panel/c/Chat01/t/Thr001");
+  expect(parseRoute(new URL("https://cloud.test/app/chat/panel/c/Chat01/threads"))).toMatchObject({ chatId: "Chat01", threads: true });
+  expect(parseRoute(new URL("https://cloud.test/app/chat/panel"))).toEqual({
+    chatId: null,
+    view: "all",
+    threads: false,
+    messageId: null,
+    panel: null,
+  });
+  expect(parseRoute(new URL("https://cloud.test/app/chat/panel-other"))).toBeNull();
+});

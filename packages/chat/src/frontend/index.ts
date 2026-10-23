@@ -6,6 +6,12 @@ import page from "./page";
 
 const reader = auth.requireRole("user", "guest", ssr.access);
 export default new Hono<AuthContext>()
+  .get("/panel", reader, ...page)
+  .get("/panel/c/:chat", reader, ...page)
+  .get("/panel/c/:chat/m/:message", reader, ...page)
+  .get("/panel/c/:chat/threads", reader, ...page)
+  .get("/panel/c/:chat/t/:thread", reader, ...page)
+  .get("/panel/c/:chat/t/:thread/m/:message", reader, ...page)
   .get("/", reader, ...page)
   .get("/c/:chat", reader, ...page)
   .get("/c/:chat/m/:message", reader, ...page)

@@ -156,3 +156,43 @@ describe("ChatWorkspace server render", () => {
     });
   }
 });
+
+test("the panel renders the same authorized chat with internal links and an explicit full-view link", () => {
+  const html = render("en", {
+    ...props(),
+    embedded: true,
+    sidebar: { items: [conversation], nextCursor: null },
+    chatId: conversation.id,
+    open: {
+      conversation,
+      page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+      threads: { general: { unread: 0, lastMessage: null }, items: [] },
+      focus: null,
+    },
+  });
+  expect(html).toContain('href="/app/chat/panel/c/Chat01"');
+  expect(html).toContain('href="/app/chat/panel"');
+  expect(html).toContain('href="/app/chat/c/Chat01"');
+  expect(html).toContain("Open full view");
+  expect(html).toMatch(/<textarea[^>]*disabled/);
+  expect(html).toContain(conversation.title);
+});
+
+test("the panel keeps a chat's threads below the panel route; the full view opens the same thread", () => {
+  const html = render("en", {
+    ...props(),
+    embedded: true,
+    sidebar: { items: [{ ...conversation, threads: 1 }], nextCursor: null },
+    chatId: conversation.id,
+    view: "general",
+    open: {
+      conversation: { ...conversation, threads: 1 },
+      page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+      threads: { general: { unread: 0, lastMessage: null }, items: [] },
+      focus: null,
+    },
+  });
+  expect(html).toContain('href="/app/chat/panel/c/Chat01/threads"');
+  expect(html).toContain('href="/app/chat/c/Chat01/t/general"');
+  expect(html).not.toContain('href="/app/chat/c/Chat01/threads"');
+});

@@ -25,6 +25,7 @@ const unreadMark = (row: Conversation): number | true | undefined =>
  */
 export default function ChatList(props: {
   rows: readonly Conversation[];
+  basePath?: string;
   activeId: string | null;
   viewerId: string;
   dateConfig: DateContext;
@@ -48,7 +49,7 @@ export default function ChatList(props: {
           return (
             <>
               <AppWorkspace.SidebarItem
-                href={chatHref(row.id)}
+                href={`${props.basePath ?? "/app/chat"}/c/${encodeURIComponent(row.id)}`}
                 navigation="enhanced"
                 onNavigate={(navigation) => props.onOpen(row.id, navigation)}
                 // With its threads shown, the open thread's row carries the selection, not the chat's.
@@ -114,7 +115,7 @@ export default function ChatList(props: {
               <Show when={expanded() ? props.threads : undefined}>
                 {(threads) => (
                   <div class="chat-list__threads">
-                    <ThreadRows {...threads()} chatId={row.id} unread={row.unread} />
+                    <ThreadRows {...threads()} chatId={row.id} basePath={props.basePath} unread={row.unread} />
                   </div>
                 )}
               </Show>
