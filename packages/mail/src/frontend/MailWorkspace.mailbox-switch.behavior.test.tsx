@@ -464,9 +464,13 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
 
   test("a pending collapse preference flushes on disposal and becomes the new session's preference", async () => {
     mount(`${path}?conversation=Box001-row`);
-    const button = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Hide conversation list"]')!;
-    expect(button).not.toBeNull();
-    button.click();
+    dom.root.querySelector<HTMLButtonElement>('.k2b-app-workspace__head button[aria-label="Options for Support"]')!.click();
+    await Bun.sleep(0);
+    const item = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent?.trim() === "Hide conversation list",
+    )!;
+    expect(item).not.toBeUndefined();
+    item.click();
     link("Box002").click();
     await settle();
     expect(m.readMailWorkspacePreferences(document.cookie).listCollapsed).toBe(true);
@@ -554,6 +558,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
 
   test("a mailbox switch cancels older pending search text", async () => {
     mount();
+    dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")?.click();
     const input = dom.root.querySelector<HTMLInputElement>('input[name="q"]')!;
     input.value = "invoice";
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -710,6 +715,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     const release = hold("Box002");
     link("Box002").click();
     await settle();
+    dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")?.click();
     const input = dom.root.querySelector<HTMLInputElement>('input[name="q"]')!;
     input.value = "invoice";
     input.dispatchEvent(new Event("input", { bubbles: true }));

@@ -275,6 +275,32 @@ describe("admin CLI", () => {
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ config: linuxConfig, rangeReserved: true });
   });
 
+  test("Linux exported unreadable metadata is read-only and replacement requires its own flag", async () => {
+    for (const replace of [false, true]) {
+      const { ctx, calls } = createContext(
+        ["linux", "config", "set"],
+        {
+          config: JSON.stringify({ ...linuxConfig, unreadable: true }),
+          yes: true,
+          "range-reserved": true,
+          ...(replace ? { "replace-unreadable": true } : {}),
+        },
+        [
+          replace
+            ? jsonResponse(linuxConfig)
+            : jsonResponse({ code: "setting_unreadable", message: "Stored configuration is unreadable" }, 409),
+        ],
+      );
+      if (replace) await adminCli.run(ctx);
+      else await expect(adminCli.run(ctx)).rejects.toThrow("Stored configuration is unreadable");
+      expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+        config: linuxConfig,
+        rangeReserved: true,
+        ...(replace ? { replaceUnreadable: true } : {}),
+      });
+    }
+  });
+
   test("rejects invalid Linux configuration without a request", async () => {
     const { ctx, calls } = createContext(["linux", "config", "set"], {
       config: JSON.stringify({ ...linuxConfig, loginShell: "relative" }),

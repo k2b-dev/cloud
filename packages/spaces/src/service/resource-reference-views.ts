@@ -8,6 +8,7 @@ import {
   cloudResourceRefAppId,
   resolveCapabilityResourceReader,
 } from "@k2b/cloud/contracts";
+import type { RequestAuthority } from "@k2b/cloud/server";
 import { z } from "zod";
 import type { SpaceItemResourceReference } from "@/contracts";
 
@@ -16,7 +17,7 @@ export type ItemResourceReferenceView = SpaceItemResourceReference & { resource:
 const READER_CONCURRENCY = 8;
 
 type ResourceReaderDependencies = {
-  getCatalogApp: (appId: string) => Promise<{ appId: string; manifest: CapabilityManifest } | null>;
+  getCatalogApp: (appId: string, authority: RequestAuthority | null) => Promise<{ appId: string; manifest: CapabilityManifest } | null>;
   invokeReader: (
     input: { appId: string; capabilityId: string; id: string },
     caller: CapabilityCaller,
@@ -24,8 +25,8 @@ type ResourceReaderDependencies = {
 };
 
 const resourceReaderDependencies: ResourceReaderDependencies = {
-  getCatalogApp: async (appId) => {
-    const result = await getCapabilityCatalogApp(appId);
+  getCatalogApp: async (appId, authority) => {
+    const result = await getCapabilityCatalogApp(appId, undefined, authority);
     return result.ok ? result.data : null;
   },
   invokeReader: async ({ appId, capabilityId, id }, caller) => {
@@ -37,6 +38,7 @@ const resourceReaderDependencies: ResourceReaderDependencies = {
 export const resolveReferenceViews = async (
   references: SpaceItemResourceReference[],
   caller: CapabilityCaller,
+  authority: RequestAuthority | null,
   dependencies: ResourceReaderDependencies = resourceReaderDependencies,
 ): Promise<ItemResourceReferenceView[]> => {
   const catalogs = new Map<string, Promise<{ appId: string; manifest: CapabilityManifest } | null>>();
@@ -44,7 +46,7 @@ export const resolveReferenceViews = async (
     const appId = cloudResourceRefAppId(reference.ref);
     let catalog = catalogs.get(appId);
     if (!catalog) {
-      catalog = dependencies.getCatalogApp(appId);
+      catalog = dependencies.getCatalogApp(appId, authority);
       catalogs.set(appId, catalog);
     }
     const app = await catalog;

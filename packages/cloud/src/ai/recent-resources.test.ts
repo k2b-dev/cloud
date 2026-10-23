@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { z } from "zod";
 import { LOCALE_HEADER } from "../shared/locale";
 import { type AiRecentResourceDependencies, listAiRecentResources, recentResourcePreview } from "./recent-resources";
-import { recentTestApp, recentTestAuthority, recentTestSkill } from "./recent-resources.test-fixture";
+import { recentTestApp, recentTestAuthority, recentTestRegistryApp, recentTestSkill } from "./recent-resources.test-fixture";
 
 const sent = (id: string, type = "demo.item") => ({
   ref: { type, id },
@@ -16,7 +16,7 @@ const run = (dependencies: AiRecentResourceDependencies, signal = new AbortContr
     authority: recentTestAuthority,
     locale: "de-DE",
     signal,
-    dependencies: { listRegistry: async () => [recentTestApp], ...dependencies },
+    dependencies: { listApps: async () => [recentTestRegistryApp], listRegistry: async () => [recentTestApp], ...dependencies },
   });
 
 test("preview uses only first line, omits blanks, clips at a word boundary within 160 characters", () => {
@@ -110,7 +110,7 @@ test("lists skills once by accessSubject and never calls readers for disabled, i
         calls++;
         expect(subject).toBe(recentTestAuthority.accessSubject);
         // Only the sent Skills, never a page of the whole catalog.
-        expect(options).toEqual({ shortIds: ["enabled", "disabled", "invisible"] });
+        expect(options).toEqual({ shortIds: ["enabled", "disabled", "invisible"], authority: recentTestAuthority });
         return [recentTestSkill("enabled"), recentTestSkill("disabled", false)];
       },
     },

@@ -3,9 +3,12 @@ import { appAudienceRoles, hasAnyAppRole } from "../../_internal/app-roles";
 import { getApp, listApps } from "../../_internal/registry";
 import type { AppRegistryEntry } from "../../contracts/registry";
 import type { RequestActor } from "../../contracts/shared";
+import type { RequestAuthority } from "../../server/middleware/auth";
 import { resolveAppPresentations } from "../../shared/app-presentation";
 import { type HelpArticleLink, helpLocaleChain, parseHelpReference } from "../../shared/help";
 import { lexHelpMarkdown, walkHelpTokens } from "../../shared/markdown";
+import { canUseApp } from "../app-access";
+import { discoverableApps } from "../app-discovery";
 import { logger } from "../logging";
 import { HELP_RESOURCE_PAGE_SIZE, type HelpSelection, hasHelpBm25, metadata, queryHelp } from "./store";
 import type { HelpReader } from "./types";
@@ -30,13 +33,16 @@ export const createHelpReader = (
   locale: string,
   viewer: RequestActor | undefined,
   dependencies: {
+    authority?: RequestAuthority | null;
     db?: SQL;
     listApps?: () => Promise<AppRegistryEntry[]>;
     getApp?: (appId: string) => Promise<AppRegistryEntry | null>;
   } = {},
 ): HelpReader => {
   const db = dependencies.db ?? sql;
-  const visible = (app: AppRegistryEntry | null): app is AppRegistryEntry => app !== null && canReadAppHelp(app, viewer);
+  const visible = (app: AppRegistryEntry | null): app is AppRegistryEntry =>
+    app !== null && (app.access !== undefined || canReadAppHelp(app, viewer));
+  const visibleApps = async (apps: (AppRegistryEntry | null)[]) => discoverableApps(dependencies.authority ?? null, apps.filter(visible));
   const selectionFor = (apps: AppRegistryEntry[]): HelpSelection[] =>
     apps.flatMap((app) =>
       app.help
@@ -52,12 +58,12 @@ export const createHelpReader = (
     );
   const select = async (appId?: string): Promise<HelpSelection[]> => {
     const apps = appId ? [await (dependencies.getApp ?? getApp)(appId)] : await (dependencies.listApps ?? listApps)();
-    return selectionFor(resolveAppPresentations(apps.filter(visible), locale));
+    return selectionFor(resolveAppPresentations(await visibleApps(apps), locale));
   };
   return {
     async manifest(appId) {
       const app = await (dependencies.getApp ?? getApp)(appId);
-      if (!visible(app) || !app.help) return null;
+      if (!visible(app) || !app.help || !(await canUseApp(dependencies.authority ?? null, app))) return null;
       const [corpus] = await db`SELECT 1 FROM help.corpora WHERE app_id=${app.id} AND manifest_hash=${app.help.manifestHash}`;
       if (!corpus) return null;
       const rows = await queryHelp(
@@ -110,10 +116,13 @@ export const createHelpReader = (
       const referencedApps = new Set([...references].map((reference) => reference.split("/")[0]));
       const apps = references.size
         ? resolveAppPresentations(
-            (referencedApps.size === 1 && referencedApps.has(input.appId)
-              ? [await (dependencies.getApp ?? getApp)(input.appId)]
-              : await (dependencies.listApps ?? listApps)()
-            ).filter((app): app is AppRegistryEntry => visible(app) && referencedApps.has(app.id)),
+            (
+              await visibleApps(
+                referencedApps.size === 1 && referencedApps.has(input.appId)
+                  ? [await (dependencies.getApp ?? getApp)(input.appId)]
+                  : await (dependencies.listApps ?? listApps)(),
+              )
+            ).filter((app) => referencedApps.has(app.id)),
             locale,
           )
         : [];

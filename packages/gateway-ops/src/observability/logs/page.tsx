@@ -1,5 +1,5 @@
 import { type AuthContext, getLocale, getTimeZone } from "@k2b/cloud/server";
-import { get } from "@k2b/cloud/services";
+import { read } from "@k2b/cloud/services";
 import { formatNumber } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { Placeholder, StatCell, StatGrid } from "@k2b/ui";
@@ -85,8 +85,8 @@ export default ssr<AuthContext>(async (c) => {
     return withoutPage.includes("?") ? `${withoutPage}&page=` : `${withoutPage}?page=`;
   })();
 
-  const rawRetention = await get<unknown>("logs.retention_days");
-  const retentionDays = typeof rawRetention === "number" ? rawRetention : 30;
+  const retentionState = await read("logs.retention_days");
+  const retentionDays = Number(retentionState.value);
 
   return () => (
     <AdminLayout c={c} title={t.logs}>
@@ -181,6 +181,7 @@ export default ssr<AuthContext>(async (c) => {
           filter={filter}
           sources={sources}
           retentionDays={retentionDays}
+          retentionUnreadable={retentionState.stored === "unreadable"}
           timeZone={getTimeZone(c)}
           totalPages={paginationResult.total_pages}
           baseUrl={baseUrl}
