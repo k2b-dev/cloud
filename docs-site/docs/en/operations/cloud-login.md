@@ -63,7 +63,7 @@ Changing either origin requires reviewing the existing pairings.
 
 ## Send push notifications
 
-Push notifications are optional. They only wake the phone: the app still loads
+Push notifications are optional. They only wake the device: the app still loads
 every request through the signed Cloud connection, and approving still needs
 the code comparison. Without push, everything works as before; users open the
 app to see pending requests.
@@ -97,7 +97,7 @@ when the private key does not match the public key. Several replicas can run
 at once: they share the database and the NATS queue. See the
 [configuration reference](./configuration.md#application-pwa-auth).
 
-Changing the private key invalidates every phone's subscription. Users then
+Changing the private key invalidates every device's subscription. Users then
 reconnect under **Notifications**. Back up the key with your other secrets.
 
 ### Network and data
@@ -108,14 +108,14 @@ iPhone, iPad), `updates.push.services.mozilla.com` (Firefox) and
 `*.notify.windows.com`. It only connects to public addresses. Each Cloud needs
 outbound HTTPS to the Cloud Login origin.
 
-`cloud_login.push_subscriptions` stores one row per phone: the push
+`cloud_login.push_subscriptions` stores one row per device: the push
 endpoint and its public encryption keys, a SHA-256 hash of the push token,
 creation time, last successful delivery and a failure count. It stores no
 Cloud, account or request data. `cloud_login.push_rate_limits` holds short-lived
 counters keyed by hashes; old windows are removed every minute.
 
-A notification is encrypted for the phone (RFC 8291) and contains only the
-Cloud origin and an opaque request reference. The phone shows
+A notification is encrypted for the device (RFC 8291) and contains only the
+Cloud origin and an opaque request reference. The device shows
 “Sign-in request for cloud.example.org”; codes, secrets and account names
 never pass through Cloud Login's server or the push service.
 
@@ -128,7 +128,7 @@ seconds; a message that still fails lands in the queue's dead-letter store
 and increments the subscription's failure count. A push service answer of 404
 or 410 deletes the subscription, so the next notification for its token
 answers 410 and the Cloud forgets the token. The same sign-in request wakes a
-phone once, however often a Cloud retries.
+device once, however often a Cloud retries.
 
 | Limit | Value |
 | --- | --- |
@@ -160,7 +160,7 @@ Actions use a separate Web Push topic, so an Action wake-up cannot replace an
 undelivered sign-in wake-up. Bodies without `kind` keep the original sign-in
 message and topic.
 
-Anyone holding a push token can make that phone show a sign-in or Action notification,
+Anyone holding a push token can make that device show a sign-in or Action notification,
 up to its rate limit, but cannot read or approve anything. The app hands its
 token only to the Clouds it is paired with, through each Cloud's signed device
 channel, and again whenever the token changes. Revoking a device in Cloud or
@@ -171,8 +171,8 @@ revoke it there.
 ## Protect the app
 
 Cloud Login opens directly and never asks you to set an app PIN. Anyone who
-can open it on an unlocked phone can approve sign-ins and Actions. Protect the
-phone with its own screen lock.
+can open it on an unlocked device can approve sign-ins and Actions. Protect the
+device with its own screen lock.
 
 Device credentials are encrypted in browser storage, but the key is stored
 alongside them. Copied browser data is a full credential. After suspected
@@ -197,7 +197,7 @@ them. Nothing is deleted automatically.
 
 On your own Cloud profile page, open **Sign-in → Paired devices → Pair a device**.
 Copy the link into **Add Cloud** in Cloud Login, open the link on the same device,
-or choose **Scan QR code** to scan inside Cloud Login. The phone's camera can
+or choose **Scan QR code** to scan inside Cloud Login. The device's camera can
 also open the link. All paths carry the same temporary link.
 
 Invalid pasted links remain editable. The app distinguishes expired links from
@@ -325,7 +325,7 @@ Approvals need an internet connection. Before making the app available to your
 organization, check camera access, installation, notifications and switching
 between Cloud and the app on the devices and browsers you support.
 
-On Android, tell people to install from Chrome. On Samsung phones, Samsung
+On Android, tell people to install from Chrome. On Samsung devices, Samsung
 Internet builds its own app package, which Android 14 and later may block as
 built for an older Android version. The manifest, icons and headers of this
 origin neither cause nor prevent that warning. The app's installation guide
@@ -354,7 +354,7 @@ Cloud the next time it is open, and to newly paired Clouds right after
 pairing. Clouds without push support keep working without notifications.
 Tapping a notification opens Cloud Login, or focuses it, and shows that
 request first once it appears in the Cloud's inbox. Notifications are not guaranteed:
-the phone, its battery saver or the push service may delay or drop them.
+the device, its battery saver or the push service may delay or drop them.
 
 Action notifications say **Approval requested on cloud.example.org** and
 **Open Cloud Login to review it.** They name only the Cloud host, without app

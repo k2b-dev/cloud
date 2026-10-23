@@ -30,7 +30,7 @@ enhanced navigation, mutations, and realtime updates improve that path.
 | Cloud chrome, breadcrumbs, and registered navigation | Shared layout and live app registry | [Layout and navigation](/en/docs/frontend/layout-and-navigation) |
 | Content geometry inside the page | Application using shared shells | [Application shells](/en/docs/frontend/application-shells) |
 | Local browser interaction | The smallest interactive application island | [Islands](/en/docs/frontend/islands-and-hydration) |
-| Phone pages in the installable mobile app (preview) | Application, framed by `PwaLayout` | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages) |
+| Device pages in the installable mobile app (preview) | Application, framed by `PwaLayout` | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages) |
 
 Use the URL for filters, sorting, pagination, selection, and the active view.
 See [URL state and navigation](/en/docs/frontend/url-state-and-navigation).

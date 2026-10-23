@@ -1353,7 +1353,7 @@ topic `cloud:live:grids` and checks, when it delivers an update, that the
 reader may read the Base, by the same rules as the Grids API. A changed grant
 and a deleted Base check the readers of the Base's tables, structure, and runs
 at once. The socket accepts every credential the Grids API accepts, so pages
-in the phone app receive live updates too. A returning tab receives what it
+in the device app receive live updates too. A returning tab receives what it
 missed instead of checking the Base structure again; the check every 30
 seconds is gone.
 
@@ -1404,7 +1404,7 @@ which reads the topic `cloud:live:mail` and checks the reader's access when it
 delivers an update. The mailbox view, the composer, and the mailing list dialog
 of a page share one socket instead of opening one each, and a returning tab
 receives what it missed instead of loading the view again. The socket accepts
-every credential the Mail API accepts, so pages in the phone app receive live
+every credential the Mail API accepts, so pages in the device app receive live
 updates too.
 
 The first Mail start after the update replaces `mail.enqueue_live_invalidation()`

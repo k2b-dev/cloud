@@ -9,10 +9,10 @@ export const app = defineApp({
   id: "pwa",
   name: "Mobile app",
   icon: "ti ti-device-mobile",
-  description: "The installable phone app of this Cloud.",
+  description: "The installable device app of this Cloud.",
   presentation: {
     baseLocale: "en",
-    translations: { de: { name: "Mobile App", description: "Die installierbare Handy-App dieser Cloud." } },
+    translations: { de: { name: "Mobile App", description: "Die installierbare Geräte-App dieser Cloud." } },
   },
   basePath: "/pwa",
   baseUrl: "http://app-pwa:3000",

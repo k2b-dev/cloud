@@ -360,7 +360,7 @@ export const accountsMessages = i18n.define({
       temporaryPasswordCreated: "Temporary password created",
       temporaryPasswordIntro: "A new temporary password has been generated for this FreeIPA account.",
       temporaryPasswordNextLogin:
-        "The user is signed out of all browsers, the mobile app, the command line and apps. Their phones with Cloud Login stay paired. They must set a new password at the next login.",
+        "The user is signed out of all browsers, the mobile app, the command line and apps. Their devices with Cloud Login stay paired. They must set a new password at the next login.",
       temporaryPassword: "Temporary password",
       copyPassword: "Copy password",
       deleteUserFailed: "The user could not be deleted.",
@@ -379,7 +379,7 @@ export const accountsMessages = i18n.define({
       copyLink: "Copy link",
       notifyFailed: "The notification could not be sent.",
       resetPasswordConfirm: ({ uid }: { uid: string }) =>
-        `Generate a temporary password for “${uid}”? The user is signed out of all browsers, the mobile app, the command line and apps. Their phones with Cloud Login stay paired. They must set a new password at the next login.`,
+        `Generate a temporary password for “${uid}”? The user is signed out of all browsers, the mobile app, the command line and apps. Their devices with Cloud Login stay paired. They must set a new password at the next login.`,
       reset: "Reset",
       editUser: "Edit user",
       emailSyncWarning:
@@ -554,19 +554,19 @@ export const accountsMessages = i18n.define({
       appDevices: "App devices",
       appDevicesSummary: ({ count }: { count: number }) =>
         i18n.plural(count, "en", {
-          one: "1 phone is signed in to the mobile app",
-          other: `${count} phones are signed in to the mobile app`,
+          one: "1 device is signed in to the mobile app",
+          other: `${count} devices are signed in to the mobile app`,
         }),
       platform: "Platform",
       platformIos: "iOS",
       platformAndroid: "Android",
       platformOther: "Other",
-      removeAppDevice: "Remove phone",
+      removeAppDevice: "Remove device",
       removeAppDeviceConfirm: ({ name }: { name: string }) =>
-        `Remove “${name}”? The mobile app on this phone is signed out at once. The person can pair it again.`,
-      removeAppDeviceLabel: ({ name }: { name: string }) => `Remove phone ${name}`,
-      removeAppDeviceFailed: "The phone could not be removed.",
-      appDevicesUnavailable: "Phones in the mobile app could not be loaded. Refresh the page.",
+        `Remove “${name}”? The mobile app on this device is signed out at once. The person can pair it again.`,
+      removeAppDeviceLabel: ({ name }: { name: string }) => `Remove device ${name}`,
+      removeAppDeviceFailed: "The device could not be removed.",
+      appDevicesUnavailable: "Devices in the mobile app could not be loaded. Refresh the page.",
       denyConfirm: ({ name, email }: { name: string; email: string }) => `Deny the request from ${name} (${email})?`,
       deny: "Deny",
       denyAccountRequest: "Deny account request",
@@ -1195,7 +1195,7 @@ export const accountsMessages = i18n.define({
       temporaryPasswordCreated: "Temporäres Passwort erstellt",
       temporaryPasswordIntro: "Für dieses FreeIPA-Konto wurde ein neues temporäres Passwort erzeugt.",
       temporaryPasswordNextLogin:
-        "Die Person wird in allen Browsern, in der Mobile App, in der Kommandozeile und in Apps abgemeldet. Ihre Telefone mit Cloud Login bleiben gekoppelt. Bei der nächsten Anmeldung muss sie ein neues Passwort festlegen.",
+        "Die Person wird in allen Browsern, in der Mobile App, in der Kommandozeile und in Apps abgemeldet. Ihre Geräte mit Cloud Login bleiben gekoppelt. Bei der nächsten Anmeldung muss sie ein neues Passwort festlegen.",
       temporaryPassword: "Temporäres Passwort",
       copyPassword: "Passwort kopieren",
       deleteUserFailed: "Der Benutzer konnte nicht gelöscht werden.",
@@ -1213,7 +1213,7 @@ export const accountsMessages = i18n.define({
       copyLink: "Link kopieren",
       notifyFailed: "Die Benachrichtigung konnte nicht gesendet werden.",
       resetPasswordConfirm: ({ uid }) =>
-        `Ein temporäres Passwort für „${uid}“ erzeugen? Die Person wird in allen Browsern, in der Mobile App, in der Kommandozeile und in Apps abgemeldet. Ihre Telefone mit Cloud Login bleiben gekoppelt. Bei der nächsten Anmeldung muss sie ein neues Passwort festlegen.`,
+        `Ein temporäres Passwort für „${uid}“ erzeugen? Die Person wird in allen Browsern, in der Mobile App, in der Kommandozeile und in Apps abgemeldet. Ihre Geräte mit Cloud Login bleiben gekoppelt. Bei der nächsten Anmeldung muss sie ein neues Passwort festlegen.`,
       reset: "Zurücksetzen",
       editUser: "Benutzer bearbeiten",
       emailSyncWarning:
@@ -1392,19 +1392,19 @@ export const accountsMessages = i18n.define({
       appDevices: "App-Geräte",
       appDevicesSummary: ({ count }) =>
         i18n.plural(count, "de", {
-          one: "1 Telefon ist in der Mobile App angemeldet",
-          other: `${count} Telefone sind in der Mobile App angemeldet`,
+          one: "1 Gerät ist in der Mobile App angemeldet",
+          other: `${count} Geräte sind in der Mobile App angemeldet`,
         }),
       platform: "Plattform",
       platformIos: "iOS",
       platformAndroid: "Android",
       platformOther: "Andere",
-      removeAppDevice: "Telefon entfernen",
+      removeAppDevice: "Gerät entfernen",
       removeAppDeviceConfirm: ({ name }) =>
-        `„${name}“ entfernen? Die Mobile App auf diesem Telefon wird sofort abgemeldet. Die Person kann es danach wieder koppeln.`,
-      removeAppDeviceLabel: ({ name }) => `Telefon ${name} entfernen`,
-      removeAppDeviceFailed: "Das Telefon konnte nicht entfernt werden.",
-      appDevicesUnavailable: "Telefone in der Mobile App konnten nicht geladen werden. Lade die Seite neu.",
+        `„${name}“ entfernen? Die Mobile App auf diesem Gerät wird sofort abgemeldet. Die Person kann es danach wieder koppeln.`,
+      removeAppDeviceLabel: ({ name }) => `Gerät ${name} entfernen`,
+      removeAppDeviceFailed: "Das Gerät konnte nicht entfernt werden.",
+      appDevicesUnavailable: "Geräte in der Mobile App konnten nicht geladen werden. Lade die Seite neu.",
       denyConfirm: ({ name, email }) => `Die Anfrage von ${name} (${email}) ablehnen?`,
       deny: "Ablehnen",
       denyAccountRequest: "Kontoanfrage ablehnen",

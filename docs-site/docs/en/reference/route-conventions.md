@@ -65,7 +65,7 @@ completed registration and all awaited lifecycle startup work.
 | Prefix | Owner |
 | --- | --- |
 | `/pwa` | The mobile app (the application `pwa`): Start, `/pwa/settings`, `/pwa/offline`, manifest, and service worker |
-| `/pwa/_auth` | Core: the phone's sign-in endpoints |
+| `/pwa/_auth` | Core: the device's sign-in endpoints |
 | `/pwa/<app-id>` | That application's [part](/en/docs/frontend/mobile-app-pages), declared with `defineApp({ pwa })` |
 
 A part's application id consists of lowercase letters, digits, and hyphens and

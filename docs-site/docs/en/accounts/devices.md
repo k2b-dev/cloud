@@ -10,12 +10,12 @@ updated: 2026-10-09
 
 # Pair and manage sign-in devices
 
-Cloud lists two kinds of paired phones separately:
+Cloud lists two kinds of paired devices separately:
 
 - **Sign-in devices** approve sign-ins for an account through an
   authenticator such as Cloud Login. Most of this page covers them.
-- **App devices** are phones paired with the mobile app (preview). Each one
-  holds its own app session. You pair and remove your own phones under **App**
+- **App devices** are devices paired with the mobile app (preview). Each one
+  holds its own app session. You pair and remove your own devices under **App**
   in your profile menu (`/me/app`); for administrators, see
   [Remove an app device for someone](#remove-an-app-device-for-someone).
 
@@ -68,9 +68,9 @@ When administrator-assisted pairing is enabled, an authorized administrator
 opens **Accounts → Users → the user → Pair sign-in app**.
 
 1. The dialog first shows a QR code for the configured sign-in app. The person
-   scans it with their phone and installs the app from the page that opens.
+   scans it with their device and installs the app from the page that opens.
 2. Choose **Next**, or **App is already installed** if the app is already on
-   the phone. The pairing starts only then, so installing does not use up the
+   the device. The pairing starts only then, so installing does not use up the
    five-minute pairing link.
 3. Check the named target account, pair as described above and compare the
    codes together. If you have to confirm your identity first, the dialog
@@ -134,19 +134,19 @@ From the terminal, administrators use
 See [Cloud Login](/en/docs/operations/cloud-login#protect-the-app) for app-lock
 recovery. A synced passkey is not a backup of the authenticator's local vault.
 
-## Pair a phone with the mobile app
+## Pair a device with the mobile app
 
 > **Preview:** the mobile app is not released yet.
 
 Open **App** in your profile menu (`/me/app`). The page lists your paired
-phones with their platform and last use, and marks the phone you are using.
+devices with their platform and last use, and marks the device you are using.
 
-1. Choose **Pair a phone**. A dialog opens with a QR code and shows how long
+1. Choose **Pair a device**. A dialog opens with a QR code and shows how long
    the code still works: five minutes. **Copy link** copies the same link, for
-   example when you pair the phone you are reading this on.
+   example when you pair the device you are reading this on.
 2. In the app, tap **Scan code**, or copy the link and tap **Paste link**.
-   Without the app, scanning the code with the phone's camera opens the page
-   that shows how to install it; on the phone itself, choose **Install the
+   Without the app, scanning the code with the device's camera opens the page
+   that shows how to install it; on the device itself, choose **Install the
    app**. On Android, install it from Chrome. In Samsung Internet, the page
    offers **Open in Chrome** instead, because Android may block an app
    installed from there as built for an older Android version.
@@ -154,7 +154,7 @@ phones with their platform and last use, and marks the phone you are using.
    moves to code entry on its own. The app shows a six-digit code. Enter it in
    the dialog and choose **Pair**. The third wrong code ends the pairing; start
    again for a new one.
-4. The app finishes on its own, and the phone appears in the list.
+4. The app finishes on its own, and the device appears in the list.
 
 The QR code and the link only start the pairing. A photographed code or a
 forwarded link pairs nothing by itself: only the browser that opened the
@@ -162,16 +162,16 @@ dialog can confirm the six-digit code, and the link works once. Closing the
 dialog before you confirm the code cancels the pairing, so its link stops
 working. Pairing needs a sign-in from the last ten minutes; if asked, choose
 **Confirm it's you**, and the dialog opens again after sign-in.
-To remove a phone, choose **Remove** in its row. The app on that phone is
+To remove a device, choose **Remove** in its row. The app on that device is
 signed out at once.
 
-When a phone is paired, Cloud sends you a **New phone paired** notice with
-the phone's name, platform and pairing time, and a link to this page. If you
-did not pair that phone, remove it there and contact your administrator. The
+When a device is paired, Cloud sends you a **New device paired** notice with
+the device's name, platform and pairing time, and a link to this page. If you
+did not pair that device, remove it there and contact your administrator. The
 notice goes by email, or as a browser notification when your account has no
 email address; choose how it reaches you under **My account → Notifications**
-(**Phones paired with the mobile app**).
-You get it once per pairing, also for a phone that was removed right away, but
+(**Devices paired with the mobile app**).
+You get it once per pairing, also for a device that was removed right away, but
 not when the app later renews its sign-in. The notice never contains the
 pairing link or code. While do not disturb or your quiet hours are on, a
 notice that would go as a browser notification is held back; it then appears
@@ -182,17 +182,17 @@ only in your notification history.
 > **Preview:** the mobile app is not released yet. Until it is, no account has
 > app devices and the section below does not appear.
 
-When someone loses a phone that is paired with the mobile app, an
+When someone loses a device that is paired with the mobile app, an
 administrator opens **Accounts → Users → the user**. **App devices** lists each
-paired phone with its name, platform, when it was paired and when it was last
-used. The section appears only while the account has at least one paired phone,
-or with an error when the phones could not be loaded.
+paired device with its name, platform, when it was paired and when it was last
+used. The section appears only while the account has at least one paired device,
+or with an error when the devices could not be loaded.
 
-1. Find the phone by name and last use.
-2. Choose the remove button in its row, then **Remove phone** to confirm.
+1. Find the device by name and last use.
+2. Choose the remove button in its row, then **Remove device** to confirm.
 
-Removing a phone ends its app sessions at once. At its next request, the app
-on that phone shows that it was signed out, and nobody can use it for that
+Removing a device ends its app sessions at once. At its next request, the app
+on that device shows that it was signed out, and nobody can use it for that
 account until it is paired again. Web sessions and sign-in devices stay as they
 are. Cloud records the removal in the audit log; the person is not notified.
 
@@ -203,4 +203,4 @@ From the terminal, administrators use
 
 An administrator cannot do this from the mobile app: app sessions never carry
 the administrator role. For the HTTP routes, see
-[Account administration API](/en/docs/reference/account-administration#remove-phones-from-the-mobile-app).
+[Account administration API](/en/docs/reference/account-administration#remove-devices-from-the-mobile-app).

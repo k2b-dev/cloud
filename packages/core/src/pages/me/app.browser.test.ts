@@ -236,9 +236,9 @@ describe("/me/app in a browser", () => {
             return {
               frames,
               current: main.querySelector('nav [aria-current="page"]')?.getAttribute("href"),
-              thisPhone: panel.textContent?.includes("This phone"),
+              thisPhone: panel.textContent?.includes("This device"),
               styles: styles.size,
-              pair: Array.from(panel.querySelectorAll("button")).filter((button) => button.textContent?.trim() === "Pair a phone").length,
+              pair: Array.from(panel.querySelectorAll("button")).filter((button) => button.textContent?.trim() === "Pair a device").length,
               overflow: document.documentElement.scrollWidth - window.innerWidth,
             };
           });

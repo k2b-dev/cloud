@@ -3,7 +3,7 @@ title: Account administration API
 navTitle: Account administration
 section: Reference
 order: 1276
-description: Display account categories, manage Linux identities and remove a person's mobile app phones through supported APIs.
+description: Display account categories, manage Linux identities and remove a person's mobile app devices through supported APIs.
 tags: [accounts, api, linux]
 updated: 2026-10-06
 ---
@@ -11,7 +11,7 @@ updated: 2026-10-06
 # Account administration API
 
 For application authors integrating account presentation or administrator-only
-Linux identity and phone operations. For configuration in Administration, start with
+Linux identity and device operations. For configuration in Administration, start with
 [Accounts & sign-in](/en/docs/accounts).
 
 ## Display account types in an application
@@ -164,27 +164,27 @@ remains available for assigning a GID to an existing local group.
 See [Assign Linux identities](/en/docs/operations/linux-identities) for setup,
 name requirements and CLI examples.
 
-## Remove phones from the mobile app
+## Remove devices from the mobile app
 
 > **Preview:** the mobile app is not released yet. This contract may still
 > change until it is, without counting as a breaking change.
 
-Administrators list and remove another account's phones in the mobile app
+Administrators list and remove another account's devices in the mobile app
 through the Accounts API. Both routes require the `admin` role. An
 administrator's own app session never carries that role, so the mobile app
-cannot call them. A web session in the phone's browser is independent of the
-app and keeps its role until it ends; removing the phone does not end it.
+cannot call them. A web session in the device's browser is independent of the
+app and keeps its role until it ends; removing the device does not end it.
 
 | Method and path below `/api/accounts/users` | Result |
 | --- | --- |
 | `GET /:id/app-devices` | `{ devices }` with `id`, `name`, `platform` (`ios`, `android` or `other`), `createdAt`, `lastUsedAt` and `current` (always `false` here) |
-| `DELETE /:id/app-devices/:deviceId` | `{ revoked }`: `true` for the call that removed the phone, `false` when it was already removed |
+| `DELETE /:id/app-devices/:deviceId` | `{ revoked }`: `true` for the call that removed the device, `false` when it was already removed |
 
-An unknown account or a phone of another account answers `404`. Cloud purges a
-removed phone 30 days after removal at the earliest; from then on, repeating
+An unknown account or a device of another account answers `404`. Cloud purges a
+removed device 30 days after removal at the earliest; from then on, repeating
 the removal also answers `404`. Removal ends
-the phone's app sessions in the same transaction, so every application's
-validator rejects them at once; the app then shows that the phone was signed
+the device's app sessions in the same transaction, so every application's
+validator rejects them at once; the app then shows that the device was signed
 out. Cloud audits the removal as `auth.pwa.device.revoke` with the
 administrator as actor and no notification is sent.
 

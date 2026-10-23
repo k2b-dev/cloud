@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Server and browser platform detection choose different initial content | iPadOS Safari reports a Mac, so desktop guidance changes after mount. | Tests: PWA start-page renders require both iPad steps and the computer hint in English and German; a Welcome behavior test checks that both variants survive mount. CSS selects by pointer before JavaScript runs. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
@@ -951,6 +952,13 @@ convention still needs a check or a test.
 - **Root cause:** Its fixture added two days to the real clock, then used fixed UTC times while asserting summer local times.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
+
+### iPad installation guidance changed after the page loaded
+
+- **What happened:** iPadOS Safari initially showed the mobile app’s phone-only message, then changed it after mount.
+- **Root cause:** Its Mac user agent selected the desktop text on the server; a client pointer check corrected it later.
+- **Error class:** Server and browser platform detection choose different initial content.
+- **Guard:** The start-page render tests require both iPad installation steps and the computer hint for the Mac-style iPadOS user agent in English and German. CSS selects the visible variant before JavaScript runs; a behavior test checks that mounting retains both variants.
 
 ## Add a lesson
 

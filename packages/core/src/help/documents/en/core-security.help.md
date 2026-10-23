@@ -66,9 +66,9 @@ The link expires after five minutes. Do not share it outside this setup.
 
 When Cloud supplies browser details, the app shows them above the code:
 
-- Browser, system, and start time in your phone's time zone.
+- Browser, system, and start time in your device's time zone.
 - **Approximately {city}, {country}** and **Network: …**, only when Cloud's location database knows the address. The network names the operator.
-- **Same internet address as this phone**, only when true. Its absence says nothing.
+- **Same internet address as this device**, only when true. Its absence says nothing.
 - **Known browser · since …** or **Cloud does not know this browser yet**. Neither appears during the first 14 days after the update. Known means “signed in here before”, not “safe”.
 - A known browser in a new country gets a calm note about country history. A new browser can get **Did you start this sign-in?**. This warning requires no sign-in from that country in the last 90 days and existing sign-in countries for your account. A younger history uses its start date. **Deny** is then the main button, with **Approve anyway** available.
 

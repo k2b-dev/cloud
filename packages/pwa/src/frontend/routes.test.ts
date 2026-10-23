@@ -132,7 +132,7 @@ describe("shell routes", () => {
 
   for (const [state, text] of [
     ["new", "Pair this app with your account on the web."],
-    ["ended", "This phone was signed out. Connect it again."],
+    ["ended", "This device was signed out. Connect it again."],
     ["expired", "This code expired. Get a new one on the web."],
     ["blocked", "This account can't use the app right now."],
     ["unavailable", "Can't reach Example Cloud right now."],
@@ -152,16 +152,50 @@ describe("shell routes", () => {
       }
     });
 
+  for (const [locale, computer, share, homeScreen] of [
+    ["en", "On a computer, use Example Cloud in the browser.", "Open Share", "Add to Home Screen"],
+    ["de", "Auf dem Computer nutzt du Example Cloud im Browser.", "Teilen öffnen", "Zum Home-Bildschirm"],
+  ] as const)
+    test(`iPadOS Safari without a session renders both installation variants in ${locale}`, async () => {
+      const response = await request("/pwa/?pwa=new", {
+        headers: {
+          Cookie: `cloud.locale=${locale}`,
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+        },
+      });
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toContain('class="pwa-coarse-only"');
+      expect(html).toContain('data-platform="apple-mobile"');
+      expect(html).toContain(share);
+      expect(html).toContain(homeScreen);
+      expect(html).toContain('class="pwa-fine-only"');
+      expect(html).toContain(computer);
+      expect(html).not.toContain("This app is for phones");
+      expect(html).not.toContain("Diese App ist für Telefone");
+    });
+
+  test("a generic desktop gets the computer sentence without mobile installation steps", async () => {
+    const html = await (
+      await request("/pwa/?pwa=new", {
+        headers: { Cookie: "cloud.locale=en", "User-Agent": "Mozilla/5.0 (X11; Linux x86_64)" },
+      })
+    ).text();
+    expect(html).toContain("On a computer, use Example Cloud in the browser.");
+    expect(html).not.toContain('data-platform="apple-mobile"');
+  });
+
   test("Start lists the parts and Settings, and shows a calm empty state without parts", async () => {
     signIn();
     let html = await (await request("/pwa/", { headers: { Cookie: "pwa_session=test-session; cloud.locale=en" } })).text();
-    expect(html).toContain("No apps for your phone yet.");
+    expect(html).toContain("No apps for your device yet.");
     expect(html).toContain('href="/pwa/settings"');
     expect(html).toContain("<title>Example Cloud</title>");
 
     apps = [shell, inventory];
     html = await (await request("/pwa/", { headers: { Cookie: "pwa_session=test-session; cloud.locale=en" } })).text();
-    expect(html).not.toContain("No apps for your phone yet.");
+    expect(html).not.toContain("No apps for your device yet.");
     expect(html).toContain('href="/pwa/inventory"');
     expect(html).toContain("Count what is on the shelf");
     expect(html).toContain("k2b-tab-bar");

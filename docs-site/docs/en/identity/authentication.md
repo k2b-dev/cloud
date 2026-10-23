@@ -66,7 +66,7 @@ credential kind, and invocation ID for audit context; it grants no permission.
 
 ### Which session a request uses
 
-A browser can hold the web session (`session_token`) and, on a paired phone,
+A browser can hold the web session (`session_token`) and, on a paired device,
 the mobile app's session (`pwa_session`). Cloud picks one per request:
 
 | Request | Credential |
@@ -196,7 +196,7 @@ Changing a FreeIPA password in Cloud ends the person's other sign-ins. This
 applies to profile password changes, administrator resets, reset links, and
 expired or temporary password changes at sign-in. Browser sessions, OAuth
 sign-ins (including the command line, MCP and connected apps), pending sign-in
-completions, and mobile app phones end. API keys, passkeys and background
+completions, and mobile app devices end. API keys, passkeys and background
 mandates stay valid.
 
 A password sign-in is bound to the account's authentication epoch read before
@@ -212,12 +212,12 @@ sign in with the new password and keeps where to go afterwards.
 The platform operation `auth.session.endOtherSignIns(userId, { keep, reason })`
 owns this behavior. `reason` is `password_change`, `password_reset` or
 `sign_out_others`. It advances the account's authentication
-epoch and revokes its mobile app phones, with an audit entry per phone. Cloud
-Login phones stay paired. A reset link calls `revokeAllForUser` before the
-password changes, so that flow also unpairs Cloud Login phones. If that fails,
+epoch and revokes its mobile app devices, with an audit entry per device. Cloud
+Login devices stay paired. A reset link calls `revokeAllForUser` before the
+password changes, so that flow also unpairs Cloud Login devices. If that fails,
 the password stays unchanged and the person requests a new reset link. Because
 the old password works until FreeIPA has changed it, the flow calls
-`revokeAllForUser` again after the change; that also ends a sign-in or phone
+`revokeAllForUser` again after the change; that also ends a sign-in or device
 added in the meantime. If that second call fails, the flow issues no browser
 session and answers `500`: the password changed, and the person requests a new
 reset link to finish. Every attempt uses up the reset link, so Core's reset form
@@ -310,12 +310,12 @@ refresh token does not require another browser sign-in.
 > **Preview:** the mobile app is not released yet. This contract may still
 > change until it is, without counting as a breaking change.
 
-A phone pairs with the [mobile app](/en/docs/frontend/layout-and-navigation#use-the-responsive-profile-menu)
-through `/me/app`; it never sees a password. A paired phone holds two
+A device pairs with the [mobile app](/en/docs/frontend/layout-and-navigation#use-the-responsive-profile-menu)
+through `/me/app`; it never sees a password. A paired device holds two
 credentials:
 
 - a **device key** in the HTTP-only `pwa_device` cookie with the path
-  `/pwa/_auth`, so only Core receives it. It stays valid while the phone is used
+  `/pwa/_auth`, so only Core receives it. It stays valid while the device is used
   at least every 150 days and changes on every renewal;
 - an **app session** in the HTTP-only `pwa_session` cookie with the path `/`,
   valid for 24 hours. It is an ordinary Cloud session, validated by every
@@ -334,7 +334,7 @@ App sessions never carry the installation `admin` role, also not in calls to
 other applications. A service that reloads the user to confirm the role must
 treat the request actor's roles as the upper bound and never add `admin` back.
 
-The mobile app cannot create access that would keep working after the phone
+The mobile app cannot create access that would keep working after the device
 is removed:
 
 - passkeys and personal API keys follow the
@@ -349,7 +349,7 @@ is removed:
   Spaces steps answer the same `403`;
 - OAuth treats an app session as no session: `/oauth/authorize` leads to
   sign-in, and the consent and device pages ask the person to use the web;
-- Cloud Login pairing management and pairing another phone answer
+- Cloud Login pairing management and pairing another device answer
   `FORBIDDEN` in their own error format.
 
 Ordinary work stays available, including profile changes, sharing, and
@@ -358,11 +358,11 @@ creates such authority with `auth.rejectAppSession`, which answers the `403`
 above. In services and capabilities, check `isAppSessionActor(actor)` from
 `@k2b/cloud/server`.
 
-A phone's sessions end when the person removes it in `/me/app` or signs out of
+A device's sessions end when the person removes it in `/me/app` or signs out of
 the app, when an administrator removes it, when a password changes or
 `revokeAllForUser` runs, when the account expires or is deleted, and after 150
 days without use. A disabled
-account category pauses the phone until it is enabled again. Signing out of the
+account category pauses the device until it is enabled again. Signing out of the
 web does not end the app.
 
 On Android, Chrome and the installed app share cookies. Web pages in Chrome

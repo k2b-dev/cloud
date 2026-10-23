@@ -294,7 +294,7 @@ their `auth.app.device.enroll` and `auth.app.device.revoke` entries.
 Use `appPairingLink(authenticatorOrigin, payload)` from the contracts export to
 create `https://auth.example/#pairing=<percent-encoded JSON payload>`. The
 authenticator origin comes from the operator setting, not from user input.
-The QR encodes this exact link; copying it or opening it on the same phone
+The QR encodes this exact link; copying it or opening it on the same device
 transfers the same five-minute, one-use enrollment secret.
 
 The authenticator accepts the whole link as pasted text and calls
@@ -425,7 +425,7 @@ With opt-in, each browser sign-in carries this strict `AppLoginContext`:
 | `history.knownSince` | This browser's first successful sign-in for this account inside its current remembered period, or `null` if unknown. |
 | `history.newCountry` | Core has a country for the request, `geoip_since` is set, and this account has no successful sign-in from that country inside the 90-day window. |
 | `history.countriesSince` | `geoip_since` when less than 90 days ago, otherwise `null`. A shorter history can be shown as “since {date}”. |
-| `sameNetwork` | Optional literal `true`. The browser request and phone share the full IPv4 address or IPv6 /64. Absence makes no claim. |
+| `sameNetwork` | Optional literal `true`. The browser request and device share the full IPv4 address or IPv6 /64. Absence makes no claim. |
 
 Dates use UTC ISO date-times. Browser recognition uses the browser cookie
 (S1); countries use successful sign-ins inside the last 90 days (S6).
@@ -448,7 +448,7 @@ address pseudonyms, storage, and retention.
 Terminal sign-ins never carry context. Push never carries it. The waiting
 browser's `/login/start`, `/login/status`, and `/login/complete` responses stay
 unchanged, and `/login/start` sets no cookie. Context is a snapshot of the
-start request; it is not recomputed while the phone polls.
+start request; it is not recomputed while the device polls.
 
 An opted-in browser request can lack context if it started before the upgrade
 or the response budget forced it out. Cloud first drops Actions from the end
@@ -581,7 +581,7 @@ App names come from Cloud's registry in the language Cloud used when it asked.
 The chat title is `null` when empty.
 `message` is plain text or `null`. Each detail has `{label, value}` and may
 carry `format: "date" | "date-time"`. Those values retain their raw date
-encoding; show them in the phone's locale and time zone. Markdown details
+encoding; show them in the device's locale and time zone. Markdown details
 arrive as plain text with no markdown format. Dates are ISO dates or RFC 3339;
 creation and expiry times are UTC ISO timestamps.
 
@@ -686,7 +686,7 @@ A `409` means the request was decided elsewhere, expired, or its view changed.
 Remove the old choice and reload the inbox. Do not retry the old decision
 against a new view.
 
-### Wake the paired phone
+### Wake the paired device
 
 A device with a push token gets at most one sign-in wake-up in 30 seconds
 while its previously woken request is pending and unexpired. A new sign-in
@@ -713,7 +713,7 @@ carries the comparison code, challenge, browser secret, account name or email.
 The call runs in the background with a five-second timeout: it never delays
 `/login/start`, and unknown, disabled or throttled accounts, which receive a
 decoy request, never trigger one. Core does not retry; Cloud Login queues and
-retries delivery itself. An answer of 410 means the phone's subscription is
+retries delivery itself. An answer of 410 means the device's subscription is
 gone, so Core clears that token from the account's devices. Revoked devices
 are never woken.
 

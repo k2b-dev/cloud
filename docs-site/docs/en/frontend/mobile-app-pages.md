@@ -3,7 +3,7 @@ title: Pages in the mobile app
 navTitle: Mobile app pages
 section: Frontend
 order: 835
-description: Add phone-first pages of an application to the installable mobile app.
+description: Add application pages for devices to the installable mobile app.
 tags: [mobile, pwa, routing, layout]
 updated: 2026-10-12
 ---
@@ -13,15 +13,22 @@ updated: 2026-10-12
 > **Preview:** the mobile app is not released yet. This contract may still
 > change until it is, without counting as a breaking change.
 
-Each Cloud installation has one installable phone app. The `pwa` application
+Each Cloud installation has one installable device app. The `pwa` application
 provides it: the Home Screen app, its Start page, Settings, and pairing. An
 application adds a **part**: its own pages at `/pwa/<app-id>`, built for a
-task people do on a phone. A part is not the web version on a small screen.
-It looks and behaves like an app and offers only what the phone task needs.
+task people do on a device. A part is not the web version on a small screen.
+It looks and behaves like an app and offers only what the task needs.
 
 The mobile app finds parts in the live app registry. People install nothing
 per application, and applications without a part do not appear in the app.
 Built-in and third-party applications use the same contract.
+
+On iPad, open `/pwa/` in Safari and choose **Share → Add to Home Screen**.
+Safari on iPadOS reports a Mac user agent, so the welcome page renders both
+the iPad steps and the computer hint. CSS selects the iPad steps with
+`(pointer: coarse)` before JavaScript runs. On a computer, use Cloud in the
+browser. To pair on the same iPad, copy the link from **App → Pair a device**
+on the web and paste it into the installed app.
 
 ## Declare a part
 
@@ -61,7 +68,7 @@ action; see [Spaces](/en/apps/spaces#check-off-tasks-in-the-mobile-app).
 | --- | --- |
 | `/pwa/` | The mobile app: Start, the manifest scope |
 | `/pwa/settings`, `/pwa/offline` | The mobile app |
-| `/pwa/_auth/*` | Core: the phone's sign-in endpoints |
+| `/pwa/_auth/*` | Core: the device's sign-in endpoints |
 | `/pwa/<app-id>/*` | The application's part |
 | `/api/<app-id>/*` | The application's API, used by the part as on the web |
 
@@ -114,7 +121,7 @@ export default ssr<AuthContext>(async (c) => {
 
 | Case | Response |
 | --- | --- |
-| No app session | `302` to `/pwa/_auth/session/launch?to=<path and query>`; Core renews the session and returns the phone to the same page |
+| No app session | `302` to `/pwa/_auth/session/launch?to=<path and query>`; Core renews the session and returns the device to the same page |
 | No app session after that return (`pwa_launch` in the query) | `302` to `/pwa/?pwa=unavailable`, which stops a redirect loop |
 | Signed in without the required role | `403` page in the mobile app's layout |
 
@@ -208,7 +215,7 @@ grants, as on the web.
   script request below `/pwa` that does not go to the mobile app.
 - The server renders the initial data and decides permissions. Islands handle
   only the interaction. Views and filters live in the URL.
-- Design for the phone: one column, flat sections without boxes inside boxes
+- Design for the device: one column, flat sections without boxes inside boxes
   and without lines between rows or sections, one primary action per screen,
   targets of at least 44 px, nothing that needs hover, public `@k2b/ui`
   components, light and dark, and every language the application supports.
@@ -250,11 +257,11 @@ Controls that the server renders before their island runs stay disabled until
 then, because a tap on them would do nothing.
 
 There is no update prompt. Each tab tap and each link loads a page from the
-network, so a new release of the part reaches the phone with the next page.
+network, so a new release of the part reaches the device with the next page.
 
 When the mobile app is not running, a request to a part still reaches the part,
 but without an app session it ends at Core's not-found page. Nobody can pair a
-phone then.
+device then.
 
 ## Test a part
 
@@ -272,10 +279,10 @@ Cover the part at its own seams, as described in
 - **Safari:** run the behavior checks in WebKit with iPhone emulation, because
   iOS decides the status bar color and the zoom behavior.
 
-To try a part on a phone, run Cloud over HTTPS at the address set in the
-installation's URL setting, open `/me/app` on a computer, and pair the phone.
+To try a part on a device, run Cloud over HTTPS at the address set in the
+installation's URL setting, open `/me/app` on a computer, and pair the device.
 
-Judge loading speed on a production build. In production, the phone's
+Judge loading speed on a production build. In production, the device's
 browser keeps stylesheets, scripts, and fonts in its cache, so a tab switch
 usually loads only its page. After an application restarts or updates, its
 first page loads its stylesheets again. A development stack serves the same

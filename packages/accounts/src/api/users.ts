@@ -39,7 +39,7 @@ const UserAppDevicesResponseSchema = z.object({ devices: z.array(PwaDeviceViewSc
 const AppDeviceRemovalResponseSchema = z.object({
   revoked: z
     .boolean()
-    .describe("True only for the call that removed the phone; repeating the call answers false until the removed phone is purged"),
+    .describe("True only for the call that removed the device; repeating the call answers false until the removed device is purged"),
 });
 
 // Admin PATCH accepts the same profile fields plus `mail`. Defined standalone
@@ -391,7 +391,7 @@ const app = new Hono<AuthContext>()
       tags: ["Users"],
       summary: "Reset user password",
       description:
-        "Reset a FreeIPA user's password to a temporary generated password (admin only). Ends every sign-in of that user; Cloud Login phones stay paired. The user will be forced to change it on next login.",
+        "Reset a FreeIPA user's password to a temporary generated password (admin only). Ends every sign-in of that user; Cloud Login devices stay paired. The user will be forced to change it on next login.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(ResetPasswordResponseSchema, "Password reset"),
@@ -719,12 +719,12 @@ const app = new Hono<AuthContext>()
     "/:id/app-devices",
     describeRoute({
       tags: ["Users"],
-      summary: "List phones paired with the mobile app",
+      summary: "List devices paired with the mobile app",
       description:
-        "List the account's active phones in the mobile app (preview) with name, platform, pairing date and last use (admin only). `current` is always false here.",
+        "List the account's active devices in the mobile app (preview) with name, platform, pairing date and last use (admin only). `current` is always false here.",
       ...requiresAdmin,
       responses: {
-        200: jsonResponse(UserAppDevicesResponseSchema, "Active phones"),
+        200: jsonResponse(UserAppDevicesResponseSchema, "Active devices"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
         404: jsonResponse(ErrorResponseSchema, "User not found"),
@@ -744,15 +744,15 @@ const app = new Hono<AuthContext>()
     "/:id/app-devices/:deviceId",
     describeRoute({
       tags: ["Users"],
-      summary: "Remove a phone from the mobile app",
+      summary: "Remove a device from the mobile app",
       description:
-        "Remove one of the account's phones from the mobile app (preview) and end its app sessions at once (admin only). The phone shows that it was signed out at its next request. Repeating the call succeeds with `revoked: false`; once the removed phone is purged, 30 days after removal at the earliest, the call answers 404.",
+        "Remove one of the account's devices from the mobile app (preview) and end its app sessions at once (admin only). The device shows that it was signed out at its next request. Repeating the call succeeds with `revoked: false`; once the removed device is purged, 30 days after removal at the earliest, the call answers 404.",
       ...requiresAdmin,
       responses: {
-        200: jsonResponse(AppDeviceRemovalResponseSchema, "Phone removed, or already removed"),
+        200: jsonResponse(AppDeviceRemovalResponseSchema, "Device removed, or already removed"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
-        404: jsonResponse(ErrorResponseSchema, "User or phone not found, or the removed phone was purged"),
+        404: jsonResponse(ErrorResponseSchema, "User or device not found, or the removed device was purged"),
       },
     }),
     v("param", UserDeviceParamSchema),

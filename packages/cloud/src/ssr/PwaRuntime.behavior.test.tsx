@@ -224,7 +224,7 @@ else {
     try {
       await waitFor(() => harness.dom.document.body.textContent?.includes("as Max Beispiel") ?? false, "notice");
       expect(harness.dom.document.body.textContent).toContain(
-        "Chrome on this phone is signed in to Example Cloud as Max Beispiel. Changes in the app may be saved to that account.",
+        "Chrome on this device is signed in to Example Cloud as Max Beispiel. Changes in the app may be saved to that account.",
       );
     } finally {
       harness.dispose();

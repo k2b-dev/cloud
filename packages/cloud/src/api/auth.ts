@@ -301,7 +301,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         tags: ["Auth"],
         summary: "Complete password reset",
         description:
-          "Use a one-time reset token to first sign the account out everywhere, including unpairing Cloud Login and mobile app phones, then set the password, sign out everywhere again and create the new browser session. If signing out everywhere fails before the change, the password stays unchanged; if it fails after the change, no session is issued. Both answer 500, and a new reset link is required. signOutOthersFailed is false whenever a session is issued.",
+          "Use a one-time reset token to first sign the account out everywhere, including unpairing Cloud Login and mobile app devices, then set the password, sign out everywhere again and create the new browser session. If signing out everywhere fails before the change, the password stays unchanged; if it fails after the change, no session is issued. Both answer 500, and a new reset link is required. signOutOthersFailed is false whenever a session is issued.",
         responses: {
           200: jsonResponse(PasswordChangeAuthResponseSchema, "Password reset completed and session created"),
           400: jsonResponse(ErrorResponseSchema, "Password reset failed"),

@@ -126,7 +126,7 @@ export const parseDeviceKey = (value: string | null | undefined): { deviceId: st
 
 /** Untranslated default names; the person renames the phone in the app. */
 export const defaultDeviceName = (platform: PwaPlatform, userAgent: string | undefined): string =>
-  platform === "ios" ? (/\biPad\b/.test(userAgent ?? "") ? "iPad" : "iPhone") : platform === "android" ? "Android" : "Phone";
+  platform === "ios" ? (/\biPad\b/.test(userAgent ?? "") ? "iPad" : "iPhone") : platform === "android" ? "Android" : "Device";
 
 const accountName = (user: Pick<UserRow, "display_name" | "uid">) => user.display_name?.trim() || user.uid;
 

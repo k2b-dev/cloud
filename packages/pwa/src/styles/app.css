@@ -11,6 +11,21 @@
   display: none;
 }
 
+/* iPadOS Safari reports a Mac. Pick its installation steps before JavaScript runs. */
+.pwa-coarse-only {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .pwa-coarse-only {
+    display: block;
+  }
+
+  .pwa-fine-only {
+    display: none;
+  }
+}
+
 @media (display-mode: standalone) {
   .pwa-standalone-only {
     display: block;

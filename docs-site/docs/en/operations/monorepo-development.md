@@ -86,13 +86,17 @@ Filegate also accepts browser requests from this origin. `bun run test` keeps
 APP_URL=https://cloud.dev.example
 ```
 
-## Test the mobile app on a phone
+## Test the mobile app on a device
+
+On iPad, test Safari's **Share → Add to Home Screen** steps before JavaScript
+runs, then pair the installed app. When pairing on the same iPad, copy the
+link from **App → Pair a device** on the web and paste it into the app.
 
 The mobile app is unreleased. Its shell (`app-pwa`) runs in the core development
 stack, while `compose.prod.yml` starts it only with the `unreleased` profile.
 
-A phone cannot reach `localhost`, and browsers install apps and register
-service workers only over HTTPS. To try the app on a phone:
+A device cannot reach `localhost`, and browsers install apps and register
+service workers only over HTTPS. To try the app on a device:
 
 1. Serve the stack through an HTTPS reverse proxy or tunnel, as described in
    [Serve the stack under another address](#serve-the-stack-under-another-address).
@@ -100,8 +104,8 @@ service workers only over HTTPS. To try the app on a phone:
    only while no value is stored; otherwise, change the URL in
    Administration → Settings. Pairing and renewal accept only requests whose
    `Origin` is this address.
-3. Use the same address on the computer and on the phone. Pair the phone from
-   `/me/app` on the computer, or open `/pwa/` on the phone to install the app
+3. Use the same address on the computer and on the device. Pair the device from
+   `/me/app` on the computer, or open `/pwa/` on the device to install the app
    first.
 
 ## Connect Pulse to development ClickHouse

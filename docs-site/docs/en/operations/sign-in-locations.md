@@ -170,7 +170,7 @@ The value has no account data or raw address, and the key is per request.
 Decoys do the same work. Private or unknown addresses produce no entry.
 
 The key expires with the five-minute request and is deleted after approval or
-denial. A signed context read compares the phone's prefix with this pseudonym
+denial. A signed context read compares the device's prefix with this pseudonym
 and returns `sameNetwork: true` only on a match. Core reads the listed browser
 requests in one Valkey call after the SQL transaction. If Valkey is down,
 the hint is missing and sign-in continues. Nothing about S5 changes the level.
