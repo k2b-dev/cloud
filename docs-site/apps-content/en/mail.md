@@ -752,6 +752,11 @@ send-safety review and approval.
 
 ## Check failed synchronization
 
+When the provider limits requests, Mail retries unconfirmed flag changes and
+incomplete message downloads. Read state, flags, and labels are not skipped,
+and a partial body is not marked complete. A provider that reports a larger
+message size remains supported when Mail can confirm the end of its source.
+
 `cld mail status` counts the sync runs that failed in the last 24 hours. Each
 attempt to sync a batch of one folder is a run, so a failure that a retry
 completed still counts. List the failed runs of the last 30 days, newest first,
