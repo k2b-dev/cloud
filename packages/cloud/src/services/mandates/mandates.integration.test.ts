@@ -14,6 +14,7 @@ suite("mandates", () => {
   let serviceAccountId = "";
   const createdMandateIds: string[] = [];
   let appLookup: ReturnType<typeof spyOn<typeof registry, "getApp">> | undefined;
+  const machineIds: string[] = [];
 
   beforeAll(async () => {
     // This database-only suite isolates mandate lifecycle/policy from registry transport.
@@ -56,6 +57,7 @@ suite("mandates", () => {
       `;
     await sql`DELETE FROM audit.events WHERE action LIKE 'mandate.%' AND metadata::text LIKE ${`%${suffix}%`}`;
     await sql`DELETE FROM auth.mandates WHERE id = ANY(${toPgTextArray(createdMandateIds)}::uuid[])`;
+    if (machineIds.length) await sql`DELETE FROM auth.service_accounts WHERE id = ANY(${toPgTextArray(machineIds)}::uuid[])`;
     if (serviceAccountId) await sql`DELETE FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid`;
     if (ownerUserId && expiredUserId) await sql`DELETE FROM auth.users WHERE id IN (${ownerUserId}::uuid, ${expiredUserId}::uuid)`;
   }, 15_000);
@@ -122,6 +124,65 @@ suite("mandates", () => {
     });
     expect(await mandates.validateIssueAuthority(next)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
   });
+
+  test.each(["standalone", "agent"] as const)(
+    "%s workflow mandates require administrative assignment and retain live fences",
+    async (kind) => {
+      const [machine] = await sql<
+        { id: string }[]
+      >`INSERT INTO auth.service_accounts(name,kind,status) VALUES (${`workflow-${kind}-${suffix}`},${kind},'active') RETURNING id`;
+      const id = machine!.id;
+      machineIds.push(id);
+      const input = {
+        subject: { type: "service_account" as const, id },
+        ownerAppId: "grids",
+        workloadType: "grids.workflow",
+        workloadId: `machine-${kind}-${suffix}`,
+        policy: { version: 1 as const, apps: ["grids"], operations: ["workflow.run"], actions: "deny" as const },
+      };
+      expect((await mandates.create({ ...input, authority: interactive() })).ok).toBe(false);
+      const authority = { kind: "admin" as const, userId: ownerUserId };
+      const created = await mandates.create({ ...input, authority });
+      expect(created.ok).toBe(true);
+      if (!created.ok) return;
+      createdMandateIds.push(created.data.id);
+      const check = {
+        mandateId: created.data.id,
+        expectedRevision: created.data.revision,
+        ownerAppId: "grids",
+        targetAppId: "grids",
+        operation: "workflow.run",
+      };
+      expect((await mandates.validateIssueAuthority(check)).ok).toBe(true);
+      expect((await mandates.validateIssueAuthority({ ...check, targetAppId: "files" })).ok).toBe(false);
+      expect((await mandates.validateIssueAuthority({ ...check, operation: "capability.query:base.read" })).ok).toBe(false);
+      const paused = await mandates.pause({ mandateId: created.data.id, expectedRevision: created.data.revision, authority });
+      expect(paused.ok).toBe(true);
+      if (!paused.ok) return;
+      expect((await mandates.validateIssueAuthority(check)).ok).toBe(false);
+      const resumed = await mandates.resume({ mandateId: created.data.id, expectedRevision: paused.data.revision, authority });
+      expect(resumed.ok).toBe(true);
+      if (!resumed.ok) return;
+      expect((await mandates.validateIssueAuthority(check)).ok).toBe(false);
+      const current = { ...check, expectedRevision: resumed.data.revision };
+      expect((await mandates.validateIssueAuthority(current)).ok).toBe(true);
+      await sql`UPDATE auth.service_accounts SET status='disabled' WHERE id=${id}::uuid`;
+      expect((await mandates.validateIssueAuthority(current)).ok).toBe(false);
+      await sql`UPDATE auth.service_accounts SET status='active' WHERE id=${id}::uuid`;
+      expect((await mandates.validateIssueAuthority(current)).ok).toBe(true);
+      expect(
+        (
+          await mandates.revoke({
+            mandateId: created.data.id,
+            expectedRevision: resumed.data.revision,
+            authority,
+            reason: "Test revocation",
+          })
+        ).ok,
+      ).toBe(true);
+      expect((await mandates.validateIssueAuthority(current)).ok).toBe(false);
+    },
+  );
 
   test("enforces one mandate per workload and current subjects", async () => {
     const created = await mandates.create({

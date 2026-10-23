@@ -201,3 +201,9 @@ before it expires, and obtains a new one after a `401`. Nothing else changes:
 the agent runs the same `cld` commands as a person, under its own identity, and
 only sees what it was granted. Read the CLI's `cld admin reference` for the
 complete command list.
+
+## Automatic machine workflows
+
+Grids can run scheduled and record-event workflows under a named machine account
+with its own base grant and an exact-workflow, revocable mandate. See
+[Machine workflow mandates](./machine-workflow-mandates.md).

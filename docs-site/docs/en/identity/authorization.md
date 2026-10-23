@@ -731,3 +731,9 @@ users, such as guests, and machine accounts cannot be members and need a
 local Cloud group or a direct grant. Cloud rejects these recipients in
 directory groups. Change eligible membership in the directory, or grant the
 local recipient separately.
+
+## Automatic machine workflows
+
+Grids can run scheduled and record-event workflows under a named machine account
+with its own base grant and an exact-workflow, revocable mandate. See
+[Machine workflow mandates](./machine-workflow-mandates.md).

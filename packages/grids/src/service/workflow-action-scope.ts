@@ -283,6 +283,7 @@ const customAppAuthorizationIsAvailable = async (params: {
  * queued.
  */
 export const canExecuteWorkflow = async (claim: GridsWorkflowExecutionClaim, client?: SqlClient): Promise<boolean> => {
+  if (claim.principal.mandate && claim.principal.mandate.workflowId !== claim.workflowId) return false;
   const { authorization } = claim;
   if (authorization.kind === "workflow") {
     return authorizeWorkflowBase(claim.principal, claim.baseId, "write", client);
@@ -482,6 +483,8 @@ export const workflowAuditMeta = (scope: GridsWorkflowActionScope) => ({
   credentialScopes: scope.principal.credential?.scopes ?? [],
   credentialPermissionCap: scope.principal.credential?.permissionCap ?? null,
   credentialResourceBinding: scope.principal.credential?.resourceBinding ?? null,
+  mandateId: scope.principal.mandate?.id ?? null,
+  mandateRevision: scope.principal.mandate?.revision ?? null,
 });
 
 export const actorId = (scope: GridsWorkflowActionScope): string | null => scope.principal.userId;

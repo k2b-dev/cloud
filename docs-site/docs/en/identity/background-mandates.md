@@ -128,6 +128,12 @@ Only a current interactive subject or administrator can create, resume, or
 broaden a mandate. The owning workload may narrow, pause, or revoke it. A
 revoked mandate is terminal.
 
+Active standalone and agent accounts can also be mandate subjects. Only an
+administrator can create authority for a machine; the editing person's grants
+are never substituted for the machine's own grants. Grids binds its
+`workflow.run` mandate to one workflow and a write ceiling; see
+[Machine workflow mandates](./machine-workflow-mandates.md).
+
 ## Grant capabilities to an unattended Assistant routine
 
 Assistant routines use explicit `grants` in their mandate policy. Each grant pairs

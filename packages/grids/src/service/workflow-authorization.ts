@@ -17,6 +17,8 @@ import {
   resolveEffectivePermission,
 } from "./permission-resolver";
 
+import { validateWorkflowMachineMandate } from "./workflow-machine-authority";
+
 type SqlClient = typeof sql;
 type WorkflowAuthorizationUser = Pick<User, "id" | "accountExpires">;
 type WorkflowAuthorizationServiceAccount = Pick<
@@ -166,12 +168,18 @@ export const revalidateWorkflowPrincipal = async (
   principal: GridsWorkflowPrincipal,
   baseId: string,
   deps: WorkflowAuthorizationDeps = defaultDeps,
+  db?: SqlClient,
 ): Promise<WorkflowAuthorizationRevalidation> => {
   const actorServiceAccountId = principal.actorServiceAccountId ?? null;
   const acceptedCredential = principal.credential ?? null;
   const subject = subjectFor(principal, actorServiceAccountId);
   if (!subject) return { ok: false, reason: "Workflow principal is invalid." };
 
+  if (principal.mandate) {
+    if (!(await validateWorkflowMachineMandate(principal, baseId, db)))
+      return { ok: false, reason: "Workflow mandate is inactive or changed." };
+    if (!acceptedCredential) return { ok: true, subject, permissionCap: "write", credential: null };
+  }
   const now = deps.now();
   if (subject.type === "user") {
     const user = await deps.getUser(subject.userId);
@@ -217,10 +225,12 @@ export const revalidateWorkflowPrincipal = async (
     return {
       ok: true,
       subject,
-      permissionCap:
+      permissionCap: minPermission(
+        principal.mandate ? "write" : "admin",
         serviceAccount.kind === "user_delegated"
           ? acceptedCredential.permissionCap
           : minPermission(acceptedCredential.permissionCap, permissionFromCredentialScopes(acceptedCredential.scopes)),
+      ),
       credential: acceptedCredential,
     };
   }
@@ -247,14 +257,19 @@ export const revalidateWorkflowPrincipal = async (
     expiresAt: current.expiresAt,
     resourceBinding: currentBinding,
   };
-  return { ok: true, subject, permissionCap: currentCredential.permissionCap, credential: currentCredential };
+  return {
+    ok: true,
+    subject,
+    permissionCap: principal.mandate ? minPermission("write", currentCredential.permissionCap) : currentCredential.permissionCap,
+    credential: currentCredential,
+  };
 };
 
 export const revalidateWorkflowPrincipalInTransaction = async (
   principal: GridsWorkflowPrincipal,
   baseId: string,
   db: SqlClient,
-): Promise<WorkflowAuthorizationRevalidation> => revalidateWorkflowPrincipal(principal, baseId, await databaseDeps(db));
+): Promise<WorkflowAuthorizationRevalidation> => revalidateWorkflowPrincipal(principal, baseId, await databaseDeps(db), db);
 
 export const authorizeWorkflowBase = async (
   principal: GridsWorkflowPrincipal,

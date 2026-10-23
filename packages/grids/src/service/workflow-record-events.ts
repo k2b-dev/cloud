@@ -24,6 +24,7 @@ import {
   requeueRecordEventWork,
 } from "./record-events";
 import { listRecordEventWorkflows } from "./workflow-definitions";
+import { machineWorkflowOwnerPrincipal } from "./workflow-machine-authority";
 import { type GridsWorkflowPrincipal, loadWorkflowUserGroupIds } from "./workflow-values";
 
 const log = logger("grids:workflow-record-events");
@@ -163,11 +164,12 @@ const loadSnapshot = async (workflow: GridsWorkflow, event: GridsRecordEvent): P
   return { data: row.data, matched: Boolean(row.matched) };
 };
 
-const ownerPrincipal = async (workflow: GridsWorkflow): Promise<GridsWorkflowPrincipal> => ({
-  userId: workflow.ownerUserId,
-  groupIds: await loadWorkflowUserGroupIds(workflow.ownerUserId),
-  serviceAccountId: null,
-});
+const ownerPrincipal = async (workflow: GridsWorkflow): Promise<GridsWorkflowPrincipal> =>
+  (await machineWorkflowOwnerPrincipal(workflow.id)) ?? {
+    userId: workflow.ownerUserId,
+    groupIds: await loadWorkflowUserGroupIds(workflow.ownerUserId),
+    serviceAccountId: null,
+  };
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
