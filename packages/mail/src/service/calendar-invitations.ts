@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
+import type { RequestAuthority } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { CalendarAddress, CalendarParticipationStatus, SpacesMailDestinationContext } from "../app-integration-contracts";
@@ -31,7 +32,8 @@ import * as senderIdentities from "./sender-identities";
 
 const MAX_CALENDAR_BYTES = 1_000_000;
 
-export const composerIntegrationAvailable = async (): Promise<boolean> => (await getSpacesMailIntegrationAvailability()).composer;
+export const composerIntegrationAvailable = async (authority: RequestAuthority | null): Promise<boolean> =>
+  (await getSpacesMailIntegrationAvailability(authority)).composer;
 
 export const visibleInvitationAttendees = (draft: Pick<MailDraft, "to" | "cc">, organizerAddress: string): CalendarAddress[] => {
   const organizer = organizerAddress.trim().toLowerCase();

@@ -21,7 +21,6 @@ export type ChartExplorerColumn<T> = {
   render?: (row: T) => JSX.Element;
   /**
    * Explicit comparable value. Omit to leave the column unsortable.
-   * Returning a number also exempts the cell from spreadsheet formula guarding on copy.
    */
   sortValue?: (row: T) => string | number | null;
   align?: "left" | "center" | "right";
@@ -75,8 +74,10 @@ export type ChartExplorerProps<T extends ChartExplorerRow> = {
   class?: string;
 };
 
-const tsvCell = (value: string, numeric = false) => {
-  const safe = !numeric && /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+// Only the copied text can prove that a cell is a number; a numeric sort key cannot.
+const plainNumber = /^[-+]?\p{Sc}?\s?\d[\d.,\s]*(?:\s?(?:%|\p{Sc}))?$/u;
+const tsvCell = (value: string) => {
+  const safe = /^[=+\-@\t\r]/.test(value) && !plainNumber.test(value) ? `'${value}` : value;
   return /[\t\r\n"]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 };
 
@@ -158,7 +159,7 @@ export function ChartExplorer<T extends ChartExplorerRow>(props: ChartExplorerPr
   const copyText = () =>
     [
       props.columns.map((c) => tsvCell(c.label)).join("\t"),
-      ...rows().map((row) => props.columns.map((c) => tsvCell(c.value(row), typeof c.sortValue?.(row) === "number")).join("\t")),
+      ...rows().map((row) => props.columns.map((c) => tsvCell(c.value(row))).join("\t")),
     ].join("\n");
   return (
     <section class={`k2b-chart-explorer ${props.class ?? ""}`} aria-labelledby={id}>

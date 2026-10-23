@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { clickhouseAdminQuery } from "../../../../scripts/fixtures/test-clickhouse";
 import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { ALERT_CHECKS_PER_HOUR } from "../alert-contracts";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { baseStore } from "../store/base-store";
 import { cleanupFixtureBase, fixtureBase, fixtureConnection, fixtureStore, installFixtureStore } from "../store/base-store.test-fixture";
@@ -11,6 +12,7 @@ import { waitUntil } from "../store/sql-run.test-fixture";
 import { applyAlertEvaluation, claimDueAlert, evaluateDueAlerts } from "./alert-evaluator";
 import { createOverviewQueries } from "./overview-queries";
 import { sqlAdmission } from "./sql-admission";
+import { SqlError } from "./sql-errors";
 import { runAlertSql } from "./sql-service";
 
 suiteFor(
@@ -189,6 +191,32 @@ suiteFor(
       expect((await sqlAdmission.usage(base.id)).used).toBe(0);
     } finally {
       await held?.release();
+      run.mockRestore();
+      await cleanupFixtureBase(base);
+    }
+  }, 30_000);
+  test("an exhausted alert budget records an error without running SQL", async () => {
+    const base = await fixtureBase();
+    const run = spyOn(sqlRunner, "run");
+    const admission = spyOn(sqlAdmission, "acquire").mockRejectedValue(new SqlError("QUOTA", "The hourly alert check budget is reached"));
+    try {
+      await createBaseLifecycle(store)(base.id);
+      const ruleId = await createRule(base.id, "SELECT 'cpu' AS key, 1 AS value");
+      expect(await execute(ruleId, start)).toMatchObject({ ok: false, error: { code: "QUOTA" } });
+      expect(admission).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseId: base.id,
+          quota: ALERT_CHECKS_PER_HOUR,
+          quotaKind: "alerts",
+          countQuota: true,
+          freeOnly: true,
+        }),
+      );
+      expect(await state(ruleId)).toMatchObject({ state: "error", last_error: "QUOTA" });
+      expect(run).not.toHaveBeenCalled();
+      expect((await sqlAdmission.usage(base.id)).used).toBe(0);
+    } finally {
+      admission.mockRestore();
       run.mockRestore();
       await cleanupFixtureBase(base);
     }

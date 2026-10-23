@@ -198,10 +198,42 @@ const createEngine = (options: LiquidTemplateOptions = {}) => {
 const defaultEngine = createEngine();
 const engineFor = (options: LiquidTemplateOptions = {}) => (Object.keys(options).length > 0 ? createEngine(options) : defaultEngine);
 
-export const migrateLegacyMustacheTemplate = (template: string): string =>
-  template
-    .replace(/{{#\s*([A-Za-z_][A-Za-z0-9_]*)\s*}}([\s\S]*?){{\/\s*\1\s*}}/g, "{% if $1 != blank %}$2{% endif %}")
-    .replace(/{{\^\s*([A-Za-z_][A-Za-z0-9_]*)\s*}}([\s\S]*?){{\/\s*\1\s*}}/g, "{% if $1 == blank %}$2{% endif %}");
+// Two linear passes preserve the legacy positive-then-inverted replacement order.
+// Index closing tags once instead of rescanning the suffix for each unmatched opener.
+const migrateLegacySections = (template: string, kind: "#" | "^"): string => {
+  const tags = [...template.matchAll(/{{([#^/])\s*([A-Za-z_][A-Za-z0-9_]*)\s*}}/g)];
+  const nextClose = new Map<string, number>();
+  const pairs = new Map<number, number>();
+  for (let i = tags.length - 1; i >= 0; i--) {
+    const tag = tags[i]!;
+    const name = tag[2]!;
+    if (tag[1] === "/") nextClose.set(name, i);
+    else if (tag[1] === kind) {
+      const close = nextClose.get(name);
+      if (close !== undefined) pairs.set(i, close);
+    }
+  }
+  const chunks: string[] = [];
+  let cursor = 0;
+  for (let i = 0; i < tags.length; i++) {
+    const close = pairs.get(i);
+    if (close === undefined) continue;
+    const openTag = tags[i]!;
+    const closeTag = tags[close]!;
+    chunks.push(
+      template.slice(cursor, openTag.index),
+      `{% if ${openTag[2]} ${kind === "#" ? "!=" : "=="} blank %}`,
+      template.slice(openTag.index + openTag[0].length, closeTag.index),
+      "{% endif %}",
+    );
+    cursor = closeTag.index + closeTag[0].length;
+    i = close;
+  }
+  chunks.push(template.slice(cursor));
+  return chunks.join("");
+};
+
+export const migrateLegacyMustacheTemplate = (template: string): string => migrateLegacySections(migrateLegacySections(template, "#"), "^");
 
 export const validateLiquidTemplate = (
   template: string,

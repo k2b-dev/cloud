@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../../../ui/test/browser";
 import type { DetailPanelHarness } from "./detail-panel.browser-harness";
 
 // Each fixture types its browser window locally; other harnesses use the same property.
@@ -97,9 +97,9 @@ const settle = async (page: Page) => {
 };
 const open = async (width: number, delayActivity = false) => {
   const page = await browser.newPage({
-    viewport: { width, height: width === 390 ? 844 : 900 },
-    isMobile: width === 390,
-    hasTouch: width === 390,
+    viewport: { width, height: width < 600 ? 844 : 900 },
+    isMobile: width < 600,
+    hasTouch: width < 1024,
   });
   let release = () => {};
   const gate = new Promise<void>((resolve) => {
@@ -261,6 +261,122 @@ for (const width of [1440, 390]) {
       expect(await page.getByRole("button", { name: /^Mit KI bearbeiten/ }).isDisabled()).toBe(true);
       expect(await page.getByRole("button", { name: /^Kommentieren/ }).isDisabled()).toBe(true);
     } finally {
+      await page.close();
+    }
+  }, 30_000);
+}
+
+// A size prop alone does not prevent app CSS from stretching or resizing a shared control.
+for (const width of [320, 390, 768, 1440]) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`${width} ${theme}: AI and View keep the shared compact size`, async () => {
+      const { page } = await open(width);
+      try {
+        await page.evaluate((theme) => {
+          document.body.dataset.theme = theme;
+          document.body.classList.toggle("k2b-dark", theme === "dark");
+        }, theme);
+        await settled(page);
+        const ai = page.getByRole("button", { name: "Mit KI bearbeiten", exact: true });
+        const view = page.getByRole("button", { name: "Ansicht", exact: true });
+        const metrics = () =>
+          page.locator('.notebook-detail-actions button[data-variant="ai"], .notebook-view-menu__trigger').evaluateAll((buttons) =>
+            buttons.map((button) => {
+              const style = getComputedStyle(button);
+              const { x, y, width, height } = button.getBoundingClientRect();
+              return { x, y, width, height, padding: style.padding, fontSize: style.fontSize };
+            }),
+          );
+        const before = await metrics();
+        expect(before).toHaveLength(2);
+        const [action, menu] = before;
+        expect(action!.height).toBe(28);
+        expect(menu!.height).toBe(action!.height);
+        expect(action!.padding).toBe(menu!.padding);
+        expect(action!.fontSize).toBe(menu!.fontSize);
+        closeTo(action!.y, menu!.y);
+        // The content width is independent of the room left by the view menu.
+        const intrinsicWidth = await ai.evaluate((button) => {
+          const style = getComputedStyle(button);
+          return (
+            button.querySelector(".k2b-button__label")!.getBoundingClientRect().width +
+            parseFloat(style.paddingLeft) +
+            parseFloat(style.paddingRight) +
+            parseFloat(style.borderLeftWidth) +
+            parseFloat(style.borderRightWidth)
+          );
+        });
+        closeTo(action!.width, intrinsicWidth);
+        expect(await ai.getAttribute("data-variant")).toBe("ai");
+        expect(await view.getAttribute("data-variant")).toBe("secondary");
+        const row = await box(page, ".notebook-detail-actions");
+        for (const control of before) {
+          expect(control.x).toBeGreaterThanOrEqual(row.x);
+          expect(control.x + control.width).toBeLessThanOrEqual(row.x + row.width + 0.5);
+          expect(control.x + control.width).toBeLessThanOrEqual(width);
+        }
+        for (const control of [ai, view]) {
+          await control.hover();
+          await settled(page);
+          expect(await metrics()).toEqual(before);
+        }
+        // Enter the pair from the preceding header control using the keyboard.
+        await page.getByRole("button", { name: "Notizdetails schließen", exact: true }).focus();
+        await page.keyboard.press("Tab");
+        expect(await ai.evaluate((button) => button.matches(":focus-visible"))).toBe(true);
+        await settled(page);
+        expect(await metrics()).toEqual(before);
+        await page.keyboard.press("Tab");
+        expect(await view.evaluate((button) => button.matches(":focus-visible"))).toBe(true);
+        await settled(page);
+        expect(await metrics()).toEqual(before);
+        await page.evaluate(() => window.harness.offline(true));
+        await settled(page);
+        expect(await page.getByRole("button", { name: /^Mit KI bearbeiten/ }).isDisabled()).toBe(true);
+        // The connection notice can move a phone sheet; the controls keep their own dimensions.
+        const offline = await metrics();
+        offline.forEach((control, index) => {
+          expect(control.width).toBe(before[index]!.width);
+          expect(control.height).toBe(before[index]!.height);
+        });
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+}
+
+for (const width of [390, 1440]) {
+  test(`${width}: the AI action keeps its size while launching and after failure`, async () => {
+    const { page } = await open(width);
+    let release = () => {};
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      await page.route("**/api/ai/conversations", async (route) => {
+        await pending;
+        if (!page.isClosed()) await route.fulfill({ status: 503, json: { message: "Fixture: Assistant unavailable" } });
+      });
+      await settled(page);
+      const selector = '.notebook-detail-actions button[data-variant="ai"]';
+      const before = await box(page, selector);
+      await page.getByRole("button", { name: "Mit KI bearbeiten", exact: true }).click();
+      await page.locator(`${selector}[aria-busy="true"]`).waitFor();
+      await settled(page);
+      sameBox(await box(page, selector), before);
+      expect(await page.locator(selector).isDisabled()).toBe(true);
+      // Move off the button before the error dialog covers it, so its hover does not change mid-dialog animation.
+      await page.mouse.move(0, 0);
+      await settled(page);
+      release();
+      await page.getByText("Fixture: Assistant unavailable", { exact: true }).waitFor();
+      await page.locator(`${selector}:not(:disabled)`).waitFor();
+      await settled(page);
+      sameBox(await box(page, selector), before);
+    } finally {
+      release();
+      await page.unrouteAll({ behavior: "wait" });
       await page.close();
     }
   }, 30_000);
