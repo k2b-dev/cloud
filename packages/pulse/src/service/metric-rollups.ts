@@ -107,22 +107,21 @@ export const createHourlyRollup =
         return { buckets: 1, done: false };
       });
     } catch (error) {
-      if (failedHour && error instanceof Error && error.message === "MAINTENANCE_BUSY") {
-        await database`UPDATE pulse.metric_hours SET lease_until=greatest(lease_until,${new Date(clock().getTime() + 5_000)})
-          WHERE base_id=${failedHour.baseId}::uuid AND hour=${failedHour.hour} AND state='dirty'`;
-        return { buckets: 0, done: false, retryAfterMs: 5_000 };
-      }
+      const maintenanceBusy = error instanceof Error && error.message === "MAINTENANCE_BUSY";
+      if (maintenanceBusy && !failedHour) return { buckets: 0, done: false, retryAfterMs: 5_000 };
       if (failedHour) {
         const failed = failedHour;
+        const retryAt = new Date(maintenanceBusy ? clock().getTime() + 5_000 : failed.now.getTime() + HOUR_MS);
         await database.begin(async (tx) => {
           await tx`SET LOCAL statement_timeout='30s'`.simple();
           await tx`SET LOCAL lock_timeout='30s'`.simple();
           const active = await requireBaseWritable(failed.baseId, tx);
           if (!active.ok) return;
-          await tx`UPDATE pulse.metric_hours SET lease_until=greatest(lease_until,${failed.now}::timestamptz+interval '1 hour')
+          await tx`UPDATE pulse.metric_hours SET lease_until=greatest(lease_until,${retryAt}::timestamptz)
             WHERE base_id=${failed.baseId}::uuid AND hour=${failed.hour} AND state='dirty' AND revision=${failed.revision}::bigint
               AND EXISTS(SELECT 1 FROM pulse.base_stores WHERE base_id=${failed.baseId}::uuid AND reset_generation=${failed.generation}::bigint)`;
         });
+        if (maintenanceBusy) return { buckets: 0, done: false, retryAfterMs: 5_000 };
         log.warn("Pulse hourly rollup deferred", { baseId: failed.baseId, hour: failed.hour.toISOString() });
       }
       throw error;

@@ -6,6 +6,7 @@ import { BaseOperationSuperseded, loadStoreRow } from "../store/base-store";
 import { installFixtureStore } from "../store/base-store.test-fixture";
 import { clickhouseQuery, StoreQueryError } from "../store/client";
 import { acceptCheckpoint, insertCheckpoint, prepareCheckpoint, verifyBaseCheckpoint, writeBaseCheckpoint } from "../store/maintenance";
+import { MaintenanceBusy } from "../store/maintenance-query";
 import { quoteIdentifier as q } from "../store/validation";
 import * as lifecycle from "./base-lifecycle";
 import { clearBaseData } from "./base-management";
@@ -209,50 +210,84 @@ suiteFor(
     }
   }, 60_000);
 
-  for (const transition of ["unchanged", "revision", "generation"] as const)
-    test(`failed rollup backoff respects a concurrent ${transition}`, async () => {
-      const f = await writeFixture(`recovery-rollup-failure-${transition}`);
-      const database = new SQL({ max: 1 });
-      const begin = database.begin.bind(database);
-      const query = f.store.query;
-      const hour = new Date("2026-10-17T10:00:00Z");
-      let interleaved = false;
-      const boundary = spyOn(database, "begin").mockImplementation(async (run) => {
-        if (typeof run === "string") throw new Error("Unexpected transaction options");
-        try {
-          return await begin(run);
-        } catch (error) {
-          if (!interleaved) {
-            interleaved = true;
-            await sql.begin(async (tx) => {
-              await tx`SELECT id FROM pulse.bases WHERE id=${f.base.id}::uuid FOR UPDATE`;
-              await tx`SELECT base_id FROM pulse.base_stores WHERE base_id=${f.base.id}::uuid FOR UPDATE`;
-              if (transition === "generation")
-                await tx`UPDATE pulse.base_stores SET reset_generation=reset_generation+1 WHERE base_id=${f.base.id}::uuid`;
-              if (transition === "revision")
-                await tx`UPDATE pulse.metric_hours SET revision=revision+1 WHERE base_id=${f.base.id}::uuid AND hour=${hour}`;
-            });
-          }
-          throw error;
+  test("busy checkpoint admission resubmits rollups without spending failure attempts", async () => {
+    const f = await writeFixture("recovery-rollup-admission-busy");
+    const query = f.store.query;
+    try {
+      await sql`INSERT INTO pulse.metric_hours(base_id,hour,state) VALUES(${f.base.id}::uuid,${new Date("2026-10-17T10:00:00Z")},'dirty')`;
+      const before = await sql`SELECT * FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid`;
+      let inspected = false;
+      f.store.query = async (statement, params, connection) => {
+        if (statement.includes("._checkpoints")) {
+          inspected = true;
+          throw new MaintenanceBusy();
         }
+        return query(statement, params, connection);
+      };
+      await expect(createHourlyRollup({ store: f.store, clock: f.clock })(f.base.id)).resolves.toEqual({
+        buckets: 0,
+        done: false,
+        retryAfterMs: 5_000,
       });
-      try {
-        await sql`INSERT INTO pulse.metric_hours(base_id,hour,state) VALUES(${f.base.id}::uuid,${hour},'dirty')`;
-        f.store.query = async (statement, params, connection) => {
-          if (statement.startsWith("INSERT INTO") && statement.includes("._rollups")) throw new StoreQueryError("unreachable");
-          return query(statement, params, connection);
-        };
-        await expect(createHourlyRollup({ store: f.store, database, clock: f.clock })(f.base.id)).rejects.toThrow();
-        expect(interleaved).toBe(true);
-        const [row] = await sql`SELECT lease_until FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid AND hour=${hour}`;
-        expect(row?.lease_until).toEqual(transition === "unchanged" ? new Date("2026-10-17T13:00:00Z") : null);
-      } finally {
-        boundary.mockRestore();
-        await database.close();
-        f.store.query = query;
-        await f.cleanup();
-      }
-    }, 60_000);
+      expect(inspected).toBe(true);
+      expect(await sql`SELECT * FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid`).toEqual(before);
+    } finally {
+      f.store.query = query;
+      await f.cleanup();
+    }
+  }, 60_000);
+
+  for (const failure of ["unreachable", "maintenance_busy"] as const)
+    for (const transition of ["unchanged", "revision", "generation", "blocked"] as const)
+      test(`${failure} rollup backoff respects a concurrent ${transition}`, async () => {
+        const f = await writeFixture(`recovery-rollup-${failure}-${transition}`);
+        const database = new SQL({ max: 1 });
+        const begin = database.begin.bind(database);
+        const query = f.store.query;
+        const hour = new Date("2026-10-17T10:00:00Z");
+        let interleaved = false;
+        const boundary = spyOn(database, "begin").mockImplementation(async (run) => {
+          if (typeof run === "string") throw new Error("Unexpected transaction options");
+          try {
+            return await begin(run);
+          } catch (error) {
+            if (!interleaved) {
+              interleaved = true;
+              await sql.begin(async (tx) => {
+                await tx`SELECT id FROM pulse.bases WHERE id=${f.base.id}::uuid FOR UPDATE`;
+                await tx`SELECT base_id FROM pulse.base_stores WHERE base_id=${f.base.id}::uuid FOR UPDATE`;
+                if (transition === "generation")
+                  await tx`UPDATE pulse.base_stores SET reset_generation=reset_generation+1 WHERE base_id=${f.base.id}::uuid`;
+                if (transition === "blocked")
+                  await tx`UPDATE pulse.base_stores SET write_block_reason='checkpoint_mismatch' WHERE base_id=${f.base.id}::uuid`;
+                if (transition === "revision")
+                  await tx`UPDATE pulse.metric_hours SET revision=revision+1 WHERE base_id=${f.base.id}::uuid AND hour=${hour}`;
+              });
+            }
+            throw error;
+          }
+        });
+        try {
+          await sql`INSERT INTO pulse.metric_hours(base_id,hour,state) VALUES(${f.base.id}::uuid,${hour},'dirty')`;
+          f.store.query = async (statement, params, connection) => {
+            if (statement.startsWith("INSERT INTO") && statement.includes("._rollups"))
+              throw failure === "maintenance_busy" ? new MaintenanceBusy() : new StoreQueryError("unreachable");
+            return query(statement, params, connection);
+          };
+          const run = createHourlyRollup({ store: f.store, database, clock: f.clock })(f.base.id);
+          if (failure === "maintenance_busy") await expect(run).resolves.toEqual({ buckets: 0, done: false, retryAfterMs: 5_000 });
+          else await expect(run).rejects.toThrow();
+          expect(interleaved).toBe(true);
+          const [row] = await sql`SELECT lease_until FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid AND hour=${hour}`;
+          const retryAt = new Date(failure === "maintenance_busy" ? "2026-10-17T12:00:05Z" : "2026-10-17T13:00:00Z");
+          expect(row?.lease_until).toEqual(transition === "unchanged" ? retryAt : null);
+        } finally {
+          boundary.mockRestore();
+          await database.close();
+          f.store.query = query;
+          await f.cleanup();
+        }
+      }, 60_000);
 
   test("a pending receipt restores its referenced series even when another batch acknowledged the mirror", async () => {
     const f = await writeFixture("recovery-pending-series");

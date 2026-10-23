@@ -953,6 +953,13 @@ convention still needs a check or a test.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
 
+## Pulse maintenance retries after recovery integration
+
+- **What happened:** Merging maintenance admission with checkpoint recovery left busy rollups on an unfenced retry path.
+- **Root cause:** The busy branch preceded the recovery transaction, and checkpoint admission could fail before an hour was claimed.
+- **Error class:** Stale background writes and retry-budget exhaustion during ordinary contention.
+- **Guard:** Recovery integration tests check busy checkpoint admission and both failure paths across unchanged, revised, reset and blocked hours; every backoff update uses the same writable-state, revision and generation checks.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its
