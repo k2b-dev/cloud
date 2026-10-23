@@ -1106,7 +1106,7 @@ describe("PermissionEditor pending controls", () => {
     return;
   }
 
-  const deferred = <T = void,>() => {
+  const deferred = <T = void>() => {
     let resolve!: (value: T) => void;
     let reject!: (error: Error) => void;
     const promise = new Promise<T>((yes, no) => {
