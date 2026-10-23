@@ -19,7 +19,7 @@ suite("mandates", () => {
   beforeAll(async () => {
     // This database-only suite isolates mandate lifecycle/policy from registry transport.
     // Real registry and app-grant enforcement is covered by app-access.integration.test.ts.
-    const apps = new Set(["core", "external", "mail", "notebooks", "oauth", "spaces"]);
+    const apps = new Set(["core", "external", "grids", "mail", "notebooks", "oauth", "spaces"]);
     appLookup = spyOn(registry, "getApp").mockImplementation(async (id) =>
       apps.has(id)
         ? {

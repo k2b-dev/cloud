@@ -1,4 +1,5 @@
-import { beforeAll, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { appRegistry } from "@k2b/cloud";
 import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
 import * as notificationPlatform from "@k2b/cloud/services/notifications/platform";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
@@ -11,6 +12,7 @@ import { getWorkflowRunByShortId, getWorkflowRunScope } from "../service/workflo
 import { getWorkflowTriggerRuntimeState, runGridsWorkflowRun } from "../service/workflow-runtime";
 import "../../../../scripts/fixtures/authorization-preload";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
+import { app } from "../config";
 import { testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { grantAccess, lockBaseAuthorization, revokeAccess } from "../service/access";
@@ -33,6 +35,15 @@ import api from ".";
 const suite = suiteFor("database", "nats", "valkey");
 beforeAll(async () => {
   if (testInfra.database) await migrate();
+});
+// Mandate validation resolves the live application through the real test NATS
+// registry. Publish the application's actual entry contract, without replacing
+// identity, app access, credential or mandate authorization.
+beforeEach(async () => {
+  if (testInfra.database && testInfra.nats) await appRegistry().upsert({ key: "apps/grids", value: { ...app.meta, baseUrl: app.baseUrl } });
+});
+afterEach(async () => {
+  if (testInfra.database && testInfra.nats) await appRegistry().delete({ key: "apps/grids" });
 });
 const source = `triggers:
   schedule:
