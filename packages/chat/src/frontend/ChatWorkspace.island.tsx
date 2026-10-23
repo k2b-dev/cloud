@@ -562,8 +562,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   /** Opens another part of the open chat, from the list, the picker, a thread chip, or a new thread. */
   const openView = async (id: string, view: ThreadView, navigation?: LinkNavigateEvent, message?: string) => {
-    // From the phone's page of threads, "Back" in the thread returns to that page in the history.
-    const options = { scroll: "preserve" as const, state: { threadFromPage: route().threads } };
+    // From the phone's page of threads, "Back" in the thread returns to that page in the history; from Info opened
+    // on top of it, the previous entry is Info, so "Back" opens the page instead.
+    const options = { scroll: "preserve" as const, state: { threadFromPage: route().threads && route().panel === null } };
     const next = chatRoute(id, view, { messageId: message ?? null });
     if ((await open(next)) !== "applied") return;
     const href = threadHref(id, view, message);

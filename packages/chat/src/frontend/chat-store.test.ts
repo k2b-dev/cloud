@@ -1433,3 +1433,25 @@ test("HTTP errors retain server messages, optional rate-limit codes and required
     globalThis.fetch = original;
   }
 });
+
+test("a thread refresh asked for while the previous one finishes still runs", async () => {
+  let calls = 0;
+  const { store } = fixture({
+    threads: async () => {
+      calls += 1;
+      return noThreads;
+    },
+  });
+  // A listener reacting to the first list asks again in the step right after it, while that refresh is finishing.
+  let asked = false;
+  const unsubscribe = store.subscribe(() => {
+    if (asked || calls !== 1) return;
+    asked = true;
+    queueMicrotask(() => void store.refreshThreads());
+  });
+  await store.refreshThreads();
+  for (let tick = 0; tick < 20 && calls < 2; tick++) await Promise.resolve();
+  expect(calls).toBe(2);
+  unsubscribe();
+  store.dispose();
+});

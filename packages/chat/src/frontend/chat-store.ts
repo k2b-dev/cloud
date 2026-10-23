@@ -436,24 +436,29 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       return chat.threadsWork;
     }
     const work = (async () => {
-      do {
-        chat.threadsAgain = false;
-        if (!active(chat)) return;
-        const list = await api.threads(chat.view.id).catch(() => undefined);
-        if (!active(chat)) return;
-        if (list === null) return noAccess(chat);
-        // The chat's thread count follows its list, so the first thread shows the thread controls at once.
-        const conversation =
-          list && chat.view.conversation ? { ...chat.view.conversation, threads: list.items.length } : chat.view.conversation;
-        chat.view =
-          list === undefined
-            ? { ...chat.view, threadsStatus: "failed" }
-            : { ...chat.view, conversation, threads: list, threadsStatus: "ready" };
-        notify();
-      } while (chat.threadsAgain);
-    })().finally(() => {
-      chat.threadsWork = null;
-    });
+      // The caller stores this work before it runs, and it is released in the same step as the last check, so a refresh
+      // asked for at any moment either joins a loop that checks again or starts a new one.
+      await null;
+      try {
+        do {
+          chat.threadsAgain = false;
+          if (!active(chat)) return;
+          const list = await api.threads(chat.view.id).catch(() => undefined);
+          if (!active(chat)) return;
+          if (list === null) return noAccess(chat);
+          // The chat's thread count follows its list, so the first thread shows the thread controls at once.
+          const conversation =
+            list && chat.view.conversation ? { ...chat.view.conversation, threads: list.items.length } : chat.view.conversation;
+          chat.view =
+            list === undefined
+              ? { ...chat.view, threadsStatus: "failed" }
+              : { ...chat.view, conversation, threads: list, threadsStatus: "ready" };
+          notify();
+        } while (chat.threadsAgain);
+      } finally {
+        chat.threadsWork = null;
+      }
+    })();
     chat.threadsWork = work;
     return work;
   };
