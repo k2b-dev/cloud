@@ -489,6 +489,12 @@ nav: {
 `section` is `primary`, `more`, or `hidden`. The layout filters entries with
 the current request identity.
 
+Cloud first filters declared applications by the caller's app access, including
+credential limits. Navigation roles may further narrow placement; they never
+grant entry. Help and app Skills use the declared access rule, while apps
+without a declaration retain their legacy audience. See
+[App access](/en/docs/identity/app-access).
+
 The live app registry supplies the navigation. Do not hardcode links to every
 other Cloud application.
 

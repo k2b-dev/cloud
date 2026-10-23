@@ -80,6 +80,14 @@ request.
 See [URL state and navigation](/en/docs/frontend/url-state-and-navigation#cloud-page-swaps)
 for the replaced content and unsaved-input guards.
 
+## Declare app access
+
+Use `access: appAccess.signedIn()` for signed-in identities, `appAccess.noGuests()`
+for non-guests, or `appAccess.roles(["admin"])` for administrators. Configurable
+applications use `appAccess.grants()`. Import `appAccess` from `@k2b/cloud`.
+Cloud evaluates this declaration at entry and discovery; it does not replace
+resource permissions. See [App access](/en/docs/identity/app-access).
+
 ## Add global navigation
 
 `nav` contributes one application entry:

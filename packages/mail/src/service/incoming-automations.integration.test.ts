@@ -13,6 +13,7 @@ import {
 } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import incomingAutomationRoutes from "../api/incoming-automations";
 import type { MailApiContext } from "../api/public-resource-boundary";
@@ -85,6 +86,7 @@ const contextFor = (user: TestUser): MailRequestContext => ({
 });
 
 suite("incoming automations", () => {
+  useTestAppRegistry(["mail", "spaces"]);
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
   let mailboxId = "";

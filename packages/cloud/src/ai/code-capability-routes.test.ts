@@ -102,6 +102,7 @@ function fixture() {
   const stream = mock(async (..._args: Parameters<typeof dispatchCapabilityStream>) => new Response("csv"));
   const routes = createCodeCapabilityRoutes({
     invocation: {
+      getApp: async () => ({ id: "core" }),
       verify: (value, expected, options) => verifyInvocationToken(value, expected, { ...options, issuer, key }),
       resolve: async (claims) =>
         current

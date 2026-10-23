@@ -1,7 +1,8 @@
-import { beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
+import * as registry from "../_internal/registry";
 import { mandates } from "../services/mandates";
 import { toAiChatTaskView } from "./chat-task-contracts";
 import { chatTaskReasonSentence } from "./chat-task-reasons";
@@ -16,9 +17,26 @@ import { aiConversations, recordAiToolReview } from "./store";
 const suite = databaseSuite();
 
 suite("AI chat tasks", () => {
+  let appLookup: ReturnType<typeof spyOn<typeof registry, "getApp">>;
   beforeAll(async () => {
+    // Keep this suite database-only; substitute registry transport, not access evaluation.
+    const apps = new Set(["core", "assistant", "mail"]);
+    appLookup = spyOn(registry, "getApp").mockImplementation(async (id) =>
+      apps.has(id)
+        ? {
+            id,
+            name: id,
+            icon: "ti ti-test-pipe",
+            description: "Chat task integration fixture",
+            baseUrl: `http://${id}.test:3000`,
+            routes: [`/api/${id}`],
+            access: { kind: "signedIn" },
+          }
+        : null,
+    );
     await migrateCloudAi();
   });
+  afterAll(() => appLookup?.mockRestore());
   const createRetentionRun = async (input: {
     userId: string;
     conversation: { id: string; shortId: string };

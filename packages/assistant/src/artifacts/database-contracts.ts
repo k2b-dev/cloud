@@ -89,4 +89,10 @@ export const DatabaseRequest = z.discriminatedUnion("operation", [
   DatabaseSql.extend({ operation: z.literal("query").describe("Database operation: query.") }),
 ]);
 export type DatabaseRequest = z.infer<typeof DatabaseRequest>;
-export const DatabaseSettings = z.object({ url: z.string().max(2048), token: z.string().max(4096).optional() }).strict();
+export const DatabaseSettings = z
+  .object({
+    url: z.string().max(2048).optional(),
+    token: z.string().max(4096).optional(),
+    replaceUnreadable: z.array(z.enum(["assistant.rsql_url", "assistant.rsql_api_token"])).optional(),
+  })
+  .strict();

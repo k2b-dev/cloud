@@ -66,9 +66,9 @@ The sidebar contains **Focus** and your mailboxes, with pinned mailboxes first. 
 The head contains:
 
 - View tabs: **All**, **Needs action**, **Assigned to me**, **Waiting for reply**, and **Unassigned**. **More** contains **Later**, **Done**, **Recent activity**, **Kept**, and saved views. Folders, Scheduled, and Send problems have no view tabs.
-- A **Tag** chip when tags exist, a **Search** chip for an active structured search, and **Reset** to clear filters. Remove the Search chip to end that search. **Search filters** in the list head opens the filter builder.
-- **Choose list view** for conversations or individual messages.
-- **…** for mailbox details, synchronization, health, automations, mailing lists, remote images, shared links, email-link handling, and **Settings**. Your access determines the entries. Readers see **About this mailbox**. People who can only see assigned conversations have no **…** in the head; the open mailbox's **…** in the sidebar offers them only pin and hide.
+- A **Tag** icon next to **Search** when tags exist, a **Search** chip for an active structured search, and **Reset** to clear filters. Remove the Search chip to end that search. The magnifier or `/` opens search in the head; **Search filters** opens its filter builder.
+- **Select conversations** replaces the views with a selection count and actions. **Exit selection** brings the views back.
+- **… → Choose list view** switches between conversations and individual messages. The menu also contains mailbox details, synchronization, health, automations, mailing lists, remote images, shared links, email-link handling, and **Settings**. Your access determines the entries. Readers see **About this mailbox**. People who can only see assigned conversations can choose their list view here; the open mailbox's **…** in the sidebar offers them only pin and hide.
 - **Compose** as the primary action when you can send.
 
 On a phone, open the mailbox title to reach Focus, other mailboxes, and the open mailbox's folders. Use the head for views, filters, Compose, and **…**.
@@ -86,7 +86,7 @@ The center list shows one row per conversation: the sender and the time, the sub
 
 **Reply**, **Reply all**, and **Forward** start the reader's toolbar, followed by the actions you chose with **… > Customize toolbar**. When the reader gets narrow, Reply all and Forward show only their icons, then move into **…** with the actions that no longer fit. **…** always lists every action.
 
-Choose **Conversation details** to open team context, local tags, ownership, comments, reminders, and the longer list of recent activity. The details stand next to the reader while it keeps enough room. Otherwise they wait behind **Details**: choose it, and they open over the reader's end. To get more reading space, hide the conversation list.
+Choose **Details** in the mailbox head to open team context, local tags, ownership, comments, reminders, and the longer list of recent activity. On a phone, use the details icon beside **…** in the reader instead. The details stand next to the reader while it keeps enough room. With less room, they open over the reader's end. To get more reading space, hide the conversation list.
 
 Next to a composer, the conversation history contains only messages. Operational activity does not distract you while you write.
 

@@ -167,7 +167,8 @@ export const projectMailboxPageData = async (data: MailboxPageData, loadPublicId
   const visitSearchExpression = (value: unknown, prefix: Path["segments"]): void => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return;
     const expression = value as Record<string, unknown>;
-    if (expression.type === "folder_id") add(paths, "folders", [...prefix, "folderId"], expression.folderId);
+    if (expression.type === "folder_id" || expression.type === "unread" || expression.type === "flagged")
+      add(paths, "folders", [...prefix, "folderId"], expression.folderId);
     if (expression.type === "local_tag_id") add(paths, "tags", [...prefix, "tagId"], expression.tagId);
     for (const [field, child] of Object.entries(expression)) {
       if (Array.isArray(child)) child.forEach((item, index) => visitSearchExpression(item, [...prefix, field, index]));

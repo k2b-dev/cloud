@@ -9,9 +9,11 @@ import { decodeJwt, generateKeyPair } from "jose";
 import { z } from "zod";
 import { type FixtureCorpus, fixtureHelpReader } from "../../test/help-reader";
 import { compileCapabilities } from "../_internal/capabilities";
+import { appAccess } from "../contracts/app-access";
 import { CAPABILITY_MAX_RESULT_BYTES, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
-import { type AuthContext, auth, type RequestActor } from "../server";
+import { type AuthContext, auth, type RequestActor, type RequestAuthority } from "../server";
+import { issueInvocationToken } from "../services/identity/issue-invocation";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { oauthTokens } from "../services/oauth-tokens";
 import { buildProjectedUser } from "../services/session/user";
@@ -152,6 +154,7 @@ const summary = (capability: CapabilityRegistryEntry): AppRegistryEntry => ({
   description: `${capability.appName} app`,
   baseUrl: `http://${capability.appId}:3000`,
   routes: [],
+  access: appAccess.signedIn(),
   capabilities: {
     protocolVersion: capability.manifest.protocolVersion,
     manifestHash: capability.manifest.manifestHash,
@@ -169,29 +172,30 @@ const helpSummary = (): AppRegistryEntry => ({
 
 type McpTestDependencies = NonNullable<Parameters<typeof createMcpRoutesBase>[0]>;
 const passThrough: NonNullable<McpTestDependencies["limit"]> = async (_c, next) => next();
+const user: Extract<RequestActor, { kind: "user" }>["user"] = {
+  id: "11111111-1111-4111-8111-111111111111",
+  uid: "mcp-user",
+  provider: "local" as const,
+  displayName: "MCP user",
+  givenname: "MCP",
+  sn: "user",
+  mail: null,
+  avatarHash: null,
+  accountExpires: null,
+  lastLoginLocal: null,
+  ipa: null,
+  profile: "user",
+  roles: ["user"],
+  manages: [],
+  managesGroupIds: [],
+  memberofGroup: [],
+  memberofGroupIds: [],
+};
 const setTestAuthority = (c: Parameters<MiddlewareHandler<AuthContext>>[0]) => {
-  const user: Extract<RequestActor, { kind: "user" }>["user"] = {
-    id: "11111111-1111-4111-8111-111111111111",
-    uid: "mcp-user",
-    provider: "local" as const,
-    displayName: "MCP user",
-    givenname: "MCP",
-    sn: "user",
-    mail: null,
-    avatarHash: null,
-    accountExpires: null,
-    lastLoginLocal: null,
-    ipa: null,
-    profile: "user",
-    roles: ["user"],
-    manages: [],
-    managesGroupIds: [],
-    memberofGroup: [],
-    memberofGroupIds: [],
-  };
   c.set("actor", { kind: "user", user });
   c.set("accessSubject", { type: "user", userId: user.id });
   c.set("credentialKind", "oauth");
+  c.set("credentialScopes", ["read", "write"]);
 };
 const authenticated: MiddlewareHandler<AuthContext> = async (c, next) => {
   setTestAuthority(c);
@@ -224,17 +228,44 @@ const workloadAuthentication =
     c.set("credentialScopes", [scope]);
     await next();
   };
-const createMcpRoutes = (dependencies: McpTestDependencies = {}) =>
-  createMcpRoutesBase({
-    listApps: async () => [summary(app)],
+const createMcpRoutes = (dependencies: McpTestDependencies = {}) => {
+  const listApps = dependencies.listApps ?? (async () => [summary(app)]);
+  return createMcpRoutesBase({
+    listApps,
     getOperatorLocale: async () => "en",
     getOperatorTimeZone: async () => "UTC",
     getAppUrl: async () => "cloud.example",
     authenticate: authenticated,
     withActiveSigner,
+    // Replace only live identity/registry I/O; retain the checked issuer,
+    // app-access decision and real operation-bound token signing.
+    signInvocation: (params) =>
+      issueInvocationToken(params, {
+        getApp: async (appId) => (await listApps()).find((entry) => entry.id === appId) ?? null,
+        resolve: async (authority, callingAppId) => {
+          if (authority.principal_type !== "user" || authority.sub !== user.id) return null;
+          return {
+            actor: {
+              kind: "user",
+              user,
+              ...(authority.session_kind ? { sessionKind: authority.session_kind } : {}),
+              delegation: {
+                kind: "invocation",
+                callingAppId,
+                credentialKind: authority.credential_kind,
+                invocationId: "mcp-fixture",
+              },
+            },
+            accessSubject: { type: "user", userId: user.id },
+            credentialKind: "invocation",
+            scopes: [...authority.scopes],
+          };
+        },
+      }),
     limit: passThrough,
     ...dependencies,
   });
+};
 
 const rpc = (
   routes: ReturnType<typeof createMcpRoutes>,
@@ -317,16 +348,26 @@ describe("capability MCP projection", () => {
 
   test("reads Help as the caller", async () => {
     const viewers: (RequestActor | undefined)[] = [];
+    const authorities: (RequestAuthority | null | undefined)[] = [];
     const routes = createMcpRoutes({
       listApps: async () => [helpSummary()],
-      help: (locale, viewer) => {
+      help: (locale, viewer, options) => {
         viewers.push(viewer);
-        return fixtureHelpReader(async () => [help])(locale, viewer);
+        authorities.push(options?.authority);
+        return fixtureHelpReader(async () => [help])(locale, viewer, options);
       },
     });
     const response = await rpc(routes, { jsonrpc: "2.0", id: 1, method: "resources/list", params: {} });
     expect(response.status).toBe(200);
-    expect(viewers).toMatchObject([{ kind: "user", user: { id: "11111111-1111-4111-8111-111111111111" } }]);
+    expect(viewers).toEqual([{ kind: "user", user }]);
+    expect(authorities).toEqual([
+      {
+        actor: { kind: "user", user },
+        accessSubject: { type: "user", userId: user.id },
+        credentialKind: "oauth",
+        scopes: ["read", "write"],
+      },
+    ]);
   });
 
   test("initializes current and compatible clients with self-contained server guidance", async () => {
@@ -436,10 +477,22 @@ describe("capability MCP projection", () => {
       authenticate: async (c, next) => {
         setTestAuthority(c);
         c.set("oauthScopes", ["read"]);
+        c.set("credentialScopes", ["read"]);
         return next();
       },
       getCapability: async () => app,
-      fetch: async () => Response.json({ data: { id: "one" } }),
+      fetch: async (_input, init) => {
+        const authorization = new Headers(init?.headers).get("authorization");
+        expect(authorization).toStartWith("Bearer ");
+        expect(decodeJwt(authorization!.slice(7))).toMatchObject({
+          sub: user.id,
+          credential_kind: "oauth",
+          scopes: ["read"],
+          aud: "app:demo",
+          op: "capability.query:get",
+        });
+        return Response.json({ data: { id: "one" } });
+      },
     });
     const listed = await rpc(readOnly, { jsonrpc: "2.0", id: 40, method: "tools/list", params: {} });
     const names = ((await listed.json()) as { result: { tools: Tool[] } }).result.tools.map((tool) => tool.name);
@@ -467,6 +520,7 @@ describe("capability MCP projection", () => {
       authenticate: async (c, next) => {
         setTestAuthority(c);
         c.set("oauthScopes", ["write"]);
+        c.set("credentialScopes", ["write"]);
         return next();
       },
     });
@@ -487,6 +541,7 @@ describe("capability MCP projection", () => {
         if (token === "read-token") {
           setTestAuthority(c);
           c.set("oauthScopes", ["read"]);
+          c.set("credentialScopes", ["read"]);
           return next();
         }
         return c.json({ message: "Authentication required" }, 401);
@@ -994,7 +1049,13 @@ describe("capability MCP projection", () => {
       aud: "app:demo",
       op: "capability.action.run:create",
       token_use: "invocation",
-      sub: "11111111-1111-4111-8111-111111111111",
+      sub: user.id,
+      principal_type: "user",
+      access_subject_type: "user",
+      access_subject_id: user.id,
+      credential_kind: "oauth",
+      scopes: ["read", "write"],
+      schema_hash: compiled.manifest.actions.find((action) => action.localId === "create")!.schemaHash,
     });
     expect(forwarded?.get("idempotency-key")).toBe("create-1");
   });
@@ -1103,7 +1164,8 @@ describe("capability MCP projection", () => {
     const routes = createMcpRoutes({
       getCapability: async () => app,
       listApps: async () => {
-        if (++listings > 1) throw new Error("Registry went offline");
+        // Discovery and issuance succeed; only optional link enrichment loses the registry.
+        if (++listings > 2) throw new Error("Registry went offline");
         return [summary(app)];
       },
       authenticate: authenticated,
@@ -1118,7 +1180,7 @@ describe("capability MCP projection", () => {
     expect(await response.json()).toMatchObject({
       result: { structuredContent: { data: { id: "one" }, refs: [{ type: "demo.item", id: "one" }] } },
     });
-    expect(listings).toBe(2);
+    expect(listings).toBe(3);
   });
 
   test("returns actionable resource-ref validation and reader errors", async () => {
@@ -1311,7 +1373,12 @@ test("MCP keeps its JSON socket raised until a tool response or error and resets
       { timeout: (_request: Request, seconds: number) => calls.push(seconds) },
     );
     try {
-      await entered.promise;
+      await Promise.race([
+        entered.promise,
+        Promise.resolve(pending).then(() => {
+          throw new Error("MCP completed before reaching the fixture upstream");
+        }),
+      ]);
       expect(calls).toEqual([55]);
     } finally {
       release.resolve();

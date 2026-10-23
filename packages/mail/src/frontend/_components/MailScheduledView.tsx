@@ -109,15 +109,7 @@ export default function MailScheduledView(props: {
 
   return (
     <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden" aria-busy={props.loading}>
-      <header class="flex shrink-0 items-center gap-3 px-4 py-3">
-        <span class="flex h-8 w-8 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
-          <i class="ti ti-calendar-time" aria-hidden="true" />
-        </span>
-        <div class="min-w-0 flex-1">
-          <h1 class="text-base font-semibold text-primary">{t().scheduled}</h1>
-          <p class="text-xs text-dimmed">{t().waitingForDelivery({ count: props.page.total })}</p>
-        </div>
-      </header>
+      <h1 class="sr-only">{t().scheduled}</h1>
       <ScrollArea class="flex-1 p-3">
         <Show when={!props.error} fallback={<Placeholder state="error" title={t().scheduledUnavailable} description={props.error!} />}>
           <Show
