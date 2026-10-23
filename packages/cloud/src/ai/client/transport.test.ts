@@ -167,6 +167,29 @@ describe("AI stream transport lifecycle", () => {
     });
   }
 
+  test("a live app-access denial stops the stream and reports a visible terminal error", async () => {
+    const timers = captureTimers();
+    const events: unknown[] = [];
+    const errors: AiStreamError[] = [];
+    let attempts = 0;
+    const stream = subscribeAiStream({
+      url: "/stream",
+      fetch: async () => {
+        attempts++;
+        return new Response('event: error\ndata: {"code":"app_access_denied","app":"assistant","message":"Ask an access manager."}\n\n');
+      },
+      onEvent: (event) => events.push(event),
+      onError: (error) => errors.push(error),
+    });
+    await settle();
+    expect(events).toEqual([]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: "access_denied", message: "Ask an access manager." });
+    expect(attempts).toBe(1);
+    expect(timers.filter((timer) => timer !== null)).toEqual([]);
+    stream.close();
+  });
+
   test("falls back to a stable message when the error body is not JSON", async () => {
     captureTimers();
     const errors: AiStreamError[] = [];

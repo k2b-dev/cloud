@@ -73,6 +73,8 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         { version: 3, name: "clickhouse_baseline" },
         { version: 4, name: "sql_console" },
         { version: 5, name: "overview_alerts" },
+        { version: 6, name: "agent_source_ownership" },
+        { version: 7, name: "sql_dashboards" },
         { version: 8, name: "receipt_checkpoints" },
       ]);
       expect(await sql`SELECT extname FROM pg_extension ORDER BY extname`).toEqual(extensions);
@@ -90,6 +92,9 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         "base_internal_targets",
         "base_stores",
         "bases",
+        "dashboard_operations",
+        "dashboard_runs",
+        "dashboards",
         "event_kinds",
         "ingest_idempotency",
         "metric_defs",
@@ -166,6 +171,22 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         { expect_daily_by: string; stale_since: Date | null }[]
       >`SELECT expect_daily_by,stale_since FROM pulse.sources WHERE id=${source}::uuid`,
     ).toEqual([{ expect_daily_by: "04:00", stale_since: null }]);
+  });
+  databaseTest("migration 6 preserves sources and records no invented creator", async () => {
+    await sql`DELETE FROM pulse.schema_migrations WHERE version=6`;
+    await sql`ALTER TABLE pulse.sources DROP COLUMN created_by_subject`.simple();
+    await Promise.all([migrate(), migrate(), migrate()]);
+    expect(await sql`SELECT version FROM pulse.schema_migrations WHERE version=6`).toHaveLength(1);
+    expect(
+      await sql<
+        { name: string; created_by_subject: string | null }[]
+      >`SELECT name,created_by_subject FROM pulse.sources WHERE id=${source}::uuid`,
+    ).toEqual([{ name: "Daily push", created_by_subject: null }]);
+    await sql`UPDATE pulse.sources SET created_by_subject='service_account:fixture' WHERE id=${source}::uuid`;
+    await migrate();
+    expect((await sql`SELECT created_by_subject FROM pulse.sources WHERE id=${source}::uuid`)[0]?.created_by_subject).toBe(
+      "service_account:fixture",
+    );
   });
   databaseTest("migration 8 preserves receipt identities and invalidates old completions once", async () => {
     await sql`DELETE FROM pulse.schema_migrations WHERE version=8`;

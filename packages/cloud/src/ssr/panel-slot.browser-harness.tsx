@@ -77,6 +77,9 @@ export const server = new Hono<Environment>()
         <a href="/app/fixture/next" id="leave-panel">
           Open in the app
         </a>
+        <a href="/app/fixture/panel?guard=multiple&mode=manual&step=2" id="internal-panel">
+          Another panel document
+        </a>
       </PanelLayout>
     )),
   )

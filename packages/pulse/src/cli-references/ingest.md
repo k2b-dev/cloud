@@ -31,6 +31,27 @@ This uses the authenticated base/source API. It has no idempotency-key flag.
 For deliveries that need safe retries, use the source-token HTTP route with an
 `Idempotency-Key` from the first attempt.
 
+## Track backend website events
+
+Send `page_view` after serving a page and `contact_form_sent` after accepting
+a form. Use canonical `dimensions.path` without query strings and an opaque,
+pseudonymous `sessionId` from the website. Omit IP addresses, email addresses,
+and form content. Keep the source token on the backend; there is no Beacon.
+The executable repository example is `packages/pulse/examples/website-tracking.ts`
+(`--help`), with `website-delivery.json` as a fictional persisted delivery.
+Read the [backend tracking guide](/en/apps/pulse#track-a-website-from-its-backend)
+for setup, retry behavior and the expected day/path/session counts.
+
+Agents may instead call `ingest.write` with `baseId`, `sourceId`, the current
+`expectedRevision`, and `batch` (whole input at most 192 KiB). This needs base
+write access and a source created by the current access subject. It accepts
+remembered approval per source and requires an idempotency key. Source token
+and membership management remain outside capabilities. Capability dispatch
+can return `409 IDEMPOTENCY_UNCERTAIN` after a provider 5xx or lost upstream
+answer; it will not call the writer again. Inspect stored rows with SQL and
+report the uncertainty. Do not use a new key for a potentially partial batch.
+The direct HTTP/CLI ingest retries described below have a separate contract.
+
 ## Build a batch
 
 The JSON object accepts `metrics`, `events`, and `states` arrays. Omit arrays

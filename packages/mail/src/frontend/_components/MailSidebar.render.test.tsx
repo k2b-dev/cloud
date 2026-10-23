@@ -63,6 +63,21 @@ describe("Mail sidebar", () => {
     expect((await selectHtml(mailbox, 'a[href="/app/mail"]'))[0]?.attributes["aria-current"]).toBeUndefined();
   });
 
+  test("the open mailbox and its full folder tree share one section while Focus chips stay direct rows", async () => {
+    const html = renderSidebar({
+      open: openMailboxFixture({ folders: [folder("Inbox1", "Inbox", "inbox", 20, 5), folder("Cust01", "Customers", "other", 9, 4)] }),
+    });
+    const group = ".mail-sidebar-mailbox-group.is-open";
+    expect(await selectHtml(html, group)).toHaveLength(1);
+    expect(await selectHtml(html, `${group} [data-mailbox="Box001"]`)).toHaveLength(1);
+    expect(await selectHtml(html, `${group} .mail-sidebar-folders`)).toHaveLength(1);
+    for (const id of ["Inbox1", "Cust01"])
+      expect(await selectHtml(html, `${group} a[href="/app/mail/Box001?folder=${id}"]`)).toHaveLength(1);
+    const focus = renderSidebar({ mobile: "stacked", open: null });
+    expect(await selectHtml(focus, ".mail-sidebar-mailbox-group")).toHaveLength(0);
+    expect(await selectHtml(focus, ".k2b-app-workspace__sidebar-section-content > [data-mailbox]")).not.toHaveLength(0);
+  });
+
   test("phone title navigation lists places, hidden mailboxes and New mailbox without views or tools", () => {
     const html = renderSidebar({
       open: openMailboxFixture({

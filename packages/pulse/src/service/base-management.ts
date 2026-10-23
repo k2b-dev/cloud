@@ -52,6 +52,7 @@ type BaseRow = {
   data_clear_error: string | null;
   created_at: Date | string;
   updated_at: Date | string;
+  updated_at_version?: string;
 };
 
 type AccessRow = {
@@ -86,29 +87,39 @@ type BaseUpdateValues = {
   sensitiveRetentionHours: number;
 };
 
-const mapBase = async (row: BaseRow): Promise<PulseBase> => ({
-  store: await baseStoreStatus(row.id),
-  id: row.id,
-  shortId: row.short_id,
-  icon: row.icon,
-  color: row.color,
-  timezone: row.timezone,
-  name: row.name,
-  description: row.description,
-  rawRetentionDays: row.retention_days,
-  rollupRetentionDays: row.rollup_retention_days,
-  sensitiveRetentionHours: row.sensitive_retention_hours,
-  createdBy: row.created_by,
-  deletionStartedAt: isoNullable(row.deletion_started_at),
-  deletionFailedAt: isoNullable(row.deletion_failed_at),
-  deletionError: row.deletion_error,
-  dataClearStartedAt: isoNullable(row.data_clear_started_at),
-  dataClearCompletedAt: isoNullable(row.data_clear_completed_at),
-  dataClearFailedAt: isoNullable(row.data_clear_failed_at),
-  dataClearError: row.data_clear_error,
-  createdAt: iso(row.created_at),
-  updatedAt: iso(row.updated_at),
-});
+const mapBase = async (row: BaseRow): Promise<PulseBase> => {
+  // Count configured members, not the people inside a group or a general access rule.
+  const [membership] = await sql<{ count: number }[]>`
+    SELECT count(*)::int AS count FROM pulse.base_access b
+    JOIN auth.access a ON a.id=b.access_id
+    WHERE b.base_id=${row.id}::uuid AND a.permission<>'none'
+      AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL OR a.service_account_id IS NOT NULL)
+  `;
+  return {
+    memberCount: membership!.count,
+    store: await baseStoreStatus(row.id),
+    id: row.id,
+    shortId: row.short_id,
+    icon: row.icon,
+    color: row.color,
+    timezone: row.timezone,
+    name: row.name,
+    description: row.description,
+    rawRetentionDays: row.retention_days,
+    rollupRetentionDays: row.rollup_retention_days,
+    sensitiveRetentionHours: row.sensitive_retention_hours,
+    createdBy: row.created_by,
+    deletionStartedAt: isoNullable(row.deletion_started_at),
+    deletionFailedAt: isoNullable(row.deletion_failed_at),
+    deletionError: row.deletion_error,
+    dataClearStartedAt: isoNullable(row.data_clear_started_at),
+    dataClearCompletedAt: isoNullable(row.data_clear_completed_at),
+    dataClearFailedAt: isoNullable(row.data_clear_failed_at),
+    dataClearError: row.data_clear_error,
+    createdAt: iso(row.created_at),
+    updatedAt: row.updated_at_version ?? iso(row.updated_at),
+  };
+};
 
 const principalFromAccessRow = (row: Pick<AccessRow, "user_id" | "group_id" | "service_account_id" | "authenticated_only">): Principal => {
   if (row.user_id) return { type: "user", userId: row.user_id };
@@ -177,13 +188,7 @@ export const listDeletingBases = async (user: AccessScope): Promise<Result<Pulse
   return ok(await Promise.all(rows.map(mapBase)));
 };
 
-export const createBase = async (params: {
-  name: string;
-  description?: string | null;
-  user: AccessScope;
-  isCloudAdmin?: boolean;
-  agent: boolean;
-}): Promise<Result<PulseBase>> => {
+export const checkBaseCreation = async (params: { user: AccessScope; isCloudAdmin?: boolean; agent: boolean }) => {
   const policy = await readBasePolicy();
   if (
     ("subject" in params.user &&
@@ -196,6 +201,19 @@ export const createBase = async (params: {
       status: 403,
       message: "Creating bases is restricted by policy. A Cloud admin can change this under Administration -> Pulse -> Bases.",
     });
+  return ok(policy);
+};
+
+export const createBase = async (params: {
+  name: string;
+  description?: string | null;
+  user: AccessScope;
+  isCloudAdmin?: boolean;
+  agent: boolean;
+}): Promise<Result<PulseBase>> => {
+  const allowed = await checkBaseCreation(params);
+  if (!allowed.ok) return allowed;
+  const policy = allowed.data;
   const creator = userIdForScope(params.user);
   const serviceAccountId = "subject" in params.user ? params.user.subject.serviceAccountId : null;
   const name = params.name.trim();
@@ -367,7 +385,7 @@ export const getBase = async (baseId: string, user: AccessScope): Promise<Result
   const access = await requireBaseAccess(baseId, user, "read");
   if (!access.ok) return fail(access.error);
   const [row] = await sql<BaseRow[]>`
-    SELECT *
+    SELECT *, to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS updated_at_version
     FROM pulse.bases
     WHERE id = ${baseId}::uuid
   `;
@@ -506,7 +524,7 @@ export const updateBase = async (params: {
   return ok(await mapBase(result.data));
 };
 
-export const deleteBase = async (params: { baseId: string; user: AccessScope }): Promise<Result<void>> => {
+export const deleteBase = async (params: { baseId: string; user: AccessScope; expectedUpdatedAt?: string }): Promise<Result<void>> => {
   const [existing] = await sql<BaseRow[]>`SELECT * FROM pulse.bases WHERE id = ${params.baseId}::uuid`;
   if (!existing) return fail(err.notFound("Pulse base"));
 
@@ -516,7 +534,11 @@ export const deleteBase = async (params: { baseId: string; user: AccessScope }):
   // Settings reads use the global pool: never wait for a second connection inside the locked transaction.
   const policy = await readBasePolicy();
   const queued = await sql.begin(async (tx): Promise<Result<void>> => {
-    await tx`SELECT id FROM pulse.bases WHERE id=${params.baseId}::uuid FOR UPDATE`;
+    const [locked] = await tx<
+      { version: string }[]
+    >`SELECT to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS version FROM pulse.bases WHERE id=${params.baseId}::uuid FOR UPDATE`;
+    if (params.expectedUpdatedAt !== undefined && locked?.version !== params.expectedUpdatedAt)
+      return fail(err.conflict("Base changed; read its current updatedAt and retry."));
     const authorized = await requireBaseAccess(params.baseId, params.user, "admin", tx);
     if (!authorized.ok) return authorized;
     await insertBaseStore(params.baseId, policy, tx);
@@ -543,7 +565,7 @@ export const deleteBase = async (params: { baseId: string; user: AccessScope }):
   return ok();
 };
 
-export const clearBaseData = async (params: { baseId: string; user: AccessScope }): Promise<Result<void>> => {
+export const clearBaseData = async (params: { baseId: string; user: AccessScope; expectedUpdatedAt?: string }): Promise<Result<void>> => {
   const [existing] = await sql<BaseRow[]>`SELECT * FROM pulse.bases WHERE id = ${params.baseId}::uuid`;
   if (!existing) return fail(err.notFound("Pulse base"));
 
@@ -551,7 +573,11 @@ export const clearBaseData = async (params: { baseId: string; user: AccessScope 
   if (!access.ok) return fail(access.error);
 
   const queued = await sql.begin(async (tx): Promise<Result<void>> => {
-    await tx`SELECT id FROM pulse.bases WHERE id=${params.baseId}::uuid FOR UPDATE`;
+    const [locked] = await tx<
+      { version: string }[]
+    >`SELECT to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS version FROM pulse.bases WHERE id=${params.baseId}::uuid FOR UPDATE`;
+    if (params.expectedUpdatedAt !== undefined && locked?.version !== params.expectedUpdatedAt)
+      return fail(err.conflict("Base changed; read its current updatedAt and retry."));
     const active = await requireBaseActive(params.baseId, tx);
     if (!active.ok) return active;
     const authorized = await requireBaseAccess(params.baseId, params.user, "admin", tx);

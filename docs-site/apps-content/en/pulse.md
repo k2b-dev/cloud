@@ -5,7 +5,7 @@ section: Operations
 order: 420
 description: Collect telemetry and query each base with read-only SQL.
 tags: [pulse, telemetry, metrics]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Pulse
@@ -16,13 +16,17 @@ to one ClickHouse database per base; Postgres keeps control data.
 
 Use SQL through the API, CLI, or `sql.run` capability to read measurements.
 Saved queries keep SQL and parameters for reuse. The live SQL console is a
-separate interface for these same operations; dashboards follow later.
+separate interface for these same operations. Dashboards save SQL results as
+numbers, charts, tables, and funnels.
 
 Cloud administrators open **Administration → App administration → Pulse** to
 manage the data store, bases, and internal targets. **Data store** opens first.
 Pulse uses the shared app administration list, with no separate sidebar section.
 
 ## See what needs attention
+
+The base switcher shows the number of configured members. Each person, group
+or agent counts once; general access rules do not count as individual members.
 
 A base opens on **Overview**. It shows source freshness, alert rules needing
 attention, up to four saved key numbers, and recent changes. Existing
@@ -93,6 +97,14 @@ tabs. Each rule has a ten-second SQL deadline and uses only free execution
 slots, without consuming the question quota. A missed check is an error, never
 an assumed success. Work is bounded per tick: at most 60 due rules and 2,000
 sources; a backlog continues on later ticks.
+
+Starting with this release, alert SQL has a separate budget of 240 admitted
+checks per clock hour per base, shared by all replicas. Editing or replacing a rule does not
+reset this budget. With all 20 rules running every five minutes, immediate
+checks after edits can exhaust the budget before the hour ends. Refused
+admission consumes no check; an admitted query that fails still counts. When the budget is exhausted, due checks report an error
+and subsequent scheduled checks can resume in the next hour. Interactive SQL
+keeps its own hourly quota.
 
 Firing, escalation, missing data, errors, and recovery notify the base's admins
 through Cloud; browser and email delivery are recommended and respect their
@@ -292,19 +304,24 @@ result geometry and do not imply a row count before a result is available.
 
 ### Use time buckets and metric helpers
 
-Buckets use native ClickHouse SQL. For fixed intervals, write:
+Use `bucket(timestamp, :interval)` through the SQL API, CLI, console, or
+`sql.run`. Supply a positive integer duration such as `5m`, `1h`, `1d`, or
+`2w` (units `s`, `m`, `h`, `d`, `w`). For example:
 
 ```sql
-SELECT toStartOfInterval(ts, toIntervalSecond(:bucket), :base_tz) AS t,
+SELECT bucket(ts, :bucket) AS t,
        count() AS events
 FROM events
 WHERE ts >= :from AND ts < :to
 GROUP BY t ORDER BY t
 ```
 
-For calendar days, use `toStartOfInterval(ts, INTERVAL 1 DAY, :base_tz)`.
-Calendar days follow the base timezone and can contain 23 or 25 hours.
-`bucket()` is not a global function.
+Seconds, minutes, and hours use fixed durations. Days and weeks use calendar
+intervals in the base timezone; a local day can contain 23 or 25 hours.
+Pulse compiles the helper to native ClickHouse SQL and binds interval values
+and the base timezone as data. The second argument must be a named parameter;
+quoted text and comments remain unchanged. Direct ClickHouse clients can use
+`toStartOfInterval` themselves.
 
 Three per-base parameterized views provide reset-safe counter calculations:
 
@@ -390,6 +407,139 @@ are retained, with 240 KiB reserved for data and 16 KiB for the capability
 envelope. `saved_query.save` uses an idempotency
 key and revision checks with rememberable approval. Deletion always asks for
 approval. There is no capability for tokens or access changes.
+
+## Build a dashboard
+
+Use **Ask AI** to propose a dashboard, or save its JSON plus SQL with
+`cld pulse dashboards save --base <base-id> --file dashboard.json`.
+Read `cld pulse reference dashboards.md` for a complete website example.
+The Assistant asks before saving. Updates use the revision from
+`dashboard.read` or `dashboards get` so a stale edit cannot overwrite a newer one.
+
+A dashboard groups number, line, bar, table, and funnel panels into sections.
+A named section can include an icon, color, and caption describing its sources
+or cadence; these come from the saved definition.
+A number panel shows one numeric value. With a DateTime `x`, it uses the last
+returned row and shows up to 480 trend points. Optional String columns
+`unit`, `detail`, and `detailTone` add a unit and change label.
+Choose 24 hours, seven days, 30 days, 90 days, or a custom period. Referenced
+`:from`, `:to`, and `:bucket` parameters follow that range. Other values remain
+in the panel's `params`. Each panel declares the output `columns` it shows;
+charts also choose `x` and optionally `series`. Aggregate to at most eight
+series and 480 points per series, with 36 panels and 3,840 marks per panel.
+Excessive or truncated results show an error instead of silently losing rows.
+
+Panels retain the base's SQL profile and concurrency limits, separately from
+the questions quota. Refreshes run at most once per revision, range, and
+60-second interval. On failure, the panel keeps its last successful result
+and timestamp when available. Retries back off from one to five minutes.
+
+### Share selected results
+
+Review every output column before publishing. Anyone with the returned link
+can read those results. The public page contains presentation and selected
+columns, without SQL or parameters. Publishing requires write access and an
+explicit confirmation. Assistant publication always asks for approval.
+
+SQL, parameters, selected-column, and output changes end the existing link;
+title and layout edits retain it. Publishing again rotates the link. Revoke it
+with **Unpublish** or `cld pulse dashboards unpublish`. Clearing measurements
+preserves definitions and discards old cached results; deleting a base also
+removes its dashboards and public links.
+
+### Dashboard operations in this release
+
+This release adds Postgres dashboard definitions and durable execution
+receipts. Back them up with the other Pulse control data. Valkey holds only
+result snapshots: at most 500 entries or 64 MiB of serialized keys and data,
+evicted by oldest write. Loss or eviction of a snapshot does not permit an
+extra calculation within its current interval. Private and public reads have
+separate cache keys and validate access on every read. A store outage may
+leave a timestamped previous result available; a lost cache means waiting for
+the next permitted refresh.
+
+## Let an agent create and write telemetry
+
+`base.create` follows the operator's base creation policy and grants the
+creating access subject admin access. `ingest.write` needs base write access
+and an HTTP ingest source created by that same access subject. Create the
+source with `source.create`, then read its current revision with `source.read`.
+Existing sources without a recorded creator continue to accept their source
+tokens and authenticated API writes; create a new source for `ingest.write`.
+
+| Action | Input and approval |
+| --- | --- |
+| `base.create` | `name`, optional `description`; rememberable approval |
+| `ingest.write` | `baseId`, `sourceId`, `expectedRevision`, `batch`; whole input at most 192 KiB; rememberable approval per source |
+| `base.clear_data` | `baseId`, exact `expectedUpdatedAt` from a fresh `base.read`; base admin; always asks |
+| `base.delete` | Same revision and admin requirements; always asks |
+
+All four require an idempotency key. Reuse the same key and unchanged input
+when retrying through the platform capability dispatcher. After a provider
+5xx or a lost upstream answer, the dispatcher can return
+`409 IDEMPOTENCY_UNCERTAIN` without executing again. Inspect stored rows with
+SQL and report the uncertain result; do not invent a new key, because part of
+the batch may already exist. Direct HTTP ingest has its own same-key retry
+contract. A changed source
+revision or base timestamp returns 409: read the resource again before
+proposing another action. Clear and delete return `{started: true}` when the
+lifecycle operation is queued; follow `base.read` for completion. Clearing
+preserves sources and configuration; deletion removes the base and its sources.
+There are no token or membership capabilities. `source.create` and
+`source.update` continue to ask on every call.
+
+## Track a website from its backend
+
+Send `page_view` after the backend serves a page, and `contact_form_sent`
+after it accepts and stores a contact request. Keep the source token in the
+backend's secret store. Browser JavaScript must never receive it; Pulse has
+no browser Beacon or browser tracking snippet. A static site needs a backend
+or server function to send these events.
+
+Use canonical paths without query strings, such as `/services`. Supply an
+opaque, pseudonymous `sessionId` from the website's own session handling.
+Do not send IP addresses, email addresses, form content, or authentication
+cookies. Pulse neither creates sessions nor infers unique people.
+
+The repository includes an executable backend example at
+`packages/pulse/examples/website-tracking.ts` and a fictional delivery in
+`packages/pulse/examples/website-delivery.json`. Create an HTTP source and
+save its token to a new protected file:
+
+```sh
+cld pulse use Website
+cld pulse sources create --name willow-website --kind http_ingest
+cld pulse source-tokens create willow-website --name backend --output-file ./website.token
+bun packages/pulse/examples/website-tracking.ts --help
+bun packages/pulse/examples/website-tracking.ts https://cloud.example/api/pulse/ingest ./website.token ./delivery.json
+```
+
+Copy the fictional delivery to `delivery.json` for a test base. Its five events
+are dated 19–20 October 2026; use current timestamps and a new delivery key if
+those dates are outside retention. A successful response reports five events.
+Persist each real delivery's body and key before sending it. On HTTP 429 or
+503, leave it pending and respect `Retry-After`. Retry the unchanged body with
+the same key within 24 hours, including after a lost response. Replaying the
+fixture once still leaves five stored events.
+
+With the base timezone set to `Europe/Berlin`, this query returns one page
+view on 19 October and three on 20 October. The same pseudonymous session
+crosses midnight. `/services` has two views from two sessions, and `/contact`
+has one view and one submitted form:
+
+```sql
+SELECT toString(bucket(ts, :bucket)) AS day, JSONExtractString(dimensions,'path') AS path,
+       countIf(kind='page_view') AS views,
+       uniqExactIf(session_id, kind='page_view') AS sessions,
+       countIf(kind='contact_form_sent') AS contacts
+FROM events GROUP BY day, path ORDER BY day, path
+```
+
+Run the supplied query with `cld pulse sql --file packages/pulse/examples/website.sql --param bucket=1d`, or pass
+`{baseId, sql, params: {bucket: "1d"}}` to `sql.run` in Assistant. Save and pin
+`SELECT countIf(kind='page_view') AS value FROM events` to show four page
+views on Overview. A session count is scoped to the query's grouping; do not
+sum per-path sessions to claim a count of unique visitors.
 
 ## Send a batch with HTTP ingest
 

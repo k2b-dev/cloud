@@ -113,6 +113,7 @@ describe("Pulse base overview", () => {
           return {
             host: rect(".layout-content-main", true),
             workspace: rect(".k2b-app-workspace"),
+            header: rect(".pulse-workspace__mobile-header"),
             numbers: rect(".pulse-overview__numbers"),
             documentHeight: document.documentElement.scrollHeight,
             documentWidth: document.documentElement.scrollWidth,
@@ -125,7 +126,7 @@ describe("Pulse base overview", () => {
         await tab.evaluate(() => document.fonts.ready);
         await tab.locator(".pulse-overview__headline").waitFor();
         const before = await geometry();
-        expect(before.workspace.top).toBeCloseTo(before.host.top, 0);
+        expect(before.workspace.top).toBeCloseTo(before.host.top + before.header.height, 0);
         expect(before.workspace.bottom).toBeCloseTo(before.host.bottom, 0);
         expect(before.host.bottom).toBeLessThanOrEqual(view.height);
         expect(before.documentHeight).toBeLessThanOrEqual(view.height + 1);
@@ -683,17 +684,21 @@ describe("Pulse base page after the cut", () => {
     }
   }, 60_000);
 
-  test("where dashboards used to be, one hint explains what comes back and leads to the sources", async () => {
+  test("empty dashboards offer SQL and Assistant and keep their first frame stable", async () => {
     for (const view of views) {
-      const { tab } = await open(view, { ...workspaceFixture, initialRouteState: { view: "coming-back", sourceId: "" } });
+      const { tab } = await open(view, {
+        ...workspaceFixture,
+        initialRouteState: { view: "dashboards", sourceId: "" },
+        initialDashboards: { items: [], total: 0, nextOffset: null, selected: null, error: null },
+      });
       try {
-        await tab.getByText("Dashboards kommen zurück").first().waitFor();
-        const hint = await tab.getByText("Dashboards kommen zurück").first().boundingBox();
-        expect(await tab.getByRole("button", { name: "Zu den Quellen" }).isVisible()).toBe(true);
+        await tab.getByRole("heading", { name: "Noch kein Dashboard", exact: true }).waitFor();
+        const hint = await tab.getByRole("heading", { name: "Noch kein Dashboard", exact: true }).boundingBox();
+        expect(await tab.getByRole("link", { name: "SQL-Konsole öffnen" }).isVisible()).toBe(true);
         expect(await overflow(tab)).toBeLessThanOrEqual(0);
         // Nothing loads after the first frame, so the hint stays where it was a few frames later.
         await tab.clock.runFor(100);
-        expect(await tab.getByText("Dashboards kommen zurück").first().boundingBox()).toEqual(hint);
+        expect(await tab.getByRole("heading", { name: "Noch kein Dashboard", exact: true }).boundingBox()).toEqual(hint);
       } finally {
         await tab.close();
       }
@@ -741,7 +746,12 @@ describe("Pulse base page after the cut", () => {
     };
     const { tab, calls } = await open(
       views[1]!,
-      { ...workspaceFixture, initialBases: [clearing], initialRouteState: { view: "coming-back", sourceId: "" } },
+      {
+        ...workspaceFixture,
+        initialBases: [clearing],
+        initialRouteState: { view: "dashboards", sourceId: "" },
+        initialDashboards: { items: [], total: 0, nextOffset: null, selected: null, error: null },
+      },
       "de",
       (url) => {
         const path = new URL(url).pathname;
@@ -847,7 +857,10 @@ test("Browser Back asks before discarding base settings and Cancel preserves the
     await tab.getByRole("button", { name: "Abbrechen", exact: true }).last().click();
     expect(await name.inputValue()).toBe("Laden Entwurf");
     await tab.evaluate(() => window.history.back());
-    await tab.getByRole("button", { name: "Verwerfen", exact: true }).click();
+    // Back dispatches asynchronously; the settings form also has a Discard button.
+    const confirmation = tab.getByRole("dialog", { name: "Ungespeicherte Änderungen", exact: true });
+    await confirmation.getByText("Ungespeicherte Änderungen verwerfen?", { exact: true }).waitFor();
+    await confirmation.getByRole("button", { name: "Verwerfen", exact: true }).click();
     await tab.waitForFunction(() => !new URL(window.location.href).searchParams.has("settings"));
     expect(await name.count()).toBe(0);
   } finally {
