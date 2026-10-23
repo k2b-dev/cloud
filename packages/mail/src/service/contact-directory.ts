@@ -8,11 +8,14 @@ import {
   capabilityContractIssues,
   contactDirectory,
 } from "@k2b/cloud/contracts";
+import { invalidateSettingsCache, read, SettingUnreadableError, set } from "@k2b/cloud/services/settings";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { sql } from "bun";
 import type { Context } from "hono";
 import { app } from "../config";
 import { contactDirectoryMessages } from "../contact-directory-messages";
 import {
+  MAIL_CONTACT_DIRECTORY_DEFAULTS,
   MAIL_CONTACT_DIRECTORY_REQUIRED,
   MAIL_CONTACT_DIRECTORY_SETTING_KEYS,
   type MailContactDirectory,
@@ -46,20 +49,30 @@ export type ContactDirectoryIssue = {
   message: string;
 };
 
-type ContactDirectorySettingKey = (typeof MAIL_CONTACT_DIRECTORY_SETTING_KEYS)[keyof typeof MAIL_CONTACT_DIRECTORY_SETTING_KEYS];
+export type ContactDirectorySettingKey = (typeof MAIL_CONTACT_DIRECTORY_SETTING_KEYS)[keyof typeof MAIL_CONTACT_DIRECTORY_SETTING_KEYS];
 /** Platform seams; tests replace them instead of touching the catalog, accounts, or shared settings. */
 export type ContactDirectoryDependencies = {
   listCatalog: typeof listCapabilityCatalog;
   getCatalogApp: typeof getCapabilityCatalogApp;
   isAdmin: (context: MailRequestContext) => Promise<boolean>;
-  writeSetting: (key: ContactDirectorySettingKey, value: string) => Promise<void>;
+  readSetting: (key: ContactDirectorySettingKey, tx?: typeof sql) => Promise<{ value: string; stored: "none" | "readable" | "unreadable" }>;
+  writeSetting: (key: ContactDirectorySettingKey, value: string, options: { replaceUnreadable?: boolean }, tx: typeof sql) => Promise<void>;
+  transaction: (write: (tx: typeof sql) => Promise<ContactDirectorySaveResult>) => Promise<ContactDirectorySaveResult>;
+  invalidateSettings: (keys: readonly string[]) => Promise<void>;
 };
 const platform: ContactDirectoryDependencies = {
   listCatalog: listCapabilityCatalog,
   getCatalogApp: getCapabilityCatalogApp,
   isAdmin: (context) => isCurrentPlatformAdmin(context),
-  // complete value from explicit admin input; nothing is merged over a read (#1303)
-  writeSetting: (key, value) => app.settings.set(key, value, { replaceUnreadable: true }),
+  readSetting: async (key, tx) => {
+    if (!tx) return app.settings.read(key);
+    const state = await read(key, tx);
+    if (typeof state.value !== "string") throw new Error(`Expected a string setting: ${key}`);
+    return { ...state, value: state.value };
+  },
+  writeSetting: (key, value, options, tx) => set(key, value, tx, options),
+  transaction: (write) => sql.begin(write),
+  invalidateSettings: invalidateSettingsCache,
 };
 
 const requireAdmin = async (context: MailRequestContext, deps: ContactDirectoryDependencies): Promise<Result<void>> =>
@@ -152,6 +165,7 @@ const loadCatalogApps = async (locale: string, deps: ContactDirectoryDependencie
 };
 
 export type ContactDirectoryAdminView = {
+  unreadable?: Partial<Record<ContactDirectorySettingKey, boolean>>;
   config: MailContactDirectoryConfig;
   /** `null` when the capability catalog could not be read. */
   apps: ContactDirectoryAppOption[] | null;
@@ -163,10 +177,18 @@ export const loadContactDirectoryAdmin = async (
   context: MailRequestContext,
   config: MailContactDirectoryConfig,
   locale: string,
-  deps: ContactDirectoryDependencies = platform,
+  overrides: Partial<ContactDirectoryDependencies> = {},
 ): Promise<Result<ContactDirectoryAdminView>> => {
+  const deps = { ...platform, ...overrides };
   const admin = await requireAdmin(context, deps);
   if (!admin.ok) return admin;
+  const unreadable: Partial<Record<ContactDirectorySettingKey, boolean>> = {};
+  for (const field of ["appId", ...CONTACT_DIRECTORY_FUNCTIONS] as const) {
+    const key = MAIL_CONTACT_DIRECTORY_SETTING_KEYS[field];
+    const state = await deps.readSetting(key);
+    config = { ...config, [field]: state.value };
+    unreadable[key] = state.stored === "unreadable";
+  }
   const catalogApps = await loadCatalogApps(locale, deps);
   const apps =
     catalogApps
@@ -184,7 +206,7 @@ export const loadContactDirectoryAdmin = async (
       }))
       .sort((left, right) => left.appName.localeCompare(right.appName, locale, { sensitivity: "base" })) ?? null;
   const current = catalogApps?.find((catalogApp) => catalogApp.appId === config.appId) ?? null;
-  return ok({ config, apps, issues: catalogApps ? contactDirectoryIssues(config, current, locale) : [] });
+  return ok({ config, apps, unreadable, issues: catalogApps ? contactDirectoryIssues(config, current, locale) : [] });
 };
 
 export type ContactDirectorySaveResult =
@@ -195,22 +217,40 @@ export type ContactDirectorySaveResult =
 /** Validates a mapping against the provider's live catalog and stores it only when Mail can use it. */
 export const saveContactDirectory = async (
   context: MailRequestContext,
-  config: MailContactDirectoryConfig,
+  input: Partial<MailContactDirectoryConfig> & { replaceUnreadable?: ContactDirectorySettingKey[] },
   locale: string,
-  deps: ContactDirectoryDependencies = platform,
+  overrides: Partial<ContactDirectoryDependencies> = {},
 ): Promise<ContactDirectorySaveResult> => {
+  const deps = { ...platform, ...overrides };
   const admin = await requireAdmin(context, deps);
   if (!admin.ok) return { ok: false, status: 403, message: admin.error.message };
-  const catalog = await deps.getCatalogApp(config.appId, locale);
-  if (!catalog.ok) return { ok: false, status: 503, message: catalog.error.message };
-  const issues = contactDirectoryIssues(config, catalog.data, locale);
-  if (issues.length > 0) return { ok: false, status: 400, issues };
-  const stored = { ...config };
-  for (const field of ["appId", ...CONTACT_DIRECTORY_FUNCTIONS] as const) {
-    stored[field] = config[field].trim();
-    await deps.writeSetting(MAIL_CONTACT_DIRECTORY_SETTING_KEYS[field], stored[field]);
-  }
-  return { ok: true, config: stored };
+  const changed: ContactDirectorySettingKey[] = [];
+  const saved = await deps.transaction(async (tx): Promise<ContactDirectorySaveResult> => {
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended('mail.contact-directory-settings', 0))`;
+    const config: MailContactDirectoryConfig = { ...MAIL_CONTACT_DIRECTORY_DEFAULTS };
+    // Merge and validate the latest mapping while holding the same lock as every other save.
+    for (const field of ["appId", ...CONTACT_DIRECTORY_FUNCTIONS] as const) {
+      const key = MAIL_CONTACT_DIRECTORY_SETTING_KEYS[field];
+      const state = await deps.readSetting(key, tx);
+      if (input[field] !== undefined && state.stored === "unreadable" && !input.replaceUnreadable?.includes(key))
+        throw new SettingUnreadableError(key);
+      config[field] = (input[field] ?? state.value).trim();
+    }
+    const catalog = await deps.getCatalogApp(config.appId, locale);
+    if (!catalog.ok) return { ok: false, status: 503, message: catalog.error.message };
+    const issues = contactDirectoryIssues(config, catalog.data, locale);
+    if (issues.length > 0) return { ok: false, status: 400, issues };
+    for (const field of ["appId", ...CONTACT_DIRECTORY_FUNCTIONS] as const) {
+      const key = MAIL_CONTACT_DIRECTORY_SETTING_KEYS[field];
+      if (input[field] !== undefined) {
+        await deps.writeSetting(key, config[field], { replaceUnreadable: input.replaceUnreadable?.includes(key) === true }, tx);
+        changed.push(key);
+      }
+    }
+    return { ok: true, config };
+  });
+  if (saved.ok) await deps.invalidateSettings(changed);
+  return saved;
 };
 
 /** A request-local registry read distinguishes an absent provider from a failed call. */

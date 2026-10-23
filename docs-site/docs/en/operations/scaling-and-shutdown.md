@@ -287,3 +287,14 @@ Make stop hooks idempotent. A startup failure can require cleanup before the
 service fully starts.
 
 Test shutdown with real `SIGTERM`, not only a local process kill.
+
+## IP request budgets
+
+IP-based request limits share one budget across replicas through Valkey. IPv6
+clients in the same `/64` also share that budget, including public share pages.
+IPv4 remains per address. See [Limit requests](/en/docs/server/middleware#limit-requests)
+for address normalization and custom budgets.
+
+When upgrading, existing full-address IPv6 counters are replaced by network
+counters. Expect one fresh window at cutover; after all replicas are updated,
+changing host addresses cannot obtain a new budget.

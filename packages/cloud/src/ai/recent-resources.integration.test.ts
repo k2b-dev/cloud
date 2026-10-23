@@ -7,10 +7,11 @@ import * as registry from "../_internal/registry";
 import * as capabilities from "../api/capabilities";
 import type { RequestAuthority } from "../server";
 import { accounts } from "../services/accounts";
+import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import { createTestSession } from "../services/session/session.test-fixture";
 import { migrateCloudAi } from "./migrate";
 import { listAiRecentResources } from "./recent-resources";
-import { recentTestApp, recentTestSkill } from "./recent-resources.test-fixture";
+import { recentTestApp, recentTestRegistryApp, recentTestSkill } from "./recent-resources.test-fixture";
 import { aiResourceMarker } from "./resource-markers";
 import { aiRoutes } from "./routes";
 import { createAiShortId } from "./short-id";
@@ -55,6 +56,7 @@ const fixture = async () => {
       locale: "de",
       signal: new AbortController().signal,
       dependencies: {
+        listApps: async () => [recentTestRegistryApp],
         listRegistry: async () => [recentTestApp],
         dispatch: async ({ input }) => {
           const { id } = z.object({ id: z.string() }).parse(input);
@@ -71,6 +73,7 @@ const fixture = async () => {
 };
 
 suite("recent sent resources: real store and current reader authorization", () => {
+  useRegisteredTestApp("demo", { kind: "signedIn" });
   beforeAll(migrateCloudAi);
 
   test("only own sent user refs count; excludes archived chats, routines, agents, assistant/tool markers and malformed content", async () => {

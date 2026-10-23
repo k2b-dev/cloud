@@ -833,7 +833,10 @@ const mailOperationsApi = new Hono<MailApiContext>()
     const mailboxId = internalMailboxId(c);
     const allowed = await mailboxAccess.requireMailboxPermission(requestContext(c), mailboxId, "admin");
     if (!allowed.ok) return respondPublic(c, allowed);
-    return respondPublic(c, ok(await discoverMailConfigurations((await internalInput(c, c.req.valid("query"))).email)));
+    return respondPublic(
+      c,
+      ok(await discoverMailConfigurations((await internalInput(c, c.req.valid("query"))).email, { signal: c.req.raw.signal })),
+    );
   })
   .get(
     "/mailboxes",
@@ -1114,7 +1117,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
     },
   )
   .get("/mailboxes/:mailboxId/settings-context", v("param", mailboxParamSchema), async (c) =>
-    respondAggregate(c, settingsContext.loadMailboxSettingsContext(requestContext(c), internalMailboxId(c))),
+    respondAggregate(c, settingsContext.loadMailboxSettingsContext(requestContext(c), internalMailboxId(c), auth.getAuthority(c))),
   )
   .get("/mailboxes/:mailboxId/details", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, mailboxDetails.getMailboxDetails(requestContext(c), internalMailboxId(c))),
@@ -1372,6 +1375,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
       respondPublic(
         c,
         listSubscriptions.requestUnsubscribe({
+          signal: c.req.raw.signal,
           context: requestContext(c),
           mailboxId: internalMailboxId(c),
           input: await internalInput(c, c.req.valid("json")),

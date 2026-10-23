@@ -128,14 +128,19 @@ mutations; application-owned access grants do not confer this authority.
 | Method and path below `/api/admin/core/linux-identities` | Purpose |
 | --- | --- |
 | `GET /` | Preview a page; optional UUID `after` cursor |
-| `PUT /configuration` | Save `{ config, rangeReserved }`; enabled setup requires confirmation |
+| `PUT /configuration` | Save `{ config, rangeReserved, replaceUnreadable? }`; enabled setup requires confirmation |
 | `GET /users/:id` | Inspect one account and its identity state |
 | `POST /users/:id` | Backfill missing attributes for one eligible local full account |
 | `PATCH /users/:id` | Set local `homeDirectory` and `loginShell` |
 | `POST /groups/:id` | Assign a GID to an existing local group |
 
 The configuration is one validated value, `linux.identity_config`, in the
-existing settings store. Use the dedicated administration API rather than
+existing settings store. Administration reads add `config.unreadable`; omit that
+read-only marker from the configuration in a PUT. The service's
+`configure(actor, config, { replaceUnreadable: true })` and the API's
+`replaceUnreadable: true` explicitly replace an unreadable configuration.
+Without this intent the write fails with HTTP 409 `setting_unreadable`.
+Use the dedicated administration API rather than
 editing that JSON setting directly. Allocation and the current configuration
 are checked inside each database transaction. No partial account or group
 allocation is published when a check fails.
