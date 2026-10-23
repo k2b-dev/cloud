@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { renderMarkdownInfoBlock } from "@k2b/ui";
 import postcss, { type Rule } from "postcss";
+import { downstreamBudget } from "../downstream-budget";
 import type { GotenbergConfig } from "./gotenberg";
 import {
   buildMarkdownPdfHtml,
@@ -10,6 +11,12 @@ import {
   MarkdownPdfError,
   renderMarkdownToPdfWithConfig,
 } from "./markdown";
+
+let admission: ReturnType<typeof spyOn<typeof downstreamBudget, "acquire">>;
+beforeEach(() => {
+  admission = spyOn(downstreamBudget, "acquire").mockResolvedValue(() => {});
+});
+afterEach(() => admission.mockRestore());
 
 const config = {
   url: "http://gotenberg:3000",

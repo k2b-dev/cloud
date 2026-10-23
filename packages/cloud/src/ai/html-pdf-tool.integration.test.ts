@@ -70,7 +70,7 @@ const convert = async (
   return { result, pdf };
 };
 
-suiteFor("gotenberg")("html_to_pdf in Gotenberg", () => {
+suiteFor("gotenberg", "valkey")("html_to_pdf in Gotenberg", () => {
   let config: GotenbergConfig;
   let trap: GotenbergTrap;
 
