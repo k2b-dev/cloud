@@ -250,6 +250,36 @@ for (const mode of [
       await dialog.waitFor({ state: "hidden" });
       expect(harness.props({ chat: id }).open?.conversation.purpose).toBe("Updated purpose");
     });
+    test("saving over an audience someone else changed is refused and shows the stored one", async () => {
+      harness.addGroup({ id: "77777777-7777-4777-8777-777777777777", name: "Press group", size: 3 });
+      const id = harness.addChannel("Press", "Press releases", true);
+      await mount(page, mode.locale, `/app/chat/c/${id}`);
+      await page.getByRole("link", { name: t.chatInfo, exact: true }).filter({ visible: true }).click();
+      const info = page.locator("#k2b-workspace-detail-chat-info");
+      await info.getByRole("button", { name: t.chatActions({ title: "Press" }), exact: true }).click();
+      await page.getByRole("menuitem", { name: t.discoverySettings, exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByText(t.discoveryAudience({ count: 42 }), { exact: true }).waitFor();
+      // Another admin narrows the audience to a group while this dialog is open.
+      harness.setDiscovery(id, [
+        { principal: { type: "group", groupId: "77777777-7777-4777-8777-777777777777" }, permission: "read", displayName: "Press group" },
+      ]);
+      await dialog.getByRole("textbox", { name: t.purpose, exact: true }).fill("Updated releases");
+      await dialog.getByRole("button", { name: t.save, exact: true }).click();
+      await dialog.getByText(t.discoveryChanged, { exact: true }).waitFor();
+      await dialog.getByText("Press group", { exact: true }).waitFor();
+      expect(await dialog.getByRole("textbox", { name: t.purpose, exact: true }).inputValue()).toBe("Updated releases");
+      // Only the changed purpose and the audience it started from went to the server.
+      expect(harness.discoveryUpdates[0]).toMatchObject({ purpose: "Updated releases", revision: expect.stringMatching(/^[0-9a-f]{64}$/) });
+      expect(harness.discoveryUpdates[0]).not.toHaveProperty("name");
+      await dialog.getByText(t.discoveryAudience({ count: 42 }), { exact: true }).waitFor();
+      await dialog.getByRole("button", { name: t.save, exact: true }).click();
+      await dialog.waitFor({ state: "hidden" });
+      expect(harness.discoveryUpdates.at(-1)?.entries).toEqual([
+        { principal: { type: "group", groupId: "77777777-7777-4777-8777-777777777777" }, permission: "read" },
+      ]);
+    });
+
     test("the last manager must choose a successor before unsubscribing", async () => {
       const id = harness.addChannel("Design", "Shared decisions", true);
       await mount(page, mode.locale, `/app/chat/c/${id}`);

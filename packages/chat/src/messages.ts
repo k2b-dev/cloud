@@ -126,6 +126,7 @@ export const chatMessages = i18n.define({
       threadNameTaken: "A thread with this name already exists.",
       threadLimit: "This chat has reached its thread limit.",
       threadsUnavailable: "Channels do not support threads.",
+      discoveryChanged: "Someone changed who can find this channel in the meantime. Check the current settings and save again.",
       threadArchived: "Restore this thread before sending a message.",
       systemThreadCreated: ({ actor, name }: { actor: string; name: string }) => `${actor} created the thread “${name}”`,
       systemThreadRenamed: ({ actor, from, to }: { actor: string; from: string; to: string }) => `${actor} renamed “${from}” to “${to}”`,
@@ -432,6 +433,7 @@ export const chatMessages = i18n.define({
       threadNameTaken: "Ein Thread mit diesem Namen existiert bereits.",
       threadLimit: "Dieser Chat hat die maximale Anzahl an Threads erreicht.",
       threadsUnavailable: "Kanäle unterstützen keine Threads.",
+      discoveryChanged: "Inzwischen hat jemand geändert, wer diesen Kanal findet. Prüfe die aktuellen Einstellungen und speichere erneut.",
       threadArchived: "Stelle diesen Thread wieder her, bevor du eine Nachricht sendest.",
       systemThreadCreated: ({ actor, name }: { actor: string; name: string }) => `${actor} hat den Thread „${name}“ angelegt`,
       systemThreadRenamed: ({ actor, from, to }: { actor: string; from: string; to: string }) =>

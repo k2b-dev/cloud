@@ -224,6 +224,7 @@ export const startChatHarness = async () => {
   // Which part of the chat each read named: "general", "all", or a thread.
   const readViews: { chat: string; seq: number; thread: string }[] = [];
   const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string; refs?: CloudResourceRef[] }[] = [];
+  const discoveryUpdates: { entries: unknown[]; name?: string; purpose?: string; revision?: string }[] = [];
 
   const principalId = (principal: MemberPrincipal) =>
     principal.type === "user" ? principal.userId : principal.type === "group" ? principal.groupId : principal.serviceAccountId;
@@ -864,8 +865,15 @@ export const startChatHarness = async () => {
         const chat = chats.get(id!);
         if (!chat) return Response.json({ code: "NOT_FOUND", message: "Chat not found." }, { status: 404 });
         if (part === "discovery") {
+          const key = (entries: NonNullable<Chat["discovery"]>) =>
+            entries
+              .map((entry) => `${entry.principal.type === "group" ? entry.principal.groupId : "authenticated"}:${entry.permission}`)
+              .sort()
+              .join(",");
+          const revision = new Bun.CryptoHasher("sha256").update(key(chat.discovery ?? [])).digest("hex");
           if (request.method === "GET")
             return Response.json({
+              revision,
               entries: (chat.discovery ?? []).map((entry, index) => ({
                 ...entry,
                 displayName:
@@ -877,12 +885,21 @@ export const startChatHarness = async () => {
               allowAuthenticated,
               audienceCount: chat.discovery?.length ? 42 : 0,
             });
-          const input = (await request.json()) as { entries: NonNullable<Chat["discovery"]>; name?: string; purpose?: string };
-          const key = (entries: NonNullable<Chat["discovery"]>) =>
-            entries
-              .map((entry) => `${entry.principal.type === "group" ? entry.principal.groupId : "authenticated"}:${entry.permission}`)
-              .sort()
-              .join(",");
+          const input = (await request.json()) as {
+            entries: NonNullable<Chat["discovery"]>;
+            name?: string;
+            purpose?: string;
+            revision?: string;
+          };
+          discoveryUpdates.push(input);
+          if (input.revision !== undefined && input.revision !== revision)
+            return Response.json(
+              {
+                code: "DISCOVERY_CHANGED",
+                message: "Someone changed who can find this channel in the meantime. Check the current settings and save again.",
+              },
+              { status: 409 },
+            );
           const discoveryChanged = key(chat.discovery ?? []) !== key(input.entries);
           const detailsChanged =
             (input.name !== undefined && input.name !== chat.conversation.name) ||
@@ -1307,6 +1324,11 @@ export const startChatHarness = async () => {
     /** Returns the current member entries for assertions. */
     members: (chat: string): Member[] => chats.get(chat)?.members ?? [],
     posted,
+    discoveryUpdates,
+    /** Changes who can find a channel, as another admin would. */
+    setDiscovery: (chat: string, entries: NonNullable<Chat["discovery"]>) => {
+      chats.get(chat)!.discovery = entries;
+    },
     /** An element of the made-up "spaces" app; `readable: false` makes its card "not available". */
     addElement: (element: { id: string; title: string; preview?: string; readable?: boolean }) => {
       elements.set(element.id, { preview: "", readable: true, ...element });
@@ -1345,6 +1367,7 @@ export const startChatHarness = async () => {
       reads.length = 0;
       readViews.length = 0;
       posted.length = 0;
+      discoveryUpdates.length = 0;
       failing = 0;
       failingUnread = 0;
       failingThreads = 0;

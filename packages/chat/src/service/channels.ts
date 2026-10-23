@@ -88,6 +88,19 @@ const preview = async (input: ChatContext & { input: unknown; conversationId?: s
     return valid.ok ? countAudience(db, parsed.data, input, input.conversationId) : valid;
   });
 };
+/**
+ * Names the stored audience, so a dialog opened before someone else changed it cannot replace the newer one unseen.
+ * The keys are already visible to the admins who read them.
+ */
+const discoveryRevision = (entries: readonly { group_id: string | null; permission: string }[]) =>
+  new Bun.CryptoHasher("sha256")
+    .update(
+      entries
+        .map((entry) => `${entry.group_id ?? "authenticated"}:${entry.permission}`)
+        .sort()
+        .join(","),
+    )
+    .digest("hex");
 const get = async (input: ChatContext & { conversationId: string }) =>
   sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const allowed = await requireConversation({ ...input, required: "admin" }, db);
@@ -106,6 +119,7 @@ const get = async (input: ChatContext & { conversationId: string }) =>
     if (!audience.ok) return audience;
     return ok({
       entries: projected,
+      revision: discoveryRevision(entries),
       allowAuthenticated: await discoveryAllowed(),
       ...audience.data,
     });
@@ -130,6 +144,8 @@ const update = async (input: ChatContext & { conversationId: string; input: unkn
     if (!valid.ok) return valid;
     const previous = await db<{ group_id: string | null; permission: string }[]>`SELECT a.group_id, a.permission
       FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id WHERE ca.conversation_id = ${allowed.data.id}::uuid AND ca.role = 'discoverable'`;
+    if (data.revision !== undefined && data.revision !== discoveryRevision(previous))
+      return fail({ code: "DISCOVERY_CHANGED", status: 409, message: messages(input).discoveryChanged });
     const entryKey = (groupId: string | null, permission: string) => `${groupId ?? "authenticated"}:${permission}`;
     const oldKeys = previous.map((entry) => entryKey(entry.group_id, entry.permission)).sort();
     const nextKeys = data.entries
