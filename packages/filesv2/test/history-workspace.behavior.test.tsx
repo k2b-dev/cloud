@@ -107,6 +107,11 @@ const snapshotOf = (patch: Partial<WorkspaceSnapshot> & Pick<WorkspaceSnapshot, 
   now: NOW,
   ...patch,
 });
+// The detail reads its file again after a version list; this answers that read with the state it found.
+const confirmEntry = (file: FileEntry) => {
+  expect(pending("entry").input).toEqual({ param: { baseId: home.id }, query: { path: file.path } });
+  pending("entry").resolve(Response.json({ base: home, entry: file }));
+};
 const query = (request: ApiRequest) => (request.input as { query?: Record<string, string> } | undefined)?.query ?? {};
 
 describe("Files history in the workspace", () => {
@@ -494,6 +499,8 @@ describe("Files history in the workspace", () => {
     );
     pending("shares").resolve(Response.json({ items: [], next: null }));
     await flush();
+    confirmEntry(file);
+    await flush();
     expect(inspector().textContent).toContain("Version 1");
     expect(inspector().textContent).toContain("Version 2");
   });
@@ -708,6 +715,12 @@ describe("Files history in the workspace", () => {
     );
     pending("shares").resolve(Response.json({ items: [], next: null }));
     await flush();
+    // The list alone claims nothing until the file read after it shows the same revision.
+    expect(button(inspector(), "Restore version 2")).toBeUndefined();
+    confirmEntry(file);
+    await flush();
+    // A confirmed list needs no second details read.
+    expect(apiRequests.filter((item) => item.kind === "entry")).toHaveLength(1);
     expect(inspector().textContent).toContain("Version 3");
     expect(inspector().querySelector(".filesv2-inspector-info")?.textContent).toContain("Mia Schulz");
     // Only the change that produced today's revision offers a restore; an older overwrite names no version.
@@ -771,6 +784,8 @@ describe("Files history in the workspace", () => {
       ]),
     );
     await flush();
+    confirmEntry(file);
+    await flush();
     // Info and the list share one request per file state.
     expect(apiRequests.filter((item) => item.kind === "versions")).toHaveLength(2);
     expect(toggle().textContent?.trim()).toBe("3");
@@ -813,6 +828,8 @@ describe("Files history in the workspace", () => {
         ]),
       );
       await flush();
+      confirmEntry(file);
+      await flush();
       expect(section().textContent).not.toContain("Versions not loaded.");
       expect(section().textContent).toContain("Approved copy");
       expect(section().querySelectorAll<HTMLButtonElement>("button.k2b-detail-panel__action")[1]!.disabled).toBe(false);
@@ -826,5 +843,154 @@ describe("Files history in the workspace", () => {
     await flush();
     expect(section().getAttribute("data-open")).toBe("true");
     expect(toggle().getAttribute("aria-expanded")).toBe("true");
+  });
+
+  const versionFixtures = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      id: `v-${index + 1}`,
+      created: `2026-10-1${index + 1}T08:30:00.000Z`,
+      size: index + 1,
+      pinned: false,
+      comment: null,
+      author: null,
+    }));
+  const mountDetail = (file: FileEntry, revision: string) => {
+    const raw = current(file.path, { directory: false });
+    if (raw.visibility !== "full") throw new Error("fixture side must be full");
+    const request = { baseId: home.id, path: file.path, scope: "item" as const };
+    const dom = mount(
+      snapshotOf({
+        source: `/app/filesv2?base=${encodeURIComponent(home.id)}&path=Kunden&file=${encodeURIComponent(file.path)}`,
+        directory: { base: home, path: "Kunden", items: [file], next: null },
+        detail: { base: home, entry: file },
+        history: {
+          source: JSON.stringify(request),
+          page: page([entry({ action: "file.overwrite", after: { ...raw, revision } })]),
+        },
+      }),
+    );
+    const inspector = () => dom.root.querySelector("#filesv2-inspector, [id*='filesv2-inspector']")!;
+    const section = () => inspector().querySelector<HTMLElement>(".filesv2-inspector-versions")!;
+    return {
+      inspector,
+      section,
+      toggle: () => inspector().querySelector<HTMLButtonElement>(".filesv2-inspector-info [aria-controls]")!,
+      titles: () => [...section().querySelectorAll(".k2b-detail-panel__action-title")].map((title) => title.textContent?.trim()),
+      rows: () => section().querySelectorAll<HTMLButtonElement>("button.k2b-detail-panel__action"),
+    };
+  };
+
+  for (const refresh of ["current", "unchanged", "failed"] as const)
+    test(`details of R3 never number or restore from the version list of R4 (${refresh} details refresh)`, async () => {
+      const file: FileEntry = { name: "Proof.bin", path: "Kunden/Proof.bin", directory: false, size: 1, modified: NOW, revision: "rev-3" };
+      const newer: FileEntry = { ...file, size: 2, modified: "2026-10-20T12:31:00.000Z", revision: "rev-4" };
+      const { inspector, section, toggle, titles } = mountDetail(file, "rev-3");
+      await flush();
+      pending("shares").resolve(Response.json({ items: [], next: null }));
+      // R4 was written after the details were read: the list now saves R3 as v-3.
+      pending("versions").resolve(Response.json(versionFixtures(3)));
+      await flush();
+      confirmEntry(newer);
+      await flush();
+      expect(inspector().textContent).not.toContain("Version 4");
+      expect(button(inspector(), "Restore version 3")).toBeUndefined();
+      expect(toggle().textContent?.trim()).toBe("Loading details…");
+      expect(section().querySelector(".k2b-count-chip")).toBeNull();
+      // Exactly one details refresh follows the mismatched list.
+      expect(apiRequests.filter((item) => item.kind === "entry")).toHaveLength(2);
+      if (refresh === "failed") {
+        pending("entry").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
+        await flush();
+        // The failed refresh ends in the detail error with its retry, not in a spinner.
+        expect(inspector().textContent).toContain("This item is no longer available or you do not have access.");
+        expect(inspector().textContent).not.toContain("Version 4");
+        button(inspector(), "Try again")!.click();
+        await flush();
+      } else if (refresh === "unchanged") {
+        pending("entry").resolve(Response.json({ base: home, entry: file }));
+        await flush();
+        // Still no confirmation: a failed list with Try again, never an endless spinner or a guessed number.
+        expect(section().textContent).toContain("Versions not loaded.");
+        expect(toggle().textContent?.trim()).toBe("Versions not loaded.");
+        expect(inspector().textContent).not.toContain("Version 4");
+        expect(apiRequests.filter((item) => item.kind === "entry")).toHaveLength(2);
+        button(section(), "Try again")!.click();
+        await flush();
+        expect(toggle().textContent?.trim()).toBe("Loading details…");
+        pending("versions").resolve(Response.json(versionFixtures(3)));
+        await flush();
+        confirmEntry(newer);
+        await flush();
+        // A new mismatched list asks the details once more.
+        expect(apiRequests.filter((item) => item.kind === "entry")).toHaveLength(4);
+      }
+      pending("entry").resolve(Response.json({ base: home, entry: newer }));
+      await flush();
+      // The details show R4, so its list is read and confirmed again.
+      pending("versions").resolve(Response.json(versionFixtures(3)));
+      await flush();
+      confirmEntry(newer);
+      await flush();
+      expect(titles()[0]).toBe("Version 4 · current");
+      expect(section().querySelector(".k2b-count-chip")?.textContent).toBe("4");
+      expect(toggle().textContent?.trim()).toBe("4");
+      // The overwrite that produced R3 no longer names the current file, so it restores no predecessor.
+      expect(button(inspector(), "Restore version 3")).toBeUndefined();
+      expect(button(inspector(), "Restore version 2")).toBeUndefined();
+      expect(apiRequests.some((item) => item.kind === "version-restore")).toBe(false);
+    });
+
+  test("a failed file read after the version list shows Try again, keeps confirmed rows and disables their actions", async () => {
+    const file: FileEntry = { name: "Proof.bin", path: "Kunden/Proof.bin", directory: false, size: 1, modified: NOW, revision: "rev-3" };
+    const { inspector, section, toggle, titles, rows } = mountDetail(file, "rev-3");
+    await flush();
+    pending("shares").resolve(Response.json({ items: [], next: null }));
+    pending("versions").resolve(Response.json(versionFixtures(2)));
+    await flush();
+    pending("entry").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
+    await flush();
+    expect(section().textContent).toContain("Versions not loaded.");
+    expect(toggle().textContent?.trim()).toBe("Versions not loaded.");
+    expect(titles()).toHaveLength(0);
+    expect(button(inspector(), "Restore version 2")).toBeUndefined();
+    button(section(), "Try again")!.click();
+    await flush();
+    pending("versions").resolve(Response.json(versionFixtures(2)));
+    await flush();
+    confirmEntry(file);
+    await flush();
+    expect(titles()[0]).toBe("Version 3 · current");
+    expect(button(inspector(), "Restore version 2")).toBeDefined();
+    const { prompts } = await import("@k2b/ui");
+    const form = spyOn(prompts, "form").mockResolvedValue({ comment: "Approved copy" });
+    try {
+      rows()[1]!.click();
+      await flush();
+      pending("version-comment").resolve(Response.json({ ok: true }));
+      await flush();
+      const commented = versionFixtures(2).map((version) => (version.id === "v-2" ? { ...version, comment: "Approved copy" } : version));
+      pending("versions").resolve(Response.json(commented));
+      await flush();
+      pending("entry").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
+      await flush();
+      // The unconfirmed refresh keeps the last confirmed rows, but none of them acts.
+      expect(section().textContent).toContain("Versions not loaded.");
+      expect(titles()).toHaveLength(3);
+      expect(section().textContent).not.toContain("Approved copy");
+      expect(rows()[1]!.disabled).toBe(true);
+      expect(rows()[2]!.disabled).toBe(true);
+      expect(button(inspector(), "Restore version 2")).toBeUndefined();
+      button(section(), "Try again")!.click();
+      await flush();
+      pending("versions").resolve(Response.json(commented));
+      await flush();
+      confirmEntry(file);
+      await flush();
+      expect(section().textContent).not.toContain("Versions not loaded.");
+      expect(section().textContent).toContain("Approved copy");
+      expect(rows()[1]!.disabled).toBe(false);
+    } finally {
+      form.mockRestore();
+    }
   });
 });
