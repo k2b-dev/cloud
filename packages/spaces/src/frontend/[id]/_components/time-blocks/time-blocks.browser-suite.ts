@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, test as bunTest, expect, setDefaultTimeout, setSystemTime } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
@@ -310,6 +310,23 @@ const waitFor = async (condition: () => Promise<boolean>) => {
 const shot = async (page: Page, motif: string) => {
   await settled(page);
   mkdirSync(shots, { recursive: true });
+  const fonts = await page.evaluate(() => {
+    const label = document.querySelector(".k2b-calendar-days__hour, .k2b-calendar-week__hour, .k2b-calendar-time-grid__hour");
+    const root = getComputedStyle(document.documentElement);
+    const body = getComputedStyle(document.body);
+    return {
+      body: body.fontFamily,
+      calendarLabel: label ? getComputedStyle(label).fontFamily : null,
+      rootFontSans: root.getPropertyValue("--font-sans"),
+      rootK2bFontSans: root.getPropertyValue("--k2b-font-sans"),
+      bodyK2bFontSans: body.getPropertyValue("--k2b-font-sans"),
+      plexSans: [...document.fonts]
+        .filter((font) => font.family.includes("IBM Plex Sans"))
+        .map((font) => ({ family: font.family, weight: font.weight, status: font.status })),
+    };
+  });
+  // Diagnostic evidence stays outside the published image set.
+  appendFileSync(join(shots, "..", "browser-font-audit.jsonl"), `${JSON.stringify({ motif, width: page.viewportSize()!.width, fonts })}\n`);
   await page.screenshot({ path: join(shots, `${motif}-light-${page.viewportSize()!.width}.png`), animations: "disabled" });
 };
 const drop = async (page: Page, f: Scene) => {
