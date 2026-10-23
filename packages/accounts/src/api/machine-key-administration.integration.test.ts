@@ -52,7 +52,7 @@ suite("machine key administration", () => {
           const path = `/credentials/${key.data.credential.id}`;
           expect((await routes.request(path, { method: "DELETE", headers: readHeaders })).status).toBe(403);
           expect((await serviceAccountCredentials.getOverview({ id: key.data.credential.id }))?.status).toBe("active");
-          const headers =
+          const headers: Record<string, string> =
             authority === "session" ? { cookie: `session_token=${session}` } : { authorization: `Bearer ${await token(authority)}` };
           expect((await routes.request(path, { method: "DELETE", headers })).status).toBe(200);
           expect((await serviceAccountCredentials.getOverview({ id: key.data.credential.id }))?.status).toBe("revoked");

@@ -18,22 +18,21 @@ export function CreateMachineKeyDialog(props: {
   const [expiresAt, setExpiresAt] = createSignal<string | null>(null);
   const [token, setToken] = createSignal<string | null>(null);
   const [uncertain, setUncertain] = createSignal(false);
-  const create = mutation.create({
+  const create = mutation.create<string, void>({
     mutation: async () => {
       const id = accountId();
       if (!id) throw new Error(t().chooseMachine);
       const expires = expiresAt();
       const expiry = expires ? new Date(expires).toISOString() : null;
-      let response: Response;
-      try {
-        response = await coreClient.admin.identity["service-accounts"][":id"]["api-keys"].$post({
+      const response = await coreClient.admin.identity["service-accounts"][":id"]["api-keys"]
+        .$post({
           param: { id },
           json: { name: name().trim(), access: access(), expiresAt: expiry },
+        })
+        .catch(() => {
+          setUncertain(true);
+          throw new Error(t().machineKeyUncertain);
         });
-      } catch {
-        setUncertain(true);
-        throw new Error(t().machineKeyUncertain);
-      }
       if (!response.ok && response.status < 500) {
         const error = z.object({ message: z.string() }).safeParse(await response.json().catch(() => null));
         throw new Error(error.success ? error.data.message : t().machineKeyFailed);

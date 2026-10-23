@@ -73,7 +73,7 @@ for (const width of [390, 768, 1280])
         await tab.route("https://cloud.example.test/app/accounts/service-accounts", (route) =>
           route.fulfill({
             contentType: "text/html",
-            body: `<!doctype html><html class="${dark ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui"><main id="root" class="p-4"></main><script>${bundle}</script></body></html>`,
+            body: `<!doctype html><html class="${dark ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" data-theme="${dark ? "dark" : "light"}"><main id="root" class="p-4"></main><script>${bundle}</script></body></html>`,
           }),
         );
         await tab.goto("https://cloud.example.test/app/accounts/service-accounts");

@@ -21,7 +21,6 @@ export const accountsMessages = i18n.define({
         "The result could not be confirmed. Close this dialog and check the key list before creating another key. Revoke any key you could not save.",
       machineKeyOneTime: "Save this key now. It will only be shown once.",
       copyMachineKey: "Copy API key",
-      done: "Done",
 
       duplicateLastSync: "Last FreeIPA sync",
       duplicateEmails: "Duplicate email addresses",
@@ -867,7 +866,6 @@ export const accountsMessages = i18n.define({
         "Das Ergebnis ist unbestätigt. Dialog schließen und die Schlüsselliste prüfen, bevor ein weiterer Schlüssel erstellt wird. Nicht gespeicherte Schlüssel widerrufen.",
       machineKeyOneTime: "Schlüssel jetzt speichern. Er wird nur einmal angezeigt.",
       copyMachineKey: "API-Schlüssel kopieren",
-      done: "Fertig",
 
       duplicateLastSync: "Letzte FreeIPA-Synchronisierung",
       duplicateEmails: "Doppelte E-Mail-Adressen",
