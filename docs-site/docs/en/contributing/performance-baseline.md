@@ -974,6 +974,11 @@ Outputs: `.local/mail-perf/mail-switch-current-20261023` and
 `.local/mail-perf/mail-switch-lazy-menus-20261023`; the latter also preserves
 the discarded candidate for a future controlled comparison.
 
+The frame-batched fades were removed again before merging. They left the
+bottom fade drawn for one frame after the note editor scrolled to its end, so
+its fade-aware scroll margins failed in both engines. All rows from "Frame-batched
+fades" onward still include that change; no run without it was repeated.
+
 ### Rank bottlenecks
 
 After a run, rank candidate bottlenecks against its result:
