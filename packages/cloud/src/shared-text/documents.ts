@@ -294,6 +294,8 @@ export const bindDocuments = <Saved, Context>(
         validate?: () => Promise<boolean>;
         /** Application-owned limit on the merged canonical UTF-16 text. */
         maxLength?: number;
+        /** Validate application-owned fields in the fully merged encoded state. */
+        validateState?: (state: Uint8Array) => boolean | Promise<boolean>;
       },
     ): Promise<{ status: "accepted"; cursor: string } | { status: "recoveryRequired" | "notFound" }> {
       if (options.maxLength !== undefined && (!Number.isSafeInteger(options.maxLength) || options.maxLength < 0))
@@ -335,6 +337,9 @@ export const bindDocuments = <Saved, Context>(
               for await (const event of events(docId, options.baseCursor, target, options.signal)) {
                 options.signal?.throwIfAborted();
                 if (event.data.restoreRevision !== undefined && event.data.restoreRevision !== options.restoreRevision) continue;
+                // An unreferenced send marker has no domain or text effect.
+                // It must not make an otherwise valid pending edit unrecoverable.
+                if (event.data.kind === "freeze") continue;
                 // Old/unclassified retained events cannot prove that an edit's
                 // original table/row targets survived. Do not guess at ingress.
                 const history = event.data.history;
@@ -366,6 +371,7 @@ export const bindDocuments = <Saved, Context>(
         if (doc.store.pendingStructs || doc.store.pendingDs) return { status: "recoveryRequired" };
         if (options.maxLength !== undefined && doc.getText(SHARED_TEXT_NAME).length > options.maxLength)
           return { status: "recoveryRequired" };
+        if (options.validateState && !(await options.validateState(Y.encodeStateAsUpdate(doc)))) return { status: "recoveryRequired" };
         options.signal?.throwIfAborted();
         if (options.validate && !(await options.validate())) return { status: "recoveryRequired" };
         options.signal?.throwIfAborted();
@@ -383,6 +389,59 @@ export const bindDocuments = <Saved, Context>(
           },
         });
         return { status: "accepted", cursor: published.cursor };
+      } finally {
+        doc.destroy();
+      }
+    },
+    /**
+     * Capture an exact ordered boundary. The application commits this cursor,
+     * full state and generation with its send transaction; an unreferenced
+     * marker has no domain effect. Later updates are outside the captured state.
+     */
+    async freeze(
+      docId: string,
+      options: {
+        actor: SharedTextActor;
+        restoreRevision: string;
+        signal?: AbortSignal;
+        validate: (state: Uint8Array) => Promise<void>;
+      },
+    ): Promise<{ state: Uint8Array; text: string; cursor: string; restoreRevision: string } | null> {
+      options.signal?.throwIfAborted();
+      const stored = await store.load(docId, { signal: options.signal });
+      if (!stored) return null;
+      if (stored.restoreRevision !== options.restoreRevision) throw new Error("Document generation changed before freeze");
+      const handle = topic();
+      const target = await handle.latestCursor({ tenantId: docId });
+      const doc = createDoc(stored);
+      try {
+        if (target)
+          await replay({
+            docId,
+            after: stored.cursor,
+            until: target,
+            doc,
+            restoreRevision: stored.restoreRevision,
+            signal: options.signal,
+          });
+        if (doc.store.pendingStructs || doc.store.pendingDs) throw new Error("Document has unresolved dependencies before freeze");
+        const state = Y.encodeStateAsUpdate(doc);
+        // Give validation a copy: it cannot alter the state returned for sending.
+        await options.validate(state.slice());
+        options.signal?.throwIfAborted();
+        const published = await handle.publish({
+          tenantId: docId,
+          expectedAfter: target,
+          data: {
+            kind: "freeze",
+            payload: "",
+            restoreRevision: stored.restoreRevision,
+            actor: options.actor,
+            originNodeId: sharedTextNodeId,
+            originPeerId: null,
+          },
+        });
+        return { state, text: doc.getText(SHARED_TEXT_NAME).toString(), cursor: published.cursor, restoreRevision: stored.restoreRevision };
       } finally {
         doc.destroy();
       }

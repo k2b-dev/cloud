@@ -309,6 +309,7 @@ window.mountMailList = (options) => {
               <div id="reader" class="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-surface-raised)]">
                 <Show when={options.reader} fallback="Reader">
                   <MailConversationReader
+                    currentUserId="Usr001"
                     mailboxId="Box001"
                     requestUrl={requestUrl()}
                     canWrite

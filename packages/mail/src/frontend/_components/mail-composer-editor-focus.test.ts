@@ -5,12 +5,18 @@ describe("Mail composer initial focus", () => {
   test("focuses the body and places the caret before signature content", () => {
     const calls: unknown[][] = [];
     const editor = {
-      focus: () => calls.push(["focus"]),
-      setSelectionRange: (start: number, end: number) => calls.push(["selection", start, end]),
-    } as unknown as HTMLTextAreaElement;
+      view: {
+        focus: () => {
+          calls.push(["focus"]);
+        },
+        dispatch: (...specs: readonly unknown[]) => {
+          calls.push(["dispatch", ...specs]);
+        },
+      },
+    };
 
     focusMailComposerEditorAtStart(editor);
 
-    expect(calls).toEqual([["focus"], ["selection", 0, 0]]);
+    expect(calls).toEqual([["dispatch", { selection: { anchor: 0 } }], ["focus"]]);
   });
 });

@@ -3,7 +3,7 @@ export type SharedTextActor = { kind: "user" | "service_account"; id: string };
 
 /** Actor is optional so events retained from older deployments remain readable. */
 export type SharedTextEvent = {
-  kind: "sync" | "awareness";
+  kind: "sync" | "awareness" | "freeze";
   payload: string;
   originNodeId: string;
   originPeerId: string | null;
@@ -15,7 +15,8 @@ export type SharedTextEvent = {
   /** Updates apply only to the store lineage from which they originated. */
   restoreRevision?: string;
 };
-export type SharedTextSyncEvent = SharedTextEvent & { kind: "sync" };
+/** Ordered document events; a freeze marker carries no text update. */
+export type SharedTextSyncEvent = SharedTextEvent & { kind: "sync" | "freeze" };
 export type SharedTextContributor = SharedTextActor & { lastContributedAt: Date };
 
 /** The store anchors legacy cursors to this log before returning a snapshot. */

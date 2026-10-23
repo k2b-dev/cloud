@@ -355,8 +355,16 @@ const cancelScheduledSendBy = async (params: {
         UPDATE mail.drafts
         SET
           state = ${draftState},
+          doc_generation = doc_generation + CASE WHEN edit_mode = 'shared' AND ${params.input.disposition === "draft"} THEN 1 ELSE 0 END,
+          doc_frozen_cursor = NULL, doc_frozen_state = NULL, doc_frozen_generation = NULL, doc_frozen_revision = NULL,
           revision = revision + ${params.input.disposition === "draft" ? 1 : 0}
         WHERE id = ${outbox.draft_id}::uuid
+      `;
+      await tx`
+        INSERT INTO mail.draft_document_revisions (draft_id, generation, revision, state, cursor)
+        SELECT id, doc_generation, revision, doc_state, doc_cursor FROM mail.drafts
+        WHERE id = ${outbox.draft_id}::uuid AND edit_mode = 'shared' AND state = 'draft' AND doc_state IS NOT NULL
+        ON CONFLICT DO NOTHING
       `;
       await removeUnsentOutboundMessage(tx, outbox.id);
       const projectionSnapshotId =

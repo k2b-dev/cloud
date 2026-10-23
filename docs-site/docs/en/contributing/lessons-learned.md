@@ -1055,6 +1055,13 @@ convention still needs a check or a test.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
 
+### Replacing text moved a peer's insertion inside the replacement
+
+- **What happened:** The Mail model regression produced `P peerROJECT notes` when a peer added text after `Project` and another writer changed it to `PROJECT`.
+- **Root cause:** Deleting the original range before inserting its replacement discarded the replacement's right-edge anchor and let writer ordering decide where the peer text appeared.
+- **Error class:** A collaborative replacement loses its original insertion boundary.
+- **Guard:** Replacement inserts before deleting the original range. Model tests cover revision and local subject edits with fixed peer identities on either side of the writer's ordering.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its
@@ -1076,3 +1083,10 @@ updates that class's row in the table.
 - **Root cause:** The internal renderer enforced output size but did not reject the oversized input before template, Markdown and CSS work.
 - **Error class:** Performing expensive work before validating the owning application's input budget.
 - **Guard:** `compose-renderer.test.ts` submits one character beyond the draft body limit and asserts rejection before Markdown rendering. Existing output-size and complexity cases retain their original limits.
+
+### An editor callback republished remote draft text
+
+- **What happened:** A remote body change could be inserted again when CodeMirror reported it before the shared document projected its complete content to the composer.
+- **Root cause:** Both the Yjs projection and the editor callback wrote the shared body through the application's local edit path.
+- **Error class:** Feeding a remote projection back into a local writer.
+- **Guard:** The actual shared-composer DOM regression asserts zero publications for remote input, then exactly one publication for a local edit with the exact merged body. Shared bodies now project only through Yjs; exclusive drafts retain the editor callback.

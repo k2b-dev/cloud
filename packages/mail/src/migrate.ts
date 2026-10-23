@@ -61,6 +61,95 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * older Mail image, which records no version for them, still starts on it.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  // Release N understands both modes; existing and newly created drafts stay
+  // in lock mode until the subsequent activation release. No body is rewritten.
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS edit_mode text NOT NULL DEFAULT 'lock'
+    CHECK (edit_mode IN ('lock', 'shared'))`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_generation bigint NOT NULL DEFAULT 1
+    CHECK (doc_generation > 0)`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_state bytea`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_cursor text`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_seq bigint`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_history_complete boolean NOT NULL DEFAULT true`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_cursor text`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_state bytea`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_generation bigint`.simple();
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS doc_frozen_revision bigint`.simple();
+  // Revision writers need the exact identities they read, including deletes.
+  // A cursor alone cannot reconstruct an earlier state from a newer GC snapshot.
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_revisions (
+    draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    generation bigint NOT NULL CHECK (generation > 0),
+    revision bigint NOT NULL CHECK (revision > 0),
+    state bytea NOT NULL,
+    cursor text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (draft_id, generation, revision)
+  )`.simple();
+  // Historical exact bases share the browser's two-envelope pending budget:
+  // 2 * 8,000,000 base64 characters * 3/4 = 12,000,000 raw Yjs bytes.
+  // Required current/frozen bases are additional pinned state. Enforce here
+  // so attachment-only revisions and generation resets obey the same policy.
+  await tx`CREATE OR REPLACE FUNCTION mail.trim_draft_document_revisions(target uuid)
+    RETURNS void LANGUAGE plpgsql AS $$
+    DECLARE current_draft mail.drafts%ROWTYPE;
+    BEGIN
+      SELECT * INTO current_draft FROM mail.drafts WHERE id = target FOR UPDATE;
+      IF NOT FOUND THEN RETURN; END IF;
+      WITH historical AS (
+        SELECT generation, revision,
+          sum(octet_length(state)::bigint) OVER (ORDER BY revision DESC) AS retained_bytes
+        FROM mail.draft_document_revisions
+        WHERE draft_id = target AND generation = current_draft.doc_generation
+          AND revision <> current_draft.revision
+          AND NOT (generation = coalesce(current_draft.doc_frozen_generation, 0)
+            AND revision = coalesce(current_draft.doc_frozen_revision, 0))
+      )
+      DELETE FROM mail.draft_document_revisions r
+      WHERE r.draft_id = target
+        AND NOT (r.generation = current_draft.doc_generation AND r.revision = current_draft.revision)
+        AND NOT (r.generation = coalesce(current_draft.doc_frozen_generation, 0)
+          AND r.revision = coalesce(current_draft.doc_frozen_revision, 0))
+        AND (r.generation <> current_draft.doc_generation OR EXISTS (
+          SELECT 1 FROM historical h WHERE h.generation = r.generation AND h.revision = r.revision
+            AND h.retained_bytes > 12000000
+        ));
+    END;
+    $$`.simple();
+  await tx`CREATE OR REPLACE FUNCTION mail.trim_inserted_draft_document_revision()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      PERFORM mail.trim_draft_document_revisions(NEW.draft_id);
+      RETURN NEW;
+    END;
+    $$`.simple();
+  await tx`CREATE OR REPLACE TRIGGER trim_draft_document_revisions
+    AFTER INSERT OR UPDATE OF state ON mail.draft_document_revisions
+    FOR EACH ROW EXECUTE FUNCTION mail.trim_inserted_draft_document_revision()`.simple();
+  // Apply the policy to pre-existing history as well as future admissions.
+  await tx`SELECT mail.trim_draft_document_revisions(draft_id)
+    FROM (SELECT DISTINCT draft_id FROM mail.draft_document_revisions) existing`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_freezes (
+    draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    generation bigint NOT NULL CHECK (generation > 0),
+    revision bigint NOT NULL CHECK (revision > 0),
+    cursor text NOT NULL,
+    state bytea NOT NULL,
+    PRIMARY KEY (draft_id, generation)
+  )`.simple();
+  await tx`CREATE TABLE IF NOT EXISTS mail.draft_document_rests (
+    source_draft_id uuid NOT NULL REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    generation bigint NOT NULL CHECK (generation > 0),
+    actor_kind text NOT NULL CHECK (actor_kind IN ('user', 'service_account')),
+    actor_id uuid NOT NULL,
+    client_id uuid NOT NULL,
+    rest_draft_id uuid REFERENCES mail.drafts(id) ON DELETE CASCADE,
+    source_state bytea NOT NULL,
+    PRIMARY KEY (source_draft_id, generation, actor_kind, actor_id, client_id),
+    UNIQUE (rest_draft_id)
+  )`.simple();
+  await tx`ALTER TABLE mail.draft_document_rests ALTER COLUMN rest_draft_id DROP NOT NULL`.simple();
+
   await tx`CREATE TABLE IF NOT EXISTS mail.mailbox_logo_versions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,

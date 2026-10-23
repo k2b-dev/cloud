@@ -268,7 +268,7 @@ export default function Layout(props: LayoutProps) {
       ? {
           rail: c.get("railPreferences") ?? defaultRailPreferences(),
           home: resolveHomePath(settings?.app?.home_path),
-          profile: { name: profileName, avatarSrc: profileAvatarSrc, appHref },
+          profile: { userId: user.id, name: profileName, avatarSrc: profileAvatarSrc, appHref },
         }
       : {}),
     legalLinks,

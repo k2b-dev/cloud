@@ -24,6 +24,7 @@ import { commandTargetVisibleTo, commandVisibleTo, conversationCommandKinds } fr
 import { enqueueMailCommand } from "./command-runtime";
 import { validateDraftComposeSafety } from "./compose-safety";
 import { checkCommandKeepProtection, isKeptMessage, keepError } from "./conversation-keep-rules";
+import { lockDraftDocumentInTransaction } from "./draft-documents";
 import { invalidateDraftLeaseAfterSend } from "./draft-leases";
 import { resolveMailExecution } from "./execution";
 import { mailLive } from "./live";
@@ -462,6 +463,7 @@ const createSendOutbox = async (params: {
   selectedBindingId: string;
   prepared: PreparedActorCommand;
   actor: ActorRef;
+  context?: MailRequestContext;
 }): Promise<OutboundMessageProjection | null> => {
   const { prepared } = params;
   if (prepared.kind !== "send" || !prepared.draftId || !prepared.senderIdentityId) return null;
@@ -539,6 +541,37 @@ const createSendOutbox = async (params: {
   } catch (error) {
     const invalid = err.badInput(error instanceof Error ? error.message : "Message exceeds the provider limit");
     throw Object.assign(new Error(invalid.message), invalid);
+  }
+  const [editing] = await params.db<{ edit_mode: "lock" | "shared" }[]>`
+    SELECT edit_mode FROM mail.drafts WHERE id = ${prepared.draftId}::uuid
+  `;
+  if (editing?.edit_mode === "shared") {
+    if (!params.context)
+      throw Object.assign(
+        new Error("Shared draft sending requires the current editor identity"),
+        err.forbidden("Shared draft sending requires the current editor identity"),
+      );
+    const locked = await lockDraftDocumentInTransaction({
+      db: params.db,
+      context: params.context,
+      mailboxId: params.mailboxId,
+      draftId: prepared.draftId,
+    });
+    if (!locked.ok) throw Object.assign(new Error(locked.error.message), locked.error);
+    const state = await locked.data.read();
+    if (!state.ok) throw Object.assign(new Error(state.error.message), state.error);
+    // A successful publication with a failed projection must not send the old SQL body.
+    // The editor retries projection, obtains the new revision, then reviews that version.
+    if (!Buffer.from(state.data.fresh.state).equals(Buffer.from(state.data.durable.state))) {
+      const changed = sendContentChanged();
+      throw Object.assign(new Error(changed.message), changed);
+    }
+    const frozen = await locked.data.freeze({ generation: state.data.generation });
+    if (!frozen.ok) throw Object.assign(new Error(frozen.error.message), frozen.error);
+    await params.db`
+      INSERT INTO mail.draft_document_freezes (draft_id, generation, revision, cursor, state)
+      VALUES (${prepared.draftId}::uuid, ${frozen.data.generation}::bigint, ${frozen.data.revision}, ${frozen.data.cursor}, ${Buffer.from(frozen.data.state)})
+    `;
   }
   const outboxRows = await withShortIdDb(
     params.db,
@@ -806,6 +839,7 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
     selectedBindingId: execution.data.bindingId,
     prepared,
     actor,
+    context: params.context ?? undefined,
   });
   if (projection) {
     const result = {

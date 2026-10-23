@@ -13,7 +13,7 @@ import {
 import MailComposer from "./MailComposer";
 import MailComposerEditor from "./MailComposerEditor";
 
-export type MailComposerEditorHarnessOptions = { locale: "en" | "de" };
+export type MailComposerEditorHarnessOptions = { locale: "en" | "de"; body?: string; editorActive?: boolean };
 export type MailComposerHarnessOptions = { locale: "en" | "de"; intent: DraftIntent; signatureTemplateId: string | null };
 
 declare global {
@@ -24,6 +24,10 @@ declare global {
     setFormattingWarnings: (warnings: ComposeFormattingWarning[]) => void;
     /** Replaces the previewed HTML, as a compose preview response with a signature logo does. */
     setPreviewHtml: (html: string) => void;
+    editorBody: () => string;
+    replaceEditorBody: (body: string) => void;
+    setEditorFormat: (format: "plain" | "markdown") => void;
+    setEditorEditable: (editable: boolean) => void;
   }
 }
 
@@ -40,6 +44,16 @@ window.mountComposerEditor = (options) => {
     text: "First paragraph of the message.\n\nRegards",
     formattingWarnings: [],
   });
+  const [body, setBody] = createSignal(options.body ?? 'First paragraph <small>of</small> the <span class="x">message</span>.');
+  const [panes, setPanes] = createSignal<PanesLayout>(
+    options.editorActive ? { version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } } : layout,
+  );
+  const [format, setFormat] = createSignal<"plain" | "markdown">("markdown");
+  const [editable, setEditable] = createSignal(true);
+  window.editorBody = body;
+  window.replaceEditorBody = setBody;
+  window.setEditorFormat = setFormat;
+  window.setEditorEditable = setEditable;
   window.setFormattingWarnings = (formattingWarnings) => setPreview({ ...preview(), formattingWarnings });
   window.setPreviewHtml = (next) => setPreview({ ...preview(), html: next });
   render(
@@ -47,13 +61,13 @@ window.mountComposerEditor = (options) => {
       <LocaleProvider locale={options.locale}>
         <div class="flex min-h-0 w-full flex-1 flex-col">
           <MailComposerEditor
-            format={() => "markdown"}
-            body={() => 'First paragraph <small>of</small> the <span class="x">message</span>.'}
-            onBodyInput={() => undefined}
-            editable={() => true}
+            format={format}
+            body={body}
+            onBodyInput={setBody}
+            editable={editable}
             completions={() => []}
-            panes={() => layout}
-            onPanesChange={() => undefined}
+            panes={panes}
+            onPanesChange={setPanes}
             preview={preview}
             previewError={() => undefined}
             previewPending={() => false}

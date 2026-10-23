@@ -17,6 +17,7 @@ import { mailComposeDraftSeedInput } from "./mail-compose-seed";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { storeMailDraftSeed } from "./mail-draft-seed-store";
 import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./mail-sender-preference";
+import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
 type WritableMailbox = {
   id: string;
@@ -33,8 +34,19 @@ export default function MailComposeIntentPage(props: {
   returnHref: string | null;
   contactDirectory: MailContactDirectory;
   currentUserEmail: string | null;
+  currentUserId?: string;
 }) {
   const locale = useLocale();
+  let seedStorage: Storage | undefined;
+  onMount(() => {
+    if (props.currentUserId) {
+      try {
+        seedStorage = openMailUserDraftStorage(localStorage, props.currentUserId);
+      } catch {
+        /* Starting a draft reports storage failure. */
+      }
+    }
+  });
   const t = () => mailComposerMessages.resolve([locale()]).t;
   const [mailto, setMailto] = createSignal(props.mailto);
   const [returnHref, setReturnHref] = createSignal(CommandPathSchema.safeParse(props.returnHref).success ? props.returnHref : null);
@@ -195,7 +207,8 @@ export default function MailComposeIntentPage(props: {
     onSuccess: ({ seed, identityId }) => {
       writeMailSenderPreference(localStorage, seed.mailboxId, identityId);
       try {
-        storeMailDraftSeed(localStorage, seed);
+        if (!seedStorage) throw new Error(t().localMessageFailed);
+        storeMailDraftSeed(seedStorage, seed);
       } catch {
         void prompts.error(t().localMessageFailed, {
           title: t().startMessageFailed,

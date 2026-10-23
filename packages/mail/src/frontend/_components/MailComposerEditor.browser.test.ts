@@ -556,3 +556,38 @@ describe("Mail composer preview with a table", () => {
     }, 30_000);
   }
 });
+
+describe("shared Mail text editor", () => {
+  for (const [label, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    test(`edits table cells and preserves the same text across source and plain views on ${label}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      const initial = "Before\n\n| Item | Cost |\n| --- | ---: |\n| Paper | 4 |\n\nAfter";
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      try {
+        await page.goto(server.url.href);
+        await page.evaluate((body) => window.mountComposerEditor({ locale: "en", body, editorActive: true }), initial);
+        const cell = page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]');
+        await cell.fill("Ink");
+        const expected = initial.replace("Paper", "Ink");
+        expect(await page.evaluate(() => window.editorBody())).toBe(expected);
+        await page.getByRole("radio", { name: "Markdown", exact: true }).click();
+        expect(await page.locator(".cm-content").innerText()).toBe(expected);
+        await page.evaluate(() => window.setEditorFormat("plain"));
+        await page.waitForSelector('.k2b-text-editor[data-mode="plain"]');
+        expect(await page.locator(".cm-content").innerText()).toBe(expected);
+        expect(await page.locator(".k2b-ste-table").count()).toBe(0);
+        await page.evaluate(() => window.setEditorEditable(false));
+        await page.waitForSelector('.cm-content[contenteditable="false"]');
+        await page.evaluate(() => window.replaceEditorBody("Restored body"));
+        expect(await page.locator(".cm-content").innerText()).toBe("Restored body");
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+});

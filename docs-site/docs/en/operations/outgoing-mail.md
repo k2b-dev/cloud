@@ -24,6 +24,37 @@ Existing drafts need no migration. Already frozen send snapshots retain their
 stored HTML and text. Notebooks keeps formula calculation.
 See [Format outgoing messages](/en/apps/mail#format-outgoing-messages).
 
+## Mail draft compatibility during rollout
+
+This release adds document generations, shared draft snapshots and immutable
+send boundaries to the Mail schema. Existing and newly created drafts keep
+exclusive editing by default. Deploy the compatible release to every Mail
+instance before a later release enables shared drafts.
+
+Shared activation also requires a Sync topic contract that rejects full
+storage and retains uncovered updates until a durable snapshot permits
+pruning. The currently installed finite topic retention does not provide
+that guarantee. Do not manually switch draft modes to bypass this gate.
+Already scheduled messages keep their immutable send snapshots.
+
+Shared revision saves use their authenticated original document state. A retry
+of the same actor's content against that same base reuses the retained log
+receipt, including after a database rollback. Missing operation history or an
+evicted base preserves the submission for recovery instead of guessing a merge.
+Historical revision bases are bounded to 12,000,000 raw state bytes per draft,
+plus its current and current frozen bases. This uses the same two-envelope
+budget as pending browser input; immutable send boundaries remain separate.
+Prepared provider exports superseded before any possible remote effect are
+coalesced. Exports that may already have reached the provider remain available
+for reconciliation.
+
+A recovery request identifies an immutable whole device state. Repeating it
+returns the same result; a different state may create a separate recovery
+draft without overwriting an already edited copy. If the visible content is
+unchanged, Mail stores an exact source receipt before acknowledging local
+cleanup. Discarded shared drafts also allow authorized recovery of their
+current generation without a send marker.
+
 ## Configure a sender
 
 A profile has an immutable lowercase key, a display name, a sender address,

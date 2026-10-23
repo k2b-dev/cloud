@@ -1499,18 +1499,29 @@ const appendSource = async (
   internalDate = new Date(),
   signal?: AbortSignal,
 ): Promise<RemoteAppendResult> => {
+  let effectPossible = false;
   try {
     return await withImapClient(
       config,
       async (client) => {
-        return appendStream({ client, path: folderPath, source, byteLength, flags, internalDate });
+        try {
+          const result = await appendStream({ client, path: folderPath, source, byteLength, flags, internalDate });
+          effectPossible = true;
+          return result;
+        } catch (error) {
+          // Disposal can replace this error. Preserve the command's effect evidence too.
+          effectPossible = !!(error && typeof error === "object" && "effectPossible" in error && error.effectPossible);
+          throw error;
+        }
       },
       signal,
     );
   } catch (error) {
-    if (error && typeof error === "object" && "effectPossible" in error) throw error;
-    const sourceError = error instanceof Error ? error : new Error("IMAP APPEND failed before transfer");
-    throw Object.assign(sourceError, { effectPossible: false });
+    // A successful APPEND can still be rejected by session postconditions or
+    // disposal. Such failures must retain the export's reconciliation marker.
+    if (!effectPossible && error && typeof error === "object" && "effectPossible" in error) throw error;
+    const sourceError = error instanceof Error ? error : new Error("IMAP APPEND failed");
+    throw Object.assign(sourceError, { effectPossible });
   }
 };
 

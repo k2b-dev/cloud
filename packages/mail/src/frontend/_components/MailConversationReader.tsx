@@ -64,6 +64,7 @@ import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
+import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 import type { MailReadingFormat } from "./mail-user-preferences";
 import { captureMailWorkspaceRefreshError } from "./mail-workspace-refresh";
 
@@ -94,6 +95,7 @@ type DirectToolbarAction = {
 };
 
 export default function MailConversationReader(props: {
+  currentUserId?: string;
   mailboxId: string;
   requestUrl: string;
   canWrite: boolean;
@@ -146,6 +148,16 @@ export default function MailConversationReader(props: {
   onClose: (event: LinkNavigateEvent) => void | Promise<void>;
 }) {
   const locale = useLocale();
+  let seedStorage: Storage | undefined;
+  onMount(() => {
+    if (props.currentUserId) {
+      try {
+        seedStorage = openMailUserDraftStorage(localStorage, props.currentUserId);
+      } catch {
+        /* Starting a draft reports storage failure. */
+      }
+    }
+  });
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const retryToast = createRetryToasts();
   const intentLabel = (intent: DraftIntent): string =>
@@ -390,7 +402,8 @@ export default function MailConversationReader(props: {
     const store = await importOnDemand(() => import("./mail-draft-seed-store"));
     if (!store || disposed || !stillCurrent()) return;
     try {
-      store.storeMailDraftSeed(localStorage, seed);
+      if (!seedStorage) throw new Error(t().localDraftFailed);
+      store.storeMailDraftSeed(seedStorage, seed);
     } catch {
       void prompts.error(t().localDraftFailed, {
         title: t().startMessageFailed,
