@@ -177,6 +177,15 @@ Options:
 `keyBy: "ip"` always uses the client IP. `keyBy: "user"` and `"auto"` use the
 session user when one can be resolved. They fall back to the client IP.
 
+IP budgets share one key per IPv6 `/64`; rotating addresses within that network
+does not reset a limit. IPv4 keeps one key per address. IPv4-mapped IPv6, NAT64
+(`64:ff9b::/96`), Teredo and 6to4 use the embedded IPv4 address.
+
+For a custom IP budget, import `clientIp` and `clientIpBucket` from
+`@k2b/cloud/server` and pass `clientIpBucket(clientIp(c))` to `ratelimit.check()`.
+`clientIp(c)` returns the forwarded address; `clientIpBucket(address)` returns
+the same network key used by the middleware and Files public uploads.
+
 The client IP is the first `X-Forwarded-For` address, then `X-Real-IP`. The
 gateway sets both on every request and drops the client's own values, so an
 application behind the gateway can rely on them. It also removes `Forwarded`

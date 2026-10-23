@@ -12,6 +12,7 @@ import {
   capabilityApprovalText,
 } from "../_internal/capability-sentences";
 import { HELP_READ_MAX_CHARS, HELP_SEARCH_MAX_LIMIT, readHelpArticle } from "../_internal/help-catalog";
+import type { listApps } from "../_internal/registry";
 import {
   type CapabilityActionManifest,
   type CapabilityActionReviewData,
@@ -23,6 +24,8 @@ import {
 } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { RequestActor } from "../server";
+import type { RequestAuthority } from "../server/middleware/auth";
+import { discoverableAppEntries } from "../services/app-discovery";
 import type { HelpReader, HelpReaderFactory } from "../services/help";
 import { type MandatePolicyV1, mandatePolicyCanPermitCapability } from "../services/mandates/policy";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
@@ -869,6 +872,7 @@ export const createAiToolResolver =
   (input: {
     conversationId: string;
     actor: RequestActor;
+    authority?: RequestAuthority | null;
     staticTools: AiRuntimeTool[];
     allowedTools?: readonly string[] | null;
     /** Undefined for interactive runs; null fails closed when a background mandate cannot be loaded. */
@@ -880,6 +884,7 @@ export const createAiToolResolver =
     runtimeContext?: Omit<AiToolPreparationContext, "actor" | "conversationId">;
     store: Pick<AiConversationService, "getLoadedTools" | "loadTools">;
     listRegistry?: () => Promise<CapabilityRegistryEntry[]>;
+    listApps?: typeof listApps;
     onCapabilityRegistryError?: (error: unknown) => void;
     help?: HelpReaderFactory;
     locale?: string;
@@ -904,7 +909,17 @@ export const createAiToolResolver =
       input.listRegistry ? resolveCapabilityRegistry(input.listRegistry, input.onCapabilityRegistryError) : [],
       input.store.getLoadedTools({ conversationId: input.conversationId }),
     ]);
-    const registry = liveRegistry ?? [];
+    const registry =
+      (await resolveCapabilityRegistry(
+        () => discoverableAppEntries(input.authority ?? null, liveRegistry ?? [], input.listApps),
+        input.onCapabilityRegistryError,
+      )) ?? [];
+    const visibleAppIds = new Set(registry.map((app) => app.appId));
+    const hiddenNames = new Set(
+      buildAiCapabilityCatalog(liveRegistry ?? [])
+        .filter((entry) => !visibleAppIds.has(entry.appId))
+        .flatMap((entry) => [entry.name, entry.providerName]),
+    );
     const configuredLimit = Math.floor(input.maxLoadedTools ?? 0);
     const loadedNames = configuredLimit > 0 ? persistedLoadedNames.slice(-configuredLimit) : persistedLoadedNames;
     if (loadedNames.length !== persistedLoadedNames.length) {
@@ -931,7 +946,9 @@ export const createAiToolResolver =
     );
     const capabilityCatalog = fullCapabilityCatalog.filter((entry) => (!allowed || allowed.has(entry.name)) && mandateAllows(entry));
     // The turn's actor decides which apps' Help exists for the model, like every other Help surface.
-    const helpTools = input.help ? createAiHelpTools(input.help(input.locale ?? "en", input.actor)) : [];
+    const helpTools = input.help
+      ? createAiHelpTools(input.help(input.locale ?? "en", input.actor, { authority: input.authority ?? null }))
+      : [];
     const resourceTool =
       input.execute && (capabilityCatalog.length > 0 || input.staticTools.some((tool) => tool.def.name === "code_read"))
         ? createAiResourceReaderTool({ apps: registry, catalog: capabilityCatalog, execute: input.execute })
@@ -940,7 +957,7 @@ export const createAiToolResolver =
     const builtIns = allBuiltIns.filter((tool) => !allowed || allowed.has(tool.def.name));
     const catalog = buildAiToolCatalog(builtIns, capabilityCatalog);
     const catalogNames = new Set(catalog.map((entry) => entry.name));
-    const unavailableLoadedNames = loadedNames.filter((name) => !catalogNames.has(name));
+    const unavailableLoadedNames = loadedNames.filter((name) => !catalogNames.has(name) && !hiddenNames.has(name));
     const outOfScope = new Set([
       ...allBuiltIns.map((tool) => tool.def.name),
       ...fullCapabilityCatalog.flatMap((entry) => [entry.name, entry.providerName]),
@@ -959,6 +976,7 @@ export const createAiToolResolver =
     const unavailableReason = (requested: string): AiToolUnavailableReason => {
       if (input.skillNames?.includes(requested)) return "skill";
       const name = loadedByProviderName.get(requested) ?? requested;
+      if (hiddenNames.has(requested) || hiddenNames.has(name)) return "unknown";
       if (mandateExcluded.has(name)) return "not_allowed";
       if (allowed && outOfScope.has(name) && !allowed.has(name)) return "not_allowed";
       if (unoffered.has(name)) return "not_offered_in_turn";

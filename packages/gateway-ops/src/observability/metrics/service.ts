@@ -2,6 +2,7 @@ import { listAppsDetailed } from "@k2b/cloud";
 import type { User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { listGatewayRouteSnapshots, logging, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
+import { readAppAccessDenials } from "@k2b/cloud/services/app-access-metrics";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { getGridsOperationalSnapshot, listAppSloWindows } from "../../grids-operational-health";
 import { listRegisteredAppStatus } from "../../registered-apps";
@@ -141,6 +142,20 @@ const withTimeout = async <T>(label: string, promise: Promise<T>, timeoutMs: num
 };
 
 const metricCatalog: CollectorDefinition[] = [
+  {
+    id: "app-access",
+    name: "Application access",
+    description: "Denied application entry and invocation attempts.",
+    metricNames: ["cloud_app_access_denied_total"],
+    collect: async () =>
+      (await readAppAccessDenials((await listAppsDetailed()).map((app) => app.id))).map(({ app, count }) => ({
+        name: "cloud_app_access_denied_total",
+        help: "Application entry and invocation attempts denied by the app access rule.",
+        type: "counter",
+        labels: { app },
+        value: count,
+      })),
+  },
   {
     id: "gateway",
     name: "Gateway",

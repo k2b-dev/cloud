@@ -4,6 +4,15 @@ export const artifactMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      storageLimits: "Storage limits",
+      storageFileLimit: "Maximum file size (MiB)",
+      storageTotalLimit: "Storage per app (MiB)",
+      unreadableTitle: "Stored settings cannot be read",
+      unreadableDetail:
+        "The displayed values are fallbacks. Other applications may still read the stored values. Select only the settings you intend to replace, or ask the operator to restore access.",
+      replaceStored: "Replace stored value",
+      recoveryFailed: "Saved settings could not be refreshed. Retry saving to refresh them; your draft is kept.",
+
       visualization: "Visualization",
       visualizationUnavailable: "Visualization unavailable",
       visualizationInvalid: "Invalid visualization.",
@@ -213,6 +222,16 @@ export const artifactMessages = i18n.define({
       REQUEST_FAILED: "The artifact request failed. Please try again.",
     },
     de: {
+      storageLimits: "Speichergrenzen",
+      storageFileLimit: "Maximale Dateigröße (MiB)",
+      storageTotalLimit: "Speicher pro App (MiB)",
+      unreadableTitle: "Gespeicherte Einstellungen sind nicht lesbar",
+      unreadableDetail:
+        "Die angezeigten Werte sind Ersatzwerte. Andere Anwendungen können die gespeicherten Werte möglicherweise noch lesen. Wähle nur Einstellungen aus, die du ersetzen möchtest, oder bitte den Betreiber, den Zugriff wiederherzustellen.",
+      replaceStored: "Gespeicherten Wert ersetzen",
+      recoveryFailed:
+        "Die gespeicherten Einstellungen konnten nicht neu geladen werden. Erneut speichern lädt sie neu; der Entwurf bleibt erhalten.",
+
       visualization: "Visualisierung",
       visualizationUnavailable: "Visualisierung nicht verfügbar",
       visualizationInvalid: "Ungültige Visualisierung.",

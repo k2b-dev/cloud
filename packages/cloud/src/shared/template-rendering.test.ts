@@ -275,3 +275,21 @@ describe("Liquid template rendering", () => {
     }
   });
 });
+
+test("legacy migration preserves section replacement order and unmatched text", () => {
+  for (const [source, expected] of [
+    ["{{#a}}A{{/a}}{{#a}}B{{/a}}", "{% if a != blank %}A{% endif %}{% if a != blank %}B{% endif %}"],
+    ["{{#a}}1{{#a}}2{{/a}}3{{/a}}", "{% if a != blank %}1{{#a}}2{% endif %}3{{/a}}"],
+    ["{{#a}}1{{^b}}2{{/b}}{{/a}}", "{% if a != blank %}1{% if b == blank %}2{% endif %}{% endif %}"],
+    ["{{#missing}}x{{# a }}ok{{/ a }}", "{{#missing}}x{% if a != blank %}ok{% endif %}"],
+    ["{{#A}}x{{/a}}", "{{#A}}x{{/a}}"],
+  ])
+    expect(migrateLegacyMustacheTemplate(source!)).toBe(expected!);
+});
+
+test("unmatched legacy sections finish within the rendering time budget", () => {
+  const source = "{{{{#A}}}}" + "{{{{#a}}}}a".repeat(18_000);
+  const started = performance.now();
+  expect(migrateLegacyMustacheTemplate(source)).toBe(source);
+  expect(performance.now() - started).toBeLessThan(1_000);
+});

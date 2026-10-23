@@ -7,7 +7,7 @@ import typescript from "@babel/preset-typescript";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, storedCookie } from "../../../ui/test/browser";
+import { launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-panel-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -94,13 +94,42 @@ document.documentElement.dataset.panelHostMounted = "true";
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import PanelRuntime from "./PanelRuntime.island";
-import { getContext, onContextChange } from "../browser/panel";
+import { getContext, onContextChange, onPanelBeforeLeave } from "../browser/panel";
+const parameters = new URL(location.href).searchParams;
+if (parameters.has("guard")) {
+  const input = document.querySelector("input");
+  let dirty = false;
+  input.addEventListener("input", () => { dirty = true; });
+  const save = document.createElement("button");
+  save.textContent = "Save fixture";
+  save.id = "save-fixture";
+  save.addEventListener("click", () => { dirty = false; });
+  input.after(save);
+  const first = onPanelBeforeLeave(() => !dirty);
+  if (parameters.get("guard") === "multiple") {
+    onPanelBeforeLeave(() => !dirty);
+    const dispose = document.createElement("button");
+    dispose.id = "dispose-first-guard";
+    dispose.textContent = "Dispose first guard";
+    dispose.addEventListener("click", first);
+    input.after(dispose);
+  }
+}
 const showContext = () => document.getElementById("panel-context-probe").textContent = JSON.stringify(getContext());
 showContext();
 onContextChange(showContext);
 document.getElementById("prevent-escape").addEventListener("keydown", event => { if (event.key === "Escape") event.preventDefault(); });
-if (new URL(location.href).searchParams.get("mode") !== "silent" || document.cookie.includes("fixture_ready=1")) {
-  render(() => createComponent(PanelRuntime, { provider: document.querySelector("[data-cloud-panel-page]").dataset.panelProvider }), document.createElement("div"));
+const mountRuntime = () => {
+  render(() => createComponent(PanelRuntime, { provider: document.querySelector("[data-cloud-panel-page]").dataset.panelProvider, scope: location.pathname }), document.createElement("div"));
+};
+if (parameters.get("mode") === "manual") {
+  const mount = document.createElement("button");
+  mount.id = "mount-runtime";
+  mount.textContent = "Mount runtime";
+  mount.addEventListener("click", mountRuntime, { once: true });
+  document.body.append(mount);
+} else if (parameters.get("mode") !== "silent" || document.cookie.includes("fixture_ready=1")) {
+  mountRuntime();
 }
 document.documentElement.dataset.panelProviderMounted = "true";
 `,
@@ -109,6 +138,8 @@ document.documentElement.dataset.panelProviderMounted = "true";
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
+      if (path === "/foreign-document")
+        return new Response("<!doctype html><p>External document</p>", { headers: { "content-type": "text/html" } });
       if (path.endsWith("/panel")) providerRequests++;
       if (path === "/panel-host.js" || path === "/panel-provider.js")
         return new Response(path === "/panel-host.js" ? host : provider, { headers: { "content-type": "text/javascript" } });
@@ -148,6 +179,131 @@ const settle = (page: Page) => page.evaluate(() => new Promise((done) => request
 const panelCookie = async (page: Page) => (await storedCookie(page, "cloud_panel"))?.value;
 const modJ = async (page: Page) =>
   (await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent))) ? "Meta+j" : "Control+j";
+
+for (const width of [1440, 390]) {
+  test(`provider lifecycle checks the live frame before close, switch, retarget and full view at ${width}px`, async () => {
+    const { page, context } = await fixture(width);
+    try {
+      await page.locator("#open-panel").click();
+      await ready(page);
+      // The public request bridge selects a guarded destination in the real Layout slot.
+      await page.evaluate(() =>
+        window.dispatchEvent(
+          new CustomEvent("cloud.panel.request", {
+            detail: { action: "open", provider: "fixture", search: "guard=1", accepted: false },
+          }),
+        ),
+      );
+      await ready(page);
+      const frame = page.frameLocator("[data-cloud-panel-frame]");
+      await frame.locator("#save-fixture").waitFor();
+      await frame.getByLabel("Panel input", { exact: true }).evaluate((input: HTMLInputElement) => {
+        input.value = "Keep this unsent draft";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        // No event-loop turn in which a posted busy flag could catch up.
+        window.parent.dispatchEvent(new CustomEvent("cloud.panel.request", { detail: { action: "close" } }));
+      });
+      const original = await frame.locator("html").evaluate(() => location.href);
+      const originalDocument = await frame.locator("html").evaluateHandle((element) => element.ownerDocument);
+      for (const request of [
+        { action: "close" },
+        { action: "open", provider: "second", accepted: false },
+        { action: "open", provider: "fixture", search: "other=1", accepted: false },
+      ]) {
+        await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("cloud.panel.request", { detail })), request);
+        expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("fixture");
+        expect(await frame.getByLabel("Panel input", { exact: true }).inputValue()).toBe("Keep this unsent draft");
+        expect(await frame.locator("html").evaluate(() => location.href)).toBe(original);
+        expect(await page.locator("[data-cloud-panel-leave=blocked]").isVisible()).toBe(true);
+      }
+      await frame.locator("#leave-panel").click();
+      expect(page.url()).not.toContain("/next");
+      await page.setViewportSize({ width: width === 390 ? 1440 : 390, height: 900 });
+      // CSS sees the breakpoint before the MediaQuery change handler restores the vetoed editor.
+      await settled(page);
+      expect(await originalDocument.evaluate((previous) => previous === document)).toBe(true);
+      expect(await frame.getByLabel("Panel input", { exact: true }).isVisible()).toBe(true);
+      expect(await frame.getByLabel("Panel input", { exact: true }).inputValue()).toBe("Keep this unsent draft");
+      await page.setViewportSize({ width, height: 900 });
+      await settled(page);
+      await page.evaluate(() => window.dispatchEvent(new PopStateEvent("popstate")));
+      expect(await originalDocument.evaluate((previous) => previous === document)).toBe(true);
+      await originalDocument.dispose();
+      expect(await frame.getByLabel("Panel input", { exact: true }).isVisible()).toBe(true);
+      await page.evaluate(() =>
+        window.dispatchEvent(
+          new CustomEvent("cloud.panel.consent", {
+            detail: { provider: "fixture", allowed: false },
+          }),
+        ),
+      );
+      await frame.locator("#panel-context-probe").filter({ hasText: "null" }).waitFor();
+      expect(await frame.getByLabel("Panel input", { exact: true }).inputValue()).toBe("Keep this unsent draft");
+      await frame.locator("#save-fixture").click();
+      // Saving never runs an old navigation request.
+      expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("fixture");
+      await page.locator("[data-cloud-panel-close]").click();
+      await closed(page);
+    } finally {
+      await context.close();
+    }
+  });
+}
+for (const width of [1440, 390]) {
+  for (const action of ["close", "switch", "retry"] as const) {
+    test(`a foreign-origin frame remains recoverable through ${action} at ${width}px`, async () => {
+      const { page, context } = await fixture(width);
+      try {
+        await page.evaluate(
+          (action) =>
+            window.dispatchEvent(
+              new CustomEvent("cloud.panel.request", {
+                detail: {
+                  action: "open",
+                  provider: "fixture",
+                  search: action === "retry" ? "guard=1&mode=silent" : "guard=1",
+                  accepted: false,
+                },
+              }),
+            ),
+          action,
+        );
+        const frame = page.frameLocator("[data-cloud-panel-frame]");
+        await frame.locator("#save-fixture").waitFor();
+        // The real native _self navigation destroys the old document, including its guard.
+        const external = new URL("/foreign-document", origin.replace("localhost", "127.0.0.1")).href;
+        await frame.locator("body").evaluate((body, href) => {
+          const link = document.createElement("a");
+          link.href = href;
+          link.target = "_self";
+          link.textContent = "External page";
+          body.append(link);
+        }, external);
+        await frame.getByRole("link", { name: "External page", exact: true }).click();
+        await frame.getByText("External document", { exact: true }).waitFor();
+        expect(await frame.locator("html").evaluate(() => location.origin)).not.toBe(origin);
+        if (action === "close") {
+          await page.locator("[data-cloud-panel-close]").click();
+          await closed(page);
+        } else if (action === "switch") {
+          await page.locator('[data-cloud-panel-provider="second"]').click();
+          await ready(page);
+          expect(await page.locator(slot).getAttribute("data-provider")).toBe("second");
+        } else {
+          // No ready message arrived: the normal bounded load error exposes Retry.
+          await page.locator("[data-cloud-panel-retry]").waitFor({ timeout: 12_000 });
+          await context.addCookies([{ name: "fixture_ready", value: "1", url: origin }]);
+          await page.locator("[data-cloud-panel-retry]").click();
+          await ready(page);
+          await frame.locator("#save-fixture").waitFor();
+        }
+        expect(await page.locator("[data-cloud-panel-leave=blocked]").isVisible()).toBe(false);
+      } finally {
+        await context.close();
+      }
+    });
+  }
+}
 async function fixture(
   width = 1440,
   cookie?: string,
@@ -733,6 +889,100 @@ test("1194px touch tablet waits for Details beside the open panel and opens an e
     expect(await page.locator(mainArea).boundingBox()).toEqual(before);
     expect(await page.locator(slot).getAttribute("data-state")).toBe("ready");
     expect(await page.locator(".cloud-app-canvas").getAttribute("data-panel")).toBe("open");
+  } finally {
+    await context.close();
+  }
+});
+
+test("early links keep multiple guards through disposal and late runtime without duplicate navigation", async () => {
+  const { page, context } = await fixture(1440);
+  let fullRequests = 0;
+  page.on("request", (request) => {
+    if (request.isNavigationRequest() && request.url() === `${origin}/app/fixture/next`) fullRequests++;
+  });
+  try {
+    await page.locator("#open-panel").click();
+    await ready(page);
+    await page.evaluate(() => {
+      document.documentElement.dataset.navigationMessages = "0";
+      window.addEventListener("message", (event) => {
+        if (event.data?.type === "cloud.panel.navigate")
+          document.documentElement.dataset.navigationMessages = String(Number(document.documentElement.dataset.navigationMessages) + 1);
+      });
+      window.dispatchEvent(
+        new CustomEvent("cloud.panel.request", {
+          detail: { action: "open", provider: "fixture", search: "guard=multiple&mode=manual", accepted: false },
+        }),
+      );
+    });
+    const frame = page.frameLocator("[data-cloud-panel-frame]");
+    await frame.locator('html[data-panel-provider-mounted="true"]').waitFor();
+    await frame.locator("#dispose-first-guard").click();
+    const checkNativeLinks = async () => {
+      expect(
+        await frame.locator("#leave-panel").evaluate((anchor: HTMLAnchorElement) => {
+          const nativeCases = [
+            { event: { ctrlKey: true } },
+            { event: { metaKey: true } },
+            { event: { shiftKey: true } },
+            { event: { altKey: true } },
+            { event: { button: 1 } },
+            { target: "_blank" },
+            { download: "fixture.txt" },
+            { href: "#local" },
+            { href: "https://example.org/" },
+          ];
+          return nativeCases.map((entry) => {
+            const link = document.createElement("a");
+            link.href = anchor.href;
+            if (entry.target) link.target = entry.target;
+            if (entry.download) link.download = entry.download;
+            if (entry.href) link.href = entry.href;
+            document.body.append(link);
+            let handled = false;
+            document.addEventListener(
+              "click",
+              (event) => {
+                handled = event.defaultPrevented;
+                event.preventDefault(); // Observe native classification without opening a new browser destination.
+              },
+              { once: true },
+            );
+            link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...entry.event }));
+            link.remove();
+            return handled;
+          });
+        }),
+      ).toEqual(Array(9).fill(false));
+    };
+    await checkNativeLinks();
+    await frame.getByLabel("Panel input", { exact: true }).fill("Still dirty before runtime");
+    await frame.locator("#internal-panel").click();
+    await page.locator('[data-cloud-panel-leave="blocked"]').waitFor();
+    expect(await frame.getByLabel("Panel input", { exact: true }).inputValue()).toBe("Still dirty before runtime");
+    expect(await page.locator("html").getAttribute("data-navigation-messages")).toBe("1");
+    await frame.locator("#save-fixture").click();
+    await frame.locator("#internal-panel").click();
+    await page.waitForFunction(() =>
+      document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")?.contentWindow?.location.search.includes("step=2"),
+    );
+    await frame.locator('html[data-panel-provider-mounted="true"]').waitFor();
+    expect(await page.locator("html").getAttribute("data-navigation-messages")).toBe("2");
+    expect(new URL(page.url()).pathname).toBe("/app/fixture");
+    expect(await frame.locator(".cloud-app-canvas").count()).toBe(0);
+    await frame.locator("#dispose-first-guard").click();
+    await frame.locator("#mount-runtime").click();
+    await ready(page);
+    await checkNativeLinks();
+    await frame.getByLabel("Panel input", { exact: true }).fill("Still dirty after runtime");
+    await frame.locator("#leave-panel").click();
+    await page.locator('[data-cloud-panel-leave="blocked"]').waitFor();
+    expect(await page.locator("html").getAttribute("data-navigation-messages")).toBe("3");
+    expect(fullRequests).toBe(0);
+    await frame.locator("#save-fixture").click();
+    await frame.locator("#leave-panel").click();
+    await page.waitForURL(`${origin}/app/fixture/next`);
+    expect(fullRequests).toBe(1);
   } finally {
     await context.close();
   }

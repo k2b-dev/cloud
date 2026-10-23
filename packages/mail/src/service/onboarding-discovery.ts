@@ -2,6 +2,12 @@ import { resolveSrv } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { domainToASCII } from "node:url";
 import { pinnedNetworkLookup } from "@k2b/cloud/services/network-security";
+import {
+  awaitNetworkOperation,
+  type NetworkRequestFactory,
+  readNetworkResponse,
+  withNetworkDeadline,
+} from "@k2b/cloud/services/network-transport";
 import { XMLParser } from "fast-xml-parser";
 import type { MailEndpoint } from "../contracts";
 import { resolvePublicEndpoint } from "./connectors/endpoint-policy";
@@ -27,7 +33,7 @@ type SrvRecord = { name: string; port: number; priority: number; weight: number 
 
 type DiscoveryDependencies = {
   resolveSrv: (name: string) => Promise<SrvRecord[]>;
-  fetchXml: (url: URL, timeoutMs: number) => Promise<string | null>;
+  fetchXml: (url: URL, timeoutMs: number, signal: AbortSignal) => Promise<string | null>;
 };
 
 const PRESETS: DiscoveryPreset[] = [
@@ -136,59 +142,65 @@ export const parseThunderbirdAutoconfig = (params: {
   );
 };
 
-const readPinnedHttps = async (url: URL, timeoutMs: number): Promise<string | null> => {
-  const endpoint = await resolvePublicEndpoint({ host: url.hostname, port: 443, tlsMode: "implicit" }, timeoutMs);
-  return new Promise((resolve, reject) => {
-    const request = httpsRequest(
-      {
-        protocol: "https:",
-        hostname: endpoint.host,
-        servername: endpoint.host,
-        port: 443,
-        path: `${url.pathname}${url.search}`,
-        method: "GET",
-        headers: { accept: "application/xml,text/xml;q=0.9", "user-agent": "Cloud-Mail-Autoconfig/1" },
-        lookup: pinnedNetworkLookup(endpoint.addresses),
-        // A default agent may route through an environment proxy, which would resolve the name again.
-        agent: false,
-        timeout: timeoutMs,
-      },
-      (response) => {
-        if (response.statusCode === 404) {
-          response.resume();
-          resolve(null);
+const readPinnedHttps = async (
+  url: URL,
+  timeoutMs: number,
+  signal: AbortSignal,
+  deps: {
+    resolveEndpoint?: typeof resolvePublicEndpoint;
+    request?: NetworkRequestFactory;
+  } = {},
+): Promise<string | null> => {
+  const endpoint = await awaitNetworkOperation(
+    (deps.resolveEndpoint ?? resolvePublicEndpoint)({ host: url.hostname, port: 443, tlsMode: "implicit" }, timeoutMs, signal),
+    signal,
+  );
+  signal.throwIfAborted();
+  return readNetworkResponse<string | null>({
+    request: deps.request ?? httpsRequest,
+    signal,
+    options: {
+      protocol: "https:",
+      hostname: endpoint.host,
+      servername: endpoint.host,
+      port: 443,
+      path: `${url.pathname}${url.search}`,
+      method: "GET",
+      headers: { accept: "application/xml,text/xml;q=0.9", "user-agent": "Cloud-Mail-Autoconfig/1" },
+      lookup: pinnedNetworkLookup(endpoint.addresses),
+      // A default agent may route through an environment proxy, which would resolve the name again.
+      agent: false,
+    },
+    read: (response, resolve, reject) => {
+      if (response.statusCode === 404) {
+        resolve(null);
+        return;
+      }
+      if (response.statusCode !== 200) {
+        reject(new Error(`Autoconfiguration returned HTTP ${response.statusCode ?? "unknown"}`));
+        return;
+      }
+      const contentType = response.headers["content-type"]?.toLowerCase() ?? "";
+      if (!contentType.includes("xml")) {
+        reject(new Error("Autoconfiguration did not return XML"));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      response.on("data", (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > MAX_AUTOCONFIG_BYTES) {
+          reject(new Error("Autoconfiguration response is too large"));
           return;
         }
-        if (response.statusCode !== 200) {
-          response.resume();
-          reject(new Error(`Autoconfiguration returned HTTP ${response.statusCode ?? "unknown"}`));
-          return;
-        }
-        const contentType = response.headers["content-type"]?.toLowerCase() ?? "";
-        if (!contentType.includes("xml")) {
-          response.resume();
-          reject(new Error("Autoconfiguration did not return XML"));
-          return;
-        }
-        const chunks: Buffer[] = [];
-        let bytes = 0;
-        response.on("data", (chunk: Buffer) => {
-          bytes += chunk.length;
-          if (bytes > MAX_AUTOCONFIG_BYTES) {
-            response.destroy(new Error("Autoconfiguration response is too large"));
-            return;
-          }
-          chunks.push(chunk);
-        });
-        response.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-        response.on("error", reject);
-      },
-    );
-    request.on("timeout", () => request.destroy(new Error("Autoconfiguration request timed out")));
-    request.on("error", reject);
-    request.end();
+        chunks.push(chunk);
+      });
+      response.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    },
   });
 };
+
+export const __test = { readPinnedHttps };
 
 const srvCandidates = async (
   parts: ReturnType<typeof normalizeEmail>,
@@ -247,7 +259,7 @@ const dedupeCandidates = (candidates: DiscoveredMailConfiguration[]): Discovered
 
 export const discoverMailConfigurations = async (
   email: string,
-  options: { timeoutMs?: number; dependencies?: Partial<DiscoveryDependencies> } = {},
+  options: { timeoutMs?: number; signal?: AbortSignal; dependencies?: Partial<DiscoveryDependencies> } = {},
 ): Promise<DiscoveredMailConfiguration[]> => {
   const parts = normalizeEmail(email);
   const timeoutMs = Math.min(Math.max(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, 250), 15_000);
@@ -267,27 +279,40 @@ export const discoverMailConfigurations = async (
     new URL(`https://${parts.domain}/.well-known/autoconfig/mail/config-v1.1.xml?emailaddress=${encodeURIComponent(parts.email)}`),
   ];
   const providerAutoconfig: DiscoveredMailConfiguration[] = [];
-  for (const url of providerUrls) {
-    try {
-      const xml = await dependencies.fetchXml(url, timeoutMs);
-      if (xml) providerAutoconfig.push(...parseThunderbirdAutoconfig({ xml, email: parts.email, source: "provider_autoconfig" }));
-    } catch {
-      // Discovery is best-effort. Connection verification reports actionable endpoint errors later.
-    }
-  }
   let thunderbirdAutoconfig: DiscoveredMailConfiguration[] = [];
-  try {
-    const url = new URL(`https://autoconfig.thunderbird.net/v1.1/${encodeURIComponent(parts.domain)}`);
-    const xml = await dependencies.fetchXml(url, timeoutMs);
-    if (xml) thunderbirdAutoconfig = parseThunderbirdAutoconfig({ xml, email: parts.email, source: "thunderbird_autoconfig" });
-  } catch {
-    // The third-party catalog is optional and receives only the domain.
-  }
   let srv: DiscoveredMailConfiguration[] = [];
   try {
-    srv = await srvCandidates(parts, dependencies.resolveSrv);
-  } catch {
-    // Manual setup remains available when DNS discovery is unavailable.
+    await withNetworkDeadline(timeoutMs, options.signal, new Error("Autoconfiguration request timed out"), async (signal) => {
+      const deadline = Date.now() + timeoutMs;
+      const fetchXml = (url: URL) => {
+        signal.throwIfAborted();
+        return awaitNetworkOperation(dependencies.fetchXml(url, Math.max(0, deadline - Date.now()), signal), signal);
+      };
+      for (const url of providerUrls) {
+        try {
+          const xml = await fetchXml(url);
+          if (xml) providerAutoconfig.push(...parseThunderbirdAutoconfig({ xml, email: parts.email, source: "provider_autoconfig" }));
+        } catch {
+          // Discovery is best-effort. Connection verification reports actionable endpoint errors later.
+        }
+      }
+      try {
+        const url = new URL(`https://autoconfig.thunderbird.net/v1.1/${encodeURIComponent(parts.domain)}`);
+        const xml = await fetchXml(url);
+        if (xml) thunderbirdAutoconfig = parseThunderbirdAutoconfig({ xml, email: parts.email, source: "thunderbird_autoconfig" });
+      } catch {
+        // The third-party catalog is optional and receives only the domain.
+      }
+      try {
+        signal.throwIfAborted();
+        srv = await awaitNetworkOperation(srvCandidates(parts, dependencies.resolveSrv), signal);
+      } catch {
+        // Manual setup remains available when DNS discovery is unavailable.
+      }
+    });
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
+    // Keep candidates already found when the shared discovery budget expires.
   }
   return dedupeCandidates([...preset, ...providerAutoconfig, ...thunderbirdAutoconfig, ...srv]).slice(0, 16);
 };

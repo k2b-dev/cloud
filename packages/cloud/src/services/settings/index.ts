@@ -192,8 +192,8 @@ export async function set(key: string, value: unknown, db?: SqlClient, options?:
   await writeKey(key, value, db, options);
 }
 
-export async function read(key: string): Promise<SettingRead> {
-  return readKeyState(key);
+export async function read(key: string, db?: SqlClient): Promise<SettingRead> {
+  return readKeyState(key, db);
 }
 
 export async function remove(key: string, db?: SqlClient): Promise<void> {

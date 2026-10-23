@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { buildHelpDocumentPayload } from "../server/help-payload";
 import { getLocale } from "../server/locale";
+import { appAccessAuthority } from "../services/app-access";
 import { createHelpReader } from "../services/help";
 import type { HelpManifestResult } from "../services/help/types";
 import { logger } from "../services/logging";
@@ -23,7 +24,7 @@ export const preloadLayoutHelp = async (c: Context, appId?: string): Promise<Hel
   const id = appId ?? resolveCurrentApp(getRuntimeContext(c).apps, c.req.path)?.id;
   if (!id) return null;
   try {
-    const manifest = await createHelpReader(getLocale(c), c.get("actor")).manifest(id);
+    const manifest = await createHelpReader(getLocale(c), c.get("actor"), { authority: appAccessAuthority(c) }).manifest(id);
     manifests.set(c, manifest);
     return manifest;
   } catch (error) {
@@ -42,7 +43,7 @@ export type LayoutHelpArticle = { payload: Omit<HelpDocumentPayload, "html">; pa
 export const preloadLayoutHelpArticle = async (c: Context, appId: string, documentId: string): Promise<LayoutHelpArticle | null> => {
   if (!c.get("user")) return null;
   try {
-    const article = await createHelpReader(getLocale(c), c.get("actor")).read({ appId, documentId });
+    const article = await createHelpReader(getLocale(c), c.get("actor"), { authority: appAccessAuthority(c) }).read({ appId, documentId });
     if (!article) return null;
     const { html, ...payload } = buildHelpDocumentPayload(article, c.req.header("User-Agent") ?? "");
     return { payload, parts: helpArticlePartsServer(html) };
