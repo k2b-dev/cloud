@@ -124,13 +124,6 @@ services:
     volumes:
       - ipa_nats_data:/data
 
-  geo:
-    image: ghcr.io/valentinkolb/geo@sha256:bd4cf5b4e8114c6a838eacb3dc9a6db318e21d04ca2602cafe88e71f1dcae7b1
-    container_name: geo
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8081:4000"
-
   filegate:
     image: ghcr.io/k2b-dev/filegate:7.1.0
     platform: linux/amd64

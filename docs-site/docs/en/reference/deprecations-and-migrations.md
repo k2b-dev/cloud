@@ -10,6 +10,33 @@ updated: 2026-10-21
 
 # Deprecations and migrations
 
+## Weather city search uses Core geo
+
+The standalone `geoService`, `geo`, `services.geo`, and their legacy
+`GeoPlace`/`GeoService` server exports are removed. Applications use
+`geoClient` from `@k2b/cloud/server` with current request credentials, or call
+Core's address capabilities directly. `weather.city.search` is replaced by
+Core `address.autocomplete` with `type: "city"` and `countryCode: "DE"`.
+Autocomplete takes at least three characters and returns at most five
+suggestions. Choose a suggestion and pass its coordinates to Weather for a forecast.
+
+Operators configure the secret `geo.api_key` and credit budgets in Core.
+`weather.geo_url`, `GEO_ALLOWED_TARGETS`, and the development `geo` container
+are removed. Existing saved locations and their coordinates remain valid.
+Remove the old URL and allowlist from deployment configuration; stored legacy
+setting rows are ignored. Core must be upgraded and configured before Weather
+city searches can succeed. Upgrade Weather’s schema before its new code; the
+additive `weather_locations.provenance` column retains the selected place’s
+source. Coordinate-only locations keep an empty provenance value.
+
+`GET /api/weather/geo/search` and `/api/weather/forecast/by-city` now require
+sign-in and charge Core's geo budget. Coordinate-based forecasts stay public.
+The public display labels the forecast with its weather station, avoiding a
+paid anonymous reverse-geocode lookup. Server callers of
+`weatherService.forecast.getByCityName` and `weatherService.location.city.list`
+must pass `caller` credentials. The old `weatherService.location.city.get`
+reverse lookup is removed; use `geoClient.reverse` in an authenticated request.
+
 ## Application mail content grants
 
 `mail.content(id, context)` adds audited plain-text and attachment-name reads.

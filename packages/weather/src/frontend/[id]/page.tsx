@@ -1,3 +1,4 @@
+import type { GeoProvenance } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { type WeatherData, weatherService } from "@k2b/cloud/services";
@@ -15,6 +16,7 @@ type Location = {
   state: string | null;
   lat: number;
   lon: number;
+  provenance?: GeoProvenance | null;
 };
 
 /* The measurement's own color tints its chip: sun amber, dew blue, the rest neutral ink. */
@@ -54,6 +56,17 @@ function WeatherDetail({ location, data }: { location: Location; data: WeatherDa
         <header class="flex max-w-full flex-col items-center text-center" style={`view-transition-name: weather-location-${location.id}`}>
           <h1 class="max-w-full truncate text-lg font-semibold text-primary app-accent-text">{location.name}</h1>
           {location.state && <p class="mt-0.5 max-w-full truncate text-xs text-dimmed">{location.state}</p>}
+          {location.provenance && (
+            <p class="mt-1 text-xs text-dimmed">
+              <a href="https://www.geoapify.com/" class="underline" target="_blank" rel="noopener noreferrer">
+                Geoapify
+              </a>
+              {" · "}
+              <a href="https://www.openstreetmap.org/copyright" class="underline" target="_blank" rel="noopener noreferrer">
+                OpenStreetMap
+              </a>
+            </p>
+          )}
         </header>
         <div class="flex items-center gap-3">
           <i
