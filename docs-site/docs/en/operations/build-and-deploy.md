@@ -15,6 +15,10 @@ The Cloud build creates one self-contained Bun bundle for one application.
 It emits the server, Solid island chunks, application CSS, static assets, and
 optional application-specific build output.
 
+The build and development preload scripts preserve every `color-mix()` value
+in application CSS, including multiple variable-based mixes in one rule.
+See [Mix semantic colors](/en/docs/frontend/styling-and-accessibility#mix-semantic-colors).
+
 ## Build a standalone application
 
 ```bash
