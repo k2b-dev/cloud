@@ -4,6 +4,7 @@ import { FilesError } from "./errors";
 export type ActivityReadBudget = {
   signal: AbortSignal;
   check(): void;
+  remainingMs(): number;
   run<T>(work: () => PromiseLike<T>, cancel?: () => void): Promise<T>;
 };
 
@@ -21,6 +22,10 @@ export async function withActivityReadBudget<T>(requestAbort: AbortSignal | unde
       if (performance.now() >= deadline && !signal.aborted) expire();
       signal.throwIfAborted();
     },
+    remainingMs: () => {
+      budget.check();
+      return Math.max(1, Math.ceil(deadline - performance.now()));
+    },
     async run(work, cancel) {
       budget.check();
       return new Promise((resolve, reject) => {
@@ -34,8 +39,16 @@ export async function withActivityReadBudget<T>(requestAbort: AbortSignal | unde
             budget.check();
             return work();
           })
-          .then(resolve, reject)
-          .finally(() => signal.removeEventListener("abort", abort));
+          .then(
+            (value) => {
+              signal.removeEventListener("abort", abort);
+              resolve(value);
+            },
+            (error) => {
+              signal.removeEventListener("abort", abort);
+              reject(error);
+            },
+          );
       });
     },
   };

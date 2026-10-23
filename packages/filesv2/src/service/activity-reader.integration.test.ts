@@ -411,23 +411,37 @@ suite("history reader SQL and permission projection in a private database", () =
           expect(error).toMatchObject({ message: "query canceled" });
         },
       );
-      const until = Date.now() + 5000;
+      // Leave time for finally to release the lock before Bun's 5-second test deadline.
+      const until = performance.now() + 2000;
       while (!(await waiting())) {
-        if (Date.now() >= until) throw new Error("Reader did not reach the database lock");
+        if (performance.now() >= until) throw new Error("Reader did not reach the database lock");
         await Bun.sleep(10);
       }
       controller.abort(new Error("query canceled"));
-      await pending;
+      let cancellationTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          pending,
+          new Promise<never>((_resolve, reject) => {
+            cancellationTimer = setTimeout(() => reject(new Error("Reader cancellation did not finish")), until - performance.now());
+          }),
+        ]);
+      } finally {
+        clearTimeout(cancellationTimer);
+      }
       while (await waiting()) {
-        if (Date.now() >= until) throw new Error("Canceled reader left a database waiter behind");
+        if (performance.now() >= until) throw new Error("Canceled reader left a database waiter behind");
         await Bun.sleep(10);
       }
       expect((await sql<{ healthy: number }[]>`SELECT 1 AS healthy`)[0]?.healthy).toBe(1);
     } finally {
       controller.abort(new Error("query canceled"));
-      await blocker`ROLLBACK`;
-      blocker.release();
-      await pending;
+      try {
+        await blocker`ROLLBACK`;
+      } finally {
+        blocker.release();
+        await pending;
+      }
     }
   });
 
@@ -505,11 +519,11 @@ suite("history reader SQL and permission projection in a private database", () =
     expect(f.requests).toEqual([]);
   });
 
-  test("recorded base SQL pages every historical binding, including 55 bindings of one public ID", async () => {
-    const recordedPublicId = "freeipa:users:70000000-0000-4000-8000-000000000001";
+  test("recorded base SQL pages archived bindings and filters a public ID beyond the first page", async () => {
+    const recordedPublicId = "freeipa:users:70000000-0000-4000-8000-000000000055";
     await sql`INSERT INTO filesv2.bases(id,area,kind,identity_id,identity_name,root,path,lifecycle)
       SELECT ('80000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
-        'freeipa','users','70000000-0000-4000-8000-000000000001'::uuid,'Recorded user','freeipa','archive/user-'||n,'archived'
+        'freeipa','users',('70000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'Recorded user','freeipa','archive/user-'||n,'archived'
       FROM generate_series(1,55) n`;
     await withActivityReadBudget(undefined, async (budget) => {
       const first = await activityReaderData.activityBases(undefined, 50, budget);
@@ -521,23 +535,22 @@ suite("history reader SQL and permission projection in a private database", () =
       expect(keys).toEqual([...keys].sort());
       expect(new Set(keys).size).toBe(56);
       const filtered = await activityReaderData.activityBases(undefined, 50, budget, { baseId: recordedPublicId });
-      const filteredLast = await activityReaderData.activityBases(filtered.next!, 50, budget, { baseId: recordedPublicId });
-      expect(filtered.items).toHaveLength(50);
-      expect(filteredLast.items).toHaveLength(5);
-      expect(filteredLast.next).toBeNull();
+      expect(filtered.items.map((item) => item.id)).toEqual([keys[55]!]);
+      expect(filtered.next).toBeNull();
       const exact = await activityReaderData.activityBases(undefined, 50, budget, { bindingIds: [keys[55]!] });
       expect(exact.items.map((item) => item.id)).toEqual([keys[55]!]);
       expect(exact.items[0]?.path).toBe("archive/user-55");
     });
-    // The public filter used by history/export already matches every binding, including later pages.
+    // The public filter used by history/export finds an archived binding beyond the first base page, on either side.
     await seed(candidate(1, { base_id: "80000000-0000-4000-8000-000000000049" }));
     await seed(candidate(2, { base_id: "80000000-0000-4000-8000-000000000055" }));
+    await seed(candidate(3, { base_id: null, base_after_id: "80000000-0000-4000-8000-000000000055" }));
     await withActivityReadBudget(undefined, async (budget) => {
       const rows = await activityReaderData.candidates(
         { scope: { admin: true, userId: actorId, bindingIds: [] }, baseId: recordedPublicId, position: null, direction: "desc", limit: 50 },
         budget,
       );
-      expect(rows).toHaveLength(2);
+      expect(rows.map((row) => row.id)).toEqual([candidate(3).id, candidate(2).id]);
     });
   });
   test("legacy metadata markers are derived narrowly by both SQL readers and never imply file or folder", async () => {

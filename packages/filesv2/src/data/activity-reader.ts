@@ -1,5 +1,5 @@
-import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
+import { logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { type ReservedSQL, type SQL, sql } from "bun";
 import {
   ACTIVITY_PAGE_LIMIT,
   ACTIVITY_SCAN_LIMIT,
@@ -9,7 +9,7 @@ import {
   ShareAccessNetwork,
   type ShareAccessPeriod,
 } from "../activity-contracts";
-import type { ActivityReadBudget } from "../service/activity-read-budget";
+import { type ActivityReadBudget, withActivityReadBudget } from "../service/activity-read-budget";
 import { FilesError } from "../service/errors";
 import type { Binding } from "./bases";
 
@@ -63,6 +63,77 @@ export type CandidateInput = {
   from?: string;
   to?: string;
 };
+
+const log = logger("filesv2:activity-reader");
+
+async function readQuery<T>(query: SQL.Query<T>, budget?: ActivityReadBudget): Promise<T> {
+  if (!budget) return query;
+  let connection: ReservedSQL | undefined;
+  let backendPid: number | undefined;
+  let cancellation: Promise<void> | undefined;
+  return budget.run(
+    async () => {
+      connection = await sql.reserve({ signal: budget.signal });
+      try {
+        budget.check();
+        return await connection.begin(async (db) => {
+          budget.check();
+          // A server-side bound remains if a cancellation connection cannot reach Postgres.
+          // Keep an operator's stricter timeout, and restore the setting when this transaction ends.
+          const [backend] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid,
+            set_config('statement_timeout', (SELECT least(nullif(setting::bigint,0),${budget.remainingMs()})::text
+              FROM pg_settings WHERE name='statement_timeout'), true)`;
+          backendPid = backend!.pid;
+          budget.check();
+          const rows = await db<T>`${query}`;
+          budget.check();
+          return rows;
+        });
+      } finally {
+        try {
+          await cancellation;
+        } finally {
+          connection.release();
+        }
+      }
+    },
+    () => {
+      const owned = connection;
+      if (!owned) return;
+      // Bun's PostgreSQL query.cancel() does not interrupt the server on all supported versions.
+      // Keep this session reserved until its cancellation completes, so it cannot hit another request.
+      cancellation = (async () => {
+        try {
+          if (backendPid !== undefined) {
+            // Cancellation must not queue behind blocked reads in the application pool.
+            const control = new Bun.SQL({ ...sql.options, max: 1 });
+            try {
+              await withActivityReadBudget(undefined, (cleanup) =>
+                cleanup.run(
+                  () => control`SELECT pg_cancel_backend(${backendPid})`,
+                  () => {
+                    void control
+                      .close({ timeout: 0 })
+                      .catch((error: unknown) => log.warn("History SQL cancellation connection close failed", { error }));
+                  },
+                ),
+              );
+            } finally {
+              await control.close({ timeout: 0 });
+            }
+          }
+        } finally {
+          await owned.close({ timeout: 0 });
+        }
+      })().catch((error: unknown) => {
+        // The request already rejected. Observe cleanup failures immediately,
+        // even while the original data query is still waiting on socket I/O.
+        log.warn("History SQL cancellation failed", { error });
+      });
+    },
+  );
+}
+
 export const activityReaderData = {
   /** All recorded locations; no lifecycle or public-ID deduplication may discard historical bindings. */
   async activityBases(
@@ -82,10 +153,7 @@ export const activityReaderData = {
     SELECT id,area,kind,identity_id,identity_name,root,path FROM filesv2.bases
     WHERE (${after ?? null}::uuid IS NULL OR id>${after ?? null}::uuid) AND ${identities} AND ${bindings}
     ORDER BY id LIMIT ${limit + 1}`;
-    const rows = await budget.run(
-      () => query,
-      () => query.cancel(),
-    );
+    const rows = await readQuery(query, budget);
     return { items: rows.slice(0, limit), next: rows.length > limit ? rows[limit - 1]!.id : null };
   },
   /** Uses the activity migration's effective-time index; LIMIT bounds returned candidates. */
@@ -154,12 +222,7 @@ export const activityReaderData = {
           WHERE ${filters}
           AND (${input.position?.time ?? null}::timestamptz IS NULL OR (coalesce(finished_at,started_at),id)<(${input.position?.time ?? null}::timestamptz,${input.position?.id ?? null}::uuid))
           ORDER BY coalesce(finished_at,started_at) DESC,id DESC LIMIT ${input.limit}`;
-    return budget
-      ? budget.run(
-          () => query,
-          () => query.cancel(),
-        )
-      : query;
+    return readQuery(query, budget);
   },
   async byId(id: string, budget?: ActivityReadBudget): Promise<ActivityCandidate | null> {
     // Same projection as candidates, with an exact-key read and no raw detail.
@@ -175,12 +238,7 @@ export const activityReaderData = {
       LEFT JOIN (SELECT id AS share_join_id,expires_at AS share_expires_at FROM filesv2.shares) s
         ON s.share_join_id=activity.share_id AND activity.action IN ('share.create','share.revoke')
       WHERE activity.id=${id}::uuid`;
-    const rows = await (budget
-      ? budget.run(
-          () => query,
-          () => query.cancel(),
-        )
-      : query);
+    const rows = await readQuery(query, budget);
     return rows[0] ?? null;
   },
   /** One statement keeps totals and networks on the same snapshot during concurrent rollup.
@@ -268,12 +326,7 @@ export const activityReaderData = {
         coalesce((SELECT jsonb_agg(page ORDER BY usage DESC,network COLLATE "C") FROM page),'[]'::jsonb) AS items,
         coalesce((SELECT jsonb_agg(timeline_page ORDER BY date DESC) FROM timeline_page),'[]'::jsonb) AS timeline
       FROM (SELECT pages,downloads,password_failed FROM hourly UNION ALL SELECT pages,downloads,password_failed FROM daily) counts`;
-    const [row] = await (options.budget
-      ? options.budget.run(
-          () => query,
-          () => query.cancel(),
-        )
-      : query);
+    const [row] = await readQuery(query, options.budget);
     if (!row) throw new Error("Missing share access aggregate");
     if (!row.cursor_exists) throw new FilesError("share_access_cursor_expired", 409);
     const count = (value: string): number => {

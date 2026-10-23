@@ -74,21 +74,23 @@ export const shares = {
   }): Promise<{ items: ShareRow[]; next: string | null }> {
     const limit = input.limit ?? 50;
     const item = input.item;
+    // JSON null is legacy absence; CASE keeps scalars out of array expansion even if SQL reorders predicates.
     const rows = item
       ? await sql<ShareRow[]>`SELECT * FROM filesv2.shares
       WHERE (${input.ownerId ?? null}::uuid IS NULL OR created_by=${input.ownerId ?? null}::uuid)
       AND base_id=${item.bindingId}::uuid AND root=${item.root} AND base_path=${item.basePath}
         AND (server_url IS NULL OR server_url=${item.serverUrl})
         AND (
-          (target_snapshots IS NOT NULL AND EXISTS (
-            SELECT 1 FROM jsonb_array_elements(target_snapshots) AS target
+          (EXISTS (
+            SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(target_snapshots)='array'
+              THEN target_snapshots ELSE '[]'::jsonb END) AS target
             WHERE (kind='download' OR ${item.directory})
             AND (target->>'directory')::boolean=${item.directory}
             AND CASE WHEN ${item.itemId}::text IS NOT NULL AND target->>'itemId' IS NOT NULL
               THEN target->>'itemId'=${item.itemId}
               ELSE target->>'path'=${item.target} END
           ))
-          OR (target_snapshots IS NULL AND (
+          OR ((target_snapshots IS NULL OR target_snapshots='null'::jsonb) AND (
             (kind='download' AND items @> ${JSON.stringify([item.path])}::jsonb)
             OR (kind='inbox' AND ${item.directory} AND scope=${item.path})
           ))
