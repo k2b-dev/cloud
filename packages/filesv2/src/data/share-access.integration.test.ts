@@ -213,6 +213,9 @@ suite("Files public share access accounting with private Postgres", () => {
       SELECT md5(g::text)::uuid,date_trunc('hour',${old}::timestamptz),'192.0.2.0/24','chrome',1 FROM generate_series(1,10001) g`;
     await sql`INSERT INTO filesv2.share_access_daily(share_id,day,pages)
       SELECT md5(g::text)::uuid,'2028-01-01'::date,1 FROM generate_series(1,10001) g`;
+    // Plan against the bulk-loaded backlog, not stale statistics from an empty table.
+    await sql`ANALYZE filesv2.share_access`.simple();
+    await sql`ANALYZE filesv2.share_access_daily`.simple();
     expect(await maintain()).toEqual({ rolledUp: 10000, purged: 0 });
     expect((await sql`SELECT count(*)::int AS n FROM filesv2.share_access`)[0]!.n).toBe(1);
     expect(await maintain()).toEqual({ rolledUp: 1, purged: 9999 });
