@@ -25,6 +25,7 @@ const endpoint = "/api/mail/mailboxes/Box001/compose-logo";
 const content = "iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAYAAACddGYaAAAAEElEQVR4nGNgaPj/H46ROQC4Cg71MgUCWAAAAABJRU5ErkJggg==";
 const replacementContent = "iVBORw0KGgoAAAANSUhEUgAAAAQAAAABCAYAAAD5PA/NAAAAD0lEQVR4nGP438DwHxkDAFXNCfkaFx1aAAAAAElFTkSuQmCC";
 const storedLogo: Logo = {
+  versionId: "10000000-0000-4000-8000-000000000001",
   contentType: "image/png",
   pixelWidth: 3,
   pixelHeight: 2,
@@ -54,7 +55,8 @@ describe("Mailbox logo settings", () => {
   let dom: DomTestHarness;
   let dispose = () => {};
   let initialLogo: Logo | null;
-  let getResponse: () => Response;
+  let getResponse: () => Response | Promise<Response>;
+  let deletePreconditions: Array<string | null>;
   let putResponse: (request: Request) => Response | Promise<Response>;
   let requests: Array<{ method: string; path: string; body: unknown }>;
   let unexpected: string[];
@@ -69,6 +71,7 @@ describe("Mailbox logo settings", () => {
     getResponse = () => Response.json({ logo: initialLogo });
     putResponse = () => Response.json({ logo: storedLogo });
     requests = [];
+    deletePreconditions = [];
     unexpected = [];
     const fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -81,7 +84,10 @@ describe("Mailbox logo settings", () => {
         if (path === endpoint) {
           if (request.method === "GET") return getResponse();
           if (request.method === "PUT") return putResponse(request);
-          if (request.method === "DELETE") return Response.json({ logo: null });
+          if (request.method === "DELETE") {
+            deletePreconditions.push(new URL(request.url).searchParams.get("expectedVersionId"));
+            return Response.json({ logo: null });
+          }
         }
         unexpected.push(`${request.method} ${path}`);
         throw new Error(`Unexpected request: ${request.method} ${path}`);
@@ -165,7 +171,7 @@ describe("Mailbox logo settings", () => {
     expect(dropzone().disabled).toBe(false);
     chooseFile();
     await waitFor(() => image() !== null && dom.document.activeElement === dropzone());
-    expect(writes()).toEqual([{ method: "PUT", path: endpoint, body: { content } }]);
+    expect(writes()).toEqual([{ method: "PUT", path: endpoint, body: { content, expectedVersionId: null } }]);
     // Files from this device or any Cloud app, limited to what the server accepts.
     expect(chooseFiles.mock.calls[0]?.[0]).toEqual({ accept: "image/png,image/jpeg,.png,.jpg,.jpeg", maxBytes: 102_400 });
     expectImage(storedLogo);
@@ -250,7 +256,7 @@ describe("Mailbox logo settings", () => {
     chooseFile();
     await waitFor(() => text().includes(message));
     expectUploadError(message);
-    expect(writes()).toEqual([{ method: "PUT", path: endpoint, body: { content } }]);
+    expect(writes()).toEqual([{ method: "PUT", path: endpoint, body: { content, expectedVersionId: null } }]);
     expect(dom.document.body.textContent).not.toContain("BAD_INPUT");
     expect(text()).toContain("Noch kein Logo");
     expect(image()).toBeNull();
@@ -269,6 +275,64 @@ describe("Mailbox logo settings", () => {
     expect(image()).toBeNull();
   });
 
+  test("a stale details conflict preserves edits and reloads the current logo before retry", async () => {
+    initialLogo = storedLogo;
+    const replacement = {
+      ...storedLogo,
+      versionId: "10000000-0000-4000-8000-000000000002",
+      dataUrl: `data:image/png;base64,${replacementContent}`,
+    };
+    putResponse = () => Response.json({ code: "CONFLICT" }, { status: 409 });
+    mount();
+    await waitFor(() => image() !== null);
+    edit(widthInput(), "300");
+    edit(altInput(), "My pending text");
+    button("Save").click();
+    await waitFor(() => text().includes("Load current logo"));
+    expect(widthInput().value).toBe("300");
+    expect(altInput().value).toBe("My pending text");
+    expect(writes()[0]?.body).toMatchObject({ expectedVersionId: storedLogo.versionId });
+    getResponse = () => Response.json({ message: "Temporarily unavailable" }, { status: 503 });
+    button("Load current logo").click();
+    await waitFor(() => text().includes("The logo could not be loaded"));
+    expect(altInput().value).toBe("My pending text");
+    expect(image()?.getAttribute("src")).toBe(storedLogo.dataUrl);
+    getResponse = () => Response.json({ logo: replacement });
+    button("Load current logo").click();
+    await waitFor(() => image()?.getAttribute("src") === replacement.dataUrl);
+    expect(widthInput().value).toBe("300");
+    expect(altInput().value).toBe("My pending text");
+    putResponse = () => Response.json({ logo: { ...replacement, displayWidth: 300, altText: "My pending text" } });
+    button("Save").click();
+    await waitFor(() => writes().length === 2);
+    expect(writes()[1]?.body).toEqual({
+      content: replacementContent,
+      expectedVersionId: replacement.versionId,
+      displayWidth: 300,
+      altText: "My pending text",
+    });
+  });
+
+  test("removal keeps the viewed version when a conflict refresh finishes during confirmation", async () => {
+    initialLogo = storedLogo;
+    putResponse = () => Response.json({ code: "CONFLICT" }, { status: 409 });
+    mount();
+    await waitFor(() => image() !== null);
+    edit(altInput(), "Pending edit");
+    button("Save").click();
+    await waitFor(() => text().includes("Load current logo"));
+    const pending = Promise.withResolvers<Response>();
+    getResponse = () => pending.promise;
+    button("Load current logo").click();
+    button("Remove").click();
+    await waitFor(() => dom.document.querySelector("dialog") !== null);
+    pending.resolve(Response.json({ logo: null }));
+    await waitFor(() => image() === null);
+    button("Remove", dom.document.querySelector("dialog")!).click();
+    await waitFor(() => deletePreconditions.length === 1);
+    expect(deletePreconditions).toEqual([storedLogo.versionId]);
+  });
+
   test("reuses the stored bytes when saving width and alt text, then disables Save again", async () => {
     initialLogo = storedLogo;
     const updated = { ...storedLogo, displayWidth: 300, altText: "Team logo" };
@@ -282,7 +346,13 @@ describe("Mailbox logo settings", () => {
     expect(button("Save").disabled).toBe(false);
     button("Save").click();
     await waitFor(() => image()?.getAttribute("alt") === "Team logo" && button("Save").disabled);
-    expect(writes()).toEqual([{ method: "PUT", path: endpoint, body: { content, displayWidth: 300, altText: "Team logo" } }]);
+    expect(writes()).toEqual([
+      {
+        method: "PUT",
+        path: endpoint,
+        body: { content, expectedVersionId: storedLogo.versionId, displayWidth: 300, altText: "Team logo" },
+      },
+    ]);
     expectImage(updated);
     expect(widthInput().value).toBe("300");
     expect(altInput().value).toBe("Team logo");
@@ -311,7 +381,12 @@ describe("Mailbox logo settings", () => {
       {
         method: "PUT",
         path: endpoint,
-        body: { content: replacementContent, displayWidth: storedLogo.displayWidth, altText: storedLogo.altText },
+        body: {
+          content: replacementContent,
+          expectedVersionId: storedLogo.versionId,
+          displayWidth: storedLogo.displayWidth,
+          altText: storedLogo.altText,
+        },
       },
     ]);
     expectImage(replacement);

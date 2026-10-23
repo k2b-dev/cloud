@@ -14,14 +14,14 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, createUniqueId, Match, on, onCleanup, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { apiClient } from "../../api/client";
 import { type MailboxComposeLogo, mailboxLogoDisplayHeight } from "../../contracts";
 import { readApiError } from "./api-response";
 import { mailSettingsMessages } from "./mail-settings-messages";
 
 type Logo = NonNullable<MailboxComposeLogo["logo"]>;
-type LogoUpload = { content: string; displayWidth?: number; altText?: string };
+type LogoUpload = { expectedVersionId?: string | null; content: string; displayWidth?: number; altText?: string };
 
 /** The largest file the server accepts; larger files are not read or sent. */
 const MAX_LOGO_BYTES = 102_400;
@@ -59,13 +59,25 @@ export default function MailboxLogoSettings(props: {
   });
   // `undefined` until the first load answers; `null` when the mailbox has no logo.
   const [logo, setLogo] = createSignal<Logo | null | undefined>(undefined);
-  createEffect(on(logoQuery.data, (data) => data && setLogo(data.logo)));
+  const [conflict, setConflict] = createSignal(false);
   const [displayWidth, setDisplayWidth] = createSignal<number | null>(DEFAULT_DISPLAY_WIDTH);
   const [altText, setAltText] = createSignal("");
-  createEffect(
-    on(logo, (current) => {
+  const adoptLogo = (current: Logo | null, preserveDetails = false) => {
+    setLogo(current);
+    if (!preserveDetails) {
       setDisplayWidth(current?.displayWidth ?? DEFAULT_DISPLAY_WIDTH);
       setAltText(current?.altText ?? "");
+    }
+  };
+  createEffect(
+    on(logoQuery.data, (data) => {
+      if (!data) return;
+      adoptLogo(data.logo, conflict());
+      if (conflict()) {
+        setUploadError();
+        setDetailsError();
+      }
+      setConflict(false);
     }),
   );
   const [uploadError, setUploadError] = createSignal<string>();
@@ -79,6 +91,10 @@ export default function MailboxLogoSettings(props: {
       { param: { mailboxId: props.mailboxId }, json },
       { init: { signal: abortSignal } },
     );
+    if (response.status === 409) {
+      setConflict(true);
+      throw new Error(messages().logoChanged);
+    }
     if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveLogo));
     return (await response.json()).logo;
   };
@@ -86,7 +102,7 @@ export default function MailboxLogoSettings(props: {
   const upload = mutations.create<Logo | null, LogoUpload>({
     mutation: (json, { abortSignal }) => putLogo(json, abortSignal),
     onSuccess: (next) => {
-      setLogo(next);
+      adoptLogo(next);
       setDetailsError();
       toast.success(messages().logoUploaded);
       focusControl(dropzoneId);
@@ -99,7 +115,7 @@ export default function MailboxLogoSettings(props: {
   const saveDetails = mutations.create<Logo | null, LogoUpload>({
     mutation: (json, { abortSignal }) => putLogo(json, abortSignal),
     onSuccess: (next) => {
-      setLogo(next);
+      adoptLogo(next);
       toast.success(messages().logoDetailsSaved);
       focusControl(altTextId);
     },
@@ -108,16 +124,20 @@ export default function MailboxLogoSettings(props: {
       focusControl(altTextId);
     },
   });
-  const remove = mutations.create<void, void>({
-    mutation: async (_input, { abortSignal }) => {
+  const remove = mutations.create<void, string>({
+    mutation: async (expectedVersionId, { abortSignal }) => {
       const response = await apiClient.mailboxes[":mailboxId"]["compose-logo"].$delete(
-        { param: { mailboxId: props.mailboxId } },
+        { param: { mailboxId: props.mailboxId }, query: { expectedVersionId } },
         { init: { signal: abortSignal } },
       );
+      if (response.status === 409) {
+        setConflict(true);
+        throw new Error(messages().logoChanged);
+      }
       if (!response.ok) throw new Error(await readApiError(response, messages().failedRemoveLogo));
     },
     onSuccess: () => {
-      setLogo(null);
+      adoptLogo(null);
       setUploadError();
       setDetailsError();
       toast.success(messages().logoRemoved);
@@ -170,7 +190,11 @@ export default function MailboxLogoSettings(props: {
     if (disposed) return;
     // A replacement keeps the stored width and alt text; a first upload takes the server's defaults.
     const current = logo();
-    await upload.mutate(current ? { content, displayWidth: current.displayWidth, altText: current.altText } : { content });
+    await upload.mutate(
+      current
+        ? { content, expectedVersionId: current.versionId, displayWidth: current.displayWidth, altText: current.altText }
+        : { content, expectedVersionId: null },
+    );
   };
 
   const submitDetails = async () => {
@@ -183,21 +207,39 @@ export default function MailboxLogoSettings(props: {
     }
     setDetailsError();
     // Versions are immutable: a new width or alt text stores the same bytes again.
-    await saveDetails.mutate({ content: storedContent(current), displayWidth: width, altText: trimmedAlt() });
+    await saveDetails.mutate({
+      expectedVersionId: current.versionId,
+      content: storedContent(current),
+      displayWidth: width,
+      altText: trimmedAlt(),
+    });
   };
 
   const confirmRemove = async () => {
+    const current = logo();
+    if (!current) return;
     const confirmed = await prompts.confirm(messages().removeLogoDescription, {
       title: messages().removeLogoTitle,
       confirmText: messages().removeLogo,
       variant: "danger",
     });
-    if (confirmed) await remove.mutate();
+    if (confirmed) await remove.mutate(current.versionId);
   };
 
   return (
     <SettingsGroup title={messages().logo} description={messages().logoDescription}>
       <div class="flex flex-col gap-3">
+        <Show when={conflict()}>
+          <InlineGuidance>
+            {messages().logoChanged}
+            <Button variant="secondary" size="sm" type="button" disabled={logoQuery.loading()} onClick={() => void logoQuery.refresh()}>
+              {messages().loadCurrentLogo}
+            </Button>
+            <Show when={logoQuery.error() && !logoQuery.loading()}>
+              <span role="alert">{messages().failedLoadLogo}</span>
+            </Show>
+          </InlineGuidance>
+        </Show>
         <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,15rem)]">
           {/* One fixed box for every state; the logo's box comes from its stored size, so nothing moves while it loads. */}
           {/* The logo sits on the white paper recipients see, also in dark mode. */}

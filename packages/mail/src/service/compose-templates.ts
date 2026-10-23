@@ -709,12 +709,14 @@ export const updateMailboxComposeLogo = async (params: {
   try {
     return await sql.begin(async (tx) => {
       // Lock the mailbox before the permission check, so a concurrent access revocation either finishes first or waits.
-      const [mailbox] = await tx<{ name: string }[]>`
-        SELECT name FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL FOR UPDATE
+      const [mailbox] = await tx<{ name: string; logo_version_id: string | null }[]>`
+        SELECT name, logo_version_id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL FOR UPDATE
       `;
       const allowed = await requireMailboxPermission(params.context, params.mailboxId, "admin", tx);
       if (!allowed.ok) return allowed;
       if (!mailbox) return fail(err.notFound("Mailbox"));
+      if (parsed.data.expectedVersionId !== undefined && parsed.data.expectedVersionId !== mailbox.logo_version_id)
+        return fail(err.conflict("The mailbox logo changed. Load the current logo before saving your edits."));
       const actor = actorRefFromRequest(params.context);
       const actorId = actorDatabaseId(actor);
       if (!actorId || actor.kind === "workflow" || actor.kind === "system") return fail(err.forbidden("Logo editor is invalid"));
@@ -752,16 +754,19 @@ export const updateMailboxComposeLogo = async (params: {
 export const removeMailboxComposeLogo = async (params: {
   context: MailRequestContext;
   mailboxId: string;
+  expectedVersionId?: string | null;
 }): Promise<Result<MailboxComposeLogo>> => {
   try {
     return await sql.begin(async (tx) => {
       // Lock the mailbox before the permission check, so a concurrent access revocation either finishes first or waits.
-      const [mailbox] = await tx<{ id: string }[]>`
-        SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL FOR UPDATE
+      const [mailbox] = await tx<{ id: string; logo_version_id: string | null }[]>`
+        SELECT id, logo_version_id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL FOR UPDATE
       `;
       const allowed = await requireMailboxPermission(params.context, params.mailboxId, "admin", tx);
       if (!allowed.ok) return allowed;
       if (!mailbox) return fail(err.notFound("Mailbox"));
+      if (params.expectedVersionId !== undefined && params.expectedVersionId !== mailbox.logo_version_id)
+        return fail(err.conflict("The mailbox logo changed. Load the current logo before removing it."));
       const actor = actorRefFromRequest(params.context);
       if (!actorDatabaseId(actor) || actor.kind === "workflow" || actor.kind === "system")
         return fail(err.forbidden("Logo editor is invalid"));
