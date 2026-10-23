@@ -6,13 +6,13 @@ const resourceMessages = i18n.define({
   messages: {
     en: {
       resourceUntitled: "Untitled",
-      resourceNoAccess: "No access",
+      resourceNoAccess: "Item not available",
       resourceDeleted: "Item deleted",
       resourceUnavailable: "Not available right now",
     },
     de: {
       resourceUntitled: "Ohne Titel",
-      resourceNoAccess: "Kein Zugriff",
+      resourceNoAccess: "Element nicht verfügbar",
       resourceDeleted: "Element gelöscht",
       resourceUnavailable: "Gerade nicht verfügbar",
     },

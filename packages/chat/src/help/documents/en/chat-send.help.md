@@ -53,7 +53,7 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 
 :::reference
 - The element shows as a card in the message. Choosing the card opens the element.
-- Each person sees only what they may see. Without access to the element, the card says **Element not available** and shows no title or place.
+- Each person sees only what they may see. Without access to the element, the card says **Item not available** and shows no title or place.
 - Sharing an element gives nobody access to it.
 :::
 

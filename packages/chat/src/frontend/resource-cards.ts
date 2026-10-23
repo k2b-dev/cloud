@@ -92,7 +92,8 @@ export const createResourceCards = (dependencies = { listCapabilityCatalog, invo
         state: "ok",
         title: current?.title,
         icon: current?.icon ?? type?.icon,
-        source: [type?.title, app.appName].filter(Boolean).join(" · "),
+        // Type titles in manifests are not translated; the app's name is.
+        source: app.appName,
         preview: current?.preview,
         href,
       };

@@ -25,7 +25,7 @@ Use `Avatar`'s `ring` for a live status such as someone working on a task, or a 
 
 - `"ok"` (the default) shows the element's `icon`, `title`, a line with its `source` and `location` joined by " · ", and one line of `preview` text. Empty lines are left out; a blank title shows "Untitled", so a card that opens always has a name.
 - `"loading"` shows a quiet placeholder while the application looks the element up.
-- `"no_access"` shows "No access", `"deleted"` shows "Item deleted", and `"unavailable"` shows "Not available right now", each with a neutral icon.
+- `"no_access"` shows "Item not available" without saying whether the item exists, `"deleted"` shows "Item deleted", and `"unavailable"` shows "Not available right now", each with a neutral icon.
 
 The card has the same width and height in every state, at most the width of its container, so a card that resolves, loses access, or is deleted moves nothing around it. Long text is cut off with an ellipsis. The labels follow the inherited `@k2b/ui` locale.
 

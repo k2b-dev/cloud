@@ -57,7 +57,7 @@ const textOf = (html: string) => {
 
 const hidden = [element.title, element.source, element.location, element.preview, element.href, element.icon] as string[];
 const reasons = [
-  { state: "no_access", icon: "ti ti-lock", en: "No access", de: "Kein Zugriff" },
+  { state: "no_access", icon: "ti ti-lock", en: "Item not available", de: "Element nicht verfügbar" },
   { state: "deleted", icon: "ti ti-trash", en: "Item deleted", de: "Element gelöscht" },
   { state: "unavailable", icon: "ti ti-cloud-off", en: "Not available right now", de: "Gerade nicht verfügbar" },
 ] as const;

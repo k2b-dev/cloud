@@ -180,7 +180,7 @@ export const chatMessages = i18n.define({
       nothingForFilter: "Nothing for this filter.",
       sharedFailed: "Shared items could not be loaded.",
       showMoreShared: "Show more",
-      elementUnavailable: "Element not available",
+      elementUnavailable: "Item not available",
       noAccess: "No access",
       newThreadHint: "Keeps one topic of this chat apart.",
       threadsIn: ({ title }: { title: string }) => `Threads in ${title}`,

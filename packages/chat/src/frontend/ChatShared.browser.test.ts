@@ -105,7 +105,7 @@ describe("Shared in the chat's info", () => {
       await rows.first().waitFor();
       expect(await rows.locator(".chat-shared__title").allInnerTexts()).toEqual([
         "example.com/vpn",
-        "Element not available",
+        "Item not available",
         "Delivery cooling shelves",
       ]);
       expect(await rows.nth(1).locator(".chat-shared__meta").innerText()).toContain("No access");
