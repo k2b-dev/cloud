@@ -1,6 +1,7 @@
 import { hasRole } from "@k2b/cloud/contracts";
 import { createAllowedNetworkFetch } from "@k2b/cloud/services";
 import { NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
+import { invalidateSettingsCache, SettingUnreadableError, set } from "@k2b/cloud/services/settings";
 import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import { createRsqlClient, type RsqlResult } from "@k2b/rsql";
 import { SQL, sql } from "bun";
@@ -355,30 +356,65 @@ export const artifactDatabase = {
   },
   async settings(identity: ArtifactIdentity) {
     admin(identity);
-    const c = await config();
-    return { url: c.url, tokenSet: Boolean(c.token) };
+    const url = await app.settings.read("assistant.rsql_url");
+    const token = await app.settings.read("assistant.rsql_api_token");
+    return {
+      url: url.value,
+      tokenSet: token.stored !== "unreadable" && Boolean(token.value),
+      unreadable: {
+        "assistant.rsql_url": url.stored === "unreadable",
+        "assistant.rsql_api_token": token.stored === "unreadable",
+      },
+    };
   },
   async configure(input: unknown, identity: ArtifactIdentity, testOnly = false) {
     admin(identity);
     const next = DatabaseSettings.parse(input);
-    return sql.begin(async (db) => {
+    await sql.begin(async (db) => {
       await db`SELECT pg_advisory_xact_lock(hashtext('assistant-rsql-settings'))`;
-      const current = await config(),
+      const states = { url: await app.settings.read("assistant.rsql_url"), token: await app.settings.read("assistant.rsql_api_token") };
+      for (const [field, key] of [
+        ["url", "assistant.rsql_url"],
+        ["token", "assistant.rsql_api_token"],
+      ] as const) {
+        // Testing is read-only, but must not test an unreadable credential's fallback.
+        if (
+          states[field].stored === "unreadable" &&
+          ((testOnly && next[field] === undefined) || (!testOnly && next[field] !== undefined && !next.replaceUnreadable?.includes(key)))
+        )
+          throw new SettingUnreadableError(key);
+      }
+      const current = { url: states.url.value, token: states.token.value },
+        url = next.url ?? current.url,
         token = next.token ?? current.token;
-      if (!testOnly && (next.url !== current.url || !token)) {
+      if (
+        !testOnly &&
+        ((next.url !== undefined && (states.url.stored === "unreadable" || url !== current.url)) || (next.token !== undefined && !token))
+      ) {
         const [used] = await db<
           { count: number }[]
         >`SELECT ((SELECT count(*) FROM assistant.artifact_databases)+(SELECT count(*) FROM assistant.database_cleanup))::int AS count`;
         if (used?.count) throw new DatabaseError("DB_SERVER_IN_USE", 409);
       }
-      if (next.url || token) result(await connection({ url: next.url, token }).namespaces.list({ limit: 1 }));
-      if (testOnly) return { connected: true };
-      // complete value from explicit admin input; nothing is merged over a read (#1303)
-      await app.settings.set("assistant.rsql_url", next.url, { replaceUnreadable: true });
-      // complete value from explicit admin input; nothing is merged over a read (#1303)
-      if (next.token !== undefined) await app.settings.set("assistant.rsql_api_token", next.token, { replaceUnreadable: true });
-      return { url: next.url, tokenSet: Boolean(token) };
+      const knownUrl = next.url !== undefined || states.url.stored !== "unreadable";
+      const knownToken = next.token !== undefined || states.token.stored !== "unreadable";
+      if (knownUrl && knownToken && (url || token)) result(await connection({ url, token }).namespaces.list({ limit: 1 }));
+      if (testOnly) return;
+      if (next.url !== undefined)
+        await set("assistant.rsql_url", next.url, db, {
+          replaceUnreadable: next.replaceUnreadable?.includes("assistant.rsql_url") === true,
+        });
+      if (next.token !== undefined)
+        await set("assistant.rsql_api_token", next.token, db, {
+          replaceUnreadable: next.replaceUnreadable?.includes("assistant.rsql_api_token") === true,
+        });
     });
+    if (testOnly) return { connected: true };
+    await invalidateSettingsCache([
+      ...(next.url !== undefined ? ["assistant.rsql_url"] : []),
+      ...(next.token !== undefined ? ["assistant.rsql_api_token"] : []),
+    ]);
+    return this.settings(identity);
   },
   async connect(id: string, identity: ArtifactIdentity, signal?: AbortSignal, requireManage = false) {
     user(identity);

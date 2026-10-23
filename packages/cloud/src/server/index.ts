@@ -41,6 +41,7 @@ export {
   v,
   validator,
 } from "./middleware";
+export { guardAppAccessSocket } from "./middleware/app-access";
 export { RateLimitError, type RateLimiter, type RateLimiterConfig, type RateLimitResult, ratelimit } from "./ratelimit";
 export { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "./request-timeout";
 export type {

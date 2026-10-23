@@ -3,12 +3,14 @@ import { api } from "@k2b/cloud/browser";
 import { z } from "zod";
 import type { ApiType } from "../api";
 import { ArtifactSource, type ArtifactUpdate } from "./contracts";
+import type { DatabaseSettings } from "./database-contracts";
 import { DatabaseRequest } from "./database-contracts";
 import { FlatDatabaseRequest } from "./database-runtime";
 import { type HttpPrepare, HttpResult, HttpReview, type HttpScope, type SecretSave, SecretView } from "./http-contracts";
 import { encodePdfRequest } from "./pdf-contracts";
 import { ViewerContext } from "./runner-contracts";
 import type { StorageRequest } from "./storage-contracts";
+import type { StorageSettings } from "./storage-settings";
 
 const client = api.create<ApiType>({ baseUrl: "/api/assistant" }).artifacts;
 async function checked(response: Pick<Response, "json" | "ok" | "status">): Promise<void> {
@@ -188,17 +190,27 @@ export const artifactClient = {
       await checked(response);
       return response.json();
     },
+    storageSettings: async () => {
+      const response = await client.admin.storage.settings.$get();
+      await checked(response);
+      return response.json();
+    },
+    configureStorage: async (input: z.input<typeof StorageSettings>) => {
+      const response = await client.admin.storage.settings.$put({ json: input });
+      await checked(response);
+      return response.json();
+    },
     settings: async () => {
       const response = await client.admin.database.settings.$get();
       await checked(response);
       return response.json();
     },
-    configure: async (input: { url: string; token?: string }) => {
+    configure: async (input: z.input<typeof DatabaseSettings>) => {
       const response = await client.admin.database.settings.$put({ json: input });
       await checked(response);
       return response.json();
     },
-    test: async (input: { url: string; token?: string }) => {
+    test: async (input: z.input<typeof DatabaseSettings>) => {
       const response = await client.admin.database.test.$post({ json: input });
       await checked(response);
       return response.json();

@@ -1,5 +1,5 @@
 import { type AuthContext, auth, getLocale, jsonResponse, middleware, rateLimit, requiresAdmin, respond, v } from "@k2b/cloud/server";
-import { get, set } from "@k2b/cloud/services";
+import { read, set } from "@k2b/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
@@ -212,12 +212,12 @@ const app = new Hono<AuthContext>()
       summary: "Get log retention setting",
       ...requiresAdmin,
       responses: {
-        200: jsonResponse(z.object({ retentionDays: z.number() }), "Current retention setting"),
+        200: jsonResponse(z.object({ retentionDays: z.number(), unreadable: z.boolean() }), "Current retention setting"),
       },
     }),
     async (c) => {
-      const value = await get<unknown>("logs.retention_days");
-      return respond(c, ok({ retentionDays: typeof value === "number" ? value : 30 }));
+      const state = await read("logs.retention_days");
+      return respond(c, ok({ retentionDays: Number(state.value), unreadable: state.stored === "unreadable" }));
     },
   )
 
@@ -231,13 +231,16 @@ const app = new Hono<AuthContext>()
       responses: {
         200: jsonResponse(z.object({ message: z.string() }), "Retention setting updated"),
         400: jsonResponse(ErrorResponseSchema, "Invalid request"),
+        409: jsonResponse(
+          z.object({ code: z.literal("setting_unreadable"), message: z.string() }),
+          "Stored period needs explicit replacement",
+        ),
       },
     }),
-    v("json", z.object({ retentionDays: z.coerce.number().int().min(1) })),
+    v("json", z.object({ retentionDays: z.coerce.number().int().min(1), replaceUnreadable: z.boolean().optional() })),
     async (c) => {
-      const { retentionDays } = c.req.valid("json");
-      // The administrator supplies the complete value; nothing is merged from storage.
-      await set("logs.retention_days", retentionDays, undefined, { replaceUnreadable: true });
+      const { retentionDays, replaceUnreadable } = c.req.valid("json");
+      await set("logs.retention_days", retentionDays, undefined, { replaceUnreadable: replaceUnreadable === true });
       return respond(c, ok({ message: gatewayOpsMessages.resolve([getLocale(c)]).t.logRetentionUpdated }));
     },
   );
