@@ -132,8 +132,8 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
   const readConfig = async (connection = db): Promise<LinuxIdentityConfiguration> => {
     // Provisioning must not use a stale cache after an operator disables or changes the range.
     const [row] = await connection<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${CONFIG_KEY}`;
-    const raw = row ? await decryptValue(row.value) : JSON.stringify(DEFAULT_LINUX_IDENTITY_CONFIGURATION);
     try {
+      const raw = row ? await decryptValue(row.value) : JSON.stringify(DEFAULT_LINUX_IDENTITY_CONFIGURATION);
       return LinuxIdentityConfigurationSchema.parse(typeof raw === "string" ? JSON.parse(raw) : raw);
     } catch {
       throw new PosixError("invalid_configuration", 400);
@@ -304,15 +304,21 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
   };
 
   const service = {
-    async configuration(actor: Actor) {
+    async configuration(actor: Actor): Promise<LinuxIdentityConfiguration & { unreadable?: boolean }> {
       requireAdmin(actor);
-      return readConfig();
+      try {
+        return { ...(await readConfig()), unreadable: false };
+      } catch (error) {
+        // Provisioning still fails on this row. Administration alone may display the default for recovery.
+        if (!(error instanceof PosixError) || error.code !== "invalid_configuration") throw error;
+        return { ...DEFAULT_LINUX_IDENTITY_CONFIGURATION, unreadable: true };
+      }
     },
     async overview(actor: Actor, after: string | null = null, filters: { search?: string; scope?: "ready" | "all" } = {}) {
       requireAdmin(actor);
       const result = await rows(db, null, after, filters);
       const items = result.slice(0, POSIX_PAGE_SIZE).map(candidate);
-      return { config: await readConfig(), items, nextCursor: result.length > POSIX_PAGE_SIZE ? items.at(-1)!.id : null };
+      return { config: await service.configuration(actor), items, nextCursor: result.length > POSIX_PAGE_SIZE ? items.at(-1)!.id : null };
     },
     async get(actor: Actor, id: string) {
       requireAdmin(actor);
@@ -320,7 +326,7 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
       if (!row) throw new PosixError("user_not_found", 404);
       return { config: await readConfig(), user: candidate(row) };
     },
-    async configure(actor: Actor, input: LinuxIdentityConfiguration) {
+    async configure(actor: Actor, input: LinuxIdentityConfiguration, options?: { replaceUnreadable?: boolean }) {
       requireAdmin(actor);
       const parsed = LinuxIdentityConfigurationSchema.safeParse(input);
       if (!parsed.success) throw new PosixError("invalid_configuration", 400);
@@ -328,9 +334,17 @@ export const createPosixRuntime = (db: typeof sql = sql, readRanges = readIpaIdR
       await db.begin(async (tx) => {
         // Same order as provisioning; settings write upgrades this lock in the same transaction.
         await lock(tx);
+        if (options?.replaceUnreadable !== true) {
+          try {
+            await readConfig(tx);
+          } catch (error) {
+            if (error instanceof PosixError && error.code === "invalid_configuration")
+              throw new settings.SettingUnreadableError(CONFIG_KEY);
+            throw error;
+          }
+        }
         if (parsed.data.enabled) await checkRange(tx, parsed.data, ranges);
-        // complete value from explicit admin input; nothing is merged over a read (#1303)
-        await settings.set(CONFIG_KEY, JSON.stringify(parsed.data), tx, { replaceUnreadable: true });
+        await settings.set(CONFIG_KEY, JSON.stringify(parsed.data), tx, { replaceUnreadable: options?.replaceUnreadable === true });
         await audit.record(
           {
             action: "accounts.linux.configure",

@@ -4,6 +4,12 @@ export const contactDirectoryMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      unreadableTitle: "Stored settings cannot be read",
+      unreadableDetail:
+        "The displayed values are fallbacks. Other applications may still read the stored values. Select only the settings you intend to replace, or ask the operator to restore access.",
+      replaceStored: "Replace stored value",
+      recoveryFailed: "Saved settings could not be refreshed. Retry saving to refresh them; your draft is kept.",
+
       title: "Contact directory",
       description:
         "Choose the app that Mail uses for recipient suggestions, participant contacts, and saving new contacts. Mail calls it with each person's own access.",
@@ -52,6 +58,13 @@ export const contactDirectoryMessages = i18n.define({
       pairedFunction: "New contact needs both List writable books and Create a contact. Map both or neither.",
     },
     de: {
+      unreadableTitle: "Gespeicherte Einstellungen sind nicht lesbar",
+      unreadableDetail:
+        "Die angezeigten Werte sind Ersatzwerte. Andere Anwendungen können die gespeicherten Werte möglicherweise noch lesen. Wähle nur Einstellungen aus, die du ersetzen möchtest, oder bitte den Betreiber, den Zugriff wiederherzustellen.",
+      replaceStored: "Gespeicherten Wert ersetzen",
+      recoveryFailed:
+        "Die gespeicherten Einstellungen konnten nicht neu geladen werden. Erneut speichern lädt sie neu; der Entwurf bleibt erhalten.",
+
       title: "Kontaktverzeichnis",
       description:
         "Wähle die App, die Mail für Empfängervorschläge, Kontakte von Beteiligten und neue Kontakte verwendet. Mail ruft sie mit den eigenen Rechten der jeweiligen Person auf.",

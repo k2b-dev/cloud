@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { LiveViewer } from "@k2b/cloud/events";
 import type { RequestActor } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
+import { useRegisteredTestApp } from "@k2b/cloud/services/identity/application.test-fixture";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
@@ -182,4 +183,5 @@ suite("Mail live channel", () => {
     });
     expect(closed).toEqual({ code: 1008, reason: "login_required" });
   });
+  useRegisteredTestApp("mail");
 });

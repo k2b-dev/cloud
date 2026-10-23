@@ -10,6 +10,15 @@ updated: 2026-09-09
 
 # Assign Linux identities
 
+If the saved Linux configuration cannot be read, administration shows its
+defaults with an unreadable warning. Existing provisioning still refuses the
+unreadable configuration. Restore the operator's access, or select **Replace
+stored value: Local Linux identities** before saving a complete configuration.
+Failed saves retain the draft. CLI replacement also requires
+`--replace-unreadable` in addition to the usual confirmation flags. If a value
+becomes unreadable during editing, a rejected save refreshes the warning and
+replacement choice while preserving the entered configuration.
+
 Administrators configure local Linux identity assignment in **Administration →
 Accounts & sign-in → Linux identities**. Individual identities and group IDs appear in
 **Accounts**. FreeIPA remains the authority for its own identities.
