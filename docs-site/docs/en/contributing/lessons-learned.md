@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-22
+updated: 2026-10-23
 ---
 
 # Lessons learned
@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
@@ -178,6 +179,13 @@ convention still needs a check or a test.
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
 
 ## Lessons
+
+### Spread props never reached Pulse, Grids scanner and Weather settings islands
+
+- **What happened:** Every Pulse base page showed "This section could not be displayed" after load; the browser threw `Cannot read properties of undefined (reading 'view')`.
+- **Root cause:** The `@k2b/ssr` island transform serialized only named JSX attributes and skipped `JSXSpreadAttribute`, so `<PulseWorkspace {...workspaceProps} />` hydrated with `{}`. The Grids scanner and Weather settings islands used the same pattern.
+- **Error class:** A build transform silently drops a supported JSX form, so server and browser receive different props.
+- **Guard:** The transform merges spread and named attributes with Solid's `mergeProps`, as Solid renders them; a unit test renders a transformed page and decodes its `data-props`, including order, `undefined` fallback and an overridden getter.
 
 ### Pulse retention confirmation and lowered policy limits
 
