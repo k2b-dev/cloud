@@ -9,9 +9,11 @@ kind: task
 
 ## Find the conversation you need {icon="search"}
 
-Use **Search mailbox** for a quick search across the current mailbox. **Everything** is selected by default. It covers the synchronized message fields and extracted attachment text.
+Open the magnifier in the head or press `/` to **Search mailbox**. Text search covers the current mailbox. **Everything** is selected by default. It covers the synchronized message fields and extracted attachment text.
 
 To narrow the search, use the search-in button. Choose any combination of **Sender**, **Recipients**, **Subject**, **Message body**, and **Attachment names**. With several words, a message matches when each word appears somewhere in it, for example the sender's name and a word from the subject.
+
+**Place** starts at **Whole mailbox**. If you started in a folder, choose that folder to search only there. After you open search with the magnifier or `/`, clearing or deleting the text restores the starting view and keeps the field open. **Reset**, **Cancel**, or Escape returns to the view where you started; closing an open options menu with Escape leaves search open until you press Escape again.
 
 For more conditions, such as dates, recipients, attachments, folders, tags, or collaboration state, choose **Search filters**.
 
@@ -28,10 +30,18 @@ The filter dialog can search:
 - Conversation reference
 - Folder
 - Local tag
+- Unread
+- Flagged
+
+For **Unread** or **Flagged**, choose a folder to check the message's state
+there. **Any included folder** matches a message with that state in any folder
+included in the search. A separate **Folder** condition does not restrict this
+choice: set the folder on the Unread or Flagged condition too. You can exclude
+either condition to find messages without that state in the chosen scope.
 
 Choose **Any condition** to match at least one filled field. Choose **All conditions** to require every filled field. Search filters stay in the page URL, so a reload or a shared URL keeps the current result.
 
-A search remembers the view where you started it, such as **Needs action** or a folder. To end the search, choose **Clear** in the search field, delete the text, press Esc, or remove the **Search** chip in the head. **Reset** also clears the filters. Mail then returns to that view and opens the conversation that was open before. The URL keeps the starting view, so a reload or Back keeps it too.
+A search remembers the view where you started it, such as **Needs action** or a folder. **Reset**, **Cancel**, or Escape closes the search field and returns to that view, including the conversation that was open before. Outside the text field, **Reset** removes structured search filters. The URL keeps the starting view, so a reload or Back keeps it too.
 
 Provider keywords are advanced synchronized metadata, not a normal labeling system. Existing search URLs with keywords still work, and you can still edit them. New filters use local tags for labels that people read.
 
@@ -109,6 +119,8 @@ To empty the Inbox in other mail clients too, also choose **Archive**. Archive d
   Each person works from **Assigned to me**. The owner's confirmed reply sets **Waiting for reply**; the owner marks **Done**.
   Use **Only in the folder** for team folders that must stay outside shared lists, as described above.
 
+In a folder, use **Unread**, **Flagged**, **With attachment**, or **Date range** in the head to narrow that folder. Sent offers attachment and date filters. The **Tag** icon next to **Search** opens the tag choices. Its tooltip names the active tag; **Clear** removes that choice. A tag keeps the folder restriction and selects **All** in the tabs. **Reset** returns to the place and selection where filtering began. Date presets keep their chosen time range on reload; **Custom date range…** opens the search editor with your current filters. Typing a text search still searches the whole mailbox.
+
 ## Take a quick look before opening {icon="eye"}
 
 With a mouse, rest the pointer on a conversation row for a moment. A quick look opens next to the list. It shows:
@@ -123,6 +135,8 @@ Move the pointer into the card to keep it open. The card closes when you move aw
 A quick look never marks a conversation as read, never creates a summary, and never loads remote images. It does not appear for the conversation that is already open or while you select conversations. It also does not appear on touch devices or when there is no room next to the list.
 
 ## Read a complete thread {icon="route"}
+
+The reader keeps its subject above the messages while you scroll. The message count appears on wider screens. Use its first button to hide or show the list on a wide screen. On a phone, Back returns to the list and its workspace head.
 
 Choose a conversation row to open its thread. Each message has its own sender, recipients, date, body, and attachments. Expand an older message when you need its full content.
 
@@ -263,7 +277,7 @@ Open **… → Settings → Organization** to create a saved view from folder an
 - **Everyone with mailbox access** creates a mailbox view and requires **Edit** access.
 - You cannot change the visibility after creation. Create a replacement view if you need a different visibility.
 
-Local tags are mailbox labels for people, search, and automations. Choose a tag with the **Tag** chip in the head to open all matching conversations. Local tags are not IMAP folders or provider keywords, and other clients do not show them.
+Local tags are mailbox labels for people, search, and automations. Choose a tag with the **Tag** icon next to **Search** in the head to open all matching conversations. Local tags are not IMAP folders or provider keywords, and other clients do not show them.
 
 :::warning Deleting a local tag removes it everywhere
 Mail removes a deleted local tag from every conversation in that mailbox. Saved views and search links that filter by a deleted tag or folder find no conversations for that condition.

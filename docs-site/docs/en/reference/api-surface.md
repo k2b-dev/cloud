@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # API surface
@@ -152,6 +152,7 @@ Use the capability guide to choose the narrow API:
 - [Universal search](/en/docs/platform/search)
 - [Document extraction](/en/docs/platform/document-extraction)
 - [Secrets and persistent state](/en/docs/data/secrets-and-persistent-state#call-a-public-https-address): `requestPublicHttps()` for server-side requests to a URL that a person, an administrator, or remote content chooses; `resolvePublicNetworkAddresses()`, `NetworkTargetBlockedError`, and `pinnedNetworkLookup()` from `@k2b/cloud/services/network-security` for other transports.
+- [Specialized outbound transports](/en/docs/data/secrets-and-persistent-state#call-a-public-https-address): `withNetworkDeadline()`, `awaitNetworkOperation()` and `readNetworkResponse()` from `@k2b/cloud/services/network-transport` share cancellation and close completed HTTP requests. Callers still validate and pin every target through the network guard.
 - [Operator-approved internal targets](/en/docs/data/secrets-and-persistent-state#allow-operator-approved-internal-targets): `createAllowedNetworkFetch(allowlist, { lookup?, resolve?, request? }?)` from `@k2b/cloud/services` supplies a fetch-compatible streaming HTTP/HTTPS transport: it refuses URL user information, resolves once, pins the connection without proxies, preserves Host/TLS identity and repeated response headers, and propagates guard refusals. Redirects are never followed (`redirect: "error"` rejects a 3xx; other modes return it); non-identity encoding is rejected. Request normalization supports streaming bodies; the real `Response` streams until completion or cancellation. Signals cover lookup through response streaming, and callers own timeouts, limits and retries. Other internal transports use `resolveAllowedNetworkAddresses(hostname, allowlist, lookup?, port?)` from the same entry point with a `NetworkAllowlist` parsed by `parseNetworkAllowlist()` or `parseNetworkAllowlistEnv(variable, entries)` (errors name the env variable) from `@k2b/cloud/shared`; `isAllowlistedNetworkAddress()` there matches IP networks without DNS. Entries come from the application's operator-controlled env registry, or Pulse's Cloud-admin-managed per-base targets: exact host names, strict IPv4/IPv6, or canonical CIDRs. `host:port` and `[ipv6]:port` restrict hosts/IPs to one port (1–65535, no leading zeros); bare entries cover every port, and CIDRs cannot carry a port. Without a supplied port, only bare entries apply; the HTTP transport supplies the URL's effective port. `NetworkAllowlist.hostPorts` is optional for existing callers. Host entries trust all validated answers; reserved names require a host entry. IPv4-mapped IPv6 also matches IPv4 networks; NAT64 and other embeddings require IPv6 entries. Failed or empty lookups still refuse. `isNetworkTargetBlocked(hostname, allowlist, { resolve?, timeoutMs?, port? })` from `@k2b/cloud/services/network-security` and `@k2b/cloud/services` supplies a save-time hint: only policy refusals return `true`; lookup failures and the default five-second timeout return `false`. Every request still rechecks and pins its target.
 
 Raw stores, runtime starters, gateway telemetry, migrations, and platform
@@ -221,7 +222,7 @@ inferring support from autocomplete.
 
 | Entry point | Application surface | Other exports |
 | --- | --- | --- |
-| `@k2b/cloud` | `defineApp`, declaration types, typed notifications | Registry, heartbeat, and runtime composition are platform-owned |
+| `@k2b/cloud` | `defineApp`, `appAccess`, declaration types, typed notifications | Registry, heartbeat, and runtime composition are platform-owned |
 | `@k2b/cloud/services` | Feature services used by capability guides | Raw stores, lifecycle starters, gateway telemetry, and migrations are maintainer APIs |
 | `@k2b/cloud/ai` | Structured model calls, local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
 | `@k2b/cloud/browser` | Typed Hono client factory | Utility helpers are outside the documented typed-client contract |
@@ -330,7 +331,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/hints` | Supported, browser | `markHintSeen`: remembers a moved-path hint in the browser cookie before dismissal or navigation | [One-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/browser/reload` | Supported, browser | `reloadOnce`: bounded automatic page reload that cannot loop and, under an open modal dialog, offers the reload once the dialog closes; `importOnDemand`: load code when an action needs it and offer a reload when it cannot load | [Realtime UI](/en/docs/frontend/realtime-ui#preserve-reload-behavior), [Islands](/en/docs/frontend/islands-and-hydration#keep-the-first-load-small) |
 | `@k2b/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |
-| `@k2b/cloud/browser/panel` | Supported, browser | `openPanel` and `closePanel`: open a visible provider or close the current panel | [Panels](/en/docs/platform/panels) |
+| `@k2b/cloud/browser/panel` | Supported, browser | `openPanel`, `closePanel`, and `onPanelBeforeLeave`: open or close the panel and protect unfinished provider work | [Panels](/en/docs/platform/panels) |
 | `@k2b/cloud/browser/search` | Supported, browser | Open global search with an optional context and register app navigation | [Universal search](/en/docs/platform/search) |
 | `@k2b/cloud/browser/widgets` | Supported, browser | `streamWidgets`: read dashboard widgets from Core as each one answers | [Dashboard widgets](/en/docs/platform/dashboard-widgets#read-widgets-from-a-browser) |
 | `@k2b/cloud/browser/commands` | Supported, browser | Open interactive Commands, handle command links, and register context actions | [Capabilities](/en/docs/platform/capabilities) |
@@ -497,3 +498,7 @@ for consent, ordering, and the rule that refs never grant access.
 `clientIp` and `clientIpBucket` from `@k2b/cloud/server` resolve forwarded
 addresses and normalize shared network budgets. See
 [Limit requests](/en/docs/server/middleware#limit-requests).
+
+Application entry declarations use `appAccess` from `@k2b/cloud`; see
+[App access](/en/docs/identity/app-access). The batch resolver and registry
+filtering helpers are platform-owned.

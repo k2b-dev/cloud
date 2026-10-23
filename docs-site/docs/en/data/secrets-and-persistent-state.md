@@ -5,7 +5,7 @@ section: Data
 order: 440
 description: Store sensitive configuration and durable application state in the correct platform service.
 tags: [data, secrets, encryption, settings, valkey, storage, https, ssrf]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Secrets and persistent state
@@ -300,6 +300,24 @@ answer that changes in between cannot move the request. TLS still verifies the
 certificate for the URL's host name. A response above `maxBytes` is stopped
 with `HTTP_TOO_LARGE`, including when its declared content length already
 exceeds the limit. Connection and response failures use `HTTP_FAILED`.
+
+Keep the same deadline signal for the entire operation, including DNS,
+connection attempts, redirects handled by the caller, response headers and body
+reads. Receiving occasional bytes does not restart that budget. Cancellation
+closes both the active request and response. A redirect or rejected response
+whose body is unused is destroyed immediately; it is never drained after the
+operation settles. A DNS lookup that cannot be cancelled may finish later, but
+its answer cannot start a request after cancellation.
+
+Specialized transports can use the lifecycle helpers from
+`@k2b/cloud/services/network-transport`: `withNetworkDeadline(timeoutMs,
+callerSignal, timeoutError, work)` supplies one signal and clears its timer and
+caller listener when work settles; `awaitNetworkOperation(promise, signal)`
+bounds an uncancellable lookup. `readNetworkResponse({ request, options, signal,
+body?, read })` consumes an already validated and pinned HTTP request and closes
+both streams on success, failure or abort. Its `read(response, resolve, reject)`
+callback decides which status and body to accept. These helpers do not authorize
+an address: resolve through the network guard and preserve the pinned options.
 
 For transports `requestPublicHttps` cannot cover, such as IMAP, SMTP, or a
 plain-HTTP tester, resolve with `resolvePublicNetworkAddresses` from

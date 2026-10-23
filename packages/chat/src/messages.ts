@@ -4,6 +4,14 @@ export const chatMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      openFullView: "Open full view",
+      draftChangedElsewhere: "Another view changed this draft",
+      draftChangedElsewhereDescription:
+        "Your text is still in the composer. Compare it with the saved text below and choose which to keep.",
+      useSavedDraft: "Use saved text",
+      keepLocalDraft: "Keep my text",
+      draftNotSaved: "Draft could not be kept in this tab",
+      draftNotSavedDescription: "Keep this view open and copy your text before leaving. You can try saving again.",
       newChat: "New chat",
       people: "People",
       guestPickerDescription: "You can add people you already share a chat with.",
@@ -140,6 +148,7 @@ export const chatMessages = i18n.define({
       liveStopped: "New messages do not arrive at the moment. Reload the page.",
       openFailed: "The chat could not be opened. Try again.",
       messageNotSent: "Your message was not sent.",
+      sendPreparing: "Your message is being prepared. Wait before switching chats.",
       messageTooLong: ({ limit }: { limit: string }) => `Shorten to at most ${limit} characters.`,
       messageInvalidCharacters: "Remove the unsupported character.",
       messagesWaiting: "Later messages wait for the one that was not sent.",
@@ -176,6 +185,15 @@ export const chatMessages = i18n.define({
       logs: "Logs",
     },
     de: {
+      openFullView: "In Vollansicht öffnen",
+      draftChangedElsewhere: "Eine andere Ansicht hat diesen Entwurf geändert",
+      draftChangedElsewhereDescription:
+        "Dein Text steht weiter im Eingabefeld. Vergleiche ihn mit dem gespeicherten Text unten und wähle, welchen du behalten möchtest.",
+      useSavedDraft: "Gespeicherten Text verwenden",
+      keepLocalDraft: "Meinen Text behalten",
+      draftNotSaved: "Entwurf konnte in diesem Tab nicht gesichert werden",
+      draftNotSavedDescription:
+        "Lass diese Ansicht geöffnet und kopiere deinen Text vor dem Verlassen. Du kannst das Sichern erneut versuchen.",
       newChat: "Neuer Chat",
       people: "Personen",
       guestPickerDescription: "Du kannst Personen hinzufügen, mit denen du schon einen Chat teilst.",
@@ -316,6 +334,7 @@ export const chatMessages = i18n.define({
       liveStopped: "Neue Nachrichten kommen gerade nicht an. Lade die Seite neu.",
       openFailed: "Der Chat konnte nicht geöffnet werden. Versuche es erneut.",
       messageNotSent: "Deine Nachricht wurde nicht gesendet.",
+      sendPreparing: "Deine Nachricht wird vorbereitet. Warte vor dem Wechsel der Unterhaltung.",
       messageTooLong: ({ limit }: { limit: string }) => `Kürze auf höchstens ${limit} Zeichen.`,
       messageInvalidCharacters: "Entferne das nicht unterstützte Zeichen.",
       messagesWaiting: "Spätere Nachrichten warten auf die nicht gesendete.",

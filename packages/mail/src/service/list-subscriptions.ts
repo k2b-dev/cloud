@@ -1,10 +1,17 @@
 import { request as httpsRequest } from "node:https";
+import { urlToHttpOptions } from "node:url";
 import {
   type NetworkLookup,
   type PublicNetworkAddress,
   pinnedNetworkLookup,
   resolvePublicNetworkAddresses,
 } from "@k2b/cloud/services/network-security";
+import {
+  awaitNetworkOperation,
+  type NetworkRequestFactory,
+  readNetworkResponse,
+  withNetworkDeadline,
+} from "@k2b/cloud/services/network-transport";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
@@ -312,75 +319,101 @@ type RequestOptions = {
   lookup?: NetworkLookup;
   request?: OneClickTransport;
   timeoutMs?: number;
+  signal?: AbortSignal;
+  httpsRequest?: NetworkRequestFactory;
 };
 
 type OneClickResponse = { statusCode: number; location: string | null };
-type OneClickTransport = (url: URL, addresses: readonly PublicNetworkAddress[], timeoutMs: number) => Promise<OneClickResponse>;
+type OneClickTransport = (
+  url: URL,
+  addresses: readonly PublicNetworkAddress[],
+  timeoutMs: number,
+  signal: AbortSignal,
+) => Promise<OneClickResponse>;
 
-const performOneClickRequest: OneClickTransport = async (url, addresses, timeoutMs) =>
-  await new Promise<OneClickResponse>((resolve, reject) => {
-    const body = "List-Unsubscribe=One-Click";
-    const request = httpsRequest(
-      url,
-      {
-        method: "POST",
-        headers: {
-          Accept: "text/plain, */*;q=0.1",
-          "Content-Type": "application/x-www-form-urlencoded",
-          "Content-Length": Buffer.byteLength(body),
-          "User-Agent": "Cloud-Mail/1.0",
-        },
-        lookup: pinnedNetworkLookup(addresses),
-        // A default agent may route through an environment proxy, which would resolve the name again.
-        agent: false,
+const performOneClickRequest = (
+  url: URL,
+  addresses: readonly PublicNetworkAddress[],
+  signal: AbortSignal,
+  request: NetworkRequestFactory = httpsRequest,
+): Promise<OneClickResponse> => {
+  const body = "List-Unsubscribe=One-Click";
+  return readNetworkResponse<OneClickResponse>({
+    request,
+    signal,
+    body: Buffer.from(body),
+    options: {
+      ...urlToHttpOptions(url),
+      method: "POST",
+      headers: {
+        Accept: "text/plain, */*;q=0.1",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": Buffer.byteLength(body),
+        "User-Agent": "Cloud-Mail/1.0",
       },
-      (incoming) => {
-        let bytes = 0;
-        incoming.on("data", (chunk: Buffer) => {
-          bytes += chunk.byteLength;
-          if (bytes > MAX_RESPONSE_BYTES) {
-            incoming.destroy(Object.assign(new Error("Unsubscribe response is too large"), { code: "RESPONSE_TOO_LARGE" }));
-          }
-        });
-        incoming.on("end", () =>
-          resolve({
-            statusCode: incoming.statusCode ?? 0,
-            location: typeof incoming.headers.location === "string" ? incoming.headers.location : null,
-          }),
-        );
-        incoming.on("error", reject);
-      },
-    );
-    request.setTimeout(timeoutMs, () =>
-      request.destroy(Object.assign(new Error("Unsubscribe request timed out"), { code: "REQUEST_TIMEOUT" })),
-    );
-    request.on("error", reject);
-    request.end(body);
+      lookup: pinnedNetworkLookup(addresses),
+      // A default agent may route through an environment proxy, which would resolve the name again.
+      agent: false,
+    },
+    read: (incoming, resolve, reject) => {
+      const result = {
+        statusCode: incoming.statusCode ?? 0,
+        location: typeof incoming.headers.location === "string" ? incoming.headers.location : null,
+      };
+      if (result.statusCode < 200 || result.statusCode >= 300) {
+        resolve(result);
+        return;
+      }
+      let bytes = 0;
+      incoming.on("data", (chunk: Buffer) => {
+        bytes += chunk.byteLength;
+        if (bytes > MAX_RESPONSE_BYTES) {
+          reject(Object.assign(new Error("Unsubscribe response is too large"), { code: "RESPONSE_TOO_LARGE" }));
+        }
+      });
+      incoming.on("end", () => resolve(result));
+    },
   });
-
-const postOneClick = async (href: string, options: RequestOptions = {}, redirectCount = 0): Promise<void> => {
-  const url = new URL(href);
-  if (url.protocol !== "https:" || url.username || url.password) throw new Error("One-click unsubscribe requires a public HTTPS URL");
-  const addresses = await resolvePublicNetworkAddresses(url.hostname, options.lookup);
-  const response = await (options.request ?? performOneClickRequest)(url, addresses, options.timeoutMs ?? REQUEST_TIMEOUT_MS);
-
-  if ([307, 308].includes(response.statusCode) && response.location) {
-    if (redirectCount >= MAX_REDIRECTS) throw new Error("Unsubscribe endpoint redirected too many times");
-    return postOneClick(new URL(response.location, url).toString(), options, redirectCount + 1);
-  }
-  if (response.statusCode >= 300 && response.statusCode < 400) {
-    throw new Error("Unsubscribe endpoint returned an unsafe redirect");
-  }
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw new Error(`Unsubscribe endpoint returned HTTP ${response.statusCode}`);
-  }
 };
+
+const postOneClick = (href: string, options: RequestOptions = {}): Promise<void> =>
+  withNetworkDeadline(
+    options.timeoutMs ?? REQUEST_TIMEOUT_MS,
+    options.signal,
+    Object.assign(new Error("Unsubscribe request timed out"), { code: "REQUEST_TIMEOUT" }),
+    async (signal) => {
+      const deadline = Date.now() + (options.timeoutMs ?? REQUEST_TIMEOUT_MS);
+      for (let redirectCount = 0; ; redirectCount++) {
+        signal.throwIfAborted();
+        const url = new URL(href);
+        if (url.protocol !== "https:" || url.username || url.password) throw new Error("One-click unsubscribe requires a public HTTPS URL");
+        const addresses = await awaitNetworkOperation(resolvePublicNetworkAddresses(url.hostname, options.lookup), signal);
+        signal.throwIfAborted();
+        const response = await awaitNetworkOperation(
+          options.request
+            ? options.request(url, addresses, Math.max(0, deadline - Date.now()), signal)
+            : performOneClickRequest(url, addresses, signal, options.httpsRequest),
+          signal,
+        );
+        if ([307, 308].includes(response.statusCode) && response.location) {
+          if (redirectCount >= MAX_REDIRECTS) throw new Error("Unsubscribe endpoint redirected too many times");
+          href = new URL(response.location, url).toString();
+          continue;
+        }
+        if (response.statusCode >= 300 && response.statusCode < 400) throw new Error("Unsubscribe endpoint returned an unsafe redirect");
+        if (response.statusCode < 200 || response.statusCode >= 300)
+          throw new Error(`Unsubscribe endpoint returned HTTP ${response.statusCode}`);
+        return;
+      }
+    },
+  );
 
 export const requestUnsubscribe = async (
   params: {
     context: MailRequestContext;
     mailboxId: string;
     input: UnsubscribeMailingListInput;
+    signal?: AbortSignal;
   },
   options: RequestOptions = {},
 ): Promise<Result<UnsubscribeMailingListResult>> => {
@@ -445,7 +478,7 @@ export const requestUnsubscribe = async (
   }
 
   try {
-    await postOneClick(parsed.data.href, options);
+    await postOneClick(parsed.data.href, { ...options, signal: options.signal ?? params.signal });
   } catch (error) {
     const errorCode = externalFailureCode(error);
     const activityId = await sql.begin(async (tx) => {
