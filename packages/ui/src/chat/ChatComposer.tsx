@@ -191,6 +191,15 @@ export type ChatFileSelection = {
 
 export type ChatPasteHandler = (event: ClipboardEvent & { currentTarget: HTMLTextAreaElement; target: Element }) => void;
 
+export type ChatComposerReply = {
+  /** Name of the answered message's author. */
+  author: string;
+  /** Plain text of the answered message; it shows at most two lines. */
+  text: string;
+  onCancel: () => void;
+  onSelect?: () => void;
+};
+
 export type ChatComposerProps = {
   value: string;
   onValueChange: (value: string) => void;
@@ -271,6 +280,11 @@ export type ChatComposerProps = {
   microphone?: ChatComposerMicrophone;
   /** One line above the field. The conversation variant always keeps its height; the default shows it only with content. */
   hint?: JSX.Element;
+  /**
+   * The message this draft answers, shown above the field on the same quiet tint as a quote in a message, with a
+   * button that cancels the reply. `onSelect` makes the quote a button, for example to jump to the original.
+   */
+  reply?: ChatComposerReply;
 };
 
 type FormatTool = {
@@ -978,7 +992,18 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         label: action.label,
         variant: action.variant,
         disabled: action.disabled,
-        action: () => reportChatFailure(() => executeChatAction(action), props.onError),
+        action: () =>
+          reportChatFailure(async () => {
+            await executeChatAction(action);
+            // Like attaching files, an add action returns to the field when the focus is still on this composer's add
+            // button or nowhere; focus the action moved somewhere on purpose stays there.
+            queueMicrotask(() => {
+              const active = textareaRef?.ownerDocument.activeElement;
+              const root = textareaRef?.closest(".k2b-chat-composer");
+              if (!active || active === active.ownerDocument.body || (root?.contains(active) && active.matches(".k2b-chat-composer__add")))
+                focus();
+            });
+          }, props.onError),
       });
     }
     return items;
@@ -1663,7 +1688,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     <Dropdown.Root position="top-right" label={chatMessages().addToChat} items={menuItems()} disabled={blocked()}>
       <Dropdown.Trigger
         appearance="plain"
-        class={`k2b-chat-composer__icon-action${extraClass}`}
+        class={`k2b-chat-composer__icon-action k2b-chat-composer__add${extraClass}`}
         label={chatMessages().addToChat}
         tooltip={chatMessages().addToChat}
       >
@@ -2091,6 +2116,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       </button>
     );
   };
+  const replyQuote = (reply: ChatComposerReply) => (
+    <>
+      <span class="k2b-message-row__quote-author">
+        <span class="k2b-sr-only">{chatMessages().replyingTo} </span>
+        {reply.author}
+      </span>
+      <span class="k2b-message-row__quote-text">{reply.text}</span>
+    </>
+  );
   return (
     <div ref={shellRef} class="k2b-chat-composer-shell">
       <Show when={suggestionsOpen() || hasAccessory()}>
@@ -2290,6 +2324,29 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               )}
             </Show>
           </div>
+        </Show>
+        <Show when={props.reply}>
+          {(reply) => (
+            <div class="k2b-chat-composer__reply">
+              <Show when={reply().onSelect} fallback={<div class="k2b-message-row__quote">{replyQuote(reply())}</div>}>
+                {(select) => (
+                  <button type="button" class="k2b-message-row__quote" onClick={() => select()()}>
+                    {replyQuote(reply())}
+                  </button>
+                )}
+              </Show>
+              <button
+                type="button"
+                class="k2b-chat-composer__icon-action k2b-chat-composer__reply-cancel"
+                aria-label={chatMessages().cancelReply}
+                title={chatMessages().cancelReply}
+                onMouseDown={keepFieldFocus}
+                onClick={() => reply().onCancel()}
+              >
+                <i class="ti ti-x" aria-hidden="true" />
+              </button>
+            </div>
+          )}
         </Show>
         <Show when={attachments().length > 0}>
           <div class="k2b-chat-composer__attachments" role="list" aria-label={chatMessages().attachments} tabIndex={0}>

@@ -6,7 +6,7 @@ description: Erfahre, wie Gruppen, Gäste und ehemalige Konten deine Chats beein
 order: 300
 ---
 
-Mit dem Zugriff **Verwalten** auf einen Chat kannst du Personen, Gastkonten und Gruppen hinzufügen.
+Mit dem Zugriff **Verwalten** auf einen Chat kannst du Personen, Gastkonten, Gruppen, Agenten und Dienstkonten hinzufügen.
 
 ## Personen hinzufügen {icon="user-plus"}
 
@@ -44,6 +44,26 @@ Eine Nachricht im Chat hält die Änderung fest.
 Mit Zugriff **Verwalten** kannst du den Zugriff einer Person ändern oder ein Mitglied entfernen.
 Gehört eine entfernte Person auch über eine Gruppe dazu, behält sie den Zugriff über diese Gruppe.
 Die letzte Person mit Zugriff **Verwalten** behält diesen Zugriff und lässt sich nicht entfernen.
+
+## Auffindbarkeit und Abonnements {icon="compass"}
+
+Mit Zugriff **Verwalten** änderst du unter **Chat-Info → … → Auffindbarkeit**, wer den Kanal finden kann.
+Wähle Gruppen oder, wenn der Betreiber es erlaubt, **Alle mit einem Cloud-Konto**.
+Lege für jede Zielgruppe **Lesen** oder **Schreiben** fest und wähle **Speichern**.
+Die Zielgruppe kann schon vor dem Abonnieren den ganzen Verlauf lesen. Bestehende Mitglieder behalten ihren Zugriff.
+Entfernst du alle Zielgruppen, wird der Kanal zu einem Chat für seine bestehenden Mitglieder.
+
+Zum Abbestellen öffnest du das **…**-Menü des Kanals und wählst **Abbestellen**.
+Der Kanal verschwindet aus deiner Liste. Mit **Rückgängig** in der Bestätigung abonnierst du ihn wieder.
+Wenn du als letzte Person Zugriff **Verwalten** hast, wähle zuerst eine Nachfolge.
+Solange du zur Zielgruppe gehörst, kannst du den Kanal weiterhin finden und lesen.
+
+## Agenten und Dienstkonten aufnehmen {icon="robot"}
+
+Wähle Agenten und Dienstkonten wie Personen in der Mitgliederauswahl.
+Sie erscheinen mit einem Roboter-Avatar und ihrem Namen. Ein Agent trägt zusätzlich die Markierung **Agent**.
+Mit Zugriff **Verwalten** kannst du ihren Zugriff ändern oder sie entfernen.
+Das letzte aktive Konto mit Zugriff **Verwalten** behält ihn, bis ein anderes geeignetes Mitglied die Verwaltung übernimmt.
 
 ## Einen Chat verlassen {icon="logout"}
 

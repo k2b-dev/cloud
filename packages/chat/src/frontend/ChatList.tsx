@@ -1,13 +1,20 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
-import { AppWorkspace, Dropdown, useLocale } from "@k2b/ui";
+import { AppWorkspace, Dropdown, Placeholder, StatusBadge, useLocale } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import type { ConversationSchema } from "../service/contracts";
+import { ThreadRows } from "./ChatThreads";
 import { lastMessageLine, listTime } from "./chat-format";
+import { containerIcon, systemMembers } from "./system-chats";
+import { chatHasThreads } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
+
+/** A channel's line under its name: what it is for and how many subscribe. */
+export const channelLine = (row: Pick<Conversation, "purpose" | "memberCount">, t: ReturnType<typeof chatMessages.resolve>["t"]) =>
+  [row.purpose, t.subscribers({ count: row.memberCount })].filter(Boolean).join(" · ");
 
 export const chatHref = (id: string, message?: string | null) => `/app/chat/c/${id}${message ? `/m/${message}` : ""}`;
 
@@ -15,13 +22,38 @@ export const chatHref = (id: string, message?: string | null) => `/app/chat/c/${
 const unreadMark = (row: Conversation): number | true | undefined =>
   row.unread > 0 ? row.unread : row.read?.unreadFromSeq != null ? true : undefined;
 
+/** A partial authorized summary is a lower bound, even when its inspected page has no unread messages. */
+export function IncompleteUnread(props: { count: number }) {
+  const locale = useLocale();
+  const label = () => chatMessages.resolve([locale()]).t.unreadIncomplete;
+  return (
+    <StatusBadge
+      tone="neutral"
+      icon={null}
+      variant="text"
+      title={label()}
+      label={
+        <>
+          <span aria-hidden="true">{props.count > 0 ? `${props.count}+` : "…"}</span>
+          <span class="k2b-sr-only">{label()}</span>
+        </>
+      }
+    />
+  );
+}
+
 /**
  * The chats as navigation rows, newest activity first: title, the last message with its sender, the time, and the
  * unread count below it. Every row has the same two lines in every state, also before the first message, so rows never
- * change height and a count that comes or goes moves nothing. The open chat shows no marks: it is being read.
+ * change height and a count that comes or goes moves nothing. The open chat shows no marks while it is being read; after
+ * "Mark unread" it shows its count like any other.
  */
 export default function ChatList(props: {
   rows: readonly Conversation[];
+  system?: boolean;
+  channelsActive?: boolean;
+  chatsActions?: JSX.Element;
+  onDiscover?: (navigation: LinkNavigateEvent) => Promise<void>;
   basePath?: string;
   activeId: string | null;
   viewerId: string;
@@ -32,57 +64,150 @@ export default function ChatList(props: {
   onMore: () => void;
   onMarkRead: (id: string) => void;
   onMarkUnread: (id: string) => void;
+  /** The open chat's threads, shown as rows under it; the chat's own row then shows its members instead of a count. */
+  threads?: Omit<Parameters<typeof ThreadRows>[0], "chatId" | "unread">;
 }): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const config = () => ({ ...props.dateConfig, locale: locale() });
+  const rows = (channels: boolean) => (
+    <For
+      each={props.rows.filter((row) =>
+        props.system ? row.kind === "system" : row.kind !== "system" && row.member && row.channel === channels,
+      )}
+    >
+      {(row) => {
+        const expanded = () => row.id === props.activeId && props.threads !== undefined && chatHasThreads(row);
+        return (
+          <>
+            <AppWorkspace.SidebarItem
+              href={`${props.basePath ?? "/app/chat"}/c/${encodeURIComponent(row.id)}`}
+              navigation="enhanced"
+              onNavigate={(navigation) => props.onOpen(row.id, navigation)}
+              // With its threads shown, the open thread's row carries the selection, not the chat's.
+              active={row.id === props.activeId && !expanded()}
+              actions={
+                <AppWorkspace.SidebarItemActions visibility="hover">
+                  <Dropdown.Root
+                    position="bottom-right"
+                    items={[
+                      unreadMark(row) === undefined
+                        ? { label: t().markUnread, icon: "ti ti-mail", action: () => props.onMarkUnread(row.id) }
+                        : { label: t().markRead, icon: "ti ti-mail-opened", action: () => props.onMarkRead(row.id) },
+                    ]}
+                  >
+                    <Dropdown.Trigger
+                      iconOnly
+                      label={t().chatActions({ title: row.title })}
+                      tooltip={t().chatActions({ title: row.title })}
+                      size="xs"
+                    >
+                      <i class="ti ti-dots text-xs" />
+                    </Dropdown.Trigger>
+                  </Dropdown.Root>
+                </AppWorkspace.SidebarItemActions>
+              }
+              class={expanded() ? "chat-list__open" : undefined}
+              description={
+                <>
+                  {/* Its rows show below it; from a 1800 px window they move into their own column and the row reads
+                    like any other chat again. */}
+                  <Show when={expanded()}>
+                    <span class="chat-list__preview chat-list__members">
+                      {row.kind === "system" ? systemMembers(row.resource?.type, t()) : t().members({ count: row.memberCount })}
+                    </span>
+                  </Show>
+                  <span class="chat-list__preview" data-collapsed-only={expanded() ? "" : undefined}>
+                    {row.kind === "system" && !row.lastMessage
+                      ? systemMembers(row.resource?.type, t())
+                      : row.channel
+                        ? channelLine(row, t())
+                        : lastMessageLine(row, props.viewerId, locale())}
+                  </span>
+                </>
+              }
+            >
+              <AppWorkspace.SidebarItemIcon
+                icon={
+                  row.kind === "system"
+                    ? containerIcon(row.resource?.type)
+                    : (row.icon ?? (row.channel ? "ti ti-speakerphone" : row.memberCount <= 2 ? "ti ti-user" : "ti ti-users"))
+                }
+              />
+              <AppWorkspace.SidebarItemLabel marquee={false}>
+                {row.title}
+                {/* A chat with threads has more inside; open it to see them. */}
+                <Show when={chatHasThreads(row) && !expanded()}>
+                  <i class="ti ti-chevron-right chat-list__threads-mark" aria-hidden="true" />
+                </Show>
+              </AppWorkspace.SidebarItemLabel>
+              <AppWorkspace.SidebarItemMeta>
+                <span class="chat-list__meta">
+                  <time class="chat-list__time" datetime={row.lastActivityAt}>
+                    {listTime(row.lastActivityAt, props.now(), config())}
+                  </time>
+                  <span class="chat-list__unread">
+                    {/* The open chat is being read, so it shows no mark, unless the reader marked it unread on purpose. With its
+                      threads shown, each thread carries its own count instead. */}
+                    <Show
+                      when={row.summaryCursor != null}
+                      fallback={
+                        <AppWorkspace.SidebarItemStatus
+                          unread={
+                            row.id === props.activeId && (expanded() || row.read?.unreadFromSeq == null) ? undefined : unreadMark(row)
+                          }
+                        />
+                      }
+                    >
+                      <IncompleteUnread count={row.unread} />
+                    </Show>
+                  </span>
+                </span>
+              </AppWorkspace.SidebarItemMeta>
+            </AppWorkspace.SidebarItem>
+            <Show when={expanded() ? props.threads : undefined}>
+              {(threads) => (
+                <div class="chat-list__threads">
+                  <ThreadRows {...threads()} chatId={row.id} basePath={props.basePath} unread={row.unread} />
+                </div>
+              )}
+            </Show>
+          </>
+        );
+      }}
+    </For>
+  );
   return (
     <>
-      <For each={props.rows}>
-        {(row) => (
-          <AppWorkspace.SidebarItem
-            href={`${props.basePath ?? "/app/chat"}/c/${encodeURIComponent(row.id)}`}
-            navigation="enhanced"
-            onNavigate={(navigation) => props.onOpen(row.id, navigation)}
-            active={row.id === props.activeId}
-            actions={
-              <AppWorkspace.SidebarItemActions visibility="hover">
-                <Dropdown.Root
-                  position="bottom-right"
-                  items={[
-                    unreadMark(row) === undefined
-                      ? { label: t().markUnread, icon: "ti ti-mail", action: () => props.onMarkUnread(row.id) }
-                      : { label: t().markRead, icon: "ti ti-mail-opened", action: () => props.onMarkRead(row.id) },
-                  ]}
-                >
-                  <Dropdown.Trigger
-                    iconOnly
-                    label={t().chatActions({ title: row.title })}
-                    tooltip={t().chatActions({ title: row.title })}
-                    size="xs"
-                  >
-                    <i class="ti ti-dots text-xs" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
-              </AppWorkspace.SidebarItemActions>
-            }
-            description={<span class="chat-list__preview">{lastMessageLine(row, props.viewerId, locale())}</span>}
-          >
-            <AppWorkspace.SidebarItemIcon icon={row.icon ?? (row.memberCount <= 2 ? "ti ti-user" : "ti ti-users")} />
-            <AppWorkspace.SidebarItemLabel marquee={false}>{row.title}</AppWorkspace.SidebarItemLabel>
-            <AppWorkspace.SidebarItemMeta>
-              <span class="chat-list__meta">
-                <time class="chat-list__time" datetime={row.lastActivityAt}>
-                  {listTime(row.lastActivityAt, props.now(), config())}
-                </time>
-                <span class="chat-list__unread">
-                  <AppWorkspace.SidebarItemStatus unread={row.id === props.activeId ? undefined : unreadMark(row)} />
-                </span>
-              </span>
-            </AppWorkspace.SidebarItemMeta>
-          </AppWorkspace.SidebarItem>
-        )}
-      </For>
+      <Show
+        when={props.system}
+        fallback={
+          <>
+            <AppWorkspace.SidebarSection title={t().chats} actions={props.chatsActions}>
+              <Show
+                when={props.rows.some((row) => row.member && !row.channel)}
+                fallback={<Placeholder variant="inline" align="left" description={t().noneYet} />}
+              >
+                {rows(false)}
+              </Show>
+            </AppWorkspace.SidebarSection>
+            <AppWorkspace.SidebarSection title={t().channels}>
+              {rows(true)}
+              <AppWorkspace.SidebarItem
+                href={`${props.basePath ?? "/app/chat"}/channels`}
+                navigation="enhanced"
+                onNavigate={props.onDiscover}
+                active={props.channelsActive}
+                icon="ti ti-compass"
+              >
+                {t().browseChannels}
+              </AppWorkspace.SidebarItem>
+            </AppWorkspace.SidebarSection>
+          </>
+        }
+      >
+        {rows(false)}
+      </Show>
       <Show when={props.hasMore}>
         <AppWorkspace.SidebarItem icon="ti ti-dots" onClick={props.onMore}>
           {t().showMoreChats}

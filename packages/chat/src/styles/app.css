@@ -148,6 +148,11 @@
   justify-content: flex-end;
   gap: 0.75rem;
 }
+.chat-add-people__alternative {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 2rem;
+}
 .chat-match {
   width: 100%;
 }
@@ -203,4 +208,630 @@
   font-size: 0.875rem;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+/* Where the reader cannot write, a quiet line takes the composer's place in the same reading column. */
+.chat-conversation__notice {
+  display: flex;
+  width: 100%;
+  max-width: calc(var(--k2b-reading-column) - 1.5rem);
+  height: 2.75rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 0 auto 0.75rem;
+  padding: 0.25rem 0.75rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+}
+.chat-conversation__notice > i {
+  color: var(--k2b-text-muted);
+}
+/* Automatic read feedback reuses the composer's fixed hint line or the reader notice. */
+.chat-read-status {
+  display: inline-flex;
+  max-width: 100%;
+  height: 1.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  vertical-align: top;
+}
+.chat-read-status > span,
+.chat-conversation__notice > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2b-ui .chat-read-status > .k2b-button.chat-read-status__retry {
+  flex: none;
+  min-height: 0;
+  padding-block: 0;
+  line-height: inherit;
+}
+.chat-dialog__intro {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+}
+
+/* The open thread beside the chat's title: name, a dot while other threads have unread messages, and a chevron. */
+.chat-thread-picker {
+  display: inline-flex;
+  flex: none;
+  max-width: 16rem;
+  height: 2rem;
+  align-items: center;
+  gap: 0.375rem;
+  margin-inline-start: 0.5rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text);
+  background: var(--k2b-surface-muted);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.chat-thread-picker:hover {
+  background: var(--k2b-hover);
+}
+.chat-thread-picker:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+.chat-thread-picker > i {
+  color: var(--k2b-text-muted);
+}
+.chat-thread-picker__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The dot keeps its place, so it never moves the chevron. */
+.chat-thread-picker__dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  flex: none;
+  border-radius: 999px;
+  background: transparent;
+}
+.chat-thread-picker__dot[data-on] {
+  background: var(--k2b-action-solid);
+}
+.chat-thread-picker__unread {
+  font-weight: 600;
+}
+.chat-thread-count {
+  min-width: 1.25rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--k2b-action-solid);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1.25rem;
+  text-align: center;
+}
+.chat-threads__error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem 0.375rem 2.25rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+}
+/* Three rows of the final height while the threads load, so nothing moves when they arrive. */
+.chat-threads__loading {
+  display: grid;
+  gap: 0.125rem;
+}
+.chat-threads__loading > span {
+  height: 2rem;
+  margin-inline-start: 2.25rem;
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface-muted);
+}
+.chat-list__threads-mark {
+  margin-inline-start: 0.25rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+.chat-threads__new {
+  color: var(--k2b-action);
+}
+/* A phone names the open thread after the chat's title; a wider window picks it beside the title. */
+.chat-conversation__thread-name {
+  display: none;
+  flex: none;
+  margin-inline-start: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+@media (max-width: 47.999rem) {
+  .chat-conversation__thread-name {
+    display: inline;
+  }
+  .chat-conversation__picker {
+    display: none;
+  }
+}
+/* The phone's page between the chats and one thread. */
+.chat-threads-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--k2b-surface);
+}
+.chat-threads-page__list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.25rem 0.5rem 0.75rem;
+}
+.chat-threads-page__empty {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+}
+@media (max-width: 47.999rem) {
+  .chat-threads-page {
+    position: fixed;
+    z-index: 25;
+    inset: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+  }
+}
+/* The title keeps its own width, so the thread picker stands right beside it. */
+.chat-conversation__header > .k2b-page-title {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* From a 1800 px window, the threads of the open chat stand in a column of their own. Below, the list and the picker
+   show them; the reading column keeps its width on both sides, so nothing rewraps at the limit. */
+.k2b-ui .k2b-app-workspace__main.chat-main:not(.chat-main--threads) > .k2b-app-workspace__main-pane.chat-thread-pane,
+.k2b-ui .k2b-app-workspace__main.chat-main:not(.chat-main--threads) > .k2b-app-workspace__resize[data-workspace-panel-id="chat-threads"] {
+  display: none;
+}
+@media (max-width: 1799.98px) {
+  .k2b-ui .k2b-app-workspace__main.chat-main > .k2b-app-workspace__main-pane.chat-thread-pane,
+  .k2b-ui .k2b-app-workspace__main.chat-main > .k2b-app-workspace__resize[data-workspace-panel-id="chat-threads"] {
+    display: none;
+  }
+}
+.chat-list__preview[data-collapsed-only] {
+  display: none;
+}
+@media (min-width: 1800px) {
+  .chat-conversation__picker,
+  .chat-list__threads,
+  .chat-list__members {
+    display: none;
+  }
+  .chat-list__preview[data-collapsed-only] {
+    display: block;
+  }
+  .chat-conversation[data-wide-title] .chat-conversation__header > .k2b-page-title,
+  .chat-conversation[data-wide-title] .chat-conversation__thread-name {
+    display: none;
+  }
+  .chat-conversation[data-wide-title] .chat-conversation__wide-title {
+    display: flex;
+  }
+  /* The open chat's row carries the selection again, like the shared selected row. */
+  .k2b-ui .k2b-app-workspace__sidebar-item.chat-list__open {
+    --k2b-text-muted: var(--k2b-text-secondary);
+    color: var(--k2b-app-workspace-active);
+    background: var(--k2b-app-workspace-selected);
+  }
+}
+.chat-thread-column {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.chat-thread-column__head {
+  display: flex;
+  min-height: 2.875rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem 0.25rem 0.75rem;
+}
+.chat-thread-column__title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.chat-thread-column__chat {
+  overflow: hidden;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-thread-column__members {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+.chat-thread-column__list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0.375rem 0.75rem;
+  scrollbar-gutter: stable;
+}
+.chat-thread-column__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text);
+  text-decoration: none;
+}
+.chat-thread-column__row:hover {
+  background: var(--k2b-hover);
+}
+.chat-thread-column__row:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+.chat-thread-column__row[aria-current="page"] {
+  --k2b-text-muted: var(--k2b-text-secondary);
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-selected);
+}
+.chat-thread-column__icon {
+  width: 1.25rem;
+  flex: none;
+  margin-top: 0.125rem;
+  color: var(--k2b-text-muted);
+  font-size: 1.125rem;
+  text-align: center;
+}
+.chat-thread-column__row[aria-current="page"] .chat-thread-column__icon {
+  color: inherit;
+}
+.chat-thread-column__copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.0625rem;
+}
+.chat-thread-column__line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+.chat-thread-column__name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 0.9375rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-thread-column__row[data-unread] .chat-thread-column__name {
+  font-weight: 600;
+}
+.chat-thread-column__time {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.chat-thread-column__description,
+.chat-thread-column__preview {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-thread-column__preview {
+  flex: 1;
+}
+.chat-thread-column__row[data-unread] .chat-thread-column__preview {
+  color: var(--k2b-text-secondary);
+}
+.chat-thread-column__count {
+  min-width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  padding: 0 0.3125rem;
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--k2b-action-solid);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1.25rem;
+  text-align: center;
+  visibility: hidden;
+}
+.chat-thread-column__row[data-unread] .chat-thread-column__count {
+  visibility: visible;
+}
+
+.chat-conversation__wide-title {
+  display: none;
+  min-width: 0;
+  flex-direction: column;
+}
+.chat-conversation__wide-name {
+  margin: 0;
+  overflow: hidden;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-conversation__wide-subtitle {
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Shared Cloud elements under a message's text, one card each, at most the bubble's width. */
+.chat-resource-cards {
+  display: flex;
+  max-width: 24rem;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+/* "Shared" in the info panel: kind filters, the thread, then one row per item that jumps to its message. */
+.chat-shared {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+.chat-shared__kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+.chat-shared__loading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.chat-shared__loading > * {
+  height: 2.5rem;
+}
+.chat-shared__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0 -0.5rem;
+  padding: 0;
+  list-style: none;
+}
+.chat-shared__row {
+  display: flex;
+  width: 100%;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.375rem 0.5rem;
+  border: 0;
+  border-radius: 0.5rem;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.chat-shared__row:hover {
+  background: var(--k2b-hover);
+}
+.chat-shared__row:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+.chat-shared__icon {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+}
+.chat-shared__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.chat-shared__title,
+.chat-shared__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-shared__title {
+  font-size: 0.875rem;
+}
+.chat-shared__meta {
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+.chat-shared__row[data-unavailable] .chat-shared__title {
+  color: var(--k2b-text-secondary);
+}
+
+/* System chats use the existing flat list; counts and async actions keep their places. */
+.chat-system-chats {
+  margin-block-start: 0.75rem;
+}
+.chat-system-chats .k2b-app-workspace__sidebar-section-count {
+  order: 2;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  margin-inline-start: auto;
+  text-align: end;
+}
+.chat-system-chats .k2b-app-workspace__sidebar-section-toggle > i {
+  margin-inline-start: 0;
+}
+.chat-system-chats--read .k2b-app-workspace__sidebar-section-count {
+  visibility: hidden;
+}
+.chat-system-chats__count {
+  display: inline-flex;
+  justify-content: flex-end;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.chat-system-chats__loading,
+.chat-system-directory__results {
+  min-height: 3rem;
+}
+.chat-system-chats__skeleton {
+  height: 3.25rem;
+  margin: 0.25rem 0.5rem;
+}
+.chat-system-chats__empty,
+.chat-system-chats__membership {
+  padding: 0.5rem 0.75rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+}
+.chat-system-directory__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+.chat-system-directory__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.chat-system-directory__description {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.chat-system-directory__more {
+  min-width: 12rem;
+}
+.chat-item-metadata {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--k2b-text-secondary);
+}
+.chat-item-metadata > span {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-resource-head__metadata {
+  min-width: 0;
+  max-width: 24rem;
+}
+.chat-resource-head__link {
+  white-space: nowrap;
+  margin-inline: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.chat-resource-head__icon,
+.chat-resource-head__mobile {
+  display: none;
+}
+@media (max-width: 47.999rem) {
+  .chat-resource-head__status,
+  .chat-resource-head__metadata,
+  .chat-resource-head__link {
+    display: none;
+  }
+  .chat-resource-head__icon {
+    display: flex;
+  }
+  .chat-resource-head__mobile {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    color: var(--k2b-text-secondary);
+  }
+  .chat-resource-head__mobile a {
+    margin-inline-start: auto;
+    white-space: nowrap;
+  }
+}
+.chat-thread-picker--item .chat-thread-picker__name {
+  display: none;
+}
+.chat-system-directory__description > span {
+  min-height: 1.25rem;
+}
+
+/* Keep the container's name readable beside the longer item-discussion action on a phone. */
+@container k2b-app-area (max-width: 47.999rem) {
+  .chat-threads-page__header--system {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+  .chat-threads-page__header--system .chat-conversation__actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+}
+/* Discover is a flat workspace page; the action slot stays fixed across membership and pending states. */
+.chat-discover { display: flex; flex-direction: column; min-width: 0; width: 100%; height: 100%; }
+.chat-discover__body { min-height: 0; padding: 1rem; flex: 1; }
+/* The catalog reads in the same column as a chat. */
+.chat-discover__content { max-width: var(--k2b-reading-column); margin-inline: auto; }
+.chat-discover__row { display: flex; align-items: center; gap: 0.75rem; padding-block: 0.75rem; }
+.chat-discover__icon { display: flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; flex-shrink: 0; border-radius: 50%; background: var(--k2b-surface-muted); }
+.chat-discover__subscribe { width: 8.5rem; flex-shrink: 0; }
+
+/* The audience line keeps its height while it counts, shows the count, or offers Try again. */
+.chat-channel-audience {
+  display: flex;
+  /* Two lines: a failure with Try again may wrap on a phone. */
+  min-height: 3rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+
 }

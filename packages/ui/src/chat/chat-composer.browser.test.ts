@@ -106,7 +106,24 @@ render(
             },
             // "files" attaches directly, "menu" turns attach into the add menu, "none" leaves it out.
             fileSelection: options.attach === "none" ? undefined : { onSelect: () => {} },
-            menuActions: options.attach === "menu" ? [{ id: "poll", label: "Poll", onSelect: () => {} }] : undefined,
+            menuActions:
+              options.attach === "menu"
+                ? [
+                    { id: "poll", label: "Poll", onSelect: () => {} },
+                    // An action that moves the focus on purpose, as one that opens its own field.
+                    {
+                      id: "focus",
+                      label: "Focus header",
+                      onSelect: async () => {
+                        await new Promise((done) => setTimeout(done, 50));
+                        const field = document.createElement("input");
+                        field.id = "intended";
+                        document.body.append(field);
+                        field.focus();
+                      },
+                    },
+                  ]
+                : undefined,
             formatting: true,
             emoji: { onOpen: ({ insert }) => insert("🙂") },
             get microphone() {
@@ -509,6 +526,20 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
         await page.close();
       }
     }
+  }, 30_000);
+
+  test("an action from the add menu returns the focus to the field, as attaching files does", async () => {
+    const page = await open({ attach: "menu" });
+    await page.locator(".k2b-chat-composer__attach").click();
+    await page.getByRole("menuitem", { name: "Poll" }).click();
+    await page.waitForFunction(() => document.activeElement?.matches(".k2b-chat-composer textarea:not([aria-hidden])"));
+    // An action that put the focus somewhere on purpose keeps it there.
+    await page.locator(".k2b-chat-composer__attach").click();
+    await page.getByRole("menuitem", { name: "Focus header" }).click();
+    await page.waitForFunction(() => document.activeElement?.id === "intended");
+    await frames(page, 3);
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe("intended");
+    await page.close();
   }, 30_000);
 
   test("the formatting row starts at the field's edge also with the add menu or without an attach control", async () => {

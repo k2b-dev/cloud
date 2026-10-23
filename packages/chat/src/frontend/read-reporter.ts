@@ -1,8 +1,14 @@
 type Timer = ReturnType<typeof setTimeout> | number;
+/**
+ * The positions the reader has seen. A thread's history skips the positions of other threads, so the range starts right
+ * after the loaded message before it; at the start of the loaded history it starts at the first message unless nothing
+ * older exists.
+ */
 export const seenRange = (
   items: readonly { seq?: number; kind: "text" | "system"; own: boolean }[],
   firstIndex: number,
   lastIndex: number,
+  hasOlder = true,
 ) => {
   if (firstIndex < 0 || lastIndex < firstIndex || lastIndex >= items.length) return null;
   // System and own messages do not count as unread, even when the marker leaves them above the view.
@@ -12,7 +18,9 @@ export const seenRange = (
     firstIndex--;
   }
   const seqs = items.slice(firstIndex, lastIndex + 1).flatMap((item) => (item.seq === undefined ? [] : [item.seq]));
-  return seqs.length ? { first: seqs[0]!, last: seqs.at(-1)! } : null;
+  if (!seqs.length) return null;
+  const before = items.slice(0, firstIndex).findLast((item) => item.seq !== undefined)?.seq;
+  return { first: before !== undefined ? before + 1 : hasOlder ? seqs[0]! : 1, last: seqs.at(-1)! };
 };
 type Timers = {
   setTimeout(callback: () => void, delay: number): Timer;

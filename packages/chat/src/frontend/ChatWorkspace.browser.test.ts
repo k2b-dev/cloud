@@ -3,11 +3,12 @@ import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { CreateConversationSchema, CreateOutcomeSchema } from "../service/contracts";
-import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
+import { chatTestNow, nora, pinPageClock, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 declare global {
   interface Window {
     chatShifts: number;
+    chatShiftSources: string[];
     chatShiftObserver: PerformanceObserver | undefined;
     chatNavigationMarker: string;
     chatSeen: number;
@@ -32,40 +33,26 @@ const viewports: { name: string; options: BrowserContextOptions }[] = [
 const observeShifts = (page: Page) =>
   page.evaluate(() => {
     window.chatShifts = 0;
+    window.chatShiftSources = [];
     window.chatShiftObserver = new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) {
-        if ("hadRecentInput" in entry && !entry.hadRecentInput && "value" in entry && typeof entry.value === "number")
+        if ("hadRecentInput" in entry && !entry.hadRecentInput && "value" in entry && typeof entry.value === "number") {
           window.chatShifts += entry.value;
+          const sources: unknown = Reflect.get(entry, "sources");
+          if (entry.value > 0 && Array.isArray(sources))
+            sources.forEach((source: unknown) => {
+              if (typeof source !== "object" || source === null || !("node" in source) || !(source.node instanceof Element)) return;
+              window.chatShiftSources.push(
+                `${source.node.tagName}.${String(source.node.className)}: ${JSON.stringify(Reflect.get(source, "previousRect"))} -> ${JSON.stringify(Reflect.get(source, "currentRect"))}`,
+              );
+            });
+        }
       }
     });
     // WebKit has no Layout Instability API. The geometry assertions still run in both engines.
     if (PerformanceObserver.supportedEntryTypes.includes("layout-shift")) window.chatShiftObserver.observe({ type: "layout-shift" });
   });
-const settle = (page: Page) =>
-  page.evaluate(async () => {
-    await document.fonts.ready;
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  });
-/**
- * Starts the page's wall clock at the harness clock and lets it flow from there; each new document starts again at that
- * instant. Only `Date` changes: Playwright's `clock` also replaces timers, animation frames, and `performance`, and
- * WebKit then stops reporting reads in the read-state tests.
- */
-const pinPageClock = (at: number) => {
-  const RealDate = Date;
-  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
-  class PinnedDate extends RealDate {
-    constructor(...args: ConstructorParameters<DateConstructor> | []) {
-      if (args.length === 0)
-        super(RealDate.now() + offset); // real clock: flows from the pinned instant
-      else super(...(args as ConstructorParameters<DateConstructor>));
-    }
-    static override now() {
-      return RealDate.now() + offset; // real clock: flows from the pinned instant
-    }
-  }
-  globalThis.Date = PinnedDate as DateConstructor;
-};
+
 /** Records when the page starts each read post, on the page's own clock, so throttle assertions do not depend on event delivery. */
 const recordReadStarts = () => {
   window.chatReadStarts = [];
@@ -102,7 +89,7 @@ const load = async (
     if (presentation.theme) url.searchParams.set("theme", presentation.theme);
     if (address.panel) url.searchParams.set("panel", address.panel);
     await page.goto(url.href);
-    await settle(page);
+    await settled(page);
     // real clock: proves the page reads the pinned day, not the machine's
     expect(await page.evaluate(() => new Date().toISOString().slice(0, 10))).toBe(chatTestNow.toISOString().slice(0, 10));
     if (presentation.theme)
@@ -113,7 +100,7 @@ const load = async (
       props: harness.props(address, { guest: presentation.guest }),
       locale: presentation.locale ?? "en",
     });
-    await settle(page);
+    await settled(page);
     return { page, errors };
   } catch (error) {
     await context.close();
@@ -152,7 +139,7 @@ describe("ChatWorkspace browser full view", () => {
         for (let i = 1; i <= 5; i++) harness.receive(chat, nora, `Live arrival ${i}`);
         harness.receive(other, tobias, "Changed elsewhere");
         await page.locator(".chat-conversation").getByText("Live arrival 5", { exact: true }).waitFor();
-        await settle(page);
+        await settled(page);
         await inFeed(page, `.k2b-virtual-feed__item[data-key="${harness.messageId(chat, 45)}"]`);
         expect(await page.evaluate(() => window.chatShifts)).toBe(0);
         if (name === "desktop") expect(await sidebar.evaluateAll((rows) => rows.map((row) => row.getAttribute("href")))).toEqual(order);
@@ -170,6 +157,7 @@ describe("ChatWorkspace browser full view", () => {
           expect(await page.getByText("Choose a chat", { exact: true }).isVisible()).toBe(false);
           await page.locator(`.chat-list-page a[href="/app/chat/c/${chat}"]`).click();
           await page.waitForURL(`**/app/chat/c/${chat}`);
+          await settled(page);
           const frame = await page.locator(".chat-conversation").boundingBox();
           expect(frame).toEqual({ x: 0, y: 0, width: 390, height: 844 });
           const composer = await page.locator(".chat-conversation__composer").boundingBox();
@@ -205,7 +193,7 @@ describe("ChatWorkspace browser full view", () => {
         await inFeed(page, selector);
         expect(await page.evaluate(() => window.chatShifts)).toBe(0);
         await page.locator(`${selector}[data-highlighted]`).waitFor({ state: "detached" });
-        await settle(page);
+        await settled(page);
         expect(await page.evaluate(() => window.chatShifts)).toBe(0);
         expect(errors).toEqual([]);
       } finally {
@@ -274,7 +262,7 @@ describe("ChatWorkspace browser full view", () => {
         await page.getByRole("button", { name: "Retry", exact: true }).click();
         const row = page.locator('.k2b-message-row[data-status="sent"]', { hasText: `Retry on ${name}` });
         await row.waitFor();
-        await settle(page);
+        await settled(page);
         expect(harness.posted.slice(start)).toEqual([
           { chat, clientId: harness.posted[start]!.clientId, body: `Retry on ${name}` },
           { chat, clientId: harness.posted[start]!.clientId, body: `Retry on ${name}` },
@@ -302,10 +290,8 @@ describe("ChatWorkspace browser full view", () => {
         await page.locator('.k2b-message-row[data-status="pending"]', { hasText: `Waiting on ${name}` }).waitFor();
         await page.getByText("Later messages wait for the one that was not sent.", { exact: true }).waitFor();
         expect(harness.posted.slice(start).map((input) => input.body)).toEqual([`Refused on ${name}`]);
-        // A phone shows the row's actions on the first tap, a mouse while it rests on the row.
-        if (options.hasTouch) await failed.locator(".k2b-message-row__bubble").tap();
-        else await failed.hover();
-        await failed.getByRole("button", { name: "Discard message", exact: true }).click();
+        // "Discard" sits next to "Retry" where the failure shows, on a phone and with a mouse alike.
+        await failed.getByRole("button", { name: "Discard", exact: true }).click();
         await page.locator('.k2b-message-row[data-status="sent"]', { hasText: `Waiting on ${name}` }).waitFor();
         await failed.waitFor({ state: "detached" });
         expect(harness.posted.slice(start).map((input) => input.body)).toEqual([`Refused on ${name}`, `Waiting on ${name}`]);
@@ -345,8 +331,8 @@ describe("ChatWorkspace browser full view", () => {
       await page.waitForFunction(() => document.title === "After rename");
       await page.locator(".chat-conversation__header", { hasText: "After rename" }).waitFor();
       harness.revoke(chat);
-      await page.waitForFunction(() => document.title === "No access");
-      await page.locator(".k2b-app-workspace__main", { hasText: "No access" }).waitFor();
+      await page.waitForFunction(() => document.title === "Thread unavailable");
+      await page.locator(".k2b-app-workspace__main", { hasText: "Thread unavailable" }).waitFor();
       expect(await page.locator(".k2b-app-workspace__main").innerText()).not.toContain("After rename");
       expect(errors).toEqual([]);
     } finally {
@@ -393,7 +379,50 @@ const scrollFeed = async (page: Page, direction: number) => {
   await feed.evaluate((element, delta) => {
     element.scrollTop += (delta * element.clientHeight) / 2;
   }, direction);
-  await settle(page);
+  await settled(page);
+};
+/** Opens a message's menu the way each device does: "…" beside the bubble on a desktop, a long press on a phone. */
+const openMessageMenu = async (page: Page, name: string, item: Locator) => {
+  await settled(page);
+  if (name === "phone") {
+    await item.locator(".k2b-message-row__text").scrollIntoViewIfNeeded();
+    const box = (await item.locator(".k2b-message-row__text").boundingBox())!;
+    const point = { x: box.x + 8, y: box.y + box.height / 2 };
+    // A page that just opened may still be settling; the finger lands once the message is what lies under it.
+    const key = await item.getAttribute("data-key");
+    await page.waitForFunction(
+      ({ point, key }) => document.elementFromPoint(point.x, point.y)?.closest("[data-key]")?.getAttribute("data-key") === key,
+      { point, key },
+    );
+    // Playwright taps only as a whole; the held pointer's lifecycle runs as GestureMenu receives it on a phone.
+    await page.evaluate(async (point) => {
+      const target = document.elementFromPoint(point.x, point.y)!;
+      const init: PointerEventInit = {
+        pointerType: "touch",
+        isPrimary: true,
+        pointerId: 1,
+        bubbles: true,
+        cancelable: true,
+        clientX: point.x,
+        clientY: point.y,
+      };
+      target.dispatchEvent(new PointerEvent("pointerdown", init));
+      await new Promise((resolve) => setTimeout(resolve, 650));
+      target.dispatchEvent(new PointerEvent("pointerup", init));
+    }, point);
+    const sheet = page.locator("dialog[open]");
+    await sheet.waitFor();
+    return sheet;
+  }
+  await item.locator(".k2b-message-row__bubble").hover();
+  await item.getByRole("button", { name: "Message actions", exact: true }).click();
+  const menu = page.getByRole("menu", { name: "Message actions", exact: true });
+  await menu.waitFor();
+  return menu;
+};
+const chooseFromMessageMenu = async (page: Page, name: string, item: Locator, entry: string) => {
+  const menu = await openMessageMenu(page, name, item);
+  await menu.getByRole("menuitem", { name: new RegExp(`^${entry}`) }).click();
 };
 const rowAction = async (page: Page, name: string, chat: string, action: "Mark unread" | "Mark read") => {
   const link = row(page, name, chat);
@@ -405,7 +434,10 @@ const rowAction = async (page: Page, name: string, chat: string, action: "Mark u
   await page.getByRole("menuitem", { name: action, exact: true }).click();
 };
 const readAllAction = async (page: Page, name: string) => {
-  await rows(page, name).locator(".k2b-app-workspace__sidebar-section-header").hover();
+  await rows(page, name)
+    .locator(".k2b-app-workspace__sidebar-section-header")
+    .filter({ has: page.getByRole("button", { name: "Actions for all chats", exact: true }) })
+    .hover();
   await rows(page, name).getByRole("button", { name: "Actions for all chats", exact: true }).click();
   await page.getByRole("menuitem", { name: "Mark all read", exact: true }).click();
 };
@@ -528,7 +560,7 @@ describe("ChatWorkspace browser read state", () => {
         }));
         for (let i = 1; i <= 3; i++) harness.receive(chat, nora, `Unread live ${i}`);
         await page.getByRole("button", { name: "Jump to latest, 3 new", exact: true }).waitFor();
-        await settle(page);
+        await settled(page);
         const after = await marker(page).evaluate((element) => ({
           key: element.closest("[data-key]")!.getAttribute("data-key"),
           text: element.closest("[data-key]")!.textContent,
@@ -715,9 +747,8 @@ describe("ChatWorkspace browser read state", () => {
         await page.waitForURL(`**/c/${chat}`);
         const target = harness.messageId(chat, 5);
         const item = page.locator(`[data-key="${target}"]`);
-        if (name === "phone") await item.tap();
-        else await item.hover();
-        await item.getByRole("button", { name: "Mark unread from here", exact: true }).click();
+        // settled: the menu helper waits for its target under the pointer, Playwright for the button.
+        await chooseFromMessageMenu(page, name, item, "Mark unread from here");
         await marker(page).waitFor();
         expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(target);
         await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 5);
@@ -736,6 +767,115 @@ describe("ChatWorkspace browser read state", () => {
         await page.context().close();
       }
     }, 30_000);
+
+    test(`"Mark unread from here" in the message menu: undo, failure with retry, own messages, copy on ${name}`, async () => {
+      const chat = harness.addChat({ members: [viewer, nora], name: "Menu actions", count: 8, end: harness.now() });
+      const { page, errors } = await load(options, { chat }, true);
+      try {
+        await until(() => harness.subscribed(chat));
+        const target = page.locator(`[data-key="${harness.messageId(chat, 5)}"]`);
+        const own = page.locator(`[data-key="${harness.messageId(chat, 7)}"]`);
+
+        // Own messages never count as unread, so their menu has no such entry; "Reply" and "Copy text" are on every message.
+        // settled: the menu helper waits for its target under the pointer, Playwright for the button.
+        const ownMenu = await openMessageMenu(page, name, own);
+        expect(await ownMenu.getByRole("menuitem").allInnerTexts()).toEqual([
+          expect.stringContaining("Reply"),
+          expect.stringContaining("Add reaction"),
+          expect.stringContaining("Copy text"),
+        ]);
+        await page.keyboard.press("Escape");
+        await ownMenu.waitFor({ state: "hidden" });
+
+        // A failure leaves the marker and read state as they were and offers "Try again".
+        harness.failUnread();
+        await chooseFromMessageMenu(page, name, target, "Mark unread from here");
+        const failed = page.locator(".k2b-toast").filter({ hasText: "The read state could not be changed." });
+        await failed.waitFor();
+        expect(await marker(page).count()).toBe(0);
+        expect(harness.props({ chat }).open!.conversation.read!.unreadFromSeq).toBe(null);
+        await failed.getByRole("button", { name: "Try again", exact: true }).click();
+        // An action closes its message, so it cannot run twice.
+        await failed.waitFor({ state: "detached" });
+        await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 5);
+        await marker(page).waitFor();
+        expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(
+          harness.messageId(chat, 5),
+        );
+
+        // The success names whose message it starts at and offers "Undo", which puts everything back. Meanwhile the
+        // chat counts as unread in the list.
+        const done = page.locator(".k2b-toast").filter({ hasText: "Unread from Nora’s message" });
+        await done.waitFor();
+        if (name === "desktop") await row(page, name, chat).locator('[data-unread="count"]').waitFor();
+        await done.getByRole("button", { name: "Undo", exact: true }).click();
+        await done.waitFor({ state: "detached" });
+        await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === null);
+        await marker(page).waitFor({ state: "detached" });
+        expect(harness.props({ chat }).open!.conversation.unread).toBe(0);
+        if (name === "desktop") await row(page, name, chat).locator("[data-unread]").waitFor({ state: "detached" });
+
+        if (name === "desktop") {
+          // Alt+click (Option+click) runs it directly.
+          await target.locator(".k2b-message-row__text").click({ modifiers: ["Alt"] });
+          await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 5);
+          await marker(page).waitFor();
+          // The entry teaches the shortcut and says what it does.
+          const menu = await openMessageMenu(page, name, target);
+          const entry = menu.getByRole("menuitem", { name: /^Mark unread from here/ });
+          expect(await entry.innerText()).toContain("“New messages” starts at this message.");
+          expect(await entry.locator("kbd.k2b-kbd").count()).toBe(1);
+          await page.keyboard.press("Escape");
+        }
+
+        await page
+          .context()
+          .grantPermissions(["clipboard-read", "clipboard-write"])
+          .catch(() => {});
+        // settled: the menu helper waits for its target under the pointer, Playwright for the button.
+        await chooseFromMessageMenu(page, name, target, "Copy text");
+        await page.locator("[data-k2b-live]").getByText("Copied", { exact: true }).waitFor({ state: "attached" });
+        if (errors.length) expect(errors).toEqual([]);
+        if (name === "desktop") expect(await page.evaluate(() => window.chatShifts)).toBeLessThan(0.001);
+      } finally {
+        await page.context().close();
+      }
+    }, 45_000);
+
+    test(`Undo restores an earlier unread boundary that is not loaded on ${name}`, async () => {
+      const chat = harness.addChat({ members: [viewer, nora], name: "Long history", count: 160, end: harness.now() });
+      const { page, errors } = await load(options, { chat });
+      try {
+        await until(() => harness.subscribed(chat));
+        // An earlier "Mark unread from here" far above the loaded page.
+        const earlier = harness.messageId(chat, 6);
+        expect(
+          await page.evaluate(
+            async ({ chat, earlier }) =>
+              (
+                await fetch(`/api/chat/conversations/${chat}/unread`, {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ message: earlier }),
+                })
+              ).status,
+            { chat, earlier },
+          ),
+        ).toBe(200);
+        await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 6);
+        const target = page.locator(".k2b-message-row:not([data-own])").last().locator("xpath=ancestor::*[@data-key][1]");
+        // settled: the menu helper waits for its target under the pointer, Playwright for the button.
+        await chooseFromMessageMenu(page, name, target, "Mark unread from here");
+        const done = page.locator(".k2b-toast").filter({ hasText: "Unread from" });
+        await done.waitFor();
+        expect(harness.props({ chat }).open!.conversation.read!.unreadFromSeq).toBeGreaterThan(6);
+        await done.getByRole("button", { name: "Undo", exact: true }).click();
+        await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 6);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 45_000);
 
     test(`Escape independently marks the open head read and removes its marker on ${name}`, async () => {
       const chat = harness.addChat({ members: [viewer, nora], count: 48, unread: 25, end: harness.now() });
@@ -762,7 +902,7 @@ describe("ChatWorkspace browser read state", () => {
         for (let i = 1; i <= 5; i++) {
           harness.receive(chat, nora, `Batch arrival ${i}`);
           await page.getByRole("feed").getByText(`Batch arrival ${i}`, { exact: true }).waitFor();
-          await settle(page);
+          await settled(page);
         }
         await until(() => chatReads(chat).at(-1)?.seq === 13);
         const starts = await readStarts(page, chat);
@@ -784,7 +924,8 @@ describe("ChatWorkspace browser read state", () => {
       const { page, errors } = await load(options, {});
       const geometry = () =>
         rows(page, name)
-          .locator("a[href]")
+          // Chat rows only; "Discover channels" has no time.
+          .locator('a[href*="/app/chat/c/"]')
           .evaluateAll((links) =>
             links.map((link) => {
               const time = link.querySelector("time")!.getBoundingClientRect();
@@ -812,7 +953,7 @@ describe("ChatWorkspace browser read state", () => {
               ),
             { chat, count },
           );
-          await settle(page);
+          await settled(page);
           expect(await geometry()).toEqual(before);
           expect(await page.evaluate(() => window.chatShifts)).toBe(0);
         }
@@ -823,7 +964,7 @@ describe("ChatWorkspace browser read state", () => {
         expect(await geometry()).toEqual(before);
         await rowAction(page, name, dot, "Mark unread");
         await row(page, name, dot).locator('[data-unread="dot"]').waitFor();
-        await settle(page);
+        await settled(page);
         expect(await geometry()).toEqual(before);
         expect(await page.evaluate(() => window.chatShifts)).toBe(0);
         expect(errors).toEqual([]);
@@ -977,7 +1118,7 @@ describe("ChatWorkspace start chats and members", () => {
             expect(await dialog.getByRole("textbox", { name: t.name, exact: true }).isDisabled()).toBe(true);
             // Reopen after a real document reload: same tab, same immutable unresolved intent.
             await page.reload();
-            await settle(page);
+            await settled(page);
             await page.evaluate(({ props, locale }) => window.mountChat(props, locale), {
               props: harness.props(kind === "fresh" ? { chat } : {}),
               locale,
@@ -1037,17 +1178,24 @@ describe("ChatWorkspace start chats and members", () => {
               const dialog = page.getByRole("dialog", { name: t.newChat, exact: true });
               await dialog.waitFor();
               await page.waitForTimeout(600);
-              expect(await page.evaluate(() => window.chatShifts)).toBe(0);
+              expect(await page.evaluate(() => ({ value: window.chatShifts, sources: window.chatShiftSources }))).toEqual({
+                value: 0,
+                sources: [],
+              });
               if (dismissal === "escape") await page.keyboard.press("Escape");
               else await dialog.getByRole("button", { name: t.cancel, exact: true }).click();
               await dialog.waitFor({ state: "hidden" });
               await focused(newChat);
               await page.waitForTimeout(600);
-              expect(await page.evaluate(() => window.chatShifts)).toBe(0);
+              expect(await page.evaluate(() => ({ value: window.chatShifts, sources: window.chatShiftSources }))).toEqual({
+                value: 0,
+                sources: [],
+              });
             }
             const list = page.locator(name === "phone" ? ".chat-list-page" : ".k2b-app-workspace__sidebar");
             await list.locator(`a[href="/app/chat/c/${chat}"]`).click();
             await page.waitForURL(`**/app/chat/c/${chat}`);
+            await settled(page);
             const header = page.locator(".chat-conversation__header");
             const height = (await header.boundingBox())!.height;
             const entries = [{ entry: header.getByRole("button", { name: t.addPeople, exact: true }), title: t.addPeople }];
@@ -1060,14 +1208,20 @@ describe("ChatWorkspace start chats and members", () => {
                 await dialog.waitFor();
                 await page.waitForTimeout(600);
                 expect((await header.boundingBox())!.height).toBe(height);
-                expect(await page.evaluate(() => window.chatShifts)).toBe(0);
+                expect(await page.evaluate(() => ({ value: window.chatShifts, sources: window.chatShiftSources }))).toEqual({
+                  value: 0,
+                  sources: [],
+                });
                 if (dismissal === "escape") await page.keyboard.press("Escape");
                 else await dialog.getByRole("button", { name: t.cancel, exact: true }).click();
                 await dialog.waitFor({ state: "hidden" });
                 await focused(entry);
                 await page.waitForTimeout(600);
                 expect((await header.boundingBox())!.height).toBe(height);
-                expect(await page.evaluate(() => window.chatShifts)).toBe(0);
+                expect(await page.evaluate(() => ({ value: window.chatShifts, sources: window.chatShiftSources }))).toEqual({
+                  value: 0,
+                  sources: [],
+                });
               }
             }
             expect(errors).toEqual([]);
@@ -1097,7 +1251,10 @@ describe("ChatWorkspace start chats and members", () => {
               if (name === "phone") expect(box).toEqual({ x: 0, y: 0, width: 390, height: 844 });
               else expect(box!.x).toBeGreaterThan(1000);
               expect((await header.boundingBox())!.height).toBe(height);
-              expect(await page.evaluate(() => window.chatShifts)).toBe(0);
+              expect(await page.evaluate(() => ({ value: window.chatShifts, sources: window.chatShiftSources }))).toEqual({
+                value: 0,
+                sources: [],
+              });
             };
             const closePanel = async () => {
               await panel.getByRole("button", { name: t.closeChatInfo, exact: true }).click();
@@ -1105,7 +1262,10 @@ describe("ChatWorkspace start chats and members", () => {
               await page.waitForTimeout(600);
               await page.waitForURL((url) => !url.searchParams.has("panel"));
               expect((await header.boundingBox())!.height).toBe(height);
-              expect(await page.evaluate(() => window.chatShifts)).toBe(0);
+              expect(await page.evaluate(() => ({ value: window.chatShifts, sources: window.chatShiftSources }))).toEqual({
+                value: 0,
+                sources: [],
+              });
             };
             await observeShifts(page);
             await header.getByRole("link", { name: t.chatInfo, exact: true }).click();
@@ -1121,7 +1281,7 @@ describe("ChatWorkspace start chats and members", () => {
             address.searchParams.set("theme", theme);
             await page.evaluate((url) => history.replaceState(history.state, "", url), address.href);
             await page.reload();
-            await settle(page);
+            await settled(page);
             await observeShifts(page);
             await page.evaluate(({ props, locale }) => window.mountChat(props, locale), {
               props: harness.props({ chat, panel: "info" }),
@@ -1211,7 +1371,7 @@ describe("Chat info reopening", () => {
         await page.reload();
         // This harness mounts explicitly rather than hydrating an island.
         await page.evaluate((props) => window.mountChat(props, "en"), harness.props({ chat }));
-        await settle(page);
+        await settled(page);
         expect(await toggle.isVisible()).toBe(true);
         expect(await toggle.isEnabled()).toBe(true);
         expect(errors).toEqual([]);

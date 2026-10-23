@@ -23,9 +23,29 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Replacement conflates refresh and revocation | An ordinary refresh drops acknowledged live arrivals, or a delayed refresh restores a revoked window. | Tests: Chat store latest-arrival retention, concurrent revocation, and superseded latest-response cases. |
+| Replay deduplication assumes contiguous revisions | Renewing from the batch tail skips filtered events; deduplicating against the live watermark drops unseen earlier events. | Tests: Chat store batched discovery resumes at the first relevant hint and fills replay gaps exactly once. |
+| Summary reads stand in for discovery authorization | An ID-ordered summary page never reaches a newly active item beyond its candidate boundary. | Tests: Chat store sidebar discovery requires the authorized short thread read before renewal and rejects failed discovery. |
+| Output limits hide unbounded state queries | A short response groups unread state for the whole directory before selecting candidates. | Tests: Chat thread service requires explicit bounded IDs on every state query and preserves selected and recent candidates. |
+| Partial summaries imply complete counts | An inspected page with zero unread messages makes an incomplete section look read. | Tests: Chat bilingual render cases cover empty and nonempty summary cursors, lower bounds, active rows, and completed zero counts. |
+| UTC dates replace local calendar semantics | UTC slicing shifts all-day events; displaying an exclusive end adds a day. | Tests: Chat metadata render cases cover Berlin, Los Angeles, daylight-saving changes, and date-only deadlines. |
+| Background feedback changes the reading viewport | A conditional error card above the feed changes its position and height. | Tests: Chat focused DOM retry cases require the same composer or read-only status region and feed siblings before and after recovery. Browser geometry remains a separate check. |
+| Clients treat filtered deltas as replacement snapshots | Removed rows survive when a filtered delta is merged into an older window. | Tests: Chat store system resync and selected-item availability cases replace the window and clear unavailable selections. |
+| Receipts have no client state owner | A client waits for an event the service intentionally does not send, or ignores a continuation. | Tests: Chat store applies system HTTP read/unread receipts, follows All-thread cursors, and keeps ordinary receipts on their personal channel. |
+| Automatic refresh hides exhaustive traversal | One message walks every cursor before updating the screen. | Tests: Chat store short-page and sidebar-summary request counts; system API short selection beyond 100 candidates. |
+| Independent cursors share an exhaustion state | Finishing one provider restarts it while another provider advances. | Tests: Chat system browser discovery and API exhausted-source cases. |
+| Live invalidation discards loaded context | A revision replaces a multi-page directory with page one. | Test: Chat system browser directory retains loaded rows and their DOM nodes after a message. |
+| Presentation substitutes identifiers or invented counts | A view shows a column ID, drops reader metadata, or calls a local row count container membership. | Tests: Chat resource-reader projection, system API metadata, and bilingual system membership render cases. |
+| Provider failure looks like empty data | A failed or malformed list becomes a successful empty result. | Tests: Chat resource-reader outcomes and system discovery API failure/recovery. |
+| Feature slices leave incomplete view contracts | A merge leaves older fixtures or links without the new projection fields or navigation root. | Tests: Chat system-chat unit fixtures and the panel browser case cover channel fields and item, overview, back, and info links. |
+| Bounded batches hide unbounded request work | A reader limits concurrency but traverses every item or repeats nested scans for each container. | Tests: Chat `system-chats.integration.test.ts` asserts total reader calls for selected histories, shared summary budgets, and fully hidden read-all pages, including continuation. |
+| New live keys have no discovery path | Existing viewers cannot receive the first event on a key they do not yet follow or have permission cached for. | Test: Chat `live.integration.test.ts` opens two viewers with warm container caches and no item decision, requires a metadata-free refresh hint, checks authorized HTTP discovery, renews the existing subscription at its hint cursor, and replays an event committed during discovery. Store tests require subscription renewal and sidebar/directory invalidation. |
+| An aggregate exceeds the request budget | A recursive count keeps a request busy without a usable answer. | Test: Chat `service/channels.integration.test.ts` checks overlapping and cyclic groups, a bounded SQL timeout, a visible unavailable response, and restoration of the surrounding transaction. |
+
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
+
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | App CSS overrides shared control sizing | An app stretches a compact action or overrides its size, so adjacent controls no longer match. | Test: Notebooks `detail-panel.browser.test.ts` measures AI and View height, padding, font size, intrinsic width, hover, keyboard focus, and offline dimensions in both themes at phone, tablet, and desktop widths. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
@@ -190,6 +210,8 @@ convention still needs a check or a test.
 | Export safety checked against a different value | A numeric sort key exempts formatted text such as `-1 +1` from formula escaping. | Test: `ui/test/chart-explorer.behavior.test.ts` copies real ChartExplorer cells with numeric sort keys and checks formulas, compact suffixes, units and plain numeric values (#1342). |
 | User navigation mistaken for an async action's own navigation | Every draft-key change keeps an app opening active, leaving another chat's composer read-only. | Tests: `chat-slash.behavior.test.ts` requires `follow()` for one draft move and cancels unannounced changes; Assistant's `composer-app-commands.behavior.test.tsx` checks that editing returns before the previous save finishes. |
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
+| Workspace layout changes shape after the first render | A workspace region such as a `MainPane` mounts only after hydration, and the layout drops or moves content that was already shown. | Test: Chat `ChatThreads.browser.test.ts` switches from a chat without threads to one with threads at 1440 and 2000 px. Library fix pending in [#1752](https://github.com/k2b-dev/cloud/issues/1752). |
+| A JSON value encoded twice on its way into `jsonb` | Serialized JSON reaches a `::jsonb` cast as a string parameter, and the column stores a JSON string instead of the object or array. | Test: Chat `api/shared.integration.test.ts` reads stored `refs` back as an array. Convention: serialized JSON goes to Postgres as `::text::jsonb`. |
 
 ## Lessons
 
@@ -974,6 +996,20 @@ convention still needs a check or a test.
 - **Error class:** Checking direct dependency versions instead of every resolved copy and its upstream range.
 - **Guard:** The existing nightly `bun audit --audit-level=high` checks the resolved graph. Verify upstream advisories and consumer paths before updating: Fibel still needs a supported SDK release, and the disputed cache advisory has no confirmed behavior fix in 4.3.0. Keep those findings visible rather than adding overrides or weakening the audit.
 
+### A thread column that appeared later emptied the chat
+
+- **What happened:** In Chat, creating the first thread of a chat, or switching from a chat without threads to one with threads, left the message area blank until a reload.
+- **Root cause:** `AppWorkspace.Main` renders its children without panes first; when a `MainPane` mounts later, the primary region reuses nodes from the discarded branch and stays empty ([#1752](https://github.com/k2b-dev/cloud/issues/1752)).
+- **Error class:** Workspace layout changes shape after the first render.
+- **Guard:** Chat keeps its thread pane mounted for every chat and shows it with CSS; a Chat browser test switches from a chat without threads to one with threads at 1440 and 2000 px. The library fix is pending in #1752.
+
+### Shared elements were stored as a JSON string
+
+- **What happened:** On the branch adding shared Cloud elements to Chat, every new message failed with a server error, also system lines such as "created the chat", before it reached `main`.
+- **Root cause:** The insert passed `JSON.stringify(refs)` straight to `::jsonb`; the driver encoded the string once more, so the column held a JSON string instead of an array, and the response schema rejected it. The neighbouring `system_params` already used `::text::jsonb`.
+- **Error class:** A JSON value encoded twice on its way into `jsonb`.
+- **Guard:** Chat `api/shared.integration.test.ts` reads the stored `refs` back as an array; the integration run caught it. Convention: pass serialized JSON to Postgres as `::text::jsonb`.
+
 ### The notebook AI action stretched beside View
 
 - **What happened:** “Edit with AI” filled the remaining row and stood taller than “View”.
@@ -987,6 +1023,13 @@ convention still needs a check or a test.
 - **Root cause:** Its fixture added two days to the real clock, then used fixed UTC times while asserting summer local times.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
+
+## Combining chat navigation and projection contracts
+
+- **What happened:** After merging chat features, a system-chat fixture lacked required channel fields, overview links escaped the panel, and a polling helper mixed wall and monotonic clocks.
+- **Root cause:** Existing fixtures and newly added links still followed the older view contract; the resolved polling loop combined timestamps from different clocks.
+- **Error class:** Independent feature slices leave incompatible projection, navigation, or timing assumptions at their intersection.
+- **Guard:** System-chat unit fixtures include channel state. The system-chat browser suite checks item, overview, back, and info links inside the panel. Polling deadlines and comparisons use the same clock.
 
 ## Add a lesson
 

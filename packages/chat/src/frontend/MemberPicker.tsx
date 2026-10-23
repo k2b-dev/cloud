@@ -1,17 +1,21 @@
 import { PrincipalPicker, principalKey } from "@k2b/cloud/access/ui";
 import { CloudAvatar } from "@k2b/cloud/account/ui";
-import { Combobox, IconButton } from "@k2b/ui";
+import { Combobox, IconButton, StatusBadge } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
-import { MEMBER_PAGE_SIZE, type MemberPrincipal } from "../service/contracts";
+import { MEMBER_PAGE_SIZE, type MemberPrincipal, type MemberSchema } from "../service/contracts";
 import { type ChatDialogStore, useChatMessages } from "./chat-dialog";
 
-export type ChosenMember = { principal: MemberPrincipal; displayName: string };
+export type ChosenMember = {
+  principal: MemberPrincipal;
+  displayName: string;
+  serviceAccountKind?: import("zod").z.infer<typeof MemberSchema>["serviceAccountKind"];
+};
 
 /** A person's avatar, or the quiet round tile the permission editor shows for a group. */
 export function MemberAvatar(props: { principal: MemberPrincipal; displayName: string; avatarHash?: string | null }): JSX.Element {
   return (
     <Show
-      when={props.principal.type === "user" ? props.principal.userId : undefined}
+      when={props.principal.type !== "group"}
       fallback={
         <span
           class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-secondary dark:bg-zinc-700"
@@ -21,9 +25,14 @@ export function MemberAvatar(props: { principal: MemberPrincipal; displayName: s
         </span>
       }
     >
-      {(userId) => (
-        <CloudAvatar username={props.displayName} userId={userId()} avatarHash={props.avatarHash} size="xs" class="h-7 w-7 shrink-0" />
-      )}
+      <CloudAvatar
+        username={props.displayName}
+        userId={props.principal.type === "user" ? props.principal.userId : undefined}
+        kind={props.principal.type === "service_account" ? "service_account" : "user"}
+        avatarHash={props.avatarHash}
+        size="xs"
+        class="h-7 w-7 shrink-0"
+      />
     </Show>
   );
 }
@@ -39,6 +48,8 @@ export default function MemberPicker(props: {
   /** Already in the chat, or the viewer: never offered. */
   excluded: readonly MemberPrincipal[];
   people: ChatDialogStore["people"];
+  /** The chat that gains the members; only accounts bound to it, besides standalone and agent accounts, can join. */
+  conversationId?: string;
   disabled?: boolean;
   onChange: (chosen: ChosenMember[]) => void;
 }): JSX.Element {
@@ -47,9 +58,9 @@ export default function MemberPicker(props: {
   const taken = () => [...props.excluded, ...props.chosen.map((member) => member.principal)];
   // A chat takes at most one page of new entries per request.
   const full = () => props.chosen.length >= MEMBER_PAGE_SIZE;
-  const choose = (principal: MemberPrincipal, displayName: string) => {
+  const choose = (principal: MemberPrincipal, displayName: string, serviceAccountKind?: ChosenMember["serviceAccountKind"]) => {
     if (taken().some((known) => principalKey(known) === principalKey(principal))) return;
-    props.onChange([...props.chosen, { principal, displayName }]);
+    props.onChange([...props.chosen, { principal, displayName, ...(serviceAccountKind ? { serviceAccountKind } : {}) }]);
   };
   const remove = (member: ChosenMember) => {
     props.onChange(props.chosen.filter((other) => principalKey(other.principal) !== principalKey(member.principal)));
@@ -63,11 +74,22 @@ export default function MemberPicker(props: {
           fallback={
             <PrincipalPicker
               existing={taken()}
-              allowServiceAccounts={false}
+              allowServiceAccounts
+              serviceAccountFilter={(account) =>
+                account.status === "active" &&
+                (account.kind === "standalone" ||
+                  account.kind === "agent" ||
+                  (account.kind === "resource_bound" &&
+                    account.appId === "chat" &&
+                    account.resourceType === "conversation" &&
+                    props.conversationId !== undefined &&
+                    account.resourceId === props.conversationId))
+              }
               allowAuthenticated={false}
               disabled={props.disabled || full()}
               onSelect={(principal, display) => {
-                if (principal.type === "user" || principal.type === "group") choose(principal, display.displayName);
+                if (principal.type === "user" || principal.type === "group" || principal.type === "service_account")
+                  choose(principal, display.displayName, display.serviceAccountKind);
               }}
             />
           }
@@ -95,6 +117,23 @@ export default function MemberPicker(props: {
               <li class="chat-member-row">
                 <MemberAvatar principal={member.principal} displayName={member.displayName} />
                 <span class="min-w-0 flex-1 truncate text-sm">{member.displayName}</span>
+                <Show when={member.serviceAccountKind}>
+                  {(kind) => (
+                    <StatusBadge
+                      tone="neutral"
+                      variant="text"
+                      label={
+                        kind() === "agent"
+                          ? t().agentAccount
+                          : kind() === "standalone"
+                            ? t().standaloneAccount
+                            : kind() === "resource_bound"
+                              ? t().resourceAccount
+                              : t().delegatedAccount
+                      }
+                    />
+                  )}
+                </Show>
                 <IconButton
                   label={t().removeName({ name: member.displayName })}
                   size="xs"

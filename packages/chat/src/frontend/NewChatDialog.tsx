@@ -1,9 +1,10 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, LocaleProvider, prompts, StatusBadge, TextInput, useLocale } from "@k2b/ui";
-import { createSignal, For, type JSX, Show } from "solid-js";
+import { Button, LocaleProvider, prompts, SegmentedControl, StatusBadge, TextInput, useLocale } from "@k2b/ui";
+import { createEffect, createSignal, For, type JSX, Show } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import type { ExistingMatchSchema } from "../service/contracts";
+import { ChannelDialog } from "./ChannelDialogs";
 import { type ChatDialogStore, DialogActions, DialogError, errorMessage, useChatMessages } from "./chat-dialog";
 import { listTime } from "./chat-format";
 import { createIntent } from "./create-intent";
@@ -18,7 +19,7 @@ export const openNewChatDialog = (props: NewChatProps): Promise<string | undefin
     (close, context) => (
       // A prompt renders outside the workspace, so its content gets the workspace's locale again.
       <LocaleProvider locale={props.locale}>
-        <NewChatDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
+        <NewConversationDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
       </LocaleProvider>
     ),
     {
@@ -28,12 +29,41 @@ export const openNewChatDialog = (props: NewChatProps): Promise<string | undefin
     },
   );
 
+function NewConversationDialog(
+  props: NewChatProps & { setDismissHandler: (handler: () => void) => void; close: (id?: string) => void },
+): JSX.Element {
+  const t = useChatMessages();
+  const [kind, setKind] = createSignal<"chat" | "channel">("chat");
+  const [busy, setBusy] = createSignal(false);
+  return (
+    <div class="flex flex-col gap-4">
+      <SegmentedControl
+        ariaLabel={t().newChat}
+        value={kind}
+        disabled={busy()}
+        onValueChange={setKind}
+        options={[
+          { value: "chat", label: t().chatChoice },
+          { value: "channel", label: t().channelChoice },
+        ]}
+      />
+      <Show when={kind() === "channel"} fallback={<NewChatDialog {...props} onBusyChange={setBusy} />}>
+        <ChannelDialog {...props} onBusyChange={setBusy} />
+      </Show>
+    </div>
+  );
+}
+
 /**
  * A chat with exactly the same direct people may exist already. Then the same dialog lists those chats, the most
  * recently active first, and opening one is the main action; a second chat with the same people stays possible.
  */
 export function NewChatDialog(
-  props: NewChatProps & { setDismissHandler: (handler: () => void) => void; close: (chatId?: string) => void },
+  props: NewChatProps & {
+    setDismissHandler: (handler: () => void) => void;
+    close: (chatId?: string) => void;
+    onBusyChange?: (busy: boolean) => void;
+  },
 ): JSX.Element {
   const t = useChatMessages();
   const locale = useLocale();
@@ -41,6 +71,7 @@ export function NewChatDialog(
   const [name, setName] = createSignal("");
   const [matches, setMatches] = createSignal<readonly Match[] | null>(null);
   const [busy, setBusy] = createSignal(false);
+  createEffect(() => props.onBusyChange?.(busy()));
   const intent = createIntent(`${props.viewerId}:new`, (saved) => {
     setChosen(saved.chosen);
     setName(saved.input.name ?? "");
