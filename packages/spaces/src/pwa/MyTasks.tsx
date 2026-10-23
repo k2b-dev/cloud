@@ -2,7 +2,7 @@ import { Link, type LinkNavigateEvent, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { query as queries } from "@k2b/stdlib/solid";
 import { Button, IconButton, Placeholder, SegmentedControl, type ToastHandle, toast, useLocale } from "@k2b/ui";
-import { createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, on, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
 import { createRetryToasts } from "../frontend/lib/feedback";
@@ -26,6 +26,8 @@ type Props = {
   onOpen?: (item: WorkItem, event: LinkNavigateEvent) => void;
   /** The person chose another view. */
   onViewChange?: (view: OverviewView) => void;
+  /** Raised when a task changed elsewhere on the page, such as in its detail; the list is read again. */
+  revision?: number;
   /** A task was completed or reopened here; `done` is what the server kept. */
   onCompletedChange?: (shortId: string, done: boolean) => void;
 };
@@ -100,6 +102,13 @@ export default function MyTasks(props: Props) {
     return list;
   };
   const counts = () => work.data()?.counts ?? props.initialWork.counts;
+  createEffect(
+    on(
+      () => props.revision,
+      () => void refresh(),
+      { defer: true },
+    ),
+  );
 
   const select = (next: OverviewView) => {
     if (next === view()) return;

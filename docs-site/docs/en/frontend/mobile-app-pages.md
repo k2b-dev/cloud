@@ -5,7 +5,7 @@ section: Frontend
 order: 835
 description: Add phone-first pages of an application to the installable mobile app.
 tags: [mobile, pwa, routing, layout]
-updated: 2026-10-12
+updated: 2026-10-23
 ---
 
 # Pages in the mobile app
@@ -136,13 +136,16 @@ pages. Declare `/public/<app-id>` when the part has its own styles.
 | --- | --- |
 | `c` | The request context |
 | `title` | Header heading and document title |
-| `back` | Optional `{ href, label }` for going up inside the part, for example from a detail to its list |
+| `sidebarTitle` | Optional heading beside the sidebar, where the sidebar already names the installation; `title` by default |
+| `back` | Optional `{ href, label, withSidebar }` for going up inside the part, for example from a detail to its list; `withSidebar: false` hides it beside the sidebar |
 | `actions` | At most two icon buttons at the end of the header |
+| `bare` | The page brings its own heads and scroll areas, such as `AppWorkspace.Main` levels; `title` still names the document |
 | `children` | The page content, in the app's only scroll area |
 
 It renders the app's document head, a
-[`MobileShell`](/en/ui/layout/mobile-shell) with a header, and a
-[`TabBar`](/en/ui/layout/tab-bar) with Start and the first three parts. Start
+[`MobileShell`](/en/ui/layout/mobile-shell) with a header, a
+[`TabBar`](/en/ui/layout/tab-bar) with Start and the first three parts, and a
+sidebar with Start, every part, and Settings for wide screens. Start
 lists every part, so it also serves as "More", and opens Settings from its
 header. The layout provides the request locale, follows the person's Light,
 Dark, or Automatic theme preference, and sets `Referrer-Policy: no-referrer`
@@ -158,13 +161,40 @@ App pages switch at once, without the cross-fade that web pages use between
 documents. A browser ignores taps while such a transition runs, so a quick
 second tap in the tab bar would be lost.
 
-A tab switches at the first touch. The tab shows as selected, the header
+A tab or sidebar row switches at the first touch. The item shows as selected, the header
 shows the title of the tab's page, and the content area is empty. The page
 loads at the end of the tap, as with any link, so the browser's Back still
 returns to the page where the tab was tapped. A repeat tap does not start the
 load over. The header shows Start with the installation's name and a part
 with its `name`, so title the part's first page with the application's name,
 as Spaces does. Otherwise the title changes when the page arrives.
+
+### iPad and monitor
+
+The same pages serve every width; the window width decides, not the device, so
+Split View and Stage Manager follow the same rules:
+
+| Window width | Navigation | A list and its detail |
+| --- | --- | --- |
+| Below 48 rem (768 px): phone, iPad in narrow Split View | Tab bar at the bottom | One after the other; the detail is a page of its own with Back |
+| 48 to 64 rem: iPad upright, wide Split View | Sidebar, 15 rem | One column; the detail is a page of its own with Back |
+| From 64 rem (1024 px): iPad across, monitor | Sidebar, 15 rem | Side by side: the list 22 rem, the detail in the rest |
+
+There is no further step for large monitors. Surfaces run to the window's
+edge, and columns keep their limits instead, such as 44 rem for a detail.
+Rotating changes only CSS: the address, the selection, typed text, focus, and
+the scroll position stay.
+
+For a list with details, give the detail an address of its own below the
+part, render both on one page with
+[`AppWorkspace.Main` levels](/en/ui/layout/workspace#levels) in
+`PwaLayout bare`, and keep the selection in the address. A reload, Back, and
+rotating then show the same selection. Spaces does this for one task at
+`/pwa/spaces/<space>/<task>`.
+
+On a wide screen, a page whose title the sidebar's head already says passes
+`sidebarTitle`, as Start does. Keep the touch rules at every width: an iPad is
+a touch device, also with a trackpad.
 
 ### Only the app's session reaches a part
 

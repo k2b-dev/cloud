@@ -1,14 +1,14 @@
-import { type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
+import { type LinkNavigateEvent, listenPopState } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
 import { OverviewViewSchema } from "@/overview-contracts";
-import { myTasksMessages } from "./messages";
 import MyTasks, { type WorkItem } from "./MyTasks";
+import { myTasksMessages } from "./messages";
 import { listHref, taskAddress, taskHref } from "./paths";
-import type { PwaTask } from "./task";
 import TaskDetail, { type TaskDetailState } from "./TaskDetail";
+import type { PwaTask } from "./task";
 
 type Props = {
   userId: string;
@@ -39,6 +39,7 @@ export default function SpacesPwa(props: Props) {
   const locale = useLocale();
   const t = () => myTasksMessages.resolve([locale()]).t;
   const [view, setView] = createSignal(props.initialView);
+  const [revision, setRevision] = createSignal(0);
   const [selection, setSelection] = createSignal<Selection>(
     props.initialTask ? { spaceShortId: props.initialTask.spaceShortId, shortId: props.initialTask.shortId } : null,
   );
@@ -102,6 +103,12 @@ export default function SpacesPwa(props: Props) {
     if (target) load(target, current?.kind === "failed" ? current.item : undefined);
   };
 
+  /** The detail completed or reopened its task: the list reads its work again. */
+  const detailCompleted = (shortId: string, done: boolean) => {
+    setRevision((value) => value + 1);
+    completedChange(shortId, done);
+  };
+
   const completedChange = (shortId: string, done: boolean) => {
     const current = detail();
     if (current?.kind === "ready" && current.task.shortId === shortId)
@@ -132,6 +139,7 @@ export default function SpacesPwa(props: Props) {
               onOpen={open}
               onViewChange={setView}
               onCompletedChange={completedChange}
+              revision={revision()}
             />
           </AppWorkspace.MainPane>
           <AppWorkspace.MainPane
@@ -139,7 +147,9 @@ export default function SpacesPwa(props: Props) {
             label={spaceOf()?.name ?? t().task}
             lead={
               <Show when={spaceOf()?.color}>
-                {(color) => <span class="spaces-pwa__dot spaces-pwa__dot--head" style={{ "background-color": color() }} aria-hidden="true" />}
+                {(color) => (
+                  <span class="spaces-pwa__dot spaces-pwa__dot--head" style={{ "background-color": color() }} aria-hidden="true" />
+                )}
               </Show>
             }
           >
@@ -156,7 +166,7 @@ export default function SpacesPwa(props: Props) {
                       dateConfig={props.dateConfig}
                       listHref={listHref(view())}
                       onRetry={retry}
-                      onCompletedChange={completedChange}
+                      onCompletedChange={detailCompleted}
                     />
                   </Show>
                 )}
