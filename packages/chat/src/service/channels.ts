@@ -73,12 +73,12 @@ export const countAudience = async (
   }
 };
 const preview = async (input: ChatContext & { input: unknown; conversationId?: string }) => {
-  if (!input.conversationId && input.accessSubject.type !== "user") return fail(err.badInput(messages(input).personalAccountRequired));
-  const parsed = DiscoveryEntriesSchema.safeParse(input.input);
-  if (!parsed.success) return fail(err.badInput(messages(input).invalidInput));
   const bound = boundConversation(input.actor, input.locale);
   if (!bound.ok || (bound.data !== null && !input.conversationId) || capPermission("read", input.actor) === "none")
     return fail(err.forbidden(messages(input).forbidden));
+  if (!input.conversationId && input.accessSubject.type !== "user") return fail(err.badInput(messages(input).personalAccountRequired));
+  const parsed = DiscoveryEntriesSchema.safeParse(input.input);
+  if (!parsed.success) return fail(err.badInput(messages(input).invalidInput));
   return sql.begin(async (db) => {
     if (input.conversationId) {
       const allowed = await requireConversation({ ...input, conversationId: input.conversationId, required: "admin" }, db);
