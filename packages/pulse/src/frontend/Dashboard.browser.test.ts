@@ -5,6 +5,7 @@ import {
   baseOverviewFixture,
   buildWorkspaceHarness,
   origin,
+  pauseWorkspaceClock,
   renderWorkspaceSnapshot,
   workspaceFixture,
 } from "./PulseWorkspace.browser-fixture";
@@ -82,8 +83,7 @@ const open = async (
   let listResponse: Reply = { json: dashboardTestSnapshot };
   let overviewResponse: Reply = { json: overview };
   const tab = await browser.newPage({ viewport: { width: options.width ?? 1440, height: 1000 } });
-  await tab.clock.install({ time: new Date(options.now ?? dashboardTestNow) });
-  await tab.clock.pauseAt(new Date(options.now ?? dashboardTestNow));
+  await pauseWorkspaceClock(tab.clock, new Date(options.now ?? dashboardTestNow));
   const requests: { path: string; body: unknown; key: string | undefined }[] = [];
   const panels = new Map<string, Reply>();
   let publication: Reply = { json: { href: "/app/pulse/public/fictional-public-token", revision: 4 } };
@@ -560,8 +560,7 @@ test("the actual SSR page and first client render preserve dashboard structure i
     const serverHtml = await serverSnapshot(props);
     const tab = await browser.newPage({ viewport: { width, height: 1000 } });
     try {
-      await tab.clock.install({ time: new Date(dashboardTestNow) });
-      await tab.clock.pauseAt(new Date(dashboardTestNow));
+      await pauseWorkspaceClock(tab.clock, new Date(dashboardTestNow));
       await tab.route(`${origin}/api/**`, (route) => {
         const id = new URL(route.request().url()).pathname.split("/").at(-1);
         const panel = dashboardTestDashboard.definition.panels.find((panel) => panel.id === id);
@@ -705,8 +704,7 @@ test("SQL keeps the same 236px sidebar and 312px content origin in SSR and the b
   const serverHtml = await serverSnapshot(props);
   const tab = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   try {
-    await tab.clock.install({ time: new Date(dashboardTestNow) });
-    await tab.clock.pauseAt(new Date(dashboardTestNow));
+    await pauseWorkspaceClock(tab.clock, new Date(dashboardTestNow));
     await tab.route(`${origin}/api/**`, (route) => route.fulfill({ json: props.initialOverview!.data }));
     await tab.route(`${origin}/app/pulse/**`, (route) =>
       route.fulfill({

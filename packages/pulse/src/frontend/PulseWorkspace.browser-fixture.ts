@@ -2,6 +2,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { User } from "@k2b/cloud/contracts";
 import type { ComponentProps } from "solid-js";
+import type { launchBrowser } from "../../../ui/test/browser";
 import type { PulseSource } from "../contracts";
 import type { Overview } from "../overview-contracts";
 import type PublicDashboard from "./PublicDashboard.island";
@@ -220,6 +221,17 @@ export const overviewWorkspaceFixture: PulseWorkspaceProps = {
   ...workspaceFixture,
   initialRouteState: { view: "overview", sourceId: "" },
   initialOverview: { data: baseOverviewFixture, error: null },
+};
+
+type Browser = Awaited<ReturnType<typeof launchBrowser>>;
+type BrowserPage = Awaited<ReturnType<Browser["newPage"]>>;
+
+/** Freeze before pausing so a delayed browser command cannot move the pause target into the past. */
+export const pauseWorkspaceClock = async (clock: BrowserPage["clock"], time: Date) => {
+  await clock.setFixedTime(time);
+  await clock.pauseAt(time);
+  // Keep runFor() advancing Date and timers together after the initial pause.
+  await clock.setSystemTime(time);
 };
 
 /** Render the real server component in an isolated Bun process, leaving browser tests' module conditions alone. */

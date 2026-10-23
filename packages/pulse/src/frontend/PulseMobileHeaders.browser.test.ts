@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { launchBrowser } from "../../../ui/test/browser";
-import { buildWorkspaceHarness, origin, overviewWorkspaceFixture, renderWorkspaceSnapshot } from "./PulseWorkspace.browser-fixture";
+import {
+  buildWorkspaceHarness,
+  origin,
+  overviewWorkspaceFixture,
+  pauseWorkspaceClock,
+  renderWorkspaceSnapshot,
+} from "./PulseWorkspace.browser-fixture";
 import { dashboardTestDashboard, dashboardTestSnapshot } from "./workspace/dashboard-test-fixtures";
 import { buildPulseWorkspaceHref } from "./workspace/routes";
 import { sqlTestLimits } from "./workspace/sql-test-fixtures";
@@ -31,8 +37,7 @@ for (const view of ["overview", "sources", "sql"] as const) {
     for (const width of [390, 900, 1440]) {
       const tab = await browser.newPage({ viewport: { width, height: 1000 } });
       try {
-        await tab.clock.install({ time: new Date(props.initialNow!) });
-        await tab.clock.pauseAt(new Date(props.initialNow!));
+        await pauseWorkspaceClock(tab.clock, new Date(props.initialNow!));
         await tab.route(`${origin}/api/**`, (route) => route.fulfill({ status: 500, json: { code: "UNEXPECTED" } }));
         await tab.route(`${origin}/app/pulse/**`, (route) =>
           route.fulfill({
@@ -98,8 +103,7 @@ test("the phone SQL action sends the live draft once, shows pending, and retries
   const launches: unknown[] = [];
   const response = Promise.withResolvers<void>();
   try {
-    await tab.clock.install({ time: new Date(props.initialNow!) });
-    await tab.clock.pauseAt(new Date(props.initialNow!));
+    await pauseWorkspaceClock(tab.clock, new Date(props.initialNow!));
     await tab.route(`${origin}/api/**`, async (route) => {
       if (route.request().url().endsWith("/api/ai/conversations")) {
         launches.push(route.request().postDataJSON());
@@ -153,8 +157,7 @@ test("the phone All sheet keeps Sources and settings reachable without replacing
   const props = snapshot("sql");
   const tab = await browser.newPage({ viewport: { width: 390, height: 1000 } });
   try {
-    await tab.clock.install({ time: new Date(props.initialNow!) });
-    await tab.clock.pauseAt(new Date(props.initialNow!));
+    await pauseWorkspaceClock(tab.clock, new Date(props.initialNow!));
     await tab.route(`${origin}/api/**`, (route) => route.fulfill({ status: 500, json: { code: "UNEXPECTED" } }));
     await tab.route(`${origin}/app/pulse/**`, (route) => route.fulfill({ contentType: "text/html", body: harness(props) }));
     await tab.goto(`${origin}${buildPulseWorkspaceHref({ baseId: props.initialBaseId, state: props.initialRouteState })}`);
@@ -194,8 +197,7 @@ test("overview phone action reports launch failure and stays unavailable without
     };
     const tab = await browser.newPage({ viewport: { width: 390, height: 1000 } });
     try {
-      await tab.clock.install({ time: new Date(props.initialNow!) });
-      await tab.clock.pauseAt(new Date(props.initialNow!));
+      await pauseWorkspaceClock(tab.clock, new Date(props.initialNow!));
       await tab.route(`${origin}/api/**`, (route) => route.fulfill({ status: 503, json: { code: "REQUEST_FAILED" } }));
       await tab.route(`${origin}/app/pulse/**`, (route) => route.fulfill({ contentType: "text/html", body: harness(props, "de", true) }));
       await tab.goto(`${origin}/app/pulse/Lad001`);

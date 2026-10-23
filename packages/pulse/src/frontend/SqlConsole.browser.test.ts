@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { launchBrowser } from "../../../ui/test/browser";
-import { buildWorkspaceHarness, origin, workspaceFixture } from "./PulseWorkspace.browser-fixture";
+import { buildWorkspaceHarness, origin, pauseWorkspaceClock, workspaceFixture } from "./PulseWorkspace.browser-fixture";
 import { buildPulseWorkspaceHref, readWorkspacePathState } from "./workspace/routes";
 import { sqlTestLimits, sqlTestQuery, sqlTestResult } from "./workspace/sql-test-fixtures";
 import type { PulseWorkspaceProps } from "./workspace/types";
@@ -22,8 +22,7 @@ const open = async (width: number, snapshot: Partial<PulseWorkspaceProps> = {}, 
     ...snapshot,
   };
   const tab = await browser.newPage({ viewport: { width, height: 1000 } });
-  await tab.clock.install({ time: new Date("2026-10-20T14:32:00Z") });
-  await tab.clock.pauseAt(new Date("2026-10-20T14:32:00Z"));
+  await pauseWorkspaceClock(tab.clock, new Date("2026-10-20T14:32:00Z"));
   const runs: unknown[] = [];
   let response: { status: number; json: unknown } = { status: 200, json: sqlTestResult };
   await tab.route(`${origin}/api/**`, async (route) => {
