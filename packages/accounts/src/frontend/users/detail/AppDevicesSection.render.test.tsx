@@ -48,7 +48,7 @@ describe("App devices on the user detail page", () => {
   test("lists each phone with name, platform, pairing date, last use and a remove button", () => {
     const html = render(phones);
     expect(html).toContain("App devices");
-    expect(html).toContain("2 devices are signed in to the mobile app");
+    expect(html).toContain("2 devices are signed in to the Cloud app");
     for (const header of ["Device", "Platform", "Paired since", "Last used"]) expect(html).toContain(header);
     expect(html).toContain("Personal iPhone");
     expect(html).toContain("iOS");
@@ -61,7 +61,7 @@ describe("App devices on the user detail page", () => {
   test("speaks German", () => {
     const html = render(phones.slice(0, 1), "de");
     expect(html).toContain("App-Geräte");
-    expect(html).toContain("1 Gerät ist in der Mobile App angemeldet");
+    expect(html).toContain("1 Gerät ist in der Cloud-App angemeldet");
     expect(html).toContain("Plattform");
     expect(html).toContain('aria-label="Gerät Personal iPhone entfernen"');
   });
@@ -75,7 +75,7 @@ describe("App devices on the user detail page", () => {
   test("shows an error instead of hiding phones when they could not be loaded", () => {
     const html = render(null);
     expect(html).toContain("App devices");
-    expect(html).toContain("Devices in the mobile app could not be loaded. Refresh the page.");
+    expect(html).toContain("Devices in the Cloud app could not be loaded. Refresh the page.");
     expect(html).not.toContain("Remove device");
   });
 });

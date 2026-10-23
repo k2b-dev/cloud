@@ -248,7 +248,7 @@ pass siblings as separate arguments or use shell expansion.
 ## History
 
 Files records folder creation, renames, moves, copies, uploads, document creation,
-template use, and Office saves through the web, mobile app, API and CLI, other
+template use, and Office saves through the web, Cloud app, API and CLI, other
 apps, and agents. Each selected item has its
 own entry; items changed in one batch share a batch ID. Moving a folder
 records one entry for the whole tree. Planning folder creation or finding an

@@ -9,7 +9,7 @@ import api from ".";
 const suite = suiteFor("database", "nats", "valkey");
 const users: string[] = [];
 
-suite("Contacts API keys and the mobile app", () => {
+suite("Contacts API keys and the Cloud app", () => {
   afterAll(async () => {
     for (const id of users) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
   });

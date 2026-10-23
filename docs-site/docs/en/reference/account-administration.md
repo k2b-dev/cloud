@@ -3,7 +3,7 @@ title: Account administration API
 navTitle: Account administration
 section: Reference
 order: 1276
-description: Display account categories, manage Linux identities and remove a person's mobile app devices through supported APIs.
+description: Display account categories, manage Linux identities and remove a person's Cloud app devices through supported APIs.
 tags: [accounts, api, linux]
 updated: 2026-10-06
 ---
@@ -164,14 +164,14 @@ remains available for assigning a GID to an existing local group.
 See [Assign Linux identities](/en/docs/operations/linux-identities) for setup,
 name requirements and CLI examples.
 
-## Remove devices from the mobile app
+## Remove devices from the Cloud app
 
-> **Preview:** the mobile app is not released yet. This contract may still
+> **Preview:** the Cloud app is not released yet. This contract may still
 > change until it is, without counting as a breaking change.
 
-Administrators list and remove another account's devices in the mobile app
+Administrators list and remove another account's devices in the Cloud app
 through the Accounts API. Both routes require the `admin` role. An
-administrator's own app session never carries that role, so the mobile app
+administrator's own app session never carries that role, so the Cloud app
 cannot call them. A web session in the device's browser is independent of the
 app and keeps its role until it ends; removing the device does not end it.
 

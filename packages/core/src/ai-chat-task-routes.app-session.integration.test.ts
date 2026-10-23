@@ -9,7 +9,7 @@ import { aiChatTaskRoutes } from "./ai-chat-task-routes";
 const suite = suiteFor("database", "nats", "valkey");
 const users: string[] = [];
 
-suite("scheduled tasks and the mobile app", () => {
+suite("scheduled tasks and the Cloud app", () => {
   afterAll(async () => {
     for (const id of users) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
   });

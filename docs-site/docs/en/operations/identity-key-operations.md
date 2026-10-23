@@ -138,7 +138,7 @@ of the incident blast radius. Session-family and user-epoch revocation remains
 available when all sessions must be invalidated immediately at the database
 authorization step.
 
-Revoking a session signing key also ends the mobile app's sessions signed with
+Revoking a session signing key also ends the Cloud app's sessions signed with
 it. Paired devices are not signed out: their device keys stay valid, and each
 device gets a new app session from the replacement signer the next time it
 starts. To sign devices out, remove them or revoke the account's sessions.

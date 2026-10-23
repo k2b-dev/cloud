@@ -453,7 +453,7 @@ The Core sign-in, password, and consent pages use the same class.
 
 Authenticated users change the theme or language from the profile menu and
 can open `/me` for the remaining profile settings. While the installation runs
-the mobile app (the `pwa` application), the menu also shows **App**, which
+the Cloud app (the `pwa` application), the menu also shows **App**, which
 leads to `/me/app`, where people pair and remove devices. The menu ends with
 **Sign out**. Applications do not add their own link to any of these.
 Anonymous `Layout` pages expose the same preferences in the header without

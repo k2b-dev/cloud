@@ -29,7 +29,7 @@ Your account area combines local Cloud data, optional FreeIPA data, and the acti
 Create API keys under **Developer** and passkeys under **Sign-in** in the
 browser. Your browser sign-in must be from the last ten minutes. If Cloud asks
 you to confirm your identity, sign in again with the same account. The dialog
-then opens again. The mobile app, command-line sign-in, and existing API keys cannot
+then opens again. The Cloud app, command-line sign-in, and existing API keys cannot
 create personal API keys or passkeys.
 
 ## Choose your appearance {icon="palette"}

@@ -131,7 +131,7 @@ export const accountMessages = i18n.define({
       pwaReauthenticate: "Confirm it's you",
       pwaReauthenticateHint: "Pairing a device needs a recent sign-in.",
       pwaLimit: "You have reached the limit of paired devices or open pairings. Remove a device, or wait a few minutes.",
-      pwaUnavailable: "The mobile app isn't available right now.",
+      pwaUnavailable: "The Cloud app isn't available right now.",
       pwaFailed: "That didn't work. Try again.",
       pwaStartAgain: "Start again",
       pwaPhones: "Devices",
@@ -174,7 +174,7 @@ export const accountMessages = i18n.define({
       changePasswordFailed: "Failed to change password.",
       currentPasswordIncorrect: "The current password is incorrect.",
       changePasswordSignsOutHint:
-        "Changing your password signs you out everywhere else: other browsers, the mobile app, the command line, and connected apps. This browser stays signed in. Your API keys and passkeys stay valid, and your phones with Cloud Login stay paired.",
+        "Changing your password signs you out everywhere else: other browsers, the Cloud app, the command line, and connected apps. This browser stays signed in. Your API keys and passkeys stay valid, and your phones with Cloud Login stay paired.",
       passwordChangedSignedOut:
         "Password changed. You are signed out everywhere else. Your API keys and passkeys stay valid, and your phones with Cloud Login stay paired.",
       passwordChangedSignOutFailed: "Password changed. Signing out your other sign-ins did not work.",
@@ -589,7 +589,7 @@ export const accountMessages = i18n.define({
       pwaReauthenticate: "Bestätige, dass du es bist",
       pwaReauthenticateHint: "Zum Koppeln eines Geräts brauchst du eine frische Anmeldung.",
       pwaLimit: "Du hast die Grenze für gekoppelte Geräte oder offene Kopplungen erreicht. Entferne ein Gerät oder warte ein paar Minuten.",
-      pwaUnavailable: "Die Mobile App ist gerade nicht verfügbar.",
+      pwaUnavailable: "Die Cloud-App ist gerade nicht verfügbar.",
       pwaFailed: "Das hat nicht geklappt. Versuche es erneut.",
       pwaStartAgain: "Neu starten",
       pwaPhones: "Geräte",
@@ -634,7 +634,7 @@ export const accountMessages = i18n.define({
       changePasswordFailed: "Das Passwort konnte nicht geändert werden.",
       currentPasswordIncorrect: "Das aktuelle Passwort ist falsch.",
       changePasswordSignsOutHint:
-        "Mit dem neuen Passwort meldet Cloud dich überall sonst ab: in anderen Browsern, in der Mobile App, in der Kommandozeile und in verbundenen Apps. Dieser Browser bleibt angemeldet. Deine API-Schlüssel und Passkeys bleiben gültig, und deine Telefone mit Cloud Login bleiben gekoppelt.",
+        "Mit dem neuen Passwort meldet Cloud dich überall sonst ab: in anderen Browsern, in der Cloud-App, in der Kommandozeile und in verbundenen Apps. Dieser Browser bleibt angemeldet. Deine API-Schlüssel und Passkeys bleiben gültig, und deine Telefone mit Cloud Login bleiben gekoppelt.",
       passwordChangedSignedOut:
         "Passwort geändert. Du bist überall sonst abgemeldet. Deine API-Schlüssel und Passkeys bleiben gültig, und deine Telefone mit Cloud Login bleiben gekoppelt.",
       passwordChangedSignOutFailed: "Passwort geändert. Das Abmelden der anderen Anmeldungen hat nicht geklappt.",

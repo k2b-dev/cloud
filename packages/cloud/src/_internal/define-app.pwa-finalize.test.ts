@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-test("mobile app pages skip the web layout's announcements, Help, and rail reads; Core's pages below /pwa/_auth keep them", async () => {
+test("Cloud app pages skip the web layout's announcements, Help, and rail reads; Core's pages below /pwa/_auth keep them", async () => {
   const module = (path: string) => JSON.stringify(new URL(path, import.meta.url).pathname);
   const script = `
     import { mock } from "bun:test";

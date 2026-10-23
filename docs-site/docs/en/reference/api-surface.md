@@ -373,19 +373,19 @@ their presence is not an application support promise.
 
 ## Preview surfaces
 
-The mobile app is not released yet, so its part contract and the platform
+The Cloud app is not released yet, so its part contract and the platform
 exports behind it are `Preview`. Their guides say so at the top.
 
 | Surface | Status | Use | Guide |
 | --- | --- | --- | --- |
-| `pwa` option of `defineApp()` from `@k2b/cloud` | Preview | Add the application's pages to the mobile app | [Define an application](/en/docs/build/define-app#add-pages-to-the-mobile-app) |
-| `/pwa/<app-id>` part routes | Preview | Paths that `defineApp()` derives for a part; every other `/pwa` path is reserved | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#paths) |
-| `PwaLayout` and `PwaLayoutProps` from `@k2b/cloud/ssr` | Preview, server-only | Frame every page of a part | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#pwalayout) |
-| `ssr.pwaAccess` of the defined application | Preview, server-only | Handle a part request without an app session | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#serve-pages) |
-| `visiblePwaParts` and `VisiblePwaPart` from `@k2b/cloud/ssr` | Preview, platform-owned | The parts the mobile app lists on Start | — |
-| `PWA_*` constants, `isPwaPartId`, `isPwaShellAvailable`, pairing-link helpers and `Pwa*` schemas from `@k2b/cloud/contracts` | Preview, platform-owned | Paths, limits, pairing and device contracts of the mobile app | [App sessions](/en/docs/identity/authentication#app-sessions-preview) |
+| `pwa` option of `defineApp()` from `@k2b/cloud` | Preview | Add the application's pages to the Cloud app | [Define an application](/en/docs/build/define-app#add-pages-to-the-mobile-app) |
+| `/pwa/<app-id>` part routes | Preview | Paths that `defineApp()` derives for a part; every other `/pwa` path is reserved | [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages#paths) |
+| `PwaLayout` and `PwaLayoutProps` from `@k2b/cloud/ssr` | Preview, server-only | Frame every page of a part | [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages#pwalayout) |
+| `ssr.pwaAccess` of the defined application | Preview, server-only | Handle a part request without an app session | [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages#serve-pages) |
+| `visiblePwaParts` and `VisiblePwaPart` from `@k2b/cloud/ssr` | Preview, platform-owned | The parts the Cloud app lists on Start | — |
+| `PWA_*` constants, `isPwaPartId`, `isPwaShellAvailable`, pairing-link helpers and `Pwa*` schemas from `@k2b/cloud/contracts` | Preview, platform-owned | Paths, limits, pairing and device contracts of the Cloud app | [App sessions](/en/docs/identity/authentication#app-sessions-preview) |
 | `pwaDevices`, `PwaError` and their types from `@k2b/cloud/services` | Preview, platform-owned | Pairing, app sessions and device administration | [Account administration API](/en/docs/reference/account-administration#remove-devices-from-the-mobile-app) |
-| `sessionKind` on `AuthContext`, `auth.isAppSession`, `auth.rejectAppSession` and `isAppSessionActor` from `@k2b/cloud/server` | Preview | Recognize the mobile app's session and refuse it where an action would outlive the device | [App sessions](/en/docs/identity/authentication#app-sessions-preview) |
+| `sessionKind` on `AuthContext`, `auth.isAppSession`, `auth.rejectAppSession` and `isAppSessionActor` from `@k2b/cloud/server` | Preview | Recognize the Cloud app's session and refuse it where an action would outlive the device | [App sessions](/en/docs/identity/authentication#app-sessions-preview) |
 
 ## Platform-owned and limited surfaces
 

@@ -912,7 +912,7 @@ describe("Core AI capabilities", () => {
     expect(result).toMatchObject({ ok: true, data: { data: { chat: { id: chat.shortId, archived: true } } } });
   });
 
-  test("the mobile app never creates, changes or resumes a routine's mandate", async () => {
+  test("the Cloud app never creates, changes or resumes a routine's mandate", async () => {
     const create = spyOn(aiChatTasks, "create");
     const update = spyOn(aiChatTasks, "update");
     const setState = spyOn(aiChatTasks, "setState");

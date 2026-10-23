@@ -40,7 +40,7 @@ const script = { "sec-fetch-mode": "cors", "sec-fetch-dest": "empty" };
 const users: string[] = [];
 const spaces: string[] = [];
 
-suite("Spaces in the mobile app", () => {
+suite("Spaces in the Cloud app", () => {
   afterAll(async () => {
     for (const id of spaces) await sql`DELETE FROM spaces.spaces WHERE id = ${id}::uuid`;
     for (const id of users) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;

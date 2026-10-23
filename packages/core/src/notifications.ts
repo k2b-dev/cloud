@@ -69,7 +69,7 @@ const notificationMessages = i18n.define({
       expirySubject: ({ appName }: { appName: string }) => `${appName} account expires soon`,
       phonePairedTitle: "New device paired",
       phonePairedBody: ({ name, platform, time, where }: { name: string; platform: PwaPlatform; time: string; where: string }) =>
-        `The device “${name}” (${platformLabel(platform, "other platform")}) was paired with your account in the mobile app on ${time}. If this wasn't you, remove it ${where} and contact your administrator.`,
+        `The device “${name}” (${platformLabel(platform, "other platform")}) was paired with your account in the Cloud app on ${time}. If this wasn't you, remove it ${where} and contact your administrator.`,
       phonePairedInApp: "under App in your profile menu",
       phonePairedAt: ({ url }: { url: string }) => `at ${url}`,
     },
@@ -120,7 +120,7 @@ const notificationMessages = i18n.define({
       expirySubject: ({ appName }) => `Dein Konto bei ${appName} läuft bald ab`,
       phonePairedTitle: "Neues Gerät gekoppelt",
       phonePairedBody: ({ name, platform, time, where }) =>
-        `Das Gerät „${name}“ (${platformLabel(platform, "andere Plattform")}) wurde am ${time} in der Mobile App mit deinem Konto gekoppelt. Falls du das nicht warst, entferne es ${where} und wende dich an die Administration.`,
+        `Das Gerät „${name}“ (${platformLabel(platform, "andere Plattform")}) wurde am ${time} in der Cloud-App mit deinem Konto gekoppelt. Falls du das nicht warst, entferne es ${where} und wende dich an die Administration.`,
       phonePairedInApp: "unter „App“ in deinem Profilmenü",
       phonePairedAt: ({ url }) => `unter ${url}`,
     },
@@ -301,11 +301,11 @@ export const NOTIFICATIONS = {
   }),
   appDevicePaired: notification({
     recipient: "user",
-    label: "Devices paired with the mobile app",
-    description: "Security notice when a device is paired with your account in the mobile app.",
+    label: "Devices paired with the Cloud app",
+    description: "Security notice when a device is paired with your account in the Cloud app.",
     presentation: presentation(
-      "Gekoppelte Geräte der Mobile App",
-      "Sicherheitshinweis, wenn ein Gerät in der Mobile App mit deinem Konto gekoppelt wird.",
+      "Gekoppelte Geräte der Cloud-App",
+      "Sicherheitshinweis, wenn ein Gerät in der Cloud-App mit deinem Konto gekoppelt wird.",
     ),
     // A personal preference: email first, a browser notification where email is not set up.
     delivery: { recommended: ["email", "browser"] },

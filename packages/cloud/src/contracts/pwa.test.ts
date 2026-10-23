@@ -13,7 +13,7 @@ import {
 const origin = "https://cloud.example.test";
 const secret = "A".repeat(42) + "w";
 
-describe("mobile app contract", () => {
+describe("Cloud app contract", () => {
   test("the shell is available only while the app pwa owns /pwa", () => {
     expect(isPwaShellAvailable([])).toBeFalse();
     expect(isPwaShellAvailable([{ id: "core", routes: ["/", "/pwa/_auth"] }])).toBeFalse();

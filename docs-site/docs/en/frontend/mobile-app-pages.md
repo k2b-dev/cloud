@@ -1,16 +1,16 @@
 ---
-title: Pages in the mobile app
-navTitle: Mobile app pages
+title: Pages in the Cloud app
+navTitle: Cloud app pages
 section: Frontend
 order: 835
-description: Add application pages for devices to the installable mobile app.
+description: Add application pages for devices to the installable Cloud app.
 tags: [mobile, pwa, routing, layout]
 updated: 2026-10-12
 ---
 
-# Pages in the mobile app
+# Pages in the Cloud app
 
-> **Preview:** the mobile app is not released yet. This contract may still
+> **Preview:** the Cloud app is not released yet. This contract may still
 > change until it is, without counting as a breaking change.
 
 Each Cloud installation has one installable device app. The `pwa` application
@@ -19,7 +19,7 @@ application adds a **part**: its own pages at `/pwa/<app-id>`, built for a
 task people do on a device. A part is not the web version on a small screen.
 It looks and behaves like an app and offers only what the task needs.
 
-The mobile app finds parts in the live app registry. People install nothing
+The Cloud app finds parts in the live app registry. People install nothing
 per application, and applications without a part do not appear in the app.
 Built-in and third-party applications use the same contract.
 
@@ -66,8 +66,8 @@ action; see [Spaces](/en/apps/spaces#check-off-tasks-in-the-mobile-app).
 
 | Path | Owner |
 | --- | --- |
-| `/pwa/` | The mobile app: Start, the manifest scope |
-| `/pwa/settings`, `/pwa/offline` | The mobile app |
+| `/pwa/` | The Cloud app: Start, the manifest scope |
+| `/pwa/settings`, `/pwa/offline` | The Cloud app |
 | `/pwa/_auth/*` | Core: the device's sign-in endpoints |
 | `/pwa/<app-id>/*` | The application's part |
 | `/api/<app-id>/*` | The application's API, used by the part as on the web |
@@ -123,7 +123,7 @@ export default ssr<AuthContext>(async (c) => {
 | --- | --- |
 | No app session | `302` to `/pwa/_auth/session/launch?to=<path and query>`; Core renews the session and returns the device to the same page |
 | No app session after that return (`pwa_launch` in the query) | `302` to `/pwa/?pwa=unavailable`, which stops a redirect loop |
-| Signed in without the required role | `403` page in the mobile app's layout |
+| Signed in without the required role | `403` page in the Cloud app's layout |
 
 Each of these responses sets `Cache-Control: private, no-store`. For other errors, call
 `ssr.error(c, status, { layout: "pwa" })`; see
@@ -137,7 +137,7 @@ pages. Declare `/public/<app-id>` when the part has its own styles.
 
 ### PwaLayout
 
-`PwaLayout` from `@k2b/cloud/ssr` frames every page in the mobile app:
+`PwaLayout` from `@k2b/cloud/ssr` frames every page in the Cloud app:
 
 | Prop | Meaning |
 | --- | --- |
@@ -176,7 +176,7 @@ as Spaces does. Otherwise the title changes when the page arrives.
 ### Only the app's session reaches a part
 
 Requests below `/pwa/`, except Core's `/pwa/_auth`, authenticate only with the
-mobile app's session, whatever the request type. A web session or an API key
+Cloud app's session, whatever the request type. A web session or an API key
 never reaches part content, so `auth.requireRole` on a part route already
 admits only the app. Parts need no extra middleware. See
 [Which session a request uses](/en/docs/identity/authentication#which-session-a-request-uses).
@@ -212,7 +212,7 @@ grants, as on the web.
 - Do not register a service worker, set `theme-color`, or add `position: fixed`
   or `sticky` layers at the top edge. The layout owns all three; iOS takes the
   status bar color from the top layer. The gateway answers `403` to a worker
-  script request below `/pwa` that does not go to the mobile app.
+  script request below `/pwa` that does not go to the Cloud app.
 - The server renders the initial data and decides permissions. Islands handle
   only the interaction. Views and filters live in the URL.
 - Design for the device: one column, flat sections without boxes inside boxes
@@ -224,7 +224,7 @@ grants, as on the web.
 
 ## Touch gestures
 
-The mobile app feels like an app, as Cloud Login does. Pinch zoom is off,
+The Cloud app feels like an app, as Cloud Login does. Pinch zoom is off,
 including in dialogs, and touch scrolling stays available. The page itself
 never scrolls or bounces: the header and the tab bar stay in place, and only
 the content scrolls. Text fields use 16 px text, so iOS does not zoom into a
@@ -238,7 +238,7 @@ own gesture, such as a drag handle, sets its own `touch-action`.
 
 ## Offline and updates
 
-The mobile app's service worker handles only navigations below `/pwa/` and
+The Cloud app's service worker handles only navigations below `/pwa/` and
 caches nothing. Every page and every API response comes from the network.
 When the installation cannot be reached or the gateway cannot reach the
 application, the app shows its offline page with **Try again**. While a part's
@@ -259,7 +259,7 @@ then, because a tap on them would do nothing.
 There is no update prompt. Each tab tap and each link loads a page from the
 network, so a new release of the part reaches the device with the next page.
 
-When the mobile app is not running, a request to a part still reaches the part,
+When the Cloud app is not running, a request to a part still reaches the part,
 but without an app session it ends at Core's not-found page. Nobody can pair a
 device then.
 

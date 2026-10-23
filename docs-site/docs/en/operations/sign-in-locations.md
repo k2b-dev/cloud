@@ -122,7 +122,7 @@ The value is 32 random bytes encoded as 43 base64url characters without
 padding. The cookie lasts 90 days. Each successful sign-in refreshes its
 lifetime and keeps the same value. A missing or invalid value gets a new one.
 Core does not rotate it. Signing out keeps it. Failed sign-ins do not set or
-refresh it. The mobile app does not get this cookie.
+refresh it. The Cloud app does not get this cookie.
 
 ## Stored data
 
@@ -201,7 +201,7 @@ After a successful web sign-in from a new browser, Core hands over
 **New sign-in from a new browser** after the session transaction commits and
 before the response returns to the browser. This includes password, passkey,
 email-code, Cloud Login, password-reset, expired-password, and emergency-admin
-sign-ins. Mobile app session issuance is excluded. An email-code sign-in that
+sign-ins. Cloud app session issuance is excluded. An email-code sign-in that
 creates a guest account sends no notice, because the account did not exist
 before.
 

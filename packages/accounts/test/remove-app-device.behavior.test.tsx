@@ -26,7 +26,7 @@ const flush = async () => {
   for (let n = 0; n < 20; n++) await Promise.resolve();
 };
 
-describe("removing another person's phone from the mobile app", () => {
+describe("removing another person's phone from the Cloud app", () => {
   if (isServer) {
     test.skip("requires the package DOM runner", () => {});
     return;

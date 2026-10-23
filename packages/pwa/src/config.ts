@@ -1,18 +1,18 @@
 import { defineApp } from "@k2b/cloud";
 
 /**
- * The installable mobile app (preview). The shell owns the manifest scope `/pwa/`: the welcome and pairing page,
+ * The installable Cloud app (preview). The shell owns the manifest scope `/pwa/`: the welcome and pairing page,
  * Start, Settings, the offline page, the manifest and the service worker. Applications add their own pages below
  * `/pwa/<app-id>`; Core serves the phone's identity endpoints below `/pwa/_auth`.
  */
 export const app = defineApp({
   id: "pwa",
-  name: "Mobile app",
+  name: "Cloud app",
   icon: "ti ti-device-mobile",
-  description: "The installable device app of this Cloud.",
+  description: "This Cloud as an app on your device.",
   presentation: {
     baseLocale: "en",
-    translations: { de: { name: "Mobile App", description: "Die installierbare Geräte-App dieser Cloud." } },
+    translations: { de: { name: "Cloud-App", description: "Diese Cloud als App auf deinem Gerät." } },
   },
   basePath: "/pwa",
   baseUrl: "http://app-pwa:3000",

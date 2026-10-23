@@ -186,7 +186,7 @@ It does not assign Linux identities.
 
 Changing or resetting a FreeIPA password in Cloud ends the person's other
 sign-ins, including browsers, `cld`, MCP, connected apps using OAuth, and devices
-paired with the mobile app. This applies to profile changes, administrator
+paired with the Cloud app. This applies to profile changes, administrator
 resets, reset links, and expired or temporary password changes at sign-in.
 People using the command line run `cld login` again afterwards.
 

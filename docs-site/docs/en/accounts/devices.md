@@ -14,7 +14,7 @@ Cloud lists two kinds of paired devices separately:
 
 - **Sign-in devices** approve sign-ins for an account through an
   authenticator such as Cloud Login. Most of this page covers them.
-- **App devices** are devices paired with the mobile app (preview). Each one
+- **App devices** are devices paired with the Cloud app (preview). Each one
   holds its own app session. You pair and remove your own devices under **App**
   in your profile menu (`/me/app`); for administrators, see
   [Remove an app device for someone](#remove-an-app-device-for-someone).
@@ -134,9 +134,9 @@ From the terminal, administrators use
 See [Cloud Login](/en/docs/operations/cloud-login#protect-the-app) for app-lock
 recovery. A synced passkey is not a backup of the authenticator's local vault.
 
-## Pair a device with the mobile app
+## Pair a device with the Cloud app
 
-> **Preview:** the mobile app is not released yet.
+> **Preview:** the Cloud app is not released yet.
 
 Open **App** in your profile menu (`/me/app`). The page lists your paired
 devices with their platform and last use, and marks the device you are using.
@@ -170,7 +170,7 @@ the device's name, platform and pairing time, and a link to this page. If you
 did not pair that device, remove it there and contact your administrator. The
 notice goes by email, or as a browser notification when your account has no
 email address; choose how it reaches you under **My account → Notifications**
-(**Devices paired with the mobile app**).
+(**Devices paired with the Cloud app**).
 You get it once per pairing, also for a device that was removed right away, but
 not when the app later renews its sign-in. The notice never contains the
 pairing link or code. While do not disturb or your quiet hours are on, a
@@ -179,10 +179,10 @@ only in your notification history.
 
 ## Remove an app device for someone
 
-> **Preview:** the mobile app is not released yet. Until it is, no account has
+> **Preview:** the Cloud app is not released yet. Until it is, no account has
 > app devices and the section below does not appear.
 
-When someone loses a device that is paired with the mobile app, an
+When someone loses a device that is paired with the Cloud app, an
 administrator opens **Accounts → Users → the user**. **App devices** lists each
 paired device with its name, platform, when it was paired and when it was last
 used. The section appears only while the account has at least one paired device,
@@ -201,6 +201,6 @@ From the terminal, administrators use
 `cld accounts users app-devices remove <user> <device-id> --yes`. Both accept
 `--json`; repeating a removal answers `revoked: false`.
 
-An administrator cannot do this from the mobile app: app sessions never carry
+An administrator cannot do this from the Cloud app: app sessions never carry
 the administrator role. For the HTTP routes, see
 [Account administration API](/en/docs/reference/account-administration#remove-devices-from-the-mobile-app).

@@ -36,7 +36,7 @@ See [Page swaps](/en/docs/frontend/url-state-and-navigation#cloud-page-swaps).
 | Complex editor dialog | `PanelDialog` |
 | Tabular records | `DataPanel` and `DataTable` |
 | Metrics | `StatGrid` and `StatCell` |
-| Page in the mobile app (preview) | `PwaLayout`; see [Pages in the mobile app](/en/docs/frontend/mobile-app-pages) |
+| Page in the Cloud app (preview) | `PwaLayout`; see [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages) |
 
 
 ## Build an overview

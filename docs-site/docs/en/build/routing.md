@@ -35,9 +35,9 @@ public paths declare those exact paths.
 See [Route conventions](/en/docs/reference/route-conventions) for the standard
 prefixes, reserved paths, and matching rules.
 
-Do not list `/pwa` paths. An application adds pages to the mobile app with
+Do not list `/pwa` paths. An application adds pages to the Cloud app with
 `defineApp({ pwa })`, which declares `/pwa/<id>` for it; see
-[Pages in the mobile app](/en/docs/frontend/mobile-app-pages) (preview).
+[Pages in the Cloud app](/en/docs/frontend/mobile-app-pages) (preview).
 
 > **Do not serve HTML below `/public`.** Cloud handles `/public/*` before the
 > application router and returns a terminal asset response. Use a separate

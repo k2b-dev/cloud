@@ -233,7 +233,7 @@ describe("accounts CLI", () => {
     expect(revoke.lines).toEqual(["Device revoked."]);
   });
 
-  test("lists and removes a user's phones in the mobile app through the accounts API", async () => {
+  test("lists and removes a user's phones in the Cloud app through the accounts API", async () => {
     const device = {
       id: "p1",
       name: "iPhone",

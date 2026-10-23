@@ -170,7 +170,7 @@ change nothing.
 
 Creating personal API keys and passkeys now requires a browser sign-in from
 the last ten minutes. OAuth access tokens, API keys, background mandates, and
-mobile app sessions receive `403 BROWSER_SIGN_IN_REQUIRED` for those writes.
+Cloud app sessions receive `403 BROWSER_SIGN_IN_REQUIRED` for those writes.
 An older browser sign-in receives `403 REAUTHENTICATE`.
 
 Automation that created personal API keys using an OAuth token or another API

@@ -30,7 +30,7 @@ An existing passkey keeps working while your account type is allowed. If your ac
 
 ## Change your password {icon="shield-lock"}
 
-For a FreeIPA account, open **Sign-in** in your account, choose **Change password**, and enter your current password. Cloud then signs you out everywhere else: in other browsers, in the mobile app, in the command line, and in connected apps. Run `cld login` again to reconnect the command line.
+For a FreeIPA account, open **Sign-in** in your account, choose **Change password**, and enter your current password. Cloud then signs you out everywhere else: in other browsers, in the Cloud app, in the command line, and in connected apps. Run `cld login` again to reconnect the command line.
 
 This browser stays signed in. Your paired sign-in devices stay paired. API keys and passkeys keep working.
 
@@ -82,7 +82,7 @@ If the result of a sign-in is unclear, reload the page to check your session, or
 
 ## New sign-in notice {icon="bell"}
 
-After a successful sign-in, Cloud sends **New sign-in from a new browser** once for each new browser. This starts 14 days after the upgrade. It does not apply to the mobile app.
+After a successful sign-in, Cloud sends **New sign-in from a new browser** once for each new browser. This starts 14 days after the upgrade. It does not apply to the Cloud app.
 
 The notice shows the browser and time. The email also shows the sign-in method and the approximate place, when available.
 

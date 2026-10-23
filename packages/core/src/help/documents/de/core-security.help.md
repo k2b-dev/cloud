@@ -30,7 +30,7 @@ Ein bestehender Passkey funktioniert weiter, solange dein Kontotyp erlaubt ist. 
 
 ## Passwort ändern {icon="shield-lock"}
 
-Öffne für ein FreeIPA-Konto **Anmeldung** in deinem Konto, wähle **Passwort ändern** und gib dein aktuelles Passwort ein. Cloud meldet dich danach überall sonst ab: in anderen Browsern, in der Mobile App, in der Kommandozeile und in verbundenen Apps. Verbinde die Kommandozeile danach mit `cld login` neu.
+Öffne für ein FreeIPA-Konto **Anmeldung** in deinem Konto, wähle **Passwort ändern** und gib dein aktuelles Passwort ein. Cloud meldet dich danach überall sonst ab: in anderen Browsern, in der Cloud-App, in der Kommandozeile und in verbundenen Apps. Verbinde die Kommandozeile danach mit `cld login` neu.
 
 In diesem Browser bleibst du angemeldet. Deine gekoppelten Anmeldegeräte bleiben gekoppelt. API-Schlüssel und Passkeys funktionieren weiter.
 
@@ -82,7 +82,7 @@ Ist das Ergebnis einer Anmeldung unklar, lade die Seite neu, um deine Sitzung zu
 
 ## Benachrichtigung zu neuen Anmeldungen {icon="bell"}
 
-Nach einer erfolgreichen Anmeldung sendet Cloud einmal pro neuem Browser **Neue Anmeldung aus einem neuen Browser**. Das beginnt 14 Tage nach dem Upgrade. Die Benachrichtigung gilt nicht für die Mobile App.
+Nach einer erfolgreichen Anmeldung sendet Cloud einmal pro neuem Browser **Neue Anmeldung aus einem neuen Browser**. Das beginnt 14 Tage nach dem Upgrade. Die Benachrichtigung gilt nicht für die Cloud-App.
 
 Sie zeigt Browser und Zeit. Die E-Mail zeigt zusätzlich den Anmeldeweg und den ungefähren Ort, wenn er bekannt ist.
 

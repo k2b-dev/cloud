@@ -719,9 +719,9 @@ const app = new Hono<AuthContext>()
     "/:id/app-devices",
     describeRoute({
       tags: ["Users"],
-      summary: "List devices paired with the mobile app",
+      summary: "List devices paired with the Cloud app",
       description:
-        "List the account's active devices in the mobile app (preview) with name, platform, pairing date and last use (admin only). `current` is always false here.",
+        "List the account's active devices in the Cloud app (preview) with name, platform, pairing date and last use (admin only). `current` is always false here.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(UserAppDevicesResponseSchema, "Active devices"),
@@ -744,9 +744,9 @@ const app = new Hono<AuthContext>()
     "/:id/app-devices/:deviceId",
     describeRoute({
       tags: ["Users"],
-      summary: "Remove a device from the mobile app",
+      summary: "Remove a device from the Cloud app",
       description:
-        "Remove one of the account's devices from the mobile app (preview) and end its app sessions at once (admin only). The device shows that it was signed out at its next request. Repeating the call succeeds with `revoked: false`; once the removed device is purged, 30 days after removal at the earliest, the call answers 404.",
+        "Remove one of the account's devices from the Cloud app (preview) and end its app sessions at once (admin only). The device shows that it was signed out at its next request. Repeating the call succeeds with `revoked: false`; once the removed device is purged, 30 days after removal at the earliest, the call answers 404.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(AppDeviceRemovalResponseSchema, "Device removed, or already removed"),
