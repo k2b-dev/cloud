@@ -4,6 +4,31 @@ export const assistantMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      openFullView: "Open full view",
+      panelUnsaved: "Draft not saved yet",
+      panelSaveHint: "Save drafts before closing or switching the panel. Then repeat your navigation.",
+      panelSave: "Save drafts",
+      panelUnknownSend: "Message status is unclear",
+      panelUnknownCreate: "Conversation creation is unclear",
+      panelCreateRejected: "Conversation could not be created",
+      panelCreateRejectedHint: "Your draft is still here. Check your access and retry to start a new conversation.",
+      panelUnknownCreateHint:
+        "The conversation could not be confirmed. Retrying uses the same creation request. Only an empty creation attempt can be abandoned.",
+      panelRetryCreate: "Retry creating conversation",
+      panelCreateDraftCollision: "Another local draft belongs to this conversation. Save or resolve it before retrying creation.",
+      panelLeaveUnknownCreate: "Leave despite unclear creation",
+      panelLeaveUnknownCreateConfirm:
+        "The conversation may already exist. Leaving abandons only local tracking of this empty creation attempt; it does not delete or cancel the conversation. Nothing is retried automatically. Check your conversations later. Leave now?",
+      panelUnknownHint: "Check whether the message was accepted, or retry the same submission. No new message is sent automatically.",
+      panelCheckSend: "Check message status",
+      panelRetrySend: "Retry the same message",
+      panelLeaveUnknown: "Leave despite unclear message status",
+      panelLeaveUnknownHint: "You can also leave knowingly. First save other drafts and wait for uploads or saves to finish.",
+      panelLeaveUnknownConfirm:
+        "The message may already have been sent or may still be accepted. Leaving does not cancel it. Check the conversation later; nothing is retried automatically. Leaving discards the restored message and any later unsaved text or attachments in conversations with unclear message status. Leave now?",
+      panelAttach: "Attach current view",
+      panelAttaching: "Checking access…",
+      panelAttachFailed: "This view could not be attached. Check your access and try again.",
       analyzeFiles: "Analyze PDFs and tables and compare the results",
       analyzeFilesPrompt: "Analyze the attached files. Help me identify useful questions and explain the results. ",
       buildApp: "Build an app for a recurring task",
@@ -119,6 +144,34 @@ export const assistantMessages = i18n.define({
       messageNumber: ({ seq }: { seq: number }) => `Message ${seq}`,
     },
     de: {
+      openFullView: "In Vollansicht öffnen",
+      panelUnsaved: "Entwurf noch nicht gespeichert",
+      panelSaveHint: "Speichere die Entwürfe vor dem Schließen oder Wechseln des Panels. Wiederhole danach den Wechsel.",
+      panelSave: "Entwürfe speichern",
+      panelUnknownSend: "Sendestatus ist unklar",
+      panelUnknownCreate: "Erstellen der Unterhaltung ist unklar",
+      panelCreateRejected: "Unterhaltung konnte nicht erstellt werden",
+      panelCreateRejectedHint: "Dein Entwurf ist noch hier. Prüfe deinen Zugriff und versuche erneut, eine neue Unterhaltung zu erstellen.",
+      panelUnknownCreateHint:
+        "Die Unterhaltung konnte nicht bestätigt werden. Ein erneuter Versuch verwendet dieselbe Anfrage. Nur ein leerer Erstellversuch kann aufgegeben werden.",
+      panelRetryCreate: "Erstellen erneut versuchen",
+      panelCreateDraftCollision:
+        "Zu dieser Unterhaltung gehört ein weiterer lokaler Entwurf. Speichere oder kläre ihn vor dem erneuten Erstellversuch.",
+      panelLeaveUnknownCreate: "Trotz unklarem Erstellen verlassen",
+      panelLeaveUnknownCreateConfirm:
+        "Die Unterhaltung kann bereits existieren. Verlassen gibt nur die lokale Nachverfolgung dieses leeren Erstellversuchs auf; die Unterhaltung wird weder gelöscht noch storniert. Es wird nichts automatisch wiederholt. Prüfe deine Unterhaltungen später. Jetzt verlassen?",
+      panelUnknownHint:
+        "Prüfe, ob die Nachricht angenommen wurde, oder versuche denselben Versand erneut. Es wird keine neue Nachricht automatisch gesendet.",
+      panelCheckSend: "Sendestatus prüfen",
+      panelRetrySend: "Dieselbe Nachricht erneut versuchen",
+      panelLeaveUnknown: "Trotz unklarem Versand verlassen",
+      panelLeaveUnknownHint:
+        "Du kannst auch bewusst verlassen. Speichere zuerst andere Entwürfe und warte, bis Uploads oder Speichervorgänge fertig sind.",
+      panelLeaveUnknownConfirm:
+        "Die Nachricht kann bereits gesendet sein oder noch angenommen werden. Verlassen storniert sie nicht. Prüfe die Unterhaltung später; es wird nichts automatisch wiederholt. Beim Verlassen werden die wiederhergestellte Nachricht und späterer ungespeicherter Text oder Anhänge in Unterhaltungen mit unklarem Versand verworfen. Jetzt verlassen?",
+      panelAttach: "Aktuelle Ansicht anhängen",
+      panelAttaching: "Zugriff wird geprüft…",
+      panelAttachFailed: "Diese Ansicht konnte nicht angehängt werden. Prüfe deinen Zugriff und versuche es erneut.",
       analyzeFiles: "PDFs und Tabellen auswerten und Ergebnisse vergleichen",
       analyzeFilesPrompt: "Werte die angehängten Dateien aus. Hilf mir, sinnvolle Fragen zu finden, und erkläre die Ergebnisse. ",
       buildApp: "Eine eigene App für eine wiederkehrende Aufgabe bauen",

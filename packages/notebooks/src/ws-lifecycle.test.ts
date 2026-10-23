@@ -33,7 +33,9 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   const note = { id: "test-note", notebookId: "test-notebook", lockedAt: null };
   mock.module("@k2b/cloud/server", () => ({
     getLocale: () => "en",
+    guardAppAccessSocket: async (_c: Context, _appId: string, events: WSEvents) => events,
     auth: {
+      requireRole: () => async (_c: Context, next: () => Promise<void>) => next(),
       session: {
         resolveToken: async () => "session",
         authenticate: async () => ({ user: { id: "user", displayName: "User", avatarHash: null } }),

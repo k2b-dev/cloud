@@ -1,6 +1,7 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import * as registry from "../../_internal/registry";
 import { parsePgJsonRecord, toPgTextArray } from "../postgres";
 import { MANDATE_MAX_PENDING_PER_USER, mandates } from ".";
 
@@ -12,8 +13,24 @@ suite("mandates", () => {
   let expiredUserId = "";
   let serviceAccountId = "";
   const createdMandateIds: string[] = [];
+  let appLookup: ReturnType<typeof spyOn<typeof registry, "getApp">> | undefined;
 
   beforeAll(async () => {
+    // This database-only suite isolates mandate lifecycle/policy from registry transport.
+    // Real registry and app-grant enforcement is covered by app-access.integration.test.ts.
+    const apps = new Set(["core", "external", "mail", "notebooks", "oauth", "spaces"]);
+    appLookup = spyOn(registry, "getApp").mockImplementation(async (id) =>
+      apps.has(id)
+        ? {
+            id,
+            name: id,
+            icon: "ti ti-test-pipe",
+            description: "Fixture",
+            baseUrl: `http://${id}.test:3000`,
+            routes: [`/api/${id}`],
+          }
+        : null,
+    );
     const users = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, mail, given_name, sn, account_expires)
       VALUES
@@ -32,6 +49,7 @@ suite("mandates", () => {
   });
 
   afterAll(async () => {
+    appLookup?.mockRestore();
     await sql`
         DELETE FROM audit.events
         WHERE target_type = 'mandate' AND target_id = ANY(${toPgTextArray(createdMandateIds)}::text[])

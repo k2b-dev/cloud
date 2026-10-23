@@ -2,7 +2,7 @@ import type { RequestActor } from "@k2b/cloud/contracts";
 import { type AccessSubject, ok } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { z } from "zod";
-import { ALERT_MAX_EXECUTION_MS } from "../alert-contracts";
+import { ALERT_CHECKS_PER_HOUR, ALERT_MAX_EXECUTION_MS } from "../alert-contracts";
 import { DashboardDefinitionSchema, type DashboardWindow, dashboardParameters } from "../dashboard-contracts";
 import { prepareSql, SqlInputError } from "../sql-params";
 import type { ReadProfileName } from "../store/admin-contracts";
@@ -118,7 +118,8 @@ export const runAlertSql = async (input: {
       sql: rule.sql,
       params: rule.params,
       ownerKey: `alert:${input.ruleId}:${input.revision}`,
-      countQuota: false,
+      countQuota: true,
+      quotaKind: "alerts",
       freeOnly: true,
       executionDeadline,
       signal: input.signal,
@@ -169,6 +170,7 @@ const executeBaseSql = async (
     runId?: string;
     ownerKey: string;
     countQuota: boolean;
+    quotaKind?: "alerts";
     freeOnly?: boolean;
     executionDeadline?: number;
   },
@@ -190,8 +192,9 @@ const executeBaseSql = async (
       lease = await sqlAdmission.acquire({
         baseId: base.id,
         runId,
-        quota: base.queries_per_hour,
+        quota: input.quotaKind === "alerts" ? ALERT_CHECKS_PER_HOUR : base.queries_per_hour,
         countQuota: input.countQuota,
+        quotaKind: input.quotaKind,
         freeOnly: input.freeOnly,
         signal,
       });
@@ -238,7 +241,7 @@ const executeBaseSql = async (
       // Cancellation on another replica may arrive before ClickHouse starts;
       // checking after the answer also ensures that race never reports success.
       if (await sqlAdmission.cancelled(base.id, runId)) throw new SqlError("CANCELLED", "Query cancelled");
-      return ok({ ...result, runId, limits: limits(base, lease) });
+      return ok({ ...result, runId, limits: limits(base, input.quotaKind === "alerts" ? await sqlAdmission.usage(base.id) : lease) });
     } finally {
       running.delete(key);
     }

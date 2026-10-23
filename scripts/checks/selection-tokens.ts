@@ -187,6 +187,11 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Primary action: the one filled action in the app color (workspace R5).",
   },
   {
+    file: "packages/mail/src/styles/app.css",
+    subject: ".mail-workspace [data-workspace-primary] { --k2b-action-solid-hover }",
+    reason: "Primary action: Mail Compose uses the approved app accent; this is not a selection fill.",
+  },
+  {
     file: "packages/mail/src/frontend/_components/MailSidebar.tsx",
     subject: 'class={dropFolderId() === folder.id ? "bg-[var(--ui-selected)]" : undefined}',
     reason: "Control: drop target under a dragged message.",

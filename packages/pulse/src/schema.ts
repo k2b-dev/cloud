@@ -334,3 +334,8 @@ export const installDashboards = async (sql: TransactionSQL): Promise<void> => {
   )`.simple();
   await sql`CREATE INDEX ON pulse.dashboard_runs(expires_at)`.simple();
 };
+
+/** Source ownership is durable authorization metadata, independent of activity retention. */
+export const installAgentSourceOwnership = async (sql: TransactionSQL): Promise<void> => {
+  await sql`ALTER TABLE pulse.sources ADD COLUMN created_by_subject TEXT`.simple();
+};

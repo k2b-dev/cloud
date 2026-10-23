@@ -52,9 +52,9 @@ const EventSensitiveSchema = z
 
 const ResourceSchema = z
   .strictObject({
-    type: z.string().trim().min(1).max(80),
-    id: z.string().trim().min(1).max(500),
-    label: z.string().trim().min(1).max(240).nullable().optional(),
+    type: z.string().trim().min(1).max(80).describe("Resource type; without a colon."),
+    id: z.string().trim().min(1).max(500).describe("Stable resource identifier."),
+    label: z.string().trim().min(1).max(240).nullable().optional().describe("Optional display label."),
   })
   .superRefine((resource, context) => {
     const message = validateResourceIdentity(resource.type, resource.id);
@@ -64,45 +64,49 @@ const ResourceSchema = z
   .optional();
 
 const MetricSchema = z.strictObject({
-  name: z.string().trim().min(1),
-  value: z.number().finite(),
-  ts: z.string().datetime().optional(),
-  unit: z.string().trim().min(1).nullable().optional(),
-  type: z.enum(METRIC_TYPES).optional(),
-  sourceId: z.never().optional(),
-  resource: ResourceSchema,
-  dimensions: DimensionsSchema,
+  name: z.string().trim().min(1).describe("Metric name."),
+  value: z.number().finite().describe("Measured or current value."),
+  ts: z.string().datetime().optional().describe("Observation timestamp in ISO 8601; defaults to receipt time."),
+  unit: z.string().trim().min(1).nullable().optional().describe("Optional metric unit."),
+  type: z.enum(METRIC_TYPES).optional().describe("Metric type; defaults to gauge."),
+  sourceId: z.never().optional().describe("Forbidden; the enclosing source supplies this identity."),
+  resource: ResourceSchema.describe("Optional resource that produced the observation."),
+  dimensions: DimensionsSchema.describe("Indexed dimensions with scalar values."),
 });
 
 const EventSchema = z.strictObject({
-  kind: z.string().trim().min(1),
-  ts: z.string().datetime().optional(),
-  value: z.number().finite().nullable().optional(),
-  sourceId: z.never().optional(),
-  actorId: z.string().trim().min(1).nullable().optional(),
-  sessionId: z.string().trim().min(1).nullable().optional(),
-  correlationId: z.string().trim().min(1).nullable().optional(),
-  resource: ResourceSchema,
-  dimensions: DimensionsSchema,
-  attributes: EventAttributesSchema,
-  sensitive: EventSensitiveSchema,
-  payload: EventPayloadSchema,
+  kind: z.string().trim().min(1).describe("Event kind such as page_view."),
+  ts: z.string().datetime().optional().describe("Observation timestamp in ISO 8601; defaults to receipt time."),
+  value: z.number().finite().nullable().optional().describe("Measured or current value."),
+  sourceId: z.never().optional().describe("Forbidden; the enclosing source supplies this identity."),
+  actorId: z.string().trim().min(1).nullable().optional().describe("Optional pseudonymous actor identifier."),
+  sessionId: z.string().trim().min(1).nullable().optional().describe("Optional pseudonymous session identifier."),
+  correlationId: z.string().trim().min(1).nullable().optional().describe("Optional correlation identifier."),
+  resource: ResourceSchema.describe("Optional resource that produced the observation."),
+  dimensions: DimensionsSchema.describe("Indexed dimensions with scalar values."),
+  attributes: EventAttributesSchema.describe("Indexed event attributes."),
+  sensitive: EventSensitiveSchema.describe("Sensitive fields governed by shorter retention."),
+  payload: EventPayloadSchema.describe("Non-indexed event payload."),
 });
 
 const StateSchema = z.strictObject({
-  key: z.string().trim().min(1),
-  value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
-  ts: z.string().datetime().optional(),
-  sourceId: z.never().optional(),
-  resource: ResourceSchema,
-  dimensions: DimensionsSchema,
+  key: z.string().trim().min(1).describe("State key."),
+  value: z.union([z.string(), z.number(), z.boolean(), z.null()]).describe("Measured or current value."),
+  ts: z.string().datetime().optional().describe("Observation timestamp in ISO 8601; defaults to receipt time."),
+  sourceId: z.never().optional().describe("Forbidden; the enclosing source supplies this identity."),
+  resource: ResourceSchema.describe("Optional resource that produced the observation."),
+  dimensions: DimensionsSchema.describe("Indexed dimensions with scalar values."),
 });
 
 export const IngestBatchSchema = z
   .strictObject({
-    metrics: z.array(MetricSchema).max(PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT).optional(),
-    events: z.array(EventSchema).max(PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT).optional(),
-    states: z.array(StateSchema).max(PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT).optional(),
+    metrics: z.array(MetricSchema).max(PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT).optional().describe("Metric samples, at most 500."),
+    events: z.array(EventSchema).max(PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT).optional().describe("Events, at most 500."),
+    states: z
+      .array(StateSchema)
+      .max(PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT)
+      .optional()
+      .describe("Current state observations, at most 500."),
   })
   .refine(
     (batch) =>
