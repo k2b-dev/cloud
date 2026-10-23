@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Lessons learned
@@ -26,9 +26,11 @@ convention still needs a check or a test.
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
+| A source location is valid but no longer names its evidence | A ranking accepts an in-range line number even when the line is blank or different code now occupies it. | Test: Mail `scripts/perf-baseline/browser-model.test.ts` rejects blank, changed and moved source lines and missing or multiline anchors; ranking requires the complete source line ([#1472](https://github.com/k2b-dev/cloud/issues/1472)). |
 | Mixed timestamp precision drops measured requests | A recorder compares fractional browser starts with an integer end timestamp, discarding a required request in the final millisecond and reporting zero transferred bytes. | Test: Mail `page-change-network.browser.test.ts` fixes the fractional boundary while a real script remains pending, then requires its actual transfer; the cached-script guard still requires zero encoded transfer. Convention: compare measurement boundaries and request starts at the same precision. |
 | Positional input-union compatibility | A manifest check rejects preserved input variants after additions or reordering, or accepts a `oneOf` change that makes old inputs match multiple variants. | Tests: Cloud `_internal/capabilities.test.ts` covers nested additive unions, required disjoint tags, removed or narrowed branches, overlaps, optional tags, and unchanged result-union restrictions. |
 | An app adds an unnecessary administration group | A single administration entry declares `adminNav`, separating it from the shared app administration list. | Test: Pulse `frontend/admin/navigation.render.test.ts` checks the German and English SSR sidebar and mobile snapshot, active link, default data-store tab, and unchanged admin-only route access. Convention: use `adminHref` for one app administration entry. |
+| A shadow follows the inset instead of the frame | Attaching separation paint to an inset scrollport cuts its top short; fading to zero removes the bottom cue. | Test: `detail-float.browser.test.ts` samples the actual column edge at the workspace top and bottom, checks a visible softer end, and preserves geometry through close, resize, drawer, and phone modes. |
 | Shared interaction behavior implemented for only some consumers | Resize handles differ in cue, keyboard behavior, or reset depending on the region. | Tests: UI `resize-cue.browser.test.ts` covers every workspace edge and standalone separator; separator, workspace controller, and Cloud panel behavior tests cover reset callbacks and saved-size removal. |
 | Unread fetch error bodies | A reader returns its fallback after response headers but leaves the unused body open, keeping a browser request pending. | Tests: Cloud `app-badges.behavior.test.tsx` covers cleanup rejection, absent bodies, aborts and disposal; `app-badges.browser.test.ts` checks real finite and streaming error responses, terminal network events and server disconnects through `watchAppBadges`. |
 | Incomplete stored-state fixtures | A direct SQL fixture omits one of the fields that domain writers persist together, creating a state that normal writes cannot produce. | Test: `yjs-snapshot-projections.integration.test.ts` checks the persisted cursor and its matching sequence before publishing in both initialization cases, then asserts that the real snapshot save succeeds ([#1651](https://github.com/k2b-dev/cloud/pull/1651)). |
@@ -46,6 +48,7 @@ convention still needs a check or a test.
 | Raw principal id rendered as a name | A missing name or an unresolved grant response replaces a person’s name and avatar initials with a UUID. | Check: `principal-id-labels` rejects principal ID fallbacks, label functions returning IDs, IDs in ternary branches and template spans in text positions, and IDs as JSX text. Tests: `principal-label.test.ts`, `PermissionEditor.behavior.test.tsx`, `StudioPermissions.behavior.test.tsx`, and the missing-principal suite in `access.test.ts`. |
 | Rendered Markdown dropped by the email sanitizer | marked emits an element, here `hr` from `---`, that the email allowlist lacks, so the divider disappears from sent mail while help and editor show it. | Test: Mail `compose-renderer.test.ts` pins the exact set of elements email drops from a render of every Markdown construct; Cloud `email-html.test.ts` and `email-frame.test.ts` keep `hr`. |
 | Immutable asset URL names different builds | A start stamp changes stylesheet URLs after every restart and can name different Core files during a rolling deploy ([#1544](https://github.com/k2b-dev/cloud/issues/1544)). | Tests: Cloud `define-app.stylesheet-versions.test.ts` checks real restarts, shared Core URLs, changed and missing app files, and development stamps; `static-assets.test.ts` checks version matching, source hashes, missing files, in-place changes, and 304 cache policy. |
+| Complete row state inferred from a bounded detail page | Changes to older messages disappear when the browser compares a whole conversation with only its newest 100 message bodies. | Tests: Mail `api/workspace-detail.integration.test.ts` reads all placements of a 101-message thread, including deleted placements and current access; `MailWorkspace.conversation-open.behavior.test.tsx` marks the older unread message read on open. Convention: return aggregate state with the authorised detail response ([#1510](https://github.com/k2b-dev/cloud/issues/1510)). |
 | Concurrency bounded by count, not by memory | Background worker counts allow several large items to hold more memory together than the process can afford. | Tests: Mail `processing-memory-budget.test.ts` checks weighted FIFO admission, oversized work, cancellation and release; `processing-memory.integration.test.ts` checks peak RSS and correctness under the guard workload ([#1549](https://github.com/k2b-dev/cloud/issues/1549)). |
 | Optional app absence shown as an error | The consumer could not tell an app that is not installed from a failed call. | Mail: one registry-aware resolver, explicit `absent` contact state, and conversation-context render and behavior tests. |
 | Decode work bounded only by file size | One record consumes the whole file's decode budget on every lookup, or a probe keeps many large records at once. | Tests: Cloud `geoip.test.ts` checks the 32 KiB record boundary, isolated failure and refusal of a valid record with a huge array; GeoIP `index.test.ts` checks upload refusal and that the probe keeps no record between addresses. |
@@ -196,6 +199,13 @@ convention still needs a check or a test.
 - **Error class:** Shared resource removed by one of several owners.
 - **Guard:** The replica-membership cases in `heartbeat.test.ts` cover clean stops, surge races, TTL expiry, late writes, registry failures, a survivor replacing the entry of a departed newer replica, and a newer replica taking back an entry that an older one repaired. A stale stop snapshot cannot remove shared entries unless at least half the membership lease remains. `heartbeat.integration.test.ts` checks real Sync watches. The nightly scale-acceptance `chat-replica-stop` scenario checks gateway requests across a graceful stop and a surge rollout, and requires the container to be stopped with exit code 0 and no OOM kill before removal.
 
+### Mail rows missed changes outside the detail page
+
+- **What happened:** Opening a conversation with more than 100 messages could leave its unread or flagged row state stale ([#1510](https://github.com/k2b-dev/cloud/issues/1510)).
+- **Root cause:** The browser inferred complete conversation state from the newest 100 message bodies and their selected placements.
+- **Error class:** Complete row state inferred from a bounded detail page.
+- **Guard:** The authorized detail response carries state aggregated across all messages and live placements. The 101-message HTTP and automatic-read tests cover an older unread message; comparison tests preserve folder/search scopes, recovery, and the highest revision from parallel detail reads.
+
 ### Large Mail messages exhausted container memory (#1549)
 
 - **What happened:** Mail 0.43.0 was OOMKilled at a 1 GiB container limit while hydrating messages up to about 34 MiB and extracting attachments ([#1549](https://github.com/k2b-dev/cloud/issues/1549)). In the production image, the `incident` load case of `packages/mail/scripts/memory-load.ts` reached about 1,040 MiB RSS before the fix and about 790 MiB after it.
@@ -230,6 +240,13 @@ convention still needs a check or a test.
 - **Root cause:** The page rendered the chart outside an island. The plot deliberately suppressed category labels inside SVG, so default tooltips could not recover those names or the block's value format.
 - **Error class:** Inert server-rendered interaction.
 - **Guard:** Grids `chart-tooltip.test.ts` checks category and aggregation labels and value formatting. `page.render.test.tsx` checks the chart island, SVG parity, and display-only serialized props for signed-in and anonymous pages. `chart-tooltips.browser.test.ts` covers real island mounting, hover, keyboard, tap, and server/browser layout parity at desktop and phone widths.
+
+### Ranking references survived after their evidence moved
+
+- **What happened:** The performance ranking accepted blank source rows or unrelated code at a previously valid location ([#1472](https://github.com/k2b-dev/cloud/issues/1472)).
+- **Root cause:** Validation checked only that the file existed and the line number was in range.
+- **Error class:** A source location is valid but no longer names its evidence.
+- **Guard:** Ranking candidates require a matching complete source-line anchor. Tests reject blank, changed and moved lines, missing anchors, and internal or surrounding line breaks while preserving measured-metric checks.
 
 ### release-please skipped the Cloud release 0.44.0
 

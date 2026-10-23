@@ -25,3 +25,17 @@ export const limitExceeded = (limit: string, max: number, actual: number): never
   throw new GeoError("GEO_LIMIT_EXCEEDED", { limit, max, actual });
 };
 export const busy = (retryAfterSeconds = 1) => new GeoError("GEO_BUSY", { retryAfterSeconds });
+
+export class GeoProviderError extends GeoError {
+  constructor(
+    code: "GEO_PROVIDER_FAILED" | "GEO_BUSY",
+    readonly charge: "none" | "known" | "unknown",
+    readonly keyRejected = false,
+    readonly referenceDistanceMeters?: number,
+  ) {
+    super(code, {
+      ...(code === "GEO_BUSY" ? { retryAfterSeconds: 1 } : {}),
+      ...(keyRejected ? { adminHint: "Geoapify rejected the key. Check geo.api_key in Core settings." } : {}),
+    });
+  }
+}

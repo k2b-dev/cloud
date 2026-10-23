@@ -166,3 +166,13 @@
     outline-offset: -2px;
   }
 }
+
+/* Keep the compact map settings heading within its available workspace width. */
+.places-maps-settings {
+  container: places-maps-settings / inline-size;
+}
+@container places-maps-settings (max-width: 30rem) {
+  .places-maps-settings .k2b-settings-page__heading > p {
+    display: none;
+  }
+}
