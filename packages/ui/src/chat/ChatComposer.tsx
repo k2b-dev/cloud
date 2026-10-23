@@ -995,10 +995,17 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         action: () =>
           reportChatFailure(async () => {
             await executeChatAction(action);
-            // Like attaching files, an add action returns to the field, unless it moved the focus somewhere on purpose.
+            // Like attaching files, an add action returns to the field when the focus is still on this composer's add
+            // button or nowhere; focus the action moved somewhere on purpose stays there.
             queueMicrotask(() => {
               const active = textareaRef?.ownerDocument.activeElement;
-              if (!active || active === active.ownerDocument.body || active.closest(".k2b-chat-composer")) focus();
+              const root = textareaRef?.closest(".k2b-chat-composer");
+              if (
+                !active ||
+                active === active.ownerDocument.body ||
+                (root?.contains(active) && active.matches(".k2b-chat-composer__attach"))
+              )
+                focus();
             });
           }, props.onError),
       });

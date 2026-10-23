@@ -72,6 +72,30 @@ describe("Shared Cloud elements", () => {
     }, 30_000);
   }
 
+  test("a shown card follows lost access within a minute, without a reload", async () => {
+    const { chat } = seed();
+    const context = await browser.newContext(desktop);
+    const page = await context.newPage();
+    page.setDefaultTimeout(5_000);
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    // The page's clock moves only when the test moves it, so a minute passes at once.
+    await page.clock.install({ time: chatTestNow });
+    await page.goto(new URL(`/app/chat/c/${chat}`, harness.url).href);
+    await page.evaluate(({ props }) => window.mountChat(props, "en"), { props: harness.props({ chat }) });
+    try {
+      const card = page.locator(".k2b-message-row", { hasText: "Here is the task:" }).locator(".k2b-resource-card");
+      await card.getByText("Delivery cooling shelves", { exact: true }).waitFor();
+      harness.setReadable("cooling", false);
+      await page.clock.runFor(61_000);
+      await page.locator('.k2b-message-row:has-text("Here is the task:") .k2b-resource-card[data-state="no_access"]').waitFor();
+      expect(await card.innerText()).not.toContain("Delivery cooling shelves");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
   test("the composer shares an element from the picker; a message may be only the element", async () => {
     const chat = harness.addChat({ members: [viewer, nora], count: 3, end: new Date(chatTestNow.getTime() - 3_600_000) });
     harness.addElement({ id: "inventory", title: "Inventory hall 3", preview: "Event in Warehouse · Mon 27.10." });

@@ -1,10 +1,10 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, DetailPanel, FilterToggle, InlineGuidance, Select, Skeleton, useLocale } from "@k2b/ui";
-import { createEffect, createResource, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
+import { createEffect, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import type { SharedItem, SharedPageSchema, SharedQuerySchema } from "../service/contracts";
-import type { ResourceCards } from "./ChatResourceCards";
+import { type ResourceCards, useResourceCard } from "./ChatResourceCards";
 import { listTime } from "./chat-format";
 import { activeThreads, archivedThreads, type ThreadList } from "./threads";
 
@@ -60,20 +60,25 @@ export default function ChatSharedSection(props: {
     void refresh();
   };
   /**
-   * Reads the newest page. New messages arrive at the top, so the rows the reader already loaded further down stay;
-   * a row the newest page no longer holds within its range is gone, such as a deleted message.
+   * Reads the list again as deep as the reader has loaded it, page by page through the server's own cursors, and
+   * replaces rows and cursor together. New messages arrive at the top; deleted ones leave; nothing loaded is lost.
    */
   const refresh = async () => {
     const list = generation;
     const token = ++request;
+    const depth = Math.max(items().length, 1);
     if (items().length === 0) setStatus("loading");
     try {
-      const page = await props.load(query());
+      let page = await props.load(query());
+      const rows = [...page.items];
+      while (rows.length < depth && page.nextCursor) {
+        if (list !== generation || token !== request) return;
+        page = await props.load(query(page.nextCursor));
+        rows.push(...page.items);
+      }
       if (list !== generation || token !== request) return;
-      const oldest = page.items.at(-1)?.seq;
-      const deeper = page.nextCursor !== null && oldest !== undefined ? items().filter((item) => item.seq < oldest) : [];
-      setItems([...page.items, ...deeper]);
-      if (deeper.length === 0) setCursor(page.nextCursor);
+      setItems(rows);
+      setCursor(page.nextCursor);
       setStatus("ready");
     } catch {
       if (list === generation && token === request) setStatus("failed");
@@ -83,10 +88,12 @@ export default function ChatSharedSection(props: {
     const next = cursor();
     if (!next || loadingMore() || status() !== "ready") return;
     const list = generation;
+    const token = request;
     setLoadingMore(true);
     try {
       const page = await props.load(query(next));
-      if (list !== generation || cursor() !== next) return;
+      // A refresh that started meanwhile answers for the whole list, this page included.
+      if (list !== generation || token !== request || cursor() !== next) return;
       setItems((current) => [...current, ...page.items]);
       setCursor(page.nextCursor);
     } catch {
@@ -96,13 +103,19 @@ export default function ChatSharedSection(props: {
     }
   };
   createEffect(on([kind, thread, () => props.chatId], restart));
+  // A burst of new messages reads the list once.
+  let pending: ReturnType<typeof setTimeout> | undefined;
   createEffect(
     on(
       () => props.revision,
-      () => void refresh(),
+      () => {
+        clearTimeout(pending);
+        pending = setTimeout(() => void refresh(), 300);
+      },
       { defer: true },
     ),
   );
+  onCleanup(() => clearTimeout(pending));
 
   const threadOptions = () => [
     { value: "all", label: t().wholeChat, icon: "ti ti-messages" },
@@ -187,9 +200,9 @@ export default function ChatSharedSection(props: {
 function SharedRow(props: { item: SharedItem; meta: string; cards: ResourceCards | undefined; onJump: () => void }): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
-  const [view] = createResource(
-    () => (props.item.kind === "element" ? props.cards : undefined),
-    (cards) => (props.item.kind === "element" ? cards.view(props.item.ref) : Promise.resolve(undefined)),
+  const view = useResourceCard(
+    () => props.cards,
+    () => (props.item.kind === "element" ? props.item.ref : undefined),
   );
   const unavailable = () => props.item.kind === "element" && view() !== undefined && view()?.state !== "ok";
   const title = () => {

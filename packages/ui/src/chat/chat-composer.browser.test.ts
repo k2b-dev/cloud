@@ -106,7 +106,14 @@ render(
             },
             // "files" attaches directly, "menu" turns attach into the add menu, "none" leaves it out.
             fileSelection: options.attach === "none" ? undefined : { onSelect: () => {} },
-            menuActions: options.attach === "menu" ? [{ id: "poll", label: "Poll", onSelect: () => {} }] : undefined,
+            menuActions:
+              options.attach === "menu"
+                ? [
+                    { id: "poll", label: "Poll", onSelect: () => {} },
+                    // An action that moves the focus on purpose, as one that opens its own field.
+                    { id: "focus", label: "Focus header", onSelect: () => document.querySelector<HTMLElement>("#outside-header button")?.focus() },
+                  ]
+                : undefined,
             formatting: true,
             emoji: { onOpen: ({ insert }) => insert("🙂") },
             get microphone() {
@@ -516,6 +523,11 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
     await page.locator(".k2b-chat-composer__attach").click();
     await page.getByRole("menuitem", { name: "Poll" }).click();
     await page.waitForFunction(() => document.activeElement?.matches(".k2b-chat-composer textarea:not([aria-hidden])"));
+    // An action that put the focus somewhere on purpose keeps it there.
+    await page.locator(".k2b-chat-composer__attach").click();
+    await page.getByRole("menuitem", { name: "Focus header" }).click();
+    await frames(page, 3);
+    expect(await page.evaluate(() => document.activeElement?.closest("#outside-header") !== null)).toBe(true);
     await page.close();
   }, 30_000);
 

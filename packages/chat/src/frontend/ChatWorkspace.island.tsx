@@ -48,7 +48,7 @@ import { createChatStore, type OpenChat } from "./chat-store";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
-import { createResourceCards } from "./resource-cards";
+import { createResourceCards, FRESH_MS } from "./resource-cards";
 import { panelHref, parseRoute, type Route, threadsPageHref } from "./route";
 import { openThreadDialog } from "./ThreadDialog";
 import { chatHasThreads, isUnread, messageThread, type ThreadView, threadHref, threadOf, viewName, viewReadStart } from "./threads";
@@ -761,7 +761,15 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
   // Shared elements resolve in the browser with the reader's own session; the server render shows their placeholders.
   const [cards, setCards] = createSignal<ReturnType<typeof createResourceCards>>();
-  onMount(() => setCards(createResourceCards()));
+  onMount(() => {
+    const resolver = createResourceCards();
+    setCards(resolver);
+    // Shown cards read again once a minute while the page is visible, so lost or new access shows without a reload.
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") resolver.tick();
+    }, FRESH_MS);
+    onCleanup(() => clearInterval(timer));
+  });
   const pickResource = async () => {
     const item = await openCloudResourcePicker({ title: t().shareResource, requireReader: true });
     return item ? { ref: item.ref, title: item.title, icon: item.icon ?? item.appIcon } : null;
