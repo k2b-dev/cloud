@@ -4,6 +4,7 @@ import webpush, { type RequestDetails as WebPushRequestDetails, type RequestOpti
 import { type BrowserPushSubscription, BrowserPushSubscriptionSchema } from "../../contracts/user-notifications";
 import { normalizeNetworkHostname } from "../../shared/network-address";
 import { type PublicNetworkAddress, resolvePublicNetworkAddresses } from "../network-security";
+import { awaitNetworkOperation, readNetworkResponse, withNetworkDeadline } from "../network-transport";
 
 const RESPONSE_LIMIT_BYTES = 64 * 1_024;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -19,6 +20,7 @@ type RequestDetailsFactory = (
 type WebPushTransportDeps = {
   generateRequestDetails?: RequestDetailsFactory;
   request?: RequestFactory;
+  signal?: AbortSignal;
   resolve?: (hostname: string) => Promise<PublicNetworkAddress[]>;
 };
 
@@ -31,7 +33,9 @@ export const buildPinnedWebPushRequests = async (
   const validatedSubscription = BrowserPushSubscriptionSchema.parse(subscription);
   const endpoint = new URL(validatedSubscription.endpoint);
   const hostname = normalizeNetworkHostname(endpoint.hostname);
-  const resolvedAddresses = await (deps.resolve ?? resolvePublicNetworkAddresses)(hostname);
+  deps.signal?.throwIfAborted();
+  const resolving = (deps.resolve ?? resolvePublicNetworkAddresses)(hostname);
+  const resolvedAddresses = deps.signal ? await awaitNetworkOperation(resolving, deps.signal) : await resolving;
   const uniqueAddresses = resolvedAddresses.filter(
     (target, index) => resolvedAddresses.findIndex((candidate) => candidate.address === target.address) === index,
   );
@@ -61,32 +65,30 @@ export const buildPinnedWebPushRequests = async (
       headers: { ...details.headers, host: endpoint.host },
       servername: hostname,
       rejectUnauthorized: true,
-      timeout: REQUEST_TIMEOUT_MS,
     })),
   };
 };
 
-const sendPreparedWebPushRequest = async (request: RequestFactory, options: HttpsRequestOptions, body: Buffer | null): Promise<void> =>
-  new Promise<void>((resolve, reject) => {
-    let settled = false;
-    let responseReceived = false;
-    const finish = (result: { error?: Error }) => {
-      if (settled) return;
-      settled = true;
-      if (result.error) {
-        reject(responseReceived ? Object.assign(result.error, { providerResponse: true }) : result.error);
-      } else {
-        resolve();
-      }
-    };
-    const outgoing = request(options, (response) => {
+const sendPreparedWebPushRequest = (
+  request: RequestFactory,
+  options: HttpsRequestOptions,
+  body: Buffer | null,
+  signal: AbortSignal,
+): Promise<void> => {
+  let responseReceived = false;
+  return readNetworkResponse<void>({
+    request,
+    options,
+    body: body ?? undefined,
+    signal,
+    read: (response, resolve, reject) => {
       responseReceived = true;
+      const finish = (result: { error?: Error }) => (result.error ? reject(result.error) : resolve());
       let responseBody = "";
       let bytes = 0;
       response.on("data", (chunk: Buffer | string) => {
         bytes += Buffer.byteLength(chunk);
         if (bytes > RESPONSE_LIMIT_BYTES) {
-          response.destroy();
           finish({ error: new Error("Web Push provider response is too large") });
           return;
         }
@@ -105,31 +107,36 @@ const sendPreparedWebPushRequest = async (request: RequestFactory, options: Http
           }),
         });
       });
-      response.on("error", (error) => finish({ error }));
-    });
-    outgoing.on("timeout", () => outgoing.destroy(new Error("Web Push provider request timed out")));
-    outgoing.on("error", (error) => finish({ error }));
-    if (body) outgoing.write(body);
-    outgoing.end();
+    },
+  }).catch((error) => {
+    throw responseReceived ? Object.assign(error, { providerResponse: true }) : error;
   });
+};
 
 export const sendPinnedWebPush = async (
   subscription: BrowserPushSubscription,
   payload: string,
   options: WebPushRequestOptions,
   deps: WebPushTransportDeps = {},
-): Promise<void> => {
-  const request = deps.request ?? httpsRequest;
-  const prepared = await buildPinnedWebPushRequests(subscription, payload, options, deps);
-  let lastError: unknown;
-  for (const attempt of prepared.attempts) {
-    try {
-      await sendPreparedWebPushRequest(request, attempt, prepared.body);
-      return;
-    } catch (error) {
-      if (error && typeof error === "object" && "providerResponse" in error) throw error;
-      lastError = error;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error("Web Push provider request failed");
-};
+): Promise<void> =>
+  withNetworkDeadline(
+    options.timeout ?? REQUEST_TIMEOUT_MS,
+    deps.signal,
+    new Error("Web Push provider request timed out"),
+    async (signal) => {
+      const request = deps.request ?? httpsRequest;
+      const prepared = await buildPinnedWebPushRequests(subscription, payload, options, { ...deps, signal });
+      let lastError: unknown;
+      for (const attempt of prepared.attempts) {
+        try {
+          await sendPreparedWebPushRequest(request, attempt, prepared.body, signal);
+          return;
+        } catch (error) {
+          signal.throwIfAborted();
+          if (error && typeof error === "object" && "providerResponse" in error) throw error;
+          lastError = error;
+        }
+      }
+      throw lastError instanceof Error ? lastError : new Error("Web Push provider request failed");
+    },
+  );

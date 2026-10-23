@@ -9,6 +9,8 @@ import { env } from "../config/env";
 import { type CapabilityExecutionContext, type CapabilityStream, defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { RequestAuthority } from "../server";
+import { AppAccessDeniedError } from "../server/middleware/app-access";
+import { signInvocationToken } from "../services/identity/invocation-token";
 import type { CapabilityDispatchDependencies } from "./capabilities";
 import { dispatchCapabilityStream, sealCapabilityStream } from "./capability-streams";
 
@@ -126,6 +128,7 @@ const entry: CapabilityRegistryEntry = {
 const signer = (await generateKeyPair("RS256")).privateKey;
 let calls = 0;
 const deps: CapabilityDispatchDependencies & { recordStreamExecution: () => Promise<string> } = {
+  signInvocation: signInvocationToken,
   recordStreamExecution: async () => "recorded",
   getCapability: async () => entry,
   withActiveSigner: async (_, fn) =>
@@ -364,4 +367,24 @@ test("Core rejects a stream completion receipt that the provider did not check",
     });
     expect(response.status).toBe(status);
   }
+});
+
+test("stream continuation rechecks app access before provider execution and records denial", async () => {
+  const ref = await open("query", "invoice.pdf");
+  const before = calls;
+  const records: Array<{ status: string; errorCode?: string | null }> = [];
+  const response = await dispatchCapabilityStream(request(ref), authority, "read", {
+    ...deps,
+    signInvocation: async () => {
+      throw new AppAccessDeniedError({ id: entry.appId });
+    },
+    recordStreamExecution: async (record) => {
+      records.push(record);
+      return "denied";
+    },
+  });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ code: "app_access_denied", app: entry.appId });
+  expect(calls).toBe(before);
+  expect(records).toMatchObject([{ status: "denied", errorCode: "app_access_denied" }]);
 });

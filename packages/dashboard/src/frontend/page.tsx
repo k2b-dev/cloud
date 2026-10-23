@@ -2,7 +2,7 @@ import { listLegalLinks, listWidgets } from "@k2b/cloud";
 import { hasRole, type Role, type RuntimeAppMeta, type User, widgetKey } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
+import { getDisplayRuntimeContext, getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
 import { ScrollArea } from "@k2b/ui";
 import { ssr } from "../config";
 import { dashboardSettingsService } from "../service";
@@ -61,7 +61,9 @@ export default ssr<AuthContext>(async (c) => {
     listWidgets(locale),
     listLegalLinks(locale),
   ]);
-  const apps = getLocalizedRuntimeContext(c).apps;
+  const runtimeApps = getLocalizedRuntimeContext(c).apps;
+  const usable = new Set(getDisplayRuntimeContext(c).apps.map((app) => app.id));
+  const apps = runtimeApps.filter((app) => usable.has(app.id));
   const availableApps: DashboardAppSummary[] = [
     ...apps
       .filter((entry) => appIsAvailable(entry, user))
@@ -82,7 +84,7 @@ export default ssr<AuthContext>(async (c) => {
   const declared = widgets.map((widget) => ({ ...widget, key: widgetKey(widget.appId, widget.widgetId) }));
   // `requiresRoles` only decides what the gallery and the default board offer; each handler still authorizes.
   const catalog: DashboardCatalogWidget[] = declared
-    .filter((widget) => mayUse(widget.requiresRoles, user))
+    .filter((widget) => usable.has(widget.appId) && mayUse(widget.requiresRoles, user))
     .map((widget) => ({
       key: widget.key,
       appId: widget.appId,

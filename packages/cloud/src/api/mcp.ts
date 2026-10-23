@@ -47,6 +47,7 @@ import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/reg
 import { type AuthContext, auth, type RequestAuthority, rateLimit, rejectReservedWorkloadCredential, resolveLocale } from "../server";
 import { preferredLocale } from "../server/locale";
 import { noTransform } from "../server/middleware/no-transform";
+import { discoverableApps } from "../services/app-discovery";
 import { createHelpReader, type HelpArticle, type HelpMetadata, type HelpReader, type HelpReaderFactory } from "../services/help";
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { logger } from "../services/logging";
@@ -494,7 +495,7 @@ const createMcpServer = (
   oauthScopes: string[] | null,
   authority?: RequestAuthority,
 ): Server => {
-  const registry = dependencies.listApps ?? listApps;
+  const registry = async () => discoverableApps(authority ?? null, await (dependencies.listApps ?? listApps)());
   const capabilityLookup = dependencies.getCapability ?? getCapability;
   let helpLocale: Promise<string> | undefined;
   const resolveHelpLocale = () =>
@@ -502,9 +503,10 @@ const createMcpServer = (
       resolveLocale(request.headers, operatorDefault),
     ));
   const helpReader = async () =>
-    (dependencies.help ?? ((locale, viewer) => createHelpReader(locale, viewer, { listApps: registry })))(
+    (dependencies.help ?? ((locale, viewer) => createHelpReader(locale, viewer, { listApps: registry, authority: authority ?? null })))(
       await resolveHelpLocale(),
       authority?.actor,
+      { authority: authority ?? null },
     );
   const hasScope = (scope: "read" | "write"): boolean =>
     oauthScopes === null || oauthScopes.includes(scope) || oauthScopes.includes("admin");

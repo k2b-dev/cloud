@@ -57,6 +57,7 @@ export default new Hono<MailApiContext>()
     v("param", imageParamSchema),
     async (c) => {
       const image = await remoteContent.loadRemoteImage({
+        signal: c.req.raw.signal,
         context: requestContext(c),
         ...internalParams(c, c.req.valid("param")),
       });
