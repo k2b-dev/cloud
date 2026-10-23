@@ -158,7 +158,7 @@ export const appendMessage = async (
         ${message.kind === "system" ? JSON.stringify(message.system.params) : null}::text::jsonb,
         ${message.kind === "text" ? db`(SELECT last_activity_at FROM chat.conversations WHERE id = ${conversation.id}::uuid)` : db`clock_timestamp()`},
         ${message.threadId ?? null}::uuid, ${message.kind === "text" ? (message.replyToSeq ?? null) : null},
-        ${JSON.stringify(refs)}::jsonb, ${toPgTextArray(links)}::text[])
+        ${JSON.stringify(refs)}::text::jsonb, ${toPgTextArray(links)}::text[])
       ON CONFLICT (short_id) DO NOTHING RETURNING *`;
   }
   if (!row) throw new Error("Chat message ID could not be allocated");
