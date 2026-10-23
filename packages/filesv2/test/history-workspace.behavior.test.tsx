@@ -414,6 +414,7 @@ describe("Files history in the workspace", () => {
     expect(inspector().textContent).toContain("Mia Schulz");
     // The file facts use the same request timezone as the adjacent versions and history.
     expect(inspector().querySelector("time")?.textContent).toContain("14:30");
+    expect(dom.root.querySelector(".filesv2-list__row time")?.textContent).toContain("14:30");
     expect(button(inspector(), "All in Activity")!.getAttribute("href")).toBe(
       `/app/filesv2?view=activity&base=${encodeURIComponent(home.id)}&path=Kunden%2FProof.bin`,
     );
