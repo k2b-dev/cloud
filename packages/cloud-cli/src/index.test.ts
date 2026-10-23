@@ -1383,7 +1383,9 @@ describe("cloud CLI OAuth session handling", () => {
   });
 
   test.skipIf(process.platform === "win32")("openUrl validates links, checks the host, and silently reports opener results", async () => {
-    const dir = await createTempDir();
+    // This standalone plugin does not use the first-party module inventory.
+    const dir = await mkdtemp(join(tmpdir(), "cld-opener-test-"));
+    tempDirs.push(dir);
     const configPath = join(dir, "config.json");
     const pluginDir = join(dir, "package-browser");
     const binDir = join(dir, "bin");
