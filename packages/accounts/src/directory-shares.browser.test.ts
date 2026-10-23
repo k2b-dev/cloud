@@ -12,7 +12,7 @@ beforeAll(async () => {
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const build = await Bun.build({
-    entrypoints: [resolve(import.meta.dir, "directory-shares.browser-fixture.tsx")],
+    entrypoints: [resolve(import.meta.dir, "../test/directory-shares.browser-fixture.tsx")],
     target: "browser",
     format: "iife",
     conditions: ["browser"],
