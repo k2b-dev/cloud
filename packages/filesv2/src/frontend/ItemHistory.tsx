@@ -145,7 +145,7 @@ export default function ItemHistory(props: ItemHistoryProps) {
         actions={
           <Show when={props.activityHref}>
             {(href) => (
-              <ButtonLink size="xs" variant="text" href={href()}>
+              <ButtonLink size="xs" variant="text" class="filesv2-history-link" href={href()}>
                 {h().allInActivity}
               </ButtonLink>
             )}
@@ -158,7 +158,7 @@ export default function ItemHistory(props: ItemHistoryProps) {
               <p class="filesv2-item-history__line" role="alert">
                 <i class="ti ti-alert-triangle" aria-hidden="true" />
                 {h().historyFailed}
-                <Button size="xs" variant="text" onClick={() => void history.refresh()}>
+                <Button size="xs" variant="text" class="filesv2-history-link" onClick={() => void history.refresh()}>
                   {h().retry}
                 </Button>
               </p>
@@ -178,6 +178,7 @@ export default function ItemHistory(props: ItemHistoryProps) {
                 <Button
                   size="xs"
                   variant="text"
+                  class="filesv2-history-link"
                   loading={loadingOlder()}
                   loadingLabel={h().loadingOlder}
                   onClick={() => (history.error() ? void activity().retry() : loadNext())}
@@ -232,6 +233,7 @@ export default function ItemHistory(props: ItemHistoryProps) {
                   <Button
                     size="xs"
                     variant="text"
+                    class="filesv2-history-link"
                     onClick={() => {
                       setExpanded(true);
                       if (older() <= 0) loadNext();
@@ -244,6 +246,7 @@ export default function ItemHistory(props: ItemHistoryProps) {
                   <Button
                     size="xs"
                     variant="text"
+                    class="filesv2-history-link"
                     loading={loadingOlder()}
                     loadingLabel={h().loadingOlder}
                     onClick={() => (history.error() ? void activity().retry() : loadNext())}
@@ -252,7 +255,7 @@ export default function ItemHistory(props: ItemHistoryProps) {
                   </Button>
                 </Show>
                 <Show when={expanded() && lines().length > RECENT}>
-                  <Button size="xs" variant="text" onClick={() => setExpanded(false)}>
+                  <Button size="xs" variant="text" class="filesv2-history-link" onClick={() => setExpanded(false)}>
                     {h().showLess}
                   </Button>
                 </Show>
@@ -274,7 +277,7 @@ export default function ItemHistory(props: ItemHistoryProps) {
             <p class="filesv2-item-history__line" role="alert">
               <i class="ti ti-alert-triangle" aria-hidden="true" />
               {h().accessFailed}
-              <Button size="xs" variant="text" onClick={retryAccess}>
+              <Button size="xs" variant="text" class="filesv2-history-link" onClick={retryAccess}>
                 {h().retry}
               </Button>
             </p>

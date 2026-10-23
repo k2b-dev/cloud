@@ -20,6 +20,7 @@ import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
 import type { BaseSummary, EntryResult, FileEntry, FileVersion, SharePage, ShareView } from "../contracts";
 import { ENTRY_TYPE, entryRefId } from "../resource-ref";
+import { activityVersion } from "./activity-versions";
 import type { InspectorHistory } from "./Browser";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
@@ -445,7 +446,9 @@ export default function FileInspector(props: {
                             term: f().modified,
                             description: (
                               <>
-                                <Format.DateTime value={item().modified} timeZone={props.history?.env.timeZone} />
+                                <Show when={props.history?.env} fallback={<Format.DateTime value={item().modified} />}>
+                                  {(env) => <time datetime={item().modified}>{formatWhen(item().modified, locale(), h(), env())}</time>}
+                                </Show>
                                 <Show when={currentAuthor()}>{(name) => <span>, {name()}</span>}</Show>
                               </>
                             ),
@@ -593,29 +596,10 @@ function EntryHistory(props: {
   // Numbers count the saved versions, oldest first; the current content comes after them.
   const ordered = createMemo(() => [...(props.versions.items() ?? [])].sort((a, b) => a.created.localeCompare(b.created)));
   const versionNumbers = createMemo(() => new Map(ordered().map((version, index) => [version.id, index + 1])));
-  /**
-   * An entry names a version only by an exact version ID, or as the current content when its new revision is the
-   * file's revision now. Then the newest retained version is what that change replaced and may be restored.
-   * A revision is never taken for a version ID.
-   */
-  const producesCurrent = (entry: ActivityEntry) =>
-    (entry.action === "file.overwrite" || entry.action === "file.edit") &&
-    entry.state === "done" &&
-    entry.after.visibility === "full" &&
-    !!entry.after.revision &&
-    entry.after.revision === props.entry.revision;
-  const versionOf = (entry: ActivityEntry) => {
-    if (props.versions.state() !== "ready") return null;
-    const side = entry.after.visibility === "full" ? entry.after : entry.before.visibility === "full" ? entry.before : null;
-    const number = side?.versionId ? versionNumbers().get(side.versionId) : undefined;
-    if (number) return { current: number, restorable: null };
-    if (!producesCurrent(entry)) return null;
-    const previous = ordered().length;
-    return { current: previous + 1, restorable: previous > 0 && props.entry.actions?.write !== false ? previous : null };
-  };
+  const versionOf = (entry: ActivityEntry) => (props.versions.state() === "ready" ? activityVersion(entry, props.entry, ordered()) : null);
   const restorePrevious = async (entry: ActivityEntry) => {
     const previous = ordered().at(-1);
-    if (!previous || !producesCurrent(entry)) throw new Error(h().actionFailed);
+    if (!previous || !versionOf(entry)?.restorable) throw new Error(h().actionFailed);
     await restoreVersion(props.base.id, props.entry, previous.id, h().actionFailed);
     toast.success(t().versionRestored);
     props.onChanged(props.entry.path);

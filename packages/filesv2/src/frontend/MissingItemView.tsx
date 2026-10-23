@@ -126,6 +126,7 @@ export default function MissingItemView(props: MissingItemViewProps) {
         </Match>
         <Match when={props.state === "error"}>
           <Placeholder
+            class="filesv2-history-placeholder"
             state="error"
             icon="ti ti-alert-triangle"
             title={h().searchFailedTitle}
@@ -150,6 +151,7 @@ export default function MissingItemView(props: MissingItemViewProps) {
         </Match>
         <Match when={hits().length === 0}>
           <Placeholder
+            class="filesv2-history-placeholder"
             state="no-results"
             icon="ti ti-file-search"
             title={h().noHitsTitle.replace("{query}", props.query)}
@@ -250,6 +252,7 @@ function OtherHit(props: { hit: SearchHit; env: HistoryEnvironment; actions?: Hi
       variant="list"
       sentence={sentence()}
       meta={meta()}
+      keep
       onChanged={props.onChanged}
     />
   );
@@ -634,8 +637,14 @@ function MissingChainRow(props: {
     const parts = metaParts(props.row, h(), locale(), props.env, { context: "chain", dated: false, actions: props.actions });
     const result = batch.data();
     const others = result ? Math.max(0, result.visibleCount - 1) : props.loadBatch ? 0 : props.loadedOthers;
-    if (others)
-      parts.push({ kind: "text", text: (result?.complete ? h().withOthers : h().withAtLeastOthers).replace("{count}", String(others)) });
+    if (!others) return parts;
+    // The batch size describes the change; the execution link stays last.
+    const link = parts.findIndex((part) => part.kind === "link");
+    const count = {
+      kind: "text" as const,
+      text: (result?.complete ? h().withOthers : h().withAtLeastOthers).replace("{count}", String(others)),
+    };
+    parts.splice(link < 0 ? parts.length : link, 0, count);
     return parts;
   });
   return (

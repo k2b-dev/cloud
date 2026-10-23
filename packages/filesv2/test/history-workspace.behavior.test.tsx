@@ -174,6 +174,46 @@ describe("Files history in the workspace", () => {
     expect(dom.window.location.search).toBe(`?view=activity&base=${encodeURIComponent(home.id)}`);
   });
 
+  test("Activity restores an exact retained version through the freshly resolved target and expected revision", async () => {
+    const itemId = "7d1e2f3a-4b5c-4d6e-8f90-a1b2c3d4e5f6";
+    const raw = current("vertrieb/Old/Proof.txt", { itemId, directory: false });
+    if (raw.visibility !== "full") throw new Error("fixture side must be full");
+    const changed = entry({ action: "file.overwrite", after: { ...raw, publicBaseId: home.id, revision: "revision-3" } });
+    const source = "/app/filesv2?view=activity";
+    const dom = mount(snapshotOf({ source, activity: { filters: {}, page: page([changed]) } }));
+    await flush();
+    expect(pending("entry-by-id").input).toEqual({ param: { id: `n:${home.id}:${itemId}` } });
+    const file: FileEntry = {
+      name: "Proof.txt",
+      path: "Current/Proof.txt",
+      directory: false,
+      size: 24,
+      modified: NOW,
+      revision: "revision-3",
+    };
+    pending("entry-by-id").resolve(Response.json({ base: home, entry: file }));
+    await flush();
+    expect(query(pending("versions"))).toEqual({ path: "Current/Proof.txt" });
+    pending("versions").resolve(
+      Response.json([
+        { id: "saved-2", created: "2026-10-19T12:00:00.000Z", size: 20, pinned: false, comment: null, author: null },
+        { id: "saved-1", created: "2026-10-18T12:00:00.000Z", size: 10, pinned: false, comment: null, author: null },
+      ]),
+    );
+    await flush();
+    expect(dom.root.textContent).toContain("Version 3");
+    button(dom.root, "Restore version 2")!.click();
+    await flush();
+    expect(pending("version-restore").input).toEqual({
+      param: { baseId: home.id },
+      json: { path: "Current/Proof.txt", id: "saved-2", expectedRevision: "revision-3" },
+    });
+    pending("version-restore").resolve(Response.json({ code: "revision_conflict", message: "The file changed" }, { status: 409 }));
+    await flush();
+    expect(dom.root.textContent).toContain("The file changed");
+    expect(apiRequests.some((item) => item.kind === "activity")).toBe(false);
+  });
+
   test("a failed Activity load keeps its filters beside Try again, and an empty page with more pages claims nothing", async () => {
     const source = `/app/filesv2?view=activity&base=${encodeURIComponent(home.id)}&when=7`;
     const dom = mount(snapshotOf({ source }));
@@ -413,7 +453,7 @@ describe("Files history in the workspace", () => {
     const inspector = () => dom.root.querySelector("#filesv2-inspector, [id*='filesv2-inspector']")!;
     expect(inspector().textContent).toContain("Mia Schulz");
     // The file facts use the same request timezone as the adjacent versions and history.
-    expect(inspector().querySelector("time")?.textContent).toContain("14:30");
+    expect(inspector().querySelector("time")?.textContent).toBe("today, 02:30 PM");
     expect(dom.root.querySelector(".filesv2-list__row time")?.textContent).toContain("14:30");
     expect(button(inspector(), "All in Activity")!.getAttribute("href")).toBe(
       `/app/filesv2?view=activity&base=${encodeURIComponent(home.id)}&path=Kunden%2FProof.bin`,
