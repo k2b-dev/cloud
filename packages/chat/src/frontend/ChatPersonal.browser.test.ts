@@ -458,7 +458,10 @@ for (const failRefresh of [false, true, "position"] as const)
           );
           await actions(page, "Another unread", "en");
           await page.getByRole("menuitem", { name: "Pin chat", exact: true }).click();
-          await visible(page).getByRole("alert").filter({ hasText: "Invalid position" }).waitFor();
+          await visible(page)
+            .getByRole("alert")
+            .filter({ hasText: chatMessages.resolve(["en"]).t.pinPositionChanged })
+            .waitFor();
         }
         const entries = await page.evaluate(() => history.length);
         const readsBeforeRetry = unreadReads;
