@@ -241,7 +241,8 @@ for (const mode of [
       let hold: (() => void) | undefined;
       let first = true;
       await page.route("**/api/chat/channels/preview*", async (route) => {
-        if (!first) return route.continue();
+        // Only the first count of the chosen audience is held and fails; the empty dialog may count before it.
+        if (!first || !route.request().postData()?.includes("authenticated")) return route.continue();
         first = false;
         await new Promise<void>((resolve) => {
           hold = resolve;
