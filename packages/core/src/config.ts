@@ -65,6 +65,7 @@ export const app = defineApp({
     "/api/ai",
     "/api/mcp",
     "/api/search",
+    "/api/geo",
     "/api/accounts/entities",
     "/api/admin/account-lifecycle",
     "/api/admin/core",

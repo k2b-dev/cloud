@@ -23,6 +23,13 @@ Diese Personen müssen direkte Mitglieder eines gemeinsamen Chats sein.
 Wenn ein Chat mit genau diesen Personen besteht, wähle **Vorhandenen öffnen**, um ihn zu nutzen.
 Wähle **Trotzdem einen neuen Chat erstellen**, um einen weiteren Chat mit denselben Personen zu starten.
 
+## Wenn die Bestätigung fehlt {icon="refresh"}
+
+Wenn **Erneut versuchen** erscheint, wähle es, um dieselbe Anfrage abzuschließen. Personen und Name bleiben fest, damit eine verlorene Antwort keinen zweiten Chat erzeugt.
+Öffne nach dem Neuladen dieses Tabs wieder **Neuer Chat**, um die Anfrage fortzusetzen.
+Mit **Abbrechen** verwirfst du die Anfrage und beginnst neu. Prüfe zuerst die Liste: Der Chat kann bereits bestehen.
+Nach dem Schließen des Tabs oder bei gesperrtem Tab-Speicher ist keine Wiederaufnahme nach dem Neuladen möglich.
+
 ## Eigene Notizen festhalten {icon="notes"}
 
 Starte einen Chat, ohne andere Personen zu wählen. Ohne Namen heißt dieser Chat **Du**.
