@@ -12,6 +12,8 @@ import {
   MemberPreviewSchema,
   MemberQuerySchema,
   PeopleQuerySchema,
+  ReadAllSchema,
+  SummaryQuerySchema,
   SystemChatParamSchema,
   ThreadQuerySchema,
   ThreadResourceSchema,
@@ -281,4 +283,15 @@ test("system chat contracts constrain containers, item metadata and paging", () 
   expect(
     ThreadResourceSchema.safeParse({ ref: { type: "spaces.item", id: "item01" }, kind: "task", status: null, href: "/item" }).success,
   ).toBeFalse();
+});
+
+test("summary and read-all continuations reject malformed state and preserve an unstarted thread page", () => {
+  for (const thread of [undefined, "", "abcdef"]) {
+    const cursor = { at: "2026-10-01T00:00:00.000123Z", id: "ghijkl", ...(thread !== undefined ? { thread } : {}) };
+    expect(ReadAllSchema.parse({ confirmed: true, cursor: JSON.stringify(cursor) }).cursor).toEqual(cursor);
+  }
+  expect(SummaryQuerySchema.parse({ summaryCursor: "" }).summaryCursor).toBe("");
+  for (const cursor of ["bad", "{}", JSON.stringify({ at: "bad", id: "abcdef" }), "x".repeat(257)])
+    expect(ReadAllSchema.safeParse({ cursor }).success).toBeFalse();
+  expect(SummaryQuerySchema.safeParse({ summaryCursor: "not-a-thread" }).success).toBeFalse();
 });

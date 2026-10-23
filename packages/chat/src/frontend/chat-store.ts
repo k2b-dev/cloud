@@ -55,7 +55,7 @@ export type ChatStoreApi = {
   people(search: string, cursor?: string, signal?: AbortSignal): Promise<z.infer<typeof PeoplePageSchema>>;
   read(id: string, seq: number, thread?: ThreadView): Promise<z.infer<typeof ReadUpdateSchema>>;
   markUnread(id: string, message?: string): Promise<z.infer<typeof ReadUpdateSchema>>;
-  readAll(confirmed: boolean): Promise<z.infer<typeof ReadAllOutcomeSchema>>;
+  readAll(confirmed: boolean, cursor?: string): Promise<z.infer<typeof ReadAllOutcomeSchema>>;
   conversations(cursor?: string): Promise<ConversationPage>;
   conversation(id: string): Promise<Conversation | null>;
   messages(id: string, query?: { before?: number; after?: number; thread?: ThreadView }): Promise<MessagePage | null>;
@@ -173,11 +173,11 @@ export const createChatStoreApi = (): ChatStoreApi => {
         await client.conversations[":conversation"].unread.$post({ param: { conversation: id }, json: { message } }),
         ReadUpdateSchema,
       ),
-    readAll: async (confirmed) =>
-      requiredResponse(await client.conversations["read-all"].$post({ json: { confirmed } }), ReadAllOutcomeSchema),
+    readAll: async (confirmed, cursor) =>
+      requiredResponse(await client.conversations["read-all"].$post({ json: { confirmed, cursor } }), ReadAllOutcomeSchema),
     conversations: async (cursor) => requiredResponse(await client.conversations.$get({ query: { cursor } }), ConversationPageSchema),
     conversation: async (id) =>
-      parseResponse(await client.conversations[":conversation"].$get({ param: { conversation: id } }), ConversationSchema),
+      parseResponse(await client.conversations[":conversation"].$get({ param: { conversation: id }, query: {} }), ConversationSchema),
     messages: async (id, query) =>
       parseResponse(
         await client.conversations[":conversation"].messages.$get({
@@ -735,7 +735,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     /** The ID of the chat's message at `seq`, read from the server, or null when it is gone. */
     messageAt: async (id: string, seq: number) =>
       (await api.messages(id, { before: seq + 1 }))?.items.find((message) => message.seq === seq)?.id ?? null,
-    readAll: (confirmed: boolean) => api.readAll(confirmed),
+    readAll: (confirmed: boolean, cursor?: string) => api.readAll(confirmed, cursor),
     get sidebar(): readonly Conversation[] {
       return rows;
     },

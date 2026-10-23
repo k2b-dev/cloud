@@ -201,7 +201,9 @@ export const readStart = (read: ReadState | null): number | null =>
   read === null
     ? null
     : Math.min(Math.max(read.lastReadSeq ?? 0, read.joinedSeq), read.unreadFromSeq === null ? Infinity : read.unreadFromSeq - 1);
+export const SummaryQuerySchema = z.strictObject({ summaryCursor: z.union([ThreadIdSchema, z.literal("")]).optional() });
 export const ReadUpdateSchema = ReadStateSchema.extend({
+  summaryCursor: z.string().nullable().optional(),
   conversationId: ShortIdSchema,
   unread: z.number().int().min(0).max(UNREAD_CAP),
   asOfRev: z.number().int().min(0),
@@ -210,14 +212,31 @@ export const ReadUpdateSchema = ReadStateSchema.extend({
 export const ReadSchema = z.strictObject({
   seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
   thread: z.union([ThreadSelectorSchema, z.literal("all")]).default("general"),
+  summaryCursor: SummaryQuerySchema.shape.summaryCursor,
 });
 export const MarkUnreadSchema = z.strictObject({ message: MessageIdSchema.optional() });
-export const ReadAllSchema = z.strictObject({ confirmed: z.boolean().default(false) });
+const ReadAllCursorSchema = ConversationCursorSchema.extend({ thread: z.union([ThreadIdSchema, z.literal("")]).optional() });
+export const ReadAllSchema = z.strictObject({
+  confirmed: z.boolean().default(false),
+  cursor: z
+    .string()
+    .max(256)
+    .transform((value, ctx) => {
+      try {
+        return ReadAllCursorSchema.parse(JSON.parse(value));
+      } catch {
+        ctx.addIssue({ code: "custom", message: "Invalid cursor" });
+        return z.NEVER;
+      }
+    })
+    .optional(),
+});
 export const ReadAllOutcomeSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("confirm") }),
-  z.object({ outcome: z.literal("done"), marked: z.number().int(), more: z.boolean() }),
+  z.object({ outcome: z.literal("done"), marked: z.number().int(), more: z.boolean(), nextCursor: z.string().nullable().optional() }),
 ]);
 export const ConversationSchema = z.object({
+  summaryCursor: z.string().nullable().optional(),
   kind: z.enum(["chat", "system"]).optional(),
   resource: CloudResourceRefSchema.nullable().optional(),
   threads: z.number().int().min(0),

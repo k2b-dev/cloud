@@ -15,25 +15,46 @@ export const visibleThreadPage = async <T extends ThreadReferenceRow>(context: C
   (await readerBatch(rows, async (row) => ({ row, resource: await threadResource(context, row) }))).filter(
     ({ row, resource }) => row.resource_type === null || resource !== null,
   );
-/** Exact aggregates traverse bounded database pages; reader fan-out never exceeds eight. */
-export const visibleThreadIds = async (db: typeof sql, context: ChatContext, conversationId: string) => {
+/** One request spends at most one 100-candidate page on summary item readers.
+ * Together with the two 100-container discovery pages this is <= 302 reader
+ * invocations (including both list calls), never 200 nested thread traversals.
+ */
+export const READER_REQUEST_BUDGET = 3 * RESOURCE_PAGE_SIZE + 2;
+// Reserve both discovery calls and their container readers; spend the rest once.
+export const SUMMARY_TRAVERSAL_BUDGET = READER_REQUEST_BUDGET - 2 * (RESOURCE_PAGE_SIZE + 1);
+export type ThreadBudget = { remaining: number };
+export const visibleThreadIdPage = async (
+  db: typeof sql,
+  context: ChatContext,
+  conversationId: string,
+  after?: string,
+  budget: ThreadBudget = { remaining: SUMMARY_TRAVERSAL_BUDGET },
+) => {
+  context.caller?.signal?.throwIfAborted();
   const [conversation] = await db<{ kind: string }[]>`SELECT kind FROM chat.conversations WHERE id = ${conversationId}::uuid`;
-  if (conversation?.kind !== "system") return null;
-  const ids: string[] = [];
-  let after: string | null = null;
-  for (;;) {
-    context.caller?.signal?.throwIfAborted();
-    const rows: ThreadReferenceRow[] = await db<ThreadReferenceRow[]>`SELECT id, resource_type, resource_id FROM chat.threads
-      WHERE conversation_id = ${conversationId}::uuid AND ${after ? db`id > ${after}::uuid` : db`true`}
-      ORDER BY id LIMIT ${RESOURCE_PAGE_SIZE}`;
-    ids.push(...(await visibleThreadPage(context, rows)).map(({ row }) => row.id));
-    if (rows.length < RESOURCE_PAGE_SIZE) return ids;
-    after = rows.at(-1)!.id;
-  }
+  if (conversation?.kind !== "system") return { ids: undefined, nextCursor: null };
+  const limit = budget.remaining;
+  const rows = await db<(ThreadReferenceRow & { short_id: string })[]>`SELECT id, short_id, resource_type, resource_id FROM chat.threads
+    WHERE conversation_id = ${conversationId}::uuid AND ${after ? db`short_id > ${after}` : db`true`}
+    ORDER BY short_id LIMIT ${limit + 1}`;
+  const page = rows.slice(0, limit);
+  budget.remaining -= page.length;
+  return {
+    ids: (await visibleThreadPage(context, page)).map(({ row }) => row.id),
+    nextCursor: rows.length > limit ? (page.at(-1)?.short_id ?? after ?? "") : null,
+  };
 };
-export const visibleMessageCondition = async (db: typeof sql, context: ChatContext, conversationId: string) => {
-  const ids = await visibleThreadIds(db, context, conversationId);
-  return ids === null ? db`true` : db`(thread_id IS NULL OR thread_id = ANY(${toPgUuidArray(ids)}::uuid[]))`;
+export const messageCondition = (db: typeof sql, ids?: string[]) =>
+  ids === undefined ? db`true` : db`(thread_id IS NULL OR thread_id = ANY(${toPgUuidArray(ids)}::uuid[]))`;
+/** Authorize only the threads in an already bounded message candidate page. */
+export const visibleMessages = async <T extends { thread_id: string | null }>(db: typeof sql, context: ChatContext, rows: T[]) => {
+  const ids = [...new Set(rows.flatMap((row) => (row.thread_id ? [row.thread_id] : [])))];
+  if (!ids.length) return rows;
+  const threads = await db<
+    ThreadReferenceRow[]
+  >`SELECT id, resource_type, resource_id FROM chat.threads WHERE id = ANY(${toPgUuidArray(ids)}::uuid[])`;
+  const visible = new Set((await visibleThreadPage(context, threads)).map(({ row }) => row.id));
+  return rows.filter((row) => row.thread_id === null || visible.has(row.thread_id));
 };
 export const projectResource = (row: ThreadReferenceRow, resource: ResourceDecision | null) =>
   resource?.kind && row.resource_type && row.resource_id

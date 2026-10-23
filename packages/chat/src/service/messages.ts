@@ -22,7 +22,7 @@ import { conversations } from "./conversations";
 import { chatLive } from "./live";
 import { appendMessage, type MessageRow, messageViews } from "./message-store";
 import { openParticipant } from "./read-state";
-import { canReadThread, visibleMessageCondition, visibleThreadIds } from "./thread-access";
+import { canReadThread, visibleMessages, visibleThreadIdPage } from "./thread-access";
 import { threadStates } from "./thread-state";
 import { findThread, threadNotFound, threads } from "./threads";
 
@@ -126,22 +126,22 @@ const list = async (input: Input & { query?: unknown }) => {
     const query = parsed.data;
     const thread = query.thread && query.thread !== "general" ? await findThread(db, allowed.data.id, query.thread, input) : null;
     if (query.thread && query.thread !== "general" && !thread) return threadNotFound(input);
-    const visibility = await visibleMessageCondition(db, input, allowed.data.id);
-    const filter = query.thread === undefined ? visibility : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
-    const rows = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid
+    const filter = query.thread === undefined ? db`true` : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
+    const candidates = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid
       AND ${filter}
       AND ${query.before !== undefined ? db`seq < ${query.before}` : query.after !== undefined ? db`seq > ${query.after}` : db`true`}
       ORDER BY seq ${query.after !== undefined ? db`ASC` : db`DESC`} LIMIT ${MESSAGE_PAGE_SIZE}`;
-    if (query.after === undefined) rows.reverse();
+    if (query.after === undefined) candidates.reverse();
+    const rows = query.thread === undefined ? await visibleMessages(db, input, candidates) : candidates;
     const seqHead = Number(allowed.data.seq_head);
-    const full = rows.length === MESSAGE_PAGE_SIZE;
+    const full = candidates.length === MESSAGE_PAGE_SIZE;
     return ok({
       items: await messageViews(db, rows, input.conversationId, input.locale),
       seqHead,
       rev: Number(allowed.data.rev),
       ...(query.after !== undefined
-        ? { from: query.after + 1, to: full ? Number(rows.at(-1)!.seq) : seqHead }
-        : { from: full ? Number(rows[0]!.seq) : 1, to: query.before !== undefined ? Math.min(query.before - 1, seqHead) : seqHead }),
+        ? { from: query.after + 1, to: full ? Number(candidates.at(-1)!.seq) : seqHead }
+        : { from: full ? Number(candidates[0]!.seq) : 1, to: query.before !== undefined ? Math.min(query.before - 1, seqHead) : seqHead }),
     });
   });
 };
@@ -155,20 +155,23 @@ const snapshot = async (
   return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
-    const conversation = await conversations.get(input, db);
-    if (!conversation.ok) return conversation;
     const selector = parsed.data.thread;
     const thread = selector && selector !== "general" ? await findThread(db, allowed.data.id, selector, input) : null;
     if (selector && selector !== "general" && !thread) return threadNotFound(input);
-    const visibility = await visibleMessageCondition(db, input, allowed.data.id);
-    const filter = selector === undefined ? visibility : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
+    const conversation = await conversations.get(
+      { ...input, ...(selector !== undefined ? { selectedThread: thread?.id ?? null } : {}) },
+      db,
+    );
+    if (!conversation.ok) return conversation;
+    const filter = selector === undefined ? db`true` : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
     const id = MessageIdSchema.safeParse(input.messageId);
-    const [target] = id.success
-      ? await db<{ short_id: string; seq: bigint | string }[]>`SELECT short_id, seq FROM chat.messages
+    const [candidateTarget] = id.success
+      ? await db<{ short_id: string; seq: bigint | string; thread_id: string | null }[]>`SELECT short_id, seq, thread_id FROM chat.messages
           WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${id.data} AND ${filter}`
       : [];
-    const visibleIds = await visibleThreadIds(db, input, allowed.data.id);
-    const states = await threadStates(db, input.accessSubject, allowed.data.id, visibleIds ?? undefined);
+    const target = candidateTarget && (await canReadThread(db, input, candidateTarget.thread_id)) ? candidateTarget : undefined;
+    const visible = selector === undefined ? await visibleThreadIdPage(db, input, allowed.data.id) : { ids: thread ? [thread.id] : [] };
+    const states = await threadStates(db, input.accessSubject, allowed.data.id, visible.ids);
     const hasThreads = states.some((state) => state.id !== null);
     const starts = states
       .filter((state) => state.unread > 0 && (selector === undefined || state.id === (thread?.id ?? null)))
@@ -192,13 +195,14 @@ const snapshot = async (
       : input.messageId === undefined && conversation.data.unread > 0 && start !== null
         ? start + 1
         : null;
-    const rows = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid
+    const candidates = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid
       AND ${filter}
       AND ${position !== null ? db`seq < ${position + MESSAGE_PAGE_SIZE / 2}` : db`true`}
       ORDER BY seq DESC LIMIT ${MESSAGE_PAGE_SIZE}`;
-    rows.reverse();
+    candidates.reverse();
+    const rows = selector === undefined ? await visibleMessages(db, input, candidates) : candidates;
     const seqHead = Number(allowed.data.seq_head);
-    const list = await threads.list({ ...input, selectedThread: thread?.short_id }, db);
+    const list = await threads.list({ ...input, selectedThread: selector === "general" ? "general" : thread?.short_id }, db);
     if (!list.ok) return list;
     return ok({
       conversation: conversation.data,
@@ -206,7 +210,7 @@ const snapshot = async (
         items: await messageViews(db, rows, input.conversationId, input.locale),
         seqHead,
         rev: Number(allowed.data.rev),
-        from: rows.length === MESSAGE_PAGE_SIZE ? Number(rows[0]!.seq) : 1,
+        from: candidates.length === MESSAGE_PAGE_SIZE ? Number(candidates[0]!.seq) : 1,
         to: position !== null ? Math.min(position + MESSAGE_PAGE_SIZE / 2 - 1, seqHead) : seqHead,
       },
       threads: list.data,
@@ -232,19 +236,19 @@ const changes = async (input: Input & { query: unknown }) => {
   return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
-    const visibility = await visibleMessageCondition(db, input, allowed.data.id);
     const afterRev = parsed.data.afterRev;
     const head = Number(allowed.data.rev);
     if (afterRev > head) return fail({ code: "RESYNC_REQUIRED", status: 409, message: catalog(input).resyncRequired });
-    const rows = await db<
+    const candidates = await db<
       MessageRow[]
-    >`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid AND rev > ${afterRev} AND ${visibility}
+    >`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid AND rev > ${afterRev}
       ORDER BY rev LIMIT ${CHANGES_PAGE_SIZE}`;
+    const rows = await visibleMessages(db, input, candidates);
     const conversation = Number(allowed.data.changed_rev) > afterRev ? await conversations.get(input, db) : null;
     if (conversation && !conversation.ok) return conversation;
-    const more = rows.length === CHANGES_PAGE_SIZE;
+    const more = candidates.length === CHANGES_PAGE_SIZE;
     return ok({
-      rev: more ? Number(rows.at(-1)!.rev) : head,
+      rev: more ? Number(candidates.at(-1)!.rev) : head,
       more,
       conversation: conversation?.data ?? null,
       messages: await messageViews(db, rows, input.conversationId, input.locale),

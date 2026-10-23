@@ -1455,3 +1455,20 @@ test("a thread refresh asked for while the previous one finishes still runs", as
   unsubscribe();
   store.dispose();
 });
+
+test("read-all forwards continuation even when the preceding page marked no chats", async () => {
+  const seen: (string | undefined)[] = [];
+  const { store } = fixture({
+    readAll: async (_confirmed, cursor) => {
+      seen.push(cursor);
+      return cursor
+        ? { outcome: "done", marked: 1, more: false, nextCursor: null }
+        : { outcome: "done", marked: 0, more: true, nextCursor: "hidden-page" };
+    },
+  });
+  const first = await store.readAll(true);
+  if (first.outcome !== "done") throw new Error("Expected a completed page");
+  expect(await store.readAll(true, first.nextCursor ?? undefined)).toMatchObject({ marked: 1, more: false });
+  expect(seen).toEqual([undefined, "hidden-page"]);
+  store.dispose();
+});

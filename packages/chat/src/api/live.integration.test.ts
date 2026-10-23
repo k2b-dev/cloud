@@ -1,18 +1,27 @@
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { LIVE_LIMITS, startLiveOutbox } from "@k2b/cloud/events/testing";
 import { type AuthContext, createAccess } from "@k2b/cloud/server";
 import { get as getSetting } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
-import { sql } from "bun";
+import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
-import { ChatLiveEventSchema, MemberPageSchema, MessageViewSchema } from "../service/contracts";
+import {
+  ChatLiveEventSchema,
+  ConversationSchema,
+  MemberPageSchema,
+  MessageViewSchema,
+  ThreadListSchema,
+  ThreadSchema,
+} from "../service/contracts";
 import { chatLive } from "../service/live";
 import { chatLiveChannels } from "../service/live-channels";
+import { accessKey, resourceReaderDependencies } from "../service/resource-access";
 import chatApi from ".";
 import { messageFixtures, type Person } from "./messages.test-fixture";
 
@@ -102,6 +111,91 @@ suite("Chat live delivery on two replicas", () => {
   };
   const ready = async (socket: Awaited<ReturnType<typeof open>>, ids: string[]) =>
     until(() => ids.every((id) => socket.frames(id).some(({ frame }) => frame.t === "ready")));
+
+  test("new item hints reach two warm viewers before either has an item decision", async () => {
+    const owner = await f.person("Owner"),
+      allowed = await f.person("Reader"),
+      denied = await f.person("Denied item");
+    const space = testShortId(),
+      item = testShortId();
+    const keys = [owner, allowed, denied].flatMap((person) => [
+      accessKey(`user:${person.id}`, { type: "spaces.space", id: space }),
+      accessKey(`user:${person.id}`, { type: "spaces.item", id: item }),
+    ]);
+    const reader = spyOn(resourceReaderDependencies, "invoke").mockImplementation(async (_app, capability, _input, caller) => {
+      if (capability === "space.read")
+        return { data: { id: space, name: "Project", permission: "write" }, links: [{ rel: "open", href: `/app/spaces/${space}` }] };
+      if (capability === "item.read" && caller.cookie !== denied.headers.cookie)
+        return {
+          data: { id: item, title: "Private task", kind: "task", spaceId: space },
+          links: [{ rel: "open", href: `/app/spaces/${space}/${item}` }],
+        };
+      return null;
+    });
+    let a: Awaited<ReturnType<typeof open>> | undefined, b: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      const response = await new Hono<AuthContext>().route("/api/chat", chatApi).fetch(
+        new Request(`http://127.0.0.1:${pods[0]!.port}/api/chat/system-chats/spaces.space/${space}/open`, {
+          method: "POST",
+          headers: { ...owner.headers, "x-forwarded-for": uniqueCallerAddress() },
+        }),
+      );
+      const chat = ConversationSchema.parse(await response.json());
+      f.trackChat(chat.id);
+      // Populate only container decisions using authorized HTTP, before the item exists.
+      for (const person of [allowed, denied]) {
+        expect((await f.request(person.headers, `/${chat.id}`)).status).toBe(200);
+        expect(await redis.get(accessKey(`user:${person.id}`, { type: "spaces.space", id: space }))).not.toBeNull();
+        expect(await redis.get(accessKey(`user:${person.id}`, { type: "spaces.item", id: item }))).toBeNull();
+      }
+      a = await open(0, allowed);
+      b = await open(1, denied);
+      for (const socket of [a, b]) socket.sub("chat", "conversation", { conversation: chat.id });
+      await ready(a, ["chat"]);
+      await ready(b, ["chat"]);
+      const createdAt = Date.now();
+      const created = ThreadSchema.parse(
+        await (
+          await f.request(owner.headers, `/${chat.id}/threads/for-resource`, "POST", { ref: { type: "spaces.item", id: item } })
+        ).json(),
+      );
+      await until(() => [a!, b!].every((socket) => socket.events("chat").some((event) => event.type === "threads")), 5_000);
+      expect(Date.now() - createdAt).toBeLessThan(5_000); // Well before the 60-second item/cache discovery interval.
+      for (const socket of [a, b]) expect(socket.events("chat")).toEqual([{ type: "threads", conversationId: chat.id }]);
+      // The hint's consumer refreshes over HTTP; only the authorized viewer discovers the thread.
+      const visible = ThreadListSchema.parse(await (await f.request(allowed.headers, `/${chat.id}/threads`)).json());
+      const hidden = ThreadListSchema.parse(await (await f.request(denied.headers, `/${chat.id}/threads`)).json());
+      expect(visible.items.map((thread) => thread.id)).toEqual([created.id]);
+      expect(hidden.items).toEqual([]);
+      // A subscription after HTTP discovery must still enforce both cached decisions.
+      for (const socket of [a, b]) socket.sub("fresh", "conversation", { conversation: chat.id });
+      await ready(a, ["fresh"]);
+      await ready(b, ["fresh"]);
+      const sent = MessageViewSchema.parse(
+        await (
+          await f.request(owner.headers, `/${chat.id}/messages`, "POST", {
+            clientId: crypto.randomUUID(),
+            body: "Private item payload",
+            thread: created.id,
+          })
+        ).json(),
+      );
+      await until(() => a!.events("fresh").some((event) => event.type === "message" && event.message.id === sent.id));
+      const barrier = await send(owner, chat.id, "General barrier");
+      await until(() => b!.events("fresh").some((event) => event.type === "message" && event.message.id === barrier.id));
+      for (const channel of ["chat", "fresh"]) {
+        expect(b.events(channel).some((event) => event.type === "message" && event.message.id === sent.id)).toBeFalse();
+        expect(JSON.stringify(b.events(channel))).not.toContain("Private task");
+        expect(JSON.stringify(b.events(channel))).not.toContain("Private item payload");
+      }
+      expect((await f.request(denied.headers, `/${chat.id}/messages/${sent.id}`)).status).toBe(404);
+    } finally {
+      a?.socket.close();
+      b?.socket.close();
+      reader.mockRestore();
+      await redis.send("DEL", keys);
+    }
+  });
 
   test("conversation and sidebar events reach readers across pods; strangers learn no chat", async () => {
     const ben = await f.person("Ben"),

@@ -6,6 +6,7 @@ import { SystemChatParamSchema, SystemChatQuerySchema } from "./contracts";
 import { conversations } from "./conversations";
 import { openParticipant } from "./read-state";
 import { readContainers, readerBatch, readResource } from "./resource-access";
+import { SUMMARY_TRAVERSAL_BUDGET } from "./thread-access";
 
 const open = async (input: ChatContext & { resourceType: string; resourceId: string }) => {
   const parsed = SystemChatParamSchema.safeParse(input);
@@ -54,12 +55,14 @@ const list = async (input: ChatContext & { query?: unknown }) => {
   }));
   // Build a typed result without relying on stored conversation titles for authorization.
   const visible = [];
+  const threadBudget = { remaining: SUMMARY_TRAVERSAL_BUDGET };
   for (const { entry, resource } of entries) {
+    input.caller?.signal?.throwIfAborted();
     if (!resource || capPermission(resource.permission, input.actor) === "none") continue;
     const [row] = await sql<{ short_id: string }[]>`SELECT short_id FROM chat.conversations
       WHERE kind = 'system' AND resource_type = ${entry.ref.type} AND resource_id = ${entry.ref.id}`;
     if (bound.data !== null && row?.short_id !== bound.data) continue;
-    const conversation = row ? await conversations.get({ ...input, conversationId: row.short_id }) : null;
+    const conversation = row ? await conversations.get({ ...input, conversationId: row.short_id, threadBudget }) : null;
     if (conversation && !conversation.ok) continue;
     visible.push({ ref: entry.ref, name: resource.name, conversation: conversation?.data ?? null });
   }

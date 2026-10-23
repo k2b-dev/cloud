@@ -250,6 +250,9 @@ const forResource = async (input: Input & { input: unknown }): Promise<Result<Cr
     }
     if (!row) throw new Error("Thread ID could not be allocated");
     await db`UPDATE chat.conversations SET rev = rev + 1, changed_rev = rev + 1 WHERE id = ${c.id}::uuid`;
+    // Existing viewers have no item decision yet. This metadata-free container
+    // hint prompts an authorized HTTP refresh; item payloads still use t:/s:.
+    await publish(db, c.short_id);
     // No thread_created line: item metadata belongs to its owning application.
     for (const prefix of ["t", "s"])
       await chatLive.publish(db, { key: `${prefix}:${c.short_id}:${row.short_id}`, data: { type: "threads", conversationId: c.short_id } });

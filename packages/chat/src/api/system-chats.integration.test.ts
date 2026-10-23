@@ -6,9 +6,12 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import {
+  ChangesPageSchema,
   ChatSnapshotSchema,
   ConversationSchema,
+  MessagePageSchema,
   MessageViewSchema,
+  ReadAllOutcomeSchema,
   SharedPageSchema,
   SystemChatPageSchema,
   ThreadListSchema,
@@ -17,6 +20,7 @@ import {
 import { chatLiveChannels } from "../service/live-channels";
 import { reconcile } from "../service/maintenance";
 import { accessKey, type ResourceReaderDependencies, resourceReaderDependencies } from "../service/resource-access";
+import { READER_REQUEST_BUDGET, SUMMARY_TRAVERSAL_BUDGET } from "../service/thread-access";
 import chatApi from ".";
 import { messageFixtures, type Person } from "./messages.test-fixture";
 
@@ -353,6 +357,151 @@ suite("system chats use caller-authorized readers", () => {
     const secondReads = calls.filter((call) => call.capability === "spaces.item.read");
     expect(secondReads.length).toBe(101);
   });
+  test("General and a selected thread do not read unrelated items, including snapshots and shared history", async () => {
+    const person = await f.person(),
+      space = testShortId(),
+      item = testShortId();
+    grant(person, "spaces.space", space, { name: "Space", permission: "write" });
+    grant(person, "spaces.item", item, { title: "Selected", kind: "task", spaceId: space });
+    const chat = await open(person, space);
+    const selected = await thread(person, chat.id, item);
+    await sql`INSERT INTO chat.threads (short_id, conversation_id, name, created_by_type, created_by_id, resource_type, resource_id)
+      SELECT 'b' || lpad(n::text, 5, '0'), c.id, 'Hidden', 'user', ${person.id}::uuid, 'spaces.item', 'x' || lpad(n::text, 5, '0')
+      FROM chat.conversations c CROSS JOIN generate_series(1, 1000) n WHERE c.short_id = ${chat.id}`;
+    for (const endpoint of ["messages", "shared", "snapshot"]) {
+      for (const selector of ["general", selected.id]) {
+        await expire(person, "spaces.space", space);
+        await expire(person, "spaces.item", item);
+        calls.length = 0;
+        expect((await f.request(person.headers, `/${chat.id}/${endpoint}?thread=${selector}`)).status).toBe(200);
+        expect(calls.length).toBe(selector === "general" ? 1 : 2);
+      }
+    }
+  });
+
+  test("summary traversal shares one request budget across large containers and continues counts", async () => {
+    const person = await f.person(),
+      author = await f.person();
+    const containers = [];
+    for (let c = 0; c < 3; c++) {
+      const space = testShortId();
+      grant(person, "spaces.space", space, { name: "Space", permission: "write" });
+      const chat = await open(person, space);
+      containers.push({ id: space, name: "Space", permission: "write", chat: chat.id });
+      for (let n = 0; n < SUMMARY_TRAVERSAL_BUDGET + 1; n++) {
+        const item = testShortId(),
+          shortId = `${c}${String(n).padStart(5, "0")}`;
+        grant(person, "spaces.item", item, { title: "Item", kind: "task", spaceId: space });
+        await sql`INSERT INTO chat.threads (short_id, conversation_id, name, created_by_type, created_by_id, resource_type, resource_id)
+          SELECT ${shortId}, id, 'Item', 'user', ${person.id}::uuid, 'spaces.item', ${item} FROM chat.conversations WHERE short_id = ${chat.id}`;
+      }
+      await sql`INSERT INTO chat.messages (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, body_md, client_id)
+        SELECT ${`g${String(c).padStart(9, "0")}`}, id, 1, 1, 'text', 'user', ${author.id}::uuid, 'Author', 'General', 'general'
+        FROM chat.conversations WHERE short_id = ${chat.id}`;
+      await sql`UPDATE chat.conversations SET seq_head = 1, rev = 1 WHERE short_id = ${chat.id}`;
+      await expire(person, "spaces.space", space);
+    }
+    replies.set(`${credential(person)}:spaces.space.list`, { data: containers });
+    calls.length = 0;
+    const result = SystemChatPageSchema.parse(await (await api(person, "/system-chats")).json());
+    expect(calls.length).toBe(2 + containers.length + SUMMARY_TRAVERSAL_BUDGET);
+    expect(calls.length).toBeLessThanOrEqual(READER_REQUEST_BUDGET);
+    expect(result.items.map((entry) => entry.conversation?.unread)).toEqual([1, 0, 0]);
+    expect(result.items.map((entry) => entry.conversation?.threads)).toEqual([SUMMARY_TRAVERSAL_BUDGET, 0, 0]);
+    expect(result.items.map((entry) => entry.conversation?.summaryCursor)).toEqual(["000099", "", ""]);
+    calls.length = 0;
+    const next = ConversationSchema.parse(await (await f.request(person.headers, `/${containers[0]!.chat}?summaryCursor=000099`)).json());
+    expect(next.threads).toBe(1);
+    expect(next.unread).toBe(0);
+    expect(next.summaryCursor).toBeNull();
+    expect(calls.length).toBe(1);
+  });
+
+  test("fully hidden read-all candidates consume one page and return a progressing cursor", async () => {
+    const person = await f.person(),
+      author = await f.person();
+    // No readable container: a cold cache still spends at most READ_ALL_BATCH readers.
+    for (let n = 0; n < 51; n++) {
+      const chat = await f.fixture(person),
+        resource = testShortId();
+      key(person, "spaces.space", resource);
+      await sql`UPDATE chat.conversations SET kind = 'system', resource_type = 'spaces.space', resource_id = ${resource},
+        last_activity_at = '2026-10-01T00:00:00Z', seq_head = 1, rev = 1 WHERE id = ${chat.id}::uuid`;
+      await sql`INSERT INTO chat.messages (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, body_md, client_id)
+        VALUES (${`r${String(n).padStart(9, "0")}`}, ${chat.id}::uuid, 1, 1, 'text', 'user', ${author.id}::uuid, 'Author', 'Hidden', ${`hidden-${n}`})`;
+    }
+    calls.length = 0;
+    const first = ReadAllOutcomeSchema.parse(await (await f.request(person.headers, "/read-all", "POST", { confirmed: true })).json());
+    expect(first).toMatchObject({ outcome: "done", marked: 0, more: true });
+    expect(calls.length).toBe(50);
+    if (first.outcome !== "done") throw new Error("Expected completed page");
+    calls.length = 0;
+    const next = ReadAllOutcomeSchema.parse(
+      await (await f.request(person.headers, "/read-all", "POST", { confirmed: true, cursor: first.nextCursor })).json(),
+    );
+    expect(next).toMatchObject({ outcome: "done", marked: 0, more: false, nextCursor: null });
+    expect(calls.length).toBe(1);
+  });
+
+  test("hidden history, changes, shared items and read-all thread pages preserve continuation", async () => {
+    const author = await f.person(),
+      person = await f.person(),
+      space = testShortId();
+    grant(person, "spaces.space", space, { name: "Space", permission: "write" });
+    const chat = await open(person, space);
+    let lastItem = "";
+    for (let n = 0; n < 101; n++) {
+      const item = testShortId(),
+        shortId = `h${String(n).padStart(5, "0")}`;
+      lastItem = item;
+      key(person, "spaces.item", item);
+      await sql`INSERT INTO chat.threads (short_id, conversation_id, name, created_by_type, created_by_id, resource_type, resource_id)
+        SELECT ${shortId}, id, 'Hidden', 'user', ${person.id}::uuid, 'spaces.item', ${item} FROM chat.conversations WHERE short_id = ${chat.id}`;
+      await sql`INSERT INTO chat.messages (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, body_md, client_id, thread_id, links)
+        SELECT ${`m${String(n).padStart(9, "0")}`}, conversation_id, ${n + 1}, ${n + 1}, 'text', 'user', ${author.id}::uuid, 'Person', 'Hidden', ${`hidden-${n}`}, id,
+        ARRAY['https://example.com'] FROM chat.threads WHERE short_id = ${shortId}`;
+    }
+    await sql`UPDATE chat.conversations SET seq_head = 101, rev = 101 WHERE short_id = ${chat.id}`;
+    calls.length = 0;
+    const first = MessagePageSchema.parse(await (await f.request(person.headers, `/${chat.id}/messages`)).json());
+    expect(first.items).toEqual([]);
+    expect(first.from).toBe(52);
+    expect(calls.length).toBe(50);
+    const next = MessagePageSchema.parse(await (await f.request(person.headers, `/${chat.id}/messages?before=${first.from}`)).json());
+    expect(next.items).toEqual([]);
+    expect(next.from).toBe(2);
+    const changes = ChangesPageSchema.parse(await (await f.request(person.headers, `/${chat.id}/changes?afterRev=0`)).json());
+    expect(changes.messages).toEqual([]);
+    expect(changes.rev).toBe(101);
+    const shared = SharedPageSchema.parse(await (await f.request(person.headers, `/${chat.id}/shared`)).json());
+    expect(shared.items).toEqual([]);
+    expect(shared.nextCursor).not.toBeNull();
+    for (const cacheKey of keys) await redis.del(cacheKey);
+    calls.length = 0;
+    const read = ReadAllOutcomeSchema.parse(await (await f.request(person.headers, "/read-all", "POST", { confirmed: true })).json());
+    expect(read).toMatchObject({ outcome: "done", marked: 0, more: true });
+    expect(calls.length).toBe(1 + SUMMARY_TRAVERSAL_BUDGET);
+    if (read.outcome !== "done") throw new Error("Expected completed page");
+    calls.length = 0;
+    const done = ReadAllOutcomeSchema.parse(
+      await (await f.request(person.headers, "/read-all", "POST", { confirmed: true, cursor: read.nextCursor })).json(),
+    );
+    expect(done).toMatchObject({ outcome: "done", marked: 0, more: false });
+    expect(calls.length).toBe(1);
+    // A later authorized item on a resumed page is marked; hidden items stay untouched.
+    grant(person, "spaces.item", lastItem, { title: "Now readable", kind: "task", spaceId: space });
+    await expire(person, "spaces.item", lastItem);
+    const resumed = ReadAllOutcomeSchema.parse(
+      await (await f.request(person.headers, "/read-all", "POST", { confirmed: true, cursor: read.nextCursor })).json(),
+    );
+    expect(resumed).toMatchObject({ outcome: "done", marked: 1, more: false });
+    const marked = await sql<{ short_id: string; last_read_seq: string }[]>`SELECT t.short_id, tr.last_read_seq FROM chat.thread_reads tr
+      JOIN chat.threads t ON t.id = tr.thread_id JOIN chat.conversations c ON c.id = t.conversation_id
+      WHERE c.short_id = ${chat.id} AND tr.principal_id = ${person.id}::uuid`;
+    expect(marked.map((row) => row.short_id)).toEqual(["h00100"]);
+    expect(Number(marked[0]!.last_read_seq)).toBe(101);
+  });
+
   test("concurrent open and item-thread retries allocate one row", async () => {
     const person = await f.person(),
       id = testShortId(),

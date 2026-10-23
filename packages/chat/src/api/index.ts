@@ -52,6 +52,7 @@ import {
   SharedQuerySchema,
   SnapshotQuerySchema,
   SuccessSchema,
+  SummaryQuerySchema,
   SystemChatPageSchema,
   SystemChatParamSchema,
   SystemChatQuerySchema,
@@ -109,7 +110,7 @@ const app = new Hono<AuthContext>()
       summary: "List visible Spaces and Notebooks with their system chats",
       ...requiresAuth,
       description:
-        "Reads at most 100 containers from each owning application with the caller's credential. Pass spacesCursor and notebooksCursor independently. Includes containers without a conversation as conversation: null. Unavailable or unauthorized resources are omitted. Existing summaries count only visible item threads; exact totals may read multiple bounded thread pages.",
+        "Reads at most 100 containers from each owning application with the caller's credential. Pass spacesCursor and notebooksCursor independently. Includes containers without a conversation as conversation: null. Unavailable or unauthorized resources are omitted. Summaries share a 100-thread candidate budget across the entire response. Follow each non-null summaryCursor at GET /conversations/:conversation?summaryCursor=...; counts describe that page, with General included only on the initial page.",
       responses: { 200: jsonResponse(SystemChatPageSchema, "Visible containers and independent source cursors") },
     }),
     validator("query", SystemChatQuerySchema, invalidInput),
@@ -173,7 +174,13 @@ const app = new Hono<AuthContext>()
     "/conversations/read-all",
     description("Mark your unread chats read", ReadAllOutcomeSchema),
     validator("json", ReadAllSchema, invalidInput),
-    async (c) => respond(c, chatService.readState.readAll({ ...context(c), input: c.req.valid("json") })),
+    async (c) => {
+      const { confirmed, cursor } = c.req.valid("json");
+      return respond(
+        c,
+        chatService.readState.readAll({ ...context(c), input: { confirmed, ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) } }),
+      );
+    },
   )
   .post(
     "/conversations/:conversation/read",
@@ -199,9 +206,14 @@ const app = new Hono<AuthContext>()
   )
   .get(
     "/conversations/:conversation",
-    description("Read a chat", ConversationSchema),
+    description("Read a chat and one bounded summary page", ConversationSchema),
     validator("param", ConversationParamSchema, invalidInput),
-    async (c) => respond(c, chatService.conversations.get({ ...context(c), conversationId: c.req.valid("param").conversation })),
+    validator("query", SummaryQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.conversations.get({ ...context(c), ...c.req.valid("query"), conversationId: c.req.valid("param").conversation }),
+      ),
   )
   .get(
     "/conversations/:conversation/snapshot",

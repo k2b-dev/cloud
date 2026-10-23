@@ -211,3 +211,16 @@ test("documents system chat discovery, opening, item threads, and paged thread f
     .parse(spec.paths["/api/chat/conversations/{conversation}/threads"]?.get?.parameters);
   for (const name of ["filter", "q", "cursor"]) expect(parameters).toContainEqual({ name, in: "query" });
 });
+
+test("documents summary and read-all continuation at the HTTP boundary", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  expect(spec.paths["/api/chat/conversations/{conversation}"]?.get?.parameters).toContainEqual(
+    expect.objectContaining({ name: "summaryCursor", in: "query" }),
+  );
+  const body = z
+    .object({
+      content: z.object({ "application/json": z.object({ schema: z.object({ properties: z.record(z.string(), z.unknown()) }) }) }),
+    })
+    .parse(spec.paths["/api/chat/conversations/read-all"]?.post?.requestBody);
+  expect(body.content["application/json"].schema.properties.cursor).toMatchObject({ type: "string", maxLength: 256 });
+});

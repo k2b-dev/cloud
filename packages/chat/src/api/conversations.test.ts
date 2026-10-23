@@ -3,7 +3,7 @@ import { ServiceAccountCredentialSchema, ServiceAccountSchema, UserSchema } from
 import * as platform from "@k2b/cloud/services";
 import { redis } from "bun";
 import { chatService } from "../service";
-import { ConversationSchema } from "../service/contracts";
+import { ConversationSchema, ReadAllSchema } from "../service/contracts";
 import { chatLive } from "../service/live";
 import chatApi from ".";
 
@@ -306,4 +306,17 @@ test("passes the authenticated caller credential into system chat discovery", as
       query: { spacesCursor: "next" },
     }),
   );
+});
+
+test("read-all continuation survives HTTP validation and the service's second parse", async () => {
+  authenticate(true);
+  const cursor = JSON.stringify({ at: "2026-10-01T00:00:00.000123Z", id: "abcdef", thread: "" });
+  const read = spyOn(chatService.readState, "readAll").mockImplementation(async ({ input }) => {
+    expect(ReadAllSchema.parse(input)).toEqual({ confirmed: true, cursor: JSON.parse(cursor) });
+    return { ok: true, data: { outcome: "done", marked: 0, more: true, nextCursor: cursor } };
+  });
+  const response = await post("/conversations/read-all", { confirmed: true, cursor });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ outcome: "done", marked: 0, more: true, nextCursor: cursor });
+  expect(read).toHaveBeenCalledTimes(1);
 });

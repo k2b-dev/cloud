@@ -481,7 +481,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         result = await live.readAll(true);
       }
       // Each request marks one bounded batch; the server says whether more chats wait.
-      while (result.outcome === "done" && result.more) result = await live.readAll(true);
+      while (result.outcome === "done" && result.more) result = await live.readAll(true, result.nextCursor ?? undefined);
     });
   };
 

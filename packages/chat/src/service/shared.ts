@@ -11,7 +11,7 @@ import {
   SharedQuerySchema,
 } from "./contracts";
 import { type MessageRow, messageViews } from "./message-store";
-import { visibleMessageCondition } from "./thread-access";
+import { visibleMessages } from "./thread-access";
 import { findThread, threadNotFound } from "./threads";
 
 // A sequence alone would skip items when a page ends inside a message. Positions are stable across kind filters:
@@ -47,8 +47,7 @@ const list = async (
     const thread = query.thread && query.thread !== "general" ? await findThread(db, allowed.data.id, query.thread, input) : null;
     if (query.thread && query.thread !== "general" && !thread) return threadNotFound(input);
     if (query.kind === "images" || query.kind === "documents") return ok({ items: [], nextCursor: null });
-    const visibility = await visibleMessageCondition(db, input, allowed.data.id);
-    const threadFilter = query.thread === undefined ? visibility : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
+    const threadFilter = query.thread === undefined ? db`true` : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
     const kindFilter =
       query.kind === "elements"
         ? db`refs <> '[]'::jsonb`
@@ -57,9 +56,10 @@ const list = async (
           : db`(refs <> '[]'::jsonb OR links <> '{}')`;
     // At most the cursor's message contributes no remaining items. One message per item plus that message and
     // one lookahead bounds the read, even for sparse chats; no scan of unrelated message bodies is needed.
-    const rows = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid
+    const scanned = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid
       AND ${threadFilter} AND ${kindFilter} AND ${cursor ? db`seq <= ${cursor.seq}` : db`true`}
       ORDER BY seq DESC LIMIT ${SHARED_PAGE_SIZE + 2}`;
+    const rows = query.thread === undefined ? await visibleMessages(db, input, scanned) : scanned;
     const views = await messageViews(db, rows, input.conversationId, input.locale);
     const candidates: { item: SharedItem; position: number }[] = [];
     for (const [index, row] of rows.entries()) {
@@ -86,7 +86,11 @@ const list = async (
       nextCursor:
         remaining.length > SHARED_PAGE_SIZE && last
           ? Buffer.from(JSON.stringify({ v: 1, seq: last.item.seq, position: last.position })).toString("base64url")
-          : null,
+          : scanned.length === SHARED_PAGE_SIZE + 2
+            ? Buffer.from(
+                JSON.stringify({ v: 1, seq: Number(scanned.at(-1)!.seq), position: MAX_MESSAGE_REFS + MAX_MESSAGE_LINKS - 1 }),
+              ).toString("base64url")
+            : null,
     });
   });
 };

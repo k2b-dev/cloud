@@ -55,11 +55,44 @@ Visibility, search, and state filters apply within that page. Follow a non-null
 `nextCursor` even when `items` is empty. Ordinary chats retain their existing
 activity and archive ordering.
 
-Conversation summaries count only authorized item threads. Exact totals and
-history reads can traverse several candidate pages. Each reader batch has at
-most 8 concurrent calls; request cancellation stops further batches. A cold
-cache therefore costs more for a container with many threads. Unread totals
-retain Chat's existing cap of 100.
+Conversation summaries count only authorized item threads in the current
+candidate page. A non-null `summaryCursor` means the counts and preview are
+partial. Continue at `GET /conversations/:conversation?summaryCursor=...`,
+including when the cursor is the empty string (no item candidates inspected
+yet). Add each page's `threads` and `unread`, capping unread at 100; General
+is counted once, on the first inspected page. Select the newest `lastMessage`
+across pages. Counts describe each request's current authorized view; changes
+between requests can change the totals.
+
+The reader request budget is **302 calls**: two container-list calls, up to
+100 container readers per source, and 100 item readers shared across all
+summaries. `SUMMARY_TRAVERSAL_BUDGET` is the remaining 100 calls after reserving
+the two source pages from `READER_REQUEST_BUDGET`. A single summary also stops
+after 100 candidate threads. Hidden candidates consume the same traversal
+budget as readable ones. There are at most eight concurrent reader calls;
+request cancellation stops further batches. This bounds work, not response
+latency when an owning application is slow.
+
+General and an individually selected thread authorize only the container and,
+for the latter, that item. Their snapshots contain only the selected thread's
+counts and list; `summaryCursor: ""` directs callers to the full summary read.
+Aggregate history authorizes at most 50 candidate messages per request, change
+feeds 200, and shared history 32. These reads never enumerate all threads.
+Follow history `from`/`to`, change-feed `rev`/`more`, and shared `nextCursor`
+even when the returned items are empty: they advance past hidden candidates.
+
+`POST /conversations/read-all` inspects at most 50 candidate conversations and
+100 item threads across them. A completed page returns `marked`, `more`, and,
+for system conversations, `nextCursor`. Repeat with `{ "confirmed": true,
+"cursor": "<nextCursor>" }` while `more` is true, including when `marked` is
+zero. The cursor may continue within the same conversation. An incomplete
+unconfirmed preview returns `outcome: "confirm"` without changing read state.
+An ordinary-chat page without a cursor retains its existing repeat behavior.
+
+For `POST /conversations/:conversation/read` with `thread: "all"`, repeat the
+same sequence with the returned non-null `summaryCursor` to advance remaining
+item pages. General and selected-thread read receipts describe their selection;
+read the conversation summary separately for aggregate counts.
 
 ## Access and runtime dependencies
 
@@ -77,7 +110,13 @@ valid decision exists. Chat's own grants never replace an unavailable reader.
 No credential is stored in the cache or a background job.
 
 Live item messages and summaries use separate thread keys. Delivery requires
-cached authorization for both the container and item. The platform's live
+cached authorization for both the container and item. Creating an item thread
+also emits the existing `{ "type": "threads", "conversationId": "…" }` refresh
+hint on the container's conversation and list keys. It carries no item ID,
+title, resource ref, or message. Existing conversation viewers use it to refresh
+the thread list over authorized HTTP, even with no cached item decision. A
+viewer denied by the item reader receives no item metadata or message payload.
+New subscriptions discover the keys authorized by that HTTP refresh. The platform's live
 viewer carries no credential: a missing or expired decision denies delivery
 until an authenticated HTTP read refreshes it. Clients must refresh a snapshot
 when the live subscription requests resynchronization. The platform's existing

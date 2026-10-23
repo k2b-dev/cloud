@@ -51,16 +51,14 @@ import {
   MemberQuerySchema,
   PEOPLE_PAGE_SIZE,
   PeopleQuerySchema,
-  UNREAD_CAP,
   UpdateConversationSchema,
   UpdateMemberSchema,
 } from "./contracts";
 import { chatLive } from "./live";
 import { appendMessage, deletedPeople, personSnapshots } from "./message-store";
-import { projectRead, type ReadProjection, unreadQuery } from "./read-state";
+import { projectRead, type ReadProjection, readProjection, unreadQuery } from "./read-state";
 import { readerBatch, readResource } from "./resource-access";
-import { visibleMessageCondition, visibleThreadIds } from "./thread-access";
-import { threadStates } from "./thread-state";
+import { messageCondition, type ThreadBudget, visibleThreadIdPage } from "./thread-access";
 import { deriveTitle, TITLE_NAME_LIMIT } from "./titles";
 
 const creationLimit = ratelimit({ id: "chat.conversation.create", limit: CREATE_LIMIT, windowSecs: CREATE_WINDOW_SECONDS });
@@ -267,8 +265,8 @@ const titles = async (rows: ConversationRow[], context: ChatContext, db: typeof 
     ]),
   );
 };
-const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: typeof sql) => {
-  const visibility = rows.length === 1 && rows[0]!.kind === "system" ? await visibleMessageCondition(db, context, rows[0]!.id) : db`true`;
+const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: typeof sql, ids?: string[]) => {
+  const visibility = messageCondition(db, ids);
   const found = rows.length
     ? await db<
         {
@@ -508,28 +506,34 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
   }
 };
 
-const getInSnapshot = async (input: ChatContext & { conversationId: string }, db: typeof sql) => {
+const getInSnapshot = async (
+  input: ChatContext & { conversationId: string; summaryCursor?: string; threadBudget?: ThreadBudget; selectedThread?: string | null },
+  db: typeof sql,
+) => {
   const result = await requireConversation({ ...input, required: "read" }, db);
   if (!result.ok) return result;
   const row = result.data;
-  const visibleIds = await visibleThreadIds(db, input, row.id);
-  const read = projectRead((await db<ReadProjection[]>`${unreadQuery(db, input.accessSubject, [row.id])}`)[0]!);
-  if (visibleIds !== null) {
-    const states = await threadStates(db, input.accessSubject, row.id, visibleIds);
-    read.unread = Math.min(
-      UNREAD_CAP,
-      states.reduce((sum, state) => sum + state.unread, 0),
-    );
-    read.threads = visibleIds.length;
-  }
+  const page =
+    row.kind === "system" && input.selectedThread !== undefined
+      ? { ids: input.selectedThread ? [input.selectedThread] : [], nextCursor: "" }
+      : await visibleThreadIdPage(db, input, row.id, input.summaryCursor, input.threadBudget);
+  const visibleIds = page.ids;
+  const read = await readProjection(
+    db,
+    input,
+    row.id,
+    visibleIds,
+    input.selectedThread === null || (!input.summaryCursor && page.nextCursor !== ""),
+  );
   const resource =
     row.kind === "system" && row.resource_type && row.resource_id
       ? await readResource(input, { type: row.resource_type, id: row.resource_id })
       : null;
   const names = await titles([row], input, db);
-  const latest = await lastMessages([row], input, db);
-  return ok(
-    project(
+  const latest = await lastMessages([row], input, db, visibleIds);
+  return ok({
+    ...(row.kind === "system" ? { summaryCursor: page.nextCursor } : {}),
+    ...project(
       resource
         ? {
             ...row,
@@ -544,10 +548,12 @@ const getInSnapshot = async (input: ChatContext & { conversationId: string }, db
       (await lifecycleFlags([row], input, db)).get(row.id)!,
       read,
     ),
-  );
+  });
 };
-const get = (input: ChatContext & { conversationId: string }, db?: typeof sql) =>
-  db ? getInSnapshot(input, db) : sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", (tx) => getInSnapshot(input, tx));
+const get = (
+  input: ChatContext & { conversationId: string; summaryCursor?: string; threadBudget?: ThreadBudget; selectedThread?: string | null },
+  db?: typeof sql,
+) => (db ? getInSnapshot(input, db) : sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", (tx) => getInSnapshot(input, tx)));
 const list = (input: ChatContext & { query?: unknown }) =>
   sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const parsed = parse(ConversationQuerySchema, input.query ?? {}, input);
