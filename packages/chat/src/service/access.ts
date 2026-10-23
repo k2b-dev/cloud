@@ -10,9 +10,16 @@ import {
   type Result,
 } from "@k2b/cloud/server";
 import { type SQLQuery, sql } from "bun";
+import { app } from "../config";
 import { chatMessages } from "../messages";
 
-export type ChatContext = { actor: RequestActor; accessSubject: AccessSubject; locale?: string; requestId?: string };
+export type ChatContext = {
+  actor: RequestActor;
+  accessSubject: AccessSubject;
+  locale?: string;
+  credentialScopes?: readonly string[];
+  requestId?: string;
+};
 export type ConversationRow = {
   id: string;
   short_id: string;
@@ -54,6 +61,9 @@ export const boundConversation = (actor: RequestActor, locale?: string): Result<
     ? ok(account.resourceId)
     : fail(err.forbidden(messages({ locale }).forbidden));
 };
+export const personalChannelKey = (subject: AccessSubject) =>
+  subject.type === "user" ? `p:${subject.userId}` : `p:service_account:${subject.serviceAccountId}`;
+export const discoveryAllowed = () => app.settings.get("chat.discoverable_authenticated");
 export const principalCondition = (subject: AccessSubject, db: typeof sql = sql) =>
   buildAccessPrincipalCondition({
     subject,
@@ -77,6 +87,25 @@ export const readableMemberCondition = (subject: AccessSubject, bound: string | 
   AND ${bound ? db`c.short_id = ${bound}` : db`true`}
 `;
 
+export const discoveryGroupCondition = (subject: AccessSubject, db: typeof sql = sql) =>
+  subject.type === "user"
+    ? db`(a.group_id IS NULL OR EXISTS(SELECT 1 FROM auth.users u WHERE u.id = ${subject.userId}::uuid AND u.profile <> 'guest'))`
+    : db`a.group_id IS NULL`;
+
+/** The production permission query is also the integration EXPLAIN seam. */
+export const conversationAccessQuery = (db: typeof sql, input: ChatContext & { conversationId: string }, allowAuthenticated: boolean) => {
+  return db<(ConversationRow & { permission_rank: number })[]>`
+    SELECT c.*, COALESCE((
+      SELECT MAX(CASE WHEN ca.role = 'discoverable' THEN 1 ELSE CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END END)
+      FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+      WHERE ca.conversation_id = c.id AND ${principalCondition(input.accessSubject, db)}
+        AND a.permission IN ('read', 'write', 'admin')
+        AND (ca.role = 'member' OR (${discoveryGroupCondition(input.accessSubject, db)} AND (NOT a.authenticated_only OR ${allowAuthenticated})))
+    ), 0)::int AS permission_rank
+    FROM chat.conversations c WHERE c.short_id = ${input.conversationId}
+  `;
+};
+
 /** One SQL query resolves the resource and highest matching grant; credential checks precede it. */
 export const requireConversation = async (
   input: ChatContext & { conversationId: string; required: PermissionLevel },
@@ -85,14 +114,8 @@ export const requireConversation = async (
   const t = messages(input);
   const bound = boundConversation(input.actor, input.locale);
   if (!bound.ok || (bound.data !== null && bound.data !== input.conversationId)) return fail(err.forbidden(t.forbidden));
-  const [row] = await db<(ConversationRow & { permission_rank: number })[]>`
-    SELECT c.*, COALESCE((
-      SELECT MAX(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END)
-      FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
-      WHERE ca.conversation_id = c.id AND ${principalCondition(input.accessSubject, db)}
-    ), 0)::int AS permission_rank
-    FROM chat.conversations c WHERE c.short_id = ${input.conversationId}
-  `;
+  const allowAuthenticated = await discoveryAllowed();
+  const [row] = await conversationAccessQuery(db, input, allowAuthenticated);
   const permission = conversationPermission(input.conversationId, permissionFromRank(row?.permission_rank ?? 0), input.actor);
   if (!row || permission === "none") return fail({ code: "NOT_FOUND", message: t.notFound, status: 404 });
   if (!hasPermission(permission, input.required)) return fail(err.forbidden(t.forbidden));
@@ -141,6 +164,8 @@ export const coMemberIds = (subject: AccessSubject, db: typeof sql = sql) => db`
 export const repairMemberCount = async (conversationId: string, db: typeof sql) => {
   const [row] = await db<{ member_count: number }[]>`
     UPDATE chat.conversations SET member_count = (SELECT COUNT(*)::int FROM (${memberUsers(conversationId, db)}) members)
+      + (SELECT COUNT(DISTINCT a.service_account_id)::int FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+        JOIN auth.service_accounts sa ON sa.id = a.service_account_id WHERE ca.conversation_id = ${conversationId}::uuid AND ca.role = 'member' AND a.permission IN ('read', 'write', 'admin'))
     WHERE id = ${conversationId}::uuid RETURNING member_count
   `;
   if (!row) throw new Error("Chat member count has no conversation");

@@ -16,6 +16,7 @@ import {
   ConversationSchema,
   type CreateConversationSchema,
   CreateOutcomeSchema,
+  LeaveResultSchema,
   MemberPageSchema,
   MemberPreviewSchema,
   type MemberPrincipal,
@@ -24,12 +25,18 @@ import {
   MessageSchema,
   PeoplePageSchema,
   type PermissionSchema,
+  ReactionsSchema,
   ReadAllOutcomeSchema,
   ReadUpdateSchema,
   readStart,
+  SharedPageSchema,
+  type SharedQuerySchema,
   SuccessSchema,
+  ThreadListSchema,
+  ThreadSchema,
   UNREAD_CAP,
 } from "../service/contracts";
+import { chatHasThreads, inView, type ThreadList, type ThreadView } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 type Message = z.infer<typeof MessageSchema>;
@@ -38,33 +45,47 @@ type MessagePage = z.infer<typeof MessagePageSchema>;
 type ChangesPage = z.infer<typeof ChangesPageSchema>;
 type Summary = Extract<z.infer<typeof ChatLiveEventSchema>, { type: "summary" }>;
 export type ChatStoreApi = {
+  react(id: string, message: string, emoji: string, on: boolean): Promise<void>;
+  reactions(id: string, message: string): Promise<z.infer<typeof ReactionsSchema>>;
   create(input: z.input<typeof CreateConversationSchema>): Promise<z.infer<typeof CreateOutcomeSchema>>;
   updateDetails(id: string, patch: { name?: string | null; icon?: string | null; purpose?: string | null }): Promise<Conversation>;
   members(id: string, query: { q?: string; cursor?: string }): Promise<z.infer<typeof MemberPageSchema>>;
+  shared(id: string, query: z.input<typeof SharedQuerySchema>): Promise<z.infer<typeof SharedPageSchema>>;
   previewMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof MemberPreviewSchema>>;
   addMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof ChangeSchema>>;
   updateMember(id: string, accessId: string, permission: z.infer<typeof PermissionSchema>): Promise<z.infer<typeof SuccessSchema>>;
   removeMember(id: string, accessId: string): Promise<z.infer<typeof MemberRemovalSchema>>;
-  leave(id: string, successor?: string): Promise<z.infer<typeof MemberRemovalSchema>>;
+  leave(id: string, successor?: string): Promise<z.infer<typeof LeaveResultSchema>>;
   people(search: string, cursor?: string, signal?: AbortSignal): Promise<z.infer<typeof PeoplePageSchema>>;
-  read(id: string, seq: number): Promise<z.infer<typeof ReadUpdateSchema>>;
+  read(id: string, seq: number, thread?: ThreadView): Promise<z.infer<typeof ReadUpdateSchema>>;
   markUnread(id: string, message?: string): Promise<z.infer<typeof ReadUpdateSchema>>;
   readAll(confirmed: boolean): Promise<z.infer<typeof ReadAllOutcomeSchema>>;
   conversations(cursor?: string): Promise<ConversationPage>;
   conversation(id: string): Promise<Conversation | null>;
-  messages(id: string, query?: { before?: number; after?: number }): Promise<MessagePage | null>;
-  snapshot(id: string, message?: string): Promise<(OpenChatSnapshot & { focus: string | null }) | null>;
+  messages(id: string, query?: { before?: number; after?: number; thread?: ThreadView }): Promise<MessagePage | null>;
+  snapshot(id: string, message?: string, thread?: ThreadView): Promise<(OpenChatSnapshot & { focus: string | null }) | null>;
+  threads(id: string): Promise<ThreadList | null>;
+  createThread(id: string, input: { name: string; description: string | null; createKey: string }): Promise<z.infer<typeof ThreadSchema>>;
+  updateThread(
+    id: string,
+    thread: string,
+    patch: { name?: string; description?: string | null; archived?: boolean },
+  ): Promise<z.infer<typeof ThreadSchema>>;
   changes(id: string, afterRev: number): Promise<ChangesPage | "RESYNC_REQUIRED" | null>;
 };
-export type OpenChatSnapshot = { cursor: string; conversation: Conversation; page: MessagePage };
+export type OpenChatSnapshot = { cursor: string; conversation: Conversation; page: MessagePage; threads: ThreadList };
 export type ChatStoreSnapshot = {
   viewerId: string;
   cursor: string;
   sidebar: ConversationPage;
-  open?: { conversation: Conversation; page: MessagePage };
+  open?: { conversation: Conversation; page: MessagePage; threads: ThreadList; view: ThreadView };
 };
 export type OpenChat = {
   id: string;
+  /** The open part of the chat: "all", "general", or a thread's ID. Only its messages are in `messages`. */
+  view: ThreadView;
+  threads: ThreadList | null;
+  threadsStatus: "ready" | "loading" | "failed";
   status: "live" | "no-access" | "stopped";
   conversation: Conversation | null;
   messages: readonly Message[];
@@ -102,6 +123,17 @@ export const createChatStoreApi = (): ChatStoreApi => {
     return schema.parse(await response.json());
   };
   return {
+    react: async (id, message, emoji, on) => {
+      const route = client.conversations[":conversation"].messages[":message"].reactions[":emoji"];
+      const request = { param: { conversation: id, message, emoji } };
+      const response = on ? await route.$put(request) : await route.$delete(request);
+      if (!response.ok) throw await requestError(response);
+    },
+    reactions: async (id, message) =>
+      requiredResponse(
+        await client.conversations[":conversation"].messages[":message"].reactions.$get({ param: { conversation: id, message } }),
+        ReactionsSchema,
+      ),
     create: async (input) => requiredResponse(await client.conversations.$post({ json: input }), CreateOutcomeSchema),
     updateDetails: async (id, patch) =>
       requiredResponse(
@@ -110,6 +142,8 @@ export const createChatStoreApi = (): ChatStoreApi => {
       ),
     members: async (id, query) =>
       requiredResponse(await client.conversations[":conversation"].members.$get({ param: { conversation: id }, query }), MemberPageSchema),
+    shared: async (id, query) =>
+      requiredResponse(await client.conversations[":conversation"].shared.$get({ param: { conversation: id }, query }), SharedPageSchema),
     previewMembers: async (id, members) =>
       requiredResponse(
         await client.conversations[":conversation"].members.preview.$post({ param: { conversation: id }, json: { members } }),
@@ -136,14 +170,17 @@ export const createChatStoreApi = (): ChatStoreApi => {
     leave: async (id, successor) =>
       requiredResponse(
         await client.conversations[":conversation"].leave.$post({ param: { conversation: id }, json: { successor } }),
-        MemberRemovalSchema,
+        LeaveResultSchema,
       ),
     people: async (search, cursor, signal) =>
       requiredResponse(await client.people.$get({ query: { search, cursor } }, { init: { signal } }), PeoplePageSchema),
 
-    read: async (id, seq) =>
+    read: async (id, seq, thread) =>
       requiredResponse(
-        await client.conversations[":conversation"].read.$post({ param: { conversation: id }, json: { seq } }),
+        await client.conversations[":conversation"].read.$post({
+          param: { conversation: id },
+          json: { seq, ...(thread ? { thread } : {}) },
+        }),
         ReadUpdateSchema,
       ),
     markUnread: async (id, message) =>
@@ -160,14 +197,33 @@ export const createChatStoreApi = (): ChatStoreApi => {
       parseResponse(
         await client.conversations[":conversation"].messages.$get({
           param: { conversation: id },
-          query: { before: query?.before?.toString(), after: query?.after?.toString() },
+          query: {
+            before: query?.before?.toString(),
+            after: query?.after?.toString(),
+            ...(query?.thread && query.thread !== "all" ? { thread: query.thread } : {}),
+          },
         }),
         MessagePageSchema,
       ),
-    snapshot: async (id, message) =>
+    snapshot: async (id, message, thread) =>
       parseResponse(
-        await client.conversations[":conversation"].snapshot.$get({ param: { conversation: id }, query: { message } }),
+        await client.conversations[":conversation"].snapshot.$get({
+          param: { conversation: id },
+          query: { message, ...(thread && thread !== "all" ? { thread } : {}) },
+        }),
         ChatSnapshotSchema,
+      ),
+    threads: async (id) =>
+      parseResponse(await client.conversations[":conversation"].threads.$get({ param: { conversation: id } }), ThreadListSchema),
+    createThread: async (id, input) =>
+      requiredResponse(
+        await client.conversations[":conversation"].threads.$post({ param: { conversation: id }, json: input }),
+        ThreadSchema,
+      ),
+    updateThread: async (id, thread, patch) =>
+      requiredResponse(
+        await client.conversations[":conversation"].threads[":thread"].$patch({ param: { conversation: id, thread }, json: patch }),
+        ThreadSchema,
       ),
     changes: async (id, afterRev) => {
       const response = await client.conversations[":conversation"].changes.$get({
@@ -226,6 +282,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     older: Promise<boolean> | null;
     newer: Promise<boolean> | null;
     latest: Promise<void> | null;
+    threadsWork: Promise<void> | null;
+    threadsAgain: boolean;
   };
   let current: Current | null = null;
   const notify = () => {
@@ -259,11 +317,28 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     if (chat.to === null && sequences.has(1)) chat.from = chat.to = 1;
     if (chat.to !== null) while (sequences.has(chat.to + 1)) chat.to++;
   };
+  type ReactionChange = { emoji: string; on: boolean };
+  type ReactionWork = { base: Message["reactions"]; pending: ReactionChange[]; tail: Promise<void> };
+  const reactionWork = new WeakMap<Current, Map<string, ReactionWork>>();
+  const changeReaction = (items: Message["reactions"], { emoji, on }: ReactionChange): Message["reactions"] => {
+    const known = items.find((item) => item.emoji === emoji);
+    if ((known?.own ?? false) === on) return items;
+    if (!known) return [...items, { emoji, count: 1, own: true }];
+    return items.flatMap((item) =>
+      item !== known ? [item] : item.count === 1 && !on ? [] : [{ ...item, count: item.count + (on ? 1 : -1), own: on }],
+    );
+  };
+  const pendingReactions = (chat: Current, message: Message): Message => {
+    const work = reactionWork.get(chat)?.get(message.id);
+    if (!work) return message;
+    work.base = message.reactions;
+    return { ...message, reactions: work.pending.reduce(changeReaction, work.base) };
+  };
   const applyMessage = (chat: Current, message: Message) => {
     if (!active(chat) || message.conversationId !== chat.view.id) return;
     const known = chat.messages.get(message.id);
     if ((chat.from === null || message.seq >= chat.from) && (known ? message.rev > known.rev : message.rev > chat.view.watermark))
-      chat.messages.set(message.id, message);
+      chat.messages.set(message.id, pendingReactions(chat, message));
     chat.view = { ...chat.view, watermark: Math.max(chat.view.watermark, message.rev), seqHead: Math.max(chat.view.seqHead, message.seq) };
     extendWindow(chat);
   };
@@ -272,7 +347,10 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     chat.view = {
       ...chat.view,
       messages: [...chat.messages.values()]
-        .filter((message) => chat.from !== null && chat.to !== null && message.seq >= chat.from && message.seq <= chat.to)
+        .filter(
+          (message) =>
+            chat.from !== null && chat.to !== null && message.seq >= chat.from && message.seq <= chat.to && inView(chat.view.view, message),
+        )
         .sort((a, b) => a.seq - b.seq),
       hasOlder: chat.from !== null && chat.from > 1,
       hasNewer: chat.to !== null && chat.to < chat.view.seqHead,
@@ -287,7 +365,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   };
   const replaceMessages = async (chat: Current) => {
     const watermark = chat.view.watermark;
-    const page = await api.messages(chat.view.id);
+    const page = await api.messages(chat.view.id, { thread: chat.view.view });
     if (!active(chat)) return;
     if (page === null) return noAccess(chat);
     const conversation = await api.conversation(chat.view.id);
@@ -298,10 +376,11 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     const currentConversation = chat.view.conversation;
     const keepMetadata = page.rev >= watermark && currentConversation !== null && currentConversation.rev > conversation.rev;
     // A restored chat can move back in revisions, so the replacement wins over the guard.
-    chat.messages = new Map(page.items.map((message) => [message.id, MessageSchema.parse(message)]));
+    chat.messages = new Map(page.items.map((message) => [message.id, pendingReactions(chat, MessageSchema.parse(message))]));
     chat.window++;
-    chat.from = page.items[0]?.seq ?? null;
-    chat.to = page.items.at(-1)?.seq ?? null;
+    // The page says which positions it covers for the open view, also between messages of other threads.
+    chat.from = page.from;
+    chat.to = page.to;
     chat.view = {
       ...chat.view,
       conversation: keepMetadata ? currentConversation : conversation,
@@ -319,7 +398,10 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       return Promise.resolve(false);
     const window = chat.window;
     const work = (async () => {
-      const page = await api.messages(chat.view.id, direction === "older" ? { before: boundary } : { after: boundary });
+      const page = await api.messages(
+        chat.view.id,
+        direction === "older" ? { before: boundary, thread: chat.view.view } : { after: boundary, thread: chat.view.view },
+      );
       if (!active(chat) || chat.window !== window) return false;
       if (page === null) {
         noAccess(chat);
@@ -328,13 +410,11 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       for (const row of page.items) {
         const message = MessageSchema.parse(row);
         const known = chat.messages.get(message.id);
-        if (!known || message.rev > known.rev) chat.messages.set(message.id, message);
+        if (!known || message.rev > known.rev) chat.messages.set(message.id, pendingReactions(chat, message));
       }
       chat.view = { ...chat.view, seqHead: Math.max(chat.view.seqHead, page.seqHead, ...page.items.map((message) => message.seq)) };
-      if (direction === "older" && chat.from !== null) {
-        const sequences = new Set([...chat.messages.values()].map((message) => message.seq));
-        while (sequences.has(chat.from - 1)) chat.from--;
-      }
+      if (direction === "older" && chat.from !== null) chat.from = Math.min(chat.from, page.from);
+      if (direction === "newer" && chat.to !== null) chat.to = Math.max(chat.to, page.to);
       extendWindow(chat);
       publishMessages(chat);
       return direction === "older" ? chat.from !== boundary : chat.to !== boundary;
@@ -377,29 +457,71 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       chat.view = { ...chat.view, membershipRev: chat.view.membershipRev + 1 };
       notify();
     }
+    // Thread changes and reads missed while away are in no message delta.
+    await refreshThreads(chat);
   };
-  const open = (next: OpenChatSnapshot) => {
+  // The threads' counts, last messages, and order come from the server, after every change that may touch them. A
+  // refresh asked for while one runs runs once more after it, so a burst of messages costs two requests.
+  const refreshThreads = (chat: Current): Promise<void> => {
+    if (chat.threadsWork) {
+      chat.threadsAgain = true;
+      return chat.threadsWork;
+    }
+    const work = (async () => {
+      // The caller stores this work before it runs, and it is released in the same step as the last check, so a refresh
+      // asked for at any moment either joins a loop that checks again or starts a new one.
+      await null;
+      try {
+        do {
+          chat.threadsAgain = false;
+          if (!active(chat)) return;
+          const list = await api.threads(chat.view.id).catch(() => undefined);
+          if (!active(chat)) return;
+          if (list === null) return noAccess(chat);
+          // The chat's thread count follows its list, so the first thread shows the thread controls at once.
+          const conversation =
+            list && chat.view.conversation ? { ...chat.view.conversation, threads: list.items.length } : chat.view.conversation;
+          chat.view =
+            list === undefined
+              ? { ...chat.view, threadsStatus: "failed" }
+              : { ...chat.view, conversation, threads: list, threadsStatus: "ready" };
+          notify();
+        } while (chat.threadsAgain);
+      } finally {
+        chat.threadsWork = null;
+      }
+    })();
+    chat.threadsWork = work;
+    return work;
+  };
+  const open = (next: OpenChatSnapshot & { view: ThreadView }) => {
     opening++;
     if (disposed) return;
     current?.subscription?.close();
+    const seqHead = Math.max(next.page.seqHead, ...next.page.items.map((message) => message.seq));
     const chat: Current = {
       view: {
         id: next.conversation.id,
+        view: next.view,
+        threads: next.threads,
+        threadsStatus: "ready",
         status: "live",
         conversation: next.conversation,
         membershipRev: 0,
         watermark: next.page.rev,
-        seqHead: Math.max(next.page.seqHead, ...next.page.items.map((message) => message.seq)),
-        hasOlder: (next.page.items[0]?.seq ?? 0) > 1,
-        hasNewer: next.page.items.length > 0 && next.page.items.at(-1)!.seq < next.page.seqHead,
+        seqHead,
+        hasOlder: next.page.from > 1,
+        hasNewer: next.page.to < seqHead,
         messages: next.page.items.map((message) => MessageSchema.parse(message)),
       },
-      from: next.page.items[0]?.seq ?? null,
-      to: next.page.items.at(-1)?.seq ?? null,
+      from: next.page.from,
+      to: next.page.to,
       window: 0,
       older: null,
       newer: null,
       latest: null,
+      threadsWork: null,
+      threadsAgain: false,
       metadataRev: next.conversation.rev,
       messages: new Map(next.page.items.map((message) => [message.id, MessageSchema.parse(message)])),
       subscription: null,
@@ -415,17 +537,41 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
           let system = false,
             membership = false,
             highestRev = 0;
+          let threadsChanged = false;
+          const reactionHints = new Map<string, number>();
           for (const { data } of events) {
             if (!active(chat)) return;
+            if (data.type === "reactions" && data.conversationId === chat.view.id) {
+              const known = chat.messages.get(data.messageId);
+              if (known && data.rev > known.rev)
+                reactionHints.set(data.messageId, Math.max(data.rev, reactionHints.get(data.messageId) ?? 0));
+            }
+            if (data.type === "threads" && data.conversationId === chat.view.id) threadsChanged = true;
+            // A channel's subscriptions change its members without a timeline line; the members and counts follow.
+            if (data.type === "membership" && data.conversationId === chat.view.id) membership = system = true;
             if (data.type !== "message" || data.message.conversationId !== chat.view.id) continue;
-            applyMessage(chat, data.message);
+            if (data.message.kind === "text" && chatHasThreads(chat.view.conversation)) threadsChanged = true;
+            applyMessage(chat, { ...data.message, reactions: [] });
             if (data.message.kind === "system") {
               system = true;
               if (data.message.system && membershipCodes.has(data.message.system.code)) membership = true;
             }
             highestRev = Math.max(highestRev, data.message.rev);
           }
+          for (const [id, rev] of reactionHints) {
+            const items = await api.reactions(chat.view.id, id);
+            if (!active(chat)) return;
+            const known = chat.messages.get(id);
+            if (!known || known.rev >= rev) continue;
+            chat.messages.set(
+              id,
+              pendingReactions(chat, { ...known, rev, reactions: items.items.map(({ emoji, count, own }) => ({ emoji, count, own })) }),
+            );
+            chat.view = { ...chat.view, watermark: Math.max(chat.view.watermark, rev) };
+          }
           if (membership) chat.view = { ...chat.view, membershipRev: chat.view.membershipRev + 1 };
+          // The messages show at once; the threads follow.
+          if (threadsChanged) void refreshThreads(chat);
           if (system) await refreshMetadata(chat);
           if (active(chat)) chat.metadataRev = Math.max(chat.metadataRev, highestRev);
           publishMessages(chat);
@@ -450,9 +596,12 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     sidebarWork = work.catch(() => {});
     return work;
   };
+  // Counts sidebar reloads, which follow every membership change and resync, so views of subscriptions can follow.
+  let subscriptionsVersion = 0;
   const reloadSidebar = async () => {
     const page = await api.conversations();
     if (disposed) return;
+    subscriptionsVersion++;
     rows = [...page.items];
     unreadRev.clear();
     for (const row of rows) unreadRev.set(row.id, row.rev);
@@ -505,8 +654,26 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     const read = { lastReadSeq: data.lastReadSeq, unreadFromSeq: data.unreadFromSeq, joinedSeq: data.joinedSeq };
     rows = rows.map((row) => (row.id === known.id ? { ...row, read, unread: data.unread } : row));
     unreadRev.set(known.id, data.asOfRev);
-    if (current?.view.id === known.id && current.view.conversation)
-      current.view = { ...current.view, conversation: { ...current.view.conversation, read, unread: data.unread } };
+    const chat = current;
+    if (chat?.view.id === known.id && chat.view.conversation) {
+      const list = chat.view.threads;
+      const touched = new Map(data.threads.map((thread) => [thread.id, thread]));
+      chat.view = {
+        ...chat.view,
+        conversation: { ...chat.view.conversation, read, unread: data.unread },
+        threads: list && {
+          ...list,
+          items: list.items.map((thread) => {
+            const next = touched.get(thread.id);
+            return next
+              ? { ...thread, unread: next.unread, read: { lastReadSeq: next.lastReadSeq, unreadFromSeq: next.unreadFromSeq } }
+              : thread;
+          }),
+        },
+      };
+      // General's own count is not part of the event; the thread list says it exactly.
+      if (list && list.items.length > 0) void refreshThreads(chat);
+    }
     notify();
   };
   const applySummary = async (summary: Summary) => {
@@ -522,7 +689,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       unreadRev.set(known.id, summary.rev);
     }
     if (known && summary.rev <= known.rev) return;
-    if (!known || summary.kind === "system") {
+    if (!known || summary.kind === "system" || summary.thread !== null) {
       const row = await api.conversation(summary.conversationId);
       if (disposed) return;
       if (row !== null) unreadRev.set(row.id, row.rev);
@@ -537,7 +704,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         ...known,
         rev: summary.rev,
         lastActivityAt: summary.createdAt,
-        lastMessage: { id: summary.id, author: summary.author, preview: summary.preview ?? "", createdAt: summary.createdAt },
+        lastMessage: { thread: null, id: summary.id, author: summary.author, preview: summary.preview ?? "", createdAt: summary.createdAt },
       });
     notify();
   };
@@ -550,7 +717,11 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         parse: (data) => ChatLiveEventSchema.parse(data),
         apply: (events) =>
           sidebar(async () => {
-            for (const { data } of events) if (data.type === "summary") await applySummary(data);
+            for (const { data } of events) {
+              if (data.type === "summary") await applySummary(data);
+              else if (data.type === "membership" && rows.some((row) => row.id === data.conversationId))
+                await refetchRow(data.conversationId);
+            }
           }),
         resync: () => sidebar(reloadSidebar),
         unavailable: stopped,
@@ -589,7 +760,59 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       await sidebar(() => refetchRow(id)).catch(() => {});
       return result;
     },
+    react: (id: string, messageId: string, emoji: string, on: boolean): Promise<void> => {
+      const chat = current;
+      const known = chat?.view.id === id && active(chat) ? chat.messages.get(messageId) : undefined;
+      if (!chat || !known) return api.react(id, messageId, emoji, on);
+      let messages = reactionWork.get(chat);
+      if (!messages) {
+        messages = new Map();
+        reactionWork.set(chat, messages);
+      }
+      let work = messages.get(messageId);
+      if (!work) {
+        work = { base: known.reactions, pending: [], tail: Promise.resolve() };
+        messages.set(messageId, work);
+      }
+      const state = work;
+      const change = { emoji, on };
+      state.pending.push(change);
+      const publish = () => {
+        if (!active(chat)) return;
+        const message = chat.messages.get(messageId);
+        if (!message) return;
+        chat.messages.set(messageId, { ...message, reactions: state.pending.reduce(changeReaction, state.base) });
+        publishMessages(chat);
+      };
+      publish();
+      const request = state.tail.then(async () => {
+        try {
+          await api.react(id, messageId, emoji, on);
+          state.base = changeReaction(state.base, change);
+        } finally {
+          state.pending = state.pending.filter((pending) => pending !== change);
+          publish();
+          if (!state.pending.length) {
+            messages.delete(messageId);
+            void reconcile();
+          }
+        }
+      });
+      // A write's answer can arrive after newer reactions from elsewhere, so once this message has no pending change,
+      // its reactions are read again from the server instead of trusting the local sum.
+      const reconcile = async () => {
+        const fresh = await api.reactions(id, messageId).catch(() => null);
+        if (!fresh || !active(chat) || messages.has(messageId)) return;
+        const message = chat.messages.get(messageId);
+        if (!message) return;
+        chat.messages.set(messageId, { ...message, reactions: fresh.items.map(({ emoji, count, own }) => ({ emoji, count, own })) });
+        publishMessages(chat);
+      };
+      state.tail = request.catch(() => {});
+      return request;
+    },
     members: (id: string, query: Parameters<ChatStoreApi["members"]>[1]) => api.members(id, query),
+    shared: (id: string, query: Parameters<ChatStoreApi["shared"]>[1]) => api.shared(id, query),
     previewMembers: (id: string, members: MemberPrincipal[]) => api.previewMembers(id, members),
     addMembers: async (id: string, members: MemberPrincipal[]) => {
       const result = await api.addMembers(id, members);
@@ -614,16 +837,23 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       await sidebar(reloadSidebar).catch(() => {});
       return result;
     },
+    refreshSidebar: () => sidebar(reloadSidebar),
     people: (search: string, signal?: AbortSignal) => api.people(search, undefined, signal),
     // Only the FIFO personal live channel applies write results; HTTP responses never change local state.
-    markRead: (id: string, seq: number) => api.read(id, seq),
+    markRead: (id: string, seq: number, thread?: ThreadView) => api.read(id, seq, thread),
     markUnread: (id: string, message?: string) => api.markUnread(id, message),
+    /** The ID of the chat's message at `seq`, read from the server, or null when it is gone. */
+    messageAt: async (id: string, seq: number) =>
+      (await api.messages(id, { before: seq + 1 }))?.items.find((message) => message.seq === seq)?.id ?? null,
     readAll: (confirmed: boolean) => api.readAll(confirmed),
     get sidebar(): readonly Conversation[] {
       return rows;
     },
     get hasMoreSidebar() {
       return nextCursor !== null;
+    },
+    get subscriptionsVersion() {
+      return subscriptionsVersion;
     },
     loadMoreSidebar: (): Promise<void> => {
       if (moreSidebar) return moreSidebar;
@@ -671,19 +901,23 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     openChat: async (
       id: string,
       message?: string,
+      view: ThreadView = "all",
     ): Promise<{ status: "opened"; focus: string | null } | { status: "no-access" } | { status: "superseded" }> => {
       const request = ++opening;
       if (disposed) return { status: "superseded" };
-      const next = await api.snapshot(id, message);
+      const next = await api.snapshot(id, message, view);
       if (disposed || request !== opening) return { status: "superseded" };
       if (next) {
-        open(next);
+        open({ ...next, view });
         return { status: "opened", focus: next.focus };
       }
       current?.subscription?.close();
       const chat: Current = {
         view: {
           id,
+          view,
+          threads: null,
+          threadsStatus: "ready",
           status: "live",
           conversation: null,
           messages: [],
@@ -702,10 +936,27 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         older: null,
         newer: null,
         latest: null,
+        threadsWork: null,
+        threadsAgain: false,
       };
       current = chat;
       noAccess(chat);
       return { status: "no-access" };
+    },
+    /** Reads the open chat's threads again, for example after the list failed to load. */
+    refreshThreads: () => (current ? refreshThreads(current) : Promise.resolve()),
+    // A created or changed thread shows at once; the live event brings the same list to the reader's other tabs.
+    createThread: async (id: string, input: Parameters<ChatStoreApi["createThread"]>[1]) => {
+      const thread = await api.createThread(id, input);
+      if (current?.view.id === id) await refreshThreads(current);
+      await sidebar(() => refetchRow(id)).catch(() => {});
+      return thread;
+    },
+    updateThread: async (id: string, thread: string, patch: Parameters<ChatStoreApi["updateThread"]>[2]) => {
+      const result = await api.updateThread(id, thread, patch);
+      if (current?.view.id === id) await refreshThreads(current);
+      await sidebar(() => refetchRow(id)).catch(() => {});
+      return result;
     },
     get openConversation(): OpenChat | null {
       return current?.view ?? null;

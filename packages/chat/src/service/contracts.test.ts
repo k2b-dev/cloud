@@ -130,6 +130,7 @@ test("conversation revisions, summary timestamps and membership hints are part o
   expect(ChatLiveEventSchema.safeParse({ type: "membership", conversationId: "missing-id" }).success).toBeFalse();
   const summary = {
     type: "summary",
+    thread: null,
     conversationId: "abcdef",
     id: "0123456789",
     seq: 1,
@@ -189,7 +190,7 @@ test("personal read contracts reject unsafe seqs, unknown input fields and unbou
     "./contracts"
   );
   for (const seq of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) expect(ReadSchema.safeParse({ seq }).success).toBeFalse();
-  expect(ReadSchema.parse({ seq: Number.MAX_SAFE_INTEGER })).toEqual({ seq: Number.MAX_SAFE_INTEGER });
+  expect(ReadSchema.parse({ seq: Number.MAX_SAFE_INTEGER })).toEqual({ seq: Number.MAX_SAFE_INTEGER, thread: "general" });
   expect(ReadSchema.safeParse({ seq: 1, lastReadAt: "now" }).success).toBeFalse();
   expect(MarkUnreadSchema.parse({})).toEqual({});
   expect(MarkUnreadSchema.safeParse({ message: "bad" }).success).toBeFalse();
@@ -198,7 +199,7 @@ test("personal read contracts reject unsafe seqs, unknown input fields and unbou
   const state = { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 };
   expect(ReadStateSchema.parse(state)).toEqual(state);
   expect(ReadStateSchema.safeParse({ ...state, unreadFromSeq: 0 }).success).toBeFalse();
-  const update = { ...state, conversationId: "abcdef", unread: 100, asOfRev: 1 };
+  const update = { threads: [], ...state, conversationId: "abcdef", unread: 100, asOfRev: 1 };
   expect(ReadUpdateSchema.safeParse(update).success).toBeTrue();
   expect(ReadUpdateSchema.safeParse({ ...update, unread: 101 }).success).toBeFalse();
   expect(ReadUpdateSchema.safeParse({ ...update, asOfRev: undefined }).success).toBeFalse();
@@ -228,4 +229,58 @@ test("member query bounds search and strictly decodes opaque name and access-ID 
   });
   expect(MemberPreviewSchema.safeParse({ joining: -1, throughGroups: 0, memberCount: 3 }).success).toBeFalse();
   expect(MemberPreviewSchema.safeParse({ joining: 1.5, throughGroups: 0, memberCount: 3 }).success).toBeFalse();
+});
+
+test("thread input is strict, bounded, trimmed and supports explicit read selectors", async () => {
+  const { CreateThreadSchema, UpdateThreadSchema, ThreadIdSchema, ThreadSelectorSchema, ReadSchema, SnapshotQuerySchema } = await import(
+    "./contracts"
+  );
+  expect(CreateThreadSchema.parse({ name: " Work ", description: " " })).toEqual({ name: "Work", description: null });
+  for (const input of [
+    { name: " " },
+    { name: "a".repeat(81) },
+    { name: "A", description: "b".repeat(81) },
+    { name: "A", extra: true },
+    { name: "A", description: "two\nlines" },
+  ]) {
+    expect(CreateThreadSchema.safeParse(input).success).toBeFalse();
+  }
+  expect(UpdateThreadSchema.safeParse({}).success).toBeFalse();
+  expect(UpdateThreadSchema.parse({ archived: false })).toEqual({ archived: false });
+  expect(ThreadIdSchema.safeParse("general").success).toBeFalse();
+  for (const thread of ["general", "abc123"]) {
+    expect(ThreadSelectorSchema.safeParse(thread).success).toBeTrue();
+    expect(SnapshotQuerySchema.parse({ thread })).toEqual({ thread });
+  }
+  expect(ReadSchema.parse({ seq: 1, thread: "all" })).toEqual({ seq: 1, thread: "all" });
+  expect(SnapshotQuerySchema.safeParse({ thread: "all" }).success).toBeFalse();
+});
+
+test("channel discovery accepts bounded distinct audiences and service-account members", async () => {
+  const { ChannelQuerySchema, DiscoveryEntriesSchema, DiscoveryUpdateSchema, SystemMessageSchema } = await import("./contracts");
+  const entries = [
+    { principal: { type: "group" as const, groupId: lea }, permission: "write" as const },
+    { principal: { type: "authenticated" as const }, permission: "read" as const },
+  ];
+  expect(DiscoveryEntriesSchema.parse(entries)).toEqual(entries);
+  for (const invalid of [
+    [...entries, entries[0]],
+    [{ principal: { type: "user", userId: lea }, permission: "read" }],
+    [{ principal: { type: "authenticated" }, permission: "admin" }],
+    Array(101).fill(entries[0]),
+  ])
+    expect(DiscoveryEntriesSchema.safeParse(invalid).success).toBeFalse();
+  expect(DiscoveryUpdateSchema.parse({ entries: [], name: "  News  " })).toEqual({ entries: [], name: "News" });
+  const principal = { type: "service_account" as const, serviceAccountId: lea };
+  expect(AddMembersSchema.parse({ members: [principal, principal] }).members).toEqual([principal]);
+  expect(CreateConversationSchema.parse({ discovery: entries, members: [principal] }).discovery).toEqual(entries);
+  expect(ChannelQuerySchema.parse({ q: " News ", cursor: JSON.stringify({ name: "news", id: lea }) })).toEqual({
+    q: "News",
+    cursor: { name: "news", id: lea },
+  });
+  expect(ChannelQuerySchema.safeParse({ cursor: "invalid" }).success).toBeFalse();
+  expect(ChannelQuerySchema.safeParse({ q: "x".repeat(101) }).success).toBeFalse();
+  expect(SystemMessageSchema.parse({ code: "discovery_changed", params: { count: 2 } }).code).toBe("discovery_changed");
+  expect(ConversationSchema.shape.channel.parse(true)).toBeTrue();
+  expect(ConversationSchema.shape.member.parse(false)).toBeFalse();
 });

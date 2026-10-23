@@ -67,6 +67,7 @@ export const formatShortcut = (shortcut: string, options: ShortcutFormatOptions 
     esc: { label: "Esc", name: t.escape },
     tab: { label: "Tab", name: t.tab },
     space: { label: t.spaceLabel, name: t.space },
+    click: { label: t.clickLabel, name: t.click },
     backspace: { label: "⌫", name: t.backspace },
     delete: { label: apple ? "⌦" : t.deleteLabel, name: t.delete },
     home: { label: t.homeLabel, name: t.home },

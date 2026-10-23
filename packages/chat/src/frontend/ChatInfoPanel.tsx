@@ -8,6 +8,7 @@ import {
   InlineGuidance,
   prompts,
   SelectChip,
+  StatusBadge,
   TextInput,
   Tooltip,
   toast,
@@ -41,6 +42,11 @@ export default function ChatInfoPanel(props: {
   onClose: () => void;
   onAddPeople: () => void;
   onEditDetails: () => void;
+  /** For admins: "New thread", also where the chat has none yet. */
+  onCreateThread?: () => void;
+  /** What the chat shared, below its members. */
+  shared?: JSX.Element;
+  onDiscovery?: () => void;
   onLeave: () => void;
 }): JSX.Element {
   const t = useChatMessages();
@@ -149,7 +155,7 @@ export default function ChatInfoPanel(props: {
   const remove = async (member: Member) => {
     const store = props.store;
     if (!store || changing()) return;
-    const confirmed = await prompts.confirm(t().removeMemberDescription, {
+    const confirmed = await prompts.confirm(props.conversation.channel ? t().removeChannelMemberDescription : t().removeMemberDescription, {
       title: t().removeMemberTitle({ name: member.displayName }),
       icon: "ti ti-user-minus",
       confirmText: t().remove,
@@ -172,10 +178,21 @@ export default function ChatInfoPanel(props: {
 
   // The chat's own commands sit in the header: below a member list that loads, they would move.
   const commands = (): DropdownItem[] => [
+    ...(manager() && props.onDiscovery ? [{ label: t().discoverySettings, icon: "ti ti-compass", action: props.onDiscovery }] : []),
     ...(props.conversation.permission !== "read" ? [{ label: t().editDetails, icon: "ti ti-pencil", action: props.onEditDetails }] : []),
+    ...(props.onCreateThread
+      ? [{ label: t().newThread, icon: "ti ti-hash", description: t().newThreadHint, action: props.onCreateThread }]
+      : []),
     // Alone in a chat there is nobody to leave it to.
-    ...(props.conversation.memberCount > 1
-      ? [{ label: t().leaveChat, icon: "ti ti-logout", variant: "danger" as const, action: props.onLeave }]
+    ...(props.conversation.member && (props.conversation.channel || props.conversation.memberCount > 1)
+      ? [
+          {
+            label: props.conversation.channel ? t().unsubscribe : t().leaveChat,
+            icon: props.conversation.channel ? "ti ti-bell-off" : "ti ti-logout",
+            variant: "danger" as const,
+            action: props.onLeave,
+          },
+        ]
       : []),
   ];
 
@@ -252,7 +269,7 @@ export default function ChatInfoPanel(props: {
                     member={member}
                     own={member.principal.type === "user" && member.principal.userId === props.viewerId}
                     manager={manager()}
-                    locked={member.principal.type === "user" && !member.deactivated && managers() === 1 && isManagerEntry(member)}
+                    locked={member.principal.type !== "group" && !member.deactivated && managers() === 1 && isManagerEntry(member)}
                     disabled={changing()}
                     onPermission={(permission) => void changePermission(member, permission)}
                     onRemove={() => void remove(member)}
@@ -286,6 +303,8 @@ export default function ChatInfoPanel(props: {
             </Show>
           </div>
         </DetailPanel.Section>
+        {/* Below the members, it waits for their first page, so their arrival never pushes it down. */}
+        <Show when={status() !== "loading" || rows.length > 0}>{props.shared}</Show>
       </DetailPanel.Body>
     </DetailPanel>
   );
@@ -323,12 +342,31 @@ export function ChatMemberRow(props: {
       props.member.groupSize === null ? null : size(props.member.groupSize),
     ].filter((marker) => marker !== null);
   // Groups always write; only a direct person's level changes.
-  const editable = () => props.manager && props.member.principal.type === "user";
+  const editable = () => props.manager && props.member.principal.type !== "group";
   return (
     <li class="chat-member-row">
       <MemberAvatar principal={props.member.principal} displayName={props.member.displayName} avatarHash={props.member.avatarHash} />
       <span class="chat-member-row__name">
-        <span class="truncate text-sm">{props.member.displayName}</span>
+        <span class="flex min-w-0 items-center gap-1">
+          <span class="truncate text-sm">{props.member.displayName}</span>
+          <Show when={props.member.serviceAccountKind}>
+            {(kind) => (
+              <StatusBadge
+                tone="neutral"
+                variant="text"
+                label={
+                  kind() === "agent"
+                    ? t().agentAccount
+                    : kind() === "standalone"
+                      ? t().standaloneAccount
+                      : kind() === "resource_bound"
+                        ? t().resourceAccount
+                        : t().delegatedAccount
+                }
+              />
+            )}
+          </Show>
+        </span>
         <Show when={markers().length > 0}>
           <span class="truncate text-xs text-dimmed">{markers().join(" · ")}</span>
         </Show>

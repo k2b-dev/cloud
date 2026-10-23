@@ -6,6 +6,12 @@ export const renderSystemMessage = (system: SystemMessage, authorName: string, l
   const t = resolved.t;
   const actor = authorName;
   switch (system.code) {
+    case "thread_created":
+      return t.systemThreadCreated({ actor, name: system.params.thread.name });
+    case "thread_renamed":
+      return t.systemThreadRenamed({ actor, from: system.params.from, to: system.params.to });
+    case "discovery_changed":
+      return system.params.count ? t.systemDiscoveryChanged({ actor }) : t.systemDiscoveryRemoved({ actor });
     case "conversation_created":
       return t.systemCreated({ actor });
     case "details_changed": {

@@ -1,9 +1,13 @@
 import { logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
+import { channels } from "./channels";
 import { conversations } from "./conversations";
 import { messages } from "./messages";
+import { reactions } from "./reactions";
 import { readState } from "./read-state";
+import { shared } from "./shared";
+import { threads } from "./threads";
 
 const log = logger("chat:api");
 
@@ -39,7 +43,7 @@ const health = async (): Promise<ChatHealth> => {
   return { status, observedAt: new Date().toISOString(), database: { status, latencyMs } };
 };
 
-export const chatService = { health, conversations, messages, readState };
+export const chatService = { health, channels, conversations, messages, reactions, readState, threads, shared };
 export type ChatService = typeof chatService;
 
 export { loadChatView } from "./snapshot";
