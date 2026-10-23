@@ -36,3 +36,5 @@ Um bei einer bestimmten Nachricht zu beginnen, öffne ihr Menü und wähle **Ab 
 :::
 
 Drücke **Esc** in einem offenen Chat, um diesen Chat als gelesen zu markieren.
+
+Kommen Nachrichten an, während du in einem anderen Tab bist, bringt dich **Neue Nachrichten** zu den übersehenen ungelesenen Nachrichten zurück. Falls nötig, lädt Chat den fehlenden Verlauf. Die Nachrichten bleiben ungelesen, bis du sie siehst.

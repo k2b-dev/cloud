@@ -24,7 +24,12 @@ const memberApi = {
 class ManualConnection implements LiveConnection {
   channels = new Map<string, (data: unknown) => Promise<void>>();
   subscribe<T>(channel: string, _scope: unknown, handlers: LiveSubscriptionHandlers<T>) {
-    this.channels.set(channel, async (data) => handlers.apply([{ data: handlers.parse(data), cursor: "cursor" }]));
+    this.channels.set(channel, async (data) => {
+      handlers.caughtUp?.(false);
+      await handlers.apply([{ data: handlers.parse(data), cursor: "cursor" }]);
+      handlers.caughtUp?.(true);
+    });
+    handlers.caughtUp?.(true);
     return { close() {} };
   }
   apply(channel: string, data: unknown) {

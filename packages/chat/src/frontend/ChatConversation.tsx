@@ -69,6 +69,8 @@ export type ChatConversationProps = {
   controller?: (controller: VirtualFeedController) => void;
   /** Key of the first new message when the chat opened; "New messages" stays above it until the chat closes. */
   markerKey: string | null;
+  /** A later unread gap can differ from the opening marker or require loading an older snapshot. */
+  unreadGap?: { key: string | null; jump: () => void };
   /** The first and last item fully in view, for reporting what the reader has seen. */
   onVisibleChange: (visible: { first: ChatFeedItem; last: ChatFeedItem } | null) => void;
   onMarkUnreadFrom: (item: ChatFeedItem) => void;
@@ -107,7 +109,10 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   const [visible, setVisible] = createSignal<{ first: ChatFeedItem; last: ChatFeedItem } | null>(null);
   const markerAway = createMemo(() => {
     const range = visible();
-    const marker = props.markerKey ? props.items.findIndex((item) => item.key === props.markerKey) : -1;
+    const key = props.unreadGap?.key ?? props.markerKey;
+    if (props.unreadGap && props.unreadGap.key === null) return "above";
+    const marker = key ? props.items.findIndex((item) => item.key === key) : -1;
+    if (props.unreadGap && marker < 0) return "above";
     if (!range || marker < 0) return null;
     return marker < props.items.indexOf(range.first) ? "above" : marker > props.items.indexOf(range.last) ? "below" : null;
   });
@@ -158,7 +163,10 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               size="sm"
               variant="ghost"
               tooltip={t().jumpToNewLabel}
-              onClick={() => props.markerKey && feed()?.scrollToKey(props.markerKey, { align: "start" })}
+              disabled={props.busy}
+              onClick={() =>
+                props.unreadGap ? props.unreadGap.jump() : props.markerKey && feed()?.scrollToKey(props.markerKey, { align: "start" })
+              }
             >
               <i class={direction() === "above" ? "ti ti-arrow-up" : "ti ti-arrow-down"} aria-hidden="true" />
               {t().jumpToNew}

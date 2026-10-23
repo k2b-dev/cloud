@@ -15,7 +15,7 @@ import {
   useLocale,
   type VirtualFeedController,
 } from "@k2b/ui";
-import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import {
@@ -63,6 +63,7 @@ const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>): OpenChat =>
   return {
     id: open.conversation.id,
     status: "live",
+    caughtUp: false,
     conversation: open.conversation,
     messages: items,
     membershipRev: 0,
@@ -222,13 +223,20 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // "New messages" stands above the first message from others after the read position as the chat opened, and stays
   // there until the reader leaves the chat, also while the read position moves on.
   const [marker, setMarker] = createSignal<string | null>(null);
+  const [unreadGap, setUnreadGap] = createSignal<{ from: number; key: string | null } | null>(null);
   // Reports what the reader sees in the open chat. After the reader marks it unread, nothing is reported until they
   // leave it, so the mark is not read away at once.
   let reporter: { chatId: string; reporter: ReturnType<typeof createReadReporter> } | undefined;
   let paused = false;
   let phone: MediaQueryList | undefined;
+  // Replay can paint many intermediate windows. Only the caught-up window starts new reading.
+  const catchingUp = createMemo(() => openChat()?.status === "live" && !openChat()?.caughtUp);
   const reading = () =>
-    Boolean(phone) && document.visibilityState === "visible" && document.hasFocus() && !(panel() === "info" && phone?.matches);
+    !catchingUp() &&
+    Boolean(phone) &&
+    document.visibilityState === "visible" &&
+    document.hasFocus() &&
+    !(panel() === "info" && phone?.matches);
   // Per chat, not per change of the open chat.
   const openId = createMemo(() => openChat()?.id ?? null);
   createEffect(
@@ -240,6 +248,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           ? undefined
           : current?.messages.find((message) => message.seq > start && message.kind === "text" && message.author.id !== props.viewerId);
       setMarker(first?.id ?? null);
+      setUnreadGap(null);
       reporter?.reporter.dispose();
       reporter = undefined;
       paused = false;
@@ -248,8 +257,23 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         chatId: id,
         reporter: createReadReporter({
           start,
-          active: reading,
-          post: (seq) => (paused ? Promise.resolve() : store ? store.markRead(id, seq) : Promise.reject(new Error("Chat is not live yet"))),
+          active: () => reading() && !paused,
+          onGap: (from) => {
+            if (from === null) {
+              setUnreadGap(null);
+              return;
+            }
+            const current = openChat();
+            // A deep link keeps its initial destination; once reading has advanced, a later gap is new.
+            if (current?.id !== id || (route().messageId && from <= start + 1)) return;
+            const first = current.messages.find(
+              (message) => message.seq >= from && message.kind === "text" && message.author.id !== props.viewerId,
+            );
+            const key = first && (current.messages[0]?.seq ?? Infinity) <= from ? first.id : null;
+            if (!marker() && key) setMarker(key);
+            setUnreadGap((previous) => (previous?.from === from && previous.key === key ? previous : { from, key }));
+          },
+          post: (seq) => (store ? store.markRead(id, seq) : Promise.reject(new Error("Chat is not live yet"))),
         }),
       };
     }),
@@ -257,18 +281,35 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   createEffect(() => {
     const current = openChat();
     const start = readStart(current?.conversation?.read ?? null);
-    if (current && start !== null && reporter?.chatId === current.id) reporter.reporter.setStart(start);
+    if (current && start !== null && reporter?.chatId === current.id) untrack(() => reporter?.reporter.setStart(start));
   });
+  let visibleRange: { first: ChatFeedItem; last: ChatFeedItem } | null = null;
+  let readFrame: number | undefined;
   const reportVisible = (visible: { first: ChatFeedItem; last: ChatFeedItem } | null) => {
-    if (!visible) return;
-    const list = items();
-    const range = seenRange(
-      list,
-      list.findIndex((item) => item.key === visible.first.key),
-      list.findIndex((item) => item.key === visible.last.key),
-    );
-    if (range) reporter?.reporter.seen(range.first, range.last);
+    visibleRange = visible;
+    if (readFrame !== undefined) return;
+    // A replay can render several intermediate windows in one task. Read only the window that reaches a frame.
+    readFrame = requestAnimationFrame(() => {
+      readFrame = undefined;
+      const visible = visibleRange;
+      if (!visible || catchingUp()) return;
+      const list = items();
+      const range = seenRange(
+        list,
+        list.findIndex((item) => item.key === visible.first.key),
+        list.findIndex((item) => item.key === visible.last.key),
+      );
+      if (range) reporter?.reporter.seen(range.first, range.last);
+    });
   };
+  createEffect(
+    on(catchingUp, (pending) => {
+      if (!pending) reportVisible(visibleRange);
+    }),
+  );
+  onCleanup(() => {
+    if (readFrame !== undefined) cancelAnimationFrame(readFrame);
+  });
   const changeRead = async (work: () => Promise<unknown> | undefined) => {
     try {
       await work();
@@ -281,18 +322,29 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // The server stops at the newest message, so the largest position marks the whole chat read.
   const markRead = (id: string) => void changeRead(() => store?.markRead(id, Number.MAX_SAFE_INTEGER));
   const markUnread = async (id: string, from?: ChatFeedItem) => {
-    const open = openChat()?.id === id;
-    if (open) paused = true;
-    // Let earlier reads finish before the server applies the unread mark.
-    if (open && reporter?.chatId === id) await reporter.reporter.settled();
-    if (from) setMarker(from.key);
-    if (!(await changeRead(() => store?.markUnread(id, from?.messageId))) && open) paused = false;
+    const target = openChat()?.id === id ? reporter : undefined;
+    const previousMarker = marker();
+    const previousGap = unreadGap();
+    if (target) paused = true;
+    // Flush already-seen reads before the unread write; pending visibility cannot advance while paused.
+    await target?.reporter.settled();
+    if (target && reporter === target) {
+      setUnreadGap(null);
+      if (from) setMarker(from.key);
+    }
+    if (!(await changeRead(() => store?.markUnread(id, from?.messageId))) && target && reporter === target) {
+      paused = false;
+      setMarker(previousMarker);
+      setUnreadGap(previousGap);
+      target.reporter.activate();
+    }
   };
   const markOpenRead = () => {
     const current = openChat();
     if (!current) return;
     paused = false;
     setMarker(null);
+    setUnreadGap(null);
     announce(t().markedRead);
     void changeRead(() => store?.markRead(current.id, current.seqHead));
   };
@@ -364,6 +416,32 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         setBusy(false);
       }
     }
+  };
+  const jumpUnreadGap = async () => {
+    const gap = unreadGap();
+    const id = route().chatId;
+    if (!gap || busy() || !id) return;
+    if (gap.key && feed?.scrollToKey(gap.key, { align: "start" })) return;
+    // A live resync can have discarded the gap. Reuse the permission-aware snapshot around first unread.
+    const previous = route();
+    const token = openToken;
+    await reporter?.reporter.settled();
+    // A pending read must not pull the reader back after they opened another chat or panel.
+    if (route() !== previous || openToken !== token) return;
+    const next = { ...previous, chatId: id, messageId: null };
+    if ((await open(next)) !== "applied") return;
+    navigate(panelHref(id, next.panel), { replace: true, scroll: "preserve" });
+    const current = openChat();
+    const start = readStart(current?.conversation?.read ?? null);
+    const first =
+      start === null
+        ? undefined
+        : current?.messages.find((message) => message.seq > start && message.kind === "text" && message.author.id !== props.viewerId);
+    if (first) {
+      if (!marker()) setMarker(first.id);
+      feed?.scrollToKey(first.id, { align: "start" });
+    }
+    setUnreadGap(null);
   };
   const openFromList = async (id: string, navigation: LinkNavigateEvent) => {
     const fromList = route().chatId === null;
@@ -654,6 +732,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         feed = controller;
                       }}
                       markerKey={marker()}
+                      unreadGap={unreadGap() ? { key: unreadGap()?.key ?? null, jump: () => void jumpUnreadGap() } : undefined}
                       onVisibleChange={reportVisible}
                       onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
                       // With the info open, Esc closes it first; the workspace owns that.

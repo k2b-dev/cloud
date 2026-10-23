@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A visible message advances past an unseen gap | A virtualized live feed reports its newest visible sequence as read after a hidden or unfocused burst, skipping unseen messages ([#1130](https://github.com/k2b-dev/cloud/issues/1130)). | Tests: Chat `read-reporter.test.ts` preserves a contiguous frontier; workspace behavior and browser tests cover hidden and unfocused bursts, reconnect replay, visible gap recovery and the separate fixed opening marker. Reading waits for catch-up and a painted visible range. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
@@ -178,6 +179,14 @@ convention still needs a check or a test.
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
 
 ## Lessons
+
+### A live Chat burst skipped unseen messages
+
+- **What happened:** Returning to a chat after a hidden or unfocused burst could advance the read position over messages the person had not seen ([#1130](https://github.com/k2b-dev/cloud/issues/1130)).
+- **Root cause:** A skipped range had no recovery control, while intermediate reconnect windows could incorrectly look like contiguous reading before catch-up completed.
+- **Error class:** A visible message advances past an unseen gap.
+- **Guard:** The read reporter retains the contiguous frontier and exposes a recoverable unread gap. Workspace behavior and browser tests require a jump back through the gap after hidden and unfocused bursts and reconnect replay, while keeping the fixed opening marker distinct. Only the caught-up, painted range begins new reading.
+
 
 ### Pulse retention confirmation and lowered policy limits
 
