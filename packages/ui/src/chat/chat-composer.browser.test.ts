@@ -511,6 +511,14 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
     }
   }, 30_000);
 
+  test("an action from the add menu returns the focus to the field, as attaching files does", async () => {
+    const page = await open({ attach: "menu" });
+    await page.locator(".k2b-chat-composer__attach").click();
+    await page.getByRole("menuitem", { name: "Poll" }).click();
+    await page.waitForFunction(() => document.activeElement?.matches(".k2b-chat-composer textarea:not([aria-hidden])"));
+    await page.close();
+  }, 30_000);
+
   test("the formatting row starts at the field's edge also with the add menu or without an attach control", async () => {
     const devices: [number, BrowserContextOptions][] = [
       [720, {}],

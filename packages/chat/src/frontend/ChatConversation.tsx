@@ -390,7 +390,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             onAttachmentsChange={setShared}
             menuActions={
               props.onPickResource
-                ? [{ id: "share-resource", label: t().shareResource, icon: "ti ti-share", onSelect: () => void pickResource() }]
+                ? [{ id: "share-resource", label: t().shareResource, icon: "ti ti-share", onSelect: () => pickResource() }]
                 : undefined
             }
             draftKey={props.draftKey ?? props.chatId}

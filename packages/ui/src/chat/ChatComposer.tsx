@@ -992,7 +992,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         label: action.label,
         variant: action.variant,
         disabled: action.disabled,
-        action: () => reportChatFailure(() => executeChatAction(action), props.onError),
+        action: () =>
+          reportChatFailure(async () => {
+            await executeChatAction(action);
+            // Like attaching files, an add action returns to the field, unless it moved the focus somewhere on purpose.
+            queueMicrotask(() => {
+              const active = textareaRef?.ownerDocument.activeElement;
+              if (!active || active === active.ownerDocument.body || active.closest(".k2b-chat-composer")) focus();
+            });
+          }, props.onError),
       });
     }
     return items;
@@ -2317,10 +2325,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         <Show when={props.reply}>
           {(reply) => (
             <div class="k2b-chat-composer__reply">
-              <Show
-                when={reply().onSelect}
-                fallback={<div class="k2b-message-row__quote">{replyQuote(reply())}</div>}
-              >
+              <Show when={reply().onSelect} fallback={<div class="k2b-message-row__quote">{replyQuote(reply())}</div>}>
                 {(select) => (
                   <button type="button" class="k2b-message-row__quote" onClick={() => select()()}>
                     {replyQuote(reply())}
