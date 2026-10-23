@@ -722,10 +722,11 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
       const f = await scene();
       const input = { id: uuid(9000 + Number(f.key.slice(4))), startsAt: "2030-03-14T10:00:00.000Z", endsAt: "2030-03-14T10:45:00.000Z" };
       await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`, { method: "POST", body: JSON.stringify(input) }));
+      // The user-backed API credential is a distinct actor from the fixture's human claim holder.
       await json(
         await request(f, `/${f.spaceId}/items/${f.taskId}/completed`, {
           method: "POST",
-          body: JSON.stringify({ completed: true, claimId: uuid(Number(f.key.slice(4)) * 10 + 6) }),
+          body: JSON.stringify({ completed: true, claimId: uuid(Number(f.key.slice(4)) * 10 + 6), force: true }),
         }),
       );
       expect((await blocks(f))[0]?.taskState).toBe("done");
@@ -782,9 +783,31 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         await page.getByRole("button", { name: "Zeit blocken", exact: true }).click();
         const dialog = page.locator(".spaces-time-block-dialog");
         await dialog.waitFor();
+        await settled(page);
         const dialogBounds = (await dialog.boundingBox())!;
         if (width === 1440) expect(Math.round(dialogBounds.width)).toBe(440);
         else expect(dialogBounds.width).toBeLessThanOrEqual(390);
+        const primary = (await dialog.getByRole("button", { name: "Zeit blocken", exact: true }).boundingBox())!;
+        const cancel = (await dialog.getByRole("button", { name: "Abbrechen", exact: true }).boundingBox())!;
+        if (width === 1440) {
+          expect(primary.width).toBeGreaterThanOrEqual(132);
+          const gap = primary.x - (cancel.x + cancel.width);
+          expect(gap).toBeGreaterThanOrEqual(0);
+          expect(gap).toBeLessThanOrEqual(12);
+        } else {
+          expect(primary.height).toBeGreaterThanOrEqual(44);
+          expect(cancel.height).toBeGreaterThanOrEqual(44);
+          for (const control of [
+            dialog.locator('[data-field="date"] .k2b-date-trigger'),
+            dialog.getByRole("combobox", { name: "Beginn", exact: true }),
+            dialog.getByLabel("Dauer", { exact: true }),
+          ]) {
+            expect((await control.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+          }
+        }
+        expect(
+          await dialog.locator('[data-field="date"] .k2b-date-trigger__value').evaluate((el) => el.scrollWidth <= el.clientWidth),
+        ).toBe(true);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
         await shot(page, "02-dialog-open");
         await dialog.getByRole("combobox", { name: "Beginn", exact: true }).fill("10:00");

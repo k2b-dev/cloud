@@ -191,12 +191,15 @@
 .spaces-time-block-fields { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 10px; }
 .spaces-time-block-fields > * { min-width: 0; }
 .spaces-time-block-hint { min-height: 18px; margin-top: 4px; font-size: .78125rem; color: var(--ui-text-dimmed); }
-.spaces-time-block-submit { min-width: 132px; }
+.k2b-ui .spaces-time-block-dialog .k2b-panel-dialog__footer { justify-content: flex-end; }
+.k2b-ui .spaces-time-block-dialog .k2b-panel-dialog__footer > .spaces-time-block-submit { min-width: 132px; }
 .spaces-time-block-context { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; font-size: .8125rem; line-height: 1.45; }
 .spaces-time-block-error { min-height: 38px; margin-top: 14px; color: var(--k2b-danger-text); font-size: .8125rem; line-height: 1.45; }
 @media (max-width: 767px) {
-  .spaces-time-block-dialog .k2b-panel-dialog__footer > button { flex: 1; }
-  .spaces-time-block-dialog .k2b-panel-dialog__footer > .spaces-time-block-submit { flex: 2; }
+  .k2b-ui .spaces-time-block-dialog .k2b-panel-dialog__footer > button { flex: 1; min-height: 44px; font-size: .9375rem; }
+  .k2b-ui .spaces-time-block-dialog .k2b-panel-dialog__footer > .spaces-time-block-submit { flex: 2; }
+  .k2b-ui .spaces-time-block-dialog .spaces-time-block-fields :is(.k2b-date-trigger, .k2b-combobox__input, .k2b-input-shell) { min-height: 44px; font-size: .9375rem; }
+  .k2b-ui .spaces-time-block-dialog .spaces-time-block-fields input { min-height: 44px; font-size: .9375rem; }
   .spaces-time-block-fields { grid-template-columns: 1fr 1fr; }
   .spaces-time-block-fields > :first-child { grid-column: 1 / -1; }
 }

@@ -114,6 +114,7 @@ export function TimeBlockDialog(props: Props) {
                   if (invalid() === "date") setInvalid(null);
                 }}
                 dateConfig={props.dateConfig}
+                renderValue={(value) => formatDeadline(value, props.dateConfig)}
                 disabled={busy() || Boolean(!props.block && submitted && error())}
                 error={invalid() === "date" ? t.chooseDate : undefined}
               />
