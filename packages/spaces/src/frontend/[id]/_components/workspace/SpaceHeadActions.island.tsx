@@ -3,6 +3,7 @@ import type { DateContext } from "@k2b/stdlib";
 import { Dropdown, type DropdownItem, MovedHint, toast, watchAppHostWidth } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import type { SpaceAssignableUser } from "@/contracts";
+import { assigneeIcon } from "@/presentation/assignees";
 import { useSpaceMessages } from "../../messages";
 import SearchButton from "../search/SearchButton";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
@@ -66,7 +67,7 @@ export default function SpaceHeadActions(props: Props) {
             sectionLabel: t.headPeople,
             items: props.people.map((person) => ({
               label: person.displayName,
-              icon: person.kind === "service_account" ? "ti ti-api" : "ti ti-user",
+              icon: person.kind === "service_account" ? assigneeIcon(person.serviceAccountKind) : "ti ti-user",
               disabled: true as const,
             })),
           },

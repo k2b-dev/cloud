@@ -128,6 +128,7 @@ export default ssr<AuthContext>(async (c) => {
   let parentItems = [] as Awaited<ReturnType<typeof accountsService.entity.list>>["items"];
   let directMemberUserIds: string[] = [];
   let directMemberGroupIds: string[] = [];
+  let directMemberServiceAccountIds: string[] = [];
   let directManagerUserIds: string[] = [];
   let directManagerGroupIds: string[] = [];
   let membersPagination = createPagination({ page, perPage, offset: (page - 1) * perPage }, 0);
@@ -151,6 +152,9 @@ export default ssr<AuthContext>(async (c) => {
     ]);
 
     memberItems = membersPage.items;
+    directMemberServiceAccountIds = directMembersPage.items
+      .filter((member) => member.type === "service_account")
+      .map((member) => member.id);
     directMemberUserIds = directMembersPage.items.filter((member) => member.type === "user").map((member) => member.id);
     directMemberGroupIds = directMembersPage.items.filter((member) => member.type === "group").map((member) => member.id);
     membersPagination = createPagination({ page, perPage, offset: (page - 1) * perPage }, membersPage.total);
@@ -314,6 +318,7 @@ export default ssr<AuthContext>(async (c) => {
               groupProvider={group.provider}
               allMemberIds={directMemberUserIds}
               allMemberGroupIds={directMemberGroupIds}
+              allMemberServiceAccountIds={directMemberServiceAccountIds}
               isAdmin={isAdmin}
               canManage={canManageMutations}
               indirect={indirect}

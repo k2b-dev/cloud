@@ -1,16 +1,17 @@
+import { hasRole } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
   type AccessSubject,
   buildAccessPrincipalCondition,
   createAccess,
   deleteAccess,
+  ensureManagerRemains,
   getEffectivePermission,
   getEffectivePermissions,
   type PermissionLevel,
   type Principal,
   type RequestActor,
   type ResourceAccessAdapter,
-  resolveDisplayNames,
   updateAccess,
 } from "@k2b/cloud/server";
 import {
@@ -20,7 +21,7 @@ import {
   serviceAccounts,
 } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
+import { type SQL, sql } from "bun";
 import { publishSpaceChange, spacesLive } from "./live";
 
 // ==========================
@@ -35,6 +36,12 @@ type DbSpaceAccess = {
   authenticated_only: boolean;
   permission: PermissionLevel;
   created_at: Date;
+  service_account_kind: AccessEntry["serviceAccountKind"] | null;
+  user_display_name: string | null;
+  user_uid: string | null;
+  user_avatar_hash: string | null;
+  group_name: string | null;
+  service_account_name: string | null;
 };
 
 export const SPACES_APP_ID = "spaces";
@@ -67,6 +74,36 @@ export const resolveSpaceApiKeyPermission = (accessPermission: PermissionLevel, 
   return minPermission(accessPermission, permissionFromScopes(credentialScopes));
 };
 
+/** Request callers are reauthorized after acquiring the resource lock. Omitted only by trusted initialization/key/adapter paths. */
+export type SpaceAccessCaller = {
+  actor: RequestActor;
+  accessSubject: AccessSubject;
+  locale?: string;
+  authority?: "grant" | "administration";
+};
+
+const authorizeAccessMutation = async (
+  spaceId: string,
+  entries: AccessEntry[],
+  caller: SpaceAccessCaller | undefined,
+  db: SQL,
+): Promise<boolean> => {
+  if (!caller) return true;
+  const user = caller.actor.kind === "user" ? caller.actor.user : caller.actor.delegatedUser;
+  if (caller.authority === "administration") return Boolean(user && hasRole(user, "admin"));
+  const account = caller.actor.kind === "service_account" ? caller.actor.serviceAccount : null;
+  if (
+    account?.kind === "resource_bound" &&
+    (account.appId !== SPACES_APP_ID || account.resourceType !== SPACE_RESOURCE_TYPE || account.resourceId !== spaceId)
+  )
+    return false;
+  let permission = await getEffectivePermission({ accessIds: entries.map((entry) => entry.id), subject: caller.accessSubject }, db);
+  if (caller.actor.kind === "service_account" && account?.kind !== "user_delegated") {
+    permission = minPermission(permission, permissionFromScopes(caller.actor.scopes));
+  }
+  return permission === "admin";
+};
+
 /** Canonical principal predicate for joined `auth.access a` rows. */
 export const buildSpacePrincipalCondition = (subject: AccessSubject) =>
   buildAccessPrincipalCondition({
@@ -94,8 +131,8 @@ export const mayReadAcrossSpaces = async (subject: AccessSubject, boundSpaceId: 
 /**
  * List all access entries for a space with resolved display names.
  */
-export const listSpaceAccess = async (spaceId: string): Promise<AccessEntry[]> => {
-  const rows = await sql<DbSpaceAccess[]>`
+export const listSpaceAccess = async (spaceId: string, db: SQL = sql): Promise<AccessEntry[]> => {
+  const rows = await db<DbSpaceAccess[]>`
     SELECT
       a.id as access_id,
       a.user_id,
@@ -103,9 +140,18 @@ export const listSpaceAccess = async (spaceId: string): Promise<AccessEntry[]> =
       a.service_account_id,
       a.authenticated_only,
       a.permission,
-      a.created_at
+      a.created_at,
+      account.kind AS service_account_kind,
+      u.display_name AS user_display_name,
+      u.uid AS user_uid,
+      u.avatar_hash AS user_avatar_hash,
+      g.name AS group_name,
+      account.name AS service_account_name
     FROM spaces.space_access sa
     JOIN auth.access a ON sa.access_id = a.id
+    LEFT JOIN auth.service_accounts account ON account.id = a.service_account_id
+    LEFT JOIN auth.users u ON u.id = a.user_id
+    LEFT JOIN auth.groups g ON g.id = a.group_id
     WHERE sa.space_id = ${spaceId}::uuid
     ORDER BY
       CASE
@@ -131,9 +177,16 @@ export const listSpaceAccess = async (spaceId: string): Promise<AccessEntry[]> =
             : { type: "public" as const },
     permission: row.permission,
     createdAt: row.created_at.toISOString(),
+    serviceAccountKind: row.service_account_kind ?? undefined,
+    displayName: row.user_id
+      ? row.user_display_name || row.user_uid || undefined
+      : row.group_id
+        ? row.group_name || undefined
+        : row.service_account_name || undefined,
+    ...(row.user_id ? { avatarHash: row.user_avatar_hash } : {}),
   }));
 
-  return resolveDisplayNames(entries);
+  return entries;
 };
 
 /**
@@ -168,20 +221,7 @@ export const addSpaceAccess = async (spaceId: string, accessId: string): Promise
  * Remove an access entry from a space.
  * Also deletes the auth.access entry (CASCADE will handle junction).
  */
-export const removeSpaceAccess = async (spaceId: string, accessId: string): Promise<Result<void>> => {
-  // First verify it belongs to this space
-  const [exists] = await sql<{ access_id: string }[]>`
-    SELECT access_id FROM spaces.space_access
-    WHERE space_id = ${spaceId}::uuid AND access_id = ${accessId}::uuid
-  `;
-
-  if (!exists) {
-    return fail(err.notFound("Access entry for this space"));
-  }
-
-  // Delete the auth.access entry (CASCADE will remove junction row)
-  return deleteAccess({ id: accessId });
-};
+export const removeSpaceAccess = (spaceId: string, accessId: string): Promise<Result<void>> => revokeSpaceAccess({ spaceId, accessId });
 
 /**
  * Count access entries for a space.
@@ -195,89 +235,47 @@ export const countSpaceAccess = async (spaceId: string): Promise<number> => {
   return row?.count ?? 0;
 };
 
-/** Remove an access entry while preventing accidental orphaning. */
-export const revokeSpaceAccess = async (params: { spaceId: string; accessId: string }): Promise<Result<void>> => {
-  const result = await sql.begin(async (tx) => {
-    const [guard] = await tx<
-      {
-        total: number;
-        other_admins: number;
-        current_permission: PermissionLevel | null;
-      }[]
-    >`
-      WITH locked AS (
-        SELECT a.id, a.permission
-        FROM spaces.space_access sa
-        JOIN auth.access a ON sa.access_id = a.id
-        WHERE sa.space_id = ${params.spaceId}::uuid
-        FOR UPDATE OF sa, a
-      )
-      SELECT
-        COUNT(*)::int AS total,
-        COUNT(*) FILTER (
-          WHERE permission = 'admin'::auth.permission_level
-            AND id <> ${params.accessId}::uuid
-        )::int AS other_admins,
-        MAX(CASE WHEN id = ${params.accessId}::uuid THEN permission END) AS current_permission
-      FROM locked
-    `;
-
-    if (!guard?.current_permission) return fail(err.notFound("Access entry for this space"));
-    if (guard.total <= 1) return fail(err.badInput("Cannot remove the last access entry"));
-    if (guard.current_permission === "admin" && guard.other_admins <= 0) {
-      return fail(err.badInput("Cannot remove the last admin"));
-    }
-
-    const result = await tx`DELETE FROM auth.access WHERE id = ${params.accessId}::uuid`;
-    if (result.count === 0) return fail(err.notFound("Access entry for this space"));
-    await publishSpaceChange(tx, { type: "access.changed", spaceId: params.spaceId });
-    return ok();
+/** Serialize grant mutations on the resource, then check the caller and the remaining managers. */
+const mutateSpaceAccess = async (params: {
+  spaceId: string;
+  accessId: string;
+  permission?: PermissionLevel;
+  caller?: SpaceAccessCaller;
+}): Promise<Result<void>> => {
+  const result = await sql.begin(async (tx): Promise<Result<void>> => {
+    const [resource] = await tx`SELECT id FROM spaces.spaces WHERE id = ${params.spaceId}::uuid FOR UPDATE`;
+    if (!resource) return fail(err.notFound("Space"));
+    const before = await listSpaceAccess(params.spaceId, tx);
+    if (!(await authorizeAccessMutation(params.spaceId, before, params.caller, tx))) return fail(err.forbidden("Access denied"));
+    if (!before.some((entry) => entry.id === params.accessId)) return fail(err.notFound("Access entry for this space"));
+    const permission = params.permission;
+    const after =
+      permission === undefined
+        ? before.filter((entry) => entry.id !== params.accessId)
+        : before.map((entry) => (entry.id === params.accessId ? { ...entry, permission } : entry));
+    const guarded = ensureManagerRemains({ before, after, locale: params.caller?.locale });
+    if (!guarded.ok) return guarded;
+    if (after.length === 0) return fail(err.badInput("Cannot remove the last access entry"));
+    const changed =
+      params.permission === undefined
+        ? await deleteAccess({ id: params.accessId }, tx)
+        : await updateAccess({ id: params.accessId, permission: params.permission }, tx);
+    if (changed.ok) await publishSpaceChange(tx, { type: "access.changed", spaceId: params.spaceId });
+    return changed;
   });
   if (result.ok) spacesLive.wake();
   return result;
 };
 
-/** Update a permission while preserving at least one Space admin. */
-export const updateSpaceAccessPermission = async (params: {
+export const revokeSpaceAccess = (params: { spaceId: string; accessId: string; caller?: SpaceAccessCaller }): Promise<Result<void>> =>
+  mutateSpaceAccess(params);
+
+export const updateSpaceAccessPermission = (params: {
   spaceId: string;
   accessId: string;
   permission: PermissionLevel;
-}): Promise<Result<void>> => {
-  const result = await sql.begin(async (tx) => {
-    const [guard] = await tx<
-      {
-        other_admins: number;
-        current_permission: PermissionLevel | null;
-      }[]
-    >`
-      WITH locked AS (
-        SELECT a.id, a.permission
-        FROM spaces.space_access sa
-        JOIN auth.access a ON sa.access_id = a.id
-        WHERE sa.space_id = ${params.spaceId}::uuid
-        FOR UPDATE OF sa, a
-      )
-      SELECT
-        COUNT(*) FILTER (
-          WHERE permission = 'admin'::auth.permission_level
-            AND id <> ${params.accessId}::uuid
-        )::int AS other_admins,
-        MAX(CASE WHEN id = ${params.accessId}::uuid THEN permission END) AS current_permission
-      FROM locked
-    `;
-
-    if (!guard?.current_permission) return fail(err.notFound("Access entry for this space"));
-    if (guard.current_permission === "admin" && params.permission !== "admin" && guard.other_admins <= 0) {
-      return fail(err.badInput("Cannot remove the last admin"));
-    }
-
-    const updated = await updateAccess({ id: params.accessId, permission: params.permission }, tx);
-    if (updated.ok) await publishSpaceChange(tx, { type: "access.changed", spaceId: params.spaceId });
-    return updated;
-  });
-  if (result.ok) spacesLive.wake();
-  return result;
-};
+  caller?: SpaceAccessCaller;
+}): Promise<Result<void>> => mutateSpaceAccess(params);
 
 /**
  * Get the effective permission level for an actor on a space.
@@ -340,55 +338,42 @@ export const grantSpaceAccess = async (params: {
   spaceId: string;
   principal: Principal;
   permission: PermissionLevel;
+  caller?: SpaceAccessCaller;
 }): Promise<Result<AccessEntry>> => {
   const { spaceId, principal, permission } = params;
-
-  // Check for duplicate principal on this space
-  const existing = await listSpaceAccess(spaceId);
-  const duplicate = existing.find((e) => {
-    if (principal.type === "public" && e.principal.type === "public") return true;
-    if (principal.type === "authenticated" && e.principal.type === "authenticated") return true;
-    if (principal.type === "user" && e.principal.type === "user" && principal.userId === e.principal.userId) return true;
-    if (principal.type === "group" && e.principal.type === "group" && principal.groupId === e.principal.groupId) return true;
-    if (
-      principal.type === "service_account" &&
-      e.principal.type === "service_account" &&
-      principal.serviceAccountId === e.principal.serviceAccountId
-    ) {
-      return true;
-    }
-    return false;
-  });
-
-  if (duplicate) {
-    return fail({
-      code: "CONFLICT",
-      message: "This principal already has access to this space",
-      status: 409,
+  const result = await sql.begin(async (tx): Promise<Result<string>> => {
+    const [resource] = await tx`SELECT id FROM spaces.spaces WHERE id = ${spaceId}::uuid FOR UPDATE`;
+    if (!resource) return fail(err.notFound("Space"));
+    const before = await listSpaceAccess(spaceId, tx);
+    if (!(await authorizeAccessMutation(spaceId, before, params.caller, tx))) return fail(err.forbidden("Access denied"));
+    const duplicate = before.some(({ principal: existing }) => {
+      switch (principal.type) {
+        case "user":
+          return existing.type === "user" && existing.userId === principal.userId;
+        case "group":
+          return existing.type === "group" && existing.groupId === principal.groupId;
+        case "service_account":
+          return existing.type === "service_account" && existing.serviceAccountId === principal.serviceAccountId;
+        default:
+          return existing.type === principal.type;
+      }
     });
-  }
-
-  // Create access entry
-  const createResult = await createAccess({ principal, permission });
-  if (!createResult.ok) return createResult;
-
-  // Link to space
-  const linkResult = await addSpaceAccess(spaceId, createResult.data.id);
-  if (!linkResult.ok) {
-    // Cleanup: delete the orphaned access entry
-    await deleteAccess({ id: createResult.data.id });
-    return linkResult;
-  }
-
-  // Return the created entry with display name
-  const entries = await listSpaceAccess(spaceId);
-  const created = entries.find((e) => e.id === createResult.data.id);
-
-  if (!created) {
-    return fail(err.internal("Failed to retrieve created access entry"));
-  }
-
-  return ok(created);
+    if (duplicate)
+      return fail({
+        code: "CONFLICT",
+        message: "This principal already has access to this space",
+        status: 409,
+      });
+    const created = await createAccess({ principal, permission }, tx);
+    if (!created.ok) return created;
+    await tx`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${spaceId}::uuid, ${created.data.id}::uuid)`;
+    await publishSpaceChange(tx, { type: "access.changed", spaceId });
+    return ok(created.data.id);
+  });
+  if (!result.ok) return result;
+  spacesLive.wake();
+  const created = (await listSpaceAccess(spaceId)).find((entry) => entry.id === result.data);
+  return created ? ok(created) : fail(err.internal("Failed to retrieve created access entry"));
 };
 
 export const ensureSpaceServiceAccountAccess = async (params: {
@@ -411,7 +396,7 @@ export const ensureSpaceServiceAccountAccess = async (params: {
 
   if (existing.permission === params.permission) return ok(existing);
 
-  const updated = await updateAccess({ id: existing.id, permission: params.permission });
+  const updated = await updateSpaceAccessPermission({ spaceId: params.spaceId, accessId: existing.id, permission: params.permission });
   if (!updated.ok) return fail(updated.error);
 
   return ok({ ...existing, permission: params.permission });

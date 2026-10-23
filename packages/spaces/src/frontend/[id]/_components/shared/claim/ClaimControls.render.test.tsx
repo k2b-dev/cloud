@@ -148,7 +148,7 @@ describe("Spaces claim controls", () => {
     expect(picture).toContain(`<img src="/api/accounts/users/${other}/avatar?rev=rev1"`);
 
     const bot = avatar({ claim: botClaim });
-    expect(bot).toContain('class="ti ti-api"');
+    expect(bot).toContain('class="ti ti-key"');
     expect(bot).toContain('title="Task worker is on it"');
 
     const own = avatar({ claim: ownClaim }, "de");
@@ -156,6 +156,18 @@ describe("Spaces claim controls", () => {
     expect(own).toContain('title="Du arbeitest daran"');
     expect(own).toContain('alt="Du arbeitest daran"');
   });
+
+  for (const [serviceAccountKind, icon] of [
+    ["agent", "ti-robot"],
+    ["standalone", "ti-key"],
+  ] as const) {
+    test(`shows the ${serviceAccountKind} principal icon in assignees and claims`, () => {
+      const assignee = { kind: "service_account" as const, id: other, serviceAccountKind, displayName: "Work helper", avatarHash: null };
+      expect(stack({ assignees: [assignee] })).toContain(`class="ti ${icon}"`);
+      expect(stack({ assignees: [assignee] })).toContain("Work helper avatar");
+      expect(avatar({ claim: { ...botClaim, serviceAccountKind } })).toContain(`class="ti ${icon}"`);
+    });
+  }
 
   test("draws a person with the same initials as claim holder and as assignee", () => {
     expect(avatar({ claim: { ...otherClaim, displayName: "Peter Fox" } })).toContain(">PF</span>");

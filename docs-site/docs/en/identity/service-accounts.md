@@ -21,8 +21,8 @@ Every service account has one `kind`:
 | --- | --- | --- |
 | `user_delegated` | A credential acting for one user | The delegated user's live grants |
 | `resource_bound` | A machine identity bound to one app resource | Explicit grants, capped to that resource |
-| `standalone` | An integration with its own identity | Explicit grants on the account |
-| `agent` | A standalone account that surfaces as an agent | Explicit grants on the account |
+| `standalone` | An integration with its own identity | Direct and local group grants |
+| `agent` | A standalone account that surfaces as an agent | Direct and local group grants |
 
 `agent` changes presentation only: pickers, entity search, permission editor
 rows, and the Accounts app show a robot icon and the label "Agent" instead of a
@@ -123,10 +123,20 @@ editor shows next to the name, and `cld spaces access list "Roadmap"` shows its
 grant with type `agent` or `service account`; see
 [Application CLI modules](/en/docs/platform/cli-modules#add-access-commands).
 
+A human group manager or installation administrator can also add an active
+standalone or agent account to a local Cloud group through Accounts, its API,
+or `cld accounts groups members add <group> --service-account <id-or-name> --yes`.
+The account inherits resource grants through the group and its local ancestors;
+removing membership or disabling the account ends that inherited access.
+This creates no Unix or FreeIPA identity. IPA groups keep their directory
+policy, and machine membership does not grant directory visibility, group
+management authority, or an installation role. See
+[Local group recipients](/en/docs/identity/authorization#local-group-recipients).
+
 Two limits apply to every request, and the lower one wins:
 
 - the account's grant on the resource, resolved through the same shared
-  resolver as for a user (direct grant, authenticated, and public grants);
+  resolver as for a user (direct grant, local group grants, authenticated, and public grants);
 - the scopes of the credential it presents. A token with only `read` cannot
   write, even with a `write` grant; a token without `read` reaches nothing.
 
@@ -155,8 +165,9 @@ In Spaces, Notebooks, Contacts, Pulse, and Venue, actions that belong to a
 person stay user-only: creating a Space, Notebook, contact book, or venue, creating and revoking API keys, managing Pulse source tokens, personal
 views such as favorites and the Spaces work overview, editing or deleting
 comments (and, in Notebooks, writing comments), writing contact notes, and
-signing up for or cancelling Venue shifts. Managing access and listing API keys
-stay user-only in Spaces, Notebooks, and Contacts.
+signing up for or cancelling Venue shifts. Managing access in Spaces, Notebooks, and Contacts follows the admin grant
+and credential scope, including for agents and standalone accounts. Listing
+API keys stays user-only in those applications.
 Managing the resource itself follows the grant: deleting a Space, Notebook, or
 contact book, renaming, importing, or exporting a contact book, administering a
 mailbox (its settings, access, sender identities, automations, and restoring it

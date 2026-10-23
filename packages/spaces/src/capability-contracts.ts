@@ -1,4 +1,9 @@
-import { CapabilitySemanticLinkSchema, CloudResourceRefSchema, CloudResourceViewSchema } from "@k2b/cloud/contracts";
+import {
+  CapabilitySemanticLinkSchema,
+  CloudResourceRefSchema,
+  CloudResourceViewSchema,
+  ServiceAccountKindSchema,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
   CreateItemTemplateSchema,
@@ -211,6 +216,7 @@ const ItemAssigneeDataSchema = z
   .object({
     id: UuidSchema,
     kind: z.enum(["user", "service_account"]).describe("Assignee principal kind"),
+    serviceAccountKind: ServiceAccountKindSchema.optional(),
     displayName: z.string().min(1).max(200),
   })
   .strict();
@@ -305,6 +311,7 @@ const ItemListBaseDataShape = {
         .object({
           id: UuidSchema,
           kind: z.enum(["user", "service_account"]).describe("Assignee principal kind"),
+          serviceAccountKind: ServiceAccountKindSchema.optional(),
           displayName: z.string().min(1).max(100),
         })
         .strict(),
@@ -396,6 +403,7 @@ export const SpaceAssigneeDataSchema = z
   .object({
     id: UuidSchema,
     kind: z.enum(["user", "service_account"]).describe("Assignee principal kind"),
+    serviceAccountKind: ServiceAccountKindSchema.optional(),
     displayName: z.string().min(1).max(200),
     description: z.string().max(300),
   })

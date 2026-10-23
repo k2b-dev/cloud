@@ -1,5 +1,6 @@
 import { Avatar, type AvatarSize } from "@k2b/ui";
 import type { SpaceItemClaim } from "@/contracts";
+import { assigneeIcon } from "@/presentation/assignees";
 import { useSpaceMessages } from "../../../messages";
 import { isOwnClaim } from "./claim";
 
@@ -36,7 +37,7 @@ export default function ClaimAvatar(props: Props) {
             ? `/api/accounts/users/${encodeURIComponent(props.claim.actor.id)}/avatar?rev=${encodeURIComponent(props.claim.avatarHash)}`
             : undefined
         }
-        icon={user() ? undefined : "ti ti-api"}
+        icon={user() ? undefined : assigneeIcon(props.claim.serviceAccountKind)}
         size={props.size ?? "xs"}
         ring="success"
       />

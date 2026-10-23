@@ -1,7 +1,9 @@
-import { Avatar, type AvatarSize } from "@k2b/ui";
+import { principalLabel } from "@k2b/cloud/shared";
+import { Avatar, type AvatarSize, useLocale } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { For, Show } from "solid-js";
 import type { SpaceItemAssignee, SpaceItemClaim } from "@/contracts";
+import { assigneeIcon } from "@/presentation/assignees";
 import ClaimAvatar from "./claim/ClaimAvatar";
 import { isClaimHolder } from "./claim/claim";
 
@@ -31,18 +33,30 @@ const SIZE_CLASS: Record<AvatarSize, string> = {
   xl: "h-20 w-20 text-xl",
 };
 
-/** One assignee: a person with their picture or initials, a service account with the same API icon its claim shows. */
+/** One assignee: a person with their picture or initials, a service account with its principal-kind icon. */
 export function AssigneeAvatar(props: { assignee: SpaceItemAssignee; size?: AvatarSize; class?: string }) {
+  const locale = useLocale();
   const person = () => props.assignee.kind === "user";
+  const label = () =>
+    principalLabel(
+      {
+        principal: person()
+          ? { type: "user", userId: props.assignee.id }
+          : { type: "service_account", serviceAccountId: props.assignee.id },
+        displayName: props.assignee.displayName,
+        serviceAccountKind: props.assignee.serviceAccountKind,
+      },
+      locale(),
+    );
   return (
     <Avatar
-      name={props.assignee.displayName}
+      name={label()}
       src={
         person() && props.assignee.avatarHash
           ? `/api/accounts/users/${encodeURIComponent(props.assignee.id)}/avatar?rev=${encodeURIComponent(props.assignee.avatarHash)}`
           : undefined
       }
-      icon={person() ? undefined : "ti ti-api"}
+      icon={person() ? undefined : assigneeIcon(props.assignee.serviceAccountKind)}
       size={props.size ?? "xs"}
       class={props.class}
     />

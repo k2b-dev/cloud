@@ -1034,8 +1034,6 @@ const app = new Hono<AuthContext>()
       },
     }),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       const bookId = c.req.param("bookId") ?? "";
 
       const internalBookId = await resolvePublicId("books", bookId);
@@ -1055,7 +1053,7 @@ const app = new Hono<AuthContext>()
     documentRoute({
       tags: ["Contacts"],
       summary: "Grant book access",
-      description: "Grant access to a user, group, or public principal for a manual book. Requires admin book access.",
+      description: "Grant access to a person, group, service account, signed-in accounts, or the public. Requires admin book access.",
       ...requiresAuth,
       responses: {
         ...bookScopedResponses,
@@ -1066,8 +1064,6 @@ const app = new Hono<AuthContext>()
     }),
     v("json", GrantAccessSchema),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       const bookId = c.req.param("bookId") ?? "";
       const { principal, permission } = c.req.valid("json");
 
@@ -1103,8 +1099,6 @@ const app = new Hono<AuthContext>()
     }),
     v("json", UpdateAccessSchema),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       const bookId = c.req.param("bookId") ?? "";
       const accessId = c.req.param("accessId") ?? "";
       const { permission } = c.req.valid("json");
@@ -1145,8 +1139,6 @@ const app = new Hono<AuthContext>()
       },
     }),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       const bookId = c.req.param("bookId") ?? "";
       const accessId = c.req.param("accessId") ?? "";
 

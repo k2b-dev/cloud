@@ -401,7 +401,7 @@ export const transfer = async (params: {
     const accessRows = await tx<{ access_id: string }[]>`
       SELECT access_id FROM spaces.space_access WHERE space_id = ${locked.target_space_id}::uuid
     `;
-    // Broad access preserves existing people only. Accounts always need their own direct grant.
+    // Broad access preserves existing people only. Machine accounts need an eligible direct or local-group grant.
     const [broadAccess] = await tx<{ allowed: boolean }[]>`
       SELECT EXISTS (
         SELECT 1

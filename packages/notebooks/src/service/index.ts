@@ -126,10 +126,9 @@ export const notebooksService = {
       grant: access.grantNotebookAccess,
       ensureServiceAccount: access.ensureNotebookServiceAccountAccess,
       update: access.updateNotebookAccess,
-      remove: (config: { notebookId: string; accessId: string }) => access.removeNotebookAccess(config.notebookId, config.accessId),
+      remove: access.revokeNotebookAccess,
       add: (config: { notebookId: string; accessId: string }) => access.addNotebookAccess(config.notebookId, config.accessId),
       count: (config: { notebookId: string }) => access.countNotebookAccess(config.notebookId),
-      guard: (config: { notebookId: string; accessId: string }) => access.getNotebookAccessGuard(config),
       getPermission: access.getNotebookPermission,
       apiKeys: {
         list: apiKeys.list,

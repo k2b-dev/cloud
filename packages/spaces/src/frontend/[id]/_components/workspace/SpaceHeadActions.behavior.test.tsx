@@ -24,7 +24,15 @@ if (isServer) {
     dom.root.replaceChildren();
     dom.document.cookie = "cloud_seen_hints=; Max-Age=0; Path=/";
   });
-  const mount = (options: { view?: "kanban" | "list"; token?: string | null; hintOpen?: boolean; locale?: string } = {}) => {
+  const mount = (
+    options: {
+      view?: "kanban" | "list";
+      token?: string | null;
+      hintOpen?: boolean;
+      locale?: string;
+      serviceAccountKind?: "standalone" | "agent";
+    } = {},
+  ) => {
     dispose = render(
       () =>
         createComponent(LocaleProvider, {
@@ -46,6 +54,7 @@ if (isServer) {
                   displayName: "Task worker",
                   avatarHash: null,
                   kind: "service_account",
+                  serviceAccountKind: options.serviceAccountKind ?? "standalone",
                 },
               ],
             });
@@ -65,32 +74,36 @@ if (isServer) {
   const settle = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 
   describe("Space head menu", () => {
-    test("runs settings, iCal and Kanban shortcuts from the menu", async () => {
-      const dialog = spyOn(prompts, "dialog").mockResolvedValue(undefined);
-      const copy = spyOn(clipboard, "copy").mockResolvedValue(undefined);
-      try {
-        mount();
-        openMenu();
-        expect(dom.document.querySelector('[role="menu"]')?.textContent).toContain("People with access");
-        expect(dom.root.querySelector("[data-spaces-people-row]")?.getAttribute("aria-label")).toContain("Mara Lind, Task worker");
-        expect(dom.root.querySelector("[data-spaces-people-row] .ti-api")).not.toBeNull();
-        clickText("Space settings");
-        await settle();
-        expect(dialog).toHaveBeenCalledTimes(1);
-        openMenu();
-        clickText("Copy iCal URL");
-        await settle();
-        expect(copy).toHaveBeenCalledWith("http://localhost/api/spaces/calendar/ical/calendar-token.ics");
-        expect(dom.root.querySelector('[role="status"]')?.textContent).toBe("Copied iCal URL");
-        openMenu();
-        clickText("Keyboard shortcuts");
-        expect(dialog).toHaveBeenCalledTimes(2);
-        expect(dialog.mock.calls[1]?.[1]?.title).toBe("Keyboard shortcuts");
-      } finally {
-        dialog.mockRestore();
-        copy.mockRestore();
-      }
-    });
+    test.each(["standalone", "agent"] as const)(
+      "%s: runs settings, iCal and Kanban shortcuts from the menu",
+      async (serviceAccountKind) => {
+        const dialog = spyOn(prompts, "dialog").mockResolvedValue(undefined);
+        const copy = spyOn(clipboard, "copy").mockResolvedValue(undefined);
+        try {
+          mount({ serviceAccountKind });
+          openMenu();
+          expect(dom.document.querySelector('[role="menu"]')?.textContent).toContain("People with access");
+          expect(dom.root.querySelector("[data-spaces-people-row]")?.getAttribute("aria-label")).toContain("Mara Lind, Task worker");
+          expect(dom.root.querySelector(`[data-spaces-people-row] .ti-${serviceAccountKind === "agent" ? "robot" : "key"}`)).not.toBeNull();
+          expect(dom.document.querySelector(`[role="menu"] .ti-${serviceAccountKind === "agent" ? "robot" : "key"}`)).not.toBeNull();
+          clickText("Space settings");
+          await settle();
+          expect(dialog).toHaveBeenCalledTimes(1);
+          openMenu();
+          clickText("Copy iCal URL");
+          await settle();
+          expect(copy).toHaveBeenCalledWith("http://localhost/api/spaces/calendar/ical/calendar-token.ics");
+          expect(dom.root.querySelector('[role="status"]')?.textContent).toBe("Copied iCal URL");
+          openMenu();
+          clickText("Keyboard shortcuts");
+          expect(dialog).toHaveBeenCalledTimes(2);
+          expect(dialog.mock.calls[1]?.[1]?.title).toBe("Keyboard shortcuts");
+        } finally {
+          dialog.mockRestore();
+          copy.mockRestore();
+        }
+      },
+    );
 
     test("lists people in the menu only below the app host threshold", () => {
       dom.document.documentElement.style.width = "1440px";
