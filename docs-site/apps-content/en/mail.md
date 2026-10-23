@@ -567,6 +567,24 @@ cld mail admin contact-directory set --app crm --suggest customer.suggest --reso
 cld mail admin contact-directory reset --yes
 ```
 
+If Mail cannot read a saved directory setting, the dialog lists that setting
+under **Stored settings cannot be read**. Select **Replace stored value** only
+for values you want to replace. Unselected unreadable settings stay in storage;
+failed saves keep the dialog, draft, and replacement choices open.
+
+A directory update locks the mapping, reads its current values, validates the
+combined provider and functions, and commits all supplied settings together.
+Concurrent partial updates cannot combine functions from different providers.
+If a value becomes
+unreadable while the dialog is open, its replacement checkbox appears after
+the rejected save; the draft and existing selections remain available.
+
+`show --json` includes `unreadable` by setting name. `set` preserves omitted
+functions when the app stays the same. Replacing a supplied unreadable value
+requires `--replace-unreadable`; `reset` needs that flag as well when defaults
+would replace unreadable values. API updates may omit unchanged fields and
+accept `replaceUnreadable` as an array of the supplied setting names.
+
 | Setting | Default | Required |
 | --- | --- | --- |
 | `mail.contact_directory.app` | `contacts` | Yes |

@@ -2,7 +2,8 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { SQL } from "bun";
 import { encryptValue } from "./crypto";
 import { registerSettings } from "./defaults";
-import { SettingUnreadableError, writeKey } from "./store";
+import { read } from "./index";
+import { readStates, SettingUnreadableError, writeKey } from "./store";
 
 const key = "test.write_key_conflict";
 const lockQuery = "UPDATE settings.entries SET value = value WHERE key = ? RETURNING value";
@@ -135,3 +136,16 @@ for (const conflict of [false, true]) {
     }
   });
 }
+
+test("state reads use the caller transaction for both single and bulk reads", async () => {
+  const row = [{ key, value: await encryptValue("https://transaction.test") }];
+  const tx = transaction([row, row]);
+  try {
+    expect(await read(key, tx.db)).toEqual({ value: "https://transaction.test", stored: "readable" });
+    expect((await readStates([key], tx.db)).get(key)).toEqual({ value: "https://transaction.test", stored: "readable" });
+    expect(tx.queries).toHaveLength(2);
+    expect(tx.queries.every((query) => query.startsWith("SELECT key, value FROM settings.entries"))).toBe(true);
+  } finally {
+    await tx.close();
+  }
+});

@@ -55,3 +55,22 @@ test("integer settings reject fractions and unsafe values without changing ordin
   for (const value of [1.5, 0, Number.MAX_SAFE_INTEGER + 1, Infinity]) expect(validateSettingValue(integer!, value).ok).toBe(false);
   expect(validateSettingValue(decimal!, 1.5)).toEqual({ ok: true, value: 1.5 });
 });
+
+test("email validation handles long adversarial values with linear work", () => {
+  const [email] = toLegacySettingDefs({ "example.email": { kind: "email", default: "" } });
+  for (const [value, ok] of [
+    ["", true],
+    ["a@b.c", true],
+    ["a@.b", false],
+    ["a@b.", false],
+    ["a@@b.c", false],
+    ["a@b..", true],
+    ["a b@c.d", false],
+  ] as const) {
+    expect(validateSettingValue(email!, value).ok).toBe(ok);
+  }
+  const value = "!@!." + "!.".repeat(100_000) + "@";
+  const started = performance.now();
+  expect(validateSettingValue(email!, value).ok).toBe(false);
+  expect(performance.now() - started).toBeLessThan(1_000);
+});

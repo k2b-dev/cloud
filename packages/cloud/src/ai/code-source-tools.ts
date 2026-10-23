@@ -8,7 +8,8 @@ import {
   completeCapabilityClaim,
   markCapabilityClaimUncertain,
 } from "../capabilities/claims";
-import { signInvocationToken } from "../services/identity/invocation-token";
+import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
+import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
 import { resolveAiCapabilityActor } from "./capability-execution";
@@ -53,11 +54,12 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
     promptHint: "promptHint" in definition ? definition.promptHint : undefined,
   }).server(async (input, context) => {
     if (!context.conversationId) throw new Error("Code tools require an Assistant conversation.");
-    const { actor } = await resolveAiCapabilityActor({
+    const authority = await resolveAiCapabilityActor({
       conversationId: context.conversationId,
       persistedActor: context.actor,
       store: aiConversations,
     });
+    const { actor } = authority;
     const databaseOperations: Partial<Record<CodeSourceToolName, string>> = {
       code_sql: "query",
       code_database_read: "status",
@@ -97,23 +99,19 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
       await authorizeDatabase?.();
       const signed = await withActiveIdentitySigner(
         "invocation",
-        (signer) =>
-          signInvocationToken({
-            targetAppId: "assistant",
-            callingAppId: "core",
-            operation: `tool:${name}`,
-            schemaHash: null,
-            authority: {
-              sub: actor.user.id,
-              principal_type: "user",
-              access_subject_type: "user",
-              access_subject_id: actor.user.id,
-              credential_kind: "session",
-              scopes: [],
+        (signer, db) =>
+          signInvocationToken(
+            {
+              targetAppId: "assistant",
+              callingAppId: "core",
+              operation: `tool:${name}`,
+              schemaHash: null,
+              authority: invocationAuthorityFromRequest(authority),
+              signer,
+              issuer: signer.issuer,
             },
-            signer,
-            issuer: signer.issuer,
-          }),
+            { db, groupsAdmin: signer.groupsAdmin },
+          ),
         { signal, timeoutMs: 5000 },
       );
       const headers = new Headers({ authorization: `Bearer ${signed.token}`, "content-type": "application/json" });

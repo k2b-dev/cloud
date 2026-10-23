@@ -1,6 +1,6 @@
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, AiFileWriteError, type CODE_SOURCE_TOOLS, createAiConversationArtifact } from "@k2b/cloud/ai";
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
-import { accessRevision, resolveDisplayNames } from "@k2b/cloud/server";
+import { accessRevision, type RequestAuthority, resolveDisplayNames } from "@k2b/cloud/server";
 import { principalLabel } from "@k2b/cloud/shared";
 import { fail, ok, text } from "@k2b/stdlib";
 import { sql } from "bun";
@@ -20,6 +20,8 @@ import { ArtifactError, artifacts, readArtifactRevision, requireArtifact, user }
 import { sourceDiagnostics, sourceManifest } from "./source";
 
 export type CodeToolContext = ArtifactIdentity & {
+  /** Resolved by invocation middleware; retains credential caps and mobile provenance. */
+  authority?: RequestAuthority | null;
   locale: string;
   timeZone: string;
   theme?: "light" | "dark";

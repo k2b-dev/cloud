@@ -1,5 +1,6 @@
 import type { AppRegistryHelpSummary } from "../../contracts/registry";
 import type { RequestActor } from "../../contracts/shared";
+import type { RequestAuthority } from "../../server/middleware/auth";
 import type { HelpAccessLevel, HelpArticleLink, HelpDocumentManifest, HelpKind } from "../../shared/help";
 
 export type HelpDocument = {
@@ -52,4 +53,8 @@ export type HelpReader = {
   search(input: HelpSearchInput): Promise<HelpMatch[]>;
   read(input: HelpReadInput): Promise<HelpArticle | null>;
 };
-export type HelpReaderFactory = (locale: string, viewer: RequestActor | undefined) => HelpReader;
+export type HelpReaderFactory = (
+  locale: string,
+  viewer: RequestActor | undefined,
+  options?: { authority?: RequestAuthority | null },
+) => HelpReader;
