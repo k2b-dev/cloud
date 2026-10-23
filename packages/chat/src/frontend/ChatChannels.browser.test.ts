@@ -252,7 +252,10 @@ for (const mode of [
       await dialog.getByText(t.countingAudience).waitFor();
       await transitionsDone();
       const counting = await create.boundingBox();
-      // Counting fails, then Try again counts: the line keeps its height through all three.
+      // Counting fails, then Try again counts: the line keeps its height through all three. The held request may reach
+      // the route only after the dialog shows that it counts.
+      const deadline = Date.now() + 10_000; // real clock: bounds the wait for the browser's request
+      while (!hold && Date.now() < deadline) await Bun.sleep(20); // real clock: polls the route handler
       hold?.();
       await dialog.getByRole("button", { name: t.retry, exact: true }).waitFor();
       await transitionsDone();
