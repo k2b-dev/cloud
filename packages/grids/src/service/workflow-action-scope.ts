@@ -37,6 +37,7 @@ import {
   workflowTableBelongsToBase,
 } from "./workflow-authorization";
 import { getLauncher } from "./workflow-launchers";
+import { validateWorkflowOwnerSnapshot } from "./workflow-machine-authority";
 import { type GridsWorkflowAuthorization, getWorkflowRunScope } from "./workflow-runs";
 
 type PermissionLevel = "read" | "write" | "admin";
@@ -283,11 +284,16 @@ const customAppAuthorizationIsAvailable = async (params: {
  * queued.
  */
 export const canExecuteWorkflow = async (claim: GridsWorkflowExecutionClaim, client?: SqlClient): Promise<boolean> => {
+  if (!(await validateWorkflowOwnerSnapshot(claim.principal, claim.workflowId, client))) return false;
   if (claim.principal.mandate && claim.principal.mandate.workflowId !== claim.workflowId) return false;
   const { authorization } = claim;
   if (authorization.kind === "workflow") {
     return authorizeWorkflowBase(claim.principal, claim.baseId, "write", client);
   }
+  // A machine mandate retains its base-write requirement even when a
+  // published App supplies the launch capability. Use the same live policy
+  // and transaction client as direct workflow execution.
+  if (claim.principal.mandate && !(await authorizeWorkflowBase(claim.principal, claim.baseId, "write", client))) return false;
   const revalidated = client
     ? await revalidateWorkflowPrincipalInTransaction(claim.principal, claim.baseId, client)
     : await revalidateWorkflowPrincipal(claim.principal, claim.baseId);
@@ -457,12 +463,9 @@ export const requireTableAccess = async (
 export const createWorkflowEffectAccess = async (
   scope: GridsWorkflowActionScope,
   client: SqlClient,
-  deps = { authorizeWorkflowBase, canExecuteRun, workflowTableBelongsToBase },
+  deps = { canExecuteRun, workflowTableBelongsToBase },
 ) => {
-  const allowed =
-    scope.authorization.kind === "workflow"
-      ? await deps.authorizeWorkflowBase(scope.principal, scope.baseId, "write", client)
-      : await deps.canExecuteRun(scope, client);
+  const allowed = await deps.canExecuteRun(scope, client);
   if (!allowed) throw forbidden();
   const canReadTable = (tableId: string): Promise<boolean> => deps.workflowTableBelongsToBase(scope.baseId, tableId, client);
   const requireTable = async (tableId: string): Promise<void> => {

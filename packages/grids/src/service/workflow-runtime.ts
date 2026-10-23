@@ -58,7 +58,7 @@ import { cleanupExpiredEvidenceExports } from "./evidence-exports";
 import { canAccessWorkflowExecutionTable, canAccessWorkflowRunTable, canExecuteWorkflow } from "./workflow-action-scope";
 import { getWorkflow, listScheduledWorkflows } from "./workflow-definitions";
 import { workflowConflict } from "./workflow-errors";
-import { machineWorkflowOwnerPrincipal } from "./workflow-machine-authority";
+import { machineWorkflowOwnerPrincipal, resolveWorkflowInvocationPrincipal } from "./workflow-machine-authority";
 import { createWorkflowRecordEventRuntime } from "./workflow-record-events";
 import { publishWorkflowRunEvent } from "./workflow-run-events";
 import {
@@ -252,13 +252,9 @@ export const invokeGridsWorkflow = async (input: InvokeGridsWorkflowInput): Prom
   const t = workflowServiceText(locale);
   const workflow = await getWorkflow(input.workflowId);
   if (!workflow) return fail({ ...err.notFound("workflow"), message: t.workflowNotFound });
-  if (input.principal.serviceAccountId && !input.principal.mandate) {
-    const owner = await machineWorkflowOwnerPrincipal(workflow.id);
-    if (owner?.serviceAccountId === input.principal.serviceAccountId) {
-      if (!owner.mandate) return fail(err.forbidden("Workflow machine mandate is unavailable"));
-      input = { ...input, principal: { ...input.principal, mandate: owner.mandate } };
-    }
-  }
+  const principal = await resolveWorkflowInvocationPrincipal(workflow.id, input.principal);
+  if (!principal.ok) return principal;
+  input = { ...input, principal: principal.data };
   const authorization = input.authorization ?? { kind: "workflow" };
   const claim = {
     baseId: workflow.baseId,

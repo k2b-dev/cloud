@@ -5,7 +5,7 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-10-22
+updated: 2026-10-23
 ---
 
 # Resource authorization
@@ -35,6 +35,22 @@ if (!hasPermission(permission, "write")) {
 
 Applications decide what each level means for their resources. `admin` also
 makes an entry a manager; see [Keep at least one manager](#keep-at-least-one-manager).
+
+## Installation administration in a transaction
+
+For a mutation that requires installation administration, use
+`accounts.users.hasInstallationAdminInTransaction(actor, tx)` from
+`@k2b/cloud/services` inside the mutation's database transaction. It returns a
+boolean and keeps the current user, provider authority, and relevant settings
+stable until commit. It respects the request actor's role ceiling, account expiry,
+and account-category policy. Resource permissions remain a separate check.
+
+Call it before acquiring resource, grant, or mandate locks. If account locks
+must come first, only the first account lock may wait. Acquire subsequent account
+locks and the remaining user and membership locks with `NOWAIT` before calling
+the helper. Roll back and return a conflict on PostgreSQL
+`lock_not_available`; the caller can submit a fresh request. This keeps account
+and user deletion compatible with the mutation.
 
 ## Principals
 

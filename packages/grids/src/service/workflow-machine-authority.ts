@@ -1,7 +1,7 @@
 import type { RequestActor } from "@k2b/cloud/server";
-import { type Mandate, mandates } from "@k2b/cloud/services";
+import { accounts, type Mandate, mandates } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
+import { SQL, sql } from "bun";
 import type { GridsWorkflowPrincipal, WorkflowMachineAuthorityChange } from "../workflows/contracts";
 import { hasTransactionalBaseAdmin, lockBaseAuthorization } from "./access";
 import { logAudit, type SqlClient } from "./audit";
@@ -84,6 +84,33 @@ export async function validateWorkflowMachineMandate(
   return Boolean(profile);
 }
 
+/** A queued credential snapshot cannot acquire a newly configured owner's authority. */
+export async function validateWorkflowOwnerSnapshot(
+  principal: GridsWorkflowPrincipal,
+  workflowId: string,
+  db: SqlClient = sql,
+): Promise<boolean> {
+  if (principal.userId || !principal.serviceAccountId || principal.mandate) return true;
+  // Match assignment/deletion order, retaining the owner snapshot through effects.
+  await db`SELECT id FROM auth.service_accounts WHERE id=${principal.serviceAccountId}::uuid FOR SHARE`;
+  const [profile] = await db<{ owner_service_account_id: string | null }[]>`
+    SELECT owner_service_account_id FROM grids.workflow_profile
+    WHERE id=${workflowId}::uuid FOR SHARE`;
+  return profile?.owner_service_account_id !== principal.serviceAccountId;
+}
+
+/** Fresh admission only; stored run snapshots must never acquire new authority. */
+export async function resolveWorkflowInvocationPrincipal(
+  workflowId: string,
+  principal: GridsWorkflowPrincipal,
+): Promise<Result<GridsWorkflowPrincipal>> {
+  if (!principal.serviceAccountId || principal.mandate) return ok(principal);
+  const owner = await machineWorkflowOwnerPrincipal(workflowId);
+  if (owner?.serviceAccountId !== principal.serviceAccountId) return ok(principal);
+  if (!owner.mandate) return fail(err.forbidden("Workflow machine mandate is unavailable"));
+  return ok({ ...principal, mandate: owner.mandate });
+}
+
 /** Choosing another execution identity requires installation authority as well as base management. */
 export async function configureWorkflowMachineAuthority(params: {
   actor: RequestActor;
@@ -95,17 +122,28 @@ export async function configureWorkflowMachineAuthority(params: {
     return fail(err.forbidden("An administrator is required to assign machine authority"));
   const workflow = await getWorkflow(params.workflowId);
   if (!workflow) return fail(err.notFound("Workflow"));
-  const changed = await sql.begin(async (db): Promise<Result<void>> => {
+  const mutation = sql.begin(async (db): Promise<Result<void>> => {
     const initial = await getWorkflowMachineAuthority(workflow.id, db);
     if (!initial) return fail(err.notFound("Workflow"));
     // Match account deletion's account -> mandate -> profile cascade. Lock both
     // sides of reassignment before base authorization, in a stable order.
     const accountIds = new Set(initial.serviceAccountId ? [initial.serviceAccountId] : []);
     if (params.change.action === "assign") accountIds.add(params.change.serviceAccountId);
-    for (const id of [...accountIds].sort()) {
-      await db`SELECT id FROM auth.service_accounts WHERE id=${id}::uuid FOR SHARE`;
+    for (const [index, id] of [...accountIds].sort().entries()) {
+      // A multi-user deletion batch can reach accounts in creator order.
+      // Only the first account may wait; a later conflict releases all locks.
+      if (index === 0) await db`SELECT id FROM auth.service_accounts WHERE id=${id}::uuid FOR SHARE`;
+      else await db`SELECT id FROM auth.service_accounts WHERE id=${id}::uuid FOR SHARE NOWAIT`;
     }
-    await lockBaseAuthorization([workflow.baseId], db);
+    // User/provider deletion can reach these accounts through another user's
+    // created_by cascade, after locking users or membership tables. Never wait
+    // on those dependencies while retaining account locks: abort and retry a
+    // fresh request instead. Revalidate authority after the base lock wait.
+    const [actorUser] = await db`SELECT id FROM auth.users WHERE id=${actor.user.id}::uuid FOR SHARE NOWAIT`;
+    if (!actorUser) return fail(err.forbidden("An administrator is required to assign machine authority"));
+    await lockBaseAuthorization([workflow.baseId], db, { nowait: true });
+    if (!(await accounts.users.hasInstallationAdminInTransaction(actor, db)))
+      return fail(err.forbidden("An administrator is required to assign machine authority"));
     if (
       !(await hasTransactionalBaseAdmin(
         workflow.baseId,
@@ -198,6 +236,11 @@ export async function configureWorkflowMachineAuthority(params: {
     );
     await publishMetadataChange(db, workflow.baseId, "workflow.updated");
     return ok();
+  });
+  const changed = await mutation.catch((error): Result<void> => {
+    if (error instanceof SQL.PostgresError && error.errno === "55P03")
+      return fail(err.conflict("Workflow authorization is changing; reload before trying again"));
+    throw error;
   });
   if (!changed.ok) return changed;
   await gridsLive.wake();

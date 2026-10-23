@@ -1,19 +1,26 @@
-import { beforeAll, expect, test } from "bun:test";
-import { serviceAccountCredentials } from "@k2b/cloud/services";
+import { beforeAll, expect, spyOn, test } from "bun:test";
+import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
+import * as notificationPlatform from "@k2b/cloud/services/notifications/platform";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
+import { encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { sql } from "bun";
 import { z } from "zod";
 import { suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
-import { getWorkflowRunByShortId } from "../service/workflow-runs";
+import * as machineAuthority from "../service/workflow-machine-authority";
+import { getWorkflowRunByShortId, getWorkflowRunScope } from "../service/workflow-runs";
 import { getWorkflowTriggerRuntimeState, runGridsWorkflowRun } from "../service/workflow-runtime";
 import "../../../../scripts/fixtures/authorization-preload";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import { lockBaseAuthorization, revokeAccess } from "../service/access";
+import { grantAccess, lockBaseAuthorization, revokeAccess } from "../service/access";
 import type { SqlClient } from "../service/audit";
+import { apply as applyCustomApp, publish as publishCustomApp } from "../service/custom-apps";
+import { create as createEmailTemplate } from "../service/email-templates";
 import { canExecuteWorkflow } from "../service/workflow-action-scope";
-import { createWorkflow } from "../service/workflow-definitions";
+import { createWorkflow, updateWorkflow } from "../service/workflow-definitions";
+import { sendWorkflowEmail } from "../service/workflow-email-send";
+import { createLauncher } from "../service/workflow-launchers";
 import {
   getWorkflowMachineAuthority,
   machineWorkflowOwnerPrincipal,
@@ -170,11 +177,12 @@ const snapshot = (value: { serviceAccountId: string | null; mandate: { id: strin
 });
 const emptyAuthority = { serviceAccountId: null, mandate: null };
 
-const authorityFixture = async () => {
+const authorityFixture = async (write = false) => {
   const ownerId = testUuid(),
     keeperId = testUuid(),
     baseId = testUuid();
-  const accountIds = [testUuid(), testUuid()].sort();
+  // Credential creation accepts the UUID format used by real service accounts.
+  const accountIds = [crypto.randomUUID(), crypto.randomUUID()].sort();
   const accessIds = [testUuid(), testUuid(), testUuid(), testUuid()];
   await sql`INSERT INTO auth.users(id,uid,provider,profile,admin)
     VALUES(${ownerId}::uuid,${`authority-owner-${ownerId}`},'local','user',TRUE),
@@ -187,7 +195,21 @@ const authorityFixture = async () => {
   for (const [index, id] of accountIds.entries())
     await sql`INSERT INTO auth.access(id,service_account_id,permission) VALUES(${accessIds[index + 2]!}::uuid,${id}::uuid,'write')`;
   for (const id of accessIds) await sql`INSERT INTO grids.base_access(base_id,access_id) VALUES(${baseId}::uuid,${id}::uuid)`;
-  const workflow = await createWorkflow(baseId, { name: "Authority concurrency", source, enabled: true }, ownerId);
+  const tableId = testUuid();
+  if (write) {
+    await sql`INSERT INTO grids.tables(id,short_id,base_id,name,position) VALUES(${tableId}::uuid,${testShortId()},${baseId}::uuid,'Tasks',0)`;
+    await sql`INSERT INTO grids.fields(id,short_id,table_id,name,type,config,position)
+      VALUES(${testUuid()}::uuid,${testShortId()},${tableId}::uuid,'Name','text','{}'::jsonb,0)`;
+  }
+  const workflow = await createWorkflow(
+    baseId,
+    {
+      name: "Authority concurrency",
+      source: write ? "steps:\n  - createRecord:\n      table: Tasks\n      values:\n        Name: Created by machine" : source,
+      enabled: true,
+    },
+    ownerId,
+  );
   if (!workflow.ok) throw new Error(workflow.error.message);
   const cookie = `session_token=${await createTestSession(ownerId)}`;
   const change = async (body: WorkflowMachineAuthorityChange) =>
@@ -203,6 +225,7 @@ const authorityFixture = async () => {
   };
   return {
     ownerId,
+    tableId,
     keeperId,
     baseId,
     accountIds,
@@ -234,6 +257,19 @@ const waitForBlocked = async (blocker: number) => {
   }
   throw new Error("Authority operation never reached the database lock barrier");
 };
+const responseWithinLock = async (pending: Promise<Response>): Promise<Response> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      pending,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("Authority mutation waited instead of releasing its account locks")), 10_000);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+};
 const locked = async <T>(lock: (db: SqlClient) => Promise<unknown>, work: (db: SqlClient, pid: number) => Promise<T>) =>
   sql.begin(async (db) => {
     await lock(db);
@@ -263,6 +299,241 @@ suite("machine authority concurrency", () => {
       });
       expect((await f.change({ action: "resume", expected: snapshot(paused) })).status).toBe(200);
     } finally {
+      await f.cleanup();
+    }
+  });
+
+  for (const provider of ["local", "ipa"] as const)
+    test(`${provider} installation administration revoked during an account lock wait cannot assign authority`, async () => {
+      const f = await authorityFixture();
+      let pending: Promise<Response> | undefined;
+      try {
+        if (provider === "ipa") {
+          await sql`UPDATE auth.users SET provider='ipa',admin=FALSE WHERE id=${f.ownerId}::uuid`;
+          await sql`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${f.ownerId}::uuid,'admins')`;
+          // Canonical IPA authority does not require a mirrored auth.groups row.
+          expect((await accounts.users.getRoles(f.ownerId)).includes("admin")).toBe(true);
+        }
+        await locked(
+          (db) => db`SELECT id FROM auth.service_accounts WHERE id=${f.accountIds[0]!}::uuid FOR UPDATE`,
+          async (_db, pid) => {
+            pending = f.change({ action: "assign", serviceAccountId: f.accountIds[0]!, expected: emptyAuthority });
+            await waitForBlocked(pid);
+            if (provider === "local") expect((await accounts.users.setAdmin({ id: f.ownerId, admin: false })).ok).toBe(true);
+            else await sql`DELETE FROM auth.ipa_user_effective_groups WHERE user_id=${f.ownerId}::uuid`;
+          },
+        );
+        expect((await pending!).status).toBe(403);
+        expect(await getWorkflowMachineAuthority(f.workflow.id)).toMatchObject({ serviceAccountId: null, mandate: null });
+      } finally {
+        await Promise.allSettled(pending ? [pending] : []);
+        await f.cleanup();
+      }
+    });
+
+  test("canonical IPA installation authority can assign, and rejects stale captured admin roles", async () => {
+    const f = await authorityFixture();
+    try {
+      await sql`UPDATE auth.users SET provider='ipa',admin=FALSE WHERE id=${f.ownerId}::uuid`;
+      await sql`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${f.ownerId}::uuid,'admins')`;
+      const assigned = await f.assign();
+      expect(assigned.mandate?.state).toBe("active");
+      const user = await accounts.users.get({ id: f.ownerId });
+      if (!user) throw new Error("Actor missing");
+      expect(user.roles).toContain("admin");
+      await sql`DELETE FROM auth.ipa_user_effective_groups WHERE user_id=${f.ownerId}::uuid`;
+      await sql.begin(async (db) => {
+        expect(await accounts.users.hasInstallationAdminInTransaction({ kind: "user", user }, db)).toBe(false);
+      });
+      expect((await f.change({ action: "pause", expected: snapshot(assigned) })).status).toBe(403);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  for (const provider of ["local", "ipa"] as const)
+    test(`${provider} installation authority remains locked through the domain commit`, async () => {
+      const f = await authorityFixture();
+      let revoking: Promise<unknown> | undefined;
+      try {
+        if (provider === "ipa") {
+          await sql`UPDATE auth.users SET provider='ipa',admin=FALSE WHERE id=${f.ownerId}::uuid`;
+          await sql`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${f.ownerId}::uuid,'admins')`;
+        }
+        const user = await accounts.users.get({ id: f.ownerId });
+        if (!user) throw new Error("Actor missing");
+        await sql.begin(async (db) => {
+          expect(await accounts.users.hasInstallationAdminInTransaction({ kind: "user", user }, db)).toBe(true);
+          const [backend] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+          if (!backend) throw new Error("Missing database backend");
+          revoking =
+            provider === "local"
+              ? accounts.users.setAdmin({ id: f.ownerId, admin: false })
+              : sql`DELETE FROM auth.ipa_user_effective_groups WHERE user_id=${f.ownerId}::uuid`.execute();
+          await waitForBlocked(backend.pid);
+          expect(await accounts.users.hasInstallationAdminInTransaction({ kind: "user", user }, db)).toBe(true);
+        });
+        await revoking;
+        await sql.begin(async (db) => {
+          expect(await accounts.users.hasInstallationAdminInTransaction({ kind: "user", user }, db)).toBe(false);
+        });
+      } finally {
+        await Promise.allSettled(revoking ? [revoking] : []);
+        await f.cleanup();
+      }
+    });
+
+  test("IPA projection replacement during a lock wait remains fenced through commit", async () => {
+    const f = await authorityFixture();
+    let pending: Promise<void> | undefined;
+    let revoking: Promise<unknown> | undefined;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let validated!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      validated = resolve;
+    });
+    let authorityPid = 0;
+    try {
+      await sql`UPDATE auth.users SET provider='ipa',admin=FALSE WHERE id=${f.ownerId}::uuid`;
+      await sql`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${f.ownerId}::uuid,'admins')`;
+      const user = await accounts.users.get({ id: f.ownerId });
+      if (!user) throw new Error("Actor missing");
+      await locked(
+        async (db) => {
+          await db`DELETE FROM auth.ipa_user_effective_groups WHERE user_id=${f.ownerId}::uuid`;
+          await db`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${f.ownerId}::uuid,'admins')`;
+        },
+        async (_db, pid) => {
+          pending = sql.begin(async (tx) => {
+            expect(await accounts.users.hasInstallationAdminInTransaction({ kind: "user", user }, tx)).toBe(true);
+            const [backend] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+            if (!backend) throw new Error("Missing database backend");
+            authorityPid = backend.pid;
+            validated();
+            await gate;
+          });
+          await waitForBlocked(pid);
+        },
+      );
+      await Promise.race([
+        reached,
+        pending!.then(() => {
+          throw new Error("Authority transaction ended before the barrier");
+        }),
+      ]);
+      revoking = sql`DELETE FROM auth.ipa_user_effective_groups WHERE user_id=${f.ownerId}::uuid`.execute();
+      await waitForBlocked(authorityPid);
+      release();
+      await pending;
+      await revoking;
+    } finally {
+      release();
+      await Promise.allSettled([...(pending ? [pending] : []), ...(revoking ? [revoking] : [])]);
+      await f.cleanup();
+    }
+  });
+
+  test("installation authority reads transaction-local IPA configuration, not the settings cache", async () => {
+    const f = await authorityFixture();
+    const rollback = new Error("rollback authority settings fixture");
+    try {
+      const user = await accounts.users.get({ id: f.ownerId });
+      if (!user) throw new Error("Actor missing");
+      try {
+        await sql.begin(async (db) => {
+          await db`UPDATE auth.users SET provider='ipa',admin=FALSE WHERE id=${f.ownerId}::uuid`;
+          await db`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${f.ownerId}::uuid,'workflow administrators')`;
+          await db`INSERT INTO settings.entries(key,value) VALUES('freeipa.groups.admin',${await encryptValue([" workflow administrators "])})
+            ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
+          expect(await accounts.users.hasInstallationAdminInTransaction({ kind: "user", user }, db)).toBe(true);
+          expect(await accounts.users.hasInstallationAdminInTransaction({ kind: "user", user, sessionKind: "app" }, db)).toBe(false);
+          expect(
+            await accounts.users.hasInstallationAdminInTransaction(
+              { kind: "user", user: { ...user, roles: ["user", "local", "local/user"] } },
+              db,
+            ),
+          ).toBe(false);
+          await db`UPDATE settings.entries SET value=${await encryptValue(["other administrators"])} WHERE key='freeipa.groups.admin'`;
+          expect(await accounts.users.hasInstallationAdminInTransaction({ kind: "user", user }, db)).toBe(false);
+          throw rollback;
+        });
+      } catch (error) {
+        if (error !== rollback) throw error;
+      }
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  test("user deletion commits while assignment waits on an account, without retaining a user lock", async () => {
+    const f = await authorityFixture();
+    let pending: Promise<Response> | undefined;
+    try {
+      await sql`UPDATE auth.service_accounts SET created_by=${f.ownerId}::uuid WHERE id=${f.accountIds[0]!}::uuid`;
+      await locked(
+        async (db) => {
+          await db`SELECT id FROM auth.users WHERE id=${f.ownerId}::uuid FOR UPDATE`;
+          await db`SELECT id FROM auth.service_accounts WHERE id=${f.accountIds[0]!}::uuid FOR UPDATE`;
+        },
+        async (db, pid) => {
+          pending = f.change({ action: "assign", serviceAccountId: f.accountIds[0]!, expected: emptyAuthority });
+          await waitForBlocked(pid);
+          await db`DELETE FROM auth.users WHERE id=${f.ownerId}::uuid`;
+        },
+      );
+      expect((await pending!).status).toBe(403);
+      expect((await getWorkflowMachineAuthority(f.workflow.id))?.mandate).toBeNull();
+    } finally {
+      await Promise.allSettled(pending ? [pending] : []);
+      await f.cleanup();
+    }
+  });
+
+  test("a busy acting user rolls assignment back before its deletion reaches an account", async () => {
+    const f = await authorityFixture();
+    let pending: Promise<Response> | undefined;
+    try {
+      await sql`UPDATE auth.service_accounts SET created_by=${f.ownerId}::uuid WHERE id=${f.accountIds[0]!}::uuid`;
+      await locked(
+        (db) => db`SELECT id FROM auth.users WHERE id=${f.ownerId}::uuid FOR UPDATE`,
+        async (db) => {
+          pending = f.change({ action: "assign", serviceAccountId: f.accountIds[0]!, expected: emptyAuthority });
+          expect((await responseWithinLock(pending)).status).toBe(409);
+          await db`DELETE FROM auth.users WHERE id=${f.ownerId}::uuid`;
+        },
+      );
+      expect((await getWorkflowMachineAuthority(f.workflow.id))?.mandate).toBeNull();
+    } finally {
+      await Promise.allSettled(pending ? [pending] : []);
+      await f.cleanup();
+    }
+  });
+
+  test("creator deletion and a waiting grant mutation cannot invert account and membership locks", async () => {
+    const f = await authorityFixture();
+    let pending: Promise<Response> | undefined;
+    let grantWaiter: Promise<unknown> | undefined;
+    try {
+      await sql`UPDATE auth.service_accounts SET created_by=${f.keeperId}::uuid WHERE id=${f.accountIds[0]!}::uuid`;
+      await locked(
+        (db) => db`LOCK TABLE auth.user_groups_v2 IN ROW EXCLUSIVE MODE`,
+        async (db, pid) => {
+          grantWaiter = sql.begin((tx) => lockBaseAuthorization([f.baseId], tx));
+          await waitForBlocked(pid);
+          pending = f.change({ action: "assign", serviceAccountId: f.accountIds[0]!, expected: emptyAuthority });
+          expect((await responseWithinLock(pending)).status).toBe(409);
+          // The failed assignment released its account locks, so the creator's
+          // cascade can finish before this transaction releases memberships.
+          await db`DELETE FROM auth.users WHERE id=${f.keeperId}::uuid`;
+        },
+      );
+      await grantWaiter;
+      expect((await getWorkflowMachineAuthority(f.workflow.id))?.mandate).toBeNull();
+    } finally {
+      await Promise.allSettled([...(pending ? [pending] : []), ...(grantWaiter ? [grantWaiter] : [])]);
       await f.cleanup();
     }
   });
@@ -311,16 +582,16 @@ suite("machine authority concurrency", () => {
     }
   });
 
-  test("detects a replacement made between the initial read and proposed account lock", async () => {
+  test("a busy proposed account rejects reassignment and releases the current owner's lock", async () => {
     const f = await authorityFixture();
     let pending: Promise<Response> | undefined;
     try {
       const first = await f.assign();
       await locked(
         (db) => db`SELECT id FROM auth.service_accounts WHERE id=${f.accountIds[1]!}::uuid FOR UPDATE`,
-        async (_db, pid) => {
+        async (_db) => {
           pending = f.change({ action: "assign", serviceAccountId: f.accountIds[1]!, expected: snapshot(first) });
-          await waitForBlocked(pid);
+          expect((await responseWithinLock(pending)).status).toBe(409);
           await f.assign(f.accountIds[0]!, snapshot(first));
         },
       );
@@ -329,6 +600,37 @@ suite("machine authority concurrency", () => {
     } finally {
       await Promise.allSettled(pending ? [pending] : []);
       await f.cleanup();
+    }
+  });
+
+  test("two distinct IPA creators can be deleted in one batch while reassignment contends on its second account", async () => {
+    const f = await authorityFixture();
+    const secondCreator = testUuid();
+    let pending: Promise<Response> | undefined;
+    try {
+      await sql`UPDATE auth.users SET provider='ipa',admin=FALSE WHERE id=${f.keeperId}::uuid`;
+      await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${secondCreator}::uuid,${`creator-${secondCreator}`},'ipa','user')`;
+      await sql`UPDATE auth.service_accounts SET created_by=${f.keeperId}::uuid WHERE id=${f.accountIds[0]!}::uuid`;
+      await sql`UPDATE auth.service_accounts SET created_by=${secondCreator}::uuid WHERE id=${f.accountIds[1]!}::uuid`;
+      const first = await f.assign();
+      await locked(
+        (db) => db`DELETE FROM auth.users WHERE id=${secondCreator}::uuid`,
+        async (db) => {
+          pending = f.change({ action: "assign", serviceAccountId: f.accountIds[1]!, expected: snapshot(first) });
+          expect((await responseWithinLock(pending)).status).toBe(409);
+          // Canonical IPA sync retains both creator cascades in this transaction.
+          await db`DELETE FROM auth.users WHERE id=${f.keeperId}::uuid`;
+        },
+      );
+      expect((await getWorkflowMachineAuthority(f.workflow.id))?.serviceAccountId).toBe(f.accountIds[0]);
+      const rows = await sql<{ created_by: string | null }[]>`SELECT created_by FROM auth.service_accounts
+        WHERE id IN (${f.accountIds[0]!}::uuid,${f.accountIds[1]!}::uuid)`;
+      expect(rows).toHaveLength(2);
+      expect(rows.every((row) => row.created_by === null)).toBe(true);
+    } finally {
+      await Promise.allSettled(pending ? [pending] : []);
+      await f.cleanup();
+      await sql`DELETE FROM auth.users WHERE id=${secondCreator}::uuid`;
     }
   });
 
@@ -399,6 +701,508 @@ suite("machine authority concurrency", () => {
         expect((await getWorkflowMachineAuthority(f.workflow.id))?.mandate).toBeNull();
       } finally {
         await Promise.allSettled(pending ? [pending] : []);
+        await f.cleanup();
+      }
+    });
+});
+
+suite("machine owner changes preserve independent callers", () => {
+  for (const caller of ["human", "unrelated machine"] as const)
+    test(`${caller}: a previously queued domain write retains its own authority`, async () => {
+      const f = await authorityFixture(true);
+      try {
+        let headers: Record<string, string>;
+        if (caller === "human") headers = { cookie: `session_token=${await createTestSession(f.ownerId)}` };
+        else {
+          const token = await serviceAccountCredentials.createApiToken({
+            serviceAccountId: f.accountIds[1]!,
+            name: "Independent caller",
+            scopes: ["grids:write"],
+          });
+          if (!token.ok) throw new Error(token.error.message);
+          headers = { authorization: `Bearer ${token.data.token}` };
+        }
+        const response = await api.request(`/workflows/${f.workflow.shortId}/invoke`, {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
+          body: JSON.stringify({ inputs: {}, idempotencyKey: crypto.randomUUID(), mode: "execute" }),
+        });
+        expect(response.status, await response.clone().text()).toBe(200);
+        const receipt = z.object({ runId: z.string() }).parse(await response.json());
+        const run = await getWorkflowRunByShortId(receipt.runId);
+        if (!run) throw new Error("Queued run missing");
+        const owner = await f.assign();
+        expect((await f.change({ action: "revoke", expected: snapshot(owner) })).status).toBe(200);
+        await runGridsWorkflowRun(run.id);
+        const [finished] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${run.id}::uuid`;
+        expect(finished?.state).toBe("succeeded");
+        expect(await sql`SELECT id FROM grids.records WHERE table_id=${f.tableId}::uuid`).toHaveLength(1);
+      } finally {
+        await f.cleanup();
+      }
+    });
+});
+
+suite("credential snapshots queued before machine owner assignment", () => {
+  for (const kind of ["standalone", "agent"] as const)
+    for (const lifecycle of ["active", "pause", "revoke", "delete"] as const)
+      for (const boundary of ["execution", "transactional effect"] as const)
+        test(`${kind}: ${lifecycle} rejects a stale createRecord run at ${boundary}`, async () => {
+          const f = await authorityFixture(true);
+          let pending: ReturnType<typeof runGridsWorkflowRun> | undefined;
+          let release: (() => void) | undefined;
+          let barrier: ReturnType<typeof spyOn<typeof machineAuthority, "validateWorkflowOwnerSnapshot">> | undefined;
+          try {
+            const accountId = f.accountIds[0]!;
+            await sql`UPDATE auth.service_accounts SET kind=${kind} WHERE id=${accountId}::uuid`;
+            const token = await serviceAccountCredentials.createApiToken({
+              serviceAccountId: accountId,
+              name: "Queued write",
+              scopes: ["grids:write"],
+            });
+            if (!token.ok) throw new Error(token.error.message);
+            const queue = async () => {
+              const response = await api.request(`/workflows/${f.workflow.shortId}/invoke`, {
+                method: "POST",
+                headers: {
+                  authorization: `Bearer ${token.data.token}`,
+                  "content-type": "application/json",
+                  "x-forwarded-for": uniqueCallerAddress(),
+                },
+                body: JSON.stringify({ inputs: {}, idempotencyKey: crypto.randomUUID(), mode: "execute" }),
+              });
+              expect(response.status, await response.clone().text()).toBe(200);
+              const receipt = z.object({ runId: z.string() }).parse(await response.json());
+              const run = await getWorkflowRunByShortId(receipt.runId);
+              if (!run) throw new Error("Queued run missing");
+              return run;
+            };
+            // Prove this exact token, source, grant and domain write work before assignment.
+            const baseline = await queue();
+            await runGridsWorkflowRun(baseline.id);
+            const records = () => sql`SELECT id FROM grids.records WHERE table_id=${f.tableId}::uuid`;
+            expect(await records()).toHaveLength(1);
+            const run = await queue();
+            const accepted = await getWorkflowRunScope(run.id);
+            expect(accepted?.principal.credential?.id).toBeTruthy();
+            expect(accepted?.principal.mandate ?? null).toBeNull();
+            if (!accepted) throw new Error("Queued scope missing");
+            expect(await canExecuteWorkflow({ ...accepted, workflowId: f.workflow.id })).toBe(true);
+            if (boundary === "transactional effect") {
+              let entered!: () => void;
+              const reached = new Promise<void>((resolve) => {
+                entered = resolve;
+              });
+              const gate = new Promise<void>((resolve) => {
+                release = resolve;
+              });
+              const original = machineAuthority.validateWorkflowOwnerSnapshot;
+              let first = true;
+              barrier = spyOn(machineAuthority, "validateWorkflowOwnerSnapshot").mockImplementation(async (...args) => {
+                if (first && args[2] !== undefined) {
+                  first = false;
+                  entered();
+                  await gate;
+                }
+                return original(...args);
+              });
+              // Pause inside the actual createRecord transaction before its
+              // authority read. No authorization result is replaced or skipped.
+              pending = runGridsWorkflowRun(run.id);
+              await Promise.race([
+                reached,
+                pending.then(() => {
+                  throw new Error("Run ended before the transactional authority barrier");
+                }),
+              ]);
+            }
+            const assigned = await f.assign(accountId);
+            if (lifecycle === "delete") await sql`DELETE FROM auth.mandates WHERE id=${assigned.mandate!.id}::uuid`;
+            else if (lifecycle !== "active") expect((await f.change({ action: lifecycle, expected: snapshot(assigned) })).status).toBe(200);
+            if (boundary === "execution") expect(await canExecuteWorkflow({ ...accepted, workflowId: f.workflow.id })).toBe(false);
+            release?.();
+            await (pending ?? runGridsWorkflowRun(run.id));
+            const [failed] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${run.id}::uuid`;
+            expect(failed?.state).toBe("failed");
+            if (boundary === "transactional effect") {
+              const outcomes = await sql<{ outcome: { error?: { code?: string } } }[]>`
+                SELECT outcome->'outcome' AS outcome FROM workflows.step_outcome WHERE run_id=${run.id}::uuid`;
+              expect(outcomes.some((row) => row.outcome?.error?.code === "FORBIDDEN")).toBe(true);
+            }
+            expect(await records()).toHaveLength(1);
+            expect((await getWorkflowRunScope(run.id))?.principal.mandate ?? null).toBeNull();
+            const effects = await sql`SELECT id FROM grids.audit_log WHERE base_id=${f.baseId}::uuid AND action='workflow.record.created'`;
+            expect(effects).toHaveLength(1);
+            if (lifecycle === "active") {
+              const fresh = await queue();
+              expect((await getWorkflowRunScope(fresh.id))?.principal.mandate).toEqual({
+                id: assigned.mandate!.id,
+                revision: assigned.mandate!.revision,
+                workflowId: f.workflow.id,
+              });
+              await runGridsWorkflowRun(fresh.id);
+              expect(await records()).toHaveLength(2);
+              const [finished] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${fresh.id}::uuid`;
+              expect(finished?.state).toBe("succeeded");
+            }
+          } finally {
+            release?.();
+            await Promise.allSettled(pending ? [pending] : []);
+            barrier?.mockRestore();
+            await f.cleanup();
+          }
+        });
+});
+
+suite("machine email authority at each recipient", () => {
+  for (const kind of ["standalone", "agent"] as const)
+    for (const loss of ["revoke", "disable"] as const)
+      for (const caller of ["owner", "human", "unrelated machine"] as const)
+        test(`${kind}: ${loss} between recipients preserves completed mail for ${caller}`, async () => {
+          const f = await authorityFixture();
+          let pending: ReturnType<typeof runGridsWorkflowRun> | undefined;
+          let release!: () => void;
+          const gate = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          let entered!: () => void;
+          const reached = new Promise<void>((resolve) => {
+            entered = resolve;
+          });
+          const sentIds: string[] = [];
+          const send = spyOn(notificationPlatform, "sendTypedNotification").mockImplementation(async () => {
+            const id = testUuid();
+            sentIds.push(id);
+            if (sentIds.length === 1) {
+              entered();
+              await gate;
+            }
+            return { id, created: true, status: "delivered", deliveries: [] };
+          });
+          try {
+            await sql`UPDATE auth.service_accounts SET kind=${kind} WHERE id IN (${f.accountIds[0]!}::uuid,${f.accountIds[1]!}::uuid)`;
+            const template = await createEmailTemplate(
+              f.baseId,
+              { name: "Recipient notice", subject: "Notice", html: "<p>Notice</p>" },
+              f.ownerId,
+            );
+            if (!template.ok) throw new Error(template.error.message);
+            const updated = await updateWorkflow(
+              f.workflow.id,
+              {
+                source:
+                  "steps:\n  - sendEmail:\n      template: Recipient notice\n      to:\n        - email: first@example.invalid\n        - email: second@example.invalid",
+              },
+              f.ownerId,
+              f.workflow.revision,
+            );
+            if (!updated.ok) throw new Error(updated.error.message);
+            const assigned = await f.assign();
+            let headers: Record<string, string>;
+            if (caller === "human") headers = { cookie: `session_token=${await createTestSession(f.ownerId)}` };
+            else {
+              const token = await serviceAccountCredentials.createApiToken({
+                serviceAccountId: f.accountIds[caller === "owner" ? 0 : 1]!,
+                name: "Recipient sender",
+                scopes: ["grids:write"],
+              });
+              if (!token.ok) throw new Error(token.error.message);
+              headers = { authorization: `Bearer ${token.data.token}` };
+            }
+            const response = await api.request(`/workflows/${f.workflow.shortId}/invoke`, {
+              method: "POST",
+              headers: { ...headers, "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
+              body: JSON.stringify({ inputs: {}, idempotencyKey: crypto.randomUUID(), mode: "execute" }),
+            });
+            expect(response.status, await response.clone().text()).toBe(200);
+            const receipt = z.object({ runId: z.string() }).parse(await response.json());
+            const run = await getWorkflowRunByShortId(receipt.runId);
+            if (!run) throw new Error("Email run missing");
+            const scope = await getWorkflowRunScope(run.id);
+            if (!scope) throw new Error("Email scope missing");
+            expect(Boolean(scope.principal.mandate)).toBe(caller === "owner");
+            pending = runGridsWorkflowRun(run.id);
+            await Promise.race([
+              reached,
+              pending.then(() => {
+                throw new Error("Run ended before the first send");
+              }),
+            ]);
+            if (loss === "revoke") expect((await f.change({ action: "revoke", expected: snapshot(assigned) })).status).toBe(200);
+            else await sql`UPDATE auth.service_accounts SET status='disabled' WHERE id=${f.accountIds[0]!}::uuid`;
+            release();
+            await pending;
+            const [finished] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${run.id}::uuid`;
+            expect(finished?.state).toBe(caller === "owner" ? "failed" : "succeeded");
+            expect(sentIds).toHaveLength(caller === "owner" ? 1 : 2);
+            const deliveries = await sql<
+              { status: string; notification_id: string | null; workflow_step_key: string; idempotency_key: string }[]
+            >`
+              SELECT status, notification_id, workflow_step_key, idempotency_key FROM grids.workflow_email_deliveries
+              WHERE workflow_run_id=${run.id}::uuid ORDER BY recipient_index`;
+            expect(deliveries).toHaveLength(2);
+            expect(deliveries[0]).toMatchObject({ status: "sent", notification_id: sentIds[0] });
+            expect(deliveries[1]).toMatchObject(
+              caller === "owner" ? { status: "pending", notification_id: null } : { status: "sent", notification_id: sentIds[1] },
+            );
+            const audits = await sql<
+              { user_id: string | null; identity: { actorServiceAccountId: string | null; mandateId: string | null } }[]
+            >`
+              SELECT user_id, diff->'workflowEmail'->'new' AS identity FROM grids.audit_log
+              WHERE base_id=${f.baseId}::uuid AND action='workflow.email.sent' ORDER BY created_at`;
+            expect(audits).toHaveLength(sentIds.length);
+            expect(audits[0]).toMatchObject({
+              user_id: caller === "human" ? f.ownerId : null,
+              identity: {
+                actorServiceAccountId: caller === "human" ? null : f.accountIds[caller === "owner" ? 0 : 1],
+                mandateId: caller === "owner" ? assigned.mandate!.id : null,
+              },
+            });
+            if (caller === "owner") {
+              const outcomes = await sql<
+                { code: string | null }[]
+              >`SELECT outcome->'outcome'->'error'->>'code' AS code FROM workflows.step_outcome WHERE run_id=${run.id}::uuid`;
+              expect(outcomes.some((row) => row.code === "FORBIDDEN")).toBe(true);
+              const replay = () =>
+                sendWorkflowEmail({
+                  scope,
+                  template: template.data,
+                  recipients: [
+                    { kind: "email", value: "first@example.invalid" },
+                    { kind: "email", value: "second@example.invalid" },
+                  ],
+                  data: {},
+                  occurredAt: "2026-10-23T08:00:00.000Z",
+                  effectKey: deliveries[0]!.idempotency_key.replace(/:recipient:1$/, ""),
+                  workflowStepKey: deliveries[0]!.workflow_step_key,
+                });
+              await expect(replay()).rejects.toMatchObject({ code: "FORBIDDEN" });
+              expect(sentIds).toHaveLength(1);
+              if (loss === "disable") {
+                await sql`UPDATE auth.service_accounts SET status='active' WHERE id=${f.accountIds[0]!}::uuid`;
+                await replay();
+                expect(sentIds).toHaveLength(2);
+                const restored = await sql<
+                  { status: string; notification_id: string | null }[]
+                >`SELECT status, notification_id FROM grids.workflow_email_deliveries WHERE workflow_run_id=${run.id}::uuid ORDER BY recipient_index`;
+                expect(restored.map((delivery) => delivery.status)).toEqual(["sent", "sent"]);
+                expect(restored.map((delivery) => delivery.notification_id)).toEqual(sentIds);
+              }
+            }
+          } finally {
+            release();
+            await Promise.allSettled(pending ? [pending] : []);
+            send.mockRestore();
+            await f.cleanup();
+          }
+        });
+});
+
+suite("published App machine-owner admission", () => {
+  for (const kind of ["standalone", "agent"] as const)
+    test(`${kind}: published actions retain live base-write authority and preserve queued snapshots`, async () => {
+      const f = await authorityFixture(true);
+      let pending: ReturnType<typeof runGridsWorkflowRun> | undefined;
+      let release: (() => void) | undefined;
+      let barrier: ReturnType<typeof spyOn<typeof machineAuthority, "validateWorkflowOwnerSnapshot">> | undefined;
+      try {
+        const accountId = f.accountIds[0]!;
+        await sql`UPDATE auth.service_accounts SET kind=${kind} WHERE id=${accountId}::uuid`;
+        const launcher = await createLauncher(
+          f.workflow,
+          { name: "Write a task", config: { kind: "customApp", inputMode: "fixed", inputBindings: {} }, enabled: true },
+          f.ownerId,
+        );
+        if (!launcher.ok) throw new Error(launcher.error.message);
+        const [base] = await sql<{ short_id: string }[]>`SELECT short_id FROM grids.bases WHERE id=${f.baseId}::uuid`;
+        if (!base) throw new Error("Base missing");
+        const app = await applyCustomApp(
+          {
+            schemaVersion: 5,
+            kind: "grids.custom-app",
+            id: testShortId(),
+            baseId: base.short_id,
+            name: "Task actions",
+            startPageId: "home",
+            pages: [
+              {
+                id: "home",
+                title: "Home",
+                navigation: { visible: true },
+                parameters: {},
+                rows: [
+                  {
+                    id: "main",
+                    columns: [
+                      {
+                        id: "content",
+                        span: 12,
+                        blocks: [
+                          {
+                            id: "actions",
+                            type: "actions",
+                            actions: [
+                              {
+                                id: "run",
+                                label: "Write",
+                                kind: "workflow",
+                                launcherId: launcher.data.shortId,
+                                variant: "primary",
+                                inputs: {},
+                              },
+                            ],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          f.ownerId,
+        );
+        if (!app.ok) throw new Error(app.error.message);
+        expect((await publishCustomApp(app.data.id, f.ownerId)).ok).toBe(true);
+        const grant = await grantAccess({
+          resourceType: "customApp",
+          resourceId: app.data.id,
+          principal: { type: "service_account", serviceAccountId: accountId },
+          permission: "read",
+          actorId: f.ownerId,
+        });
+        if (!grant.ok) throw new Error(grant.error.message);
+        f.accessIds.push(grant.data.accessId);
+        const token = await serviceAccountCredentials.createApiToken({
+          serviceAccountId: accountId,
+          name: "App action",
+          scopes: ["grids:write"],
+        });
+        if (!token.ok) throw new Error(token.error.message);
+        const invoke = async () =>
+          api.request(`/apps/runtime/${app.data.shortId}/home/actions/actions/run`, {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${token.data.token}`,
+              "content-type": "application/json",
+              "x-forwarded-for": uniqueCallerAddress(),
+            },
+            body: JSON.stringify({ operationId: crypto.randomUUID() }),
+          });
+        const acceptedRun = async () => {
+          const response = await invoke();
+          expect(response.status, await response.clone().text()).toBe(202);
+          const receipt = z.object({ runId: z.string() }).parse(await response.json());
+          const run = await getWorkflowRunByShortId(receipt.runId);
+          if (!run) throw new Error("App action run missing");
+          return run;
+        };
+        const stale = await acceptedRun();
+        expect((await getWorkflowRunScope(stale.id))?.principal.mandate ?? null).toBeNull();
+        const assigned = await f.assign();
+        const fresh = await acceptedRun();
+        expect((await getWorkflowRunScope(fresh.id))?.principal.mandate).toEqual({
+          id: assigned.mandate!.id,
+          revision: assigned.mandate!.revision,
+          workflowId: f.workflow.id,
+        });
+        await runGridsWorkflowRun(fresh.id);
+        const [finished] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${fresh.id}::uuid`;
+        expect(finished?.state).toBe("succeeded");
+        await runGridsWorkflowRun(stale.id);
+        const [denied] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${stale.id}::uuid`;
+        expect(denied?.state).toBe("failed");
+        expect((await getWorkflowRunScope(stale.id))?.principal.mandate ?? null).toBeNull();
+        const records = () => sql`SELECT id FROM grids.records WHERE table_id=${f.tableId}::uuid`;
+        const effects = () => sql`SELECT id FROM grids.audit_log WHERE base_id=${f.baseId}::uuid AND action='workflow.record.created'`;
+        expect(await records()).toHaveLength(1);
+        expect(await effects()).toHaveLength(1);
+        let baseAccessId = f.accessIds[2]!;
+        for (const boundary of ["execution", "transactional effect"] as const) {
+          const queued = await acceptedRun();
+          const accepted = await getWorkflowRunScope(queued.id);
+          if (!accepted) throw new Error("Mandated App scope missing");
+          expect(accepted.principal.mandate).toEqual((await getWorkflowRunScope(fresh.id))?.principal.mandate);
+          expect(await canExecuteWorkflow({ ...accepted, workflowId: f.workflow.id })).toBe(true);
+          if (boundary === "transactional effect") {
+            let entered!: () => void;
+            const reached = new Promise<void>((resolve) => {
+              entered = resolve;
+            });
+            const gate = new Promise<void>((resolve) => {
+              release = resolve;
+            });
+            const original = machineAuthority.validateWorkflowOwnerSnapshot;
+            let first = true;
+            barrier = spyOn(machineAuthority, "validateWorkflowOwnerSnapshot").mockImplementation(async (...args) => {
+              if (first && args[2] !== undefined) {
+                first = false;
+                entered();
+                await gate;
+              }
+              return original(...args);
+            });
+            // The real createRecord transaction has started; pause before its
+            // authority read, then commit the actual grant revocation.
+            pending = runGridsWorkflowRun(queued.id);
+            await Promise.race([
+              reached,
+              pending.then(() => {
+                throw new Error("App run ended before the transactional authority barrier");
+              }),
+            ]);
+          }
+          expect((await revokeAccess(baseAccessId, f.ownerId)).ok).toBe(true);
+          expect(
+            await sql`SELECT a.id FROM auth.access a JOIN grids.custom_app_access ca ON ca.access_id=a.id
+              WHERE ca.custom_app_id=${app.data.id}::uuid AND a.id=${grant.data.accessId}::uuid AND a.permission='read'`,
+          ).toHaveLength(1);
+          expect((await invoke()).status).toBe(403);
+          expect(await canExecuteWorkflow({ ...accepted, workflowId: f.workflow.id })).toBe(false);
+          release?.();
+          await (pending ?? runGridsWorkflowRun(queued.id));
+          const [blocked] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${queued.id}::uuid`;
+          expect(blocked?.state).toBe("failed");
+          if (boundary === "transactional effect") {
+            const outcomes = await sql<{ code: string | null }[]>`
+              SELECT outcome->'outcome'->'error'->>'code' AS code FROM workflows.step_outcome WHERE run_id=${queued.id}::uuid`;
+            expect(outcomes.some((row) => row.code === "FORBIDDEN")).toBe(true);
+          }
+          expect(await records()).toHaveLength(1);
+          expect(await effects()).toHaveLength(1);
+          expect((await getWorkflowRunScope(queued.id))?.principal).toEqual(accepted.principal);
+          barrier?.mockRestore();
+          barrier = undefined;
+          pending = undefined;
+          release = undefined;
+          const restored = await grantAccess({
+            resourceType: "base",
+            resourceId: f.baseId,
+            principal: { type: "service_account", serviceAccountId: accountId },
+            permission: "write",
+            actorId: f.ownerId,
+          });
+          if (!restored.ok) throw new Error(restored.error.message);
+          baseAccessId = restored.data.accessId;
+          f.accessIds.push(baseAccessId);
+        }
+        // Base and App grants are valid again, so the remaining denials prove
+        // account and mandate revocation independently of the base grant.
+        const restored = await acceptedRun();
+        await runGridsWorkflowRun(restored.id);
+        const [restoredRun] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${restored.id}::uuid`;
+        expect(restoredRun?.state).toBe("succeeded");
+        expect(await records()).toHaveLength(2);
+        await sql`UPDATE auth.service_accounts SET status='disabled' WHERE id=${accountId}::uuid`;
+        expect((await invoke()).status).toBe(401);
+        await sql`UPDATE auth.service_accounts SET status='active' WHERE id=${accountId}::uuid`;
+        await acceptedRun();
+        expect((await f.change({ action: "revoke", expected: snapshot(assigned) })).status).toBe(200);
+        expect((await invoke()).status).toBe(403);
+      } finally {
+        release?.();
+        await Promise.allSettled(pending ? [pending] : []);
+        barrier?.mockRestore();
         await f.cleanup();
       }
     });

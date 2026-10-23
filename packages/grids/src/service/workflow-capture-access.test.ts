@@ -53,13 +53,13 @@ describe("atomic workflow effect access", () => {
     expect(deps.canExecuteRun).toHaveBeenCalledTimes(1);
   });
 
-  test("direct effects require Base write including credential scope, not just read", async () => {
+  test("direct effects require current workflow execution authority, including owner and credential checks", async () => {
     const deps = dependencies();
     const claim = scope(false);
-    deps.authorizeWorkflowBase.mockResolvedValue(false);
+    deps.canExecuteRun.mockResolvedValue(false);
     await expect(createWorkflowEffectAccess(claim, sql, deps)).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(deps.authorizeWorkflowBase).toHaveBeenCalledWith(claim.principal, "base", "write", sql);
-    expect(deps.canExecuteRun).not.toHaveBeenCalled();
+    expect(deps.canExecuteRun).toHaveBeenCalledWith(claim, sql);
+    expect(deps.authorizeWorkflowBase).not.toHaveBeenCalled();
     expect(deps.workflowTableBelongsToBase).not.toHaveBeenCalled();
   });
 
