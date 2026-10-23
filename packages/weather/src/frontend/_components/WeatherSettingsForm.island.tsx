@@ -22,7 +22,6 @@ type Initial = {
   "weather.default_lat": string;
   "weather.default_lon": string;
   "weather.cache_minutes": number;
-  "weather.geo_url": string;
 };
 
 /** `unreadable[key]` marks a saved value this application cannot read; `initial` then holds the value in use. */
@@ -115,8 +114,8 @@ export default function WeatherSettingsForm(props: { initial: Initial; unreadabl
           <p>{t().forecastSourceBody}</p>
           <p>
             {t().geocodingBody}{" "}
-            <a href="https://github.com/ValentinKolb/geo" target="_blank" class="underline" rel="noreferrer">
-              github.com/ValentinKolb/geo
+            <a href="/admin/places-and-maps" target="_blank" class="underline" rel="noreferrer">
+              {t().locationSearch}
             </a>
             .
           </p>
@@ -168,23 +167,6 @@ export default function WeatherSettingsForm(props: { initial: Initial; unreadabl
             max={1440}
           />
           {unreadableHint("weather.cache_minutes")}
-        </SettingsField>
-      </SettingsSection>
-
-      <SettingsSection title={t().locationSearch} subtitle={t().locationSearchDescription} icon="ti ti-search">
-        <SettingsField
-          label={t().geoApiUrl}
-          description={t().geoApiUrlDescription}
-          error={() => fieldErrors()["weather.geo_url"]}
-          changed={() => isChanged("weather.geo_url")}
-        >
-          <TextInput
-            value={() => draft()["weather.geo_url"]}
-            onValueChange={(v) => update("weather.geo_url", v)}
-            type="url"
-            placeholder={t().geoApiExample}
-          />
-          {unreadableHint("weather.geo_url")}
         </SettingsField>
       </SettingsSection>
     </SettingsPage>

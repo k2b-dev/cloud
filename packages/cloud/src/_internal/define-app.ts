@@ -1,4 +1,5 @@
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, validateAppSkillCatalog } from "../ai/app-skills";
+import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
 import { startLiveOutbox } from "../events/live";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
@@ -51,8 +52,10 @@ import type { AppSettingsMap, KindToType } from "../contracts/settings-types";
 import type { Role } from "../contracts/shared";
 import type { HelpDefinition } from "../server/help";
 import { getLocale, resolveLocale } from "../server/locale";
+import { requireAppAccess, stopAppAccessConnections } from "../server/middleware/app-access";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { requireInvocation } from "../server/middleware/invocation";
+import "../events/app-access";
 import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-template";
 import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
 import { preloadLayoutAnnouncements, settings as settingsMiddleware } from "../server/middleware/settings";
@@ -131,6 +134,7 @@ type ResolvedPageOptions = PageOptions & { performanceRoute?: string; themePrefe
  */
 export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefinitionMap = {}, AppId extends string = string> = {
   id: AppId;
+  access?: AppAccessDeclaration;
   name: string;
   icon: string;
   description: string;
@@ -584,13 +588,18 @@ export const defineApp = <
     openapi: opts.openapi,
     cli: opts.cli,
   };
-  const meta: AppMeta = { ...baseMeta, presentation: compileAppPresentation(baseMeta, opts.presentation) };
+  const meta: AppMeta = {
+    ...baseMeta,
+    access: compileAppAccess(opts.access),
+    presentation: compileAppPresentation(baseMeta, opts.presentation),
+  };
 
   // ── 3. start() — builds and boots the Hono server ────────────────────
   const start = async (startOpts: StartOptions): Promise<StartResult> => {
     const port = startOpts.port ?? 3000;
     const baseUrl = opts.baseUrl;
     const log = logger("app");
+    if (!meta.access) log.warn("Application has no access declaration; legacy entry and discovery rules remain active", { appId: meta.id });
 
     // Settings are encrypted at rest, so every container needs the secret. It
     // is only read on the first decrypt, which meant a container without it
@@ -638,6 +647,7 @@ export const defineApp = <
       // Registry entry
       const entry: AppRegistryEntry = {
         id: meta.id,
+        access: meta.access,
         name: meta.name,
         icon: meta.icon,
         description: meta.description,
@@ -772,6 +782,7 @@ export const defineApp = <
       // Framework-owned mounts answer before the app's router ever runs, so the
       // app middleware cannot report their template. Without this, every hashed
       // island chunk would land in telemetry as its own route.
+      const invocationApp = { getApp: async (id: string) => (id === meta.id ? meta : null) };
       const server = new Hono<AuthContext>()
         .use("*", routeTemplate)
         .get(APP_READINESS_PATH, () => appReadinessResponse(meta.id))
@@ -780,11 +791,14 @@ export const defineApp = <
         .all("/public/*", servePublicAsset(isDevelopment, sharedStylesheetVersion(buildMetadata.release)))
         .use(
           "/_internal/sync/*",
-          requireInvocation((c) => ({
-            targetAppId: meta.id,
-            operation: syncInvocationOperation(c.req.method, new URL(c.req.url).pathname.slice("/_internal/sync".length)),
-            schemaHash: null,
-          })),
+          requireInvocation(
+            (c) => ({
+              targetAppId: meta.id,
+              operation: syncInvocationOperation(c.req.method, new URL(c.req.url).pathname.slice("/_internal/sync".length)),
+              schemaHash: null,
+            }),
+            invocationApp,
+          ),
         )
         .use("/_internal/sync/*", auth.requireOAuthScope("admin"))
         .use("/_internal/sync/*", async (c, next) => {
@@ -792,15 +806,6 @@ export const defineApp = <
           return next();
         })
         .route("/_internal/sync", createSyncOpsRoutes(getProcessSync));
-
-      if (opts.cli && cliModules.length > 0) server.route(CLOUD_CLI_PLUGIN_ROUTE, createCliPluginRoutes(meta.id, opts.cli));
-
-      if (compiledHelp) {
-        const pageBase = compiledHelp.summary.pageBase;
-        const centralPageBase = `/help/apps/${encodeURIComponent(meta.id)}`;
-        server.get(pageBase, (c) => c.redirect(centralPageBase, 302));
-        server.get(`${pageBase}/:topic`, (c) => c.redirect(`${centralPageBase}/${encodeURIComponent(c.req.param("topic"))}`, 302));
-      }
 
       if (compiledCapabilities) {
         const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") =>
@@ -839,6 +844,7 @@ export const defineApp = <
               input: body.input,
               expectedSchemaHash: c.req.header("x-cloud-capability-schema-hash") ?? null,
               context: {
+                authority: auth.getAuthority(c),
                 actor,
                 accessSubject: c.get("accessSubject"),
                 user,
@@ -860,6 +866,7 @@ export const defineApp = <
               kind === "review" ? await reviewCompiledCapability(invocation) : await invokeCompiledCapability({ ...invocation, kind });
             const operation = kind === "action" ? compiledCapabilities.actions.get(invocation.localId) : undefined;
             const serialized = serializeCapabilityProviderResult(result, {
+              review: kind === "review",
               nonIdempotentAction: kind === "action" && operation?.manifest.idempotency === "none",
             });
             return new Response(serialized.body, {
@@ -885,7 +892,7 @@ export const defineApp = <
               operation: invocationOperation,
               schemaHash: operation.manifest.schemaHash,
             };
-          });
+          }, invocationApp);
         for (const kind of ["queries", "actions"] as const) {
           server.post(
             `/api/_internal/capabilities/v1/streams/${kind}/:capabilityId/:verb`,
@@ -900,6 +907,7 @@ export const defineApp = <
                 verb: c.req.param("verb") ?? "",
                 request: c.req.raw,
                 context: {
+                  authority: auth.getAuthority(c),
                   actor,
                   accessSubject: c.get("accessSubject"),
                   user: actor.kind === "user" ? actor.user : actor.delegatedUser,
@@ -939,7 +947,7 @@ export const defineApp = <
             const widgetId = c.req.param("widgetId") ?? "";
             if (!declaredWidgetIds.has(widgetId) || !startOpts.widgets?.[widgetId]) return null;
             return { targetAppId: meta.id, operation: widgetInvocationOperation(widgetId), schemaHash: null };
-          }),
+          }, invocationApp),
           auth.requireOAuthScope("read", "admin"),
           runtimeMiddleware(),
           settingsMiddleware(),
@@ -954,10 +962,31 @@ export const defineApp = <
         );
       }
 
+      cleanup.push(() => stopAppAccessConnections());
+      server.use(
+        "*",
+        requireAppAccess(meta, (c, message) =>
+          ssr.error(c, 403, {
+            title: "No access",
+            description: message,
+            layout: "minimal",
+          }),
+        ),
+      );
+
+      if (opts.cli && cliModules.length > 0) server.route(CLOUD_CLI_PLUGIN_ROUTE, createCliPluginRoutes(meta.id, opts.cli));
+
+      if (compiledHelp) {
+        const pageBase = compiledHelp.summary.pageBase;
+        const centralPageBase = `/help/apps/${encodeURIComponent(meta.id)}`;
+        server.get(pageBase, (c) => c.redirect(centralPageBase, 302));
+        server.get(`${pageBase}/:topic`, (c) => c.redirect(`${centralPageBase}/${encodeURIComponent(c.req.param("topic"))}`, 302));
+      }
+
       // OpenAPI spec mount. Registered on the framework server (before the
       // user-fetch catch-all below) so it bypasses any auth / rate-limit
       // middleware on the api router — the spec must stay reachable without
-      // a session for `app-api-docs` to render it.
+      // a session for legacy apps. Declared app access is enforced above.
       //
       // The `servers` override is load-bearing: hono-openapi walks the
       // BARE api router and emits paths relative to its own root (e.g.

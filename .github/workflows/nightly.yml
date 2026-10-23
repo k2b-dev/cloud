@@ -206,12 +206,7 @@ jobs:
       - run: ./packages/grids/node_modules/.bin/playwright install chromium
       # The Chat smoke's phone runs in WebKit, which the Playwright image serves as in ci.yml's webkit job.
       - name: Start WebKit in the Playwright image
-        run: |
-          set -euo pipefail
-          version=$(jq -r '.workspaces.catalog.playwright' package.json)
-          "$GITHUB_WORKSPACE/.github/pull-images.sh" "mcr.microsoft.com/playwright:v$version-noble"
-          docker run --detach --name playwright --network host --init --ipc=host --user pwuser --workdir /home/pwuser \
-            "mcr.microsoft.com/playwright:v$version-noble" npx -y "playwright@$version" run-server --port 3333 --host 127.0.0.1
+        run: .github/start-playwright.sh
       - name: Build the Core, gateway, Accounts, Grids, Mail and Chat images
         run: |
           set -euo pipefail
@@ -292,7 +287,6 @@ jobs:
               extra+=(--app-url "$APP_URL")
             fi
             if [[ "$app" == chat ]]; then
-              timeout 120s bash -c 'until docker logs playwright 2>&1 | grep -q "Listening on"; do sleep 1; done'
               extra+=(--webkit-endpoint ws://127.0.0.1:3333/)
             fi
             bun "packages/$app/scripts/browser-smoke.ts" --base-url http://127.0.0.1:3000 --admin-token-file "$RUNNER_TEMP/admin-token" "${extra[@]}" || failed+=("$app")
@@ -344,10 +338,9 @@ jobs:
       - name: Install the Playwright browser used by the Assistant code host and Mail tests
         run: ./packages/assistant/node_modules/.bin/playwright install chromium
       - name: Fetch the Bun runtime that the standalone CLI test compiles into cld
-        # Same step as in the `unit` job of ci.yml: a slow registry fails here
-        # by name instead of the test's 60 s budget.
-        timeout-minutes: 3
-        run: CLD_TARGETS=linux_x64 CLD_OUTPUT_DIR="$RUNNER_TEMP/cld-runtime" bun run packages/cloud-cli/scripts/build.ts
+        # Retry the prefetch as in ci.yml; the test reuses Bun's cached runtime.
+        timeout-minutes: 7
+        run: CLD_TARGETS=linux_x64 CLD_OUTPUT_DIR="$RUNNER_TEMP/cld-runtime" .github/retry.sh timeout 120s bun run packages/cloud-cli/scripts/build.ts
       - run: bun run test --shard 1/3
 
   dependencies:
@@ -359,5 +352,6 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/install
+      - run: bun run --cwd packages/ui build
       - run: bun run check dependencies
       - run: bun audit --audit-level=high

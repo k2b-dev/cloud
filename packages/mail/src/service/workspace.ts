@@ -35,7 +35,7 @@ import { mailLive } from "./live";
 import type { ConversationLocalTags, LocalTag } from "./local-tags";
 import * as localTags from "./local-tags";
 import * as mailboxes from "./mailboxes";
-import type { ConversationSummary, ConversationViewCounts, MailFolderView, MessageDetail } from "./messages";
+import type { ConversationRowState, ConversationSummary, ConversationViewCounts, MailFolderView, MessageDetail } from "./messages";
 import * as messages from "./messages";
 import * as publicResources from "./public-resources";
 import type { ConversationReminder } from "./reminders";
@@ -178,6 +178,7 @@ export type MailboxPageData = {
   listError: MailListError | null;
   listTitle: string;
   detailMessages: MailWorkspaceMessage[];
+  conversationRowState: ConversationRowState | null;
   conversationSummary: ConversationContentSummary | null;
   conversationDrafts: ConversationDraftSummary[];
   detailError: string | null;
@@ -212,6 +213,7 @@ export type MailDetailErrors = {
 export type MailSelectionDetail = Pick<
   MailboxPageData,
   | "detailMessages"
+  | "conversationRowState"
   | "conversationSummary"
   | "conversationDrafts"
   | "detailError"
@@ -243,6 +245,7 @@ const EMPTY_DETAIL_ERRORS: MailDetailErrors = {
 
 const EMPTY_SELECTION_DETAIL: MailSelectionDetail = {
   detailMessages: [],
+  conversationRowState: null,
   conversationSummary: null,
   conversationDrafts: [],
   detailError: null,
@@ -360,6 +363,7 @@ const loadConversationDetails = async (
   const assignedOnly = access.scope === "assigned";
   const [
     detailResult,
+    rowStateResult,
     stateResult,
     tagResult,
     commentsResult,
@@ -372,6 +376,7 @@ const loadConversationDetails = async (
     draftsResult,
   ] = await Promise.all([
     messages.listConversationMessageDetails({ ...params, limit: 100 }),
+    messages.getConversationRowState(params),
     collaboration.getConversationCollaboration(params),
     localTags.getConversationLocalTags(params),
     collaboration.listConversationComments({ ...params, limit: 100, order: "newest" }),
@@ -392,9 +397,10 @@ const loadConversationDetails = async (
 
   return {
     detailMessages: detailResult.ok ? detailResult.data.map(workspaceMessage) : [],
+    conversationRowState: rowStateResult.ok ? rowStateResult.data : null,
     conversationSummary: summaryResult.ok ? summaryResult.data : null,
     conversationDrafts: draftsResult.ok ? draftsResult.data : [],
-    detailError: detailResult.ok ? null : errorMessage(detailResult.error),
+    detailError: !detailResult.ok ? errorMessage(detailResult.error) : !rowStateResult.ok ? errorMessage(rowStateResult.error) : null,
     collaborationState: stateResult.ok ? stateResult.data : null,
     conversationLocalTags: tagResult.ok ? tagResult.data : null,
     comments: commentsResult.ok ? commentsResult.data.items : [],
@@ -627,7 +633,7 @@ export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string)
     publicResources.resolveExistingMailboxPublicIds(
       "folders",
       mailboxId,
-      references.flatMap((reference) => (reference.type === "folder_id" ? [reference.folderId] : [])),
+      references.flatMap((reference) => (reference.type !== "local_tag_id" ? [reference.folderId] : [])),
     ),
     publicResources.resolveExistingMailboxPublicIds(
       "tags",
@@ -636,9 +642,9 @@ export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string)
     ),
   ]);
   const expression = replaceMailSearchReferences(search.expression, (reference) => {
-    const id = reference.type === "folder_id" ? folders.get(reference.folderId) : tags.get(reference.tagId);
+    const id = reference.type !== "local_tag_id" ? folders.get(reference.folderId) : tags.get(reference.tagId);
     if (!id) return MAIL_SEARCH_MATCHES_NOTHING;
-    return reference.type === "folder_id" ? { ...reference, folderId: id } : { ...reference, tagId: id };
+    return reference.type !== "local_tag_id" ? { ...reference, folderId: id } : { ...reference, tagId: id };
   });
   return { requestUrl, search: { ...search, expression }, publicSearch: search };
 };

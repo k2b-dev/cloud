@@ -512,7 +512,7 @@ export default function MailSidebar(
       ...(counts().needsAction > 0 ? [overviewText().needsActionCount({ count: counts().needsAction })] : []),
       ...(counts().unread > 0 ? [overviewText().unreadCount({ count: counts().unread })] : []),
     ];
-    return (
+    const content = (
       <>
         <AppWorkspace.SidebarItem
           href={`/app/mail/${mailbox.id}`}
@@ -607,6 +607,15 @@ export default function MailSidebar(
         </AppWorkspace.SidebarItem>
         <Show when={rowOpen()}>{folderGroup()}</Show>
       </>
+    );
+    // Focus uses the shared phone object strip, whose rows remain direct section children.
+    // Mailbox pages keep one stable section per mailbox so live updates do not remount its focused row.
+    return props.mobile === "stacked" ? (
+      content
+    ) : (
+      <AppWorkspace.SidebarSection class={`mail-sidebar-mailbox-group${rowOpen() ? " is-open" : ""}`}>
+        {content}
+      </AppWorkspace.SidebarSection>
     );
   };
 

@@ -72,13 +72,22 @@ test("every outgoing mail route requires administrator authentication", async ()
   }
 });
 test("retention reads effective settings even when record deletion precedes content purge", async () => {
-  const get = spyOn(settings, "get").mockResolvedValueOnce(90).mockResolvedValueOnce(30);
+  const get = spyOn(settings, "read")
+    .mockResolvedValueOnce({ value: 90, stored: "unreadable" })
+    .mockResolvedValueOnce({ value: 30, stored: "readable" });
   try {
     const response = await authorized().request("/retention");
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store, no-transform");
-    expect(await response.json()).toEqual({ contentDays: 90, recordDays: 30 });
-    expect(get.mock.calls).toEqual([["outgoing_mail.content_retention_days"], ["outgoing_mail.record_retention_days"]]);
+    expect(await response.json()).toMatchObject({
+      contentDays: 90,
+      recordDays: 30,
+      unreadable: { "outgoing_mail.content_retention_days": true, "outgoing_mail.record_retention_days": false },
+    });
+    expect(get.mock.calls).toEqual([
+      ["outgoing_mail.content_retention_days", undefined],
+      ["outgoing_mail.record_retention_days", undefined],
+    ]);
   } finally {
     get.mockRestore();
   }
@@ -88,9 +97,6 @@ test("retention PUT rejects incomplete, non-integer, non-positive, reversed and 
   const record = spyOn(audit, "record");
   try {
     for (const input of [
-      {},
-      { contentDays: 30 },
-      { recordDays: 90 },
       { contentDays: 0, recordDays: 90 },
       { contentDays: 30, recordDays: -1 },
       { contentDays: 1.5, recordDays: 90 },
@@ -118,14 +124,24 @@ test("retention schema accepts at most 36500 whole days", () => {
   expect(MailRetentionSchema.safeParse({ contentDays: 36500, recordDays: 36500 }).success).toBe(true);
 });
 test("retention PUT writes both settings and the old/new audit in one transaction, then invalidates cache", async () => {
-  const get = spyOn(settings, "get").mockResolvedValueOnce(90).mockResolvedValueOnce(365);
+  const get = spyOn(settings, "read")
+    .mockResolvedValueOnce({ value: 90, stored: "readable" })
+    .mockResolvedValueOnce({ value: 365, stored: "readable" })
+    .mockResolvedValueOnce({ value: 30, stored: "readable" })
+    .mockResolvedValueOnce({ value: 30, stored: "readable" });
   const set = spyOn(settings, "set").mockResolvedValue();
   const record = spyOn(audit, "record").mockResolvedValue();
   const invalidate = spyOn(settings, "invalidateSettingsCache").mockResolvedValue();
   // Lazy, unused connection: all writers are mocked; nothing queries this client.
-  const tx = Object.assign(new SQL("postgres://localhost/unused_test"), {
+  const client = Object.assign(new SQL("postgres://localhost/unused_test"), {
     savepoint: () => {
       throw new Error("Unexpected savepoint");
+    },
+  });
+  const tx = new Proxy(client, {
+    apply(_target, _receiver, [strings]) {
+      if (!strings.join("?").includes("pg_advisory_xact_lock")) throw new Error("Only the retention pair lock is expected");
+      return Promise.resolve([]);
     },
   });
   const begin = spyOn(sql, "begin").mockImplementation(async (run) => {
@@ -137,24 +153,36 @@ test("retention PUT writes both settings and the old/new audit in one transactio
     const next = { contentDays: 30, recordDays: 30 };
     const response = await request(authorized(), "/retention", "PUT", next);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(next);
+    expect(await response.json()).toMatchObject(next);
     expect(begin).toHaveBeenCalledTimes(1);
+    expect(get.mock.calls.slice(0, 2)).toEqual([
+      ["outgoing_mail.content_retention_days", tx],
+      ["outgoing_mail.record_retention_days", tx],
+    ]);
     expect(set.mock.calls).toEqual([
-      ["outgoing_mail.content_retention_days", 30, tx, { replaceUnreadable: true }],
-      ["outgoing_mail.record_retention_days", 30, tx, { replaceUnreadable: true }],
+      ["outgoing_mail.content_retention_days", 30, tx, { replaceUnreadable: false }],
+      ["outgoing_mail.record_retention_days", 30, tx, { replaceUnreadable: false }],
     ]);
     expect(record).toHaveBeenCalledTimes(1);
     expect(record.mock.calls[0]).toEqual([
       expect.objectContaining({
         action: "outgoing_mail.retention.update",
         actor: expect.objectContaining({ userId: user.id }),
-        metadata: { old: { contentDays: 90, recordDays: 365 }, new: next },
+        metadata: {
+          old: {
+            contentDays: 90,
+            recordDays: 365,
+            unreadable: { "outgoing_mail.content_retention_days": false, "outgoing_mail.record_retention_days": false },
+          },
+          new: next,
+        },
       }),
       tx,
     ]);
     expect(invalidate).toHaveBeenCalledWith(["outgoing_mail.content_retention_days", "outgoing_mail.record_retention_days"]);
   } finally {
     for (const mock of [get, set, record, invalidate, begin]) mock.mockRestore();
+    await client.close();
   }
 });
 test("PUT validates and reports create/replace status without credentials", async () => {
@@ -494,6 +522,9 @@ test("log-access PUT validates app IDs and bounded distinct grants and forwards 
     for (const body of [
       {},
       { apps: "source" },
+      { apps: ["source"], contentApps: ["other"] },
+      { apps: ["source"], contentApps: ["source", "source"] },
+      { apps: ["source"], contentApps: "source" },
       { apps: ["core"] },
       { apps: ["a", "a"] },
       { apps: [""] },
@@ -504,7 +535,11 @@ test("log-access PUT validates app IDs and bounded distinct grants and forwards 
       expect(response.status).toBe(400);
       expect(await response.json()).toMatchObject({ code: "bad_input" });
     }
-    expect(set).toHaveBeenCalledTimes(3);
+    const response = await request(authorized(), "/apps/reader/log-access", "PUT", { apps: ["source"], contentApps: ["source"] });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store, no-transform");
+    expect(set).toHaveBeenLastCalledWith("reader", { apps: ["source"], contentApps: ["source"] }, expect.anything());
+    expect(set).toHaveBeenCalledTimes(4);
   } finally {
     set.mockRestore();
   }

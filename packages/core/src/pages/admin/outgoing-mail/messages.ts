@@ -4,6 +4,12 @@ export const outgoingMailMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      unreadableTitle: "Stored settings cannot be read",
+      unreadableDetail:
+        "The displayed values are fallbacks. Other applications may still read the stored values. Select only the settings you intend to replace, or ask the operator to restore access.",
+      replaceStored: "Replace stored value",
+      recoveryFailed: "Saved settings could not be refreshed. Retry saving to refresh them; your draft is kept.",
+
       title: "Outgoing mail",
       description: "Sender profiles Cloud uses for system email and for apps that send mail.",
       profiles: "Sender profiles",
@@ -128,8 +134,15 @@ export const outgoingMailMessages = i18n.define({
       changeLogAccess: "Change send log access",
       appActions: ({ name }: { name: string }) => `Actions for ${name}`,
       logAccessTitle: "Send log access",
-      logAccessHint:
-        "The app always reads its own mail. Choose the apps whose sent mail it may also read: recipients, subject, status, delivery errors, who sent it, record references, and attachment names, but not the text. The app decides which of its users see them.",
+      logNoAccess: "No access",
+      logMetadata: "Metadata",
+      logContent: "Content",
+      logAccessHint: "Choose access to other apps’ mail, past and future, while it is retained. The app can always read its own mail.",
+      logAccessDetails: "What does each level allow?",
+      logMetadataHint:
+        "Metadata: recipients, subject, status, delivery errors, sender, record references, and attachment names. No message text.",
+      logContentHint:
+        "Content: metadata and individual reads of the message text. Each text read is audited. The app decides which of its users may see it.",
       logAccessNotDeclared:
         "This app does not request send log access in its manifest, so it reads only its own mail whatever you choose here.",
       logAccessFailed: "Could not change send log access",
@@ -200,6 +213,13 @@ export const outgoingMailMessages = i18n.define({
       close: "Close",
     },
     de: {
+      unreadableTitle: "Gespeicherte Einstellungen sind nicht lesbar",
+      unreadableDetail:
+        "Die angezeigten Werte sind Ersatzwerte. Andere Anwendungen können die gespeicherten Werte möglicherweise noch lesen. Wähle nur Einstellungen aus, die du ersetzen möchtest, oder bitte den Betreiber, den Zugriff wiederherzustellen.",
+      replaceStored: "Gespeicherten Wert ersetzen",
+      recoveryFailed:
+        "Die gespeicherten Einstellungen konnten nicht neu geladen werden. Erneut speichern lädt sie neu; der Entwurf bleibt erhalten.",
+
       log: "Sendeprotokoll",
       logDescription: ({ contentDays, recordDays }) =>
         `Mails, die Apps an Cloud übergeben haben. Der Text bleibt ${contentDays} Tage, der Eintrag ${recordDays} Tage erhalten. Anhänge werden hier nie gespeichert.`,
@@ -385,8 +405,16 @@ export const outgoingMailMessages = i18n.define({
       changeLogAccess: "Zugriff aufs Sendeprotokoll ändern",
       appActions: ({ name }) => `Aktionen für ${name}`,
       logAccessTitle: "Zugriff aufs Sendeprotokoll",
+      logNoAccess: "Kein Zugriff",
+      logMetadata: "Metadaten",
+      logContent: "Inhalt",
       logAccessHint:
-        "Die App liest immer ihre eigenen Mails. Wähle die Apps, deren gesendete Mails sie zusätzlich lesen darf: Empfänger, Betreff, Status, Zustellfehler, wer sie gesendet hat, Datensatzverweise und Anhangsnamen, aber nicht den Text. Welche ihrer Nutzer sie sehen, entscheidet die App.",
+        "Wähle den Zugriff auf bisherige und künftige Mails anderer Apps, solange sie aufbewahrt werden. Eigene Mails kann die App immer lesen.",
+      logAccessDetails: "Was erlauben die Zugriffsstufen?",
+      logMetadataHint:
+        "Metadaten: Empfänger, Betreff, Status, Zustellfehler, Absender, Datensatzverweise und Anhangsnamen. Kein Nachrichtentext.",
+      logContentHint:
+        "Inhalt: Metadaten und einzelne Abrufe des Nachrichtentexts. Jeder Textabruf wird protokolliert. Welche ihrer Nutzer ihn sehen dürfen, entscheidet die App.",
       logAccessNotDeclared:
         "Diese App fordert in ihrem Manifest keine Einsicht ins Sendeprotokoll an und liest daher unabhängig von dieser Auswahl nur ihre eigenen Mails.",
       logAccessFailed: "Der Zugriff aufs Sendeprotokoll konnte nicht geändert werden",

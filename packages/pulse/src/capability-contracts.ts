@@ -1,7 +1,7 @@
 import { CapabilitySemanticLinkSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { AlertRuleSchema, AlertSaveSchema } from "./api/alert-schemas";
-import { CreateSourceSchema, SourceStatusSchema, UpdateSourceSchema } from "./api/schemas";
+import { CreateBaseSchema, CreateSourceSchema, IngestBatchSchema, SourceStatusSchema, UpdateSourceSchema } from "./api/schemas";
 import { SOURCE_KINDS } from "./contracts";
 import { MetricFiltersSchema } from "./metric-filters";
 import { BaseStoreStatusSchema } from "./store/admin-schemas";
@@ -181,3 +181,30 @@ export const SourceUpdateInputSchema = UpdateSourceSchema.omit({ bearerToken: tr
     ),
   })
   .strict();
+
+export const BaseCreateInputSchema = CreateBaseSchema.extend({
+  name: CreateBaseSchema.shape.name.describe("Name of the new base."),
+  description: CreateBaseSchema.shape.description.describe("Optional base description."),
+}).strict();
+export const BaseDestroyInputSchema = z.strictObject({
+  baseId: ShortIdSchema.describe("Base ID from base.list."),
+  expectedUpdatedAt: TimestampSchema.describe("Exact updatedAt from a fresh base.read; rejects changed bases."),
+});
+export const BaseOperationDataSchema = z.strictObject({ started: z.literal(true) });
+export const INGEST_CAPABILITY_MAX_BYTES = 192 * 1024;
+export const IngestWriteInputSchema = z
+  .strictObject({
+    baseId: ShortIdSchema.describe("Base ID from base.list."),
+    sourceId: ShortIdSchema.describe("HTTP ingest source created by the current access subject."),
+    expectedRevision: z.number().int().positive().describe("Current source revision from source.read."),
+    batch: IngestBatchSchema.describe("Telemetry batch; the complete Action input must fit 192 KiB."),
+  })
+  .superRefine((input, context) => {
+    if (new TextEncoder().encode(JSON.stringify(input)).byteLength > INGEST_CAPABILITY_MAX_BYTES)
+      context.addIssue({ code: "custom", message: "ingest.write input exceeds 192 KiB; split the batch." });
+  });
+export const IngestWriteDataSchema = z.strictObject({
+  metrics: z.number().int().nonnegative(),
+  events: z.number().int().nonnegative(),
+  states: z.number().int().nonnegative(),
+});

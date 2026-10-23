@@ -106,6 +106,15 @@ test("retention show and set forward exact API paths, both day counts and JSON o
     output: [retention],
   });
 });
+test("retention replacement flags grant intent only for the selected unreadable keys", async () => {
+  for (const [flag, key] of [
+    ["replace-unreadable-content", "outgoing_mail.content_retention_days"],
+    ["replace-unreadable-records", "outgoing_mail.record_retention_days"],
+  ]) {
+    const result = await invoke(["retention", "set"], { "content-days": "30", "record-days": "90", yes: true, [flag!]: true });
+    expect(result.requests[0]?.body).toEqual({ contentDays: 30, recordDays: 90, replaceUnreadable: [key] });
+  }
+});
 test("retention set requires both positive integer flags, valid ordering and --yes before a request", async () => {
   const invalid: CloudCliFlags[] = [
     {},
@@ -306,12 +315,18 @@ test("apps list shows declared read access and comma-joined log grants", async (
     profiles: [],
   };
   const result = { defaultProfile: null, items: [item] };
-  expect((await invoke(["apps", "list"], {}, result, [], "text")).output[0]).toMatchObject([{ reads: true, logApps: "a,b" }]);
+  expect((await invoke(["apps", "list"], {}, result, [], "text")).output[0]).toMatchObject([
+    { reads: true, logApps: "a:metadata,b:metadata" },
+  ]);
   expect((await invoke(["apps", "list"], {}, result)).output).toEqual([result]);
 });
 test("set-log-access requires exactly one mode and confirmation and validates readers and sources", async () => {
   for (const [flags, body] of [
     [{ apps: " a, b " }, { apps: ["a", "b"] }],
+    [
+      { apps: "a,b", "content-apps": " a " },
+      { apps: ["a", "b"], contentApps: ["a"] },
+    ],
     [{ apps: "erp_v2,ERP" }, { apps: ["erp_v2", "ERP"] }],
     [{ "own-only": true }, { apps: [] }],
   ] as const) {
@@ -323,6 +338,11 @@ test("set-log-access requires exactly one mode and confirmation and validates re
     await expect(invoke(["apps", "set-log-access", "reader"], flags)).rejects.toThrow("--yes");
   }
   const invalid: CloudCliFlags[] = [
+    { "content-apps": "a" },
+    { "own-only": true, "content-apps": "a" },
+    { apps: "a", "content-apps": "b" },
+    { apps: "a", "content-apps": "a,a" },
+    { apps: "a", "content-apps": "" },
     {},
     { apps: "a", "own-only": true },
     { apps: "" },

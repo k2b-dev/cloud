@@ -25,7 +25,7 @@ import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
 import { httpApprovalNotice } from "../artifacts/code-approval-message";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
-import { pendingActionQuestion } from "./action-question";
+import { pendingActionQuestion, printPendingActionContent, printReviewContent } from "./action-question";
 import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
 import { closeCliCodeHost } from "./code-host";
 import { createLineReader, type LineReader } from "./line-reader";
@@ -319,6 +319,7 @@ const resolveAttention = async (input: {
       const question = pendingActionQuestion(input.ctx, action);
       for (const line of question.lines) input.ctx.print(line);
       if (question.showInput) input.ctx.print(approvalInputPreview(action.args));
+      await printPendingActionContent(input.ctx, action, input.signal);
       const decision = await collectActionApproval(input.ctx, input.reader, action);
       if (decision === null) return null;
       await submitAction(input.ctx, action, { type: "approval_response", ...decision });
@@ -385,6 +386,7 @@ export async function collectCapabilityApproval(
     ),
   );
   ctx.print(approvalInputPreview(request.input));
+  await printReviewContent(ctx, request.review);
   const decision = await collectActionApproval(ctx, reader, request);
   return decision?.remember === "always" ? { approved: true, remember: "always" } : { approved: decision?.approved === true };
 }

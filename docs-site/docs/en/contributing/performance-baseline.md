@@ -67,7 +67,8 @@ Caddy passes through the gateway's Brotli/gzip without re-encoding.
 Caddy publishes HTTPS and the browser server on two free `127.0.0.1` ports
 other than 3000. Every application's `APP_URL` and the measured origin are
 `https://localhost:<port>`. Bun fetches skip certificate verification only
-for this origin; browser contexts ignore certificate errors and use a secure
+for this origin; Chromium pins the run’s certificate public key, WebKit ignores
+certificate errors, and both use a secure
 session cookie. The development stack is separate.
 
 The Playwright container shares Caddy's network namespace, isolating both
@@ -296,7 +297,8 @@ then WebKit column, drawer, and sheet:
 
 Every sample has a fresh context, administrator session, `en-US` locale,
 `Europe/Berlin` time zone and cookie, light theme, blocked service workers,
-and ignored local certificate errors. **HTTP cache stays enabled** in both
+and the run’s local certificate (Chromium SPKI pin; WebKit certificate-error
+override). **HTTP cache stays enabled** in both
 engines. The from page warms the session cache before the measured navigation;
 desktop also waits for its Help content, warming provider assets. Phone waits
 for host TTI without opening Help. Server and OS caches are not flushed.
@@ -509,6 +511,93 @@ ports, and never uses port 3000 or the development database. Builds and
 startup take 5–15 minutes. Seeding 20,000 messages takes about 2 minutes per
 mailbox, and measuring takes 2–5 minutes; a busy host takes longer. The browser part adds
 roughly 10–30 minutes. `--help` lists every flag without starting Docker.
+
+### Measure actual page changes
+
+Add `--page-changes` to a browser run to measure overview → mailbox,
+mailbox → automations, and automations → mailbox through their rendered
+links and menu controls. Mail need not opt into page swapping: before the
+pilot, these rows record full document loads as the current baseline.
+For a focused run with the same seeded fixture:
+
+```bash
+bun --no-env-file packages/mail/scripts/perf-baseline.ts \
+  --browser chromium,webkit --browser-runs 3 --browser-only \
+  --page-changes --loads none --interactions none \
+  --compare <earlier-mail-result.json>
+```
+
+The result uses Mail schema version 2. `--compare` and `--rank` also accept
+validated schema 1 results. Migration preserves existing samples and leaves
+new page-change measurements absent; an older result provides no evidence
+for these gates. Page baseline results remain incompatible.
+
+Each browser/profile has separate cold and warm rows. Cold starts from a
+fresh context; Chromium keeps its HTTP cache disabled through the change.
+WebKit has no equivalent cache-disable command, so its start document may
+already have cached shared assets. Warm visits each destination first with
+caching enabled. Chromium trusts only the run's local certificate public
+key through an SPKI pin, allowing its HTTP cache to work. The harness reads
+only the public localhost leaf certificate from the tracked Caddy container,
+checks its run label and image, then addresses that container by its immutable
+ID. A CA certificate, wrong hostname, or expired leaf fails the run; the pin
+is never learned from an unverified network connection. The run-owned Playwright
+server permits launch arguments (`run-server --unsafe`) so Chromium receives
+the pin; Playwright otherwise filters it out. This disposable server shares
+Caddy’s network namespace and is published only on loopback. Its clients must
+be trusted, because this mode also accepts other launch options. WebKit uses its
+existing certificate-error override. A warm sample fails if eager JavaScript
+before destination readiness transfers any bytes; a document load also fails
+if its eager script entries are missing. A swap can reuse evaluated modules
+without another resource entry. This guard covers eager JavaScript, not lazy
+code requested by the first action, API responses, or database caches.
+
+| Field | Observation |
+| --- | --- |
+| `clickToMainMs` | Trusted pointerdown until a frame finds destination content in the viewport: a mailbox row or the Automations heading. |
+| `clickToFirstActionMs` | Until a trusted input has a visible response: the mailbox selection toolbar or the app menu on Automations. The open Help column can hide the sidebar settings button even at desktop width, so both profiles use the visible app menu. Both the destination-content island and the action's island must be mounted, and the action must be enabled. Includes the driver's dispatch delay; this is an upper bound. |
+| `documentLoad` | Host `performance.timeOrigin` changed. |
+| `panelReloaded` | The Help iframe was replaced/disconnected, its document time origin changed, or another provider document request occurred. |
+| `panelContextMs` | First frame with the ready, visible Help heading and expected topic: `mail-work` for the mailbox; the start heading without a stale view section for Automations. |
+| `htmlBytes`, `jsBytes`, `cssBytes` | Encoded transfer bytes for requests begun during the change through the first action and panel result. Chromium uses CDP `encodedDataLength`; WebKit uses the combined response body/header estimate. The request set is frozen and given 10 seconds to settle; missing, failed, or unsuccessful required responses fail the sample. Cached Chromium responses contribute zero. The destination must return the expected HTML page; the warm guard separately checks Resource Timing. |
+| `eagerJsTransferBytes` | Resource Timing transfer bytes for JavaScript requested before destination readiness. Must be zero in a warm row. |
+
+Desktop uses the real open Help column. Phone times use the existing
+390×844 profile and Chromium CPU/network throttling; its panel is unavailable
+in this test and has null panel metrics. WebKit remains unthrottled.
+Failures and unavailable engines remain visible in the result and summary;
+a failed measured profile makes the command fail.
+
+Native uncaught exceptions, unhandled rejections, and island failures are
+recorded across the host and same-origin provider documents through the tab's
+shared session storage. Playwright's WebKit `pageerror` also includes handled
+fetch denials, so it does not define this error
+boundary. Required document, script, and stylesheet responses retain their
+separate strict network checks.
+
+Request starts use the same browser-time window in Playwright and Chromium's
+CDP evidence. Both window boundaries retain fractional epoch milliseconds,
+matching browser request timestamps. Rounding the end down to a whole
+millisecond can discard a request that started before the observed end.
+Playwright exposes start timing with the response; a delayed event for a request begun before the measurement is excluded after that
+timing becomes available. Required requests inside the window still need
+their own successful response and transfer evidence.
+
+The Chromium desktop sequence records a GC snapshot at the start and after
+50, 100, and 150 alternating mailbox/automations changes. It reports heap,
+DOM nodes, all DOM listener counts, registered window/document listeners,
+pending timers, and live EventSource/WebSocket objects. Listener counts honor
+capture, `once`, removal, and aborted signals. Instrumentation runs only in
+this sequence; it removes its own references to detached islands before GC.
+The first 20 changes also count document and panel reloads. Full document
+loads reset the heap, so this baseline cannot establish cleanup across swaps.
+
+The fixed pilot limits remain **203 ms desktop / 821 ms phone** for both
+main content and first action, half the historical 406 / 1,642 ms document
+references. Current document-load rows are additional evidence and never
+move those limits. Zero panel reloads across 20 changes and the 3×50 cleanup
+observations still need the later Mail opt-in. This harness alone makes no
+pilot or hydration go decision.
 
 ### Fixture
 
@@ -816,7 +905,11 @@ bun --no-env-file packages/mail/scripts/perf-baseline.ts \
 ```
 
 `candidates.json` is a list of entries with `title`, `location`
-(`path:line` relative to the repository), `metric`, `evidence`, and `slice`.
+(`path:line` relative to the repository), `anchor`, `metric`, `evidence`, and
+`slice`. Copy the complete source line at `location` into `anchor`, without
+leading or trailing whitespace. The line must be non-empty and match the
+anchor exactly. If code moves or changes, review the location and anchor
+before ranking again; a stale reference fails instead of ranking silently.
 The `metric` names a measured time in that result, for example
 `interaction.folder-switch.chromium.phone.median`,
 `load.mailbox.webkit.desktop.ttiMs`,
@@ -826,8 +919,8 @@ The `metric` names a measured time in that result, for example
 `totalMs`), or
 `server.search-common.totalMs.median`. The command prints the five entries
 with the largest measured times as a Markdown table. It refuses an entry
-whose location is not an existing file and line, or whose metric has no
-number in the result, and it needs at least five entries. It also refuses
+whose location is not an existing non-empty line matching its anchor, or whose
+metric has no number in the result, and it needs at least five entries. It also refuses
 a list that mixes `server.` metrics with browser metrics: a server request
 time and a throttled browser time do not measure the same thing. Pick the
 metric that isolates the named cost, for example the island render time

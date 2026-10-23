@@ -17,15 +17,18 @@ import { type AuthContext, auth, jsonResponse, requiresAdmin } from "../server";
 import { noTransform } from "../server/middleware/no-transform";
 import { audit } from "../services/audit";
 import { outgoingMailLog } from "../services/outgoing-mail/admin";
-import { MAIL_RETENTION_KEYS, readMailRetention } from "../services/outgoing-mail/retention";
+import { MAIL_RETENTION_KEYS, readMailRetentionSettings } from "../services/outgoing-mail/retention";
 import { type MailAuditContext, OutgoingMailError, outgoingMailStore } from "../services/outgoing-mail/store";
 import { outgoingMailTest } from "../services/outgoing-mail/test-send";
 import * as settings from "../services/settings";
 
-const retentionInput = MailRetentionSchema.refine((value) => value.recordDays >= value.contentDays, {
-  message: "Record retention must be at least content retention.",
-  path: ["recordDays"],
-});
+const retentionView = MailRetentionSchema.extend({ unreadable: z.record(z.string(), z.boolean()) });
+const retentionInput = MailRetentionSchema.partial()
+  .extend({ replaceUnreadable: z.array(z.enum(MAIL_RETENTION_KEYS)).optional() })
+  .refine((value) => value.recordDays === undefined || value.contentDays === undefined || value.recordDays >= value.contentDays, {
+    message: "Record retention must be at least content retention.",
+    path: ["recordDays"],
+  });
 
 const validate = <Target extends "param" | "json" | "query", Schema extends z.ZodType>(
   target: Target,
@@ -113,9 +116,9 @@ export const createAdminOutgoingMailRoutes = (authenticate: MiddlewareHandler<Au
         summary: "Read outgoing mail retention",
         tags: ["Outgoing mail"],
         ...requiresAdmin,
-        responses: { 200: jsonResponse(MailRetentionSchema, "Effective retention in days") },
+        responses: { 200: jsonResponse(retentionView, "Effective retention in days") },
       }),
-      async (c) => c.json(await readMailRetention()),
+      async (c) => c.json(await readMailRetentionSettings()),
     )
     .put(
       "/retention",
@@ -124,19 +127,30 @@ export const createAdminOutgoingMailRoutes = (authenticate: MiddlewareHandler<Au
         tags: ["Outgoing mail"],
         ...requiresAdmin,
         responses: {
-          200: jsonResponse(MailRetentionSchema, "Updated retention in days"),
+          200: jsonResponse(retentionView, "Updated retention in days"),
           400: jsonResponse(z.object({ code: z.literal("bad_input"), message: z.string() }), "Invalid retention"),
+          409: jsonResponse(
+            z.object({ code: z.literal("setting_unreadable"), message: z.string() }),
+            "Stored period needs explicit replacement",
+          ),
         },
       }),
       validate("json", retentionInput, "bad_input"),
       async (c) => {
         const next = c.req.valid("json");
-        const old = await readMailRetention();
         await sql.begin(async (tx) => {
-          // complete value from explicit admin input; nothing is merged over a read (#1303)
-          await settings.set(MAIL_RETENTION_KEYS[0], next.contentDays, tx, { replaceUnreadable: true });
-          // complete value from explicit admin input; nothing is merged over a read (#1303)
-          await settings.set(MAIL_RETENTION_KEYS[1], next.recordDays, tx, { replaceUnreadable: true });
+          await tx`SELECT pg_advisory_xact_lock(hashtextextended('outgoing-mail.retention-settings', 0))`;
+          const old = await readMailRetentionSettings(tx);
+          if ((next.recordDays ?? old.recordDays) < (next.contentDays ?? old.contentDays))
+            throw new OutgoingMailError("bad_input", "Record retention must be at least content retention.");
+          if (next.contentDays !== undefined)
+            await settings.set(MAIL_RETENTION_KEYS[0], next.contentDays, tx, {
+              replaceUnreadable: next.replaceUnreadable?.includes(MAIL_RETENTION_KEYS[0]) === true,
+            });
+          if (next.recordDays !== undefined)
+            await settings.set(MAIL_RETENTION_KEYS[1], next.recordDays, tx, {
+              replaceUnreadable: next.replaceUnreadable?.includes(MAIL_RETENTION_KEYS[1]) === true,
+            });
           await audit.record(
             {
               ...context(c),
@@ -149,7 +163,7 @@ export const createAdminOutgoingMailRoutes = (authenticate: MiddlewareHandler<Au
           );
         });
         await settings.invalidateSettingsCache(MAIL_RETENTION_KEYS);
-        return c.json(next);
+        return c.json(await readMailRetentionSettings());
       },
     )
     .get(
@@ -245,7 +259,7 @@ export const createAdminOutgoingMailRoutes = (authenticate: MiddlewareHandler<Au
     .put(
       "/apps/:appId/log-access",
       describeRoute({
-        summary: "Set application mail log access",
+        summary: "Replace application metadata and content mail log access",
         tags: ["Outgoing mail"],
         ...requiresAdmin,
         responses: {

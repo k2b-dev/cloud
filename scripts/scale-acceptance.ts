@@ -81,7 +81,6 @@ export const composeEnvironment = (imageTag: string, run: string): Record<string
   ASSISTANT_RSQL_ALLOWED_TARGETS: "",
   NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS: "",
   PULSE_SCRAPE_ALLOWED_TARGETS: "",
-  GEO_ALLOWED_TARGETS: "",
 });
 export const envFileContents = (env: Record<string, string>): string =>
   Object.entries(env)
@@ -1214,6 +1213,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
         record(review) && Array.isArray(review.warnings) && review.warnings.length === 0 && review.revision === saved.revision,
         "Inert compose fixture unexpectedly needs safety approval",
       );
+      check(typeof review.contentHash === "string" && /^[a-f0-9]{64}$/.test(review.contentHash), "Missing reviewed send content hash");
       // commands.ts commits state='scheduled', then invalidates the lease before answering. Creation
       // only reads credential metadata; the outbox worker waits until scheduledAt before provider work.
       const scheduledAt = new Date(Date.now() + 60 * 60_000).toISOString();
@@ -1225,6 +1225,7 @@ export const run = async (options: ReturnType<typeof parseOptions>) => {
           kind: "send",
           draftId: saved.id,
           expectedDraftRevision: saved.revision,
+          expectedContentHash: review.contentHash,
           senderIdentityId: identityId,
           idempotencyKey: crypto.randomUUID(),
           scheduledAt,

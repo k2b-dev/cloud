@@ -21,6 +21,14 @@ export const migrate = async (): Promise<void> => {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_conversations_short_id ON chat.conversations(short_id);
     ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS changed_rev bigint NOT NULL DEFAULT 0;
+    -- Successful intents live exactly as long as their chat and subject. No expiring retry window.
+    CREATE TABLE IF NOT EXISTS chat.create_intents (
+      user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      create_key uuid NOT NULL,
+      payload jsonb NOT NULL,
+      conversation_id uuid NOT NULL UNIQUE REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      PRIMARY KEY (user_id, create_key)
+    );
     CREATE TABLE IF NOT EXISTS chat.messages (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       short_id text NOT NULL CHECK (short_id ~ '^[0-9A-Za-z]{10}$'),

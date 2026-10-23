@@ -27,6 +27,8 @@ import { isAppSessionActor } from "../server/actor";
 import { isRequestCredentialCurrent } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
 import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
+import { appAccessAuthority } from "../services/app-access";
+import { discoverableAppEntries } from "../services/app-discovery";
 import { approvalDecisionChannel, approvals } from "../services/approvals";
 import { pendingApprovalReview } from "../services/approvals/question";
 import { ImageMetadataError } from "../services/image-metadata";
@@ -99,7 +101,14 @@ import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
 import { aiSkills } from "./skills";
-import { AI_TOOL_CHECK_STALE_MS, aiConversations, claimAiToolCheck, readAiToolCheck, settleAiToolCheck } from "./store";
+import {
+  AI_TOOL_CHECK_STALE_MS,
+  AiConversationCreationError,
+  aiConversations,
+  claimAiToolCheck,
+  readAiToolCheck,
+  settleAiToolCheck,
+} from "./store";
 import { createAiConversationStreamResponse, loadAiStreamState } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
@@ -286,13 +295,17 @@ const prepareConversationForMessageRetry = async (conversationId: string): Promi
   return (await aiConversations.getActiveTurn({ conversationId })) ? "busy" : "ready";
 };
 
-const prepareLaunchDraft = async (body: z.infer<typeof AiCreateConversationInputSchema>, subject: AccessSubject | null) => {
+const prepareLaunchDraft = async (
+  body: z.infer<typeof AiCreateConversationInputSchema>,
+  subject: AccessSubject | null,
+  authority: import("../server").RequestAuthority | null = null,
+) => {
   const content = [...(body.draft?.content ?? [])];
   if (body.skills?.length && body.allowedTools && !body.allowedTools.includes("load_skill")) {
     return fail(err.badInput("Linked Skills require load_skill in allowedTools."));
   }
   for (const name of new Set(body.skills ?? [])) {
-    const skill = await aiSkills.getByName(name, subject);
+    const skill = await aiSkills.getByName(name, subject, "read", authority);
     if (!skill?.enabled) return fail(err.badInput(`Skill is unavailable: ${name}`));
     if (!content.some((part) => part.type === "resource" && part.ref.type === "core.ai.skill" && part.ref.id === skill.shortId)) {
       content.push({ type: "resource", ref: { type: "core.ai.skill", id: skill.shortId }, title: skill.name, icon: "ti ti-sparkles" });
@@ -433,7 +446,9 @@ export const aiRoutes = (() => {
           if (preferredId) previewProfile = selectAiModelProfile(state, ctx.modelPolicy, preferredId);
         }
         const toolsSupported = Boolean(previewProfile?.capabilities.includes("tools"));
-        const availableSkills = toolsSupported ? (await aiSkills.list(c.get("accessSubject"))).filter((skill) => skill.enabled) : [];
+        const availableSkills = toolsSupported
+          ? (await aiSkills.list(c.get("accessSubject"), { authority: appAccessAuthority(c) })).filter((skill) => skill.enabled)
+          : [];
         const skillCatalog = selectAiSkillCatalog(
           availableSkills.filter((skill) => !skill.manualOnly).map(({ name, description }) => ({ name, description })),
           previewProfile?.contextWindow ?? 0,
@@ -447,8 +462,8 @@ export const aiRoutes = (() => {
               })),
               ...(client?.localTools === "ask" ? [createCloudAiLocalBashTool(), ...createCloudAiLocalTools()] : []),
               ...(memoryEnabled ? [createCloudAiMemoryTool()] : []),
-              ...(availableSkills.length ? [createCloudAiLoadSkillTool(c.get("accessSubject"))] : []),
-              ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(c.get("accessSubject"))] : []),
+              ...(availableSkills.length ? [createCloudAiLoadSkillTool(c.get("accessSubject"), appAccessAuthority(c))] : []),
+              ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(c.get("accessSubject"), [], appAccessAuthority(c))] : []),
             ]
           : [];
         const memoryToolEnabled = tools.some((tool) => tool.def.name === "memory");
@@ -577,7 +592,7 @@ export const aiRoutes = (() => {
         const body = c.req.valid("json");
         const project = body.projectId ? await aiProjects.getByShortId(body.projectId, c.get("accessSubject"), "read") : null;
         if (body.projectId && !project) return respond(c, fail(err.notFound("Project")));
-        const draft = await prepareLaunchDraft(body, c.get("accessSubject"));
+        const draft = await prepareLaunchDraft(body, c.get("accessSubject"), appAccessAuthority(c));
         if (!draft.ok) return respond(c, draft);
         const requestedCapabilityTools = (body.preloadTools ?? []).filter(
           (requested): requested is { appId: string; kind: "query" | "action"; id: string } => "appId" in requested,
@@ -585,7 +600,7 @@ export const aiRoutes = (() => {
         let catalog: ReturnType<typeof buildAiCapabilityCatalog> = [];
         if (requestedCapabilityTools.length) {
           try {
-            catalog = buildAiCapabilityCatalog(await listCapabilities());
+            catalog = buildAiCapabilityCatalog(await discoverableAppEntries(appAccessAuthority(c), await listCapabilities()));
           } catch {
             return respond(c, fail(err.internal("The live capability catalog is unavailable.")));
           }
@@ -616,24 +631,29 @@ export const aiRoutes = (() => {
         if (body.allowedTools && preloadTools.some((name) => !body.allowedTools!.includes(name!))) {
           return respond(c, fail(err.badInput("Preloaded tools must be included in allowedTools.")));
         }
-        return respond(
-          c,
-          ok(
-            publicConversation(
-              await aiConversations.createConversation({
-                ownerUserId: ctx.ownerUserId,
-                title: body.title,
-                projectId: project?.id,
-                draft: draft.data.content,
-                preloadTools: preloadTools.map((name) => name!),
-                allowedTools: body.allowedTools,
-                launchedByAppId: body.launchedByAppId,
-              }),
-              project?.shortId ?? null,
-            ),
-          ),
-          201,
-        );
+        try {
+          const conversation = await aiConversations.createConversation({
+            requestId: body.requestId,
+            ownerUserId: ctx.ownerUserId,
+            title: body.title,
+            projectId: project?.id,
+            draft: draft.data.content,
+            preloadTools: preloadTools.map((name) => name!),
+            allowedTools: body.allowedTools,
+            launchedByAppId: body.launchedByAppId,
+          });
+          // A replay may return a conversation assigned to a Project since creation.
+          const currentProject = conversation.projectId
+            ? await aiProjects.get(conversation.projectId, c.get("accessSubject"), "read")
+            : null;
+          if (conversation.projectId && !currentProject) return respond(c, fail(err.notFound("Project")));
+          return respond(c, ok(publicConversation(conversation, currentProject?.shortId ?? null)), 201);
+        } catch (error) {
+          if (error instanceof AiConversationCreationError) {
+            return respond(c, fail(error.reason === "conflict" ? err.conflict(error.message) : err.notFound("Conversation")));
+          }
+          throw error;
+        }
       })
       .get("/conversations/:conversationId", async (c) => {
         const ctx = await resolveContext(c);
@@ -642,6 +662,24 @@ export const aiRoutes = (() => {
         if (!conversation) return notFound(c);
         return respond(c, ok(await conversationDetail(conversation, c.get("accessSubject"))));
       })
+      .get(
+        "/conversations/:conversationId/submission/:draftRevision",
+        v("param", z.object({ conversationId: z.string().regex(AI_SHORT_ID_PATTERN), draftRevision: z.coerce.number().int().min(0) })),
+        async (c) => {
+          const ctx = await resolveContext(c);
+          if (ctx instanceof Response) return ctx;
+          const conversation = await loadConversation(c, ctx);
+          if (!conversation) return notFound(c);
+          if (conversation.projectId && !(await aiProjects.get(conversation.projectId, c.get("accessSubject"), "read"))) return notFound(c);
+          const submission = await aiConversations.getDraftSubmission({
+            conversationId: conversation.id,
+            ownerUserId: ctx.ownerUserId,
+            revision: c.req.valid("param").draftRevision,
+          });
+          // Null is deliberately not a claim that the request was rejected.
+          return respond(c, ok({ submission }));
+        },
+      )
       .get("/conversations/:conversationId/messages", v("query", MessagesPageQuerySchema), async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
@@ -1256,7 +1294,7 @@ export const aiRoutes = (() => {
             message.message.role === "assistant"
               ? message.message.content.find((block) => block.type === "tool_call" && block.id === callId)
               : undefined;
-          const catalog = buildAiCapabilityCatalog(await listCapabilities());
+          const catalog = buildAiCapabilityCatalog(await discoverableAppEntries(appAccessAuthority(c), await listCapabilities()));
           const presentation = message.meta?.toolPresentations?.[callId];
           const entry = catalog.find(
             (entry) =>
@@ -1371,7 +1409,7 @@ export const aiRoutes = (() => {
             const result = publicPendingAction(action, conversation.shortId, turn.shortId);
             if (action.type !== "approval_request") return result;
             const record = records.find((record) => record.callId === action.callId);
-            const request = record?.approvalId ? await approvals.get(record.approvalId) : null;
+            const request = record?.approvalId ? await approvals.get(record.approvalId, undefined, true) : null;
             const reviewCallId = record?.kind === "custom_approval" ? action.callId.replace(/-approval-[0-9]+$/, "") : action.callId;
             const stored = reviews.get(reviewCallId);
             let review: AiStoredActionReview | null = stored && !isLegacyActionReview(stored) ? stored : null;

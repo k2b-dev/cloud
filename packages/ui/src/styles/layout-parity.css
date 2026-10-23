@@ -1516,8 +1516,8 @@ html {
     --k2b-workspace-detail-fit: 54.5rem;
   }
 
-  /* The column is part of the workspace's surface: no fill, no frame, no
-     shadow. Space separates it from `Main`. */
+  /* The column shares the workspace surface. Its paint-only leading shade
+     is attached to Content below, outside the panel's inset scrollport. */
   .k2b-ui .k2b-app-workspace__detail {
     position: absolute;
     top: var(--k2b-workspace-detail-inset);
@@ -1537,6 +1537,41 @@ html {
   .k2b-ui.k2b-dark .k2b-app-workspace__detail,
   .dark .k2b-ui .k2b-app-workspace__detail {
     box-shadow: none;
+  }
+
+  /* The absolute decoration uses the same grid area as Detail, but reaches
+     the workspace's full height. A waiting column has a zero-width track,
+     so its shade also has zero width. Direct-child ownership keeps nested
+     workspaces and transparent island wrappers independent. */
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-drawer]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-drawer])
+    )::after {
+    position: absolute;
+    z-index: 20;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(1.5rem, 100%);
+    grid-area: detail;
+    content: "";
+    pointer-events: none;
+    background: linear-gradient(
+      to right,
+      transparent,
+      var(--k2b-detail-column-shadow-mid, rgb(24 24 27 / 0.01)) 45%,
+      var(--k2b-detail-column-shadow-edge, rgb(24 24 27 / 0.04))
+    );
+    mask-image: linear-gradient(to bottom, #000, #000 max(0px, 100% - 6rem), rgb(0 0 0 / 0.45));
+    transform: translateX(-100%);
+  }
+
+  .k2b-ui[data-theme="dark"] .k2b-app-workspace__content::after,
+  .k2b-ui.k2b-dark .k2b-app-workspace__content::after,
+  .dark .k2b-ui .k2b-app-workspace__content::after {
+    --k2b-detail-column-shadow-mid: rgb(0 0 0 / 0.025);
+    --k2b-detail-column-shadow-edge: rgb(0 0 0 / 0.1);
   }
 
   .k2b-ui .k2b-app-workspace__detail-grabber {
@@ -2298,6 +2333,13 @@ html {
   .k2b-ui .k2b-app-workspace__head[data-row] > .k2b-app-workspace__head-lead > .k2b-app-workspace__head-filters {
     padding-inline: 1rem;
     scroll-padding-inline: 1rem;
+  }
+
+  /* A plain title in place of the view strip keeps the strip's inset from
+     the edge that its negative margin returns. Controls bring their own. */
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-app-workspace__head-views > :is(span, strong, p, h1, h2, h3),
+  .k2b-ui .k2b-app-workspace__head[data-row] .k2b-app-workspace__head-views > :is(solid-island, solid-client) > :is(span, strong, p, h1, h2, h3) {
+    padding-inline-start: 1rem;
   }
 
   .k2b-ui .k2b-app-workspace__head[data-row] .k2b-view-tabs__item[data-compact-hidden] {
@@ -3216,6 +3258,11 @@ html {
   transform: translateY(-50%);
 }
 
+/* Align the sidebar glyph and Details text on their shared font baseline. */
+.k2b-ui .k2b-app-workspace__detail-toggle > .k2b-button__label {
+  align-items: baseline;
+}
+
 /* A head row can wrap to more lines; the Details button stays centred on
    its first line, beside the actions: the row's top padding plus half of
    its 2.5 rem line. */
@@ -3381,8 +3428,8 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
-    --k2b-workspace-head-end: 7rem;
-    padding: 0.25rem 7rem 0.25rem 0.5rem;
+    --k2b-workspace-head-end: 6.25rem;
+    padding: 0.25rem 6.25rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
     white-space: normal;
@@ -3443,8 +3490,8 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
-    --k2b-workspace-head-end: 7rem;
-    padding: 0.25rem 7rem 0.25rem 0.5rem;
+    --k2b-workspace-head-end: 6.25rem;
+    padding: 0.25rem 6.25rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
     white-space: normal;
@@ -3505,8 +3552,8 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
-    --k2b-workspace-head-end: 7rem;
-    padding: 0.25rem 7rem 0.25rem 0.5rem;
+    --k2b-workspace-head-end: 6.25rem;
+    padding: 0.25rem 6.25rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
     white-space: normal;
@@ -3567,8 +3614,8 @@ html {
     height: auto;
     min-height: 2.875rem;
     margin: 0;
-    --k2b-workspace-head-end: 7rem;
-    padding: 0.25rem 7rem 0.25rem 0.5rem;
+    --k2b-workspace-head-end: 6.25rem;
+    padding: 0.25rem 6.25rem 0.25rem 0.5rem;
     overflow: visible;
     clip-path: none;
     white-space: normal;
@@ -3588,13 +3635,14 @@ html {
   }
 }
 
-/* An open drawer covers `Main`, so it is a raised surface again. Its shadow
-   shows only along its leading edge: the other edges are the workspace's. */
-.k2b-ui .k2b-app-workspace__detail[data-workspace-detail-drawer="open"] {
+/* An open drawer covers `Main`. Round its exposed leading corner and let the
+   side shadow continue above it; the other edges meet the workspace's. */
+.k2b-ui .k2b-app-workspace .k2b-app-workspace__detail[data-width][data-workspace-detail-drawer="open"] {
   --k2b-detail-space: 0px;
+  border-top-left-radius: var(--k2b-radius-surface);
   background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-side);
-  clip-path: inset(0 0 0 -4rem);
+  clip-path: inset(-4rem 0 0 -4rem);
 }
 
 /* These containers clip their content, so focus rings inside them are drawn
@@ -4542,9 +4590,43 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   height: max-content;
   min-height: 2.875rem;
   margin: 0;
-  --k2b-workspace-head-end: 7rem;
-  padding: 0.25rem 7rem 0.25rem 0.5rem;
+  --k2b-workspace-head-end: 6.25rem;
+  padding: 0.25rem 6.25rem 0.25rem 0.5rem;
   overflow: visible;
   clip-path: none;
   white-space: normal;
+}
+/* On a phone, a split list/reader page shows its head only with the list,
+   and its reader owns the object's Details control. Without an available
+   object the shared control has nothing to open, so the list head neither
+   shows nor reserves room for it. */
+@media not all and (min-width: 48rem) {
+  .k2b-ui
+    .k2b-app-workspace:has(> .k2b-app-workspace__head[data-workspace-head-pane]):has(
+      > .k2b-app-workspace__content > .k2b-app-workspace__main.has-panes:not([data-workspace-levels]),
+      > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__main.has-panes:not([data-workspace-levels])
+    )
+    > .k2b-app-workspace__content
+    > .k2b-app-workspace__detail-toggle:disabled,
+  .k2b-ui
+    .k2b-app-workspace:has(> .k2b-app-workspace__head[data-workspace-head-pane]):has(
+      > .k2b-app-workspace__content > .k2b-app-workspace__main.has-panes:not([data-workspace-levels]),
+      > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__main.has-panes:not([data-workspace-levels])
+    )
+    > .k2b-app-workspace__content
+    > :is(solid-island, solid-client)
+    > .k2b-app-workspace__detail-toggle:disabled {
+    display: none;
+  }
+  .k2b-ui
+    .k2b-app-workspace:has(> .k2b-app-workspace__head[data-workspace-head-pane]):has(
+      > .k2b-app-workspace__content > .k2b-app-workspace__main.has-panes:not([data-workspace-levels]),
+      > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__main.has-panes:not([data-workspace-levels])
+    ):has(
+      > .k2b-app-workspace__content > .k2b-app-workspace__detail-toggle:disabled,
+      > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail-toggle:disabled
+    )
+    > .k2b-app-workspace__head.k2b-app-workspace__head[data-workspace-head-pane] {
+    --k2b-workspace-head-end: 1rem;
+  }
 }

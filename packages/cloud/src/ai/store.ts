@@ -1,7 +1,9 @@
 import type { DoneReason, InboundEvent, LoopAggregate, Message, SessionStore, StoreEntry } from "@k2b/nessi";
 import type { Usage } from "@k2b/nessi/ai";
 import { type SQL, sql } from "bun";
-import { type CapabilityActionReviewData, CapabilityActionReviewDataSchema } from "../contracts/capabilities";
+import { capabilityRequestHash } from "../capabilities/claims";
+import { restoreReviewSnapshot, serializeReviewSnapshot } from "../capabilities/review-storage";
+import { type CapabilityActionReviewPresentation, CapabilityActionReviewPresentationSchema } from "../contracts/capabilities";
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview } from "./action-review";
@@ -14,6 +16,13 @@ import { aiTurnErrorText } from "./chat/turn-error";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
 import { collectRecentSentResourceRefs, RECENT_SENT_CONVERSATION_SCAN_LIMIT, RECENT_SENT_MESSAGE_SCAN_LIMIT } from "./recent-sent-refs";
+import {
+  compactCapabilityReview,
+  compactReviewMapSql,
+  compactReviewMetaSql,
+  compactStoredReview,
+  storedReviewWithContent,
+} from "./review-content";
 import { AiRunTimeout } from "./run-timeout";
 import { withAiShortId, withAiShortIdForDb } from "./short-id";
 import { parseAiTodoPlan } from "./todo-contracts";
@@ -530,9 +539,9 @@ const parseJsonValue = <T>(value: unknown): T => {
   return value as T;
 };
 
-const parseCapabilityActionReview = (value: unknown): CapabilityActionReviewData | undefined => {
+const parseCapabilityActionReview = (value: unknown): CapabilityActionReviewPresentation | undefined => {
   if (value === null || value === undefined) return undefined;
-  const parsed = CapabilityActionReviewDataSchema.safeParse(parseJsonValue(value));
+  const parsed = CapabilityActionReviewPresentationSchema.safeParse(restoreReviewSnapshot(parseJsonValue(value)));
   return parsed.success ? parsed.data : undefined;
 };
 
@@ -664,6 +673,14 @@ const intValue = (value: number | string | null | undefined): number => Math.max
 
 const rowToMessage = (row: MessageRow): AiStoredMessage => {
   const message = parseJsonValue<Message>(row.message);
+  const meta = row.meta ? parseJsonValue<AiStoredMessage["meta"]>(row.meta) : null;
+  if (meta?.toolReviews)
+    meta.toolReviews = Object.fromEntries(
+      Object.entries(meta.toolReviews).map(([callId, review]) => [
+        callId,
+        compactStoredReview(review, { conversationId: row.conversation_id, turnId: row.loop_id ?? "", callId }),
+      ]),
+    );
   return {
     id: row.id,
     shortId: row.short_id,
@@ -679,7 +696,7 @@ const rowToMessage = (row: MessageRow): AiStoredMessage => {
     loopAggregate: row.loop_aggregate ? parseJsonValue<LoopAggregate>(row.loop_aggregate) : null,
     loopDoneReason: row.loop_done_reason,
     compactedAt: row.compacted_at ? iso(row.compacted_at) : null,
-    meta: row.meta ? parseJsonValue<AiStoredMessage["meta"]>(row.meta) : null,
+    meta,
     feedback:
       Number(row.feedback_rating) === 1 || Number(row.feedback_rating) === -1
         ? {
@@ -733,7 +750,16 @@ const pendingActionToPublicEvent = (row: PendingActionRow): AiPendingTurnAction 
         name: row.tool_name,
         args: row.args,
         message: row.message ?? undefined,
-        review: parseCapabilityActionReview(row.review),
+        review: (() => {
+          const review = parseCapabilityActionReview(row.review);
+          return review
+            ? compactCapabilityReview(review, {
+                conversationId: row.conversation_id,
+                turnId: row.turn_id,
+                callId: row.kind === "custom_approval" ? row.call_id.replace(/-approval-[0-9]+$/, "") : row.call_id,
+              })
+            : undefined;
+        })(),
         allowAlways: row.allow_always,
         allowChat: row.allow_always || row.allow_chat === true,
         ...(row.remember_tool_name === AI_WEBSITE_APPROVAL_TOOL ? { website: row.approval_scope } : {}),
@@ -749,7 +775,16 @@ const rowToPendingActionRecord = (row: PendingActionRow): AiPendingTurnActionRec
   name: row.tool_name,
   args: row.args,
   message: row.message ?? undefined,
-  review: parseCapabilityActionReview(row.review),
+  review: (() => {
+    const review = parseCapabilityActionReview(row.review);
+    return review
+      ? compactCapabilityReview(review, {
+          conversationId: row.conversation_id,
+          turnId: row.turn_id,
+          callId: row.kind === "custom_approval" ? row.call_id.replace(/-approval-[0-9]+$/, "") : row.call_id,
+        })
+      : undefined;
+  })(),
   approvalScope: row.approval_scope,
   allowAlways: row.allow_always,
   allowChat: row.allow_always || row.allow_chat === true,
@@ -994,7 +1029,7 @@ const recordAiToolMeta = async (
       UPDATE ${db(table)}
       SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
         ${key}::text, COALESCE(meta->${key}::text, '{}'::jsonb) ||
-          jsonb_build_object(${input.callId}::text, ${JSON.stringify(value)}::text::jsonb)
+          jsonb_build_object(${input.callId}::text, ${key === "toolReviews" ? serializeReviewSnapshot(value) : JSON.stringify(value)}::text::jsonb)
       )
       WHERE conversation_id = ${input.conversationId}::uuid AND loop_id = ${input.turnId}::text
         AND role = 'assistant'
@@ -1005,8 +1040,16 @@ const recordAiToolMeta = async (
   if (!written) throw new Error("AI tool call message is unavailable.");
 };
 
-export const recordAiToolReview = (input: { conversationId: string; turnId: string; callId: string; review: AiStoredActionReview }) =>
-  recordAiToolMeta(input, "toolReviews", input.review);
+export const recordAiToolReview = async (input: {
+  conversationId: string;
+  turnId: string;
+  callId: string;
+  review: AiStoredActionReview;
+}): Promise<AiStoredActionReview> => {
+  const stored = storedReviewWithContent(input.review, input);
+  await recordAiToolMeta(input, "toolReviews", stored);
+  return compactStoredReview(stored, input);
+};
 
 export const recordAiToolCheck = (input: { conversationId: string; turnId: string; callId: string; check: AiActionCheck }, db = sql) =>
   recordAiToolMeta(input, "toolChecks", input.check, db);
@@ -1319,11 +1362,45 @@ export const saveAiDraftInTransaction = async (
   };
 };
 
+export class AiConversationCreationError extends Error {
+  constructor(readonly reason: "conflict" | "unavailable") {
+    super(
+      reason === "conflict"
+        ? "This creation request was already used with different input."
+        : "The conversation from this request is no longer available.",
+    );
+  }
+}
+
 export const aiConversations: AiConversationService = {
+  getDraftSubmission: async ({ conversationId, ownerUserId, revision }) => {
+    const [row] = await sql<{ message_id: string; turn_id: string | null }[]>`
+      SELECT message.short_id AS message_id, turn.short_id AS turn_id
+      FROM ai.messages message
+      JOIN ai.conversations conversation ON conversation.id = message.conversation_id
+      LEFT JOIN ai.turns turn ON turn.id::text = message.loop_id AND turn.conversation_id = conversation.id
+      WHERE conversation.id = ${conversationId}::uuid AND conversation.created_by_user_id = ${ownerUserId}::uuid
+        AND conversation.archived_at IS NULL AND message.role = 'user'
+        AND message.meta->>'submittedDraftRevision' = ${String(revision)}
+      LIMIT 1
+    `;
+    return row ? { messageId: row.message_id, turnId: row.turn_id } : null;
+  },
   createConversation: async (input) => {
-    const rows = await withAiShortId(
-      "idx_ai_conversations_short_id",
-      (shortId) => sql<ConversationRow[]>`
+    const normalized = {
+      title: input.title?.trim() || "New chat",
+      description: input.description?.trim() ?? "",
+      projectId: input.projectId ?? null,
+      draft: input.draft ?? [],
+      preloadTools: input.preloadTools ?? [],
+      allowedTools: input.allowedTools ?? null,
+      launchedByAppId: input.launchedByAppId?.trim() || null,
+    };
+    const insert = async (db: SQL) => {
+      const rows = await withAiShortIdForDb(
+        db,
+        "idx_ai_conversations_short_id",
+        (attempt, shortId) => attempt<ConversationRow[]>`
       INSERT INTO ai.conversations (
         short_id,
         title,
@@ -1339,8 +1416,8 @@ export const aiConversations: AiConversationService = {
       )
       SELECT
         ${shortId},
-        ${input.title?.trim() || "New chat"},
-        ${input.description?.trim() ?? ""},
+        ${normalized.title},
+        ${normalized.description},
         ${input.projectId ?? null}::uuid,
         ${JSON.stringify(input.draft ?? [])}::text::jsonb,
         ${input.draft?.length ? 1 : 0},
@@ -1352,10 +1429,38 @@ export const aiConversations: AiConversationService = {
       WHERE ${input.projectId ?? null}::uuid IS NULL
          OR EXISTS (SELECT 1 FROM ai.projects project WHERE project.id = ${input.projectId ?? null}::uuid)
       RETURNING *
-    `,
-    );
-    if (!rows[0]) throw new Error("Project does not exist.");
-    return rowToConversation(rows[0]);
+      `,
+      );
+      if (!rows[0]) throw new Error("Project does not exist.");
+      return rowToConversation(rows[0]);
+    };
+    if (!input.requestId) return insert(sql);
+    const hash = capabilityRequestHash(normalized);
+    return sql.begin(async (tx) => {
+      const reserved = await tx<{ request_id: string }[]>`
+        INSERT INTO ai.conversation_creations (owner_user_id, request_id, input_hash)
+        VALUES (${input.ownerUserId}::uuid, ${input.requestId}::uuid, ${hash})
+        ON CONFLICT (owner_user_id, request_id) DO NOTHING RETURNING request_id
+      `;
+      const [claim] = await tx<{ input_hash: string; conversation_id: string | null }[]>`
+        SELECT input_hash, conversation_id FROM ai.conversation_creations
+        WHERE owner_user_id = ${input.ownerUserId}::uuid AND request_id = ${input.requestId}::uuid
+        FOR UPDATE
+      `;
+      if (!claim || claim.input_hash !== hash) throw new AiConversationCreationError("conflict");
+      if (!reserved.length) {
+        const [existing] = await tx<ConversationRow[]>`
+          SELECT * FROM ai.conversations WHERE id = ${claim.conversation_id}::uuid
+            AND created_by_user_id = ${input.ownerUserId}::uuid AND archived_at IS NULL
+        `;
+        if (!existing) throw new AiConversationCreationError("unavailable");
+        return rowToConversation(existing);
+      }
+      const conversation = await insert(tx);
+      await tx`UPDATE ai.conversation_creations SET conversation_id = ${conversation.id}::uuid
+        WHERE owner_user_id = ${input.ownerUserId}::uuid AND request_id = ${input.requestId}::uuid`;
+      return conversation;
+    });
   },
 
   forkConversation: async (input) => {
@@ -2442,7 +2547,10 @@ export const aiConversations: AiConversationService = {
     // summaries are hidden. The active summary sorts after archived rows
     // sharing its checkpoint seq, marking where the model context begins.
     const rows = await sql<MessageRow[]>`
-      SELECT *
+      SELECT id, short_id, conversation_id, seq, kind, message, loop_id, model_profile_id, provider_model,
+        usage, stop_reason, loop_aggregate, loop_done_reason, compacted_at, created_at,
+        feedback_rating, feedback_reasons, feedback_comment, feedback_updated_at,
+        ${compactReviewMetaSql(todoMetaJson())} AS meta
       FROM ai.messages
       WHERE conversation_id = ${input.conversationId}
         AND NOT (kind = 'summary' AND compacted_at IS NOT NULL)
@@ -2467,7 +2575,10 @@ export const aiConversations: AiConversationService = {
         ORDER BY seq DESC
         LIMIT ${limit}
       )
-      SELECT *
+      SELECT id, short_id, conversation_id, seq, kind, message, loop_id, model_profile_id, provider_model,
+        usage, stop_reason, loop_aggregate, loop_done_reason, compacted_at, created_at,
+        feedback_rating, feedback_reasons, feedback_comment, feedback_updated_at,
+        ${compactReviewMetaSql(todoMetaJson())} AS meta
       FROM ai.messages
       WHERE conversation_id = ${input.conversationId}
         AND seq IN (SELECT seq FROM page_seqs)
@@ -2496,7 +2607,10 @@ export const aiConversations: AiConversationService = {
     const pattern = `%${query.toLowerCase()}%`;
     const rows = await sql<(MessageRow & { page_rank: number | string })[]>`
       WITH matching AS (
-        SELECT *, DENSE_RANK() OVER (ORDER BY seq DESC) AS page_rank
+        SELECT id, short_id, conversation_id, seq, kind, message, loop_id, model_profile_id, provider_model,
+        usage, stop_reason, loop_aggregate, loop_done_reason, compacted_at, created_at,
+        feedback_rating, feedback_reasons, feedback_comment, feedback_updated_at,
+        ${compactReviewMetaSql(todoMetaJson())} AS meta, DENSE_RANK() OVER (ORDER BY seq DESC) AS page_rank
         FROM ai.messages
         WHERE conversation_id = ${input.conversationId}::uuid
           AND role <> 'tool_result'
@@ -2620,7 +2734,10 @@ export const aiConversations: AiConversationService = {
 
   listContextMessages: async (input) => {
     const rows = await sql<MessageRow[]>`
-      SELECT *
+      SELECT id, short_id, conversation_id, seq, kind, message, loop_id, model_profile_id, provider_model,
+        usage, stop_reason, loop_aggregate, loop_done_reason, compacted_at, created_at,
+        feedback_rating, feedback_reasons, feedback_comment, feedback_updated_at,
+        ${compactReviewMetaSql(todoMetaJson())} AS meta
       FROM ai.messages
       WHERE conversation_id = ${input.conversationId}
         AND compacted_at IS NULL
@@ -2631,7 +2748,10 @@ export const aiConversations: AiConversationService = {
 
   listTurnMessages: async (input) => {
     const rows = await sql<MessageRow[]>`
-      SELECT *
+      SELECT id, short_id, conversation_id, seq, kind, message, loop_id, model_profile_id, provider_model,
+        usage, stop_reason, loop_aggregate, loop_done_reason, compacted_at, created_at,
+        feedback_rating, feedback_reasons, feedback_comment, feedback_updated_at,
+        ${compactReviewMetaSql(todoMetaJson())} AS meta
       FROM (SELECT * FROM ai.messages UNION ALL SELECT * FROM ai.task_messages) messages
       WHERE conversation_id = ${input.conversationId}
         AND loop_id = ${input.loopId}
@@ -3042,7 +3162,7 @@ export const aiConversations: AiConversationService = {
     const [waits, metadata] = await Promise.all([
       activeTurnWaits(rows[0].id),
       sql<{ tool_reviews: Record<string, AiStoredActionReview> | null; tool_checks: Record<string, AiActionCheck> | null }[]>`
-        SELECT meta->'toolReviews' AS tool_reviews, meta->'toolChecks' AS tool_checks
+        SELECT ${compactReviewMapSql(sql`meta->'toolReviews'`)} AS tool_reviews, meta->'toolChecks' AS tool_checks
         FROM (
           SELECT meta, seq, conversation_id, loop_id, role FROM ai.messages
           UNION ALL
@@ -3062,7 +3182,8 @@ export const aiConversations: AiConversationService = {
       turn: rowToTurn(rows[0]),
       liveBlocks: rowToLiveBlocks(rows[0]).map((block) => {
         if (block.kind !== "tool") return block;
-        const review = reviews.get(block.callId);
+        const snapshot = reviews.get(block.callId);
+        const review = snapshot ? compactStoredReview(snapshot, { ...input, turnId: rows[0]!.id, callId: block.callId }) : undefined;
         const check = checks.get(block.callId);
         return { ...block, ...(review ? { review } : {}), ...(check ? { check } : {}) };
       }),
@@ -3546,7 +3667,7 @@ export const aiConversations: AiConversationService = {
         ${input.name},
         ${JSON.stringify(input.args ?? null)}::text::jsonb,
         ${input.message ?? null},
-        ${input.review ? JSON.stringify(input.review) : null}::text::jsonb,
+        ${input.review ? serializeReviewSnapshot("sentence" in input.review ? storedReviewWithContent(input.review, input) : input.review) : null}::text::jsonb,
         ${input.approvalScope},
         ${input.allowAlways},
         ${input.allowChat ?? input.allowAlways},
@@ -3574,7 +3695,8 @@ export const aiConversations: AiConversationService = {
 
   listPendingTurnActions: async (input) => {
     const rows = await sql<PendingActionRow[]>`
-      SELECT *
+      SELECT approval_id, turn_id, conversation_id, call_id, kind, status, tool_name, args, message,
+        review - 'content' AS review, approval_scope, allow_always, allow_chat, remember_tool_name, frontend_mode, resolved_event
       FROM ai.pending_actions
       WHERE conversation_id = ${input.conversationId}
         AND turn_id = ${input.turnId}
@@ -3586,7 +3708,8 @@ export const aiConversations: AiConversationService = {
 
   getPendingTurnAction: async (input) => {
     const rows = await sql<PendingActionRow[]>`
-      SELECT *
+      SELECT approval_id, turn_id, conversation_id, call_id, kind, status, tool_name, args, message,
+        review - 'content' AS review, approval_scope, allow_always, allow_chat, remember_tool_name, frontend_mode, resolved_event
       FROM ai.pending_actions
       WHERE conversation_id = ${input.conversationId}
         AND turn_id = ${input.turnId}
@@ -3610,7 +3733,7 @@ export const aiConversations: AiConversationService = {
   listTurnToolReviews: async (input) => {
     // Only the review metadata, never the messages themselves, which can carry large tool results.
     const rows = await sql<{ tool_reviews: Record<string, AiStoredActionReview> | null }[]>`
-      SELECT meta->'toolReviews' AS tool_reviews
+      SELECT ${compactReviewMapSql(sql`meta->'toolReviews'`)} AS tool_reviews
       FROM (
         SELECT meta, seq, conversation_id, loop_id, role FROM ai.messages
         UNION ALL
@@ -3622,12 +3745,19 @@ export const aiConversations: AiConversationService = {
         AND meta ? 'toolReviews'
       ORDER BY seq ASC
     `;
-    return new Map(rows.flatMap((row) => Object.entries(row.tool_reviews ?? {})));
+    return new Map(
+      rows.flatMap((row) =>
+        Object.entries(row.tool_reviews ?? {}).map(
+          ([callId, review]) => [callId, compactStoredReview(review, { ...input, callId })] as const,
+        ),
+      ),
+    );
   },
 
   listPendingActionRecords: async (input) => {
     const rows = await sql<PendingActionRow[]>`
-      SELECT *
+      SELECT approval_id, turn_id, conversation_id, call_id, kind, status, tool_name, args, message,
+        review - 'content' AS review, approval_scope, allow_always, allow_chat, remember_tool_name, frontend_mode, resolved_event
       FROM ai.pending_actions
       WHERE conversation_id = ${input.conversationId}
         AND turn_id = ${input.turnId}
@@ -3639,7 +3769,8 @@ export const aiConversations: AiConversationService = {
 
   listResolvedPendingActions: async (input) => {
     const rows = await sql<PendingActionRow[]>`
-      SELECT *
+      SELECT approval_id, turn_id, conversation_id, call_id, kind, status, tool_name, args, message,
+        review - 'content' AS review, approval_scope, allow_always, allow_chat, remember_tool_name, frontend_mode, resolved_event
       FROM ai.pending_actions
       WHERE conversation_id = ${input.conversationId}
         AND turn_id = ${input.turnId}
@@ -3803,7 +3934,11 @@ export const aiConversations: AiConversationService = {
       const rows = input.turnId
         ? (
             await sql<MessageRow[]>`
-            SELECT * FROM ai.messages
+            SELECT id, short_id, conversation_id, seq, kind, message, loop_id, model_profile_id, provider_model,
+              usage, stop_reason, loop_aggregate, loop_done_reason, compacted_at, created_at,
+              feedback_rating, feedback_reasons, feedback_comment, feedback_updated_at,
+              ${compactReviewMetaSql(todoMetaJson())} AS meta
+            FROM ai.messages
             WHERE conversation_id = ${input.conversationId}::uuid AND compacted_at IS NULL
               AND ${visibleToTurn(input.turnId)}
             ORDER BY seq ASC

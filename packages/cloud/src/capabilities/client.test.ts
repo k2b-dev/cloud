@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { futureLibrary } from "../../test/future-capability-manifest";
-import { invokeCapability, invokeCapabilityWithDataSchema, listCapabilityCatalog, reviewCapabilityAction } from "./client";
+import {
+  invokeCapability,
+  invokeCapabilityWithDataSchema,
+  listCapabilityCatalog,
+  readCapabilityReviewContent,
+  reviewCapabilityAction,
+} from "./client";
 
 describe("public capability client", () => {
   test("uses the public route and forwards the idempotency key", async () => {
@@ -178,5 +184,45 @@ describe("public capability client", () => {
 
     expect(result).toEqual({ ok: true, data: { message: "Rename one." } });
     expect(url).toBe("/api/capabilities/v1/actions/demo/rename/review");
+  });
+});
+
+test("full review reader uses only Cloud snapshot routes and preserves complete content", async () => {
+  const content = { kind: "page" as const, title: "Full", body: "x".repeat(300_000), format: "plain" as const };
+  const ref = { href: "/api/approvals/11111111-1111-4111-8111-111111111111/content", digest: "a".repeat(64) };
+  let calls = 0;
+  const fetcher = async (url: string | URL | Request, init?: RequestInit) => {
+    calls++;
+    expect(String(url)).toBe(`https://cloud.example.test${ref.href}?digest=${ref.digest}`);
+    expect(init?.cache).toBe("no-store");
+    expect(init?.credentials).toBe("same-origin");
+    return Response.json(content);
+  };
+  expect(await readCapabilityReviewContent(ref, { baseUrl: "https://cloud.example.test/api", fetch: fetcher })).toEqual({
+    ok: true,
+    data: content,
+  });
+  for (const href of ["https://elsewhere.test/", "/api/approvals/../../private", `${ref.href}?other=1`, `${ref.href}#fragment`])
+    expect((await readCapabilityReviewContent({ ...ref, href }, { fetch: fetcher })).ok).toBe(false);
+  expect(calls).toBe(1);
+});
+
+test("full review reader fails closed on oversize and catches cancellation during streaming", async () => {
+  const ref = { href: "/api/approvals/11111111-1111-4111-8111-111111111111/content", digest: "a".repeat(64) };
+  expect(
+    await readCapabilityReviewContent(ref, {
+      fetch: async () => new Response("{}", { headers: { "content-length": String(16 * 1024 * 1024 + 1) } }),
+    }),
+  ).toMatchObject({ ok: false, error: { code: "RESPONSE_TOO_LARGE" } });
+  const abort = new AbortController();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"kind":"page","body":"'));
+      queueMicrotask(() => abort.abort());
+    },
+  });
+  expect(await readCapabilityReviewContent(ref, { signal: abort.signal, fetch: async () => new Response(stream) })).toMatchObject({
+    ok: false,
+    error: { code: "REQUEST_CANCELLED" },
   });
 });

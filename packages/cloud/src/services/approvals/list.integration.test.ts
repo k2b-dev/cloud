@@ -6,7 +6,9 @@ import { migrateCloudAi } from "../../ai/migrate";
 import { aiConversations, recordAiToolReview } from "../../ai/store";
 import { createDeviceActions } from "../../api/app-approval-actions";
 import { APPROVALS_PAGE_SIZE } from "../../contracts/approvals";
-import { type ApprovalRequestInput, approvals, countPending, listPending, presentPendingApproval } from ".";
+import { CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "../../contracts/capabilities";
+import { type ApprovalRequestInput, approvalReviewDigest, approvals, countPending, listPending, presentPendingApproval } from ".";
+import { readApprovalContent } from "./content";
 
 const insertUser = async () => {
   const uid = `approval-list-${crypto.randomUUID()}`;
@@ -69,6 +71,52 @@ databaseSuite()("pending approval lists", () => {
     return { userId, chat, turn, ask };
   };
 
+  test("full approval content round-trips JSONB with exact approver, digest, expiry and epoch checks", async () => {
+    const { userId, ask } = await fixture();
+    const other = await fixture();
+    const content = { kind: "page" as const, title: "Draft", body: `${"x".repeat(65_536)}\u0000\ud800END\udc00`, format: "plain" as const };
+    const review = { ...reviewFixture(), preview: { ...content, body: "Short" }, content };
+    const id = await ask({ review });
+    const digest = approvalReviewDigest(review);
+    expect((await approvals.get(id))?.details).toEqual(review);
+    expect(await readApprovalContent({ id, digest, approverUserId: userId })).toEqual(content);
+    expect(await readApprovalContent({ id, digest, approverUserId: other.userId })).toBeNull();
+    expect(await readApprovalContent({ id, digest: "0".repeat(64), approverUserId: userId })).toBeNull();
+    expect(JSON.stringify(await listPending({ approverUserId: userId }))).not.toContain("x".repeat(1_000));
+    await sql`UPDATE approvals.requests SET approver_auth_epoch=approver_auth_epoch+1 WHERE id=${id}::uuid`;
+    expect(await readApprovalContent({ id, digest, approverUserId: userId })).toBeNull();
+    const expired = await ask({ review, expiresInMs: -1 });
+    expect(await readApprovalContent({ id: expired, digest, approverUserId: userId })).toBeNull();
+    for (const approved of [false, true]) {
+      const decided = await ask({ review });
+      expect(await readApprovalContent({ id: decided, digest, approverUserId: userId })).toEqual(content);
+      expect(await approvals.decide(decided, { approved }, { userId, via: "web_session" })).toMatchObject({
+        ok: true,
+        status: approved ? "approved" : "rejected",
+      });
+      expect(await readApprovalContent({ id: decided, digest, approverUserId: userId })).toBeNull();
+    }
+    const unlinked = await ask({ review }, false);
+    expect(await readApprovalContent({ id: unlinked, digest, approverUserId: userId })).toBeNull();
+  });
+
+  test("the exact 16 MiB escaped content budget survives the authorized JSONB reader and compact list", async () => {
+    const { userId, ask } = await fixture();
+    const empty = { kind: "page" as const, title: "Complete", body: "", format: "plain" as const };
+    const remaining = CAPABILITY_MAX_REVIEW_CONTENT_BYTES - Buffer.byteLength(JSON.stringify(empty));
+    // Quotes take two bytes in public JSON and expand again in the existing JSONB string encoding.
+    const content = { ...empty, body: '"'.repeat(Math.floor(remaining / 2)) + "x".repeat(remaining % 2) };
+    expect(Buffer.byteLength(JSON.stringify(content))).toBe(CAPABILITY_MAX_REVIEW_CONTENT_BYTES);
+    const review = { ...reviewFixture(), content };
+    const id = await ask({ review });
+    const digest = approvalReviewDigest(review);
+    expect(await readApprovalContent({ id, digest, approverUserId: userId })).toEqual(content);
+    const listed = JSON.stringify(await listPending({ approverUserId: userId }));
+    expect(listed.length).toBeLessThan(32 * 1024);
+    expect(listed).toContain(digest);
+    expect(listed).not.toContain(content.body.slice(0, 1_000));
+  }, 30_000);
+
   test("filters owner, requester and exact review links, and excludes requests nobody can continue", async () => {
     const { userId, chat, turn, ask } = await fixture();
     const owner = await ask();
@@ -88,6 +136,7 @@ databaseSuite()("pending approval lists", () => {
     const requester = await ask({ appId: "contacts", requester: { kind: "studio_app", appId: "mail", ref: crypto.randomUUID() } });
     const sameApp = await ask({ appId: "mail", requester: { kind: "assistant_turn", appId: "mail", ref: crypto.randomUUID() } });
     const elsewhere = await ask({ appId: "spaces", review: null });
+    expect((await approvals.get(elsewhere, undefined, true))?.details).toBeNull();
     const expired = await ask();
     await sql`UPDATE approvals.requests SET expires_at=now()-interval '1 second' WHERE id=${expired}::uuid`;
     const cancelled = await ask();

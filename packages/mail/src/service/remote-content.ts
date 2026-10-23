@@ -1,7 +1,10 @@
+import type { ClientRequest, IncomingMessage } from "node:http";
 import { request as httpRequest } from "node:http";
+import type { RequestOptions } from "node:https";
 import { request as httpsRequest } from "node:https";
 import { audit } from "@k2b/cloud/services";
 import { pinnedNetworkLookup } from "@k2b/cloud/services/network-security";
+import { awaitNetworkOperation, readNetworkResponse, withNetworkDeadline } from "@k2b/cloud/services/network-transport";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
@@ -284,121 +287,125 @@ export const matchesRemoteImageSignature = (contentType: string, bytes: Uint8Arr
   return false;
 };
 
-const requestRemoteImage = async (
-  url: URL,
-  deadline = Date.now() + REMOTE_IMAGE_TIMEOUT_MS,
-  redirectCount = 0,
-): Promise<RemoteImagePayload> => {
-  const secure = url.protocol === "https:";
-  if ((!secure && url.protocol !== "http:") || url.username || url.password) throw new Error("Remote image URL is not allowed");
-  const remainingMs = deadline - Date.now();
-  if (remainingMs <= 0) throw new Error("Remote image request timed out");
-  const port = url.port ? Number(url.port) : secure ? 443 : 80;
-  const endpoint = await resolvePublicEndpoint(
-    {
-      host: url.hostname,
-      port,
-      tlsMode: secure ? "implicit" : "starttls",
-    },
-    Math.min(5_000, remainingMs),
-  );
-  return new Promise<RemoteImagePayload>((resolve, reject) => {
-    let settled = false;
-    let totalTimeout: ReturnType<typeof setTimeout> | undefined;
-    const finish = (callback: () => void) => {
-      if (settled) return;
-      settled = true;
-      if (totalTimeout) clearTimeout(totalTimeout);
-      callback();
-    };
-    const request = (secure ? httpsRequest : httpRequest)(
-      {
-        protocol: url.protocol,
-        hostname: endpoint.host,
-        port,
-        path: `${url.pathname}${url.search}`,
-        method: "GET",
-        lookup: pinnedNetworkLookup(endpoint.addresses),
-        // A default agent may route through an environment proxy, which would resolve the name again.
-        agent: false,
-        servername: secure ? endpoint.host : undefined,
-        headers: {
-          Accept: "image/avif,image/webp,image/png,image/jpeg,image/gif",
-          "Accept-Encoding": "identity",
-          "User-Agent": "Cloud-Mail-Remote-Image/1.0",
-        },
-      },
-      (response) => {
-        const status = response.statusCode ?? 0;
-        if (status >= 300 && status < 400) {
-          response.resume();
-          if (redirectCount >= MAX_REDIRECTS || !response.headers.location) {
-            finish(() => reject(new Error("Remote image redirected too many times")));
-            return;
-          }
-          let target: URL;
-          try {
-            target = new URL(response.headers.location, url);
-          } catch {
-            finish(() => reject(new Error("Remote image redirect is invalid")));
-            return;
-          }
-          finish(() => {
-            void requestRemoteImage(target, deadline, redirectCount + 1).then(resolve, reject);
-          });
-          return;
-        }
-        if (status < 200 || status >= 300) {
-          response.resume();
-          finish(() => reject(new Error("Remote image request failed")));
-          return;
-        }
-        const contentType = imageContentType(response.headers["content-type"]);
-        const rawLength = response.headers["content-length"];
-        const declaredLength = rawLength === undefined ? null : Number(rawLength);
-        if (
-          !contentType ||
-          (response.headers["content-encoding"] && response.headers["content-encoding"] !== "identity") ||
-          (declaredLength !== null &&
-            (!Number.isSafeInteger(declaredLength) || declaredLength < 0 || declaredLength > MAX_REMOTE_IMAGE_BYTES))
-        ) {
-          response.destroy();
-          finish(() => reject(new Error("Remote image response is not allowed")));
-          return;
-        }
-        const chunks: Buffer[] = [];
-        let total = 0;
-        response.on("data", (chunk: Buffer | Uint8Array) => {
-          total += chunk.byteLength;
-          if (total > MAX_REMOTE_IMAGE_BYTES) {
-            response.destroy(new Error("Remote image is too large"));
-            return;
-          }
-          chunks.push(Buffer.from(chunk));
-        });
-        response.on("error", (error) => finish(() => reject(error)));
-        response.on("end", () => {
-          const bytes = Buffer.concat(chunks, total);
-          if (!matchesRemoteImageSignature(contentType, bytes)) {
-            finish(() => reject(new Error("Remote image content does not match its type")));
-            return;
-          }
-          finish(() => resolve({ bytes, contentType }));
-        });
-      },
-    );
-    request.on("error", (error) => finish(() => reject(error)));
-    request.setTimeout(remainingMs, () => request.destroy(new Error("Remote image request timed out")));
-    totalTimeout = setTimeout(() => request.destroy(new Error("Remote image request timed out")), remainingMs);
-    request.end();
-  });
+type RemoteImageOptions = {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  resolveEndpoint?: typeof resolvePublicEndpoint;
+  request?: (options: RequestOptions, callback: (response: IncomingMessage) => void) => ClientRequest;
 };
+
+const requestRemoteImage = (url: URL, options: RemoteImageOptions = {}): Promise<RemoteImagePayload> =>
+  withNetworkDeadline(
+    options.timeoutMs ?? REMOTE_IMAGE_TIMEOUT_MS,
+    options.signal,
+    new Error("Remote image request timed out"),
+    async (signal) => {
+      const deadline = Date.now() + (options.timeoutMs ?? REMOTE_IMAGE_TIMEOUT_MS);
+      const follow = async (url: URL, redirectCount = 0): Promise<RemoteImagePayload> => {
+        const secure = url.protocol === "https:";
+        if ((!secure && url.protocol !== "http:") || url.username || url.password) throw new Error("Remote image URL is not allowed");
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) throw new Error("Remote image request timed out");
+        const port = url.port ? Number(url.port) : secure ? 443 : 80;
+        const endpoint = await awaitNetworkOperation(
+          (options.resolveEndpoint ?? resolvePublicEndpoint)(
+            {
+              host: url.hostname,
+              port,
+              tlsMode: secure ? "implicit" : "starttls",
+            },
+            Math.min(5_000, remainingMs),
+            signal,
+          ),
+          signal,
+        );
+        signal.throwIfAborted();
+        const response = await readNetworkResponse<RemoteImagePayload | URL>({
+          request: options.request ?? (secure ? httpsRequest : httpRequest),
+          signal,
+          options: {
+            protocol: url.protocol,
+            hostname: endpoint.host,
+            port,
+            path: `${url.pathname}${url.search}`,
+            method: "GET",
+            lookup: pinnedNetworkLookup(endpoint.addresses),
+            // A default agent may route through an environment proxy, which would resolve the name again.
+            agent: false,
+            servername: secure ? endpoint.host : undefined,
+            headers: {
+              Accept: "image/avif,image/webp,image/png,image/jpeg,image/gif",
+              "Accept-Encoding": "identity",
+              "User-Agent": "Cloud-Mail-Remote-Image/1.0",
+            },
+          },
+          read: (response, resolve, reject) => {
+            const status = response.statusCode ?? 0;
+            if (status >= 300 && status < 400) {
+              if (redirectCount >= MAX_REDIRECTS || !response.headers.location) {
+                reject(new Error("Remote image redirected too many times"));
+                return;
+              }
+              let target: URL;
+              try {
+                target = new URL(response.headers.location, url);
+              } catch {
+                reject(new Error("Remote image redirect is invalid"));
+                return;
+              }
+              resolve(target);
+              return;
+            }
+            if (status < 200 || status >= 300) {
+              reject(new Error("Remote image request failed"));
+              return;
+            }
+            const contentType = imageContentType(response.headers["content-type"]);
+            const rawLength = response.headers["content-length"];
+            const declaredLength = rawLength === undefined ? null : Number(rawLength);
+            if (
+              !contentType ||
+              (response.headers["content-encoding"] && response.headers["content-encoding"] !== "identity") ||
+              (declaredLength !== null &&
+                (!Number.isSafeInteger(declaredLength) || declaredLength < 0 || declaredLength > MAX_REMOTE_IMAGE_BYTES))
+            ) {
+              reject(new Error("Remote image response is not allowed"));
+              return;
+            }
+            const chunks: Buffer[] = [];
+            let total = 0;
+            response.on("data", (chunk: Buffer | Uint8Array) => {
+              total += chunk.byteLength;
+              if (total > MAX_REMOTE_IMAGE_BYTES) {
+                reject(new Error("Remote image is too large"));
+                return;
+              }
+              chunks.push(Buffer.from(chunk));
+            });
+            response.on("end", () => {
+              const bytes = Buffer.concat(chunks, total);
+              if (!matchesRemoteImageSignature(contentType, bytes)) {
+                reject(new Error("Remote image content does not match its type"));
+                return;
+              }
+              resolve({ bytes, contentType });
+            });
+          },
+        });
+        return response instanceof URL ? follow(response, redirectCount + 1) : response;
+      };
+      return follow(url);
+    },
+  );
+
+export const __test = { requestRemoteImage };
 
 export const loadRemoteImage = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   messageId: string;
   imageId: string;
+  signal?: AbortSignal;
 }): Promise<Result<RemoteImagePayload>> => {
   const source = await remoteImageSource(params);
   if (!source.ok) return source;
@@ -408,7 +415,7 @@ export const loadRemoteImage = async (params: {
   if (!assessment.ok) return assessment;
   if (assessment.data.linksDisabled) return fail(err.forbidden("Remote content is blocked for this message"));
   try {
-    const image = await requestRemoteImage(new URL(source.data));
+    const image = await requestRemoteImage(new URL(source.data), { signal: params.signal });
     const currentSource = await remoteImageSource(params);
     if (!currentSource.ok) return currentSource;
     if (currentSource.data !== source.data) return fail(err.notFound("Remote image"));

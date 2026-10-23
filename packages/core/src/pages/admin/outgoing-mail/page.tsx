@@ -1,6 +1,6 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { outgoingMailLog } from "@k2b/cloud/services/outgoing-mail/admin";
-import { readMailRetention } from "@k2b/cloud/services/outgoing-mail/retention";
+import { readMailRetentionSettings } from "@k2b/cloud/services/outgoing-mail/retention";
 import { outgoingMailStore } from "@k2b/cloud/services/outgoing-mail/store";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
@@ -22,7 +22,7 @@ export default ssr<AuthContext>(async (c) => {
       },
       { perPage: SEND_LOG_PAGE_SIZE },
     ),
-    readMailRetention(),
+    readMailRetentionSettings(),
   ]);
   return () => (
     <AdminLayout c={c} title={t.title}>

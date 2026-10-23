@@ -947,7 +947,7 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit and WebKit tests run in five shards each, balanced by
+Unit tests run in five shards and WebKit tests in seven, balanced by
 `scripts/test-weights.json`: measured seconds per suite, longest first. An
 unknown suite counts as the median of its table. Each shard prints its
 predicted and actual time. It fails with an annotation when it runs longer
@@ -1207,12 +1207,21 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in five shards with `bun run test --browser`, against
+them again in WebKit in seven shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the
 runner; see
 [When WebKit reports an internal error](#when-webkit-reports-an-internal-error).
+
+CI and nightly start the Playwright server through `.github/start-playwright.sh`.
+It installs the exact catalog version with up to three attempts, then starts
+the server without an npm download. A failed start prints the container logs
+and recreates the container, with up to three attempts and a 120-second
+readiness wait each. The `ci-runtime-downloads` check rejects inline
+`run-server` commands in workflow steps; use the helper when adding a job.
+The standalone CLI test's Bun runtime prefetch also gets three attempts before
+the tests start. Each download attempt is limited to 120 seconds.
 
 The nightly workflow repeats the integration suites against PostgreSQL 15, the
 oldest supported version, and runs the longer acceptance checks that are too

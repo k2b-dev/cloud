@@ -306,6 +306,7 @@ databaseSuite()("outgoing mail store and delivery", () => {
       declared: false,
       readDeclared: false,
       logApps: [],
+      logContentApps: [],
       mode: "selected",
       profiles: [b],
     });

@@ -1,9 +1,9 @@
 import type { AssistantMessage, CompactEvent, LoopAggregate, Message, NessiLoop, OutboundEvent } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
 import { capabilityReviewRememberScope } from "../_internal/capability-reviews";
-import { listCapabilities } from "../_internal/registry";
+import { getCapability, listCapabilities } from "../_internal/registry";
 import type { CapabilityActionReviewData } from "../contracts/capabilities";
-import { capabilityActionPolicy } from "../contracts/capabilities";
+import { CapabilityActionReviewDataSchema, capabilityActionPolicy } from "../contracts/capabilities";
 import type { AccessSubject, RequestActor } from "../server";
 import { approvalAssurance, approvalScopeFromToolName, approvals } from "../services/approvals";
 import { createHelpReader } from "../services/help";
@@ -73,6 +73,7 @@ import {
 import { retryTransientProviderErrors } from "./provider-retry";
 import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
 import { collectConversationResourceObservations } from "./resource-refs";
+import { compactCapabilityReview } from "./review-content";
 import { AiRunTimeout } from "./run-timeout";
 import { isAiVisionModelConfigured, type resolveAiModel } from "./settings";
 import { mergeAiSkillCatalog, selectAiSkillCatalog } from "./skill-catalog";
@@ -456,7 +457,12 @@ const approvalReviewForCallId = (
  * to (attempt, turn) so re-claimed attempts never collide, and (b) maintains
  * tool blocks keyed by callId, enriched with Cloud status/approval metadata.
  */
-const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowRememberedApprovals = true) => {
+const createEventMapper = (
+  attempt: number,
+  seedBlocks: AiTurnBlock[],
+  allowRememberedApprovals = true,
+  location?: { conversationId: string; turnId: string },
+) => {
   const toolBlocks = new Map<string, Extract<AiTurnBlock, { kind: "tool" }>>();
   /** Website receipts by the call that shows them and their index; every later state of that call keeps them. */
   const receiptsByCall = new Map<string, Map<number, { method: string; url: string }>>();
@@ -586,7 +592,8 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[], allowReme
         return [setTool(event.callId, { name: event.name, args: event.args, status: "running" })];
       case "tool_action_request":
         const displayCallId = event.kind === "custom_approval" ? (customApprovalParentCallId(event.callId) ?? event.callId) : event.callId;
-        const review = approvalReviewForCallId(approvalReviews, event.callId);
+        const rawReview = approvalReviewForCallId(approvalReviews, event.callId);
+        const review = rawReview && location ? compactCapabilityReview(rawReview, { ...location, callId: displayCallId }) : rawReview;
         const target = event.kind === "custom_approval" ? approvalTargets.get(event.callId) : undefined;
         const allowAlways = target
           ? target.always
@@ -919,9 +926,9 @@ export class AiTurnExecutor {
     const helpEnabled = toolActor !== null;
     const toolDiscoveryEnabled = toolActor !== null;
     const appToolsEnabled = toolActor !== null && defaultToolSource?.appTools === true;
-    let capabilityAuthority: Awaited<ReturnType<typeof resolveAiCapabilityActor>> | null = null;
+    let toolAuthority: Awaited<ReturnType<typeof resolveAiCapabilityActor>> | null = null;
     try {
-      capabilityAuthority = appToolsEnabled
+      toolAuthority = toolActor
         ? await resolveAiCapabilityActor({ conversationId, persistedActor: material.actor, store: aiConversations })
         : null;
     } catch (error) {
@@ -940,7 +947,10 @@ export class AiTurnExecutor {
       );
       return;
     }
-    if (capabilityAuthority) material.actor = capabilityAuthority.actor;
+    if (toolAuthority) material.actor = toolAuthority.actor;
+    // Skills and Help need current authority even when application operations are disabled.
+    // Keep the appTools switch responsible for exposing and executing those operations.
+    const capabilityAuthority = appToolsEnabled ? toolAuthority : null;
 
     // Personalization applies to user-backed personal conversations.
     const user = aiActorUser(material.actor);
@@ -959,7 +969,9 @@ export class AiTurnExecutor {
     // executions must not gain an implicit database dependency or extra tools.
     const skillSubject =
       defaultToolSource && resolved.profile.capabilities.includes("tools") ? accessSubjectForActor(material.actor) : null;
-    const availableSkills = skillSubject ? (await aiSkills.list(skillSubject)).filter((skill) => skill.enabled) : [];
+    const availableSkills = skillSubject
+      ? (await aiSkills.list(skillSubject, { authority: toolAuthority })).filter((skill) => skill.enabled)
+      : [];
     const localClient = !config.background && !config.mandate ? config.client : undefined;
     const localContext = localClient ? config.localContext : undefined;
     const localSkills = (localContext?.skills ?? []).map((skill) => ({
@@ -996,15 +1008,15 @@ export class AiTurnExecutor {
         : undefined;
     const skillFiles = skillSubject
       ? {
-          list: () => aiSkills.listTurnFiles(turnId, skillSubject),
-          read: (path: string) => aiSkills.readTurnFile(turnId, path, skillSubject),
+          list: () => aiSkills.listTurnFiles(turnId, skillSubject, toolAuthority),
+          read: (path: string) => aiSkills.readTurnFile(turnId, path, skillSubject, toolAuthority),
         }
       : undefined;
     const runtimeTools = [
       ...material.tools,
       ...(memoryActive ? [createCloudAiMemoryTool(query)] : []),
-      ...(skillSubject && availableSkills.length ? [createCloudAiLoadSkillTool(skillSubject)] : []),
-      ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(skillSubject, localSkills)] : []),
+      ...(skillSubject && availableSkills.length ? [createCloudAiLoadSkillTool(skillSubject, toolAuthority)] : []),
+      ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(skillSubject, localSkills, toolAuthority)] : []),
       ...(config.project && resolvedProjectId && projectSubject
         ? [
             createCloudAiSearchProjectTool(resolvedProjectId, projectSubject),
@@ -1101,8 +1113,7 @@ export class AiTurnExecutor {
       describeReview: async (approvalCallId: string, review: CapabilityActionReviewData) => {
         capabilityActionReviews.set(approvalCallId, review);
         const callId = customApprovalParentCallId(approvalCallId) ?? approvalCallId;
-        const stored = storedActionReview(review);
-        await recordAiToolReview({ conversationId, turnId, callId, review: stored });
+        const stored = await recordAiToolReview({ conversationId, turnId, callId, review: storedActionReview(review) });
         storedReviews.set(callId, stored);
         await pipeline.setToolReview(callId, stored);
       },
@@ -1125,8 +1136,12 @@ export class AiTurnExecutor {
       const scope = capabilityReviewRememberScope(review, approval);
       if (scope) rememberableCapabilityApprovals.set(callId, scope);
       else rememberableCapabilityApprovals.delete(callId);
-      const stored = storedActionReview(review, capabilityActionPolicy(entry.app.manifest, entry.operation.localId));
-      await recordAiToolReview({ conversationId, turnId, callId, review: stored });
+      const stored = await recordAiToolReview({
+        conversationId,
+        turnId,
+        callId,
+        review: storedActionReview(review, capabilityActionPolicy(entry.app.manifest, entry.operation.localId)),
+      });
       storedReviews.set(callId, stored);
       await pipeline.setToolReview(callId, stored);
     };
@@ -1253,7 +1268,8 @@ export class AiTurnExecutor {
     const tools = toolActor
       ? createAiToolResolver({
           conversationId,
-          actor: capabilityAuthority?.actor ?? toolActor,
+          actor: toolAuthority?.actor ?? toolActor,
+          authority: toolAuthority,
           staticTools: activeTools,
           ...(activeTools.some((tool) => tool.def.name === "load_skill") ? { skillNames: availableSkills.map((skill) => skill.name) } : {}),
           allowedTools,
@@ -1472,6 +1488,7 @@ export class AiTurnExecutor {
       turnId,
       skillSubject,
       activeTools.some((tool) => tool.def.name === "load_skill"),
+      toolAuthority,
     );
     const chat = await aiConversations.getConversation({ conversationId });
     const workingPlan = chat?.todoPlan;
@@ -1742,7 +1759,7 @@ export class AiTurnExecutor {
     approvalContext?: AiToolApprovalContext;
     allowRememberedApprovals: boolean;
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
-    capabilityActionReviews: ReadonlyMap<string, CapabilityActionReviewData>;
+    capabilityActionReviews: Map<string, CapabilityActionReviewData>;
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     linkedApprovals: ReadonlyMap<string, string>;
     freshApprovalRequired?: ReadonlySet<string>;
@@ -1927,7 +1944,7 @@ export class AiTurnExecutor {
     approvalContext?: AiToolApprovalContext;
     allowRememberedApprovals: boolean;
     rememberableCapabilityApprovals: ReadonlyMap<string, string>;
-    capabilityActionReviews: ReadonlyMap<string, CapabilityActionReviewData>;
+    capabilityActionReviews: Map<string, CapabilityActionReviewData>;
     approvalTargets: ReadonlyMap<string, AiApprovalTarget>;
     linkedApprovals: ReadonlyMap<string, string>;
     freshApprovalRequired?: ReadonlySet<string>;
@@ -2016,7 +2033,7 @@ export class AiTurnExecutor {
       }
     }
 
-    const review = event.kind === "custom_approval" ? approvalReviewForCallId(capabilityActionReviews, event.callId) : undefined;
+    let review = event.kind === "custom_approval" ? approvalReviewForCallId(capabilityActionReviews, event.callId) : undefined;
     let approvalId: string | undefined;
     let presented = event;
     if (event.kind !== "client_tool") {
@@ -2031,6 +2048,24 @@ export class AiTurnExecutor {
         approvalId = linked;
         // The card shows the question the effect's own record holds, never the text the relay sent.
         presented = { ...event, message: record.sentence };
+        // A later linked question without structured details replaces an earlier child's review too.
+        review = record.details === null ? undefined : CapabilityActionReviewDataSchema.parse(record.details);
+        if (review) capabilityActionReviews.set(event.callId, review);
+        else capabilityActionReviews.delete(event.callId);
+        const callId = event.kind === "custom_approval" ? (customApprovalParentCallId(event.callId) ?? event.callId) : event.callId;
+        const capability = review && "sentence" in review && !review.ask ? await getCapability(record.appId).catch(() => null) : null;
+        // Keep the original proposal on the existing tool-call message as well as the approval.
+        // Its chat reference must remain readable after the approval has been consumed.
+        const stored = await recordAiToolReview({
+          conversationId,
+          turnId,
+          callId,
+          review: storedActionReview(
+            review ?? { message: record.sentence },
+            capability ? capabilityActionPolicy(capability.manifest, record.action) : undefined,
+          ),
+        });
+        await pipeline.setToolReview(callId, stored);
       } else {
         const record = await approvals.request({
           ...approvalScopeFromToolName(toolName),
@@ -2315,7 +2350,7 @@ class StreamPipeline {
     this.seq = input.startSeq;
     this.blocks = [];
     this.allowRememberedApprovals = input.allowRememberedApprovals;
-    this.mapper = createEventMapper(input.attempt, input.seedBlocks, input.allowRememberedApprovals);
+    this.mapper = createEventMapper(input.attempt, input.seedBlocks, input.allowRememberedApprovals, input);
   }
 
   private ordered(run: () => Promise<void>): Promise<void> {

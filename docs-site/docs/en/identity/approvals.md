@@ -72,6 +72,15 @@ comes from the app's review or declared policy, not the model's explanation;
 legacy reviews and Actions without a policy use `app_asks`. Filling a missing
 reason in a displayed copy never changes the approval snapshot or its digest.
 
+The list and the band's detail panel reuse the chat's preview and reading
+controls. They show the stored review, including its locale and revision links.
+An excerpt without a link can expand in place; a preview with an `open` link
+opens the app's reviewed revision. These surfaces share the
+[review limits](/en/docs/platform/capabilities#describe-an-action-before-it-runs): opening the approvals
+page does not recover content omitted from the snapshot. The app must make
+the complete proposed content available at that link. A saved resource that
+does not yet contain the proposed edits cannot serve as that complete review.
+
 The lists contain only open, unexpired requests that a chat still waits for.
 They include Assistant chats and Studio code that asked through a chat.
 A Studio request answered in an open Studio page is not listed.
@@ -272,7 +281,17 @@ An actor without a user gets `403`. An unauthenticated caller gets `401`.
 | --- | --- | --- |
 | `GET /api/approvals` | Optional query fields `app`, `link`, and `cursor` | `{ items, nextCursor, count, elsewhere }` |
 | `GET /api/approvals/counts` | None | `{ total, apps }` |
+| `GET /api/approvals/:id/content` | UUID `id`, SHA-256 `digest` query | One complete pending review content object |
+| `GET /api/approvals/conversations/:conversationId/turns/:turnId/reviews/:callId` | Conversation and turn UUIDs, call ID, SHA-256 `digest` query | One historical chat review content object |
 | `POST /api/approvals/:id/decision` | UUID `id` and JSON `{ approved, remember? }` | `{ status: "approved" }` or `{ status: "rejected" }` |
+
+Full-content readers require the matching snapshot digest and normal user
+credentials. The pending-request reader also checks the approver, pending
+execution, expiry and current sign-out epoch. Historical chat reads require
+ownership of an unarchived conversation and the exact turn and call; they
+remain available after the approval is consumed. Missing or inaccessible
+snapshots return `404`. Responses are private and use `Cache-Control: no-store`.
+Lists omit the complete content and retain its `contentRef` instead.
 
 `app` matches the effect owner or requester app. `link` matches an exact review
 link href that starts with `/`. Both filters apply when both are present.

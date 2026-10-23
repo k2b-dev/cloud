@@ -29,6 +29,7 @@ import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesM
 import { composeFormattingMessages, describeComposeFormattingWarning, describeIgnoredMailboxCss } from "./compose-formatting-messages";
 import {
   MAIL_CONTACT_DIRECTORY_DEFAULTS,
+  MAIL_CONTACT_DIRECTORY_SETTING_KEYS,
   type MailContactDirectoryConfig,
   proposeContactDirectoryConfig,
   usesContactDirectoryDefaults,
@@ -41,7 +42,6 @@ import {
   type ComposeFormattingWarning,
   type ComposePreview,
   type ComposeSafetyApproval,
-  type ComposeSafetyReview,
   type ComposeSignatureDefault,
   type ComposeSuggestion,
   type ComposeTemplate,
@@ -62,6 +62,7 @@ import {
   type DraftIntent,
   type DraftLease,
   type DraftRecoveryCopy,
+  type DraftSendReview,
   draftEditableContentInputSchema,
   type FolderDisplay,
   folderDisplaySchema,
@@ -719,7 +720,10 @@ const printContactDirectoryIssues = (ctx: CloudCliContext, issues: readonly { fi
 };
 
 /** Stores a mapping through the admin route. An incompatible mapping prints the server's issues and exits 1. */
-const saveContactDirectoryMapping = async (ctx: CloudCliContext, config: MailContactDirectoryConfig): Promise<number | undefined> => {
+const saveContactDirectoryMapping = async (
+  ctx: CloudCliContext,
+  config: Partial<MailContactDirectoryConfig> & { replaceUnreadable?: string[] },
+): Promise<number | undefined> => {
   const response = await ctx.fetch(apiPath(CONTACT_DIRECTORY_PATH), jsonRequest("PUT", config));
   if (response.status === 400) {
     const invalid = contactDirectoryInvalidSchema.safeParse(
@@ -938,21 +942,24 @@ const reviewDraftSafety = async (
   mailboxId: string,
   draft: Pick<MailDraft, "id" | "revision">,
   approve: boolean,
-): Promise<ComposeSafetyApproval | undefined> => {
-  const review = await readApi<ComposeSafetyReview>(
+): Promise<{ expectedContentHash: string; safetyApproval?: ComposeSafetyApproval }> => {
+  const review = await readApi<DraftSendReview>(
     ctx,
     `/mailboxes/${mailboxId}/drafts/${draft.id}/safety-review`,
     jsonRequest("POST", { expectedRevision: draft.revision }),
   );
-  if (review.warnings.length === 0) return undefined;
+  if (review.warnings.length === 0) return { expectedContentHash: review.contentHash };
   if (!approve) {
     const details = review.warnings.map((warning) => `- ${warning.title}: ${warning.description}`).join("\n");
     throw new Error(`Sending requires review:\n${details}\nPass --approve-safety after reviewing these warnings.`);
   }
   return {
-    revision: review.revision,
-    fingerprint: review.fingerprint,
-    warningIds: review.warnings.map((warning) => warning.id),
+    expectedContentHash: review.contentHash,
+    safetyApproval: {
+      revision: review.revision,
+      fingerprint: review.fingerprint,
+      warningIds: review.warnings.map((warning) => warning.id),
+    },
   };
 };
 
@@ -2733,7 +2740,7 @@ const everydayCommands = (t: Translate) => {
         const scheduledAt = flags.schedule ? parseOffsetDateTime(flags.schedule, "--schedule") : undefined;
         const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
         const draft = await readApi<MailDraft>(ctx, `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draft, "Draft id")}`);
-        const safetyApproval = await reviewDraftSafety(ctx, mailbox.id, draft, flags.approveSafety);
+        const reviewed = await reviewDraftSafety(ctx, mailbox.id, draft, flags.approveSafety);
         const queued = await readApi<MailCommand>(
           ctx,
           `/mailboxes/${mailbox.id}/commands`,
@@ -2745,7 +2752,7 @@ const everydayCommands = (t: Translate) => {
             scheduledAt,
             undoSeconds: flags.undo,
             idempotencyKey: flags.idempotencyKey ?? crypto.randomUUID(),
-            ...(safetyApproval ? { safetyApproval } : {}),
+            ...reviewed,
           }),
         );
         const result = flags.wait ? await waitForCommand(ctx, mailbox.id, queued.id, flags.timeoutSeconds) : queued;
@@ -3959,9 +3966,12 @@ const specialistCommands = {
           usesDefaults: usesContactDirectoryDefaults(view.config),
           catalogAvailable: view.apps !== null,
           issues: view.issues,
+          unreadable: view.unreadable ?? {},
         };
         if (printStructured(ctx, summary)) return;
         printContactDirectoryMapping(ctx, view.config, appName);
+        for (const [key, unreadable] of Object.entries(view.unreadable ?? {}))
+          if (unreadable) ctx.error(`Unreadable stored setting: ${key}`);
         if (!summary.catalogAvailable) ctx.error("The capability catalog is unavailable; the mapping could not be checked.");
         if (view.issues.length > 0) {
           ctx.error("Mail cannot fully use this mapping:");
@@ -4007,6 +4017,10 @@ const specialistCommands = {
         noBooks: flag.boolean({ name: "no-books", description: "Do not map a writable-books Query" }),
         create: flag.string({ description: "Action that creates a contact; needs --books" }),
         noCreate: flag.boolean({ name: "no-create", description: "Do not map a create Action" }),
+        replaceUnreadable: flag.boolean({
+          name: "replace-unreadable",
+          description: "Explicitly replace unreadable settings supplied by this command",
+        }),
         yes: confirmFlag("Confirm the change for every Mail user"),
       },
       examples: [
@@ -4032,15 +4046,35 @@ const specialistCommands = {
           const value = overrides[field];
           if (value !== undefined) config[field] = value;
         }
-        return saveContactDirectoryMapping(ctx, config);
+        const patch: Partial<MailContactDirectoryConfig> = {};
+        const replaceUnreadable: string[] = [];
+        for (const field of ["appId", "suggest", "resolve", "read", "listWritableBooks", "create"] as const) {
+          const supplied = field === "appId" || overrides[field] !== undefined || appId !== view.config.appId;
+          if (!supplied) continue;
+          const key = MAIL_CONTACT_DIRECTORY_SETTING_KEYS[field];
+          if (view.unreadable?.[key] && !flags.replaceUnreadable)
+            throw new Error(`Unreadable stored setting: ${key}. Pass --replace-unreadable to replace supplied values.`);
+          patch[field] = config[field];
+          if (view.unreadable?.[key]) replaceUnreadable.push(key);
+        }
+        return saveContactDirectoryMapping(ctx, { ...patch, ...(replaceUnreadable.length ? { replaceUnreadable } : {}) });
       },
     }),
     command("admin contact-directory reset", {
       summary: "Use the built-in Contacts app with its default capabilities",
-      flags: { yes: confirmFlag("Confirm the change for every Mail user") },
+      flags: {
+        yes: confirmFlag("Confirm the change for every Mail user"),
+        replaceUnreadable: flag.boolean({
+          name: "replace-unreadable",
+          description: "Explicitly replace unreadable settings with the Contacts defaults",
+        }),
+      },
       run: async ({ ctx, flags }) => {
         if (!flags.yes) throw new Error("Pass --yes to reset the contact directory for every Mail user.");
-        return saveContactDirectoryMapping(ctx, { ...MAIL_CONTACT_DIRECTORY_DEFAULTS });
+        return saveContactDirectoryMapping(ctx, {
+          ...MAIL_CONTACT_DIRECTORY_DEFAULTS,
+          ...(flags.replaceUnreadable ? { replaceUnreadable: Object.values(MAIL_CONTACT_DIRECTORY_SETTING_KEYS) } : {}),
+        });
       },
     }),
     command("admin security reports", {

@@ -64,13 +64,21 @@ const mailReview = (locale = "en"): CapabilityActionCallReview => ({
   },
 });
 
-test("request reviews inherit the declared reason while stored reviews keep their snapshot", () => {
+test("request snapshots take precedence and inherit the recorded reason", () => {
   const { ask: _ask, ...review } = mailReview();
   const input = { details: review, storedReview: null };
   expect(pendingApprovalReview(input, { ask: "sends" })).toEqual({ ...review, ask: "sends" });
   expect(pendingApprovalReview(input, null)).toEqual(review);
   const stored = { ...review, ask: "app_asks" as const };
-  expect(pendingApprovalReview({ ...input, storedReview: stored }, { ask: "sends" })).toBe(stored);
+  expect(pendingApprovalReview({ ...input, storedReview: stored }, { ask: "sends" })).toEqual(stored);
+  const contentRef = { href: `/api/approvals/${row.id}/content`, digest: "a".repeat(64) };
+  const request = { ...review, contentRef, preview: { ...review.preview!, subject: "Original request" } };
+  const laterTurnReview = { ...stored, preview: { ...stored.preview!, subject: "Later turn" } };
+  expect(pendingApprovalReview({ details: request, storedReview: laterTurnReview }, { ask: "sends" })).toEqual({
+    ...request,
+    ask: "app_asks",
+  });
+  expect(pendingApprovalReview({ details: null, storedReview: stored }, { ask: "sends" })).toBe(stored);
   expect(pendingApprovalReview({ ...input, details: { invalid: true } })).toBeNull();
 });
 
