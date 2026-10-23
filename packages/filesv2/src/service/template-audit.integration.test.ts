@@ -386,7 +386,7 @@ suite("Template administration security audit", () => {
     expect(await service.use(readerCall, templateId, target)).toBe(created);
     expect(createCalls).toHaveLength(1);
     expect(createCalls[0]?.call).toBe(readerCall);
-    expect(createCalls[0]?.input).toBe(target);
+    expect(createCalls[0]?.input).toEqual({ ...target, templateId });
     expect(Buffer.from(createCalls[0]!.bytes)).toEqual(Buffer.from("seed bytes"));
     expect(await state()).toEqual(before);
   });
