@@ -491,7 +491,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   // The server stops at the newest message, so the largest position marks the whole chat read.
   const markRead = (id: string) => void changeRead(() => store?.markRead(id, Number.MAX_SAFE_INTEGER));
+  let unreadAction = 0;
   const markUnread = async (id: string, from?: ChatFeedItem) => {
+    if (openChat()?.id === id) unreadAction++;
     const target = openChat()?.id === id ? reporter : undefined;
     const previousMarker = marker();
     const previousGap = unreadGap();
@@ -509,14 +511,21 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       target.reporter.activate();
     }
   };
-  const markOpenRead = () => {
+  const markOpenRead = async () => {
     const current = openChat();
-    if (!current) return;
+    const live = store;
+    if (!current || !live) return;
+    const target = reporter;
+    const intent = unreadAction;
+    if (!(await changeRead(() => live.markRead(current.id, current.seqHead)))) return;
+    if (intent !== unreadAction || target !== reporter || openChat()?.id !== current.id) return;
     paused = false;
+    // Keep the mark on failure. On success, advance the reporter before focus can revive the old gap.
+    target?.reporter.advance(current.seqHead);
     setMarker(null);
     setUnreadGap(null);
+    target?.reporter.activate();
     announce(t().markedRead);
-    void changeRead(() => store?.markRead(current.id, current.seqHead));
   };
   const readAll = async () => {
     const live = store;

@@ -92,6 +92,14 @@ export const createReadReporter = (options: {
       }
       await Promise.all(inFlight);
     },
+    // An explicit read's HTTP response may arrive before older live read events. Advance progress,
+    // but retain the live baseline so those earlier events are not mistaken for a new unread mark.
+    advance(next: number) {
+      frontier = Math.max(frontier, next);
+      posted = Math.max(posted, next);
+      sent = Math.max(sent, next);
+      if (options.active()) options.onGap?.(range && range.first > frontier + 1 ? frontier + 1 : null);
+    },
     setStart(next: number) {
       if (next < start) {
         frontier = posted = sent = next;

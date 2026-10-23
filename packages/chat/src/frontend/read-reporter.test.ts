@@ -317,3 +317,27 @@ test("settled waits for the throttled post it flushes", async () => {
     reporter.dispose();
   }
 });
+
+
+test("an explicit read stays ahead of delayed live reads while a later unread mark can reset it", async () => {
+  const f = fixture(3);
+  try {
+    f.reporter.seen(8, 12);
+    expect(f.gaps).toEqual([4]);
+    f.reporter.advance(12);
+    f.reporter.setStart(5);
+    f.reporter.activate();
+    expect(f.gaps).toEqual([4]);
+    expect(f.posts).toEqual([]);
+    // The stream first catches up to the explicit read, then delivers a genuine new unread mark.
+    f.reporter.setStart(12);
+    f.reporter.setStart(7);
+    f.reporter.seen(10, 12);
+    expect(f.gaps).toEqual([4, 8]);
+    f.reporter.seen(8, 10);
+    await settle();
+    expect(f.posts).toEqual([10]);
+  } finally {
+    f.reporter.dispose();
+  }
+});

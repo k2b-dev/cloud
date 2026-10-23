@@ -672,6 +672,16 @@ describe("ChatWorkspace browser read state", () => {
           await release.promise;
           await route.continue();
         });
+        await page.route(`**/api/chat/conversations/${chat}/read`,
+          (route) => route.fulfill({ status: 503, json: { message: "Read is temporarily unavailable." } }),
+          { times: 1 },
+        );
+        await page.locator(".k2b-virtual-feed__viewport").click();
+        await page.keyboard.press("Escape");
+        await page.getByText(chatMessages.resolve(["en"]).t.readStateFailed, { exact: true }).waitFor();
+        expect(await page.getByRole("button", { name: "New messages", exact: true }).isVisible()).toBe(true);
+        expect(harness.props({ chat }).open!.conversation.unread).toBe(40);
+        await page.getByRole("button", { name: "Dismiss notification", exact: true }).click();
         await page.locator(".k2b-virtual-feed__viewport").click();
         await page.keyboard.press("Escape");
         await requested.promise;
