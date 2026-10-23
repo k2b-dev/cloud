@@ -244,7 +244,7 @@ export const startChatHarness = async () => {
       principal,
       displayName:
         principal.type === "user" ? people.get(id)!.name : principal.type === "group" ? group!.name : serviceAccounts.get(id)!.name,
-      serviceAccountKind: principal.type === "service_account" ? serviceAccounts.get(id)!.kind : null,
+      ...(principal.type === "service_account" ? { serviceAccountKind: serviceAccounts.get(id)!.kind } : {}),
       guest: false,
       deactivated: false,
       groupSize: group?.size ?? null,
