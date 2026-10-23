@@ -1010,3 +1010,8 @@ updates that class's row in the table.
 
 - **Error class:** asynchronous UI locator race. The Pulse Back test could resolve the settings form's Discard button before the confirmation appeared, then wait on that hidden button.
 - **Guard:** the test waits for the named confirmation dialog and its question before clicking its Discard button. It still checks Back, Escape, Cancel, draft preservation and the resulting URL.
+
+## Avoid measuring scroll overflow after every live row mutation
+
+- **Error class:** repeated forced layout. Updating many unread badges made the shared scroll-fade observer measure each intermediate layout, delaying Chat's batch-read response and interaction completion.
+- **Guard:** `scroll-fade.behavior.test.tsx` checks that separate row mutations share one frame measurement, scrolling still updates immediately, and disposal cancels pending work. Resize observations remain synchronous before paint. Chat's 51-conversation browser case checks both read batches with the original deadlines.

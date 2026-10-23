@@ -3,6 +3,11 @@ import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
+const nextFrame = async () => {
+  await Promise.resolve();
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+};
+
 if (isServer) test.skip("requires browser conditions", () => {});
 else
   test("shared scroll fade follows both edges, content changes and reactive opt-out", async () => {
@@ -44,7 +49,7 @@ else
         expect(body.dataset.scrollFade).toBe("both");
         Object.defineProperty(body, "scrollHeight", { value: 200 });
         body.textContent = "Short content";
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        await nextFrame();
         expect(body.dataset.scrollFade).toBeUndefined();
         dispose();
       }
@@ -72,7 +77,7 @@ if (!isServer)
       next.setAttribute("data-scroll-fade-mode", "bottom");
       Object.defineProperties(next, { scrollHeight: { value: 500 }, clientHeight: { value: 100 } });
       dom.root.append(next);
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await nextFrame();
       expect(next.getAttribute("data-scroll-fade")).toBe("bottom");
       expect(dom.root.querySelector(".unmanaged")?.hasAttribute("data-scroll-fade")).toBe(false);
       second();
@@ -143,14 +148,14 @@ if (!isServer)
       scroll(-300);
       expect(body.dataset.scrollFade, "rtl end").toBe("bottom");
       setOrientation("vertical");
-      await Promise.resolve();
+      await nextFrame();
       expect(body.dataset.scrollFade).toBeUndefined();
       setOrientation("horizontal");
-      await Promise.resolve();
+      await nextFrame();
       expect(body.dataset.scrollFade, "after axis restored").toBe("bottom");
       Object.defineProperty(body, "scrollWidth", { value: 200 });
       body.textContent = "Short";
-      await Promise.resolve();
+      await nextFrame();
       expect(body.dataset.scrollFade).toBeUndefined();
     } finally {
       dispose();
@@ -241,6 +246,59 @@ if (!isServer)
     } finally {
       stop();
       expect(body.dataset.scrollFade).toBeUndefined();
+      dom.cleanup();
+    }
+  });
+
+if (!isServer)
+  test("live row mutations measure scroll overflow once per frame and stop measuring after cleanup", async () => {
+    const dom = createDomTestHarness();
+    const frames = new Map<number, FrameRequestCallback>();
+    let next = 0;
+    globalThis.requestAnimationFrame = (callback) => {
+      frames.set(++next, callback);
+      return next;
+    };
+    globalThis.cancelAnimationFrame = (id) => { frames.delete(id); };
+    const { installScrollFades } = await import("../src/layout/scroll-fade");
+    dom.root.innerHTML = '<div data-scroll-fade-mode="both"><span>Unread</span></div>';
+    const body = dom.root.firstElementChild as HTMLElement;
+    let reads = 0;
+    let height = 500;
+    Object.defineProperties(body, {
+      scrollHeight: { get: () => { reads++; return height; } },
+      clientHeight: { value: 200 },
+    });
+    const stop = installScrollFades(dom.root);
+    try {
+      expect(body.dataset.scrollFade).toBe("bottom");
+      reads = 0;
+      for (let index = 0; index < 50; index++) {
+        body.firstElementChild!.textContent = String(index);
+        await Promise.resolve();
+      }
+      expect(reads).toBe(0);
+      expect(frames.size).toBe(1);
+      height = 100;
+      const pending = [...frames.values()];
+      frames.clear();
+      for (const callback of pending) callback(0);
+      expect(reads).toBe(1);
+      expect(body.dataset.scrollFade).toBeUndefined();
+      body.firstElementChild!.textContent = "One more change";
+      await Promise.resolve();
+      expect(frames.size).toBe(1);
+      height = 500;
+      body.dispatchEvent(new Event("scroll"));
+      expect(body.dataset.scrollFade).toBe("bottom");
+      stop();
+      expect(frames.size).toBe(0);
+      body.textContent = "After cleanup";
+      await Promise.resolve();
+      expect(frames.size).toBe(0);
+    } finally {
+      // installScrollFades cleanup is idempotent.
+      stop();
       dom.cleanup();
     }
   });
