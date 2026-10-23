@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-22
+updated: 2026-10-23
 ---
 
 # Lessons learned
@@ -25,12 +25,14 @@ convention still needs a check or a test.
 | --- | --- | --- |
 | An SSR browser fixture leaves an asset request external | The generated shell requests its branding image, but the fixture intercepts only app and API routes; navigation can wait on DNS or the unavailable host instead of reaching `load`. | Test: Pulse `PulseWorkspace.browser.test.ts` supplies a local branding SVG, rejects unexpected requests, checks decoded logo images, and retains the normal navigation load wait and SSR height checks. |
 | A browser locator captures an underlying dialog action | Before asynchronous Back opens a confirmation, an unscoped button label matches the form action. The confirmation hides that retained button, so the click waits on the wrong element. | Test: Pulse `PulseWorkspace.browser.test.ts` scopes Cancel and Discard to the named confirmation, checks that the form action is visible while the confirmation action is absent, and verifies draft preservation and final dismissal. |
+| Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | App CSS overrides shared control sizing | An app stretches a compact action or overrides its size, so adjacent controls no longer match. | Test: Notebooks `detail-panel.browser.test.ts` measures AI and View height, padding, font size, intrinsic width, hover, keyboard focus, and offline dimensions in both themes at phone, tablet, and desktop widths. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | A source location is valid but no longer names its evidence | A ranking accepts an in-range line number even when the line is blank or different code now occupies it. | Test: Mail `scripts/perf-baseline/browser-model.test.ts` rejects blank, changed and moved source lines and missing or multiline anchors; ranking requires the complete source line ([#1472](https://github.com/k2b-dev/cloud/issues/1472)). |
+| An app links assets below a prefix it never declared | The platform links `/public/<id>/app.css` on every page, but the gateway routes only declared prefixes, so the stylesheet answers 404 and the pages render unstyled. | Check: `app-public-route` requires the app's own `/public/<id>` prefix in every app config that declares pages below `/app/` or `/admin/`. |
 | Mixed timestamp precision drops measured requests | A recorder compares fractional browser starts with an integer end timestamp, discarding a required request in the final millisecond and reporting zero transferred bytes. | Test: Mail `page-change-network.browser.test.ts` fixes the fractional boundary while a real script remains pending, then requires its actual transfer; the cached-script guard still requires zero encoded transfer. Convention: compare measurement boundaries and request starts at the same precision. |
 | Positional input-union compatibility | A manifest check rejects preserved input variants after additions or reordering, or accepts a `oneOf` change that makes old inputs match multiple variants. | Tests: Cloud `_internal/capabilities.test.ts` covers nested additive unions, required disjoint tags, removed or narrowed branches, overlaps, optional tags, and unchanged result-union restrictions. |
 | An app adds an unnecessary administration group | A single administration entry declares `adminNav`, separating it from the shared app administration list. | Test: Pulse `frontend/admin/navigation.render.test.ts` checks the German and English SSR sidebar and mobile snapshot, active link, default data-store tab, and unchanged admin-only route access. Convention: use `adminHref` for one app administration entry. |
@@ -98,6 +100,7 @@ convention still needs a check or a test.
 | Retention blocked by a dependent check | A row's `ON DELETE SET NULL` violates its own CHECK, so every delete of the referenced row fails and an oldest-first sweep stalls for good. | Test: `chat-tasks.integration.test.ts` expires a background turn that a workflow memory learning run points at. |
 | Unreadable treated as missing | Startup replaces an unreadable or invalid stored value with an environment value. | Test: `packages/cloud/src/services/settings/bootstrap.integration.test.ts` preserves ciphertext and timestamps for undecryptable and invalid rows while reads use the environment fallback ([#1295](https://github.com/k2b-dev/cloud/issues/1295)). |
 | Read fallback written back | A read fallback hides an unreadable row and a later merge writes that fallback over saved data. | Guard: settings store refuses unreadable rows by default; `unreadable.integration.test.ts` and Files configuration tests cover explicit recovery ([#1303](https://github.com/k2b-dev/cloud/issues/1303)). |
+| HTML structure lost in a text alternative | A generic HTML-to-text conversion treats table cells as adjacent inline content, joining headings and values. | Tests: Mail `outbound-mime.test.ts` renders one table through the composer and MIME builder, parses both alternatives, and checks row/cell boundaries, an empty cell, links and surrounding prose; `compose-renderer.test.ts` checks plain-format templates. Guard: use the data-table formatter for Mail HTML-to-text conversions ([#1607](https://github.com/k2b-dev/cloud/issues/1607)). |
 | Absence from an empty provider answer | An empty or failed provider read is taken as proof that a message is gone. A command fails as missing, a delete or move is confirmed, a body is marked missing, or a reconcile window retires messages. | Test: `%s confirms an empty FETCH answer before it reports a message as gone` in `packages/mail/src/service/connectors/imap-smtp.test.ts` drives real ImapFlow against a throttling fixture for every connector read that can infer absence ([#1244](https://github.com/k2b-dev/cloud/issues/1244)). Convention: a new connector read that infers absence confirms it with the same helper. |
 | An existence lookup scans a tenant’s whole history | A late-sample ASOF join or the hourly predecessor lookup reads and deduplicates all samples for a base, so cost grows with retention and one slow base stops hourly values for every base. | Tests: Pulse `service/ingest-controls.integration.test.ts` checks the one-query raw-pair lookup, late-series and retention bounds, and affected hours; `service/metric-rollups.integration.test.ts` checks that a clean history supplies the predecessor from its hourly value and that a failing base hour is deferred while another base proceeds. |
 | Write that bypasses the domain history | An app writes to external storage through a path that never opened its history entry, such as a derived client or a new method. | Check: `filegate-facade` prevents SDK access outside the Files facade. Test: `activity-classification.test.ts` classifies every service method and freezes the shrinking migration list, its call sites, and the facade methods each entry may use. |
@@ -187,6 +190,13 @@ convention still needs a check or a test.
 
 ## Lessons
 
+### Spread props never reached Pulse, Grids scanner and Weather settings islands
+
+- **What happened:** Every Pulse base page showed "This section could not be displayed" after load; the browser threw `Cannot read properties of undefined (reading 'view')`.
+- **Root cause:** The `@k2b/ssr` island transform serialized only named JSX attributes and skipped `JSXSpreadAttribute`, so `<PulseWorkspace {...workspaceProps} />` hydrated with `{}`. The Grids scanner and Weather settings islands used the same pattern.
+- **Error class:** A build transform silently drops a supported JSX form, so server and browser receive different props.
+- **Guard:** The transform merges spread and named attributes with Solid's `mergeProps`, as Solid renders them; a unit test renders a transformed page and decodes its `data-props`, including order, `undefined` fallback and an overridden getter.
+
 ### Pulse retention confirmation and lowered policy limits
 
 - **What happened:** A retention confirmation could delete data under settings the person had never previewed; lowering the raw retention maximum also blocked unrelated settings edits.
@@ -206,6 +216,13 @@ convention still needs a check or a test.
 - **Root cause:** Every replica wrote the same keys and deleted them unconditionally on stop. No membership check protected the shared entries from a stop racing a new replica’s start.
 - **Error class:** Shared resource removed by one of several owners.
 - **Guard:** The replica-membership cases in `heartbeat.test.ts` cover clean stops, surge races, TTL expiry, late writes, registry failures, a survivor replacing the entry of a departed newer replica, and a newer replica taking back an entry that an older one repaired. A stale stop snapshot cannot remove shared entries unless at least half the membership lease remains. `heartbeat.integration.test.ts` checks real Sync watches. The nightly scale-acceptance `chat-replica-stop` scenario checks gateway requests across a graceful stop and a surge rollout, and requires the container to be stopped with exit code 0 and no OOM kill before removal.
+
+### Pulse pages rendered without the Pulse stylesheet
+
+- **What happened:** Every Pulse page linked `/public/pulse/app.css`, but the gateway answered it with 404, so overview, SQL console and settings showed unstyled text.
+- **Root cause:** A September change removed `/public/pulse` from the Pulse routes; the platform still links the stylesheet and favicon below that prefix. Browser harnesses load the stylesheet directly, so no test noticed.
+- **Error class:** An app links assets below a prefix it never declared to the gateway.
+- **Guard:** The `app-public-route` check requires the app's own `/public/<id>` prefix in every app config that declares pages below `/app/` or `/admin/`.
 
 ### Mail rows missed changes outside the detail page
 
