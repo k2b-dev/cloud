@@ -151,6 +151,7 @@ suiteFor(
     await sql`UPDATE auth.users SET profile = 'guest' WHERE id = ${guest.id}::uuid`;
     const created = await f.request(owner.headers, "", "POST", {
       name: "Reactions",
+      purpose: "News to react to",
       discovery: [{ principal: { type: "authenticated" }, permission: "read" }],
     });
     expect(created.status).toBe(201);
@@ -175,7 +176,7 @@ suiteFor(
     for (const kind of ["standalone", "agent"]) {
       const [account] = await sql<
         { id: string }[]
-      >`INSERT INTO auth.service_accounts (name, kind) VALUES ('Reaction agent', ${kind}) RETURNING id`;
+      >`INSERT INTO auth.service_accounts (name, kind) VALUES (${`Reaction agent ${crypto.randomUUID()}`}, ${kind}) RETURNING id`;
       accounts.push(account!.id);
       const access = await createAccess({ principal: { type: "service_account", serviceAccountId: account!.id }, permission: "read" });
       if (!access.ok) throw new Error(access.error.message);
