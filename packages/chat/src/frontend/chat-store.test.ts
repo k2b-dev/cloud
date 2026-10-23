@@ -2023,6 +2023,26 @@ test("failed sidebar recent-thread authorization leaves discovery unacknowledged
   }
 });
 
+test("a latest response started during revocation and finishing first cannot cancel it", async () => {
+  const reconcile = deferred<ReturnType<typeof windowPage>>();
+  let calls = 0;
+  const { store, connection } = systemFixture({
+    messages: async () => (++calls === 1 ? reconcile.promise : windowPage(1, 5)),
+  });
+  store.open({ cursor: "middle", conversation: systemConversation, threads: noThreads, view: "all", page: windowPage(1, 1, 5, 1) });
+  try {
+    expect(store.openConversation?.hasNewer).toBe(true);
+    const resync = connection.get("conversation").resync();
+    // The reader jumps to the latest messages while access is being reconciled; that read answers first.
+    await store.loadLatest();
+    reconcile.resolve({ ...windowPage(1, 5), items: [] });
+    await resync;
+    expect(store.openConversation?.messages).toEqual([]);
+  } finally {
+    store.dispose();
+  }
+});
+
 test("a latest response started before revocation cannot restore the superseded authorized window", async () => {
   const latest = deferred<ReturnType<typeof windowPage>>();
   let calls = 0;

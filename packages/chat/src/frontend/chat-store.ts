@@ -300,6 +300,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     from: number | null;
     to: number | null;
     window: number;
+    /** Access reconciliations in flight; an ordinary replacement never commits while one runs. */
+    reconciling?: number;
     older: Promise<boolean> | null;
     newer: Promise<boolean> | null;
     latest: Promise<void> | null;
@@ -398,16 +400,28 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     else metadata(chat, row);
   };
   const replaceMessages = async (chat: Current, reconcileAccess = false) => {
-    // Access reconciliation supersedes pending reads, including reads that began
-    // while it was in flight. A delayed latest response must not restore revoked content.
+    if (!reconcileAccess) return commitMessages(chat, false);
+    chat.reconciling = (chat.reconciling ?? 0) + 1;
+    try {
+      await commitMessages(chat, true);
+    } finally {
+      chat.reconciling = (chat.reconciling ?? 1) - 1;
+    }
+  };
+  const commitMessages = async (chat: Current, reconcileAccess: boolean) => {
+    // Access reconciliation supersedes pending reads, including reads that began while it was in flight, and an
+    // ordinary replacement never commits while a reconciliation runs, whichever finishes first. A delayed latest
+    // response must not restore revoked content, nor cancel the reconciliation that removes it.
     if (reconcileAccess) chat.window++;
     const window = chat.window;
+    const superseded = () => !active(chat) || (!reconcileAccess && (chat.reconciling ?? 0) > 0);
     const watermark = chat.view.watermark;
+    if (superseded()) return;
     const page = await api.messages(chat.view.id, { thread: chat.view.view });
-    if (!active(chat) || chat.window !== window) return;
+    if (superseded() || chat.window !== window) return;
     if (page === null) return noAccess(chat);
     const conversation = await api.conversation(chat.view.id);
-    if (!active(chat) || chat.window !== window) return;
+    if (superseded() || chat.window !== window) return;
     if (conversation === null) return noAccess(chat);
     // Retain arrivals during this read, unless its lower revision proves a restore.
     const arrivals =
