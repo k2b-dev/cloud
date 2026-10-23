@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import type { AuthContext } from "../server";
+import { audit } from "../services/audit";
 import { createAccountsEntitiesRoutes } from "./accounts-entities";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -126,6 +127,14 @@ describe("accounts entity routes", () => {
         await next();
       },
     });
-    expect((await serviceAccount.request("/entities")).status).toBe(403);
+    // Exercise the real denial policy while keeping its durable audit out of this unit fixture.
+    const record = spyOn(audit, "recordResult").mockImplementation(async (params) => params.result);
+    try {
+      expect((await serviceAccount.request("/entities")).status).toBe(403);
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(record.mock.calls[0]![0].result.ok).toBe(false);
+    } finally {
+      record.mockRestore();
+    }
   });
 });
