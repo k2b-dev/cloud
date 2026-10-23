@@ -13,6 +13,8 @@ describe("Mail workspace preferences", () => {
       toolbarActions: ["reply", "archive", "tags"],
       listMode: "conversations",
       lastMailboxId: null,
+      searchDiscovered: false,
+      searchHintDismissed: false,
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
     });
@@ -31,6 +33,8 @@ describe("Mail workspace preferences", () => {
       toolbarActions: DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS,
       listMode: "conversations",
       lastMailboxId: null,
+      searchDiscovered: false,
+      searchHintDismissed: false,
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
     });
@@ -40,9 +44,19 @@ describe("Mail workspace preferences", () => {
       toolbarActions: DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS,
       listMode: "conversations",
       lastMailboxId: null,
+      searchDiscovered: false,
+      searchHintDismissed: false,
       pinnedMailboxIds: [],
       hiddenMailboxIds: [],
     });
+  });
+
+  test("keeps search discovery and hint dismissal independently of the details preference", () => {
+    const original = readMailWorkspacePreferences(null);
+    const used = readMailWorkspacePreferences(mailWorkspaceCookie({ ...original, detailsOpen: true, searchDiscovered: true }));
+    expect(used).toMatchObject({ detailsOpen: true, searchDiscovered: true, searchHintDismissed: false });
+    const dismissed = readMailWorkspacePreferences(mailWorkspaceCookie({ ...original, searchHintDismissed: true }));
+    expect(dismissed).toMatchObject({ detailsOpen: false, searchDiscovered: false, searchHintDismissed: true });
   });
 
   test("reads the optional message list mode", () => {

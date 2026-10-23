@@ -1,11 +1,11 @@
-import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { err, fail, ok } from "@k2b/stdlib";
+import type { CapabilityCaller } from "../../capabilities/server";
 import { registerSettings, toLegacySettingDefs } from "../settings/defaults";
 import { getCurrentWeather, getWeatherData } from "./forecast";
 import { WEATHER_COUNTRY_CODE } from "./geo";
 import { weatherLocationService } from "./location";
 import { weatherLocationsService } from "./locations";
 import { WEATHER_SETTINGS } from "./settings";
-import type { WeatherData } from "./types";
 import { weatherUiService } from "./ui";
 
 registerSettings(toLegacySettingDefs(WEATHER_SETTINGS));
@@ -13,13 +13,14 @@ registerSettings(toLegacySettingDefs(WEATHER_SETTINGS));
 /**
  * Resolves a city name to coordinates and returns weather for the first match.
  */
-const getByCityName = async (config: { query: string }): Promise<Result<WeatherData>> => {
+const getByCityName = async (config: { query: string; caller: CapabilityCaller }) => {
   const query = config.query.trim();
   if (!query) {
     return fail(err.badInput("City query is required"));
   }
 
   const cityResult = await weatherLocationService.city.list({
+    caller: config.caller,
     pagination: { page: 1, perPage: 1 },
     filter: {
       query,

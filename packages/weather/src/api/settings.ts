@@ -16,7 +16,7 @@ import { z } from "zod";
 import { app } from "../config";
 import { weatherMessages } from "../messages";
 
-const WEATHER_KEYS = new Set(["weather.default_lat", "weather.default_lon", "weather.cache_minutes", "weather.geo_url"]);
+const WEATHER_KEYS = new Set(["weather.default_lat", "weather.default_lon", "weather.cache_minutes"]);
 const isWeatherKey = (key: string): key is Parameters<typeof app.settings.read>[0] => WEATHER_KEYS.has(key);
 
 const BulkUpdateSchema = z.union([

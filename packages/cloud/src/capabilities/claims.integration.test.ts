@@ -1,8 +1,9 @@
-import { beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
+import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
 import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { compileCapabilities } from "../_internal/capabilities";
 import { dispatchCapability } from "../api/capabilities";
@@ -10,6 +11,7 @@ import { defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { RequestAuthority } from "../server";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
+import { serviceAccountCredentials } from "../services/service-account-credentials";
 import {
   CAPABILITY_CLAIM_RETENTION_HOURS,
   capabilityRequestHash,
@@ -23,6 +25,28 @@ const suite = databaseSuite();
 beforeAll(async () => {
   if (!testInfra.database) return;
   await migrateCloudCapabilities();
+  await sql`INSERT INTO auth.service_accounts (id, name, kind)
+    VALUES (${serviceAccountId}::uuid, 'Caller', 'standalone')`;
+  const created = await serviceAccountCredentials.createApiToken({ serviceAccountId, name: "Claims fixture", scopes: ["write"] });
+  if (!created.ok) throw new Error(created.error.message);
+  const authenticated = await serviceAccountCredentials.authenticateApiToken(created.data.token);
+  if (!authenticated) throw new Error("Claims fixture API key did not authenticate");
+  authority = {
+    actor: {
+      kind: "service_account",
+      serviceAccount: authenticated.serviceAccount,
+      delegatedUser: authenticated.delegatedUser,
+      scopes: authenticated.credential.scopes,
+      credentialId: authenticated.credential.id,
+      credentialExpiresAt: authenticated.credential.expiresAt,
+    },
+    accessSubject: { type: "service_account", serviceAccountId },
+    credentialKind: "api_key",
+    scopes: authenticated.credential.scopes,
+  };
+});
+afterAll(async () => {
+  if (testInfra.database) await sql`DELETE FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid`;
 });
 
 const compiled = compileCapabilities(
@@ -78,30 +102,8 @@ const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callb
   );
 };
 
-const serviceAccountId = "11111111-1111-4111-8111-111111111111";
-const authority: RequestAuthority = {
-  actor: {
-    kind: "service_account",
-    serviceAccount: {
-      id: serviceAccountId,
-      name: "Caller",
-      kind: "resource_bound",
-      status: "active",
-      delegatedUserId: null,
-      appId: "core",
-      resourceType: "cloud.app",
-      resourceId: "core",
-      createdBy: null,
-      createdAt: "2026-09-02T00:00:00.000Z",
-    },
-    delegatedUser: null,
-    scopes: ["write"],
-    credentialId: "22222222-2222-4222-8222-222222222222",
-  },
-  accessSubject: { type: "service_account", serviceAccountId },
-  credentialKind: "api_key",
-  scopes: ["write"],
-};
+const serviceAccountId = crypto.randomUUID();
+let authority: RequestAuthority;
 
 type UpstreamFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -144,6 +146,7 @@ const claimState = async (keyHash?: string) =>
   `;
 
 suite("platform capability idempotency claims", () => {
+  useTestAppRegistry(["demo"]);
   test.each([
     { body: { data: { id: "item-1" } }, jsonType: "object" },
     { body: [1, "two", null], jsonType: "array" },
