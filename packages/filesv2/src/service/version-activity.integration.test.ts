@@ -354,22 +354,19 @@ suite("version activity with real Filegate", () => {
     } else expect(audits).toHaveLength(0);
   });
 
-  test("every version service fails closed before Filegate when the history insert fails", async () => {
-    const files = await Promise.all(operations.map((operation) => fixture(`insert-failure-${operation}`)));
+  test.each([...operations])("%s fails closed before Filegate when the history insert fails", async (operation) => {
+    const file = await fixture(`insert-failure-${operation}`);
     const tracked = wire();
+    const versions = await root().versions(file.target);
     await sql`CREATE FUNCTION filesv2.reject_version_intent() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'version intent unavailable'; END $$`.simple();
     await sql`CREATE TRIGGER reject_version_intent BEFORE INSERT ON filesv2.activity FOR EACH ROW EXECUTE FUNCTION filesv2.reject_version_intent()`.simple();
     try {
-      for (const [index, operation] of operations.entries()) {
-        const file = files[index]!;
-        const versions = await root().versions(file.target);
-        await expect(invoke(tracked.service, operation, file)).rejects.toThrow("version intent unavailable");
-        expect(tracked.mutations()).toBe(0);
-        expect(await root().stat(file.target)).toEqual(file.before);
-        expect(await root().versions(file.target)).toEqual(versions);
-        expect(await content(file.target)).toBe(currentContent);
-        await expect(root().stat(file.copyTarget)).rejects.toMatchObject({ status: 404 });
-      }
+      await expect(invoke(tracked.service, operation, file)).rejects.toThrow("version intent unavailable");
+      expect(tracked.mutations()).toBe(0);
+      expect(await root().stat(file.target)).toEqual(file.before);
+      expect(await root().versions(file.target)).toEqual(versions);
+      expect(await content(file.target)).toBe(currentContent);
+      await expect(root().stat(file.copyTarget)).rejects.toMatchObject({ status: 404 });
       expect(await rows()).toHaveLength(0);
       expect(await sql`SELECT id FROM audit.events`).toHaveLength(0);
     } finally {
