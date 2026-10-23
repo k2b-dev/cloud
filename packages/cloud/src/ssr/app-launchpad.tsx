@@ -23,7 +23,12 @@ const readEmbeddedContext = (): AppLaunchpadContext | undefined => {
   return {
     apps: data.apps,
     profile: data.profile
-      ? { name: data.profile.name, theme: data.theme, ...(data.profile.appHref === "/me/app" ? { appHref: data.profile.appHref } : {}) }
+      ? {
+          userId: data.profile.userId,
+          name: data.profile.name,
+          theme: data.theme,
+          ...(data.profile.appHref === "/me/app" ? { appHref: data.profile.appHref } : {}),
+        }
       : undefined,
     legalLinks: data.legalLinks,
   };

@@ -1,17 +1,10 @@
-import {
-  AutocompleteEditor,
-  Button,
-  type Completion,
-  MarkdownEditor,
-  Panes,
-  type PanesItem,
-  type PanesLayout,
-  Placeholder,
-  useLocale,
-} from "@k2b/ui";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
+import { Button, type Completion, Panes, type PanesItem, type PanesLayout, Placeholder, useLocale } from "@k2b/ui";
+import type { TextEditorController } from "@k2b/ui/text-editor";
 import type { Accessor, JSX } from "solid-js";
-import { createMemo, Show } from "solid-js";
+import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import type { ComposePreview } from "../../contracts";
+import type { MailDraftDocumentClient, MailSharedDraftState } from "../../lib/draft-document-client";
 import MailFormattingWarnings from "./MailFormattingWarnings";
 import { mailComposerMessages } from "./mail-composer-messages";
 
@@ -20,6 +13,9 @@ const PREVIEW_POLICY =
   "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'\">";
 
 export default function MailComposerEditor(props: {
+  shared?: Accessor<MailDraftDocumentClient | null>;
+  sharedState?: Accessor<MailSharedDraftState | null>;
+  onTableCheck?: (needsCheck: boolean) => void;
   format: Accessor<"plain" | "markdown">;
   body: Accessor<string>;
   onBodyInput: (value: string) => void;
@@ -31,43 +27,65 @@ export default function MailComposerEditor(props: {
   previewError: Accessor<string | undefined>;
   previewPending: Accessor<boolean>;
   onRetryPreview: () => void;
-  onEditorReady: (element: HTMLTextAreaElement) => void;
+  onEditorReady: (editor: TextEditorController) => void;
+  onAttachImages?: () => void;
+  onDroppedImages?: (files: File[]) => void;
   history?: () => JSX.Element;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
   const hasHistory = () => props.history !== undefined;
   const usesPanes = () => props.format() === "markdown" || hasHistory();
+  const [editorModule, setEditorModule] = createSignal<typeof import("./MailTextEditor.client")>();
+  const [editorFailed, setEditorFailed] = createSignal(false);
+  const loadEditor = async () => {
+    setEditorFailed(false);
+    const loaded = await importOnDemand(() => import("./MailTextEditor.client"));
+    if (loaded) setEditorModule(loaded);
+    else setEditorFailed(true);
+  };
+  onMount(() => void loadEditor());
   const writeSurface = () => (
     <Show
-      when={props.format() === "markdown"}
+      when={editorModule()}
       fallback={
-        <AutocompleteEditor
-          value={props.body}
-          onValueChange={props.onBodyInput}
-          lines={26}
-          placeholder={t().writeMessage}
-          aria-label={t().messageBody}
-          spellcheck
-          disabled={!props.editable()}
-          completions={props.completions()}
-          textareaRef={props.onEditorReady}
-          fill
+        <Placeholder
+          state={editorFailed() ? "error" : "loading"}
+          variant="panel"
+          class="h-full min-h-72"
+          title={editorFailed() ? t().editorFailed : t().preparingDraft}
+          action={
+            editorFailed() ? (
+              <Button variant="secondary" onClick={() => void loadEditor()}>
+                {t().retry}
+              </Button>
+            ) : undefined
+          }
         />
       }
     >
-      <MarkdownEditor
-        value={props.body}
-        onValueChange={props.onBodyInput}
-        placeholder={t().writeMessage}
-        aria-label={t().messageBody}
-        lines={26}
-        spellcheck
-        disabled={!props.editable()}
-        completions={props.completions()}
-        textareaRef={props.onEditorReady}
-        fill
-      />
+      {(module) => {
+        const Editor = module().default;
+        return (
+          <For each={[props.shared?.() ?? null]}>
+            {(binding) => (
+              <Editor
+                shared={binding ?? undefined}
+                sharedState={props.sharedState}
+                onTableCheck={props.onTableCheck}
+                format={props.format}
+                body={props.body}
+                onBodyInput={props.onBodyInput}
+                editable={props.editable}
+                completions={props.completions}
+                onEditorReady={props.onEditorReady}
+                onAttachImages={props.onAttachImages}
+                onDroppedImages={props.onDroppedImages}
+              />
+            )}
+          </For>
+        );
+      }}
     </Show>
   );
 

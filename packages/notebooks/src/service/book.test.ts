@@ -25,6 +25,7 @@ const note = {
   yjsSnapshotAt: "2026-09-03T10:00:00Z",
   contentMd: "# Saved heading\n\n:::toc\n:::\n\n## Next page",
   yjsSnapshot: "private-collaboration-state",
+  yjsRestoreRevision: "0",
   createdBy: params.userId,
   createdAt: "2026-09-03T10:00:00Z",
   updatedAt: "2026-09-03T10:00:00Z",

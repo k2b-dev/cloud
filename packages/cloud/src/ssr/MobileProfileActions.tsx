@@ -5,10 +5,10 @@ import { createProfileActions } from "./profile-actions";
 import { ThemeCycleButton } from "./ThemeCycleButton";
 
 export function MobileProfileActions(props: {
-  profile: { name: string; theme: CloudThemePreference; appHref?: string };
+  profile: { userId?: string; name: string; theme: CloudThemePreference; appHref?: string };
   beforeSelect: () => Promise<boolean>;
 }) {
-  const { preferences, signingOut, signOut } = createProfileActions(props.profile.theme, props.profile.appHref);
+  const { preferences, signingOut, signOut } = createProfileActions(props.profile.theme, props.profile.appHref, props.profile.userId);
   const navigate = (href: string) => (event: MouseEvent) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();

@@ -112,6 +112,7 @@ export function SyncEndedBar(props: {
     if (code === "ACCESS_REVOKED" || code === "ACCESS_DENIED") return t().accessChanged;
     if (code === "NOTE_LOCKED") return t().noteLocked;
     if (code === "STORAGE_EXHAUSTED") return t().storageFull;
+    if (code === "RESYNC_REQUIRED") return t().documentReopen;
     return t().connectionClosed;
   };
   const onPrimary = () => {

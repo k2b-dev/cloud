@@ -49,6 +49,13 @@ import { NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY }
 import { NOTE_PATH_MAX_LENGTH, NOTE_PATH_MAX_SEGMENTS } from "@/lib/note-path";
 import { encodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, NOTE_PDF_OMISSIONS_HEADER_MAX_BYTES } from "@/lib/pdf-omissions";
 import { PRESENTATION_MODES } from "@/lib/presentation-mode";
+import {
+  decodeTableActionIntent,
+  decodeTableFocus,
+  NoteTableActionErrorSchema,
+  NoteTableActionRequestSchema,
+  NoteTableActionResponseSchema,
+} from "@/lib/table-actions";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
 import { InvalidActivityCursorError, NOTEBOOK_ACTIVITY_ACTIONS } from "../service/activity";
@@ -145,6 +152,7 @@ const NoteSchema = z.object({
 
 const NoteWithContentSchema = NoteSchema.extend({
   yjsSnapshot: z.string().nullable().describe("Base64-encoded Yjs snapshot"),
+  yjsRestoreRevision: z.string(),
 });
 
 const NoteCommentSchema = z.object({
@@ -499,6 +507,7 @@ const EditableNoteRouteStateSchema = z.object({
     id: ResourceShortIdSchema,
     title: z.string(),
     yjsSnapshot: z.string().nullable(),
+    yjsRestoreRevision: z.string().nullable(),
     historyIncomplete: z.boolean(),
     contentMd: z.string().nullable(),
     createdAt: z.string(),
@@ -1988,7 +1997,7 @@ const app = new Hono<AuthContext>()
       const note = await notebooksService.note.getCurrentWithContent({ id: noteCheck.data.id });
       if (!note) return respond(c, fail(notFoundMessage(messages(c).noteNotFound)));
       const [data] = await toPublicNotes([note], notebook!.shortId);
-      return respond(c, ok({ ...data!, yjsSnapshot: note.yjsSnapshot }));
+      return respond(c, ok({ ...data!, yjsSnapshot: note.yjsSnapshot, yjsRestoreRevision: note.yjsRestoreRevision }));
     },
   )
 
@@ -2149,6 +2158,75 @@ const app = new Hono<AuthContext>()
       if (!result.ok) return respond(c, localizeMutationResult(result, getLocale(c)));
       const [note] = await toPublicNotes([result.data.note], notebook!.shortId);
       return respond(c, ok({ ...result.data, note: note! }));
+    },
+  )
+
+  // Apply an anchored table action; the live stream carries the resulting text.
+  .post(
+    "/:id/notes/:noteId/table-action",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Apply a table action",
+      description:
+        "Capture character anchors synchronously, then flush all unconfirmed edits before sending. The restore revision must match the current note. Rejected actions preserve text. Never automatically retry a conflict or an unknown publication outcome. An accepted persistence failure includes the published cursor and undo receipt; recover through the live stream rather than resubmitting. actionId correlates undo; it is not an idempotency key.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(NoteTableActionResponseSchema, "Applied or unchanged; current text arrives through the live stream"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid action transport"),
+        403: jsonResponse(z.union([ErrorResponseSchema, NoteTableActionErrorSchema]), "Access denied or locked"),
+        404: jsonResponse(z.union([ErrorResponseSchema, NoteTableActionErrorSchema]), "Note not found in this notebook"),
+        409: jsonResponse(NoteTableActionErrorSchema, "Rejected action; inspect current state before another action"),
+        413: jsonResponse(NoteTableActionErrorSchema, "Content limit exceeded; existing text preserved"),
+        500: jsonResponse(NoteTableActionErrorSchema, "Accepted persistence failure or unknown publication outcome; do not resubmit"),
+      },
+    }),
+    v("json", NoteTableActionRequestSchema),
+    async (c) => {
+      const { notebook, user, permission, error } = await checkNotebookAccess(c, c.req.param("id")!, "write");
+      if (error) return error;
+      const noteCheck = await requireNoteInNotebook(notebook!.id, c.req.param("noteId")!, getLocale(c));
+      if (!noteCheck.ok) return respond(c, noteCheck);
+      const data = c.req.valid("json");
+      const result = await notebooksService.note.tableAction({
+        notebookId: notebook!.id,
+        noteId: noteCheck.data.id,
+        permission,
+        intent: decodeTableActionIntent(data.intent),
+        focus: data.focus ? decodeTableFocus(data.focus) : undefined,
+        caret: data.caret,
+        restoreRevision: data.restoreRevision,
+        actionId: data.actionId,
+        createdBy: user?.id ?? null,
+        actor: getNotebookActivityActor(c),
+        signal: c.req.raw.signal,
+      });
+      if (result.ok) return respond(c, ok(result.data));
+      const t = messages(c);
+      const copy = {
+        table_action_access_denied: t.accessDenied,
+        table_action_note_not_found: t.noteNotFound,
+        table_action_locked: t.tableActionLocked,
+        table_action_history_incomplete: t.tableActionHistoryIncomplete,
+        table_action_restore_conflict: t.tableActionRestoreConflict,
+        table_target_rejected: t.tableTargetRejected,
+        table_action_conflict: t.tableActionConflict,
+        table_action_too_large: t.tableActionTooLarge,
+        table_action_sync_failed: t.tableActionSyncFailed,
+        table_action_persist_failed: t.tableActionPersistFailed,
+        table_action_outcome_unknown: t.tableActionOutcomeUnknown,
+      };
+      return respond(
+        c,
+        { ok: false, error: copy[result.code], code: result.code, status: result.status },
+        {
+          errorDetails: {
+            accepted: result.accepted,
+            cursor: result.cursor,
+            receipt: result.receipt,
+            focus: result.focus,
+          },
+        },
+      );
     },
   )
 
@@ -2525,7 +2603,7 @@ const app = new Hono<AuthContext>()
       return respond(
         c,
         toPublicNoteResult(
-          notebooksService.note.versions.restore({ noteId, yjsSnapshot, createdBy: user?.id ?? null }),
+          notebooksService.note.versions.restore({ noteId, yjsSnapshot, createdBy: user?.id ?? null, signal: c.req.raw.signal }),
           notebook!.shortId,
           getLocale(c),
         ),

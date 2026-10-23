@@ -1,11 +1,11 @@
 import { IconButton, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, createUniqueId, For, on, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { mailRecipientSuggestionsSchema } from "../../contracts";
 import { suggestContacts } from "./contact-capabilities";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
-import { commitMailRecipient, shouldCommitMailRecipient } from "./mail-recipient";
+import { commitMailRecipient, parseMailRecipient, shouldCommitMailRecipient } from "./mail-recipient";
 
 type RecipientSuggestion = { label: string; address: string; context: string | null; source: "contacts" | "mailbox" };
 
@@ -36,6 +36,7 @@ export default function MailRecipientInput(props: {
   const [loading, setLoading] = createSignal(false);
   const [validationError, setValidationError] = createSignal<string | null>(null);
   const [editingIndex, setEditingIndex] = createSignal<number | null>(null);
+  let editingAddress: string | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let controller: AbortController | null = null;
   let disposed = false;
@@ -43,13 +44,24 @@ export default function MailRecipientInput(props: {
   let pillButtons: HTMLButtonElement[] = [];
 
   const add = (raw: string) => {
-    const next = commitMailRecipient(props.value(), raw, editingIndex());
+    // Resolve the pill by address immediately: a remote edit can change array positions before effects run.
+    const index =
+      editingAddress === null ? null : props.value().findIndex((value) => parseMailRecipient(value)?.address === editingAddress);
+    if (index === -1) {
+      editingAddress = null;
+      setEditingIndex(null);
+      setValidationError(t().recipientRemovedRemotely);
+      focusInput();
+      return;
+    }
+    const next = commitMailRecipient(props.value(), raw, index);
     if (!next) {
       setValidationError(t().enterValidEmail);
       return;
     }
-    props.onChange(next);
+    editingAddress = null;
     setEditingIndex(null);
+    props.onChange(next);
     setQuery("");
     setSuggestions([]);
     setValidationError(null);
@@ -109,6 +121,7 @@ export default function MailRecipientInput(props: {
   const edit = (index: number) => {
     const recipient = props.value()[index];
     if (recipient === undefined || props.disabled) return;
+    editingAddress = parseMailRecipient(recipient)?.address ?? null;
     setEditingIndex(index);
     setQuery(recipient);
     setSuggestions([]);
@@ -117,6 +130,7 @@ export default function MailRecipientInput(props: {
   };
 
   const cancelEdit = () => {
+    editingAddress = null;
     setEditingIndex(null);
     setQuery("");
     setSuggestions([]);
@@ -132,13 +146,32 @@ export default function MailRecipientInput(props: {
 
   const remove = (index: number, focusAfter = false) => {
     const next = props.value().filter((_, candidateIndex) => candidateIndex !== index);
-    props.onChange(next);
     if (editingIndex() === index) {
+      editingAddress = null;
       setEditingIndex(null);
       setQuery("");
     }
+    props.onChange(next);
     if (focusAfter) queueMicrotask(() => focusPill(Math.min(index, next.length - 1)));
   };
+
+  createEffect(
+    on(
+      props.value,
+      (values) => {
+        if (editingAddress === null) return;
+        const index = values.findIndex((value) => parseMailRecipient(value)?.address === editingAddress);
+        if (index < 0) {
+          // Preserve the typed query, but never apply it to the next person's pill.
+          editingAddress = null;
+          setEditingIndex(null);
+          setValidationError(t().recipientRemovedRemotely);
+          focusInput();
+        } else setEditingIndex(index);
+      },
+      { defer: true },
+    ),
+  );
 
   const handlePillKeyDown = (event: KeyboardEvent, index: number) => {
     if (event.key === "ArrowLeft") {
@@ -309,6 +342,7 @@ export default function MailRecipientInput(props: {
                   }
                 }}
                 onBlur={() => {
+                  if (editingAddress !== parseMailRecipient(recipient)?.address) return;
                   if (query().trim()) add(query());
                   else cancelEdit();
                 }}

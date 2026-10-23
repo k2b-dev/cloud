@@ -23,6 +23,18 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Deferred paste captures an unpublished cell selection | Native caret changes reach the table before selectionchange reaches CodeMirror; delayed parser loading then mistakes publication of the same caret for a changed target. | Test: UI `clipboard-loading.browser.test.ts` publishes the old caret, moves the native selection and pastes in one browser task. The table synchronizes before target capture; peer edits, changed selection or focus, read-only state and disposal still preserve the paste as recovery. |
+| A focused CLI fixture loads unrelated application plugins | Installing the full first-party inventory adds discovery and fixture work to a standalone opener test that starts multiple CLI processes under one deadline. | Test: Cloud CLI `index.test.ts` runs URL validation, unavailable-host checks and opener outcomes with only the custom browser plugin; all assertions and the five-second timeout remain unchanged. See #1762. |
+| Selection escapes a nested editor | Native Select All can select the outer note even while a table cell has focus. Replacing the selection then replaces the whole note. | Tests: UI `text-editor.browser.test.ts` scopes Select All to a numeric cell; Notebooks `shared-text-editor.browser.test.ts` checks cell focus, unchanged surrounding Markdown, and recalculated formulas. The cell handles Select All explicitly. |
+| Local structural Undo loses its recovery owner | Late input can arrive after the column author has undone the insertion and closed the editor. A browser-only undo filter cannot protect that write. | Shared text stores structural provenance in the retained log, validates inverses and delayed ingress before acknowledgement, and preserves rejected input for recovery. Server regression tests cover closed-author input, alignment and appended rows after Undo/Redo. |
+| Undo changes the meaning of surviving text | Restoring or deleting an ordinary character next to a delimiter can move another writer's input to a different cell, even when the original boundary characters survive. | Tests: Cloud `shared-text-history-context-review.test.ts` and `shared-text-history-escape-review.test.ts` require preserved peer cell targets or an unchanged refusal; `shared-text-history-validation.test.ts` compares projected effects with native Yjs Undo/Redo. |
+| Deferred input is cancelled by a newer editor update | Android EditContext can apply the next typed character before a deferred Enter runs, joining two intended lines. | Tests: Notebooks `shared-text-editor.browser.test.ts` sends native Enter immediately followed by typing and checks the newline, list keymap, and slash command in the actual shared editor. |
+| Prose normalization alters pasted source code | Converting a code clipboard as prose collapses indentation or blank lines and can interpret tabs as table separators. | Test: UI `text-editor-paste.behavior.test.ts` covers plain and HTML-only source, line wrappers, whitespace-preserving styles, and fenced, indented and inline code destinations. |
+| Acknowledgement races a document replacement | A publication can be valid when submitted but belong to a retired document version when echoed to a browser. | Tests: Notebooks `ws-lineage.test.ts` and `restore-ack.test.ts` verify authoritative delivery under the row lock and restoration against accepted live content; `yjs-snapshot.integration.test.ts` covers the real SQL-lock/NATS ordering. |
+| Extra table cells disappear in email | The editor shows every cell, but GFM email rendering truncates rows to the header width. | Test: Mail `compose-table-check.test.ts` requires the preview/send renderer to reject extra cells, including signatures, and accept a corrected table without losing its text. Plain text and fenced code stay unchanged. |
+| Minimal UTF-16 edits split a character | A common-prefix or common-suffix optimization edits half of a surrogate pair; Yjs replaces the split character with replacement glyphs. | Test: UI `text-editor/markdown-table.test.ts` applies emoji replacements through real Y.Text splices and checks the resulting text. Both display differencing and final source trimming preserve complete surrogate pairs. |
+| Editor presentation loses the reading position | Switching table widgets to raw Markdown changes heights above the viewport; preserving selection alone can move the selected paragraph off screen. | Test: Notebooks `shared-text-editor.browser.test.ts` switches both ways in a long note, preserving bytes, native selection, and the paragraph at the outer scroll area edge on desktop and phone. Reuse the existing reading-position anchor before the reactive presentation changes. |
+| Editor formatting lost at an output boundary | Shared Markdown widgets depend on classes or calculate formulas before email sanitization, so outgoing HTML loses formatting or replaces source text. | Tests: Mail `compose-renderer.test.ts` checks final HTML and text for rules, strike, alignment, literal formulas, signatures and custom CSS; MIME tests cover fallback and pre-rendered output. Cloud `table-rendering.test.ts` and Notebooks `book-renderer.test.ts` keep default formula results after email rendering. |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
@@ -974,6 +986,61 @@ convention still needs a check or a test.
 - **Error class:** Checking direct dependency versions instead of every resolved copy and its upstream range.
 - **Guard:** The existing nightly `bun audit --audit-level=high` checks the resolved graph. Verify upstream advisories and consumer paths before updating: Fibel still needs a supported SDK release, and the disputed cache advisory has no confirmed behavior fix in 4.3.0. Keep those findings visible rather than adding overrides or weakening the audit.
 
+### Clipboard normalization changed pasted source code
+
+- **What happened:** Pasting code into the shared editor collapsed indentation or blank lines and could turn tabs into a table.
+- **Root cause:** The prose converter ran before checking the destination syntax, then normalized whitespace across literal code blocks.
+- **Error class:** Applying prose normalization to a literal-text context.
+- **Guard:** `text-editor-paste.behavior.test.ts` covers fenced, indented and inline destinations, HTML-only code, editor clipboard line wrappers, and whitespace-preserving styles. Plain clipboard text takes precedence inside code; block conversion preserves literal whitespace.
+
+### A confirmed table replacement lost the source caret
+
+- **What happened:** Applying a per-table Markdown draft closed the source editor without restoring focus to its confirmed cell.
+- **Root cause:** Rebuilding the grid detached the active source editor, and the old cell's selection restoration could then steal its focus.
+- **Error class:** Treating a nested editor's focus as the surrounding widget's selection during an asynchronous redraw.
+- **Guard:** `text-editor-table-source.behavior.test.ts` opens the source from a focused cell, applies a structural receipt, and checks that the draft stays focused until the current target resolver returns focus to the resulting cell.
+
+### A reactive availability update disabled the editor binding
+
+- **What happened:** Appending a table row succeeded, but later characters reached CodeMirror without reaching the shared Y.Text.
+- **Root cause:** The component's mode effect subscribed to host availability read during its imperative grid redraw. A history notification then re-entered CodeMirror during a binding update, and CodeMirror disabled the crashed plugin.
+- **Error class:** Tracking incidental reads inside an imperative editor dispatch as reactive configuration dependencies.
+- **Guard:** `text-editor-host.behavior.test.tsx` changes reactive history availability inside a binding update and checks continued writes and the exception sink. Notebook browser tests also collect console errors, where CodeMirror reports disabled plugins.
+
+### Text convergence alone did not preserve a table edit's target
+
+- **What happened:** Undoing an inserted column after another person's alignment could break the separator; deleting a moved value could be acknowledged without deleting its replacement.
+- **Root cause:** Native text history and ordinary CRDT convergence did not record structural dependencies or validate the original target before acknowledgement.
+- **Error class:** Confirming an operation whose text identities no longer represent its intended table cell.
+- **Guard:** Shared-text structural history retains dependent columns, and admission validates delayed input against retained receipts. Fixed-seed table fuzz, native-history and effects-review regressions cover foreign text, alignment, multi-step Undo/Redo, and stale deletions.
+
+### A pointer-selected completion immediately dismissed its popover
+
+- **What happened:** Selecting the table slash command in WebKit opened and immediately closed its size picker.
+- **Root cause:** Completion ran on mousedown; the same press's release outside the new popover triggered native light dismissal.
+- **Error class:** Opening a dismissible surface before its originating pointer gesture has finished.
+- **Guard:** Notebook browser tests hold the pointer down, then release it and check the picker. Pointer-picked commands wait for release; keyboard commands retain their immediate scheduling.
+
+### An empty shared status row shifted a note on hydration
+
+- **What happened:** Replacing the Notebook preview with the shared editor moved every text line and chart down by 24 px.
+- **Root cause:** The editor reserved an empty status row even when the host supplied its own presentation and no shared status.
+- **Error class:** Adding component chrome above a host-owned content surface during hydration.
+- **Guard:** The existing Notebook preview browser tests compare line, glyph and chart positions within 1 px. Host DOM tests retain table warnings while omitting the unused row; hosts supplying status keep its reserved space.
+
+### The editor received initial focus while its mount was hidden
+
+- **What happened:** A Notebook opened at the correct reading position but lacked its editable caret.
+- **Root cause:** The shared controller became available before Solid removed the mount's hidden state, so the native focus call had no effect.
+- **Error class:** Treating controller readiness as visible DOM readiness during hydration.
+- **Guard:** Notebook initial focus runs after the visibility flush and preserves focus already inside the note. The existing scrolled-preview browser tests require the caret, and recovery-surface tests protect an existing selection.
+
+### An eager browser fixture hid deferred loading and consumed the interaction budget
+
+- **What happened:** The Notebook table-source recovery test exceeded its unchanged five-second deadline in WebKit before completing the second edit.
+- **Root cause:** Its IIFE parsed deferred diagram modules on every navigation. The 16.5 MB script cost about 2.7 seconds to open; the production-style split build reduced the entry script to 2.4 MB and the measured opening to 1.2 seconds.
+- **Error class:** A browser fixture whose module-loading behavior differs from the application.
+- **Guard:** The fixture serves the source build's split ESM artifacts with production conditions. The original source-recovery flow keeps its deadline and assertions; code-paste coverage waits for the actual deferred input before checking the entire fenced text and indentation.
 ### The notebook AI action stretched beside View
 
 - **What happened:** “Edit with AI” filled the remaining row and stood taller than “View”.
@@ -987,6 +1054,13 @@ convention still needs a check or a test.
 - **Root cause:** Its fixture added two days to the real clock, then used fixed UTC times while asserting summer local times.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
+
+### Replacing text moved a peer's insertion inside the replacement
+
+- **What happened:** The Mail model regression produced `P peerROJECT notes` when a peer added text after `Project` and another writer changed it to `PROJECT`.
+- **Root cause:** Deleting the original range before inserting its replacement discarded the replacement's right-edge anchor and let writer ordering decide where the peer text appeared.
+- **Error class:** A collaborative replacement loses its original insertion boundary.
+- **Guard:** Replacement inserts before deleting the original range. Model tests cover revision and local subject edits with fixed peer identities on either side of the writer's ordering.
 
 ## Add a lesson
 
@@ -1002,3 +1076,17 @@ updates that class's row in the table.
 
 - **Error class:** asynchronous UI locator race. The Pulse Back test could resolve the settings form's Discard button before the confirmation appeared, then wait on that hidden button.
 - **Guard:** the test waits for the named confirmation dialog and its question before clicking its Discard button. It still checks Back, Escape, Cancel, draft preservation and the resulting URL.
+
+### Draft size validation happened after rendering work
+
+- **What happened:** A renderer limit regression spent its test budget parsing an input already larger than Mail's public draft body limit.
+- **Root cause:** The internal renderer enforced output size but did not reject the oversized input before template, Markdown and CSS work.
+- **Error class:** Performing expensive work before validating the owning application's input budget.
+- **Guard:** `compose-renderer.test.ts` submits one character beyond the draft body limit and asserts rejection before Markdown rendering. Existing output-size and complexity cases retain their original limits.
+
+### An editor callback republished remote draft text
+
+- **What happened:** A remote body change could be inserted again when CodeMirror reported it before the shared document projected its complete content to the composer.
+- **Root cause:** Both the Yjs projection and the editor callback wrote the shared body through the application's local edit path.
+- **Error class:** Feeding a remote projection back into a local writer.
+- **Guard:** The actual shared-composer DOM regression asserts zero publications for remote input, then exactly one publication for a local edit with the exact merged body. Shared bodies now project only through Yjs; exclusive drafts retain the editor callback.

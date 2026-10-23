@@ -30,6 +30,8 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
+| `@k2b/ui/text-editor` | Supported, SolidJS | [Markdown editor with editable table cells](/en/ui/input/text-editor); application-injected collaboration |
+| `@k2b/ui/text-editor/model` | Supported, portable | Pure Markdown table parsing and minimal source edits for the editor and server actions |
 | `@k2b/stdlib/solid` | Supported, SolidJS | Owner-local queries, mutations, and browser interaction primitives |
 | `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters; `hintOpen` and `markHintSeen` for [one-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/workflows` | Supported | Workflow definitions and authoring contracts |
@@ -241,6 +243,32 @@ and types come from `@k2b/cloud/shared`. See
 [runtime configuration guide](/en/docs/operations/runtime-configuration)
 documents all process variables; that larger list is not the shape of `env`.
 
+### Render Markdown for email
+
+Use `markdown.renderSync(source, { links: "plain", output: "email" })` from
+`@k2b/cloud/shared` to produce HTML for an email renderer. `markdown.render`
+accepts the same options. The email output keeps GFM strikethrough and places
+column alignment on table headers and cells as `align` attributes. Table
+formulas and math render as literal source without evaluation. It needs no
+Cloud table styles or formula widgets.
+
+```ts
+import { markdown, sanitizeEmailHtml } from "@k2b/cloud/shared";
+
+const html = sanitizeEmailHtml(
+  markdown.renderSync("~~Previous price~~\n\n| Amount |\n| ---: |\n| =1+2 |", {
+    links: "plain",
+    output: "email",
+  }),
+);
+```
+
+Apply the email sanitizer and your email styling before delivery. The Mail
+application uses this rendering mode for previews, signatures, provider draft
+copies, and outgoing messages. Its mailbox CSS may override column alignment. Omitting
+`output` keeps the existing Cloud rendering, including computed table
+formulas; `links: "plain"` alone does not disable formula evaluation.
+
 ### Evaluate Markdown table cells
 
 Import `evaluateTableCell(row, column, context)` and `EvalResult` from
@@ -308,6 +336,8 @@ for execution, model access, and usage accounting.
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
 | `@k2b/cloud/shared-text` | Supported, server-only | Retained collaborative text logs and application-owned snapshot writes | [Shared text documents](/en/docs/data/shared-text-documents) |
+| `@k2b/cloud/browser/shared-text` | Supported, browser | Shared provider, offline storage, action history and anchored table transport | [Shared text documents](/en/docs/data/shared-text-documents) |
+| `@k2b/cloud/browser/session` | Supported, browser | Sign out with cross-tab offline-document cleanup | [Offline documents](/en/docs/data/shared-text-documents#keep-unconfirmed-input-on-the-device) |
 | `@k2b/cloud/ai/browser` | Supported, client | Launch Assistant drafts; use SSE parsing, attachment helpers, and client-tool input and output schemas in browser or CLI clients | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/solid` | Supported, browser | AI chat controller over the conversation SSE stream | [Chat interface](/en/docs/ai/chat-interface) |
 | `@k2b/cloud/ai/tools` | Advanced, server-only | Mount Cloud's standard agent-tool factories, including document-aware `read_file` and conversation-file `markdown_to_pdf` and `html_to_pdf` | [Files and Projects](/en/docs/ai/files-projects-and-personalization) |

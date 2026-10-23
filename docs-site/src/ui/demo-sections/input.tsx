@@ -49,6 +49,7 @@ import {
   TagsInput,
   TextInput,
 } from "@k2b/ui";
+import { TextEditor } from "@k2b/ui/text-editor";
 import { createSignal, createUniqueId } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { QrScannerDemo } from "./mobile-navigation";
@@ -1648,6 +1649,44 @@ const demos: DemoSection = {
   text: () => (
     <DemoGrid columns="one">
       <TextDemo />
+    </DemoGrid>
+  ),
+  "text-editor": () => (
+    <DemoGrid columns="one">
+      <DemoCard
+        id="text-editor"
+        chip={{ kind: "component", name: "TextEditor", from: "@k2b/ui/text-editor" }}
+        description="Click a cell to type. Tab moves to the next cell; Enter appends a row. This local example does not save text."
+        code={'<TextEditor label="Note" initialValue={markdown} maxLength={2_097_152} />'}
+      >
+        <TextEditor
+          label="Note"
+          initialValue={
+            "An **editable** table.\n\n| Item | Quantity |\n| --- | ---: |\n| Paper | 4 |\n| Ink | 2 |\n\nContinue writing here."
+          }
+          maxLength={2_097_152}
+        />
+      </DemoCard>
+      <DemoCard
+        chip={{ kind: "component", name: "TextEditor", from: "@k2b/ui/text-editor" }}
+        code={'<TextEditor label="Table" initialValue={markdown} maxLength={2_097_152} />'}
+        id="text-editor-check"
+        description="Extra cells remain visible until the header includes them."
+      >
+        <TextEditor
+          label="Table to check"
+          initialValue={"| Item | Quantity |\n| --- | --- |\n| Paper | 4 | Extra detail |"}
+          maxLength={2_097_152}
+        />
+      </DemoCard>
+      <DemoCard
+        chip={{ kind: "component", name: "TextEditor", from: "@k2b/ui/text-editor" }}
+        code={'<TextEditor label="Loading" loading maxLength={2_097_152} />'}
+        id="text-editor-loading"
+        description="Loading keeps the controls and text area in place."
+      >
+        <TextEditor label="Loading note" loading maxLength={2_097_152} />
+      </DemoCard>
     </DemoGrid>
   ),
   "markdown-editor": () => (

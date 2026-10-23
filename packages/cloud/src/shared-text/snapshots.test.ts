@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import {
+  ConflictError,
   type Job,
   type JobContext,
   type JobProcessOptions,
@@ -7,12 +8,14 @@ import {
   RetentionGapError,
   type Topic,
   type TopicEvent,
+  type TopicPublish,
   type Worker,
 } from "@k2b/sync";
 import * as Y from "yjs";
 import { createDoc } from "./documents";
 import { MalformedSharedTextEventError, SHARED_TEXT_NAME, toBase64 } from "./events";
 import {
+  type SharedTextSnapshotRepair,
   type SharedTextSnapshotRequest,
   type SharedTextSnapshotStore,
   type SharedTextStoredState,
@@ -52,8 +55,9 @@ const event = (seq: number, docId = "doc", ageMs = 1000): TopicEvent<SharedTextS
     doc.destroy();
   }
 };
-const fixture = () => {
+const fixture = (repair?: SharedTextSnapshotRepair) => {
   const calls: string[] = [];
+  const publications: TopicPublish<SharedTextSyncEvent>[] = [];
   const rows: Array<{ docId: string; cursor: string | null }> = [];
   const states = new Map<string, SharedTextStoredState>();
   states.set("doc", { state: null, cursor: cursor(0), text: null, restoreRevision: "revision" });
@@ -74,12 +78,30 @@ const fixture = () => {
   const warnings: unknown[][] = [];
   const infos: unknown[][] = [];
   const lifecycle: unknown[] = [];
-  const control: { replayError?: Error; replayHook?: () => Promise<void>; yielded: number; closed: number; firstSequence: number } = {
+  const control: {
+    replayError?: Error;
+    replayHook?: () => Promise<void>;
+    beforePublish?: () => void;
+    yielded: number;
+    closed: number;
+    firstSequence: number;
+  } = {
     yielded: 0,
     closed: 0,
     firstSequence: 1,
   };
   const topic = {
+    publish: async (input: TopicPublish<SharedTextSyncEvent>) => {
+      publications.push(input);
+      control.beforePublish?.();
+      if (input.expectedAfter !== (latest.get(input.tenantId ?? "") ?? null)) throw new ConflictError("head changed");
+      const seq = sequence(head.value) + 1;
+      const next = cursor(seq);
+      head.value = next;
+      latest.set(input.tenantId!, next);
+      events.push({ cursor: next, sequence: seq, eventId: next, tenantId: input.tenantId!, publishedAt: NOW, data: input.data });
+      return { cursor: next, eventId: next, messageId: next, streamSequence: seq, duplicate: false };
+    },
     cursorSequence: sequence,
     cursorAt: cursor,
     head: async () => {
@@ -163,7 +185,7 @@ const fixture = () => {
     error() {},
     debug() {},
   };
-  const pipeline = sharedText.snapshots({ log, store, job: () => job, logger });
+  const pipeline = sharedText.snapshots({ log, store, job: () => job, logger, repair });
   const context = (signal = new AbortController().signal): JobContext<SharedTextSnapshotRequest> => ({
     jobId: "j",
     key: "doc:5",
@@ -180,6 +202,7 @@ const fixture = () => {
   };
   return {
     pipeline,
+    publications,
     job,
     log,
     store,
@@ -646,4 +669,166 @@ test("backlog finds the oldest update across pages and uses the final head witho
   expect(f.calls.filter((call) => call === "latest")).toHaveLength(5001);
   expect(f.replays.map(({ tenantId }) => tenantId)).toEqual(["05000", "00000"]);
   expect(f.control.yielded).toBe(2);
+});
+
+test("repair publishes insertion-only changes at the captured tenant head before the snapshot", async () => {
+  const f = fixture({ maxLength: 100, plan: (text) => [{ from: text.length, to: text.length, insert: "!" }] });
+  await f.run();
+  expect(f.publications).toHaveLength(1);
+  expect(f.publications[0]).toMatchObject({ tenantId: "doc", expectedAfter: cursor(5) });
+  expect(f.publications[0]!.data.actor).toBeUndefined();
+  expect(f.saves[0]![1]).toMatchObject({ text: "text5!", cursor: cursor(11), actor: null, restoreRevision: "revision" });
+  expect(f.saves[0]![1].contributors).toEqual([{ kind: "user", id: "writer", lastContributedAt: new Date(NOW.getTime() - 1000) }]);
+  const reader = new Y.Doc();
+  try {
+    for (const entry of f.events) Y.applyUpdate(reader, Buffer.from(entry.data.payload, "base64"));
+    expect(reader.getText(SHARED_TEXT_NAME).toString()).toBe("text5!");
+  } finally {
+    reader.destroy();
+  }
+});
+
+test("repair conflicts never project the stale plan and retry reparses current text", async () => {
+  let race = true;
+  const observed: string[] = [];
+  const f = fixture({
+    maxLength: 100,
+    plan: (text) => {
+      observed.push(text);
+      if (race) {
+        race = false;
+        f.events.push(event(11));
+        f.latest.set("doc", cursor(11));
+        f.head.value = cursor(11);
+      }
+      return [{ from: text.length, to: text.length, insert: "!" }];
+    },
+  });
+  await expect(f.run()).rejects.toBeInstanceOf(ConflictError);
+  expect(f.saves).toEqual([]);
+  await f.run();
+  expect(observed[1]).toContain("text11");
+  expect(f.saves[0]![1].text).toContain("text11");
+  expect(f.saves[0]![1].text.endsWith("!")).toBe(true);
+  expect(f.publications[1]!.expectedAfter).toBe(cursor(11));
+});
+
+test("repair can settle an already saved document or a document without retained events", async () => {
+  for (const latest of [cursor(5), null]) {
+    const f = fixture({
+      maxLength: 100,
+      plan: (text) => (text.endsWith("!") ? [] : [{ from: text.length, to: text.length, insert: "!" }]),
+    });
+    f.states.set("doc", { state: null, cursor: cursor(10), text: "saved", restoreRevision: "revision" });
+    if (latest === null) f.latest.delete("doc");
+    await f.run();
+    expect(f.replays).toEqual([]);
+    expect(f.publications[0]!.expectedAfter).toBe(latest);
+    expect(f.saves[0]![1].text).toBe("saved!");
+    const input = f.saves[0]![1];
+    f.states.set("doc", { state: input.state, text: input.text, cursor: input.cursor, restoreRevision: input.restoreRevision });
+    await f.run();
+    expect(f.publications).toHaveLength(1);
+    expect(f.saves).toHaveLength(1);
+  }
+});
+
+test("repair refuses destructive, oversized or split-Unicode plans before publication", async () => {
+  for (const plan of [
+    () => [{ from: 0, to: 1, insert: "" }],
+    () => [{ from: 0, to: 0, insert: "x".repeat(101) }],
+    () => [{ from: 1, to: 1, insert: "!" }],
+  ]) {
+    const f = fixture({ maxLength: 100, plan });
+    f.latest.delete("doc");
+    f.states.set("doc", { state: null, cursor: null, text: "😀", restoreRevision: "r" });
+    await expect(f.run()).rejects.toBeInstanceOf(RangeError);
+    expect(f.publications).toEqual([]);
+    expect(f.saves).toEqual([]);
+  }
+});
+
+test("repair is skipped while pending dependencies are preserved in the snapshot", async () => {
+  const f = fixture({
+    maxLength: 100,
+    plan: () => {
+      throw new Error("Must not repair pending state");
+    },
+  });
+  const writer = new Y.Doc();
+  try {
+    writer.clientID = 444;
+    const text = writer.getText(SHARED_TEXT_NAME);
+    text.insert(0, "base");
+    const vector = Y.encodeStateVector(writer);
+    text.insert(4, "late");
+    f.events[0]!.data.payload = toBase64(Y.encodeStateAsUpdate(writer, vector));
+    await f.run();
+    expect(f.publications).toEqual([]);
+    const saved = new Y.Doc();
+    try {
+      Y.applyUpdate(saved, f.saves[0]![1].state);
+      expect(saved.store.pendingStructs).not.toBeNull();
+      Y.applyUpdate(saved, Y.encodeStateAsUpdate(writer));
+      expect(saved.getText(SHARED_TEXT_NAME).toString()).toBe("baselate");
+    } finally {
+      saved.destroy();
+    }
+  } finally {
+    writer.destroy();
+  }
+});
+
+test("a repair accepted across a store-only restore cannot delete restored text or create missing dependencies on retry", async () => {
+  for (const replacement of [false, true]) {
+    const original = new Y.Doc({ gc: false }),
+      current = new Y.Doc({ gc: false }),
+      unrelated = new Y.Doc();
+    original.clientID = 101;
+    current.clientID = 202;
+    unrelated.clientID = 303;
+    try {
+      original.getText(SHARED_TEXT_NAME).insert(0, "TOKEN keep");
+      const oldVersion = Y.encodeStateAsUpdate(original);
+      Y.applyUpdate(current, oldVersion);
+      current.getText(SHARED_TEXT_NAME).delete(0, 5);
+      unrelated.getText(SHARED_TEXT_NAME).insert(0, "RESTORED");
+      const restoredState = replacement ? Y.encodeStateAsUpdate(unrelated) : oldVersion;
+      const restoredText = replacement ? "RESTORED" : "TOKEN keep";
+      const f = fixture({ maxLength: 100, plan: (text) => [{ from: text.length, to: text.length, insert: "!" }] });
+      f.states.set("doc", { state: Y.encodeStateAsUpdate(current), text: " keep", cursor: cursor(10), restoreRevision: "old" });
+      f.control.beforePublish = () => {
+        f.control.beforePublish = undefined;
+        // Restore advances the store lineage, but deliberately not the tenant head.
+        f.states.set("doc", { state: restoredState, text: restoredText, cursor: cursor(10), restoreRevision: "restored" });
+      };
+      const originalSave = f.store.save;
+      const save = spyOn(f.store, "save").mockImplementation(async (id, input) => {
+        if (f.states.get(id)!.restoreRevision !== input.restoreRevision) throw new Error("restored during repair");
+        await originalSave(id, input);
+      });
+      try {
+        await expect(f.run()).rejects.toThrow("restored during repair");
+        expect(f.publications[0]!.data.restoreRevision).toBe("old");
+        expect(f.saves).toEqual([]);
+        await f.run();
+        expect(f.saves[0]![1]).toMatchObject({ text: `${restoredText}!`, restoreRevision: "restored" });
+        expect(f.publications[1]!.data.restoreRevision).toBe("restored");
+        const reader = new Y.Doc();
+        try {
+          Y.applyUpdate(reader, f.saves[0]![1].state);
+          expect(reader.store.pendingStructs).toBeNull();
+          expect(reader.store.pendingDs).toBeNull();
+        } finally {
+          reader.destroy();
+        }
+      } finally {
+        save.mockRestore();
+      }
+    } finally {
+      original.destroy();
+      current.destroy();
+      unrelated.destroy();
+    }
+  }
 });

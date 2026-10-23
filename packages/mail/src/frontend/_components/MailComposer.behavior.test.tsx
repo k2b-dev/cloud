@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import { setImmediate } from "node:timers";
+import { EditorView } from "@codemirror/view";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { contactDirectory, defineCapabilities } from "@k2b/cloud/contracts";
+import { encoding } from "@k2b/stdlib";
 import { delegateEvents, isServer, render } from "solid-js/web";
+import * as Y from "yjs";
 import { z } from "zod";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 import {
@@ -15,6 +18,7 @@ import {
   materializeDraftSeedInputSchema,
   type SenderIdentity,
 } from "../../contracts";
+import { createDraftDocument, DRAFT_BODY, readDraftDocument, writeLocalDraftHeaders } from "../../lib/draft-document";
 
 const now = "2026-10-11T10:00:00.000Z";
 const identity = (id: string, label: string, signature: string): SenderIdentity => ({
@@ -124,7 +128,7 @@ class OfflineWebSocket {
   readyState = OfflineWebSocket.CONNECTING;
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
-  constructor() {
+  constructor(readonly url?: string) {
     OfflineWebSocket.instances.push(this);
   }
   open() {
@@ -136,7 +140,7 @@ class OfflineWebSocket {
   }
   onclose = null;
   onerror = null;
-  send() {}
+  send(_data: string) {}
   close() {
     this.readyState = OfflineWebSocket.CLOSED;
   }
@@ -263,8 +267,10 @@ describe("MailComposer signature choice", () => {
       ),
       dom.root,
     );
-    if (settle) await settle();
-    else await waitFor(() => Boolean(dom.root.querySelector<HTMLButtonElement>("footer button.mail-compose-action:not(:disabled)")));
+    if (settle) {
+      await settle();
+      for (let attempt = 0; attempt < 100 && !dom.root.querySelector(".cm-content"); attempt++) await settle();
+    } else await waitFor(() => Boolean(dom.root.querySelector<HTMLButtonElement>("footer button.mail-compose-action:not(:disabled)")));
   };
   const trigger = () => dom.root.querySelector<HTMLButtonElement>("footer button.mail-composer-signature")!;
   const choose = (label: string, role: "menuitemradio" | "menuitem" = "menuitemradio") => {
@@ -274,6 +280,87 @@ describe("MailComposer signature choice", () => {
     expect(option).toBeDefined();
     option!.click();
   };
+
+  test("shared projection preserves an open empty Cc and its unfinished query without republishing remote input", async () => {
+    const offline = await import("@k2b/cloud/browser/shared-text");
+    const generations = spyOn(offline, "listSharedTextOfflineGenerations").mockResolvedValue([]);
+    const base = draftEditableContentInputSchema.strip().parse(initialDraft);
+    const document = createDraftDocument(base);
+    const bytes = Y.encodeStateAsUpdate(document);
+    const cursor = "s6t.fixture.1";
+    const requests: string[] = [];
+    const fetchWithFixtures = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        const path = new URL(request.url).pathname;
+        requests.push(path);
+        if (path.endsWith("/document"))
+          return Response.json({
+            generation: "1",
+            revision: 1,
+            lifecycle: "draft",
+            historyComplete: true,
+            fresh: { state: encoding.toBase64(bytes), cursor, content: base },
+            durable: { state: encoding.toBase64(bytes), cursor, content: base },
+            frozen: null,
+          });
+        return fetchWithFixtures(request);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    localStorage.setItem("cloud:mail:shared:Usr001:Draft1:1:remember", "no");
+    const settle = async () => {
+      await Bun.sleep(0);
+      const socket = OfflineWebSocket.instances.find((socket) => socket.url && new URL(socket.url).pathname.endsWith("/document/socket"));
+      if (socket?.readyState === 0) {
+        socket.open();
+        socket.message({ type: "replayReady", payload: { docId: "Draft1", generation: "1", cursor, peerId: "peer1" } });
+      }
+    };
+    try {
+      delegateEvents(["click", "input"]);
+      await mount("en", { ...initialDraft, editMode: "shared", generation: "1" }, undefined, undefined, settle);
+      await waitFor(() => Boolean(dom.root.querySelector<HTMLButtonElement>("footer button.mail-compose-action:not(:disabled)")));
+      Array.from(dom.root.querySelectorAll("button"))
+        .find((button) => button.textContent === "Cc/Bcc")!
+        .click();
+      const cc = dom.root.querySelector<HTMLInputElement>('input[aria-label="Cc recipients"]')!;
+      expect(cc).not.toBeNull();
+      cc.value = "unfinished recipient";
+      cc.dispatchEvent(new Event("input", { bubbles: true }));
+      const socket = OfflineWebSocket.instances.find((socket) => socket.url && new URL(socket.url).pathname.endsWith("/document/socket"))!;
+      const send = spyOn(socket, "send");
+      const vector = Y.encodeStateVector(document);
+      writeLocalDraftHeaders(document, base, { ...base, subject: "Peer subject" });
+      document.getText(DRAFT_BODY).insert(document.getText(DRAFT_BODY).length, " peer");
+      socket.message({
+        type: "syncPush",
+        payload: {
+          docId: "Draft1",
+          generation: "1",
+          updates: [{ generation: "1", payload: encoding.toBase64(Y.encodeStateAsUpdate(document, vector)), cursor }],
+        },
+      });
+      await waitFor(() => dom.root.querySelector<HTMLInputElement>('input[aria-label="Subject"]')?.value === "Peer subject");
+      expect(dom.root.querySelector('input[aria-label="Cc recipients"]')).toBe(cc);
+      expect(cc.value).toBe("unfinished recipient");
+      expect(readDraftDocument(document).body).toContain(" peer");
+      expect(send.mock.calls.filter(([raw]) => JSON.parse(raw).type === "syncPublish")).toHaveLength(0);
+      const view = EditorView.findFromDOM(dom.root.querySelector<HTMLElement>(".cm-editor")!)!;
+      expect(view.state.doc.toString()).toBe("Hello peer");
+      view.dispatch({ changes: { from: view.state.doc.length, insert: " local" }, userEvent: "input.type" });
+      const publications = send.mock.calls.map(([raw]) => JSON.parse(raw)).filter((packet) => packet.type === "syncPublish");
+      expect(publications).toHaveLength(1);
+      Y.applyUpdate(document, encoding.fromBase64(publications[0].payload.payload));
+      expect(readDraftDocument(document).body).toBe("Hello peer local");
+      expect(requests.some((path) => path.endsWith("/lease"))).toBe(false);
+      send.mockRestore();
+    } finally {
+      generations.mockRestore();
+      document.destroy();
+    }
+  });
 
   test("restoring a recovery copy renews an expired own lease and retries once", async () => {
     jest.useFakeTimers();
@@ -335,7 +422,7 @@ describe("MailComposer signature choice", () => {
       await flush();
       expect(restoreTokens).toEqual(["expired-token", "renewed-token"]);
       expect(operations).toEqual(["acquire", "restore", "acquire", "restore"]);
-      expect(dom.root.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Recovered text");
+      expect(EditorView.findFromDOM(dom.root.querySelector<HTMLElement>(".cm-content")!)?.state.doc.toString()).toBe("Recovered text");
       expect(errors).not.toHaveBeenCalled();
       expect(restoredNotice).toHaveBeenCalledTimes(1);
     } finally {
@@ -371,21 +458,22 @@ describe("MailComposer signature choice", () => {
     );
     try {
       await mount("en", initialDraft, undefined, initialSeed, flush);
-      const editor = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
+      const editor = dom.root.querySelector<HTMLElement>(".cm-content")!;
+      const view = EditorView.findFromDOM(editor)!;
       editor.focus();
-      editor.value = "First lines";
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "First lines" } });
       jest.advanceTimersByTime(700);
       await flush();
       expect(saves).toHaveLength(1);
       expect(grant).toBeDefined();
-      expect(editor.disabled).toBe(false);
+      expect(view.state.readOnly).toBe(false);
       expect(dom.document.activeElement).toBe(editor);
       // Text typed while the lease is pending survives a reload: the materialized draft keeps its journal.
-      editor.value = "First lines and more";
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "First lines and more" } });
       await flush();
-      expect(JSON.parse(localStorage.getItem("cloud:mail:draft:Box001:Draft1") ?? "null")?.content?.body).toBe("First lines and more");
+      expect(JSON.parse(localStorage.getItem("cloud:user:Usr001:mail:cloud:mail:draft:Box001:Draft1") ?? "null")?.content?.body).toBe(
+        "First lines and more",
+      );
       grant?.(
         Response.json({
           token: "seed-token",
@@ -395,9 +483,9 @@ describe("MailComposer signature choice", () => {
         }),
       );
       await flush();
-      expect(editor.disabled).toBe(false);
+      expect(view.state.readOnly).toBe(false);
       expect(dom.document.activeElement).toBe(editor);
-      expect(editor.value).toBe("First lines and more");
+      expect(view.state.doc.toString()).toBe("First lines and more");
       expect(saves.map((save) => save.body)).toEqual(["First lines", "First lines and more"]);
       jest.advanceTimersByTime(10_000);
       await flush();
@@ -431,9 +519,10 @@ describe("MailComposer signature choice", () => {
     );
     try {
       await mount("en", initialDraft, undefined, undefined, flush);
-      const editor = dom.root.querySelector<HTMLTextAreaElement>("textarea");
+      const editor = dom.root.querySelector<HTMLElement>(".cm-content");
+      const view = EditorView.findFromDOM(editor!)!;
       expect(editor).not.toBeNull();
-      expect(editor!.disabled).toBe(false);
+      expect(view.state.readOnly).toBe(false);
       editor!.focus();
       expect(dom.document.activeElement).toBe(editor);
       const socket = OfflineWebSocket.instances.at(-1)!;
@@ -442,7 +531,7 @@ describe("MailComposer signature choice", () => {
       socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: null } });
       await flush();
       expect(finishHeartbeat).toBeDefined();
-      expect(editor!.disabled).toBe(false);
+      expect(view.state.readOnly).toBe(false);
       expect(dom.document.activeElement).toBe(editor);
       finishHeartbeat?.(
         Response.json({
@@ -453,7 +542,7 @@ describe("MailComposer signature choice", () => {
         }),
       );
       await flush();
-      expect(editor!.disabled).toBe(false);
+      expect(view.state.readOnly).toBe(false);
       expect(dom.document.activeElement).toBe(editor);
     } finally {
       jest.useRealTimers();
@@ -667,9 +756,18 @@ describe("MailComposer signature choice", () => {
     expect(saves[0]).toMatchObject({ signatureTemplateId: null, body: "Hello" });
   });
 
+  test("unowned legacy device input is neither displayed nor deleted by a new user session", async () => {
+    const raw = JSON.stringify({ revision: 1, content: { ...initialDraft, body: "Unknown owner's private text" } });
+    localStorage.setItem("cloud:mail:draft:Box001:Draft1", raw);
+    await mount();
+    expect(localStorage.getItem("cloud:mail:draft:Box001:Draft1")).toBe(raw);
+    expect(dom.root.textContent).not.toContain("Unknown owner's private text");
+    expect(saves.some((saved) => saved.body.includes("Unknown owner's private text"))).toBe(false);
+  });
+
   test("local recovery restores its signature without selecting the sender default", async () => {
     localStorage.setItem(
-      "cloud:mail:draft:Box001:Draft1",
+      "cloud:user:Usr001:mail:cloud:mail:draft:Box001:Draft1",
       JSON.stringify({
         revision: 1,
         content: {
@@ -695,7 +793,7 @@ describe("MailComposer signature choice", () => {
 
   test("local recovery preserves an inline signature from a journal without a signature choice", async () => {
     localStorage.setItem(
-      "cloud:mail:draft:Box001:Draft1",
+      "cloud:user:Usr001:mail:cloud:mail:draft:Box001:Draft1",
       JSON.stringify({
         revision: 1,
         content: {

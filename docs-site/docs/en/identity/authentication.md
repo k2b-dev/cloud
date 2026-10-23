@@ -186,6 +186,21 @@ Successful browser sign-ins also set a separate 90-day
 [browser cookie](/en/docs/operations/sign-in-locations#browser-cookie) that is
 kept on sign-out; it does not authenticate requests.
 
+Custom browser sign-out controls use `signOutBrowserSession(userId, errorMessage)`
+from `@k2b/cloud/browser/session` to clear that user's local draft storage as well
+as their credential. Keep failures visible until the user can retry. Its
+`POST /api/auth/logout` request supplies `X-Cloud-Logout-User` with the rendered
+user UUID, or `none` for an anonymous page. A changed account answers `409`;
+the page must refresh before retrying. Without this optional header, the API
+retains its idempotent current-credential logout behavior.
+
+Server handlers can pass the same expectation to
+`auth.session.delete(c, expectedUserId)`: it returns `false` on an account
+mismatch and `true` after revoking the matching or absent credential. Bound
+logout leaves the cookie unchanged; the revoked token no longer authenticates.
+This lets a newer sign-in in another tab keep its cookie when responses arrive
+out of order. Unbound calls retain cookie deletion.
+
 Signing out of one browser ends only that session. Signing an account out
 everywhere with `auth.session.revokeAllForUser` invalidates every older session,
 ends its OAuth sign-ins and access tokens at the next request, and revokes its

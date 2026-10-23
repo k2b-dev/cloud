@@ -206,6 +206,7 @@ export default ssr<AuthContext>(async (c) => {
                   userId={user.id}
                   displayName={user.displayName}
                   initialSnapshot={selectedNote.yjsSnapshot}
+                  initialRestoreRevision={selectedNote.yjsRestoreRevision}
                   initialContent={readonlyMode && !selectedNote.yjsSnapshot ? selectedNote.contentMd : null}
                   initialPanelOpen={detailPanelOpen}
                   initialRichMode={ctx.settings.richMode}

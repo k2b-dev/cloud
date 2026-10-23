@@ -183,6 +183,8 @@ export const notebooksService = {
     create: notes.create,
     update: notes.update,
     editContent: notes.editContent,
+    tableAction: notes.tableAction,
+    acceptYjsUpdate: notes.acceptYjsUpdate,
     remove: notes.remove,
     move: notes.move,
     resetOrder: notes.resetOrder,
@@ -190,6 +192,7 @@ export const notebooksService = {
     isLocked: notes.isLocked,
     lock: notes.lock,
     getYjsStateWithCursor: notes.getYjsStateWithCursor,
+    deliverAtRestoreRevision: notes.deliverAtRestoreRevision,
     getAnchoredYjsState: notes.getAnchoredYjsState,
     adoptSnapshotAtHead: notes.adoptSnapshotAtHead,
     versions: {

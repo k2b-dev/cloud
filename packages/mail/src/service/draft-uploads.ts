@@ -12,6 +12,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { requireDraftAccess } from "./access";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import { sha256Text } from "./canonical";
+import { recordDraftDocumentRevision } from "./draft-document-revision";
 import { requireDraftLeaseAvailable } from "./draft-leases";
 import { MAX_DRAFT_ATTACHMENTS } from "./draft-provider-mime";
 import { queueDraftProjectionInTransaction } from "./draft-provider-projection";
@@ -422,6 +423,7 @@ export const finalizeDraftAttachmentUpload = async (params: {
         RETURNING revision
       `;
       if (!updated) return fail(err.internal("Draft attachment update returned no row"));
+      await recordDraftDocumentRevision({ db: tx, context: params.context, mailboxId: params.mailboxId, draftId });
       await tx`
         UPDATE mail.draft_attachment_uploads
         SET state = 'attached', attachment_id = ${attachment.id}::uuid, finalized_revision = ${Number(updated.revision)}, blob_id = ${blobId}::uuid

@@ -1,5 +1,6 @@
 import { lazySync } from "@k2b/cloud";
 import { type SharedTextActor, type SharedTextSnapshotStore, sharedText, sharedTextSnapshotJobConfig } from "@k2b/cloud/shared-text";
+import { repairTables } from "@k2b/ui/text-editor/model";
 import { sql } from "bun";
 
 export const log = sharedText.define({
@@ -55,4 +56,5 @@ export const draftSnapshots = (store: SharedTextSnapshotStore) =>
     log,
     job: lazySync((sync) => sync.job(snapshotConfig)),
     store,
+    repair: { maxLength: 2_097_152, plan: (text) => repairTables(text, 2_097_152) },
   });

@@ -279,12 +279,13 @@ export const slashCommands: SlashCommand[] = [
   },
   {
     name: "table",
+    aliases: ["tabelle"],
     label: "Table",
     icon: "ti-table",
     section: "Insert",
     description: "Insert a markdown table — try /table2x4 for direct sizing",
     // Power-cmd: `/table<R>x<C>` inserts an R×C table immediately,
-    // bypassing the modal. Bare `/table` keeps the modal flow.
+    // bypassing the picker. Bare `/table` opens the shared size picker.
     params: /^(\d+)x(\d+)$/,
     run: (view, ctx, params) => {
       if (params) {
@@ -292,7 +293,7 @@ export const slashCommands: SlashCommand[] = [
         const cols = Number.parseInt(params[2]!, 10);
         return insertTable(view, { rows, cols }, ctx.locale);
       }
-      return insertTable(view, undefined, ctx.locale);
+      if (!view.state.readOnly) ctx.openTablePicker();
     },
   },
   {

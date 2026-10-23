@@ -117,7 +117,7 @@ const localizeProgressLabel = (label: string, locale: string): string => {
 
 const renderProgressCell = (progress: ProgressValue, alignCls: string, title: string, locale: string): string => {
   const pct = Math.round(progress.ratio * 100);
-  return `<td><span class="md-table-cell md-table-progress${alignCls}" title="${escapeHtml(title)}"><span class="md-table-progress-track" aria-hidden="true"><span class="md-table-progress-fill" style="width:${pct}%"></span></span><span>${escapeHtml(localizeProgressLabel(progress.label, locale))}</span></span></td>`;
+  return `<span class="md-table-cell md-table-progress${alignCls}" title="${escapeHtml(title)}"><span class="md-table-progress-track" aria-hidden="true"><span class="md-table-progress-fill" style="width:${pct}%"></span></span><span>${escapeHtml(localizeProgressLabel(progress.label, locale))}</span></span>`;
 };
 
 export const formatFormulaValue = (value: EvalValue, locale?: string): string => {
@@ -157,7 +157,7 @@ export const formatFormulaError = (error: EvalError, locale?: string): string =>
   return error.suggestion ? `${message}\n→ ${t.suggestion({ value: error.suggestion })}` : message;
 };
 
-const renderBodyCell = (
+const renderBodyCellContent = (
   cell: string,
   alignCls: string,
   result: EvalResult,
@@ -167,44 +167,53 @@ const renderBodyCell = (
 ): string => {
   if (!isFormula(cell) || (renderInline && /^==[^=\n]+==$/.test(cell))) {
     const content = renderInline ? (renderIsoDateTime(cell, locale) ?? renderInline(cell)) : renderInlineMarkdown(cell, notebookId, locale);
-    return `<td><span class="md-table-cell${alignCls}">${content}</span></td>`;
+    return `<span class="md-table-cell${alignCls}">${content}</span>`;
   }
   if (result.kind === "ok") {
     const progress = parseProgressValue(result.value);
     if (progress) return renderProgressCell(progress, alignCls, cell, locale ?? "en");
-    return `<td><span class="md-table-cell md-formula-ok${alignCls}" title="${escapeHtml(cell)}"><i class="ti ti-math-function"></i>${escapeHtml(formatFormulaValue(result.value, locale))}</span></td>`;
+    return `<span class="md-table-cell md-formula-ok${alignCls}" title="${escapeHtml(cell)}"><i class="ti ti-math-function"></i>${escapeHtml(formatFormulaValue(result.value, locale))}</span>`;
   }
   const tooltip = formatFormulaError(result, locale);
-  return `<td><span class="md-table-cell md-formula-error${alignCls}" title="${escapeHtml(tooltip)}">⚠ ${escapeHtml(cell)}</span></td>`;
+  return `<span class="md-table-cell md-formula-error${alignCls}" title="${escapeHtml(tooltip)}">⚠ ${escapeHtml(cell)}</span>`;
 };
 
-export const renderPrettyTableHtml = (
-  data: PrettyTableData,
-  options: { notebookId?: string; locale?: string; renderInline?: (raw: string) => string } = {},
-): string => {
+export type PrettyTableOptions = { notebookId?: string; locale?: string; renderInline?: (raw: string) => string };
+
+/** One evaluated snapshot shared by full-table and editable-grid presentation.
+ * Row indexes refer to body rows; all returned HTML is view-only. */
+export const createPrettyTablePresentation = (data: PrettyTableData, options: PrettyTableOptions = {}) => {
   const locale = options.locale ?? (typeof document === "undefined" ? "en" : document.documentElement.lang || "en");
   const align = data.align ?? [];
+  const rows = evaluatePrettyTable(data);
+  return {
+    rows,
+    headerHtml: (column: number): string => {
+      const raw = data.headers[column] ?? "";
+      return `<span class="md-table-cell${alignClass(align[column] ?? null)}">${options.renderInline?.(raw) ?? escapeHtml(raw)}</span>`;
+    },
+    cellHtml: (row: number, column: number): string => {
+      const cell = rows[row]?.cells[column];
+      return cell
+        ? renderBodyCellContent(cell.raw, alignClass(align[column] ?? null), cell.result, options.notebookId, locale, options.renderInline)
+        : "";
+    },
+  };
+};
+
+export const renderPrettyTableHtml = (data: PrettyTableData, options: PrettyTableOptions = {}): string => {
+  const presentation = createPrettyTablePresentation(data, options);
   const caption = data.caption
     ? `<div class="md-block-handle" data-block-name="${escapeHtml(data.caption)}">@${escapeHtml(data.caption)}</div>`
     : "";
-  const headerHtml = data.headers
-    .map(
-      (h, i) =>
-        `<th scope="col"><span class="md-table-cell${alignClass(align[i] ?? null)}">${options.renderInline?.(h) ?? escapeHtml(h)}</span></th>`,
-    )
-    .join("");
-  const bodyHtml = evaluatePrettyTable(data)
-    .map((row) => {
-      const totalRow = row.isTotalRow;
-      const cells = data.headers
-        .map((_, colIdx) => {
-          const cell = row.cells[colIdx]!;
-          const alignCls = alignClass(align[colIdx] ?? null);
-          return renderBodyCell(cell.raw, alignCls, cell.result, options.notebookId, locale, options.renderInline);
-        })
-        .join("");
-      return totalRow ? `<tr class="md-table-total-row">${cells}</tr>` : `<tr>${cells}</tr>`;
+  const headerHtml = data.headers.map((_, i) => `<th scope="col">${presentation.headerHtml(i)}</th>`).join("");
+  // An all-empty GFM header is the approved header-off representation.
+  const head = data.headers.some((cell) => cell.trim()) ? `<thead><tr>${headerHtml}</tr></thead>` : "";
+  const bodyHtml = presentation.rows
+    .map((row, rowIndex) => {
+      const cells = data.headers.map((_, colIdx) => `<td>${presentation.cellHtml(rowIndex, colIdx)}</td>`).join("");
+      return row.isTotalRow ? `<tr class="md-table-total-row">${cells}</tr>` : `<tr>${cells}</tr>`;
     })
     .join("");
-  return `${caption}<div class="md-table-wrap"><table class="md-table"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
+  return `${caption}<div class="md-table-wrap"><table class="md-table">${head}<tbody>${bodyHtml}</tbody></table></div>`;
 };

@@ -16,6 +16,7 @@ import { signOutCurrentSession } from "./account-session";
 import { accountMessages } from "./messages";
 
 type Props = {
+  userId: string;
   provider: UserProvider;
   profile: UserProfile;
   freeIpaEnabled: boolean;
@@ -245,7 +246,7 @@ export default function ProfileSettings(props: Props) {
             label={t().signOut}
             description={t().signOutDescription}
             onClick={() =>
-              void signOutCurrentSession(t().signOutFailed).catch((error) =>
+              void signOutCurrentSession(props.userId, t().signOutFailed).catch((error) =>
                 prompts.error(error instanceof Error ? error.message : t().signOutFailed),
               )
             }

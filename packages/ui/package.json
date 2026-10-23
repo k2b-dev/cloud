@@ -32,7 +32,18 @@
       "default": "./dist/browser/chart-inspection.js"
     },
     "./package.json": "./package.json",
-    "./map-glyphs/*": "./map-glyphs/*"
+    "./map-glyphs/*": "./map-glyphs/*",
+    "./text-editor": {
+      "types": "./dist/types/text-editor.d.ts",
+      "browser": "./dist/browser/text-editor.js",
+      "import": "./dist/ssr/text-editor.js",
+      "default": "./dist/ssr/text-editor.js"
+    },
+    "./text-editor/model": {
+      "types": "./dist/types/text-editor/markdown-table.d.ts",
+      "import": "./dist/ssr/text-editor/markdown-table.js",
+      "default": "./dist/ssr/text-editor/markdown-table.js"
+    }
   },
   "files": [
     "dist",
@@ -50,10 +61,16 @@
     "prepack": "bun run build"
   },
   "dependencies": {
+    "@codemirror/commands": "6.10.4",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/state": "6.7.1",
+    "@codemirror/view": "6.43.7",
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/ibm-plex-sans": "5.3.0",
     "@k2b/stdlib": "0.30.0",
+    "@lezer/markdown": "1.7.2",
     "@tabler/icons-webfont": "3.48.0",
+    "dompurify": "3.4.17",
     "maplibre-gl": "6.14.0",
     "marked": "18.0.14",
     "qr-scanner": "1.4.2"
@@ -81,7 +98,10 @@
     "typescript": "7.0.2",
     "@typescript/typescript6": "6.0.2",
     "@maplibre/maplibre-gl-style-spec": "26.4.4",
-    "fontnik": "0.7.7"
+    "fontnik": "0.7.7",
+    "yjs": "13.6.33",
+    "y-codemirror.next": "0.3.6",
+    "y-protocols": "1.0.7"
   },
   "publishConfig": {
     "access": "public"

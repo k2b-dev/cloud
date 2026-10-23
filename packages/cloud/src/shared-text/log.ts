@@ -14,6 +14,7 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "de
     after: string | null;
     until: string;
     doc: Y.Doc;
+    restoreRevision?: string;
     signal?: AbortSignal;
   }): Promise<SharedTextContributor[]> => {
     const contributors = new Map<string, SharedTextContributor>();
@@ -22,8 +23,8 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "de
     if (compareStreamCursor(after, config.until) >= 0) return [];
     let reachedTarget = false;
     for await (const event of handle.replay({ tenantId: config.docId, after, until: config.until, signal: config.signal })) {
-      applySharedTextEvent(config.doc, event, config.docId);
-      if (event.data.actor)
+      const applied = applySharedTextEvent(config.doc, event, config.docId, config.restoreRevision);
+      if (applied && event.data.actor)
         contributors.set(`${event.data.actor.kind}:${event.data.actor.id}`, {
           ...event.data.actor,
           lastContributedAt: event.publishedAt,
@@ -39,6 +40,7 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "de
     after: string | null;
     until: string;
     doc: Y.Doc;
+    restoreRevision?: string;
     signal?: AbortSignal;
   }): Promise<{ recoveredUpdates: number; malformedUpdates: number; historyGaps: number }> => {
     const handle = topic();
@@ -51,8 +53,7 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "de
       try {
         for await (const event of handle.replay({ tenantId: config.docId, after, until: config.until, signal: config.signal })) {
           try {
-            applySharedTextEvent(config.doc, event, config.docId);
-            recoveredUpdates++;
+            if (applySharedTextEvent(config.doc, event, config.docId, config.restoreRevision)) recoveredUpdates++;
           } catch (error) {
             if (!(error instanceof MalformedSharedTextEventError)) throw error;
             malformedUpdates++;
@@ -87,7 +88,25 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "de
       return 0;
     },
     withStore<Saved, Context>(store: SharedTextStore<Saved, Context>) {
-      return bindDocuments({ topic, replay }, store);
+      return bindDocuments(
+        {
+          topic,
+          replay,
+          maxEventBytes: topicConfig.maxPayloadBytes,
+          async *events(docId, after, until, signal) {
+            const handle = topic();
+            const exact = after === until;
+            const start = exact ? handle.cursorAt(handle.cursorSequence(until) - 1) : (after ?? handle.cursorAt(0));
+            let reached = false;
+            for await (const event of handle.replay({ tenantId: docId, after: start, until, signal })) {
+              reached = event.cursor === until;
+              if (!exact || event.cursor === until) yield event;
+            }
+            if (!reached) throw new Error("The structural receipt history is unavailable");
+          },
+        },
+        store,
+      );
     },
   };
 };

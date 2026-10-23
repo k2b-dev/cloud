@@ -190,6 +190,7 @@ const renderBookPage = async (preferences: Record<string, unknown> = {}) => {
     yjsSnapshotAt: null,
     contentMd: `# ${title}`,
     yjsSnapshot: null,
+    yjsRestoreRevision: "0",
     createdBy: user.id,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -332,6 +333,7 @@ const renderNotebookWithNotes = async (
     yjsSnapshotAt: null,
     contentMd: `# ${title}`,
     yjsSnapshot: null,
+    yjsRestoreRevision: "0",
     createdBy: user.id,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -386,7 +388,7 @@ const renderNotebookWithNotes = async (
   if (mode !== "graph") {
     spies.push(
       spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue({
-        note: { ...note("note01", "Private folder"), id: "note01", yjsSnapshot: null },
+        note: { ...note("note01", "Private folder"), id: "note01", yjsSnapshot: null, yjsRestoreRevision: "0" },
         noteAuthors,
         readonlyMode: mode === "readonly",
         tocItems: [],
@@ -472,6 +474,7 @@ const renderEditorPage = async (
     yjsSnapshotAt: timestamp,
     contentMd: options.markdown === undefined ? previewMarkdown : options.markdown,
     yjsSnapshot: options.snapshot === undefined ? "c25hcHNob3Q=" : options.snapshot,
+    yjsRestoreRevision: "0",
     createdBy: user.id,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -673,7 +676,7 @@ const renderLinkedNotebook = async (
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([{ ...note, children: [] }]));
   spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note));
-  spies.push(spyOn(noteStore, "getWithContentByShortId").mockResolvedValue({ ...note, yjsSnapshot: null }));
+  spies.push(spyOn(noteStore, "getWithContentByShortId").mockResolvedValue({ ...note, yjsSnapshot: null, yjsRestoreRevision: "0" }));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));

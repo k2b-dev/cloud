@@ -1,12 +1,15 @@
 import { expect, spyOn, test } from "bun:test";
-import type { TopicPublish } from "@k2b/sync";
+import { ConflictError, type TopicPublish } from "@k2b/sync";
 import * as Y from "yjs";
-import { bindDocuments } from "./documents";
+import { createStructuralFixture } from "../../../../scripts/fixtures/shared-text-history";
+import { captureTextAnchor, resolveTextAnchor } from "./anchors";
+import { bindDocuments, createDoc } from "./documents";
 import { applySharedTextEvent, SHARED_TEXT_NAME, sharedTextNodeId, toBase64 } from "./events";
 import type { SharedTextSaveInput, SharedTextStoredState, SharedTextSyncEvent } from "./types";
 
 const fixture = () => {
   let stored: SharedTextStoredState | null = { state: null, cursor: null, restoreRevision: "revision", text: null };
+  const publications: TopicPublish<SharedTextSyncEvent>[] = [];
   const events: { cursor: string; data: SharedTextSyncEvent }[] = [];
   const saves: { docId: string; input: SharedTextSaveInput; context: string | undefined }[] = [];
   const docs: Y.Doc[] = [];
@@ -17,7 +20,11 @@ const fixture = () => {
       if (failures.latest) throw failures.latest;
       return events.at(-1)?.cursor ?? null;
     },
-    publish: async ({ data }: TopicPublish<SharedTextSyncEvent>) => {
+    publish: async (input: TopicPublish<SharedTextSyncEvent>) => {
+      publications.push(input);
+      const { data } = input;
+      if (Object.hasOwn(input, "expectedAfter") && input.expectedAfter !== (events.at(-1)?.cursor ?? null))
+        throw new ConflictError("head changed");
       if (failures.publish) throw failures.publish;
       const cursor = `s6t.fixture.${events.length + 1}`;
       events.push({ cursor, data });
@@ -27,12 +34,16 @@ const fixture = () => {
   const documents = bindDocuments(
     {
       topic: () => handle,
-      replay: async ({ docId, after, until, doc, signal }) => {
+      async *events(_docId, after, until) {
+        const start = after === until ? Number(until.split(".").at(-1)) - 1 : after ? Number(after.split(".").at(-1)) : 0;
+        yield* events.slice(start, Number(until.split(".").at(-1)));
+      },
+      replay: async ({ docId, after, until, doc, restoreRevision, signal }) => {
         docs.push(doc);
         replays.push({ after, until, signal });
         if (failures.replay === replays.length) throw new Error("replay failed");
         for (const event of events.slice(after ? Number(after.split(".").at(-1)) : 0, Number(until.split(".").at(-1))))
-          applySharedTextEvent(doc, event, docId);
+          applySharedTextEvent(doc, event, docId, restoreRevision);
         return [];
       },
     },
@@ -61,6 +72,7 @@ const fixture = () => {
   };
   return {
     documents,
+    publications,
     events,
     saves,
     failures,
@@ -73,9 +85,161 @@ const fixture = () => {
   };
 };
 
+test("freeze returns full state at its ordered marker without saving or including later edits", async () => {
+  const f = fixture();
+  const initial = new Y.Doc();
+  initial.clientID = 101;
+  initial.getText(SHARED_TEXT_NAME).insert(0, "body");
+  initial.getText("subject").insert(0, "Shared subject");
+  initial.getMap("headers").set("sender", "sender-1");
+  f.setStored({ state: Y.encodeStateAsUpdate(initial), text: "body", cursor: null, restoreRevision: "g1" });
+  initial.destroy();
+  await f.append("before");
+  const expected = (await f.documents.read("doc"))!.text;
+  const frozen = await f.documents.freeze("doc", {
+    actor: { kind: "user", id: "sender" },
+    restoreRevision: "g1",
+    validate: async (state) => {
+      state.fill(0);
+    },
+  });
+  expect(frozen?.text).toBe(expected!);
+  expect(frozen?.cursor).toBe("s6t.fixture.2");
+  expect(f.publications.at(-1)).toMatchObject({
+    tenantId: "doc",
+    expectedAfter: "s6t.fixture.1",
+    data: { kind: "freeze", restoreRevision: "g1" },
+  });
+  expect(f.saves).toHaveLength(0);
+  await f.append("after");
+  expect((await f.documents.read("doc"))?.text).toContain("after");
+  const copy = new Y.Doc();
+  try {
+    Y.applyUpdate(copy, frozen!.state);
+    expect(copy.getText(SHARED_TEXT_NAME).toString()).toBe(expected!);
+    expect(copy.getText(SHARED_TEXT_NAME).toString()).not.toContain("after");
+    expect(copy.getText("subject").toString()).toBe("Shared subject");
+    expect(copy.getMap("headers").get("sender")).toBe("sender-1");
+  } finally {
+    copy.destroy();
+  }
+});
+
+test("an unreferenced freeze marker does not reject a pending edit from before the marker", async () => {
+  const f = fixture();
+  const doc = new Y.Doc();
+  doc.clientID = 108;
+  doc.getText(SHARED_TEXT_NAME).insert(0, "Draft");
+  const initial = Y.encodeStateAsUpdate(doc);
+  f.setStored({ state: initial, text: "Draft", cursor: null, restoreRevision: "g1" });
+  const actor = { kind: "user" as const, id: "author" };
+  await f.documents.freeze("doc", { actor, restoreRevision: "g1", validate: async () => {} });
+  const vector = Y.encodeStateVector(doc);
+  doc.getText(SHARED_TEXT_NAME).insert(5, " later");
+  const admitted = await f.documents.accept("doc", {
+    actor,
+    update: Y.encodeStateAsUpdate(doc, vector),
+    baseCursor: null,
+    restoreRevision: "g1",
+    originNodeId: "fixture",
+    originPeerId: "peer",
+  });
+  expect(admitted.status).toBe("accepted");
+  expect((await f.documents.read("doc"))?.text).toBe("Draft later");
+  doc.destroy();
+});
+
+test("freeze refuses a changed head rather than assigning a stale state to a newer marker", async () => {
+  const f = fixture();
+  await f.append("before");
+  await expect(
+    f.documents.freeze("doc", {
+      actor: { kind: "user", id: "sender" },
+      restoreRevision: "revision",
+      validate: async () => {
+        await f.append("racing peer");
+      },
+    }),
+  ).rejects.toBeInstanceOf(ConflictError);
+  expect(f.events.every((event) => event.data.kind === "sync")).toBe(true);
+  expect(f.docs.every((doc) => doc.isDestroyed)).toBe(true);
+});
+
+test("freeze rejects incomplete state, changed generation, denied validation and cancellation before publication", async () => {
+  const actor = { kind: "user" as const, id: "sender" };
+  const f = fixture();
+  await expect(f.documents.freeze("doc", { actor, restoreRevision: "other", validate: async () => {} })).rejects.toThrow("generation");
+  await expect(
+    f.documents.freeze("doc", {
+      actor,
+      restoreRevision: "revision",
+      validate: async () => {
+        throw new Error("denied");
+      },
+    }),
+  ).rejects.toThrow("denied");
+  const controller = new AbortController();
+  await expect(
+    f.documents.freeze("doc", {
+      actor,
+      restoreRevision: "revision",
+      signal: controller.signal,
+      validate: async () => {
+        controller.abort(new Error("cancelled"));
+      },
+    }),
+  ).rejects.toThrow("cancelled");
+  const source = new Y.Doc();
+  source.clientID = 201;
+  source.getText(SHARED_TEXT_NAME).insert(0, "A");
+  const vector = Y.encodeStateVector(source);
+  source.getText(SHARED_TEXT_NAME).insert(1, "B");
+  f.setStored({ state: Y.encodeStateAsUpdate(source, vector), text: null, cursor: null, restoreRevision: "revision" });
+  source.destroy();
+  await expect(f.documents.freeze("doc", { actor, restoreRevision: "revision", validate: async () => {} })).rejects.toThrow("unresolved");
+  expect(f.publications).toHaveLength(0);
+  f.setStored(null);
+  expect(await f.documents.freeze("doc", { actor, restoreRevision: "revision", validate: async () => {} })).toBeNull();
+});
+
+test("admission validates application headers in the merged state before confirming input", async () => {
+  const f = createStructuralFixture("body");
+  try {
+    const vector = Y.encodeStateVector(f.own.doc);
+    f.own.doc.getMap("headers").set("sender", "unavailable");
+    const update = Y.encodeStateAsUpdate(f.own.doc, vector);
+    let inspected = false;
+    const result = await f.documents().accept("fixture", {
+      actor: f.own.actor,
+      update,
+      baseCursor: f.own.cursor,
+      restoreRevision: "0",
+      originNodeId: "fixture",
+      originPeerId: null,
+      validateState: (state) => {
+        const merged = new Y.Doc();
+        try {
+          Y.applyUpdate(merged, state);
+          expect(merged.getText(SHARED_TEXT_NAME).toString()).toBe("body");
+          expect(merged.getMap("headers").get("sender")).toBe("unavailable");
+          inspected = true;
+          return false;
+        } finally {
+          merged.destroy();
+        }
+      },
+    });
+    expect(inspected).toBe(true);
+    expect(result.status).toBe("recoveryRequired");
+    expect(f.events).toHaveLength(0);
+  } finally {
+    f.destroy();
+  }
+});
+
 test("read preserves nullable snapshots and replays only newer log events", async () => {
   const f = fixture();
-  expect(await f.documents.read("doc")).toEqual({ state: null, text: null, cursor: null });
+  expect(await f.documents.read("doc")).toEqual({ state: null, text: null, cursor: null, restoreRevision: "revision" });
   f.setStored(null);
   expect(await f.documents.read("doc")).toBeNull();
   f.setStored({ state: null, text: "fallback", cursor: null, restoreRevision: "r" });
@@ -84,9 +248,15 @@ test("read preserves nullable snapshots and replays only newer log events", asyn
   expect(current?.text).toContain("live");
   expect(current?.text).toContain("fallback");
   expect(current?.cursor).toBe(receipt.cursor);
+  expect(current?.restoreRevision).toBe("r");
   expect(current?.state).toBeInstanceOf(Uint8Array);
   f.setStored({ state: current!.state, text: "stored projection", cursor: receipt.cursor, restoreRevision: "r" });
-  expect(await f.documents.read("doc")).toEqual({ state: current!.state, text: "stored projection", cursor: receipt.cursor });
+  expect(await f.documents.read("doc")).toEqual({
+    state: current!.state,
+    text: "stored projection",
+    cursor: receipt.cursor,
+    restoreRevision: "r",
+  });
   expect(f.replays).toHaveLength(1);
 });
 
@@ -133,7 +303,13 @@ test("edit reads the log end and persists a replay to its published cursor with 
     });
     expect(f.saves[0]!.input.text).toContain("foreign!");
     expect(f.saves[0]!.input.text).toContain("during callback");
-    expect(f.events.at(-1)?.data).toMatchObject({ actor, originNodeId: sharedTextNodeId, originPeerId: null, kind: "sync" });
+    expect(f.events.at(-1)?.data).toMatchObject({
+      actor,
+      restoreRevision: "revision",
+      originNodeId: sharedTextNodeId,
+      originPeerId: null,
+      kind: "sync",
+    });
     expect(f.docs.every((doc) => doc.isDestroyed)).toBe(true);
     expect(f.replays).toEqual([
       { after: null, until: "s6t.fixture.1", signal },
@@ -240,4 +416,305 @@ test("an edit of fallback text without a snapshot keeps the edit in the saved st
   }
   // A later read from the same fallback replays the published edit, too.
   expect((await f.documents.read("doc"))?.text).toBe("hello!");
+});
+
+test("change preserves the identities between disjoint edits and conditions an empty tenant head", async () => {
+  const f = fixture();
+  const stored = { state: null, cursor: null, restoreRevision: "r", text: "first middle last" };
+  f.setStored(stored);
+  const before = createDoc(stored);
+  const after = new Y.Doc();
+  try {
+    const anchor = Y.createRelativePositionFromTypeIndex(before.getText(SHARED_TEXT_NAME), 8);
+    const result = await f.documents.change("doc", { actor: null, maxLength: 100 }, ({ text }) => [
+      { from: text.length, to: text.length, insert: "]" },
+      { from: 0, to: 0, insert: "[" },
+    ]);
+    expect(result).toMatchObject({ status: "edited", text: "[first middle last]" });
+    expect(f.publications[0]?.expectedAfter).toBeNull();
+    Y.applyUpdate(after, f.saves[0]!.input.state);
+    const resolved = Y.createAbsolutePositionFromRelativePosition(anchor, after, false)!;
+    expect(resolved.index).toBe(9);
+    expect(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(after.getText(SHARED_TEXT_NAME), resolved.index))).toEqual(
+      Y.encodeRelativePosition(anchor),
+    );
+    expect(after.store.pendingStructs).toBeNull();
+  } finally {
+    before.destroy();
+    after.destroy();
+  }
+});
+
+test("change rejects a moved tenant head without publishing or saving its speculative edits", async () => {
+  const f = fixture();
+  await f.append("base");
+  await expect(
+    f.documents.change("doc", { actor: null, maxLength: 100 }, async ({ text }) => {
+      await f.append("peer");
+      return [{ from: text.length, to: text.length, insert: "mine" }];
+    }),
+  ).rejects.toBeInstanceOf(ConflictError);
+  expect(f.events).toHaveLength(2);
+  expect(f.saves).toHaveLength(0);
+  expect(f.publications.at(-1)?.expectedAfter).toBe("s6t.fixture.1");
+  expect(f.docs.every((doc) => doc.isDestroyed)).toBe(true);
+  expect((await f.documents.read("doc"))?.text).not.toContain("mine");
+});
+
+test("change skips identical edits and rejects invalid ranges, Unicode splits and size before publication", async () => {
+  const f = fixture();
+  f.setStored({ state: null, cursor: null, restoreRevision: "r", text: "a😀b" });
+  expect(await f.documents.change("doc", { actor: null, maxLength: 4 }, () => [{ from: 0, to: 1, insert: "a" }])).toEqual({
+    status: "unchanged",
+    text: "a😀b",
+  });
+  const invalid = [
+    [{ from: -1, to: 0, insert: "" }],
+    [{ from: 1, to: 0, insert: "" }],
+    [{ from: 0, to: 5, insert: "" }],
+    [{ from: 0.5, to: 1, insert: "" }],
+    [
+      { from: 0, to: 3, insert: "" },
+      { from: 1, to: 4, insert: "" },
+    ],
+    [
+      { from: 0, to: 0, insert: "x" },
+      { from: 0, to: 0, insert: "y" },
+    ],
+    [{ from: 1, to: 2, insert: "" }],
+    [{ from: 0, to: 0, insert: "\ud800" }],
+    [{ from: 0, to: 0, insert: "too long" }],
+  ];
+  for (const changes of invalid)
+    await expect(f.documents.change("doc", { actor: null, maxLength: 4 }, () => changes)).rejects.toBeInstanceOf(RangeError);
+  expect(f.publications).toHaveLength(0);
+  expect(f.saves).toHaveLength(0);
+});
+
+test("change refuses unresolved causal dependencies before invoking the planner", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  source.clientID = 77;
+  const partial = new Y.Doc();
+  try {
+    const text = source.getText(SHARED_TEXT_NAME);
+    text.insert(0, "a");
+    const vector = Y.encodeStateVector(source);
+    text.insert(1, "b");
+    Y.applyUpdate(partial, Y.encodeStateAsUpdate(source, vector));
+    expect(partial.store.pendingStructs).not.toBeNull();
+    f.setStored({ state: Y.encodeStateAsUpdate(partial), text: "", cursor: null, restoreRevision: "r" });
+    let planned = false;
+    const result = await f.documents.change("doc", { actor: null, maxLength: 100 }, () => {
+      planned = true;
+      return [{ from: 0, to: 0, insert: "new" }];
+    });
+    expect(result).toMatchObject({ status: "syncFailed", error: expect.any(Error) });
+    expect(planned).toBe(false);
+    expect(f.publications).toHaveLength(0);
+  } finally {
+    partial.destroy();
+    source.destroy();
+  }
+});
+
+test("change preserves cancellation, unknown publication errors and accepted-write persistence failure", async () => {
+  const f = fixture();
+  const signal = new AbortController();
+  await expect(
+    f.documents.change("doc", { actor: null, maxLength: 20, signal: signal.signal }, () => {
+      signal.abort(new Error("cancelled"));
+      return [{ from: 0, to: 0, insert: "hello" }];
+    }),
+  ).rejects.toThrow("cancelled");
+  expect(f.publications).toHaveLength(0);
+  const unknown = new Error("publication outcome unknown");
+  f.failures.publish = unknown;
+  await expect(f.documents.change("doc", { actor: null, maxLength: 20 }, () => [{ from: 0, to: 0, insert: "hello" }])).rejects.toBe(
+    unknown,
+  );
+  expect(f.saves).toHaveLength(0);
+  f.failures.publish = undefined;
+  f.failures.save = new Error("save failed");
+  expect(await f.documents.change("doc", { actor: null, maxLength: 20 }, () => [{ from: 0, to: 0, insert: "hello" }])).toMatchObject({
+    status: "persistFailed",
+    cursor: "s6t.fixture.1",
+  });
+  expect(f.events).toHaveLength(1);
+});
+
+test("change returns and publishes the same action receipt before persistence, with the loaded restore revision", async () => {
+  for (const failure of [false, true]) {
+    const f = fixture();
+    f.setStored({ state: null, cursor: null, restoreRevision: "17", text: "body" });
+    if (failure) f.failures.save = new Error("store unavailable");
+    const result = await f.documents.change(
+      "doc",
+      { actor: { kind: "user", id: "writer" }, actionId: "action-17", maxLength: 100 },
+      (current) => {
+        expect(current.restoreRevision).toBe("17");
+        return [{ from: 4, to: 4, insert: "!" }];
+      },
+    );
+    expect(result.status).toBe(failure ? "persistFailed" : "edited");
+    if (result.status !== "edited" && result.status !== "persistFailed") throw new Error("Missing action result");
+    expect(result.receipt?.actionId).toBe("action-17");
+    expect(f.publications[0]!.data.actionId).toBe("action-17");
+    expect(Buffer.from(result.receipt!.update).toString("base64")).toBe(f.publications[0]!.data.payload);
+    const peer = createDoc({ state: null, text: "body", cursor: null, restoreRevision: "17" });
+    try {
+      Y.applyUpdate(peer, result.receipt!.update);
+      expect(peer.getText(SHARED_TEXT_NAME).toString()).toBe("body!");
+    } finally {
+      peer.destroy();
+    }
+  }
+});
+
+test("ordinary text edits keep their originating revision when a snapshot is restored during planning", async () => {
+  const f = fixture();
+  const old = new Y.Doc();
+  old.clientID = 101;
+  old.getText(SHARED_TEXT_NAME).insert(0, "TOKEN");
+  const historical = Y.encodeStateAsUpdate(old);
+  old.getText(SHARED_TEXT_NAME).delete(0, 5);
+  f.setStored({ state: Y.encodeStateAsUpdate(old), text: "", cursor: null, restoreRevision: "0" });
+  try {
+    await f.documents.edit("doc", { actor: null }, () => {
+      f.setStored({ state: historical, text: "TOKEN", cursor: null, restoreRevision: "1" });
+      return "OLD EDIT";
+    });
+    expect(f.events.at(-1)?.data.restoreRevision).toBe("0");
+    const current = await f.documents.read("doc");
+    expect(current?.text).toBe("TOKEN");
+    expect(current?.restoreRevision).toBe("1");
+    const replacement = new Y.Doc();
+    try {
+      Y.applyUpdate(replacement, current!.state!);
+      expect(replacement.store.pendingDs).toBeNull();
+      expect(replacement.store.pendingStructs).toBeNull();
+    } finally {
+      replacement.destroy();
+    }
+  } finally {
+    old.destroy();
+  }
+});
+
+test("ordinary ingress accepts an idle shared-topic snapshot watermark and replays only its new tenant event", async () => {
+  const initial = new Y.Doc();
+  initial.clientID = 17;
+  initial.getText(SHARED_TEXT_NAME).insert(0, "base");
+  const stored: SharedTextStoredState = {
+    state: Y.encodeStateAsUpdate(initial),
+    text: "base",
+    cursor: "s6t.fixture.9",
+    restoreRevision: "0",
+  };
+  const client = createDoc(stored);
+  const before = Y.encodeStateVector(client);
+  client.getText(SHARED_TEXT_NAME).insert(4, " input");
+  const events: { cursor: string; data: SharedTextSyncEvent }[] = [];
+  const documents = bindDocuments(
+    {
+      topic: () => ({
+        latestCursor: async () => events.at(-1)?.cursor ?? null,
+        publish: async (input) => {
+          expect(input.expectedAfter).toBeNull(); // Snapshot covers other tenants' events.
+          const cursor = "s6t.fixture.10";
+          events.push({ cursor, data: input.data });
+          return { cursor, eventId: "event", messageId: "message", streamSequence: 10, duplicate: false };
+        },
+      }),
+      events: async function* () {
+        yield* events;
+      },
+      replay: async ({ doc }) => {
+        for (const event of events) applySharedTextEvent(doc, event, "idle", "0");
+        return [];
+      },
+    },
+    { load: async () => stored, save: async () => {} },
+  );
+  try {
+    expect(
+      await documents.accept("idle", {
+        actor: { kind: "user", id: "author" },
+        update: Y.encodeStateAsUpdate(client, before),
+        baseCursor: stored.cursor,
+        restoreRevision: "0",
+        originNodeId: "node",
+        originPeerId: "peer",
+      }),
+    ).toEqual({ status: "accepted", cursor: "s6t.fixture.10" });
+    const snapshot = (await documents.read("idle"))!;
+    const reloaded = createDoc(snapshot);
+    try {
+      expect(reloaded.getText(SHARED_TEXT_NAME).toString()).toBe("base input");
+    } finally {
+      reloaded.destroy();
+    }
+  } finally {
+    initial.destroy();
+    client.destroy();
+  }
+});
+
+test("only an explicit authorized recreation changes equal-text range identities", async () => {
+  const f = fixture();
+  f.setStored({ text: "abc", state: null, cursor: null, restoreRevision: "revision" });
+  const initial = createDoc((await f.documents.read("doc"))!);
+  const anchor = captureTextAnchor(initial.getText(SHARED_TEXT_NAME), 1);
+  initial.destroy();
+  const options = { actor: null, maxLength: 3, actionId: "identity-fence" };
+  expect((await f.documents.change("doc", options, () => [{ from: 1, to: 2, insert: "b" }])).status).toBe("unchanged");
+  expect(f.events).toHaveLength(0);
+  expect((await f.documents.change("doc", options, () => [{ from: 1, to: 2, insert: "b", recreate: true }])).status).toBe("edited");
+  const current = createDoc((await f.documents.read("doc"))!);
+  try {
+    expect(current.getText(SHARED_TEXT_NAME).toString()).toBe("abc");
+    expect(resolveTextAnchor(current.getText(SHARED_TEXT_NAME), anchor)).toBeNull();
+    expect(f.events[0]!.data.history!.patches[0]!.recreate).toBe(true);
+  } finally {
+    current.destroy();
+  }
+  await expect(f.documents.change("doc", options, () => [{ from: 0, to: 0, insert: "", recreate: true }])).rejects.toBeInstanceOf(
+    RangeError,
+  );
+  expect(f.events).toHaveLength(1);
+});
+
+test("admission validates the merged text limit before confirming individually legal concurrent input", async () => {
+  const f = createStructuralFixture("base");
+  try {
+    const baseCursor = f.peer.cursor;
+    const ownVector = Y.encodeStateVector(f.own.doc),
+      peerVector = Y.encodeStateVector(f.peer.doc);
+    f.own.text.insert(0, "AA");
+    f.peer.text.insert(4, "BB");
+    expect(f.own.text.length).toBe(6);
+    expect(f.peer.text.length).toBe(6);
+    const own = Y.encodeStateAsUpdate(f.own.doc, ownVector),
+      peer = Y.encodeStateAsUpdate(f.peer.doc, peerVector);
+    const options = { actor: f.own.actor, baseCursor, restoreRevision: "0", originNodeId: "fixture", originPeerId: "peer", maxLength: 6 };
+    expect((await f.documents().accept("fixture", { ...options, update: own })).status).toBe("accepted");
+    const count = f.events.length,
+      before = (await f.canonical()).text;
+    expect((await f.documents().accept("fixture", { ...options, actor: f.peer.actor, update: peer })).status).toBe("recoveryRequired");
+    expect(f.events).toHaveLength(count);
+    expect((await f.canonical()).text).toBe(before);
+    expect(f.peer.text.toString()).toBe("baseBB");
+    // The actual transport envelope/source remains available to the provider.
+    const probe = createDoc(f.stored());
+    try {
+      Y.applyUpdate(probe, peer);
+      expect(probe.getText(SHARED_TEXT_NAME).toString()).toContain("BB");
+    } finally {
+      probe.destroy();
+    }
+    for (const maxLength of [-1, 0.5, Number.NaN])
+      await expect(f.documents().accept("fixture", { ...options, update: peer, maxLength })).rejects.toThrow(RangeError);
+  } finally {
+    f.destroy();
+  }
 });

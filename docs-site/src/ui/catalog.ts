@@ -103,6 +103,12 @@ const portableSections = [
         "ti ti-drag-drop",
         "Whole-area file drops with a calm overlay, nested targets, and dialog precedence.",
       ),
+      page(
+        "text-editor",
+        "TextEditor",
+        "ti ti-table",
+        "Markdown editing with directly editable tables and application-supplied collaboration.",
+      ),
       page("markdown-editor", "MarkdownEditor", "ti ti-markdown", "Standalone controlled Markdown editing with native textarea behavior."),
       page(
         "autocomplete",

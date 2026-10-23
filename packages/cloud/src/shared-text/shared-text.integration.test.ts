@@ -1,5 +1,5 @@
 import { expect, spyOn } from "bun:test";
-import { createSync } from "@k2b/sync";
+import { ConflictError, createSync } from "@k2b/sync";
 import * as Y from "yjs";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
@@ -78,6 +78,9 @@ const setup = async () => {
     saves,
     source,
     append,
+    setWatermark: (cursor: string) => {
+      stored = { ...stored, cursor };
+    },
     setOvertaken: () => {
       overtaken = true;
     },
@@ -169,5 +172,70 @@ testFor("nats")("an overtaken save result passes through without another save", 
     expect(saves).toHaveLength(1);
     expect((await documents.read(docId))?.text).toBe("accepted update");
     expect(saves).toHaveLength(1);
+  });
+});
+
+testFor("nats")("disjoint changes preserve interior Yjs identities through the real log", async () => {
+  await withLog(async ({ documents, docId }) => {
+    await documents.change(docId, { actor: null, maxLength: 100 }, () => [{ from: 0, to: 0, insert: "first middle last" }]);
+    const before = new Y.Doc();
+    const after = new Y.Doc();
+    try {
+      Y.applyUpdate(before, (await documents.read(docId))!.state!);
+      const anchor = Y.createRelativePositionFromTypeIndex(before.getText(SHARED_TEXT_NAME), 8);
+      const result = await documents.change(docId, { actor: null, maxLength: 100 }, ({ text }) => [
+        { from: 0, to: 0, insert: "[" },
+        { from: text.length, to: text.length, insert: "]" },
+      ]);
+      expect(result).toMatchObject({ status: "edited", text: "[first middle last]" });
+      Y.applyUpdate(after, (await documents.read(docId))!.state!);
+      const resolved = Y.createAbsolutePositionFromRelativePosition(anchor, after, false)!;
+      expect(resolved.index).toBe(9);
+      expect(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(after.getText(SHARED_TEXT_NAME), resolved.index))).toEqual(
+        Y.encodeRelativePosition(anchor),
+      );
+    } finally {
+      before.destroy();
+      after.destroy();
+    }
+  });
+});
+
+for (const empty of [false, true]) {
+  testFor("nats")(
+    `a competing update rejects a structural transaction from ${empty ? "an empty" : "an existing"} tenant head`,
+    async () => {
+      await withLog(async ({ documents, docId, append, saves, log }) => {
+        if (!empty) await append("base");
+        await expect(
+          documents.change(docId, { actor: null, maxLength: 100 }, async ({ text }) => {
+            await append("peer");
+            return [{ from: text.length, to: text.length, insert: "must not publish" }];
+          }),
+        ).rejects.toBeInstanceOf(ConflictError);
+        expect(saves).toHaveLength(0);
+        expect((await documents.read(docId))?.text).toBe(empty ? "peer" : "basepeer");
+        const events = await Array.fromAsync(
+          log
+            .topic()
+            .replay({ tenantId: docId, after: log.topic().cursorAt(0), until: (await log.topic().latestCursor({ tenantId: docId }))! }),
+        );
+        expect(events).toHaveLength(empty ? 1 : 2);
+      });
+    },
+  );
+}
+
+testFor("nats")("other tenants and a newer stored stream watermark do not conflict with this document", async () => {
+  await withLog(async ({ documents, docId, log, source, setWatermark }) => {
+    await documents.edit(docId, { actor: null }, () => "base");
+    const other = await log.topic().publish({
+      tenantId: "another-document",
+      data: { kind: "sync", payload: toBase64(Y.encodeStateAsUpdate(source)), originNodeId: "other", originPeerId: null },
+    });
+    setWatermark(other.cursor);
+    expect(
+      await documents.change(docId, { actor: null, maxLength: 100 }, ({ text }) => [{ from: text.length, to: text.length, insert: "!" }]),
+    ).toMatchObject({ status: "edited", text: "base!" });
   });
 });

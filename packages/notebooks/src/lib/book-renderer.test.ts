@@ -345,11 +345,22 @@ describe("Notebook Book HTML", () => {
   });
 
   test("tables use the existing formula engine and progress semantics", () => {
+    // Mail's opt-in renderer must not alter Notebook's formula output in the same process.
+    expect(markdown.renderSync("| Value |\n| --- |\n| =2*2 |", { links: "plain", output: "email" })).toContain("=2*2");
     const { html } = render("| Item | Value | Twice |\n| --- | ---: | ---: |\n| A | 2 | =Value*2 |\n| B | 3 | =Value*2 |");
     expect(html).toContain('class="md-table"');
     expect(html).toContain("md-formula-ok");
     expect(html).toContain("</i>4</span>");
     expect(html).toContain("</i>6</span>");
+  });
+
+  test("header-off tables hide only the empty GFM header and preserve all body rows", () => {
+    const { html } = render("|   |   |\n| --- | ---: |\n| Item | Value |\n| Paper | 12 |");
+    expect(html).not.toContain("<thead>");
+    expect(html).not.toContain("<th ");
+    for (const value of ["Item", "Value", "Paper", "12"]) expect(html).toContain(`>${value}</span>`);
+    expect(html).toContain("md-align-right");
+    expect(render("|   | Value |\n| --- | --- |\n| Paper | 12 |").html).toContain("<thead>");
   });
 
   test("formula values and table links remain escaped and use Book URLs", () => {

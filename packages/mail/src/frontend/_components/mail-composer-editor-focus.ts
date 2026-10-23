@@ -1,4 +1,6 @@
-export const focusMailComposerEditorAtStart = (element: HTMLTextAreaElement): void => {
-  element.focus();
-  element.setSelectionRange(0, 0);
+import type { TextEditorController } from "@k2b/ui/text-editor";
+
+export const focusMailComposerEditorAtStart = (editor: { view: Pick<TextEditorController["view"], "focus" | "dispatch"> }): void => {
+  editor.view.dispatch({ selection: { anchor: 0 } });
+  editor.view.focus();
 };

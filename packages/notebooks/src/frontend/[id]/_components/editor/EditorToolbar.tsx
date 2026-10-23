@@ -1,6 +1,7 @@
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { Dropdown, IconButton, IconButtonLink, Toolbar, Tooltip, useLocale } from "@k2b/ui";
+import { type InlineFormat, TableSizePicker, type TextEditorControls } from "@k2b/ui/text-editor";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { indentListItems, outdentListItems, setListKind } from "../../../lib/editor/list-commands";
 import { ariaShortcut, isApple, shortcutLabel } from "../../../lib/shortcut-label";
@@ -39,6 +40,11 @@ type Props = {
   format: CaretFormat;
   onUndo: () => void;
   onRedo: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onTablePickerReady?: (open: () => void) => void;
+  /** The shared editor's table controls: inline formats apply to a focused cell, and its menu edits the table. */
+  table?: TextEditorControls;
 };
 
 /** Formatting shortcuts; headings match the physical digit keys like the @k2b/ui MarkdownEditor and the list keys. */
@@ -84,11 +90,24 @@ export default function EditorToolbar(props: Props) {
   const withView = (action: (view: EditorView) => void | Promise<void>) => () => {
     const view = props.editorView;
     if (!view) return;
+    const returnFocus = () => {
+      // A shared table command may already have handed focus into its cell.
+      if (!view.dom.contains(view.dom.ownerDocument.activeElement)) view.focus();
+    };
     void asUndoStep(view, () => {
       const result = action(view);
-      if (!result) return view.focus();
-      return result.finally(() => view.focus());
+      if (!result) return returnFocus();
+      return result.finally(returnFocus);
     });
+  };
+  // A focused table cell takes inline formats; block formats would split its row, so they wait outside the table.
+  const inCell = () => !!props.table?.tableActive();
+  let openTablePicker = () => {};
+  const mark = (name: Parameters<typeof toggleInlineMark>[1], cell?: InlineFormat) => {
+    const prose = withView((view) => toggleInlineMark(view, name));
+    return () => {
+      if (!cell || !props.table?.formatCell(cell)) prose();
+    };
   };
   const list = (kind: "bullet" | "ordered" | "task") =>
     withView((view) => {
@@ -144,7 +163,8 @@ export default function EditorToolbar(props: Props) {
     const measure = () => {
       if (disposed || !viewport) return;
       const view = props.editorView;
-      const focused = !!view && (view.hasFocus || toolbar.contains(document.activeElement));
+      const focused =
+        !!view && (view.hasFocus || view.contentDOM.contains(document.activeElement) || toolbar.contains(document.activeElement));
       // The bottom the toolbar has without the lift; the note above it gives up the same height.
       const inFlowBottom = toolbar.getBoundingClientRect().bottom + lift();
       // CodeMirror's 0.85 viewport ratio requires a keyboard taller than 15% of the page. There is no shared UI
@@ -244,73 +264,69 @@ export default function EditorToolbar(props: Props) {
       </div>
       <Toolbar label={t().formatting} class="notebooks-editor-toolbar__tools no-scrollbar min-w-0 flex-1 overflow-x-auto">
         <Toolbar.Group label={t().history} class="notebooks-editor-toolbar__history shrink-0">
-          <Btn icon="ti-arrow-back-up" title={t().undo} shortcut="Mod-z" onClick={props.onUndo} />
-          <Btn icon="ti-arrow-forward-up" title={t().redo} shortcut="Mod-Shift-z" onClick={props.onRedo} />
+          <Btn icon="ti-arrow-back-up" title={t().undo} shortcut="Mod-z" enabled={props.canUndo} onClick={props.onUndo} />
+          <Btn icon="ti-arrow-forward-up" title={t().redo} shortcut="Mod-Shift-z" enabled={props.canRedo} onClick={props.onRedo} />
         </Toolbar.Group>
         <Toolbar.Separator class="notebooks-editor-toolbar__history-separator" />
         <Toolbar.Group label={t().textStyle} class="shrink-0">
-          <Dropdown.Root
-            open={coarsePointer() ? styleOpen() : undefined}
-            onOpenChange={setStyleOpen}
-            position="top-left"
-            items={[
-              {
-                sectionLabel: t().textStyle,
-                items: ([0, 1, 2, 3] as const).map((level) => ({
-                  choice: "radio",
-                  label: level === 0 ? t().normalText : level === 1 ? t().heading1 : level === 2 ? t().heading2 : t().heading3,
-                  checked: props.format.heading === level,
-                  // macOS takes ⇧⌘3 for screenshots, so Mac users pick Heading 3 here.
-                  description: level && !(level === 3 && isApple()) ? keys(`Mod-Shift-${level}`) : undefined,
-                  action: withView((view) => setHeadingLevel(view, level)),
-                })),
-              },
-            ]}
+          <Show
+            when={inCell()}
+            fallback={
+              <Dropdown.Root
+                disabled={inCell()}
+                open={coarsePointer() ? styleOpen() : undefined}
+                onOpenChange={setStyleOpen}
+                position="top-left"
+                items={[
+                  {
+                    sectionLabel: t().textStyle,
+                    items: ([0, 1, 2, 3] as const).map((level) => ({
+                      choice: "radio",
+                      label: level === 0 ? t().normalText : level === 1 ? t().heading1 : level === 2 ? t().heading2 : t().heading3,
+                      checked: props.format.heading === level,
+                      // macOS takes ⇧⌘3 for screenshots, so Mac users pick Heading 3 here.
+                      description: level && !(level === 3 && isApple()) ? keys(`Mod-Shift-${level}`) : undefined,
+                      action: withView((view) => setHeadingLevel(view, level)),
+                    })),
+                  },
+                ]}
+              >
+                <Dropdown.Trigger label={`${t().textStyle}: ${style()}`} size="xs" variant="ghost" class="text-dimmed">
+                  {/* Every label shares one grid cell, so the widest one sets the width and a new style never moves a button. */}
+                  <span class="notebooks-editor-toolbar__style">
+                    <For each={styleLabels()}>
+                      {(label) => (
+                        <span data-current={label === style() ? "true" : undefined} aria-hidden={label !== style()}>
+                          {label}
+                        </span>
+                      )}
+                    </For>
+                  </span>
+                  <i class="ti ti-chevron-down" aria-hidden="true" />
+                </Dropdown.Trigger>
+              </Dropdown.Root>
+            }
           >
-            <Dropdown.Trigger label={`${t().textStyle}: ${style()}`} size="xs" variant="ghost" class="text-dimmed">
-              {/* Every label shares one grid cell, so the widest one sets the width and a new style never moves a button. */}
-              <span class="notebooks-editor-toolbar__style">
-                <For each={styleLabels()}>
-                  {(label) => (
-                    <span data-current={label === style() ? "true" : undefined} aria-hidden={label !== style()}>
-                      {label}
-                    </span>
-                  )}
-                </For>
-              </span>
-              <i class="ti ti-chevron-down" aria-hidden="true" />
-            </Dropdown.Trigger>
-          </Dropdown.Root>
+            {props.table?.TableMenu({ class: "text-dimmed", size: "xs", position: "top-left", text: t().table })}
+          </Show>
         </Toolbar.Group>
         <Toolbar.Separator />
         <Toolbar.Group class="shrink-0">
-          <Btn
-            icon="ti-bold"
-            title={t().bold}
-            shortcut="Mod-b"
-            pressed={props.format.bold}
-            onClick={withView((view) => toggleInlineMark(view, "bold"))}
-          />
-          <Btn
-            icon="ti-italic"
-            title={t().italic}
-            shortcut="Mod-i"
-            pressed={props.format.italic}
-            onClick={withView((view) => toggleInlineMark(view, "italic"))}
-          />
+          <Btn icon="ti-bold" title={t().bold} shortcut="Mod-b" pressed={props.format.bold} onClick={mark("bold", "bold")} />
+          <Btn icon="ti-italic" title={t().italic} shortcut="Mod-i" pressed={props.format.italic} onClick={mark("italic", "italic")} />
           <Btn
             icon="ti-strikethrough"
             title={t().strikethrough}
             shortcut="Mod-Shift-s"
             pressed={props.format.strikethrough}
-            onClick={withView((view) => toggleInlineMark(view, "strikethrough"))}
+            onClick={mark("strikethrough", "strike")}
           />
           <Btn
             icon="ti-highlight"
             title={t().highlight}
             shortcut="Mod-Shift-h"
             pressed={props.format.highlight}
-            onClick={withView((view) => toggleInlineMark(view, "highlight"))}
+            onClick={mark("highlight", { marker: "==" })}
           />
         </Toolbar.Group>
         <Toolbar.Separator />
@@ -320,6 +336,7 @@ export default function EditorToolbar(props: Props) {
             title={t().bulletList}
             shortcut="Mod-Shift-8"
             pressed={props.format.list === "bullet"}
+            enabled={!inCell()}
             onClick={list("bullet")}
           />
           <Btn
@@ -327,6 +344,7 @@ export default function EditorToolbar(props: Props) {
             title={t().numberedList}
             shortcut="Mod-Shift-7"
             pressed={props.format.list === "ordered"}
+            enabled={!inCell()}
             onClick={list("ordered")}
           />
           <Btn
@@ -334,13 +352,14 @@ export default function EditorToolbar(props: Props) {
             title={t().checklist}
             shortcut="Mod-Shift-9"
             pressed={props.format.list === "task"}
+            enabled={!inCell()}
             onClick={list("task")}
           />
           <Btn
             icon="ti-indent-decrease"
             title={t().outdentListItem}
             shortcut="Mod-["
-            enabled={props.format.outdent}
+            enabled={props.format.outdent && !inCell()}
             onClick={withView((view) => {
               outdentListItems(view);
             })}
@@ -349,7 +368,7 @@ export default function EditorToolbar(props: Props) {
             icon="ti-indent-increase"
             title={t().indentListItem}
             shortcut="Mod-]"
-            enabled={props.format.indent}
+            enabled={props.format.indent && !inCell()}
             onClick={withView((view) => {
               indentListItems(view);
             })}
@@ -357,14 +376,46 @@ export default function EditorToolbar(props: Props) {
         </Toolbar.Group>
         <Toolbar.Separator />
         <Toolbar.Group label={t().insertContent} class="shrink-0">
-          <Btn icon="ti-link" title={t().link} shortcut="Mod-k" onClick={withView((view) => insertLink(view, locale()))} />
+          <Btn
+            icon="ti-link"
+            title={t().link}
+            shortcut="Mod-k"
+            onClick={() => {
+              if (!props.table?.formatCell("link")) withView((view) => insertLink(view, locale()))();
+            }}
+          />
           <Btn
             icon="ti-file-symlink"
             title={t().linkToNote}
             shortcut="Mod-Alt-k"
+            enabled={!inCell()}
             onClick={withView((view) => insertNoteLink(view, props.notebookId, locale()))}
           />
           <Btn icon="ti-paperclip" title={t().attachFile} onClick={withView(() => openAttachmentPicker(props.notebookId, locale()))} />
+          {/* Inserts a table; in a focused cell the same place opens the shared cell menu, as a sheet on phones. */}
+          <Show
+            when={props.table && inCell()}
+            fallback={
+              <TableSizePicker
+                class="text-dimmed"
+                size="xs"
+                onReady={(open) => {
+                  openTablePicker = open;
+                  props.onTablePickerReady?.(open);
+                }}
+                maxRows={50}
+                maxColumns={20}
+                disabled={props.editorView?.state.readOnly}
+                onPick={({ rows, columns }) =>
+                  withView((view) => {
+                    if (!view.state.readOnly) return insertTable(view, { rows, cols: columns }, locale());
+                  })()
+                }
+              />
+            }
+          >
+            {props.table?.TableMenu({ class: "text-dimmed", size: "xs", position: "top-right" })}
+          </Show>
           <Dropdown.Root
             open={coarsePointer() ? moreOpen() : undefined}
             onOpenChange={setMoreOpen}
@@ -374,24 +425,49 @@ export default function EditorToolbar(props: Props) {
               {
                 sectionLabel: t().blocks,
                 items: [
-                  { icon: "ti ti-chevron-right", label: t().note, action: withView((view) => insertCallout(view, "note")) },
-                  { icon: "ti ti-info-circle", label: t().info, action: withView((view) => insertCallout(view, "info")) },
-                  { icon: "ti ti-check", label: t().success, action: withView((view) => insertCallout(view, "success")) },
-                  { icon: "ti ti-alert-circle", label: t().warning, action: withView((view) => insertCallout(view, "warning")) },
-                  { icon: "ti ti-alert-hexagon", label: t().danger, action: withView((view) => insertCallout(view, "danger")) },
+                  {
+                    icon: "ti ti-chevron-right",
+                    label: t().note,
+                    disabled: inCell(),
+                    action: withView((view) => insertCallout(view, "note")),
+                  },
+                  {
+                    icon: "ti ti-info-circle",
+                    label: t().info,
+                    disabled: inCell(),
+                    action: withView((view) => insertCallout(view, "info")),
+                  },
+                  {
+                    icon: "ti ti-check",
+                    label: t().success,
+                    disabled: inCell(),
+                    action: withView((view) => insertCallout(view, "success")),
+                  },
+                  {
+                    icon: "ti ti-alert-circle",
+                    label: t().warning,
+                    disabled: inCell(),
+                    action: withView((view) => insertCallout(view, "warning")),
+                  },
+                  {
+                    icon: "ti ti-alert-hexagon",
+                    label: t().danger,
+                    disabled: inCell(),
+                    action: withView((view) => insertCallout(view, "danger")),
+                  },
                 ],
               },
               {
                 sectionLabel: t().misc,
                 items: [
-                  { icon: "ti ti-table", label: t().table, action: withView((view) => insertTable(view, undefined, locale())) },
-                  { icon: "ti ti-code-plus", label: t().codeBlock, action: withView(insertCodeBlock) },
                   {
-                    icon: "ti ti-code",
-                    label: t().inlineCode,
-                    description: keys("Mod-e"),
-                    action: withView((view) => toggleInlineMark(view, "code")),
+                    icon: "ti ti-table",
+                    label: t().table,
+                    disabled: inCell(),
+                    action: () => queueMicrotask(() => openTablePicker()),
                   },
+                  { icon: "ti ti-code-plus", label: t().codeBlock, disabled: inCell(), action: withView(insertCodeBlock) },
+                  { icon: "ti ti-code", label: t().inlineCode, description: keys("Mod-e"), action: mark("code", "code") },
                 ],
               },
             ]}
