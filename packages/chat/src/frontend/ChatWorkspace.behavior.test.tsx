@@ -108,7 +108,6 @@ describe("ChatWorkspace interactions", () => {
   const leavePosts: unknown[] = [];
   const snapshots = new Map<string, ReturnType<typeof ChatSnapshotSchema.parse>>();
   const pendingSnapshots = new Map<string, Promise<Response>>();
-  let snapshotRequests = 0;
   let membersRequests = 0;
   let memberName: string | null = null;
   let answer: (response: Response) => void;
@@ -121,7 +120,6 @@ describe("ChatWorkspace interactions", () => {
     leavePosts.length = 0;
     snapshots.clear();
     pendingSnapshots.clear();
-    snapshotRequests = 0;
     membersRequests = 0;
     memberName = null;
     FakeWebSocket.instances = [];
@@ -139,7 +137,6 @@ describe("ChatWorkspace interactions", () => {
         if (url.pathname === "/api/chat/preferences") return Response.json({ collapsed: [] });
         const snapshot = /^\/api\/chat\/conversations\/([^/]+)\/snapshot$/.exec(url.pathname);
         if (snapshot) {
-          snapshotRequests++;
           const pending = pendingSnapshots.get(snapshot[1]!);
           if (pending) return pending;
           const body = snapshots.get(snapshot[1]!);
@@ -735,33 +732,6 @@ describe("ChatWorkspace interactions", () => {
     expect(up.defaultPrevented).toBe(true);
     expect(dom.window.location.pathname).toBe("/app/chat");
     expect(dom.root.querySelector(".chat-conversation__header")).toBeNull();
-    expect(consoleErrors).toEqual([]);
-  });
-  test("closing info updates the view before history traversal completes", async () => {
-    const t = chatMessages.resolve(["en"]).t;
-    await mount(true);
-    dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
-    await settle();
-    expect(dom.window.location.search).toBe("?panel=info");
-    const back = dom.window.history.back;
-    let traversals = 0;
-    dom.window.history.back = () => {
-      traversals++;
-    };
-    try {
-      button(t.closeChatInfo).click();
-      expect(traversals).toBe(1);
-      expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(true);
-      expect(dom.root.querySelector('[aria-controls="k2b-workspace-detail-chat-info"]')?.getAttribute("aria-expanded")).toBe("false");
-      // The browser has not delivered popstate yet; the existing history entry remains intact.
-      expect(dom.window.location.search).toBe("?panel=info");
-    } finally {
-      dom.window.history.back = back;
-    }
-    dom.window.history.back();
-    await settle();
-    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat01");
-    expect(snapshotRequests).toBe(0);
     expect(consoleErrors).toEqual([]);
   });
   test("leaving info opened from the chat keeps one Back action to the list", async () => {

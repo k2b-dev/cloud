@@ -723,13 +723,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (pendingOpen !== 0) return;
     const id = route().chatId;
     if (!id || panel() === null) return;
-    const messageId = route().messageId;
-    // Reflect the close action immediately; history traversal may deliver popstate later.
-    setPanel(null);
     if (infoFromChat()) {
       history.back();
       return;
     }
+    const messageId = route().messageId;
+    setPanel(null);
     setRoute({ chatId: id, messageId, panel: null });
     if (navigation) navigation.push(listHref(panelHref(id, null, messageId)), { scroll: "preserve" });
     else navigate(listHref(panelHref(id, null, messageId)), { scroll: "preserve" });
