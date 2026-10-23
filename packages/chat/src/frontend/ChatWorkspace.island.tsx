@@ -1093,7 +1093,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       setChat(live.openConversation);
       if (live.openConversation?.status === "no-access") setPanel(null);
       setLiveStopped(live.liveStatus === "stopped");
+      // Subscriptions changed elsewhere, such as in another tab: the catalog reads them again.
+      if (live.subscriptionsVersion !== subscriptionsSeen) {
+        subscriptionsSeen = live.subscriptionsVersion;
+        setChannelRevision((revision) => revision + 1);
+      }
     };
+    let subscriptionsSeen = live.subscriptionsVersion;
     onCleanup(live.subscribe(sync));
     sync();
 
@@ -1151,6 +1157,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       }),
     );
     const activate = () => reporter?.reporter.activate();
+    // Back on the catalog after a while away, it reads current subscriptions.
+    const revisit = () => {
+      if (route().channels && document.visibilityState === "visible") setChannelRevision((revision) => revision + 1);
+    };
+    document.addEventListener("visibilitychange", revisit);
+    onCleanup(() => document.removeEventListener("visibilitychange", revisit));
     createEffect(on(panel, activate));
     phone.addEventListener("change", activate);
     document.addEventListener("visibilitychange", activate);

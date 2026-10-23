@@ -109,6 +109,25 @@ for (const mode of [
         await discover().waitFor();
       }
     });
+    test("a subscription made in another tab shows in the open catalog", async () => {
+      harness.addChannel("Atlas", "Project decisions");
+      await mount(page, mode.locale, "/app/chat/channels");
+      const row = catalog().getByRole("listitem").filter({ hasText: "Atlas" });
+      await row.getByRole("button", { name: t.subscribe, exact: true }).waitFor();
+      const other = await context.newPage();
+      await other.addInitScript(pinPageClock, chatTestNow.getTime());
+      await mount(other, mode.locale, "/app/chat/channels");
+      await other
+        .getByRole("region", { name: t.browseChannels, exact: true })
+        .getByRole("listitem")
+        .filter({ hasText: "Atlas" })
+        .getByRole("button", { name: t.subscribe, exact: true })
+        .click();
+      // The first tab learns it from its personal live channel, without a reload.
+      await row.getByRole("button", { name: t.subscribed, exact: true }).waitFor();
+      await other.close();
+    });
+
     test("loading skeleton, catalog error/retry and empty/search-empty states", async () => {
       let fail = true;
       let release!: () => void;

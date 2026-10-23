@@ -548,9 +548,12 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     sidebarWork = work.catch(() => {});
     return work;
   };
+  // Counts sidebar reloads, which follow every membership change and resync, so views of subscriptions can follow.
+  let subscriptionsVersion = 0;
   const reloadSidebar = async () => {
     const page = await api.conversations();
     if (disposed) return;
+    subscriptionsVersion++;
     rows = [...page.items];
     unreadRev.clear();
     for (const row of rows) unreadRev.set(row.id, row.rev);
@@ -749,6 +752,9 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     },
     get hasMoreSidebar() {
       return nextCursor !== null;
+    },
+    get subscriptionsVersion() {
+      return subscriptionsVersion;
     },
     loadMoreSidebar: (): Promise<void> => {
       if (moreSidebar) return moreSidebar;
