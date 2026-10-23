@@ -671,7 +671,8 @@
 /* The audience line keeps its height while it counts, shows the count, or offers Try again. */
 .chat-channel-audience {
   display: flex;
-  min-height: 2rem;
+  /* Two lines: a failure with Try again may wrap on a phone. */
+  min-height: 2.75rem;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;

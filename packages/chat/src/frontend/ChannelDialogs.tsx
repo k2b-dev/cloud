@@ -318,10 +318,12 @@ export function ChannelDialog(
           <div class="chat-channel-audience">
             <Switch>
               <Match when={!intent?.pending() && previewError()}>
-                <DialogError message={t().requestFailed} />
-                <Button variant="text" size="sm" onClick={() => void preview()}>
-                  {t().retry}
-                </Button>
+                <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+                  {t().audienceCountFailed}{" "}
+                  <Button variant="text" size="xs" onClick={() => void preview()}>
+                    {t().retry}
+                  </Button>
+                </InlineGuidance>
               </Match>
               <Match when={!intent?.pending() && countLoading()}>
                 <InlineGuidance loading>{t().countingAudience}</InlineGuidance>
