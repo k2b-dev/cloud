@@ -23,6 +23,8 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A stale poll overwrites a newer action | A late device status replaces the next pairing and discards its QR. | Test: the App-PWA example `Staff.test.ts` delays device A, issues B, delivers A and then confirms B; only B may clear its QR. |
+| A focused fixture performs unrelated startup or expensive data preparation | Route tests spend their budget importing unrelated services or compressing fixtures at maximum quality. | Tests: Gateway App-PWA routing fixtures isolate configuration/audit modules; the Brotli response fixture uses quality 4 while retaining original timeout bounds and response assertions. |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
@@ -987,6 +989,20 @@ convention still needs a check or a test.
 - **Root cause:** Its fixture added two days to the real clock, then used fixed UTC times while asserting summer local times.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
+
+### Installable-app fixtures spent their budget starting unrelated services
+
+- **What happened:** Focused App-PWA gateway tests timed out during development before reaching their assertions.
+- **Root cause:** Child fixtures imported the complete platform service graph, and a compression fixture used Brotli's maximum quality although it only needed a valid compressed body.
+- **Error class:** A focused fixture performs unrelated startup or expensive data preparation.
+- **Guard:** Gateway fixtures provide the minimal configuration and audit modules required by the route; the Brotli fixture uses quality 4. The focused gateway tests retain their original timeout bounds and verify the response contents.
+
+### A late device poll removed the next pairing QR
+
+- **What happened:** In the App-PWA example, a delayed status for an already paired device removed a new device's QR.
+- **Root cause:** Starting a mutation kept the old poll's generation, and any active device response could clear the displayed QR.
+- **Error class:** A stale poll overwrites a newer action.
+- **Guard:** The deterministic DOM test `examples/app-pwa/test/Staff.test.ts` delivers the old response after the new QR, then confirms the new device. Mutations cancel and invalidate earlier polls; confirmations match the selected device and QR.
 
 ## Add a lesson
 

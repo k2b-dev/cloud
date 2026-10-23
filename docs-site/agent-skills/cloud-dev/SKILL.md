@@ -57,6 +57,15 @@ and durable data.
 - Send an interactive credential only to Core. Framework-owned cross-app calls
   exchange it for a short-lived target- and operation-bound invocation; never
   forward a cookie, OAuth token, or API key directly to another application.
+- For an independently installed App-PWA, read **App-PWA**
+  (`/en/docs/frontend/app-pwa`) and **App-PWA sessions**
+  (`/en/docs/identity/app-pwa-sessions`). Declare one `installable` surface;
+  this is separate from the Cloud mobile app's `pwa` parts. Keep paired-device
+  and visit actors separate from employee identity: the app authorizes customer
+  actions through its visit, while Cloud resource operations intersect declared
+  device permissions with current owner grants. Use the supplied transaction
+  for visit commands and domain writes; never retain private pages or unfinished
+  signatures for offline use.
 - Durable background work that calls another application stores one revocable
   mandate for the workload. It authenticates to Core with its app-bound
   workload credential and never stores the user's session or personal API key.
