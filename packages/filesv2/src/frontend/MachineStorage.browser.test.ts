@@ -219,7 +219,15 @@ describe("Machine storage settings", () => {
         );
         try {
           await tab.locator("summary").filter({ hasText: owner.name }).click();
-          await tab.getByRole("button", { name: "Revoke", exact: true }).waitFor();
+          const revoke = tab.getByRole("button", { name: "Revoke", exact: true });
+          await revoke.waitFor();
+          const layout = await revoke.evaluate((button) => {
+            const style = getComputedStyle(button.parentElement!);
+            return { display: style.display, gap: Number.parseFloat(style.rowGap) };
+          });
+          // The captured app layout must include its compiled utilities.
+          expect(layout.display).toBe("flex");
+          expect(layout.gap).toBeGreaterThan(0);
           expect(await tab.evaluate(() => Math.max(0, document.documentElement.scrollWidth - innerWidth))).toBe(0);
           if (process.env.SHOTS)
             await tab.screenshot({ path: `${process.env.SHOTS}/files-machine-${device}-${theme}.png`, fullPage: true });

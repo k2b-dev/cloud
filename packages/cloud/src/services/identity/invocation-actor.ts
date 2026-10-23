@@ -36,6 +36,8 @@ export type InvocationPrincipalClaims = Pick<
   | "session_kind"
   | "scopes"
   | "credential_id"
+  | "oauth_client_id"
+  | "credential_expires_at"
   | "exp"
   | "act"
   | "credential_kind"
@@ -140,11 +142,14 @@ export const resolveInvocationAuthority = async (
   };
   if (
     claims.oauth_client_id &&
-    !(await isServiceAccountOAuthAuthorityCurrent({
-      serviceAccountId: serviceAccount.id,
-      clientId: claims.oauth_client_id,
-      expiresAt: actor.credentialExpiresAt,
-    }))
+    !(await isServiceAccountOAuthAuthorityCurrent(
+      {
+        serviceAccountId: serviceAccount.id,
+        clientId: claims.oauth_client_id,
+        expiresAt: actor.credentialExpiresAt,
+      },
+      { query, groupsAdmin },
+    ))
   )
     return null;
   const accessSubject: AccessSubject = delegatedUser

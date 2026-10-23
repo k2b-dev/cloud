@@ -7,9 +7,10 @@ import { Filegate } from "@k2b/filegate";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { invocationAuthorityFromRequest } from "../../../cloud/src/services/identity/invocation-authority";
-import { signInvocationToken } from "../../../cloud/src/services/identity/invocation-token";
+import { issueInvocationToken } from "../../../cloud/src/services/identity/issue-invocation";
 import { activityFilegate } from "../../test/activity-filegate";
 import { testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
@@ -24,6 +25,8 @@ import { filesService as service } from ".";
 import { verifyEditorToken } from "./collabora";
 import { FilesRoot } from "./filegate-facade";
 import { templateService } from "./templates";
+
+useTestAppRegistry(["filesv2"]);
 
 const suite = suiteFor("database", "nats", "valkey");
 suite("Files machine storage through actual API tokens", () => {
@@ -676,7 +679,7 @@ suite("Files machine storage through actual API tokens", () => {
       expect(ticket?.scopes).toEqual(["admin"]);
       expect(JSON.stringify(ticket)).not.toContain(bearer);
       expect(Buffer.from(editor.token.split(".")[0]!, "base64url").toString()).not.toContain(bearer);
-      const signedInvocation = await signInvocationToken({
+      const invocationInput = {
         issuer: "http://files-machine.test",
         callingAppId: "core",
         targetAppId: "filesv2",
@@ -684,7 +687,8 @@ suite("Files machine storage through actual API tokens", () => {
         schemaHash: null,
         authority: invocationAuthorityFromRequest(identity.authority),
         signer: { key: oauthPrivateKey, kid: oauthKid, signUntil: new Date(expiry * 1000) },
-      });
+      };
+      const signedInvocation = await issueInvocationToken(invocationInput);
       const invocationEndpoint = new Hono<AuthContext>()
         .use(requireInvocation(() => ({ targetAppId: "filesv2", operation: "capability.query:content.read", schemaHash: null })))
         .get("/", (c) => c.json({ actor: c.get("actor") }));
@@ -698,9 +702,20 @@ suite("Files machine storage through actual API tokens", () => {
       const invocationEditor = await service.editor(invocationCall, { baseId: storage.baseId, path: "oauth.odt" });
       if (invocationEditor.kind === "markdown") throw new Error("Expected office editor");
       expect((await service.editorFileInfo(invocationEditor.token, ref)).UserCanWrite).toBe(true);
+      // Issuance revalidation uses the caller's transaction, including its live client view.
+      const rollback = new Error("Rollback OAuth authority fixture");
+      await expect(
+        sql.begin(async (tx) => {
+          await tx`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
+          await expect(issueInvocationToken(invocationInput, { db: tx })).rejects.toMatchObject({ code: "app_access_denied" });
+          throw rollback;
+        }),
+      ).rejects.toBe(rollback);
+      await data(await invoke());
       await sql`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
       expect((await serviceAccounts.get({ id: account.id }))?.status).toBe("active");
       expect((await service.storageGrants(call(), storage.id)).items.some((item) => item.id === grant.id)).toBe(true);
+      await expect(issueInvocationToken(invocationInput)).rejects.toMatchObject({ code: "app_access_denied" });
       await denied(await invoke());
       await denied(await publicApi.request(invocationPath));
       await expect(service.editorFileInfo(invocationEditor.token, ref)).rejects.toMatchObject({ status: 403 });

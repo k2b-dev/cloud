@@ -154,6 +154,8 @@ For an OAuth reference, call `isServiceAccountOAuthAuthorityCurrent` from
 each authorized operation. It checks expiry and the same live client, account
 and delegated-user policy as OAuth authentication. It grants no domain access:
 reload resource permissions and keep the captured scopes as an upper bound.
+Inside a SQL transaction, pass its connection as `{ query }` in the optional
+second argument so revalidation uses that transaction's current client and policy state.
 For an API key, also check the current credential's status, account binding,
 expiry and scope cap through `serviceAccountCredentials.getOverview`.
 
