@@ -683,10 +683,12 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
       await page.reload();
       await selected.waitFor();
       expect(new URL(page.url()).searchParams.get("block")).toBe(input.id);
+      // The selected row is server-rendered; Back needs the island's onMount popstate handler.
+      await page.waitForFunction(() => document.documentElement.dataset.timeBlocksFixtureReady === "true");
       await page.goBack();
-      await selected.waitFor({ state: "detached" });
       expect(new URL(page.url()).searchParams.has("item")).toBe(false);
       expect(new URL(page.url()).searchParams.has("block")).toBe(false);
+      await selected.waitFor({ state: "detached" });
       expect(await blocks(f)).toHaveLength(1);
     } finally {
       await page.context().close();
@@ -877,6 +879,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         await page.reload();
         await row(upcoming.id).waitFor();
         expect(new URL(page.url()).searchParams.get("view")).toBe("upcoming");
+        await page.waitForFunction(() => document.documentElement.dataset.timeBlocksFixtureReady === "true");
         await shot(page, "13-my-work-upcoming");
         await page.goBack();
         await row(today.id).waitFor();
