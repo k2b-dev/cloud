@@ -60,9 +60,12 @@ accounts accept UUIDs or exact names. Ambiguous names fail before a write.
 Name lookup and principal search require directory access. A userless actor
 uses recipient UUIDs; the CLI does not grant it directory access.
 
-Standalone and agent accounts can use their grants within the credential's
-`read`, `write`, or `admin` scopes. Creating a resource requires `write` or
-`admin`. Resource-bound credentials are unsupported. Service accounts of kind
+Standalone and agent accounts can manage Projects within their grants and
+the credential's `read`, `write`, or `admin` scopes. Creating a Project requires
+`write` or `admin`. These accounts can also read Skills granted to them.
+Skill access commands and other Skill writes require a user-backed caller
+with Core access, even when a machine account has an `admin` grant and scope.
+Resource-bound credentials are unsupported. Service accounts of kind
 `user_delegated` or `resource_bound` cannot replace the last eligible manager.
 Public grants are rejected. Grant changes require `admin` permission.
 
