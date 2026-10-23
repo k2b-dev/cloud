@@ -296,13 +296,16 @@ const open = async (
       body: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#93c5fd"/><circle cx="${width / 2}" cy="${height / 2}" r="${Math.min(width, height) / 4}" fill="#1d4ed8"/></svg>`,
     });
   });
-  await page.setContent(
+  // A page with an address: WebKit keeps no history on about:blank, and a phone sheet runs its entry only after its
+  // history entry is gone.
+  const html =
     `<!doctype html><html lang="${options.locale ?? "en"}"><head><meta name="viewport" content="width=device-width">` +
-      `<style>${css}</style><style>${fonts}</style>` +
-      "<style>*,*::before,*::after{transition:none!important}</style></head>" +
-      `<body class="k2b-ui${options.theme === "dark" ? " k2b-dark" : ""}" style="margin:0;background:var(--k2b-surface)">` +
-      `<div id="app" style="display:flex;width:${width}px;height:1400px"></div></body></html>`,
-  );
+    `<style>${css}</style><style>${fonts}</style>` +
+    "<style>*,*::before,*::after{transition:none!important}</style></head>" +
+    `<body class="k2b-ui${options.theme === "dark" ? " k2b-dark" : ""}" style="margin:0;background:var(--k2b-surface)">` +
+    `<div id="app" style="display:flex;width:${width}px;height:1400px"></div></body></html>`;
+  await page.route(`${assets}page`, (route) => route.fulfill({ contentType: "text/html; charset=utf-8", body: html }));
+  await page.goto(`${assets}page`);
   // Fonts first: a font that arrives late changes every text's height, which is not the row's doing.
   await page.evaluate(async () => {
     await Promise.all(
