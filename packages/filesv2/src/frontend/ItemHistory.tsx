@@ -1,6 +1,6 @@
 import { query } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, DetailPanel } from "@k2b/ui";
-import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, Match, Show, Switch } from "solid-js";
 import type { ActivityPage, ShareAccessPeriod } from "../activity-contracts";
 import type { ShareView } from "../contracts";
 import { HistoryRow, SkeletonRows } from "./ActivityView";
@@ -55,6 +55,9 @@ const at = (iso: string) => Date.parse(iso);
  */
 export default function ItemHistory(props: ItemHistoryProps) {
   const h = useHistoryMessages();
+  const rowsId = createUniqueId();
+  let rows: HTMLUListElement | undefined;
+  let disclosure: HTMLButtonElement | undefined;
   const history = query.createInfinite({
     source: () => props.source,
     initial:
@@ -129,6 +132,23 @@ export default function ItemHistory(props: ItemHistoryProps) {
   const shown = () => (expanded() ? lines() : lines().slice(0, RECENT));
   const older = () => lines().length - RECENT;
   const loadNext = () => void limiting()?.loadMore();
+  const loadOlder = async (trigger: HTMLButtonElement) => {
+    const restoreFocus = trigger.ownerDocument.activeElement === trigger;
+    const source = props.source;
+    try {
+      if (history.error()) await activity().retry();
+      else await limiting()?.loadMore();
+      if (props.source === source && older() > 0) setExpanded(true);
+    } finally {
+      // The last page can remove the load control. Keep keyboard users at the newly loaded history,
+      // but do not take focus back from another control they used while the request was pending.
+      const active = trigger.ownerDocument.activeElement;
+      if (props.source === source && restoreFocus && (active === trigger || active === trigger.ownerDocument.body)) {
+        if (trigger.isConnected && !trigger.disabled) trigger.focus();
+        else (disclosure?.isConnected ? disclosure : rows)?.focus();
+      }
+    }
+  };
   const retryAccess = () => {
     for (const stream of access()) if (stream.failed) void stream.retry();
   };
@@ -200,7 +220,7 @@ export default function ItemHistory(props: ItemHistoryProps) {
               <p class="filesv2-item-history__line">{h().linksIncomplete}</p>
             </Match>
             <Match when={lines().length > 0}>
-              <ul class="filesv2-history-rows">
+              <ul ref={rows} id={rowsId} class="filesv2-history-rows" tabindex="-1">
                 <For each={shown()}>
                   {(line) => (
                     <li>
@@ -229,34 +249,33 @@ export default function ItemHistory(props: ItemHistoryProps) {
                 </For>
               </ul>
               <div class="filesv2-item-history__more">
-                <Show when={!expanded() && (older() > 0 || more())}>
-                  <Button
-                    size="xs"
-                    variant="text"
-                    class="filesv2-history-link"
-                    onClick={() => {
-                      setExpanded(true);
-                      if (older() <= 0) loadNext();
-                    }}
-                  >
-                    {older() > 0 && complete() ? h().showOlder.replace("{count}", String(older())) : h().showOlderUnknown}
-                  </Button>
-                </Show>
-                <Show when={expanded() && (more() || (loaded() && history.error()))}>
+                <Show when={(expanded() || older() <= 0) && (more() || (loaded() && history.error()))}>
                   <Button
                     size="xs"
                     variant="text"
                     class="filesv2-history-link"
                     loading={loadingOlder()}
                     loadingLabel={h().loadingOlder}
-                    onClick={() => (history.error() ? void activity().retry() : loadNext())}
+                    onClick={(event) => void loadOlder(event.currentTarget)}
                   >
                     {history.error() ? h().retry : h().showOlderUnknown}
                   </Button>
                 </Show>
-                <Show when={expanded() && lines().length > RECENT}>
-                  <Button size="xs" variant="text" class="filesv2-history-link" onClick={() => setExpanded(false)}>
-                    {h().showLess}
+                <Show when={older() > 0}>
+                  <Button
+                    size="xs"
+                    variant="text"
+                    class="filesv2-history-link"
+                    ref={disclosure}
+                    aria-expanded={expanded()}
+                    aria-controls={rowsId}
+                    onClick={() => setExpanded(!expanded())}
+                  >
+                    {expanded()
+                      ? h().showLess
+                      : older() > 0 && complete()
+                        ? h().showOlder.replace("{count}", String(older()))
+                        : h().showOlderUnknown}
                   </Button>
                 </Show>
               </div>
