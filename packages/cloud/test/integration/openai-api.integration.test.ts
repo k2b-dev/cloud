@@ -9,18 +9,18 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { aiLive, aiLiveChannels } from "../../src/ai/live";
-import { createAiOpenAiRoutes } from "../../src/ai/openai-api";
 import { aiModelAccess } from "../../src/ai/model-access";
+import { createAiOpenAiRoutes } from "../../src/ai/openai-api";
 import { acquire } from "../../src/ai/openai-api-slots";
 import { aiQuotas } from "../../src/ai/quotas";
-import type { Principal } from "../../src/contracts/shared";
-import { createAccess } from "../../src/server/services/access";
-import { serviceAccounts } from "../../src/services/service-accounts";
 import type { AiModelProfile } from "../../src/ai/types";
 import { createCoreApiRouter } from "../../src/api";
+import type { Principal } from "../../src/contracts/shared";
 import type { AuthContext } from "../../src/server";
+import { createAccess } from "../../src/server/services/access";
 import { accounts } from "../../src/services/accounts";
 import { serviceAccountCredentials } from "../../src/services/service-account-credentials";
+import { serviceAccounts } from "../../src/services/service-accounts";
 import { session } from "../../src/services/session";
 import { createTestBrowserSignIn } from "../../src/services/session/session.test-fixture";
 import { coreSettings } from "../../src/services/settings/api";
@@ -374,10 +374,11 @@ for (const kind of ["standalone", "agent"] as const) {
         expect(dispatches).toBe(1);
         await serviceAccounts.setStatus({ id: machineId, status: "active" });
         // Every key shares the existing account quota and concurrency identity.
-        await sql`UPDATE ai.cost_config SET enabled=true,rules=${JSON.stringify([{ scope: "*", hours: 24, anchor: "2020-01-01T00:00:00Z", grants: [] }])}::jsonb`;
+        await sql`UPDATE ai.cost_config SET enabled=true,rules=(${JSON.stringify([{ scope: "*", hours: 24, anchor: "2020-01-01T00:00:00Z", grants: [] }])}::text)::jsonb`;
+        expect((await aiQuotas.snapshot(machineSubject, model.id)).balances).toMatchObject([{ scope: "*", limit: 0, bypassed: false }]);
         expect((await call()).status).toBe(429);
         expect((await call(app(), second.data.token)).status).toBe(429);
-        await sql`UPDATE ai.cost_config SET rules=${JSON.stringify([{ scope: "*", hours: 24, anchor: "2020-01-01T00:00:00Z", grants: [{ principal: machineSubject, limit: 1 }] }])}::jsonb`;
+        await sql`UPDATE ai.cost_config SET rules=(${JSON.stringify([{ scope: "*", hours: 24, anchor: "2020-01-01T00:00:00Z", grants: [{ principal: machineSubject, limit: 1 }] }])}::text)::jsonb`;
         expect((await call()).status).toBe(200);
         const slot = await acquire({ subject: machineSubject, limit: 1 });
         const previousLimit = await coreSettings.get<number>("ai.openai_api_max_concurrent_requests");
@@ -403,7 +404,7 @@ for (const kind of ["standalone", "agent"] as const) {
       } finally {
         await coreSettings.set("ai.openai_api_enabled", enabled);
         await coreSettings.set("ai.model_profiles_json", previousProfiles);
-        await sql`UPDATE ai.cost_config SET enabled=${previousQuota.enabled},rules=${JSON.stringify(previousQuota.rules)}::jsonb`;
+        await sql`UPDATE ai.cost_config SET enabled=${previousQuota.enabled},rules=(${JSON.stringify(previousQuota.rules)}::text)::jsonb`;
         await sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access WHERE profile_id IN (${model.id},${otherModel}))`;
         await sql`DELETE FROM ai.model_access_resources WHERE profile_id IN (${model.id},${otherModel})`;
         if (machineId) {

@@ -12,7 +12,7 @@ beforeAll(async () => {
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const build = await Bun.build({
-    entrypoints: [resolve(import.meta.dir, "machine-key.browser-fixture.tsx")],
+    entrypoints: [resolve(import.meta.dir, "../test/machine-key.browser-fixture.tsx")],
     target: "browser",
     format: "iife",
     conditions: ["browser"],
@@ -79,7 +79,7 @@ for (const width of [390, 768, 1280])
         await tab.goto("https://cloud.example.test/app/accounts/service-accounts");
         await tab.getByRole("button", { name: "Create API key", exact: true }).click();
         const dialog = tab.getByRole("dialog");
-        await dialog.getByRole("button", { name: "Machine account", exact: true }).click();
+        await dialog.getByRole("combobox", { name: "Machine account", exact: true }).click();
         await tab.getByRole("option", { name: /Transcript cleanup robot/ }).click();
         await dialog.getByLabel("Name", { exact: true }).fill("Transcript cleanup");
         expect(await dialog.getByText("AI models only", { exact: true }).count()).toBeGreaterThan(0);
