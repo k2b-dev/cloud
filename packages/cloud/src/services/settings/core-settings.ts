@@ -69,6 +69,22 @@ export const CORE_SETTINGS = {
       "Trusted HTTPS origin of the authenticator, used for app installation and pairing links. Changing this origin requires reviewing existing devices; never use a wildcard.",
     default: "https://cloud-login.pwa.k2b.dev",
   },
+  "user.app_approval.label": {
+    kind: "string",
+    label: "Name in Cloud Login",
+    description:
+      "Suggested label for new Cloud Login connections. Empty uses the application display name. People can change it; existing connections keep their names.",
+    default: "",
+    presentation: {
+      translations: {
+        de: {
+          label: "Name in Cloud Login",
+          description:
+            "Namensvorschlag für neue Cloud-Login-Verbindungen. Leer übernimmt den Anzeigenamen der Anwendung. Bestehende Verbindungen behalten ihren Namen; Nutzer können den Vorschlag ändern.",
+        },
+      },
+    },
+  },
   "user.app_approval.admin_pairing": {
     kind: "boolean",
     label: "Allow administrator-assisted pairing",

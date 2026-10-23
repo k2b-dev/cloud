@@ -154,6 +154,9 @@ describe("approval on a paired device in a browser", () => {
           await page.getByRole("button", { name: t.revoke }).click();
           const dialog = page.locator("dialog[open].app-revoke-dialog");
           await dialog.getByText(t.endSessions).waitFor();
+          await page.touchscreen.tap(2, 2);
+          await page.keyboard.press("Escape");
+          expect(await dialog.count()).toBe(1);
           steps.ask = await measure(page);
           await shot("ask");
           const footer = dialog.locator(".k2b-panel-dialog__footer");
@@ -204,6 +207,9 @@ describe("approval on a paired device in a browser", () => {
           await dialog.getByText("482913").waitFor({ timeout: 12_000 });
           const code = await measure(page);
           if (shots) await page.screenshot({ path: join(shots, `pair-code-${view.name}-${theme}.png`) });
+          await page.touchscreen.tap(2, 2);
+          await page.keyboard.press("Escape");
+          expect(await dialog.count()).toBe(1);
           await dialog.getByRole("button", { name: t.confirm }).click();
           await dialog.getByText(t.approvalTitle).waitFor();
           const waiting = await measure(page);

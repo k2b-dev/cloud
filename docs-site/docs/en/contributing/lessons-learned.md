@@ -19,6 +19,16 @@ while reviews apply it, and a rule that nothing checks decays. The table marks
 each guard as a check, a test, or a convention, so a class that has only a
 convention still needs a check or a test.
 
+## Pairing survives incidental gestures and uncertain requests
+
+Multi-step enrollment must close only through explicit controls. Use the
+existing `dialogCore` option `cancelBehavior: "ignore"` for backdrop, Escape
+and sheet dismissal; avoid a synthetic Back entry when it would discard the
+flow. Keep the saved enrollment key when a request is interrupted. Read the
+server's status before retrying a claim: only `pending` allows a new claim.
+Guard: Cloud Login's `pairing.browser.test.ts` checks outside taps, Escape,
+dragging, interrupted claims and resumption in Chromium and WebKit.
+
 ## Error classes
 
 | Class | What goes wrong | Current guard |
