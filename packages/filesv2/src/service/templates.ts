@@ -198,7 +198,7 @@ export function createTemplateService(files = filesService) {
       await requireUse(actor, subject, id);
       const [row] = await sql<{ bytes: Uint8Array<ArrayBuffer> }[]>`SELECT bytes FROM filesv2.templates WHERE id=${id}::uuid`;
       if (!row) throw new FilesError("not_found", 404);
-      return files.createFromBytes(call, input, new Uint8Array(row.bytes));
+      return files.createFromBytes(call, { ...input, templateId: id }, new Uint8Array(row.bytes));
     },
   };
 }
