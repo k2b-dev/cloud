@@ -79,4 +79,60 @@ describe("MobileShell", () => {
     expect(button).toMatch(/<button [^>]*aria-label="Back"/);
     expect(button).not.toContain("k2b-mobile-shell__actions");
   });
+
+  test("a sidebar comes first and names the app; Start and Settings frame the parts, an empty group is left out", () => {
+    const html = renderToString(() =>
+      createComponent(MobileShell, {
+        get sidebar() {
+          return createComponent(MobileShell.Sidebar, {
+            label: "App",
+            title: "Example Cloud",
+            logo: "/branding/logo",
+            items: [{ id: "start", label: "Start", icon: "ti ti-home", href: "/pwa/", current: true }],
+            sections: [
+              { title: "Apps", items: [{ id: "chat", label: "Chat", icon: "ti ti-messages", href: "/pwa/chat", count: 3 }] },
+              { title: "Empty", items: [] },
+            ],
+            footer: [{ id: "settings", label: "Settings", icon: "ti ti-settings", href: "/pwa/settings" }],
+          });
+        },
+        get header() {
+          return createComponent(MobileShell.Header, { title: "Example Cloud", sidebarTitle: "Start" });
+        },
+        children: "Rows",
+      }),
+    );
+
+    expect(html).toMatch(/^<div class="k2b-mobile-shell"[^>]*><nav class="k2b-mobile-shell__sidebar" aria-label="App">/);
+    expect(html).toContain('<img src="/branding/logo" alt width="32" height="32"><span class="k2b-truncate-fade">Example Cloud</span>');
+    expect(html).toContain('<a href="/pwa/" aria-current="page" data-tab="start" data-k2b-title="Start">');
+    expect(html).toContain("<h2>Apps</h2>");
+    expect(html).not.toContain("Empty");
+    expect(html).toContain('<span class="k2b-mobile-shell__sidebar-count">3</span>');
+    expect(html).toMatch(/<div class="k2b-mobile-shell__sidebar-foot"><ul><li><a href="\/pwa\/settings"/);
+    // The page's title on the phone names the app; beside the sidebar, which names it already, the page.
+    expect(html).toContain(
+      '<h1 class="k2b-mobile-shell__title"><span class="k2b-mobile-shell__title-narrow">Example Cloud</span><span class="k2b-mobile-shell__title-wide">Start</span></h1>',
+    );
+  });
+
+  test("Back can leave the sidebar's own destinations to the sidebar, and content can bring its own heads", () => {
+    const back = renderToString(() =>
+      createComponent(MobileShell.Header, { title: "Settings", back: { href: "/pwa/", label: "Start", withSidebar: false } }),
+    );
+    expect(back).toMatch(/<a [^>]*data-with-sidebar="false"[^>]*aria-label="Start"|<a aria-label="Start"[^>]*data-with-sidebar="false"/);
+
+    const bare = renderToString(() =>
+      createComponent(MobileShell, {
+        scroll: false,
+        get header() {
+          return createComponent(MobileShell.Header, { title: "Spaces" });
+        },
+        children: "Levels",
+      }),
+    );
+    expect(bare).toMatch(/^<div class="k2b-mobile-shell" data-k2b-content-heads=""/);
+    expect(bare).toMatch(/<main class="k2b-mobile-shell__main"[^>]*>Levels<\/main>/);
+    expect(bare).not.toContain("k2b-mobile-shell__body");
+  });
 });
