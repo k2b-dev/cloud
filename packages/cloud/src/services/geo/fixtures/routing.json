@@ -1,0 +1,57 @@
+{
+  "results": [
+    {
+      "mode": "drive",
+      "units": "metric",
+      "distance_units": "meters",
+      "distance": 3000,
+      "time": 300,
+      "waypoints": [
+        {
+          "location": [10, 48],
+          "original_index": 0
+        },
+        {
+          "location": [10.01, 48.01],
+          "original_index": 1
+        },
+        {
+          "location": [10.02, 48.02],
+          "original_index": 2
+        }
+      ],
+      "legs": [
+        {
+          "distance": 1500,
+          "time": 150
+        },
+        {
+          "distance": 1500,
+          "time": 150
+        }
+      ],
+      "geometry": [
+        [
+          {
+            "lon": 10,
+            "lat": 48
+          },
+          {
+            "lon": 10.01,
+            "lat": 48.01
+          }
+        ],
+        [
+          {
+            "lon": 10.01,
+            "lat": 48.01
+          },
+          {
+            "lon": 10.02,
+            "lat": 48.02
+          }
+        ]
+      ]
+    }
+  ]
+}
