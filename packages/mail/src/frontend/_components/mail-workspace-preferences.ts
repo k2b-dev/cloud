@@ -3,6 +3,9 @@ import { type MailConversationToolbarActionId, normalizeMailConversationToolbarA
 
 export type MailWorkspacePreferences = {
   listCollapsed: boolean;
+  /** Browser-level discovery of the mailbox head search, read on the server too. */
+  searchDiscovered?: boolean;
+  searchHintDismissed?: boolean;
   detailsOpen: boolean;
   toolbarActions: MailConversationToolbarActionId[];
   listMode: MailListMode;
@@ -23,6 +26,10 @@ const normalizeMailboxIds = (value: unknown): string[] =>
   Array.isArray(value) ? [...new Set(value.filter(isMailResourceId))].slice(0, MAX_MAILBOX_IDS) : [];
 
 const normalizeMailWorkspacePreferences = (value: unknown): MailWorkspacePreferences => ({
+  searchDiscovered: Boolean(value && typeof value === "object" && (value as { searchDiscovered?: unknown }).searchDiscovered === true),
+  searchHintDismissed: Boolean(
+    value && typeof value === "object" && (value as { searchHintDismissed?: unknown }).searchHintDismissed === true,
+  ),
   listCollapsed: Boolean(value && typeof value === "object" && (value as { listCollapsed?: unknown }).listCollapsed === true),
   detailsOpen: Boolean(value && typeof value === "object" && (value as { detailsOpen?: unknown }).detailsOpen === true),
   toolbarActions: normalizeMailConversationToolbarActions(

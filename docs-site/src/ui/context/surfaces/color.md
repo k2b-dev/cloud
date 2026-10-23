@@ -102,7 +102,7 @@ the main action.
 
 Controls say what a person can do or what a field holds, not where they are.
 They keep the platform colors `--k2b-action`, `--k2b-action-solid`, and
-`--k2b-selected` in every app, and the selection hooks never change them:
+`--k2b-selected` by default. The selection hooks never change these controls:
 buttons, inputs, checkboxes, radios, switches, and every focus ring
 (`--k2b-focus-ring`), plus keyboard-active options, pressed toolbar buttons,
 and checked cards.
@@ -122,6 +122,13 @@ and checked cards.
 | Selected tone or emoji group | `EmojiPicker` | `k2b-emoji-picker` |
 | Pressed toolbar button | `Toolbar` | `k2b-toolbar` |
 | Pressed formatting tool | `MarkdownEditor` | `k2b-markdown-editor` |
+
+An application's main action may deliberately use its app accent through
+`--k2b-action-solid` and `--k2b-action-solid-hover`, scoped to that action.
+Mail's approved Compose and Send actions use this exception. In this repository,
+each exception has an exact entry in `scripts/checks/selection-tokens.ts`.
+Other controls, focus rings, status colors, and tag colors retain their roles;
+this does not change navigation or content-row selection tokens.
 
 ### Drop targets
 
