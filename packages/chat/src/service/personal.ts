@@ -2,8 +2,8 @@ import { err, fail, ok } from "@k2b/cloud/server";
 import { sql } from "bun";
 import {
   boundConversation,
-  capPermission,
   type ChatContext,
+  capPermission,
   messages,
   principalCondition,
   requireConversation,

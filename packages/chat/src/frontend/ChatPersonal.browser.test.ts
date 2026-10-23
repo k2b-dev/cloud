@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContext, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
@@ -208,6 +208,7 @@ test("sixteen pins scroll without a cap and pointer and keyboard drag both save"
     await pins.getByRole("link", { name: /Room 01/ }).hover();
     const source = pins.getByRole("button", { name: "Move Room 01", exact: true });
     await source.hover();
+    await settled(page);
     const from = await source.boundingBox(),
       target = await pins.locator("[data-dnd-droppable]", { has: page.getByText("Room 03", { exact: true }) }).boundingBox();
     await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2);
