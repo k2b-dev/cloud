@@ -14,7 +14,8 @@ import type {
   VenueDashboard,
 } from "../src/contracts";
 
-const fixtureNow = "2026-09-28T10:00:00.000Z";
+// Exercise quarter-hour rounding as well as a fixed Berlin summer-time offset.
+const fixtureNow = "2026-09-28T10:07:13.000Z";
 
 const flush = async () => {
   for (let index = 0; index < 20; index += 1) await Promise.resolve();
