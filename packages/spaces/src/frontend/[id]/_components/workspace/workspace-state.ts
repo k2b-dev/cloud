@@ -1,3 +1,4 @@
+import type { RequestAuthority } from "@k2b/cloud/server";
 import { logger, weatherService } from "@k2b/cloud/services";
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import { orderBoardColumns } from "@/board-columns";
@@ -43,6 +44,7 @@ type WorkspaceRequest = {
   href: string;
   cookieHeader?: string;
   authorizationHeader?: string;
+  authority: RequestAuthority | null;
   dateConfig?: DateContext;
   /** The days a day, week, or month view loads instead of its first window, such as the days it already shows. */
   calendarRange?: CalendarRange;
@@ -548,6 +550,7 @@ const loadSelectedItemState = async (params: {
   dateConfig?: DateContext;
   cookieHeader?: string;
   authorizationHeader?: string;
+  authority: RequestAuthority | null;
 }): Promise<SpaceItemDetail | null> => {
   if (!ResourceShortIdSchema.safeParse(params.selectedItemId).success) return null;
   const selectedItemId = await spacesPublicResources.resolvePublicId("items", params.selectedItemId);
@@ -601,10 +604,14 @@ const loadSelectedItemState = async (params: {
     comments,
     commentTarget,
     recurringContext,
-    references: await resolveReferenceViews(references, {
-      cookie: params.cookieHeader,
-      authorization: params.authorizationHeader,
-    }),
+    references: await resolveReferenceViews(
+      references,
+      {
+        cookie: params.cookieHeader,
+        authorization: params.authorizationHeader,
+      },
+      params.authority,
+    ),
     links,
     attachments,
     checklist,
@@ -847,6 +854,7 @@ export const loadSpaceItemDetail = async (params: {
   dateConfig?: DateContext;
   cookieHeader?: string;
   authorizationHeader?: string;
+  authority: RequestAuthority | null;
 }): Promise<{ kind: "ok"; detail: SpaceItemDetail } | Extract<SpacesWorkspaceState, { kind: "notFound" | "accessDenied" }>> => {
   const { t } = spaceMessages.resolve(params.dateConfig?.locale ? [params.dateConfig.locale] : []);
   const [space, permissions] = await Promise.all([
@@ -901,10 +909,14 @@ export const loadSpaceItemDetail = async (params: {
       comments,
       commentTarget,
       recurringContext,
-      references: await resolveReferenceViews(references, {
-        cookie: params.cookieHeader,
-        authorization: params.authorizationHeader,
-      }),
+      references: await resolveReferenceViews(
+        references,
+        {
+          cookie: params.cookieHeader,
+          authorization: params.authorizationHeader,
+        },
+        params.authority,
+      ),
       links,
       attachments,
       checklist,
@@ -943,6 +955,7 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     dateConfig: params.dateConfig,
     cookieHeader: params.cookieHeader,
     authorizationHeader: params.authorizationHeader,
+    authority: params.authority,
   });
   const [publicItemsResult, publicKanbanBuckets, publicCalendarItems, publicCalendarTray, publicWormholes] = await Promise.all([
     spacesPublicResources.projectItemListResult(itemsResult, route.filter.groupBy),

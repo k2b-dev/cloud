@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import type { RequestAuthority } from "@k2b/cloud/server";
 import type { SpaceItem } from "@/contracts";
 
 // Keep the Cloud and Spaces service fixtures inside their own process so
@@ -14,6 +15,29 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
     expect({ code, output: code === 0 ? "passed" : `${stdout}\n${stderr}` }).toEqual({ code: 0, output: "passed" });
   }, 60_000);
 } else {
+  const authority: RequestAuthority = {
+    actor: {
+      kind: "service_account",
+      serviceAccount: {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Catalog reader",
+        kind: "standalone",
+        status: "active",
+        delegatedUserId: null,
+        appId: null,
+        resourceType: null,
+        resourceId: null,
+        createdBy: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      },
+      delegatedUser: null,
+      scopes: ["read"],
+    },
+    accessSubject: { type: "service_account", serviceAccountId: "11111111-1111-4111-8111-111111111111" },
+    credentialKind: "oauth",
+    scopes: ["read"],
+  };
+
   const SPACE_ID = "11111111-1111-4111-8111-111111111111";
   const USER_ID = "22222222-2222-4222-8222-222222222222";
   const COLUMN_ID = "33333333-3333-4333-8333-333333333333";
@@ -110,8 +134,12 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
     },
   }));
 
+  const referenceCalls: Array<{ caller: unknown; authority: RequestAuthority | null }> = [];
   mock.module("@/service/resource-reference-views", () => ({
-    resolveReferenceViews: async () => [],
+    resolveReferenceViews: async (_references: unknown, caller: unknown, currentAuthority: RequestAuthority | null) => {
+      referenceCalls.push({ caller, authority: currentAuthority });
+      return [];
+    },
   }));
 
   mock.module("@/service/time-block-views", () => ({
@@ -244,6 +272,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
   describe("Spaces workspace SSR state", () => {
     test.each(["list", "table", "kanban", "calendar"] as const)("resolves %s from the request before rendering head tabs", async (view) => {
       const state = await loadSpacesWorkspaceState({
+        authority: null,
         user: { id: USER_ID, roles: ["user"] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
@@ -254,6 +283,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
     test("resolves a remembered view on the server when the URL has no override", async () => {
       const state = await loadSpacesWorkspaceState({
+        authority: null,
         user: { id: USER_ID, roles: ["user"] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
@@ -265,6 +295,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
     test("captures the live cursor after authorization and before snapshot queries", async () => {
       const state = await loadSpacesWorkspaceState({
+        authority: null,
         user: { id: USER_ID, roles: ["user"] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
@@ -279,6 +310,9 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
     test("includes the selected item and bounded comments page in a deep-link snapshot", async () => {
       const state = await loadSpacesWorkspaceState({
+        authority,
+        cookieHeader: "session=test",
+        authorizationHeader: "Bearer test",
         user: { id: USER_ID, roles: ["user"] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
@@ -290,6 +324,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       expect(state.selectedItemDetail?.item.id).toBe(ITEM_SHORT_ID);
       expect(state.selectedItemDetail?.comments.items[0]?.id).toBe(COMMENT_SHORT_ID);
       expect(state.selectedItemDetail?.commentTarget).toEqual({ itemId: ITEM_SHORT_ID, recurrenceId: null });
+      expect(referenceCalls.at(-1)).toEqual({ caller: { cookie: "session=test", authorization: "Bearer test" }, authority });
       expect(state.selectedItemDetail?.recurringContext).toBeNull();
       expect(state.selectedItemDetail?.attachments).toEqual([]);
       expect(state.selectedItemDetail?.checklist).toEqual([]);
@@ -297,6 +332,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
     test("refreshes a view without loading item comments", async () => {
       const snapshot = await loadSpacesViewSnapshot({
+        authority: null,
         user: { id: USER_ID, roles: ["user"] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
@@ -309,6 +345,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
     test("resolves public filter IDs before querying and projects results back", async () => {
       const snapshot = await loadSpacesViewSnapshot({
+        authority: null,
         user: { id: USER_ID, roles: ["user"] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
@@ -321,7 +358,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
     });
 
     test("groups only the list; the table keeps the selected sort across pages", async () => {
-      const request = { user: { id: USER_ID, roles: ["user" as const] }, spaceId: SPACE_ID, spaceShortId: SPACE_SHORT_ID };
+      const request = { authority: null, user: { id: USER_ID, roles: ["user" as const] }, spaceId: SPACE_ID, spaceShortId: SPACE_SHORT_ID };
       await loadSpacesViewSnapshot({ ...request, href: `/app/spaces/${SPACE_SHORT_ID}?view=list&groupBy=tag&sort=title` });
       await loadSpacesViewSnapshot({ ...request, href: `/app/spaces/${SPACE_SHORT_ID}?view=table&groupBy=tag&sort=title` });
 
@@ -330,6 +367,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
     test("narrows every Kanban column by the board filter and reports what the filter hides", async () => {
       const snapshot = await loadSpacesViewSnapshot({
+        authority: null,
         user: { id: USER_ID, roles: ["user"] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
@@ -362,6 +400,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
     test("an unfiltered Kanban board loads each column once and has no unfiltered count", async () => {
       const snapshot = await loadSpacesViewSnapshot({
+        authority: null,
         user: { id: USER_ID, roles: ["user"] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
@@ -375,6 +414,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
     test("does not block remote calendar ranges on unavailable forecast data", async () => {
       const snapshot = await loadSpacesViewSnapshot({
+        authority: null,
         user: { id: USER_ID, roles: ["user"] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
@@ -387,6 +427,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
     test("opens an old link to the removed timeline as the month of its day, without a tray", async () => {
       const snapshot = await loadSpacesViewSnapshot({
+        authority: null,
         user: { id: USER_ID, roles: ["user"] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
@@ -402,6 +443,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
     test("loads the tray with the day view and with no other view", async () => {
       const request = {
+        authority: null,
         user: { id: USER_ID, roles: ["user" as const] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
@@ -433,7 +475,10 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       };
 
       const state = await loadSpacesWorkspaceState({
+        authority,
         user: { id: USER_ID, roles: ["user"] },
+        cookieHeader: "session=test",
+        authorizationHeader: "Bearer test",
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
         href: `/app/spaces/${SPACE_SHORT_ID}?view=calendar&item=${ITEM_SHORT_ID}&occurrence=${encodeURIComponent(recurrenceId)}`,
@@ -479,7 +524,10 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       };
 
       const detail = await loadSpaceItemDetail({
+        authority,
         user: { id: USER_ID, roles: ["user"] },
+        cookieHeader: "session=test",
+        authorizationHeader: "Bearer test",
         spaceId: SPACE_ID,
         itemId: ITEM_ID,
         occurrenceId: recurrenceId,
@@ -487,6 +535,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
       expect(detail.kind).toBe("ok");
       if (detail.kind !== "ok") return;
+      expect(referenceCalls.at(-1)).toEqual({ caller: { cookie: "session=test", authorization: "Bearer test" }, authority });
       expect(detail.detail.item.reactions).toEqual([{ emoji: "❤️", count: 1, own: true, people: [] }]);
       expect(detail.detail.item.id).toBe(OVERRIDE_SHORT_ID);
       expect(detail.detail.recurringContext).toEqual({
@@ -503,6 +552,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
     test("fails closed before reading cursor or snapshot data", async () => {
       permission = "none";
       const state = await loadSpacesWorkspaceState({
+        authority: null,
         user: { id: USER_ID, roles: ["user"] },
         spaceId: SPACE_ID,
         spaceShortId: SPACE_SHORT_ID,
@@ -518,14 +568,24 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
     test("detail loading rejects missing access and cross-space item ids before comments", async () => {
       permission = "none";
-      const denied = await loadSpaceItemDetail({ user: { id: USER_ID, roles: ["user"] }, spaceId: SPACE_ID, itemId: ITEM_ID });
+      const denied = await loadSpaceItemDetail({
+        authority: null,
+        user: { id: USER_ID, roles: ["user"] },
+        spaceId: SPACE_ID,
+        itemId: ITEM_ID,
+      });
       expect(denied.kind).toBe("accessDenied");
       expect(calls).not.toContain("item.get");
 
       calls.splice(0);
       permission = "read";
       itemSpaceId = OTHER_SPACE_ID;
-      const mismatched = await loadSpaceItemDetail({ user: { id: USER_ID, roles: ["user"] }, spaceId: SPACE_ID, itemId: ITEM_ID });
+      const mismatched = await loadSpaceItemDetail({
+        authority: null,
+        user: { id: USER_ID, roles: ["user"] },
+        spaceId: SPACE_ID,
+        itemId: ITEM_ID,
+      });
       expect(mismatched.kind).toBe("notFound");
       expect(calls).toContain("item.get");
       expect(calls).not.toContain("comment.list");

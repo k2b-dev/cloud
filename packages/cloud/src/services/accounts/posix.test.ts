@@ -13,7 +13,8 @@ test("Linux identity configuration replaces the complete admin input in its audi
   });
   const tx = new Proxy(client, {
     apply(_target, _receiver, [strings]) {
-      if (!strings.join("?").trim().startsWith("LOCK TABLE")) throw new Error("Only table locks expected");
+      if (!/^(LOCK TABLE|SELECT value FROM settings.entries)/.test(strings.join("?").trim()))
+        throw new Error("Only locks and configuration reads expected");
       return Promise.resolve([]);
     },
   });
@@ -29,7 +30,7 @@ test("Linux identity configuration replaces the complete admin input in its audi
     expect(await createPosixService().configure({ id: "00000000-0000-4000-8000-000000000001", roles: ["admin"] }, input)).toEqual(input);
     expect(begin).toHaveBeenCalledTimes(1);
     expect(write).toHaveBeenCalledTimes(1);
-    expect(write).toHaveBeenCalledWith("linux.identity_config", JSON.stringify(input), tx, { replaceUnreadable: true });
+    expect(write).toHaveBeenCalledWith("linux.identity_config", JSON.stringify(input), tx, { replaceUnreadable: false });
     expect(record).toHaveBeenCalledWith(expect.objectContaining({ action: "accounts.linux.configure", metadata: input }), tx);
     expect(invalidate).toHaveBeenCalledWith(["linux.identity_config"]);
   } finally {
