@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-10-20
+updated: 2026-10-21
 ---
 
 # Chat runtime and streaming
@@ -118,6 +118,14 @@ application explicitly opens Assistant. Core stores that attribution on the
 new conversation for AI usage accounting. Omit it for chats created directly
 inside Assistant.
 
+Conversation creation accepts an optional UUID `requestId`. Keep it and the
+same creation input until `POST /api/ai/conversations` returns the conversation.
+Concurrent requests or retries after a lost response return that same conversation
+for the authenticated owner. Changed input returns a conflict. A deleted or
+archived conversation is unavailable; the request never creates a replacement.
+Project access is checked again on replay. Use a new UUID only for a new,
+deliberate creation. Without `requestId`, each request creates a conversation.
+
 The structured composer draft contains text, exact stored-file versions, and
 zero or more Cloud resource refs. Save it with `PUT
 /api/ai/conversations/:id/draft` and an `expectedRevision`. Identical autosaves
@@ -134,6 +142,28 @@ when the request sends none, and the original selected local Skills when a
 local client retries. Background and mandate runs do not
 receive local client context. The transaction consumes and clears exactly that revision, so
 text and attachments cannot drift between save and send.
+
+If a turn response is lost, retain the confirmed draft revision and the exact
+submit options. `GET /api/ai/conversations/:id/submission/:draftRevision` returns
+`{ submission: { messageId, turnId } }` when a user message records that revision,
+including compacted messages, or `{ submission: null }`. It checks the current
+owner and Project access. Null does not prove rejection: the original request
+may still be running, or its history may have been removed.
+
+A deliberate retry may submit the same revision and unchanged options without
+saving again. The transaction consumes a draft revision at most once. After a
+conflict, check the exact submission again; never infer acceptance from a newer
+draft revision. Missing records or revoked access can leave the outcome unknown.
+Keep the draft and make that uncertainty visible instead of sending it under a
+new revision.
+
+The browser controller also retains the original `queueId` and frozen body after
+an uncertain queued submission. Saving, sending, and conflict overwrite stay
+locked for that conversation. `reconcileSubmission` reads the existing queue;
+a matching entry proves acceptance, but absence may mean it already ran.
+`retrySubmission` replays the same body without another draft save, so the durable
+queue receipt also recognizes drained entries. Both paths keep the local draft
+locked until its post-submission revision has been read.
 
 Pass `skills: ["cloud-grids"]` to attach enabled, readable Skills by exact name
 when launching a chat. Core resolves them into ordinary `core.ai.skill` resource

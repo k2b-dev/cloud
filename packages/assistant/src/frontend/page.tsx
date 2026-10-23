@@ -12,7 +12,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale, getTimeZone, loadPendingApprovals } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
+import { Layout, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
 import { getCookie } from "hono/cookie";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { ssr } from "../config";
@@ -23,6 +23,8 @@ import { ASSISTANT_CONTEXT_COOKIE, assistantContextClosedFromCookie } from "./ch
 import { assistantMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
+  const embedded = c.req.path === "/app/assistant/panel";
+  const basePath = embedded ? "/app/assistant/panel" : "/app/assistant";
   const locale = getLocale(c);
   const timeZone = getTimeZone(c);
   const { t } = assistantMessages.resolve([locale]);
@@ -68,16 +70,14 @@ export default ssr<AuthContext>(async (c) => {
   const selectedConversationId =
     activeProject || approvalsOpen
       ? null
-      : (requestedConversationId ?? conversations.find((conversation) => !conversation.isDone)?.shortId ?? null);
+      : (requestedConversationId ?? (embedded ? null : conversations.find((conversation) => !conversation.isDone)?.shortId) ?? null);
   const resolvedActiveConversation = selectedConversationId
     ? await aiConversations.getConversationByShortId({ shortId: selectedConversationId, ownerUserId: user.id })
     : null;
   if (!activeProject && requestedConversationId && !resolvedActiveConversation) return ssr.error(c, 404);
   if (requestedConversationId && resolvedActiveConversation?.shortId !== requestedConversationId) {
     return c.redirect(
-      resolvedActiveConversation
-        ? `/app/assistant?conversation=${encodeURIComponent(resolvedActiveConversation.shortId)}`
-        : "/app/assistant",
+      resolvedActiveConversation ? `${basePath}?conversation=${encodeURIComponent(resolvedActiveConversation.shortId)}` : basePath,
       302,
     );
   }
@@ -99,50 +99,61 @@ export default ssr<AuthContext>(async (c) => {
       ])
     : [null, [], null];
 
+  const workspace = () => (
+    <AssistantWorkspace
+      embedded={embedded}
+      initialPanelContext={embedded ? readPanelContext(c) : null}
+      initialQuotas={initialQuotas}
+      userId={user.id}
+      cloudUrl={publicCloudOrigin(appUrl)}
+      status={status}
+      models={models}
+      lastModelId={prefs.lastModelId}
+      timeZone={timeZone}
+      renderedAt={new Date().toISOString()}
+      initialLiveCursor={initialLiveCursor}
+      initialConversations={initialConversations}
+      initialDoneCount={sidebar.doneCount}
+      initialQuestions={sidebar.questions}
+      initialConversationId={activeConversation?.shortId ?? null}
+      initialArtifactPath={initialArtifactPath}
+      initialWorkspaceHref={`${url.pathname}${url.search}`}
+      initialDetail={
+        initialDetail
+          ? {
+              conversation: initialDetail.conversation,
+              messages: initialDetail.messages,
+              hasMoreMessages: initialDetail.hasMoreMessages ?? false,
+              activeTurn: initialDetail.activeTurn,
+              timeline: initialTimeline,
+            }
+          : null
+      }
+      initialContext={initialContext}
+      initialContextClosed={assistantContextClosedFromCookie(getCookie(c, ASSISTANT_CONTEXT_COOKIE))}
+      projects={projects}
+      initialProject={activeProject}
+      initialProjectChats={
+        projectChats
+          ? {
+              ...projectChats,
+              items: projectChats.items.map((chat) => ({ ...chat, id: chat.shortId, projectId: activeProject!.id })),
+            }
+          : null
+      }
+      initialProjectContext={projectContext}
+      approvals={{ page: approvals, open: approvalsOpen }}
+    />
+  );
+  if (embedded)
+    return () => (
+      <PanelLayout c={c} title={t.assistant}>
+        {workspace()}
+      </PanelLayout>
+    );
   return () => (
     <Layout c={c} fullPage title={[{ title: t.start, href: "/" }, { title: t.assistant }]}>
-      <AssistantWorkspace
-        initialQuotas={initialQuotas}
-        userId={user.id}
-        cloudUrl={publicCloudOrigin(appUrl)}
-        status={status}
-        models={models}
-        lastModelId={prefs.lastModelId}
-        timeZone={timeZone}
-        renderedAt={new Date().toISOString()}
-        initialLiveCursor={initialLiveCursor}
-        initialConversations={initialConversations}
-        initialDoneCount={sidebar.doneCount}
-        initialQuestions={sidebar.questions}
-        initialConversationId={activeConversation?.shortId ?? null}
-        initialArtifactPath={initialArtifactPath}
-        initialWorkspaceHref={`${url.pathname}${url.search}`}
-        initialDetail={
-          initialDetail
-            ? {
-                conversation: initialDetail.conversation,
-                messages: initialDetail.messages,
-                hasMoreMessages: initialDetail.hasMoreMessages ?? false,
-                activeTurn: initialDetail.activeTurn,
-                timeline: initialTimeline,
-              }
-            : null
-        }
-        initialContext={initialContext}
-        initialContextClosed={assistantContextClosedFromCookie(getCookie(c, ASSISTANT_CONTEXT_COOKIE))}
-        projects={projects}
-        initialProject={activeProject}
-        initialProjectChats={
-          projectChats
-            ? {
-                ...projectChats,
-                items: projectChats.items.map((chat) => ({ ...chat, id: chat.shortId, projectId: activeProject!.id })),
-              }
-            : null
-        }
-        initialProjectContext={projectContext}
-        approvals={{ page: approvals, open: approvalsOpen }}
-      />
+      {workspace()}
     </Layout>
   );
 });
