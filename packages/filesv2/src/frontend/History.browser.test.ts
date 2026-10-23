@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser } from "../../../ui/test/browser";
 import {
   historyActivity,
   historyBase,
@@ -361,7 +361,13 @@ test("phone activity keeps the menu beside the search and never leaves a dot at 
     await tab.locator(".filesv2-history-row").first().waitFor();
     await tab.locator(".filesv2-history-head__filters .k2b-filter-chip").first().click();
     await tab.locator(".k2b-filter-chip__option").filter({ hasText: "Team Vertrieb" }).click();
-    await settled(tab);
+    await tab.locator('.filesv2-history-head__filters .k2b-filter-chip[data-active="true"]').waitFor();
+    await tab.waitForFunction(
+      () =>
+        !document
+          .getAnimations()
+          .some((animation) => animation.playState === "running" && animation.effect?.getTiming().iterations !== Infinity),
+    );
     const chipsFit = await tab.locator(".filesv2-history-head__filters .k2b-filter-chip").evaluateAll((chips) =>
       chips.slice(0, 4).every((chip) => {
         const rect = chip.getBoundingClientRect();
@@ -399,7 +405,17 @@ test("phone activity keeps the menu beside the search and never leaves a dot at 
           const own = dot.getBoundingClientRect();
           const end = before ? [...before.getClientRects()].at(-1) : undefined;
           const start = after?.getClientRects()[0];
-          if (!end || !start || !sameLine(end, own) || !sameLine(start, own)) misplaced.push(meta.textContent ?? "");
+          if (!end || !start || !sameLine(end, own) || !sameLine(start, own))
+            misplaced.push(
+              JSON.stringify({
+                text: meta.textContent,
+                html: meta.innerHTML,
+                leadWhiteSpace: getComputedStyle(meta.querySelector(".filesv2-history-row__lead") ?? meta).whiteSpace,
+                before: end?.toJSON(),
+                dot: own.toJSON(),
+                after: start?.toJSON(),
+              }),
+            );
         }
       }
       return { wrapped, misplaced };
