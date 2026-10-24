@@ -49,10 +49,48 @@ export const migrate = async (): Promise<void> => {
         OR (kind = 'system' AND system_code IS NOT NULL AND system_params IS NOT NULL AND body_md IS NULL AND client_id IS NULL)
       )
     );
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS refs jsonb NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS links text[] NOT NULL DEFAULT '{}';
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_refs ON chat.messages(conversation_id, seq DESC) WHERE refs <> '[]'::jsonb;
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_links ON chat.messages(conversation_id, seq DESC) WHERE links <> '{}';
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_short_id ON chat.messages(short_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_seq ON chat.messages(conversation_id, seq);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_rev ON chat.messages(conversation_id, rev);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_client ON chat.messages(conversation_id, author_type, author_id, client_id);
+    CREATE TABLE IF NOT EXISTS chat.message_reactions (
+      message_id uuid NOT NULL REFERENCES chat.messages(id) ON DELETE CASCADE,
+      principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
+      principal_id uuid NOT NULL,
+      display_name text NOT NULL,
+      emoji text NOT NULL CHECK (octet_length(emoji) BETWEEN 1 AND 32),
+      position bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
+      PRIMARY KEY (message_id, principal_type, principal_id, emoji)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_reactions_message ON chat.message_reactions(message_id, emoji, position);
+    CREATE TABLE IF NOT EXISTS chat.threads (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id text NOT NULL CHECK (short_id ~ '^[0-9A-Za-z]{6}$') UNIQUE,
+      conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      name text NOT NULL CHECK (char_length(name) BETWEEN 1 AND 80),
+      description text CHECK (char_length(description) <= 80),
+      archived_at timestamptz,
+      created_by_type text NOT NULL CHECK (created_by_type IN ('user', 'service_account')),
+      created_by_id uuid NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      last_activity_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS chat.thread_create_intents (
+      principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
+      principal_id uuid NOT NULL,
+      conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      create_key uuid NOT NULL,
+      payload jsonb NOT NULL,
+      thread_id uuid NOT NULL UNIQUE REFERENCES chat.threads(id) ON DELETE CASCADE,
+      PRIMARY KEY (principal_type, principal_id, create_key)
+    );
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS thread_id uuid REFERENCES chat.threads(id) ON DELETE CASCADE;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS reply_to_seq bigint;
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON chat.messages(conversation_id, thread_id, seq);
     CREATE TABLE IF NOT EXISTS chat.conversation_access (
       conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
       access_id uuid NOT NULL REFERENCES auth.access(id) ON DELETE CASCADE,
@@ -81,6 +119,19 @@ export const migrate = async (): Promise<void> => {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_participants_conversation ON chat.participants(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_chat_participants_notify_all ON chat.participants(conversation_id) WHERE notify = 'all';
+    -- A thread's read state belongs to the participant: whoever leaves and joins again starts like in General.
+    CREATE TABLE IF NOT EXISTS chat.thread_reads (
+      principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
+      principal_id uuid NOT NULL,
+      conversation_id uuid NOT NULL,
+      thread_id uuid NOT NULL REFERENCES chat.threads(id) ON DELETE CASCADE,
+      last_read_seq bigint,
+      unread_from_seq bigint,
+      PRIMARY KEY (principal_type, principal_id, thread_id),
+      FOREIGN KEY (principal_type, principal_id, conversation_id)
+        REFERENCES chat.participants(principal_type, principal_id, conversation_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_thread_reads_participant ON chat.thread_reads(principal_type, principal_id, conversation_id);
     CREATE TABLE IF NOT EXISTS chat.account_prefs (
       principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
       principal_id uuid NOT NULL,
@@ -92,6 +143,18 @@ export const migrate = async (): Promise<void> => {
       voice_hint_seen boolean NOT NULL DEFAULT false,
       PRIMARY KEY (principal_type, principal_id)
     )
+  `.simple();
+  await sql`
+    ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'chat' CHECK (kind IN ('chat', 'system'));
+    ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS resource_type text;
+    ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS resource_id text;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_system_resource ON chat.conversations(resource_type, resource_id) WHERE kind = 'system';
+    ALTER TABLE chat.threads ADD COLUMN IF NOT EXISTS resource_type text;
+    ALTER TABLE chat.threads ADD COLUMN IF NOT EXISTS resource_id text;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_thread_resource ON chat.threads(conversation_id, resource_type, resource_id) WHERE resource_type IS NOT NULL;
+    -- Item titles need not be unique. Preserve the manual-thread name constraint.
+    DROP INDEX IF EXISTS chat.idx_chat_threads_name;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_threads_manual_name ON chat.threads(conversation_id, lower(name)) WHERE resource_type IS NULL;
   `.simple();
   console.log("  ✓ chat schema");
 };

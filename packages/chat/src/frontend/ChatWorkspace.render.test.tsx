@@ -18,6 +18,9 @@ const { default: ChatWorkspace } = await import("./ChatWorkspace.island");
 const now = "2026-10-12T10:30:00.000Z";
 const viewerId = "11111111-1111-4111-8111-111111111111";
 const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
+  threads: 0,
+  channel: false,
+  member: true,
   id: "Chat01",
   name: "Delivery board",
   title: "Delivery board",
@@ -28,7 +31,6 @@ const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
   read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
   archived: false,
   pinnedRank: null,
-  member: true,
   withGuests: false,
   peerDeactivated: false,
   permission: "write",
@@ -42,6 +44,8 @@ const props = (): ChatWorkspaceProps => ({
   sidebar: { items: [], nextCursor: null },
   open: null,
   chatId: null,
+  view: "all",
+  threadsPage: false,
   guest: false,
   panel: null,
   viewerId,
@@ -67,6 +71,21 @@ describe("ChatWorkspace server render", () => {
       expect(html).toContain(t.noChatsTitle);
       expect(html).toContain(t.noChatsDescription);
     });
+    test(`channel discovery renders its authorized initial page and membership in ${locale}`, () => {
+      const channel = { ...conversation, channel: true, purpose: "Decisions for the studio" };
+      const html = render(locale, {
+        ...props(),
+        channelsPage: true,
+        channelQuery: "studio",
+        channelPage: { items: [channel], nextCursor: null },
+      });
+      expect(html).toContain(t.browseChannels);
+      expect(html).toContain(t.discoverSubtitle);
+      expect(html).toContain(channel.purpose);
+      expect(html).toContain(t.subscribed);
+      expect(html).toContain('value="studio"');
+      expect(html).not.toContain(t.noChatsTitle);
+    });
     test(`list titles, sender previews, times and selection placeholder in ${locale}`, () => {
       const rows: ChatWorkspaceProps["sidebar"]["items"] = [
         {
@@ -74,6 +93,7 @@ describe("ChatWorkspace server render", () => {
           id: "Chat01",
           title: "Own last message",
           lastMessage: {
+            thread: null,
             id: "Chat010001",
             author: { type: "user", id: viewerId, name: "Robin" },
             preview: "Sent the invoice",
@@ -87,10 +107,10 @@ describe("ChatWorkspace server render", () => {
           memberCount: 2,
           archived: false,
           pinnedRank: null,
-          member: true,
           withGuests: false,
           peerDeactivated: false,
           lastMessage: {
+            thread: null,
             id: "Chat020001",
             author: { type: "user", id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" },
             preview: "Arriving soon",
@@ -102,6 +122,7 @@ describe("ChatWorkspace server render", () => {
           id: "Chat03",
           title: "Group chat",
           lastMessage: {
+            thread: null,
             id: "Chat030001",
             author: { type: "user", id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" },
             preview: "Bring photos",
@@ -128,20 +149,28 @@ describe("ChatWorkspace server render", () => {
       test(`open ${permission} chat header and composer in ${locale}`, () => {
         const data = props();
         data.chatId = conversation.id;
-        data.open = { conversation: { ...conversation, permission }, page: { items: [], seqHead: 0, rev: 1 }, focus: null };
+        data.open = {
+          conversation: { ...conversation, permission },
+          page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+          threads: { general: { unread: 0, lastMessage: null }, items: [] },
+          focus: null,
+        };
         const html = render(locale, data);
         expect(html).toContain(conversation.title);
         expect(html).toContain(t.members({ count: 3 }));
-        expect(html).toContain(`placeholder="${t.composerPlaceholder({ title: conversation.title })}"`);
+        // Readers get a quiet line in the composer's place instead of a field they cannot use.
         if (permission === "read") {
-          expect(html).toMatch(/<textarea[^>]*disabled/);
-          expect(html).toContain(t.readOnly);
-        } else expect(html).not.toContain(t.readOnly);
+          expect(html).not.toContain("<textarea");
+          expect(html).toContain(t.readOnlyIn({ title: conversation.title }));
+        } else {
+          expect(html).toContain(`placeholder="${t.composerPlaceholder({ title: conversation.title })}"`);
+          expect(html).not.toContain(t.readOnlyIn({ title: conversation.title }));
+        }
       });
     }
     test(`no access reveals neither chat title nor address identifier in ${locale}`, () => {
       const html = render(locale, { ...props(), chatId: "Secret", open: null });
-      expect(html).toContain(t.noAccessTitle);
+      expect(html).toContain(t.threadUnavailable);
       expect(html).toContain(t.noAccessDescription);
       expect(html).not.toContain("Secret board");
       expect(html).not.toContain("Secret");
@@ -156,7 +185,12 @@ test("SSR retains personal archive and Unread navigation and saved collapsed sta
     filter: "unread",
     collapsed: ["pinned", "chats"],
     chatId: conversation.id,
-    open: { conversation: { ...conversation, archived: true }, page: { items: [], rev: 1, seqHead: 0 }, focus: null },
+    open: {
+      conversation: { ...conversation, archived: true },
+      threads: { general: { unread: 0, lastMessage: null }, items: [] },
+      page: { items: [], rev: 1, seqHead: 0, from: 1, to: 0 },
+      focus: null,
+    },
     sidebar: { items: [{ ...conversation, archived: true }], nextCursor: null },
   });
   expect(html).toContain(`/app/chat/archive?filter=unread`);
@@ -177,7 +211,12 @@ test("the panel renders the same authorized chat with internal links and an expl
     embedded: true,
     sidebar: { items: [conversation], nextCursor: null },
     chatId: conversation.id,
-    open: { conversation, page: { items: [], seqHead: 0, rev: 1 }, focus: null },
+    open: {
+      conversation,
+      page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+      threads: { general: { unread: 0, lastMessage: null }, items: [] },
+      focus: null,
+    },
   });
   expect(html).toContain('href="/app/chat/panel/c/Chat01"');
   expect(html).toContain('href="/app/chat/panel"');
@@ -194,11 +233,208 @@ test("panel personal navigation retains archive and unread context when opening 
     archived: true,
     filter: "unread",
     chatId: conversation.id,
-    open: { conversation: { ...conversation, archived: true, unread: 2 }, page: { items: [], rev: 1, seqHead: 0 }, focus: null },
+    open: {
+      conversation: { ...conversation, archived: true, unread: 2 },
+      threads: { general: { unread: 0, lastMessage: null }, items: [] },
+      page: { items: [], rev: 1, seqHead: 0, from: 1, to: 0 },
+      focus: null,
+    },
     sidebar: { items: [{ ...conversation, archived: true, unread: 2 }], nextCursor: null },
   });
   expect(html).toContain('href="/app/chat/panel/archive?filter=unread"');
   expect(html).toContain('href="/app/chat/panel/c/Chat01?filter=unread&amp;list=archive"');
   expect(html).toContain('href="/app/chat/c/Chat01?filter=unread&amp;list=archive"');
   expect(html).toContain("Open full view");
+});
+
+test("the panel keeps a chat's threads below the panel route; the full view opens the same thread", () => {
+  const html = render("en", {
+    ...props(),
+    embedded: true,
+    sidebar: { items: [{ ...conversation, threads: 1 }], nextCursor: null },
+    chatId: conversation.id,
+    view: "general",
+    open: {
+      conversation: { ...conversation, threads: 1 },
+      page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+      threads: { general: { unread: 0, lastMessage: null }, items: [] },
+      focus: null,
+    },
+  });
+  expect(html).toContain('href="/app/chat/panel/c/Chat01/threads"');
+  expect(html).toContain('href="/app/chat/c/Chat01/t/general"');
+  expect(html).not.toContain('href="/app/chat/c/Chat01/threads"');
+});
+
+for (const locale of ["en", "de"])
+  for (const type of ["spaces.space", "notebooks.notebook"]) {
+    test(`system membership has no invented count in the list, header, overview and info: ${locale}, ${type}`, () => {
+      const system = { ...conversation, kind: "system" as const, resource: { type, id: "Space1" }, memberCount: 0 };
+      const data: ChatWorkspaceProps = {
+        ...props(),
+        chatId: system.id,
+        panel: "info",
+        sidebar: { items: [system], nextCursor: null },
+        open: {
+          conversation: system,
+          page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+          threads: { general: { unread: 0, lastMessage: null }, items: [] },
+          focus: null,
+        },
+      };
+      for (const threadsPage of [false, true]) {
+        const html = render(locale, { ...data, threadsPage });
+        expect(html.match(/.{0,100}0 (?:members|Mitglieder).{0,100}/g)).toBeNull();
+        expect(html).toContain(locale === "de" ? "Mitglieder: alle mit Zugriff" : "Members: everyone with access");
+      }
+    });
+  }
+
+const { default: ThreadMetadata } = await import("./ThreadMetadata");
+const { default: ChatList } = await import("./ChatList");
+const { default: ChatSystemChats } = await import("./ChatSystemChats");
+const renderChild = (locale: string, child: () => ReturnType<typeof createComponent>) =>
+  renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return child();
+      },
+    }),
+  );
+
+for (const locale of ["en", "de"]) {
+  for (const summaryCursor of ["", "Page02"]) {
+    test(`partial sidebar summaries stay visibly unknown in ${locale}, cursor ${JSON.stringify(summaryCursor)}`, () => {
+      const row = { ...conversation, kind: "system" as const, summaryCursor, unread: 0 };
+      const html = render(locale, { ...props(), sidebar: { items: [row], nextCursor: null } });
+      expect(html).toContain(locale === "de" ? "Ungelesene Nachrichten noch nicht vollständig gezählt" : "Unread count is incomplete");
+      expect(html).not.toContain("chat-system-chats--read");
+      expect(html).toContain("…");
+    });
+  }
+  test(`partial positive counts are lower bounds, including in an active chat in ${locale}`, () => {
+    const row = { ...conversation, kind: "system" as const, summaryCursor: "Page02", unread: 3 };
+    const list = {
+      href: (id: string) => `/app/chat/c/${id}`,
+      onPersonal: () => {},
+      pending: false,
+      activeId: row.id,
+      viewerId,
+      dateConfig: props().dateConfig,
+      now: () => new Date(now),
+      onOpen: () => {},
+      onMarkRead: () => {},
+      onMarkUnread: () => {},
+    };
+    const html = renderChild(locale, () =>
+      createComponent(ChatList, {
+        ...list,
+        rows: [row],
+        system: true,
+        hasMore: false,
+        onMore: () => {},
+      }),
+    );
+    expect(html).toContain("3+");
+    const section = renderChild(locale, () =>
+      createComponent(ChatSystemChats, {
+        list,
+        current: null,
+        updates: [row],
+        unavailableId: null,
+        expanded: false,
+        onExpanded: () => {},
+        onOpen: () => {},
+        state: { page: () => undefined, status: () => "ready", more: () => false, load: async () => {} },
+      }),
+    );
+    expect(section).toContain("3+");
+    expect(section).not.toContain("chat-system-chats--read");
+  });
+  test(`completed zero summaries keep the read section in ${locale}`, () => {
+    const row = { ...conversation, kind: "system" as const, summaryCursor: null, unread: 0 };
+    const html = render(locale, { ...props(), sidebar: { items: [row], nextCursor: null } });
+    expect(html).toContain("chat-system-chats--read");
+  });
+}
+
+for (const [zone, start, end, days] of [
+  ["Europe/Berlin", "2026-10-23T22:00:00.000Z", "2026-10-24T22:00:00.000Z", ["2026-10-24"]],
+  ["Europe/Berlin", "2026-10-23T22:00:00.000Z", "2026-10-25T23:00:00.000Z", ["2026-10-24", "2026-10-25"]],
+  ["America/Los_Angeles", "2026-10-24T07:00:00.000Z", "2026-10-25T07:00:00.000Z", ["2026-10-24"]],
+] as const) {
+  test(`all-day metadata uses calendar dates and inclusive end in ${zone}: ${end}`, () => {
+    const html = renderChild("en", () =>
+      createComponent(ThreadMetadata, {
+        dateConfig: { timeZone: zone, firstDayOfWeek: 1 },
+        resource: {
+          ref: { type: "spaces.item", id: "Item01" },
+          kind: "event",
+          startsAt: start,
+          endsAt: end,
+          allDay: true,
+          status: null,
+          done: false,
+          deadline: "2026-10-24",
+          deadlineAllDay: true,
+          href: "/app/spaces/Item01",
+        },
+      }),
+    );
+    const dates = [...html.matchAll(/datetime="([^"]+)"/g)].map((match) => match[1]!.slice(0, 10));
+    expect(dates).toEqual(["2026-10-24", ...days]);
+  });
+}
+
+test("timed events retain their exact instants, including their exclusive endpoint", () => {
+  const start = "2026-10-24T08:00:00.000Z",
+    end = "2026-10-24T09:00:00.000Z";
+  const html = renderChild("de", () =>
+    createComponent(ThreadMetadata, {
+      dateConfig: { timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+      resource: {
+        ref: { type: "spaces.item", id: "Item01" },
+        kind: "event",
+        status: null,
+        done: false,
+        startsAt: start,
+        endsAt: end,
+        allDay: false,
+        href: "/app/spaces/Item01",
+      },
+    }),
+  );
+  expect(html).toContain(`datetime="${start}"`);
+  expect(html).toContain(`datetime="${end}"`);
+  expect(html).toContain("10:00");
+  expect(html).toContain("11:00");
+});
+
+test("all-day events without an end keep their local start date", () => {
+  const html = renderChild("en", () =>
+    createComponent(ThreadMetadata, {
+      dateConfig: { timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+      resource: {
+        ref: { type: "spaces.item", id: "Item01" },
+        kind: "event",
+        status: null,
+        done: false,
+        startsAt: "2026-10-23T22:00:00.000Z",
+        allDay: true,
+        href: "/app/spaces/Item01",
+      },
+    }),
+  );
+  expect([...html.matchAll(/datetime="([^"]+)"/g)].map((match) => match[1]!.slice(0, 10))).toEqual(["2026-10-24"]);
+});
+
+test("system chat links keep personal Unread separate from the thread directory filter", () => {
+  const system = { ...conversation, kind: "system" as const, member: false, unread: 2, resource: { type: "spaces.space", id: "Space1" } };
+  const html = render("en", {
+    ...props(), embedded: true, filter: "unread", chatId: system.id,
+    open: { conversation: system, threads: { general: { unread: 2, lastMessage: null }, items: [] }, page: { items: [], rev: 1, seqHead: 0, from: 1, to: 0 }, focus: null },
+  });
+  expect(html).toContain('/app/chat/panel/c/Chat01?panel=info&amp;listFilter=unread');
+  expect(html).not.toContain('/app/chat/panel/c/Chat01?panel=info&amp;filter=unread');
 });

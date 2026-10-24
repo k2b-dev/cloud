@@ -12,11 +12,38 @@ const OperationSchema = z.object({
   parameters: z.array(z.unknown()).optional(),
 });
 const SpecSchema = z.object({ paths: z.record(z.string(), z.record(z.string(), OperationSchema)) });
+test("audience reads document an unavailable count as HTTP 503", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  for (const [path, method] of [
+    ["/api/chat/channels/preview", "post"],
+    ["/api/chat/conversations/{conversation}/discovery", "get"],
+  ] as const) {
+    const response = z
+      .object({
+        content: z.object({
+          "application/json": z.object({
+            schema: z.object({
+              required: z.array(z.string()),
+              properties: z.object({ code: z.object({ const: z.literal("AUDIENCE_UNAVAILABLE") }) }),
+            }),
+          }),
+        }),
+      })
+      .parse(spec.paths[path]?.[method]?.responses["503"]);
+    expect(response.content["application/json"].schema.required).toEqual(["code", "message"]);
+  }
+});
 test("publishes every conversation operation with typed request and response schemas", async () => {
   const app = new Hono<AuthContext>().route("/api/chat", chatApi);
   const spec = SpecSchema.parse(await generateSpecs(app));
   for (const [path, method] of [
     ["/people", "get"],
+    ["/channels", "get"],
+    ["/channels/options", "get"],
+    ["/channels/preview", "post"],
+    ["/conversations/{conversation}/discovery", "get"],
+    ["/conversations/{conversation}/discovery", "put"],
+    ["/conversations/{conversation}/join", "post"],
     ["/conversations/read-all", "post"],
     ["/conversations/{conversation}/read", "post"],
     ["/conversations/{conversation}/unread", "post"],
@@ -32,14 +59,18 @@ test("publishes every conversation operation with typed request and response sch
     ["/conversations/{conversation}/leave", "post"],
     ["/conversations/{conversation}/messages", "post"],
     ["/conversations/{conversation}/messages", "get"],
+    ["/conversations/{conversation}/shared", "get"],
     ["/conversations/{conversation}/messages/{message}", "get"],
     ["/conversations/{conversation}/changes", "get"],
     ["/conversations/{conversation}/snapshot", "get"],
+    ["/conversations/{conversation}/threads", "get"],
+    ["/conversations/{conversation}/threads", "post"],
+    ["/conversations/{conversation}/threads/{thread}", "patch"],
   ] as const) {
     const operation = spec.paths[`/api/chat${path}`]?.[method];
     expect(operation).toBeDefined();
     expect(operation?.responses[method === "post" && path === "/conversations" ? "201" : "200"]).toBeDefined();
-    if (["post", "patch"].includes(method)) expect(operation?.requestBody).toBeDefined();
+    if (["post", "patch", "put"].includes(method) && !path.endsWith("/join")) expect(operation?.requestBody).toBeDefined();
     if (path.includes("{conversation}")) expect(operation?.parameters?.length).toBeGreaterThanOrEqual(1);
   }
 });
@@ -85,7 +116,7 @@ test("snapshot documents its canonical response and hidden-chat 404", async () =
   const response = z
     .object({ content: z.object({ "application/json": z.object({ schema: z.object({ required: z.array(z.string()) }) }) }) })
     .parse(operation?.responses["200"]);
-  expect(response.content["application/json"].schema.required).toEqual(["cursor", "conversation", "page", "focus"]);
+  expect(response.content["application/json"].schema.required).toEqual(["cursor", "conversation", "page", "threads", "focus"]);
 });
 
 test("member list documents name search and opaque keyset cursors", async () => {
@@ -136,7 +167,9 @@ test("member removal and leave require the group access outcome", async () => {
         }),
       })
       .parse(spec.paths[path]?.[method]?.responses["200"]);
-    expect(response.content["application/json"].schema.required).toEqual(["success", "keptThroughGroup"]);
+    expect(response.content["application/json"].schema.required).toEqual(
+      method === "post" ? ["success", "keptThroughGroup", "canRejoin"] : ["success", "keptThroughGroup"],
+    );
     expect(response.content["application/json"].schema.properties.keptThroughGroup).toMatchObject({ type: "boolean" });
   }
 });
@@ -159,4 +192,78 @@ test("documents optional create identity and payload conflicts", async () => {
     .parse(create.requestBody);
   expect(body.content["application/json"].schema.properties.createKey).toBeDefined();
   expect(body.content["application/json"].schema.required ?? []).not.toContain("createKey");
+});
+
+test("thread operations document conflicts and filtered history and read selectors", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const create = spec.paths["/api/chat/conversations/{conversation}/threads"]!.post!;
+  for (const status of ["200", "201", "403", "409"]) expect(create.responses[status]).toBeDefined();
+  const update = spec.paths["/api/chat/conversations/{conversation}/threads/{thread}"]!.patch!;
+  for (const status of ["200", "403", "404", "409"]) expect(update.responses[status]).toBeDefined();
+  for (const path of ["messages", "snapshot"]) {
+    const parameters = z
+      .array(z.object({ name: z.string(), in: z.string() }))
+      .parse(spec.paths[`/api/chat/conversations/{conversation}/${path}`]!.get!.parameters);
+    expect(parameters).toContainEqual({ name: "thread", in: "query" });
+  }
+});
+
+test("shared items document typed filters, opaque cursors, bounds, and errors", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const operation = spec.paths["/api/chat/conversations/{conversation}/shared"]!.get!;
+  for (const status of ["200", "400", "404"]) expect(operation.responses[status]).toBeDefined();
+  const parameters = z.array(z.object({ name: z.string(), in: z.string() })).parse(operation.parameters);
+  for (const name of ["kind", "thread", "cursor"]) expect(parameters).toContainEqual({ name, in: "query" });
+  const response = z
+    .object({
+      content: z.object({
+        "application/json": z.object({
+          schema: z.object({
+            required: z.array(z.string()),
+            properties: z.object({ items: z.object({ maxItems: z.number() }) }),
+          }),
+        }),
+      }),
+    })
+    .parse(operation.responses["200"]);
+  expect(response.content["application/json"].schema.required).toEqual(["items", "nextCursor"]);
+  expect(response.content["application/json"].schema.properties.items.maxItems).toBe(30);
+});
+
+test("documents system chat discovery, opening, item threads, and paged thread filters", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  expect(spec.paths["/api/chat/system-chats"]?.get?.responses["200"]).toBeDefined();
+  expect(spec.paths["/api/chat/system-chats/{resourceType}/{resourceId}/open"]?.post?.responses["200"]).toBeDefined();
+  expect(spec.paths["/api/chat/conversations/{conversation}/threads/for-resource"]?.post?.requestBody).toBeDefined();
+  const parameters = z
+    .array(z.object({ name: z.string(), in: z.string() }))
+    .parse(spec.paths["/api/chat/conversations/{conversation}/threads"]?.get?.parameters);
+  for (const name of ["filter", "q", "cursor"]) expect(parameters).toContainEqual({ name, in: "query" });
+});
+
+test("documents summary and read-all continuation at the HTTP boundary", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  expect(spec.paths["/api/chat/conversations/{conversation}"]?.get?.parameters).toContainEqual(
+    expect.objectContaining({ name: "summaryCursor", in: "query" }),
+  );
+  const body = z
+    .object({
+      content: z.object({ "application/json": z.object({ schema: z.object({ properties: z.record(z.string(), z.unknown()) }) }) }),
+    })
+    .parse(spec.paths["/api/chat/conversations/read-all"]?.post?.requestBody);
+  expect(body.content["application/json"].schema.properties.cursor).toMatchObject({ type: "string", maxLength: 256 });
+});
+
+test("reactions document read projection, empty writes and stable budget errors", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const path = "/api/chat/conversations/{conversation}/messages/{message}/reactions";
+  expect(spec.paths[path]?.get?.responses["200"]).toBeDefined();
+  for (const method of ["put", "delete"]) {
+    const op = spec.paths[`${path}/{emoji}`]?.[method];
+    expect(op?.parameters).toHaveLength(3);
+    for (const code of ["204", "400", "403", "404", "409", "429"]) expect(op?.responses[code]).toBeDefined();
+    expect(JSON.stringify(op?.responses["409"])).toContain("REACTION_PERSON_LIMIT");
+    expect(JSON.stringify(op?.responses["409"])).toContain("REACTION_MESSAGE_LIMIT");
+    expect(JSON.stringify(op?.responses["204"])).not.toContain("content");
+  }
 });

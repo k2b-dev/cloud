@@ -147,6 +147,7 @@
         "@k2b/ui": "workspace:*",
         "hono": "catalog:",
         "hono-openapi": "catalog:",
+        "marked": "18.0.14",
         "solid-js": "catalog:",
         "zod": "catalog:",
       },
@@ -320,7 +321,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@k2b/cloud": "workspace:*",
-        "@k2b/filegate": "7.0.0",
+        "@k2b/filegate": "7.1.0",
         "@k2b/ssr": "workspace:*",
         "@k2b/stdlib": "catalog:",
         "@k2b/ui": "workspace:*",
@@ -1150,7 +1151,7 @@
 
     "@k2b/fibel": ["@k2b/fibel@0.7.6", "", { "dependencies": { "@k2b/nessi": "^0.12.0", "@k2b/stdlib": "^0.25.0", "@modelcontextprotocol/sdk": "1.30.0", "bun-plugin-tailwind": "^0.1.2", "marked": "^18.0.12", "tailwindcss": "^4.3.3", "zod": "^4.6.1" }, "peerDependencies": { "@k2b/ssr": "^0.12.0", "solid-js": "^1.9.0" }, "optionalPeers": ["@k2b/ssr", "solid-js"], "bin": { "fibel": "src/cli.ts" } }, "sha512-Bp2WrNMu05p0pMan8pjTzn5lq3Aqt3m4VtcE2AuJA9tAOvKd6Aqffy5qJygz3uEsZ0/MqficfY2iZ/o92Vbu+A=="],
 
-    "@k2b/filegate": ["@k2b/filegate@7.0.0", "", {}, "sha512-Y3b0C5DQFbuz+HDRhEp01bdsj5Pc6w/4osewGT3jwK369Jfgow0PsEaQzJq2tUhoe/hoZzsXg02gPbFYQ6eeWA=="],
+    "@k2b/filegate": ["@k2b/filegate@7.1.0", "", {}, "sha512-wezDCkenZ/s+V0hp4AacUjd4d1Dm+Pyr6+M100LiOeoEGLWp+gMoHE/mHQCsUpxnM+GjhOjn9cxYp2DFWNppqA=="],
 
     "@k2b/nessi": ["@k2b/nessi@0.18.0", "", { "dependencies": { "zod": "^4.3.0" } }, "sha512-U6scx1lwIQIfsJ8cMxu6Kbw7P5HbDbtGpiEF+sfp7zBAYn+SYmDLVdimpP7RuTY59smzQIvD+uJdOCdOXZdH9A=="],
 

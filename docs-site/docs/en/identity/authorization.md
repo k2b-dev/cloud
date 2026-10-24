@@ -65,7 +65,9 @@ or relation filters:
 - full user accounts can search the account directory;
 - guest accounts can find only themselves and their direct or recursively
   inherited groups;
-- anonymous callers and userless service accounts cannot search identities.
+- standalone and agent accounts with a `read` scope find only exact entries
+  an administrator has shared through [Directory access](/en/docs/identity/directory-shares);
+- anonymous and resource-bound callers cannot search identities.
 
 A group result contains the group's identity, not its members. A guest who
 shares a group with another user cannot discover that user through entity
@@ -474,7 +476,10 @@ searched through Accounts after two characters; personal Linux groups are left
 out, so people are granted directly. All signed-in users are
 available by default; `allowAuthenticated={false}` removes that option.
 Public and service-account selection require `allowPublic` and
-`allowServiceAccounts` respectively. This picker grants no access itself.
+`allowServiceAccounts` respectively. `serviceAccountFilter` narrows the offered
+service accounts to those the resource can accept, for example active
+standalone and agent accounts plus accounts bound to this resource; the service
+still checks every assignment. This picker grants no access itself.
 
 ### Keep the editor mounted across refetches
 
@@ -488,6 +493,28 @@ Keep the editor mounted during a refresh. Do not wrap it in a keyed `Show` or
 `Match`, or hide it while a query is refreshing: remounting drops keyboard
 focus and closes open group member lists. The `access-editor-mounts`
 repository check enforces these mounting rules.
+
+### Expanded access lists
+
+Use `expanded` for a full access list with a separate Add action, per-row save
+feedback, and two-line principal labels. `placeholder` changes the picker hint;
+`signedIn={{ label, description }}` names the all-signed-in audience in both
+the picker and the rows. `entryDetail(entry)` supplies the expanded row subtitle,
+for example an authorized group-member count. Expanded rows do not fetch or
+expand group membership. Compact resource editors retain their Members toggle.
+These presentation props never change authorization.
+
+When `canEdit` becomes false, expanded rows hide failed-change messages and
+retries. The caller explains why editing stopped and provides recovery.
+Re-enable editing after reading the canonical list; old failed changes and
+their retries are then cleared.
+
+### Confirm access changes
+
+A `beforeChange` confirmation keeps its opener focusable so Cancel can return
+to it. The editor prevents another change while confirmation is pending and
+disables controls once saving begins. If editing stops or the editor closes
+before confirmation finishes, the pending change is not sent.
 
 ### Restrict editor levels by principal
 

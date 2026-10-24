@@ -19,6 +19,8 @@ import { deriveTitle } from "../service/titles";
 import { messagePreview } from "../system-messages";
 import { type ChatStoreApi, createChatStore } from "./chat-store";
 
+const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
+
 const X = "xxxxxx",
   Y = "yyyyyy",
   Z = "zzzzzz";
@@ -56,6 +58,16 @@ const unusedMemberRequest = async () => {
   throw new Error("Unused member request");
 };
 const memberApi = {
+  threads: async () => noThreads,
+  react: async () => {},
+  reactions: async () => ({ items: [] }),
+  shared: async () => ({ items: [], nextCursor: null }),
+  createThread: async () => {
+    throw new Error("Unused thread request");
+  },
+  updateThread: async () => {
+    throw new Error("Unused thread request");
+  },
   create: unusedMemberRequest,
   updateDetails: unusedMemberRequest,
   members: unusedMemberRequest,
@@ -130,6 +142,10 @@ class World {
   }
   message(id: string, m: ModelMessage) {
     return MessageSchema.parse({
+      reactions: [],
+      refs: [],
+      thread: null,
+      replyTo: null,
       id: id + String(m.seq).padStart(4, "0"),
       conversationId: id,
       seq: m.seq,
@@ -165,7 +181,7 @@ class World {
         queue.push({
           v: 1,
           k: key,
-          d: { type: "read", conversationId: id, ...update.read, unread: update.unread, asOfRev: update.asOfRev },
+          d: { type: "read", threads: [], conversationId: id, ...update.read, unread: update.unread, asOfRev: update.asOfRev },
         });
         this.pending.set(key, queue);
       }
@@ -208,6 +224,9 @@ class World {
     if (!this.readable(person, id)) return null;
     const m = this.models.get(id)!;
     return ConversationSchema.parse({
+      threads: 0,
+      channel: false,
+      member: true,
       id,
       name: m.name,
       icon: m.icon,
@@ -227,14 +246,19 @@ class World {
         : null,
       archived: false,
       pinnedRank: null,
-      member: true,
       withGuests: false,
       peerDeactivated: false,
       lastMessage: (() => {
         const latest = m.msgs.findLast((message) => message.kind === "text");
         if (!latest) return null;
         const message = this.message(id, latest);
-        return { id: message.id, author: message.author, preview: messagePreview(message.body ?? ""), createdAt: message.createdAt };
+        return {
+          thread: null,
+          id: message.id,
+          author: message.author,
+          preview: messagePreview(message.body ?? ""),
+          createdAt: message.createdAt,
+        };
       })(),
       permission: m.members.get(person),
       rev: m.rev,
@@ -261,6 +285,8 @@ class World {
       items: model.msgs.slice(-50).map((m) => ({ ...this.message(id, m), systemText: null })),
       rev: model.rev,
       seqHead: model.seqHead,
+      from: model.msgs.slice(-50)[0]?.seq ?? 1,
+      to: model.seqHead,
     });
   }
   api(person: string): ChatStoreApi {
@@ -283,7 +309,7 @@ class World {
       snapshot: async (id) => {
         const conversation = this.conversation(person, id),
           page = this.page(person, id);
-        return conversation && page ? { cursor: "snapshot", conversation, page, focus: null } : null;
+        return conversation && page ? { threads: noThreads, cursor: "snapshot", conversation, page, focus: null } : null;
       },
       conversations: async () => this.list(person),
       conversation: async (id) => this.conversation(person, id),
@@ -313,7 +339,12 @@ class World {
     const conversation = this.conversation(person, X),
       page = this.page(person, X);
     const store = createChatStore(
-      { viewerId: person, cursor, sidebar: this.list(person), ...(conversation && page ? { open: { conversation, page } } : {}) },
+      {
+        viewerId: person,
+        cursor,
+        sidebar: this.list(person),
+        ...(conversation && page ? { open: { threads: noThreads, view: "all", conversation, page } } : {}),
+      },
       { api: this.api(person), connection: liveConnection(`/api/chat/live?world=${worldNumber}&person=${person}`, { activity: "always" }) },
     );
     this.stores.push(store);
@@ -327,7 +358,7 @@ class World {
       page = this.page(person, X);
     if (conversation && page) {
       this.starts.set(store, page.items[0]?.seq ?? 1);
-      store.open({ cursor, conversation, page });
+      store.open({ threads: noThreads, view: "all", cursor, conversation, page });
     }
   }
   stop() {
@@ -468,7 +499,6 @@ const check = (store: ReturnType<typeof createChatStore>, person: string) => {
       memberCount: row.memberCount,
       archived: false,
       pinnedRank: null,
-      member: true,
       withGuests: false,
       peerDeactivated: false,
       permission: row.permission,

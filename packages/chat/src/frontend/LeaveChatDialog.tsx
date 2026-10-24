@@ -57,13 +57,15 @@ export function LeaveChatDialog(
     const current = loaded();
     return current?.managers === 1 && current.self?.permission === "admin" && current.self.active;
   };
-  // Nobody else holds a direct entry, so there is nobody to hand the chat to and leaving is refused.
+  const canSucceed = (member: Member) =>
+    !member.deactivated &&
+    ((member.principal.type === "user" && member.principal.userId !== props.viewerId) ||
+      (member.principal.type === "service_account" &&
+        (member.serviceAccountKind === "standalone" || member.serviceAccountKind === "agent")));
+  // With no eligible direct member, there is nobody to hand the chat to.
   const alone = () => {
     const current = loaded();
-    return (
-      current?.nextCursor === null &&
-      !current.items.some((member) => member.principal.type === "user" && member.principal.userId !== props.viewerId)
-    );
+    return current?.nextCursor === null && !current.items.some(canSucceed);
   };
   const checking = () => (manager() || refused()) && page.loading;
   const blocked = () => checking() || Boolean(page.error) || alone() || (needsSuccessor() && !successor());
@@ -90,7 +92,7 @@ export function LeaveChatDialog(
   return (
     <div class="chat-dialog">
       <div class="chat-dialog__body">
-        <p class="text-sm">{t().leaveChatDescription}</p>
+        <p class="text-sm">{props.conversation.channel ? t().leaveChannelDescription : t().leaveChatDescription}</p>
         <Show when={checking()}>
           <InlineGuidance loading>{t().membersLoading}</InlineGuidance>
         </Show>
@@ -115,11 +117,13 @@ export function LeaveChatDialog(
               fetchData={async (search, signal) => {
                 const found = await props.store.members(props.conversation.id, { q: search.trim().slice(0, 100) });
                 if (signal.aborted) return [];
-                const candidates = found.items.filter(
-                  (member) => member.principal.type === "user" && member.principal.userId !== props.viewerId && !member.deactivated,
-                );
+                const candidates = found.items.filter(canSucceed);
                 offered = new Map(candidates.map((member) => [member.accessId, member]));
-                return candidates.map((member) => ({ id: member.accessId, label: member.displayName, icon: "ti-user" }));
+                return candidates.map((member) => ({
+                  id: member.accessId,
+                  label: member.displayName,
+                  icon: member.principal.type === "service_account" ? "ti ti-robot" : "ti ti-user",
+                }));
               }}
               onSelect={(option) => setSuccessor(offered.get(option.id) ?? null)}
             />

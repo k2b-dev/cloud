@@ -24,16 +24,25 @@ type Entity =
         appId: string | null;
         resourceType: string | null;
         resourceId: string | null;
+        status: "active" | "disabled";
       };
     };
+/** The service-account facts a consumer can check before offering an account. */
+export type PrincipalPickerServiceAccount = Extract<Entity, { kind: "service_account" }>["serviceAccount"];
 /** Shared identity selector; the consumer owns the meaning of the assignment. */
 export default function PrincipalPicker(props: {
   existing?: Principal[];
   allowPublic?: boolean;
   allowAuthenticated?: boolean;
   allowServiceAccounts?: boolean;
+  /** Offers only the service accounts this returns `true` for, such as active accounts the resource can accept. */
+  serviceAccountFilter?: (account: PrincipalPickerServiceAccount) => boolean;
   disabled?: boolean;
   readOnly?: boolean;
+  /** Replaces the default placeholder, which lists the principal kinds on offer. */
+  placeholder?: string;
+  /** The consumer's name and description for every signed-in person. */
+  signedIn?: { label: string; description: string };
   /** `serviceAccountKind` is set for service accounts so a new row can show the same kind as the result. */
   onSelect: (
     principal: Principal,
@@ -56,8 +65,9 @@ export default function PrincipalPicker(props: {
     if (props.allowAuthenticated !== false)
       entries.push({
         principal: { type: "authenticated" },
-        label: principalLabel({ principal: { type: "authenticated" } }, locale()),
+        label: props.signedIn?.label ?? principalLabel({ principal: { type: "authenticated" } }, locale()),
         icon: "ti ti-lock-open-2",
+        description: props.signedIn?.description,
       });
     if (props.allowPublic)
       entries.push({
@@ -98,7 +108,7 @@ export default function PrincipalPicker(props: {
             icon: "ti ti-users-group",
             description: e.group.description ?? undefined,
           });
-        else {
+        else if (!props.serviceAccountFilter || props.serviceAccountFilter(e.serviceAccount)) {
           const account = e.serviceAccount;
           const kind = serviceAccountKindDisplay(account.kind, t());
           entries.push({
@@ -133,13 +143,14 @@ export default function PrincipalPicker(props: {
       disabled={props.disabled}
       readOnly={props.readOnly}
       placeholder={
-        props.allowAuthenticated !== false || props.allowPublic
+        props.placeholder ??
+        (props.allowAuthenticated !== false || props.allowPublic
           ? props.allowServiceAccounts
             ? t().addAll
             : t().addAudience
           : props.allowServiceAccounts
             ? t().addService
-            : t().addBasic
+            : t().addBasic)
       }
       fetchData={load}
       onSelect={(option) => {

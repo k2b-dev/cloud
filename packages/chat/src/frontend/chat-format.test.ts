@@ -50,6 +50,9 @@ for (const locale of ["en", "de"]) {
 
   test(`${locale}: last-message lines cover empty, own, direct, and group chats`, () => {
     const conversation = ConversationSchema.parse({
+      threads: 0,
+      channel: false,
+      member: true,
       id: "abcdef",
       name: null,
       icon: null,
@@ -60,7 +63,6 @@ for (const locale of ["en", "de"]) {
       read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
       archived: false,
       pinnedRank: null,
-      member: true,
       withGuests: false,
       peerDeactivated: false,
       rev: 1,
@@ -71,6 +73,7 @@ for (const locale of ["en", "de"]) {
     });
     expect(lastMessageLine(conversation, "viewer", locale)).toBe(locale === "en" ? "No messages yet" : "Noch keine Nachrichten");
     const lastMessage = {
+      thread: null,
       id: "message001",
       author: { type: "user" as const, id: "11111111-1111-4111-8111-111111111111", name: "  Lea Müller " },
       preview: "Hello",

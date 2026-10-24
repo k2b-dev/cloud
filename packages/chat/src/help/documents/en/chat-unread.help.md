@@ -25,7 +25,23 @@ Chat marks messages read while you see them in a visible, focused window. Jumpin
 2. Choose **Mark unread**.
 :::
 
-To start from a particular message, open that message's menu and choose **Mark unread from here**. This changes your unread mark. Others still see what you have read.
+## Mark unread from a message {icon="mail"}
+
+Use this when you have read something but want to come back to it later.
+
+:::steps
+1. Point at the message and select **…** beside it, or right-click the message. On a phone, touch and hold the message.
+2. Choose **Mark unread from here**.
+:::
+
+**New messages** now starts at that message, the chat shows as unread in the list, and the next time you open it you land there. A message confirms the change; select **Undo** to put your read position back. If the change fails, nothing changes and you can select **Try again**.
+
+:::reference
+- Shortcut: hold **Alt** (**Option** on a Mac) while you choose the message.
+- Your own messages have no **Mark unread from here**, because they never count as unread.
+- Others still see what you have read.
+- **Copy text** in the same menu copies the message's text.
+:::
 
 ## Mark chats read {icon="checks"}
 

@@ -41,6 +41,7 @@ const usage: GeoAdminUsage = {
   month: { period: "2026-10", used: 0, limit: 90000, resetsAt: "2026-10-31T23:00:00.000Z" },
   today: { period: "2026-10-20", used: 0, allowance: 3000, resetsAt: "2026-10-20T22:00:00.000Z" },
   shares: [],
+  routeCostOverruns: 0,
   peopleAtLimit: 0,
   timezone: "Europe/Berlin",
 };

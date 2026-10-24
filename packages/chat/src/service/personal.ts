@@ -5,6 +5,7 @@ import {
   type ChatContext,
   capPermission,
   messages,
+  personalChannelKey,
   principalCondition,
   requireConversation,
   subjectPrincipal,
@@ -20,8 +21,7 @@ const lock = async (context: ChatContext, db: typeof sql) => {
   return self;
 };
 const publish = async (context: ChatContext, db: typeof sql) => {
-  if (context.accessSubject.type === "user")
-    await chatLive.publish(db, { key: `p:${context.accessSubject.userId}`, data: { type: "personal" } });
+  await chatLive.publish(db, { key: personalChannelKey(context.accessSubject), data: { type: "personal" } });
 };
 const allowedPersonal = (context: ChatContext) => {
   const bound = boundConversation(context.actor);
@@ -43,8 +43,7 @@ const savePreferences = async (input: ChatContext & { input: unknown }) => {
     await db`INSERT INTO chat.account_prefs (principal_type, principal_id, collapsed_sections)
       VALUES (${self.type}, ${self.id}::uuid, ${JSON.stringify(parsed.data.collapsed)}::text::jsonb)
       ON CONFLICT (principal_type, principal_id) DO UPDATE SET collapsed_sections = EXCLUDED.collapsed_sections`;
-    if (input.accessSubject.type === "user")
-      await chatLive.publish(db, { key: `p:${input.accessSubject.userId}`, data: { type: "preferences", ...parsed.data } });
+    await chatLive.publish(db, { key: personalChannelKey(input.accessSubject), data: { type: "preferences", ...parsed.data } });
     return preferences(input, db);
   });
   chatLive.wake();
@@ -60,6 +59,7 @@ const update = async (input: ChatContext & { conversationId: string; input: unkn
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
     const row = allowed.data;
+    if (row.kind === "system") return fail(err.forbidden(messages(input).forbidden));
     const [membership] = await db<{ member: boolean }[]>`SELECT EXISTS(
       SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
       WHERE ca.conversation_id = ${row.id}::uuid AND ca.role = 'member' AND ${principalCondition(input.accessSubject, db)}

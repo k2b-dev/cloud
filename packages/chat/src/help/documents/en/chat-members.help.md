@@ -6,7 +6,7 @@ description: Understand how groups, guests, and former accounts affect your chat
 order: 300
 ---
 
-With **Manage** access to a chat, you can add people, guest accounts, and groups.
+With **Manage** access to a chat, you can add people, guest accounts, groups, agents, and service accounts.
 
 ## Add people {icon="user-plus"}
 
@@ -44,6 +44,26 @@ A message in the chat records the change.
 People with **Manage** access can change a person's access or remove a member.
 A removed person who also belongs through a group keeps access through that group.
 The last person with **Manage** keeps that access and cannot be removed.
+
+## Channel discovery and subscriptions {icon="compass"}
+
+With **Manage** access, open **Chat info → … → Discoverability** to change who can find the channel.
+Choose groups or, when the operator allows it, **Everyone with a Cloud account**.
+Set **Read** or **Write** for each audience and choose **Save**.
+The audience can read the whole history before subscribing. Existing members keep their access.
+Removing every audience makes the channel a chat for its existing members.
+
+To unsubscribe, open the channel's **…** menu and choose **Unsubscribe**.
+The channel disappears from your list. Choose **Undo** in the confirmation to subscribe again.
+If you are the last person with **Manage** access, choose a successor first.
+You can still find and read the channel while you belong to its discovery audience.
+
+## Include agents and service accounts {icon="robot"}
+
+Choose agents and service accounts in the member picker, like people.
+They appear with a robot avatar and their name. An agent also has the **Agent** marker.
+With **Manage** access, you can change their access or remove them.
+The last active account with **Manage** access keeps it until another eligible member takes over.
 
 ## Leave a chat {icon="logout"}
 
@@ -89,3 +109,5 @@ chat longest takes over management. A message explains the change.
 In a chat's list menu, choose **Pin chat** to put it in **Pinned**. Use **Move up** and **Move down**, or drag its grip, to change the order. On the grip, Space starts a move, the arrow keys choose a position, Enter places it, and Escape cancels. More than 15 pins scroll in their section; there is no limit on the number of pins. Collapsing a section stays saved across your devices.
 
 **Archive chat** hides a chat from your list without leaving it. New messages keep it archived. Open **Archive** at the foot of the list and choose **Restore** in its menu to bring it back, including its saved pin position. Archiving changes only your own list.
+
+These controls also apply to subscribed channels. Unpinned channels appear under **Channels**. **All** and **Unread** filter both chats and channels; each section keeps its saved collapsed state. Spaces and Notebooks remain in their own section and cannot be pinned or personally archived.
