@@ -657,6 +657,12 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   // "For you" as the server answers it, set by the test; failing reads answer 503.
   let forYou: z.infer<typeof ForYouItemSchema>[] = [];
   let failingForYou = 0;
+  // The list's search as the server answers it: member chats and Space or notebook chats by title, their named threads,
+  // and the Spaces and notebooks without a chat that a test adds; at most eight.
+  let emptyContainerHits: { ref: { type: "spaces.space" | "notebooks.notebook"; id: string }; name: string }[] = [];
+  let searchSystemUnavailable = false;
+  let failingSearch = 0;
+  const searchQueries: string[] = [];
   const list = (archived = false, unread = false, ids?: string[], cursor?: z.infer<typeof ConversationQuerySchema>["cursor"]) => {
     const items = [...chats.values()]
       .map((chat) => chat.conversation)
@@ -992,6 +998,38 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
             .sort((a, b) => a.title.localeCompare(b.title)),
           nextCursor: null,
         });
+      }
+      if (url.pathname === "/api/chat/search" && request.method === "GET") {
+        const q = (url.searchParams.get("q") ?? "").trim();
+        searchQueries.push(q);
+        if (failingSearch > 0) {
+          failingSearch -= 1;
+          return Response.json({ message: "Unavailable" }, { status: 503 });
+        }
+        const match = (name: string) => name.toLowerCase().includes(q.toLowerCase());
+        const items: unknown[] = [];
+        for (const chat of chats.values()) {
+          const row = chat.conversation;
+          const ref = row.resource;
+          if (row.kind === "system" && (ref?.type === "spaces.space" || ref?.type === "notebooks.notebook")) {
+            if (match(row.title)) items.push({ kind: "system", ref, name: row.title, conversation: row });
+          } else if (row.member && match(row.title)) items.push({ kind: "chat", conversation: row });
+          if (row.kind !== "system" && !row.member) continue;
+          for (const thread of chat.threads)
+            if (!thread.archived && match(thread.name))
+              items.push({
+                kind: "thread",
+                conversation: { id: row.id, title: row.title, kind: row.kind === "system" ? "system" : "chat" },
+                thread: {
+                  id: thread.id,
+                  name: thread.name,
+                  ...(thread.resource ? { resource: { kind: thread.resource.kind, done: thread.resource.done } } : {}),
+                },
+              });
+        }
+        if (!searchSystemUnavailable)
+          for (const hit of emptyContainerHits) if (match(hit.name)) items.push({ kind: "system", ...hit, conversation: null });
+        return Response.json({ items: items.slice(0, 8), ...(searchSystemUnavailable ? { systemUnavailable: true } : {}) });
       }
       if (url.pathname === "/api/chat/for-you" && request.method === "GET") {
         if (failingForYou > 0) {
@@ -1712,6 +1750,19 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
       forYou = items;
       if (notify) deliver("me", "", { type: "for-you" });
     },
+    /** A Space or notebook nobody has written in yet, found by the list's search. */
+    searchContainer: (ref: { type: "spaces.space" | "notebooks.notebook"; id: string }, name: string) => {
+      emptyContainerHits.push({ ref, name });
+    },
+    /** Spaces and Notebooks do not answer the list's search; the other hits still come. */
+    failSearchSystem: (failing = true) => {
+      searchSystemUnavailable = failing;
+    },
+    /** The next searches fail as a whole. */
+    failSearch: (times = 1) => {
+      failingSearch = times;
+    },
+    searchQueries,
     /** The next "For you" reads fail. */
     failForYou: (times = 1) => {
       failingForYou = times;
@@ -1728,6 +1779,10 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     readElsewhere: read,
     /** Isolates scenarios; IDs stay unique so a closing page cannot report against a later chat. */
     reset: () => {
+      emptyContainerHits = [];
+      searchSystemUnavailable = false;
+      failingSearch = 0;
+      searchQueries.length = 0;
       collapsed = [];
       allowAuthenticated = true;
       chats.clear();

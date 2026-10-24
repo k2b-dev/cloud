@@ -20,6 +20,7 @@ import {
   Placeholder,
   prompts,
   ScrollArea,
+  TextInput,
   toast,
   useLocale,
   type VirtualFeedController,
@@ -50,6 +51,7 @@ import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
+import ChatSearch from "./ChatSearch";
 import ChatSharedSection from "./ChatSharedSection";
 import ChatSystemChats, { createSystemChatList } from "./ChatSystemChats";
 import ChatThreadColumn from "./ChatThreadColumn";
@@ -425,6 +427,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }),
   );
   const [systemExpanded, setSystemExpanded] = createSignal(props.open?.conversation.kind === "system");
+  /** The list's search; it lasts while the reader moves between chats and ends with "Escape" or an empty field. */
+  const [searchQuery, setSearchQuery] = createSignal("");
   // A Space's or notebook's chat opened from "For you", the search, or another app shows where it lives in the list.
   createEffect(
     on(
@@ -1121,14 +1125,20 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const row = systemList.page()?.items.find((item) => item.conversation?.id === id);
     const ref = row?.ref ?? rows().find((row) => row.id === id)?.resource ?? (conversation()?.id === id ? conversation()?.resource : null);
     if (!ref || (ref.type !== "spaces.space" && ref.type !== "notebooks.notebook")) return;
+    await openSystem({ type: ref.type, id: ref.id }, (href) => navigation.push(href, { scroll: "preserve" }));
+  };
+  /** Opens a Space's or notebook's chat, starting it when nobody has written there yet. */
+  const openSystem = async (
+    ref: { type: "spaces.space" | "notebooks.notebook"; id: string },
+    go: (href: string) => void = (href) => navigate(href, { scroll: "preserve" }),
+  ) => {
     const token = ++systemOpen;
     setBusy(true);
     try {
       const current = await openSystemChat({ resourceType: ref.type, resourceId: ref.id });
       if (token !== systemOpen) return;
       store?.includeSystemChats([current]);
-      if ((await open(chatRoute(current.id))) === "applied")
-        navigation.push(viewHref(threadHref(current.id, "all")), { scroll: "preserve" });
+      if ((await open(chatRoute(current.id))) === "applied") go(viewHref(threadHref(current.id, "all")));
     } catch {
       if (token === systemOpen) toast.error(t().openFailed);
     } finally {
@@ -1850,121 +1860,176 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       {t().archive}
     </AppWorkspace.SidebarItem>
   );
+  const searchField = () => (
+    <div class="chat-list-search">
+      <TextInput
+        type="search"
+        icon="ti ti-search"
+        value={searchQuery}
+        onValueChange={setSearchQuery}
+        aria-label={t().searchChats}
+        placeholder={t().searchChats}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || !searchQuery()) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setSearchQuery("");
+        }}
+      />
+    </div>
+  );
   const listContent = (includeArchive = true) => (
     <>
-      <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
-        {t().newChat}
-      </AppWorkspace.SidebarItem>
-      <AppWorkspace.SidebarItem
-        href={listHref(`${basePath}/for-you`)}
-        navigation="enhanced"
-        onNavigate={showForYou}
-        active={route().forYou}
-        icon="ti ti-at"
-        meta={<AppWorkspace.SidebarItemStatus unread={forYouUnread() || undefined} />}
-      >
-        {t().forYou}
-      </AppWorkspace.SidebarItem>
-      <div class="chat-list-filters" role="group" aria-label={t().chats}>
-        <FilterToggle
-          label={t().allChats}
-          icon="ti ti-messages"
-          active={!archived() && filter() === "all"}
-          disabled={listLoading() || listPending()}
-          onClick={() => void changeList("all")}
-        />
-        <FilterToggle
-          label={t().unreadChats}
-          icon="ti ti-mail"
-          active={filter() === "unread"}
-          disabled={listLoading() || listPending()}
-          onClick={() => void changeList("unread")}
-        />
-      </div>
-      <div class="chat-list-feedback">
-        <p role="status" aria-live="polite" class="chat-list-status">
-          {!listError() && (listLoading() ? t().loadingChats : listPending() ? t().savingList : "")}
-        </p>
-        <Show when={listError()}>
-          {(error) => (
-            <InlineGuidance role="alert" tone="danger" class="chat-list-error">
-              {error()}
-              <Show when={listRetry()}>
-                <Button size="sm" variant="ghost" disabled={listPending() || listLoading()} onClick={() => listRetry()?.()}>
-                  {t().retry}
-                </Button>
-              </Show>
-            </InlineGuidance>
-          )}
-        </Show>
-      </div>
+      {searchField()}
       <Show
-        when={archived()}
+        when={!searchQuery().trim()}
         fallback={
-          <>
-            <Show when={pinnedRows().length > 0}>
-              <AppWorkspace.SidebarSection
-                title={t().pinnedChats}
-                collapsible
-                open={!collapsed().includes("pinned")}
-                onOpenChange={(open) => void collapse("pinned", open)}
-              >
-                <ScrollArea class="chat-list-pins" scrollPreserveKey="chat-pins">
-                  {list(pinnedRows, true)}
-                </ScrollArea>
-              </AppWorkspace.SidebarSection>
-            </Show>
-            <AppWorkspace.SidebarSection
-              title={t().chats}
-              actions={chatsActions()}
-              collapsible
-              open={!collapsed().includes("chats")}
-              onOpenChange={(open) => void collapse("chats", open)}
-            >
-              <Show
-                when={listRows().some((row) => row.pinnedRank === null && !row.channel && row.kind !== "system")}
-                fallback={
-                  <Show when={!hasMore() && !listLoading() && listRows().length === 0}>
-                    <Placeholder variant="inline" align="left" description={filter() === "unread" ? t().noUnreadChats : t().noneYet} />
-                  </Show>
-                }
-              >
-                {list(() => listRows().filter((row) => row.pinnedRank === null && !row.channel && row.kind !== "system"))}
-              </Show>
-            </AppWorkspace.SidebarSection>
-            <AppWorkspace.SidebarSection
-              title={t().channels}
-              collapsible
-              open={!collapsed().includes("channels")}
-              onOpenChange={(open) => void collapse("channels", open)}
-            >
-              {list(() => listRows().filter((row) => row.channel && row.pinnedRank === null && row.kind !== "system"))}
-              <AppWorkspace.SidebarItem
-                href={listHref(`${basePath}/channels`)}
-                navigation="enhanced"
-                onNavigate={discover}
-                active={route().channels}
-                icon="ti ti-compass"
-              >
-                {t().browseChannels}
-              </AppWorkspace.SidebarItem>
-            </AppWorkspace.SidebarSection>
-          </>
+          <ChatSearch
+            query={searchQuery().trim()}
+            basePath={basePath}
+            active={{ chatId: openChat()?.id ?? null, view: openChat()?.view ?? "all" }}
+            chatRow={(row) => (
+              <ChatList
+                rows={[row]}
+                {...listProps()}
+                threads={undefined}
+                activeId={openChat()?.id ?? null}
+                viewerId={props.viewerId}
+                dateConfig={props.dateConfig}
+                now={now}
+                hasMore={false}
+                onOpen={(id, navigation) => {
+                  const ref = row.resource;
+                  if (row.kind !== "system") return openFromList(id, navigation);
+                  if (ref?.type === "spaces.space" || ref?.type === "notebooks.notebook")
+                    return openSystem({ type: ref.type, id: ref.id }, (href) => navigation.push(href, { scroll: "preserve" }));
+                }}
+                onMore={() => {}}
+                pending={listPending() || listLoading()}
+                onPersonal={(id, patch) => void personal(id, patch)}
+                onMarkRead={markRead}
+                onMarkUnread={(id) => void markUnread(id)}
+              />
+            )}
+            onThread={(chatId, thread, navigation) => openView(chatId, thread, navigation)}
+            onSystem={(ref) => openSystem(ref)}
+          />
         }
       >
-        <AppWorkspace.SidebarSection title={t().archive}>
-          <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().archiveEmpty} />}>
-            {list(listRows)}
-          </Show>
-        </AppWorkspace.SidebarSection>
-      </Show>
-      <Show when={hasMore()}>
-        <AppWorkspace.SidebarItem disabled={listLoading() || listPending()} icon="ti ti-dots" onClick={() => void more()}>
-          {t().showMoreChats}
+        <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+          {t().newChat}
         </AppWorkspace.SidebarItem>
+        <AppWorkspace.SidebarItem
+          href={listHref(`${basePath}/for-you`)}
+          navigation="enhanced"
+          onNavigate={showForYou}
+          active={route().forYou}
+          icon="ti ti-at"
+          meta={<AppWorkspace.SidebarItemStatus unread={forYouUnread() || undefined} />}
+        >
+          {t().forYou}
+        </AppWorkspace.SidebarItem>
+        <div class="chat-list-filters" role="group" aria-label={t().chats}>
+          <FilterToggle
+            label={t().allChats}
+            icon="ti ti-messages"
+            active={!archived() && filter() === "all"}
+            disabled={listLoading() || listPending()}
+            onClick={() => void changeList("all")}
+          />
+          <FilterToggle
+            label={t().unreadChats}
+            icon="ti ti-mail"
+            active={filter() === "unread"}
+            disabled={listLoading() || listPending()}
+            onClick={() => void changeList("unread")}
+          />
+        </div>
+        <div class="chat-list-feedback">
+          <p role="status" aria-live="polite" class="chat-list-status">
+            {!listError() && (listLoading() ? t().loadingChats : listPending() ? t().savingList : "")}
+          </p>
+          <Show when={listError()}>
+            {(error) => (
+              <InlineGuidance role="alert" tone="danger" class="chat-list-error">
+                {error()}
+                <Show when={listRetry()}>
+                  <Button size="sm" variant="ghost" disabled={listPending() || listLoading()} onClick={() => listRetry()?.()}>
+                    {t().retry}
+                  </Button>
+                </Show>
+              </InlineGuidance>
+            )}
+          </Show>
+        </div>
+        <Show
+          when={archived()}
+          fallback={
+            <>
+              <Show when={pinnedRows().length > 0}>
+                <AppWorkspace.SidebarSection
+                  title={t().pinnedChats}
+                  collapsible
+                  open={!collapsed().includes("pinned")}
+                  onOpenChange={(open) => void collapse("pinned", open)}
+                >
+                  <ScrollArea class="chat-list-pins" scrollPreserveKey="chat-pins">
+                    {list(pinnedRows, true)}
+                  </ScrollArea>
+                </AppWorkspace.SidebarSection>
+              </Show>
+              <AppWorkspace.SidebarSection
+                title={t().chats}
+                actions={chatsActions()}
+                collapsible
+                open={!collapsed().includes("chats")}
+                onOpenChange={(open) => void collapse("chats", open)}
+              >
+                <Show
+                  when={listRows().some((row) => row.pinnedRank === null && !row.channel && row.kind !== "system")}
+                  fallback={
+                    <Show when={!hasMore() && !listLoading() && listRows().length === 0}>
+                      <Placeholder variant="inline" align="left" description={filter() === "unread" ? t().noUnreadChats : t().noneYet} />
+                    </Show>
+                  }
+                >
+                  {list(() => listRows().filter((row) => row.pinnedRank === null && !row.channel && row.kind !== "system"))}
+                </Show>
+              </AppWorkspace.SidebarSection>
+              <AppWorkspace.SidebarSection
+                title={t().channels}
+                collapsible
+                open={!collapsed().includes("channels")}
+                onOpenChange={(open) => void collapse("channels", open)}
+              >
+                {list(() => listRows().filter((row) => row.channel && row.pinnedRank === null && row.kind !== "system"))}
+                <AppWorkspace.SidebarItem
+                  href={listHref(`${basePath}/channels`)}
+                  navigation="enhanced"
+                  onNavigate={discover}
+                  active={route().channels}
+                  icon="ti ti-compass"
+                >
+                  {t().browseChannels}
+                </AppWorkspace.SidebarItem>
+              </AppWorkspace.SidebarSection>
+            </>
+          }
+        >
+          <AppWorkspace.SidebarSection title={t().archive}>
+            <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().archiveEmpty} />}>
+              {list(listRows)}
+            </Show>
+          </AppWorkspace.SidebarSection>
+        </Show>
+        <Show when={hasMore()}>
+          <AppWorkspace.SidebarItem disabled={listLoading() || listPending()} icon="ti ti-dots" onClick={() => void more()}>
+            {t().showMoreChats}
+          </AppWorkspace.SidebarItem>
+        </Show>
+        {systemSection()}
+        <Show when={includeArchive}>{archiveLink()}</Show>
       </Show>
-      {systemSection()}
-      <Show when={includeArchive}>{archiveLink()}</Show>
     </>
   );
   return (

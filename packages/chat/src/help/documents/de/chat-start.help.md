@@ -23,6 +23,18 @@ Diese Personen müssen direkte Mitglieder eines gemeinsamen Chats sein.
 Wenn ein Chat mit genau diesen Personen besteht, wähle **Vorhandenen öffnen**, um ihn zu nutzen.
 Wähle **Trotzdem einen neuen Chat erstellen**, um einen weiteren Chat mit denselben Personen zu starten.
 
+## In der Liste suchen {icon="search"}
+
+:::steps
+1. Tippe oben in der Liste in **Suchen**.
+2. Wähle einen Treffer, um ihn zu öffnen.
+:::
+
+Die Suche findet deine Chats und Kanäle, die Chats von Spaces und Notebooks, die du öffnen kannst, und Threads nach Namen.
+Jeder Thread-Treffer sagt, wo er steht, zum Beispiel **Thread in IT** oder **Aufgabe in Frühlingsausstellung**. Du siehst höchstens acht Treffer.
+Antworten Spaces oder Notebooks nicht, siehst du die übrigen Treffer trotzdem, und **Erneut versuchen** fragt noch einmal.
+Drücke `Escape` oder leere das Feld, um wieder die Liste zu sehen.
+
 ## Kanäle entdecken {icon="compass"}
 
 :::steps

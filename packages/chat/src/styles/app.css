@@ -213,6 +213,7 @@
 /* Fifteen unchanged two-line rows fit before this personal section scrolls. */
 .chat-list-pins { max-height: calc(15 * 3.25rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: auto; }
 .chat-list-filters { display: flex; gap: .25rem; padding: .25rem; }
+.chat-list-search { padding: .25rem; }
 .chat-list-error, .chat-list-status { padding: .5rem; font-size: .875rem; }
 .chat-list-error { color: var(--k2b-danger-text); }
 
@@ -729,6 +730,7 @@
   margin: 0.25rem 0.5rem;
 }
 .chat-system-chats__empty,
+.chat-search__empty,
 .chat-system-chats__membership {
   padding: 0.5rem 0.75rem;
   color: var(--k2b-text-secondary);

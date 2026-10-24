@@ -129,8 +129,8 @@ test("the search feedback catalog supplies the approved German text and English 
   const de = chatMessages.resolve(["de"]).t;
   const en = chatMessages.resolve(["en"]).t;
   expect(de.searchChats).toBe("Suchen");
-  expect(de.searchNoResults({ q: "IT" })).toBe("Nichts gefunden für „IT“");
-  expect(de.searchSystemUnavailable).toBe("Suche in Spaces und Notebooks fehlgeschlagen");
+  expect(de.searchNoResults({ q: "IT" })).toBe("Nichts gefunden für „IT“.");
+  expect(de.searchSystemUnavailable).toBe("Suche in Spaces und Notebooks fehlgeschlagen.");
   expect(de.retry).toBe("Erneut versuchen");
   expect(de.searchTaskIn({ title: "Frühlingsausstellung" })).toBe("Aufgabe in Frühlingsausstellung");
   expect(en.searchThreadIn({ title: "IT" })).toBe("Thread in IT");
