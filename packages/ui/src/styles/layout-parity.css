@@ -3965,13 +3965,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   flex-direction: column;
   min-height: 0;
   padding: 0 0.5rem calc(env(safe-area-inset-bottom) + 0.5rem) max(0.5rem, env(safe-area-inset-left));
-  background: var(--k2b-mobile-shell-sidebar-surface, var(--k2b-surface-muted));
-}
-
-.k2b-ui[data-theme="dark"] .k2b-mobile-shell__sidebar,
-.k2b-ui.k2b-dark .k2b-mobile-shell__sidebar,
-.dark .k2b-ui .k2b-mobile-shell__sidebar {
-  --k2b-mobile-shell-sidebar-surface: var(--k2b-surface-elevated);
+  background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-mobile-shell__sidebar-head {
@@ -4058,17 +4052,20 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   font-variant-numeric: tabular-nums;
 }
 
-/* The open page, and from the press on the one that is loading, in the action
-   colour and weight. Colour, weight and opacity only, so nothing moves: the
-   label fades at its end and never rewraps. */
+/* The open page, and from the press on the one that is loading, tinted in the
+   action colour and weight, like the selected row of a web sidebar. Colour,
+   fill and weight only, so nothing moves: the label fades at its end and never
+   rewraps. */
 .k2b-ui .k2b-mobile-shell__sidebar a[aria-current="page"],
 .k2b-ui .k2b-mobile-shell__sidebar a[data-k2b-pending] {
-  color: var(--k2b-action);
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-selected);
   font-weight: 600;
 }
 
 .k2b-ui .k2b-mobile-shell__sidebar:has(a[data-k2b-pending]) a[aria-current="page"]:not([data-k2b-pending]) {
   color: var(--k2b-text-secondary);
+  background: transparent;
   font-weight: 400;
 }
 
@@ -4096,10 +4093,12 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
     background: var(--k2b-app-workspace-hover);
     color: var(--k2b-text);
   }
+}
 
-  .k2b-ui .k2b-mobile-shell__sidebar a[aria-current="page"]:hover {
-    color: var(--k2b-action);
-  }
+/* The open page keeps its fill under the pointer; more specific than the hover above, so it holds on every device. */
+.k2b-ui .k2b-mobile-shell__sidebar a[aria-current="page"]:hover {
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-selected);
 }
 
 /* ------------------------------------------------- levels in a touch app */
