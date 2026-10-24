@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 
 # Lessons learned
@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A bound applied before the parts that follow | The Links graph around a page capped its pages at 400, then added every page's way up the tree; 400 linked pages deep in their own branches returned about 20,000 nodes, and a depth cap left parents missing. | Test: Notebooks `graph-around.integration.test.ts` builds those tree shapes and requires the bound with every way up whole. Convention: count everything a response adds toward its bound. |
 | Parse tree read before the parser finished | A test reads `syntaxTree(state)` of a fresh CodeMirror state; the first parse runs only within a short time budget, so a busy runner sees a partial tree (11 of 45 characters). | Test: Notebooks `list-structure.test.ts` finishes the parse with `ensureSyntaxTree` and applies it with `state.update({})` before reading the tree. Convention: complete an asynchronous result before asserting on it. |
 | A formatter exposes ambiguous generic TSX syntax | Removing the trailing comma from a generic arrow with a default type makes the Solid/Babel test transform parse it as JSX. | Test: `PermissionEditor.behavior.test.tsx` runs through the actual Solid DOM preload; use a generic function declaration for the deferred helper and run the test after formatting. |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
