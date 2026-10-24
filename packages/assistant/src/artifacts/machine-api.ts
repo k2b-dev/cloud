@@ -244,16 +244,17 @@ export const createMachineRoutes = () =>
     .get("/:id/access", ManagerQuery, async (c) => respond(c, ok(await machineAccess.list(id(c), manager(c)))))
     .put(
       "/:id/access/:accessId",
+      auth.requireOAuthScope("admin"),
       ManagerQuery,
       v("json", z.object({ rights: MachineRights, expectedRevision: z.uuid().nullable() }).strict()),
       async (c) =>
         respond(c, ok(await machineAccess.save(id(c), z.uuid().parse(c.req.param("accessId")), c.req.valid("json"), manager(c)))),
     )
     .get("/:id/secrets", ManagerQuery, async (c) => respond(c, ok(await machineAccess.secretList(id(c), manager(c)))))
-    .put("/:id/secrets", ManagerQuery, v("json", SecretSave), async (c) =>
+    .put("/:id/secrets", auth.requireOAuthScope("admin"), ManagerQuery, v("json", SecretSave), async (c) =>
       respond(c, ok(await machineAccess.saveSecret(id(c), c.req.valid("json"), manager(c)))),
     )
-    .delete("/:id/secrets/:name", ManagerQuery, v("json", z.object({ revision: z.uuid() }).strict()), async (c) =>
+    .delete("/:id/secrets/:name", auth.requireOAuthScope("admin"), ManagerQuery, v("json", z.object({ revision: z.uuid() }).strict()), async (c) =>
       respond(
         c,
         ok(await machineAccess.removeSecret(id(c), z.string().parse(c.req.param("name")), c.req.valid("json").revision, manager(c))),

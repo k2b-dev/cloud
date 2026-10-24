@@ -49,6 +49,10 @@ The database must already be connected and its tables configured by an app
 manager. A machine writes rows as `service_account:<account-id>`, including
 when a table allows changes only to the caller's own rows.
 
+Managers use a browser session or an OAuth token with `admin` scope to change
+machine rights and app machine secrets. The app management grant is still required;
+installation administrators can use the existing administrative view.
+
 ## Configure machine secrets and HTTP
 
 In the same permissions dialog, add **App machine secrets**. Give each secret
