@@ -844,6 +844,9 @@ describe("ChatWorkspace browser read state", () => {
         await noReportsForBatch(page, chat, 0);
         expect(await marker(page).count()).toBe(0);
         expect(await page.getByRole("button", { name: "New messages", exact: true }).count()).toBe(0);
+        // The highlight fades out on its own; scrolling starts once it has, so the fade is no motion the steps wait for.
+        await page.locator(`[data-key="${message}"][data-highlighted]`).waitFor({ state: "detached" });
+        await settled(page);
         // Read back through the gap in overlapping half-screen steps, including paged older history.
         for (let i = 0; i < 45 && chatReads(chat).length === 0; i++) await scrollFeed(page, -1);
         await until(() => chatReads(chat).length > 0);
