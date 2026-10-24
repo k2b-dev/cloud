@@ -470,7 +470,11 @@ Tool-capable personal chats keep three bounded discovery tools available:
 - `search_tools` searches Cloud built-ins and live app operations by task. App
   operations use their stable qualified capability ID, such as
   `mail.conversation.list`. Its
-  optional `appId` scopes app operations; `kind` is returned as metadata and is
+  optional `appId` searches that app first. If it has no matches, discovery
+  returns matching tools from other available apps or built-ins, within the
+  same permissions, chat scope, and task grants. Successful scoped searches
+  stay scoped. Search includes operation titles in the request language as
+  well as base titles and descriptions. `kind` is returned as metadata and is
   not a search filter. Searching never loads a tool;
 - `load_tools` retains qualified capability IDs or stable built-in names.
   Skills and the system prompt may name either directly, so the model does not
