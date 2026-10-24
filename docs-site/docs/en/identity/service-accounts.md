@@ -194,3 +194,10 @@ complete command list.
 
 For independently owned file storage and explicit path grants, see
 [Files machine storage](/en/docs/identity/files-machine-storage).
+## Find names through a directory share
+
+An administrator can share exact people, groups, or accounts under **Accounts →
+Service accounts → Directory access**. A machine credential with `read` can
+then resolve those entries through `/api/accounts/entities`. Sharing a name
+does not grant resource access or disclose group relationships. See
+[Directory shares](/en/docs/identity/directory-shares).

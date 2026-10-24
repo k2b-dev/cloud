@@ -47,7 +47,7 @@ suite("chat view snapshots", () => {
     const before = await detail(owner, chat.shortId);
     const changed = await f.request(owner.headers, `/${chat.shortId}`, "PATCH", { purpose: "Updated details" });
     expect(changed.status).toBe(200);
-    const expected = { id: text.id, author: text.author, preview: messagePreview(body), createdAt: text.createdAt };
+    const expected = { thread: null, id: text.id, author: text.author, preview: messagePreview(body), createdAt: text.createdAt };
     const after = await detail(owner, chat.shortId);
     expect(after.lastMessage).toEqual(expected);
     expect(ConversationSchema.parse(await changed.json()).lastMessage).toEqual(expected);
@@ -68,7 +68,7 @@ suite("chat view snapshots", () => {
       expect(response.status).toBe(201);
       const sent = MessageViewSchema.parse(await response.json());
       expect(messagePreview(body)).toBe("Hello world");
-      const expected = { id: sent.id, author: sent.author, preview: messagePreview(body), createdAt: sent.createdAt };
+      const expected = { thread: null, id: sent.id, author: sent.author, preview: messagePreview(body), createdAt: sent.createdAt };
       expect((await detail(owner, chat.shortId)).lastMessage).toEqual(expected);
       expect((await sidebar(owner)).items.find((row) => row.id === chat.shortId)?.lastMessage).toEqual(expected);
     }
@@ -97,7 +97,7 @@ suite("chat view snapshots", () => {
     const ssr = await loadChatView(owner.context, { conversationId: chat.shortId, messageId: target.id });
     expect(ssr.cursor.length).toBeGreaterThan(0);
     expect(ssr.noAccess).toBe(false);
-    expect(ssr.open).toEqual({ conversation: middle.conversation, page: middle.page, focus: middle.focus });
+    expect(ssr.open).toEqual({ threads: middle.threads, conversation: middle.conversation, page: middle.page, focus: middle.focus });
     expect(ssr.sidebar.items.some((row) => row.id === chat.shortId)).toBe(true);
   });
 

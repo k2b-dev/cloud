@@ -98,7 +98,7 @@ Melde dich mit `cld login --server <Cloud-URL>` an. `cld filesv2 ls` zeigt deine
 
 Ein leerer Ordner bedeutet etwas anderes als ein fehlendes oder nicht erreichbares Verzeichnis. Die Seite zeigt, ob ein Verzeichnis fehlt, zugeordnet werden muss oder derzeit nicht erreichbar ist. Kontaktiere die Administration, wenn ein Verzeichnis geprüft werden muss.
 
-Persönliche Cloud-Ablagen und Gruppenablagen setzen aktivierte lokale Linux-Identitäten voraus. Maschinenablagen haben eigene Eigentümer und ausdrücklich erteilte Berechtigungen; sie benötigen keine lokale Linux-Einrichtung. Nur POSIX-Gruppen können eine Gruppenablage haben. FreeIPA-Ablagen werden unabhängig konfiguriert; FreeIPA-Nutzer können zusätzlich auf zugängliche lokale Cloud-Gruppenablagen zugreifen.
+Persönliche Cloud-Ablagen und Gruppenablagen setzen aktivierte lokale Linux-Identitäten voraus. Maschinenablagen haben eigene Eigentümer und ausdrücklich erteilten Zugriff; sie benötigen keine lokale Linux-Einrichtung. Nur POSIX-Gruppen können eine Gruppenablage haben. FreeIPA-Ablagen werden unabhängig konfiguriert; FreeIPA-Nutzer können zusätzlich auf zugängliche lokale Cloud-Gruppenablagen zugreifen.
 
 ## Markdown bearbeiten und Vorlagen nutzen {icon="markdown"}
 

@@ -98,7 +98,7 @@ Download a file with `cld filesv2 get me:/Documents/report.pdf`, or print a text
 
 An empty folder has a different meaning from a missing or unavailable directory. The page shows whether a directory is missing, needs assignment or cannot currently be reached. Contact your administrator when a directory needs attention.
 
-Personal and group Cloud storage requires enabled local Linux identities. Machine storage uses independent ownership and explicit grants; it needs no local Linux provisioning. Only POSIX groups can have group storage. FreeIPA storage is configured independently; a FreeIPA user can also see accessible local Cloud group storage.
+Personal and group Cloud storage requires enabled local Linux identities. Machine storage uses independent ownership and explicit access; it needs no local Linux provisioning. Only POSIX groups can have group storage. FreeIPA storage is configured independently; a FreeIPA user can also see accessible local Cloud group storage.
 
 ## Edit Markdown and use templates {icon="markdown"}
 

@@ -1,9 +1,19 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 
 const port = 3000;
 
 export const app = defineApp({
   id: "gateway-ops",
+  access: appAccess.roles(["admin"], {
+    publicRoutes: [
+      // The scraper and self-service notification API keep their specialized authorization.
+      "/metrics",
+      "/api/notifications",
+      "/api/notifications/summary",
+      "/api/notifications/:id",
+      "/api/notifications/:id/resend",
+    ],
+  }),
   name: "Gateway",
   icon: "ti ti-route-scan",
   description: "Admin console for gateway operations, observability, and notifications.",

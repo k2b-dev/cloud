@@ -7,14 +7,17 @@ import { Filegate } from "@k2b/filegate";
 import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
+import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import { invocationAuthorityFromRequest } from "../../../cloud/src/services/identity/invocation-authority";
-import { issueInvocationToken } from "../../../cloud/src/services/identity/issue-invocation";
+import { invocationAuthorityFromRequest } from "@k2b/cloud/services/identity/invocation-authority";
+import { issueInvocationToken } from "@k2b/cloud/services/identity/issue-invocation";
 import { activityFilegate } from "../../test/activity-filegate";
 import { testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
 import api from "../api";
+import { app } from "../config";
 import type { EntriesResult, OfficeEditorLaunch } from "../contracts";
 import { entryRef } from "../data/references";
 import { uploads } from "../data/uploads";
@@ -43,14 +46,14 @@ suite("Files machine storage through actual API tokens", () => {
   const originalJwksOrigin = process.env.CLOUD_OAUTH_JWKS_ORIGIN;
   const prefix = `machine-access-${Bun.randomUUIDv7()}`;
   const call = () => testCall(admin);
-  const publicIpPrefix = `2001:db8:${crypto.randomUUID().replaceAll("-", "").slice(0, 4)}:${crypto.randomUUID().replaceAll("-", "").slice(0, 4)}::`;
-  let publicClient = 0;
-  // These are independent transfer clients, not a rate-limit load test. Avoid sharing
-  // the synthetic "unknown" client with every other test using the real Valkey.
+  const publicRoutes = new Hono<AuthContext>()
+    .use("*", requireAppAccess(app.meta, async (c, message) => c.text(message, 403)))
+    .route("/share/filesv2", publicApi);
+  // Every synthetic client gets an independent per-IP budget in shared test Valkey.
   const publicRequest = (path: string, init: RequestInit = {}) => {
     const headers = new Headers(init.headers);
-    headers.set("x-real-ip", `${publicIpPrefix}${(++publicClient).toString(16)}`);
-    return publicApi.request(path, { ...init, headers });
+    headers.set("x-real-ip", uniqueCallerAddress());
+    return publicRoutes.request(`/share/filesv2${path}`, { ...init, headers });
   };
   async function token(id: string, scopes: string[]) {
     const result = await serviceAccountCredentials.createStandaloneApiToken({
@@ -65,7 +68,7 @@ suite("Files machine storage through actual API tokens", () => {
   const request = (key: string, path: string, method = "GET", body?: unknown) =>
     api.request(path, {
       method,
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "x-request-id": "machine-files-fixture" },
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "x-request-id": "machine-files-fixture", "x-real-ip": uniqueCallerAddress() },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   async function data<T>(response: Response): Promise<T> {

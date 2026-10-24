@@ -268,3 +268,14 @@ export { coreGeo, createGeoService } from "./geo/service";
 export { migrate as migrateGeo } from "./geo/migrate";
 
 export { coreGeoMap, createGeoMapService } from "./geo/map";
+
+export {
+  AppAccessManagementError,
+  appAccessGrantCounts,
+  canManageAppAccess,
+  readAppAccess,
+  changeAppAccess,
+  canRepairAppAccess,
+  requireAppAccessManager,
+  type AppAccessSnapshot,
+} from "./app-access-management";

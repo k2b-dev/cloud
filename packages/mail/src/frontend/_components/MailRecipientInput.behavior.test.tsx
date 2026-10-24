@@ -53,7 +53,7 @@ if (!isServer)
     const { default: MailRecipientInput } = await import("./MailRecipientInput");
     const { MailContactDirectoryProvider } = await import("./mail-contact-directory-context");
     let recipients: string[] = [];
-    delegateEvents(["input", "click"]);
+    delegateEvents(["input", "click", "keydown"]);
     const dispose = render(() => {
       const [value, setValue] = createSignal<string[]>([]);
       return (
@@ -106,7 +106,7 @@ if (!isServer)
   });
 
 if (!isServer)
-  test("waits for both sources before showing results and commits a named mailbox suggestion", async () => {
+  test("shows mailbox suggestions while contacts are pending and commits a named suggestion", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
     const contacts = Promise.withResolvers<Response>();
@@ -125,7 +125,7 @@ if (!isServer)
     const { default: MailRecipientInput } = await import("./MailRecipientInput");
     const { MailContactDirectoryProvider } = await import("./mail-contact-directory-context");
     let recipients: string[] = [];
-    delegateEvents(["input", "click"]);
+    delegateEvents(["input", "click", "keydown"]);
     const dispose = render(
       () => (
         <MailContactDirectoryProvider value={DEFAULT_MAIL_CONTACT_DIRECTORY}>
@@ -147,12 +147,30 @@ if (!isServer)
       input.dispatchEvent(new Event("input", { bubbles: true }));
       for (let i = 0; i < 100 && !mailboxAnswered; i++) await Bun.sleep(10);
       expect(mailboxAnswered).toBe(true);
-      expect(dom.root.querySelector('[role="listbox"]')).toBeNull();
-      contacts.resolve(Response.json({ data: [] }));
       for (let i = 0; i < 100 && !dom.root.querySelector('[role="option"]'); i++) await Bun.sleep(10);
-      const option = dom.root.querySelector<HTMLButtonElement>('[role="option"]');
-      expect(option?.textContent).toContain("Ada Lovelace");
-      option!.click();
+      expect(dom.root.querySelector('[role="option"]')?.textContent).toContain("Ada Lovelace");
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      contacts.resolve(
+        Response.json({
+          data: [
+            {
+              contactId: "Ctc001",
+              bookId: "Book01",
+              contactPointsTruncated: false,
+              updatedAt: "2026-10-19T12:00:00.000Z",
+              displayName: "Adam Contact",
+              companyName: null,
+              jobTitle: null,
+              emails: [{ email: "adam@example.test", label: null }],
+              phones: [],
+            },
+          ],
+        }),
+      );
+      for (let i = 0; i < 100 && dom.root.querySelectorAll('[role="option"]').length < 2; i++) await Bun.sleep(10);
+      expect(dom.root.querySelectorAll('[role="option"]')).toHaveLength(2);
+      expect(dom.root.querySelector('[role="option"]')?.textContent).toContain("Adam Contact");
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
       expect(recipients).toEqual(["Ada Lovelace <ada@example.test>"]);
     } finally {
       contacts.resolve(Response.json({ data: [] }));
