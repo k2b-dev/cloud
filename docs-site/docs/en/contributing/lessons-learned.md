@@ -1056,6 +1056,20 @@ explicitly documented identity reason for an excluding shared picker.
 - **Error class:** An isolated transport test inherits an unconfigured infrastructure prerequisite.
 - **Guard:** The starter test installs and restores `mockPdfAdmission()`, preserving the real template, Liquid rendering, and escaping assertions. Production admission still runs in integration tests.
 
+### Preview setup and cleanup must share the document
+
+- **What happened:** Notebook attachment-preview setup exhausted the first case deadline and cleanup cascaded into later cases ([#1886](https://github.com/k2b-dev/cloud/issues/1886)).
+- **Root cause:** Cold component loading ran inside a multi-preview case; delegated events and portaled lightboxes depend on the document that created them.
+- **Error class:** Suite setup and document-bound cleanup are mixed with timed assertions.
+- **Guard:** Load modules into the retained suite document in setup, close dialog and lightbox portals after each case, and restore fetch and component ownership in finally blocks. Keep the original assertions and deadlines.
+
+### Pause a running fixture clock at a future target
+
+- **What happened:** Pulse SQL browser setup sometimes failed before feature assertions with “Cannot fast-forward to the past” ([#1889](https://github.com/k2b-dev/cloud/issues/1889)).
+- **Root cause:** The installed fake clock kept running between protocol calls, passing the identical pause target.
+- **Error class:** Fixture clock setup races elapsed real time.
+- **Guard:** Install one day before the target, then pause at the exact original fixture time before navigation. Keep controlled timers, explicit advances, assertions, and deadlines unchanged.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its
