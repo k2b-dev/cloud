@@ -176,6 +176,20 @@ export default function Welcome(props: WelcomeProps) {
           schedule();
         }
       }
+    } else if (answer.code === "FORBIDDEN" || answer.code === "CONFLICT") {
+      // The pairing changed since this prompt: a newer prompt replaced its token, the administrator cancelled, or
+      // another window decided. Its current state decides; a fresh prompt needs its own decision.
+      const completed = await inOrder(phoneAuth.complete);
+      if (!readCompletion(completed)) {
+        setConfirmation(undefined);
+        setWaiting(undefined);
+        setMessage(failure(completed));
+      }
+    } else if (answer.status !== 0 && answer.status < 500) {
+      // Expired or no longer allowed: this pairing cannot finish, so the person starts again with a new code.
+      setConfirmation(undefined);
+      setWaiting(undefined);
+      setMessage(failure(answer));
     } else setMessage(failure(answer));
     setBusy(false);
   };

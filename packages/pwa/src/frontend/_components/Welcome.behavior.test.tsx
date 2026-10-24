@@ -1,4 +1,4 @@
-import { expect, spyOn, test, setSystemTime } from "bun:test";
+import { expect, setSystemTime, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
@@ -168,6 +168,53 @@ else {
       });
     }
   }
+  test("an expired or replaced device decision never traps the person on the prompt", async () => {
+    const prompt = (token: string) =>
+      Response.json(
+        { state: "confirmation_required", account: { name: "Ada" }, administrator: { name: "Admin" }, confirmationToken: token, expiresAt },
+        { status: 202 },
+      );
+    // Expired: back to entering a code, with the reason.
+    let fetch = mockFetch((_method, path) => {
+      if (path.endsWith("/complete")) return prompt("D".repeat(43));
+      if (path.endsWith("/decision")) return Response.json({ code: "EXPIRED" }, { status: 410 });
+    });
+    let page = mount({ standalone: true });
+    try {
+      await waitFor(() => text(page.dom).includes("Sign in as Ada?"), "device confirmation");
+      button(page.dom, "Confirm")!.click();
+      await waitFor(() => !text(page.dom).includes("Sign in as Ada?"), "prompt closed");
+      expect(page.dom.document.querySelector("[role=alert]")?.textContent).toContain("expired");
+      expect(button(page.dom, "Scan code")).toBeDefined();
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+    // Replaced by a newer prompt: the newer prompt shows and needs its own decision.
+    const decisions: unknown[] = [];
+    let completions = 0;
+    fetch = mockFetch((_method, path, body) => {
+      if (path.endsWith("/complete")) return prompt((completions++ === 0 ? "D" : "E").repeat(43));
+      if (path.endsWith("/decision")) {
+        decisions.push(body);
+        return Response.json({ code: "FORBIDDEN" }, { status: 403 });
+      }
+    });
+    page = mount({ standalone: true });
+    try {
+      await waitFor(() => text(page.dom).includes("Sign in as Ada?"), "device confirmation");
+      button(page.dom, "Confirm")!.click();
+      await waitFor(() => completions === 2, "current state read");
+      await Bun.sleep(20);
+      expect(text(page.dom)).toContain("Sign in as Ada?");
+      expect(decisions).toHaveLength(1);
+      expect(page.replaced).toEqual([]);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
   test("a failed device decision keeps the confirmation visible for retry", async () => {
     let decisions = 0;
     const fetch = mockFetch((_method, path) => {
