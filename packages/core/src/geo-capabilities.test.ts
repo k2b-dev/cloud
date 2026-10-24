@@ -96,7 +96,9 @@ test("routing queries dispatch through the same service context and structured r
   if (updated.ok) capabilityResultSchema(geoRouteContract.updateRoute.data).parse(updated.data);
   calculate.mockRejectedValue(
     new GeoError("GEO_COST_OVERRUN", {
-      distanceAllowanceMeters: 500000,
+      estimatedDistanceMeters: 3000,
+      reservedCredits: 1,
+      actualCredits: 2,
       actualDistanceMeters: 600000,
       costs: { settledCredits: 2, unknownCredits: 0 },
     }),
@@ -104,5 +106,22 @@ test("routing queries dispatch through the same service context and structured r
   expect(await aiCapabilities.queries["route.calculate"].run(input, context)).toMatchObject({
     ok: false,
     error: { code: "GEO_COST_OVERRUN", details: { costs: { settledCredits: 2, unknownCredits: 0 } } },
+  });
+});
+
+test("geo budget refusals show the required credits and shortfall in the request locale", async () => {
+  const { runGeoQuery } = await import("./geo-capability-result");
+  const result = await runGeoQuery({ ...context, locale: "de" }, async () => {
+    throw new GeoError("GEO_BUDGET_EXHAUSTED", {
+      scope: "person",
+      resetsAt: "2026-10-20T22:00:00.000Z",
+      requiredCredits: 12,
+      availableCredits: 7,
+      shortfallCredits: 5,
+    });
+  });
+  expect(result).toMatchObject({
+    ok: false,
+    error: { message: expect.stringContaining("Benötigt: 12 Credits; verfügbar: 7; fehlen: 5.") },
   });
 });

@@ -684,7 +684,8 @@ admin sidebar leads between the pages. The page renders its own heading.
 The admin shell stays within the viewport, with independent sidebar and content
 scrolling. For a bounded child such as `SettingsPage`, pass `scroll={false}` to
 `AdminLayout`: the child then owns content scrolling and its fixed save footer.
-The default remains `scroll={true}` for ordinary admin pages.
+The default remains `scroll={true}` for ordinary admin pages. Set `contentClass`
+when the page owns its content insets; it replaces the default shell padding.
 
 App-owned admin groups come from `adminNav` in the application declaration.
 A group may declare `section: "ai"` to contribute its links to the shared AI

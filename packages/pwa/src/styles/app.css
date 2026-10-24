@@ -36,6 +36,13 @@
   }
 }
 
+/* From 48rem the sidebar leads to Settings, so Start's own button goes. */
+@media (min-width: 48rem) {
+  .pwa-phone-only {
+    display: none;
+  }
+}
+
 .pwa-welcome,
 .pwa-start,
 .pwa-settings {

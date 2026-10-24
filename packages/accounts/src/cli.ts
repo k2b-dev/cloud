@@ -150,6 +150,7 @@ type AuditEvent = {
   actor: {
     userId: string | null;
     uid: string | null;
+    displayName?: string;
     provider: string | null;
     roles: string[];
   };
@@ -377,7 +378,10 @@ const auditRows = (items: AuditEvent[], locale?: string) =>
     outcome: event.outcome,
     action: event.action,
     actor:
-      event.actor.uid ?? (event.actor.userId ? principalLabel({ principal: { type: "user", userId: event.actor.userId } }, locale) : ""),
+      event.actor.uid ??
+      (event.actor.userId
+        ? principalLabel({ principal: { type: "user", userId: event.actor.userId }, displayName: event.actor.displayName }, locale)
+        : ""),
     target:
       event.target.type === "user"
         ? principalLabel({ principal: { type: "user", userId: event.target.id ?? "" }, displayName: event.target.label }, locale)

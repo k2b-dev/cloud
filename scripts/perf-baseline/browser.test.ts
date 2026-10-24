@@ -1,7 +1,16 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import type { Browser } from "playwright";
 import { createDomTestHarness } from "../../packages/ui/test/dom";
-import { Browsers, installProbe, trackHostScripts, transferType } from "./browser";
+import {
+  assetKind,
+  Browsers,
+  installProbe,
+  installPwaProbe,
+  pwaStartUrl,
+  stepMilliseconds,
+  trackHostScripts,
+  transferType,
+} from "./browser";
 import { type BrowserResult, metricNames, metricsSchema } from "./model";
 
 test("transfer types group script/stylesheet/document separately from fonts and XHR", () => {
@@ -199,4 +208,205 @@ test("host TTI tracks only main-frame scripts, while a new document resets its s
   expect(scripts.pending.size).toBe(0);
   scripts.stop();
   expect([...listeners.values()].every((entries) => entries.size === 0)).toBe(true);
+});
+
+test("step clocks subtract the epoch origin and round without adding the quiet window", () => {
+  expect(stepMilliseconds(1_800_000_000_123.6, 1_800_000_000_000)).toBe(124);
+  expect(stepMilliseconds(100, 100)).toBe(0);
+  expect(stepMilliseconds(null, 100)).toBeNull();
+});
+
+test("PWA resource kinds use initiators and URL extensions, including CSS-loaded fonts and images", () => {
+  expect(
+    [
+      ["script", "/pwa/_ssr/123/entry.js"],
+      ["link", "/public/styles.css?v=123"],
+      ["css", "/public/font.woff2"],
+      ["css", "/public/bg.webp"],
+      ["img", "/branding/icon"],
+      ["link", "/public/font.ttf"],
+      ["other", "/manifest.webmanifest"],
+    ].map(([initiator, path]) => assetKind(initiator ?? "", path ?? "/")),
+  ).toEqual(["script", "css", "font", "image", "image", "font", "other"]);
+});
+
+test("the PWA probe records the visible pseudo-title frame even while the original heading is hidden", () => {
+  const dom = createDomTestHarness();
+  const storage = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+  const observer = Object.getOwnPropertyDescriptor(globalThis, "PerformanceObserver");
+  const innerHtml = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
+  Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: dom.window.sessionStorage });
+  Object.defineProperty(globalThis, "PerformanceObserver", {
+    configurable: true,
+    value: class {
+      static supportedEntryTypes: string[] = [];
+    },
+  });
+  const frames: FrameRequestCallback[] = [];
+  const raf = spyOn(globalThis, "requestAnimationFrame").mockImplementation((callback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  const rect = { x: 0, y: 0, width: 100, height: 44, top: 0, left: 0, right: 100, bottom: 44, toJSON: () => ({}) };
+  const rects = spyOn(Element.prototype, "getClientRects").mockReturnValue({
+    0: rect,
+    length: 1,
+    item: () => rect,
+    [Symbol.iterator]: () => [rect][Symbol.iterator](),
+  });
+  const getStyle = globalThis.getComputedStyle;
+  const pseudoStyle = document.createElement("span").style;
+  pseudoStyle.visibility = "visible";
+  const style = spyOn(globalThis, "getComputedStyle").mockImplementation((element, pseudo) =>
+    pseudo === "::after" ? pseudoStyle : getStyle(element),
+  );
+  try {
+    document.body.innerHTML =
+      '<div class="k2b-mobile-shell" data-k2b-switching><h1 class="k2b-mobile-shell__title" style="visibility:hidden" data-k2b-next-title="Spaces">Cloud</h1><a href="/pwa/spaces" data-k2b-pending>Spaces</a></div>';
+    installProbe(false);
+    const launch = { token: "first-launch", title: null, action: "navigation" as const, choice: null };
+    window.__cloudPwaLaunch = launch;
+    installPwaProbe();
+    expect(window.__cloudPwa.read().token).toBe("first-launch");
+    window.__cloudPwa.reset({ token: "tab-step", title: "Spaces", action: "navigation", choice: null });
+    window.__cloudPwa.launch(launch);
+    expect(window.__cloudPwa.read().token).toBe("tab-step");
+    const link = document.querySelector("a");
+    if (!link) throw new Error("Missing test link");
+    const press = new Event("pointerdown", { bubbles: true });
+    Object.defineProperty(press, "isPrimary", { value: true });
+    link.dispatchEvent(press);
+    frames.shift()?.(performance.now());
+    expect(window.__cloudPwa.read()).toMatchObject({ pointer: window.__cloudPwa.epoch + press.timeStamp, titleFrame: true });
+    expect(window.__cloudPwa.read().pressed).not.toBeNull();
+    expect(window.__cloudPwa.read().titleAt).not.toBeNull();
+    const stored: unknown = JSON.parse(sessionStorage.getItem("cloud.perf.pwa") ?? "null");
+    expect(stored).toMatchObject({ token: "tab-step", titleFrame: true });
+    window.dispatchEvent(new Event("pagehide"));
+    const show = new Event("pageshow");
+    Object.defineProperty(show, "persisted", { value: true });
+    window.dispatchEvent(show);
+    frames.shift()?.(performance.now());
+    expect(window.__cloudPwa.read().hide).not.toBeNull();
+    expect(window.__cloudPwa.read().persisted).toBe(true);
+    expect(window.__cloudPwa.read().restoredFrame).not.toBeNull();
+    for (const [tab, title] of [
+      ["start", "Cloud"],
+      ["spaces", "Spaces"],
+    ]) {
+      document.body.innerHTML = `<div class="k2b-mobile-shell"><h1 class="k2b-mobile-shell__title">${title}</h1><a data-tab="${tab}" aria-current="page" data-k2b-title="${title}">${title}</a></div>`;
+      window.__cloudPwa.reset({ token: `relaunch-${tab}`, title: null, action: "navigation", choice: null });
+      expect(window.__cloudPwa.read().titleAt).toBeNull();
+      frames.shift()?.(performance.now());
+      expect(window.__cloudPwa.read().titleAt).not.toBeNull();
+      expect(window.__cloudPwa.read().titleFrame).toBe(false);
+    }
+  } finally {
+    window.dispatchEvent(new Event("pagehide"));
+    style.mockRestore();
+    rects.mockRestore();
+    raf.mockRestore();
+    if (storage) Object.defineProperty(globalThis, "sessionStorage", storage);
+    else Reflect.deleteProperty(globalThis, "sessionStorage");
+    if (observer) Object.defineProperty(globalThis, "PerformanceObserver", observer);
+    else Reflect.deleteProperty(globalThis, "PerformanceObserver");
+    if (innerHtml) Object.defineProperty(Element.prototype, "innerHTML", innerHtml);
+    dom.cleanup();
+  }
+});
+
+test("PWA profiles keep phone throttling and use large WebKit tablets plus a desktop Chromium monitor", async () => {
+  const { PhoneSession } = await import("./seed");
+  const browsers = new Browsers(new AbortController().signal, "test-spki");
+  const phone = new PhoneSession("https://localhost:4100", browsers.signal);
+  const prepare = spyOn(phone, "response").mockResolvedValue(new Response(null, { status: 204 }));
+  const contexts: { engine: string; options: Parameters<Browser["newContext"]>[0] }[] = [];
+  // Stop at context creation: exercise the actual profile and context options without starting a browser.
+  for (const engine of ["webkit", "chromium"] as const) {
+    const browser: Partial<Browser> = {
+      async newContext(options) {
+        contexts.push({ engine, options });
+        throw new Error("test stops before opening a page");
+      },
+    };
+    Object.defineProperty(browsers.engines, "get", {
+      configurable: true,
+      value: (name: string) => (name === engine ? browser : undefined),
+    });
+    try {
+      const results = await browsers.measurePwa(phone.origin, phone, {
+        runs: 1,
+        deviceName: "perf-2026-10-14",
+        remote: false,
+        results: [],
+      });
+      const measured = results.filter((profile) => profile.browser === engine);
+      expect(
+        measured.map(({ profile, viewport, deviceScaleFactor, cpuThrottle, network }) => ({
+          profile,
+          viewport,
+          deviceScaleFactor,
+          cpuThrottle,
+          network,
+        })),
+      ).toEqual(
+        engine === "webkit"
+          ? [
+              { profile: "iphone", viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, cpuThrottle: null, network: null },
+              { profile: "ipad-portrait", viewport: { width: 1024, height: 1366 }, deviceScaleFactor: 2, cpuThrottle: null, network: null },
+              {
+                profile: "ipad-landscape",
+                viewport: { width: 1366, height: 1024 },
+                deviceScaleFactor: 2,
+                cpuThrottle: null,
+                network: null,
+              },
+              {
+                profile: "ipad-split-view",
+                viewport: { width: 678, height: 1024 },
+                deviceScaleFactor: 2,
+                cpuThrottle: null,
+                network: null,
+              },
+            ]
+          : [
+              { profile: "monitor", viewport: { width: 2560, height: 1440 }, deviceScaleFactor: 1, cpuThrottle: 1, network: null },
+              {
+                profile: "phone",
+                viewport: { width: 390, height: 844 },
+                deviceScaleFactor: 3,
+                cpuThrottle: 4,
+                network: { latencyMs: 150, downloadBytesPerSecond: 200_000, uploadBytesPerSecond: 93_750 },
+              },
+            ],
+      );
+    } finally {
+      if (engine === "chromium") prepare.mockRestore();
+    }
+  }
+  expect(contexts).toHaveLength(12);
+  const monitor = contexts.filter(({ options }) => options?.viewport?.width === 2560);
+  expect(monitor.map(({ options }) => options?.serviceWorkers)).toEqual(["allow", "block"]);
+  for (const { options } of monitor) {
+    expect(options).toMatchObject({ isMobile: false, hasTouch: false, deviceScaleFactor: 1, ignoreHTTPSErrors: false });
+    expect(options?.userAgent).toBeUndefined();
+  }
+  for (const { engine, options } of contexts.filter(({ options }) => options?.viewport?.width !== 2560)) {
+    expect(options).toMatchObject({ isMobile: true, hasTouch: true, ignoreHTTPSErrors: engine === "webkit" });
+  }
+});
+
+test("manifest start_url is resolved within the paired app", () => {
+  const origin = "https://cloud.example.test";
+  expect(pwaStartUrl({ start_url: "/pwa/" }, origin)).toBe(`${origin}/pwa/`);
+  expect(pwaStartUrl({ start_url: "./?from=home" }, origin)).toBe(`${origin}/pwa/?from=home`);
+  for (const manifest of [
+    null,
+    {},
+    { start_url: 1 },
+    { start_url: "/app/spaces" },
+    { start_url: "https://elsewhere.test/pwa/" },
+    { start_url: "https://user:pass@cloud.example.test/pwa/" },
+  ])
+    expect(() => pwaStartUrl(manifest, origin)).toThrow();
 });

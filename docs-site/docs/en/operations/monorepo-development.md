@@ -151,7 +151,7 @@ Connecting is optional in this release; existing Pulse features stay on Postgres
 
 ## Test Filegate locally
 
-Development infrastructure includes Filegate 7.0.0 for Files (`filesv2`) development.
+Development infrastructure includes Filegate 7.1.0 for Files (`filesv2`) development.
 To prepare its backend token and configuration and start only Filegate:
 
 ```bash
@@ -338,10 +338,10 @@ contain workspace catalog references; their peer dependencies remain explicit
 compatibility ranges.
 
 `bun install` applies the three-day release-age gate when it resolves a new npm
-version. The first-party `@k2b/fibel`, `@k2b/nessi`, `@k2b/stdlib`,
-`@k2b/sync`, and its pinned NATS client packages are the exceptions so a coordinated Cloud update
-can use a new release immediately. `@k2b/ssr` and `@k2b/ui` are workspace
-packages and never come from npm here. Dependency lifecycle scripts are denied by
+version. The first-party `@k2b/fibel`, `@k2b/filegate`, `@k2b/nessi`,
+`@k2b/rsql`, `@k2b/stdlib`, and `@k2b/sync` packages are the exceptions so a
+coordinated Cloud update can use a new trusted release immediately. `@k2b/ssr`
+and `@k2b/ui` are workspace packages and never come from npm here. Dependency lifecycle scripts are denied by
 default. Add no trusted package without verifying why its install script is
 required.
 

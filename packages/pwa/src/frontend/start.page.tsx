@@ -36,11 +36,15 @@ export default ssr<AuthContext>(async (c) => {
       <PwaLayout
         c={c}
         title={cloud}
-        // Settings sits in the header, as in a phone's own apps, so Start stays one list of parts.
+        sidebarTitle={t.start}
+        // On the phone Settings sits in the header, as in a phone's own apps, so Start stays one list of parts. The
+        // sidebar of a wide screen lists it itself.
         actions={
-          <IconButtonLink href={`${PWA_SCOPE}settings`} label={t.settings} tooltip={false}>
-            <i class="ti ti-settings" aria-hidden="true" />
-          </IconButtonLink>
+          <span class="pwa-phone-only">
+            <IconButtonLink href={`${PWA_SCOPE}settings`} label={t.settings} tooltip={false}>
+              <i class="ti ti-settings" aria-hidden="true" />
+            </IconButtonLink>
+          </span>
         }
       >
         <div class="pwa-start">

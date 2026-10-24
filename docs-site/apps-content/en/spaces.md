@@ -101,7 +101,30 @@ Tasks you claim also count as yours in **For me**.
   the count is higher, a line under the list says how many more are in Spaces
   on the web.
 
-Rows do not open the item. Read and edit details in Spaces on the web.
+### Open a task
+
+Tap a row to open its task. The task has its own address,
+`/pwa/spaces/<space>/<task>`, so a reload, Back, and rotating the device show
+the same task. Only people who can read the task's Space can open it; for
+anyone else the address does not exist.
+
+- On a phone and on an iPad upright, the task replaces the list, with
+  **Back to Spaces** in its head. From 64 rem (1024 px), for example on an
+  iPad across or a monitor, the list stays beside the task, the open task's
+  row is marked, and **No task selected** holds the place until you choose one.
+- The task shows its Space in the head, whether it is done, the deadline or
+  for an event the time and place, the people assigned or attending, the
+  description, and the checklist with how many items are done.
+- The title, Space, and date show at once from the row; the rest follows.
+- Tap the circle to mark the task done or open it again, and tap a checklist
+  item to check it off. Each change shows at once with a spinner at its place
+  while it saves. When it cannot be saved, it goes back, its row offers
+  **Retry**, and a line above the checklist says how many changes are not
+  saved.
+- Without write access to the Space, the task says so, and the circle and the
+  checklist are off.
+- **Open in Spaces** opens the task in Spaces on the web, to edit everything
+  else.
 
 ## Understand the Spaces model
 

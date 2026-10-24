@@ -39,7 +39,7 @@ const context = { number: "RE-2026-000001", issuedAt: new Date("2026-08-22T10:00
 
 // Explicit opt-in: exercises the external renderer, not a successful mock.
 // No DB writes, no bank calls, no production URL inferred from settings.
-const livePdfTest = testFor("gotenberg");
+const livePdfTest = testFor("gotenberg", "valkey");
 livePdfTest(
   "real Gotenberg produces readable PDF/XML for invoices, corrections and self-billing",
   async () => {

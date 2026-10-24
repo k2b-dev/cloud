@@ -1,4 +1,5 @@
 import { createHash, X509Certificate } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -41,6 +42,19 @@ export function browserServer(version: string, port: number) {
     // Playwright 1.64 filters client launch args unless this controlled, loopback-published server opts in.
     tail: ["npx", "-y", `playwright@${version}`, "run-server", "--unsafe", "--port", String(port), "--host", "0.0.0.0"],
     endpoint: `ws://127.0.0.1:${port}/`,
+  };
+}
+
+export function remoteBrowserArgs(port: number, origin: string, address: string) {
+  return ["--publish", `127.0.0.1:${port}:${port}`, "--add-host", `${new URL(origin).hostname}:${address}`];
+}
+
+export function netem(rttMs: number, remote: boolean) {
+  const device = remote ? "eth0" : "lo";
+  const delay = remote ? rttMs : rttMs / 2;
+  return {
+    args: ["--cap-add", "NET_ADMIN", "--entrypoint", "sh"],
+    tail: ["-c", `apk add --no-cache iproute2-tc >/dev/null && tc qdisc replace dev ${device} root netem delay ${delay}ms`],
   };
 }
 
@@ -160,8 +174,9 @@ export class Runtime {
     readonly port: number,
     readonly image: string,
     readonly signal: AbortSignal,
+    readonly remoteOrigin?: string,
   ) {
-    this.origin = measurementOrigin(port);
+    this.origin = remoteOrigin ?? measurementOrigin(port);
   }
 
   name(service: string) {
@@ -299,6 +314,7 @@ export class Runtime {
     this.networks.push(this.prefix);
     await command(["docker", "network", "create", "--label", `cloud.perf.run=${this.prefix}`, this.prefix], { signal: this.signal });
     if (!(await this.owns("network", this.prefix))) throw new Error(`Could not establish network ownership: ${this.prefix}`);
+    if (this.remoteOrigin) return;
     await this.container(
       "postgres",
       "postgres:17-alpine",
@@ -435,16 +451,41 @@ export class Runtime {
       .digest("base64");
   }
 
-  async startBrowsers(version: string) {
+  async startBrowsers(version: string, rttMs?: number) {
+    if (this.remoteOrigin) this.browserPort = await freeLoopbackPort();
     if (this.browserPort === null) throw new Error("Caddy must publish the browser server port before browsers start");
     const server = browserServer(version, this.browserPort);
-    await this.container("browsers", server.image, server.args, server.tail, undefined, `container:${this.name("caddy")}`);
+    if (this.remoteOrigin) {
+      const { address } = await lookup(new URL(this.remoteOrigin).hostname);
+      await this.container(
+        "browsers",
+        server.image,
+        [...server.args, ...remoteBrowserArgs(this.browserPort, this.remoteOrigin, address)],
+        server.tail,
+      );
+    } else await this.container("browsers", server.image, server.args, server.tail, undefined, `container:${this.name("caddy")}`);
     await waitFor(
       "Playwright browser server",
       async () => (await fetch(server.endpoint.replace("ws:", "http:"), { signal: AbortSignal.timeout(5000) })).ok,
       this.signal,
       60_000,
     );
+    if (rttMs !== undefined) {
+      const config = netem(rttMs, !!this.remoteOrigin);
+      await this.container(
+        "netem",
+        caddyImage,
+        config.args,
+        config.tail,
+        undefined,
+        `container:${this.name(this.remoteOrigin ? "browsers" : "caddy")}`,
+      );
+      const code = await command(["docker", "wait", this.name("netem")], { signal: this.signal });
+      if (code !== "0") {
+        const logs = await command(["docker", "logs", this.name("netem")], { includeStderr: true, signal: this.signal });
+        throw new Error(`RTT netem setup exited ${code}: ${logs}`);
+      }
+    }
     return server.endpoint;
   }
 

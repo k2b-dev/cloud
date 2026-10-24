@@ -16,11 +16,16 @@ export type GeoRouteChainDependencies = {
   bucket: ReturnType<typeof createGeoBucket>;
   ledger: ReturnType<typeof createGeoLedger>;
   now: () => Date;
-  recordTransition: (event: "monthly_budget_exhausted" | "provider_key_rejected", timezone: string, context: GeoContext) => Promise<void>;
+  recordTransition: (
+    event: "monthly_budget_exhausted" | "provider_key_rejected" | "route_cost_overrun",
+    timezone: string,
+    context: GeoContext,
+    metadata?: Record<string, number>,
+  ) => Promise<boolean | void>;
 };
-export type GeoRouteCallPricing = { pairs: number; avoids: number; optimize: boolean; distanceAllowanceMeters: number };
+export type GeoRouteCallPricing = { pairs: number; avoids: number; optimize: boolean; estimatedDistanceMeters: number };
 export const reserveRouteCall = (pricing: GeoRouteCallPricing) =>
-  geoRouteReferenceCost({ ...pricing, distanceMeters: pricing.pairs * pricing.distanceAllowanceMeters });
+  geoRouteReferenceCost({ ...pricing, distanceMeters: pricing.estimatedDistanceMeters });
 export type GeoRouteChainCall = <V>(
   fn: GeoFunction,
   input: unknown,
@@ -53,26 +58,28 @@ export const runGeoRouteChain = async <T>(
   let known = 0,
     unknown = 0;
   let result: T | undefined, failure: unknown;
+  let overrun:
+    | { estimatedDistanceMeters: number; actualDistanceMeters: number; reservedCredits: number; actualCredits: number }
+    | undefined;
   try {
     result = await work(async (fn, input, schema, request, pricing, distance) => {
       context.signal?.throwIfAborted();
       const key = geoCacheKey(fn, input, context.locale ?? "en");
       const hit = await cache.get(key, schema);
-      if (hit !== null) {
-        // A cached response still must respect this call's reference allowance.
-        if (pricing && distance && distance(hit) > pricing.pairs * pricing.distanceAllowanceMeters)
-          throw new GeoError("GEO_COST_OVERRUN", {
-            distanceAllowanceMeters: pricing.distanceAllowanceMeters,
-            actualDistanceMeters: distance(hit),
-          });
-        return hit;
-      }
+      if (hit !== null) return hit; // Cached provider results incur no new cost.
       const allocated = pricing ? reserveRouteCall(pricing) : geoReferenceCost({ fn });
       const debitKnown = (meters: number) => {
         try {
           const cost = pricing ? geoRouteReferenceCost({ ...pricing, distanceMeters: meters }) : allocated;
           if (!Number.isSafeInteger(known + unknown + cost)) throw new Error("Unrepresentable reference cost");
           known += cost;
+          if (pricing && cost > allocated)
+            overrun = {
+              estimatedDistanceMeters: pricing.estimatedDistanceMeters,
+              actualDistanceMeters: meters,
+              reservedCredits: allocated / 1000,
+              actualCredits: cost / 1000,
+            };
         } catch {
           // A sent request never becomes free because the provider's distance cannot be priced safely.
           unknown += allocated;
@@ -106,13 +113,9 @@ export const runGeoRouteChain = async <T>(
         const actualDistance = pricing && distance ? distance(parsed.data) : 0;
         debitKnown(actualDistance);
         if (signal.aborted) throw new GeoError("GEO_PROVIDER_FAILED");
-        // Retain valid paid results even on overrun, so an explicitly larger allowance can reuse them.
+        // Retain paid results even on overrun so an explicit retry can reuse them without paying again.
         await cache.put(key, fn, parsed.data, false);
-        if (pricing && actualDistance > pricing.pairs * pricing.distanceAllowanceMeters)
-          throw new GeoError("GEO_COST_OVERRUN", {
-            distanceAllowanceMeters: pricing.distanceAllowanceMeters,
-            actualDistanceMeters: actualDistance,
-          });
+        if (overrun) throw new GeoError("GEO_COST_OVERRUN", overrun);
         return parsed.data;
       } finally {
         await release();
@@ -121,9 +124,13 @@ export const runGeoRouteChain = async <T>(
   } catch (error) {
     failure = error;
   }
+  if (overrun) failure = new GeoError("GEO_COST_OVERRUN", overrun);
+  const knownReferenceCredits = known / 1000;
+  let settlementConfirmed = true;
   try {
     await ledger.settle(reservation, known + unknown);
   } catch {
+    settlementConfirmed = false;
     // Keep the original admission debit, and make failed reconciliation visible without retaining a provider cause.
     failure = new GeoError("GEO_PROVIDER_FAILED", {
       adminHint:
@@ -139,6 +146,21 @@ export const runGeoRouteChain = async <T>(
   }
   if (failure) {
     const error = failure instanceof GeoError ? failure : new GeoError("GEO_PROVIDER_FAILED");
+    if (overrun) {
+      const recorded = await dependencies.recordTransition("route_cost_overrun", config.timezone, context, {
+        reservedCredits: reservation.cost / 1000,
+        settledCredits: known / 1000,
+        unknownCredits: unknown / 1000,
+        knownReferenceCredits,
+        settlementConfirmed: settlementConfirmed ? 1 : 0,
+        estimatedCallCredits: overrun.reservedCredits,
+        actualCallCredits: overrun.actualCredits,
+      });
+      if (recorded === false)
+        error.details.adminHint =
+          "The routing cost overrun could not be recorded in the audit log. Reconcile the reported costs before retrying. " +
+          (typeof error.details.adminHint === "string" ? error.details.adminHint : "");
+    }
     throw new GeoError(error.code, { ...error.details, costs: { settledCredits: known / 1000, unknownCredits: unknown / 1000 } });
   }
   return result!;

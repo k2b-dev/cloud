@@ -5,7 +5,7 @@ section: Contributing
 order: 1311
 description: Record repeatable page weight and cold-load timings from isolated production bundles.
 tags: [contributing, performance, testing, ssr]
-updated: 2026-10-20
+updated: 2026-10-23
 ---
 
 # Measure production page performance
@@ -74,10 +74,10 @@ session cookie. The development stack is separate.
 The Playwright container shares Caddy's network namespace, isolating both
 browser engines from host network interface churn. Caddy listens on the same
 HTTPS port inside its namespace as on the host, so the browsers and host use
-the same `https://localhost:<port>` origin. Both engines use fresh contexts
-for each load.
+the same `https://localhost:<port>` origin. Cold-load profiles use fresh contexts for each load; mobile flows keep one
+context through their tab switches and relaunches.
 
-Every page is measured with the throwaway administrator's session, supplied
+The eight cold-load pages use the throwaway administrator's session, supplied
 by Core's administrator-token login, so the shell includes administrator
 navigation. The harness accepts the fresh installation's legal terms for that
 administrator through Core's public consent flow. It requires an authenticated `/api/me`
@@ -104,12 +104,208 @@ the harness prints its exact removal commands. Keep its fixture directory
 private because it contains temporary credentials.
 
 Run `bun --no-env-file scripts/perf-baseline.ts --help` for every flag:
-`--pages`, `--panel`, `--runs`, `--skip-build`, `--out`, `--compare`, and `--keep`.
+`--pages`, `--panel`, `--runs`, `--origin`, `--rtt`, `--skip-build`, `--out`, `--compare`, and `--keep`.
 The default page list has eight entries: `document`, `faq`, `mail-mailbox`,
 `assistant-chat`, `notebooks-editor`, `files`, `accounts`, and `spaces`.
 `spaces` resolves to the Space created through `POST /api/spaces`.
+The `pwa` group runs only when named and can be combined with these pages in
+local mode.
 Output directories must stay inside the checkout. Existing result files are
 never overwritten.
+
+## Measure the installable Cloud app
+
+Select `pwa` to measure the installable app at `/pwa/`:
+
+```bash
+bun --no-env-file scripts/perf-baseline.ts --pages pwa --runs 3
+```
+
+Local mode builds and starts Core, the Cloud app, Spaces, and the gateway.
+Through the public Spaces API it creates one Space with 12 open tasks assigned
+to the administrator, titled `Perf task 01` through `Perf task 12`. It verifies
+that all 12 appear in `GET /api/spaces/overview/work?view=mine` before measuring.
+The fixture is described in page notes.
+
+The harness pairs a real phone session. It starts a pairing with the recent
+administrator web session, claims the secret from a separate phone cookie jar,
+confirms on the web with the phone's six-digit code, and completes on the phone
+(polling a waiting response for at most 60 seconds). It names the phone
+`perf-<UTC date>`, for example `perf-2026-10-14`, and removes it at the end,
+including after measurement failures. Pairing secrets, codes, and cookies are
+never written to the report. The browser receives only the app session and the
+path-scoped device key, never the administrator's web session. Rotated device
+and session cookies are carried into each later context and cleanup.
+
+Profiles run sequentially in this order. Phone and iPad profiles enable touch
+and mobile emulation; the monitor uses desktop mouse input:
+
+| Profile | Engine | Viewport and scale | Throttling |
+| --- | --- | --- | --- |
+| `iphone` | WebKit | 390 × 844, scale 3 | None |
+| `ipad-portrait` | WebKit | 1024 × 1366, scale 2 | None |
+| `ipad-landscape` | WebKit | 1366 × 1024, scale 2 | None |
+| `ipad-split-view` | WebKit | 678 × 1024, scale 2 | None |
+| `monitor` | Chromium | 2560 × 1440, scale 1 | None |
+| `phone` | Chromium | 390 × 844, scale 3 | CPU rate 4; the existing phone network profile |
+
+The budgets from [#1104](https://github.com/k2b-dev/cloud/issues/1104) are:
+
+- A tap shows a visible answer within **100 ms**, such as a pressed control,
+  changed title, selected choice, or pending state.
+- A tab switch inside one application needs **no full page load**.
+
+Switches between two applications, such as **Start → Spaces**, still load a
+new document because each application has its own asset bundle. Record these
+document loads separately when assessing the budget for switches inside one
+application. These are measurement targets; the harness records timings and
+document counts without enforcing these budgets as pass/fail limits.
+
+Contexts use `en-US`, `Europe/Berlin`, a light device color scheme, and the time
+zone cookie. HTTP cache stays enabled. For each profile and run, one fresh
+context allows service workers and performs these steps:
+
+1. `launch-first`: open Start with an empty HTTP cache and no worker yet. Wait
+   for the initial islands, 500 ms of script quiet, and service-worker readiness.
+   A welcome, unavailable, sign-in, or non-app page fails the profile.
+2. Run `tab-start-spaces`, `tab-spaces-start`, `tab-start-settings`, and
+   `tab-settings-start`, then repeat all four. These use touch taps (mouse clicks on the monitor) on the
+   navigation the width shows: the tab bar and Start's header settings icon on
+   a phone, the sidebar from 48 rem. Round 1 is the first visit; round 2
+   is the revisit in this context.
+3. `history-back` and `history-forward`: return to Settings and Start,
+   recording whether `pageshow.persisted` reports a back/forward cache restore.
+4. `relaunch-start-url` ("relaunch through start_url"): read the manifest's
+   `start_url` (`/pwa/`), close the page, and open that URL in a new page of the
+   same context. Keep cookies, local storage, HTTP cache, and the worker. Time
+   from navigation start to the first frame showing Start or the restored
+   place in `doneMs`, and record `finalPath` with its query string. The Markdown
+   report lists the arrival time and final path for every relaunch.
+5. Open Settings with an unmeasured tap. `language-de` selects Deutsch and
+   waits for the reloaded German document; `language-en` restores English.
+   `theme-light`, `theme-dark`, and `theme-system` cycle Automatic → Light →
+   Dark → Automatic. `rename` fills the phone name before timing its Save tap,
+   saving `<deviceName> <run>`. The final run of the final profile measures a
+   rename back to exactly `<deviceName>`. Untimed phone renames prepare a
+   different starting name so Save is enabled even with `--runs 1`.
+6. In local mode, open Spaces with an unmeasured tap. `check-off` taps the first
+   task's check button and waits for that row to disappear. Then tap Undo
+   without timing it and wait for the row and all 12 open tasks to return,
+   with the network quiet.
+7. Close the old page and open a new page in the same context for each
+   relaunch. `launch-warm` keeps the HTTP cache and worker. `launch-expired`
+   removes only `pwa_session` and records the three response hops: `/pwa/`,
+   `/pwa/_auth/session/launch?to=…`, and `/pwa/?pwa_launch=1`. `launch-timezone`
+   removes only the time zone cookie and expects two documents because of
+   TimezoneCookie's one reload. Warm, expired, and time zone launches are
+   round 2. Their content and mount times describe the final document.
+
+A second fresh context blocks service workers and repeats `launch-first`,
+both rounds of the four tab steps, and `relaunch-start-url`. Its samples have
+`serviceWorker: "blocked"`;
+the first context's samples use `"allowed"`. Each step has a 45-second deadline.
+A failed step fails its profile and retains earlier successful steps. A missing
+WebKit engine records its four profiles as skipped with the connection error.
+
+### Read step timings and cache state
+
+All step times are integer milliseconds relative to the step start: pointerdown
+for taps, the first document's navigation start for launches and history
+loads, or `pagehide` of the page being left for a back/forward cache restore. The probe stores epoch times across document
+navigations in session storage; animation-frame observations exclude harness
+polling and quiet-window delays.
+
+| Field | Observation |
+| --- | --- |
+| `pressedMs` | First frame showing the tapped control as pending, active, selected, or busy |
+| `titleMs` | First frame with the target title; `titleFrame: true` means the departing shell showed its next-title frame, `false` means the arrived document |
+| `contentMs` | Arrived document's first contentful paint; for a back/forward cache restore, the first frame after `pageshow` |
+| `mountedMs` | Every initial island in the arrived document has mounted, using the same mount hook as cold loads |
+| `selectedMs` | Language segment visibly selected, appearance button showing its new choice, or Save visibly busy |
+| `doneMs` | New language document painted, effective theme and button agree, rename success toast visible with Save disabled again, checked task row gone, or Start/restored place visible after `relaunch-start-url` |
+| `finalPath` | Final pathname and query string after the measured step |
+| `persisted` | History's `pageshow.persisted`; null for other steps |
+
+Unsupported or inapplicable observations are null. Summary rows group by step,
+round, and worker mode in the documented step order. Each metric aggregates
+only its non-null samples; a group with none stays null. JSON preserves raw
+steps and median/min/max distributions. The Markdown table shows medians,
+document counts, and the share of history samples restored from back/forward
+cache. `Doc end` is the last document's response end relative to the step start;
+`Server` sums that document's Server-Timing durations.
+
+`documents` records every main-frame document response, including redirects.
+Only the final document has navigation timings: request start, response start
+and end, worker start when used, transfer size, and Server-Timing. Redirect
+hops without a navigation entry carry only path and HTTP status. Settings
+changes without reloads, check-off, and back/forward cache restores have empty
+`documents` and `assets` arrays.
+
+After mounting and script quiet, `assets` records same-origin resource entries
+for scripts, CSS, fonts, images, and other assets, excluding fetch/XHR. Paths
+include the query string. Sizes come from Resource Timing; a missing size is
+null. Status comes from Resource Timing's `responseStatus` when exposed, then
+from the Playwright response for that URL in this step, otherwise null. Cache
+state is derived in this order:
+
+| State | Rule |
+| --- | --- |
+| `revalidated` | HTTP status 304, including when transfer size is zero or unavailable |
+| `unknown` | Transfer size unavailable and no 304 status |
+| `cache` | Transfer size zero and no 304 status |
+| `network` | Positive transfer size and no 304 status |
+
+`repeat` means the same path, ignoring the query string, was already loaded in
+this context, so a file loaded again under a new cache-busting query counts. Summary columns
+`304`, `Downloads`, and `Re-requests` count revalidated assets, network assets,
+and repeated paths whose state is not `cache`, respectively. The WebKit cache
+gate restricts that last count to `/public/` or `/_ssr/` assets in `launch-warm`,
+`relaunch-start-url`, and `tab-*` steps, across both worker modes. A clean report says:
+
+```text
+WebKit iphone: 0 re-requested /public or /_ssr assets on tab switches and relaunches
+```
+
+Otherwise it lists revalidated, downloaded, and unknown counts with up to five
+example paths. This line reports the cache observations; it does not itself
+turn a profile into a failure.
+
+### Measure an existing installation or add RTT
+
+Use an HTTPS origin without a path, query, hash, or credentials:
+
+```bash
+# Supply PERF_BASELINE_ADMIN_TOKEN through your environment's secret handling.
+bun --no-env-file scripts/perf-baseline.ts --pages pwa \
+  --origin https://cloud.example.test --rtt 100
+```
+
+`--origin` accepts only `--pages pwa` exactly and rejects `--skip-build` and
+`--keep`. The administrator token comes only from `PERF_BASELINE_ADMIN_TOKEN`,
+never a flag or report. Core's login skips consent when terms are already
+accepted and still verifies `/api/me`. If consent is pending, remote mode asks
+you to accept it yourself before measuring, so it does not change legal
+acceptance. This mode builds nothing and starts only
+the browser server on its own labelled network, with its port bound to host
+loopback. The host resolver supplies the origin's address through Docker's
+`--add-host`, so private DNS names do not depend on the bridge's resolver.
+The existing installation must serve the Cloud app and Spaces.
+
+Remote mode seeds nothing and skips check-off, with a note explaining that it
+would change real tasks. The only measurement writes are the throwaway phone's
+pairing and renames. Cleanup removes the device and signs out the newly opened
+administrator web session, attempting both even after a failure. Local fixture
+writes never run against `--origin`.
+
+`--rtt` accepts an integer from 1 through 1000 ms and adds fixed round-trip
+latency to every browser profile, in addition to Chromium phone's existing
+throttle. It uses Linux `tc netem` from a short-lived labelled sidecar based on
+the pinned Alpine Caddy image. Installing `iproute2-tc` with `apk` needs network
+access; a failed install or `tc` command fails setup with its logs. Locally,
+the sidecar shares Caddy's namespace and delays `lo` by half the requested RTT,
+once in each direction. Remotely it shares the browser namespace and delays
+`eth0` egress by the full RTT. The value is recorded in `metadata.rttMs` and
+`pages[].pwa.rttMs`; null means no added RTT.
 
 ## Read the measurements
 
@@ -210,8 +406,10 @@ Schema version 1 has these fields:
 | Field | Meaning |
 | --- | --- |
 | `schemaVersion` | `1`; incompatible comparisons are rejected |
-| `metadata` | `commit`, `dirty`, `timestamp`, `bunVersion`, `playwrightVersion`, `browserVersions`, `cpuCount`, `loadAverage` (one-minute load at start and end), `runs`, `origin`, `transport`, `runtimeImage`, `seedVersion`; new runs record `transport: "https-h2-caddy"` |
-| `pages[]` | `id`, resolved `path`, `status`, `errors`, `notes`, `static`, `browsers` |
+| `metadata` | `commit`, `dirty`, `timestamp`, `bunVersion`, `playwrightVersion`, `browserVersions`, `cpuCount`, `loadAverage` (one-minute load at start and end), `runs`, `origin`, `transport`, `runtimeImage`, `seedVersion`, `rttMs`; new runs record seed version `2`, transport `"https-h2-caddy"` locally or `"remote"`, and runtime image `"none"` remotely |
+| `metadata.rttMs` | Added fixed RTT in ms, or null; older schema version 1 files default to null |
+| `pages[]` | `id`, resolved `path`, `status`, `errors`, `notes`, `static`, `browsers`, optional `pwa` |
+| `pages[].pwa` | `origin` (`local` or `remote`), `rttMs`, `deviceName`, `notes`, `profiles`; each profile includes viewport, scale, throttle, status, raw `steps`, and grouped `summary` |
 | `pages[].static` | `html`, `islands`, `islandEntries`, `propsBytes`, `propsShare`, `js.eager`, `js.lazy`, `css`; size objects contain `raw`, `gzip`, `brotli`, with `modules` for JS/CSS |
 | `pages[].browsers[]` | `browser`, `profile`, `status`, `reason`, `cpuThrottle`, `network`, `transferSource`, `contentEncoding`, `samples`, `metrics` |
 | `samples[]` and `metrics` keys | `documentBytes`, `jsBytes`, `cssBytes`, `otherBytes`, `documentRequests`, `jsRequests`, `cssRequests`, `otherRequests`, `requests`, `fcpMs`, `lcpMs`, `cls`, `ttiMs`, `lastLongTaskEndMs`, `totalBlockingTimeMs` |

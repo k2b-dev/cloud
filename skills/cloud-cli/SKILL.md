@@ -72,6 +72,14 @@ Every module ships its own reference with the plugin. Run `cld <module> referenc
 - Run `cld apps reference` and `cld account reference` for the two modules every Cloud serves, `cld capabilities reference` for generic typed Queries and Actions, and `cld api-docs reference` for the live HTTP APIs.
 - Administrators run `cld admin reference`, `cld accounts reference`, `cld oauth reference`, and `cld ipa-hosts reference` for the matching task.
 
+For an app that ships configurable app-access commands, read `cld <app> reference`
+and `cld <app> access --help` before using `access list|grant|set|revoke`.
+These commands manage who may use the app; they take no resource argument and
+accept `--permission use|manage`. They require a management grant, respect the
+app's additional restriction, and never select administrator repair. After an
+uncertain write, read `access list` before retrying. Fixed-rule apps have no
+editable list; all built-ins keep fixed rules in the first rollout.
+
 ## Installed modules
 
 `cld` keeps this table current after every plugin install, update, and removal. The columns are Profile (`*` for package plugins), Module, Version, Summary, and Start. Open the Start file for the module and profile you operate. Package plugins carry references too; `cld <module> reference [file]` prints the same files for every installed module.

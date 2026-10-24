@@ -347,16 +347,18 @@ describe("@k2b/ui menus size to their entries", () => {
       }
     });
 
-    test(`at ${options.viewport.width} px long entries stay on one line until the viewport ends`, async () => {
+    test(`at ${options.viewport.width} px long labels stay on one line until the viewport ends; descriptions wrap at 16rem`, async () => {
       const page = await load(options);
       try {
         await click("Long")(page);
         await settle(page);
         const lines = (await openMenu(page))?.lines ?? [];
-        // Label and description of the long entry, then the long word, then
-        // "Archive": one line each on a desktop, wrapped on a phone.
+        // The long entry's label and the long word take one line each on a
+        // desktop and wrap on a phone; "Archive" takes one line. A description
+        // never widens the menu past 16rem, so it wraps on every screen.
         const long = options.viewport.width > 1000 ? 1 : 2;
-        expect(lines).toEqual([long, long, long, 1]);
+        expect([lines[0], lines[2], lines[3]]).toEqual([long, long, 1]);
+        expect(lines[1]).toBeGreaterThan(1);
       } finally {
         await page.close();
       }

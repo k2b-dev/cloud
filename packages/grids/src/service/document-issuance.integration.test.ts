@@ -1,4 +1,5 @@
-import { beforeAll, describe, expect } from "bun:test";
+import { beforeAll, describe, expect, spyOn } from "bun:test";
+import * as pdfService from "@k2b/cloud/services/pdf";
 import { err, fail } from "@k2b/stdlib";
 import { SQL, sql } from "bun";
 import { z } from "zod";
@@ -526,6 +527,22 @@ const zipOf = async (download: WorkflowDocumentsDownload) => {
 };
 
 describe("Workflow run download-all", () => {
+  postgresTest("merged PDF downloads preserve busy/503 and retry guidance", async () => {
+    const { runId } = await issueRunDocuments([pdfFile("first.pdf", "first"), pdfFile("second.pdf", "second")]);
+    using merge = spyOn(pdfService, "mergePdfs").mockRejectedValue(
+      new pdfService.GotenbergRenderError("busy", "private renderer details", 503),
+    );
+    for (const [locale, message] of [
+      ["en", "The PDF renderer is busy. Try again shortly."],
+      ["de", "Die PDF-Erstellung ist ausgelastet. Versuche es in Kürze erneut."],
+    ] as const) {
+      expect(await downloadWorkflowDocuments(runId, async () => true, locale)).toMatchObject({
+        ok: false,
+        error: { code: "busy", status: 503, message },
+      });
+    }
+    expect(merge).toHaveBeenCalledTimes(2);
+  });
   postgresTest("returns the stored PDF when every run document is a PDF", async () => {
     const { runId } = await issueRunDocuments([pdfFile("invoice.pdf", "invoice")]);
     const download = await downloadWorkflowDocuments(runId, async () => true);
