@@ -207,3 +207,11 @@ complete command list.
 Standalone and agent accounts can receive a direct, revocable local group
 management grant, separate from membership. A matching token scope is also
 required. See [Machine group management](./machine-group-management.md).
+
+## Find names through a directory share
+
+An administrator can share exact people, groups, or accounts under **Accounts →
+Service accounts → Directory access**. A machine credential with `read` can
+then resolve those entries through `/api/accounts/entities`. Sharing a name
+does not grant resource access or disclose group relationships. See
+[Directory shares](/en/docs/identity/directory-shares).

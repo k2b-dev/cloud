@@ -1,4 +1,4 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 import { MAIL_APP_ID, MAILBOX_RESOURCE_TYPE } from "./app-identity";
 import { MAIL_CONTACT_DIRECTORY_SETTINGS } from "./contact-directory-settings";
 import { NOTIFICATIONS } from "./notifications";
@@ -8,6 +8,10 @@ export { MAIL_APP_ID, MAILBOX_RESOURCE_TYPE };
 
 export const app = defineApp({
   id: MAIL_APP_ID,
+  // APIs admit roleless service accounts; navigation keeps its narrower audience.
+  access: appAccess.signedIn({
+    publicRoutes: ["/share/mail/attachments/:token", "/api/mail/openapi.json"],
+  }),
   cli: { mail: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Mail",
   icon: "ti ti-mail",
