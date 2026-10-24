@@ -282,11 +282,14 @@ test("a system chat resync replaces the history and counts the replacement, also
   });
   await store.openChat(conversation.id);
   const before = store.openConversation!;
-  expect(before.historyRev).toBe(0);
   await connection.get("conversation").resync();
   // A revoked item removes its messages without a new position; readers of the history must read again.
   expect(store.openConversation?.seqHead).toBe(before.seqHead);
-  expect(store.openConversation?.historyRev).toBe(1);
+  const resynced = store.openConversation!.historyRev;
+  expect(resynced).not.toBe(before.historyRev);
+  // Opening the same chat again starts a new history too, never an earlier value.
+  await store.openChat(conversation.id);
+  expect([before.historyRev, resynced]).not.toContain(store.openConversation!.historyRev);
   store.dispose();
 });
 
@@ -316,7 +319,7 @@ test("a restore below the watermark after live text messages replaces the histor
   expect(store.openConversation?.watermark).toBe(5);
   expect(store.openConversation?.messages).toEqual([message(5)]);
   // Readers of the history (Shared) read again: the replacement can remove messages at an older revision.
-  expect(store.openConversation?.historyRev).toBe(1);
+  expect(store.openConversation?.historyRev).toBeGreaterThan(1);
   const restored = { ...message(6), id: "restored06" };
   await connection.get("conversation").apply({ type: "message", message: restored });
   expect(store.openConversation?.messages).toContainEqual(restored);
@@ -929,7 +932,7 @@ test("openChat 404 replaces the current chat without leaking its details", async
     threadsStatus: "ready",
     threadsRevision: 0,
     membershipRev: 0,
-    historyRev: 0,
+    historyRev: expect.any(Number),
     status: "no-access",
     caughtUp: false,
     conversation: null,
