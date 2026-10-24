@@ -10,7 +10,7 @@ import groups from "./groups";
 
 const blockedBy = async (blocker: number, waiter?: number) => {
   for (let attempt = 0; attempt < 100; attempt++) {
-    const [row] = await sql<{ pid: number }[]>`SELECT pid FROM pg_stat_activity
+    const [row] = await db<{ pid: number }[]>`SELECT pid FROM pg_stat_activity
       WHERE ${blocker}=ANY(pg_blocking_pids(pid)) AND (${waiter ?? null}::int IS NULL OR pid=${waiter ?? null})`;
     if (row) return row.pid;
     await Bun.sleep(10);
@@ -18,48 +18,59 @@ const blockedBy = async (blocker: number, waiter?: number) => {
   throw new Error("Expected the fixture transaction to wait on its authorization lock");
 };
 
-const fixture = async (kind: "standalone" | "agent") => {
-  const suffix = crypto.randomUUID();
-  const [machine] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind)
+const fixture = (kind: "standalone" | "agent") =>
+  sql.begin(async (db) => {
+    const suffix = crypto.randomUUID();
+    const [machine] = await db<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind)
     VALUES(${`Lifecycle ${suffix}`},${kind}) RETURNING id`;
-  const [group] = await sql<{ id: string }[]>`INSERT INTO auth.groups(cn,name,provider)
+    const [group] = await db<{ id: string }[]>`INSERT INTO auth.groups(cn,name,provider)
     VALUES(${`local:lifecycle-${suffix}`},${`lifecycle-${suffix}`},'local') RETURNING id`;
-  const [member] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile)
+    const [member] = await db<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile)
     VALUES(${`lifecycle-member-${suffix}`},'local','user') RETURNING id`;
-  const clientId = `group-lifecycle-${suffix}`;
-  await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris)
+    const clientId = `group-lifecycle-${suffix}`;
+    await db`INSERT INTO oauth.clients(name,client_id,redirect_uris)
     VALUES(${clientId},${clientId},ARRAY[]::text[])`;
-  await sql`INSERT INTO auth.group_manager_service_accounts(group_id,service_account_id)
+    await db`INSERT INTO auth.group_manager_service_accounts(group_id,service_account_id)
     VALUES(${group!.id}::uuid,${machine!.id}::uuid)`;
-  return {
-    machineId: machine!.id,
-    clientId,
-    groupId: group!.id,
-    memberId: member!.id,
-    call: (token: string, method = "POST") => groups.request(`/${group!.id}/members`, {
-      method,
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ type: "user", id: member!.id }),
-    }),
-    members: () => sql`SELECT 1 FROM auth.user_groups_v2 WHERE group_id=${group!.id}::uuid AND user_id=${member!.id}::uuid`,
-    clean: async () => {
-      await sql`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
-      await sql`DELETE FROM auth.service_accounts WHERE id=${machine!.id}::uuid`;
-      await sql`DELETE FROM auth.groups WHERE id=${group!.id}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id=${member!.id}::uuid`;
-    },
-  };
-};
+    return {
+      machineId: machine!.id,
+      clientId,
+      groupId: group!.id,
+      memberId: member!.id,
+      call: (token: string, method = "POST") =>
+        groups.request(`/${group!.id}/members`, {
+          method,
+          headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+          body: JSON.stringify({ type: "user", id: member!.id }),
+        }),
+      members: () => sql`SELECT 1 FROM auth.user_groups_v2 WHERE group_id=${group!.id}::uuid AND user_id=${member!.id}::uuid`,
+      clean: async () => {
+        await sql`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
+        await sql`DELETE FROM auth.service_accounts WHERE id=${machine!.id}::uuid`;
+        await sql`DELETE FROM auth.groups WHERE id=${group!.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${member!.id}::uuid`;
+      },
+    };
+  });
 
 const oauthToken = async (machineId: string, clientId: string, expiresAt: number) => {
   const signer = await prepareIdentitySigner("oauth");
   const { issuer } = await getIdentityRuntimeConfig();
   return new SignJWT({ token_use: "access", client_id: clientId, service_account_id: machineId, scope: "write" })
     .setProtectedHeader({ alg: "RS256", kid: signer.kid, typ: "JWT" })
-    .setIssuer(issuer).setAudience("cloud").setSubject(machineId).setIssuedAt().setExpirationTime(expiresAt).sign(signer.key);
+    .setIssuer(issuer)
+    .setAudience("cloud")
+    .setSubject(machineId)
+    .setIssuedAt()
+    .setExpirationTime(expiresAt)
+    .sign(signer.key);
 };
 
-suiteFor("database", "nats", "valkey")("machine group credential lifecycle", () => {
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("machine group credential lifecycle", () => {
   beforeEach(async () => {
     const [clock] = await sql<{ now: Date }[]>`SELECT clock_timestamp() AS now`;
     setSystemTime(clock!.now);
@@ -87,6 +98,7 @@ suiteFor("database", "nats", "valkey")("machine group credential lifecycle", () 
             started.resolve(row!.pid);
             await revoker`DELETE FROM oauth.clients WHERE client_id=${f.clientId}`;
           });
+          void deletion.catch(started.reject);
           const deletionPid = await started.promise;
           expect(await blockedBy(mutationPid, deletionPid)).toBe(deletionPid);
         });
@@ -112,7 +124,10 @@ suiteFor("database", "nats", "valkey")("machine group credential lifecycle", () 
           if (credential === "OAuth") token = await oauthToken(f.machineId, f.clientId, expiresAt);
           else {
             const key = await serviceAccountCredentials.createApiToken({
-              serviceAccountId: f.machineId, name: "Lifecycle", scopes: ["write"], expiresAt: new Date(expiresAt * 1000).toISOString(),
+              serviceAccountId: f.machineId,
+              name: "Lifecycle",
+              scopes: ["write"],
+              expiresAt: new Date(expiresAt * 1000).toISOString(),
             });
             if (!key.ok) throw new Error("Fixture key creation failed");
             token = key.data.token;
@@ -121,8 +136,7 @@ suiteFor("database", "nats", "valkey")("machine group credential lifecycle", () 
           expect((await f.call(token)).status).toBe(200);
           expect((await f.call(token, "DELETE")).status).toBe(200);
           await sql.begin(async (db) => {
-            if (credential === "updated key")
-              await db`SELECT id FROM auth.service_accounts WHERE id=${f.machineId}::uuid FOR UPDATE`;
+            if (credential === "updated key") await db`SELECT id FROM auth.service_accounts WHERE id=${f.machineId}::uuid FOR UPDATE`;
             else await db`SELECT id FROM auth.groups WHERE id=${f.groupId}::uuid FOR UPDATE`;
             const [holder] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
             pending = Promise.resolve(f.call(token));
@@ -141,8 +155,11 @@ suiteFor("database", "nats", "valkey")("machine group credential lifecycle", () 
             WHERE target_id=${f.groupId} AND metadata->>'actorServiceAccountId'=${f.machineId} AND outcome='denied'`;
           expect(denied.length).toBeGreaterThan(0);
         } finally {
-          await pending;
-          await f.clean();
+          try {
+            await pending;
+          } finally {
+            await f.clean();
+          }
         }
       });
     }
