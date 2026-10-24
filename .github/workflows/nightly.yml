@@ -122,6 +122,8 @@ jobs:
           timeout 60s bash -c 'until docker exec grids-postgres pg_isready -U grids_test -d grids_test; do sleep 1; done'
       - uses: ./.github/actions/install
       - run: bun run --cwd packages/ui build
+      - name: Install Chromium for the Grids browser suites
+        run: ./packages/grids/node_modules/.bin/playwright install chromium
       - run: bun run --cwd packages/grids test:all
         env:
           GRIDS_VERIFY_REPORTS_DIR: ${{ runner.temp }}/grids-certification

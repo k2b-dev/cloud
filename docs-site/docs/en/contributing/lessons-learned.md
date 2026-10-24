@@ -1038,3 +1038,9 @@ updates that class's row in the table.
 
 - **Error class:** asynchronous UI locator race. The Pulse Back test could resolve the settings form's Discard button before the confirmation appeared, then wait on that hidden button.
 - **Guard:** the test waits for the named confirmation dialog and its question before clicking its Discard button. It still checks Back, Escape, Cancel, draft preservation and the resulting URL.
+
+### Certification includes browser prerequisites and current request contracts
+
+- **What happened:** Nightly Grids certification could not launch Chromium, and the Studio settings test rejected the empty unreadable-setting replacement list.
+- **Root cause:** The certification job omitted browser installation; the settings fixture expected the older request shape.
+- **Guard:** `nightly-grids-reports.test.ts` requires Chromium installation before certification. The Studio administration browser test checks the complete preview request, including `replaceUnreadable: []`, while retaining its no-save assertion.

@@ -28,3 +28,12 @@ test("Nightly preserves the failed Grids certification process logs and JUnit re
   expect(cleanup).toBeGreaterThan(upload);
   expect(steps[cleanup]?.if).toBe("always()");
 });
+
+test("Nightly installs Chromium before Grids certification starts its browser suites", () => {
+  const nightly = workflow.parse(Bun.YAML.parse(readFileSync(new URL("../.github/workflows/nightly.yml", import.meta.url), "utf8")));
+  const steps = nightly.jobs.grids.steps;
+  const install = steps.findIndex((step) => step.run === "./packages/grids/node_modules/.bin/playwright install chromium");
+  const verify = steps.findIndex((step) => step.run === "bun run --cwd packages/grids test:all");
+  expect(install).toBeGreaterThanOrEqual(0);
+  expect(verify).toBeGreaterThan(install);
+});

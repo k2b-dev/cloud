@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chromium } from "playwright";
+import { launchBrowser } from "../../../ui/test/browser";
 
 test("Studio administration renders inventory and tests settings without saving secrets", async () => {
   const build = Bun.spawn(["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "./admin-browser-harness.tsx"], {
@@ -35,7 +35,7 @@ test("Studio administration renders inventory and tests settings without saving 
       );
     },
   });
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await launchBrowser({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
     await page.goto(server.url.href);
@@ -54,11 +54,11 @@ test("Studio administration renders inventory and tests settings without saving 
     expect(await dialog.getByLabel("API token", { exact: true }).inputValue()).toBe("");
     await dialog.getByRole("button", { name: "Test connection", exact: true }).click();
     await dialog.getByText("Connection successful", { exact: true }).waitFor();
-    expect(tests).toEqual([{ url: "http://database.test" }]);
+    expect(tests).toEqual([{ url: "http://database.test", replaceUnreadable: [] }]);
     expect(writes).toEqual([]);
     await dialog.getByRole("button", { name: "Save", exact: true }).click();
     await dialog.waitFor({ state: "hidden" });
-    expect(writes).toEqual([{ url: "http://database.test" }]);
+    expect(writes).toEqual([{ replaceUnreadable: [] }]);
     await page.getByRole("button", { name: "Manage access", exact: true }).click();
     await page.getByRole("dialog").waitFor();
     await page.keyboard.press("Escape");
