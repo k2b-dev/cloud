@@ -21,17 +21,28 @@ function observeScrollFade(body: HTMLElement) {
   let entry = active.get(body);
   if (!entry) {
     const apply = () => {
-      frame = 0;
       const edges = scrollFadeEdges(body);
       if (edges) {
         if (body.getAttribute("data-scroll-fade") !== edges) body.setAttribute("data-scroll-fade", edges);
       } else if (body.hasAttribute("data-scroll-fade")) body.removeAttribute("data-scroll-fade");
     };
-    // Measuring forces layout, so changes inside the scrollport are measured once per frame, not once per change: a list
+    // Measuring forces layout. Scrolling (the browser sends one scroll event per frame) and changes to the scrollport
+    // itself measure at once, and so does the first change of its content in a frame, so a reader such as an editor's
+    // scroll margins sees the current edges. Later content changes in that frame are measured once when it ends: a list
     // that updates many rows at once, such as marking every chat read, otherwise lays the page out again for each row.
     let frame = 0;
+    let stale = false;
     const update = () => {
-      if (!frame) frame = requestAnimationFrame(apply);
+      if (frame) {
+        stale = true;
+        return;
+      }
+      apply();
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (stale) apply();
+        stale = false;
+      });
     };
     const resize = new ResizeObserver(update);
     const observe = () => {
@@ -39,10 +50,13 @@ function observeScrollFade(body: HTMLElement) {
       resize.observe(body);
       for (const child of Array.from(body.children)) resize.observe(child);
       if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      stale = false;
       apply();
     };
     const mutations = new MutationObserver((records) => {
       if (records.some((record) => record.type === "childList" && record.target === body)) observe();
+      else if (records.some((record) => record.target === body)) apply();
       else update();
     });
     mutations.observe(body, {
@@ -52,7 +66,7 @@ function observeScrollFade(body: HTMLElement) {
       attributes: true,
       attributeFilter: ["class", "style", "hidden", "open", "data-scroll-fade-mode", "data-scroll-fade-axis", "dir"],
     });
-    body.addEventListener("scroll", update, { passive: true });
+    body.addEventListener("scroll", apply, { passive: true });
     observe();
     entry = {
       users: 0,
@@ -60,7 +74,7 @@ function observeScrollFade(body: HTMLElement) {
         if (frame) cancelAnimationFrame(frame);
         resize.disconnect();
         mutations.disconnect();
-        body.removeEventListener("scroll", update);
+        body.removeEventListener("scroll", apply);
         body.removeAttribute("data-scroll-fade");
       },
     };
