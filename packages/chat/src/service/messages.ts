@@ -16,11 +16,14 @@ import {
   SEND_LIMIT,
   SEND_WINDOW_SECONDS,
   SendMessageSchema,
+  SnapshotQuerySchema,
 } from "./contracts";
 import { conversations } from "./conversations";
 import { chatLive } from "./live";
 import { appendMessage, type MessageRow, messageViews } from "./message-store";
 import { openParticipant } from "./read-state";
+import { threadStates } from "./thread-state";
+import { findThread, threadNotFound, threads } from "./threads";
 
 const conversationLimit = ratelimit({
   id: "chat.message.send.conversation",
@@ -74,7 +77,36 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
     // A concurrent retry of the same clientId may have committed while this one waited for the lock.
     const retry = await existing(db, current.data.id, input, data.clientId);
     if (retry) return ok({ message: (await messageViews(db, [retry], input.conversationId, input.locale))[0]!, created: false });
-    const row = await appendMessage(db, current.data, input, { kind: "text", ...data });
+    let threadId: string | null = null;
+    let replyToSeq: string | bigint | undefined;
+    if (data.replyTo) {
+      const [original] = await db<
+        MessageRow[]
+      >`SELECT * FROM chat.messages WHERE conversation_id = ${current.data.id}::uuid AND short_id = ${data.replyTo}`;
+      if (!original) return fail({ code: "NOT_FOUND", status: 404, message: catalog(input).messageNotFound });
+      threadId = original.thread_id;
+      replyToSeq = original.seq;
+    }
+    if (data.thread) {
+      const thread = await findThread(db, current.data.id, data.thread);
+      if (!thread) return threadNotFound(input);
+      if (data.replyTo && thread.id !== threadId) return fail(err.badInput(catalog(input).invalidInput));
+      threadId = thread.id;
+    }
+    if (threadId) {
+      const [thread] = await db<
+        { archived_at: Date | null }[]
+      >`SELECT archived_at FROM chat.threads WHERE id = ${threadId}::uuid AND conversation_id = ${current.data.id}::uuid`;
+      if (!thread) return threadNotFound(input);
+      if (thread.archived_at) return fail({ code: "THREAD_ARCHIVED", status: 409, message: catalog(input).threadArchived });
+    }
+    const row = await appendMessage(db, current.data, input, {
+      kind: "text",
+      clientId: data.clientId,
+      body: data.body,
+      threadId: threadId ?? undefined,
+      replyToSeq,
+    });
     return ok({ message: (await messageViews(db, [row], input.conversationId, input.locale))[0]!, created: true });
   });
   if (result.ok && result.data.created) chatLive.wake();
@@ -87,18 +119,31 @@ const list = async (input: Input & { query?: unknown }) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
     const query = parsed.data;
+    const thread = query.thread && query.thread !== "general" ? await findThread(db, allowed.data.id, query.thread) : null;
+    if (query.thread && query.thread !== "general" && !thread) return threadNotFound(input);
+    const filter = query.thread === undefined ? db`true` : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
     const rows = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid
+      AND ${filter}
       AND ${query.before !== undefined ? db`seq < ${query.before}` : query.after !== undefined ? db`seq > ${query.after}` : db`true`}
       ORDER BY seq ${query.after !== undefined ? db`ASC` : db`DESC`} LIMIT ${MESSAGE_PAGE_SIZE}`;
     if (query.after === undefined) rows.reverse();
+    const seqHead = Number(allowed.data.seq_head);
+    const full = rows.length === MESSAGE_PAGE_SIZE;
     return ok({
       items: await messageViews(db, rows, input.conversationId, input.locale),
-      seqHead: Number(allowed.data.seq_head),
+      seqHead,
       rev: Number(allowed.data.rev),
+      ...(query.after !== undefined
+        ? { from: query.after + 1, to: full ? Number(rows.at(-1)!.seq) : seqHead }
+        : { from: full ? Number(rows[0]!.seq) : 1, to: query.before !== undefined ? Math.min(query.before - 1, seqHead) : seqHead }),
     });
   });
 };
-const snapshot = async (input: Input & { messageId?: string }): Promise<Result<Omit<z.infer<typeof ChatSnapshotSchema>, "cursor">>> => {
+const snapshot = async (
+  input: Input & { messageId?: string; thread?: string },
+): Promise<Result<Omit<z.infer<typeof ChatSnapshotSchema>, "cursor">>> => {
+  const parsed = parse(SnapshotQuerySchema, { message: input.messageId, thread: input.thread }, input);
+  if (!parsed.ok) return parsed;
   const opened = await openParticipant(input);
   if (!opened.ok) return opened;
   return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
@@ -106,29 +151,57 @@ const snapshot = async (input: Input & { messageId?: string }): Promise<Result<O
     if (!allowed.ok) return allowed;
     const conversation = await conversations.get(input, db);
     if (!conversation.ok) return conversation;
+    const selector = parsed.data.thread;
+    const thread = selector && selector !== "general" ? await findThread(db, allowed.data.id, selector) : null;
+    if (selector && selector !== "general" && !thread) return threadNotFound(input);
+    const filter = selector === undefined ? db`true` : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
     const id = MessageIdSchema.safeParse(input.messageId);
     const [target] = id.success
       ? await db<{ short_id: string; seq: bigint | string }[]>`SELECT short_id, seq FROM chat.messages
-          WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${id.data}`
+          WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${id.data} AND ${filter}`
       : [];
-    const read = conversation.data.read;
-    const start = readStart(read);
+    const states = await threadStates(db, input.accessSubject, allowed.data.id);
+    const hasThreads = states.some((state) => state.id !== null);
+    const starts = states
+      .filter((state) => state.unread > 0 && (selector === undefined || state.id === (thread?.id ?? null)))
+      .map((state) =>
+        selector !== "general" && hasThreads
+          ? Number(state.first_unread_seq) - 1
+          : readStart(
+              state.joined_seq === null
+                ? null
+                : {
+                    joinedSeq: Number(state.joined_seq),
+                    lastReadSeq: state.last_read_seq === null ? null : Number(state.last_read_seq),
+                    unreadFromSeq: state.unread_from_seq === null ? null : Number(state.unread_from_seq),
+                  },
+            ),
+      )
+      .filter((start): start is number => start !== null);
+    const start = starts.length ? Math.min(...starts) : null;
     const position = target
       ? Number(target.seq)
       : input.messageId === undefined && conversation.data.unread > 0 && start !== null
         ? start + 1
         : null;
     const rows = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid
+      AND ${filter}
       AND ${position !== null ? db`seq < ${position + MESSAGE_PAGE_SIZE / 2}` : db`true`}
       ORDER BY seq DESC LIMIT ${MESSAGE_PAGE_SIZE}`;
     rows.reverse();
+    const seqHead = Number(allowed.data.seq_head);
+    const list = await threads.list(input, db);
+    if (!list.ok) return list;
     return ok({
       conversation: conversation.data,
       page: {
         items: await messageViews(db, rows, input.conversationId, input.locale),
-        seqHead: Number(allowed.data.seq_head),
+        seqHead,
         rev: Number(allowed.data.rev),
+        from: rows.length === MESSAGE_PAGE_SIZE ? Number(rows[0]!.seq) : 1,
+        to: position !== null ? Math.min(position + MESSAGE_PAGE_SIZE / 2 - 1, seqHead) : seqHead,
       },
+      threads: list.data,
       focus: target?.short_id ?? null,
     });
   });

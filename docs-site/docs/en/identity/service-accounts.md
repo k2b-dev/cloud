@@ -207,3 +207,11 @@ complete command list.
 Grids can run scheduled and record-event workflows under a named machine account
 with its own base grant and an exact-workflow, revocable mandate. See
 [Machine workflow mandates](./machine-workflow-mandates.md).
+
+## Find names through a directory share
+
+An administrator can share exact people, groups, or accounts under **Accounts →
+Service accounts → Directory access**. A machine credential with `read` can
+then resolve those entries through `/api/accounts/entities`. Sharing a name
+does not grant resource access or disclose group relationships. See
+[Directory shares](/en/docs/identity/directory-shares).

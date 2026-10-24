@@ -290,6 +290,33 @@ describe("accounts CLI", () => {
     expect(JSON.parse(again.lines[0]!)).toEqual({ revoked: false });
   });
 
+  test("names audit actors recorded without uid and never prints their ID", async () => {
+    const actorId = "3d0c6a1e-5b7f-4c2a-9e8d-1f2a3b4c5d6e";
+    const event = (id: number, actor: Record<string, unknown>) => ({
+      id,
+      createdAt: "2026-10-23T12:00:00.000Z",
+      action: "auth.pwa.device.enroll",
+      outcome: "allowed",
+      actor: { userId: actorId, uid: null, provider: null, roles: [], ...actor },
+      target: { type: "pwa_device", id: "device-1", label: null, provider: null },
+      reason: null,
+      errorCode: null,
+      errorMessage: null,
+      requestId: null,
+      metadata: {},
+    });
+    for (const locale of ["en", "de"]) {
+      const { ctx, tables } = createContext(["audit", "list"], {}, [
+        jsonResponse({ events: [event(1, { displayName: "Mara Lind" }), event(2, {})], pagination }),
+      ]);
+      ctx.options.locale = locale;
+      await accountsCli.run(ctx);
+      const rows = tables[0] as Array<{ actor: string }>;
+      expect(rows.map((row) => row.actor)).toEqual(["Mara Lind", locale === "de" ? "Unbekannte Person" : "Unknown person"]);
+      expect(JSON.stringify(rows)).not.toContain(actorId);
+    }
+  });
+
   test("guards destructive user mutations before resolving refs", async () => {
     const { ctx, calls } = createContext(["users", "set-admin", "alice"], { enabled: true }, []);
 
