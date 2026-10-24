@@ -1089,9 +1089,9 @@ updates that class's row in the table.
 ## Exercise the intended phase before expiring a transport fixture
 
 - **What happened:** under shared-host load, a body-deadline test expired before receiving headers, and a CLI guard test exhausted its budget across four process launches.
-- **Root cause:** the transport assertion assumed wall-clock timing implied a particular protocol phase; independent CLI cases shared one test deadline.
+- **Root cause:** the transport assertion assumed wall-clock timing implied a particular protocol phase; independent CLI cases and permission-editor viewports shared one test deadline.
 - **Error class:** test scheduling depended on host load.
-- **Guard:** trigger the caller deadline from the first response body chunk and give each CLI input case its own fixture and test, preserving every rejection and no-write assertion.
+- **Guard:** trigger the caller deadline from the first response body chunk and give each CLI input case and permission-editor viewport its own test, preserving every rejection, no-write and layout assertion.
 
 ## Measure the approved frame at each viewport
 
