@@ -58,6 +58,13 @@ messages cannot be marked unread. Mentions and replies appear in the same
 [For you feed](/en/docs/operations/build-and-deploy#chat-mentions-and-for-you)
 as ordinary chats, subject to current container and item access.
 
+Mention targets use principal UUIDs and need only be active eligible people or
+service accounts. They need no Chat grant or previous resource read. Candidates
+are previous conversation authors, excluding the caller. Mentioning someone
+does not grant access: the feed, count, message reads, and content-bearing live
+events still use that reader's own container and item authority. The personal
+`for-you` live hint carries no content or resource identity.
+
 ## Follow pages
 
 Container discovery requests at most 100 Spaces and 100 notebooks. Pass the

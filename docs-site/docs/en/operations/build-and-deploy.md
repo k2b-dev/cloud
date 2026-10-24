@@ -303,31 +303,36 @@ its items from subsequent reads.
 
 ## Chat mentions and For you
 
-Send `mentions: [{ start, end, accessId }]` with a message to mention a person.
+Send `mentions: [{ start, end, principal: { type, id } }]` with a message to
+mention a person or agent. `type` is `user` or `service_account`; `id` is that
+principal's UUID. Membership APIs continue to use grant `accessId` values.
 `start` is inclusive and `end` exclusive, measured in UTF-16 code units of the
 unchanged `body`. Select the person's typed display name, excluding `@`.
 A message accepts at most 20 non-overlapping, nonempty ranges inside its body;
 ranges cannot split a surrogate pair. Invalid ranges return 400 `BAD_INPUT`.
-Use a candidate's `accessId`, which identifies an existing access grant; do not
-substitute a user ID or a group grant. Each target must be an active user or
-service account that can read the thread. An unavailable or unreadable target
-returns 400 `INVALID_MENTION`. Self-mentions are allowed.
+Use a candidate's `principal`. Ordinary chats and channels require an active
+principal who can currently read the thread through direct or group membership.
+System chats require an active eligible principal; sending does not depend on
+that principal having opened the container or item before. User-delegated
+service-account identities and accounts bound to another resource are not
+eligible. An unavailable or invalid target returns 400 `INVALID_MENTION`.
+Self-mentions are allowed.
 
 `GET /api/chat/conversations/:conversation/mention-candidates?q=&thread=general`
-returns `{ items: [{ accessId, type, name, agent }] }`, at most 20 results. `type`
-is `user` or `service_account`; `agent` identifies agent service accounts.
-The caller is excluded. `q` is case-insensitive, matches a name or word prefix,
-and accepts at most 100 characters. `thread` defaults to `general` or selects
-one thread by ID. The route uses the same request limiter as member searches.
-Ordinary chats and channels list direct members with read access. System chats
-list previous conversation authors with a resolvable principal grant and valid
-container and item read decisions. The current container readers do not list
-people. A missing or expired target decision excludes that person until they
-read the resource again.
+returns `{ items: [{ principal: { type, id }, name, agent }] }`, at most 20
+results. `agent` identifies agent service accounts. The caller is excluded.
+`q` is case-insensitive, matches a name or word prefix, and accepts at most 100
+characters. `thread` defaults to `general` or selects one thread by ID. The
+route uses the same request limiter as member searches.
+Ordinary chats and channels list eligible direct members with read access plus
+principals who wrote in the conversation. Group-only members become candidates
+once they have written. System chats list eligible conversation authors only.
+Candidates need no individual grant. A previous author can remain a candidate
+after losing access; ordinary-chat send validation still checks current access.
 
 Message reads and live message events carry
-`mentions: [{ start, end, accessId, name }]`, including an empty array when no
-one was mentioned. Names use the principal's current display name. Deleting
+`mentions: [{ start, end, principal: { type, id }, name }]`, including an empty
+array when no one was mentioned. Names use the principal's current display name. Deleting
 the principal retains the range with the localized former-account label.
 Deleting the message removes its mentions. Messages currently have no body-edit
 operation. Retrying a `clientId` keeps the original body and mentions.
@@ -342,7 +347,9 @@ with at most 30 items. Each item contains:
 - `unread`: whether the message is beyond the existing thread read position.
 
 The feed includes replies quoting a message the caller authored, excludes their
-own messages, and rechecks conversation and item access. Unreadable items drop
+own messages, and rechecks conversation and item access with the reader's own
+authority. The feed, its unread count, message views, and content-bearing live
+events show only messages that reader can currently read. Unreadable items drop
 out. Follow every non-null `nextCursor`, including after an empty page; access
 checks apply to a bounded candidate page. Cursors are opaque and accept at most
 256 characters. Invalid cursors return 400. Open an item using its conversation,
