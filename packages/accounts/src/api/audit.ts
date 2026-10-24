@@ -1,4 +1,4 @@
-import { type AuthContext, auth, jsonResponse, requiresAdmin, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, jsonResponse, requiresAdmin, resolveDisplayNames, respond, v } from "@k2b/cloud/server";
 import { audit } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
@@ -31,6 +31,10 @@ const AuditEventSchema = z.object({
   actor: z.object({
     userId: z.string().nullable(),
     uid: z.string().nullable(),
+    displayName: z
+      .string()
+      .optional()
+      .describe("Current name of a user actor recorded without `uid`; absent when the account no longer exists."),
     provider: z.string().nullable(),
     roles: z.array(z.string()),
   }),
@@ -83,10 +87,20 @@ const app = new Hono<AuthContext>().use(auth.requireRole("admin")).get(
         days: query.days,
       },
     });
+    // Some writers record only the actor's user ID; name those actors in one batch.
+    const unnamed = [...new Set(eventsPage.items.flatMap((event) => (event.actor.userId && !event.actor.uid ? [event.actor.userId] : [])))];
+    const names = new Map(
+      (await resolveDisplayNames(unnamed.map((userId) => ({ principal: { type: "user" as const, userId } })))).flatMap((entry) =>
+        entry.principal.type === "user" && entry.displayName !== undefined ? [[entry.principal.userId, entry.displayName] as const] : [],
+      ),
+    );
     return respond(
       c,
       ok({
-        events: eventsPage.items,
+        events: eventsPage.items.map((event) => {
+          const displayName = event.actor.userId && !event.actor.uid ? names.get(event.actor.userId) : undefined;
+          return displayName === undefined ? event : { ...event, actor: { ...event.actor, displayName } };
+        }),
         pagination: createPagination(pagination, eventsPage.total),
       }),
     );

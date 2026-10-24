@@ -1,4 +1,4 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 
 /**
  * The installable mobile app (preview). The shell owns the manifest scope `/pwa/`: the welcome and pairing page,
@@ -7,6 +7,9 @@ import { defineApp } from "@k2b/cloud";
  */
 export const app = defineApp({
   id: "pwa",
+  access: appAccess.signedIn({
+    publicRoutes: ["/pwa", "/pwa/", "/pwa/manifest.webmanifest", "/pwa/sw.js"],
+  }),
   name: "Mobile app",
   icon: "ti ti-device-mobile",
   description: "The installable phone app of this Cloud.",

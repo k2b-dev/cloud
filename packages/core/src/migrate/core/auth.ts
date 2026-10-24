@@ -587,6 +587,18 @@ export const migrate = async (): Promise<void> => {
       )
     )
   `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS auth.directory_shares (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      recipient_id UUID NOT NULL REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
+      user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+      group_id UUID REFERENCES auth.groups(id) ON DELETE CASCADE,
+      service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CHECK (num_nonnulls(user_id, group_id, service_account_id) = 1),
+      UNIQUE NULLS NOT DISTINCT (recipient_id, user_id, group_id, service_account_id)
+    )
+  `.simple();
   // Standalone principals (kind standalone or agent) joined the model after the
   // table shipped; existing installations widen the two checks in place.
   await sql`ALTER TABLE auth.service_accounts DROP CONSTRAINT IF EXISTS service_accounts_kind_check`.simple();

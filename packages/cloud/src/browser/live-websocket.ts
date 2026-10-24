@@ -1,3 +1,6 @@
+/** Transport event; the shell owns its visible recovery without coupling this client to UI. */
+export const APP_ACCESS_REVOKED_EVENT = "cloud:app-access-revoked";
+
 export type LiveWebSocketActivity = "always" | "visible";
 export type LiveWebSocketStatus = "connecting" | "open" | "reconnecting" | "paused" | "closed";
 
@@ -264,6 +267,8 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
       socket = null;
       clearConnectDeadline();
       if (disposed || terminated) return;
+      if (event.code === 1008 && event.reason === "app_access_denied")
+        window.dispatchEvent(new CustomEvent(APP_ACCESS_REVOKED_EVENT, { detail: next.url }));
       const closeError = classifyClose({ code: event.code, reason: event.reason.trim() });
       if (closeError) {
         fatal(closeError, { code: event.code, reason: event.reason });
