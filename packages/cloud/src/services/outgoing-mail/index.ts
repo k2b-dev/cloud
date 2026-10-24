@@ -40,7 +40,7 @@ const failure = (error: unknown): MailServiceError => {
   return {
     code: error.code,
     message: error.message,
-    status: error.code === "mail_unavailable" || error.status === 502 ? 500 : error.status,
+    status: error.code === "mail_unavailable" || error.status === 502 || error.status === 503 ? 500 : error.status,
     ...("limit" in error && typeof error.limit === "number" ? { limit: error.limit } : {}),
     ...("used" in error && typeof error.used === "number" ? { used: error.used } : {}),
     ...("requested" in error && typeof error.requested === "number" ? { requested: error.requested } : {}),

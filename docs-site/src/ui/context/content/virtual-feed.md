@@ -37,6 +37,18 @@ that content grows or an on-screen keyboard shortens the page, the feed keeps
 its end in view while the reader is there. When the reader has scrolled up,
 the item at the bottom edge stays in place.
 
+### One reading column
+
+Items, their separators, and the marker share one reading column of at most
+`--k2b-reading-column` (47.5 rem, 760 px), centered in the feed. A wide
+window therefore keeps others' and the reader's own messages close together
+instead of at its far edges. The scrollbar stays at the feed's edge, and
+scrolling over the empty sides scrolls the feed. A feed narrower than the
+column fills its width. Put the composer of a conversation in the same column:
+the `Chat.Composer` conversation variant does so by itself. Opening a panel or
+collapsing a sidebar only changes the free space; the column keeps its width
+and centers itself again.
+
 `estimateSize` only needs to be close. Every row is measured when it mounts,
 and the feed makes up the difference before the frame is drawn, so what the
 reader sees does not move. Close estimates make the scrollbar steadier during

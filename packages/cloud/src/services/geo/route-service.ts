@@ -16,7 +16,7 @@ import {
   GeoRouteUpdateInputSchema,
 } from "../../contracts/geo-route";
 import { geoCacheKey, normalizeGeoInput } from "./cache";
-import { GeoError, limitExceeded } from "./errors";
+import { GeoError, GeoProviderError, limitExceeded } from "./errors";
 import type { GeoapifyAdapter } from "./geoapify";
 import { geoDistance } from "./polyline";
 import {
@@ -26,6 +26,7 @@ import {
   reserveRouteCall,
   runGeoRouteChain,
 } from "./route-chain";
+import { estimateRouteDistance } from "./route-estimate";
 import {
   assembleRoute,
   insertionGaps,
@@ -120,18 +121,18 @@ export const createGeoRouteService = (
       },
     };
   };
-  const pricing = (step: PlannedCall, allowance: number): GeoRouteCallPricing => ({
+  const pricing = (step: PlannedCall, stops: readonly (GeoRouteResolvedStop | undefined)[], reorder = false): GeoRouteCallPricing => ({
     pairs: step.ids.length - 1,
     avoids: step.options.avoid?.length ?? 0,
     optimize: step.optimize,
-    distanceAllowanceMeters: allowance,
+    estimatedDistanceMeters: reorder
+      ? (estimateRouteDistance(stops, true) / (stops.length - 1)) * (step.ids.length - 1)
+      : estimateRouteDistance(
+          step.ids.map((id) => stops.find((stop) => stop?.id === id)),
+          step.optimize,
+        ),
   });
-  const preflight = (
-    stops: readonly (GeoRouteResolvedStop | undefined)[],
-    options: GeoRouteOptions,
-    allowance: number,
-    optimize = false,
-  ) => {
+  const preflight = (stops: readonly (GeoRouteResolvedStop | undefined)[], options: GeoRouteOptions, optimize = false) => {
     if (optimize) {
       // Every route connects all known stops. Their minimum spanning tree is an order-independent lower bound.
       const known = stops.filter((stop): stop is GeoRouteResolvedStop => !!stop);
@@ -153,7 +154,6 @@ export const createGeoRouteService = (
         lowerBound += shortest;
       }
       const pairs = stops.length - 1;
-      if (lowerBound > pairs * allowance) limitExceeded("distanceAllowanceMeters", pairs * allowance, lowerBound);
       if (options.mode === "walk" && lowerBound > pairs * 100_000) limitExceeded("walk.legMeters", pairs * 100_000, lowerBound);
       return;
     }
@@ -161,27 +161,41 @@ export const createGeoRouteService = (
       const a = stops[i - 1],
         b = stops[i];
       if (!a || !b) continue;
-      const distance = geoDistance(a.point, b.point);
-      if (distance > allowance) limitExceeded("distanceAllowanceMeters", allowance, distance);
       walkDistance([a, b], options);
     }
   };
   const execute = async (
     step: PlannedCall,
     stops: readonly GeoRouteResolvedStop[],
-    allowance: number,
     call: RouteCall,
     config: GeoConfig,
     context: GeoContext,
   ) => {
     const selected = step.ids.map((id) => stops.find((stop) => stop.id === id)!);
-    preflight(selected, step.options, allowance, step.optimize);
+    preflight(selected, step.options, step.optimize);
     return call(
       "route",
       { stops: selected, options: step.options, optimize: step.optimize },
       providerData,
-      (signal) => dependencies.adapter.route(selected, step.options, step.optimize, config.apiKey, context.locale ?? "en", signal),
-      pricing(step, allowance),
+      async (signal) => {
+        const result = await dependencies.adapter.route(
+          selected,
+          step.options,
+          step.optimize,
+          config.apiKey,
+          context.locale ?? "en",
+          signal,
+        );
+        try {
+          // Intermediate paid responses (including overruns) must fit the same cache bound
+          // as final routes. Keep distance totals exact while compacting only geometry.
+          const compact = assembleRoute(result.stops, step.options, result.legs, dependencies.now());
+          return { stops: compact.stops, legs: compact.legs, distanceMeters: result.distanceMeters };
+        } catch {
+          throw new GeoProviderError("GEO_PROVIDER_FAILED", "known", false, result.distanceMeters);
+        }
+      },
+      pricing(step, stops),
       (data) => data.distanceMeters,
     );
   };
@@ -189,14 +203,12 @@ export const createGeoRouteService = (
     const config = await dependencies.configured(context);
     const { plan } = parse(GeoRouteCalculateInputSchema, input);
     const { defaults, byDeparture } = validateRoutePlan(plan);
-    const allowance = plan.distanceAllowanceMeters ?? 500_000;
     const key = geoCacheKey(
       "route",
       {
         calculate: {
           stops: plan.stops.map((stop) => (stop.address ? { ...stop, address: normalizeGeoInput(stop.address, "geocode") } : stop)),
           options: defaults,
-          distanceAllowanceMeters: allowance,
           optimize: plan.optimize ?? false,
           legOptions: plan.stops.flatMap((stop) => {
             const options = byDeparture.get(stop.id);
@@ -229,27 +241,26 @@ export const createGeoRouteService = (
       preflight(
         step.ids.map((id) => prepared.known[plan.stops.findIndex((stop) => stop.id === id)]),
         step.options,
-        allowance,
         step.optimize,
       );
     const result = await runGeoRouteChain(
       dependencies,
       context,
       config,
-      prepared.cost + steps.reduce((sum, step) => sum + reserveRouteCall(pricing(step, allowance)), 0),
+      prepared.cost + steps.reduce((sum, step) => sum + reserveRouteCall(pricing(step, prepared.known, plan.optimize)), 0),
       async (call) => {
         let stops = await prepared.resolve(call, config);
         let legs: GeoRouteLeg[] = [];
         const first = steps[0]!;
         if (plan.optimize) {
-          const optimized = await execute(first, stops, allowance, call, config, context);
+          const optimized = await execute(first, stops, call, config, context);
           stops = optimized.stops;
           legs = optimized.legs;
           for (let i = 0; i < legs.length; i++) {
             const options = byDeparture.get(stops[i]!.id);
             if (options && !sameRouteOptions(options, defaults)) {
               const step = { ids: [stops[i]!.id, stops[i + 1]!.id], options, optimize: false };
-              legs[i] = (await execute(step, stops, allowance, call, config, context)).legs[0]!;
+              legs[i] = (await execute(step, stops, call, config, context)).legs[0]!;
             }
           }
         } else {
@@ -258,11 +269,10 @@ export const createGeoRouteService = (
             preflight(
               step.ids.map((id) => stops.find((stop) => stop.id === id)!),
               step.options,
-              allowance,
             );
-          for (const step of steps) legs.push(...(await execute(step, stops, allowance, call, config, context)).legs);
+          for (const step of steps) legs.push(...(await execute(step, stops, call, config, context)).legs);
         }
-        return { route: assembleRoute(stops, defaults, legs, dependencies.now(), allowance) };
+        return { route: assembleRoute(stops, defaults, legs, dependencies.now()) };
       },
     );
     await dependencies.cache.put(key, "route", result, false);
@@ -270,9 +280,8 @@ export const createGeoRouteService = (
   };
   const update = async (input: GeoRouteUpdateInput, context: GeoContext): Promise<GeoRouteUpdateData> => {
     const config = await dependencies.configured(context);
-    const { route, changes, distanceAllowanceMeters } = parse(GeoRouteUpdateInputSchema, input);
+    const { route, changes } = parse(GeoRouteUpdateInputSchema, input);
     validateSavedRoute(route);
-    const allowance = distanceAllowanceMeters ?? route.distanceAllowanceMeters;
     const key = geoCacheKey("route", { update: input }, context.locale ?? "en");
     const cached = await dependencies.cache.get(key, GeoRouteUpdateDataSchema);
     if (cached) return cached;
@@ -298,12 +307,15 @@ export const createGeoRouteService = (
           options: route.legs[index]!.options,
           optimize: false,
         });
-      steps.sort((a, b) => reserveRouteCall(pricing(b, allowance)) - reserveRouteCall(pricing(a, allowance)));
+      steps.sort(
+        (a, b) =>
+          reserveRouteCall(pricing(b, [...stops, inserted!.known[0]])) - reserveRouteCall(pricing(a, [...stops, inserted!.known[0]])),
+      );
       steps.splice(3);
       const point = inserted.known[0];
       if (point)
         for (const index of fixedGap !== undefined ? [fixedGap] : insertionGaps(route, point.point))
-          preflight([stops[index], point, stops[index + 1]], route.legs[index]!.options, allowance);
+          preflight([stops[index], point, stops[index + 1]], route.legs[index]!.options);
     } else if (changes.type === "move") {
       const index = stops.findIndex((stop) => stop.id === changes.stopId);
       if (index < 0 || changes.toIndex >= stops.length) throw new GeoError("GEO_UNSUPPORTED_OPTION");
@@ -344,7 +356,6 @@ export const createGeoRouteService = (
         preflight(
           step.ids.map((id) => stops.find((stop) => stop.id === id)!),
           step.options,
-          allowance,
           step.optimize,
         );
     const work = async (call: RouteCall) => {
@@ -353,7 +364,7 @@ export const createGeoRouteService = (
         const [point] = await inserted!.resolve(call, config);
         const gaps = fixedGap !== undefined ? [fixedGap] : insertionGaps(route, point!.point);
         // Resolve and validate every candidate before the first paid route request.
-        for (const index of gaps) preflight([stops[index], point, stops[index + 1]], route.legs[index]!.options, allowance);
+        for (const index of gaps) preflight([stops[index], point, stops[index + 1]], route.legs[index]!.options);
         let winner: { index: number; legs: GeoRouteLeg[]; detour: number; meters: number } | undefined;
         for (const index of gaps) {
           let result: z.infer<typeof providerData>;
@@ -361,7 +372,6 @@ export const createGeoRouteService = (
             result = await execute(
               { ids: [stops[index]!.id, point!.id, stops[index + 1]!.id], options: route.legs[index]!.options, optimize: false },
               [...stops, point!],
-              allowance,
               call,
               config,
               context,
@@ -385,20 +395,19 @@ export const createGeoRouteService = (
         };
         stops.splice(winner!.index + 1, 0, point!);
       } else if (changes.type === "optimize") {
-        const result = await execute(steps[0]!, stops, allowance, call, config, context);
+        const result = await execute(steps[0]!, stops, call, config, context);
         stops = result.stops;
         legs = result.legs;
         for (let i = 0; i < legs.length; i++) {
           const options = byDeparture.get(stops[i]!.id) ?? defaults;
           if (!sameRouteOptions(options, defaults))
-            legs[i] = (
-              await execute({ ids: [stops[i]!.id, stops[i + 1]!.id], options, optimize: false }, stops, allowance, call, config, context)
-            ).legs[0]!;
+            legs[i] = (await execute({ ids: [stops[i]!.id, stops[i + 1]!.id], options, optimize: false }, stops, call, config, context))
+              .legs[0]!;
         }
       } else {
         const replacements = new Map<string, GeoRouteLeg>();
         for (const step of steps)
-          for (const leg of (await execute(step, stops, allowance, call, config, context)).legs) replacements.set(leg.fromStopId, leg);
+          for (const leg of (await execute(step, stops, call, config, context)).legs) replacements.set(leg.fromStopId, leg);
         legs = stops
           .slice(0, -1)
           .map(
@@ -406,7 +415,11 @@ export const createGeoRouteService = (
               replacements.get(stop.id) ?? route.legs.find((leg) => leg.fromStopId === stop.id && leg.toStopId === stops[i + 1]!.id)!,
           );
       }
-      const next = assembleRoute(stops, defaults, legs, dependencies.now(), allowance);
+      const unchanged =
+        sameRouteOptions(defaults, route.options) &&
+        stops.every((stop, i) => stop === route.stops[i]) &&
+        legs.every((leg, i) => leg === route.legs[i]);
+      const next = unchanged ? route : assembleRoute(stops, defaults, legs, dependencies.now());
       const before = routeSummary(route),
         after = routeSummary(next);
       return GeoRouteUpdateDataSchema.parse({
@@ -420,7 +433,12 @@ export const createGeoRouteService = (
         ...(insertion ? { insertion } : {}),
       });
     };
-    const cost = (inserted?.cost ?? 0) + steps.reduce((sum, step) => sum + reserveRouteCall(pricing(step, allowance)), 0);
+    const cost =
+      (inserted?.cost ?? 0) +
+      steps.reduce(
+        (sum, step) => sum + reserveRouteCall(pricing(step, inserted ? [...stops, inserted.known[0]] : stops, changes.type === "optimize")),
+        0,
+      );
     const result = cost
       ? await runGeoRouteChain(dependencies, context, config, cost, work)
       : await work(async () => {
