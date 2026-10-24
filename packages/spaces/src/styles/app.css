@@ -178,6 +178,9 @@
 .spaces-pwa-task__sk--short { width: 48%; }
 .spaces-pwa-task__sk--title { height: 1.25rem; width: 60%; margin: .5625rem 0 1rem 3.25rem; }
 .spaces-pwa-task__foot { padding-left: 3.25rem; }
+/* The comment field and Send in one row, Send at the field's foot, as the composer of a chat stands. */
+.spaces-pwa-comment { display: flex; align-items: flex-end; gap: .5rem; }
+.spaces-pwa-comment > .k2b-field { flex: 1; min-width: 0; }
 
 /* A Kanban card's footer lets the pointer through to the card link; only the reaction chips and "Add reaction" catch it.
    "+n" stays text the pointer passes, so a click on it opens the item like the rest of the card. */
