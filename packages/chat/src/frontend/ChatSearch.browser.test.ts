@@ -141,10 +141,12 @@ describe("Search in the chat list", () => {
       await sidebar.getByRole("searchbox", { name: "Search" }).fill("printe");
       await search.getByText("Search failed. Try again.").waitFor();
       const asked = harness.searchQueries.length;
+      // Only the retried answer holds the new chat, so seeing it proves the retry's answer arrived.
+      harness.addChat({ members: [viewer, nora], name: "Printer room", count: 1, end: minutesAgo(5) });
       await search.getByRole("button", { name: "Try again" }).click();
-      await search.getByText("Search failed. Try again.").waitFor({ state: "detached" });
+      await search.getByRole("link", { name: /Printer room/ }).waitFor();
+      expect(await search.getByText("Search failed. Try again.").count()).toBe(0);
       expect(harness.searchQueries.length).toBe(asked + 1);
-      await search.getByText("Thread in IT").waitFor();
       // The sidebar and the phone's list page share one search: each pause in typing asks once.
       expect(harness.searchQueries.filter((q) => q === "printe")).toHaveLength(2);
       expect(errors.filter((error) => !error.includes("503"))).toEqual([]);

@@ -358,6 +358,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               setRetryingRead(true);
               try {
                 await changeRead(failure().run);
+                refreshSearch();
               } finally {
                 setRetryingRead(false);
               }
@@ -430,6 +431,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   /** The list's search; it lasts while the reader moves between chats and ends with "Escape" or an empty field. */
   const [searchQuery, setSearchQuery] = createSignal("");
   const chatSearch = createChatSearch(() => searchQuery().trim());
+  /** A hit may be a chat the list does not hold, so the search asks again after an action changed one. */
+  const refreshSearch = () => {
+    if (searchQuery().trim()) chatSearch.retry();
+  };
   // A Space's or notebook's chat opened from "For you", the search, or another app shows where it lives in the list.
   createEffect(
     on(
@@ -700,7 +705,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   // The server stops at the newest message, so the largest position marks the whole chat read.
   let unreadAction = 0;
-  const markRead = (id: string) => void changeRead(() => store?.markRead(id, Number.MAX_SAFE_INTEGER, "all"));
+  const markRead = (id: string) => void changeRead(() => store?.markRead(id, Number.MAX_SAFE_INTEGER, "all")).then(refreshSearch);
   const markUnread = async (id: string, from?: ChatFeedItem) => {
     const selection = openKey();
     const target = reporter;
@@ -711,6 +716,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       if (open) paused = true;
       if (open && reporter?.chatId === id) await reporter.reporter.settled();
       const changed = await changeRead(() => store?.markUnread(id));
+      refreshSearch();
       if (open && reporter === target) {
         if (changed) setUnreadGap(null);
         else {
@@ -942,6 +948,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     try {
       await store.personal(id, patch);
       sortRows();
+      refreshSearch();
     } catch (error) {
       if (error instanceof ChatRequestError && error.status === 400) {
         setListError(t().pinPositionChanged);
@@ -1880,18 +1887,22 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     </div>
   );
   const listErrorLine = () => (
-    <Show when={listError()}>
-      {(error) => (
-        <InlineGuidance role="alert" tone="danger" class="chat-list-error">
-          {error()}
-          <Show when={listRetry()}>
-            <Button size="sm" variant="ghost" disabled={listPending() || listLoading()} onClick={() => listRetry()?.()}>
-              {t().retry}
-            </Button>
-          </Show>
-        </InlineGuidance>
-      )}
-    </Show>
+    <>
+      {/* A read state changed from the list with no chat open has no other place to say that it failed. */}
+      <Show when={!openChat()}>{readNotice()}</Show>
+      <Show when={listError()}>
+        {(error) => (
+          <InlineGuidance role="alert" tone="danger" class="chat-list-error">
+            {error()}
+            <Show when={listRetry()}>
+              <Button size="sm" variant="ghost" disabled={listPending() || listLoading()} onClick={() => listRetry()?.()}>
+                {t().retry}
+              </Button>
+            </Show>
+          </InlineGuidance>
+        )}
+      </Show>
+    </>
   );
   const listContent = (includeArchive = true) => (
     <>
@@ -1927,7 +1938,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     }}
                     onMore={() => {}}
                     pending={listPending() || listLoading()}
-                    onPersonal={(id, patch) => void personal(id, patch).then(chatSearch.retry)}
+                    onPersonal={(id, patch) => void personal(id, patch)}
                     onMarkRead={markRead}
                     onMarkUnread={(id) => void markUnread(id)}
                   />

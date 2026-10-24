@@ -125,7 +125,7 @@ export default function ChatSearch(props: {
       <Show
         when={items().length > 0}
         fallback={
-          <Show when={answer() && status() !== "failed"}>
+          <Show when={answer() && status() === "ready"}>
             <p class="chat-search__empty" role="status">
               {t().searchNoResults({ q: answer()?.q ?? "" })}
             </p>
