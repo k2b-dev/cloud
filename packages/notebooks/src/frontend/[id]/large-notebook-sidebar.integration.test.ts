@@ -10,7 +10,7 @@ import { uniqueCallerAddress } from "../../../../../scripts/fixtures/caller-addr
 import api from "../../api";
 import { ssr } from "../../config";
 import { migrate } from "../../migrate";
-import { type InsertedFixtureNotebook, insertFixtureNotebook } from "../../service/large-notebook.test-fixture";
+import { type InsertedFixtureNotebook, insertFixtureNotebook, removeFixtureNotebooks } from "../../service/large-notebook.test-fixture";
 import "./_components/detail/ssr-test-plugin";
 
 const { default: handler } = await import("./page");
@@ -57,8 +57,7 @@ suite("A 20,000-page notebook opens like a small one", () => {
   }, 120_000);
 
   afterAll(async () => {
-    await small?.remove();
-    await large?.remove();
+    await removeFixtureNotebooks();
     if (accessIds.length > 0) await sql`DELETE FROM auth.access WHERE id = ANY(${sql.array(accessIds, "UUID")})`;
     await sql`DELETE FROM auth.users WHERE id = ${readerId}::uuid`;
   });

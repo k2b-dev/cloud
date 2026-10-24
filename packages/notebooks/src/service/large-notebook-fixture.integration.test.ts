@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
-import { type InsertedFixtureNotebook, insertFixtureNotebook } from "./large-notebook.test-fixture";
+import { type InsertedFixtureNotebook, insertFixtureNotebook, removeFixtureNotebooks } from "./large-notebook.test-fixture";
 import { listBacklinks } from "./links";
 
 const postgresTest = testFor("database");
@@ -14,9 +14,7 @@ beforeAll(async () => {
   large = await insertFixtureNotebook("large");
 }, 120_000);
 
-afterAll(async () => {
-  await large?.remove();
-});
+afterAll(removeFixtureNotebooks);
 
 postgresTest("the 20,000-page fixture holds its tree, links and tags as the services index them", async () => {
   const notebook = large!;

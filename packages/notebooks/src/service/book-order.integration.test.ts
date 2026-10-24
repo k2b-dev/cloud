@@ -3,7 +3,7 @@ import { sql } from "bun";
 import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { migrate } from "../migrate";
-import { type InsertedFixtureNotebook, insertFixtureNotebook } from "./large-notebook.test-fixture";
+import { type InsertedFixtureNotebook, insertFixtureNotebook, removeFixtureNotebooks } from "./large-notebook.test-fixture";
 import { loadBookNavigation } from "./sidebar-tree";
 import { readLevel, revealNote } from "./tree-levels";
 
@@ -41,7 +41,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!testInfra.database) return;
   await sql`DELETE FROM notebooks.notebooks WHERE id = ${notebookId}::uuid`;
-  await large?.remove();
+  await removeFixtureNotebooks();
 });
 
 const titles = async (parentId: string | null, homepageId: string | null) =>
