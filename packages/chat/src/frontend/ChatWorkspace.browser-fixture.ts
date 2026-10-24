@@ -264,7 +264,15 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   const reads: { chat: string; seq: number }[] = [];
   // Which part of the chat each read named: "general", "all", or a thread.
   const readViews: { chat: string; seq: number; thread: string }[] = [];
-  const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string; refs?: CloudResourceRef[]; attachments?: string[] }[] = [];
+  const posted: {
+    chat: string;
+    clientId: string;
+    body: string;
+    thread?: string;
+    replyTo?: string;
+    refs?: CloudResourceRef[];
+    attachments?: string[];
+  }[] = [];
   const discoveryUpdates: { entries: unknown[]; name?: string; purpose?: string; revision?: string }[] = [];
 
   const principalId = (principal: MemberPrincipal) =>
