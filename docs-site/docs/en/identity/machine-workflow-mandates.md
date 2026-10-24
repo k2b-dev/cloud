@@ -3,7 +3,7 @@ title: Machine workflow mandates
 navTitle: Machine workflow mandates
 description: Run automatic Grids workflows under an independent machine identity.
 section: Identity and access
-order: 655
+order: 656
 tags: [identity, service-accounts, authorization]
 updated: 2026-10-23
 ---
