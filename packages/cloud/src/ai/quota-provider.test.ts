@@ -7,7 +7,7 @@ import {
   type AiCallDetails,
   type AiCallStatus,
 } from "./inference-calls";
-import { inferenceProvider } from "./quota-provider";
+import { AiProviderAdmissionError, inferenceProvider } from "./quota-provider";
 import type { AiModelProfile } from "./types";
 
 const profile: AiModelProfile = {
@@ -365,3 +365,20 @@ for (const ending of ["provider_stop", "provider_error", "abort"] as const)
     expect(history.filter((entry) => entry.message.role === "assistant")).toHaveLength(1);
     expect(history.at(-1)?.message).toMatchObject({ stopReason: ending === "abort" ? "interrupted" : "error" });
   });
+
+test("dispatch admission rejection clears reservations without estimated usage", async () => {
+  const f = fixture([]);
+  const rejection = new AiProviderAdmissionError("Access revoked before dispatch");
+  f.provider.stream = async function* () {
+    throw rejection;
+  };
+  f.provider.complete = async () => {
+    throw rejection;
+  };
+  await expect(drain(f.wrap())).rejects.toBe(rejection);
+  await expect(f.wrap().complete(request)).rejects.toBe(rejection);
+  expect(f.booked.map((booking) => booking.usage)).toEqual([
+    { input: 0, output: 0 },
+    { input: 0, output: 0 },
+  ]);
+});
