@@ -272,7 +272,7 @@ test("a failed conversation resync does not invalidate members", async () => {
   store.dispose();
 });
 
-test("a system chat resync replaces the history and counts an access reconciliation, also at the same position", async () => {
+test("a system chat resync replaces the history and counts the replacement, also at the same position", async () => {
   const system = { ...conversation, kind: "system" as const, resource: { type: "spaces.space", id: "Space1" } };
   const { store, connection } = fixture({
     snapshot: async () => ({ threads: noThreads, cursor: "snapshot", conversation: system, page: page(1), focus: null }),
@@ -281,11 +281,11 @@ test("a system chat resync replaces the history and counts an access reconciliat
   });
   await store.openChat(conversation.id);
   const before = store.openConversation!;
-  expect(before.accessRev).toBe(0);
+  expect(before.historyRev).toBe(0);
   await connection.get("conversation").resync();
   // A revoked item removes its messages without a new position; readers of the history must read again.
   expect(store.openConversation?.seqHead).toBe(before.seqHead);
-  expect(store.openConversation?.accessRev).toBe(1);
+  expect(store.openConversation?.historyRev).toBe(1);
   store.dispose();
 });
 
@@ -314,6 +314,8 @@ test("a restore below the watermark after live text messages replaces the histor
   await connection.get("conversation").resync();
   expect(store.openConversation?.watermark).toBe(5);
   expect(store.openConversation?.messages).toEqual([message(5)]);
+  // Readers of the history (Shared) read again: the replacement can remove messages at an older revision.
+  expect(store.openConversation?.historyRev).toBe(1);
   const restored = { ...message(6), id: "restored06" };
   await connection.get("conversation").apply({ type: "message", message: restored });
   expect(store.openConversation?.messages).toContainEqual(restored);
@@ -881,7 +883,7 @@ test("openChat 404 replaces the current chat without leaking its details", async
     threadsStatus: "ready",
     threadsRevision: 0,
     membershipRev: 0,
-    accessRev: 0,
+    historyRev: 0,
     status: "no-access",
     caughtUp: false,
     conversation: null,
