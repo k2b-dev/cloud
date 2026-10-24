@@ -1,10 +1,19 @@
 import { beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
+import { clickhouseAdminQuery } from "../../../../scripts/fixtures/test-clickhouse";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import * as lifecycle from "../service/base-lifecycle";
 import { createBaseLifecycle } from "../service/base-lifecycle";
 import { updateBase } from "../service/base-management";
-import { cleanupFixtureBase, fixtureBase, fixtureClock, fixtureStore, installFixtureStore } from "./base-store.test-fixture";
+import {
+  cleanupFixtureBase,
+  fixtureBase,
+  fixtureClock,
+  fixtureConnection,
+  fixtureStore,
+  installFixtureStore,
+} from "./base-store.test-fixture";
+import { clickhouseQuery } from "./client";
 import { retentionPreview } from "./retention";
 import { settingsFixture } from "./settings.test-fixture";
 import { quoteIdentifier as q } from "./validation";
@@ -12,6 +21,52 @@ import { quoteIdentifier as q } from "./validation";
 const suite = suiteFor("database", "clickhouse");
 suite("Pulse per-base retention", () => {
   beforeAll(installFixtureStore, 30_000);
+  test("reader retention hides expired physical rows and changes with the base policy", async () => {
+    const base = await fixtureBase(),
+      store = fixtureStore(() => new Date("2026-10-17T12:30:00Z"));
+    try {
+      await createBaseLifecycle(store)(base.id);
+      await store.query(`ALTER TABLE ${q(base.database)}._events REMOVE TTL`);
+      await store.query(`ALTER TABLE ${q(base.database)}._rollups REMOVE TTL`);
+      await store.query(`INSERT INTO ${q(base.database)}._events(id,ts,kind,version) VALUES
+        ('11111111-1111-4111-8111-111111111111','2026-09-17 11:59:59.999','expired',1),
+        ('22222222-2222-4222-8222-222222222222','2026-09-17 12:10:00.000','boundary',1),
+        ('33333333-3333-4333-8333-333333333333','2026-10-17 11:00:00.000','recent',1)`);
+      await store.query(`INSERT INTO ${q(base.database)}._samples(row_id,series_id,ts,value,version)
+        SELECT id,id,ts,1,1 FROM ${q(base.database)}._events`);
+      await store.query(`INSERT INTO ${q(base.database)}._rollups VALUES
+        ('11111111-1111-4111-8111-111111111111','2025-10-17 11:00:00',1,1,1,1,1,'2025-10-17 11:00:00',0,0,1),
+        ('11111111-1111-4111-8111-111111111111','2025-10-17 12:00:00',1,1,1,1,1,'2025-10-17 12:00:00',0,0,1)`);
+      const credentials = await store.readUserCredentials(base.id);
+      const read = (query: string) => clickhouseQuery({ ...fixtureConnection(), ...credentials, query, timeoutMs: 12_000 });
+      expect((await read(`SELECT kind FROM ${q(base.database)}.events ORDER BY kind`)).map((row) => row.kind)).toEqual(["recent"]);
+      expect(Number((await read(`SELECT count() AS n FROM ${q(base.database)}.samples`))[0]?.n)).toBe(2);
+      expect(Number((await read(`SELECT count() AS n FROM ${q(base.database)}.rollups`))[0]?.n)).toBe(1);
+      expect(Number((await store.query(`SELECT count() AS n FROM ${q(base.database)}._samples`))[0]?.n)).toBe(3);
+      // Reconciliation restores TTLs. Stop physical cleanup to keep the proof independent
+      // of ClickHouse's real clock and test the reader boundary alone.
+      await clickhouseAdminQuery(`SYSTEM STOP MERGES ${q(base.database)}._events`);
+      // MODIFY TTL normally queues a materialization mutation. With merges stopped,
+      // the subsequent column ALTER can wait for that mutation indefinitely.
+      // Keep metadata reconciliation real, but disable this fixture's materialization.
+      const query = store.query;
+      store.query = (statement, params, connection) =>
+        query(
+          statement.startsWith("ALTER TABLE") && statement.includes(" TTL ")
+            ? `${statement} SETTINGS materialize_ttl_after_modify=0`
+            : statement,
+          params,
+          connection,
+        );
+      // Reconciliation changes read predicates as well as physical TTL settings.
+      await sql`UPDATE pulse.bases SET retention_days=1 WHERE id=${base.id}::uuid`;
+      await createBaseLifecycle(store)(base.id);
+      expect((await read(`SELECT kind FROM ${q(base.database)}.events ORDER BY kind`)).map((row) => row.kind)).toEqual(["recent"]);
+      expect(Number((await store.query(`SELECT count() AS n FROM ${q(base.database)}._events`))[0]?.n)).toBe(3);
+    } finally {
+      await cleanupFixtureBase(base);
+    }
+  }, 60_000);
   test("sensitive preview counts only nonempty fields before the cutoff and their own size", async () => {
     const base = await fixtureBase(),
       store = fixtureStore();
