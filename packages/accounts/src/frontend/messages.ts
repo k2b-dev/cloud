@@ -6,6 +6,22 @@ export const accountsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      createMachineKey: "Create API key",
+      machineAccount: "Machine account",
+      chooseMachine: "Choose a standalone account or agent",
+      machineSearchHint: "Search active accounts by name. Refine the search if the account is missing.",
+      machineAccountsFailed: "Could not load machine accounts. Try again.",
+      keyPurpose: "Key purpose",
+      fullKeyAccess: "Full access",
+      fullKeyDescription: "Use Cloud APIs within the account's grants.",
+      machineModelsDescription: "Use explicitly granted AI models. No Cloud tools or personal context.",
+      machineModelsDisabled: "An administrator must enable the OpenAI-compatible API in AI settings to offer models-only keys.",
+      machineKeyFailed: "Could not create the API key.",
+      machineKeyUncertain:
+        "The result could not be confirmed. Close this dialog and check the key list before creating another key. Revoke any key you could not save.",
+      machineKeyOneTime: "Save this key now. It will only be shown once.",
+      copyMachineKey: "Copy API key",
+
       duplicateLastSync: "Last FreeIPA sync",
       duplicateEmails: "Duplicate email addresses",
       duplicateEmailsDescription: "Compare accounts sharing an email address before deleting an unused account.",
@@ -835,6 +851,22 @@ export const accountsMessages = i18n.define({
       reasonManualDelete: "Manual deletion",
     },
     de: {
+      createMachineKey: "API-Schlüssel erstellen",
+      machineAccount: "Maschinenkonto",
+      chooseMachine: "Eigenständiges Konto oder Agent wählen",
+      machineSearchHint: "Aktive Konten nach Namen suchen. Suche eingrenzen, falls das Konto fehlt.",
+      machineAccountsFailed: "Maschinenkonten konnten nicht geladen werden. Erneut versuchen.",
+      keyPurpose: "Schlüsselzweck",
+      fullKeyAccess: "Vollzugriff",
+      fullKeyDescription: "Cloud-APIs mit den Berechtigungen des Kontos nutzen.",
+      machineModelsDescription: "Explizit freigegebene KI-Modelle nutzen. Keine Cloud-Werkzeuge oder persönlichen Kontexte.",
+      machineModelsDisabled: "Für Modellschlüssel muss ein Administrator die OpenAI-kompatible API in den KI-Einstellungen aktivieren.",
+      machineKeyFailed: "Der API-Schlüssel konnte nicht erstellt werden.",
+      machineKeyUncertain:
+        "Das Ergebnis ist unbestätigt. Dialog schließen und die Schlüsselliste prüfen, bevor ein weiterer Schlüssel erstellt wird. Nicht gespeicherte Schlüssel widerrufen.",
+      machineKeyOneTime: "Schlüssel jetzt speichern. Er wird nur einmal angezeigt.",
+      copyMachineKey: "API-Schlüssel kopieren",
+
       duplicateLastSync: "Letzte FreeIPA-Synchronisierung",
       duplicateEmails: "Doppelte E-Mail-Adressen",
       duplicateEmailsDescription: "Vergleiche Konten mit derselben E-Mail-Adresse, bevor du ein ungenutztes Konto löschst.",

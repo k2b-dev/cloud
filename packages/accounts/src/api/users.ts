@@ -122,12 +122,19 @@ const userDeviceResult = async <T>(
   }
 };
 
-const avatarHeaders = (avatarHash: string, contentType: string, byteLength: number) => ({
-  "Cache-Control": "private, max-age=31536000, immutable",
+/**
+ * A URL that names the current hash (`?rev=`) never changes its bytes and is cached for good; any other request, such
+ * as an agent's robot linked without a hash, revalidates against the ETag. SVG avatars are drawn from fixed shapes and
+ * still get a policy that forbids scripts and external loads.
+ */
+const avatarHeaders = (avatarHash: string, contentType: string, byteLength: number, rev: string | undefined) => ({
+  "Cache-Control": rev === avatarHash ? "private, max-age=31536000, immutable" : "private, no-cache",
   "Content-Length": String(byteLength),
   "Content-Type": contentType,
   ETag: `"${avatarHash}"`,
   Vary: "Cookie, Authorization",
+  "X-Content-Type-Options": "nosniff",
+  ...(contentType === "image/svg+xml" ? { "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox" } : {}),
 });
 
 const logLocalAdminMutation = (params: {
@@ -159,7 +166,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Users"],
       summary: "Get user avatar",
-      description: "Return a stored profile picture. Profile pictures are visible to user-backed authenticated actors.",
+      description:
+        "Return the picture a person or service account shows: a photo, or a built avatar as SVG. A person showing initials has no picture (404). Service accounts always have one: their photo or their robot. Profile pictures are visible to user-backed authenticated actors.",
       responses: {
         200: { description: "Avatar image" },
         304: { description: "Avatar image not modified" },
@@ -175,7 +183,7 @@ const app = new Hono<AuthContext>()
       if (!avatar) return c.json({ message: "Avatar not found" }, 404);
 
       const etag = `"${avatar.hash}"`;
-      const headers = avatarHeaders(avatar.hash, avatar.contentType, avatar.bytes.length);
+      const headers = avatarHeaders(avatar.hash, avatar.contentType, avatar.bytes.length, c.req.query("rev"));
       if (c.req.header("if-none-match") === etag) {
         return new Response(null, { status: 304, headers });
       }
