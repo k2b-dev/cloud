@@ -8,6 +8,9 @@ import { AiBackgroundAdmissionError, type AiCallContext, type AiCallDetails, beg
 import { type ProviderFetchMarks, runWithProviderFetchMarks } from "./provider-fetch";
 import type { AiModelProfile } from "./types";
 
+/** A dispatch guard refused the call before any provider request could leave. */
+export class AiProviderAdmissionError extends Error {}
+
 const log = logger("ai:quotas");
 
 /** One wrapper owns call accounting. complete() can have a separate compaction purpose. */
@@ -108,6 +111,7 @@ export function inferenceProvider(
         if (status === "failed") error = `The provider finished with ${result.finishReason}.`;
         return result;
       } catch (thrown) {
+        if (thrown instanceof AiProviderAdmissionError) usage = { input: 0, output: 0 };
         error = thrown instanceof Error ? thrown.message : String(thrown);
         throw thrown;
       } finally {
@@ -183,6 +187,7 @@ export function inferenceProvider(
         }
         completed = true;
       } catch (thrown) {
+        if (thrown instanceof AiProviderAdmissionError) usage = { input: 0, output: 0 };
         error ??= thrown instanceof Error ? thrown.message : String(thrown);
         throw thrown;
       } finally {
