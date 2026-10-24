@@ -677,6 +677,15 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
                 />
               </div>
             </Show>
+            <Show when={data().routeCostOverruns > 0}>
+              <StateRow
+                tone="warning"
+                icon="ti ti-alert-triangle"
+                role="status"
+                title={t().routeCostOverruns({ count: number(data().routeCostOverruns) })}
+                detail={t().routeCostOverrunsDetail}
+              />
+            </Show>
             <Show when={data().peopleAtLimit > 0}>
               <div class="mt-2">
                 <StateRow

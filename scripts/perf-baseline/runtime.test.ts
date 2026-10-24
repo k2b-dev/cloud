@@ -9,7 +9,9 @@ import {
   command,
   localTls,
   measurementOrigin,
+  netem,
   Runtime,
+  remoteBrowserArgs,
   renderCaddyfile,
   repository,
   runtimeImage,
@@ -212,7 +214,7 @@ test("wrong host, CA, malformed, and out-of-validity certificates cannot become 
     ["not a certificate", "2026-10-21T12:00:00Z", ""],
     [localhostCertificate, "2026-10-19T12:00:00Z", "validity period"],
     [localhostCertificate, "2026-10-23T12:00:00Z", "validity period"],
-  ]) {
+  ] as const) {
     const runtime = new Runtime(4100, "image", new AbortController().signal);
     runtime.containers.push(runtime.name("caddy"));
     const clock = spyOn(Date, "now").mockReturnValue(Date.parse(now));
@@ -400,7 +402,7 @@ test("Mail service options preserve page defaults and publish only run-owned ser
     calls.push(args);
   });
   const fetchStub = spyOn(globalThis, "fetch").mockImplementation(
-    async () => new Response(JSON.stringify({ routeTable: { routeCount: 3 } })),
+    Object.assign(async () => new Response(JSON.stringify({ routeTable: { routeCount: 3 } })), { preconnect: globalThis.fetch.preconnect }),
   );
   try {
     await runtime.start([]);
@@ -449,5 +451,42 @@ test("Mail service options preserve page defaults and publish only run-owned ser
     address.mockRestore();
     close.mockRestore();
     await rm(runtime.directory, { recursive: true, force: true });
+  }
+});
+
+test("netem delays each loopback direction by half RTT locally and only egress remotely", () => {
+  expect(netem(101, false)).toEqual({
+    args: ["--cap-add", "NET_ADMIN", "--entrypoint", "sh"],
+    tail: ["-c", "apk add --no-cache iproute2-tc >/dev/null && tc qdisc replace dev lo root netem delay 50.5ms"],
+  });
+  expect(netem(101, true).tail).toEqual([
+    "-c",
+    "apk add --no-cache iproute2-tc >/dev/null && tc qdisc replace dev eth0 root netem delay 101ms",
+  ]);
+});
+
+test("remote browsers publish only loopback and use the host-resolved origin on the run network", () => {
+  const runtime = new Runtime(4100, "unused", new AbortController().signal, "https://cloud.example.test");
+  expect(runtime.origin).toBe("https://cloud.example.test");
+  expect(remoteBrowserArgs(4200, runtime.origin, "100.64.0.42")).toEqual([
+    "--publish",
+    "127.0.0.1:4200:4200",
+    "--add-host",
+    "cloud.example.test:100.64.0.42",
+  ]);
+  expect(remoteBrowserArgs(4200, runtime.origin, "100.64.0.42").some((arg) => arg.startsWith("container:"))).toBe(false);
+});
+
+test("remote startup creates only its labelled network, without app or infrastructure containers", async () => {
+  const runtime = new Runtime(4100, "unused", new AbortController().signal, "https://example.test");
+  const stub = stubCommands((args) => (args[2] === "inspect" ? { output: runtime.prefix } : {}));
+  try {
+    await runtime.start(["core", "pwa", "spaces", "gateway"]);
+    expect(runtime.networks).toEqual([runtime.prefix]);
+    expect(runtime.containers).toEqual([]);
+    expect(runtime.volumes).toEqual([]);
+    expect(stub.calls.some((args) => args[1] === "run")).toBe(false);
+  } finally {
+    stub.restore();
   }
 });
