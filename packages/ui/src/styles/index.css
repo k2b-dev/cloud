@@ -64,6 +64,16 @@
   --k2b-selected: var(--k2b-accent-100);
   --k2b-action: var(--k2b-accent-700);
   --k2b-action-hover: var(--k2b-accent-800);
+  /* Kind colours of icon chips (LinkCard, ResourceCard); each keeps 3:1 on its own chip. */
+  --k2b-tint-blue: var(--k2b-accent-600);
+  --k2b-tint-emerald: #047857;
+  --k2b-tint-violet: #7c3aed;
+  --k2b-tint-orange: #c2410c;
+  --k2b-tint-red: var(--k2b-danger-600);
+  --k2b-tint-amber: #b45309;
+  --k2b-tint-zinc: var(--k2b-neutral-600);
+  --k2b-tint-cyan: #0e7490;
+  --k2b-tint-rose: #e11d48;
   --k2b-app-workspace-active: var(--k2b-action);
   /* `--k2b-app-workspace-selected` is the fill of a selected navigation row
      or object chip, beside the selected ink above; the soft tabs, view tabs,
@@ -242,6 +252,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-selected: var(--k2b-accent-950);
   --k2b-action: var(--k2b-accent-300);
   --k2b-action-hover: var(--k2b-accent-200);
+  --k2b-tint-blue: var(--k2b-accent-400);
+  --k2b-tint-emerald: #34d399;
+  --k2b-tint-violet: #a78bfa;
+  --k2b-tint-orange: #fb923c;
+  --k2b-tint-red: #f87171;
+  --k2b-tint-amber: #fbbf24;
+  --k2b-tint-zinc: var(--k2b-neutral-400);
+  --k2b-tint-cyan: #22d3ee;
+  --k2b-tint-rose: #fb7185;
   --k2b-action-solid: var(--k2b-accent-600);
   --k2b-action-solid-hover: var(--k2b-accent-700);
   --k2b-selection: rgb(147 197 253 / 0.35);

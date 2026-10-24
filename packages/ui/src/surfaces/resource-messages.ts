@@ -9,12 +9,16 @@ const resourceMessages = i18n.define({
       resourceNoAccess: "Item not available",
       resourceDeleted: "Item deleted",
       resourceUnavailable: "Not available right now",
+      resourceKind: "Cloud element",
+      resourceNoAccessHint: "You have no access. Title and content stay hidden.",
     },
     de: {
       resourceUntitled: "Ohne Titel",
       resourceNoAccess: "Element nicht verfügbar",
       resourceDeleted: "Element gelöscht",
       resourceUnavailable: "Gerade nicht verfügbar",
+      resourceKind: "Cloud-Element",
+      resourceNoAccessHint: "Du hast keinen Zugriff. Titel und Inhalt bleiben verborgen.",
     },
   },
 });

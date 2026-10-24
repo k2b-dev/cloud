@@ -177,44 +177,25 @@
    action colour outside a host that maps it. */
 .k2b-ui .k2b-link-card:not([data-color]) .k2b-link-card__icon { color: var(--k2b-app-workspace-active); }
 
-/* Each light glyph keeps 3:1 on its own chip, also over hover and muted fills. */
-.k2b-ui .k2b-link-card[data-color="blue"] .k2b-link-card__icon { color: var(--k2b-accent-600); }
-.k2b-ui .k2b-link-card[data-color="emerald"] .k2b-link-card__icon { color: #047857; }
-.k2b-ui .k2b-link-card[data-color="violet"] .k2b-link-card__icon { color: #7c3aed; }
-.k2b-ui .k2b-link-card[data-color="orange"] .k2b-link-card__icon { color: #c2410c; }
-.k2b-ui .k2b-link-card[data-color="red"] .k2b-link-card__icon { color: var(--k2b-danger-600); }
-.k2b-ui .k2b-link-card[data-color="amber"] .k2b-link-card__icon { color: #b45309; }
-.k2b-ui .k2b-link-card[data-color="zinc"] .k2b-link-card__icon { color: var(--k2b-neutral-600); }
-.k2b-ui .k2b-link-card[data-color="cyan"] .k2b-link-card__icon { color: #0e7490; }
-.k2b-ui .k2b-link-card[data-color="rose"] .k2b-link-card__icon { color: #e11d48; }
-
-.k2b-ui[data-theme="dark"] .k2b-link-card[data-color="blue"] .k2b-link-card__icon,
-.k2b-ui.k2b-dark .k2b-link-card[data-color="blue"] .k2b-link-card__icon,
-.dark .k2b-ui .k2b-link-card[data-color="blue"] .k2b-link-card__icon { color: var(--k2b-accent-400); }
-.k2b-ui[data-theme="dark"] .k2b-link-card[data-color="emerald"] .k2b-link-card__icon,
-.k2b-ui.k2b-dark .k2b-link-card[data-color="emerald"] .k2b-link-card__icon,
-.dark .k2b-ui .k2b-link-card[data-color="emerald"] .k2b-link-card__icon { color: #34d399; }
-.k2b-ui[data-theme="dark"] .k2b-link-card[data-color="violet"] .k2b-link-card__icon,
-.k2b-ui.k2b-dark .k2b-link-card[data-color="violet"] .k2b-link-card__icon,
-.dark .k2b-ui .k2b-link-card[data-color="violet"] .k2b-link-card__icon { color: #a78bfa; }
-.k2b-ui[data-theme="dark"] .k2b-link-card[data-color="orange"] .k2b-link-card__icon,
-.k2b-ui.k2b-dark .k2b-link-card[data-color="orange"] .k2b-link-card__icon,
-.dark .k2b-ui .k2b-link-card[data-color="orange"] .k2b-link-card__icon { color: #fb923c; }
-.k2b-ui[data-theme="dark"] .k2b-link-card[data-color="red"] .k2b-link-card__icon,
-.k2b-ui.k2b-dark .k2b-link-card[data-color="red"] .k2b-link-card__icon,
-.dark .k2b-ui .k2b-link-card[data-color="red"] .k2b-link-card__icon { color: #f87171; }
-.k2b-ui[data-theme="dark"] .k2b-link-card[data-color="amber"] .k2b-link-card__icon,
-.k2b-ui.k2b-dark .k2b-link-card[data-color="amber"] .k2b-link-card__icon,
-.dark .k2b-ui .k2b-link-card[data-color="amber"] .k2b-link-card__icon { color: #fbbf24; }
-.k2b-ui[data-theme="dark"] .k2b-link-card[data-color="zinc"] .k2b-link-card__icon,
-.k2b-ui.k2b-dark .k2b-link-card[data-color="zinc"] .k2b-link-card__icon,
-.dark .k2b-ui .k2b-link-card[data-color="zinc"] .k2b-link-card__icon { color: var(--k2b-neutral-400); }
-.k2b-ui[data-theme="dark"] .k2b-link-card[data-color="cyan"] .k2b-link-card__icon,
-.k2b-ui.k2b-dark .k2b-link-card[data-color="cyan"] .k2b-link-card__icon,
-.dark .k2b-ui .k2b-link-card[data-color="cyan"] .k2b-link-card__icon { color: #22d3ee; }
-.k2b-ui[data-theme="dark"] .k2b-link-card[data-color="rose"] .k2b-link-card__icon,
-.k2b-ui.k2b-dark .k2b-link-card[data-color="rose"] .k2b-link-card__icon,
-.dark .k2b-ui .k2b-link-card[data-color="rose"] .k2b-link-card__icon { color: #fb7185; }
+/* Each colour is a theme token, so the dark theme needs no rules of its own. */
+.k2b-ui .k2b-link-card[data-color="blue"] .k2b-link-card__icon,
+.k2b-ui .k2b-resource-card[data-color="blue"] .k2b-resource-card__icon { color: var(--k2b-tint-blue); }
+.k2b-ui .k2b-link-card[data-color="emerald"] .k2b-link-card__icon,
+.k2b-ui .k2b-resource-card[data-color="emerald"] .k2b-resource-card__icon { color: var(--k2b-tint-emerald); }
+.k2b-ui .k2b-link-card[data-color="violet"] .k2b-link-card__icon,
+.k2b-ui .k2b-resource-card[data-color="violet"] .k2b-resource-card__icon { color: var(--k2b-tint-violet); }
+.k2b-ui .k2b-link-card[data-color="orange"] .k2b-link-card__icon,
+.k2b-ui .k2b-resource-card[data-color="orange"] .k2b-resource-card__icon { color: var(--k2b-tint-orange); }
+.k2b-ui .k2b-link-card[data-color="red"] .k2b-link-card__icon,
+.k2b-ui .k2b-resource-card[data-color="red"] .k2b-resource-card__icon { color: var(--k2b-tint-red); }
+.k2b-ui .k2b-link-card[data-color="amber"] .k2b-link-card__icon,
+.k2b-ui .k2b-resource-card[data-color="amber"] .k2b-resource-card__icon { color: var(--k2b-tint-amber); }
+.k2b-ui .k2b-link-card[data-color="zinc"] .k2b-link-card__icon,
+.k2b-ui .k2b-resource-card[data-color="zinc"] .k2b-resource-card__icon { color: var(--k2b-tint-zinc); }
+.k2b-ui .k2b-link-card[data-color="cyan"] .k2b-link-card__icon,
+.k2b-ui .k2b-resource-card[data-color="cyan"] .k2b-resource-card__icon { color: var(--k2b-tint-cyan); }
+.k2b-ui .k2b-link-card[data-color="rose"] .k2b-link-card__icon,
+.k2b-ui .k2b-resource-card[data-color="rose"] .k2b-resource-card__icon { color: var(--k2b-tint-rose); }
 
 /* ---------------------------------------------------------- ResourceCard -- */
 /* One size in every state: a fixed width and three fixed lines, so a card that
@@ -226,7 +207,7 @@
   width: 22rem;
   max-width: 100%;
   height: 4.625rem;
-  grid-template-columns: 2.5rem minmax(0, 1fr);
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 0.75rem;
   overflow: hidden;
@@ -260,13 +241,33 @@
 
 .k2b-ui .k2b-resource-card__icon {
   display: grid;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2rem;
+  height: 2rem;
   place-items: center;
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface);
-  font-size: 1.25rem;
+  font-size: 1.125rem;
+}
+
+/* A coloured kind takes the shared icon tile: its glyph colour over a soft chip of the same colour. */
+.k2b-ui .k2b-resource-card__icon.k2b-icon-tile {
+  border-radius: 28%;
+}
+
+/* The element's state, quiet and at the end, so the title keeps its line. */
+.k2b-ui .k2b-resource-card__status {
+  max-width: 8rem;
+  overflow: hidden;
+  padding: 0.0625rem 0.375rem;
+  border-radius: calc(var(--k2b-radius-control) * 0.6);
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .k2b-ui .k2b-resource-card__copy {
@@ -299,10 +300,11 @@
   line-height: 1.125rem;
 }
 
-/* An element that cannot be shown reads as one quiet line. */
+/* An element that cannot be shown names only that, in the title's place, between "Cloud element" and the reason. */
 .k2b-ui .k2b-resource-card__label {
-  color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
   line-height: 1.25rem;
 }
 
@@ -331,7 +333,8 @@
    changing its size, and the loading placeholder paints itself in GrayText so it
    stays visible. */
 @media (forced-colors: active) {
-  .k2b-ui .k2b-resource-card {
+  .k2b-ui .k2b-resource-card,
+  .k2b-ui .k2b-resource-card__status {
     outline: 1px solid CanvasText;
   }
 

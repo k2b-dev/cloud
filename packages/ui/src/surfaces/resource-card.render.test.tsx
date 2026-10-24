@@ -57,9 +57,19 @@ const textOf = (html: string) => {
 
 const hidden = [element.title, element.source, element.location, element.preview, element.href, element.icon] as string[];
 const reasons = [
-  { state: "no_access", icon: "ti ti-lock", en: "Item not available", de: "Element nicht verfügbar" },
-  { state: "deleted", icon: "ti ti-trash", en: "Item deleted", de: "Element gelöscht" },
-  { state: "unavailable", icon: "ti ti-cloud-off", en: "Not available right now", de: "Gerade nicht verfügbar" },
+  {
+    state: "no_access",
+    icon: "ti ti-lock",
+    en: "Cloud element Item not available You have no access. Title and content stay hidden.",
+    de: "Cloud-Element Element nicht verfügbar Du hast keinen Zugriff. Titel und Inhalt bleiben verborgen.",
+  },
+  { state: "deleted", icon: "ti ti-trash", en: "Cloud element Item deleted", de: "Cloud-Element Element gelöscht" },
+  {
+    state: "unavailable",
+    icon: "ti ti-cloud-off",
+    en: "Cloud element Not available right now",
+    de: "Cloud-Element Gerade nicht verfügbar",
+  },
 ] as const;
 
 describe("ResourceCard", () => {
@@ -114,7 +124,7 @@ describe("ResourceCard", () => {
   });
 
   for (const reason of reasons) {
-    test(`shows only "${reason.en}" in English and "${reason.de}" in German for ${reason.state}`, () => {
+    test(`shows only why for ${reason.state}, in English and German`, () => {
       for (const locale of ["en", "de"] as const) {
         const html = card({ state: reason.state, onOpen: () => {} }, locale);
 
@@ -141,6 +151,22 @@ describe("ResourceCard", () => {
       expect(textOf(html)).toBe(text);
       expect(html).toContain('<span class="k2b-sr-only">');
       for (const value of hidden) expect(html).not.toContain(value);
+    }
+  });
+
+  test("names kind and place above the title, the state at the end, and colours the icon chip", () => {
+    const html = card({ context: "Task in IT planning · due 30 Oct", status: "Open", color: "emerald", preview: undefined });
+
+    expect(html).toMatch(/^<a class="k2b-resource-card" data-state="ok" data-color="emerald" href=/);
+    expect(textOf(html)).toBe("Task in IT planning · due 30 Oct Onboarding checklist Notebooks · Team handbook Open");
+    expect(html).toContain('class="k2b-resource-card__icon k2b-icon-tile"');
+    expect(html).toContain('<span class="k2b-resource-card__status">Open</span>');
+    // Outside "ok" the card shows none of it.
+    for (const state of ["loading", "no_access", "deleted", "unavailable"] as const) {
+      const hiddenCard = card({ state, context: "Task in IT planning", status: "Open", color: "emerald" });
+      expect(hiddenCard).not.toContain("IT planning");
+      expect(hiddenCard).not.toContain("Open<");
+      expect(hiddenCard).not.toContain("data-color");
     }
   });
 
