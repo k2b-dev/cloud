@@ -70,6 +70,7 @@ describe("Contacts results navigation", () => {
 
     expect(await pending).toEqual({ kind: "superseded" });
     expect(state.source()).toBe("/app/contacts?search=Ada");
+    expect(state.navigation.fail("/app/contacts?search=Grace")).toBe(false);
     expect(state.order.some((entry) => entry.startsWith("fallback:"))).toBe(false);
   });
 

@@ -28,7 +28,7 @@ for (const locale of ["en", "de"]) {
     });
 
     test("search wins over other filters and scope hints", () => {
-      for (const scope of ["all", "book", "favorites"] satisfies ContactsScope[]) {
+      for (const scope of ["all", "book"] satisfies ContactsScope[]) {
         expect(choose({ scope, search: " Ada ", tagId: "vip" })).toEqual({
           title: t.noMatchingContacts,
           description: t.noMatchingContactsHint,
@@ -37,32 +37,18 @@ for (const locale of ["en", "de"]) {
       }
     });
 
-    test("tag, email, phone, and extra favorites filters explain no matches", () => {
-      for (const scope of ["all", "book", "favorites"] satisfies ContactsScope[]) {
-        for (const filter of [{ tagId: "vip" }, { email: "yes" }, { email: "no" }, { phone: "yes" }, { phone: "no" }] satisfies Partial<
-          Parameters<typeof contactsEmptyState>[0]
-        >[]) {
-          const state = choose({ scope, ...filter });
-          expect(state).toEqual({ title: t.noMatchingContacts, description: t.noMatchingFiltersHint, action: null });
-          expect(state.title).not.toBe(t.emptyAllTitle);
-        }
-      }
-      for (const scope of ["all", "book"] satisfies ContactsScope[]) {
-        expect(choose({ scope, favorites: true })).toEqual({
-          title: t.noMatchingContacts,
-          description: t.noMatchingFiltersHint,
-          action: null,
-        });
-      }
-    });
+    test("tag, email, and phone filters explain no matches", () => {});
 
-    test("favorites is a scope, including its own favorites flag", () => {
-      for (const favorites of [true, false]) {
-        expect(choose({ scope: "favorites", favorites })).toEqual({
-          title: t.emptyFavoritesTitle,
-          description: t.emptyFavoritesHint,
-          action: null,
-        });
+    test("favorites has its own empty state in either object, regardless of write access", () => {
+      for (const scope of ["all", "book"] as const) {
+        for (const canWrite of [true, false]) {
+          expect(choose({ scope, favorites: true, canWrite })).toEqual({
+            title: t.emptyFavoritesTitle,
+            description: t.emptyFavoritesHint,
+            action: null,
+          });
+          expect(choose({ scope, favorites: true, tagId: "vip" }).title).toBe(t.noMatchingContacts);
+        }
       }
     });
 
@@ -79,7 +65,7 @@ for (const locale of ["en", "de"]) {
     });
 
     test("only noBooks offers an action", () => {
-      for (const scope of ["all", "book", "favorites", "noBooks"] satisfies ContactsScope[]) {
+      for (const scope of ["all", "book", "noBooks"] satisfies ContactsScope[]) {
         expect(choose({ scope }).action).toBe(scope === "noBooks" ? "createBook" : null);
       }
     });

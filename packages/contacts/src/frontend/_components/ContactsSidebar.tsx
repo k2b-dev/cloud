@@ -1,15 +1,19 @@
 import { i18n } from "@k2b/stdlib";
 import { AppWorkspace, useLocale } from "@k2b/ui";
+import { Show } from "solid-js";
 import type { ContactBook } from "../../service";
 import BookSettingsButton from "./BookSettingsButton.island";
 import { bookMessages } from "./book-messages";
+import ContactsFavoritesHint from "./ContactsFavoritesHint.island";
 import ContactsNavigation from "./ContactsNavigation.island";
 import ContactsSpotlightButton from "./ContactsSpotlightButton.island";
 import CreateBookButton from "./CreateBookButton.island";
 
 type Props = {
   books: ContactBook[];
-  active: "all" | "favorites" | string;
+  active: "all" | string;
+  favoritesHref: string;
+  hintOpen?: boolean;
   adminBookIds?: string[];
 };
 
@@ -20,14 +24,12 @@ export const sidebarMessages = i18n.define({
       contacts: "Contacts",
       newBook: "New book",
       allContacts: "All contacts",
-      favorites: "Favorites",
       books: "Books",
     },
     de: {
       contacts: "Kontakte",
       newBook: "Neues Kontaktbuch",
       allContacts: "Alle Kontakte",
-      favorites: "Favoriten",
       books: "Kontaktbücher",
     },
   },
@@ -74,13 +76,6 @@ export default function ContactsSidebar(props: Props) {
         label={t().contacts}
         items={[
           { id: "all", label: t().allContacts, icon: "ti ti-users", href: "/app/contacts", active: props.active === "all" },
-          {
-            id: "favorites",
-            label: t().favorites,
-            icon: "ti ti-star",
-            href: "/app/contacts?favorites=true",
-            active: props.active === "favorites",
-          },
           ...props.books.map((book) => ({
             id: book.id,
             label: book.name,
@@ -100,7 +95,7 @@ export default function ContactsSidebar(props: Props) {
           })),
         ]}
       />
-      <AppWorkspace.Sidebar collapsible>
+      <AppWorkspace.Sidebar label={t().contacts} collapsible mobile="stacked" class="contacts-sidebar">
         <AppWorkspace.SidebarDesktop>
           <div data-sidebar-mode="expanded" style={`view-transition-name:${vt("primary-actions-desktop")}`}>
             <ContactsSpotlightButton variant="sidebar" registerCommand />
@@ -122,16 +117,9 @@ export default function ContactsSidebar(props: Props) {
               >
                 {t().allContacts}
               </AppWorkspace.SidebarItem>
-              <AppWorkspace.SidebarItem
-                href="/app/contacts?favorites=true"
-                navigation="document"
-                icon="ti ti-star"
-                active={props.active === "favorites"}
-                title={t().favorites}
-                viewTransitionName={vt("favorites-desktop")}
-              >
-                {t().favorites}
-              </AppWorkspace.SidebarItem>
+              <Show when={props.hintOpen}>
+                <ContactsFavoritesHint favoritesHref={props.favoritesHref} open />
+              </Show>
             </AppWorkspace.SidebarSection>
 
             <AppWorkspace.SidebarSection title={t().books}>

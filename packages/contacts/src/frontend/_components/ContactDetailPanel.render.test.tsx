@@ -217,6 +217,8 @@ describe("Contacts detail panels", () => {
 
     expect(html).toContain('class="k2b-detail-panel"');
     expect(html).toContain("<h2>Ada Lovelace</h2>");
+    expect(html).toContain("contacts-detail-back");
+    expect(html).toContain("ti-arrow-left");
     expect(html).toContain('class="k2b-detail-panel__header-leading"');
     expect(html).toContain('class="k2b-detail-panel__primary-actions"');
     expect(html).toContain('class="k2b-detail-panel__summary"');

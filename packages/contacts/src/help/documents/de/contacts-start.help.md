@@ -20,9 +20,10 @@ Kontakte verwaltet Kontaktbücher mit Kontaktdaten, Tags, Kommentaren, Hierarchi
 ## So legst du los {icon="route"}
 
 :::reference
-- **Erst suchen:** Nutze **Alle Kontakte** oder **Favoriten** in der Übersicht, wenn du das Kontaktbuch noch nicht kennst.
+- **Bereich wählen:** Öffne **Alle Kontakte** oder ein Kontaktbuch in der Seitenleiste. Auf kleineren Bildschirmen stehen die Kontaktbücher unter der Kopfzeile.
+- **Ansicht wählen:** Nutze die Tabs **Alle** und **Favoriten** oben. Beide Tabs gibt es für alle Kontaktbücher zusammen und innerhalb eines Kontaktbuchs.
 - **Kontaktbuch wählen:** Öffne ein Kontaktbuch, wenn du seine Tags brauchst, einen Kontakt anlegen willst oder die Einstellungen des Kontaktbuchs benötigst.
 - **Kontakt anlegen:** Beginne mit dem Namen und den Kontaktwegen, die zuerst gebraucht werden: E-Mail, Telefon, Website oder Adresse.
 - **Struktur ergänzen:** Ergänze Tags, berufliche Angaben, persönliche Angaben, Bankverbindungen, Kommentare oder einen übergeordneten Kontakt, wenn sie das spätere Finden erleichtern.
-- **Details öffnen:** Wähle einen Kontakt aus, um den Detailbereich zu öffnen. Dort bearbeitest du den Kontakt, fügst Kommentare hinzu, verschiebst ihn oder änderst seine Zuordnungen.
+- **Details öffnen:** Wähle einen Kontakt aus, um den Detailbereich zu öffnen. Auf dem Telefon öffnet sich der Kontakt als eigene Seite. Wähle **Kontakte**, um zur bisherigen Position in der Liste zurückzukehren.
 :::

@@ -51,8 +51,35 @@ export const syncContactDetailFromUrl = () => {
 
 type ContactHistoryMode = "push" | "replace";
 
+const CONTACT_SELECTION_STATE = "contacts.selection";
+let selectionDocumentId: string | undefined;
+
+const selectionDepth = (state: unknown): number | undefined => {
+  if (!selectionDocumentId || !state || typeof state !== "object" || !(CONTACT_SELECTION_STATE in state)) return;
+  const marker = state[CONTACT_SELECTION_STATE];
+  if (
+    marker &&
+    typeof marker === "object" &&
+    "doc" in marker &&
+    marker.doc === selectionDocumentId &&
+    "depth" in marker &&
+    typeof marker.depth === "number" &&
+    Number.isSafeInteger(marker.depth) &&
+    marker.depth > 0
+  )
+    return marker.depth;
+};
+
+/** A reloaded or directly linked selection has no matching marker in this document. */
+export const backFromContactDetail = () => {
+  const depth = selectionDepth(history.state);
+  if (depth !== undefined) history.go(-depth);
+  else clearSelectedContactInUrl("replace");
+};
+
 const commitSelectedContactUrl = (contactId: string | null, bookId: string | null, historyMode: ContactHistoryMode) => {
   const url = new URL(window.location.href);
+  const hadSelection = url.searchParams.has("contact");
   url.searchParams.delete("contactOutcome");
   if (contactId) {
     url.searchParams.set("contact", contactId);
@@ -64,7 +91,18 @@ const commitSelectedContactUrl = (contactId: string | null, bookId: string | nul
   } else {
     url.searchParams.delete("contactBook");
   }
-  if (url.toString() !== window.location.href) history[historyMode === "replace" ? "replaceState" : "pushState"]({}, "", url.toString());
+  if (url.toString() !== window.location.href) {
+    const previousState: unknown = history.state;
+    const state: Record<string, unknown> = { ...(previousState && typeof previousState === "object" ? previousState : {}) };
+    if (historyMode === "push" && contactId) {
+      const depth = hadSelection ? selectionDepth(previousState) : 0;
+      if (depth !== undefined) {
+        selectionDocumentId ??= crypto.randomUUID();
+        state[CONTACT_SELECTION_STATE] = { doc: selectionDocumentId, depth: depth + 1 };
+      } else delete state[CONTACT_SELECTION_STATE];
+    } else if (!contactId) delete state[CONTACT_SELECTION_STATE];
+    history[historyMode === "replace" ? "replaceState" : "pushState"](state, "", url.toString());
+  }
 };
 
 /** Updates detail params without navigation and notifies detail/list islands. */

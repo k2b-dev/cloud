@@ -8,6 +8,7 @@ export const detailMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      backToContacts: "Contacts",
       editContactCommand: ({ name }: { name: string }) => `Edit ${name}`,
       editContactDescription: "Change this contact's details, email addresses and phone numbers.",
       moveContactDescription: ({ name }: { name: string }) => `Choose another address book for ${name}.`,
@@ -201,6 +202,7 @@ export const detailMessages = i18n.define({
       directReports: ({ count }: { count: number }) => `${count} direct report${count === 1 ? "" : "s"}`,
     },
     de: {
+      backToContacts: "Kontakte",
       editContactCommand: ({ name }) => `${name} bearbeiten`,
       editContactDescription: "Kontaktdaten, E-Mail-Adressen und Telefonnummern ändern.",
       moveContactDescription: ({ name }) => `Ein anderes Adressbuch für ${name} auswählen.`,
