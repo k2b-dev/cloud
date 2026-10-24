@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A fixture assumes a framework-specific router helper | An integration test calls `request()` on a public transport that exposes only `fetch(Request)`. | Test: the App-PWA example flow uses the public transport; its explicit test TypeScript project checks fixture calls as well as application code. |
 | Nested database reads escape a reserved transaction | Authorization waits for a second connection or sees an older snapshot. | Test: `users.transaction.integration.test.ts` resolves an uncommitted user with a one-connection pool. |
 | A passive read outlives a newer view action | A delayed status response closes a scanner opened after the poll began. | Test: App-PWA browser regression holds a poll, opens the scanner and delivers the obsolete response. |
 | A stale poll overwrites a newer action | A late device status replaces the next pairing and discards its QR. | Test: the App-PWA example `Staff.test.ts` delays device A, issues B, delivers A and then confirms B; only B may clear its QR. |

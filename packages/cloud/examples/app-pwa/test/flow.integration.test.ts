@@ -48,11 +48,13 @@ suiteFor(
     invalidateIdentityRuntimeConfig();
   });
   const post = (route: string, body: unknown, cookie?: string, csrf?: string) =>
-    pwa.router.request(`${origin}${route}`, {
-      method: "POST",
-      headers: { origin, "content-type": "application/json", ...(cookie ? { cookie } : {}), ...(csrf ? { "X-App-Pwa-CSRF": csrf } : {}) },
-      body: JSON.stringify(body),
-    });
+    pwa.router.fetch(
+      new Request(`${origin}${route}`, {
+        method: "POST",
+        headers: { origin, "content-type": "application/json", ...(cookie ? { cookie } : {}), ...(csrf ? { "X-App-Pwa-CSRF": csrf } : {}) },
+        body: JSON.stringify(body),
+      }),
+    );
   const json = async (response: Response) => {
     expect(response.status).toBe(200);
     return response.json();

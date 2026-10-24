@@ -152,12 +152,14 @@ bun test packages/cloud/examples/app-pwa/test/http.test.ts \
   packages/cloud/examples/app-pwa/test/domain.test.ts \
   packages/cloud/examples/app-pwa/test/render.test.ts
 bun run --cwd packages/cloud typecheck
+bunx --no-install tsc -p packages/cloud/examples/app-pwa/tsconfig.test.json --noEmit
 bunx --no-install biome check packages/cloud/examples/app-pwa
 ```
 
 Browser tests are in `test/Kiosk.browser.test.ts`. They cover customer and
 employee flows, retries, pagination, camera denial, synthetic decoded QR
-delivery through the shared scanner, stale reads, BFCache behavior and
+delivery through the shared scanner, stale reads, real reload/history navigation,
+simulated BFCache restoration and
 light/dark phone and iPad layouts. Run them with the repository's Chromium and
 WebKit runners. Synthetic scanning does not verify a real camera.
 
