@@ -411,6 +411,8 @@ export const exportNotebookZip = async (params: { notebookId: string; exportedAt
   const noteFileByShortId = new Map(flatNotes.map((note) => [note.shortId, noteFileName(note)]));
   const noteShortIdById = new Map(flatNotes.map((note) => [note.id, note.shortId]));
   const attachmentFileByShortId = new Map(attachmentContents.map((attachment) => [attachment.shortId, attachmentFileName(attachment)]));
+  // A note deleted while the export runs is left out, as if it had been gone from the start.
+  const unread = new Set(metadataById.keys());
   after = undefined;
   for (;;) {
     const batch = await notes.readBatch({ notebookId: notebook.id, after });
@@ -418,6 +420,7 @@ export const exportNotebookZip = async (params: { notebookId: string; exportedAt
     for (const note of batch) {
       const metadata = metadataById.get(note.id);
       if (!metadata) continue;
+      unread.delete(note.id);
       const file = noteExportFile(
         { ...metadata, contentMd: note.contentMd, historyIncomplete: note.historyIncomplete },
         noteFileByShortId,
@@ -428,6 +431,10 @@ export const exportNotebookZip = async (params: { notebookId: string; exportedAt
     }
     after = batch.at(-1)!.id;
   }
+  const removed = new Set(
+    [...unread].map((id) => noteExportFile(metadataById.get(id)!, noteFileByShortId, noteShortIdById, attachmentFileByShortId).path),
+  );
+  if (removed.size > 0) files.splice(0, files.length, ...files.filter((file) => !removed.has(file.path)));
   return {
     filename: exportFilename(notebook, exportedAt),
     notebook: {

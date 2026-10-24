@@ -240,3 +240,29 @@ test("exports multiple keyset batches with bounded blob reads and identical port
     contents.mockRestore();
   }
 });
+
+test("a note deleted while the export reads its text is left out", async () => {
+  const exportedAt = new Date("2026-05-28T00:00:00.000Z");
+  const pages = notes.map((note, index) => ({ ...note, id: String(index).padStart(6, "0"), shortId: `n${index}`, parentId: null }));
+  const [kept] = pages;
+  const lookup = spyOn(notebookStore, "get").mockResolvedValue(notebook);
+  // The first pass still sees both notes; by the second one, the other one is gone.
+  const batches = spyOn(noteStore, "readBatch").mockImplementation(async (params) =>
+    params.after !== undefined ? [] : params.includeContent === false ? pages.map((note) => ({ ...note, contentMd: null })) : [kept!],
+  );
+  const metadata = spyOn(attachmentStore, "list").mockResolvedValue([]);
+  try {
+    const result = await exportNotebookZip({ notebookId: notebook.id, exportedAt });
+    const full = buildNotebookExportFiles({ notebook, notes: pages, attachments: [], exportedAt });
+    const expected = buildNotebookExportFiles({ notebook, notes: [kept!], attachments: [], exportedAt });
+    expect(full.length).toBe(expected.length + 1);
+    expect(result?.files.map((file) => file.path)).toEqual(expected.map((file) => file.path));
+    // The kept note still carries its text.
+    const text = (result?.files ?? []).map((file) => (typeof file.content === "string" ? file.content : ""));
+    expect(text.some((content) => content.includes("# API Overview"))).toBe(true);
+  } finally {
+    lookup.mockRestore();
+    batches.mockRestore();
+    metadata.mockRestore();
+  }
+});

@@ -548,9 +548,8 @@ const listCondition = (params: NoteListParams) => {
   const query = params.query?.trim();
   const pattern = `%${query}%`;
   const textCondition = query
-    ? sql`(n.search_document @@ ${buildTextQuery(query)} OR (
-        notebooks.title_grams(n.title) @> notebooks.title_grams(${query}) AND n.title ILIKE ${pattern}
-      ))`
+    ? // Part of a title matches anywhere in it; the search index finds whole words and word starts in the text.
+      sql`(n.title ILIKE ${pattern} OR n.search_document @@ ${buildTextQuery(query)})`
     : sql`true`;
   const parentCondition =
     params.parentId === undefined

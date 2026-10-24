@@ -107,10 +107,8 @@ for (const [index, shape] of ["small", "large"].entries()) {
     const list = await listPaged({ notebookId: notebook.id, query: marker, pagination: { limit: 7, offset: 0 } });
     expect(list.items.map((note) => note.id)).toEqual([notebook.page.id]);
     expect(list.total).toBe(1);
-    await indexedPlan(listPageQuery({ notebookId: notebook.id, query: marker, pagination: { limit: 7, offset: 0 } }), [
-      "idx_notes_search_document",
-      "idx_notes_title_grams",
-    ]);
+    // A title part reads the notebook's own rows, never the whole table.
+    await indexedPlan(listPageQuery({ notebookId: notebook.id, query: marker, pagination: { limit: 7, offset: 0 } }), []);
     await indexedPlan(listPageQuery({ notebookId: notebook.id, pagination: { limit: 7, offset: 0 } }), ["idx_notes_notebook_list"]);
     const filtered = await searchInNotebook({ notebookId: notebook.id, filters: { query: marker }, pagination });
     expect(filtered.hits.map((hit) => hit.note.id)).toEqual([notebook.page.id]);

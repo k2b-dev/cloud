@@ -150,21 +150,6 @@ export const migrate = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_notes_created
     ON notebooks.notes(created_at, id)
   `.simple();
-  // Native array GIN preserves title substrings without requiring pg_trgm. Splitting
-  // LIKE metacharacters leaves only mandatory literal runs on the query side.
-  await sql`
-    CREATE OR REPLACE FUNCTION notebooks.title_grams(value text) RETURNS text[]
-    LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
-      SELECT COALESCE(array_agg(DISTINCT substr(part, gram_start, gram_length)), ARRAY[]::text[])
-      FROM regexp_split_to_table(lower(value), '[%_\\\\]') AS parts(part)
-      CROSS JOIN generate_series(1, 3) AS lengths(gram_length)
-      CROSS JOIN LATERAL generate_series(1, char_length(part) - gram_length + 1) AS positions(gram_start)
-    $$
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_notes_title_grams
-    ON notebooks.notes USING GIN(notebooks.title_grams(title))
-  `.simple();
 
   // Canonical search projection. `simple` keeps mixed-language notebooks
   // predictable; title lexemes rank above body lexemes. This native GIN path
