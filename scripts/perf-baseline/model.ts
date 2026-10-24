@@ -1,16 +1,27 @@
 import { z } from "zod";
 
-export const pageIds = ["document", "faq", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts", "spaces"] as const;
+export const defaultPageIds = [
+  "document",
+  "faq",
+  "mail-mailbox",
+  "assistant-chat",
+  "notebooks-editor",
+  "files",
+  "accounts",
+  "spaces",
+] as const;
+export const pageIds = [...defaultPageIds, "pwa"] as const;
 export type PageId = (typeof pageIds)[number];
-export const pageApps: Record<PageId, string> = {
-  document: "core",
-  faq: "faq",
-  "mail-mailbox": "mail",
-  "assistant-chat": "assistant",
-  "notebooks-editor": "notebooks",
-  files: "filesv2",
-  accounts: "accounts",
-  spaces: "spaces",
+export const pageApps: Record<PageId, string[]> = {
+  document: ["core"],
+  faq: ["faq"],
+  "mail-mailbox": ["mail"],
+  "assistant-chat": ["assistant"],
+  "notebooks-editor": ["notebooks"],
+  files: ["filesv2"],
+  accounts: ["accounts"],
+  spaces: ["spaces"],
+  pwa: ["pwa", "spaces"],
 };
 
 export function parseArgs(args: string[]) {
@@ -23,13 +34,15 @@ export function parseArgs(args: string[]) {
     pages: PageId[];
     out?: string;
     compare?: string;
+    origin?: string;
+    rttMs?: number;
   } = {
     help: false,
     panel: false,
     keep: false,
     skipBuild: false,
     runs: 3,
-    pages: [...pageIds],
+    pages: [...defaultPageIds],
   };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -37,7 +50,7 @@ export function parseArgs(args: string[]) {
     else if (arg === "--panel") options.panel = true;
     else if (arg === "--keep") options.keep = true;
     else if (arg === "--skip-build") options.skipBuild = true;
-    else if (arg === "--runs" || arg === "--pages" || arg === "--out" || arg === "--compare") {
+    else if (arg === "--runs" || arg === "--pages" || arg === "--out" || arg === "--compare" || arg === "--origin" || arg === "--rtt") {
       const value = args[++i];
       if (!value || value.startsWith("--")) throw new Error(`${arg} needs a value`);
       if (arg === "--runs") {
@@ -47,6 +60,14 @@ export function parseArgs(args: string[]) {
       } else if (arg === "--pages") {
         options.pages = z.array(z.enum(pageIds)).min(1).parse(value.split(","));
         if (new Set(options.pages).size !== options.pages.length) throw new Error("--pages contains duplicates");
+      } else if (arg === "--origin") {
+        const url = new URL(value);
+        if (url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash || url.username || url.password)
+          throw new Error("--origin needs an HTTPS origin without path, query, hash or credentials");
+        options.origin = url.origin;
+      } else if (arg === "--rtt") {
+        if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 1000) throw new Error("--rtt needs an integer from 1 to 1000 ms");
+        options.rttMs = Number(value);
       } else if (arg === "--out") options.out = value;
       else options.compare = value;
     } else throw new Error(`Unknown flag: ${arg}`);
@@ -54,6 +75,8 @@ export function parseArgs(args: string[]) {
   if (options.panel && (args.includes("--pages") || options.compare))
     throw new Error("--panel cannot be combined with --pages or --compare");
   if (options.panel) options.pages = [];
+  if (options.origin && (options.pages.length !== 1 || options.pages[0] !== "pwa" || options.skipBuild || options.keep))
+    throw new Error("--origin requires --pages pwa exactly and rejects --skip-build and --keep");
   return options;
 }
 
@@ -109,7 +132,179 @@ export const browserResultSchema = z.object({
   metrics: aggregatesSchema.nullable(),
 });
 export type BrowserResult = z.infer<typeof browserResultSchema>;
+export const pwaProfileIds = ["iphone", "ipad-portrait", "ipad-landscape", "ipad-split-view", "monitor", "phone"] as const;
+export const pwaStepIds = [
+  "launch-first",
+  "launch-warm",
+  "relaunch-start-url",
+  "launch-expired",
+  "launch-timezone",
+  "tab-start-spaces",
+  "tab-spaces-start",
+  "tab-start-settings",
+  "tab-settings-start",
+  "history-back",
+  "history-forward",
+  "language-de",
+  "language-en",
+  "theme-light",
+  "theme-dark",
+  "theme-system",
+  "rename",
+  "check-off",
+] as const;
+export const assetCacheStates = ["cache", "revalidated", "network", "unknown"] as const;
+export type AssetCacheState = (typeof assetCacheStates)[number];
+export const pwaAssetSchema = z.object({
+  path: z.string(),
+  kind: z.enum(["script", "css", "font", "image", "other"]),
+  state: z.enum(assetCacheStates),
+  transferSize: nullableMetric,
+  encodedBodySize: nullableMetric,
+  status: z.number().int().nullable(),
+  repeat: z.boolean(),
+});
+export const pwaDocumentSchema = z.object({
+  path: z.string(),
+  status: z.number().int().nullable(),
+  requestStartMs: z.number().finite().nullable(),
+  responseStartMs: z.number().finite().nullable(),
+  responseEndMs: z.number().finite().nullable(),
+  workerStartMs: z.number().finite().nullable(),
+  transferSize: nullableMetric,
+  serverTiming: z.array(z.object({ name: z.string(), durationMs: z.number().finite().nonnegative() })),
+});
+const pwaTimings = {
+  pressedMs: nullableMetric,
+  titleMs: nullableMetric,
+  contentMs: nullableMetric,
+  mountedMs: nullableMetric,
+  selectedMs: nullableMetric,
+  doneMs: nullableMetric,
+};
+export const pwaStepSchema = z.object({
+  id: z.enum(pwaStepIds),
+  finalPath: z.string().startsWith("/pwa/"),
+  run: z.number().int().positive(),
+  round: z.union([z.literal(1), z.literal(2)]),
+  serviceWorker: z.enum(["allowed", "blocked"]),
+  ...pwaTimings,
+  titleFrame: z.boolean().nullable(),
+  persisted: z.boolean().nullable(),
+  documents: z.array(pwaDocumentSchema),
+  assets: z.array(pwaAssetSchema),
+});
+export type PwaStep = z.infer<typeof pwaStepSchema>;
+export type PwaAsset = z.infer<typeof pwaAssetSchema>;
+export type PwaDocument = z.infer<typeof pwaDocumentSchema>;
+const pwaDistribution = distributionSchema.nullable();
+export const pwaSummaryRowSchema = z.object({
+  id: z.enum(pwaStepIds),
+  round: pwaStepSchema.shape.round,
+  serviceWorker: pwaStepSchema.shape.serviceWorker,
+  samples: z.number().int().nonnegative(),
+  documents: pwaDistribution,
+  pressedMs: pwaDistribution,
+  titleMs: pwaDistribution,
+  contentMs: pwaDistribution,
+  mountedMs: pwaDistribution,
+  selectedMs: pwaDistribution,
+  doneMs: pwaDistribution,
+  responseEndMs: pwaDistribution,
+  serverMs: pwaDistribution,
+  revalidated: pwaDistribution,
+  downloaded: pwaDistribution,
+  repeatedRequests: pwaDistribution,
+  persisted: z.number().min(0).max(1).nullable(),
+});
+export type PwaSummaryRow = z.infer<typeof pwaSummaryRowSchema>;
+export const pwaProfileResultSchema = z.object({
+  profile: z.enum(pwaProfileIds),
+  browser: z.enum(["chromium", "webkit"]),
+  viewport: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }),
+  deviceScaleFactor: z.number().positive(),
+  cpuThrottle: z.number().nullable(),
+  network: browserResultSchema.shape.network,
+  status: z.enum(["ok", "failed", "skipped"]),
+  reason: z.string().nullable(),
+  steps: z.array(pwaStepSchema),
+  summary: z.array(pwaSummaryRowSchema),
+});
+export type PwaProfileResult = z.infer<typeof pwaProfileResultSchema>;
+export const pwaResultSchema = z.object({
+  origin: z.enum(["local", "remote"]),
+  rttMs: z.number().int().positive().nullable(),
+  deviceName: z.string(),
+  notes: z.array(z.string()),
+  profiles: z.array(pwaProfileResultSchema),
+});
+export type PwaResult = z.infer<typeof pwaResultSchema>;
+
+export function assetCacheState(entry: { transferSize: number | undefined; status: number | null }): AssetCacheState {
+  if (entry.status === 304) return "revalidated";
+  if (entry.transferSize === undefined) return "unknown";
+  return entry.transferSize === 0 ? "cache" : "network";
+}
+
+export function summarizePwa(steps: PwaStep[]): PwaSummaryRow[] {
+  const rows: PwaSummaryRow[] = [];
+  for (const id of pwaStepIds)
+    for (const round of [1, 2] as const)
+      for (const serviceWorker of ["allowed", "blocked"] as const) {
+        const samples = steps.filter((step) => step.id === id && step.round === round && step.serviceWorker === serviceWorker);
+        if (!samples.length) continue;
+        // Unsupported observations stay null; mixed samples aggregate only their non-null values.
+        const metric = (read: (step: PwaStep) => number | null) => {
+          const values = samples.map(read).filter((value) => value !== null);
+          return values.length ? aggregate(values) : null;
+        };
+        const persisted = samples.map((step) => step.persisted).filter((value) => value !== null);
+        rows.push({
+          id,
+          round,
+          serviceWorker,
+          samples: samples.length,
+          documents: metric((step) => step.documents.length),
+          pressedMs: metric((step) => step.pressedMs),
+          titleMs: metric((step) => step.titleMs),
+          contentMs: metric((step) => step.contentMs),
+          mountedMs: metric((step) => step.mountedMs),
+          selectedMs: metric((step) => step.selectedMs),
+          doneMs: metric((step) => step.doneMs),
+          responseEndMs: metric((step) => step.documents.at(-1)?.responseEndMs ?? null),
+          serverMs: metric((step) => {
+            const last = step.documents.at(-1);
+            return last ? last.serverTiming.reduce((sum, entry) => sum + entry.durationMs, 0) : null;
+          }),
+          revalidated: metric((step) => step.assets.filter((asset) => asset.state === "revalidated").length),
+          downloaded: metric((step) => step.assets.filter((asset) => asset.state === "network").length),
+          repeatedRequests: metric((step) => step.assets.filter((asset) => asset.repeat && asset.state !== "cache").length),
+          persisted: persisted.length ? persisted.filter(Boolean).length / persisted.length : null,
+        });
+      }
+  return rows;
+}
+
+export function cacheGate(result: PwaResult) {
+  return result.profiles
+    .filter((profile) => profile.browser === "webkit")
+    .map((profile) => {
+      const assets = profile.steps
+        .filter((step) => step.id === "launch-warm" || step.id === "relaunch-start-url" || step.id.startsWith("tab-"))
+        .flatMap((step) => step.assets)
+        .filter((asset) => asset.repeat && asset.state !== "cache" && (asset.path.startsWith("/public/") || asset.path.includes("/_ssr/")));
+      return {
+        profile: profile.profile,
+        revalidated: assets.filter((asset) => asset.state === "revalidated").length,
+        downloaded: assets.filter((asset) => asset.state === "network").length,
+        unknown: assets.filter((asset) => asset.state === "unknown").length,
+        examples: [...new Set(assets.map((asset) => asset.path))].slice(0, 5),
+      };
+    });
+}
+
 export const pageResultSchema = z.object({
+  pwa: pwaResultSchema.optional(),
   id: z.enum(pageIds),
   path: z.string(),
   status: z.enum(["ok", "failed"]),
@@ -365,9 +560,10 @@ export const resultSchema = z.object({
     loadAverage: z.object({ start: z.number().nonnegative(), end: z.number().nonnegative().nullable() }),
     runs: z.number().int().positive(),
     origin: z.string(),
-    transport: z.literal("https-h2-caddy"),
+    transport: z.enum(["https-h2-caddy", "remote"]),
     runtimeImage: z.string(),
-    seedVersion: z.literal(1),
+    seedVersion: z.number().int().positive(),
+    rttMs: z.number().int().positive().nullable().default(null),
   }),
   pages: z.array(pageResultSchema),
   panel: panelSchema.optional(),
@@ -629,6 +825,7 @@ export function renderSummary(result: Result, old?: Result) {
     "# Production performance baseline",
     "",
     `Commit: ${m.commit}${m.dirty ? " (dirty)" : ""} · UTC: ${m.timestamp}`,
+    `Bun ${m.bunVersion} · Playwright ${m.playwrightVersion} · CPUs ${m.cpuCount} · load ${m.loadAverage.start.toFixed(1)} → ${m.loadAverage.end?.toFixed(1) ?? "—"} · ${m.runs} ${result.pages.some((page) => page.id === "pwa") ? "runs" : "cold runs"} per profile`,
     `Bun ${m.bunVersion} · Playwright ${m.playwrightVersion} · CPUs ${m.cpuCount} · load ${m.loadAverage.start.toFixed(1)} → ${m.loadAverage.end?.toFixed(1) ?? "—"} · ${m.runs} ${result.panel ? "warm navigation" : "cold"} runs per profile`,
     `Browsers: ${
       Object.entries(m.browserVersions)
@@ -637,7 +834,9 @@ export function renderSummary(result: Result, old?: Result) {
     }`,
     `Runtime: ${m.runtimeImage} · Seed version: ${m.seedVersion}`,
     `Origin: ${m.origin} · Transport: ${m.transport}`,
-    "Session: throwaway administrator",
+    result.pages.some((page) => page.id === "pwa")
+      ? "Session: paired mobile app; administrator used for pairing"
+      : "Session: throwaway administrator",
     "",
     "Bytes and milliseconds are integers; all browser values below are medians. JS/CSS Brotli columns are build sizes, not measured transfers. Transfers include the encoding the browser negotiated.",
     "",
@@ -652,6 +851,55 @@ export function renderSummary(result: Result, old?: Result) {
   for (const page of result.pages) {
     const reasons: string[] = [];
     lines.push(`## ${page.id} — ${page.path}`, "");
+    if (page.pwa) {
+      const pwa = page.pwa;
+      lines.push(
+        `Origin: ${pwa.origin} · RTT: ${cell(pwa.rttMs)} ms · Device: ${escape(pwa.deviceName)}`,
+        "",
+        ...pwa.notes.map(escape),
+        "",
+      );
+      for (const profile of pwa.profiles) {
+        lines.push(`### ${profile.browser} / ${profile.profile} — ${profile.status}`, "");
+        if (profile.reason) lines.push(escape(profile.reason), "");
+        lines.push(
+          "| Step | Round | SW | Docs | Pressed | Title | Content | Mounted | Selected | Done | Doc end | Server | 304 | Downloads | Re-requests | bfcache |",
+          "| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        );
+        for (const row of profile.summary) {
+          const metrics = [
+            row.documents,
+            row.pressedMs,
+            row.titleMs,
+            row.contentMs,
+            row.mountedMs,
+            row.selectedMs,
+            row.doneMs,
+            row.responseEndMs,
+            row.serverMs,
+            row.revalidated,
+            row.downloaded,
+            row.repeatedRequests,
+          ];
+          lines.push(
+            `| ${row.id} | ${row.round} | ${row.serviceWorker} | ${metrics.map((value) => cell(value?.median)).join(" | ")} | ${row.persisted === null ? "—" : `${Math.round(row.persisted * 100)}%`} |`,
+          );
+        }
+        for (const step of profile.steps.filter((step) => step.id === "relaunch-start-url"))
+          lines.push(
+            `Relaunch through start_url (run ${step.run}, SW ${step.serviceWorker}): ${escape(step.finalPath)}; visible after ${cell(step.doneMs)} ms.`,
+          );
+        lines.push("");
+      }
+      for (const gate of cacheGate(pwa)) {
+        const count = gate.revalidated + gate.downloaded + gate.unknown;
+        lines.push(
+          `WebKit ${gate.profile}: ${count} re-requested /public or /_ssr assets on tab switches and relaunches${count ? ` (${gate.revalidated} revalidated, ${gate.downloaded} downloaded, ${gate.unknown} unknown): ${gate.examples.map(escape).join(", ")}` : ""}`,
+        );
+      }
+      lines.push("", ...page.notes.map(escape), ...page.errors.map((error) => `Failed: ${escape(error)}`), "");
+      continue;
+    }
     if (page.static) {
       const s = page.static;
       lines.push(

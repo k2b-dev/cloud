@@ -97,6 +97,9 @@ export const placesAndMapsMessages = i18n.define({
       usageFailedDetail: "Maps and place search keep working. Budget and limits apply as set.",
       monthReached: ({ when }: Reset) => `Monthly budget reached. Maps and place search are off until ${when}.`,
       monthReachedDetail: "Raise the budget if it should continue sooner.",
+      routeCostOverruns: ({ count }: Count) => `${count} route calculations exceeded their estimate this month`,
+      routeCostOverrunsDetail:
+        "Later route steps stopped. Review charged and unresolved costs under core.geo.route_cost_overrun in the audit log before retrying.",
       peopleAtLimit: ({ count }: Count) =>
         count === "1" ? "1 person reached the daily limit today." : `${count} people reached the daily limit today.`,
       peopleAtLimitDetail: ({ when }: Reset) => `For them it continues at ${when}. The limit is the same for everyone, agents included.`,
@@ -193,6 +196,9 @@ export const placesAndMapsMessages = i18n.define({
       usageFailedDetail: "Karten und Ortssuche laufen weiter. Budget und Grenzen gelten wie eingestellt.",
       monthReached: ({ when }: Reset) => `Monatsbudget erreicht. Karten und Ortssuche sind bis ${when}, aus.`,
       monthReachedDetail: "Erhöhe das Budget, wenn es früher weitergehen soll.",
+      routeCostOverruns: ({ count }: Count) => `${count} Routenberechnungen waren diesen Monat teurer als geschätzt`,
+      routeCostOverrunsDetail:
+        "Weitere Routenschritte wurden gestoppt. Prüfe gebuchte und ungeklärte Kosten unter core.geo.route_cost_overrun im Audit-Protokoll vor einem neuen Versuch.",
       peopleAtLimit: ({ count }: Count) =>
         count === "1" ? "1 Person hat heute ihre Tagesgrenze erreicht." : `${count} Personen haben heute ihre Tagesgrenze erreicht.`,
       peopleAtLimitDetail: ({ when }: Reset) => `Für sie geht es ab ${when} weiter. Die Grenze gilt für alle gleich, auch für Agenten.`,

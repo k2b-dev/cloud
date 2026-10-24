@@ -13,9 +13,10 @@ import {
   UserProfileSchema,
   UserProviderSchema,
 } from "../contracts";
-import { type AuthContext, auth, expectUserBackedActor, jsonResponse, requiresAuth, respond, v } from "../server";
+import { type AuthContext, auth, jsonResponse, requiresAuth, respond, userFromActor, v } from "../server";
 import { noTransform } from "../server/middleware/no-transform";
 import { accountsAppService as accountsService } from "../services";
+import { directoryShares } from "../services/accounts/directory-shares";
 
 const EntitiesListResponseSchema = z.object({
   items: z.array(EntityListItemSchema),
@@ -87,30 +88,30 @@ const parseUuidList = (value: string | undefined, label: string) => {
 
 type AccountsEntitiesRouteDependencies = {
   authenticate?: MiddlewareHandler<AuthContext>;
-  requireUser?: MiddlewareHandler<AuthContext>;
   listEntities?: typeof accountsService.entity.list;
+  searchShares?: typeof directoryShares.search;
 };
 
 export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRouteDependencies = {}) =>
   new Hono<AuthContext>().use("/entities/*", noTransform()).get(
     "/entities",
     dependencies.authenticate ?? auth.requireRole("authenticated"),
-    dependencies.requireUser ?? auth.requireUser(),
     describeRoute({
       tags: ["Accounts"],
-      summary: "List mixed users and groups",
+      summary: "List visible directory entries",
       description:
-        "List visible users and groups with SQL-backed filtering and pagination. Guest accounts see only themselves and their effective groups; relation filters require a full user account. Personal Linux groups (a user's private primary group, flagged with `personalOwner`) are left out unless `include_personal=true`; exact `group_ids` lookups and relation filters always return them.",
+        "List visible users and groups with SQL-backed filtering and pagination. Guest accounts see only themselves and their effective groups; relation filters require a full user account. Standalone and agent accounts with read scope see only explicitly shared directory entries and cannot query relationships. Personal Linux groups (a user's private primary group, flagged with `personalOwner`) are left out unless `include_personal=true`; exact `group_ids` lookups and relation filters always return them.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(EntitiesListResponseSchema, "Paginated mixed entity list"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
-        403: jsonResponse(ErrorResponseSchema, "User-backed account required; relation filters require a full account"),
+        403: jsonResponse(ErrorResponseSchema, "Directory read access required; relation filters require a full user account"),
       },
     }),
     v("query", QuerySchema),
     async (c) => {
-      const user = expectUserBackedActor(c);
+      const actor = c.get("actor");
+      const user = userFromActor(actor);
       const query = c.req.valid("query");
       const usesRelationFilter = Boolean(
         query.user_member_of_group_ids ||
@@ -119,7 +120,7 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
           query.parent_group_id ||
           query.managed_by_user_id,
       );
-      if (!user.roles.includes("user") && usesRelationFilter) {
+      if (user && !user.roles.includes("user") && usesRelationFilter) {
         return respond(c, fail(err.forbidden("Guest accounts cannot use entity relation filters")));
       }
       const params = parsePagination(query);
@@ -138,14 +139,7 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
       const groupIds = parseUuidList(query.group_ids, "group_ids");
       if (!groupIds.ok) return respond(c, fail(err.badInput(groupIds.message)));
 
-      const result = await (dependencies.listEntities ?? accountsService.entity.list)({
-        actor: {
-          userId: user.id,
-          uid: user.uid,
-          roles: user.roles,
-          provider: user.provider,
-        },
-        pagination: { page: params.page, perPage: params.perPage },
+      const filters = {
         search: query.search,
         kinds: kinds.value,
         provider: query.provider,
@@ -162,6 +156,20 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
         managedByUserId: query.managed_by_user_id,
         recursive: query.recursive === "true",
         includePersonal: query.include_personal === "true",
+      };
+      if (!user) {
+        const result = await (dependencies.searchShares ?? directoryShares.search)({
+          actor,
+          requestId: c.req.header("x-request-id"),
+          query: { ...filters, page: params.page, perPage: params.perPage },
+        });
+        if (!result.ok) return respond(c, result);
+        return c.json({ items: result.data.items, pagination: createPagination(params, result.data.total) });
+      }
+      const result = await (dependencies.listEntities ?? accountsService.entity.list)({
+        actor: { userId: user.id, uid: user.uid, roles: user.roles, provider: user.provider },
+        pagination: { page: params.page, perPage: params.perPage },
+        ...filters,
       });
 
       return respond(c, {
