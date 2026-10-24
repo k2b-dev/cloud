@@ -1,6 +1,6 @@
 import { type CapabilityCatalogClientResult, invokeCapability, listCapabilityCatalog } from "@k2b/cloud/capabilities";
 import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
-import type { ResourceCardState } from "@k2b/ui";
+import type { ResourceCardColor, ResourceCardState } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { z } from "zod";
 
@@ -11,8 +11,13 @@ export type ResourceCardView = {
   state: Exclude<ResourceCardState, "loading">;
   title?: string;
   icon?: string;
+  /** The kind's colour, declared by the owning app for the element's type. */
+  color?: ResourceCardColor;
+  /** What and where the element is, in the reader's language, from the owning app. */
+  context?: string;
+  status?: string;
+  /** The app's name, where the element says nothing about what and where it is. */
   source?: string;
-  preview?: string;
   href?: string;
 };
 
@@ -24,7 +29,8 @@ const ReaderDataSchema = z.object({
         id: z.string(),
         title: z.string().optional(),
         icon: z.string().optional(),
-        preview: z.string().optional(),
+        context: z.string().optional(),
+        status: z.string().optional(),
       }),
     )
     .optional(),
@@ -167,9 +173,11 @@ export const createResourceCards = (
         state: "ok",
         title: current?.title,
         icon: current?.icon ?? type?.icon,
-        // Type titles in manifests are not translated; the app's name is.
-        source: app.appName,
-        preview: current?.preview,
+        color: type?.color,
+        context: current?.context,
+        status: current?.status,
+        // Type titles in manifests are not translated; the app's name is, so it stands in for a missing context.
+        source: current?.context ? undefined : app.appName,
         href,
       };
     } finally {

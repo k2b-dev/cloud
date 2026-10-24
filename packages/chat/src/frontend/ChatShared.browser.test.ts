@@ -40,7 +40,12 @@ const load = async (options: BrowserContextOptions, address: { chat: string; pan
 /** A team chat where Nora shared a task the viewer may open, a task they may not, and a link. */
 const seed = () => {
   const chat = harness.addChat({ members: [viewer, nora, tobias], name: "IT", count: 4, end: new Date(chatTestNow.getTime() - 3_600_000) });
-  const open = harness.addElement({ id: "cooling", title: "Delivery cooling shelves", preview: "Task in IT planning · due 30.10." });
+  const open = harness.addElement({
+    id: "cooling",
+    title: "Delivery cooling shelves",
+    context: "Task in IT planning · due 30.10.",
+    status: "Open",
+  });
   const hidden = harness.addElement({ id: "old-case", title: "Old case", readable: false });
   harness.receiveShared(chat, nora, "Here is the task:", [open]);
   harness.receiveShared(chat, nora, "And the old case:", [hidden]);
@@ -60,11 +65,25 @@ describe("Shared Cloud elements", () => {
         const card = page.locator(".k2b-message-row", { hasText: "Here is the task:" }).locator(".k2b-resource-card");
         await card.getByText("Delivery cooling shelves", { exact: true }).waitFor();
         expect(await card.getAttribute("href")).toBe("/app/spaces/task/cooling");
+        // What and where above the title, the state at the end, the kind's colour on the icon (Chat v12).
+        expect(
+          (await card.innerText())
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean),
+        ).toEqual(["Task in IT planning · due 30.10.", "Delivery cooling shelves", "Open"]);
+        expect(await card.getAttribute("data-color")).toBe("emerald");
         const hidden = page.locator(".k2b-message-row", { hasText: "And the old case:" }).locator(".k2b-resource-card");
         await page.locator('.k2b-resource-card[data-state="no_access"]').waitFor();
         await until(() => harness.readerCalls() >= 2);
         // Without access, nothing of the element shows: no title, no place.
         expect(await hidden.innerText()).not.toContain("Old case");
+        expect(
+          (await hidden.innerText())
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean),
+        ).toEqual(["Cloud element", "Item not available", "You have no access. Title and content stay hidden."]);
         expect(errors).toEqual([]);
       } finally {
         await page.context().close();
@@ -98,7 +117,7 @@ describe("Shared Cloud elements", () => {
 
   test("the composer shares an element from the picker; a message may be only the element", async () => {
     const chat = harness.addChat({ members: [viewer, nora], count: 3, end: new Date(chatTestNow.getTime() - 3_600_000) });
-    harness.addElement({ id: "inventory", title: "Inventory hall 3", preview: "Event in Warehouse · Mon 27.10." });
+    harness.addElement({ id: "inventory", title: "Inventory hall 3", context: "Event in Warehouse · Mon 27.10." });
     const { page, errors } = await load(desktop, { chat });
     try {
       await page.getByRole("button", { name: "Add to chat", exact: true }).click();

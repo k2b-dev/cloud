@@ -52,7 +52,7 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 :::
 
 :::reference
-- The element shows as a card in the message. Choose the card to open the element.
+- The element shows as a card in the message: what and where it is, such as "Task in IT planning · due 30 Oct", its title, and its status, such as **Open**. Choose the card to open the element.
 - Each person sees only what they may see. Without access to the element, the card says **Item not available** and shows no title or place.
 - Sharing an element gives nobody access to it.
 :::

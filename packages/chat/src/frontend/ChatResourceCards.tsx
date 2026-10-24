@@ -51,8 +51,10 @@ export default function ChatResourceCards(props: { refs: readonly CloudResourceR
               state={view()?.state ?? "loading"}
               title={view()?.title}
               icon={view()?.icon}
+              color={view()?.color}
+              context={view()?.context}
+              status={view()?.status}
               source={view()?.source}
-              preview={view()?.preview}
               href={view()?.href}
             />
           );

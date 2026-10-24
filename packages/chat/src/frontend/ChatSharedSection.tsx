@@ -232,7 +232,9 @@ function SharedRow(props: { item: SharedItem; meta: string; cards: ResourceCards
         </span>
         <span class="chat-shared__copy">
           <span class="chat-shared__title">{title() || " "}</span>
-          <span class="chat-shared__meta">{unavailable() ? `${t().noAccess} · ${props.meta}` : props.meta}</span>
+          <span class="chat-shared__meta">
+            {unavailable() ? `${t().noAccess} · ${props.meta}` : view()?.status ? `${view()?.status} · ${props.meta}` : props.meta}
+          </span>
         </span>
       </button>
     </li>

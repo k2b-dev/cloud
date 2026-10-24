@@ -225,3 +225,49 @@ test("cards that ran out of time while waiting are read first next time", async 
   }
   await Promise.all(again.map((card) => card.view));
 });
+
+test("a card shows what and where the element is, its state and its kind's colour, and the app's name only without that", async () => {
+  const described: typeof invokeCapability = async (invocation) => {
+    const { id } = z.object({ id: z.string() }).parse(invocation.input);
+    return {
+      ok: true,
+      data: {
+        data: {},
+        refs: [{ type: "spaces.task", id, title: "Hand out laptops", context: "Task in IT planning · due 30 Oct", status: "Open" }],
+        links: [{ rel: "open", href: `/app/spaces/${id}` }],
+      },
+    };
+  };
+  const coloured: typeof listCapabilityCatalog = async () => ({
+    ok: true,
+    data: {
+      protocolVersion: 2,
+      apps: [
+        {
+          appId: "spaces",
+          appName: "Spaces",
+          appIcon: "ti ti-layout-kanban",
+          appDescription: "",
+          manifest: { ...manifest, types: [{ ...manifest.types[0]!, color: "emerald" as const }] },
+        },
+      ],
+      page: { hasMore: false },
+    },
+  });
+  const cards = createResourceCards({
+    listCapabilityCatalog: coloured,
+    invokeCapability: described,
+    now: () => 0,
+    timeout: () => new AbortController().signal,
+  });
+  expect(await cards.view(ref("x")).view).toEqual({
+    state: "ok",
+    title: "Hand out laptops",
+    icon: "ti ti-circle",
+    color: "emerald",
+    context: "Task in IT planning · due 30 Oct",
+    status: "Open",
+    source: undefined,
+    href: "/app/spaces/x",
+  });
+});
