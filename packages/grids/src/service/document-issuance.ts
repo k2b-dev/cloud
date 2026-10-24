@@ -458,7 +458,11 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       return ok(buffered);
     } catch (error) {
       const known = serviceError(error);
-      if (known) return fail({ ...known, message: t.profilePreviewFailed });
+      if (known)
+        return fail({
+          ...known,
+          message: known.code === "busy" ? t.pdfBusy : t.profilePreviewFailed,
+        });
       return fail(err.badInput(t.profilePreviewFailed));
     }
   };

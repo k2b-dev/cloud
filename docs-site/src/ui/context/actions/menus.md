@@ -117,11 +117,13 @@ hint.
 ## Menu width
 
 Menus size to their entries, so a caller does not need to know a width. A menu
-is as wide as its longest label or description, at least `12rem` (`18rem` for
+is as wide as its longest label, at least `12rem` (`18rem` for
 `variant="touch"`, `13rem` for `FilterChip`, and `10rem` for `SelectChip`), and
 at most the viewport width less `1rem` per side. An entry or section label
 longer than that wraps instead of ending in an ellipsis, and an unbroken word
-breaks, so every label stays readable on a phone. A radio choice reserves its
+breaks, so every label stays readable on a phone. A description wraps at
+`16rem` and never widens the menu past that, so a long explanation reads as a
+short paragraph under its label instead of stretching the menu. A radio choice reserves its
 check mark while unchecked, so choosing an option never widens an open menu.
 `ContextMenu` follows the same rule with a `13rem` minimum and `0.5rem` to each
 viewport edge, and is measured before it is clamped beside the pointer. When

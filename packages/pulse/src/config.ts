@@ -1,9 +1,14 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 import { NOTIFICATIONS } from "./notifications";
 import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "pulse",
+  // APIs admit roleless service accounts; navigation keeps its narrower audience.
+  access: appAccess.signedIn({
+    // Ingest-only source keys keep their scope, binding and domain checks.
+    publicRoutes: ["/api/pulse/openapi.json", "/api/pulse/ingest"],
+  }),
   cli: { pulse: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Pulse",
   icon: "ti ti-activity-heartbeat",

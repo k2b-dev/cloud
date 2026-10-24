@@ -44,8 +44,8 @@ test("accepts calm notice content, icons in controls, and overrides outside noti
         '    <NoticeCard tone="info" title="Remote images are blocked" bodyClass="flex flex-col gap-2">',
         '      <h2 class="font-semibold text-primary">Endpoints</h2>',
         '      <dl><dt class="text-dimmed">Token</dt><dd><code class="break-all">/oauth/token</code></dd></dl>',
-        '      <Button variant="secondary" size="xs"><i class="ti ti-photo" aria-hidden="true" />Load images</Button>',
-        '      <IconButton label="Close"><i class="ti ti-x" /></IconButton>',
+        '      <Button variant="secondary" size="xs"><i class="ti ti-photo text-lg" aria-hidden="true" />Load images</Button>',
+        '      <IconButton label="Close"><i class="ti ti-x text-[18px]" /></IconButton>',
         "    </NoticeCard>",
         '    <span class="text-xs opacity-70 bg-blue-100"><i class="ti ti-info-circle" /></span>',
         "  </div>",
@@ -53,4 +53,21 @@ test("accepts calm notice content, icons in controls, and overrides outside noti
       ].join("\n"),
     ),
   ).toEqual([]);
+});
+
+test("control icon sizes do not exempt colours, opacity or the control's text", async () => {
+  expect(
+    await findings(
+      [
+        'export const Panel = () => <NoticeCard tone="info">',
+        '  <IconButton label="Close">',
+        '    <i class="ti ti-x text-[18px] text-[red] opacity-50" />',
+        '    <span class="text-sm">Close</span>',
+        '    <i class="ti ti-x text-[1.125rem]"><span class="text-sm">Text</span></i>',
+        "  </IconButton>",
+        '  <p class="text-[18px]">Notice content</p>',
+        "</NoticeCard>;",
+      ].join("\n"),
+    ),
+  ).toEqual([3, 4, 5, 7].map((line) => `packages/demo/src/Panel.tsx:${line}`));
 });
