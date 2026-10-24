@@ -25,6 +25,9 @@ convention still needs a check or a test.
 | --- | --- | --- |
 | A stale poll overwrites a newer action | A late device status replaces the next pairing and discards its QR. | Test: the App-PWA example `Staff.test.ts` delays device A, issues B, delivers A and then confirms B; only B may clear its QR. |
 | A focused fixture performs unrelated startup or expensive data preparation | Route tests spend their budget importing unrelated services or compressing fixtures at maximum quality. | Tests: Gateway App-PWA routing fixtures isolate configuration/audit modules; the Brotli response fixture uses quality 4 while retaining original timeout bounds and response assertions. |
+| Transaction adapter loses driver execution semantics | Lazy query arrays are returned without executing their writes. | Test: App-PWA savepoint unit and integration guards cover array execution and rollback. |
+| Driver parameter encoding differs from the stored domain shape | Serialized JSON becomes a JSON string and plain UUID arrays fail binding. | Test: App-PWA service integration round-trips subjects, results and device lists; bind serialized JSON through text and use typed SQL arrays. |
+| A test gate reads a navigating frame instead of its requested resource | WebKit can still report the initial frame URL and bypass the intended delay. | Test: `ChatPanel.browser.test.ts` gates a provider-marked runtime URL and asserts interception before checking readiness. |
 | A formatter exposes ambiguous generic TSX syntax | Removing the trailing comma from a generic arrow with a default type makes the Solid/Babel test transform parse it as JSX. | Test: `PermissionEditor.behavior.test.tsx` runs through the actual Solid DOM preload; use a generic function declaration for the deferred helper and run the test after formatting. |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
@@ -1038,6 +1041,26 @@ convention still needs a check or a test.
 - **Root cause:** Awaiting keyboard dispatch did not wait for the browser's link navigation.
 - **Error class:** Reading asynchronous state before the completion condition.
 - **Guard:** `data-table-focus.browser.test.ts` waits for the destination URL, then retains its exact URL and callback-count assertions without increasing timeouts.
+
+### Serialized JSON was bound as a JSON string
+
+- **What happened:** An App-PWA visit could be claimed, but its next domain operation rejected the stored subject.
+- **Root cause:** Binding `JSON.stringify(value)` directly to a `jsonb` parameter made Bun encode a JSON string. A bare JavaScript UUID array also failed PostgreSQL array binding.
+- **Error class:** Driver parameter encoding differs from the stored domain shape.
+- **Guard:** `service.integration.test.ts` round-trips visit subjects, command results and device lists through real PostgreSQL. Serialized JSON uses `::text::jsonb`; UUID lists use `sql.array(ids, "uuid")`.
+
+### Preserve lazy SQL array execution in transaction adapters
+
+- **What happened:** A savepoint could report success without executing the queries returned in its callback array.
+- **Root cause:** The guarded adapter awaited the callback but did not assimilate the array's lazy Bun queries before release.
+- **Error class:** Transaction adapter loses driver execution semantics.
+- **Guard:** App-PWA transaction unit and PostgreSQL integration tests require array writes to execute before release and roll back together on failure.
+### A frame URL did not identify a pending script request
+
+- **What happened:** The delayed PanelRuntime test sometimes observed an already ready panel in WebKit ([#1833](https://github.com/k2b-dev/cloud/issues/1833)).
+- **Root cause:** The route selected a script using its frame’s current URL, which can still be the initial URL while the new document loads.
+- **Error class:** A test gate depends on navigation timing instead of the resource it holds.
+- **Guard:** The fixture marks runtime script URLs by provider; the test holds the Assistant URL unconditionally and asserts interception before checking that the panel is not ready.
 
 ## Add a lesson
 

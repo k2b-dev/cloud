@@ -235,10 +235,14 @@ suite("App-PWA durable service", () => {
     const f = await visiting();
     const attemptId = id();
     const input = { revision: 1, signature: "Customer", finish: true };
-    const results = await Promise.all([
+    const attempts = await Promise.allSettled([
       service.command(f.boot.credential, f.visit.id, "sign", attemptId, input),
       service.command(f.boot.credential, f.visit.id, "sign", attemptId, input),
     ]);
+    const results = attempts.map((attempt) => {
+      if (attempt.status === "rejected") throw attempt.reason;
+      return attempt.value;
+    });
     expect(results.map((result) => result.replayed).sort()).toEqual([false, true]);
     expect(await saved()).toBe(1);
     expect((await service.attempt(f.boot.credential, f.visit.id, attemptId)).state).toBe("committed");
@@ -466,9 +470,10 @@ suite("App-PWA durable service", () => {
       const oldSignIn = signIn;
       if (reason === "logout") await sql`UPDATE auth.session_families SET revoked_at=clock_timestamp() WHERE sid=${oldSignIn.sid}::uuid`;
       if (reason === "family-expiry")
-        await sql`UPDATE auth.session_families SET expires_at=clock_timestamp()-interval '1 second' WHERE sid=${oldSignIn.sid}::uuid`;
+        await sql`UPDATE auth.session_families SET issued_at=clock_timestamp()-interval '1 hour',expires_at=clock_timestamp()-interval '1 second' WHERE sid=${oldSignIn.sid}::uuid`;
       if (reason === "epoch") await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${ownerId}::uuid`;
-      if (reason === "signing-key") await sql`UPDATE auth.signing_keys SET state='revoked' WHERE kid=${oldSignIn.sid}`;
+      if (reason === "signing-key")
+        await sql`UPDATE auth.signing_keys SET state='revoked',revoked_at=clock_timestamp(),revoke_reason='test' WHERE kid=${oldSignIn.sid}`;
       signIn = await createTestBrowserSignIn(ownerId);
       const expected = reason === "family-expiry" ? "expired" : "revoked";
       expect((await service.deviceStatus(signIn, f.device.id)).state).toBe(expected);
