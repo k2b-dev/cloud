@@ -25,7 +25,7 @@ const retention = (ctx: BaseSchemaContext) => {
   const sensitive = z.number().int().min(1).max(8760).parse(ctx.sensitiveRetentionHours);
   return {
     raw: `toDateTime(ts) + toIntervalDay(${raw})`,
-    rollup: `bucket + toIntervalDay(${rollup})`,
+    rollup: `bucket + INTERVAL 1 HOUR + toIntervalDay(${rollup})`,
     sensitive: `toDateTime(ts) + toIntervalHour(${sensitive})`,
     changes: `toDateTime(changed_at) + toIntervalDay(${raw})`,
   };
@@ -38,6 +38,7 @@ export const baseTtlStatements = (ctx: BaseSchemaContext) => {
     `ALTER TABLE ${db}._rollups MODIFY TTL ${ttl.rollup}`,
     `ALTER TABLE ${db}._state_changes MODIFY TTL ${ttl.changes}`,
     `ALTER TABLE ${db}._events MODIFY COLUMN sensitive String DEFAULT '' TTL ${ttl.sensitive}`,
+    ...baseReadRetentionStatements(ctx),
   ];
 };
 export const BASE_SCHEMA_VERSIONS = [
@@ -168,5 +169,41 @@ export const BASE_SCHEMA_VERSIONS = [
     },
   },
   { version: 3, statements: (ctx: BaseSchemaContext): string[] => sqlHelperStatements(assertStoreName(ctx.database, ctx.prefix)) },
+  { version: 4, statements: (ctx: BaseSchemaContext): string[] => baseReadRetentionStatements(ctx) },
 ];
-export const LATEST_BASE_SCHEMA_VERSION = 3;
+export const LATEST_BASE_SCHEMA_VERSION = 4;
+
+/** Read retention is independent of asynchronous TTL merges and delayed rollups.
+ * Maintenance reads internal tables so it can still finish protected old hours. */
+export const baseReadRetentionStatements = (ctx: BaseSchemaContext): string[] => {
+  retention(ctx); // Validate every interpolated retention value.
+  const db = assertStoreName(ctx.database, ctx.prefix);
+  const rollupColumns = ["sample_count", "value_sum", "value_min", "value_max", "last_value", "last_ts", "increase", "increase_seconds"];
+  const view = (name: string, select: string) =>
+    `CREATE OR REPLACE VIEW ${db}.${q(name)} DEFINER = CURRENT_USER SQL SECURITY DEFINER AS ${select}`;
+  return [
+    view(
+      "samples",
+      `SELECT series_id,ts,argMax(src.value,src.version) AS value FROM ${db}._samples AS src
+      WHERE ts>=toStartOfHour(now64(3,'UTC')-toIntervalDay(${ctx.rawRetentionDays})) GROUP BY series_id,ts`,
+    ),
+    view(
+      "rollups",
+      `SELECT series_id,bucket,${rollupColumns.map((c, i) => `tupleElement(argMax(tuple(${rollupColumns.map((column) => `src.${column}`).join(", ")}),src.version),${i + 1}) AS ${c}`).join(", ")}
+      FROM ${db}._rollups AS src WHERE bucket>=toStartOfHour(now64(3,'UTC')-toIntervalDay(${ctx.rollupRetentionDays})) GROUP BY series_id,bucket`,
+    ),
+    view(
+      "events",
+      `SELECT id,ts,kind,source_id,value,actor_id,session_id,correlation_id,resource_key,resource_type,resource_id,dimensions,attributes
+      FROM ${db}._events FINAL WHERE ts>=now64(3,'UTC')-toIntervalDay(${ctx.rawRetentionDays})`,
+    ),
+    // Helpers may calculate retained hourly history from protected raw rows while
+    // aggregation is delayed. Direct raw reads still use the shorter raw cutoff.
+    ...sqlHelperStatements(
+      db,
+      `(SELECT series_id,ts,argMax(src.value,src.version) AS value FROM ${db}._samples AS src
+      WHERE ts>=toStartOfHour(now64(3,'UTC')-toIntervalDay(${Math.max(ctx.rawRetentionDays, ctx.rollupRetentionDays)})) GROUP BY series_id,ts)`,
+      `toStartOfHour(now64(3,'UTC')-toIntervalDay(${ctx.rawRetentionDays}))`,
+    ),
+  ];
+};
