@@ -39,6 +39,9 @@ test("Studio lists open details with all management actions; publication and ver
     async fetch(request) {
       const url = new URL(request.url),
         path = url.pathname;
+      // This is the edit-chat destination, not another autostarting Studio page.
+      if (path === "/edited")
+        return new Response("<!doctype html><p>Edit chat destination</p>", { headers: { "content-type": "text/html" } });
       if (path === "/bundle.js") return new Response(code, { headers: { "content-type": "text/javascript; charset=utf-8" } });
       if (path === "/ui.css") return new Response(Bun.file(new URL("../../../ui/dist/styles.css", import.meta.url)));
       if (path === "/app.css") return new Response(Bun.file(new URL("../styles/app.css", import.meta.url)));
@@ -188,6 +191,7 @@ test("Studio lists open details with all management actions; publication and ver
     await page.getByRole("button", { name: "Actions", exact: true }).click();
     await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
     await page.waitForURL("**/edited");
+    await page.getByText("Edit chat destination", { exact: true }).waitFor();
     await page.goto(new URL("/view", server.url).href);
     expect(await running(page)).toBe("2");
     await page.getByRole("button", { name: "Versions", exact: true }).click();
@@ -260,6 +264,7 @@ test("Studio lists open details with all management actions; publication and ver
     await page.getByText("Access stays unchanged", { exact: false }).waitFor();
     await page.getByRole("dialog").getByRole("button", { name: "Publish", exact: true }).click();
     await page.waitForURL("**/apps/*/run");
+    expect(await running(page)).toBe("2");
     expect<number | null>(publishedRevision).toBe(2);
     longCatalog = true;
     await page.goto(new URL("/view?studio=1", server.url).href);

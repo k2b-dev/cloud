@@ -1025,6 +1025,13 @@ convention still needs a check or a test.
 - **Error class:** Reading asynchronous state before the completion condition.
 - **Guard:** `data-table-focus.browser.test.ts` waits for the destination URL, then retains its exact URL and callback-count assertions without increasing timeouts.
 
+### Browser destinations must not mount unrelated applications
+
+- **What happened:** Studio's WebKit navigation test reported runtime fetch errors while leaving its dummy edit-chat page.
+- **Root cause:** The fixture mounted another autostarting Studio instance at that destination; the next navigation interrupted its requests. The fullscreen step also left before the app was ready.
+- **Error class:** A browser fixture creates unintended asynchronous work between assertions.
+- **Guard:** `apps.browser.test.ts` serves a static edit-chat destination and verifies the fullscreen app's visible revision before navigating onward. Runtime error assertions and timeouts remain unchanged.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its
