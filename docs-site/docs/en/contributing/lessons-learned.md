@@ -1028,6 +1028,13 @@ explicitly documented identity reason for an excluding shared picker.
 - **Error class:** Incomplete propagation of a shared identity contract.
 - **Guard:** The canonical membership migration and authoritative group resolver cover both machine kinds. Tests check grant use and revocation, recursive relations, named rows, and eligible choices before pagination.
 
+### Confirmation disabled its own focus-return target
+
+- **What happened:** Canceling an access-removal dialog sometimes left focus on the page instead of the Remove button ([#1767](https://github.com/k2b-dev/cloud/issues/1767)).
+- **Root cause:** Mutation loading disabled the opener while awaiting confirmation; the dialog's focus-return frame could run before history cleanup resolved the callback.
+- **Error class:** Confirmation and saving share a disabled state.
+- **Guard:** PermissionEditor keeps its operation lock during confirmation but disables controls only for the write. Browser regressions hold confirmation across focus return and check that Cancel restores the exact opener without a write. Queued focus callbacks check disposal before reading the document.
+
 ### Group recipients stopped at user-only consumers
 
 - **What happened:** Local machine members could inherit a group grant while application contexts and assignee lists still omitted their groups.
@@ -1041,13 +1048,6 @@ explicitly documented identity reason for an excluding shared picker.
 - **Root cause:** The route required a user before reaching its permission-aware service.
 - **Error class:** Applying an identity-kind gate to resource authority.
 - **Guard:** Spaces, Notebooks, and Contacts token tests grant both account kinds management access, use it within scopes, preserve the last manager, and deny access after revocation. Personal credential-management routes retain their separate contract.
-
-### Confirmation disabled its own focus-return target
-
-- **What happened:** Canceling an access-removal dialog sometimes left focus on the page instead of the Remove button ([#1767](https://github.com/k2b-dev/cloud/issues/1767)).
-- **Root cause:** Mutation loading disabled the opener while awaiting confirmation; the dialog's focus-return frame could run before history cleanup resolved the callback.
-- **Error class:** Confirmation and saving share a disabled state.
-- **Guard:** PermissionEditor keeps its operation lock during confirmation but disables controls only for the write. Browser regressions hold confirmation across focus return and check that Cancel restores the exact opener without a write. Queued focus callbacks check disposal before reading the document.
 
 ### A notice check treated control icons as prose
 
