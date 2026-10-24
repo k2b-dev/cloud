@@ -657,6 +657,11 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   // "For you" as the server answers it, set by the test; failing reads answer 503.
   let forYou: z.infer<typeof ForYouItemSchema>[] = [];
   let failingForYou = 0;
+  const forYouFails = () => {
+    if (failingForYou <= 0) return false;
+    failingForYou -= 1;
+    return true;
+  };
   const list = (archived = false, unread = false, ids?: string[], cursor?: z.infer<typeof ConversationQuerySchema>["cursor"]) => {
     const items = [...chats.values()]
       .map((chat) => chat.conversation)
@@ -744,7 +749,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
       channelsPage: address.channelsPage,
       channelQuery: address.query,
       forYouPage: address.forYouPage,
-      forYouInitial: address.forYouPage ? (failingForYou > 0 ? null : { items: forYou, nextCursor: null }) : undefined,
+      // The server's first page is a read like any other, so a failing read makes it absent.
+      forYouInitial: address.forYouPage ? (forYouFails() ? null : { items: forYou, nextCursor: null }) : undefined,
       cursor: `c.${cursor}`,
       sidebar: list(address.archived, address.filter === "unread"),
       archived: address.archived,
@@ -994,10 +1000,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
         });
       }
       if (url.pathname === "/api/chat/for-you" && request.method === "GET") {
-        if (failingForYou > 0) {
-          failingForYou -= 1;
-          return Response.json({ message: "Unavailable" }, { status: 503 });
-        }
+        if (forYouFails()) return Response.json({ message: "Unavailable" }, { status: 503 });
         return Response.json({ items: forYou, nextCursor: null });
       }
       const candidates = /^\/api\/chat\/conversations\/([^/]+)\/mention-candidates$/.exec(url.pathname);
@@ -1728,6 +1731,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     readElsewhere: read,
     /** Isolates scenarios; IDs stay unique so a closing page cannot report against a later chat. */
     reset: () => {
+      forYou = [];
+      failingForYou = 0;
       collapsed = [];
       allowAuthenticated = true;
       chats.clear();
