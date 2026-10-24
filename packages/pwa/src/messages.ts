@@ -53,6 +53,7 @@ export const shellMessages = i18n.define({
       signOut: "Sign out of the app",
       signOutConfirm: ({ cloud }: Cloud) => `To use the app again on this phone, pair it with ${cloud} on the web.`,
       // Start
+      start: "Start",
       apps: "Apps",
       settings: "Settings",
       noApps: "No apps for your phone yet.",
@@ -117,6 +118,7 @@ export const shellMessages = i18n.define({
       tryAgain: "Erneut versuchen",
       signOut: "Von der App abmelden",
       signOutConfirm: ({ cloud }: Cloud) => `Um die App auf diesem Telefon wieder zu nutzen, kopple sie im Web mit ${cloud}.`,
+      start: "Start",
       apps: "Apps",
       settings: "Einstellungen",
       noApps: "Noch keine Apps für dein Telefon.",

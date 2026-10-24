@@ -304,6 +304,7 @@ suite("chat messages", () => {
           k: `l:${chat.shortId}`,
           d: {
             type: "summary",
+            thread: null,
             createdAt: message.createdAt,
             conversationId: chat.shortId,
             id: message.id,

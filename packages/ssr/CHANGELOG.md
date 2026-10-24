@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.20.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.19.0...npm-ssr-v0.20.0) (2026-10-23)
+
+
+### Features
+
+* **cloud:** keep the shell and panel during in-app page changes ([#1653](https://github.com/k2b-dev/cloud/issues/1653)) ([7dc9247](https://github.com/k2b-dev/cloud/commit/7dc92472f4eada6534a6a55c4e9bef3d0e90168d))
+* **ui:** keep workspace controls reachable across layouts ([#1661](https://github.com/k2b-dev/cloud/issues/1661)) ([9a53dff](https://github.com/k2b-dev/cloud/commit/9a53dff2d06dd60749e15b08dc5056570652b0ca))
+
+
+### Bug Fixes
+
+* **deps:** remove vulnerable runtime and build dependency copies ([#1682](https://github.com/k2b-dev/cloud/issues/1682)) ([fba8cb9](https://github.com/k2b-dev/cloud/commit/fba8cb99b44b4684f74ff00a91e6e61237e17c9c))
+* **ssr:** pass spread island props to the browser ([#1781](https://github.com/k2b-dev/cloud/issues/1781)) ([9c0cc00](https://github.com/k2b-dev/cloud/commit/9c0cc00ec7a50f1790ee851300596b92a66c385c))
+
 ## [0.19.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.18.0...npm-ssr-v0.19.0) (2026-10-20)
 
 

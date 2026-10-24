@@ -1,22 +1,35 @@
 import { describe, expect, test } from "bun:test";
 import { toJSON } from "seroval";
+import { help } from "../perf-baseline";
 import {
   aggregate,
   aggregateMetrics,
+  assetCacheState,
   assetPath,
+  cacheGate,
   closure,
   cumulativeLayoutShift,
   decodeAttribute,
+  defaultPageIds,
   failedRequestError,
   inspectHtml,
   interactive,
   longTaskMetrics,
   metricNames,
   metricsSchema,
+  type PwaAsset,
+  type PwaProfileResult,
+  type PwaResult,
+  type PwaStep,
+  pageApps,
   parseArgs,
+  pwaProfileResultSchema,
+  pwaResultSchema,
+  pwaStepSchema,
   renderSummary,
   resultSchema,
   sortedJson,
+  summarizePwa,
   timeToInteractive,
   validatePage,
 } from "./model";
@@ -368,4 +381,231 @@ describe("performance baseline contracts", () => {
     expect(summary.indexOf("webkit / desktop: launch unavailable")).toBeGreaterThan(summary.indexOf("| webkit / phone: skipped |"));
     expect(profile.metrics.ttiMs).toEqual({ median: 400, min: 350, max: 500 });
   });
+});
+
+const pwaStep = (input: Partial<PwaStep> = {}): PwaStep =>
+  pwaStepSchema.parse({
+    id: "tab-start-spaces",
+    finalPath: "/pwa/spaces",
+    run: 1,
+    round: 1,
+    serviceWorker: "allowed",
+    pressedMs: 10,
+    titleMs: 12,
+    contentMs: 100,
+    mountedMs: 120,
+    selectedMs: null,
+    doneMs: null,
+    titleFrame: true,
+    persisted: null,
+    documents: [],
+    assets: [],
+    ...input,
+  });
+const pwaProfile = (input: Partial<PwaProfileResult> = {}): PwaProfileResult =>
+  pwaProfileResultSchema.parse({
+    profile: "iphone",
+    browser: "webkit",
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 3,
+    cpuThrottle: null,
+    network: null,
+    status: "ok",
+    reason: null,
+    steps: [pwaStep()],
+    summary: [],
+    ...input,
+  });
+const pwaResult = (profiles = [pwaProfile()]): PwaResult => ({
+  origin: "local",
+  rttMs: null,
+  deviceName: "perf-2026-10-14",
+  notes: [],
+  profiles,
+});
+const asset = (input: Partial<PwaAsset> = {}): PwaAsset => ({
+  path: "/public/pwa/app.css",
+  kind: "css",
+  state: "cache",
+  transferSize: 0,
+  encodedBodySize: 10,
+  status: 200,
+  repeat: true,
+  ...input,
+});
+
+test("pwa is opt-in; existing origins are HTTPS and restricted to the mobile flows", () => {
+  expect(parseArgs([]).pages).toEqual([...defaultPageIds]);
+  expect(parseArgs(["--pages", "pwa,faq"]).pages).toEqual(["pwa", "faq"]);
+  expect(pageApps.pwa).toEqual(["pwa", "spaces"]);
+  expect(parseArgs(["--pages", "pwa", "--origin", "https://example.test:443/"])).toMatchObject({ origin: "https://example.test" });
+  for (const origin of [
+    "http://example.test",
+    "https://example.test/path",
+    "https://example.test/?a=1",
+    "https://example.test/#a",
+    "https://user:pass@example.test",
+    "invalid",
+  ])
+    expect(() => parseArgs(["--pages", "pwa", "--origin", origin])).toThrow();
+  for (const extra of [["--pages", "faq"], ["--pages", "pwa,faq"], ["--pages", "pwa", "--skip-build"], ["--pages", "pwa", "--keep"], []])
+    expect(() => parseArgs(["--origin", "https://example.test", ...extra])).toThrow();
+  for (const value of ["1", "2", "1000"]) expect(parseArgs(["--rtt", value]).rttMs).toBe(Number(value));
+  for (const value of ["0", "-1", "1001", "2.5", "NaN", "1ms"]) expect(() => parseArgs(["--rtt", value])).toThrow();
+  expect(() => parseArgs(["--rtt"])).toThrow();
+});
+
+test("the PWA schema accepts complete steps and rejects invalid timing, step and cache states", () => {
+  const valid = pwaResult();
+  expect(pwaResultSchema.parse(valid)).toEqual(valid);
+  const step = pwaStep();
+  expect(() => pwaStepSchema.parse({ ...step, contentMs: -1 })).toThrow();
+  expect(() => pwaStepSchema.parse({ ...step, mountedMs: Number.POSITIVE_INFINITY })).toThrow();
+  expect(() => pwaStepSchema.parse({ ...step, id: "tab-unknown" })).toThrow();
+  expect(() => pwaStepSchema.parse({ ...step, assets: [asset({}), { ...asset(), state: "cached" }] })).toThrow();
+});
+
+const legacyResult = () => ({
+  schemaVersion: 1,
+  metadata: {
+    commit: "old",
+    dirty: false,
+    timestamp: "2026-10-09T00:00:00.000Z",
+    bunVersion: "1.4.2",
+    playwrightVersion: "1.63.0",
+    browserVersions: {},
+    cpuCount: 4,
+    loadAverage: { start: 0, end: 0 },
+    runs: 3,
+    origin: "https://localhost:4100",
+    transport: "https-h2-caddy",
+    runtimeImage: "oven/bun:test",
+    seedVersion: 1,
+  },
+  pages: [{ id: "document", path: "/legal/privacy", status: "ok", errors: [], notes: [], static: null, browsers: [] }],
+  errors: [],
+});
+
+test("pre-change schemaVersion 1 results still parse for comparison", () => {
+  const parsed = resultSchema.parse(legacyResult());
+  expect(parsed.metadata.rttMs).toBeNull();
+  expect(parsed.metadata.seedVersion).toBe(1);
+  expect(parsed.pages[0]?.pwa).toBeUndefined();
+  expect(
+    resultSchema.parse({
+      ...legacyResult(),
+      metadata: { ...legacyResult().metadata, transport: "remote", runtimeImage: "none", seedVersion: 2, rttMs: 120 },
+    }).metadata.transport,
+  ).toBe("remote");
+});
+
+test("asset cache classification gives 304 priority over missing or zero transfer size", () => {
+  expect(assetCacheState({ status: 304, transferSize: undefined })).toBe("revalidated");
+  expect(assetCacheState({ status: 304, transferSize: 0 })).toBe("revalidated");
+  expect(assetCacheState({ status: 200, transferSize: undefined })).toBe("unknown");
+  expect(assetCacheState({ status: null, transferSize: 0 })).toBe("cache");
+  expect(assetCacheState({ status: 200, transferSize: 123 })).toBe("network");
+});
+
+test("PWA summaries group by step, round and worker, preserve nulls, and aggregate mixed samples", () => {
+  const document = {
+    path: "/pwa/spaces",
+    status: 200,
+    requestStartMs: 10,
+    responseStartMs: 30,
+    responseEndMs: 60,
+    workerStartMs: 5,
+    transferSize: 100,
+    serverTiming: [
+      { name: "db", durationMs: 5 },
+      { name: "ssr", durationMs: 10 },
+    ],
+  };
+  const steps = [
+    pwaStep({ round: 2, contentMs: 400 }),
+    pwaStep({
+      run: 3,
+      contentMs: 200,
+      documents: [document],
+      assets: [asset({ state: "revalidated" }), asset({ state: "network" })],
+      persisted: true,
+    }),
+    pwaStep({ contentMs: null, selectedMs: 20, persisted: false }),
+    pwaStep({ run: 2, contentMs: 100 }),
+    pwaStep({ serviceWorker: "blocked" }),
+    pwaStep({ id: "launch-first" }),
+  ];
+  const rows = summarizePwa(steps);
+  expect(rows.map((row) => [row.id, row.round, row.serviceWorker])).toEqual([
+    ["launch-first", 1, "allowed"],
+    ["tab-start-spaces", 1, "allowed"],
+    ["tab-start-spaces", 1, "blocked"],
+    ["tab-start-spaces", 2, "allowed"],
+  ]);
+  expect(rows[1]).toMatchObject({
+    samples: 3,
+    contentMs: { median: 150, min: 100, max: 200 },
+    doneMs: null,
+    selectedMs: { median: 20, min: 20, max: 20 },
+    responseEndMs: { median: 60, min: 60, max: 60 },
+    serverMs: { median: 15, min: 15, max: 15 },
+    persisted: 0.5,
+    documents: { median: 0, min: 0, max: 1 },
+    repeatedRequests: { median: 0, min: 0, max: 2 },
+  });
+});
+
+test("the cache gate counts only repeated public/SSR non-cache assets on WebKit tab switches and warm launch", () => {
+  const counted = [
+    asset({ state: "revalidated" }),
+    asset({ state: "network", path: "/app/spaces/_ssr/123/a.js" }),
+    asset({ state: "unknown", path: "/public/font.woff2" }),
+  ];
+  const steps = [
+    pwaStep({ assets: [...counted, asset(), asset({ repeat: false, state: "network" }), asset({ path: "/api/me", state: "network" })] }),
+    pwaStep({ id: "launch-warm", assets: counted }),
+    pwaStep({ id: "relaunch-start-url", assets: counted }),
+    pwaStep({ id: "launch-first", assets: counted }),
+    pwaStep({ id: "rename", assets: counted }),
+  ];
+  expect(cacheGate(pwaResult([pwaProfile({ steps }), pwaProfile({ browser: "chromium", profile: "phone", steps })]))).toEqual([
+    { profile: "iphone", revalidated: 3, downloaded: 3, unknown: 3, examples: counted.map((entry) => entry.path) },
+  ]);
+  const many = pwaResult([
+    pwaProfile({ steps: [pwaStep({ assets: Array.from({ length: 8 }, (_, i) => asset({ path: `/public/${i}.js`, state: "network" })) })] }),
+  ]);
+  expect(cacheGate(many)[0]?.examples).toHaveLength(5);
+});
+
+test("PWA Markdown includes the step medians, device and cache gate without the cold-load table", () => {
+  const profile = pwaProfile();
+  profile.summary = summarizePwa(profile.steps);
+  const result = resultSchema.parse({
+    ...legacyResult(),
+    pages: [{ id: "pwa", path: "/pwa/", status: "ok", errors: [], notes: [], static: null, browsers: [], pwa: pwaResult([profile]) }],
+  });
+  const summary = renderSummary(result);
+  expect(summary).toContain("Device: perf-2026-10-14");
+  expect(summary).toContain(
+    "| Step | Round | SW | Docs | Pressed | Title | Content | Mounted | Selected | Done | Doc end | Server | 304 | Downloads | Re-requests | bfcache |",
+  );
+  expect(summary).toContain("| tab-start-spaces | 1 | allowed | 0 | 10 | 12 | 100 | 120 | — | — |");
+  expect(summary).toContain("WebKit iphone: 0 re-requested /public or /_ssr assets on tab switches and relaunches");
+  expect(summary).not.toContain("| Browser / profile |");
+});
+
+test("help lists the opt-in mobile flows, remote token and added RTT", () => {
+  for (const term of ["pwa", "--origin", "--rtt", "PERF_BASELINE_ADMIN_TOKEN", "ipad-landscape", "check-off"]) expect(help).toContain(term);
+});
+
+test("start_url relaunch keeps its visible arrival and final path in JSON and Markdown", () => {
+  const step = pwaStep({ id: "relaunch-start-url", round: 2, finalPath: "/pwa/spaces?view=mine", doneMs: 84, titleMs: 84 });
+  const profile = pwaProfile({ steps: [step], summary: summarizePwa([step]) });
+  const result = resultSchema.parse({
+    ...legacyResult(),
+    pages: [{ id: "pwa", path: "/pwa/", status: "ok", errors: [], notes: [], static: null, browsers: [], pwa: pwaResult([profile]) }],
+  });
+  expect(result.pages[0]?.pwa?.profiles[0]?.steps[0]).toMatchObject({ finalPath: "/pwa/spaces?view=mine", doneMs: 84 });
+  expect(renderSummary(result)).toContain("Relaunch through start_url (run 1, SW allowed): /pwa/spaces?view=mine; visible after 84 ms.");
+  expect(() => pwaStep({ finalPath: "/auth/login" })).toThrow();
 });
