@@ -95,7 +95,24 @@ export const spaceActivityRow = (
       ? formatDeadline(allDay ? dates.formatDateKey(value, dateConfig) : value, dateConfig)
       : null;
   const assignees = event.action === "item.assignees.updated" ? event.metadata : event.metadata.assignees;
-  if (event.action === "task.created" || event.action === "event.created") {
+  const assigneeList = (key: "added" | "removed"): unknown[] => {
+    if (!assignees || typeof assignees !== "object") return [];
+    const value: unknown = Reflect.get(assignees, key);
+    return Array.isArray(value) ? value : [];
+  };
+  const assigneesChanged = assigneeList("added").length > 0 || assigneeList("removed").length > 0;
+  // One row can stand for several changes of an hour. When they are of different kinds, no single one of them may
+  // speak for the row: it says that the item changed.
+  const kinds = new Set([
+    ...changed.map((field) =>
+      field === "columnId" ? "status" : field === "startsAt" || field === "endsAt" || field === "allDay" ? "schedule" : String(field),
+    ),
+    ...(event.action === "item.moved" ? ["status"] : []),
+    ...(assigneesChanged ? ["assignees"] : []),
+  ]);
+  if ((event.action === "task.updated" || event.action === "event.updated" || event.action === "item.moved") && kinds.size > 1) {
+    // The generic sentence and pencil already stand.
+  } else if (event.action === "task.created" || event.action === "event.created") {
     sentence = t.created(words);
     icon = "ti ti-plus";
   } else if (event.action === "task.completed" || event.action === "event.completed") {
@@ -136,9 +153,9 @@ export const spaceActivityRow = (
           : t.checklist
     )(words);
     icon = "ti ti-list-check";
-  } else if (assignees && typeof assignees === "object") {
-    const added = "added" in assignees && Array.isArray(assignees.added) ? assignees.added : [];
-    const removed = "removed" in assignees && Array.isArray(assignees.removed) ? assignees.removed : [];
+  } else if (assigneesChanged) {
+    const added = assigneeList("added");
+    const removed = assigneeList("removed");
     sentence = (
       added.includes(options.assigneeId) ? t.assignedToYou : removed.includes(options.assigneeId) ? t.unassignedYou : t.assignees
     )(words);

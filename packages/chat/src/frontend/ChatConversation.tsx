@@ -43,7 +43,7 @@ export type ChatFeedItem = {
   /** An event's icon. */
   icon?: string;
   /** A group of three or more events in a row: its line, and whether its events show below it. */
-  group?: { label: string; time: string; expanded: boolean; toggle: () => void };
+  group?: { label: string; time: string; expanded: () => boolean; toggle: () => void };
   authorId: string;
   authorName: string;
   body: string;
@@ -396,7 +396,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               label={item.group.label}
               time={item.group.time}
               dateTime={item.at}
-              expanded={item.group.expanded}
+              expanded={item.group.expanded()}
               onToggle={item.group.toggle}
             />
           ) : item.kind === "event" ? (

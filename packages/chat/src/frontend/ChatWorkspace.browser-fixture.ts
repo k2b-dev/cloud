@@ -207,6 +207,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   let failingShared = 0;
   // Changes the owning app reports for a Space or notebook chat, as GET …/events answers them.
   const itemEvents = new Map<string, z.infer<typeof ItemEventSchema>[]>();
+  let failingItemEvents = 0;
   let failingSystems = 0;
   let systemThreadPageSize = 100;
   const systemRequests: { path: string; query: Record<string, string> }[] = [];
@@ -1426,6 +1427,10 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
           return data ? Response.json(data) : Response.json({ code: "NOT_FOUND", message: "Message not found." }, { status: 404 });
         }
         if (part === "events" && request.method === "GET") {
+          if (failingItemEvents > 0) {
+            failingItemEvents -= 1;
+            return Response.json({ items: [], nextCursor: null, unavailable: true });
+          }
           const thread = url.searchParams.get("thread") ?? "all";
           const after = url.searchParams.get("after");
           const before = url.searchParams.get("before");
@@ -1692,8 +1697,13 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     addItemEvents: (chat: string, list: z.infer<typeof ItemEventSchema>[]) => {
       itemEvents.set(chat, [...(itemEvents.get(chat) ?? []), ...list]);
     },
+    /** The next item event reads answer that the owning app is unavailable. */
+    failItemEvents: (times = 1) => {
+      failingItemEvents = times;
+    },
     reset: () => {
       itemEvents.clear();
+      failingItemEvents = 0;
       collapsed = [];
       allowAuthenticated = true;
       chats.clear();

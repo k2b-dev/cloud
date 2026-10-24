@@ -143,6 +143,41 @@ describe("Item events in a Space chat", () => {
     }, 30_000);
   }
 
+  test("a group keeps the keyboard focus while it opens and closes", async () => {
+    const { chat } = seed();
+    const { page, errors } = await load(desktop, { chat });
+    try {
+      const group = feed(page).getByRole("button", { name: /^4 Änderungen an/ });
+      await group.focus();
+      await page.keyboard.press("Enter");
+      await feed(page).getByText("Elif hat die Beschreibung geändert").waitFor();
+      expect(await group.evaluate((element) => element === document.activeElement)).toBe(true);
+      await page.keyboard.press("Enter");
+      await feed(page).getByText("Elif hat die Beschreibung geändert").waitFor({ state: "detached" });
+      expect(await group.getAttribute("aria-expanded")).toBe("false");
+      expect(await group.evaluate((element) => element === document.activeElement)).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("when the owning app is unavailable the chat says so and reads the changes again on request", async () => {
+    const { chat } = seed();
+    harness.failItemEvents(1);
+    const { page, errors } = await load(desktop, { chat });
+    try {
+      await page.getByText("Die Änderungen an den Elementen konnten nicht geladen werden.").waitFor();
+      expect(await feed(page).locator(".k2b-message-event-row").count()).toBe(0);
+      await page.getByRole("button", { name: "Erneut versuchen" }).click();
+      await feed(page).getByText("Mara hat den Status auf „In Prüfung“ gesetzt").waitFor();
+      await page.getByText("Die Änderungen an den Elementen konnten nicht geladen werden.").waitFor({ state: "detached" });
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("an item's thread shows only its own changes, without item labels", async () => {
     const { chat, light } = seed();
     const { page, errors } = await load(desktop, { chat, thread: light });

@@ -61,3 +61,15 @@ test("formats all-day schedules in the caller's local calendar", () => {
   const scheduled = { ...event, metadata: { changed: ["startsAt"], startsAt: "2026-10-22T22:00:00Z", allDay: true } };
   expect(spaceActivityRow(scheduled, options).sentence).toBe("Mara moved the event to Fri, Oct 23");
 });
+test("an hour's bucket of different changes reads as one neutral change; an empty assignment is no change", () => {
+  // Assigned someone, then changed the description within the hour: the assignment must not speak for the row.
+  const mixed = { ...event, metadata: { changed: ["description"], assignees: { added: ["nora"], removed: [] } } };
+  expect(spaceActivityRow(mixed, options).sentence).toBe("Mara changed the task");
+  const moveAndDeadline = { ...event, metadata: { changed: ["columnId", "deadline"], columnName: "Done", deadline: "2026-10-30" } };
+  expect(spaceActivityRow(moveAndDeadline, options).sentence).toBe("Mara changed the task");
+  // One kind of change, spread over several fields, still names it.
+  const schedule = { ...event, metadata: { changed: ["startsAt", "endsAt"], startsAt: "2026-10-30T16:00:00Z" } };
+  expect(spaceActivityRow(schedule, options).sentence).toStartWith("Mara moved");
+  const empty = { ...event, metadata: { changed: ["description"], assignees: { added: [], removed: [] } } };
+  expect(spaceActivityRow(empty, options).sentence).toBe("Mara changed the description");
+});
