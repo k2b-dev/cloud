@@ -2,13 +2,13 @@ import { spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CloudRuntime } from "@k2b/cloud/contracts";
-import type { AuthContext } from "@k2b/cloud/server";
-import { session } from "@k2b/cloud/services";
-import { createConfig } from "@k2b/ssr";
-import { createSSRHandler } from "@k2b/ssr/hono";
 import { Hono } from "hono";
-import { adminFixtureIdentity } from "../../store/admin-identity.test-fixture";
+import { createStatusPreservingSsrHandler } from "../packages/cloud/src/_internal/status-preserving-ssr";
+import type { CloudRuntime } from "../packages/cloud/src/contracts";
+import type { AuthContext } from "../packages/cloud/src/server";
+import { session } from "../packages/cloud/src/services";
+import { adminFixtureIdentity } from "../packages/pulse/src/store/admin-identity.test-fixture";
+import { createConfig } from "../packages/ssr/src/index.ts";
 
 const root = mkdtempSync(join(tmpdir(), "pulse-admin-navigation-"));
 const snapshot = createConfig({
@@ -18,17 +18,17 @@ const snapshot = createConfig({
 });
 Bun.plugin(snapshot.plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const config = await import("../../config");
-const baseAdmin = await import("../../service/base-admin");
-const { storeAdmin } = await import("../../store/service");
+const config = await import("../packages/pulse/src/config");
+const baseAdmin = await import("../packages/pulse/src/service/base-admin");
+const { storeAdmin } = await import("../packages/pulse/src/store/service");
 // Keep the real route guards, page, AdminLayout and registry metadata. Replace
-// only platform service preloads with the public SSR adapter, as in the workspace fixture.
+// only unrelated platform service preloads; retain the production access-aware SSR adapter.
 const originalSsr = config.ssr;
-const ssr = spyOn(config, "ssr").mockImplementation(Object.assign(createSSRHandler(snapshot.html), originalSsr));
+const ssr = spyOn(config, "ssr").mockImplementation(Object.assign(createStatusPreservingSsrHandler(snapshot.html), originalSsr));
 // Bun's spy wrapper does not retain function properties. The real route must
 // still receive the original SSR access/error handlers, including login redirects.
 Object.assign(config.ssr, originalSsr);
-const routes = await import("./page").finally(() => ssr.mockRestore());
+const routes = await import("../packages/pulse/src/frontend/admin/page").finally(() => ssr.mockRestore());
 const server = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>()
   .use("*", async (c, next) => {
     c.set("runtime", { apps: [config.app.meta] });

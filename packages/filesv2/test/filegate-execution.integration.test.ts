@@ -8,11 +8,12 @@ import { suiteFor } from "../../../scripts/fixtures/test-infra";
 
 // Disposable Linux roots in a private container: never attach existing application volumes.
 const dockerAvailable = (await Bun.$`docker info`.quiet().nothrow()).exitCode === 0;
-const suite = dockerAvailable ? suiteFor("filegate") : describe.skip;
+// The database target opts into the integration run in CI; this suite starts its own Filegate.
+const suite = dockerAvailable ? suiteFor("database") : describe.skip;
 const name = `filesv2-execution-${randomUUID()}`;
 const volume = `${name}-data`;
 const identity = { uid: 12345, gid: 12345, groups: [] };
-const version = "7.0.0";
+const version = "7.1.0";
 let directory: string;
 let ownsVolume = false;
 let client: Filegate;
@@ -212,6 +213,24 @@ roots:
         )?.status,
       ).toBe(403);
       expect((await error(() => cloud.stat("denied-history.txt")))?.status).toBe(404);
+    });
+
+    test("default search normalizes accents and word order while preserving sorted pagination", async () => {
+      for (const [root, path] of [
+        [cloud, "search-defaults"],
+        [unix, "home/search-defaults"],
+      ] as const) {
+        await root.mkdir(path);
+        for (const name of ["Café-report-a.txt", "Café-report-b.txt", "unrelated.txt"]) await root.put(`${path}/${name}`, new Blob([name]));
+        const options = { path, sort: "name", limit: 1 } as const;
+        const first = await root.search("report cafe", options);
+        expect(first.items.map((item) => item.path)).toEqual([`${path}/Café-report-a.txt`]);
+        expect(first.next).toBeDefined();
+        const second = await root.search("report cafe", { ...options, after: first.next });
+        expect(second.items.map((item) => item.path)).toEqual([`${path}/Café-report-b.txt`]);
+        expect(second.next).toBeUndefined();
+        expect((await root.search("reprot cafe", { path })).items).toEqual([]);
+      }
     });
 
     test("indexed Unix search observes external additions without rebuilding and rejects unreadable subtrees", async () => {

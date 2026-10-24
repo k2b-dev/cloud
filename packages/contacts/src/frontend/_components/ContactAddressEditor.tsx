@@ -1,6 +1,6 @@
 import type { GeoAvailabilityData } from "@k2b/cloud/contracts/geo";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { announce, Button, InlineGuidance, TextInput, useLocale } from "@k2b/ui";
+import { announce, Button, IconButton, InlineGuidance, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact } from "../../service";
@@ -106,9 +106,9 @@ export default function ContactAddressEditor(props: Props) {
     >
       <div class="contacts-address-editor__heading">
         <div class="contacts-address-editor__titlebar">
-          <Button class="contacts-address-editor__phone-back" variant="ghost" aria-label={detail().backToContact} onClick={props.onCancel}>
+          <IconButton class="contacts-address-editor__phone-back" variant="ghost" label={detail().backToContact} onClick={props.onCancel}>
             <i class="ti ti-chevron-left" aria-hidden="true" />
-          </Button>
+          </IconButton>
           <h2 ref={heading} tabindex="-1">
             {t().editAddressTitle}
           </h2>
