@@ -303,6 +303,18 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(grid.match(/k2b-notice-card/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
+  test("an icon notice adds one decorative tone icon and keeps the plain notice unchanged", () => {
+    const status = renderToString(() =>
+      createComponent(NoticeCard, { tone: "warning", icon: "ti ti-alert-triangle", children: "No one manages access." }),
+    );
+    const plain = renderToString(() => createComponent(NoticeCard, { tone: "warning", children: "No one manages access." }));
+
+    expect(status).toContain("data-icon");
+    expect(status).toContain('<i class="ti ti-alert-triangle k2b-notice-card__icon" aria-hidden="true"></i>');
+    expect(plain).not.toContain("data-icon");
+    expect(plain).not.toContain("<i");
+  });
+
   test("preserves placeholder state semantics", () => {
     const loading = renderToString(() =>
       createComponent(Placeholder, { title: "Loading", state: "loading", surface: "paper", variant: "panel" }),

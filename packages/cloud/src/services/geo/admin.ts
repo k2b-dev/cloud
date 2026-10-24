@@ -146,7 +146,7 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
     const config = await readGeoConfig();
     const periods = geoPeriods(now(), config.timezone);
     const plan = config.plan === "custom" ? { dailyCredits: config.customDailyCredits } : GEO_PLANS[config.plan];
-    const [[month], [today], shares] = await Promise.all([
+    const [[month], [today], shares, [overruns]] = await Promise.all([
       db<
         { used: number }[]
       >`SELECT used::float8 AS used FROM geo.usage WHERE scope = 'cloud' AND subject = '*' AND period = ${periods.cloud.period}`,
@@ -155,6 +155,8 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
         FROM geo.usage WHERE scope = 'person' AND period = ${periods.person.period}`,
       db<{ function_group: string; used: number }[]>`
         SELECT function_group, used::float8 AS used FROM geo.shares WHERE scope = 'cloud' AND subject = '*' AND period = ${periods.cloud.period}`,
+      db<{ count: number }[]>`SELECT count(*)::int AS count FROM audit.events
+        WHERE action = 'core.geo.route_cost_overrun' AND metadata->>'period' = ${periods.cloud.period}`,
     ]);
     return {
       month: {
@@ -174,6 +176,7 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
         credits: (shares.find((row) => row.function_group === group)?.used ?? 0) / 1000,
       })),
       peopleAtLimit: today?.at_limit ?? 0,
+      routeCostOverruns: overruns?.count ?? 0,
       timezone: config.timezone,
     };
   };

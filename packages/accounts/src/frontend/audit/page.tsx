@@ -128,8 +128,13 @@ export default ssr<AuthContext>(async (c) => {
           ? principalLabel({ principal: { type: "service_account", serviceAccountId: target.id ?? "" }, displayName: target.label }, locale)
           : (target.label ?? target.id ?? "-");
   // Selected filters name their identity even when no event on this page carries it; one batch per kind.
+  // Some writers record only the actor's user ID, so those actors are resolved in the same batch.
   const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  const unnamedActorIds = [
+    ...new Set(eventsPage.items.flatMap((event) => (event.actor.userId && !event.actor.uid ? [event.actor.userId] : []))),
+  ];
   const selected = await resolveDisplayNames([
+    ...unnamedActorIds.map((userId) => ({ principal: { type: "user" as const, userId } })),
     ...(isUuid(state.actor) ? [{ principal: { type: "user" as const, userId: state.actor } }] : []),
     ...(isUuid(state.target)
       ? [{ principal: { type: "user" as const, userId: state.target } }, { principal: { type: "group" as const, groupId: state.target } }]
@@ -142,6 +147,15 @@ export default ssr<AuthContext>(async (c) => {
   // Only an identity that still exists has a name; the rest keep the localized fallback.
   const found = (principal: Selected) =>
     selected.find((entry) => entry.displayName !== undefined && JSON.stringify(entry.principal) === JSON.stringify(principal));
+  const actorLabel = (actor: AuditEvent["actor"]) =>
+    actor.userId
+      ? principalLabel(
+          actor.uid
+            ? { principal: { type: "user", userId: actor.userId }, displayName: actor.uid }
+            : (found({ type: "user", userId: actor.userId }) ?? { principal: { type: "user", userId: actor.userId } }),
+          locale,
+        )
+      : (actor.uid ?? t.system);
   const actorFilterLabel = isUuid(state.actor)
     ? principalLabel(found({ type: "user", userId: state.actor }) ?? { principal: { type: "user", userId: state.actor } }, locale)
     : state.actor;
@@ -165,10 +179,7 @@ export default ssr<AuthContext>(async (c) => {
     {
       id: "actor",
       header: t.actor,
-      value: (event) =>
-        event.actor.userId
-          ? principalLabel({ principal: { type: "user", userId: event.actor.userId }, displayName: event.actor.uid }, locale)
-          : (event.actor.uid ?? t.system),
+      value: (event) => actorLabel(event.actor),
     },
     { id: "action", header: t.action, value: (event) => actionLabel(event.action, t) },
     { id: "target", header: t.target, value: (event) => targetLabel(event.target) },
@@ -268,22 +279,20 @@ export default ssr<AuthContext>(async (c) => {
                 renderCell={({ row: event, col }) => {
                   if (col.id === "time") return <span class="text-dimmed">{dates.formatDateTime(event.createdAt, { locale })}</span>;
                   if (col.id === "actor") {
-                    const actorLabel = event.actor.userId
-                      ? principalLabel({ principal: { type: "user", userId: event.actor.userId }, displayName: event.actor.uid }, locale)
-                      : (event.actor.uid ?? t.system);
+                    const label = actorLabel(event.actor);
                     return (
                       <div class="flex min-w-0 items-center gap-2">
-                        <AccountAvatar name={actorLabel} userId={event.actor.userId} size="xs" />
+                        <AccountAvatar name={label} userId={event.actor.userId} size="xs" />
                         <div class="min-w-0 flex-1">
                           {event.actor.userId ? (
                             <ButtonLink
                               href={buildAuditUrl({ ...state, actor: event.actor.userId, page: 1 })}
                               class="block truncate font-medium text-primary hover:underline"
                             >
-                              {actorLabel}
+                              {label}
                             </ButtonLink>
                           ) : (
-                            <span class="block truncate font-medium text-primary">{actorLabel}</span>
+                            <span class="block truncate font-medium text-primary">{label}</span>
                           )}
                           {event.actor.provider ? <Tag>{event.actor.provider}</Tag> : null}
                         </div>
