@@ -1,3 +1,4 @@
+import { isPromise } from "node:util/types";
 import type { ReservedSQL, SQL, TransactionSQL } from "bun";
 import * as bun from "bun";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
@@ -59,6 +60,9 @@ export const withAppPwaTransactionLease = async <T>(
     if (typeof result !== "object" || result === null || !("cancel" in result) || typeof result.cancel !== "function") return result;
     const existing = guardedQueries.get(result);
     if (existing) return existing;
+    // ReservedSQL.close rejects even never-started Query promises. Observe the
+    // native promise without invoking Query.then(), which would execute lazy SQL.
+    if (isPromise(result)) void Promise.prototype.then.call(result, undefined, () => {});
     const cancel = result.cancel;
     const query: { cancel(): void; pending?: Promise<unknown> } = { cancel: () => Reflect.apply(cancel, result, []) };
     queries.add(query);
