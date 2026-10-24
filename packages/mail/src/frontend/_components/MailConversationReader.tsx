@@ -26,7 +26,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { batch, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
 import type {
@@ -76,6 +76,7 @@ type MailConversationComposerRequest = {
 type DraftLookup = {
   conversationId: string;
   request: MailConversationComposerRequest;
+  generation: number;
 };
 
 /** The conversation details Detail in the mailbox workspace. */
@@ -147,7 +148,12 @@ export default function MailConversationReader(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
-  const retryToast = createRetryToasts();
+  const retryToasts = createMemo(
+    on(
+      () => props.mailboxId,
+      () => createRetryToasts(),
+    ),
+  );
   const intentLabel = (intent: DraftIntent): string =>
     intent === "reply"
       ? t().replyIntent
@@ -233,48 +239,66 @@ export default function MailConversationReader(props: {
   const [messageSelections, setMessageSelections] = createSignal<Record<string, string>>({});
   const [pendingNewMessages, setPendingNewMessages] = createSignal(0);
   type SummaryEdit = { mailboxId: string; conversationId: string; expectedSummaryRevision: number; summary: string };
-  const summarySave = mutations.create<{ refreshError: Error | null; refresh: () => Promise<void> }, SummaryEdit, { edit: SummaryEdit }>({
-    onBefore: (edit) => ({ edit }),
-    mutation: async ({ mailboxId, conversationId, expectedSummaryRevision, summary }, { abortSignal }) => {
-      const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].summary.$put(
-        {
-          param: { mailboxId, conversationId },
-          json: { expectedSummaryRevision, summary },
-        },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, t().updateSummaryFailed));
-      const updated = await response.json();
-      const refresh = () => props.onSummarySaved(conversationId, updated);
-      return { refreshError: await captureMailWorkspaceRefreshError(refresh), refresh };
-    },
-    // The summary card shows the saved text; focus is back on the button that opened the form, which does not say so.
-    onSuccess: ({ refreshError, refresh }) => {
-      if (refreshError) reportSummaryRefreshFailure(refreshError, refresh);
-      else announce(t().summarySaved);
-    },
-    // The form has closed, so Retry sends the captured text again instead of losing it.
-    onError: (error, context) =>
-      retryToast(error.message, { retryLabel: t().retry, retry: () => context && summarySave.mutate(context.edit) }),
-  });
+  const summarySave = createMemo(
+    on(
+      () => props.mailboxId,
+      () => {
+        let active = true;
+        const current = mutations.create<{ refreshError: Error | null; refresh: () => Promise<void> }, SummaryEdit, { edit: SummaryEdit }>({
+          onBefore: (edit) => ({ edit }),
+          mutation: async ({ mailboxId, conversationId, expectedSummaryRevision, summary }, { abortSignal }) => {
+            if (!active) throw new DOMException("Mailbox changed", "AbortError");
+            const onSummarySaved = props.onSummarySaved;
+            const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].summary.$put(
+              {
+                param: { mailboxId, conversationId },
+                json: { expectedSummaryRevision, summary },
+              },
+              { init: { signal: abortSignal } },
+            );
+            if (!response.ok) throw new Error(await readApiError(response, t().updateSummaryFailed));
+            const updated = await response.json();
+            abortSignal.throwIfAborted();
+            const refresh = () => onSummarySaved(conversationId, updated);
+            return { refreshError: await captureMailWorkspaceRefreshError(refresh), refresh };
+          },
+          // The summary card shows the saved text; focus is back on the button that opened the form, which does not say so.
+          onSuccess: ({ refreshError, refresh }) => {
+            if (refreshError) reportSummaryRefreshFailure(refreshError, refresh);
+            else announce(t().summarySaved);
+          },
+          // The form has closed, so Retry sends the captured text again instead of losing it.
+          onError: (error, context) =>
+            retryToasts()(error.message, { retryLabel: t().retry, retry: () => context && current.mutate(context.edit) }),
+        });
+        onCleanup(() => {
+          active = false;
+          current.abort();
+        });
+        return current;
+      },
+    ),
+  );
   /** The summary was saved, only the view is stale, so Retry repeats the refresh, not the save. */
   const reportSummaryRefreshFailure = (error: Error, refresh: () => Promise<void>): void => {
-    retryToast(error.message, {
+    const generation = readerMailboxGeneration;
+    retryToasts()(error.message, {
       title: t().summaryRefreshFailed,
       retryLabel: t().retry,
       retry: async () => {
         const next = await captureMailWorkspaceRefreshError(refresh);
-        if (next) reportSummaryRefreshFailure(next, refresh);
+        if (next && !disposed && generation === readerMailboxGeneration) reportSummaryRefreshFailure(next, refresh);
       },
     });
   };
-  const summarySaving = summarySave.loading;
+  const summarySaving = () => summarySave().loading();
   const closeHref = () => buildMailListHref(mailRouteUrl(props.requestUrl));
   let closeDraftDialog: ((value: ConversationDraftSummary | null | undefined) => void) | null = null;
   let cleanupPrint: (() => void) | null = null;
   let readerScrollFrame: number | null = null;
   let followingNewest = true;
   let disposed = false;
+  let readerMailboxGeneration = 0;
   const scrollPositions = new Map<string, number>();
   const expandedBySelection = new Map<string, Set<string>>();
   // Conversations whose older messages the person revealed; going back keeps them shown with the scroll position.
@@ -341,6 +365,7 @@ export default function MailConversationReader(props: {
   };
 
   const editConversationSummary = async () => {
+    const generation = readerMailboxGeneration;
     const conversationId = props.selectedConversationId;
     const current = props.conversationSummary;
     if (!conversationId || !current || summarySaving()) return;
@@ -362,8 +387,8 @@ export default function MailConversationReader(props: {
       },
       confirmText: current.summary ? t().saveSummary : t().createSummary,
     });
-    if (!values || conversationId !== props.selectedConversationId) return;
-    await summarySave.mutate({
+    if (!values || disposed || generation !== readerMailboxGeneration || conversationId !== props.selectedConversationId) return;
+    await summarySave().mutate({
       mailboxId: props.mailboxId,
       conversationId,
       expectedSummaryRevision: current.summaryRevision,
@@ -379,7 +404,8 @@ export default function MailConversationReader(props: {
       return next;
     });
 
-  const isCurrentLookup = (lookup: DraftLookup) => !disposed && props.selectedConversationId === lookup.conversationId;
+  const isCurrentLookup = (lookup: DraftLookup) =>
+    !disposed && lookup.generation === readerMailboxGeneration && props.selectedConversationId === lookup.conversationId;
 
   const openConversationDraft = (lookup: DraftLookup, draftId: string) => {
     if (!isCurrentLookup(lookup)) return;
@@ -472,70 +498,99 @@ export default function MailConversationReader(props: {
     void createConversationDraft(lookup);
   };
 
-  const conversationDrafts = mutations.create<ConversationDraftSummary[], DraftLookup, DraftLookup>({
-    onBefore: (lookup) => lookup,
-    mutation: async (lookup, { abortSignal }) => {
-      const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].drafts.$get(
-        {
-          param: {
-            mailboxId: props.mailboxId,
-            conversationId: lookup.conversationId,
-          },
-          query: { limit: "20" },
-        },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, t().checkDraftsFailed));
-      return response.json();
-    },
-    onSuccess: (existingDrafts, context) => {
-      if (context) void chooseConversationDraft(context, existingDrafts);
-    },
-    onError: (error) => prompts.error(error.message),
-  });
-
-  const createdDraft = mutations.create<MailDraftSeed, { lookup: DraftLookup; senderIdentityId: string }, DraftLookup>({
-    onBefore: ({ lookup }) => lookup,
-    mutation: async ({ lookup, senderIdentityId }, { abortSignal }) => {
-      const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
-        {
-          param: { mailboxId: props.mailboxId },
-          json: {
-            origin: {
-              kind: "compose",
-              input: {
-                senderIdentityId,
-                to: [],
-                cc: [],
-                bcc: [],
-                subject: lookup.request.intent === "forward" ? forwardSubject(props.subject) : replySubject(props.subject),
-                body: lookup.request.quotedBody ?? "",
-                conversationId: lookup.conversationId,
-                intent: lookup.request.intent,
-                sourceMessageId: lookup.request.message.id,
-                includeSourceAttachments: lookup.request.intent === "forward" && lookup.request.message.attachments.length > 0,
+  const conversationDrafts = createMemo(
+    on(
+      () => props.mailboxId,
+      () => {
+        let active = true;
+        const current = mutations.create<ConversationDraftSummary[], DraftLookup, DraftLookup>({
+          onBefore: (lookup) => lookup,
+          mutation: async (lookup, { abortSignal }) => {
+            if (!active) throw new DOMException("Mailbox changed", "AbortError");
+            const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].drafts.$get(
+              {
+                param: {
+                  mailboxId: props.mailboxId,
+                  conversationId: lookup.conversationId,
+                },
+                query: { limit: "20" },
               },
-            },
+              { init: { signal: abortSignal } },
+            );
+            if (!response.ok) throw new Error(await readApiError(response, t().checkDraftsFailed));
+            return response.json();
           },
-        },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, t().createDraftFailed));
-      return response.json();
-    },
-    onSuccess: (seed, lookup) => {
-      if (lookup && isCurrentLookup(lookup)) void openDraftSeed(seed, () => isCurrentLookup(lookup));
-    },
-    onError: (error) => prompts.error(error.message, { title: t().startMessageFailed }),
-  });
+          onSuccess: (existingDrafts, context) => {
+            if (context) void chooseConversationDraft(context, existingDrafts);
+          },
+          onError: (error) => prompts.error(error.message),
+        });
+        onCleanup(() => {
+          active = false;
+          current.abort();
+        });
+        return current;
+      },
+    ),
+  );
+
+  const createdDraft = createMemo(
+    on(
+      () => props.mailboxId,
+      () => {
+        let active = true;
+        const current = mutations.create<MailDraftSeed, { lookup: DraftLookup; senderIdentityId: string }, DraftLookup>({
+          onBefore: ({ lookup }) => lookup,
+          mutation: async ({ lookup, senderIdentityId }, { abortSignal }) => {
+            if (!active) throw new DOMException("Mailbox changed", "AbortError");
+            const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
+              {
+                param: { mailboxId: props.mailboxId },
+                json: {
+                  origin: {
+                    kind: "compose",
+                    input: {
+                      senderIdentityId,
+                      to: [],
+                      cc: [],
+                      bcc: [],
+                      subject: lookup.request.intent === "forward" ? forwardSubject(props.subject) : replySubject(props.subject),
+                      body: lookup.request.quotedBody ?? "",
+                      conversationId: lookup.conversationId,
+                      intent: lookup.request.intent,
+                      sourceMessageId: lookup.request.message.id,
+                      includeSourceAttachments: lookup.request.intent === "forward" && lookup.request.message.attachments.length > 0,
+                    },
+                  },
+                },
+              },
+              { init: { signal: abortSignal } },
+            );
+            if (!response.ok) throw new Error(await readApiError(response, t().createDraftFailed));
+            return response.json();
+          },
+          onSuccess: (seed, lookup) => {
+            if (lookup && isCurrentLookup(lookup)) void openDraftSeed(seed, () => isCurrentLookup(lookup));
+          },
+          onError: (error) => prompts.error(error.message, { title: t().startMessageFailed }),
+        });
+        onCleanup(() => {
+          active = false;
+          current.abort();
+        });
+        return current;
+      },
+    ),
+  );
 
   /** Names why no verified sender can send, and lets a mailbox admin open the setting that fixes it. */
   const explainSenderUnavailable = async () => {
+    const generation = readerMailboxGeneration;
     const status = mailSenderIdentityStatusMessages.resolve([locale()]).t;
     const detail = senderUnavailableDetail(props.identities, locale());
     if (!props.canAdmin) return void (await prompts.error(`${detail} ${status.askAdmin}`, { title: status.cannotSend }));
     const open = await prompts.confirm(detail, { title: status.cannotSend, confirmText: status.openSenderSettings });
-    if (open) props.onOpenDeliverySettings();
+    if (open && !disposed && generation === readerMailboxGeneration) props.onOpenDeliverySettings();
   };
 
   const chooseReplyIdentity = async (lookup: DraftLookup): Promise<string | null> => {
@@ -581,63 +636,83 @@ export default function MailConversationReader(props: {
   };
 
   const createConversationDraft = async (lookup: DraftLookup) => {
-    if (!isCurrentLookup(lookup) || createdDraft.loading()) return;
+    if (!isCurrentLookup(lookup) || createdDraft().loading()) return;
     const senderIdentityId = await chooseReplyIdentity(lookup);
-    if (!senderIdentityId || !isCurrentLookup(lookup) || createdDraft.loading()) return;
-    createdDraft.mutate({ lookup, senderIdentityId });
+    if (!senderIdentityId || !isCurrentLookup(lookup) || createdDraft().loading()) return;
+    createdDraft().mutate({ lookup, senderIdentityId });
   };
 
-  const derivedDraft = mutations.create<
-    MailDraftSeed,
-    {
-      message: MailWorkspaceMessage;
-      input: Omit<DeriveDraftFromMessageInput, "idempotencyKey">;
-    },
-    { message: MailWorkspaceMessage }
-  >({
-    onBefore: ({ message }) => ({ message }),
-    mutation: async ({ message, input }, { abortSignal }) => {
-      const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
-        {
-          param: { mailboxId: props.mailboxId },
-          json: {
-            origin: {
-              kind: "derive",
-              messageId: message.id,
-              input: {
-                kind: input.kind,
-                senderIdentityId: input.senderIdentityId,
-                includeAttachments: input.includeAttachments,
-              },
-            },
+  const derivedDraft = createMemo(
+    on(
+      () => props.mailboxId,
+      () => {
+        let active = true;
+        const current = mutations.create<
+          MailDraftSeed,
+          {
+            message: MailWorkspaceMessage;
+            input: Omit<DeriveDraftFromMessageInput, "idempotencyKey">;
           },
-        },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, t().createFromMessageFailed));
-      return response.json();
-    },
-    onSuccess: (seed, context) => {
-      if (context && props.messages.some((message) => message.id === context.message.id)) {
-        void openDraftSeed(seed, () => props.messages.some((message) => message.id === context.message.id));
-      }
-    },
-    onError: (error) => prompts.error(error.message),
-  });
-  const composerBusy = () => conversationDrafts.loading() || createdDraft.loading() || derivedDraft.loading();
+          { message: MailWorkspaceMessage }
+        >({
+          onBefore: ({ message }) => ({ message }),
+          mutation: async ({ message, input }, { abortSignal }) => {
+            if (!active) throw new DOMException("Mailbox changed", "AbortError");
+            const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
+              {
+                param: { mailboxId: props.mailboxId },
+                json: {
+                  origin: {
+                    kind: "derive",
+                    messageId: message.id,
+                    input: {
+                      kind: input.kind,
+                      senderIdentityId: input.senderIdentityId,
+                      includeAttachments: input.includeAttachments,
+                    },
+                  },
+                },
+              },
+              { init: { signal: abortSignal } },
+            );
+            if (!response.ok) throw new Error(await readApiError(response, t().createFromMessageFailed));
+            return response.json();
+          },
+          onSuccess: (seed, context) => {
+            const generation = readerMailboxGeneration;
+            if (context && props.messages.some((message) => message.id === context.message.id)) {
+              void openDraftSeed(
+                seed,
+                () => generation === readerMailboxGeneration && props.messages.some((message) => message.id === context.message.id),
+              );
+            }
+          },
+          onError: (error) => prompts.error(error.message),
+        });
+        onCleanup(() => {
+          active = false;
+          current.abort();
+        });
+        return current;
+      },
+    ),
+  );
+  const composerBusy = () => conversationDrafts().loading() || createdDraft().loading() || derivedDraft().loading();
 
   const startComposer = (intent: DraftIntent, message: MailWorkspaceMessage, quotedBody?: string) => {
     const conversationId = props.selectedConversationId;
     if (!conversationId || composerBusy()) return;
-    void conversationDrafts.mutate({
+    void conversationDrafts().mutate({
+      generation: readerMailboxGeneration,
       conversationId,
       request: { intent, message, quotedBody },
     });
   };
 
   const deriveMessage = async (kind: DraftDerivationKind, message: MailWorkspaceMessage) => {
-    if (composerBusy() || derivedDraft.loading()) return;
+    if (composerBusy() || derivedDraft().loading()) return;
     const selectionKey = props.selectionKey;
+    const generation = readerMailboxGeneration;
     const identities = props.identities.filter((identity) => identity.status === "verified");
     const defaultIdentity = identities.find((identity) => identity.isDefault) ?? identities[0];
     if (!defaultIdentity) return explainSenderUnavailable();
@@ -688,8 +763,14 @@ export default function MailConversationReader(props: {
         size: "small",
       },
     );
-    if (choice && !disposed && selectionKey === props.selectionKey && props.messages.some((current) => current.id === message.id)) {
-      derivedDraft.mutate({ message, input: choice });
+    if (
+      choice &&
+      !disposed &&
+      generation === readerMailboxGeneration &&
+      selectionKey === props.selectionKey &&
+      props.messages.some((current) => current.id === message.id)
+    ) {
+      derivedDraft().mutate({ message, input: choice });
     }
   };
 
@@ -701,8 +782,8 @@ export default function MailConversationReader(props: {
     }
     currentSelection = nextSelection;
     currentMessageIds = nextMessageIds;
-    conversationDrafts.abort();
-    createdDraft.abort();
+    conversationDrafts().abort();
+    createdDraft().abort();
     const savedExpanded = nextSelection ? expandedBySelection.get(nextSelection) : null;
     const targetMessageId = selectedHistoryMessageId();
     setExpandedMessages(
@@ -738,9 +819,24 @@ export default function MailConversationReader(props: {
     scheduleReaderScroll({ selectionKey, messageId: targetMessageId });
   };
 
+  let readerMailboxId = props.mailboxId;
   createEffect(() => {
+    const mailboxChanged = props.mailboxId !== readerMailboxId;
+    readerMailboxId = props.mailboxId;
     const nextSelection = props.selectionKey;
     const nextMessageIds = new Set(props.messages.map((message) => message.id));
+    if (mailboxChanged) {
+      ++readerMailboxGeneration;
+      cancelReaderWork();
+      scrollPositions.clear();
+      expandedBySelection.clear();
+      olderShownBySelection.clear();
+      foldBoundaries.clear();
+      olderPinnedFor = null;
+      currentSelection = null;
+      restoreHistorySelection(nextSelection, nextMessageIds);
+      return;
+    }
     if (nextSelection !== currentSelection) {
       restoreHistorySelection(nextSelection, nextMessageIds);
       return;
@@ -752,16 +848,21 @@ export default function MailConversationReader(props: {
     scheduleReaderScroll({ selectionKey: props.selectionKey, messageId: initialMessageId });
   });
 
-  onCleanup(() => {
-    disposed = true;
+  const cancelReaderWork = () => {
     closeDraftDialog?.(undefined);
     closeDraftDialog = null;
     cleanupPrint?.();
     if (readerScrollFrame !== null) cancelAnimationFrame(readerScrollFrame);
-    summarySave.abort();
-    conversationDrafts.abort();
-    createdDraft.abort();
-    derivedDraft.abort();
+    readerScrollFrame = null;
+    summarySave().abort();
+    conversationDrafts().abort();
+    createdDraft().abort();
+    derivedDraft().abort();
+  };
+  onCleanup(() => {
+    disposed = true;
+    ++readerMailboxGeneration;
+    cancelReaderWork();
   });
 
   const startQuoteReply = (message: MailWorkspaceMessage, body: HTMLElement) => {

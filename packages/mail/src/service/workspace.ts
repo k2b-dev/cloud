@@ -823,6 +823,13 @@ export const loadMailboxPageData = async (params: {
     });
   }
 
+  const folders = messages.listFolders(params.context, params.mailboxId);
+  const saved = savedViews.listSavedConversationViews({ context: params.context, mailboxId: params.mailboxId });
+  // The list needs folders and saved views, but not identities, counts, tags or the receiving address.
+  const list = Promise.all([folders, saved]).then(([folderResult, savedViewResult]) =>
+    buildMailboxListView(params, folderResult, savedViewResult),
+  );
+
   const [
     mailboxResult,
     folderResult,
@@ -832,28 +839,26 @@ export const loadMailboxPageData = async (params: {
     localTagResult,
     scheduledCountResult,
     receivingAddress,
+    listView,
   ] = await Promise.all([
     mailboxes.getMailbox(params.context, params.mailboxId),
-    messages.listFolders(params.context, params.mailboxId),
+    folders,
     senderIdentities.listSenderIdentities(params.context, params.mailboxId),
     messages.getConversationViewCounts({
       context: params.context,
       mailboxId: params.mailboxId,
     }),
-    savedViews.listSavedConversationViews({
-      context: params.context,
-      mailboxId: params.mailboxId,
-    }),
+    saved,
     localTags.listLocalTags(params.context, params.mailboxId),
     scheduledSends.countScheduledSends({
       context: params.context,
       mailboxId: params.mailboxId,
     }),
     mailboxes.getMailboxReceivingAddress(params.mailboxId),
+    list,
   ]);
   if (!mailboxResult.ok) return fail(mailboxResult.error);
 
-  const listView = await buildMailboxListView(params, folderResult, savedViewResult);
   const { scheduledMode, draftsMode, folderId } = listView;
   let selectedConversationId = optionalUuidSearchParam(params.requestUrl, "conversation");
   let selectedMessageId = optionalUuidSearchParam(params.requestUrl, "message");

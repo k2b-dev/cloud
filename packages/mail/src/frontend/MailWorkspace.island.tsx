@@ -197,14 +197,14 @@ type MailboxSessionControls = {
   };
 };
 
-function MailboxWorkspace(
-  props: MailWorkspaceProps & {
-    switching: Accessor<boolean>;
-    onReady: (controls: MailboxSessionControls) => void;
-    onNavigationStart: () => void;
-    onOpenMailboxHistory: (url: URL, completeScrollRestore: () => void) => void;
-  },
-) {
+type MailboxControllerProps = MailWorkspaceProps & {
+  switching: Accessor<boolean>;
+  onReady: (controls: MailboxSessionControls) => void;
+  onNavigationStart: () => void;
+  onOpenMailboxHistory: (url: URL, completeScrollRestore: () => void) => void;
+};
+
+function createMailboxController(props: MailboxControllerProps) {
   const locale = useLocale();
   const t = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
   const conversationText = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
@@ -2620,157 +2620,266 @@ function MailboxWorkspace(
     onCleanup(publishPageContext({ scope: { type: "mail.mailbox", id: mailboxId } }));
   });
 
+  return {
+    actionTargetForItem,
+    addTagsToSelection,
+    applyCollaborationState,
+    applyConversationTags,
+    applySavedConversationSummary,
+    assignSelection,
+    assignedOnly,
+    canAdmin,
+    canAssign,
+    canShowDetails,
+    canWrite,
+    clearConversationSelection,
+    closeConversation,
+    composeStarting,
+    conversationActivity,
+    conversationText,
+    currentTab,
+    data,
+    detailsOpen,
+    exitHeadSelection,
+    folderOnlyHint,
+    hasSelection,
+    listCollapsed,
+    listNamedBy,
+    listOpen,
+    listText,
+    listView,
+    liveUnavailable,
+    loadMoreConversations,
+    mailboxMenu,
+    manageConversationTags,
+    mergeConversation,
+    mergeSelectedConversation,
+    navigateConversation,
+    navigateWorkspace,
+    openHealth,
+    openSettings,
+    openWorkspaceHref,
+    persistPreferences,
+    presence,
+    reassignMessage,
+    reconcileWorkspace,
+    requestPath,
+    requireWorkspaceReconcile,
+    routeLoading,
+    runAction,
+    searchControls,
+    searchDiscovered,
+    searchFiltered,
+    searchHintDismissed,
+    selectedConversationIds,
+    selectedFlagged,
+    selectedInJunk,
+    selectedListItem,
+    selectedUnread,
+    selectionMode,
+    setCollapsed,
+    setConversationKept,
+    setDetailsVisible,
+    setSearchHintDismissed,
+    sidebarText,
+    splitMessage,
+    startCompose,
+    structureMutationLoading,
+    structurePending,
+    t,
+    theme,
+    toggleConversationSelection,
+    toggleConversationSelectionMode,
+    toolbarActions,
+    updateListMode,
+    updateToolbarActions,
+    userPreferences,
+    viewTabs,
+    workspaceQuery,
+  };
+}
+
+function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSession> & { session: MailboxSession }) {
+  // One mailbox owns its store, queries, search, actions, effects and live subscription.
+  // Changing the committed session disposes that owner before creating the next one,
+  // while the presentation below stays mounted and reads the new controller.
+  let initialized = false;
+  const controller = createMemo(
+    on(
+      () => props.session,
+      (session) => {
+        if (initialized) {
+          const list = document.querySelector<HTMLElement>(".mail-workspace [data-scroll-preserve^='mail-list-']");
+          if (list) list.scrollTop = 0;
+        }
+        initialized = true;
+        return createMailboxController({ ...props, ...session });
+      },
+    ),
+  );
+
   return (
     <>
       <AppWorkspace.Head
         mobilePane="conversations"
         views={
-          canWrite() && selectionMode() ? (
+          controller().canWrite() && controller().selectionMode() ? (
             <div data-mail-head-selection class="mail-head-selection">
               <MailBulkActionBar
-                selectedCount={selectedConversationIds().size}
+                selectedCount={controller().selectedConversationIds().size}
                 selectedInJunk={
-                  selectedConversationIds().size > 0 &&
-                  listView()
-                    .items.filter((item) => item.conversationId && selectedConversationIds().has(item.conversationId))
+                  controller().selectedConversationIds().size > 0 &&
+                  controller()
+                    .listView()
+                    .items.filter((item) => item.conversationId && controller().selectedConversationIds().has(item.conversationId))
                     .every(
                       (item) =>
                         spamActionForConversation({
-                          viewFolderId: data.folderId,
+                          viewFolderId: controller().data.folderId,
                           activeFolderIds: item.activeFolderIds,
-                          folders: data.folders,
+                          folders: controller().data.folders,
                         }) === "not_spam",
                     )
                 }
-                busy={routeLoading()}
-                onClear={exitHeadSelection}
-                onAddTags={assignedOnly() ? undefined : addTagsToSelection}
-                onAssign={canAssign() ? assignSelection : undefined}
-                onAction={runAction}
+                busy={controller().routeLoading()}
+                onClear={controller().exitHeadSelection}
+                onAddTags={controller().assignedOnly() ? undefined : controller().addTagsToSelection}
+                onAssign={controller().canAssign() ? controller().assignSelection : undefined}
+                onAction={controller().runAction}
               />
             </div>
-          ) : searchControls.opened() && !data.draftsMode && !data.scheduledMode ? (
-            <MailSearchInput search={searchControls} mailboxName={data.mailbox.name} />
-          ) : data.draftsMode || data.scheduledMode ? (
+          ) : controller().searchControls.opened() && !controller().data.draftsMode && !controller().data.scheduledMode ? (
+            <MailSearchInput search={controller().searchControls} mailboxName={controller().data.mailbox.name} />
+          ) : controller().data.draftsMode || controller().data.scheduledMode ? (
             <span class="mail-queue-count text-xs text-muted" data-mail-queue-count>
-              {data.draftsMode
-                ? conversationText().draftCount({ count: data.draftsPage?.total ?? 0 })
-                : conversationText().waitingForDelivery({ count: data.scheduledPage?.total ?? data.scheduledCount })}
+              {controller().data.draftsMode
+                ? controller()
+                    .conversationText()
+                    .draftCount({ count: controller().data.draftsPage?.total ?? 0 })
+                : controller()
+                    .conversationText()
+                    .waitingForDelivery({ count: controller().data.scheduledPage?.total ?? controller().data.scheduledCount })}
             </span>
-          ) : currentTab() !== null ? (
+          ) : controller().currentTab() !== null ? (
             <MailboxViewTabs
-              items={viewTabs()}
-              current={currentTab()!}
+              items={controller().viewTabs()}
+              current={controller().currentTab()!}
               onOpenHref={(href) => {
-                searchControls?.cancelPending();
-                void openWorkspaceHref(href);
+                controller().searchControls?.cancelPending();
+                void controller().openWorkspaceHref(href);
               }}
             />
           ) : (
             <span
               data-mail-head-title
-              class={listNamedBy() === "sidebar" ? "mail-list-heading truncate text-sm font-semibold" : "truncate text-sm font-semibold"}
+              class={
+                controller().listNamedBy() === "sidebar"
+                  ? "mail-list-heading truncate text-sm font-semibold"
+                  : "truncate text-sm font-semibold"
+              }
             >
-              {data.listTitle}
+              {controller().data.listTitle}
             </span>
           )
         }
         filters={
-          selectionMode() || data.scheduledMode || data.draftsMode ? undefined : searchControls.opened() ? (
-            <MailSearchOptions search={searchControls} count={listView().items.length} />
+          controller().selectionMode() ||
+          controller().data.scheduledMode ||
+          controller().data.draftsMode ? undefined : controller().searchControls.opened() ? (
+            <MailSearchOptions search={controller().searchControls} count={controller().listView().items.length} />
           ) : (
             <MailboxHeadFilters
-              requestUrl={requestPath()}
-              search={data.search}
-              folderId={data.folderId}
-              folders={data.folders}
-              localTags={data.localTags}
+              requestUrl={controller().requestPath()}
+              search={controller().data.search}
+              folderId={controller().data.folderId}
+              folders={controller().data.folders}
+              localTags={controller().data.localTags}
               onEditSearch={(state, source) => {
-                searchControls?.cancelPending();
-                searchControls?.edit(state, source);
+                controller().searchControls?.cancelPending();
+                controller().searchControls?.edit(state, source);
               }}
               onOpenHref={(href) => {
-                searchControls?.cancelPending();
-                void openWorkspaceHref(href);
+                controller().searchControls?.cancelPending();
+                void controller().openWorkspaceHref(href);
               }}
             />
           )
         }
-        filtered={!searchControls.opened() && !selectionMode() && searchFiltered()}
-        resetHref={searchFiltered() ? buildMailSearchClearHref(mailRouteUrl(requestPath())) : undefined}
+        filtered={!controller().searchControls.opened() && !controller().selectionMode() && controller().searchFiltered()}
+        resetHref={controller().searchFiltered() ? buildMailSearchClearHref(mailRouteUrl(controller().requestPath())) : undefined}
         onReset={() => {
-          searchControls?.cancelPending();
-          void openWorkspaceHref(buildMailSearchClearHref(mailRouteUrl(requestPath())));
+          controller().searchControls?.cancelPending();
+          void controller().openWorkspaceHref(buildMailSearchClearHref(mailRouteUrl(controller().requestPath())));
         }}
         actions={
           <>
-            <Show when={!data.scheduledMode && !data.draftsMode}>
-              <Show when={!searchControls.opened() && !selectionMode()}>
-                <MailSearchTrigger search={searchControls} unseen={!searchDiscovered()} />
+            <Show when={!controller().data.scheduledMode && !controller().data.draftsMode}>
+              <Show when={!controller().searchControls.opened() && !controller().selectionMode()}>
+                <MailSearchTrigger search={controller().searchControls} unseen={!controller().searchDiscovered()} />
                 <MailboxTagFilter
-                  requestUrl={requestPath()}
-                  search={data.search}
-                  folderId={data.folderId}
-                  folders={data.folders}
-                  localTags={data.localTags}
+                  requestUrl={controller().requestPath()}
+                  search={controller().data.search}
+                  folderId={controller().data.folderId}
+                  folders={controller().data.folders}
+                  localTags={controller().data.localTags}
                   onOpenHref={(href) => {
-                    searchControls.cancelPending();
-                    void openWorkspaceHref(href);
+                    controller().searchControls.cancelPending();
+                    void controller().openWorkspaceHref(href);
                   }}
                 />
               </Show>
-              <Show when={canWrite() && data.listMode === "conversations" && !selectionMode()}>
-                <Tooltip.Anchor content={listText().selectConversations}>
+              <Show when={controller().canWrite() && controller().data.listMode === "conversations" && !controller().selectionMode()}>
+                <Tooltip.Anchor content={controller().listText().selectConversations}>
                   <IconButton
                     type="button"
-                    label={listText().selectConversations}
+                    label={controller().listText().selectConversations}
                     data-mail-selection-trigger
                     onClick={(event) => {
-                      searchControls.cancelPending();
-                      searchControls.lockHeight(event.currentTarget);
-                      toggleConversationSelectionMode();
+                      controller().searchControls.cancelPending();
+                      controller().searchControls.lockHeight(event.currentTarget);
+                      controller().toggleConversationSelectionMode();
                     }}
                   >
                     <i class="ti ti-checkbox" aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
               </Show>
-              <Show when={liveUnavailable()}>
-                <span class="mail-head-live text-xs text-muted" title={listText().updatesPaused}>
+              <Show when={controller().liveUnavailable()}>
+                <span class="mail-head-live text-xs text-muted" title={controller().listText().updatesPaused}>
                   <i class="ti ti-cloud-off" aria-hidden="true" />
-                  <span>{listText().updatesPaused}</span>
+                  <span>{controller().listText().updatesPaused}</span>
                 </span>
               </Show>
             </Show>
             <MailboxMenuButton
-              menu={mailboxMenu}
-              label={sidebarText().mailboxMenu({ name: data.mailbox.name })}
+              menu={controller().mailboxMenu}
+              label={controller().sidebarText().mailboxMenu({ name: controller().data.mailbox.name })}
               leading={
-                data.draftsMode || data.scheduledMode
+                controller().data.draftsMode || controller().data.scheduledMode
                   ? []
                   : [
                       {
-                        sectionLabel: listText().chooseListView,
+                        sectionLabel: controller().listText().chooseListView,
                         items: [
                           {
                             id: "list-conversations",
-                            label: listText().conversationView,
-                            icon: data.listMode === "conversations" ? "ti ti-check" : "ti ti-messages",
-                            action: () => updateListMode("conversations"),
+                            label: controller().listText().conversationView,
+                            icon: controller().data.listMode === "conversations" ? "ti ti-check" : "ti ti-messages",
+                            action: () => controller().updateListMode("conversations"),
                           },
                           {
                             id: "list-messages",
-                            label: listText().messageView,
-                            icon: data.listMode === "messages" ? "ti ti-check" : "ti ti-mail",
-                            action: () => updateListMode("messages"),
+                            label: controller().listText().messageView,
+                            icon: controller().data.listMode === "messages" ? "ti ti-check" : "ti ti-mail",
+                            action: () => controller().updateListMode("messages"),
                           },
-                          ...(hasSelection() && listOpen()
+                          ...(controller().hasSelection() && controller().listOpen()
                             ? [
                                 {
                                   id: "hide-list",
-                                  label: listText().hideList,
+                                  label: controller().listText().hideList,
                                   icon: "ti ti-layout-sidebar-left-collapse",
-                                  action: () => setCollapsed(true),
+                                  action: () => controller().setCollapsed(true),
                                 },
                               ]
                             : []),
@@ -2782,20 +2891,20 @@ function MailboxWorkspace(
           </>
         }
         primary={
-          canWrite() && !assignedOnly()
+          controller().canWrite() && !controller().assignedOnly()
             ? {
-                label: sidebarText().compose,
-                icon: composeStarting() ? "ti ti-loader-2 animate-spin" : "ti ti-pencil",
+                label: controller().sidebarText().compose,
+                icon: controller().composeStarting() ? "ti ti-loader-2 animate-spin" : "ti ti-pencil",
                 // Modified and middle clicks, a new tab, and a page before hydration open the compose page.
-                href: `/app/mail/compose?mailbox=${data.mailbox.id}&autostart=1`,
+                href: `/app/mail/compose?mailbox=${controller().data.mailbox.id}&autostart=1`,
                 onClick: (event) => {
                   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
                     return;
                   event.preventDefault();
-                  const href = `/app/mail/compose?mailbox=${data.mailbox.id}&autostart=1`;
+                  const href = `/app/mail/compose?mailbox=${controller().data.mailbox.id}&autostart=1`;
                   // The spinner replaces the icon; screen readers hear the same progress.
-                  if (!composeStarting()) announce(t().preparingMessage);
-                  void startCompose({ fallback: () => documentNavigate(href), progressToast: false });
+                  if (!controller().composeStarting()) announce(controller().t().preparingMessage);
+                  void controller().startCompose({ fallback: () => documentNavigate(href), progressToast: false });
                 },
               }
             : undefined
@@ -2804,243 +2913,270 @@ function MailboxWorkspace(
       <AppWorkspace.Content>
         <AppWorkspace.Main
           class="p-0"
-          aria-busy={routeLoading()}
-          mobilePane={hasSelection() ? "main" : "conversations"}
+          aria-busy={controller().routeLoading()}
+          mobilePane={controller().hasSelection() ? "main" : "conversations"}
           scroll={false}
-          minWidth={data.scheduledMode || data.draftsMode ? undefined : listOpen() ? MAIL_MAIN_WITH_LIST : MAIL_READER_BESIDE_DETAIL}
+          minWidth={
+            controller().data.scheduledMode || controller().data.draftsMode
+              ? undefined
+              : controller().listOpen()
+                ? MAIL_MAIN_WITH_LIST
+                : MAIL_READER_BESIDE_DETAIL
+          }
         >
           <Show
-            when={data.scheduledMode || data.draftsMode}
+            when={controller().data.scheduledMode || controller().data.draftsMode}
             fallback={
               <>
                 <AppWorkspace.MainPane
                   id="conversations"
-                  label={t().conversationList}
+                  label={controller().t().conversationList}
                   scroll={false}
-                  open={listOpen()}
+                  open={controller().listOpen()}
                   defaultSize={MAIL_LIST_WIDTH}
                   minSize={300}
                   maxSize={620}
                 >
                   <MailConversationList
-                    mailbox={data.mailbox}
-                    mailboxId={data.mailbox.id}
-                    requestUrl={requestPath()}
-                    query={data.query}
-                    search={data.search}
-                    title={data.listTitle}
-                    namedBy={listNamedBy()}
-                    items={listView().items}
-                    leavingKeys={listView().leavingKeys}
-                    error={data.listError}
-                    selectedConversationId={data.selectedConversationId}
-                    selectedMessageId={data.selectedMessageId}
-                    selectedConversationIds={selectedConversationIds()}
-                    selectionMode={selectionMode()}
-                    nextCursor={data.nextListCursor}
+                    mailbox={controller().data.mailbox}
+                    mailboxId={controller().data.mailbox.id}
+                    requestUrl={controller().requestPath()}
+                    query={controller().data.query}
+                    search={controller().data.search}
+                    title={controller().data.listTitle}
+                    namedBy={controller().listNamedBy()}
+                    items={controller().listView().items}
+                    leavingKeys={controller().listView().leavingKeys}
+                    error={controller().data.listError}
+                    selectedConversationId={controller().data.selectedConversationId}
+                    selectedMessageId={controller().data.selectedMessageId}
+                    selectedConversationIds={controller().selectedConversationIds()}
+                    selectionMode={controller().selectionMode()}
+                    nextCursor={controller().data.nextListCursor}
                     dateConfig={props.dateConfig}
-                    canWrite={canWrite()}
-                    canAdmin={canAdmin()}
-                    viewFolderId={data.folderId}
-                    folders={data.folders}
-                    localTags={data.localTags}
-                    savedViews={data.savedViews}
-                    activeSavedViewId={data.savedViewId}
-                    folderOnlyHint={folderOnlyHint()}
-                    listMode={data.listMode}
-                    loading={routeLoading()}
-                    liveDegraded={liveUnavailable()}
-                    onCollapse={() => setCollapsed(true)}
-                    onOpenHealth={() => void openHealth()}
-                    onOpenDeliverySettings={() => void openSettings("delivery")}
-                    onNavigate={navigateWorkspace}
-                    onNavigateItem={navigateConversation}
-                    onToggleSelectionMode={toggleConversationSelectionMode}
-                    onToggleSelection={toggleConversationSelection}
-                    onClearSelection={clearConversationSelection}
-                    onAddTags={assignedOnly() ? undefined : addTagsToSelection}
-                    onAssign={canAssign() ? assignSelection : undefined}
-                    onBulkAction={runAction}
+                    canWrite={controller().canWrite()}
+                    canAdmin={controller().canAdmin()}
+                    viewFolderId={controller().data.folderId}
+                    folders={controller().data.folders}
+                    localTags={controller().data.localTags}
+                    savedViews={controller().data.savedViews}
+                    activeSavedViewId={controller().data.savedViewId}
+                    folderOnlyHint={controller().folderOnlyHint()}
+                    listMode={controller().data.listMode}
+                    loading={controller().routeLoading()}
+                    liveDegraded={controller().liveUnavailable()}
+                    onCollapse={() => controller().setCollapsed(true)}
+                    onOpenHealth={() => void controller().openHealth()}
+                    onOpenDeliverySettings={() => void controller().openSettings("delivery")}
+                    onNavigate={controller().navigateWorkspace}
+                    onNavigateItem={controller().navigateConversation}
+                    onToggleSelectionMode={controller().toggleConversationSelectionMode}
+                    onToggleSelection={controller().toggleConversationSelection}
+                    onClearSelection={controller().clearConversationSelection}
+                    onAddTags={controller().assignedOnly() ? undefined : controller().addTagsToSelection}
+                    onAssign={controller().canAssign() ? controller().assignSelection : undefined}
+                    onBulkAction={controller().runAction}
                     onItemAction={(item, actionId) => {
-                      const target = actionTargetForItem(item, actionId);
-                      if (target) void runAction(actionId, { targets: [target] });
+                      const target = controller().actionTargetForItem(item, actionId);
+                      if (target) void controller().runAction(actionId, { targets: [target] });
                     }}
-                    onManageTags={manageConversationTags}
+                    onManageTags={controller().manageConversationTags}
                     onMergeItem={
-                      assignedOnly()
+                      controller().assignedOnly()
                         ? undefined
                         : (item) => {
                             if (item.conversationId)
-                              void mergeConversation({
+                              void controller().mergeConversation({
                                 conversationId: item.conversationId,
                                 revision: item.revision,
                                 subject: item.subject,
                               });
                           }
                     }
-                    onOpenHref={openWorkspaceHref}
+                    onOpenHref={controller().openWorkspaceHref}
                     onNavigationStart={props.onNavigationStart}
                     searchDiscoveryHint={
-                      !searchDiscovered() && !searchHintDismissed()
+                      !controller().searchDiscovered() && !controller().searchHintDismissed()
                         ? () => {
-                            setSearchHintDismissed(true);
-                            persistPreferences({ searchHintDismissed: true });
+                            controller().setSearchHintDismissed(true);
+                            controller().persistPreferences({ searchHintDismissed: true });
                           }
                         : undefined
                     }
-                    onLoadMore={loadMoreConversations}
-                    onRefresh={reconcileWorkspace}
+                    onLoadMore={controller().loadMoreConversations}
+                    onRefresh={controller().reconcileWorkspace}
                   />
                 </AppWorkspace.MainPane>
                 <MailConversationReader
-                  mailboxId={data.mailbox.id}
-                  requestUrl={requestPath()}
-                  canWrite={canWrite()}
-                  canAdmin={canAdmin()}
-                  mailboxWide={!assignedOnly()}
-                  identities={data.identities}
-                  onOpenDeliverySettings={() => void openSettings("delivery")}
-                  selectionKey={data.selectedMessageId ?? data.selectedConversationId}
-                  selectedConversationId={data.selectedConversationId}
-                  selectedMessageId={data.selectedMessageId}
-                  unread={selectedUnread()}
-                  flagged={selectedFlagged()}
-                  inJunk={selectedInJunk()}
-                  keep={data.keep}
-                  reference={data.selectedReference}
-                  subject={data.selectedSubject}
-                  messages={hasSelection() ? data.detailMessages : []}
-                  activity={conversationActivity()}
-                  conversationSummary={data.conversationSummary}
-                  conversationDrafts={data.conversationDrafts}
-                  totalMessageCount={hasSelection() ? (selectedListItem()?.messageCount ?? data.detailMessages.length) : 0}
-                  error={hasSelection() ? data.detailError : null}
+                  mailboxId={controller().data.mailbox.id}
+                  requestUrl={controller().requestPath()}
+                  canWrite={controller().canWrite()}
+                  canAdmin={controller().canAdmin()}
+                  mailboxWide={!controller().assignedOnly()}
+                  identities={controller().data.identities}
+                  onOpenDeliverySettings={() => void controller().openSettings("delivery")}
+                  selectionKey={controller().data.selectedMessageId ?? controller().data.selectedConversationId}
+                  selectedConversationId={controller().data.selectedConversationId}
+                  selectedMessageId={controller().data.selectedMessageId}
+                  unread={controller().selectedUnread()}
+                  flagged={controller().selectedFlagged()}
+                  inJunk={controller().selectedInJunk()}
+                  keep={controller().data.keep}
+                  reference={controller().data.selectedReference}
+                  subject={controller().data.selectedSubject}
+                  messages={controller().hasSelection() ? controller().data.detailMessages : []}
+                  activity={controller().conversationActivity()}
+                  conversationSummary={controller().data.conversationSummary}
+                  conversationDrafts={controller().data.conversationDrafts}
+                  totalMessageCount={
+                    controller().hasSelection()
+                      ? (controller().selectedListItem()?.messageCount ?? controller().data.detailMessages.length)
+                      : 0
+                  }
+                  error={controller().hasSelection() ? controller().data.detailError : null}
                   dateConfig={props.dateConfig}
-                  readingFormat={userPreferences().readingFormat}
-                  theme={theme()}
+                  readingFormat={controller().userPreferences().readingFormat}
+                  theme={controller().theme()}
                   calendarIntegrationAvailable={props.calendarIntegrationAvailable}
-                  listCollapsed={listCollapsed()}
-                  detailsOpen={detailsOpen()}
-                  toolbarActions={toolbarActions()}
-                  onToggleList={() => setCollapsed(!listCollapsed())}
-                  onToggleDetails={() => canShowDetails() && setDetailsVisible(!detailsOpen())}
-                  onToolbarActionsChange={updateToolbarActions}
-                  actionPending={structureMutationLoading()}
-                  structurePending={structurePending()}
-                  onAction={runAction}
-                  onOpenHref={openWorkspaceHref}
+                  listCollapsed={controller().listCollapsed()}
+                  detailsOpen={controller().detailsOpen()}
+                  toolbarActions={controller().toolbarActions()}
+                  onToggleList={() => controller().setCollapsed(!controller().listCollapsed())}
+                  onToggleDetails={() => controller().canShowDetails() && controller().setDetailsVisible(!controller().detailsOpen())}
+                  onToolbarActionsChange={controller().updateToolbarActions}
+                  actionPending={controller().structureMutationLoading()}
+                  structurePending={controller().structurePending()}
+                  onAction={controller().runAction}
+                  onOpenHref={controller().openWorkspaceHref}
                   onManageTags={() => {
-                    const item = selectedListItem();
-                    if (item) return manageConversationTags(item);
+                    const item = controller().selectedListItem();
+                    if (item) return controller().manageConversationTags(item);
                   }}
-                  onMergeConversation={mergeSelectedConversation}
-                  onReassignMessage={reassignMessage}
-                  onSplitMessage={splitMessage}
-                  onKeep={() => setConversationKept(true)}
-                  onStopKeeping={() => setConversationKept(false)}
-                  onSummarySaved={applySavedConversationSummary}
-                  onReconcile={reconcileWorkspace}
-                  onReconcileAfterWrite={requireWorkspaceReconcile}
-                  onClose={closeConversation}
+                  onMergeConversation={controller().mergeSelectedConversation}
+                  onReassignMessage={controller().reassignMessage}
+                  onSplitMessage={controller().splitMessage}
+                  onKeep={() => controller().setConversationKept(true)}
+                  onStopKeeping={() => controller().setConversationKept(false)}
+                  onSummarySaved={controller().applySavedConversationSummary}
+                  onReconcile={controller().reconcileWorkspace}
+                  onReconcileAfterWrite={controller().requireWorkspaceReconcile}
+                  onClose={controller().closeConversation}
                 />
               </>
             }
           >
             <Show
-              when={data.draftsMode}
+              when={controller().data.draftsMode}
               fallback={
-                <MailScheduledView
-                  mailboxId={data.mailbox.id}
-                  page={
-                    data.scheduledPage ?? {
-                      items: [],
-                      nextCursor: null,
-                      total: data.scheduledCount,
-                    }
-                  }
-                  error={data.scheduledError}
-                  dateConfig={props.dateConfig}
-                  canWrite={canWrite()}
-                  loading={routeLoading()}
-                  onNavigate={async () => {
-                    await workspaceQuery.loadMore();
-                    if (workspaceQuery.error()) toast.error(workspaceQuery.error()!.message);
-                  }}
-                  onRefresh={requireWorkspaceReconcile}
-                />
+                <Show when={controller()} keyed>
+                  {(mailbox) => (
+                    <MailScheduledView
+                      mailboxId={mailbox.data.mailbox.id}
+                      page={
+                        mailbox.data.scheduledPage ?? {
+                          items: [],
+                          nextCursor: null,
+                          total: mailbox.data.scheduledCount,
+                        }
+                      }
+                      error={mailbox.data.scheduledError}
+                      dateConfig={props.dateConfig}
+                      canWrite={mailbox.canWrite()}
+                      loading={mailbox.routeLoading()}
+                      onNavigate={async () => {
+                        await mailbox.workspaceQuery.loadMore();
+                        if (mailbox.workspaceQuery.error()) toast.error(mailbox.workspaceQuery.error()!.message);
+                      }}
+                      onRefresh={mailbox.requireWorkspaceReconcile}
+                    />
+                  )}
+                </Show>
               }
             >
-              <MailDraftsView
-                mailboxId={data.mailbox.id}
-                canWrite={canWrite()}
-                title={data.listTitle}
-                returnHref={requestPath()}
-                page={data.draftsPage ?? { items: [], nextCursor: null, total: 0 }}
-                error={data.draftsError}
-                dateConfig={props.dateConfig}
-                loading={routeLoading()}
-                onNavigate={async () => {
-                  await workspaceQuery.loadMore();
-                  if (workspaceQuery.error()) toast.error(workspaceQuery.error()!.message);
-                }}
-              />
+              <Show when={controller()} keyed>
+                {(mailbox) => (
+                  <MailDraftsView
+                    mailboxId={mailbox.data.mailbox.id}
+                    canWrite={mailbox.canWrite()}
+                    title={mailbox.data.listTitle}
+                    returnHref={mailbox.requestPath()}
+                    page={mailbox.data.draftsPage ?? { items: [], nextCursor: null, total: 0 }}
+                    error={mailbox.data.draftsError}
+                    dateConfig={props.dateConfig}
+                    loading={mailbox.routeLoading()}
+                    onNavigate={async () => {
+                      await mailbox.workspaceQuery.loadMore();
+                      if (mailbox.workspaceQuery.error()) toast.error(mailbox.workspaceQuery.error()!.message);
+                    }}
+                  />
+                )}
+              </Show>
             </Show>
           </Show>
         </AppWorkspace.Main>
         <AppWorkspace.Detail
           id={MAIL_CONTEXT_DETAIL_ID}
           openOnChoice={false}
-          open={detailsOpen() && canShowDetails()}
-          available={canShowDetails()}
-          onOpen={() => setDetailsVisible(true, false)}
-          onClose={() => setDetailsVisible(false)}
+          open={controller().detailsOpen() && controller().canShowDetails()}
+          available={controller().canShowDetails()}
+          onOpen={() => controller().setDetailsVisible(true, false)}
+          onClose={() => controller().setDetailsVisible(false)}
           width="lg"
           maxWidth={520}
         >
           <Show
-            when={data.selectedConversationId && data.collaborationState && data.conversationLocalTags}
+            when={
+              controller().data.selectedConversationId && controller().data.collaborationState && controller().data.conversationLocalTags
+            }
             fallback={
               <div class="flex h-full items-center justify-center p-4">
                 <Placeholder
-                  state={routeLoading() ? "loading" : "error"}
-                  title={routeLoading() ? t().loadingDetails : t().detailsUnavailable}
+                  state={controller().routeLoading() ? "loading" : "error"}
+                  title={controller().routeLoading() ? controller().t().loadingDetails : controller().t().detailsUnavailable}
                   description={
-                    routeLoading()
+                    controller().routeLoading()
                       ? undefined
-                      : (data.detailErrors.collaboration ?? data.detailErrors.tags ?? data.collaborationError ?? t().refreshConversation)
+                      : (controller().data.detailErrors.collaboration ??
+                        controller().data.detailErrors.tags ??
+                        controller().data.collaborationError ??
+                        controller().t().refreshConversation)
                   }
                 />
               </div>
             }
           >
-            <MailDetailsPanel
-              mailboxId={data.mailbox.id}
-              conversationId={data.selectedConversationId!}
-              active={detailsOpen()}
-              canWrite={canWrite()}
-              mailboxWide={!assignedOnly()}
-              initialState={data.collaborationState!}
-              initialLocalTags={data.localTags}
-              initialConversationLocalTags={data.conversationLocalTags!}
-              initialComments={data.comments}
-              initialCommentsCursor={data.commentsCursor}
-              assignableUsers={data.assignableUsers}
-              presence={presence().participants}
-              currentUserId={props.currentUserId}
-              activity={conversationActivity()}
-              initialReminder={data.reminder}
-              detailErrors={data.detailErrors}
-              conversationDrafts={data.conversationDrafts}
-              messages={data.detailMessages}
-              subject={data.selectedSubject}
-              requestUrl={requestPath()}
-              dateConfig={props.dateConfig}
-              onCollaborationChange={applyCollaborationState}
-              onConversationTagsChange={applyConversationTags}
-              onClose={() => setDetailsVisible(false)}
-              onOpenHref={openWorkspaceHref}
-              onReconcile={reconcileWorkspace}
-            />
+            <Show when={controller()} keyed>
+              {(mailbox) => (
+                <MailDetailsPanel
+                  mailboxId={mailbox.data.mailbox.id}
+                  conversationId={mailbox.data.selectedConversationId!}
+                  active={mailbox.detailsOpen()}
+                  canWrite={mailbox.canWrite()}
+                  mailboxWide={!mailbox.assignedOnly()}
+                  initialState={mailbox.data.collaborationState!}
+                  initialLocalTags={mailbox.data.localTags}
+                  initialConversationLocalTags={mailbox.data.conversationLocalTags!}
+                  initialComments={mailbox.data.comments}
+                  initialCommentsCursor={mailbox.data.commentsCursor}
+                  assignableUsers={mailbox.data.assignableUsers}
+                  presence={mailbox.presence().participants}
+                  currentUserId={props.currentUserId}
+                  activity={mailbox.conversationActivity()}
+                  initialReminder={mailbox.data.reminder}
+                  detailErrors={mailbox.data.detailErrors}
+                  conversationDrafts={mailbox.data.conversationDrafts}
+                  messages={mailbox.data.detailMessages}
+                  subject={mailbox.data.selectedSubject}
+                  requestUrl={mailbox.requestPath()}
+                  dateConfig={props.dateConfig}
+                  onCollaborationChange={mailbox.applyCollaborationState}
+                  onConversationTagsChange={mailbox.applyConversationTags}
+                  onClose={() => mailbox.setDetailsVisible(false)}
+                  onOpenHref={mailbox.openWorkspaceHref}
+                  onReconcile={mailbox.reconcileWorkspace}
+                />
+              )}
+            </Show>
           </Show>
         </AppWorkspace.Detail>
       </AppWorkspace.Content>
@@ -3132,20 +3268,16 @@ export default function MailWorkspace(props: MailWorkspaceProps) {
         {(() => {
           // Resolve the session before the sidebar, so its first server and browser render already has the open mailbox.
           const workspace = (
-            <Show when={session()} keyed>
-              {(s) => (
-                <MailboxWorkspace
-                  {...props}
-                  {...s}
-                  switching={switching}
-                  onReady={setControls}
-                  onNavigationStart={cancelSwitch}
-                  onOpenMailboxHistory={(url, completeScrollRestore) => {
-                    void switchMailbox(url, undefined, completeScrollRestore);
-                  }}
-                />
-              )}
-            </Show>
+            <MailboxWorkspace
+              {...props}
+              session={session()}
+              switching={switching}
+              onReady={setControls}
+              onNavigationStart={cancelSwitch}
+              onOpenMailboxHistory={(url, completeScrollRestore) => {
+                void switchMailbox(url, undefined, completeScrollRestore);
+              }}
+            />
           );
           return (
             <>

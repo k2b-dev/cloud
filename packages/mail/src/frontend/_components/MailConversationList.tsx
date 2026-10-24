@@ -13,7 +13,7 @@ import {
   Tooltip,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import type { Mailbox } from "../../contracts";
 import type { ResolvedMailSearchRoute } from "../../search-url";
 import type { LocalTag } from "../../service/local-tags";
@@ -164,6 +164,22 @@ export default function MailConversationList(props: {
   const [failedLoadHref, setFailedLoadHref] = createSignal<string | null>(null);
   let listScrollElement: HTMLDivElement | undefined;
   let requestedLoadHref: string | null = null;
+  let mailboxGeneration = 0;
+  createEffect(
+    on(
+      () => props.mailboxId,
+      () => {
+        ++mailboxGeneration;
+        cancelPrefetch();
+        quickLook.close();
+        hoverAttempt = null;
+        activeAttempt = null;
+        requestedLoadHref = null;
+        setFailedLoadHref(null);
+      },
+      { defer: true },
+    ),
+  );
   const listHref = () => buildMailListHref(requestUrl());
   const searchActive = () => Boolean(props.query.trim() || requestUrl().searchParams.has("search") || props.activeSavedViewId);
   const healthPresentation = createMemo(() => mailboxHealthPresentation(props.mailbox, locale()));
@@ -178,9 +194,11 @@ export default function MailConversationList(props: {
 
   const loadNextPage = async (href: string) => {
     if (props.loading || requestedLoadHref === href) return;
+    const generation = mailboxGeneration;
     requestedLoadHref = href;
     setFailedLoadHref(null);
     const loaded = await props.onLoadMore(href);
+    if (generation !== mailboxGeneration) return;
     if (!loaded && nextHref() === href) setFailedLoadHref(href);
     if (nextHref() !== href) requestedLoadHref = null;
   };
