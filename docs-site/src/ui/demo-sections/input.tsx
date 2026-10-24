@@ -8,6 +8,8 @@ import {
   Checkbox,
   CheckboxCard,
   ChoiceChips,
+  ChoiceTiles,
+  ColorChoices,
   ColorInput,
   Combobox,
   type Completion,
@@ -1585,6 +1587,89 @@ const ChoiceChipsDemo = () => {
   );
 };
 
+const shapePreview = (radius: string, fill: string) => (
+  <span style={{ display: "inline-block", width: "3rem", height: "3rem", "border-radius": radius, background: fill }} />
+);
+
+const ChoiceTilesDemo = () => {
+  const [shape, setShape] = createSignal<string | null>("round");
+  const [kind, setKind] = createSignal<string | null>("drawing");
+  return (
+    <DemoCard
+      id="choice-tiles"
+      chip={{ kind: "component", name: "ChoiceTiles", from: "@k2b/ui" }}
+      description="A labeled radio group of tiles with a preview. Choosing changes only fill and colour, so no tile moves; the row layout keeps a status line under every label and stacks on phones."
+      code={`<ChoiceTiles
+  label="Frame"
+  value={shape}
+  onValueChange={setShape}
+  options={[
+    { value: "round", label: "Round", visual: <RoundPreview /> },
+    { value: "square", label: "Square", visual: <SquarePreview /> },
+  ]}
+/>`}
+    >
+      <div class="flex flex-col gap-4">
+        <ChoiceTiles
+          aria-label="Kind of picture"
+          layout="row"
+          value={kind}
+          onValueChange={setKind}
+          options={[
+            { value: "photo", label: "Photo", visual: shapePreview("9999px", "#a7c7e7") },
+            { value: "drawing", label: "Drawing", visual: shapePreview("9999px", "#f5e6c6"), status: "Active" },
+            { value: "letters", label: "Letters", visual: shapePreview("9999px", "#dbe7fe") },
+          ]}
+        />
+        <ChoiceTiles
+          label="Frame"
+          value={shape}
+          onValueChange={setShape}
+          options={[
+            { value: "round", label: "Round", visual: shapePreview("9999px", "#d3efe1") },
+            { value: "soft", label: "Soft", visual: shapePreview("28%", "#d3efe1") },
+            { value: "square", label: "Square", visual: shapePreview("0.25rem", "#d3efe1") },
+          ]}
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
+const ColorChoicesDemo = () => {
+  const [color, setColor] = createSignal<string | null>("teal");
+  return (
+    <DemoCard
+      id="color-choices"
+      chip={{ kind: "component", name: "ColorChoices", from: "@k2b/ui" }}
+      description="A labeled radio group of named colour swatches. Every swatch carries its name, so colour is never the only signal; touch screens get 44 px swatches."
+      code={`<ColorChoices
+  label="Background"
+  value={color}
+  onValueChange={setColor}
+  options={[
+    { value: "sky", label: "Sky", color: "#d7e8fb" },
+    { value: "teal", label: "Teal", color: "#15837f" },
+  ]}
+/>`}
+    >
+      <ColorChoices
+        label="Background"
+        value={color}
+        onValueChange={setColor}
+        options={[
+          { value: "sky", label: "Sky", color: "#d7e8fb" },
+          { value: "mint", label: "Mint", color: "#d3efe1" },
+          { value: "sand", label: "Sand", color: "#f5e6c6" },
+          { value: "rose", label: "Rose", color: "#f7dbe1" },
+          { value: "teal", label: "Teal", color: "#15837f" },
+          { value: "stone", label: "Stone", color: "#57534e" },
+        ]}
+      />
+    </DemoCard>
+  );
+};
+
 const EmojiPickerDemo = () => {
   const [recent, setRecent] = createSignal<readonly string[]>(["👍", "🎉", "☕"]);
   const [tone, setTone] = createSignal<EmojiSkinTone>(0);
@@ -1681,6 +1766,16 @@ const demos: DemoSection = {
   "choice-chips": () => (
     <DemoGrid columns="one">
       <ChoiceChipsDemo />
+    </DemoGrid>
+  ),
+  "choice-tiles": () => (
+    <DemoGrid columns="one">
+      <ChoiceTilesDemo />
+    </DemoGrid>
+  ),
+  "color-choices": () => (
+    <DemoGrid columns="one">
+      <ColorChoicesDemo />
     </DemoGrid>
   ),
   "autocomplete-select": () => (
