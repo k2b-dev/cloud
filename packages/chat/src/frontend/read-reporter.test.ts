@@ -8,6 +8,20 @@ for (const kind of ["system", "own"] as const)
     expect(seenRange([counting(10), skipped(11), skipped(12), counting(13), counting(14)], 3, 4)).toEqual({ first: 11, last: 14 });
     expect(seenRange([skipped(11), skipped(12), counting(13)], 2, 2)).toEqual({ first: 11, last: 13 });
   });
+test("seenRange in a thread starts after the loaded message before it, across other threads' positions", () => {
+  expect(seenRange([counting(10), counting(14), counting(20)], 1, 2)).toEqual({ first: 11, last: 20 });
+  // At the start of a history with nothing older, everything before the view counts as seen.
+  expect(seenRange([counting(14), counting(20)], 0, 1, false)).toEqual({ first: 1, last: 20 });
+  expect(seenRange([counting(14), counting(20)], 0, 1, true)).toEqual({ first: 14, last: 20 });
+  // Read through 10 in this thread, 11 belongs to another: seeing 12 reports it.
+  const posts: number[] = [];
+  const reporter = createReadReporter({ start: 10, post: async (seq) => void posts.push(seq), active: () => true });
+  const range = seenRange([counting(10), counting(12)], 1, 1)!;
+  reporter.seen(range.first, range.last);
+  reporter.dispose();
+  expect(posts).toEqual([12]);
+});
+
 test("seenRange ignores items without a sequence and empty or missing ranges", () => {
   const pending = { kind: "text" as const, own: true };
   expect(seenRange([{ ...counting(11), kind: "system" }, pending, counting(12), pending], 2, 3)).toEqual({ first: 11, last: 12 });

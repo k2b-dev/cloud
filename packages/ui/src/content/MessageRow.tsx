@@ -1,13 +1,16 @@
 import { fileIcons } from "@k2b/stdlib";
 import type { Token, Tokens } from "marked";
 import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
-import { Button, IconButton } from "../actions/Button";
+import { Button } from "../actions/Button";
 import { copyText } from "../actions/CopyButton";
+import { Dropdown, type DropdownAction } from "../actions/Dropdown";
+import { type GestureKind, GestureMenu, type GestureMenuAction } from "../actions/GestureMenu";
 import { type ChatMessages, useChatMessages } from "../chat/chat-messages";
 import { announce } from "../feedback/announce";
 import { useLocale } from "../intl/locale";
 import { type UiMessages, useUiMessages } from "../intl/messages";
 import { Avatar } from "../surfaces/Avatar";
+import { Kbd } from "./Kbd";
 import { createSafeMarked, createSafeRenderer, escapeHtml } from "./MarkdownView";
 import { ReactionBar, type ReactionBarItem } from "./ReactionBar";
 
@@ -24,6 +27,8 @@ const LINE_CHARS = 100;
 /** Lines at the bottom of a collapsed message that fade out, as `.k2b-message-row__text[data-collapsed]` draws them. */
 const FADE_LINES = 2;
 const COPIED_MS = 2_000;
+/** Alt+click on these keeps its own meaning, such as downloading a link. */
+const ALT_CLICK_IGNORE = "a[href], button, input, textarea, select, summary, label, audio, video, [role='button'], [role='link']";
 /** Links in messages may only use these schemes; other links show as their text. */
 const LINK_PROTOCOLS = ["https:", "http:", "mailto:"] as const;
 /** Attachments open and load only from these schemes or from a relative URL. */
@@ -52,12 +57,26 @@ export type MessageRowStatus = "pending" | "sent" | "failed";
 
 export type MessageRowAction = {
   id: string;
-  /** Accessible name and tooltip. */
+  /** Visible name of the menu entry. */
   label: string;
   /** Icon class, for example `ti ti-arrow-back-up`. */
   icon: string;
+  /** One quiet sentence below the label that says what the entry does. */
+  description?: string;
   onSelect: () => void;
   disabled?: boolean;
+  variant?: "danger";
+  /** A touch gesture that runs the entry too. Give each gesture to at most one entry. */
+  gesture?: GestureKind;
+  /**
+   * Alt+click (Option+click on Apple devices) on the message runs the entry directly, and the entry shows that
+   * shortcut. Give it to at most one entry.
+   */
+  altClick?: boolean;
+  /** A key the application handles for the focused message, such as "r"; the entry shows it at its end. */
+  shortcut?: string;
+  /** In the phone sheet, runs while the tap still counts as the person's gesture, as clipboard writes require. */
+  immediate?: boolean;
 };
 
 export type MessageRowQuote = {
@@ -116,6 +135,17 @@ export type MessageRowFile = MessageRowAttachmentTarget & {
 
 export type MessageRowAttachment = MessageRowMedia | MessageRowFile;
 
+/** Where a message belongs, shown as a small chip under it, for example its thread in a timeline of several. */
+export type MessageRowOrigin = {
+  label: string;
+  /** Icon class, for example `ti ti-hash`. */
+  icon?: string;
+  /** Opens where the message belongs. Without it, the chip is not a control. */
+  onSelect?: () => void;
+  /** Accessible name of the control when it must say more than the label, such as "Open thread Updates". */
+  selectLabel?: string;
+};
+
 export type MessageRowProgress = {
   /** What is happening, for example "Writing" or "Searching the files". */
   status: string;
@@ -146,7 +176,12 @@ export type MessageRowProps = {
   receipt?: string;
   /** Called by "Retry" while `status` is `"failed"`. */
   onRetry?: () => void;
-  /** Shown as a toolbar over the message while it is hovered or focused. It never moves the layout. */
+  /** Called by "Discard" next to "Retry" while `status` is `"failed"`, so both answers to a failure sit where it shows. */
+  onDiscard?: () => void;
+  /**
+   * The message's menu. A quiet "…" beside the bubble opens it while the message is hovered or focused, also from the
+   * keyboard; right-click and a long press open the same menu. Showing "…" never moves the layout.
+   */
   actions?: readonly MessageRowAction[];
   /** The message this one answers, shown above it. */
   quote?: MessageRowQuote;
@@ -174,6 +209,8 @@ export type MessageRowProps = {
   onAddReaction?: (anchor: HTMLElement) => void;
   /** A bar of fixed height that opens the replies to this message. */
   thread?: MessageRowThread;
+  /** A chip of fixed height under the message that names where it belongs. */
+  origin?: MessageRowOrigin;
   /** The message is still being written, by a person or an automated author alike: a status line with "Stop". */
   progress?: MessageRowProgress;
   class?: string;
@@ -459,6 +496,48 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
     if (event.target.getBoundingClientRect().bottom > fade) setExpanded(true);
   };
 
+  // The same entries serve "…", right-click, the keyboard, and a long press. Alt+click and keys show at the entry's end.
+  // Each menu gets its own entries: a rendered shortcut is a DOM node and can live in only one menu.
+  const entries = () =>
+    (props.actions ?? []).map((entry): GestureMenuAction & Pick<Extract<DropdownAction, { action: () => void }>, "immediate"> => ({
+      label: entry.label,
+      icon: entry.icon,
+      description: entry.description,
+      disabled: entry.disabled,
+      variant: entry.variant,
+      gesture: entry.gesture,
+      immediate: entry.immediate,
+      trailing: entry.altClick ? <Kbd keys="alt+click" /> : entry.shortcut ? <Kbd keys={entry.shortcut} /> : undefined,
+      action: () => entry.onSelect(),
+    }));
+  const menuItems = createMemo(entries);
+  const gestureItems = createMemo(entries);
+  const hasMenu = () => (props.actions?.length ?? 0) > 0;
+
+  // Alt+click (Option+click) on the message, not on a link or control inside it, runs the entry that asks for it.
+  const altClick = (event: MouseEvent) => {
+    if (!event.altKey || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const entry = props.actions?.find((action) => action.altClick && !action.disabled);
+    const target = event.target instanceof Element ? event.target : null;
+    if (!entry || target?.closest(ALT_CLICK_IGNORE)) return;
+    event.preventDefault();
+    entry.onSelect();
+  };
+
+  const more = () => (
+    <Dropdown.Root
+      items={menuItems()}
+      label={chatMessages().messageActions}
+      class="k2b-message-row__menu-root"
+      position={props.own ? "bottom-right" : "bottom-left"}
+      phone="sheet"
+    >
+      <Dropdown.Trigger iconOnly variant="ghost" size="sm" label={chatMessages().messageActions} class="k2b-message-row__menu">
+        <i class="ti ti-dots" aria-hidden="true" />
+      </Dropdown.Trigger>
+    </Dropdown.Root>
+  );
+
   const header = () => (
     <>
       <span class="k2b-message-row__name">{props.author.name}</span>
@@ -473,12 +552,27 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
 
   const quote = (value: MessageRowQuote) => (
     <>
-      <i class="ti ti-arrow-back-up" aria-hidden="true" />
-      <span class="k2b-message-row__quote-text">
+      <span class="k2b-message-row__quote-author">
         <span class="k2b-sr-only">{chatMessages().messageReplyTo} </span>
-        <span class="k2b-message-row__quote-author">{value.author}</span> {value.text}
+        {value.author}
       </span>
+      <span class="k2b-message-row__quote-text">{value.text}</span>
     </>
+  );
+
+  /** The answered message on a quiet tint at the top of the bubble, or in its place without one. */
+  const quoteBlock = () => (
+    <Show when={content() && props.quote}>
+      {(value) => (
+        <Show when={value().onSelect} fallback={<div class="k2b-message-row__quote">{quote(value())}</div>}>
+          {(select) => (
+            <button type="button" class="k2b-message-row__quote" onClick={() => select()()}>
+              {quote(value())}
+            </button>
+          )}
+        </Show>
+      )}
+    </Show>
   );
 
   /** The picture's description, then that it is a video and how long, then how many more the grid hides. */
@@ -528,9 +622,11 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
     );
   };
 
-  return (
+  const row = (
+    // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: Alt+click is a pointer shortcut for a menu entry that the keyboard reaches through "…".
     <div
       class={props.class ? `k2b-message-row ${props.class}` : "k2b-message-row"}
+      onClick={altClick}
       data-own={props.own ? "" : undefined}
       data-group-start={groupStart() ? "" : undefined}
       data-status={props.status}
@@ -574,23 +670,14 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
             <span>{chatMessages().messageForwarded}</span>
           </div>
         </Show>
-        <Show when={content() && props.quote}>
-          {(value) => (
-            <Show when={value().onSelect} fallback={<div class="k2b-message-row__quote">{quote(value())}</div>}>
-              {(select) => (
-                <button type="button" class="k2b-message-row__quote" onClick={() => select()()}>
-                  {quote(value())}
-                </button>
-              )}
-            </Show>
-          )}
-        </Show>
+        <Show when={!hasBubble()}>{quoteBlock()}</Show>
         <Show when={hasBubble()}>
           <div
             class="k2b-message-row__bubble"
             data-deleted={props.deleted ? "" : undefined}
             aria-busy={props.progress && !props.deleted ? "true" : undefined}
           >
+            {quoteBlock()}
             <Show
               when={!props.deleted}
               fallback={
@@ -642,8 +729,10 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                 </Show>
               </Show>
             </Show>
+            <Show when={hasMenu()}>{more()}</Show>
           </div>
         </Show>
+        <Show when={hasMenu() && !hasBubble()}>{more()}</Show>
         {/* Without a bubble to end, the edit marker takes the bubble's place. */}
         <Show when={content() && props.edited && !hasBubble()}>
           <div class="k2b-message-row__marker">
@@ -712,6 +801,26 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
             </button>
           )}
         </Show>
+        <Show when={props.origin}>
+          {(origin) => (
+            <Show
+              when={origin().onSelect}
+              fallback={
+                <span class="k2b-message-row__origin">
+                  <Show when={origin().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                  {origin().label}
+                </span>
+              }
+            >
+              {(select) => (
+                <button type="button" class="k2b-message-row__origin" aria-label={origin().selectLabel} onClick={() => select()()}>
+                  <Show when={origin().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                  {origin().label}
+                </button>
+              )}
+            </Show>
+          )}
+        </Show>
         <Show when={hasFooter()}>
           <div class="k2b-message-row__footer">
             <Show when={reactions()}>
@@ -734,6 +843,13 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                           {(retry) => (
                             <Button variant="text" size="xs" onClick={() => retry()()}>
                               {chatMessages().messageRetry}
+                            </Button>
+                          )}
+                        </Show>
+                        <Show when={props.onDiscard}>
+                          {(discard) => (
+                            <Button variant="text" size="xs" onClick={() => discard()()}>
+                              {chatMessages().messageDiscard}
                             </Button>
                           )}
                         </Show>
@@ -778,18 +894,16 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
           </div>
         </Show>
       </div>
-      <Show when={(props.actions?.length ?? 0) > 0}>
-        <div class="k2b-message-row__actions" role="group" aria-label={chatMessages().messageActions}>
-          <For each={props.actions}>
-            {(action) => (
-              <IconButton label={action.label} size="sm" disabled={action.disabled} onClick={() => action.onSelect()}>
-                <i class={action.icon} aria-hidden="true" />
-              </IconButton>
-            )}
-          </For>
-        </div>
-      </Show>
     </div>
+  );
+
+  return (
+    <Show when={hasMenu()} fallback={row}>
+      {/* Out of the tab order: the keyboard reaches the same menu through "…", so a message adds no extra stop. */}
+      <GestureMenu items={gestureItems()} label={chatMessages().messageMenu({ author: props.author.name, time: props.time })} tabIndex={-1}>
+        {row}
+      </GestureMenu>
+    </Show>
   );
 }
 

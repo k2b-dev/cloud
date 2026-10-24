@@ -5,7 +5,7 @@ section: Platform services
 order: 595
 description: Expose application operations through the shared cld command-line interface.
 tags: [cli, cld, automation, plugins]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Application CLI modules
@@ -661,6 +661,52 @@ The CLI package also exports the helpers used by the generated commands:
 Use them when an application needs a different command shape. Keep the same
 principal resolution and output contracts.
 
+### Add app access commands
+
+For an application that declares `appAccess.grants()`, add
+`createAppAccessCommands(appId)` from `@k2b/cloud/cli` to its module. This helper
+uses the same audited API as `AppAccessEditor`; no resource adapter is needed:
+
+```ts
+import {
+  createAppAccessCommands,
+  defineCliCommands,
+} from "@k2b/cloud/cli";
+
+export default defineCliCommands({
+  name: "inventory",
+  summary: "Manage inventory access.",
+  requiresCloud: true,
+  commands: createAppAccessCommands("inventory"),
+});
+```
+
+It adds `access list`, `grant`, `set`, `revoke`, and `search-principals`.
+App access takes no resource argument. For a module installed as `inventory`:
+
+```sh
+cld inventory access list --json
+cld inventory access grant --user <user-id> --permission manage
+cld inventory access set --user <user-id> --permission use
+cld inventory access revoke --access-id <entry-id> --yes
+```
+
+Principal flags also include `--group`, `--service-account`, and
+`--authenticated`. App permission flags accept `use` or `manage`, mapped to
+`read` or `admin` only at the API boundary. List and mutation output retain
+those stored levels. The signed-in audience may receive only `use`; public
+grants are unsupported. `set` updates an existing direct grant or creates one;
+`grant` rejects duplicates. Revocation requires `--yes`.
+
+The helper calls `/_cloud/app-access/:appId`, follows the ordinary management
+redirect to the owning application, and never selects administrator repair.
+Both a management grant and any `canManage` restriction apply, alongside
+credential write authority and the last-manager guard. After a lost response,
+run `access list` to check the current state before retrying the write.
+Only applications that ship these commands expose them; all built-ins retain
+fixed rules in the first rollout. See [App access](/en/docs/identity/app-access)
+for editor integration, first configuration, and repair.
+
 ## Register the module
 
 Export the module from the application package, usually from `src/cli.ts`,
@@ -879,13 +925,16 @@ plugin then goes to a content-addressed store,
 `$XDG_CONFIG_HOME/cloud/cld/plugins/store/<digest>/`, and the profile locks
 the module's app, version, and digest in the `cld` config. Profiles for
 different Clouds can use different versions of the same module; identical
-versions are stored once. A version is deleted only when no profile lock or
-package record uses it.
+versions are stored once. Updates and removals retain published bundles because
+another `CLD_CONFIG` file may still lock them. This also applies when a package
+plugin is replaced or removed. Old versions therefore continue to use disk
+space; only abandoned download directories are cleaned automatically.
 Without `XDG_CONFIG_HOME`, the directory is `~/.config/cloud/cld/plugins/`.
 
 `cld profile rm <name>` removes a profile together with its lock. It signs the
-profile out first, revoking an OAuth login like `cld logout`, then deletes the
-versions no remaining profile lock or package record uses and rewrites the skill. It asks for
+profile out first, revoking an OAuth login like `cld logout`, then rewrites the
+skill without that profile. Its stored bundles remain available to other
+configurations. It asks for
 confirmation, or needs `--yes` without a terminal, and refuses the current
 profile while other profiles exist; `cld profile use <other>` selects another
 one first.
@@ -932,10 +981,9 @@ and `CLD_CONFIG`. Installing the same module again replaces its record and
 removes an old-format directory of that ID. Skill targets sync automatically
 after package install and removal too.
 
-Removing or replacing a package deletes only its own old bundle, and only if
-no profile lock in the current config or remaining package record uses it.
-Other unused bundles are removed at the next served plugin change or profile
-removal.
+Removing or replacing a package updates its global record and skill references.
+Its old bundle stays in the shared store because a profile in another config
+may still use exactly those bytes.
 
 Old packages with `cld.apiVersion` and `cld.entry` are refused. Their authors
 must re-pack with `cli-pack.ts` and publish the new package. Existing

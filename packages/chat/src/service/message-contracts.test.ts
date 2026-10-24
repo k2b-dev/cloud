@@ -32,6 +32,8 @@ test("history cursors are mutually exclusive safe integers; after and delta acce
 
 test("an empty group membership change still invalidates conversation and sidebar access", () => {
   const message = MessageSchema.parse({
+    thread: null,
+    replyTo: null,
     id: "0123456789",
     conversationId: "abcdef",
     seq: 1,

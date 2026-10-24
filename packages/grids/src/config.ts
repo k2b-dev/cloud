@@ -1,9 +1,25 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 import { NOTIFICATIONS } from "./notifications";
 import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "grids",
+  // APIs admit roleless service accounts; navigation keeps its narrower audience.
+  access: appAccess.signedIn({
+    publicRoutes: [
+      "/share/grids/forms/:token",
+      "/share/grids/documents/:token",
+      "/share/grids/documents/:token/download",
+      "/apps/:shortId",
+      "/apps/:shortId/:pageId",
+      "/api/grids/forms/public/:token",
+      "/api/grids/forms/public/:token/submit",
+      "/api/grids/forms/public/:token/relations/:fieldId/lookup",
+      "/api/grids/apps/runtime/:shortId",
+      "/api/grids/apps/runtime/:shortId/*",
+      "/api/grids/openapi.json",
+    ],
+  }),
   cli: { grids: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Grids",
   icon: "ti ti-table",
