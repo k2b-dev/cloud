@@ -27,7 +27,7 @@ import { ButtonLink, InlineGuidance, NoticeCard } from "@k2b/ui";
 ## Composition
 
 `NoticeCard` accepts `title`, optional `detail`, optional `meta`, `tone`,
-`class`, and `bodyClass`. Children render below the title and detail, for
+optional `icon`, `class`, and `bodyClass`. Children render below the title and detail, for
 example a list or the controls for the next step. Without a title, the
 children are the whole notice. Children that render nothing, such as a `Show`
 whose condition is false, add no body and no space.
@@ -48,9 +48,24 @@ A notice is calm by design: a light tint of its tone, no border, a generous
 radius and padding, and no icon. The title is semibold in the primary text
 color; detail and body use the secondary text color at the normal 14 px
 reading size. Only the `meta` pill repeats the tone color. There is one
-appearance for every tone and every application; do not add icons or color
-the text to make a notice louder. If something needs more weight, say so in
-the title.
+appearance for every tone and every application; do not color the text to
+make a notice louder. If something needs more weight, say so in the title.
+
+`icon` turns a notice into a compact status line directly above the form or
+list it is about, such as a repair hint over an access list or a load failure
+with its retry. It adds an 18 px Tabler icon on the first text line, sets the
+icon and the text in the tone color, and uses the control radius with tighter
+padding. A bold lead sentence in the children, such as
+`<strong>No one manages access.</strong>`, takes the place of a separate
+title. Use one icon per tone meaning (`ti-info-circle`, `ti-alert-triangle`,
+`ti-alert-circle`) or a specific one when it names the subject, and keep the
+default calm notice for findings that stand on their own.
+
+```tsx
+<NoticeCard tone="warning" icon="ti ti-alert-triangle">
+  <p><strong>No one manages access.</strong> Assign at least one person Manage access.</p>
+</NoticeCard>
+```
 
 The tint alone separates a notice from its host, so it does not read as a
 second box inside a section, panel, or dialog. Place it directly in the
@@ -96,7 +111,7 @@ code should render `NoticeCard` instead of assembling its internal markup.
 Markdown callouts (`:::note`, `:::info`, `:::success`, `:::warning`,
 `:::danger`) share the tint, title, and body classes but add a decorative type
 icon and a title in the tone colour. `NoticeCard` stays calm with neutral text
-and no icon. Callout icons are inline SVG, so they print without an icon font.
+and no icon unless it receives `icon`. Callout icons are inline SVG, so they print without an icon font.
 `MARKDOWN_CALLOUT_CLASSES` exports the root `k2b-callout` and icon
 `k2b-callout__icon` classes. Hosts with their own sanitizer must allow the
 `svg` and `path` markup, including `viewBox` and `aria-hidden="true"`.
@@ -105,7 +120,7 @@ renderer helpers, and SVG attribute contract.
 
 ## Accessibility
 
-Notice cards add no live-region role. If a new error notice must be announced immediately, the owning application must provide the appropriate alert semantics. The tint is never the only signal: the title, the body, or the `meta` pill must name the state in words, such as **Could not save** or **Due 22 Nov**. Body text keeps the secondary text color on every tint, so it meets contrast in light and dark mode.
+Notice cards add no live-region role. If a new error notice must be announced immediately, the owning application must provide the appropriate alert semantics. The tint is never the only signal: the title, the body, or the `meta` pill must name the state in words, such as **Could not save** or **Due 22 Nov**. Body text keeps the secondary text color on every tint, so it meets contrast in light and dark mode. An icon notice uses the tone's text token on its own tone surface, the same pair inline guidance and status text use; the icon is decorative and hidden from assistive technology.
 
 Inline guidance adds `role="status"`, `aria-live="polite"`, and `aria-busy="true"`
 while loading. Without loading it adds no live-region role. Explicit HTML
