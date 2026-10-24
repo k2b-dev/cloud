@@ -176,7 +176,7 @@ suite("Files machine storage through actual API tokens", () => {
     const pair = await generateKeyPair("RS256", { extractable: true });
     oauthPrivateKey = pair.privateKey;
     oauthPublicKey = await exportJWK(pair.publicKey);
-    const adminId = Bun.randomUUIDv7();
+    const adminId = crypto.randomUUID();
     await sql`INSERT INTO auth.users(id,uid,provider,profile,admin,display_name) VALUES(${adminId}::uuid,'files-machine-admin','local','user',true,'Fixture administrator')`;
     const user = await accounts.users.get({ id: adminId });
     if (!user) throw new Error("Missing administrator");
@@ -590,6 +590,53 @@ suite("Files machine storage through actual API tokens", () => {
       await expect(service.createMachineStorage(call(), { ownerId: otherCreated.data.id, area: "freeipa" })).rejects.toMatchObject({
         code: "identity_incomplete",
       });
+    }, 60000);
+  }
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`${kind}: administrator OAuth storage changes require administrative scope`, async () => {
+      const created = await serviceAccounts.createStandalone({ name: `Admin OAuth storage ${kind}`, kind, createdBy: admin.user.id });
+      if (!created.ok) throw new Error(created.error.code);
+      const owner = created.data;
+      const clientId = `files-admin-oauth-${Bun.randomUUIDv7()}`;
+      await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,scopes) VALUES('Files administrator fixture',${clientId},ARRAY[]::text[],ARRAY['read','write','admin'])`;
+      const [current] = await sql<{ auth_epoch: number }[]>`SELECT auth_epoch FROM auth.users WHERE id=${admin.user.id}::uuid`;
+      const sign = (scope: string) =>
+        new SignJWT({ token_use: "access", client_id: clientId, id: admin.user.id, auth_epoch: current!.auth_epoch, scope })
+          .setProtectedHeader({ alg: "RS256", kid: oauthKid })
+          .setIssuer("http://files-machine.test")
+          .setSubject(admin.user.id)
+          .setAudience("cloud")
+          .setIssuedAt(Math.floor(Date.now() / 1000))
+          .setExpirationTime(Math.floor(Date.now() / 1000) + 3600)
+          .sign(oauthPrivateKey);
+      const administrative = await sign("admin");
+      const restricted = await Promise.all([sign("read"), sign("write")]);
+      const storageInput = { ownerId: owner.id, area: "cloud" };
+      const grantsInput = { principal: { type: "user", userId: admin.user.id }, path: "", permission: "admin" };
+      for (const bearer of restricted) {
+        await data(await request(bearer, "/admin/machine-storage"));
+        expect((await request(bearer, "/admin/machine-storage", "POST", storageInput)).status).toBe(403);
+      }
+      const [absent] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM filesv2.machine_storage WHERE owner_id=${owner.id}::uuid`;
+      expect(absent!.count).toBe(0);
+      await expect(client.root("cloud").stat(`${prefix}/users/machine-${owner.id}`)).rejects.toMatchObject({ status: 404 });
+      const storage = await data<{ id: string; baseId: string }>(
+        await request(administrative, "/admin/machine-storage", "POST", storageInput),
+      );
+      expect((await client.root("cloud").stat(`${prefix}/users/machine-${owner.id}`)).directory).toBe(true);
+      expect((await service.storageGrants(call(), storage.id)).items).toHaveLength(0);
+      const grantsPath = `/admin/machine-storage/${storage.id}/grants`;
+      for (const bearer of restricted) expect((await request(bearer, grantsPath, "POST", grantsInput)).status).toBe(403);
+      expect((await service.storageGrants(call(), storage.id)).items).toHaveLength(0);
+      const grant = await data<{ id: string }>(await request(administrative, grantsPath, "POST", grantsInput));
+      for (const bearer of restricted) {
+        expect((await request(bearer, `${grantsPath}/${grant.id}`, "DELETE")).status).toBe(403);
+        expect((await service.storageGrants(call(), storage.id)).items.map((item) => item.id)).toEqual([grant.id]);
+      }
+      await data(await request(administrative, `${grantsPath}/${grant.id}`, "DELETE"));
+      expect((await service.storageGrants(call(), storage.id)).items).toHaveLength(0);
     }, 60000);
   }
   for (const delegated of [false, true]) {

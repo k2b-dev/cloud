@@ -1,4 +1,4 @@
-import { type AuthContext, middleware, requiresAdmin, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, middleware, requiresAdmin, respond, v } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -17,6 +17,7 @@ export const machineStorageApi = new Hono<AuthContext>()
   .post(
     "/",
     middleware.openapi({ summary: "Provision independent machine storage without granting access", ...requiresAdmin }),
+    auth.requireOAuthScope("admin"),
     v("json", MachineStorageInputSchema),
     async (c) => respond(c, ok(await service.createMachineStorage(requestCall(c), c.req.valid("json")))),
   )
@@ -30,6 +31,7 @@ export const machineStorageApi = new Hono<AuthContext>()
   .post(
     "/:id/grants",
     middleware.openapi({ summary: "Grant storage access", ...requiresAdmin }),
+    auth.requireOAuthScope("admin"),
     id,
     v("json", StorageGrantInputSchema),
     async (c) => respond(c, ok(await service.grantStorage(requestCall(c), c.req.valid("param").id, c.req.valid("json")))),
@@ -37,6 +39,7 @@ export const machineStorageApi = new Hono<AuthContext>()
   .delete(
     "/:id/grants/:accessId",
     middleware.openapi({ summary: "Revoke storage access immediately", ...requiresAdmin }),
+    auth.requireOAuthScope("admin"),
     v("param", z.object({ id: z.string().uuid(), accessId: z.string().uuid() })),
     async (c) => respond(c, ok(await service.revokeStorage(requestCall(c), c.req.valid("param").id, c.req.valid("param").accessId))),
   );

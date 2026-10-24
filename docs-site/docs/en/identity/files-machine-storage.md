@@ -47,6 +47,8 @@ recognizes `read`, `write`, `admin`, `filesv2:read`, `filesv2:write`,
 `filesv2:admin` and `filesv2:*`. A scope never creates a grant. Resource-bound
 accounts do not acquire machine storage through an unrelated application binding.
 
+Administrative OAuth clients need the `admin` scope to create storage or change its access.
+
 The administration API lives under `/api/filesv2/admin/machine-storage`:
 
 - `GET /` lists a page; pass the returned `next` as `after`.
