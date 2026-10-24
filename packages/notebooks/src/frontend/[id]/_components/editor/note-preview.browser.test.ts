@@ -82,6 +82,8 @@ const notes = {
 };
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
+/** The note of the page served last; its collaboration socket starts from that note's saved state, as Cloud's does. */
+let servedSnapshot = notes.markdown.snapshot;
 
 beforeAll(async () => {
   const ui = `${resolve(import.meta.dir, "../../../../../../ui")}/`;
@@ -137,8 +139,9 @@ beforeAll(async () => {
         const { blocks } = renderNotebookBook({ markdown: draft, notebookId: "book01", noteId: "note01", locale: "en", linkMode: "write" });
         return Response.json({ markdown: draft, blocks, diagnostics: [], headings: [] });
       }
-      const { text: note } =
+      const { text: note, snapshot: served } =
         notes[(["many", "long", "headings", "chart", "print"] as const).find((name) => url.searchParams.has(name)) ?? "markdown"];
+      servedSnapshot = served;
       const mode = url.searchParams.get("mode") === "source" ? "source" : "rich";
       const readOnly = url.searchParams.has("readonly");
       const historyIncomplete = url.searchParams.has("historyIncomplete");
@@ -197,6 +200,11 @@ beforeAll(async () => {
     },
     websocket: {
       open(socket) {
+        // The first edit connects; the server sends the note's state before it is ready, as the real one does.
+        const updates = [{ cursor: null, payload: servedSnapshot, originPeerId: null }];
+        socket.send(
+          JSON.stringify({ type: notebooksYjs.wsType.syncPush, payload: { noteId: "note01", historyIncomplete: false, updates } }),
+        );
         socket.send(JSON.stringify({ type: notebooksYjs.wsType.replayReady, payload: { noteId: "note01" } }));
       },
       message() {},
