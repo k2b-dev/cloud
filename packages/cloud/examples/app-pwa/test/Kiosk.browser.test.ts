@@ -52,7 +52,7 @@ beforeAll(async () => {
     fetch(request) {
       const url = new URL(request.url);
       if (url.pathname === "/bundle.js") return new Response(bundle, { headers: { "Content-Type": "text/javascript" } });
-      if (url.pathname === "/style.css") return new Response(fonts + icons + uiCss + style, { headers: { "Content-Type": "text/css" } });
+      if (url.pathname === "/style.css") return new Response(fonts + icons + style + uiCss, { headers: { "Content-Type": "text/css" } });
       if (/^\/(fonts\/[a-z0-9-]+|tabler-icons-[a-z0-9]+)\.woff2$/.test(url.pathname))
         return new Response(Bun.file(resolve(ui, "dist", url.pathname.slice(1))));
       const initial = fixtureSnapshot();
@@ -389,7 +389,7 @@ for (const width of [390, 768])
 const expectHeadingFocus = async (page: Page) =>
   expect(await page.locator("h1").evaluate((element) => element === document.activeElement)).toBe(true);
 
-for (const width of [390, 768, 1440])
+for (const width of [390, 600, 768, 1440])
   describe(`Staff pairing at ${width}px`, () => {
     test("stable retry, claimed nullable QR, new pairing, pagination and visit QR renewal", async () => {
       const page = await browser.newPage({ viewport: { width, height: 1024 } });
@@ -488,7 +488,7 @@ for (const width of [390, 768, 1440])
   });
 
 // These measurements protect the approved shared phone/tablet/desktop geometry.
-for (const width of [390, 768, 1440])
+for (const width of [390, 600, 768, 1440])
   for (const theme of ["light", "dark"])
     test(`approved App-PWA geometry at ${width}px in ${theme}`, async () => {
       const { page, state } = await setup(width, `unpaired=1&${theme === "dark" ? "dark=1" : ""}`);
@@ -499,10 +499,11 @@ for (const width of [390, 768, 1440])
             const element = document.querySelector(selector);
             if (!element) throw new Error(`Missing ${selector}`);
             const rect = element.getBoundingClientRect();
-            return { width: rect.width, height: rect.height };
+            return { width: rect.width, height: rect.height, top: rect.top };
           };
           return {
             frame: box(".kiosk"),
+            radius: getComputedStyle(document.querySelector(".kiosk")!).borderRadius,
             main: box(".kiosk-main"),
             welcome: box(".kiosk-welcome"),
             scan: box(".kiosk-scan-art"),
@@ -510,8 +511,12 @@ for (const width of [390, 768, 1440])
           };
         });
         expect(measure.overflow).toBe(false);
-        expect(measure.frame.width).toBe(Math.min(width, 820));
-        expect(measure.main.width).toBe(Math.min(width - (width <= 600 ? 40 : 80), 650));
+        const frameWidth = width === 390 ? 374 : width === 600 ? 576 : width === 768 ? 720 : 820;
+        expect(measure.frame.width).toBe(frameWidth);
+        expect(measure.frame.top).toBe(width === 390 ? 8 : width === 600 ? 12 : 24);
+        expect(measure.radius).toBe(width === 390 ? "14px" : "18px");
+        expect(measure.frame.height).toBeGreaterThanOrEqual(width === 390 ? 790 : width === 600 ? 780 : 760);
+        expect(measure.main.width).toBe(Math.min(frameWidth - (width === 390 ? 40 : width === 600 ? 48 : 80), 650));
         expect(measure.welcome.width).toBe(Math.min(measure.main.width, 540));
         expect(measure.scan.height).toBe(190);
         const shots = process.env.CLOUD_APP_PWA_SHOTS;

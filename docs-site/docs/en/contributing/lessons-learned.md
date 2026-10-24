@@ -1092,3 +1092,10 @@ updates that class's row in the table.
 - **Root cause:** the transport assertion assumed wall-clock timing implied a particular protocol phase; independent CLI cases shared one test deadline.
 - **Error class:** test scheduling depended on host load.
 - **Guard:** trigger the caller deadline from the first response body chunk and give each CLI input case its own fixture and test, preserving every rejection and no-write assertion.
+
+## Measure the approved frame at each viewport
+
+- **What happened:** the App-PWA example retained the desktop maximum width but filled phone and tablet viewports, losing the approved outer margins.
+- **Root cause:** the responsive CSS copied the content widths without the mockup's surrounding frame; the browser fixture also loaded styles in the reverse order from production.
+- **Error class:** responsive mockup parity drift.
+- **Guard:** browser measurements cover the frame width, top margin, minimum height and inner width at phone, tablet and desktop sizes in both themes, using the production stylesheet order.
