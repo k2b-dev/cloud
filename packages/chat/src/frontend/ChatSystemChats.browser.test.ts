@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
@@ -46,8 +46,8 @@ const load = async (
     }
     Object.defineProperty(globalThis, "Date", { value: PinnedDate, configurable: true, writable: true });
   }, chatTestNow.getTime());
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  // WebKit reports the loads a reload or Back refuses as errors; the shared collector leaves exactly those out.
+  const errors = pageErrors(page);
   try {
     await setup?.(page);
     const basePath = address.embedded ? "/app/chat/panel" : "/app/chat";
