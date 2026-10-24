@@ -158,7 +158,7 @@ const rows = (document: Document) =>
 
 describe("Spaces in the mobile app", () => {
   test("declares its part for people with the user role, at the route the gateway sends to Spaces", () => {
-    expect(app.meta.pwa).toEqual({ href: "/pwa/spaces", requiresRoles: ["user"] });
+    expect(app.meta.pwa).toEqual({ href: "/pwa/spaces", requiresRoles: ["user"], summary: "/api/spaces/overview/summary" });
     expect(app.meta.routes).toContain("/pwa/spaces");
   });
 
@@ -316,6 +316,19 @@ describe("Spaces in the mobile app", () => {
 
   test("keeps its catalog complete in every language", () => {
     expect(myTasksMessages.check()).toEqual([]);
+    // The line on the Cloud app's Start counts the tasks for you and adds today's only when there are some.
+    const en = myTasksMessages.resolve(["en"]).t;
+    const de = myTasksMessages.resolve(["de"]).t;
+    expect([en.summary({ mine: 0, today: 0 }), en.summary({ mine: 1, today: 0 }), en.summary({ mine: 5, today: 1 })]).toEqual([
+      "No tasks for you",
+      "1 task for you",
+      "5 tasks for you · 1 today",
+    ]);
+    expect([de.summary({ mine: 0, today: 2 }), de.summary({ mine: 1, today: 0 }), de.summary({ mine: 5, today: 1 })]).toEqual([
+      "Keine Aufgaben für dich · 2 heute",
+      "1 Aufgabe für dich",
+      "5 Aufgaben für dich · 1 heute",
+    ]);
     expect(overviewMessages.check()).toEqual([]);
   });
 });

@@ -33,6 +33,12 @@ export async function loadOverviewWork(params: { userId: string; view: OverviewV
   };
 }
 
+/** The counts of the overview's views alone, for a line about the reader's work, such as the Cloud app's Start. */
+export async function loadOverviewCounts(params: { userId: string; dateConfig: DateContext }): Promise<OverviewWork["counts"]> {
+  const dashboard = await dashboardSnapshot({ ...params, view: "counts", todoLimit: 0 });
+  return { mine: dashboard.assignedToMeCount, today: dashboard.todayCount, upcoming: dashboard.upcomingCount };
+}
+
 export type SpaceOverviewStats = { spaceId: string; openItemCount: number };
 
 /** Per-space sidebar facts for Spaces the caller already resolved through access checks; one query. */

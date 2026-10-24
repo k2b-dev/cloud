@@ -71,7 +71,14 @@ export const buildRuntimeFromRegistry = (entries: AppRegistryEntry[], capabiliti
       ),
       legalLinks: e.legalLinks ? e.legalLinks.map((l) => ({ ...l })) : undefined,
       searchLinks: e.searchLinks?.map((link) => ({ ...link, keywords: link.keywords ? [...link.keywords] : undefined })),
-      pwa: e.pwa ? { href: e.pwa.href, requiresRoles: e.pwa.requiresRoles ? ([...e.pwa.requiresRoles] as Role[]) : undefined } : undefined,
+      pwa: e.pwa
+        ? {
+            href: e.pwa.href,
+            requiresRoles: e.pwa.requiresRoles ? ([...e.pwa.requiresRoles] as Role[]) : undefined,
+            ...(e.pwa.badge ? { badge: e.pwa.badge } : {}),
+            ...(e.pwa.summary ? { summary: e.pwa.summary } : {}),
+          }
+        : undefined,
       openapi: e.openapi,
     };
   }),

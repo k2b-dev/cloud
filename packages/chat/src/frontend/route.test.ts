@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { panelHref, parseRoute } from "./route";
+import { panelHref, parseRoute, routeAddress, threadsPageHref } from "./route";
 
 test("info links and route parsing preserve only a valid chat panel", () => {
   expect(panelHref("Chat01", null)).toBe("/app/chat/c/Chat01");
@@ -27,6 +27,27 @@ test("info links and route parsing preserve only a valid chat panel", () => {
     panel: null,
   });
   expect(parseRoute(new URL("https://cloud.test/app/other"))).toBeNull();
+});
+
+test("the Cloud app's Chat keeps its links below /pwa/chat", () => {
+  const href = panelHref("Chat01", null, "Message001", "Thread01", "/pwa/chat");
+  expect(href).toBe("/pwa/chat/c/Chat01/t/Thread01/m/Message001");
+  expect(parseRoute(new URL(href, "https://cloud.test"))).toEqual({
+    chatId: "Chat01",
+    view: "Thread01",
+    threads: false,
+    messageId: "Message001",
+    panel: null,
+  });
+  expect(parseRoute(new URL(threadsPageHref("Chat01", "/pwa/chat"), "https://cloud.test"))?.threads).toBe(true);
+  expect(parseRoute(new URL("https://cloud.test/pwa/chat"))).toEqual({
+    chatId: null,
+    view: "all",
+    threads: false,
+    messageId: null,
+    panel: null,
+  });
+  expect(parseRoute(new URL("https://cloud.test/pwa/chats"))).toBeNull();
 });
 
 test("panel links preserve a message deep link and round-trip through route parsing", () => {
@@ -88,4 +109,16 @@ test("provider navigation stays below the panel route, including list, info, thr
     panel: null,
   });
   expect(parseRoute(new URL("https://cloud.test/app/chat/panel-other"))).toBeNull();
+});
+
+test("Info on the phone's thread page keeps that page in the address, so a reload shows it again", () => {
+  for (const basePath of ["/app/chat", "/pwa/chat"]) {
+    for (const route of [
+      { chatId: "Chat01", view: "all", threads: true, messageId: null, panel: "info" as const },
+      { chatId: "Chat01", view: "all", threads: true, messageId: null, panel: null },
+      { chatId: "Chat01", view: "Thread01", threads: false, messageId: "Message001", panel: "info" as const },
+      { chatId: null, view: "all", threads: false, messageId: null, panel: null },
+    ])
+      expect(parseRoute(new URL(routeAddress(route, basePath), "https://cloud.test"))).toEqual(route);
+  }
 });

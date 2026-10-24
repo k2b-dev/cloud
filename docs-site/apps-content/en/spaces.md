@@ -73,6 +73,8 @@ when the audience or lifecycle is different.
 When the installation runs the
 [mobile app](/en/docs/frontend/mobile-app-pages), Spaces appears on its Start
 page and, when there is room, in its tab bar for people with the `user` role. Guests do not see it.
+Start says how many tasks are for you and how many are for today, and the
+sidebar of a wide screen shows the number of tasks for you beside Spaces.
 The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
 **Upcoming** lists with their counts, across every Space you can read.
 Tasks you claim also count as yours in **For me**.

@@ -45,6 +45,13 @@ describe("validateAppRegistryEntry", () => {
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/app/core" } })).toContain("pwa");
     expect(validateAppRegistryEntry({ ...valid, pwa: "/pwa/core" })).toContain("pwa");
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/core", requiresRoles: "user" } })).toContain("pwa.requiresRoles");
+    const routes = ["/api/core", "/pwa/core"];
+    expect(validateAppRegistryEntry({ ...valid, routes, pwa: { href: "/pwa/core", badge: "/api/core/count" } })).toBeNull();
+    for (const badge of [3, "https://elsewhere.test/count", "//elsewhere.test/count", "/api/other/count"])
+      expect(validateAppRegistryEntry({ ...valid, routes, pwa: { href: "/pwa/core", badge } })).toContain("pwa.badge");
+    expect(validateAppRegistryEntry({ ...valid, routes, pwa: { href: "/pwa/core", summary: "/api/core/summary" } })).toBeNull();
+    for (const summary of [3, "https://elsewhere.test/summary", "/api/other/summary"])
+      expect(validateAppRegistryEntry({ ...valid, routes, pwa: { href: "/pwa/core", summary } })).toContain("pwa.summary");
   });
   test("accepts a navigation badge only as a same-origin path below the entry's own routes", () => {
     const nav = { href: "/", section: "primary" };

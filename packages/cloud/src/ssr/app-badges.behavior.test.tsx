@@ -4,7 +4,7 @@ import { render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import { refreshAppBadges } from "../browser/app-badges";
 import { APPROVAL_COUNTS_PATH } from "../contracts/approvals";
-import { APP_BADGE_INTERVAL_MS, appBadgeCount, approvalCount, watchAppBadges } from "./app-badges";
+import { APP_BADGE_INTERVAL_MS, appBadgeCount, appPartSummaryText, approvalCount, watchAppBadges } from "./app-badges";
 import type { RailApp } from "./rail-navigation";
 import type { ShellData } from "./shell-data";
 
@@ -442,5 +442,24 @@ test("a disposed watcher cannot clear new counts when its error cleanup rejects 
   } finally {
     stop();
     for (const reject of rejectCleanup) reject();
+  }
+});
+
+test("a Cloud app part's summary keeps its one-line text beside its count; a missing or invalid text clears it", async () => {
+  responses["/api/spaces/summary"] = () => Response.json({ count: 5, text: "5 tasks for you · 1 today" });
+  const stop = watchAppBadges(["/api/spaces/summary"]);
+  try {
+    await settle();
+    expect(appBadgeCount({ endpoint: "/api/spaces/summary" })).toBe(5);
+    expect(appPartSummaryText("/api/spaces/summary")).toBe("5 tasks for you · 1 today");
+    for (const text of [undefined, "", "two\nlines", "x".repeat(201), 3]) {
+      responses["/api/spaces/summary"] = () => Response.json({ count: 2, text });
+      refreshAppBadges();
+      await settle();
+      expect(appBadgeCount({ endpoint: "/api/spaces/summary" })).toBe(2);
+      expect(appPartSummaryText("/api/spaces/summary")).toBeUndefined();
+    }
+  } finally {
+    stop();
   }
 });

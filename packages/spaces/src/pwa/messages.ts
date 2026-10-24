@@ -44,6 +44,8 @@ export const myTasksMessages = i18n.define({
       taskLoadFailed: "The task could not be loaded.",
       taskGone: "This task is no longer available.",
       toList: "Back to the list",
+      summary: ({ mine, today }: { mine: number; today: number }) =>
+        `${mine === 0 ? "No tasks" : mine === 1 ? "1 task" : `${mine} tasks`} for you${today ? ` · ${today} today` : ""}`,
       retry: "Try again",
     },
     de: {
@@ -84,6 +86,8 @@ export const myTasksMessages = i18n.define({
       taskLoadFailed: "Die Aufgabe konnte nicht geladen werden.",
       taskGone: "Diese Aufgabe ist nicht mehr verfügbar.",
       toList: "Zur Liste",
+      summary: ({ mine, today }) =>
+        `${mine === 0 ? "Keine Aufgaben" : mine === 1 ? "1 Aufgabe" : `${mine} Aufgaben`} für dich${today ? ` · ${today} heute` : ""}`,
       retry: "Erneut versuchen",
     },
   },

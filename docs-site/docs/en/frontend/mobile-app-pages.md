@@ -49,11 +49,36 @@ Cloud then:
 it, every signed-in person sees the part. The app has no `admin` role, so a part
 limited to administrators never appears.
 
+`badge` (optional) names a `GET` route of the application that answers like
+`nav.badge`, with `{ "count": n }`, for something that calls for attention,
+such as unread messages. The sidebar and the part's tab show the count as a
+mark; `0`, an error, or another answer shows none.
+
+`summary` (optional) names a `GET` route that says what waits in the part, as
+a `PwaPartSummary`: `{ "count": n, "text": "…" }`. Start shows `text` under
+the part instead of its `description`, and the sidebar shows `count` quietly
+beside a part without a `badge`. Write `text` in the request's locale, as one
+line of at most 200 characters, such as "5 tasks for you · 1 today". Until the
+route answers, or when it fails, Start shows the `description`.
+
+Both routes are read once a minute and when the app returns to the
+foreground, and must be among the application's own paths. Chat answers both
+from one route; Spaces only summarizes:
+
+```ts
+// Chat
+pwa: { requiresRoles: ["user"], badge: "/api/chat/conversations/unread-count", summary: "/api/chat/conversations/unread-count" },
+// Spaces
+pwa: { requiresRoles: ["user"], summary: "/api/spaces/overview/summary" },
+```
+
 Do not list `/pwa` paths in `routes`; `defineApp()` throws for them. See
 [Define an application](/en/docs/build/define-app#add-pages-to-the-mobile-app).
 
 Spaces adds its "My tasks" page this way, as an example of a list with a quick
-action; see [Spaces](/en/apps/spaces#check-off-tasks-in-the-mobile-app).
+action; see [Spaces](/en/apps/spaces#check-off-tasks-in-the-mobile-app). Chat
+adds `/pwa/chat` with its chats and one conversation, as an example of a list
+beside its detail with a composer at the bottom edge.
 
 ## Paths
 

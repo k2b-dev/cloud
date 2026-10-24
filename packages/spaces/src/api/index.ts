@@ -103,6 +103,7 @@ import {
 } from "../frontend/[id]/_components/workspace/workspace-types";
 import { CreateEventInvitationDraftInputSchema, EventInvitationContextSchema, EventInvitationDraftSchema } from "../integration";
 import { OverviewViewSchema, OverviewWorkSchema } from "../overview-contracts";
+import { myTasksMessages } from "../pwa/messages";
 import { spacesService } from "../service";
 import { getActorsSpacePermissions, isSpaceResourceId, permissionFromScopes, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "../service/access";
 import { InvalidActivityCursorError } from "../service/activity";
@@ -112,7 +113,7 @@ import type { CommentAuthor } from "../service/comments";
 import { spacesLive } from "../service/live";
 import { spacesLiveChannels } from "../service/live-channels";
 import { type SpacesMessages, spacesApiErrorMessage, spacesMessages } from "../service/messages";
-import { loadOverviewWork } from "../service/overview";
+import { loadOverviewCounts, loadOverviewWork } from "../service/overview";
 import {
   projectCalendarItems,
   projectColumns,
@@ -729,6 +730,31 @@ const app = new Hono<AuthContext>()
         c,
         ok(await loadOverviewWork({ userId: user.data.id, view: c.req.valid("query").view, dateConfig: getDateConfig(c) })),
       );
+    },
+  )
+
+  .get(
+    "/overview/summary",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Summarize your work for the Cloud app",
+      description: "Count the tasks for you, with a line in your language for the Cloud app's Start.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(z.object({ count: z.number().int().min(0), text: z.string() }), "Tasks for you"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+      },
+    }),
+    async (c) => {
+      const access = getScopedSpaceAccess(c);
+      if (!access.ok) return respond(c, access);
+      if (access.data.boundSpaceId) return respond(c, fail(err.forbidden("This overview requires an unbound user-backed actor")));
+      const user = requireUserBackedActor(c);
+      if (!user.ok) return respond(c, user);
+      const counts = await loadOverviewCounts({ userId: user.data.id, dateConfig: getDateConfig(c) });
+      c.header("Cache-Control", "private, no-store");
+      const { t } = myTasksMessages.resolve([getLocale(c)]);
+      return c.json({ count: counts.mine, text: t.summary(counts) });
     },
   )
 

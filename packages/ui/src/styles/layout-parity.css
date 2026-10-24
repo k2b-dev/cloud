@@ -4258,6 +4258,19 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   font-size: 1.375rem;
 }
 
+/* A tab's attention mark sits at the icon's upper right corner, out of the flow, so a count never moves the label. */
+.k2b-ui .k2b-tab-bar a {
+  position: relative;
+}
+
+.k2b-ui .k2b-tab-bar a > .k2b-tab-bar__badge {
+  position: absolute;
+  top: 0.25rem;
+  left: calc(50% + 0.375rem);
+  max-width: none;
+  pointer-events: none;
+}
+
 .k2b-ui .k2b-tab-bar a > span {
   max-width: 100%;
 }

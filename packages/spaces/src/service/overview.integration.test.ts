@@ -4,7 +4,7 @@ import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { OverviewWorkSchema } from "../overview-contracts";
 import { dashboardSnapshot } from "./items";
-import { loadOverviewWork, loadSpaceOverviewStats, loadSpacesSidebar } from "./overview";
+import { loadOverviewCounts, loadOverviewWork, loadSpaceOverviewStats, loadSpacesSidebar } from "./overview";
 
 testFor("database")("selected overview views preserve counts, filters and access revocation", async () => {
   const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name)
@@ -40,6 +40,12 @@ testFor("database")("selected overview views preserve counts, filters and access
         );
       expect(selected.items.some((item) => item.spaceName === "Accessible overview fixture")).toBe(true);
     }
+    // The Cloud app's summary counts the same work without loading any list.
+    expect(await loadOverviewCounts(params)).toEqual({
+      mine: full.assignedToMeCount,
+      today: full.todayCount,
+      upcoming: full.upcomingCount,
+    });
     const sidebar = await loadSpacesSidebar({
       ...params,
       cookieHeader: `settings-app-spaces=${encodeURIComponent(JSON.stringify({ version: 2, pinnedSpaceIds: ["Pin001"], spaces: {} }))}`,

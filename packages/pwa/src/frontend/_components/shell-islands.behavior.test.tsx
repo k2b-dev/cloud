@@ -38,6 +38,7 @@ const load = async () => {
       PhoneSettings: (await import("./PhoneSettings.island")).default,
       Unavailable: (await import("./Unavailable.island")).default,
       PairingNotice: (await import("./PairingNotice.island")).default,
+      StartParts: (await import("./StartParts.island")).default,
     };
   } finally {
     dom.cleanup();
@@ -165,6 +166,44 @@ else {
       await waitFor(() => page.dom.document.body.textContent?.includes("Name saved") ?? false, "new name saved");
       expect(input.value).toBe("iPhone");
       expect(page.dom.window.localStorage.getItem("cloud.pwa.draft:mia:pwa.settings.device-name")).toBe("iPhone");
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("Start shows what waits in each part once the part has answered, and its description until then or without one", async () => {
+    let answer: Response = Response.json({ count: 3, text: "3 to count" });
+    const fetch = mockFetch((_method, path) => (path === "/api/inventory/summary" ? answer : undefined));
+    const page = mount(
+      () =>
+        createComponent(modules!.StartParts, {
+          label: "Apps",
+          endpoints: ["/api/inventory/summary"],
+          parts: [
+            {
+              id: "inventory",
+              label: "Inventory",
+              icon: "ti ti-box",
+              href: "/pwa/inventory",
+              description: "Count what is on the shelf",
+              summary: "/api/inventory/summary",
+            },
+            { id: "notes", label: "Notes", icon: "ti ti-notes", href: "/pwa/notes", description: "Your notes" },
+          ],
+        }),
+      { url: "/pwa/" },
+    );
+    try {
+      const row = (href: string) => page.dom.root.querySelector(`a[href="${href}"]`)?.textContent ?? "";
+      expect(row("/pwa/inventory")).toContain("Count what is on the shelf");
+      await waitFor(() => row("/pwa/inventory").includes("3 to count"), "summary");
+      expect(row("/pwa/inventory")).not.toContain("Count what is on the shelf");
+      expect(row("/pwa/notes")).toContain("Your notes");
+      // A part that stops answering falls back to its description instead of a stale line.
+      answer = new Response(null, { status: 503 });
+      page.dom.window.dispatchEvent(new page.dom.window.Event("cloud:app-badges-refresh"));
+      await waitFor(() => row("/pwa/inventory").includes("Count what is on the shelf"), "description again");
     } finally {
       page.dispose();
       fetch.restore();

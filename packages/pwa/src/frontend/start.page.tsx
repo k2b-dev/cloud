@@ -4,12 +4,13 @@ import { type AuthContext, getLocale, getUserBackedActor } from "@k2b/cloud/serv
 import { appIconVersion } from "@k2b/cloud/services/branding/app-icon-source";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { getDisplayRuntimeContext, PwaLayout, visiblePwaParts } from "@k2b/cloud/ssr";
-import { createNavigation, IconButtonLink, installationPlatform, Navigation, Placeholder } from "@k2b/ui";
+import { IconButtonLink, installationPlatform, Placeholder } from "@k2b/ui";
 import { deleteCookie, getCookie } from "hono/cookie";
 import { ssr } from "../config";
 import { shellMessages } from "../messages";
 import PairingNotice from "./_components/PairingNotice.island";
 import SignOut from "./_components/SignOut.island";
+import StartParts from "./_components/StartParts.island";
 import Unavailable from "./_components/Unavailable.island";
 import Welcome from "./_components/Welcome.island";
 
@@ -33,10 +34,15 @@ export default ssr<AuthContext>(async (c) => {
 
   if (user) {
     const parts = visiblePwaParts(getDisplayRuntimeContext(c).apps, user, locale);
-    const apps = createNavigation({
-      items: () =>
-        parts.map((part) => ({ id: part.id, label: part.name, description: part.description, icon: part.icon, href: part.pwa.href })),
-    });
+    const starts = parts.map((part) => ({
+      id: part.id,
+      label: part.name,
+      icon: part.icon,
+      href: part.pwa.href,
+      description: part.description,
+      summary: part.pwa.summary,
+    }));
+    const endpoints = [...new Set(parts.flatMap((part) => [part.pwa.badge, part.pwa.summary].filter((path) => path !== undefined)))];
     return () => (
       <PwaLayout
         c={c}
@@ -54,7 +60,7 @@ export default ssr<AuthContext>(async (c) => {
       >
         <div class="pwa-start">
           {parts.length > 0 ? (
-            <Navigation navigation={apps} label={t.apps} />
+            <StartParts parts={starts} label={t.apps} endpoints={endpoints} />
           ) : (
             <Placeholder icon="ti ti-apps" title={t.noApps} description={t.noAppsDescription} />
           )}

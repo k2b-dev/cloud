@@ -13,6 +13,7 @@ import {
   READ_ALL_BATCH,
   ReadAllOutcomeSchema,
   ReadUpdateSchema,
+  UNREAD_TOTAL_CAP,
 } from "../service/contracts";
 import { appendMessage } from "../service/message-store";
 import { unreadQuery } from "../service/read-state";
@@ -259,6 +260,30 @@ suite("personal read state", () => {
     expect(await mark(viewer, notices.shortId)).toMatchObject({ unread: 0, unreadFromSeq: 1 });
     expect(await all(viewer)).toEqual({ outcome: "done", marked: 1, more: false });
     expect(await all(viewer)).toEqual({ outcome: "done", marked: 0, more: false });
+  });
+
+  test("the unread count covers chats beyond the first page and stops at 100", async () => {
+    const viewer = await f.person(),
+      other = await f.person();
+    const summary = async () => {
+      const response = await f.request(viewer.headers, "/unread-count");
+      expect(response.status).toBe(200);
+      return (await response.json()) as { count: number; text: string };
+    };
+    expect(await summary()).toEqual({ count: 0, text: "No unread messages" });
+    // The only unread message lies in the oldest chat, behind a full first page of read ones.
+    const oldest = await f.fixture(viewer, [{ person: other, permission: "write" }]);
+    await fill(other, oldest.shortId, 3);
+    for (let i = 0; i < CONVERSATION_PAGE_SIZE; i++) {
+      const chat = await f.fixture(viewer, [{ person: other, permission: "write" }]);
+      await fill(other, chat.shortId, 1);
+      await read(viewer, chat.shortId, 1);
+    }
+    const page = ConversationPageSchema.parse(await (await f.request(viewer.headers, "")).json());
+    expect(page.items.some((item) => item.id === oldest.shortId)).toBe(false);
+    expect(await summary()).toEqual({ count: 3, text: "3 unread" });
+    await fill(other, oldest.shortId, UNREAD_TOTAL_CAP + 5);
+    expect(await summary()).toEqual({ count: UNREAD_TOTAL_CAP, text: "99+ unread" });
   });
 
   test("a service account without access cannot read or create a participant", async () => {

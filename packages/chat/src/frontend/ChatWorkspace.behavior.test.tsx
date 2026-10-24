@@ -207,7 +207,13 @@ describe("ChatWorkspace interactions", () => {
     panel: "info" | null = null,
     locale = "en",
     permission: typeof conversation.permission = "write",
-    initial: { url?: string; page?: NonNullable<ChatWorkspaceProps["open"]>["page"]; focus?: string | null; embedded?: boolean } = {},
+    initial: {
+      url?: string;
+      page?: NonNullable<ChatWorkspaceProps["open"]>["page"];
+      focus?: string | null;
+      embedded?: boolean;
+      app?: boolean;
+    } = {},
   ) => {
     const { ChatWorkspace, LocaleProvider } = modules!;
     dom.window.history.replaceState(null, "", initial.url ?? (open ? `/app/chat/c/Chat01${panel ? "?panel=info" : ""}` : "/app/chat"));
@@ -215,6 +221,7 @@ describe("ChatWorkspace interactions", () => {
       view: "all",
       threadsPage: false,
       embedded: initial.embedded,
+      app: initial.app,
       cursor: "c.0",
       sidebar: { items: sidebar, nextCursor: null },
       open: open
@@ -325,6 +332,18 @@ describe("ChatWorkspace interactions", () => {
     await settle();
     expect(consoleErrors).toEqual([]);
   });
+  test("in the Cloud app a draft lives in the device's storage, so it survives the app being ended", async () => {
+    await mount(true, [conversation], null, "en", "write", { url: "/pwa/chat/c/Chat01", app: true });
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    field.value = "Seals arrive on Monday";
+    field.dispatchEvent(new dom.window.Event("input", { bubbles: true }) as unknown as Event);
+    await settle();
+    const stored = Object.keys(dom.window.localStorage).filter((key) => key.startsWith("cloud.pwa.draft:"));
+    expect(stored).toHaveLength(1);
+    expect(dom.window.localStorage.getItem(stored[0]!)).toBe("Seals arrive on Monday");
+    expect(Object.keys(dom.window.sessionStorage).some((key) => key.startsWith("cloud.chat.draft:"))).toBe(false);
+    expect(consoleErrors).toEqual([]);
+  });
   test("failed send retries the same client ID and body, then shows one sent row", async () => {
     await mount(true);
     const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
@@ -407,6 +426,31 @@ describe("ChatWorkspace interactions", () => {
     expect(posted).toHaveLength(0);
   });
 
+  test("in the Cloud app a draft the device could not keep is stored on Retry, without a conflict with itself", async () => {
+    await mount(true, [conversation], null, "en", "write", { url: "/pwa/chat/c/Chat01", app: true });
+    const storage = dom.window.localStorage;
+    // The device's storage refuses the first keystroke, as a full or locked store does.
+    Object.defineProperty(dom.window, "localStorage", {
+      configurable: true,
+      get: () => {
+        throw new dom.window.DOMException("Quota exceeded", "QuotaExceededError");
+      },
+    });
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    field.value = "Seals arrive on Monday";
+    field.dispatchEvent(new dom.window.Event("input", { bubbles: true }) as unknown as Event);
+    await settle();
+    const t = chatMessages.resolve(["en"]).t;
+    expect(dom.root.textContent).toContain(t.draftNotSaved);
+    Object.defineProperty(dom.window, "localStorage", { configurable: true, value: storage });
+    button(t.retry).click();
+    await settle();
+    expect(dom.root.textContent).not.toContain(t.draftNotSaved);
+    const stored = Object.keys(storage).filter((key) => key.startsWith("cloud.pwa.draft:"));
+    expect(stored.map((key) => storage.getItem(key))).toEqual(["Seals arrive on Monday"]);
+    expect(field.value).toBe("Seals arrive on Monday");
+    expect(consoleErrors).toEqual([]);
+  });
   test("a failed initial storage read does not cache an empty draft; retry restores it", async () => {
     const storage = dom.window.sessionStorage;
     storage.setItem(`cloud.chat.draft:${viewerId}:Chat01`, "Saved before reopening");

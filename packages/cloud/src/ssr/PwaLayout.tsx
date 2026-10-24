@@ -7,6 +7,7 @@ import { pwaBuild } from "../contracts/pwa-builds";
 import { getLocale } from "../server/locale";
 import { visiblePwaParts } from "./app-navigation";
 import type { LayoutContext } from "./layout-context";
+import PwaPartCount from "./PwaPartCount.island";
 import PwaRuntime from "./PwaRuntime.island";
 import { pwaMessages } from "./pwa-messages";
 import { getDisplayRuntimeContext } from "./runtime";
@@ -62,12 +63,24 @@ export default function PwaLayout(props: PwaLayoutProps) {
   const ownBuild = pwaBuild(buildMetadata);
   const coreBuild = registeredPwaBuilds().core;
   const builds = { ...(owner && ownBuild ? { [owner]: ownBuild } : {}), ...(coreBuild ? { core: coreBuild } : {}) };
+  // A part's badge calls for attention in the sidebar and on its tab; without one, its summary's count stays quiet in
+  // the sidebar. One watcher reads every route of the page.
+  const countRoutes = [...new Set(parts.flatMap((part) => [part.pwa.badge, part.pwa.summary].filter((path) => path !== undefined)))];
+  const badge = (part: (typeof parts)[number]) =>
+    part.pwa.badge ? <PwaPartCount endpoint={part.pwa.badge} endpoints={countRoutes} attention /> : undefined;
   const tabs = parts.slice(0, TAB_PARTS);
   const currentTab = tabs.find((part) => path === part.pwa.href || path.startsWith(`${part.pwa.href}/`));
   // Start is titled with the installation's name; a part's first page carries the part's name.
   const items: TabBarItem[] = [
     { id: "start", label: t.start, title: cloud, icon: "ti ti-home", href: PWA_SCOPE, current: !currentTab },
-    ...tabs.map((part) => ({ id: part.id, label: part.name, icon: part.icon, href: part.pwa.href, current: part === currentTab })),
+    ...tabs.map((part) => ({
+      id: part.id,
+      label: part.name,
+      icon: part.icon,
+      href: part.pwa.href,
+      current: part === currentTab,
+      badge: badge(part),
+    })),
   ];
   // The sidebar names the installation itself, so Start is titled Start there; Settings is a destination of its own.
   const settingsHref = `${PWA_SCOPE}settings`;
@@ -87,6 +100,8 @@ export default function PwaLayout(props: PwaLayoutProps) {
             icon: part.icon,
             href: part.pwa.href,
             current: part === currentPart,
+            badge: badge(part),
+            count: part.pwa.summary ? <PwaPartCount endpoint={part.pwa.summary} endpoints={countRoutes} /> : undefined,
           })),
         },
       ]}

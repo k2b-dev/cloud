@@ -25,6 +25,8 @@ export default function ChatThreadsPage(props: {
   dateConfig: DateContext;
   now: () => Date;
   info: JSX.Element;
+  /** Unread messages in the other chats, beside the back button in a slot of fixed width; none without it. */
+  backCount?: number;
   onBack: (navigation: LinkNavigateEvent) => void | Promise<void>;
   onOpen: (view: ThreadView, navigation: LinkNavigateEvent) => void | Promise<void>;
   onCreate: () => void;
@@ -73,10 +75,15 @@ export default function ChatThreadsPage(props: {
             href={props.basePath ?? "/app/chat"}
             navigation="enhanced"
             onNavigate={props.onBack}
-            label={t().backToChats}
+            label={props.backCount ? t().backToChatsUnread({ count: props.backCount }) : t().backToChats}
             tooltip={false}
           >
             <i class="ti ti-chevron-left" aria-hidden="true" />
+            <Show when={props.backCount !== undefined}>
+              <span class="chat-conversation__back-count" aria-hidden="true">
+                {props.backCount ? (props.backCount > 99 ? "99+" : props.backCount) : ""}
+              </span>
+            </Show>
           </IconButtonLink>
         </span>
         <PageTitle

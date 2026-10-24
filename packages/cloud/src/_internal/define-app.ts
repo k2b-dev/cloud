@@ -213,6 +213,17 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   pwa?: {
     /** Coarse visibility in the mobile app, like `nav.requiresRoles`. Routes and services still authorize. */
     requiresRoles?: Role[];
+    /**
+     * Same-origin path of a `GET` route this app serves that returns an `AppNavBadge`: the count beside the part in
+     * the app's sidebar, such as unread messages. Like `nav.badge`, it must be one of the app's own paths.
+     */
+    badge?: string;
+    /**
+     * Same-origin path of a `GET` route this app serves that returns a `PwaPartSummary`: one line under the part on
+     * Start, such as "5 tasks for you", in the reader's locale, and its count beside the part in the sidebar when the
+     * part has no `badge`. It may be the badge's route. It must be one of the app's own paths.
+     */
+    summary?: string;
   };
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an
@@ -385,7 +396,21 @@ const validateAppPwaPart = (opts: Pick<AppOptions, "id" | "routes" | "pwa">): Ap
   if (!isPwaPartId(opts.id)) {
     throw new Error(`App "${opts.id}" cannot declare pwa; a part needs a plain id other than pwa, settings and offline`);
   }
-  return { href: `/pwa/${opts.id}`, requiresRoles: opts.pwa.requiresRoles ? [...opts.pwa.requiresRoles] : undefined };
+  const { badge, summary } = opts.pwa;
+  for (const [field, path] of [
+    ["badge", badge],
+    ["summary", summary],
+  ] as const) {
+    if (path !== undefined && !isOwnAppPath(path, [...opts.routes, `/pwa/${opts.id}`])) {
+      throw new Error(`App "${opts.id}" declares pwa.${field} "${path}"; it must be a same-origin path below one of its routes`);
+    }
+  }
+  return {
+    href: `/pwa/${opts.id}`,
+    requiresRoles: opts.pwa.requiresRoles ? [...opts.pwa.requiresRoles] : undefined,
+    ...(badge ? { badge } : {}),
+    ...(summary ? { summary } : {}),
+  };
 };
 
 /** The badge route is read by the browser through the gateway, so it must be one of this app's own paths. */
@@ -701,7 +726,12 @@ export const defineApp = <
         legalLinks: meta.legalLinks ? meta.legalLinks.map((l) => ({ ...l })) : undefined,
         searchLinks: meta.searchLinks,
         pwa: meta.pwa
-          ? { href: meta.pwa.href, requiresRoles: meta.pwa.requiresRoles ? [...meta.pwa.requiresRoles] : undefined }
+          ? {
+              href: meta.pwa.href,
+              requiresRoles: meta.pwa.requiresRoles ? [...meta.pwa.requiresRoles] : undefined,
+              ...(meta.pwa.badge ? { badge: meta.pwa.badge } : {}),
+              ...(meta.pwa.summary ? { summary: meta.pwa.summary } : {}),
+            }
           : undefined,
         panel: meta.panel
           ? { ...meta.panel, requiresRoles: meta.panel.requiresRoles ? [...meta.panel.requiresRoles] : undefined }
