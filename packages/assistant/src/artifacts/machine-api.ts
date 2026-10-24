@@ -254,11 +254,16 @@ export const createMachineRoutes = () =>
     .put("/:id/secrets", auth.requireOAuthScope("admin"), ManagerQuery, v("json", SecretSave), async (c) =>
       respond(c, ok(await machineAccess.saveSecret(id(c), c.req.valid("json"), manager(c)))),
     )
-    .delete("/:id/secrets/:name", auth.requireOAuthScope("admin"), ManagerQuery, v("json", z.object({ revision: z.uuid() }).strict()), async (c) =>
-      respond(
-        c,
-        ok(await machineAccess.removeSecret(id(c), z.string().parse(c.req.param("name")), c.req.valid("json").revision, manager(c))),
-      ),
+    .delete(
+      "/:id/secrets/:name",
+      auth.requireOAuthScope("admin"),
+      ManagerQuery,
+      v("json", z.object({ revision: z.uuid() }).strict()),
+      async (c) =>
+        respond(
+          c,
+          ok(await machineAccess.removeSecret(id(c), z.string().parse(c.req.param("name")), c.req.valid("json").revision, manager(c))),
+        ),
     );
 
 export const machineApi = new Hono<AuthContext>()
