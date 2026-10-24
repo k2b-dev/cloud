@@ -203,6 +203,7 @@ convention still needs a check or a test.
 | User navigation mistaken for an async action's own navigation | Every draft-key change keeps an app opening active, leaving another chat's composer read-only. | Tests: `chat-slash.behavior.test.ts` requires `follow()` for one draft move and cancels unannounced changes; Assistant's `composer-app-commands.behavior.test.tsx` checks that editing returns before the previous save finishes. |
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
 | Workspace layout changes shape after the first render | A workspace region such as a `MainPane` mounts only after hydration, and the layout drops or moves content that was already shown. | Test: Chat `ChatThreads.browser.test.ts` switches from a chat without threads to one with threads at 1440 and 2000 px. Library fix pending in [#1752](https://github.com/k2b-dev/cloud/issues/1752). |
+| Redundant reads after a confirmed insert | First sync repeats content updates and queries state that cannot exist for a newly inserted message, multiplying database latency. | Test: Mail `lifecycle.integration.test.ts` counts PostgreSQL commands for a 200-envelope import and replays it to check canonical IDs, conversations and read state. Only a confirmed insert skips these reads; existing and raced copies keep the full path ([#1487](https://github.com/k2b-dev/cloud/issues/1487)). |
 
 ## Lessons
 
@@ -1039,6 +1040,12 @@ When the guard does not exist yet, write "Pending in #n" with the issue that
 tracks it, or "None, because …". A pull request that adds a guard for a class
 updates that class's row in the table.
 
+### Mail first-sync database latency (#1487)
+
+- **Error class:** Redundant reads after a confirmed insert.
+- **Cause and fix:** New content followed the same update and lookup path as existing copies. The insertion result now distinguishes a new row from an upsert conflict; only a new row skips the redundant update and four reads. Remote-reference races fall back to the full path.
+- **Guard:** The PostgreSQL integration imports 200 envelopes through `ingestEnvelope`, counts commands at the wire, and replays the batch to verify stable IDs, conversation count and read state.
+- **Measurement:** On the same local test database, the original path used 4,602 commands and 4,554 ms (44 messages/s); the fixed path used 3,602 commands and 3,641 ms (55 messages/s). Command count fell 22%; timings are observations on a shared host, not a guaranteed throughput target. Batch limits and lease scheduling are unchanged.
 ## Wait for the confirmation after browser history traversal (#1765)
 
 - **Error class:** asynchronous UI locator race. The Pulse Back test could resolve the settings form's Discard button before the confirmation appeared, then wait on that hidden button.
