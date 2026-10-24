@@ -1,7 +1,25 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "oauth",
+  access: appAccess.roles(["admin"], {
+    publicRoutes: [
+      "/.well-known/openid-configuration",
+      "/.well-known/oauth-authorization-server",
+      "/.well-known/jwks.json",
+      "/oauth/register",
+      "/oauth/authorize",
+      "/oauth/device_authorization",
+      "/oauth/token",
+      "/oauth/revoke",
+      "/oauth/userinfo",
+      "/oauth/logout",
+      "/oauth/consent",
+      "/oauth/device",
+      "/oauth/error",
+      "/api/oauth/openapi.json",
+    ],
+  }),
   cli: { oauth: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "OAuth",
   icon: "ti ti-key",
