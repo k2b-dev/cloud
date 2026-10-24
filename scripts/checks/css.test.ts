@@ -6,7 +6,7 @@ import { rule } from "./css";
 
 const root = resolve(import.meta.dir, "../..");
 
-const check = async (property: string, uiCss = "") => {
+const check = async (property: string, uiCss = "", appOverrides: Record<string, string> = {}) => {
   const fixture = await mkdtemp(join(tmpdir(), "cloud-css-check-"));
   try {
     for (const directory of ["packages/cloud/src", "packages/cloud/scripts", "packages/ui/src", "packages/example/src/styles"])
@@ -15,7 +15,11 @@ const check = async (property: string, uiCss = "") => {
       await cp(join(root, path), join(fixture, path), { recursive: true });
     await writeFile(
       join(fixture, "package.json"),
-      JSON.stringify({ workspaces: { packages: ["packages/cloud", "packages/ui", "packages/example"] } }),
+      JSON.stringify({
+        workspaces: {
+          packages: ["packages/cloud", "packages/ui", "packages/example", ...Object.keys(appOverrides).map((name) => `packages/${name}`)],
+        },
+      }),
     );
     for (const name of ["build.ts", "preload.ts"])
       await writeFile(join(fixture, "packages/cloud/scripts", name), "// src/styles/app.css plugins: [tailwind]\n");
@@ -28,6 +32,18 @@ const check = async (property: string, uiCss = "") => {
 .example { color: var(${property}); }
 `,
     );
+    for (const [name, css] of Object.entries(appOverrides)) {
+      const directory = join(fixture, "packages", name, "src/styles");
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        join(directory, "app.css"),
+        `@import "tailwindcss/utilities.css" layer(utilities);
+@source "../**/*.{ts,tsx}";
+@custom-variant dark (&:where(.dark, .dark *));
+${css}
+`,
+      );
+    }
     const findings = await rule.run({ workspaceRoot: fixture, fix: false, flags: new Set() });
     return findings.map((finding) => finding.message);
   } finally {
@@ -37,6 +53,24 @@ const check = async (property: string, uiCss = "") => {
 
 test("CSS check recognizes UI-owned semantic tokens used by applications", async () => {
   expect(await check("--k2b-surface-muted")).toEqual([]);
+});
+
+test("applications can each override a token owned by UI", async () => {
+  expect(
+    await check("--k2b-text-muted", "", {
+      first: ".preview { --k2b-text-muted: #52525b; }",
+      second: ".selected { --k2b-text-muted: var(--k2b-text-secondary); }",
+    }),
+  ).toEqual([]);
+});
+
+test("application-owned tokens still need a single owner", async () => {
+  expect(
+    await check("--example-ink", "", {
+      first: ".preview { --example-ink: black; }",
+      second: ".selected { --example-ink: gray; }",
+    }),
+  ).toContain("--example-ink has multiple owner files: packages/first/src/styles/app.css, packages/second/src/styles/app.css");
 });
 
 test("CSS check still rejects undeclared UI tokens", async () => {
