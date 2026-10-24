@@ -21,7 +21,7 @@ order: 120
 1. Teste die geschützte Route in einer normalen Browsersitzung.
 2. Prüfe, ob der Proxy-Auth-Client noch vorhanden ist und erlaubte Gruppen besitzt.
 3. Vergleiche die konfigurierte Prüf-URL mit der aktuell kopierten URL.
-4. Prüfe die wirksame Gruppenmitgliedschaft der Person in Accounts.
+4. Prüfe die wirksame Gruppenmitgliedschaft der Person in der App Zugänge.
 5. Prüfe die Traefik-Protokolle auf das Middleware-Ergebnis und die Weiterleitung der Upstream-Header.
 :::
 

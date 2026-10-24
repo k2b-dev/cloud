@@ -11,6 +11,8 @@ describe("platformMessages", () => {
 
     expect(locale).toBe("de");
     expect(t.openApps).toBe("Apps öffnen");
+    expect(t.appCredentials).toBe("App-Schlüssel");
+    expect(t.account).toBe("Konto");
     expect(t.accountExpires({ date: "31.12.2026" })).toBe("Dein Konto läuft am 31.12.2026 ab.");
   });
 

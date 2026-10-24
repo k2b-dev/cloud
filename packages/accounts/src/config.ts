@@ -14,7 +14,7 @@ export const app = defineApp({
     baseLocale: "en",
     translations: {
       de: {
-        name: "Konten",
+        name: "Zugänge",
         description: "Konten, Gruppen, Zugriffe und Kontoanfragen verwalten.",
         widgets: { "admin-queue": { title: "Administrationsaufgaben", description: "Offene Kontoanfragen und bald ablaufende Konten." } },
       },

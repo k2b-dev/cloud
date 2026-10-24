@@ -133,8 +133,8 @@ export const adminMessages = i18n.define({
       legalSettingsDescription: "Terms of Service, Privacy Policy, and Imprint.",
     },
     de: {
-      appCredentials: "App-Zugänge",
-      appCredentialsDescription: "Zugänge für Hintergrundarbeit von Apps erstellen und widerrufen.",
+      appCredentials: "App-Schlüssel",
+      appCredentialsDescription: "App-Schlüssel für Hintergrundarbeit von Apps erstellen und widerrufen.",
       apps: "Apps",
       appsDescription: "App-Zugriff prüfen und Freigaben reparieren.",
       overview: "Übersicht",
