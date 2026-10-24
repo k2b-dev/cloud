@@ -135,6 +135,7 @@ const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>, view: Thread
   conversation: open.conversation,
   messages: open.page.items,
   membershipRev: 0,
+  accessRev: 0,
   watermark: open.page.rev,
   seqHead: open.page.seqHead,
   hasOlder: open.page.from > 1,
@@ -2341,7 +2342,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     shared={
                       <ChatSharedSection
                         chatId={current().id}
-                        revision={openChat()?.seqHead}
+                        revision={openChat() ? `${openChat()!.seqHead}:${openChat()!.accessRev}` : undefined}
                         threads={openChat()?.threads ?? null}
                         viewerId={props.viewerId}
                         dateConfig={props.dateConfig}
