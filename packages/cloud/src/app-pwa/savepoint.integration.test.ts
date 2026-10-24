@@ -17,7 +17,7 @@ suite("App-PWA savepoint recovery", () => {
   test("returned lazy query arrays execute inside the savepoint and roll back together", async () => {
     await withAppPwaTransaction(db, undefined, async (tx) => {
       await tx`CREATE TEMP TABLE app_pwa_array_guard(id integer PRIMARY KEY) ON COMMIT DROP`;
-      const result = await tx.savepoint((nested) => [
+      const result: unknown = await tx.savepoint((nested) => [
         nested`INSERT INTO app_pwa_array_guard VALUES (1) RETURNING id`,
         nested`INSERT INTO app_pwa_array_guard VALUES (2) RETURNING id`,
       ]);
