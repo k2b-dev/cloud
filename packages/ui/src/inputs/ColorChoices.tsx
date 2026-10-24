@@ -40,7 +40,7 @@ export function ColorChoices<T extends string = string>(props: ColorChoicesProps
     <Field
       meta={meta}
       labelFor={false}
-      class={`k2b-color-choices ${props.class ?? ""}`}
+      class={props.class}
       label={props.label}
       description={props.description}
       error={props.error}

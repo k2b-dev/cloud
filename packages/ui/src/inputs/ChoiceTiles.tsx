@@ -46,7 +46,7 @@ export function ChoiceTiles<T extends string = string>(props: ChoiceTilesProps<T
     <Field
       meta={meta}
       labelFor={false}
-      class={`k2b-choice-tiles ${props.class ?? ""}`}
+      class={props.class}
       label={props.label}
       description={props.description}
       error={props.error}
