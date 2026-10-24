@@ -2,7 +2,7 @@ import type { RequestActor } from "@k2b/cloud/server";
 import { accounts, type Mandate, mandates } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { SQL, sql } from "bun";
-import type { GridsWorkflowPrincipal, WorkflowMachineAuthorityChange } from "../workflows/contracts";
+import type { GridsWorkflowChannel, GridsWorkflowPrincipal, WorkflowMachineAuthorityChange } from "../workflows/contracts";
 import { hasTransactionalBaseAdmin, lockBaseAuthorization } from "./access";
 import { logAudit, type SqlClient } from "./audit";
 import { gridsLive, publishMetadataChange } from "./live";
@@ -89,7 +89,27 @@ export async function validateWorkflowOwnerSnapshot(
   principal: GridsWorkflowPrincipal,
   workflowId: string,
   db: SqlClient = sql,
+  channel?: GridsWorkflowChannel,
 ): Promise<boolean> {
+  if (channel === "schedule" || channel === "recordEvent") {
+    // Automatic human snapshots belong to the owner captured at admission.
+    // Keep manual invocations independent of automatic execution ownership.
+    if (principal.userId) {
+      // Automatic human owners have no delegated machine or token identity.
+      // User deletion clears profile ownership and run actor foreign keys;
+      // lock the user first so admission/effects follow that same order.
+      if (principal.serviceAccountId || principal.actorServiceAccountId || principal.credential || principal.mandate) return false;
+      const [user] = await db`SELECT id FROM auth.users WHERE id=${principal.userId}::uuid FOR SHARE`;
+      if (!user) return false;
+      const [profile] = await db`SELECT id FROM grids.workflow_profile
+        WHERE id=${workflowId}::uuid AND owner_user_id=${principal.userId}::uuid
+          AND owner_service_account_id IS NULL AND deleted_at IS NULL AND enabled=TRUE FOR SHARE`;
+      return Boolean(profile);
+    }
+    // Automatic machines always require their stored mandate; never upgrade
+    // an old credential-only snapshot after an owner has been assigned.
+    return Boolean(principal.serviceAccountId && principal.mandate);
+  }
   if (principal.userId || !principal.serviceAccountId || principal.mandate) return true;
   // Match assignment/deletion order, retaining the owner snapshot through effects.
   await db`SELECT id FROM auth.service_accounts WHERE id=${principal.serviceAccountId}::uuid FOR SHARE`;

@@ -31,6 +31,8 @@ type WorkflowHttpRequestInput = {
   body?: string;
   timeoutMs?: number;
   locale?: string;
+  /** Recheck effect authority after DNS preparation and before dispatch. */
+  authorize?: (signal: AbortSignal) => Promise<boolean>;
 };
 
 type WorkflowHttpResponse = {
@@ -229,6 +231,9 @@ export const requestWorkflowHttp = async (
   try {
     const prepared = await prepareWorkflowHttpRequest(input, deps, controller.signal);
     if (!prepared.ok) return prepared;
+    controller.signal.throwIfAborted();
+    if (input.authorize && !(await input.authorize(controller.signal))) return fail(err.forbidden(t.actorCannotRun));
+    controller.signal.throwIfAborted();
     return ok(
       await sendPinnedRequest(prepared.data.target, input, prepared.data.headers, controller.signal, deps, () => (dispatched = true)),
     );

@@ -259,6 +259,7 @@ export const invokeGridsWorkflow = async (input: InvokeGridsWorkflowInput): Prom
   const claim = {
     baseId: workflow.baseId,
     workflowId: workflow.id,
+    channel: input.channel,
     principal: input.principal,
     authorization,
     launcherId: input.launcherId,

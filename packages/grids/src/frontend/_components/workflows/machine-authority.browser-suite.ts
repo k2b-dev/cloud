@@ -24,7 +24,7 @@ const { plugin } = createConfig({
 });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { default: Fixture } = await import("../../../../test/fixtures/machine-authority/Authority.island");
+const { default: Fixture } = await import("../../../../test/fixtures/machine-authority/page");
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 beforeAll(async () => {
@@ -138,6 +138,7 @@ for (const [width, theme] of [
         return route.fulfill({ json: current });
       });
       await page.goto(server.url.toString());
+      expect(await page.locator("solid-island[data-id][data-props]").count()).toBe(1);
       await page.getByText("Execution authority could not be loaded.", { exact: true }).waitFor();
       readFails = false;
       await page.getByRole("button", { name: "Retry", exact: true }).click();

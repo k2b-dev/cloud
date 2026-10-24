@@ -370,50 +370,52 @@ describe("PermissionEditor service accounts", () => {
     }
   }
 
-  test("grant selection defaults to active accounts, forwards kind eligibility, and keeps existing rows", async () => {
-    const dom = createDomTestHarness();
-    installPopoverApi(dom);
-    const originalFetch = globalThis.fetch;
-    const requests: URL[] = [];
-    globalThis.fetch = Object.assign(
-      async (input: string | URL | Request) => {
-        requests.push(new URL(input instanceof Request ? input.url : input.toString()));
-        return Response.json({ items: [] });
-      },
-      { preconnect: originalFetch.preconnect },
-    );
-    const { default: PermissionEditor } = await import("./PermissionEditor");
-    const dispose = render(
-      () => (
-        <PermissionEditor
-          initialEntries={[{ ...serviceEntry("agent"), displayName: "Disabled agent" }]}
-          allowAuthenticated={false}
-          serviceAccountKinds={["standalone", "agent"]}
-          grantAccess={async () => {
-            throw new Error("No selection expected");
-          }}
-          updateAccess={async () => {}}
-          revokeAccess={async () => {}}
-        />
-      ),
-      dom.root,
-    );
-    try {
-      delegateEvents(["input"]);
-      const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
-      input.value = "helper";
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      await waitFor(() => requests.length > 0, "filtered directory request");
-      expect(requests[0]!.searchParams.get("kinds")).toBe("user,group,service_account");
-      expect(requests[0]!.searchParams.get("service_account_kinds")).toBe("standalone,agent");
-      expect(requests[0]!.searchParams.get("service_account_status")).toBe("active");
-      expect(dom.root.textContent).toContain("Disabled agent");
-    } finally {
-      dispose();
-      globalThis.fetch = originalFetch;
-      dom.cleanup();
-    }
-  });
+  for (const expanded of [false, true])
+    test(`${expanded ? "expanded" : "compact"}: grant selection defaults to active accounts, forwards kind eligibility, and keeps existing rows`, async () => {
+      const dom = createDomTestHarness();
+      installPopoverApi(dom);
+      const originalFetch = globalThis.fetch;
+      const requests: URL[] = [];
+      globalThis.fetch = Object.assign(
+        async (input: string | URL | Request) => {
+          requests.push(new URL(input instanceof Request ? input.url : input.toString()));
+          return Response.json({ items: [] });
+        },
+        { preconnect: originalFetch.preconnect },
+      );
+      const { default: PermissionEditor } = await import("./PermissionEditor");
+      const dispose = render(
+        () => (
+          <PermissionEditor
+            expanded={expanded}
+            initialEntries={[{ ...serviceEntry("agent"), displayName: "Disabled agent" }]}
+            allowAuthenticated={false}
+            serviceAccountKinds={["standalone", "agent"]}
+            grantAccess={async () => {
+              throw new Error("No selection expected");
+            }}
+            updateAccess={async () => {}}
+            revokeAccess={async () => {}}
+          />
+        ),
+        dom.root,
+      );
+      try {
+        delegateEvents(["input"]);
+        const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+        input.value = "helper";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await waitFor(() => requests.length > 0, "filtered directory request");
+        expect(requests[0]!.searchParams.get("kinds")).toBe("user,group,service_account");
+        expect(requests[0]!.searchParams.get("service_account_kinds")).toBe("standalone,agent");
+        expect(requests[0]!.searchParams.get("service_account_status")).toBe("active");
+        expect(dom.root.textContent).toContain("Disabled agent");
+      } finally {
+        dispose();
+        globalThis.fetch = originalFetch;
+        dom.cleanup();
+      }
+    });
 
   test("an explicit status filter overrides the grant selection default", async () => {
     const dom = createDomTestHarness();

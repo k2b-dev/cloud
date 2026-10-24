@@ -4,6 +4,7 @@ import { createWorkflowCaptureTableAccess, createWorkflowEffectAccess, type Grid
 
 const scope = (app = true): GridsWorkflowActionScope => ({
   runId: "run",
+  channel: app ? "customApp" : "api",
   baseId: "base",
   workflow: { id: "workflow", shortId: "WF0001", name: "Workflow" },
   principal: { userId: "user", groupIds: [], serviceAccountId: null },

@@ -1667,6 +1667,7 @@ describe("Grids App Form runtime", () => {
                 return accepted
                   ? {
                       runId,
+                      channel: accepted.channel,
                       baseId,
                       workflow: { id: workflowId, shortId: testShortId(), name: "Approve request" },
                       principal: accepted.principal,

@@ -21,7 +21,7 @@
  *                      split the phases across n jobs; combines with --phase
  *   --bootstrap        internal: migrate and seed the database named by DATABASE_URL
  *
- * Phases in order: outbox, workflow-concurrency, workflow-kernel, database-and-standard,
+ * Phases in order: outbox, machine-authority, workflow-concurrency, workflow-kernel, database-and-standard,
  * sync, evidence-exports, browser-bundle, pdf, process-crashes, recovery-and-cleanup, dom.
  * Every Grids test file runs in exactly one phase; see `verificationPhases` in ./verification-phases.ts.
  */

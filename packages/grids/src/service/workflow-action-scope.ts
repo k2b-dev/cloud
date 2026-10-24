@@ -17,11 +17,11 @@
 import { type AccessSubject, getEffectiveGroupIds } from "@k2b/cloud/server";
 import { accounts, toPgUuidArray } from "@k2b/cloud/services";
 import type { WorkflowActionContext } from "@k2b/cloud/workflows";
-import { sql } from "bun";
+import { SQL, sql } from "bun";
 import { buildCustomAppQueryContext } from "../custom-apps/query-context";
 import { customAppPageHref, resolveCustomAppPageParams } from "../custom-apps/routing";
 import { customAppScannerConfigHash } from "../custom-apps/scanner-capability";
-import type { GridsWorkflowPrincipal } from "../workflows/contracts";
+import type { GridsWorkflowChannel, GridsWorkflowPrincipal } from "../workflows/contracts";
 import type { SqlClient } from "./audit";
 import { get as getBase } from "./bases";
 import { executePublishedCustomAppRecords } from "./custom-app-records-query";
@@ -44,6 +44,7 @@ type PermissionLevel = "read" | "write" | "admin";
 
 export type GridsWorkflowActionScope = {
   runId: string;
+  channel: GridsWorkflowChannel;
   baseId: string;
   /** Display identity, for what an email template renders. */
   workflow: { id: string; shortId: string; name: string };
@@ -103,6 +104,7 @@ export const workflowRunScope = (ctx: Pick<WorkflowActionContext, "runId">, clie
 
 /** What deciding "may this run execute" needs, whether or not a run row exists yet. */
 type GridsWorkflowExecutionClaim = {
+  channel?: GridsWorkflowChannel;
   baseId: string;
   workflowId: string;
   principal: GridsWorkflowPrincipal;
@@ -284,7 +286,7 @@ const customAppAuthorizationIsAvailable = async (params: {
  * queued.
  */
 export const canExecuteWorkflow = async (claim: GridsWorkflowExecutionClaim, client?: SqlClient): Promise<boolean> => {
-  if (!(await validateWorkflowOwnerSnapshot(claim.principal, claim.workflowId, client))) return false;
+  if (!(await validateWorkflowOwnerSnapshot(claim.principal, claim.workflowId, client, claim.channel))) return false;
   if (claim.principal.mandate && claim.principal.mandate.workflowId !== claim.workflowId) return false;
   const { authorization } = claim;
   if (authorization.kind === "workflow") {
@@ -396,6 +398,53 @@ export const canExecuteWorkflow = async (claim: GridsWorkflowExecutionClaim, cli
 
 export const canExecuteRun = (scope: GridsWorkflowActionScope, client?: SqlClient): Promise<boolean> =>
   canExecuteWorkflow({ ...scope, workflowId: scope.workflow.id }, client);
+
+/** The HTTP request's abort budget also owns its final database decision. */
+export const canExecuteRunBeforeHttp = async (scope: GridsWorkflowActionScope, signal: AbortSignal): Promise<boolean> => {
+  signal.throwIfAborted();
+  // Keep a cancellation connection independent of both the shared pool and
+  // the authorization transaction. Closing this pool never affects app work.
+  const pool = new SQL({ ...sql.options, max: 2 });
+  let cancellation: Promise<unknown> | undefined;
+  let abort: (() => void) | undefined;
+  let control: Awaited<ReturnType<typeof pool.reserve>> | undefined;
+  let connection: Awaited<ReturnType<typeof pool.reserve>> | undefined;
+  try {
+    control = await pool.reserve({ signal });
+    signal.throwIfAborted();
+    connection = await pool.reserve({ signal });
+    signal.throwIfAborted();
+    return await connection.begin(async (tx) => {
+      const [backend] = await tx<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
+      if (!backend) throw new Error("HTTP authorization has no PostgreSQL backend");
+      const cancel = control!;
+      const cancelled = Promise.withResolvers<never>();
+      abort = () => {
+        cancellation ??= cancel`SELECT pg_cancel_backend(${backend.pid})`.execute().finally(() => pool.close({ timeout: 0 }));
+        // The owner awaits cleanup below; keep rejection handled meanwhile.
+        void cancellation.catch(() => undefined);
+        cancelled.reject(signal.reason);
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      // Registry reads have no per-reader cancellation.
+      // Release this waiter on abort, then await our SQL cleanup in finally.
+      const decision = Promise.race([canExecuteRun(scope, tx), cancelled.promise]);
+      if (signal.aborted) abort();
+      const allowed = await decision;
+      signal.throwIfAborted();
+      return allowed;
+    });
+  } catch (error) {
+    signal.throwIfAborted();
+    throw error;
+  } finally {
+    if (abort) signal.removeEventListener("abort", abort);
+    await cancellation?.catch(() => undefined);
+    connection?.release();
+    control?.release();
+    await pool.close({ timeout: 0 });
+  }
+};
 
 export const canAccessWorkflowExecutionTable = async (
   claim: GridsWorkflowExecutionClaim,

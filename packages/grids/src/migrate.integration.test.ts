@@ -41,6 +41,7 @@ const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
     await database`CREATE TABLE auth.users (id UUID PRIMARY KEY)`.simple();
     await database`CREATE TABLE auth.access (id UUID PRIMARY KEY)`.simple();
     await database`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY)`.simple();
+    await database`CREATE TABLE auth.mandates (id UUID PRIMARY KEY)`.simple();
     // Record writes also write their live updates to the platform outbox.
     await migrateCoreEvents(database);
     await run(database);

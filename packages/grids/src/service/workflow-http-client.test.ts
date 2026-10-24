@@ -257,6 +257,39 @@ describe("workflow HTTP client", () => {
     expect(result.ok ? "" : result.error.message).toBe("HTTP request target resolution timed out");
   });
 
+  test("cancels final authorization within the existing request budget", async () => {
+    let cancelled = false;
+    let dispatched = false;
+    const result = await requestWorkflowHttp(
+      {
+        url: "https://api.example.com/slow",
+        method: "GET",
+        timeoutMs: 5,
+        authorize: (signal) =>
+          new Promise((_resolve, reject) => {
+            signal.addEventListener(
+              "abort",
+              () => {
+                cancelled = true;
+                reject(signal.reason);
+              },
+              { once: true },
+            );
+          }),
+      },
+      {
+        lookup: async () => [{ address: publicAddress, family: 4 }],
+        request: () => {
+          dispatched = true;
+          throw new Error("Unexpected dispatch");
+        },
+      },
+    );
+    expect(cancelled).toBe(true);
+    expect(dispatched).toBe(false);
+    expect(result.ok ? "" : result.error.code).toBe("WORKFLOW_HTTP_RETRYABLE");
+  });
+
   test("applies the timeout after response headers arrive", async () => {
     const requestFactory = ((_options: RequestOptions, callback: (response: IncomingMessage) => void) => {
       const request = new EventEmitter() as ClientRequest;

@@ -803,6 +803,7 @@ describe("Document issuance", () => {
         await database`CREATE TABLE auth.users (id UUID PRIMARY KEY)`.simple();
         await database`CREATE TABLE auth.access (id UUID PRIMARY KEY)`.simple();
         await database`CREATE TABLE auth.service_accounts (id UUID PRIMARY KEY)`.simple();
+        await database`CREATE TABLE auth.mandates (id UUID PRIMARY KEY)`.simple();
         await migrateCoreWorkflows(database);
         await migrate(database);
         // Simulate an unsupported writer only in this disposable database.

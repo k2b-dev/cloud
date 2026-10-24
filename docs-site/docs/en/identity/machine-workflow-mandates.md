@@ -23,7 +23,8 @@ Changing the account revokes its previous mandate. A revoked mandate is never
 silently recreated; selecting an account again is a new explicit assignment.
 
 Automatic runs store the machine principal, mandate ID and revision. Each step
-checks the current account, base grant, workflow binding and mandate revision.
+checks the current account, application entry access, base grant, workflow binding
+and mandate revision.
 Pause, revoke, disable, reassignment, and removal of base access stop subsequent
 work. A resumed mandate has a new revision, so older queued runs remain invalid.
 Already committed effects are retained.
@@ -36,7 +37,7 @@ administrator explicitly assigns a machine.
 
 Loss of authority appears as blocked execution authority, a degraded schedule or
 paused record-event trigger, and failed execution for work already queued. The
-administrator can restore the missing base grant or resume a paused mandate, then
+administrator can restore application access or a missing base grant, or resume a paused mandate, then
 submit a new run. The editor shows failed changes and offers **Reload authority**. If another
 administrator changes the owner or mandate, review the refreshed authority before
 trying again. API changes include the expected account and mandate ID with its

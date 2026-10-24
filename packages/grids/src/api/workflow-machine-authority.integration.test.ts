@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { appRegistry } from "@k2b/cloud";
-import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
+import { appAccess, appRegistry } from "@k2b/cloud";
+import { accounts, coreSettings, serviceAccountCredentials } from "@k2b/cloud/services";
 import * as notificationPlatform from "@k2b/cloud/services/notifications/platform";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { encryptValue } from "@k2b/cloud/services/settings/crypto";
@@ -9,7 +9,7 @@ import { z } from "zod";
 import { suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import * as machineAuthority from "../service/workflow-machine-authority";
 import { getWorkflowRunByShortId, getWorkflowRunScope } from "../service/workflow-runs";
-import { getWorkflowTriggerRuntimeState, runGridsWorkflowRun } from "../service/workflow-runtime";
+import { getWorkflowTriggerRuntimeState, invokeGridsWorkflow, runGridsWorkflowRun } from "../service/workflow-runtime";
 import "../../../../scripts/fixtures/authorization-preload";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { app } from "../config";
@@ -18,10 +18,14 @@ import { migrate } from "../migrate";
 import { grantAccess, lockBaseAuthorization, revokeAccess } from "../service/access";
 import type { SqlClient } from "../service/audit";
 import { apply as applyCustomApp, publish as publishCustomApp } from "../service/custom-apps";
+import { enable as enableHistory } from "../service/durable-history";
 import { create as createEmailTemplate } from "../service/email-templates";
-import { canExecuteWorkflow } from "../service/workflow-action-scope";
+import { enable as enableFinalization } from "../service/record-finalization";
+import { canExecuteRunBeforeHttp, canExecuteWorkflow } from "../service/workflow-action-scope";
+import { lockWorkflowCatalogMutation } from "../service/workflow-catalog-mutation";
 import { createWorkflow, updateWorkflow } from "../service/workflow-definitions";
 import { sendWorkflowEmail } from "../service/workflow-email-send";
+import { requestWorkflowHttp } from "../service/workflow-http-client";
 import { createLauncher } from "../service/workflow-launchers";
 import {
   getWorkflowMachineAuthority,
@@ -137,6 +141,19 @@ suite("machine workflow execution authority", () => {
         if (!principal) throw new Error("Missing machine principal");
         const claim = { workflowId: workflow.id, baseId, principal, launcherId: null, authorization: { kind: "workflow" as const } };
         expect(await canExecuteWorkflow(claim)).toBe(true);
+        // A domain grant and a live mandate cannot bypass the application's
+        // current entry rule, including inside the effect transaction.
+        await appRegistry().upsert({
+          key: "apps/grids",
+          value: { ...app.meta, baseUrl: app.baseUrl, access: appAccess.roles(["admin"]) },
+        });
+        expect((await invoke()).status).toBe(403);
+        expect(await canExecuteWorkflow(claim)).toBe(false);
+        expect(await sql.begin((db) => canExecuteWorkflow(claim, db))).toBe(false);
+        expect((await getWorkflowTriggerRuntimeState(workflow)).schedule?.state).toBe("degraded");
+        await appRegistry().upsert({ key: "apps/grids", value: { ...app.meta, baseUrl: app.baseUrl } });
+        expect(await canExecuteWorkflow(claim)).toBe(true);
+        expect((await invoke()).status).toBe(200);
         expect(await canExecuteWorkflow({ ...claim, baseId: otherBaseId })).toBe(false);
         expect(await canExecuteWorkflow({ ...claim, workflowId: testUuid() })).toBe(false);
         const pause = await change({ action: "pause", expected: snapshot(assigned) });
@@ -1215,6 +1232,582 @@ suite("published App machine-owner admission", () => {
         await Promise.allSettled(pending ? [pending] : []);
         barrier?.mockRestore();
         await f.cleanup();
+      }
+    });
+});
+
+suite("automatic owner snapshots", () => {
+  for (const kind of ["standalone", "agent"] as const)
+    for (const channel of ["schedule", "recordEvent"] as const)
+      for (const boundary of ["captured owner", "admission lock", "queued effect"] as const)
+        test(`${kind} ${channel}: former human owner cannot survive machine assignment at ${boundary}`, async () => {
+          const f = await authorityFixture(true);
+          let pending: ReturnType<typeof invokeGridsWorkflow> | undefined;
+          try {
+            await sql`UPDATE auth.service_accounts SET kind=${kind} WHERE id=${f.accountIds[0]!}::uuid`;
+            const updated = await updateWorkflow(
+              f.workflow.id,
+              {
+                source: `triggers:
+  schedule:
+    cron: "0 8 * * *"
+    timezone: UTC
+  recordEvent:
+    event: created
+    table: Tasks
+steps:
+  - createRecord:
+      table: Tasks
+      values:
+        Name: Automatic owner`,
+              },
+              f.ownerId,
+              f.workflow.revision,
+            );
+            if (!updated.ok) throw new Error(updated.error.message);
+            const invoke = () =>
+              invokeGridsWorkflow({
+                workflowId: f.workflow.id,
+                mode: "execute",
+                channel,
+                inputs: {},
+                idempotencyKey: crypto.randomUUID(),
+                principal: { userId: f.ownerId, serviceAccountId: null, groupIds: [] },
+                occurredAt: "2026-10-24T08:00:00.000Z",
+              });
+            // Prove the real automatic channel and this human's domain grant.
+            const baseline = await invoke();
+            if (!baseline.ok) throw new Error(baseline.error.message);
+            await runGridsWorkflowRun(baseline.data.runId);
+            expect(await sql`SELECT id FROM grids.records WHERE table_id=${f.tableId}::uuid`).toHaveLength(1);
+            const blockOwner = async () => {
+              const assigned = await f.assign();
+              const response = await f.change({ action: kind === "agent" ? "revoke" : "pause", expected: snapshot(assigned) });
+              expect(response.status, await response.clone().text()).toBe(200);
+            };
+            if (boundary === "queued effect") {
+              const queued = await invoke();
+              if (!queued.ok) throw new Error(queued.error.message);
+              expect((await getWorkflowRunScope(queued.data.runId))?.channel).toBe(channel);
+              await blockOwner();
+              await runGridsWorkflowRun(queued.data.runId);
+              const [run] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${queued.data.runId}::uuid`;
+              expect(run?.state).toBe("failed");
+            } else {
+              if (boundary === "admission lock") {
+                await locked(
+                  (db) => lockWorkflowCatalogMutation(f.baseId, db),
+                  async (_db, pid) => {
+                    pending = invoke();
+                    await waitForBlocked(pid);
+                    await blockOwner();
+                  },
+                );
+              } else {
+                await blockOwner();
+                pending = invoke();
+              }
+              const denied = await pending!;
+              expect(denied.ok).toBe(false);
+              if (!denied.ok) expect(denied.error.code).toBe("FORBIDDEN");
+              expect(await sql`SELECT run_id FROM grids.workflow_run_profile WHERE workflow_id=${f.workflow.id}::uuid`).toHaveLength(1);
+            }
+            expect(await sql`SELECT id FROM grids.records WHERE table_id=${f.tableId}::uuid`).toHaveLength(1);
+          } finally {
+            await Promise.allSettled(pending ? [pending] : []);
+            await f.cleanup();
+          }
+        });
+});
+
+const queueFixtureMachine = async (f: Awaited<ReturnType<typeof authorityFixture>>, inputs: Record<string, string> = {}) => {
+  const token = await serviceAccountCredentials.createApiToken({
+    serviceAccountId: f.accountIds[0]!,
+    name: "Effect boundary",
+    scopes: ["grids:write"],
+  });
+  if (!token.ok) throw new Error(token.error.message);
+  const response = await api.request(`/workflows/${f.workflow.shortId}/invoke`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${token.data.token}`, "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
+    body: JSON.stringify({ inputs, idempotencyKey: crypto.randomUUID(), mode: "execute" }),
+  });
+  expect(response.status, await response.clone().text()).toBe(200);
+  const receipt = z.object({ runId: z.string() }).parse(await response.json());
+  const run = await getWorkflowRunByShortId(receipt.runId);
+  if (!run) throw new Error("Machine run missing");
+  return run;
+};
+
+suite("machine effects after preparation waits", () => {
+  for (const kind of ["standalone", "agent"] as const)
+    for (const boundary of ["table", "history"] as const)
+      for (const action of ["createRecord", "atomicRecords"] as const)
+        test(`${kind} ${action}: real ${boundary} lock wait cannot retain revoked base authority`, async () => {
+          const f = await authorityFixture(true);
+          let pending: ReturnType<typeof runGridsWorkflowRun> | undefined;
+          try {
+            await sql`UPDATE auth.service_accounts SET kind=${kind} WHERE id=${f.accountIds[0]!}::uuid`;
+            const inputs: Record<string, string> = {};
+            const expectedRecords = action === "atomicRecords" ? 2 : 1;
+            if (action === "atomicRecords") {
+              const coordinationId = testUuid();
+              inputs.coordination = testShortId();
+              await sql`INSERT INTO grids.records(id,short_id,table_id,data) VALUES(${coordinationId}::uuid,${inputs.coordination},${f.tableId}::uuid,'{}'::jsonb)`;
+              const updated = await updateWorkflow(
+                f.workflow.id,
+                {
+                  source: `inputs:
+  coordination:
+    type: record
+    table: Tasks
+    required: true
+steps:
+  - atomicRecords:
+      locks: [inputs.coordination]
+      checks:
+        - table: Tasks
+          where:
+            - field: Name
+              op: equals
+              value: Never present
+          assert: empty
+      changes:
+        - createRecord:
+            table: Tasks
+            values:
+              Name: Atomic machine`,
+                },
+                f.ownerId,
+                f.workflow.revision,
+              );
+              if (!updated.ok) throw new Error(updated.error.message);
+            }
+            await f.assign();
+            const baseline = await queueFixtureMachine(f, inputs);
+            await runGridsWorkflowRun(baseline.id);
+            expect(await sql`SELECT id FROM grids.records WHERE table_id=${f.tableId}::uuid`).toHaveLength(expectedRecords);
+            const queued = await queueFixtureMachine(f, inputs);
+            await locked(
+              (db) =>
+                boundary === "table"
+                  ? db`SELECT id FROM grids.tables WHERE id=${f.tableId}::uuid FOR UPDATE`
+                  : db`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:durable-history:${f.tableId}`},0))`,
+              async (_db, pid) => {
+                pending = runGridsWorkflowRun(queued.id);
+                await waitForBlocked(pid);
+                expect((await revokeAccess(f.accessIds[2]!, f.ownerId)).ok).toBe(true);
+              },
+            );
+            await pending!;
+            const [run] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${queued.id}::uuid`;
+            expect(run?.state).toBe("failed");
+            const outcomes = await sql<{ code: string | null }[]>`
+            SELECT outcome->'outcome'->'error'->>'code' AS code FROM workflows.step_outcome WHERE run_id=${queued.id}::uuid`;
+            expect(outcomes.some((row) => row.code === "FORBIDDEN")).toBe(true);
+            expect(await sql`SELECT id FROM grids.records WHERE table_id=${f.tableId}::uuid`).toHaveLength(expectedRecords);
+            expect(
+              await sql`SELECT id FROM grids.audit_log WHERE base_id=${f.baseId}::uuid AND action='workflow.record.created'`,
+            ).toHaveLength(1);
+          } finally {
+            await Promise.allSettled(pending ? [pending] : []);
+            await f.cleanup();
+          }
+        });
+
+  for (const kind of ["standalone", "agent"] as const)
+    for (const change of ["revoke", "disable"] as const)
+      test(`${kind}: ${change} during DNS resolution prevents HTTP dispatch`, async () => {
+        const f = await authorityFixture();
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let pending: ReturnType<typeof requestWorkflowHttp> | undefined;
+        let sent = 0;
+        try {
+          await sql`UPDATE auth.service_accounts SET kind=${kind} WHERE id=${f.accountIds[0]!}::uuid`;
+          const assigned = await f.assign();
+          const queued = await queueFixtureMachine(f);
+          const scope = await getWorkflowRunScope(queued.id);
+          if (!scope) throw new Error("Machine scope missing");
+          const input = {
+            url: "https://api.example.com/hooks",
+            method: "POST" as const,
+            authorize: (signal: AbortSignal) => canExecuteRunBeforeHttp(scope, signal),
+          };
+          const request = () => {
+            sent += 1;
+            throw new Error("Observed dispatch without opening a socket");
+          };
+          await requestWorkflowHttp(input, { lookup: async () => [{ address: "93.184.216.34", family: 4 }], request });
+          expect(sent).toBe(1);
+          pending = requestWorkflowHttp(input, {
+            lookup: async () => {
+              entered.resolve();
+              await release.promise;
+              return [{ address: "93.184.216.34", family: 4 }];
+            },
+            request,
+          });
+          await entered.promise;
+          if (change === "disable") await sql`UPDATE auth.service_accounts SET status='disabled' WHERE id=${f.accountIds[0]!}::uuid`;
+          else expect((await f.change({ action: "revoke", expected: snapshot(assigned) })).status).toBe(200);
+          release.resolve();
+          const denied = await pending;
+          expect(denied.ok).toBe(false);
+          if (!denied.ok) expect(denied.error.code).toBe("FORBIDDEN");
+          expect(sent).toBe(1);
+        } finally {
+          release.resolve();
+          await Promise.allSettled(pending ? [pending] : []);
+          await f.cleanup();
+        }
+      });
+});
+
+suite("automatic admission and user deletion", () => {
+  for (const channel of ["schedule", "recordEvent"] as const)
+    test(`${channel}: admission locks its human before ownership and actor foreign keys`, async () => {
+      const f = await authorityFixture(true);
+      const entered = Promise.withResolvers<number>();
+      const release = Promise.withResolvers<void>();
+      const original = machineAuthority.validateWorkflowOwnerSnapshot;
+      let pending: ReturnType<typeof invokeGridsWorkflow> | undefined;
+      let deletion: Promise<unknown> | undefined;
+      let first = true;
+      const barrier = spyOn(machineAuthority, "validateWorkflowOwnerSnapshot").mockImplementation(async (...args) => {
+        const allowed = await original(...args);
+        if (first && args[2] !== undefined && args[3] === channel) {
+          first = false;
+          const [backend] = await args[2]<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+          if (!backend) throw new Error("Admission backend missing");
+          entered.resolve(backend.pid);
+          await release.promise;
+        }
+        return allowed;
+      });
+      try {
+        const updated = await updateWorkflow(
+          f.workflow.id,
+          {
+            source: `triggers:
+  schedule:
+    cron: "0 8 * * *"
+    timezone: UTC
+  recordEvent:
+    event: created
+    table: Tasks
+steps:
+  - succeed:
+      message: Done`,
+          },
+          f.ownerId,
+          f.workflow.revision,
+        );
+        if (!updated.ok) throw new Error(updated.error.message);
+        pending = invokeGridsWorkflow({
+          workflowId: f.workflow.id,
+          mode: "execute",
+          channel,
+          inputs: {},
+          idempotencyKey: crypto.randomUUID(),
+          principal: { userId: f.ownerId, serviceAccountId: null, groupIds: [] },
+          occurredAt: "2026-10-24T08:00:00.000Z",
+        });
+        const pid = await Promise.race([
+          entered.promise,
+          pending.then(() => {
+            throw new Error("Admission ended before owner lock barrier");
+          }),
+        ]);
+        deletion = sql`DELETE FROM auth.users WHERE id=${f.ownerId}::uuid`.execute();
+        await waitForBlocked(pid);
+        release.resolve();
+        const admitted = await pending;
+        expect(admitted.ok).toBe(true);
+        await deletion;
+        if (!admitted.ok) throw new Error(admitted.error.message);
+        await runGridsWorkflowRun(admitted.data.runId);
+        const [run] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${admitted.data.runId}::uuid`;
+        expect(run?.state).toBe("failed");
+      } finally {
+        release.resolve();
+        await Promise.allSettled([...(pending ? [pending] : []), ...(deletion ? [deletion] : [])]);
+        barrier.mockRestore();
+        await f.cleanup();
+      }
+    });
+});
+
+suite("record mutation authority after writer waits", () => {
+  for (const kind of ["standalone", "agent"] as const)
+    for (const operation of ["updateRecord", "deleteRecord", "finalizeRecord"] as const)
+      for (const atomic of [false, true])
+        test(`${kind} ${atomic ? "atomic" : "single"} ${operation}: revocation during writer preparation rolls back the effect`, async () => {
+          const f = await authorityFixture(true);
+          let pending: ReturnType<typeof runGridsWorkflowRun> | undefined;
+          try {
+            await sql`UPDATE auth.service_accounts SET kind=${kind} WHERE id=${f.accountIds[0]!}::uuid`;
+            const history = await enableHistory(f.tableId, f.ownerId);
+            if (!history.ok) throw new Error(history.error.message);
+            if (operation === "finalizeRecord") {
+              const enabled = await enableFinalization(f.tableId, { mode: "direct" }, f.ownerId);
+              if (!enabled.ok) throw new Error(enabled.error.message);
+            }
+            const [field] = await sql<
+              { id: string }[]
+            >`SELECT id::text FROM grids.fields WHERE table_id=${f.tableId}::uuid AND name='Name'`;
+            if (!field) throw new Error("Name field missing");
+            const targets = [testUuid(), testUuid()];
+            const shortIds = [testShortId(), testShortId()];
+            for (let i = 0; i < targets.length; i++)
+              await sql`INSERT INTO grids.records(id,short_id,table_id,data)
+              VALUES(${targets[i]!}::uuid,${shortIds[i]!},${f.tableId}::uuid,${{ [field.id]: "Before" }}::jsonb)`;
+            const change = `${operation}:\n${atomic ? "            " : "      "}record: inputs.target${operation === "updateRecord" ? `\n${atomic ? "            " : "      "}set:\n${atomic ? "              " : "        "}Name: Changed` : ""}`;
+            const workflowSource = `inputs:
+  target:
+    type: record
+    table: Tasks
+    required: true
+steps:
+${
+  atomic
+    ? `  - atomicRecords:
+      locks: [inputs.target]
+      checks:
+        - table: Tasks
+          where:
+            - field: Name
+              op: equals
+              value: Never present
+          assert: empty
+      changes:
+        - ${change}`
+    : `  - ${change}`
+}`;
+            const updated = await updateWorkflow(f.workflow.id, { source: workflowSource }, f.ownerId, f.workflow.revision);
+            if (!updated.ok) throw new Error(updated.error.message);
+            await f.assign();
+            const baseline = await queueFixtureMachine(f, { target: shortIds[0]! });
+            await runGridsWorkflowRun(baseline.id);
+            const [worked] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${baseline.id}::uuid`;
+            expect(worked?.state).toBe("succeeded");
+            const [before] = await sql<
+              { data: Record<string, unknown>; deleted_at: Date | null; finalized_at: Date | null }[]
+            >`SELECT data,deleted_at,finalized_at FROM grids.records WHERE id=${targets[0]!}::uuid`;
+            if (operation === "updateRecord") expect(before?.data[field.id]).toBe("Changed");
+            else if (operation === "deleteRecord") expect(before?.deleted_at).not.toBeNull();
+            else expect(before?.finalized_at).not.toBeNull();
+            const queued = await queueFixtureMachine(f, { target: shortIds[1]! });
+            await locked(
+              (db) =>
+                operation === "finalizeRecord"
+                  ? db`SELECT table_id FROM grids.table_finalization_activations WHERE table_id=${f.tableId}::uuid FOR UPDATE`
+                  : db`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:durable-history:${f.tableId}`},0))`,
+              async (_db, pid) => {
+                pending = runGridsWorkflowRun(queued.id);
+                await waitForBlocked(pid);
+                expect((await revokeAccess(f.accessIds[2]!, f.ownerId)).ok).toBe(true);
+              },
+            );
+            await pending!;
+            const [failed] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${queued.id}::uuid`;
+            expect(failed?.state).toBe("failed");
+            const [after] = await sql<
+              { data: Record<string, unknown>; deleted_at: Date | null; finalized_at: Date | null; version: number }[]
+            >`SELECT data,deleted_at,finalized_at,version FROM grids.records WHERE id=${targets[1]!}::uuid`;
+            expect(after).toEqual({ data: { [field.id]: "Before" }, deleted_at: null, finalized_at: null, version: 1 });
+            const outcomes = await sql<
+              { code: string | null }[]
+            >`SELECT outcome->'outcome'->'error'->>'code' AS code FROM workflows.step_outcome WHERE run_id=${queued.id}::uuid`;
+            expect(outcomes.some((row) => row.code === "FORBIDDEN")).toBe(true);
+          } finally {
+            await Promise.allSettled(pending ? [pending] : []);
+            await sql`UPDATE grids.records SET finalized_at=NULL,finalized_by=NULL,final_revision_id=NULL WHERE table_id=${f.tableId}::uuid`;
+            await sql`DELETE FROM grids.record_revisions WHERE table_id=${f.tableId}::uuid`;
+            await sql`DELETE FROM grids.table_finalization_activations WHERE table_id=${f.tableId}::uuid`;
+            await sql`DELETE FROM grids.durable_history_activations WHERE table_id=${f.tableId}::uuid`;
+            await sql`DELETE FROM grids.table_schema_revisions WHERE table_id=${f.tableId}::uuid`;
+            await f.cleanup();
+          }
+        });
+});
+
+suite("HTTP authorization cancellation", () => {
+  test("the request budget cancels the real account lock waiter before its blocker releases", async () => {
+    const f = await authorityFixture();
+    let pending: ReturnType<typeof requestWorkflowHttp> | undefined;
+    try {
+      await f.assign();
+      const queued = await queueFixtureMachine(f);
+      const scope = await getWorkflowRunScope(queued.id);
+      if (!scope) throw new Error("Machine scope missing");
+      let sent = false;
+      await locked(
+        (db) => db`SELECT id FROM auth.service_accounts WHERE id=${f.accountIds[0]!}::uuid FOR UPDATE`,
+        async (_db, blocker) => {
+          pending = requestWorkflowHttp(
+            {
+              url: "https://api.example.com/hooks",
+              method: "POST",
+              timeoutMs: 1000,
+              authorize: (signal) => canExecuteRunBeforeHttp(scope, signal),
+            },
+            {
+              lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+              request: () => {
+                sent = true;
+                throw new Error("Unexpected dispatch");
+              },
+            },
+          );
+          await waitForBlocked(blocker);
+          const result = await pending;
+          expect(result.ok ? "" : result.error.code).toBe("WORKFLOW_HTTP_RETRYABLE");
+          expect(sent).toBe(false);
+          const [waiting] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM pg_stat_activity
+            WHERE datname=current_database() AND ${blocker}::int=ANY(pg_blocking_pids(pid))`;
+          expect(waiting?.count).toBe(0);
+        },
+      );
+    } finally {
+      await Promise.allSettled(pending ? [pending] : []);
+      await f.cleanup();
+    }
+  });
+});
+
+suite("HTTP authorization registry cancellation", () => {
+  test("the request releases account locks before a delayed registry read returns", async () => {
+    const f = await authorityFixture();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let pending: ReturnType<typeof requestWorkflowHttp> | undefined;
+    const registry = appRegistry();
+    const original = registry.snapshot;
+    let hold = false;
+    const snapshotRead = spyOn(registry, "snapshot").mockImplementation(async (...args) => {
+      if (hold) {
+        entered.resolve();
+        await release.promise;
+      }
+      return original.apply(registry, args);
+    });
+    try {
+      await f.assign();
+      const queued = await queueFixtureMachine(f);
+      const scope = await getWorkflowRunScope(queued.id);
+      if (!scope) throw new Error("Machine scope missing");
+      let sent = false;
+      hold = true;
+      pending = requestWorkflowHttp(
+        {
+          url: "https://api.example.com/hooks",
+          method: "POST",
+          timeoutMs: 1000,
+          authorize: (signal) => canExecuteRunBeforeHttp(scope, signal),
+        },
+        {
+          lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+          request: () => {
+            sent = true;
+            throw new Error("Unexpected dispatch");
+          },
+        },
+      );
+      await entered.promise;
+      // Keep the real response pending through HTTP completion and SQL cleanup.
+      // Authorization itself is never replaced.
+      const result = await pending;
+      expect(result.ok ? "" : result.error.code).toBe("WORKFLOW_HTTP_RETRYABLE");
+      expect(sent).toBe(false);
+      await sql.begin(async (tx) => {
+        const rows = await tx`SELECT id FROM auth.service_accounts WHERE id=${f.accountIds[0]!}::uuid FOR UPDATE NOWAIT`;
+        expect(rows).toHaveLength(1);
+      });
+    } finally {
+      hold = false;
+      release.resolve();
+      await Promise.allSettled(pending ? [pending] : []);
+      snapshotRead.mockRestore();
+      await f.cleanup();
+    }
+  });
+});
+
+suite("document-link effect authority", () => {
+  for (const kind of ["standalone", "agent"] as const)
+    test(`${kind}: revocation during public URL settings prevents a link effect`, async () => {
+      const f = await authorityFixture(true);
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      let pending: ReturnType<typeof runGridsWorkflowRun> | undefined;
+      const original = coreSettings.get;
+      let hold = false;
+      const settings = spyOn(coreSettings, "get").mockImplementation(async (...args) => {
+        if (hold && args[0] === "app.url") {
+          entered.resolve();
+          await release.promise;
+        }
+        return original(...args);
+      });
+      try {
+        await sql`UPDATE auth.service_accounts SET kind=${kind} WHERE id=${f.accountIds[0]!}::uuid`;
+        await sql`INSERT INTO grids.records(id,short_id,table_id,data)
+          VALUES(${testUuid()}::uuid,${testShortId()},${f.tableId}::uuid,'{}'::jsonb)`;
+        const updated = await updateWorkflow(
+          f.workflow.id,
+          {
+            source: `steps:
+  - query:
+      source: |
+        from table Tasks
+        select Name
+      saveAs: report
+  - generateDocument:
+      data: report
+      output:
+        kind: csv
+      saveAs: reportFile
+  - createDocumentLink:
+      document: reportFile
+      expiresIn: 7d
+      saveAs: reportLink`,
+          },
+          f.ownerId,
+          f.workflow.revision,
+        );
+        if (!updated.ok) throw new Error(updated.error.message);
+        await f.assign();
+        const baseline = await queueFixtureMachine(f);
+        await runGridsWorkflowRun(baseline.id);
+        const [worked] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${baseline.id}::uuid`;
+        expect(worked?.state).toBe("succeeded");
+        expect(await sql`SELECT id FROM grids.document_links WHERE base_id=${f.baseId}::uuid`).toHaveLength(1);
+        const queued = await queueFixtureMachine(f);
+        hold = true;
+        pending = runGridsWorkflowRun(queued.id);
+        await entered.promise;
+        expect((await revokeAccess(f.accessIds[2]!, f.ownerId)).ok).toBe(true);
+        release.resolve();
+        await pending;
+        const [failed] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id=${queued.id}::uuid`;
+        expect(failed?.state).toBe("failed");
+        expect(await sql`SELECT id FROM grids.document_links WHERE base_id=${f.baseId}::uuid`).toHaveLength(1);
+        expect(
+          await sql`SELECT id FROM grids.audit_log WHERE base_id=${f.baseId}::uuid AND action='workflow.document_link.created'`,
+        ).toHaveLength(1);
+        const outcomes = await sql<{ code: string | null }[]>`SELECT outcome->'outcome'->'error'->>'code' AS code
+          FROM workflows.step_outcome WHERE run_id=${queued.id}::uuid`;
+        expect(outcomes.some((row) => row.code === "FORBIDDEN")).toBe(true);
+      } finally {
+        release.resolve();
+        await Promise.allSettled(pending ? [pending] : []);
+        settings.mockRestore();
+        // Issued documents and query snapshots retain their base, matching the
+        // existing workflow-actions/document-issuance fixture contract.
+        const retained = await sql`SELECT id FROM grids.documents WHERE base_id=${f.baseId}::uuid
+          UNION ALL SELECT id FROM grids.record_snapshots WHERE base_id=${f.baseId}::uuid LIMIT 1`;
+        if (retained.length === 0) await f.cleanup();
       }
     });
 });
