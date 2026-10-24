@@ -59,6 +59,8 @@ export default function Welcome(props: WelcomeProps) {
   const [text, setText] = createSignal("");
   const [message, setMessage] = createSignal<string>();
   const [busy, setBusy] = createSignal(false);
+  const [confirmation, setConfirmation] = createSignal<{ account: string; administrator: string; token: string }>();
+  const [rejected, setRejected] = createSignal(false);
   const [waiting, setWaiting] = createSignal<Waiting>();
   /** A pairing link opened in the browser, kept in memory to copy into the installed app. */
   const [link, setLink] = createSignal<string>();
@@ -116,7 +118,7 @@ export default function Welcome(props: WelcomeProps) {
     const answer = await inOrder(phoneAuth.complete);
     inFlight = false;
     if (!polling) return;
-    if (answer.status === 200) return location.replace(PWA_SCOPE);
+    if (readCompletion(answer)) return;
     if (answer.status === 410) return location.replace(`${PWA_SCOPE}?pwa=expired`);
     if (answer.code === "ACCOUNT_BLOCKED") return location.replace(`${PWA_SCOPE}?pwa=blocked`);
     if (["ALREADY_PAIRED", "ACCOUNT_MISMATCH", "LIMIT_REACHED"].includes(answer.code ?? "")) {
@@ -127,6 +129,70 @@ export default function Welcome(props: WelcomeProps) {
     // 202, Cloud unreachable or busy: ask again later.
     schedule();
   };
+  const readCompletion = (answer: PhoneAnswer): boolean => {
+    const parsed = PwaCompleteResultSchema.safeParse(answer.body);
+    if (!parsed.success) return false;
+    if (parsed.data.state === "paired") {
+      location.replace(PWA_SCOPE);
+      return true;
+    }
+    if (parsed.data.state === "rejected") {
+      stopPolling();
+      setConfirmation(undefined);
+      setWaiting(undefined);
+      setRejected(true);
+      return true;
+    }
+    if (parsed.data.state === "confirmation_required") {
+      stopPolling();
+      setMessage(undefined);
+      setConfirmation({
+        account: parsed.data.account.name,
+        administrator: parsed.data.administrator.name,
+        token: parsed.data.confirmationToken,
+      });
+      queueMicrotask(() => document.getElementById("pwa-device-confirmation")?.focus());
+      return true;
+    }
+    return false;
+  };
+  const decide = async (decision: "confirm" | "reject") => {
+    const current = confirmation();
+    if (!current || busy()) return;
+    setBusy(true);
+    setMessage(undefined);
+    const answer = await inOrder(() => phoneAuth.decide(current.token, decision));
+    if (answer.status === 204) {
+      if (decision === "reject") {
+        setConfirmation(undefined);
+        setWaiting(undefined);
+        setRejected(true);
+      } else {
+        const completed = await inOrder(phoneAuth.complete);
+        if (!readCompletion(completed)) {
+          setConfirmation(undefined);
+          setMessage(failure(completed));
+          polling = true;
+          schedule();
+        }
+      }
+    } else if (answer.code === "FORBIDDEN" || answer.code === "CONFLICT") {
+      // The pairing changed since this prompt: a newer prompt replaced its token, the administrator cancelled, or
+      // another window decided. Its current state decides; a fresh prompt needs its own decision.
+      const completed = await inOrder(phoneAuth.complete);
+      if (!readCompletion(completed)) {
+        setConfirmation(undefined);
+        setWaiting(undefined);
+        setMessage(failure(completed));
+      }
+    } else if (answer.status !== 0 && answer.status < 500) {
+      // Expired or no longer allowed: this pairing cannot finish, so the person starts again with a new code.
+      setConfirmation(undefined);
+      setWaiting(undefined);
+      setMessage(failure(answer));
+    } else setMessage(failure(answer));
+    setBusy(false);
+  };
   const wait = (value: Waiting) => {
     setMessage(undefined);
     setWaiting(value);
@@ -136,6 +202,8 @@ export default function Welcome(props: WelcomeProps) {
   const useAnotherCode = () => {
     stopPolling();
     setWaiting(undefined);
+    setConfirmation(undefined);
+    setRejected(false);
     setMessage(undefined);
   };
 
@@ -149,6 +217,8 @@ export default function Welcome(props: WelcomeProps) {
       return;
     }
     stopPolling();
+    setConfirmation(undefined);
+    setRejected(false);
     setBusy(true);
     setMessage(undefined);
     const answer = await inOrder(() => phoneAuth.claim(parsed.secret, phonePlatform()));
@@ -224,7 +294,7 @@ export default function Welcome(props: WelcomeProps) {
     if (!standalone || linked) return;
     void (async () => {
       const answer = await inOrder(phoneAuth.complete);
-      if (answer.status === 200) return location.replace(PWA_SCOPE);
+      if (readCompletion(answer)) return;
       const pending = answer.status === 202 ? PwaCompleteResultSchema.safeParse(answer.body) : undefined;
       if (pending?.success && pending.data.state === "waiting" && !waiting() && !busy()) {
         wait({ code: pending.data.code, account: pending.data.account.name });
@@ -240,62 +310,92 @@ export default function Welcome(props: WelcomeProps) {
     </Show>
   );
 
+  const pairingContent = () => (
+    <Show
+      when={waiting()}
+      fallback={
+        <div class="pwa-welcome__block">
+          <h2>{t().connect({ cloud: props.cloud })}</h2>
+          <p class="pwa-welcome__lead">{props.state === "ended" ? t().ended : props.state === "expired" ? t().expired : t().connectLead}</p>
+          <Button class="pwa-welcome__primary" disabled={busy()} onClick={() => void scan()}>
+            <i class="ti ti-qrcode" aria-hidden="true" />
+            {t().scanCode}
+          </Button>
+          <form
+            class="pwa-welcome__paste"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (text().trim()) void claim(text());
+            }}
+          >
+            <TextInput
+              id={PASTE_FIELD}
+              icon="ti ti-link"
+              label={t().pasteLink}
+              value={text}
+              onValueChange={(value) => {
+                setText(value);
+                setMessage(undefined);
+              }}
+              maxLength={PWA_LIMITS.bodyBytes}
+              autocomplete="off"
+              spellcheck={false}
+              disabled={busy()}
+            />
+            <Button type="submit" variant="secondary" loading={busy()} disabled={!text().trim()}>
+              {t().continue}
+            </Button>
+          </form>
+          {status()}
+          <p class="pwa-welcome__hint">{t().pairingHint}</p>
+        </div>
+      }
+    >
+      {(pending) => (
+        <div class="pwa-welcome__block">
+          <h2>{t().connectingAs({ cloud: props.cloud, account: pending().account })}</h2>
+          <output class="pwa-welcome__code" aria-label={t().codeLabel}>
+            {groupedCode(pending().code)}
+          </output>
+          <p class="pwa-welcome__lead">{t().enterCode}</p>
+          {status()}
+          <Button variant="secondary" onClick={useAnotherCode}>
+            {t().useAnotherCode}
+          </Button>
+        </div>
+      )}
+    </Show>
+  );
+
   return (
     <div class="pwa-welcome">
       <img class="pwa-welcome__icon" src={props.icon} alt="" width="72" height="72" />
       <div class="pwa-standalone-only">
         <Show
-          when={waiting()}
+          when={confirmation()}
           fallback={
-            <div class="pwa-welcome__block">
-              <h2>{t().connect({ cloud: props.cloud })}</h2>
-              <p class="pwa-welcome__lead">
-                {props.state === "ended" ? t().ended : props.state === "expired" ? t().expired : t().connectLead}
-              </p>
-              <Button class="pwa-welcome__primary" disabled={busy()} onClick={() => void scan()}>
-                <i class="ti ti-qrcode" aria-hidden="true" />
-                {t().scanCode}
-              </Button>
-              <form
-                class="pwa-welcome__paste"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (text().trim()) void claim(text());
-                }}
-              >
-                <TextInput
-                  id={PASTE_FIELD}
-                  icon="ti ti-link"
-                  label={t().pasteLink}
-                  value={text}
-                  onValueChange={(value) => {
-                    setText(value);
-                    setMessage(undefined);
-                  }}
-                  maxLength={PWA_LIMITS.bodyBytes}
-                  autocomplete="off"
-                  spellcheck={false}
-                  disabled={busy()}
-                />
-                <Button type="submit" variant="secondary" loading={busy()} disabled={!text().trim()}>
-                  {t().continue}
+            <Show when={rejected()} fallback={pairingContent()}>
+              <div class="pwa-welcome__block">
+                <p role="status">{t().adminRejected}</p>
+                <Button variant="secondary" onClick={useAnotherCode}>
+                  {t().useAnotherCode}
                 </Button>
-              </form>
-              {status()}
-              <p class="pwa-welcome__hint">{t().pairingHint}</p>
-            </div>
+              </div>
+            </Show>
           }
         >
-          {(pending) => (
-            <div class="pwa-welcome__block">
-              <h2>{t().connectingAs({ cloud: props.cloud, account: pending().account })}</h2>
-              <output class="pwa-welcome__code" aria-label={t().codeLabel}>
-                {groupedCode(pending().code)}
-              </output>
-              <p class="pwa-welcome__lead">{t().enterCode}</p>
+          {(current) => (
+            <div class="pwa-welcome__block" aria-labelledby="pwa-device-confirmation">
+              <h2 id="pwa-device-confirmation" tabindex="-1">
+                {t().adminConfirmTitle({ name: current().account })}
+              </h2>
+              <p class="pwa-welcome__lead">{t().adminConfirmBody({ name: current().administrator })}</p>
               {status()}
-              <Button variant="secondary" onClick={useAnotherCode}>
-                {t().useAnotherCode}
+              <Button loading={busy()} onClick={() => void decide("confirm")}>
+                {t().adminConfirm}
+              </Button>
+              <Button variant="secondary" disabled={busy()} onClick={() => void decide("reject")}>
+                {t().adminReject}
               </Button>
             </div>
           )}

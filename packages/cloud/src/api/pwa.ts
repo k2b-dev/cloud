@@ -95,7 +95,7 @@ const webActor = async (c: Context) => {
   const session = token ? await auth.session.authenticateRequest(c, token) : null;
   if (!session) throw new PwaError("REAUTHENTICATE", 403);
   if (session.data.kind !== "web") throw new PwaError("FORBIDDEN", 403);
-  return { userId: session.user.id, sid: session.data.sid };
+  return { userId: session.user.id, sid: session.data.sid, admin: session.user.roles.includes("admin") };
 };
 
 /** The phone this request also comes from (Chrome on a paired Android phone shares the app's cookies). */
@@ -129,6 +129,26 @@ export const createPwaRoutes = (options: PwaRouteOptions = {}) => {
         return c.json(await service.startPairing(actor), 201);
       },
     )
+    .post(
+      "/users/:userId/pairings",
+      describeRoute({
+        tags,
+        summary: "Pair the Cloud app for another person",
+        description:
+          "Administrator web session only, signed in within ten minutes. App sessions and API keys are refused. The target account must be active. Uses the existing account pairing and device limits. After the administrator confirms the device code, the device must explicitly accept before credentials are issued.",
+        responses: {
+          201: jsonResponse(PwaPairingStartResultSchema, "Administrative pairing started"),
+          403: { description: "Administrator, fresh web sign-in or active account required" },
+        },
+      }),
+      v("param", z.object({ userId: z.string().uuid() }), pwaInvalidRequest),
+      async (c) => {
+        const actor = await webActor(c);
+        if (!actor.admin) throw new PwaError("FORBIDDEN", 403);
+        if (!shellAvailable(c)) throw new PwaError("UNAVAILABLE", 503);
+        return c.json(await service.startUserPairing(actor, c.req.valid("param").userId), 201);
+      },
+    )
     .get(
       "/pairings/:id",
       describeRoute({
@@ -150,6 +170,8 @@ export const createPwaRoutes = (options: PwaRouteOptions = {}) => {
       describeRoute({
         tags,
         summary: "Confirm a pairing with the code the device shows",
+        description:
+          "Administrative pairings enter awaiting_device; only the claiming device can then accept or reject. Self-pairing proceeds as before.",
         responses: { 204: { description: "Confirmed" } },
       }),
       v("param", IdParamSchema, pwaInvalidRequest),
