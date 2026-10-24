@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { KioskSnapshot } from "../src/model";
 import { fixtureSnapshot } from "./fixtures";
 
@@ -42,6 +43,8 @@ beforeAll(async () => {
   if (!build.success || !build.outputs[0]) throw new AggregateError(build.logs, "Example build failed");
   bundle = await build.outputs[0].text();
   const uiCss = await Bun.file(resolve(ui, "dist/styles.css")).text();
+  const fonts = await Bun.file(resolve(ui, "dist/plex.css")).text();
+  const icons = await Bun.file(resolve(ui, "dist/tabler.css")).text();
   const style = await Bun.file(resolve(import.meta.dir, "../src/style.css")).text();
   server = Bun.serve({
     hostname: "127.0.0.1",
@@ -49,7 +52,9 @@ beforeAll(async () => {
     fetch(request) {
       const url = new URL(request.url);
       if (url.pathname === "/bundle.js") return new Response(bundle, { headers: { "Content-Type": "text/javascript" } });
-      if (url.pathname === "/style.css") return new Response(uiCss + style, { headers: { "Content-Type": "text/css" } });
+      if (url.pathname === "/style.css") return new Response(fonts + icons + uiCss + style, { headers: { "Content-Type": "text/css" } });
+      if (/^\/(fonts\/[a-z0-9-]+|tabler-icons-[a-z0-9]+)\.woff2$/.test(url.pathname))
+        return new Response(Bun.file(resolve(ui, "dist", url.pathname.slice(1))));
       const initial = fixtureSnapshot();
       if (url.searchParams.has("neutral")) initial.visit = null;
       if (url.searchParams.has("unpaired")) {
@@ -76,7 +81,7 @@ const seedPage = async (page: Page) =>
     Object.defineProperty(crypto, "randomUUID", { value: () => `20000000-0000-4000-8000-${String(sequence++).padStart(12, "0")}` });
   });
 const setup = async (width: number, query = "") => {
-  const page = await browser.newPage({ viewport: { width, height: 1024 }, hasTouch: true });
+  const page = await browser.newPage({ viewport: { width, height: 1024 }, hasTouch: true, reducedMotion: "reduce" });
   await page.clock.install({ time: new Date("2026-10-23T10:00:00Z") });
   await seedPage(page);
   const state: {
@@ -352,7 +357,7 @@ for (const width of [390, 768])
 const expectHeadingFocus = async (page: Page) =>
   expect(await page.locator("h1").evaluate((element) => element === document.activeElement)).toBe(true);
 
-for (const width of [390, 768])
+for (const width of [390, 768, 1440])
   describe(`Staff pairing at ${width}px`, () => {
     test("stable retry, claimed nullable QR, new pairing, pagination and visit QR renewal", async () => {
       const page = await browser.newPage({ viewport: { width, height: 1024 } });
@@ -425,6 +430,15 @@ for (const width of [390, 768])
         expect(listRequests.some((request) => JSON.stringify(request) === JSON.stringify({ after: id }))).toBe(true);
         await page.getByRole("button", { name: "Besuchs-QR zeigen", exact: true }).first().click();
         await page.getByAltText("Besuchs-QR", { exact: true }).waitFor();
+        await settled(page);
+        const qrBox = await page.getByAltText("Besuchs-QR", { exact: true }).boundingBox();
+        expect(qrBox?.width).toBe(224);
+        expect(qrBox?.height).toBe(224);
+        const shots = process.env.CLOUD_APP_PWA_SHOTS;
+        if (shots) {
+          await mkdir(shots, { recursive: true });
+          await page.screenshot({ path: resolve(shots, `03-besuchsqr-dark-${width}.png`), fullPage: true });
+        }
         await page.clock.runFor(120_000);
         await Promise.all([
           page.waitForResponse((response) => response.url().endsWith("/fixture/visits/issue")),
@@ -440,3 +454,46 @@ for (const width of [390, 768])
       }
     });
   });
+
+// These measurements protect the approved shared phone/tablet/desktop geometry.
+for (const width of [390, 768, 1440])
+  for (const theme of ["light", "dark"])
+    test(`approved App-PWA geometry at ${width}px in ${theme}`, async () => {
+      const { page, state } = await setup(width, `unpaired=1&${theme === "dark" ? "dark=1" : ""}`);
+      try {
+        await settled(page);
+        const measure = await page.evaluate(() => {
+          const box = (selector: string) => {
+            const element = document.querySelector(selector);
+            if (!element) throw new Error(`Missing ${selector}`);
+            const rect = element.getBoundingClientRect();
+            return { width: rect.width, height: rect.height };
+          };
+          return {
+            frame: box(".kiosk"),
+            main: box(".kiosk-main"),
+            welcome: box(".kiosk-welcome"),
+            scan: box(".kiosk-scan-art"),
+            overflow: document.documentElement.scrollWidth > innerWidth,
+          };
+        });
+        expect(measure.overflow).toBe(false);
+        expect(measure.frame.width).toBe(Math.min(width, 820));
+        expect(measure.main.width).toBe(Math.min(width - (width <= 600 ? 40 : 80), 650));
+        expect(measure.welcome.width).toBe(Math.min(measure.main.width, 540));
+        expect(measure.scan.height).toBe(190);
+        const shots = process.env.CLOUD_APP_PWA_SHOTS;
+        if (shots) {
+          await mkdir(shots, { recursive: true });
+          await page.screenshot({ path: resolve(shots, `01-start-${theme}-${width}.png`), fullPage: true });
+        }
+        state.snapshot = fixtureSnapshot();
+        await page.goto(`${server.url}?${theme === "dark" ? "dark=1" : ""}`);
+        await heading(page, "Ankaufsvertrag lesen");
+        await settled(page);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+        if (shots) await page.screenshot({ path: resolve(shots, `02-vertrag-${theme}-${width}.png`), fullPage: true });
+      } finally {
+        await page.close();
+      }
+    });

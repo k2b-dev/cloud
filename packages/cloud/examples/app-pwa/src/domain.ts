@@ -44,10 +44,10 @@ export async function setupDomain(db: SQL = sql) {
       "Objekt: Kommode, Nussbaum, um 1920. Vereinbarter Ankaufspreis: 450,00 €.",
       "Lea Muster verkauft das beschriebene Objekt an den Beispielbetrieb. Dieser verkürzte Mustertext ist kein verwendbarer Vertrag.",
       "Ausschließlich Beispieldaten. Die Unterschrift beweist keine Identität und ist keine qualifizierte elektronische Signatur.",
-    ])}::jsonb), (${SUBJECT_ID}::uuid,'receipt',1,'Auszahlungsquittung',${JSON.stringify([
+    ])}::text::jsonb), (${SUBJECT_ID}::uuid,'receipt',1,'Auszahlungsquittung',${JSON.stringify([
       "Lea Muster bestätigt den Empfang von 450,00 € für den Ankauf der Kommode.",
       "Ausschließlich Beispieldaten. Die Beispielzahlung ist bereits als ausgezahlt vermerkt; diese App führt keine Zahlung aus.",
-    ])}::jsonb) ON CONFLICT DO NOTHING`;
+    ])}::text::jsonb) ON CONFLICT DO NOTHING`;
     await tx`INSERT INTO visit_demo.documents VALUES (${SUBJECT_ID}::uuid,'contract',1), (${SUBJECT_ID}::uuid,'receipt',1) ON CONFLICT DO NOTHING`;
   });
 }
@@ -91,7 +91,7 @@ export async function signDocument(context: AppPwaCommandContext, input: z.outpu
     signatures.some((s) => s.document_id === documentId && documents.some((d) => d.id === documentId && d.revision === s.revision));
   if (signed(expected)) throw new AppPwaError("APP_REVISION_CONFLICT", 409);
   if (expected === "receipt" && (payment?.state !== "paid" || !signed("contract"))) throw new AppPwaError("FORBIDDEN", 403);
-  await tx`INSERT INTO visit_demo.signatures(visit_id,customer_id,document_id,revision,signature) VALUES (${actor.visitId}::uuid,${id}::uuid,${expected},${input.revision},${JSON.stringify(input.signature)}::jsonb)`;
+  await tx`INSERT INTO visit_demo.signatures(visit_id,customer_id,document_id,revision,signature) VALUES (${actor.visitId}::uuid,${id}::uuid,${expected},${input.revision},${JSON.stringify(input.signature)}::text::jsonb)`;
   const completed = expected === "receipt" || payment?.state !== "paid";
   if (completed) context.endVisit();
   // Only non-sensitive state is stored with the platform attempt.
