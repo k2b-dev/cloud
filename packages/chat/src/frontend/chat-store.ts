@@ -111,8 +111,9 @@ export type OpenChat = {
   conversation: Conversation | null;
   messages: readonly Message[];
   membershipRev: number;
-  /** Counts the access reconciliations that replaced the history, which can remove messages without a new position. */
-  accessRev: number;
+  /** Counts replacements of the loaded history (access reconciliation, the jump to the latest messages, a restore),
+   * which can remove messages without a newer revision. */
+  historyRev: number;
   watermark: number;
   seqHead: number;
   hasOlder: boolean;
@@ -469,7 +470,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       conversation: keepMetadata ? currentConversation : conversation,
       watermark: page.rev,
       seqHead: page.seqHead,
-      accessRev: chat.view.accessRev + (reconcileAccess ? 1 : 0),
+      historyRev: chat.view.historyRev + 1,
     };
     chat.metadataRev = keepMetadata ? Math.max(chat.metadataRev, currentConversation.rev, conversation.rev) : conversation.rev;
     for (const message of arrivals) applyMessage(chat, message);
@@ -698,7 +699,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         caughtUp: false,
         conversation: next.conversation,
         membershipRev: 0,
-        accessRev: 0,
+        historyRev: 0,
         watermark: next.page.rev,
         seqHead,
         hasOlder: next.page.from > 1,
@@ -1185,7 +1186,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
           conversation: null,
           messages: [],
           membershipRev: 0,
-          accessRev: 0,
+          historyRev: 0,
           watermark: 0,
           seqHead: 0,
           hasOlder: false,
