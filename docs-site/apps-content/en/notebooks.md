@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-20
+updated: 2026-10-24
 ---
 
 # Notebooks
@@ -30,6 +30,14 @@ note list.
 Open the notebook name in the sidebar or phone menu to switch notebooks.
 Signed-in users can choose **New notebook** to create and open a blank notebook,
 including from Book view. Use the overview to start from a template.
+
+`notebook.activity` reads recorded changes for a `notebook` short ID,
+optionally one `item` (note short ID). Each edit bucket remains one row, with
+an actor, icon, localized sentence, last occurrence time, resource ref, and
+count. Comments and deleted notes are omitted. Follow `page.nextCursor` with
+`cursor`; `before` and `after` are exclusive ISO datetime bounds. `limit`
+defaults to 50 and accepts 1–100. See [Chat system conversations](/en/docs/operations/chat-system-chats#read-item-events)
+for the shared event contract.
 
 ## Use Notebooks
 

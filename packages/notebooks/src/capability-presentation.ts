@@ -20,6 +20,11 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "notebook.activity": {
+          title: "Notizereignisse lesen",
+          description:
+            "Berechtigte Änderungen an Notizen eines Notizbuchs lesen, neueste zuerst. Optional auf eine Notiz begrenzen. Kommentare und gelöschte Notizen werden ausgelassen. Dem Cursor folgen.",
+        },
         "notebook.browse": {
           title: "Notizbuch auswählen",
           description:

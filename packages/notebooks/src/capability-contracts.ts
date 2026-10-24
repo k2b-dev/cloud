@@ -410,3 +410,25 @@ export const NoteMoveInputSchema = z
     (input) => [input.position, input.before, input.after].filter((value) => value !== undefined).length <= 1,
     "Specify at most one placement: position, before, or after",
   );
+
+export const ActivityInputSchema = z.strictObject({
+  notebook: ResourceShortIdSchema.describe("Container short ID returned by notebook.list or notebook.read."),
+  item: ResourceShortIdSchema.optional().describe("Optional item short ID in this container."),
+  before: TimestampSchema.max(40).optional().describe("Exclusive upper bound on the last occurrence, as an ISO datetime."),
+  after: TimestampSchema.max(40).optional().describe("Exclusive lower bound on the last occurrence, as an ISO datetime."),
+  cursor: CursorSchema,
+  limit: z.number().int().min(1).max(100).default(50).describe("Maximum rows to return, from 1 to 100; defaults to 50."),
+});
+export const ActivityDataSchema = z
+  .array(
+    z.strictObject({
+      id: z.string().max(100),
+      at: TimestampSchema,
+      ref: z.strictObject({ type: z.literal("notebooks.note"), id: ResourceShortIdSchema }).nullable(),
+      actor: z.strictObject({ type: z.enum(["user", "service_account", "system"]), id: z.uuid().nullable(), name: z.string().max(1000) }),
+      icon: z.string().max(80),
+      sentence: z.string().max(4000),
+      count: z.number().int().min(1),
+    }),
+  )
+  .max(100);
