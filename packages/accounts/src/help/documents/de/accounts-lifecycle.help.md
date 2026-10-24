@@ -6,7 +6,7 @@ description: Direkte und geerbte Gruppen lesen, Kontoablauf festlegen, Anfragen 
 order: 115
 ---
 
-Konten verbindet Identitätseinträge mit dem Zugriff, den Personen und Integrationen erhalten. Prüfe vor einer Änderung an einer Person oder Gruppe den aktuellen Anbieter und den Gruppenpfad.
+Die App Zugänge verbindet Identitätseinträge mit dem Zugriff, den Personen und Integrationen erhalten. Prüfe vor einer Änderung an einer Person oder Gruppe den aktuellen Anbieter und den Gruppenpfad.
 
 ## Direkten und geerbten Zugriff unterscheiden {icon="shield-lock"}
 
