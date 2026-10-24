@@ -1024,6 +1024,12 @@ convention still needs a check or a test.
 - **Error class:** Reading asynchronous state before the completion condition.
 - **Guard:** `data-table-focus.browser.test.ts` waits for the destination URL, then retains its exact URL and callback-count assertions without increasing timeouts.
 
+### Observe a rejection before waiting for network progress
+
+- **What happened:** The stalled-connection file test reported its expected deadline error as an unhandled rejection under load.
+- **Root cause:** It attached the rejection assertion only after waiting for the server to accept the request, although the deadline also covers connection setup.
+- **Guard:** `fetch-file-tool.test.ts` observes the pending request immediately. Only the caller-cancellation case waits for the server before triggering its abort; the deadline case also accepts expiry before the connection opens. The timeout remains unchanged.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its
