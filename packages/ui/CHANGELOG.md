@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.33.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.32.0...npm-ui-v0.33.0) (2026-10-24)
+
+
+### Features
+
+* **apps:** declare access rules for every built-in application ([#1852](https://github.com/k2b-dev/cloud/issues/1852)) ([4cf7b8e](https://github.com/k2b-dev/cloud/commit/4cf7b8eca70615fccc6f10ccbd7e0f2782804ab0))
+* **chat:** threads with All threads, replies, and a thread column from 1800 px ([#1856](https://github.com/k2b-dev/cloud/issues/1856)) ([470f6b4](https://github.com/k2b-dev/cloud/commit/470f6b481af518e0e566a56a9a7a58ee73c3bb17))
+* **pwa:** the Cloud app uses iPad and monitor widths, and Spaces opens a task beside the list ([#1802](https://github.com/k2b-dev/cloud/issues/1802)) ([c1026c1](https://github.com/k2b-dev/cloud/commit/c1026c1452a9cfef0545657d24be447b59e1d3e9)), closes [#1104](https://github.com/k2b-dev/cloud/issues/1104)
+
 ## [0.32.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.31.0...npm-ui-v0.32.0) (2026-10-23)
 
 

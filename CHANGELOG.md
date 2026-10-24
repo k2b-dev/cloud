@@ -3,6 +3,27 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.50.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.49.0...cloud-v0.50.0) (2026-10-24)
+
+
+### Features
+
+* **accounts:** share exact directory entries with machine accounts ([#1832](https://github.com/k2b-dev/cloud/issues/1832)) ([e733ec2](https://github.com/k2b-dev/cloud/commit/e733ec27eec85c4c67745e1fb8b2f4a50d501848))
+* **ai:** support models-only keys for machine accounts ([#1826](https://github.com/k2b-dev/cloud/issues/1826)) ([301b4c6](https://github.com/k2b-dev/cloud/commit/301b4c6534965e46b5ee47ae80601e69ea41f2df))
+* **apps:** declare access rules for every built-in application ([#1852](https://github.com/k2b-dev/cloud/issues/1852)) ([4cf7b8e](https://github.com/k2b-dev/cloud/commit/4cf7b8eca70615fccc6f10ccbd7e0f2782804ab0))
+* **chat:** threads with All threads, replies, and a thread column from 1800 px ([#1856](https://github.com/k2b-dev/cloud/issues/1856)) ([470f6b4](https://github.com/k2b-dev/cloud/commit/470f6b481af518e0e566a56a9a7a58ee73c3bb17))
+* **cloud:** store and serve built avatars, robots for every agent ([#1853](https://github.com/k2b-dev/cloud/issues/1853)) ([190da4c](https://github.com/k2b-dev/cloud/commit/190da4c493743aaddedba2dd894c7c9867bd5aad))
+* **core:** reserve routing costs from distance estimates ([#1766](https://github.com/k2b-dev/cloud/issues/1766)) ([5087cdd](https://github.com/k2b-dev/cloud/commit/5087cdd8dcdee10ea06ac34a93a441591dda67f1))
+* **filesv2:** upgrade Filegate to 7.1.0 ([#1758](https://github.com/k2b-dev/cloud/issues/1758)) ([79b754f](https://github.com/k2b-dev/cloud/commit/79b754ffaba798379e93927ccea1880f1d0ac340))
+* **pwa:** the Cloud app uses iPad and monitor widths, and Spaces opens a task beside the list ([#1802](https://github.com/k2b-dev/cloud/issues/1802)) ([c1026c1](https://github.com/k2b-dev/cloud/commit/c1026c1452a9cfef0545657d24be447b59e1d3e9)), closes [#1104](https://github.com/k2b-dev/cloud/issues/1104)
+
+
+### Bug Fixes
+
+* **accounts:** name audit actors recorded without a login name ([#1806](https://github.com/k2b-dev/cloud/issues/1806)) ([3cc9f96](https://github.com/k2b-dev/cloud/commit/3cc9f966d384194f72351f08f82013a08de7740c))
+* **cld:** retain bundles used by other configurations ([#1728](https://github.com/k2b-dev/cloud/issues/1728)) ([11f3adb](https://github.com/k2b-dev/cloud/commit/11f3adb1bcce83aacdecc3bb3b69fed9ce794559))
+* **mail:** preserve composer progress through slow sources and expired sign-in ([#1776](https://github.com/k2b-dev/cloud/issues/1776)) ([824030d](https://github.com/k2b-dev/cloud/commit/824030d4b3715be9e730e3a15f28cd117e55c9bc)), closes [#1587](https://github.com/k2b-dev/cloud/issues/1587) [#1563](https://github.com/k2b-dev/cloud/issues/1563) [#1565](https://github.com/k2b-dev/cloud/issues/1565)
+
 ## [0.49.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.48.0...cloud-v0.49.0) (2026-10-23)
 
 
