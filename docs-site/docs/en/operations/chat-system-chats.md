@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to Spaces and Notebooks.
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 
 # Chat system conversations
@@ -52,8 +52,11 @@ System chats reject manual thread creation, renaming, archiving, chat metadata
 edits, and membership changes. Change container permissions in its owning app.
 Chat does not enumerate that app's members or copy their grants.
 
-Unread messages begin at each participant's first open. Reopening preserves
-that position. Messages before the first open cannot be marked unread.
+Unread messages begin at each participant's first open, or immediately before
+their first incoming mention or reply. Reopening preserves that position. Earlier
+messages cannot be marked unread. Mentions and replies appear in the same
+[For you feed](/en/docs/operations/build-and-deploy#chat-mentions-and-for-you)
+as ordinary chats, subject to current container and item access.
 
 ## Follow pages
 

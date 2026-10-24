@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 
 # Build and deploy
@@ -300,6 +300,68 @@ New messages retain up to 20 distinct absolute HTTP/HTTPS links from Markdown
 links, autolinks and bare URLs. URLs longer than 2,048 characters are excluded.
 The shared list reads the messages themselves, so deleting a message removes
 its items from subsequent reads.
+
+## Chat mentions and For you
+
+Send `mentions: [{ start, end, accessId }]` with a message to mention a person.
+`start` is inclusive and `end` exclusive, measured in UTF-16 code units of the
+unchanged `body`. Select the person's typed display name, excluding `@`.
+A message accepts at most 20 non-overlapping, nonempty ranges inside its body;
+ranges cannot split a surrogate pair. Invalid ranges return 400 `BAD_INPUT`.
+Use a candidate's `accessId`, which identifies an existing access grant; do not
+substitute a user ID or a group grant. Each target must be an active user or
+service account that can read the thread. An unavailable or unreadable target
+returns 400 `INVALID_MENTION`. Self-mentions are allowed.
+
+`GET /api/chat/conversations/:conversation/mention-candidates?q=&thread=general`
+returns `{ items: [{ accessId, type, name, agent }] }`, at most 20 results. `type`
+is `user` or `service_account`; `agent` identifies agent service accounts.
+The caller is excluded. `q` is case-insensitive, matches a name or word prefix,
+and accepts at most 100 characters. `thread` defaults to `general` or selects
+one thread by ID. The route uses the same request limiter as member searches.
+Ordinary chats and channels list direct members with read access. System chats
+list previous conversation authors with a resolvable principal grant and valid
+container and item read decisions. The current container readers do not list
+people. A missing or expired target decision excludes that person until they
+read the resource again.
+
+Message reads and live message events carry
+`mentions: [{ start, end, accessId, name }]`, including an empty array when no
+one was mentioned. Names use the principal's current display name. Deleting
+the principal retains the range with the localized former-account label.
+Deleting the message removes its mentions. Messages currently have no body-edit
+operation. Retrying a `clientId` keeps the original body and mentions.
+
+`GET /api/chat/for-you?cursor=...` returns `{ items, nextCursor }`, newest first,
+with at most 30 items. Each item contains:
+
+- `kind`: `mention` or `reply`; a message satisfying both appears once as `mention`.
+- `conversation`: `{ id, title, kind }`, where `kind` is `chat` or `system`.
+- `thread`: `{ id, name }`; General has `id: "general"`.
+- `message`: `{ id, seq, author, preview, createdAt }`.
+- `unread`: whether the message is beyond the existing thread read position.
+
+The feed includes replies quoting a message the caller authored, excludes their
+own messages, and rechecks conversation and item access. Unreadable items drop
+out. Follow every non-null `nextCursor`, including after an empty page; access
+checks apply to a bounded candidate page. Cursors are opaque and accept at most
+256 characters. Invalid cursors return 400. Open an item using its conversation,
+thread, and message IDs; the existing snapshot endpoint accepts `message` and
+`thread` to return the focused message window.
+
+The member sidebar response at `GET /api/chat/conversations` and the SSR sidebar
+snapshot include `forYouUnread`, capped at 99. Channel discovery pages omit
+this field. Reading a thread clears unread feed entries through the existing
+read-reporting endpoint; marking it unread also updates the count. A first
+mention or reply in a system chat creates its recipient's read position
+immediately before that message, so it can be unread before the first open.
+
+The existing personal live channel `me` emits `{ type: "for-you" }` after a new
+mention or reply commits and after a relevant read-state change. Re-read the
+sidebar and feed before acknowledging the live cursor. This invalidation carries
+no message contents or resource IDs. No separate mark-read endpoint or transport
+is needed. Startup migration adds mention storage and lookup indexes; existing
+messages have no mentions and require no backfill or new configuration.
 
 ## Chat channels after the upgrade
 
