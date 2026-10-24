@@ -1,3 +1,4 @@
+import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 export const MEMBER_PAGE_SIZE = 100;
@@ -14,6 +15,10 @@ export const MAX_EXISTING_MATCHES = 10;
 export const CREATE_LIMIT = 30;
 export const CREATE_WINDOW_SECONDS = 3_600;
 export const MESSAGE_PAGE_SIZE = 50;
+export const MAX_MESSAGE_REFS = 10;
+export const MAX_MESSAGE_LINKS = 20;
+export const MAX_MESSAGE_LINK_LENGTH = 2048;
+export const SHARED_PAGE_SIZE = 30;
 export const MESSAGE_MAX_CODE_POINTS = 20_000;
 export const CHANGES_PAGE_SIZE = 200;
 export const SEND_CONVERSATION_LIMIT = 10;
@@ -266,6 +271,7 @@ export const SystemMessageSchema = z.discriminatedUnion("code", [
 ]);
 export type SystemMessage = z.infer<typeof SystemMessageSchema>;
 export const MessageSchema = z.object({
+  refs: z.array(CloudResourceRefSchema).max(MAX_MESSAGE_REFS),
   thread: ThreadIdSchema.nullable(),
   replyTo: z
     .union([
@@ -289,11 +295,48 @@ export const MessageViewSchema = MessageSchema.extend({ systemText: z.string().n
 export const MessageBodySchema = z
   .string()
   .refine((body) => /\S/u.test(body) && !body.includes("\u0000") && [...body].length <= MESSAGE_MAX_CODE_POINTS);
-export const SendMessageSchema = z.strictObject({
-  clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
-  body: MessageBodySchema,
-  thread: ThreadIdSchema.optional(),
-  replyTo: MessageIdSchema.optional(),
+const MessageRefsSchema = z
+  // PostgreSQL jsonb cannot represent NUL or unpaired UTF-16 surrogates in identifiers.
+  .array(CloudResourceRefSchema.refine((ref) => !/[\u0000\uD800-\uDFFF]/u.test(ref.id)))
+  .max(MAX_MESSAGE_REFS)
+  .transform((refs) => {
+    const seen = new Set<string>();
+    return refs.filter((ref) => {
+      const key = JSON.stringify([ref.type, ref.id]);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  });
+export const SendMessageSchema = z
+  .strictObject({
+    clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+    body: z.union([MessageBodySchema, z.literal("")]),
+    refs: MessageRefsSchema.optional(),
+    thread: ThreadIdSchema.optional(),
+    replyTo: MessageIdSchema.optional(),
+  })
+  .refine((message) => message.body !== "" || (message.refs?.length ?? 0) > 0);
+export const SharedQuerySchema = z.strictObject({
+  kind: z.enum(["all", "images", "documents", "links", "elements"]).default("all"),
+  thread: ThreadSelectorSchema.optional(),
+  cursor: z.string().max(160).optional(),
+});
+const sharedMetadata = {
+  messageId: MessageIdSchema,
+  seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  thread: ThreadIdSchema.nullable(),
+  author: AuthorSchema,
+  createdAt: z.iso.datetime(),
+};
+export const SharedItemSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("link"), url: z.url({ protocol: /^https?$/ }).max(MAX_MESSAGE_LINK_LENGTH), ...sharedMetadata }),
+  z.strictObject({ kind: z.literal("element"), ref: CloudResourceRefSchema, ...sharedMetadata }),
+]);
+export type SharedItem = z.infer<typeof SharedItemSchema>;
+export const SharedPageSchema = z.strictObject({
+  items: z.array(SharedItemSchema).max(SHARED_PAGE_SIZE),
+  nextCursor: z.string().nullable(),
 });
 const sequenceQuery = (minimum: number) =>
   z.union([z.number(), z.string().regex(/^\d+$/).transform(Number)]).pipe(z.number().int().min(minimum).max(Number.MAX_SAFE_INTEGER));

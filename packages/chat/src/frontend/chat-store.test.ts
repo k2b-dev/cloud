@@ -26,6 +26,7 @@ const conversation = ConversationSchema.parse({
 });
 const message = (rev: number) =>
   MessageSchema.parse({
+    refs: [],
     thread: null,
     replyTo: null,
     id: String(rev).padStart(10, "0"),
@@ -76,6 +77,7 @@ class ManualConnection implements LiveConnection {
 const self = { accessId: "11111111-1111-4111-8111-111111111111", permission: "write" as const, active: true };
 const memberApi = {
   threads: async () => noThreads,
+  shared: async () => ({ items: [], nextCursor: null }),
   createThread: async () => {
     throw new Error("Unused thread request");
   },

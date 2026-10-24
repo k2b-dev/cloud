@@ -59,6 +59,7 @@ const unusedMemberRequest = async () => {
 };
 const memberApi = {
   threads: async () => noThreads,
+  shared: async () => ({ items: [], nextCursor: null }),
   createThread: async () => {
     throw new Error("Unused thread request");
   },
@@ -139,6 +140,7 @@ class World {
   }
   message(id: string, m: ModelMessage) {
     return MessageSchema.parse({
+      refs: [],
       thread: null,
       replyTo: null,
       id: id + String(m.seq).padStart(4, "0"),

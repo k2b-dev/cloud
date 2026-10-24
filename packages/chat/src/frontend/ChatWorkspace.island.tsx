@@ -1,4 +1,6 @@
 import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
+import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { type LinkNavigateEvent, listenPopState, navigate, refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
@@ -25,11 +27,13 @@ import { chatMessages } from "../messages";
 import {
   type ConversationPageSchema,
   type ConversationSchema,
+  MAX_MESSAGE_REFS,
   MESSAGE_MAX_CODE_POINTS,
   MessageBodySchema,
   type MessagePageSchema,
   type MessageSchema,
   type ReadUpdateSchema,
+  type SharedItem,
   type ThreadListSchema,
 } from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
@@ -38,6 +42,7 @@ import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
+import ChatSharedSection from "./ChatSharedSection";
 import ChatThreadColumn from "./ChatThreadColumn";
 import { ThreadMenu, ThreadPicker } from "./ChatThreads";
 import ChatThreadsPage from "./ChatThreadsPage";
@@ -47,6 +52,7 @@ import { createChatStore, type OpenChat } from "./chat-store";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
+import { createResourceCards, FRESH_MS } from "./resource-cards";
 import { panelHref as conversationHref, parseRoute, type Route, threadsPageHref as threadsPageAddress } from "./route";
 import { openThreadDialog } from "./ThreadDialog";
 import {
@@ -378,6 +384,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       const own = message.kind === "text" && message.author.id === props.viewerId;
       return reuse({
         thread: message.thread,
+        refs: message.refs,
         quote: quoteOf(current.id, message),
         origin: mixed && message.kind === "text" ? originOf(current.id, messageThread(message)) : undefined,
         key: sendKeys.get(message.id) ?? message.id,
@@ -405,6 +412,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             key: send.clientId,
             kind: "text",
             thread: send.thread === "general" ? null : send.thread,
+            refs: send.refs,
             origin: mixed ? originOf(current.id, send.thread) : undefined,
             quote: send.replyTo ? { author: send.replyTo.author, text: send.replyTo.text } : undefined,
             authorId: props.viewerId,
@@ -753,6 +761,18 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const state: unknown = history.state;
     return !!state && typeof state === "object" && "chatInfoFromChat" in state && state.chatInfoFromChat === true;
   };
+  // A shared item jumps to its message: in place when the open view holds it, otherwise in the message's thread. A phone
+  // shows the message instead of the info page.
+  const jumpToShared = (item: SharedItem) => {
+    const current = openChat();
+    if (!current) return;
+    const view = current.view === "all" || current.view === messageThread(item) ? current.view : messageThread(item);
+    if (view === current.view && feed?.scrollToKey(sendKeys.get(item.messageId) ?? item.messageId, { highlight: true })) {
+      if (phone?.matches) closeInfo();
+      return;
+    }
+    void openView(current.id, view, undefined, item.messageId);
+  };
   const closeInfo = (navigation?: LinkNavigateEvent) => {
     if (pendingOpen !== 0) return;
     const id = route().chatId;
@@ -887,16 +907,35 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (current && thread && (await setArchived(current.id, thread.id, false))) toast(t().restored);
   };
 
+  // Shared elements resolve in the browser with the reader's own session; the server render shows their placeholders.
+  const [cards, setCards] = createSignal<ReturnType<typeof createResourceCards>>();
+  onMount(() => {
+    const resolver = createResourceCards();
+    setCards(resolver);
+    // Shown cards read again once a minute while the page is visible, so lost or new access shows without a reload.
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") resolver.tick();
+    }, FRESH_MS);
+    onCleanup(() => clearInterval(timer));
+  });
+  const pickResource = async () => {
+    const item = await openCloudResourcePicker({ title: t().shareResource, requireReader: true });
+    return item ? { ref: item.ref, title: item.title, icon: item.icon ?? item.appIcon } : null;
+  };
+
   // A message goes to the open thread; in "All threads" to General. A reply goes to its original's thread.
   const [reply, setReply] = createSignal<ChatFeedItem | null>(null);
   const replies = new Map<string, ChatFeedItem | null>();
-  const send = async (text: string): Promise<boolean> => {
+  // A message that only shares Cloud elements has no text.
+  const send = async (text: string, refs: readonly CloudResourceRef[] = []): Promise<boolean> => {
     const current = openChat();
     const id = draftId(route());
+    const body = refs.length > 0 && !text.trim() ? "" : text;
     if (
       !current ||
       !outbox ||
-      !MessageBodySchema.safeParse(text).success ||
+      refs.length > MAX_MESSAGE_REFS ||
+      (body === "" ? refs.length === 0 : !MessageBodySchema.safeParse(body).success) ||
       draftStorageFailed() ||
       (id !== null && draftConflicts()[id] !== undefined) ||
       pendingOpen !== 0
@@ -908,8 +947,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       if (current.hasNewer) await store?.loadLatest();
       const answered = reply();
       const thread = answered ? (answered.thread ?? "general") : current.view === "all" ? "general" : current.view;
-      outbox.send(current.id, text, {
+      outbox.send(current.id, body, {
         thread,
+        refs,
         replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
       });
       setReply(null);
@@ -1344,6 +1384,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         draft={draft()}
                         onDraftChange={changeDraft}
                         onSend={send}
+                        cards={cards()}
+                        onPickResource={pickResource}
                         onBack={threaded() ? backToThreads : backToList}
                         busy={busy()}
                         dateConfig={props.dateConfig}
@@ -1423,6 +1465,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     onAddPeople={() => void addPeople()}
                     onEditDetails={editDetails}
                     onCreateThread={current().permission === "admin" ? () => void createThread() : undefined}
+                    shared={
+                      <ChatSharedSection
+                        chatId={current().id}
+                        revision={openChat()?.seqHead ?? 0}
+                        threads={openChat()?.threads ?? null}
+                        viewerId={props.viewerId}
+                        dateConfig={props.dateConfig}
+                        now={now}
+                        cards={cards()}
+                        load={(query) => (store ? store.shared(current().id, query) : Promise.reject(new Error("Chat is not live yet")))}
+                        onJump={jumpToShared}
+                      />
+                    }
                     onLeave={() => void leaveChat()}
                   />
                 )}

@@ -27,6 +27,8 @@ import {
   ReadAllOutcomeSchema,
   ReadUpdateSchema,
   readStart,
+  SharedPageSchema,
+  type SharedQuerySchema,
   SuccessSchema,
   ThreadListSchema,
   ThreadSchema,
@@ -44,6 +46,7 @@ export type ChatStoreApi = {
   create(input: z.input<typeof CreateConversationSchema>): Promise<z.infer<typeof CreateOutcomeSchema>>;
   updateDetails(id: string, patch: { name?: string | null; icon?: string | null; purpose?: string | null }): Promise<Conversation>;
   members(id: string, query: { q?: string; cursor?: string }): Promise<z.infer<typeof MemberPageSchema>>;
+  shared(id: string, query: z.input<typeof SharedQuerySchema>): Promise<z.infer<typeof SharedPageSchema>>;
   previewMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof MemberPreviewSchema>>;
   addMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof ChangeSchema>>;
   updateMember(id: string, accessId: string, permission: z.infer<typeof PermissionSchema>): Promise<z.infer<typeof SuccessSchema>>;
@@ -124,6 +127,8 @@ export const createChatStoreApi = (): ChatStoreApi => {
       ),
     members: async (id, query) =>
       requiredResponse(await client.conversations[":conversation"].members.$get({ param: { conversation: id }, query }), MemberPageSchema),
+    shared: async (id, query) =>
+      requiredResponse(await client.conversations[":conversation"].shared.$get({ param: { conversation: id }, query }), SharedPageSchema),
     previewMembers: async (id, members) =>
       requiredResponse(
         await client.conversations[":conversation"].members.preview.$post({ param: { conversation: id }, json: { members } }),
@@ -698,6 +703,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       return result;
     },
     members: (id: string, query: Parameters<ChatStoreApi["members"]>[1]) => api.members(id, query),
+    shared: (id: string, query: Parameters<ChatStoreApi["shared"]>[1]) => api.shared(id, query),
     previewMembers: (id: string, members: MemberPrincipal[]) => api.previewMembers(id, members),
     addMembers: async (id: string, members: MemberPrincipal[]) => {
       const result = await api.addMembers(id, members);

@@ -1,5 +1,6 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import type { ServerWebSocket } from "bun";
 import { z } from "zod";
 import {
@@ -151,10 +152,44 @@ export const startChatHarness = async () => {
   let failing = 0;
   let failingUnread = 0;
   let failingThreads = 0;
+  let failingShared = 0;
+  // Elements of a made-up "spaces" app that messages can share; a card reads them with the viewer's access.
+  const elements = new Map<string, { id: string; title: string; preview: string; readable: boolean }>();
+  let readerCalls = 0;
+  const query = (localId: string) => ({
+    localId,
+    title: "Read a task",
+    description: "Reads one task.",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false },
+    dataSchema: { type: "object", properties: {}, additionalProperties: true },
+    schemaHash: "0".repeat(64),
+    openWorld: false,
+  });
+  const catalog = {
+    protocolVersion: 2,
+    apps: [
+      {
+        appId: "spaces",
+        appName: "Spaces",
+        appIcon: "ti ti-layout-kanban",
+        appDescription: "",
+        manifest: {
+          protocolVersion: 2,
+          appId: "spaces",
+          manifestHash: "0".repeat(64),
+          types: [{ localId: "task", title: "Task", description: "A task.", icon: "ti ti-circle", reader: "task.read" }],
+          queries: [query("task.read")],
+          actions: [],
+          commands: [],
+        },
+      },
+    ],
+    page: { hasMore: false },
+  };
   const reads: { chat: string; seq: number }[] = [];
   // Which part of the chat each read named: "general", "all", or a thread.
   const readViews: { chat: string; seq: number; thread: string }[] = [];
-  const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string }[] = [];
+  const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string; refs?: CloudResourceRef[] }[] = [];
 
   const principalId = (principal: MemberPrincipal) => (principal.type === "user" ? principal.userId : principal.groupId);
   const makeMember = (principal: MemberPrincipal, permission: Permission, addedAt: string): Member => {
@@ -340,7 +375,7 @@ export const startChatHarness = async () => {
     body: string,
     at: Date,
     kind: "text" | "system" = "text",
-    target: { thread?: string | null; replyTo?: string } = {},
+    target: { thread?: string | null; replyTo?: string; refs?: CloudResourceRef[] } = {},
   ) => {
     const entry = chats.get(chat)!;
     const seq = entry.messages.length + 1;
@@ -348,6 +383,7 @@ export const startChatHarness = async () => {
     const original = target.replyTo ? entry.messages.find((message) => message.id === target.replyTo) : undefined;
     const thread = original ? original.thread : (target.thread ?? null);
     const message: Message = {
+      refs: target.refs ?? [],
       thread,
       replyTo: original ? { id: original.id, author: original.author, preview: original.body ?? "" } : null,
       id: messageId(chat, seq),
@@ -595,6 +631,42 @@ export const startChatHarness = async () => {
               matches.length > PEOPLE_PAGE_SIZE && last ? JSON.stringify({ name: last.displayName.toLowerCase(), id: last.id }) : null,
           }),
         );
+      }
+      // The Cloud element picker's search and the reader behind a card, for elements of a made-up "spaces" app.
+      if (url.pathname === "/api/search") {
+        const query = (url.searchParams.get("q") ?? "").toLowerCase();
+        const results = [...elements.values()]
+          .filter((element) => element.readable && element.title.toLowerCase().includes(query))
+          .map((element) => ({
+            appId: "spaces",
+            appName: "Spaces",
+            appIcon: "ti ti-layout-kanban",
+            readable: true,
+            ref: { type: "spaces.task", id: element.id },
+            title: element.title,
+            preview: element.preview,
+            href: `/app/spaces/task/${element.id}`,
+          }));
+        const lines = [
+          { type: "start", query, apps: [{ id: "spaces", name: "Spaces", icon: "ti ti-layout-kanban" }], providers: ["spaces"] },
+          { type: "provider", provider: "spaces", status: "ok", results, ms: 1 },
+          { type: "done", status: "complete", count: results.length },
+        ];
+        return new Response(lines.map((line) => `${JSON.stringify(line)}\n`).join(""), {
+          headers: { "content-type": "application/x-ndjson; charset=utf-8" },
+        });
+      }
+      if (url.pathname === "/api/capabilities/v1/catalog") return Response.json(catalog);
+      if (url.pathname === "/api/capabilities/v1/queries/spaces/task.read" && request.method === "POST") {
+        readerCalls += 1;
+        const { input } = z.object({ input: z.object({ id: z.string() }) }).parse(await request.json());
+        const element = elements.get(input.id);
+        if (!element?.readable) return Response.json({ code: "FORBIDDEN", message: "No access" }, { status: 403 });
+        return Response.json({
+          data: { id: element.id },
+          refs: [{ type: "spaces.task", id: element.id, title: element.title, preview: element.preview, icon: "ti ti-circle" }],
+          links: [{ rel: "open", href: `/app/spaces/task/${element.id}` }],
+        });
       }
       if (url.pathname === "/api/chat/conversations" && request.method === "GET") return Response.json(list());
       if (url.pathname === "/api/chat/conversations" && request.method === "POST") {
@@ -874,6 +946,36 @@ export const startChatHarness = async () => {
           const open = snapshot(id!, url.searchParams.get("message"), url.searchParams.get("thread") ?? "all");
           return open ? Response.json(open) : Response.json({ code: "NOT_FOUND", message: "Thread not found." }, { status: 404 });
         }
+        if (part === "shared" && request.method === "GET") {
+          if (failingShared > 0) {
+            failingShared -= 1;
+            return Response.json({ message: "Unavailable" }, { status: 503 });
+          }
+          const kind = url.searchParams.get("kind") ?? "all";
+          const thread = url.searchParams.get("thread");
+          const items = chat.messages
+            .filter((message) => message.kind === "text" && (!thread || (message.thread ?? "general") === thread))
+            .toReversed()
+            .flatMap((message) => {
+              const meta = {
+                messageId: message.id,
+                seq: message.seq,
+                thread: message.thread,
+                author: message.author,
+                createdAt: message.createdAt,
+              };
+              const links = [...(message.body ?? "").matchAll(/https?:\/\/[^\s)]+/g)].map((found) => ({
+                kind: "link" as const,
+                url: found[0],
+                ...meta,
+              }));
+              const elements = message.refs.map((ref) => ({ kind: "element" as const, ref, ...meta }));
+              return [...(kind === "all" || kind === "elements" ? elements : []), ...(kind === "all" || kind === "links" ? links : [])];
+            });
+          const offset = Number(url.searchParams.get("cursor") ?? 0);
+          const next = offset + 30 < items.length ? String(offset + 30) : null;
+          return Response.json({ items: items.slice(offset, offset + 30), nextCursor: next });
+        }
         if (part === "changes") return Response.json({ rev: chat.conversation.rev, more: false, conversation: null, messages: [] });
         if (part === "messages" && request.method === "GET") return Response.json(page(chat, url.searchParams));
         if (part === "messages" && request.method === "POST") {
@@ -887,7 +989,11 @@ export const startChatHarness = async () => {
           if (input.thread && !thread) return Response.json({ code: "NOT_FOUND", message: "Thread not found." }, { status: 404 });
           if (thread?.archived)
             return Response.json({ code: "THREAD_ARCHIVED", message: "Restore this thread before sending a message." }, { status: 409 });
-          const message = append(id!, viewer, input.body, now(), "text", { thread: input.thread ?? null, replyTo: input.replyTo });
+          const message = append(id!, viewer, input.body, now(), "text", {
+            thread: input.thread ?? null,
+            replyTo: input.replyTo,
+            refs: input.refs ?? [],
+          });
           publish(message);
           return Response.json(message, { status: 201 });
         }
@@ -983,6 +1089,24 @@ export const startChatHarness = async () => {
     /** Returns the current member entries for assertions. */
     members: (chat: string): Member[] => chats.get(chat)?.members ?? [],
     posted,
+    /** An element of the made-up "spaces" app; `readable: false` makes its card "not available". */
+    addElement: (element: { id: string; title: string; preview?: string; readable?: boolean }) => {
+      elements.set(element.id, { preview: "", readable: true, ...element });
+      return { type: "spaces.task", id: element.id } satisfies CloudResourceRef;
+    },
+    /** Grants or takes away the viewer's access to an element of the made-up "spaces" app. */
+    setReadable: (id: string, readable: boolean) => {
+      const element = elements.get(id);
+      if (element) element.readable = readable;
+    },
+    /** A message from someone else that shares elements, delivered live. */
+    receiveShared: (chat: string, author: Person, body: string, refs: CloudResourceRef[]) =>
+      publish(append(chat, author, body, now(), "text", { refs })),
+    /** The next shared lists fail. */
+    failShared: (times = 1) => {
+      failingShared = times;
+    },
+    readerCalls: () => readerCalls,
     reads,
     readViews,
     chatCount: () => chats.size,
@@ -1004,6 +1128,9 @@ export const startChatHarness = async () => {
       failing = 0;
       failingUnread = 0;
       failingThreads = 0;
+      failingShared = 0;
+      elements.clear();
+      readerCalls = 0;
     },
     /** Lets tests await the live connection before publishing. */
     subscribed: (chat?: string) =>

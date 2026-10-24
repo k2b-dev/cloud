@@ -49,6 +49,10 @@ export const migrate = async (): Promise<void> => {
         OR (kind = 'system' AND system_code IS NOT NULL AND system_params IS NOT NULL AND body_md IS NULL AND client_id IS NULL)
       )
     );
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS refs jsonb NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS links text[] NOT NULL DEFAULT '{}';
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_refs ON chat.messages(conversation_id, seq DESC) WHERE refs <> '[]'::jsonb;
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_links ON chat.messages(conversation_id, seq DESC) WHERE links <> '{}';
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_short_id ON chat.messages(short_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_seq ON chat.messages(conversation_id, seq);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_rev ON chat.messages(conversation_id, rev);

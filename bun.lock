@@ -147,6 +147,7 @@
         "@k2b/ui": "workspace:*",
         "hono": "catalog:",
         "hono-openapi": "catalog:",
+        "marked": "18.0.14",
         "solid-js": "catalog:",
         "zod": "catalog:",
       },

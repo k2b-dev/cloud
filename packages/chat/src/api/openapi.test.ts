@@ -32,6 +32,7 @@ test("publishes every conversation operation with typed request and response sch
     ["/conversations/{conversation}/leave", "post"],
     ["/conversations/{conversation}/messages", "post"],
     ["/conversations/{conversation}/messages", "get"],
+    ["/conversations/{conversation}/shared", "get"],
     ["/conversations/{conversation}/messages/{message}", "get"],
     ["/conversations/{conversation}/changes", "get"],
     ["/conversations/{conversation}/snapshot", "get"],
@@ -176,4 +177,26 @@ test("thread operations document conflicts and filtered history and read selecto
       .parse(spec.paths[`/api/chat/conversations/{conversation}/${path}`]!.get!.parameters);
     expect(parameters).toContainEqual({ name: "thread", in: "query" });
   }
+});
+
+test("shared items document typed filters, opaque cursors, bounds, and errors", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const operation = spec.paths["/api/chat/conversations/{conversation}/shared"]!.get!;
+  for (const status of ["200", "400", "404"]) expect(operation.responses[status]).toBeDefined();
+  const parameters = z.array(z.object({ name: z.string(), in: z.string() })).parse(operation.parameters);
+  for (const name of ["kind", "thread", "cursor"]) expect(parameters).toContainEqual({ name, in: "query" });
+  const response = z
+    .object({
+      content: z.object({
+        "application/json": z.object({
+          schema: z.object({
+            required: z.array(z.string()),
+            properties: z.object({ items: z.object({ maxItems: z.number() }) }),
+          }),
+        }),
+      }),
+    })
+    .parse(operation.responses["200"]);
+  expect(response.content["application/json"].schema.required).toEqual(["items", "nextCursor"]);
+  expect(response.content["application/json"].schema.properties.items.maxItems).toBe(30);
 });

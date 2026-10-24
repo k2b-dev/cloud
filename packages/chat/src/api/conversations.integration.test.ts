@@ -129,10 +129,13 @@ suite("chat conversations, people, and directory groups", () => {
       ? await sql<{ access_id: string }[]>`SELECT ca.access_id FROM chat.conversation_access ca
       JOIN chat.conversations c ON c.id = ca.conversation_id WHERE c.short_id = ANY(${toPgTextArray(conversations)}::text[])`
       : [];
-    for (const shortId of conversations) {
-      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key IN (${"c:" + shortId}, ${"l:" + shortId})`;
-      await sql`DELETE FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ${shortId}`;
-      await sql`DELETE FROM chat.conversations WHERE short_id = ${shortId}`;
+    // One statement per table: the shared test database keeps audit rows of earlier runs, and a scan per
+    // conversation outlasted the hook's budget.
+    if (conversations.length) {
+      const keys = conversations.flatMap((shortId) => ["c:" + shortId, "l:" + shortId]);
+      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ANY(${toPgTextArray(keys)}::text[])`;
+      await sql`DELETE FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ANY(${toPgTextArray(conversations)}::text[])`;
+      await sql`DELETE FROM chat.conversations WHERE short_id = ANY(${toPgTextArray(conversations)}::text[])`;
     }
     const allAccess = [...new Set([...accessIds, ...rows.map((row) => row.access_id)])];
     if (allAccess.length) await sql`DELETE FROM auth.access WHERE id = ANY(${toPgUuidArray(allAccess)}::uuid[])`;
