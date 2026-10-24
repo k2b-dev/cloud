@@ -22,7 +22,8 @@ const open = async (width: number, snapshot: Partial<PulseWorkspaceProps> = {}, 
     ...snapshot,
   };
   const tab = await browser.newPage({ viewport: { width, height: 1000 } });
-  await tab.clock.install({ time: new Date("2026-10-20T14:32:00Z") });
+  // Install before the target so real time between protocol calls cannot pass pauseAt.
+  await tab.clock.install({ time: new Date("2026-10-19T14:32:00Z") });
   await tab.clock.pauseAt(new Date("2026-10-20T14:32:00Z"));
   const runs: unknown[] = [];
   let response: { status: number; json: unknown } = { status: 200, json: sqlTestResult };
