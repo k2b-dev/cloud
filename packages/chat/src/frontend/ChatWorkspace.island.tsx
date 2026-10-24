@@ -526,10 +526,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       before: current.hasNewer ? current.messages.at(-1)?.createdAt : undefined,
     };
   };
-  const eventsKey = () => {
+  // Memos, so an update of the chat that keeps the window and the history's length reads nothing again.
+  const eventsKey = createMemo(() => {
     const window = eventsWindow();
     return window ? JSON.stringify(window) : null;
-  };
+  });
+  const loadedMessages = createMemo(() => openChat()?.messages.length);
   let eventsRequest: AbortController | undefined;
   const loadEvents = async () => {
     const window = eventsWindow();
@@ -567,17 +569,15 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       if (!request.signal.aborted && !(error instanceof Error && error.name === "AbortError")) setEventsFailed(true);
     }
   };
+  const eventsPlace = createMemo(() => {
+    const window = eventsWindow();
+    return window ? `${window.chat}:${window.view}` : null;
+  });
   createEffect(
-    on(
-      () => {
-        const window = eventsWindow();
-        return window ? `${window.chat}:${window.view}` : null;
-      },
-      () => {
-        setOpenGroups(new Set<string>());
-        setEventsFailed(false);
-      },
-    ),
+    on(eventsPlace, () => {
+      setOpenGroups(new Set<string>());
+      setEventsFailed(false);
+    }),
   );
   createEffect(
     on(eventsKey, (key) => {
@@ -588,13 +588,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       }
     }),
   );
-  createEffect(
-    on(
-      () => openChat()?.messages.length,
-      () => void loadEvents(),
-      { defer: true },
-    ),
-  );
+  createEffect(on(loadedMessages, () => void loadEvents(), { defer: true }));
   onMount(() => {
     const visible = () => {
       if (document.visibilityState === "visible") void loadEvents();
