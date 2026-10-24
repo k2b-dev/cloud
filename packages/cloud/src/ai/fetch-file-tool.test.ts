@@ -568,9 +568,14 @@ for (const mode of ["deadline", "caller"] as const)
         resolve: async () => [publicAddress],
         request: fixture.request,
       });
-      await connected.promise;
-      if (mode === "caller") caller.abort(new Error("cancelled"));
-      await expect(pending).rejects.toThrow(mode === "deadline" ? "did not respond" : "cancelled");
+      // Observe the deadline before waiting for server progress: it can expire
+      // while the connection is still pending on a busy runner.
+      const rejected = expect(pending).rejects.toThrow(mode === "deadline" ? "did not respond" : "cancelled");
+      if (mode === "caller") {
+        await connected.promise;
+        caller.abort(new Error("cancelled"));
+      }
+      await rejected;
       expect(fixture.requests[0]!.destroyed).toBe(true);
       await fixture.disconnected();
     } finally {
