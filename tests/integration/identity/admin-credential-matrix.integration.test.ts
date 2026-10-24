@@ -53,9 +53,8 @@ const expected = {
     createLoginToken: 200,
     regenerateClientSecret: 200,
   },
-  // These routes require no OAuth scope today.
   "read-only cld OAuth token of an admin": {
-    createServiceAccount: 201,
+    createServiceAccount: 403,
     saveSecuritySetting: 204,
     createLoginToken: 200,
     regenerateClientSecret: 200,
@@ -420,10 +419,15 @@ suite("Admin credential matrix", () => {
         return routes(path, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       };
       // POST /api/admin/identity/service-accounts
+      const accountName = `${prefix}-${crypto.randomUUID()}`;
       const created = await request("core", identityRoutes.request, "/service-accounts", "POST", {
-        name: `${prefix}-${crypto.randomUUID()}`,
+        name: accountName,
         kind: "standalone",
       });
+      const createdAccounts = await sql<{ id: string }[]>`
+        SELECT id FROM auth.service_accounts WHERE name = ${accountName}
+      `;
+      expect(createdAccounts).toHaveLength(statuses.createServiceAccount === 201 ? 1 : 0);
       // PUT /api/admin/core/settings
       const [settingBefore] = await sql<{ updated_at: number }[]>`
         SELECT extract(epoch FROM updated_at)::double precision AS updated_at FROM settings.entries WHERE key = ${settingKey}

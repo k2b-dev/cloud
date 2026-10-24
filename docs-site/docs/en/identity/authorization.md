@@ -15,6 +15,9 @@ The service that reads or changes a resource checks its permission.
 Every API route, SSR page, background action, and CLI command should reach the
 same permission-aware service.
 
+For machine inference, [models-only API keys](/en/docs/ai/openai-compatible-api#connect-a-machine-account)
+use the service account's explicit model grants and shared account allowance.
+
 ## Permission levels
 
 Cloud permissions are ordered:
