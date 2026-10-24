@@ -23,7 +23,8 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
-| A scrollport measures itself on every change | Marking fifty chats read froze Chat for seconds: the fade on the sidebar read its scroll height after each row's change, and every read laid the page out again. | Test: UI `scroll-fade.behavior.test.ts` counts one measurement per frame for fifty separate row changes. |
+| A scrollport measures itself on every change | Marking fifty chats read froze Chat for seconds: the fade on the sidebar read its scroll height after each row's change, and every read laid the page out again. | Test: UI `scroll-fade.behavior.test.ts` counts at most two measurements per frame for fifty separate row changes. |
+| A shared primitive changes and only one consumer is tested | A UI primitive's timing changes for one app's bug; another app that reads its result synchronously breaks, and only CI notices. | Convention: a change in `packages/ui` runs the tests of every package that uses the changed module (search its class or attribute), not only the app that needed the fix. |
 | Parse tree read before the parser finished | A test reads `syntaxTree(state)` of a fresh CodeMirror state; the first parse runs only within a short time budget, so a busy runner sees a partial tree (11 of 45 characters). | Test: Notebooks `list-structure.test.ts` finishes the parse with `ensureSyntaxTree` and applies it with `state.update({})` before reading the tree. Convention: complete an asynchronous result before asserting on it. |
 | A formatter exposes ambiguous generic TSX syntax | Removing the trailing comma from a generic arrow with a default type makes the Solid/Babel test transform parse it as JSX. | Test: `PermissionEditor.behavior.test.tsx` runs through the actual Solid DOM preload; use a generic function declaration for the deferred helper and run the test after formatting. |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
@@ -209,7 +210,8 @@ convention still needs a check or a test.
 - **What happened:** After confirming "Mark all read" with fifty unread chats, Chat stayed busy for several seconds; the browser test for it timed out on `main` (#1789).
 - **Root cause:** The sidebar's scroll fade measured the scrollport on every mutation inside it. Each measurement forced a layout of the whole page, once per changed row.
 - **Error class:** A scrollport measures itself on every change.
-- **Guard:** The fade measures at most once per animation frame; `scroll-fade.behavior.test.ts` counts the measurements for fifty separate row changes, and the Chat browser test passes again.
+- **Guard:** Scrolling, changes to the scrollport itself, and the first content change in a frame measure at once; later content changes in that frame are measured once when it ends. `scroll-fade.behavior.test.ts` counts the measurements for fifty separate row changes, and the Chat browser test passes again.
+- **Follow-up:** A first version measured only once per frame. The note editor reads the fade in its own frame to keep the cursor clear of it and then saw the edges from before the change; `fade-scroll-margins.browser.test.ts` in Notebooks and the UI's `scroll-fade.behavior.test.tsx` failed in CI, not in the Chat checks that were run. Error class: a shared primitive changes and only one consumer is tested.
 
 ### Spread props never reached Pulse, Grids scanner and Weather settings islands
 
