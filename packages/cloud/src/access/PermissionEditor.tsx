@@ -3,7 +3,7 @@ import { announce, Button, IconButton, Placeholder, prompts, Select, SelectChip,
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
-import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind } from "../contracts/shared";
+import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 import { createGroupCoverage, type GroupCoverage, GroupCoveragePanel, GroupCoverageToggle } from "./GroupCoverage";
 import { isManagerEntry } from "./managers";
 import { accessMessages } from "./messages";
@@ -81,9 +81,13 @@ type PermissionEditorProps = {
    *  true; resources with an explicit principal allowlist can disable it. */
   allowAuthenticated?: boolean;
 
-  /** Allow granting service accounts. Off by default so ordinary
-   *  permission pickers stay user/group focused. */
+  /** Allow granting service accounts. Defaults to true, including agents.
+   *  Disable only when the resource documents a user-backed identity requirement. */
   allowServiceAccounts?: boolean;
+  /** Optional directory filters for the resource's accepted credential kinds. */
+  serviceAccountKinds?: ServiceAccountKind[];
+  /** Grant selection defaults to active accounts; existing entries are unaffected. */
+  serviceAccountStatus?: ServiceAccountStatus;
 
   /** The principal search's placeholder, in the consumer's terms. Defaults to the principal kinds it offers. */
   placeholder?: string;
@@ -563,6 +567,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           allowPublic={allowPublic()}
           allowAuthenticated={allowAuthenticated()}
           allowServiceAccounts={props.allowServiceAccounts}
+          serviceAccountKinds={props.serviceAccountKinds}
+          serviceAccountStatus={props.serviceAccountStatus ?? "active"}
           placeholder={props.placeholder}
           signedIn={props.signedIn}
           readOnly={grantPending()}

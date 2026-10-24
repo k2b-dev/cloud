@@ -47,8 +47,8 @@ export const accessMessages = i18n.define({
         count === 0
           ? "No one receives access through this group right now."
           : count === 1
-            ? "1 person receives access through this group right now."
-            : `${count.toLocaleString("en")} people receive access through this group right now.`,
+            ? "1 account receives access through this group right now."
+            : `${count.toLocaleString("en")} accounts receive access through this group right now.`,
       groupMembersLoading: "Loading members…",
       groupMembersHidden: "Your account can't see who belongs to this group.",
       groupMembersFailed: "Members couldn't be loaded.",
@@ -137,8 +137,8 @@ export const accessMessages = i18n.define({
         count === 0
           ? "Über diese Gruppe erhält gerade niemand Zugriff."
           : count === 1
-            ? "Über diese Gruppe erhält gerade 1 Person Zugriff."
-            : `Über diese Gruppe erhalten gerade ${count.toLocaleString("de")} Personen Zugriff.`,
+            ? "Über diese Gruppe erhält gerade 1 Konto Zugriff."
+            : `Über diese Gruppe erhalten gerade ${count.toLocaleString("de")} Konten Zugriff.`,
       groupMembersLoading: "Mitglieder werden geladen…",
       groupMembersHidden: "Dein Konto kann nicht sehen, wer zu dieser Gruppe gehört.",
       groupMembersFailed: "Die Mitglieder konnten nicht geladen werden.",

@@ -107,6 +107,15 @@ For a slow handler, `setRequestTimeout`, `REQUEST_IDLE_TIMEOUT_SECONDS`, and
 `REQUEST_IDLE_TIMEOUT_MAX_SECONDS` control the bounded request idle timer;
 see [Answer slow requests](/en/docs/server/http#answer-slow-requests).
 
+`getEffectiveGroups` and `getEffectiveGroupIds` accept either `{ userId }` or
+`{ serviceAccountId }` and an optional database transaction. The machine form
+resolves active standalone/agent membership in local Cloud groups.
+`recursiveServiceAccountGroupIdsSubquery` exposes that same authoritative SQL
+for bounded machine-recipient queries; it accepts an ID or Bun SQL fragment.
+See [Resource authorization](/en/docs/identity/authorization#resolve-the-callers-group-ids)
+and [named recipients](/en/docs/identity/authorization#create-and-change-grants)
+for the permission, directory, binding, and audience boundaries.
+
 See [Server APIs](/en/docs/server) for the request path.
 
 The widget setting types `WidgetSettingField`, `WidgetSettingsDeclaration`,

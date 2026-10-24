@@ -618,7 +618,7 @@ The adapter accepts:
 | `list`, `grant`, `update`, `revoke` | Yes | Call the resource's access API |
 | `allowedPermissions` | No | Limit grants; defaults to `read`, `write`, and `admin` |
 | `allowPublic` | No | Add public-principal commands; defaults to `false` |
-| `allowServiceAccounts` | No | Add service-account commands; defaults to `false` |
+| `allowServiceAccounts` | No | Include service-account commands; defaults to `true`. Set `false` only for a documented resource restriction |
 | `scopes` | No | Parts of the resource a grant can cover, the whole resource first; adds `--scope` |
 | `resourceArgLabel` | No | Value label shown for resource arguments |
 | `resourceArgDescription` | No | Help text for resource arguments |

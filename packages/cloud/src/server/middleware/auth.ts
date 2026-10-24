@@ -55,6 +55,8 @@ export type ServiceAccountRequestActor =
       delegatedUser: User;
       scopes: string[];
       credentialId?: string | null;
+      /** Verified OAuth client identity for transactional credential checks. */
+      oauthClientId?: string | null;
       credentialExpiresAt?: string | null;
       delegation?: InvocationProvenance;
     }
@@ -64,6 +66,8 @@ export type ServiceAccountRequestActor =
       delegatedUser: null;
       scopes: string[];
       credentialId?: string | null;
+      /** Verified OAuth client identity for transactional credential checks. */
+      oauthClientId?: string | null;
       credentialExpiresAt?: string | null;
       delegation?: InvocationProvenance;
     };
@@ -221,6 +225,7 @@ const loadAuthenticatedActorUncached = async (
       delegatedUser: authResult.delegatedUser,
       scopes: authResult.scopes,
       credentialId: null,
+      oauthClientId: typeof authResult.payload.client_id === "string" ? authResult.payload.client_id : null,
       credentialExpiresAt: typeof authResult.payload.exp === "number" ? new Date(authResult.payload.exp * 1_000).toISOString() : null,
     };
     c.set("actor", actor);

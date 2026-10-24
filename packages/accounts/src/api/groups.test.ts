@@ -30,11 +30,17 @@ const authenticate = spyOn(session, "authenticateRequest");
 const create = spyOn(accountsAppService.group, "create");
 const get = spyOn(accountsAppService.group, "get");
 const prepare = spyOn(accountsAppService.group, "makePosix");
+const addMember = spyOn(accountsAppService.group.member, "add");
+const removeMember = spyOn(accountsAppService.group.member, "remove");
+const addManager = spyOn(accountsAppService.group.manager, "add");
 afterEach(() => {
   authenticate.mockReset();
   create.mockReset();
   get.mockReset();
   prepare.mockReset();
+  addMember.mockReset();
+  removeMember.mockReset();
+  addManager.mockReset();
 });
 afterAll(() => {
   token.mockRestore();
@@ -42,6 +48,9 @@ afterAll(() => {
   create.mockRestore();
   get.mockRestore();
   prepare.mockRestore();
+  addMember.mockRestore();
+  removeMember.mockRestore();
+  addManager.mockRestore();
 });
 const login = (roles: User["roles"]) =>
   authenticate.mockResolvedValue({
@@ -90,4 +99,45 @@ test("the same conversion route forwards the canonical provider and preserves PO
   const response = await groups.request(`/${id}/posix`, { method: "PUT" });
   expect(response.status).toBe(409);
   expect(await response.json()).toMatchObject({ code: "setup_disabled" });
+});
+
+test("full group managers add and remove named machine recipients, without opening manager assignment", async () => {
+  login(["user", "group-manager"]);
+  get.mockResolvedValue(group);
+  addMember.mockResolvedValue({ ok: true, data: undefined });
+  removeMember.mockResolvedValue({ ok: true, data: undefined });
+  const recipient = "22222222-2222-4222-8222-222222222222";
+  for (const method of ["POST", "DELETE"]) {
+    const response = await groups.request(`/${id}/members`, {
+      method,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "service_account", id: recipient }),
+    });
+    expect(response.status).toBe(200);
+    expect((method === "POST" ? addMember : removeMember).mock.calls.at(-1)?.[0]).toMatchObject({
+      actor: { userId: id },
+      id,
+      serviceAccountId: recipient,
+      provider: "local",
+    });
+  }
+  expect(
+    (
+      await groups.request(`/${id}/managers`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "service_account", id: recipient }),
+      })
+    ).status,
+  ).toBe(403);
+  expect(addManager).not.toHaveBeenCalled();
+  login(["admin"]);
+  addManager.mockResolvedValue({ ok: true, data: undefined });
+  const granted = await groups.request(`/${id}/managers`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "service_account", id: recipient }),
+  });
+  expect(granted.status).toBe(200);
+  expect(addManager.mock.calls[0]?.[0]).toMatchObject({ id, serviceAccountId: recipient, provider: "local", actor: { userId: id } });
 });

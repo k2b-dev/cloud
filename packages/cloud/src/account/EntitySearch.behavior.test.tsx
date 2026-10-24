@@ -19,12 +19,70 @@ describe("EntitySearch result rows", () => {
     return;
   }
 
+  test("service-account search keeps all kinds and statuses when filters are omitted", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    let request: URL | undefined;
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        request = new URL(input instanceof Request ? input.url : String(input));
+        return Response.json({
+          items: [
+            {
+              kind: "service_account",
+              serviceAccount: {
+                id: "disabled-bound",
+                name: "Disabled resource worker",
+                kind: "resource_bound",
+                status: "disabled",
+                appId: "accounts",
+                resourceType: "fixture",
+                resourceId: "directory",
+              },
+            },
+          ],
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: EntitySearch } = await import("./EntitySearch");
+    let selected: EntitySearchPrincipal | undefined;
+    const dispose = render(
+      () => (
+        <EntitySearch
+          includeServiceAccounts
+          onSelect={(principal) => {
+            selected = principal;
+          }}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>("input")!;
+      input.value = "worker";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(() => dom.root.textContent?.includes("Disabled resource worker") ?? false, "default machine search results");
+      expect(request!.searchParams.get("kinds")).toBe("service_account");
+      expect(request!.searchParams.has("service_account_kinds")).toBe(false);
+      expect(request!.searchParams.has("service_account_status")).toBe(false);
+      dom.root.querySelector<HTMLButtonElement>("button")!.click();
+      expect(selected).toMatchObject({ type: "service_account", serviceAccountId: "disabled-bound", kind: "resource_bound" });
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
   test("fill the width with start-aligned labels, truncating text, and a trailing add action", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
+    let request: URL | undefined;
     globalThis.fetch = Object.assign(
-      async () =>
-        Response.json({
+      async (input: string | URL | Request) => {
+        request = new URL(input instanceof Request ? input.url : String(input));
+        return Response.json({
           items: [
             {
               kind: "user",
@@ -32,7 +90,8 @@ describe("EntitySearch result rows", () => {
             },
             { kind: "group", group: { id: "group-1", provider: "local", name: "Board", description: null } },
           ],
-        }),
+        });
+      },
       { preconnect: originalFetch.preconnect },
     );
 
@@ -58,6 +117,8 @@ describe("EntitySearch result rows", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
       await waitFor(() => dom.root.textContent?.includes("Maria Kolb") ?? false, "the search results");
 
+      expect(request!.searchParams.has("service_account_kinds")).toBe(false);
+      expect(request!.searchParams.has("service_account_status")).toBe(false);
       const rows = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button.k2b-button"));
       expect(rows).toHaveLength(2);
       for (const row of rows) {

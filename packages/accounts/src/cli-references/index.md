@@ -80,7 +80,17 @@ cld accounts groups managers add "Editors" --user ada.lovelace --yes
 cld accounts requests list --scope open --json
 ```
 
-Group members and managers can be users or groups. Resolve a group and principal first, because these changes affect access recursively. Denying a request and deleting a group both require explicit confirmation.
+Group members and managers can be users or groups. A local group's members can also be active standalone or agent accounts. Add or remove one by exact name or ID:
+
+```bash
+cld accounts groups members add "Local editors" --service-account "Publishing agent" --yes
+cld accounts groups members list "Local editors" --type service_account --recursive
+cld accounts groups members remove "Local editors" --service-account "Publishing agent" --yes
+```
+
+Machine members inherit resource grants through local parent groups, within their credential scopes. Membership creates no Linux or IPA identity and grants no installation role. IPA groups retain directory membership rules. Group management still requires a full user account with the appropriate manager or administrator authority.
+
+Resolve a group and principal first, because these changes affect access recursively. Denying a request and deleting a group both require explicit confirmation.
 
 `groups list` leaves out personal Linux groups, the private primary group Cloud creates for each local account with a Linux identity. Add `--include-personal` to list them; the `personal` column (JSON: `personalOwner`) names the owning user. Grant access to that user, not to their personal group. Commands that take a group reference still resolve a personal group by exact name or ID.
 

@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Build and deploy
@@ -14,6 +14,31 @@ The Cloud build creates one self-contained Bun bundle for one application.
 
 It emits the server, Solid island chunks, application CSS, static assets, and
 optional application-specific build output.
+
+## Updating sharing controls
+
+Applications rebuilt with the current Cloud package include service accounts
+and agents in their shared permission picker and access CLI by default. Deploy
+the rebuilt applications to update these surfaces; existing grants do not
+change. Update Core before the consuming applications to provide the directory
+kind and status filters. The permission editor searches active accounts for new
+grants and keeps existing grant rows visible. An application with a documented
+user-backed workflow can keep `allowServiceAccounts={false}`. See
+[resource authorization](/en/docs/identity/authorization).
+
+### Roll out local machine group membership
+
+Deploy Core first and let its canonical migration create
+`auth.service_account_groups`. Then deploy Accounts and rebuild/redeploy
+applications using the new Cloud access resolver. The shared resolver queries
+this table for machine subjects; consumers require the Core migration even
+before the first machine member is added.
+
+The updated applications resolve local group grants for active standalone
+and agent accounts. Group coverage includes these members.
+Existing memberships and grants are preserved. IPA groups, directory
+visibility, human group management, resource bindings, and credential scope
+limits keep their existing rules.
 
 ## Build a standalone application
 

@@ -21,7 +21,7 @@ export const UpdateGroupSchema = z.object({
   description: z.string().max(4_000),
 });
 
-export const GroupMemberInputSchema = z.discriminatedUnion("type", [
+export const GroupManagerInputSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("user"),
     id: z.uuid(),
@@ -30,7 +30,9 @@ export const GroupMemberInputSchema = z.discriminatedUnion("type", [
     type: z.literal("group"),
     id: z.uuid(),
   }),
+  z.object({ type: z.literal("service_account"), id: z.uuid() }),
 ]);
+export const GroupMemberInputSchema = GroupManagerInputSchema;
 export type GroupMemberInput = z.infer<typeof GroupMemberInputSchema>;
 
 export const CreateUserResponseSchema = z.object({

@@ -146,9 +146,10 @@ export const EntityListItemSchema = z.discriminatedUnion("kind", [
 export type EntityListItem = z.infer<typeof EntityListItemSchema>;
 
 export const GroupMemberSchema = z.object({
-  type: z.enum(["user", "group"]),
+  type: z.enum(["user", "group", "service_account"]),
   id: z.string(),
   displayName: z.string().nullable(),
+  serviceAccountKind: ServiceAccountKindSchema.optional(),
 });
 export type GroupMember = z.infer<typeof GroupMemberSchema>;
 
@@ -443,6 +444,8 @@ export type ServiceAccountRequestActor = {
   delegatedUser: User | null;
   scopes: string[];
   credentialId?: string | null;
+  /** Verified OAuth client identity for transactional credential checks. */
+  oauthClientId?: string | null;
   credentialExpiresAt?: string | null;
   delegation?: InvocationProvenance;
 };
