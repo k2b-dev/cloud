@@ -1,8 +1,8 @@
 import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import type { SQL } from "bun";
-import { MachineRights } from "./machine-contracts";
 import { ArtifactError, type ArtifactIdentity } from "./identity";
+import { MachineRights } from "./machine-contracts";
 
 /** Current authority, never the account creator or a cached authentication snapshot. */
 export async function machineIdentity(identity: ArtifactIdentity, id: string, required: PermissionLevel = "read") {
