@@ -42,8 +42,6 @@ export default function BookController(props: Props) {
   let article: HTMLElement | null = null;
   let scrollContainer: HTMLElement | null = null;
   let mounted = false;
-  /** The page button a reader used, so focus stays on it when the list's next page arrives. */
-  let pagerFocus: { line: string; index: number } | null = null;
 
   const workspace = query.create({
     source,
@@ -106,9 +104,32 @@ export default function BookController(props: Props) {
     const draft = searchInput
       ? { name: searchInput.name, value: searchInput.value, start: searchInput.selectionStart, end: searchInput.selectionEnd }
       : null;
+    // A focused page button keeps focus through the new HTML, and a paged list never gets shorter, so turning pages or
+    // a live change moves nothing.
+    const pagerButton = !navigating && focused instanceof HTMLButtonElement && article.contains(focused) ? focused : null;
+    const pagerFocus = pagerButton?.dataset.queryLine
+      ? {
+          line: pagerButton.dataset.queryLine,
+          index: [...(pagerButton.closest(".notebook-query-pager")?.querySelectorAll("button[data-query-page]") ?? [])].indexOf(
+            pagerButton,
+          ),
+        }
+      : null;
+    const listHeights = navigating
+      ? new Map<string, number>()
+      : new Map(
+          [...article.querySelectorAll<HTMLElement>(".notebook-book-query[data-query-line]")].map(
+            (block) => [block.dataset.queryLine!, block.getBoundingClientRect().height] as const,
+          ),
+        );
     // This string is produced only by the permission-aware server renderer.
     if (html !== null) article.innerHTML = html;
     else article.textContent = metadata.tree.length ? t().selectNote : t().empty;
+    for (const block of article.querySelectorAll<HTMLElement>(".notebook-book-query[data-query-line]")) {
+      const height = listHeights.get(block.dataset.queryLine!);
+      if (height && block.querySelector(".notebook-query-pager") && block.getBoundingClientRect().height < height)
+        block.style.minHeight = `${height}px`;
+    }
     article.toggleAttribute("data-print-region", html !== null);
     article.setAttribute("aria-label", metadata.title ?? metadata.notebookName);
     const historyWarning = document.getElementById("notebook-book-history-warning");
@@ -136,14 +157,13 @@ export default function BookController(props: Props) {
         if (target) target.scrollIntoView();
         else scrollToTop();
       }
-    } else if (pagerFocus) {
-      const buttons = article.querySelectorAll<HTMLButtonElement>(
-        `.notebook-book-query[data-query-line="${CSS.escape(pagerFocus.line)}"] button[data-query-page]`,
-      );
+    } else if (pagerFocus && pagerFocus.index >= 0) {
+      const buttons = [
+        ...article.querySelectorAll<HTMLButtonElement>(".notebook-book-query[data-query-line] button[data-query-page]"),
+      ].filter((button) => button.dataset.queryLine === pagerFocus.line);
       // At the first or last page its own button turns off; the other one takes focus.
       const button = buttons[pagerFocus.index]?.disabled ? buttons[1 - pagerFocus.index] : buttons[pagerFocus.index];
       button?.focus({ preventScroll: true });
-      pagerFocus = null;
     } else if (draft) {
       const restored = article.querySelector<HTMLInputElement>(`input[name="${CSS.escape(draft.name)}"]`);
       if (restored) {
@@ -223,14 +243,19 @@ export default function BookController(props: Props) {
         const page = Number(pager.dataset.queryPage);
         if (pager.disabled || !Number.isInteger(line) || !Number.isInteger(page) || page < 1) return;
         const url = new URL(window.location.href);
-        const pages = parseQueryPages(url.searchParams.get(QUERY_PAGES_PARAM));
+        // Only the queries on this page keep a page, so lines that moved away never crowd out the current ones.
+        const lines = new Set(
+          [...article.querySelectorAll<HTMLElement>(".notebook-book-query[data-query-line]")].map((block) =>
+            Number(block.dataset.queryLine),
+          ),
+        );
+        const pages = new Map([...parseQueryPages(url.searchParams.get(QUERY_PAGES_PARAM))].filter(([entry]) => lines.has(entry)));
         pages.set(line, page);
         const value = formatQueryPages(pages);
         if (value) url.searchParams.set(QUERY_PAGES_PARAM, value);
         else url.searchParams.delete(QUERY_PAGES_PARAM);
         history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
-        const buttons = [...(pager.closest(".notebook-query-pager")?.querySelectorAll("button[data-query-page]") ?? [])];
-        pagerFocus = { line: String(line), index: Math.max(0, buttons.indexOf(pager)) };
+        pager.focus({ preventScroll: true });
         setSource(`${url.pathname}${url.search}`);
         return;
       }

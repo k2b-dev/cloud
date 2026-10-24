@@ -323,8 +323,10 @@ Field names and equality are case-sensitive; text contains/prefix filters and
 tags ignore case. Negative comparisons do not match missing fields.
 
 Sort by `$title`, `$created`, or `$updated`, ascending or descending. The
-default is most recently updated first, up to 25 results; set `limit` from 1
-to 100. A notice identifies additional matches. Queries do not aggregate table
+default is most recently updated first. In Book and the editor, `limit` (1 to
+100, default 25) sets the rows per page, at most 20, and page buttons reach
+every match. The CLI, capabilities and PDFs return the first `limit` matches
+and say how many more match. Queries do not aggregate table
 rows, join datasets, evaluate expressions, or modify notes. Open **Help →
 Structured blocks** for the complete operator and limit reference.
 

@@ -127,6 +127,41 @@ describe("query block previews", () => {
     }
   });
 
+  test("pages of lines that moved away are dropped, and a late page leaves focus where the reader moved it", async () => {
+    const sent: Array<[number, number][]> = [];
+    let release: (() => void) | undefined;
+    const pager = (line: number, page: number) =>
+      `<div class="notebook-book-query" data-query-line="${line}"><ul><li>Row ${page}</li></ul><nav class="notebook-query-pager">` +
+      `<button type="button" data-query-line="${line}" data-query-page="${page - 1}"${page === 1 ? " disabled" : ""}>‹</button>` +
+      `<span role="status">${page}</span><button type="button" data-query-line="${line}" data-query-page="${page + 1}">›</button></nav></div>`;
+    const app = await mount(async (markdown, _signal, pages) => {
+      sent.push([...pages]);
+      if (pages.size > 0 && !release) await new Promise<void>((resolve) => (release = resolve));
+      const document = markdown ?? DOCUMENT;
+      const line = extractNotebookDirectiveRanges(document).find((block) => block.type === "query")!.line;
+      return { ...response(document), blocks: [{ line, html: pager(line, pages.get(line) ?? 1) }] };
+    });
+    try {
+      await Bun.sleep(40);
+      app.dom.root.querySelectorAll<HTMLButtonElement>("button[data-query-page]")[1]!.click();
+      await Bun.sleep(10);
+      // The reader moves on while the page loads.
+      const elsewhere = app.dom.document.createElement("button");
+      app.dom.root.append(elsewhere);
+      elsewhere.focus();
+      release!();
+      await Bun.sleep(40);
+      expect(app.dom.document.activeElement).toBe(elsewhere);
+      expect(sent.at(-1)).toEqual([[3, 2]]);
+      // Lines added above the query move it; the page of its old line is not sent again.
+      app.view().dispatch({ changes: { from: 0, insert: "Intro\n\n" } });
+      await Bun.sleep(400);
+      expect(sent.at(-1)).toEqual([]);
+    } finally {
+      app.cleanup();
+    }
+  });
+
   test("a drawn chart widget mounts controls and restores its DOM when replaced", async () => {
     const markdown =
       "# Chart\n\n:::chart\ntype: bar\ntitle: Umsatz\ncolumns: [Monat, Umsatz]\nrows:\n  - [Januar, 1200]\nx: Monat\ny: Umsatz\ntooltip:\n  label: Betrag\n  format: EUR\n:::";
