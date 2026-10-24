@@ -175,6 +175,9 @@ describe("Shared in the chat's info", () => {
       const section = page.locator("#k2b-workspace-detail-chat-info .chat-shared");
       const rows = section.locator(".chat-shared__row");
       await rows.first().waitFor();
+      // Element rows name their element once its app has answered; the row stands from the start.
+      await rows.getByText("Item not available", { exact: true }).waitFor();
+      await rows.getByText("Delivery cooling shelves", { exact: true }).waitFor();
       expect(await rows.locator(".chat-shared__title").allInnerTexts()).toEqual([
         "example.com/vpn",
         "Item not available",
@@ -229,6 +232,9 @@ describe("Shared in the chat's info", () => {
     try {
       const section = page.locator("#k2b-workspace-detail-chat-info .chat-shared");
       await section.getByText("Shared items could not be loaded.").waitFor();
+      // Opening the chat reads the list once; its first known position is no reason to read again.
+      await page.waitForTimeout(600);
+      expect(harness.sharedReads.filter((id) => id === chat)).toHaveLength(1);
       await section.getByRole("button", { name: "Try again", exact: true }).click();
       await section.getByText("Nothing shared yet.", { exact: true }).waitFor();
       expect(errors).toEqual([]);
