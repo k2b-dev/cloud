@@ -16,9 +16,10 @@ Published packages (`@k2b/cloud`, `@k2b/ui`) use concrete versions because
 their npm artifacts must not contain catalog references.
 
 `bun install` applies a three-day release-age gate to new npm versions. The
-first-party `@k2b/*` packages are excluded so a coordinated Cloud update can
-use a new release immediately. Lifecycle scripts are denied by default; add a
-trusted dependency only after verifying why its install script is required.
+first-party packages explicitly listed in `bunfig.toml` are excluded so a
+coordinated Cloud update can use a new release immediately. Lifecycle scripts
+are denied by default; add a trusted dependency only after verifying why its
+install script is required.
 
 Update `bun.lock` together with the manifest. `bun run check` verifies that
 manifests, catalog, lockfile, and published-package constraints agree. A

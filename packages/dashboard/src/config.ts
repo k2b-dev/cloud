@@ -1,7 +1,8 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "dashboard",
+  access: appAccess.signedIn(),
   name: "Dashboard",
   icon: "ti ti-layout-dashboard",
   description: "User home — composable widgets from every app on the platform.",

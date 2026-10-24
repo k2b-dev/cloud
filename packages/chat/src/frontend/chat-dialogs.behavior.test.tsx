@@ -37,6 +37,7 @@ const viewerId = "11111111-1111-4111-8111-111111111111";
 const personId = "22222222-2222-4222-8222-222222222222";
 const now = "2026-10-12T10:30:00.000Z";
 const conversation: Conversation = {
+  threads: 0,
   id: "Chat01",
   name: "Planning",
   title: "Planning",
