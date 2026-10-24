@@ -53,20 +53,17 @@ type NotePage = {
   truncated: boolean;
 };
 
-/** Notes offered at once; the person narrows them by typing. */
-const PER_PAGE = 50;
+const NO_NOTES: NotePage = { notes: [], truncated: false };
 
+/** The server matches titles only, the exact title first, and sends no content. */
 const fetchNotes = async (notebookId: string, query: string, signal: AbortSignal): Promise<NotePage> => {
-  const response = await apiClient[":id"].notes.$get(
-    { param: { id: notebookId }, query: { per_page: String(PER_PAGE), ...(query ? { q: query } : {}) } },
+  const response = await apiClient[":id"].titles.$get(
+    { param: { id: notebookId }, query: query ? { q: query } : {} },
     { init: { signal } },
   );
-  if (!response.ok) return { notes: [], truncated: false };
-  const payload = (await response.json()) as { data: Array<{ id: string; title: string }>; pagination: { total: number } };
-  return {
-    notes: payload.data.map((note) => ({ id: note.id, title: note.title })),
-    truncated: payload.pagination.total > payload.data.length,
-  };
+  if (!response.ok) return NO_NOTES;
+  const payload = await response.json();
+  return { notes: payload.data, truncated: payload.hasMore };
 };
 
 /** Build a markdown link string for one note.
@@ -88,86 +85,69 @@ const buildMarkdownLink = (note: NoteRef): string => {
   return `[${escapedTitle}](note://${note.id})`;
 };
 
-/** Build the Completion list. Sorts by title alphabetically — for
- *  picker UX this beats sorting by recency since users typically
- *  remember the title they're trying to link.
+/** Build the Completion list in the server's order: the exact title
+ *  first, then titles that start with what was typed.
  *
  *  `triggerStart` is the doc position of the opening `[[` (= our
  *  `word.from`). The apply function uses it to REPLACE the entire
  *  `[[…` trigger sequence with the markdown link — without this,
  *  CM would only replace from `result.from` (after the brackets)
  *  to the cursor, leaving the typed `[[` stuck before the inserted
- *  link (observed bug: `[[[Title](…))`). */
-/** Non-selectable hint surfaced at the bottom of the popup when
- *  more notes match than one page shows. `apply` is a no-op
- *  (closes the popup without inserting anything); a negative
- *  `boost` keeps it pinned to the bottom regardless of how the
- *  user's typing reranks the rest. */
-const truncationHint: Completion = {
-  label: "… more notes available — keep typing to filter",
-  type: "text",
-  boost: -99,
-  apply: (view, completion, _from, _to) => {
-    // Close popup; do not modify the doc. The user can then keep
-    // typing the title to narrow the matches.
-    view.dispatch({ annotations: pickedCompletion.of(completion), userEvent: "input.complete" });
-  },
-};
+ *  link (observed bug: `[[[Title](…))`).
+ *
+ *  When more notes match than one page shows, a section heading says
+ *  so; a heading is not an option, so nothing can pick it. */
+const truncationSection = { name: "More notes match — keep typing to narrow", rank: 0 };
 
 const buildCompletions = (notes: NoteRef[], triggerStart: number, truncated: boolean): Completion[] => {
-  const out = notes
-    .slice()
-    .sort((a, b) => a.title.localeCompare(b.title))
-    .map((n) => {
-      const linkText = buildMarkdownLink(n);
-      const c: Completion = {
-        // `label` is the title — used for filtering against typed
-        // text AND for popup display. The popup user sees clean
-        // titles, the filter matches typed prefix.
-        label: n.title,
-        type: "namespace",
-        detail: n.id,
-        // Apply as a function so we can dispatch a change range
-        // that INCLUDES the leading `[[`. `to` is the doc position
-        // CM gives us (end of the matched word range, = cursor or
-        // a stale cursor if the user typed more since the popup
-        // opened). pickedCompletion annotation tells CM to tear
-        // the popup down cleanly.
-        apply: (view, completion, _from, to) => {
-          // Consume a trailing `]]` if CodeMirror's bracket-pair
-          // extension auto-closed the trigger. Without this the
-          // doc ends up as `[…](note://…)]]` — observed bug. We
-          // only extend when the next two chars are EXACTLY `]]`,
-          // so an unmatched single `]` typed by the user (rare
-          // but possible) doesn't get eaten.
-          const after = view.state.sliceDoc(to, Math.min(to + 2, view.state.doc.length));
-          const consumeTo = after === "]]" ? to + 2 : to;
-          // Trailing space so the user can keep typing prose
-          // without manually hitting space. Skip when the next
-          // char is already whitespace (mid-sentence pick) to
-          // avoid double-spaces.
-          const charAfter = view.state.sliceDoc(consumeTo, Math.min(consumeTo + 1, view.state.doc.length));
-          const insert = charAfter === "" || !/\s/.test(charAfter) ? `${linkText} ` : linkText;
-          view.dispatch({
-            changes: { from: triggerStart, to: consumeTo, insert },
-            // Place caret right after the inserted link (incl. the trailing space).
-            selection: { anchor: triggerStart + insert.length },
-            annotations: pickedCompletion.of(completion),
-            userEvent: "input.complete",
-          });
-        },
-      };
-      withIcon(c, "ti-note");
-      return c;
-    });
-  if (truncated) out.push(truncationHint);
-  return out;
+  return notes.map((n) => {
+    const linkText = buildMarkdownLink(n);
+    const c: Completion = {
+      // `label` is the title — used for filtering against typed
+      // text AND for popup display. The popup user sees clean
+      // titles, the filter matches typed prefix.
+      label: n.title,
+      type: "namespace",
+      detail: n.id,
+      ...(truncated ? { section: truncationSection } : {}),
+      // Apply as a function so we can dispatch a change range
+      // that INCLUDES the leading `[[`. `to` is the doc position
+      // CM gives us (end of the matched word range, = cursor or
+      // a stale cursor if the user typed more since the popup
+      // opened). pickedCompletion annotation tells CM to tear
+      // the popup down cleanly.
+      apply: (view, completion, _from, to) => {
+        // Consume a trailing `]]` if CodeMirror's bracket-pair
+        // extension auto-closed the trigger. Without this the
+        // doc ends up as `[…](note://…)]]` — observed bug. We
+        // only extend when the next two chars are EXACTLY `]]`,
+        // so an unmatched single `]` typed by the user (rare
+        // but possible) doesn't get eaten.
+        const after = view.state.sliceDoc(to, Math.min(to + 2, view.state.doc.length));
+        const consumeTo = after === "]]" ? to + 2 : to;
+        // Trailing space so the user can keep typing prose
+        // without manually hitting space. Skip when the next
+        // char is already whitespace (mid-sentence pick) to
+        // avoid double-spaces.
+        const charAfter = view.state.sliceDoc(consumeTo, Math.min(consumeTo + 1, view.state.doc.length));
+        const insert = charAfter === "" || !/\s/.test(charAfter) ? `${linkText} ` : linkText;
+        view.dispatch({
+          changes: { from: triggerStart, to: consumeTo, insert },
+          // Place caret right after the inserted link (incl. the trailing space).
+          selection: { anchor: triggerStart + insert.length },
+          annotations: pickedCompletion.of(completion),
+          userEvent: "input.complete",
+        });
+      },
+    };
+    withIcon(c, "ti-note");
+    return c;
+  });
 };
 
-/** Build a result for a given trigger match. Shared by sync + async
- *  paths so the cache-hit case can return without a Promise wrap. */
-const buildResult = (word: { from: number; to: number }, data: NotePage): CompletionResult | null => {
-  if (data.notes.length === 0) return null;
+/** Build a result for a given trigger match. An empty result keeps the
+ *  source active, so the next keystroke asks the server again. */
+const buildResult = (word: { from: number; to: number }, data: NotePage): CompletionResult => {
   return {
     // `from` = right after the `[[`; the apply functions replace the
     // brackets themselves via an explicit dispatch from word.from.
@@ -184,7 +164,7 @@ const buildResult = (word: { from: number; to: number }, data: NotePage): Comple
  * right notes endpoint. Mirrors `buildTagCompletionSource`.
  */
 export const buildNoteLinkCompletionSource = (notebookId: string): CompletionSource => {
-  return (context: CompletionContext): CompletionResult | Promise<CompletionResult | null> | null => {
+  return (context: CompletionContext): Promise<CompletionResult> | null => {
     // Trigger: `[[` followed by zero or more "title-body" chars.
     // We allow spaces because note titles often have spaces ("My
     // Project Notes"), so the user can type `[[my project` and
@@ -208,9 +188,9 @@ export const buildNoteLinkCompletionSource = (notebookId: string): CompletionSou
 
     // A newer keystroke aborts this request, so only the matches for what is typed now arrive.
     const controller = new AbortController();
-    context.addEventListener("abort", () => controller.abort());
+    context.addEventListener("abort", () => controller.abort(), { onDocChange: true });
     return fetchNotes(notebookId, word.text.slice(2).trim(), controller.signal)
-      .then((data) => buildResult(word, data))
-      .catch(() => null);
+      .catch(() => NO_NOTES)
+      .then((data) => buildResult(word, data));
   };
 };

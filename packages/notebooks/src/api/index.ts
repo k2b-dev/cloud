@@ -299,6 +299,19 @@ const ResolveNotePathQuerySchema = z.object({
   path: z.string().max(NOTE_PATH_MAX_LENGTH).describe("Notebook-relative address path such as `operations/backup`"),
 });
 
+/** Title matches offered at once; the person narrows them by typing. */
+const NOTE_TITLES_MAX = 50;
+
+const NoteTitlesQuerySchema = z.object({
+  q: z.string().max(500).optional().describe("Text the title contains; without it the last changed notes"),
+  limit: z.coerce.number().int().min(1).max(NOTE_TITLES_MAX).optional().describe(`At most ${NOTE_TITLES_MAX}, the default`),
+});
+
+const NoteTitlesSchema = z.object({
+  data: z.array(z.object({ id: z.string(), title: z.string() })),
+  hasMore: z.boolean().describe("More titles match than the response holds"),
+});
+
 const ResolvedNoteSchema = NoteSchema.extend({
   path: z.string().describe("Address path: title slugs joined by `/`"),
 });
@@ -1641,6 +1654,35 @@ const app = new Hono<AuthContext>()
           pagination: createPagination({ page: query.page, perPage: query.per_page, offset }, entries.length),
         }),
       );
+    },
+  )
+
+  // Notes by title, for pickers
+  .get(
+    "/:id/titles",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Find notes by title",
+      description:
+        "List the notes whose title contains the text, without content: the exact title first, then titles that start with it. Without text, the last changed notes.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(NoteTitlesSchema, "Matching notes"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
+      },
+    }),
+    v("query", NoteTitlesQuerySchema),
+    async (c) => {
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      if (error) return error;
+      const query = c.req.valid("query");
+      const result = await notebooksService.note.findByTitle({
+        notebookId: notebook!.id,
+        query: query.q ?? "",
+        limit: query.limit ?? NOTE_TITLES_MAX,
+      });
+      return respond(c, ok({ data: result.notes.map((note) => ({ id: note.shortId, title: note.title })), hasMore: result.hasMore }));
     },
   )
 

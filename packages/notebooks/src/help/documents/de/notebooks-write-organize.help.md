@@ -85,7 +85,7 @@ Für Überschriften und Listen gelten die Zifferntasten auf jedem Tastaturlayout
 
 :::reference
 - `/` am Zeilenanfang oder nach einem Leerzeichen öffnet das Einfügemenü. Tippe einen Befehlsnamen, um es zu filtern.
-- `[[` öffnet Notizvorschläge. Tippe einen Teil eines Titels, um jede Notiz des Notizbuchs zu finden. Die Auswahl ersetzt die getippten Klammern durch einen Markdown-Link zur Notiz.
+- `[[` öffnet Notizvorschläge. Tippe einen Teil eines Titels, um jede Notiz des Notizbuchs zu finden; eine Notiz mit genau diesem Titel steht oben. Die Auswahl ersetzt die getippten Klammern durch einen Markdown-Link zur Notiz.
 - `![[` öffnet Anhangsvorschläge. Die Auswahl bettet ein Bild ein; bei einer anderen Datei fügt sie einen Download-Link ein.
 - `==Text==` markiert Text farbig. Die Markierung bleibt innerhalb einer Zeile.
 - Auf Touchscreens stehen **Rückgängig** und **Wiederholen** am Anfang der Werkzeugleiste.

@@ -704,6 +704,38 @@ export const titlesByShortIds = async (params: { notebookId: string; shortIds: s
 };
 
 /**
+ * Notes whose title contains `query`, for a person picking one by name: the exact title first, then titles that
+ * start with it, then the rest; without a query the last changed notes. Reads titles only, `limit` at most.
+ */
+export const findByTitle = async (params: {
+  notebookId: string;
+  query: string;
+  limit: number;
+}): Promise<{ notes: Array<{ shortId: string; title: string }>; hasMore: boolean }> => {
+  const query = params.query.trim();
+  const escaped = query.replace(/[\\%_]/g, (char) => `\\${char}`);
+  const rows = await sql<{ short_id: string; title: string }[]>`
+    SELECT n.short_id, n.title
+    FROM notebooks.notes n
+    WHERE n.notebook_id = ${params.notebookId}::uuid
+      AND (${query === ""} OR n.title ILIKE ${`%${escaped}%`})
+    ORDER BY
+      ${
+        query === ""
+          ? sql`n.updated_at DESC`
+          : sql`CASE WHEN lower(n.title) = lower(${query}) THEN 0 WHEN n.title ILIKE ${`${escaped}%`} THEN 1 ELSE 2 END,
+                length(n.title), lower(n.title)`
+      },
+      n.short_id
+    LIMIT ${params.limit + 1}
+  `;
+  return {
+    notes: rows.slice(0, params.limit).map((row) => ({ shortId: row.short_id, title: row.title })),
+    hasMore: rows.length > params.limit,
+  };
+};
+
+/**
  * Get a note with its Yjs content.
  */
 const getWithContentRow = async (id: string): Promise<DbNote | null> => {
