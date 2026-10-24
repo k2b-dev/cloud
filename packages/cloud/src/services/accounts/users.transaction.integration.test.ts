@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { SQL } from "bun";
 import { databaseSuite, requireDatabaseUrl } from "../../../../../scripts/fixtures/test-infra";
+import { encryptValue } from "../settings/crypto";
 import { get } from "./users";
 
 const suite = databaseSuite();
@@ -22,6 +23,13 @@ suite("user reads on a reserved authorization connection", () => {
         expect(user?.id).toBe(id);
         expect(user?.roles).toContain("admin");
         expect(user?.profile).toBe("user");
+        await tx`UPDATE auth.users SET provider='ipa',admin=false WHERE id=${id}::uuid`;
+        await tx`INSERT INTO auth.ipa_user_effective_groups VALUES(${id}::uuid,'pwa-transaction-admins')`;
+        await tx`INSERT INTO settings.entries(key,value) VALUES('freeipa.groups.admin',${await encryptValue(["pwa-transaction-admins"])})
+          ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
+        expect((await get({ id }, { db: tx }))?.roles).toContain("admin");
+        await tx`UPDATE settings.entries SET value=${await encryptValue(["different-admins"])} WHERE key='freeipa.groups.admin'`;
+        expect((await get({ id }, { db: tx }))?.roles).not.toContain("admin");
         throw rollback;
       }),
     ).rejects.toBe(rollback);
