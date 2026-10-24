@@ -83,6 +83,9 @@ describe("Chat attachments", () => {
         await page.locator(".k2b-toast", { hasText: "A file could not be uploaded." }).waitFor({ state: "detached", timeout: 15_000 });
         await page.getByRole("button", { name: "Send message" }).click();
         await until(() => harness.posted.length === 1);
+        // The sent message owns its files: nothing is discarded once the chips are gone.
+        await page.evaluate(() => new Promise((done) => setTimeout(done, 50)));
+        expect(harness.discarded).toEqual([]);
         // Both uploads ran at once; whichever failed first got the later ID when it was tried again.
         expect(harness.posted[0]?.body).toBe("Here is the plan");
         expect([...(harness.posted[0]?.attachments ?? [])].sort()).toEqual(["A00001", "A00002"]);

@@ -216,8 +216,10 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     if (!removed.length) return;
     setTimeout(() => {
       if (submitting) return;
+      // A sent message took its uploads over (they are no longer ours); only a chip removed by hand gives one up.
       for (const attachment of removed)
-        if (!shared().some((current) => current.id === attachment.id)) discardUpload(attachment.id, uploadOf(attachment)?.view);
+        if (uploads.has(attachment.id) && !shared().some((current) => current.id === attachment.id))
+          discardUpload(attachment.id, uploadOf(attachment)?.view);
     }, 0);
   };
   const updateChip = (id: string, change: Partial<ChatAttachment>) =>

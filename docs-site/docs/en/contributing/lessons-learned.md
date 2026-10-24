@@ -1129,7 +1129,7 @@ updates that class's row in the table.
 ## Release a removed upload only after a refused send has put it back
 
 - **Error class:** cleanup ordered by microtasks. The Chat composer empties its chips before it hands a message over and restores them when the message is refused. A refusal that came back at once (an upload still failed) restored them only after the release check had run, so the upload was discarded and its "Try again" did nothing.
-- **Guard:** the release waits for the current task and skips while a message is handed over. `ChatAttachments.browser.test.ts` refuses a send with a failed upload, then retries it and sends both files.
+- **Guard:** the release waits for the current task, skips while a message is handed over, and gives up only uploads the composer still owns, never those a sent message took over. `ChatAttachments.browser.test.ts` refuses a send with a failed upload, retries it, sends both files, and checks that nothing was discarded.
 
 ## Measure layout shifts once an input-driven move is over
 
