@@ -64,7 +64,7 @@ const WORK = "/api/spaces/overview/work";
 const load = async () => {
   const dom = createDomTestHarness();
   try {
-    return { ui: await import("@k2b/ui"), MyTasks: (await import("./MyTasks.island")).default };
+    return { ui: await import("@k2b/ui"), MyTasks: (await import("./MyTasks")).default };
   } finally {
     dom.cleanup();
   }
@@ -93,6 +93,9 @@ const mount = (options: { locale?: string; items?: OverviewWork["items"]; mine?:
             initialView: "mine",
             initialWork: snapshot("mine", options.items ?? [tents, flyer], options.mine),
             dateConfig: { locale: options.locale ?? "en", timeZone: "UTC" },
+            taskHref: (item: { spaceShortId: string; shortId: string }, view: string) =>
+              `/pwa/spaces/${item.spaceShortId}/${item.shortId}${view === "mine" ? "" : `?view=${view}`}`,
+            listHref: (view: string) => (view === "mine" ? "/pwa/spaces" : `/pwa/spaces?view=${view}`),
           });
         },
       }),

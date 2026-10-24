@@ -38,6 +38,10 @@ export default function PrincipalPicker(props: {
   serviceAccountStatus?: ServiceAccountStatus;
   disabled?: boolean;
   readOnly?: boolean;
+  /** Replaces the default placeholder, which lists the principal kinds on offer. */
+  placeholder?: string;
+  /** The consumer's name and description for every signed-in person. */
+  signedIn?: { label: string; description: string };
   /** `serviceAccountKind` is set for service accounts so a new row can show the same kind as the result. */
   onSelect: (
     principal: Principal,
@@ -60,8 +64,9 @@ export default function PrincipalPicker(props: {
     if (props.allowAuthenticated !== false)
       entries.push({
         principal: { type: "authenticated" },
-        label: principalLabel({ principal: { type: "authenticated" } }, locale()),
+        label: props.signedIn?.label ?? principalLabel({ principal: { type: "authenticated" } }, locale()),
         icon: "ti ti-lock-open-2",
+        description: props.signedIn?.description,
       });
     if (props.allowPublic)
       entries.push({
@@ -143,13 +148,14 @@ export default function PrincipalPicker(props: {
       disabled={props.disabled}
       readOnly={props.readOnly}
       placeholder={
-        props.allowAuthenticated !== false || props.allowPublic
+        props.placeholder ??
+        (props.allowAuthenticated !== false || props.allowPublic
           ? props.allowServiceAccounts !== false
             ? t().addAll
             : t().addAudience
           : props.allowServiceAccounts !== false
             ? t().addService
-            : t().addBasic
+            : t().addBasic)
       }
       fetchData={load}
       onSelect={(option) => {
