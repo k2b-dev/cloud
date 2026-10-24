@@ -46,6 +46,12 @@ suite("Files machine storage through actual API tokens", () => {
   const originalJwksOrigin = process.env.CLOUD_OAUTH_JWKS_ORIGIN;
   const prefix = `machine-access-${Bun.randomUUIDv7()}`;
   const call = () => testCall(admin);
+  const callerNetworks = new Set<string>();
+  const callerAddress = () => {
+    const address = uniqueCallerAddress();
+    callerNetworks.add(`ip6:${address.split(":").slice(0, 4).join(":")}::/64`);
+    return address;
+  };
   const publicRoutes = new Hono<AuthContext>()
     .use(
       "*",
@@ -55,7 +61,7 @@ suite("Files machine storage through actual API tokens", () => {
   // Every synthetic client gets an independent per-IP budget in shared test Valkey.
   const publicRequest = (path: string, init: RequestInit = {}) => {
     const headers = new Headers(init.headers);
-    headers.set("x-real-ip", uniqueCallerAddress());
+    headers.set("x-real-ip", callerAddress());
     return publicRoutes.request(`/share/filesv2${path}`, { ...init, headers });
   };
   async function token(id: string, scopes: string[]) {
@@ -75,7 +81,7 @@ suite("Files machine storage through actual API tokens", () => {
         authorization: `Bearer ${key}`,
         "content-type": "application/json",
         "x-request-id": "machine-files-fixture",
-        "x-real-ip": uniqueCallerAddress(),
+        "x-real-ip": callerAddress(),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
@@ -219,8 +225,10 @@ suite("Files machine storage through actual API tokens", () => {
         .root("cloud")
         .remove(prefix, true)
         .catch(() => undefined);
-    const rateKeys = await redis.send("KEYS", [`cloud:rate-limit:*:ip:${publicIpPrefix}*`]);
-    if (Array.isArray(rateKeys)) for (const key of rateKeys) if (typeof key === "string") await redis.del(key);
+    const rateKeys = await redis.send("KEYS", ["cloud:rate-limit:*:ip6:2001:db8:*"]);
+    if (Array.isArray(rateKeys))
+      for (const key of rateKeys)
+        if (typeof key === "string" && [...callerNetworks].some((network) => key.includes(`:${network}:`))) await redis.del(key);
     setSystemTime();
     if (originalJwksOrigin === undefined) delete process.env.CLOUD_OAUTH_JWKS_ORIGIN;
     else process.env.CLOUD_OAUTH_JWKS_ORIGIN = originalJwksOrigin;
