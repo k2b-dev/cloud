@@ -794,8 +794,9 @@ test("network failure preserves values and offers recovery without claiming a da
   }
 }, 30_000);
 
-test("terminal publication rejections clear the receipt and require reload; timeouts and throttling retain retry", async () => {
-  for (const status of [400, 413, 422, 408, 429]) {
+test.each([400, 413, 422, 408, 429])(
+  "publication HTTP %i preserves the receipt and reload/retry contract",
+  async (status) => {
     const { tab, publishReply } = await open({ dashboard: dashboardTestKinds });
     try {
       await ready(tab);
@@ -819,8 +820,9 @@ test("terminal publication rejections clear the receipt and require reload; time
     } finally {
       await tab.close();
     }
-  }
-}, 60_000);
+  },
+  30_000,
+);
 
 test("republishing an existing dashboard warns in both the review and the final confirmation", async () => {
   const { tab, requests } = await open({ dashboard: { ...dashboardTestKinds, published: true } });
