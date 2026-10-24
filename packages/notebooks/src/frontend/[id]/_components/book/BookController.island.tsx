@@ -4,6 +4,7 @@ import { Button, NoticeCard, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { withPresentationMode } from "../../../../lib/presentation-url";
+import { formatQueryPages, parseQueryPages, QUERY_PAGES_PARAM } from "../../../../lib/query-blocks";
 import { attachmentFromContentUrl } from "../../../lib/editor/attachment-url";
 import { notebookWorkspaceMessages } from "../../messages";
 import { followFullWidth } from "../full-width";
@@ -41,6 +42,8 @@ export default function BookController(props: Props) {
   let article: HTMLElement | null = null;
   let scrollContainer: HTMLElement | null = null;
   let mounted = false;
+  /** The page button a reader used, so focus stays on it when the list's next page arrives. */
+  let pagerFocus: { line: string; index: number } | null = null;
 
   const workspace = query.create({
     source,
@@ -133,6 +136,14 @@ export default function BookController(props: Props) {
         if (target) target.scrollIntoView();
         else scrollToTop();
       }
+    } else if (pagerFocus) {
+      const buttons = article.querySelectorAll<HTMLButtonElement>(
+        `.notebook-book-query[data-query-line="${CSS.escape(pagerFocus.line)}"] button[data-query-page]`,
+      );
+      // At the first or last page its own button turns off; the other one takes focus.
+      const button = buttons[pagerFocus.index]?.disabled ? buttons[1 - pagerFocus.index] : buttons[pagerFocus.index];
+      button?.focus({ preventScroll: true });
+      pagerFocus = null;
     } else if (draft) {
       const restored = article.querySelector<HTMLInputElement>(`input[name="${CSS.escape(draft.name)}"]`);
       if (restored) {
@@ -204,6 +215,25 @@ export default function BookController(props: Props) {
     const onClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const target = event.target instanceof Element ? event.target : null;
+      // A query's page buttons turn its page in the address, so a reload or a live change shows the same rows.
+      const pager = target?.closest<HTMLButtonElement>("button[data-query-page]");
+      if (pager && article?.contains(pager)) {
+        event.preventDefault();
+        const line = Number(pager.dataset.queryLine);
+        const page = Number(pager.dataset.queryPage);
+        if (pager.disabled || !Number.isInteger(line) || !Number.isInteger(page) || page < 1) return;
+        const url = new URL(window.location.href);
+        const pages = parseQueryPages(url.searchParams.get(QUERY_PAGES_PARAM));
+        pages.set(line, page);
+        const value = formatQueryPages(pages);
+        if (value) url.searchParams.set(QUERY_PAGES_PARAM, value);
+        else url.searchParams.delete(QUERY_PAGES_PARAM);
+        history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
+        const buttons = [...(pager.closest(".notebook-query-pager")?.querySelectorAll("button[data-query-page]") ?? [])];
+        pagerFocus = { line: String(line), index: Math.max(0, buttons.indexOf(pager)) };
+        setSource(`${url.pathname}${url.search}`);
+        return;
+      }
       // The tree's chevron sits inside its row link; the tree folds the branch and cancels that link itself.
       if (target?.closest("[data-k2b-nav-tree-toggle]")) return;
       const anchor = target?.closest<HTMLAnchorElement>("a[href]") ?? null;

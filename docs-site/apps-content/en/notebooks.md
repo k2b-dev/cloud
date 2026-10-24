@@ -86,8 +86,11 @@ on the server with the page.
 Page links, tag filters, search, and pagination update the Book content without
 reloading the whole page when JavaScript is available. Browser Back and Forward
 preserve the reading route. Saved changes refresh the current page, navigation,
-and query results automatically. Without JavaScript, links and filters still
-work through regular page loads. Switching to Write or Read-only loads that
+and query results automatically. A query that matches more notes than one
+page shows 20 at a time, with page buttons below it; the address keeps the
+page, so a reload or a saved change shows the same rows. Without JavaScript,
+links and filters still work through regular page loads, and a query shows its
+first page. Switching to Write or Read-only loads that
 workspace as a new page.
 
 In the editor, type `:::` to insert a query, table of contents, or chart. Rich mode shows

@@ -7,6 +7,7 @@ import { orderBookTree } from "@/lib/book-tree";
 import { extractNamedBlockSummaries } from "@/lib/named-blocks";
 import { isPresentationMode, type PresentationMode, resolvePresentationMode } from "@/lib/presentation-mode";
 import { requestedPresentationMode } from "@/lib/presentation-url";
+import { parseQueryPages, QUERY_PAGES_PARAM } from "@/lib/query-blocks";
 import { parseSidebarFilter } from "@/lib/sidebar-filter";
 import { notebooksService } from "@/service";
 import { loadBookNote } from "@/service/book";
@@ -96,6 +97,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     requestedMode: mode,
     defaultPresentationMode: notebook.defaultPresentationMode,
     locale,
+    queryPages: parseQueryPages(c.req.query(QUERY_PAGES_PARAM)),
   });
   if (noteParam && !selected.note) return { kind: "not_found" as const };
 
@@ -261,6 +263,8 @@ async function loadSelectedNote(params: {
   requestedMode: string | undefined;
   defaultPresentationMode: PresentationMode;
   locale: string;
+  /** The page each query of a Book page shows, from the address. */
+  queryPages: ReadonlyMap<number, number>;
 }): Promise<{
   internalNoteId: string | null;
   note: SelectedNote | null;
@@ -281,6 +285,7 @@ async function loadSelectedNote(params: {
   });
   if (presentationMode === "book" && !params.isVersionsMode && params.requestedMode !== "graph") {
     const book = await loadBookNote({
+      pages: params.queryPages,
       notebookId: params.notebookId,
       notebookShortId: params.notebookShortId,
       noteShortId: params.selectedNoteId,

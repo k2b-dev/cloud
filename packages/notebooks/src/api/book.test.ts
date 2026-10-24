@@ -204,6 +204,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
         noteShortId: "note01",
         userId: user.id,
         locale: "de",
+        pages: new Map(),
       });
       loadPreview.mockClear();
       expect((await preview({ markdown: "# Draft" })).status).toBe(403);
