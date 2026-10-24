@@ -188,6 +188,9 @@ describe("notebook page presentation authorization", () => {
       fixtures("write");
       track(spyOn(noteStore, "getWithContentByShortId")).mockResolvedValue(null);
       track(spyOn(notebooksService.note, "getWithContentByShortId")).mockResolvedValue(null);
+      // Write opens with the saved Markdown of the same lookup: the note resolves, then is gone when it loads.
+      const found = await notebooksService.note.getByShortId({ shortId: "note01" });
+      track(spyOn(notebooksService.note, "getByShortId")).mockResolvedValueOnce(found).mockResolvedValue(null);
       expect(await requestPageData(mode)).toEqual({ kind: "not_found" });
     });
   }
@@ -204,7 +207,6 @@ describe("notebook page presentation authorization", () => {
       expect(data.showDetailPanel).toBe(false);
       expect(data.selectedRouteState).toBeNull();
       expect(data.selectedNote?.contentMd).toBeNull();
-      expect(data.selectedNote?.yjsSnapshot).toBeNull();
       expect(data.bookHtml).toContain("<strong>handbook</strong>");
       expect(data.ctx.tags).toEqual([{ tag: "team", count: 1 }]);
       expect(data.initialCommentsPage).toBeNull();
@@ -298,7 +300,8 @@ for (const [permission, query, shell, from] of [
     expect(data.graphFrom).toBe(from);
     expect(data.bookTree).toHaveLength(shell === "book" ? 1 : 0);
     expect(data.ctx.presentationMode).toBe(from);
-    expect(data.selectedNote).toMatchObject({ id: "note01", title: "Welcome", contentMd: null, yjsSnapshot: null });
+    expect(data.selectedNote).toMatchObject({ id: "note01", title: "Welcome", contentMd: null });
+    expect(data.selectedNote).not.toHaveProperty("yjsSnapshot");
     expect(data.bookHtml).toBeNull();
     expect(data.selectedRouteState).toBeNull();
     expect(data.backlinks).toEqual([]);

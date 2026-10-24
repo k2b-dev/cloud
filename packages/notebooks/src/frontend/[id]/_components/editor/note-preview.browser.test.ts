@@ -137,7 +137,7 @@ beforeAll(async () => {
         const { blocks } = renderNotebookBook({ markdown: draft, notebookId: "book01", noteId: "note01", locale: "en", linkMode: "write" });
         return Response.json({ markdown: draft, blocks, diagnostics: [], headings: [] });
       }
-      const { text: note, snapshot: initialSnapshot } =
+      const { text: note } =
         notes[(["many", "long", "headings", "chart", "print"] as const).find((name) => url.searchParams.has(name)) ?? "markdown"];
       const mode = url.searchParams.get("mode") === "source" ? "source" : "rich";
       const readOnly = url.searchParams.has("readonly");
@@ -151,12 +151,10 @@ beforeAll(async () => {
         notebookName: "Team",
         noteLockedAt: null,
         historyIncomplete,
-        workspaceCursor: null,
         appUrl: url.origin,
         userId: "writer",
         displayName: "Writer",
-        initialSnapshot,
-        initialContent: null,
+        initialContent: note,
         initialPanelOpen: false,
         initialRichMode: mode,
         readOnly,
