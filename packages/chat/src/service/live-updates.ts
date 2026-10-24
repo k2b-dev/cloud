@@ -17,6 +17,7 @@ export const chatLiveUpdates = (
       key: `l:${conversationId}`,
       data: {
         type: "summary",
+        thread: message.thread,
         conversationId,
         id: message.id,
         seq: message.seq,

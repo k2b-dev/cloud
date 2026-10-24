@@ -101,7 +101,7 @@ export {
   fitFloatingWindowRect,
   openFloatingWindow,
 } from "./FloatingWindow";
-export type { MobileShellHeaderProps, MobileShellProps } from "./MobileShell";
+export type { MobileShellHeaderProps, MobileShellProps, MobileShellSidebarItem, MobileShellSidebarProps } from "./MobileShell";
 export { default as MobileShell, observeMobileShell } from "./MobileShell";
 export { default as Navigation, type NavigationProps } from "./Navigation";
 export {

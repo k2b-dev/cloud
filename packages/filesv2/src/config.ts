@@ -1,7 +1,18 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "filesv2",
+  access: appAccess.signedIn({
+    publicRoutes: [
+      "/share/filesv2/s/:token",
+      "/share/filesv2/s/:token/*",
+      "/share/filesv2/inbox/:token",
+      "/share/filesv2/inbox/:token/*",
+      "/api/filesv2/wopi/files/:id",
+      "/api/filesv2/wopi/files/:id/contents",
+      "/api/filesv2/openapi.json",
+    ],
+  }),
   cli: { filesv2: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Files",
   icon: "ti ti-folders",

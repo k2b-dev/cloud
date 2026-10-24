@@ -41,6 +41,8 @@ export default function ChatInfoPanel(props: {
   onClose: () => void;
   onAddPeople: () => void;
   onEditDetails: () => void;
+  /** For admins: "New thread", also where the chat has none yet. */
+  onCreateThread?: () => void;
   onLeave: () => void;
 }): JSX.Element {
   const t = useChatMessages();
@@ -173,6 +175,9 @@ export default function ChatInfoPanel(props: {
   // The chat's own commands sit in the header: below a member list that loads, they would move.
   const commands = (): DropdownItem[] => [
     ...(props.conversation.permission !== "read" ? [{ label: t().editDetails, icon: "ti ti-pencil", action: props.onEditDetails }] : []),
+    ...(props.onCreateThread
+      ? [{ label: t().newThread, icon: "ti ti-hash", description: t().newThreadHint, action: props.onCreateThread }]
+      : []),
     // Alone in a chat there is nobody to leave it to.
     ...(props.conversation.memberCount > 1
       ? [{ label: t().leaveChat, icon: "ti ti-logout", variant: "danger" as const, action: props.onLeave }]

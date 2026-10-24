@@ -71,6 +71,7 @@ const usageOf = (month: number, today: number, peopleAtLimit = 0): GeoAdminUsage
     { group: "route", credits: Math.round(month * 0.18) },
     { group: "address", credits: month - Math.round(month * 0.46) - Math.round(month * 0.22) - Math.round(month * 0.18) },
   ],
+  routeCostOverruns: 0,
   peopleAtLimit,
   timezone: "Europe/Berlin",
 });
@@ -86,6 +87,7 @@ export const PLACES_AND_MAPS_SCENARIOS = {
     return { status, usage: usageOf(0, 0) };
   },
   leer: () => ({ status: setStatus(), usage: usageOf(0, 0) }),
+  "cost-overrun": () => ({ status: setStatus(), usage: { ...usageOf(41230, 2140), routeCostOverruns: 2 } }),
   "budget-cloud": () => ({ status: setStatus(), usage: usageOf(90000, 0) }),
   "budget-person": () => ({ status: setStatus(), usage: usageOf(41230, 2960, 3) }),
   "verbrauch-fehler": () => ({ status: setStatus(), usage: null }),
@@ -265,6 +267,8 @@ export async function placesAndMapsBrowserFixture() {
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
+      if (url.pathname === "/branding/logo")
+        return new Response(Bun.file(resolve(import.meta.dir, "../../../../../cloud/public/logo.svg")));
       if (url.pathname === "/fixture.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
       if (url.pathname.startsWith("/public/")) {
         const path = resolve(root, `.${url.pathname}`);
