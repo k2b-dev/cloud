@@ -471,6 +471,18 @@ test("savepoints stay on the guarded connection and cannot execute cleanup from 
   expect(f.statements.at(-1)).toBe("ROLLBACK");
 });
 
+test("savepoint query arrays settle their lazy SQL before release", async () => {
+  const f = lifecycleFixture();
+  f.query(async (statement) => (statement.startsWith("UPDATE") ? [{ saved: true }] : []));
+  const result = await withAppPwaTransaction(f.db, undefined, async (tx) =>
+    tx.savepoint((nested) => [nested`UPDATE first`, nested`UPDATE second`]),
+  );
+  expect(result).toEqual([[{ saved: true }], [{ saved: true }]]);
+  const release = f.statements.indexOf("RELEASE SAVEPOINT app_pwa_0");
+  expect(f.statements.indexOf("UPDATE first")).toBeLessThan(release);
+  expect(f.statements.indexOf("UPDATE second")).toBeLessThan(release);
+});
+
 test("a successful savepoint and its writes share the guarded transaction", async () => {
   const f = lifecycleFixture();
   expect(

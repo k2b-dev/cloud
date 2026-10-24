@@ -274,7 +274,10 @@ export const createAppPwaService = (options: AppPwaOptions) => {
       }[]
     >`SELECT f.sid,f.auth_epoch,f.expires_at,f.revoked_at,f.pwa_device_id,k.state AS key_state
       FROM auth.session_families f JOIN auth.signing_keys k ON k.kid=f.signing_kid
-      WHERE f.sid=ANY(${devices.map((device) => device.initiator_sid)}::uuid[])`;
+      WHERE f.sid=ANY(${sql.array(
+        devices.map((device) => device.initiator_sid),
+        "uuid",
+      )})`;
     const byId = new Map(families.map((family) => [family.sid, family]));
     const time = await databaseClock(tx);
     return devices.map((device) => {
@@ -560,7 +563,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
             await tx`UPDATE ${tables.visits} SET secret_hash = ${pairingSecret.hash(secret)} WHERE app_id = ${appId} AND id = ${id}::uuid`;
           else {
             await tx`INSERT INTO ${tables.visits}(app_id,id,device_id,request_id,input_digest,secret_hash,subject,state,issued_at,qr_expires_at)
-          VALUES (${appId},${id}::uuid,${device.id}::uuid,${input.requestId}::uuid,${digest},${pairingSecret.hash(secret)},${JSON.stringify(subject)}::jsonb,'pending',${time},${expires})`;
+          VALUES (${appId},${id}::uuid,${device.id}::uuid,${input.requestId}::uuid,${digest},${pairingSecret.hash(secret)},${JSON.stringify(subject)}::text::jsonb,'pending',${time},${expires})`;
             await record(tx, "visit.issued", signIn, device.id, id);
           }
           checkDevice(device, await databaseClock(tx), authority.user.auth_epoch);
@@ -684,7 +687,7 @@ export const createAppPwaService = (options: AppPwaOptions) => {
           const time = await databaseClock(tx);
           checkVisit(visit, time);
           await tx`INSERT INTO ${tables.attempts}(app_id,visit_id,attempt_id,route,input_digest,result)
-        VALUES (${appId},${visit.id}::uuid,${parse(AppPwaId, attemptId)}::uuid,${route},${digest},${JSON.stringify(result)}::jsonb)`;
+        VALUES (${appId},${visit.id}::uuid,${parse(AppPwaId, attemptId)}::uuid,${route},${digest},${JSON.stringify(result)}::text::jsonb)`;
           await tx`UPDATE ${tables.visits} SET last_used_at = ${time}, state = ${ended ? "ended" : "active"} WHERE app_id = ${appId} AND id = ${visit.id}::uuid`;
           await record(tx, ended ? "visit.completed" : "visit.command", actor, device.id, visit.id);
           checkVisit(visit, await databaseClock(tx));

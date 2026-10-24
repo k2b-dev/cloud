@@ -107,10 +107,11 @@ export const withAppPwaTransactionLease = async <T>(
     guardedQueries.set(result, guarded);
     return guarded;
   };
-  async function savepoint<T>(
-    nameOrWork: string | SQL.SavepointContextCallback<T>,
-    callback?: SQL.SavepointContextCallback<T>,
-  ): Promise<T> {
+  function savepoint<T>(nameOrWork: string | SQL.SavepointContextCallback<T>, callback?: SQL.SavepointContextCallback<T>): Promise<T>;
+  async function savepoint(
+    nameOrWork: string | SQL.SavepointContextCallback<unknown>,
+    callback?: SQL.SavepointContextCallback<unknown>,
+  ): Promise<unknown> {
     check();
     const callbackWork = typeof nameOrWork === "function" ? nameOrWork : callback;
     if (!callbackWork) throw new TypeError("A savepoint needs a callback");
@@ -119,8 +120,11 @@ export const withAppPwaTransactionLease = async <T>(
     await tx.unsafe(`SAVEPOINT ${name}`);
     try {
       const result = await callbackWork(tx);
+      // Bun starts lazy query arrays returned by a transaction callback. Settle
+      // them before releasing the savepoint, including its rollback on failure.
+      const settled = Array.isArray(result) ? await Promise.all(result) : result;
       await tx.unsafe(`RELEASE SAVEPOINT ${name}`);
-      return result;
+      return settled;
     } catch (error) {
       // A late callback must never roll back a later user's transaction.
       check();
