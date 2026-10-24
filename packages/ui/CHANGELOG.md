@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.32.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.31.0...npm-ui-v0.32.0) (2026-10-23)
+
+
+### Features
+
+* **cloud:** keep the shell and panel during in-app page changes ([#1653](https://github.com/k2b-dev/cloud/issues/1653)) ([7dc9247](https://github.com/k2b-dev/cloud/commit/7dc92472f4eada6534a6a55c4e9bef3d0e90168d))
+* **core:** provide budgeted maps and editable routes through Geoapify EU ([#1703](https://github.com/k2b-dev/cloud/issues/1703)) ([90f996d](https://github.com/k2b-dev/cloud/commit/90f996d801fa654f14e0189d7639a30555b68aeb))
+* **mail:** keep search, filters and reader actions in the workspace head ([#1665](https://github.com/k2b-dev/cloud/issues/1665)) ([c4956a5](https://github.com/k2b-dev/cloud/commit/c4956a5096fc3fd6d7016dd3f4359dd219d7232e))
+* **mail:** retain the workspace when switching mailbox contexts ([#1659](https://github.com/k2b-dev/cloud/issues/1659)) ([660704b](https://github.com/k2b-dev/cloud/commit/660704b93f17f8c242704d461ea65f1577052b20))
+* **pulse:** ask Pulse in SQL from the console, the CLI and the Assistant ([#1662](https://github.com/k2b-dev/cloud/issues/1662)) ([a74c42c](https://github.com/k2b-dev/cloud/commit/a74c42cc0cb09acc9bf828aba8f99f4cc8278d6d))
+* **ui:** explain rich selections with optional previews ([#1655](https://github.com/k2b-dev/cloud/issues/1655)) ([4b03a10](https://github.com/k2b-dev/cloud/commit/4b03a1040eba27660dabf23c673cfc6ec2551d8a))
+* **ui:** keep workspace controls reachable across layouts ([#1661](https://github.com/k2b-dev/cloud/issues/1661)) ([9a53dff](https://github.com/k2b-dev/cloud/commit/9a53dff2d06dd60749e15b08dc5056570652b0ca))
+
+
+### Bug Fixes
+
+* **deps:** remove vulnerable runtime and build dependency copies ([#1682](https://github.com/k2b-dev/cloud/issues/1682)) ([fba8cb9](https://github.com/k2b-dev/cloud/commit/fba8cb99b44b4684f74ff00a91e6e61237e17c9c))
+* **ui:** await phone picker readiness before accessibility audits ([#1668](https://github.com/k2b-dev/cloud/issues/1668)) ([3fe4f84](https://github.com/k2b-dev/cloud/commit/3fe4f84c1a41dbb74d9702f1c3d34cc5b36ee8ee))
+* **ui:** guard formatted chart values when copying ([#1729](https://github.com/k2b-dev/cloud/issues/1729)) ([ec5a399](https://github.com/k2b-dev/cloud/commit/ec5a399faaf3aa14dff38702661065b38379bd90))
+* **ui:** keep phone workspace heads with their list pane ([#1663](https://github.com/k2b-dev/cloud/issues/1663)) ([9ac019e](https://github.com/k2b-dev/cloud/commit/9ac019e917a515e356102a01e7bf9753193d4cc6))
+* **ui:** refine workspace Details presentation and focus ([#1672](https://github.com/k2b-dev/cloud/issues/1672)) ([ceec88c](https://github.com/k2b-dev/cloud/commit/ceec88c68d11cf861614ee7a71e4c532bcb3f631))
+* **ui:** round card corners on Core Administration and every app when the sidebar is hidden ([#1644](https://github.com/k2b-dev/cloud/issues/1644)) ([e44abea](https://github.com/k2b-dev/cloud/commit/e44abeaf066dfa4404aaa56f3a6e7dbaf68ce36c))
+* **ui:** settle theme transitions before RichSelect contrast audits ([#1664](https://github.com/k2b-dev/cloud/issues/1664)) ([658b226](https://github.com/k2b-dev/cloud/commit/658b226b0db4a0e8bdc29e9452f600fc2827d99f))
+* **ui:** show a consistent resize shadow on every resizable edge ([#1652](https://github.com/k2b-dev/cloud/issues/1652)) ([8f99273](https://github.com/k2b-dev/cloud/commit/8f9927348d0466d5e09088c5fb93498c966aa8a4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.19.0 to 0.20.0
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 to ^0.20.0
+
 ## [0.31.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.30.0...npm-ui-v0.31.0) (2026-10-20)
 
 

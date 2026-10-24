@@ -1,7 +1,8 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "capabilities",
+  access: appAccess.signedIn(),
   name: "Capabilities",
   icon: "ti ti-api-app",
   description: "Inspect and run the live Queries and Actions available to your account.",

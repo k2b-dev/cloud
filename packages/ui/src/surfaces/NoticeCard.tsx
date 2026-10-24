@@ -10,12 +10,15 @@ type NoticeCardContentProps =
 export type NoticeCardProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "class" | "title"> &
   NoticeCardContentProps & {
     tone?: NoticeTone;
+    /** A Tabler icon class. Turns the notice into a compact status line whose icon and text take the tone colour. */
+    icon?: string;
     class?: string;
     bodyClass?: string;
   };
 
 export const NOTICE_CARD_CLASSES = {
   root: "k2b-notice-card",
+  icon: "k2b-notice-card__icon",
   content: "k2b-notice-card__content",
   head: "k2b-notice-card__head",
   title: "k2b-notice-card__title",
@@ -25,12 +28,18 @@ export const NOTICE_CARD_CLASSES = {
 } as const;
 
 function NoticeCardComponent(props: NoticeCardProps): JSX.Element {
-  const [local, articleProps] = splitProps(props, ["tone", "title", "detail", "meta", "children", "class", "bodyClass"]);
+  const [local, articleProps] = splitProps(props, ["tone", "icon", "title", "detail", "meta", "children", "class", "bodyClass"]);
   // Children that render nothing, such as a Show whose condition is false, add no body and no gap.
   const body = children(() => local.children);
   const hasBody = () => body.toArray().some((node) => node != null && node !== false && node !== "");
   return (
-    <article {...articleProps} class={`${NOTICE_CARD_CLASSES.root} ${local.class ?? ""}`} data-tone={local.tone ?? "neutral"}>
+    <article
+      {...articleProps}
+      class={`${NOTICE_CARD_CLASSES.root} ${local.class ?? ""}`}
+      data-tone={local.tone ?? "neutral"}
+      {...(local.icon ? { "data-icon": "" } : {})}
+    >
+      <Show when={local.icon}>{(icon) => <i class={`${icon()} ${NOTICE_CARD_CLASSES.icon}`} aria-hidden="true" />}</Show>
       <div class={NOTICE_CARD_CLASSES.content}>
         <Show when={local.title}>
           {(title) => (
