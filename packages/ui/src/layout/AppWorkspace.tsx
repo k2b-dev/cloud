@@ -277,6 +277,8 @@ export type AppWorkspaceMainPaneProps = {
   href?: string;
   /** Quiet one-line text below the level title. */
   description?: JSX.Element;
+  /** Levels mode: a small mark before the level title, such as the colour dot of the object's container. */
+  lead?: JSX.Element;
   /** Controls at the end of the level head. */
   actions?: JSX.Element;
   surface?: "default" | "navigation";
@@ -597,16 +599,26 @@ function AppWorkspaceMainPane(props: AppWorkspaceMainPaneProps): JSX.Element {
 }
 
 /** A level's head; `children` is its back step. It mounts and cleans up with its open pane. */
-function LevelHead(props: { label: string; description?: JSX.Element; actions?: JSX.Element; children: JSX.Element }): JSX.Element {
+function LevelHead(props: {
+  label: string;
+  description?: JSX.Element;
+  actions?: JSX.Element;
+  lead?: JSX.Element;
+  children: JSX.Element;
+}): JSX.Element {
   // Read each slot once: every read of a JSX prop builds it again, and the
   // server and the client would then disagree on hydration keys.
   const description = children(() => props.description);
   const actions = children(() => props.actions);
+  const lead = children(() => props.lead);
   return (
     <header class="k2b-app-workspace__level-head">
       {props.children}
       <div class="k2b-app-workspace__level-title">
         <h2 tabIndex={-1}>
+          <Show when={lead()}>
+            <span class="k2b-app-workspace__level-lead">{lead()}</span>
+          </Show>
           <span class="k2b-truncate-fade">{props.label}</span>
         </h2>
         <Show when={description()}>
@@ -840,7 +852,12 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                   >
                     {levelsMode() ? (
                       <>
-                        <LevelHead label={pane.props.label} description={pane.props.description} actions={pane.props.actions}>
+                        <LevelHead
+                          label={pane.props.label}
+                          description={pane.props.description}
+                          actions={pane.props.actions}
+                          lead={pane.props.lead}
+                        >
                           <Show when={levelIndex() > 1 && depth() > 1}>
                             <IconButtonLink
                               class="k2b-app-workspace__level-back"

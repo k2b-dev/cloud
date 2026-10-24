@@ -64,6 +64,7 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
       label: t.general,
       links: [
         { href: "/admin", icon: "ti-dashboard", label: t.overview },
+        { href: "/admin/apps", icon: "ti-apps", label: t.apps },
         { href: "/admin/app-credentials", icon: "ti-key", label: t.appCredentials },
         { href: "/admin/rail", icon: "ti-layout-sidebar", label: t.rail },
         { href: "/admin/announcements", icon: "ti-speakerphone", label: t.announcements },
