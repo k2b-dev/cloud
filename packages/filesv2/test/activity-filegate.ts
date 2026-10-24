@@ -119,7 +119,7 @@ roots:
       `${volume}:/data`,
       "-v",
       `${directory}:/config:ro`,
-      "ghcr.io/k2b-dev/filegate:7.0.0",
+      "ghcr.io/k2b-dev/filegate:7.1.0",
       "serve",
       "--config",
       "/config/conf.yaml",
@@ -130,7 +130,7 @@ roots:
     for (;;) {
       try {
         const system = await client.system(startup);
-        if (system.version !== "7.0.0") throw new Error("Unexpected Filegate fixture version");
+        if (system.version !== "7.1.0") throw new Error("Unexpected Filegate fixture version");
         break;
       } catch (error) {
         if (startup.aborted || Date.now() >= deadline) throw error;

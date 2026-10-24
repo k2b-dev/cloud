@@ -1,6 +1,7 @@
+import type { SQL } from "bun";
 import { z } from "zod";
 import type { RequestAuthority } from "../server/middleware/auth";
-import { type Role, RoleSchema } from "./shared";
+import { AccessEntrySchema, type Role, RoleSchema } from "./shared";
 
 const publicRoutes = z
   .array(
@@ -25,9 +26,12 @@ export const AppAccessRuleSchema = z.union([
 ]);
 /** Serializable entry rule evaluated by the platform; never application callback code. */
 export type AppAccessRule = z.infer<typeof AppAccessRuleSchema>;
-/** The optional management restriction runs in the owning application, in addition to a management grant. */
+/**
+ * The optional management restriction runs in the owning application, in addition to a management grant.
+ * SQL-backed callbacks and domain services they call must use the supplied db: edits hold its transaction connection.
+ */
 export type AppAccessDeclaration = AppAccessRule & {
-  canManage?: (authority: RequestAuthority) => boolean | Promise<boolean>;
+  canManage?: (authority: RequestAuthority, context: { db: SQL }) => boolean | Promise<boolean>;
 };
 type PublicOptions = { publicRoutes?: readonly string[] };
 export const appAccess = {
@@ -46,3 +50,22 @@ export const compileAppAccess = (declaration: AppAccessDeclaration | undefined):
     throw new Error("Only configurable app access accepts canManage");
   return AppAccessRuleSchema.parse(rule);
 };
+
+export const AppAccessSnapshotSchema = z.object({
+  appId: z.string(),
+  name: z.string(),
+  entries: z.array(
+    AccessEntrySchema.extend({
+      id: z.union([z.uuid(), z.literal("inherited-authenticated")]),
+      groupMemberCount: z.number().int().nonnegative().optional(),
+      /** Platform eligibility for presentation; the server still checks any app-owned restriction. */
+      effectiveManager: z.boolean().optional(),
+    }),
+  ),
+  ownEntryIds: z.array(z.string()),
+  configured: z.boolean(),
+  hasEffectiveManager: z.boolean(),
+  inheritedSignedIn: z.boolean(),
+  canUse: z.boolean(),
+});
+export type AppAccessSnapshot = z.infer<typeof AppAccessSnapshotSchema>;

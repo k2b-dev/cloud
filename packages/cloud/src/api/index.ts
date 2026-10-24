@@ -26,6 +26,7 @@ import adminAiQuotaRoutes from "./admin-ai-quotas";
 import adminAiSkillsRoutes from "./admin-ai-skills";
 import adminAiUsageRoutes from "./admin-ai-usage";
 import adminCoreSettingsRoutes from "./admin-core-settings";
+import adminDirectorySharesRoutes from "./admin-directory-shares";
 import adminGeoRoutes from "./admin-geo";
 import adminGeoIpRoutes from "./admin-geoip";
 import adminIdentityRoutes from "./admin-identity";
@@ -98,6 +99,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/admin/core/linux-identities", adminLinuxIdentityRoutes)
     .route("/admin/core/geoip", adminGeoIpRoutes)
     .route("/admin/core/geo", adminGeoRoutes)
+    .route("/admin/identity/directory-shares", adminDirectorySharesRoutes)
     .route("/admin/identity", adminIdentityRoutes)
     .route("/admin/sync", createSyncOpsProxyRoutes())
     .route("/admin/lifecycle", adminLifecycleRoutes)
@@ -126,6 +128,7 @@ export const createCoreApiRouter = (options: CoreApiOptions) => {
   return { api };
 };
 
+export { createAppAccessRoutes } from "./app-access";
 export {
   CLOUD_MCP_PATH,
   CLOUD_MCP_PROTECTED_RESOURCE_PATH,
@@ -134,5 +137,4 @@ export {
   createMcpRoutes,
   publicCloudOrigin,
 } from "./mcp";
-
 export { resolveCloudResourceHref } from "./resource-links";

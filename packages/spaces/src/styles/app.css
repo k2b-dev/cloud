@@ -112,7 +112,7 @@
 .spaces-pwa { display: flex; max-width: 32rem; flex-direction: column; gap: 1rem; margin: 0 auto; }
 .spaces-pwa__count { color: var(--k2b-text-muted); font-variant-numeric: tabular-nums; }
 .spaces-pwa__list { display: flex; flex-direction: column; gap: .25rem; margin: 0; padding: 0; list-style: none; }
-.spaces-pwa__row { display: grid; min-width: 0; grid-template-columns: 2.75rem minmax(0, 1fr); align-items: center; gap: .5rem; padding: .5rem 0; }
+.spaces-pwa__row { display: grid; min-width: 0; grid-template-columns: 2.75rem minmax(0, 1fr); align-items: center; gap: .5rem; }
 /* The shared stylesheet loads after this one, so the circle outranks the icon button's size, font, and colour. */
 .k2b-ui .k2b-icon-button.spaces-pwa__check { width: 2.75rem; height: 2.75rem; border-radius: 999px; }
 .k2b-ui .spaces-pwa__check i { color: var(--k2b-text-muted); font-size: 1.5rem; }
@@ -126,6 +126,59 @@
 .spaces-pwa__when[data-overdue] { color: var(--k2b-danger-text); }
 .spaces-pwa__dot { width: .5rem; height: .5rem; flex: none; border-radius: 999px; }
 .spaces-pwa__more { margin: 0; color: var(--k2b-text-muted); font-size: .875rem; line-height: 1.25rem; text-align: center; }
+/* A row opens its task: the whole copy is the target, the check button stays its own. The open task's row carries the
+   selection fill; hover and press only paint, so nothing moves. */
+.spaces-pwa__row { padding: 0; border-radius: .625rem; }
+.spaces-pwa__row > .spaces-pwa__copy { min-height: 3.5rem; justify-content: center; padding: .5rem .5rem .5rem 0; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.spaces-pwa__row[aria-current="true"] { background: var(--k2b-row-selected); }
+.spaces-pwa__row:has(> .spaces-pwa__copy:active) { background: color-mix(in srgb, var(--k2b-text) 8%, transparent); }
+.spaces-pwa__copy:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); border-radius: .625rem; }
+@media (hover: hover) { .spaces-pwa__row:not([aria-current="true"]):has(> .spaces-pwa__copy:hover) { background: var(--k2b-app-workspace-hover); } }
+.spaces-pwa__dot--head { width: .625rem; height: .625rem; }
+/* Beside the task the list uses its whole column. */
+@container k2b-app-area (min-width: 64rem) { .spaces-pwa-workspace .spaces-pwa { max-width: none; } }
+
+/* One task: a column of at most 44 rem; on a wide screen its head lines up with it. Rows below the title start where
+   the title does, after the 2.75 rem check. */
+@container k2b-app-area (min-width: 64rem) {
+  .k2b-ui .spaces-pwa-workspace [data-workspace-main-region="task"] > .k2b-app-workspace__level-head { padding-inline: max(1.25rem, calc((100% - 44rem) / 2)); }
+}
+.spaces-pwa-task { display: flex; width: 100%; max-width: 44rem; flex-direction: column; gap: 1.5rem; margin: 0 auto; }
+.spaces-pwa-task__title { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr); align-items: start; gap: .5rem; }
+.spaces-pwa-task__title h3 { margin: 0; padding-top: .5625rem; font-size: 1.125rem; font-weight: 600; line-height: 1.625rem; overflow-wrap: anywhere; }
+.spaces-pwa-task__title[data-done] h3 { color: var(--k2b-text-muted); }
+.k2b-ui .spaces-pwa-task__title .spaces-pwa__check[aria-pressed="true"] i { color: var(--k2b-success-text); }
+.spaces-pwa-task__note { display: flex; gap: .5rem; align-items: flex-start; margin: 0; padding-left: 3.25rem; color: var(--k2b-text-secondary); font-size: .875rem; line-height: 1.25rem; }
+.spaces-pwa-task__note i { color: var(--k2b-text-muted); font-size: 1.125rem; }
+.spaces-pwa-task__props { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: .625rem 1rem; margin: 0; padding-left: 3.25rem; }
+.spaces-pwa-task__props dt { color: var(--k2b-text-muted); font-size: .875rem; line-height: 1.5rem; }
+.spaces-pwa-task__props dd { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0; line-height: 1.5rem; }
+.spaces-pwa-task__props dd > i { color: var(--k2b-text-muted); }
+.spaces-pwa-task__props dd[data-overdue] { color: var(--k2b-danger-text); }
+.spaces-pwa-task__props dd[data-overdue] > i { color: var(--k2b-danger-text); }
+.spaces-pwa-task__avatars { display: inline-flex; }
+.spaces-pwa-task__avatars > * + * { margin-left: -.375rem; }
+.spaces-pwa-task__section { display: flex; flex-direction: column; gap: .375rem; padding-left: 3.25rem; }
+.spaces-pwa-task__section h4 { display: flex; min-height: 1.5rem; align-items: center; gap: .5rem; margin: 0; font-size: 1rem; font-weight: 600; }
+.spaces-pwa-task__aside { display: inline-flex; align-items: center; gap: .375rem; margin-left: auto; color: var(--k2b-text-muted); font-size: .875rem; font-weight: 400; font-variant-numeric: tabular-nums; }
+.spaces-pwa-task__aside[data-tone="danger"] { color: var(--k2b-danger-text); }
+.spaces-pwa-task__quiet { margin: 0; padding-left: 3.25rem; color: var(--k2b-text-muted); font-size: .875rem; }
+.spaces-pwa-task__checklist { margin: 0; padding: 0; list-style: none; }
+/* Each item: the box centred in a 2.75 rem column, the label, and a slot at the end that keeps its place for the
+   spinner or Retry. */
+.spaces-pwa-task__checklist li { display: grid; min-height: 44px; grid-template-columns: minmax(0, 1fr) 2.75rem; align-items: center; }
+.k2b-ui .spaces-pwa-task__checklist .k2b-check { min-height: 44px; align-items: center; gap: .5rem; }
+.k2b-ui .spaces-pwa-task__checklist .k2b-check__control { width: 1.375rem; height: 1.375rem; margin: 0 .6875rem; border-radius: .375rem; font-size: .9375rem; }
+.k2b-ui .spaces-pwa-task__checklist .k2b-check__label { font-size: 1rem; font-weight: 400; line-height: 1.5rem; }
+.spaces-pwa-task__checklist li[data-done] .k2b-check__label { color: var(--k2b-text-muted); }
+.spaces-pwa-task__section:has(> .spaces-pwa-task__checklist) { gap: 0; }
+.spaces-pwa-task__slot { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; color: var(--k2b-text-muted); }
+.k2b-ui .spaces-pwa-task__retry { width: 2.75rem; height: 2.75rem; color: var(--k2b-danger-text); }
+.spaces-pwa-task__sk { height: .875rem; margin: .9rem 0; width: 70%; }
+.spaces-pwa-task__sk--wide { width: 92%; margin: .25rem 0; }
+.spaces-pwa-task__sk--short { width: 48%; }
+.spaces-pwa-task__sk--title { height: 1.25rem; width: 60%; margin: .5625rem 0 1rem 3.25rem; }
+.spaces-pwa-task__foot { padding-left: 3.25rem; }
 
 /* A Kanban card's footer lets the pointer through to the card link; only the reaction chips and "Add reaction" catch it.
    "+n" stays text the pointer passes, so a click on it opens the item like the rest of the card. */

@@ -2,6 +2,7 @@ import { afterEach, beforeAll, expect, setDefaultTimeout, setSystemTime, test } 
 import { accounts, notifications, serviceAccountCredentials, serviceAccounts, toPgUuidArray } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { app } from "../config";
@@ -42,7 +43,7 @@ afterEach(async () => {
 const requestToken = (token: string, path: string, method = "GET", body?: unknown) =>
   api.request(path, {
     method,
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
 

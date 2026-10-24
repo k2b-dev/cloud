@@ -33,7 +33,12 @@ export const lastMessageLine = (conversation: z.infer<typeof ConversationSchema>
   const t = chatMessages.resolve([locale]).t;
   const message = conversation.lastMessage;
   if (!message) return t.noMessagesYet;
-  if (message.author.id === viewerId) return t.ownPreview({ text: message.preview });
-  if (conversation.memberCount <= 2) return message.preview;
-  return t.senderPreview({ name: message.author.name.trim().split(/\s+/u)[0] ?? "", text: message.preview });
+  const line =
+    message.author.id === viewerId
+      ? t.ownPreview({ text: message.preview })
+      : conversation.memberCount <= 2
+        ? message.preview
+        : t.senderPreview({ name: message.author.name.trim().split(/\s+/u)[0] ?? "", text: message.preview });
+  // In a chat with threads, the preview names the thread first: "Problems · Jonas: Done".
+  return conversation.threads > 0 && message.thread ? t.threadPreview({ thread: message.thread.name, line }) : line;
 };

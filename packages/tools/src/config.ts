@@ -1,8 +1,34 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 import { germanToolSearchDescriptions, germanToolSearchLabels, toolSearchLinks } from "./search-links";
 
 export const app = defineApp({
   id: "tools",
+  access: appAccess.signedIn({
+    publicRoutes: [
+      "/tools",
+      "/tools/mailto",
+      "/tools/qr",
+      "/tools/encoding",
+      "/tools/uuid",
+      "/tools/hash",
+      "/tools/lorem",
+      "/tools/color",
+      "/tools/image-converter",
+      "/tools/image",
+      "/tools/encryption",
+      "/tools/password",
+      "/tools/speedtest",
+      "/tools/webhooks",
+      "/tools/api/speedtest/ping",
+      "/tools/api/speedtest/download",
+      "/tools/api/speedtest/upload",
+      "/tools/api/speedtest/cli",
+      "/tools/api/speedtest/cli.py",
+      "/tools/api/webhooks/receive/:token",
+      "/tools/api/webhooks/receive/:token/*",
+      "/tools/api/openapi.json",
+    ],
+  }),
   cli: { tools: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Tools",
   icon: "ti ti-tools",
