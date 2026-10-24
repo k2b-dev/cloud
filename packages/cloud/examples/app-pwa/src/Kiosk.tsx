@@ -215,7 +215,7 @@ export default function Kiosk(props: { initial: KioskSnapshot; api: KioskApi }) 
   };
   const recover = () => (endingAttempt ? void end() : completionConfirmed ? setState("completed") : void refresh());
   const openScanner = () => {
-    resetInk();
+    conceal();
     setNotice("");
     setState("scanning");
   };

@@ -75,3 +75,8 @@ customer and employee flows, camera failure, response loss, stale responses,
 and light/dark phone and iPad layouts. Browser automation cannot establish
 Safari installation, Apple Pencil behavior, or storage separation on a real
 iPad. Check those on the intended device before using the flow with real data.
+
+Inside `authorizeStaff`, resolve the employee with
+`accounts.users.get({ id: signIn.userId }, { db: tx })` before calling
+`canUseApp(..., { db: tx })`. The optional `db` keeps the account and role-setting
+reads on the supplied transaction, including with a one-connection pool.

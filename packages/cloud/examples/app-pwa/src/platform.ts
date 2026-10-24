@@ -15,7 +15,7 @@ export function createExamplePwa(publicOrigin: string) {
       // The platform already locked and validated this exact web session family.
       // Resolve the real user; never manufacture roles or an employee actor from
       // an iPad credential. App grants are read using the supplied transaction.
-      const user = await accounts.users.get({ id: signIn.userId });
+      const user = await accounts.users.get({ id: signIn.userId }, { db: tx });
       return Boolean(
         user &&
           (await canUseApp(

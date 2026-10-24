@@ -4,7 +4,7 @@ import { freeipa } from "../../server/services";
 import { createAuthLoginUrl } from "../../shared/redirect";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import type { AuditActor } from "../audit";
-import { getFreeIpaConfig } from "../freeipa-config";
+import { getFreeIpaAdminGroups, getFreeIpaConfig } from "../freeipa-config";
 import { getServiceIpaSession } from "../ipa/service-account";
 import { toPgTextArray, toPgUuidArray } from "../postgres";
 import { providers } from "../providers";
@@ -168,11 +168,12 @@ const buildUser = (row: DbRow, groupsAdmin: string[]): User => {
   };
 };
 
-export const get = async (params: { id: string } | { uid: string }): Promise<User | null> => {
-  const whereClause = "id" in params ? sql`u.id = ${params.id}` : sql`u.uid = ${params.uid}`;
-  const userIdExpr = "id" in params ? sql`${params.id}` : sql`u.id`;
-  const { groupsAdmin } = await getFreeIpaConfig();
-  const rows = await sql<DbRow[]>`
+export const get = async (params: { id: string } | { uid: string }, options: { db?: SQL } = {}): Promise<User | null> => {
+  const db = options.db ?? sql;
+  const whereClause = "id" in params ? db`u.id = ${params.id}` : db`u.uid = ${params.uid}`;
+  const userIdExpr = "id" in params ? db`${params.id}` : db`u.id`;
+  const groupsAdmin = options.db ? await getFreeIpaAdminGroups(db) : (await getFreeIpaConfig()).groupsAdmin;
+  const rows = await db<DbRow[]>`
     SELECT u.*,
       ${userIpaDataColumns()},
       CASE

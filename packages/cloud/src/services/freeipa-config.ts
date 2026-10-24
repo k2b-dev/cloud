@@ -1,6 +1,8 @@
 import { X509Certificate } from "node:crypto";
+import type { SQL } from "bun";
 import { setFreeIpaTlsResolver } from "../server/services/freeipa/tls";
 import { coreSettings } from "./settings/api";
+import { readKeyState, SettingUnreadableError } from "./settings/store";
 
 const MAX_CA_CERT_BYTES = 256 * 1024;
 const PEM_CERTIFICATE_PATTERN = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
@@ -80,6 +82,13 @@ const normalizeStringList = (value: unknown, fallback: string[] = []): string[] 
   if (!Array.isArray(value)) return fallback;
   const normalized = value.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean);
   return normalized.length > 0 ? normalized : fallback;
+};
+
+/** Read the role mapping on the caller's connection during authorization. */
+export const getFreeIpaAdminGroups = async (db: SQL): Promise<string[]> => {
+  const state = await readKeyState("freeipa.groups.admin", db);
+  if (state.stored === "unreadable") throw new SettingUnreadableError("freeipa.groups.admin");
+  return normalizeStringList(state.value, ["admins"]);
 };
 
 /**

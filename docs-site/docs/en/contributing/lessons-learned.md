@@ -23,6 +23,8 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Nested database reads escape a reserved transaction | Authorization waits for a second connection or sees an older snapshot. | Test: `users.transaction.integration.test.ts` resolves an uncommitted user with a one-connection pool. |
+| A passive read outlives a newer view action | A delayed status response closes a scanner opened after the poll began. | Test: App-PWA browser regression holds a poll, opens the scanner and delivers the obsolete response. |
 | A stale poll overwrites a newer action | A late device status replaces the next pairing and discards its QR. | Test: the App-PWA example `Staff.test.ts` delays device A, issues B, delivers A and then confirms B; only B may clear its QR. |
 | A focused fixture performs unrelated startup or expensive data preparation | Route tests spend their budget importing unrelated services or compressing fixtures at maximum quality. | Tests: Gateway App-PWA routing fixtures isolate configuration/audit modules; the Brotli response fixture uses quality 4 while retaining original timeout bounds and response assertions. |
 | Transaction adapter loses driver execution semantics | Lazy query arrays are returned without executing their writes. | Test: App-PWA savepoint unit and integration guards cover array execution and rollback. |
@@ -1061,6 +1063,13 @@ convention still needs a check or a test.
 - **Root cause:** The route selected a script using its frame’s current URL, which can still be the initial URL while the new document loads.
 - **Error class:** A test gate depends on navigation timing instead of the resource it holds.
 - **Guard:** The fixture marks runtime script URLs by provider; the test holds the Assistant URL unconditionally and asserts interception before checking that the panel is not ready.
+
+### Keep authorization and UI reads inside their active scope
+
+- **What happened:** Example staff authorization could wait for a second pool connection; a late passive poll could close a newly opened scanner.
+- **Root cause:** Account reads escaped the supplied transaction, and opening the scanner left the previous read generation valid.
+- **Error classes:** Nested database reads escape a reserved transaction; a passive read outlives a newer view action.
+- **Guards:** The account integration test uses a one-connection transaction with an uncommitted user. The browser test delivers a held poll after opening the scanner and requires the camera to remain open.
 
 ## Add a lesson
 

@@ -117,7 +117,9 @@ discard unsaved ink; customer content is fetched again only after validation.
 ## Reuse the public seams
 
 - `src/platform.ts` configures the closed router and repeats real app access
-  checks for every staff action. The signed-in app policy explicitly exempts
+  checks for every staff action. User and role-setting reads use
+  `accounts.users.get({ id: signIn.userId }, { db: tx })` on the supplied
+  transaction, so authorization never waits for a second pool connection. The signed-in app policy explicitly exempts
   only the counter surface. Guest HTTP requests enter the closed router before
   application authentication and never fall back to an employee identity.
 - `src/domain.ts` owns the visit subject and the customer, payment, document

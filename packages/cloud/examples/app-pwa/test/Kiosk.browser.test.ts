@@ -317,6 +317,38 @@ for (const width of [390, 768])
         await page.close();
       }
     });
+    test("opening the scanner invalidates a pending passive poll", async () => {
+      const { page } = await setup(width, "neutral=1");
+      const held = Promise.withResolvers<void>();
+      const entered = Promise.withResolvers<void>();
+      const delivered = Promise.withResolvers<void>();
+      try {
+        await page.evaluate(() =>
+          Object.defineProperty(navigator, "mediaDevices", {
+            configurable: true,
+            value: { getUserMedia: async () => new MediaStream() },
+          }),
+        );
+        await page.route("**/fixture/snapshot", async (route) => {
+          entered.resolve();
+          await held.promise;
+          await route.fulfill({ json: fixtureSnapshot() }).catch(() => {});
+          delivered.resolve();
+        });
+        await page.clock.runFor(2_000);
+        await entered.promise;
+        await page.getByRole("button", { name: "QR scannen", exact: true }).click();
+        await page.locator(".k2b-qr-scanner").waitFor();
+        held.resolve();
+        await delivered.promise;
+        await settled(page);
+        expect(await page.locator(".k2b-qr-scanner").count()).toBe(1);
+        expect(await page.locator("body").innerText()).not.toContain("Lea Muster");
+      } finally {
+        held.resolve();
+        await page.close();
+      }
+    });
     test("stale read after pagehide cannot reveal old customer data; BFCache returns a fresh customer", async () => {
       const { page, state } = await setup(width);
       let release: (() => void) | undefined;
