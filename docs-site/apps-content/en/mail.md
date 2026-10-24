@@ -456,12 +456,21 @@ run again. After a retry backfill, the automation menu in Mail settings offers
 **Retry failed messages** to continue with another retry. **Automations >
 Activity** shows how the new runs ended.
 
+When a new message first saves as a draft, the editor keeps focus and the cursor
+stays in place. If your Cloud sign-in expires, the composer keeps your text and
+shows **Sign in again**. That action returns to the same draft after sign-in
+and restores unsaved changes kept in this browser.
+
 ## Write signatures and snippets
 
 The composer shows **Signature** below your text when a signature is available.
 New messages, replies, and forwards start with the sender's default; a personal
 default takes precedence over the mailbox default. Choose another signature or
 **No signature**. Switching the sender switches to that sender's default.
+
+Tables in formatted messages also have readable columns and rows in the
+plain-text alternative. Links keep their destinations. Plain-format signatures
+and snippets preserve their table structure too.
 
 Signatures stay separate from the editable text. Preview and the sent message
 show the signature after your text. When you write above a quoted reply or a
@@ -567,6 +576,24 @@ cld mail admin contact-directory set --app crm --suggest customer.suggest --reso
 cld mail admin contact-directory reset --yes
 ```
 
+If Mail cannot read a saved directory setting, the dialog lists that setting
+under **Stored settings cannot be read**. Select **Replace stored value** only
+for values you want to replace. Unselected unreadable settings stay in storage;
+failed saves keep the dialog, draft, and replacement choices open.
+
+A directory update locks the mapping, reads its current values, validates the
+combined provider and functions, and commits all supplied settings together.
+Concurrent partial updates cannot combine functions from different providers.
+If a value becomes
+unreadable while the dialog is open, its replacement checkbox appears after
+the rejected save; the draft and existing selections remain available.
+
+`show --json` includes `unreadable` by setting name. `set` preserves omitted
+functions when the app stays the same. Replacing a supplied unreadable value
+requires `--replace-unreadable`; `reset` needs that flag as well when defaults
+would replace unreadable values. API updates may omit unchanged fields and
+accept `replaceUnreadable` as an array of the supplied setting names.
+
 | Setting | Default | Required |
 | --- | --- | --- |
 | `mail.contact_directory.app` | `contacts` | Yes |
@@ -588,8 +615,10 @@ Recipient fields still offer mailbox addresses.
 
 ### Mailbox recipient suggestions
 
-While you type in **To**, **Cc**, or **Bcc**, contact-directory suggestions come
-first. Addresses known from this mailbox follow, marked with a mail icon.
+While you type in **To**, **Cc**, or **Bcc**, addresses from the mailbox appear
+as soon as they arrive, marked with a mail icon. Contact-directory suggestions
+join them when ready and appear first; a slow or failed source does not delay
+the other source. Your highlighted address stays selected when results arrive.
 They work without the Contacts app. Duplicate addresses appear once. The arrow
 keys highlight a suggestion and Enter adds it.
 

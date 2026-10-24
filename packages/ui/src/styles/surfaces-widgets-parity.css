@@ -420,6 +420,20 @@
 }
 .k2b-ui :is(.k2b-notice-card__head, .k2b-notice-card__title) + :is(.k2b-notice-card__description, .k2b-notice-card__body) { margin-top: 0.25rem; }
 .k2b-ui .k2b-notice-card__description + .k2b-notice-card__body { margin-top: 0.75rem; }
+/* An icon turns a notice into a compact status line above a form or list: an
+   18px tone icon on the first text line, text in the tone colour, the control
+   radius and tighter padding. */
+.k2b-ui .k2b-notice-card[data-icon] {
+  display: grid;
+  grid-template-columns: 1.125rem minmax(0, 1fr);
+  column-gap: 0.625rem;
+  align-items: start;
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-notice-ink);
+}
+.k2b-ui .k2b-notice-card[data-icon] .k2b-notice-card__title { color: inherit; }
+.k2b-ui .k2b-notice-card__icon { display: flex; height: 1.375rem; align-items: center; color: var(--k2b-notice-ink); font-size: 1.125rem; }
 /* Markdown callouts add a decorative type icon and a title in the tone colour.
    The icon scales with the reading size and sits centred on the first text
    line, so it adds no height. */

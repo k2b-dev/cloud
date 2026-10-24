@@ -35,8 +35,8 @@ never from Query input. Inputs are strict: unknown fields are refused.
 | `address.reverse` | `point` | One `address` and `provenance` |
 | `place.search` | `categories` (1–5), exactly one of `near`, `area`, or `along`; optional `limit` (1–20, default 20) | `places` and `provenance` |
 | `map.style` | Optional `theme` (`light` or `dark`) | Same-origin `styleUrl` and attribution links |
-| `route.calculate` | `{ plan }`: 2–26 stops, route/per-leg options, optional optimization and reference-distance allowance | A self-contained `route` with resolved stops, independent legs, meters, seconds, polyline6, and provenance |
-| `route.update` | `{ route, changes, distanceAllowanceMeters? }` | Proposed `route`, `before`, `after`, `delta`, and optional insertion details |
+| `route.calculate` | `{ plan }`: 2–26 stops, route/per-leg options, optional optimization | A self-contained `route` with resolved stops, independent legs, meters, seconds, polyline6, and provenance |
+| `route.update` | `{ route, changes }` | Proposed `route`, `before`, `after`, `delta`, and optional insertion details |
 | `geo.availability` | `{}` | `configured`, `person` and `cloud`; each balance has `exhausted` and `resetsAt` |
 
 Autocomplete `type` accepts `country`, `state`, `city`, `postcode`, `street`,
@@ -133,7 +133,6 @@ const result = await geoClient.calculateRoute({
       { id: "B", address: { text: "Example Street 8, Example City" } },
     ],
     options: { mode: "car", avoid: ["highways"] },
-    distanceAllowanceMeters: 500_000,
   },
 }, caller);
 ```
@@ -155,7 +154,7 @@ defaults while keeping the first and last fixed. Core then applies overrides
 to the outgoing leg of each departure stop. Thus the optimized order is based
 on defaults, rather than a mixed-mode optimization objective.
 
-Save the entire returned `route`, including stops, legs, options, allowance,
+Save the entire returned `route`, including stops, legs, options,
 input hash, and provenance. Core stores no route. Each leg and the full route
 carry `polyline6`; geometry is simplified with a reported conservative
 `simplificationToleranceMeters` until the result fits the 256 KiB capability
@@ -178,21 +177,27 @@ minus before). The caller chooses whether to save the proposal. Insertion
 also returns `afterStopId`, `candidateGaps`, and `exhaustive`; when there are
 more than three gaps, its geographic shortlist can miss the globally best gap.
 
-### Set a reference-distance allowance
+### Reserve estimated routing costs
 
-`plan.distanceAllowanceMeters` defaults to **500,000 meters per leg**. Updates
-inherit the route's allowance; pass `distanceAllowanceMeters` alongside
-`route` and `changes` to choose a new one. The allowance is multiplied by the
-number of legs in each provider request when reserving that request's cost.
-A known straight-line distance already above the per-leg allowance is refused
-before any provider call. Optimization instead checks an order-independent
-minimum-spanning-tree distance bound against the total allowance; input
-adjacency is discarded. After address resolution, Core repeats the applicable
-checks before routing and validates replacement legs in the optimized order.
+This is a **technical refinement of the hard budget limit**: Cloud reserves
+conservatively before every call; Geoapify does not guarantee a cap on its side.
+There is no selectable distance allowance. For each leg, Core estimates road
+distance as straight-line distance × **2.0**. This fixed factor is Cloud's
+technical policy, not a measured maximum detour or a provider guarantee.
+Current fixtures are synthetic; no measured Geoapify route has validated it.
 
-Core reserves the full chain atomically before the first provider call,
-including unresolved geocodes, every insertion candidate, optimization, and
-any per-leg replacements. Conservative reference pricing is:
+Core reserves the full chain atomically before the first paid call, including
+geocoding, insertion candidates, optimization and replacement legs. Unknown
+address pairs use the maximum great-circle distance on Earth before applying
+the factor. This can require a large reservation: select autocomplete results
+with coordinates first when a request cannot fit the budget. Optimizing uses
+the greatest pair distance among the stops for each possible leg, so changing
+the order cannot invalidate admission. Insertion reserves the most expensive
+three possible candidates. After resolution, each call uses its resolved
+coordinates for the estimate and overrun check.
+
+Reference pricing retains Geoapify's distance bands; these are a pricing
+formula, not a fixed reservation distance:
 
 ```text
 base = pairs + avoid preferences
@@ -201,36 +206,28 @@ if optimizing at least 4 stops:
 reference credits = base * max(1, ceil(distance meters / 500000))
 ```
 
-If the entire reservation exceeds either configured total budget, Core returns
+If the reservation exceeds a configured total budget, Core returns
 `GEO_LIMIT_EXCEEDED` with `limit: "reservationCredits"`, `actual`, and `max`
-in credits. A reset cannot resolve this error. Choose a smaller allowance that
-still covers the route, reduce the request, or ask an administrator to increase
-the budget. With the default 300-credit person budget, 26 stops at the default
-allowance need 625 credits, and optimizing eight stops needs 301 credits.
+in credits. Reduce the plan or ask an administrator to review the budget;
+a reset cannot raise the total limit. Insufficient remaining budget returns
+`GEO_BUDGET_EXHAUSTED` with `requiredCredits`, `availableCredits`, and
+`shortfallCredits`. Both refusals occur before paid work.
 
-Reservation uses the chosen allowance; settlement uses actual returned route
-distance. This is an explicit reference-accounting assumption because the
-provider's published distance-pricing examples differ. Geoapify documents no
-car/bike road-distance ceiling or request parameter that enforces this
-allowance. Straight-line distance is only a lower bound. **The allowance is
-not a guaranteed limit on the provider's bill.**
-
-If actual distance exceeds the request's allowance, Core returns
+If the actual reference cost exceeds the call's estimate, Core returns
 `GEO_COST_OVERRUN`, stops later paid steps, and never retries automatically.
-It debits all known reference costs, even beyond the reservation. Counters can
-therefore exceed the budget; further reservations are refused until reset or
-an operator changes the budget. Unknown costs stay charged at their reserved
-amount. Inspect `costs` before choosing a larger allowance and trying again.
+Known costs are charged even beyond the reservation; unknown costs remain
+charged at their reserved amount. Further admissions see those costs. The
+administration page shows this month's overrun count; the audit event
+`core.geo.route_cost_overrun` records numerical costs without addresses.
+Review these costs before retrying. A greater distance within the same pricing
+band is not a cost overrun. Valid paid responses are cached, including overruns;
+reusing them costs zero, but the chain still requires budget admission.
+
 Routing responses are limited to **26 × 256 KiB** before decoding and
 compacted to the public 256 KiB result budget. Core requests JSON geometry
-without redundant encoded-provider polylines. This byte limit is independent
-of the distance allowance: dense or very long routes can exceed it, fail with
-`GEO_PROVIDER_FAILED`, and retain their reserved charge as unknown. No practical
-road-distance ceiling can be inferred from this limit. Split a large plan
-before retrying; real response density has not been verified live.
-
-Valid paid responses are cached even on overrun. Reusing them costs zero, but
-a retry still requires whole-chain admission; exhausted budgets block it.
+without redundant encoded-provider polylines. Dense or very long routes can
+exceed this byte limit, fail with `GEO_PROVIDER_FAILED`, and retain their
+reserved charge as unknown. This does not imply a road-distance ceiling.
 
 ## Handle budgets and errors
 
@@ -240,8 +237,7 @@ credit per started 20 requested results, including empty or shorter responses.
 With the current 20-result limit, a place search costs one credit.
 
 Core reserves address/place costs before calling the provider and settles the
-reference cost afterward. Routing reserves against the explicit distance
-allowance described above. A complete result served from cache costs zero and creates no ledger write.
+reference cost afterward. Routing reserves against the distance estimate described above. A complete result served from cache costs zero and creates no ledger write.
 The defaults are **90,000 credits per Cloud calendar month** and **300 per
 access subject per day**. Both periods use `app.timezone`, including daylight
 saving changes. Agents and service accounts count like people. Delegated
@@ -279,7 +275,7 @@ structured `details`:
 | `GEO_ADDRESS_NOT_FOUND` | Refine the address, city, or country. |
 | `GEO_ADDRESS_AMBIGUOUS` | Up to 5 `candidates`; ask the person to choose or refine the address. |
 | `GEO_NO_ROUTE` | Adjust stops or mode; no connected route was found. Completed steps remain charged. |
-| `GEO_COST_OVERRUN` | `distanceAllowanceMeters`, `actualDistanceMeters`, and `costs`; later paid steps stopped. Known costs were charged beyond the reservation when necessary. Review spend before increasing the allowance and trying again. |
+| `GEO_COST_OVERRUN` | `estimatedDistanceMeters`, `actualDistanceMeters`, `reservedCredits`, `actualCredits`, and `costs`; later paid steps stopped. Known costs were charged beyond the reservation when necessary. Review spend and the audit log before retrying. |
 | `GEO_PROVIDER_FAILED` | `costs: { settledCredits, unknownCredits }`; check known and uncertain spend before retrying. `adminHint` identifies an operator recovery step. On failed ledger settlement, `costs` reports the original reservation as unknown, while optional `accounting: { reservationCredits, knownReferenceCredits, unknownReferenceCredits }` exposes the costs that need reconciliation; no uncommitted overrun is claimed as settled. |
 
 Provider 429 errors also carry costs after a paid request. Provider bodies and
@@ -297,7 +293,7 @@ and `write` to change.
 | Request | Effect |
 | --- | --- |
 | `GET /` | Key state (`none`, `set`, `unreadable`) with when and by whom it was set, the plan, the budgets, the plan table, and `app.timezone`. Never the key. |
-| `GET /usage` | This month and today in credits, the share per function (`tiles`, `places`, `route`, `address`), and how many access subjects reached their daily limit today. |
+| `GET /usage` | This month and today in credits, the share per function (`tiles`, `places`, `route`, `address`), how many access subjects reached their daily limit today, and this month's `routeCostOverruns` count. |
 | `PUT /key` `{ apiKey }` | Checks the key with one reverse-geocoding lookup at the EU endpoint, then stores it. A refusal (`422 geo_key_rejected`) or an unreachable provider (`502 geo_key_unverified`) stores nothing; the previous key stays active. `400 geo_key_missing` or `geo_key_malformed` stop before the provider is called. |
 | `DELETE /key` | Removes the key; maps, place search, and address suggestions turn off for everyone. |
 | `PUT /budget` | Saves `plan`, `monthlyCredits`, and `personDailyCredits` (plus `customRps` and `customDailyCredits` for the custom plan) together. Each field must be a whole number within the setting's bounds, and the daily limit at most the monthly budget. A refusal returns `400 geo_budget_invalid` with a code per field and changes nothing. |

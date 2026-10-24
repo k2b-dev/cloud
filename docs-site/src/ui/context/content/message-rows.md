@@ -14,8 +14,8 @@ Every part of a row has its final height when it mounts, so the rows compose
 with [`VirtualFeed`](/en/ui/content/virtual-feed) and the feed keeps its
 positions. The application owns the messages, their order, sending, read
 state, reactions, threads, uploads, and every action. The rows own layout, the
-safe text rendering, the reserved areas, the send state, and the action
-toolbar.
+safe text rendering, the reserved areas, the send state, and the message
+menu.
 
 ## Import
 
@@ -29,6 +29,7 @@ import {
   type MessageRowAuthor,
   type MessageRowFile,
   type MessageRowMedia,
+  type MessageRowOrigin,
   type MessageRowProgress,
   type MessageRowProps,
   type MessageRowQuote,
@@ -98,7 +99,9 @@ collapsed again.
 
 - `"pending"`: a clock and "Sending";
 - `"sent"`: a check;
-- `"failed"`: "Not sent" and, with `onRetry`, a "Retry" button.
+- `"failed"`: "Not sent" and, with `onRetry`, a "Retry" button; with
+  `onDiscard`, a "Discard" button beside it, so both answers to the failure
+  sit where it shows, also on a touch screen.
 
 `receipt` replaces the check with the application's text, such as "Read by
 Nora, Tobias"; it ends in an ellipsis when it is too long. The line exists
@@ -127,10 +130,14 @@ const send = async (message: ChatMessage) => {
 
 ### Quotes, forwards, and edits
 
-`quote` shows the message this one answers above the bubble: a reply arrow,
-the quoted author's name, and the quoted text, at most two lines. Pass the
-quoted text as plain text. With `onSelect`, the quote is a button, for example
-to jump to the quoted message with `VirtualFeed`'s `scrollToKey`.
+`quote` shows the message this one answers at the top of the bubble, on a
+quiet tint without a bar or border: the quoted author's name in the accent
+color, then the quoted text, at most two lines. In the reader's own tinted
+bubble the tint is light. A message without a bubble, such as pictures alone,
+shows the quote in the bubble's place. Pass the quoted text as plain text, and
+a short text such as "Message deleted" when the original is gone. With
+`onSelect`, the quote is a button, for example to jump to the quoted message
+with `VirtualFeed`'s `scrollToKey` and its `highlight`.
 
 `forwarded` adds a "Forwarded" line above the bubble. `edited` ends the last
 paragraph of the text with a quiet "edited", so it takes no line of its own
@@ -245,6 +252,15 @@ and "Last reply" with the application's formatted `lastReply` time; a long
 time ends in an ellipsis. Pass `thread` from the first reply on. The first
 reply adds the bar like a new line; every later reply only changes its text.
 
+### Origin
+
+`origin` names where a message belongs, as a quiet chip of fixed height under
+it: a `label`, an optional `icon`, and, with `onSelect`, a button that opens
+that place. Use it where messages from several places mix, such as the
+threads of a chat in one timeline. `selectLabel` gives the button a fuller
+name, such as "Open thread Updates". Pass it from the row's first render, so
+it never adds a line later.
+
 ### Messages in progress
 
 `progress` marks a message that is still being written, by a person or an
@@ -286,27 +302,44 @@ const stream = (id: string, token: string) =>
 
 ### Actions
 
-`actions` are icon buttons with a label each. They appear as a small toolbar
-over the top corner of the row while a mouse or pen rests on it or focus is
-inside it, so they never move anything. On a phone or tablet, the first tap
-on a message focuses its row and shows them without pressing the action under
-the finger. Inside `GestureMenu`, keyboard focus still shows them but a tap
-does not; see Gestures. Keep the list short, about two to four actions.
+`actions` are the message's menu. A quiet "…" without a frame or shadow sits
+beside the bubble's inner side, right of other people's messages and left of
+the reader's own, while a mouse or pen rests on the row or focus is inside it,
+so it never moves anything. Right-click and a long press open the same
+entries: beside the pointer on a desktop and as a
+bottom sheet below 48 rem. The row puts itself into a
+[`GestureMenu`](/en/ui/actions/gestures) for this; do not wrap it in another.
+
+Each entry has a `label` and an `icon`. Use the optional fields for:
+
+- `description`: one quiet sentence below the label that says what happens,
+  for an entry whose effect is not obvious, such as "Mark unread from here".
+- `altClick`: Alt+click (Option+click on Apple devices) on the message runs
+  the entry directly, and the entry shows that shortcut. Clicks on links and
+  controls inside the message keep their own meaning. Give it to one entry.
+- `shortcut`: a key the application handles for the focused message, such
+  as `"r"`; the entry shows it at its end.
+- `gesture`: a swipe or double tap that runs the entry on a touch screen.
+- `immediate`: runs while the tap in the phone sheet still counts as the
+  person's gesture, as clipboard writes require.
+- `variant: "danger"` and `disabled`.
+
+Offer only entries the reader can use: leave out "Reply" without write
+access, and "Mark unread from here" on the reader's own messages, which never
+count as unread. Keep the list short, about two to five entries.
 
 ### Gestures
 
-For a phone, wrap a row in [`GestureMenu`](/en/ui/actions/gestures): swipe
-right to reply, double-tap to react, and a long press that opens the
-message's whole menu as a bottom sheet, each the shortcut of an entry in that
-menu. The row marks its code blocks, link preview, and card with
-`data-gesture-ignore`, so gestures never start there and a code block keeps
-scrolling sideways.
+A long press opens the whole menu, and an entry's `gesture` runs it with a
+swipe or double tap, each the shortcut of an entry in that menu, for example
+swipe right to reply. The row marks its code blocks, link preview, and card
+with `data-gesture-ignore`, so gestures never start there and a code block
+keeps scrolling sideways.
 
-In a wrapped row, a tap leaves the actions hidden: the long press opens the
-whole menu, so pass the actions there as well, and the tap stays free for a
-double tap. Keyboard focus on the article or on the wrapped element still
-shows them. Keep the element in the tab order, so Tab moves from the article
-to it and the Context Menu key or Shift+F10 opens the menu.
+A tap leaves "…" hidden: the long press opens the whole menu, and the tap
+stays free for a double tap. Keyboard focus on the article still shows it. The
+menu adds no tab stop of its own: Tab moves from the article to "…", and Enter
+or Space opens the menu there.
 
 ### Touch screens
 
@@ -332,10 +365,11 @@ The rows render no landmark or `article` themselves. Inside `VirtualFeed`,
 each item is an `article` in a `feed`, with arrow keys between messages. Pass
 `itemLabel` with the author and time so each article has a name. Tab moves from
 a message into its quote, links, code blocks, "Show more", attachments, the
-thread bar, reaction chips, "Add reaction", "Retry" or "Stop", and its actions;
-the toolbar shows while focus is inside the row.
+thread bar, reaction chips, "Add reaction", "Retry" or "Stop", and "…"; "…"
+shows while focus is inside the row.
 
-The quote is read as "In reply to" the author. Reaction chips are toggle
+The quote is read as "In reply to" the author. The menu host is named
+"Message from" the author and time. Reaction chips are toggle
 buttons with `aria-pressed`, named by emoji, count, and `label` ("👍 3
 reactions: Nora, Tobias"), in a group named "Reactions". Read-only chips say
 which are the reader's own instead ("☕ your reaction: Robin", "👍 3
@@ -354,7 +388,8 @@ failed send. Code blocks are focusable so keyboard users can scroll them.
 
 The rows render the same markup on the server and in the browser. They read
 the inherited locale for their own words in English and German: "Sending",
-"Not sent", "Retry", "Show more", "Copy", the label of the toolbar, "In reply
+"Not sent", "Retry", "Discard", "Show more", "Copy", "Message actions", "Message from",
+"Click" in the Alt+click shortcut, "In reply
 to", "Forwarded", "edited", "This message was deleted", "Video", the count of
 hidden pictures, "Reactions", "Add reaction", the reaction counts and "your
 reaction", the reply count, "Last reply", and "Stop". Application text, such

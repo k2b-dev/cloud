@@ -284,7 +284,7 @@ export const createSource = async (params: {
       name,
       endpoint_url,
       bearer_token_encrypted,
-      scrape_interval_seconds, config, expect_every_seconds, expect_daily_by
+      scrape_interval_seconds, config, expect_every_seconds, expect_daily_by, created_by_subject
     )
     VALUES (
       ${shortId},
@@ -294,7 +294,8 @@ export const createSource = async (params: {
       ${endpointUrl},
       ${encryptedBearer},
       ${params.scrapeIntervalSeconds ?? null}, (${JSON.stringify(config.data)}::jsonb #>> '{}')::jsonb,
-      ${expectation.data.expectEverySeconds}, ${expectation.data.expectDailyBy}
+      ${expectation.data.expectEverySeconds}, ${expectation.data.expectDailyBy},
+      ${"subject" in params.user ? `service_account:${params.user.subject.serviceAccountId}` : `user:${params.user.id}`}
     )
     RETURNING *
   `;

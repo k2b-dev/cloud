@@ -347,7 +347,7 @@ describe("cld package plugins", () => {
     expect(update.stderr).toContain(`cld plugins install ${echoBuild}`);
     expect((await runCli(["plugins", "remove", "echo"], dir)).exitCode).toBe(0);
     expect(await readPackagePlugins(root)).toEqual({});
-    expect(await readdir(join(root, "store"))).toEqual([]);
+    expect(await readdir(join(root, "store"))).toEqual([record.digest]);
     expect(await readFile(join(skill, "SKILL.md"), "utf8")).not.toContain("| * | echo |");
     expect(await Bun.file(join(skill, "references", "echo", "1.0.0", "index.md")).exists()).toBe(false);
     expect((await runCli(["plugins", "run", "missing"], dir)).stderr).toContain('Plugin "missing" is not installed.');
@@ -506,11 +506,11 @@ describe("cld package plugins", () => {
     const records = await readPackagePlugins(root);
     expect(Object.keys(records)).toEqual(["other"]);
     expect(await hasStoredPlugin(records.other!.digest, root)).toBe(true);
-    expect(await readdir(join(root, "store"))).toEqual([records.other!.digest]);
+    expect(await readdir(join(root, "store"))).toContain(records.other!.digest);
     expect(await readdir(join(root, ".locks"))).toEqual([]);
   }, 30_000);
 
-  test("store garbage collection waits for the shared packages lock", async () => {
+  test("profile removal preserves published bundles in the shared store", async () => {
     const dir = await tempDir();
     const root = join(dir, "cloud", "cld", "plugins");
     const config = join(dir, "config.json");
@@ -533,10 +533,10 @@ describe("cld package plugins", () => {
     }
     const result = await pending;
     expect(result.exitCode, result.stderr).toBe(0);
-    expect(await stat(unused).catch(() => null)).toBeNull();
+    expect(await stat(unused).catch(() => null)).not.toBeNull();
   }, 30_000);
 
-  test("package changes prune only their previous bundle and preserve another config's locks", async () => {
+  test("package changes retain previous bundles and another config's locks", async () => {
     const dir = await tempDir();
     const root = join(dir, "cloud", "cld", "plugins");
     const configA = join(dir, "a.json");
@@ -552,17 +552,34 @@ describe("cld package plugins", () => {
     const install = await runCli(["plugins", "install", echoBuild, "--yes"], dir, configB);
     expect(install.exitCode, install.stderr).toBe(0);
     const previous = (await readPackagePlugins(root)).echo!;
+    // A pre-existing config can lock exactly the bytes of a package plugin.
+    await writeFile(
+      configA,
+      JSON.stringify({
+        currentProfile: "a",
+        profiles: {
+          a: {
+            plugins: {
+              echo: { app: previous.package, version: previous.version, digest: previous.digest },
+            },
+          },
+        },
+      }),
+    );
     expect(await Bun.file(join(lockedEntry, "cli.js")).exists()).toBe(true);
     const pkg = await packInlinePlugin(join(dir, "echo-v2"), moduleSource("echo"), "@k2b-test/cld-plugin-echo", "2.0.0");
     const replace = await runCli(["plugins", "install", pkg, "--yes"], dir, configB);
     expect(replace.exitCode, replace.stderr).toBe(0);
     const current = (await readPackagePlugins(root)).echo!;
     expect(current.digest).not.toBe(previous.digest);
-    expect((await readdir(join(root, "store"))).sort()).toEqual([lockedDigest, current.digest].sort());
+    expect((await readdir(join(root, "store"))).sort()).toEqual([lockedDigest, previous.digest, current.digest].sort());
     expect(await hasStoredPlugin(current.digest, root)).toBe(true);
     const remove = await runCli(["plugins", "remove", "echo"], dir, configB);
     expect(remove.exitCode, remove.stderr).toBe(0);
-    expect(await readdir(join(root, "store"))).toEqual([lockedDigest]);
+    expect((await readdir(join(root, "store"))).sort()).toEqual([lockedDigest, previous.digest, current.digest].sort());
+    const reference = await runCli(["echo", "reference"], dir, configA);
+    expect(reference.exitCode, reference.stderr).toBe(0);
+    expect(reference.stdout).toContain("Echo");
   });
 
   test("never runs code before confirmation or conflict checks", async () => {
@@ -700,12 +717,12 @@ test("profile locks win for run, aliases and references; only active package mod
   // Removing the last served lock reveals the package plugin and syncs its references.
   expect((await runCli(["plugins", "remove", "echo"], dir)).exitCode).toBe(0);
   expect(await readFile(skillPath, "utf8")).toContain("| * | echo | 1.0.0 | Package echo |");
-  expect(await hasStoredPlugin(staged.manifest.digest, root)).toBe(false);
-  // Removing the package prunes its skill row, reference folder and store entry.
+  expect(await hasStoredPlugin(staged.manifest.digest, root)).toBe(true);
+  // Removing the package prunes its skill row and reference folder, retaining shared bytes.
   expect((await runCli(["plugins", "remove", "echo"], dir)).exitCode).toBe(0);
   expect(await readFile(skillPath, "utf8")).not.toContain("| * | echo |");
   expect(await Bun.file(join(target, "cloud-cli", "references", "echo", "1.0.0", "index.md")).exists()).toBe(false);
-  expect(await hasStoredPlugin(packageRecord.digest, root)).toBe(false);
+  expect(await hasStoredPlugin(packageRecord.digest, root)).toBe(true);
 }, 30_000);
 
 test("local npm-layout tarballs use the shared store and keep nested skill references", async () => {

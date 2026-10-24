@@ -2,14 +2,6 @@ import { z } from "zod";
 import { GEO_MAX_POLYLINE_CHARS, GeoAddressSchema, GeoGeocodeInputSchema, GeoPointSchema, GeoProvenanceSchema } from "./geo";
 
 export const GEO_ROUTE_MAX_STOPS = 26;
-export const GeoRouteDistanceAllowanceSchema = z
-  .number()
-  .int()
-  .min(1)
-  .max(1_000_000_000)
-  .describe(
-    "Reference distance allowance in meters per leg; defaults to 500000. The whole chain reserves at this allowance. This is not a guaranteed provider bill ceiling. A larger actual route is charged and stops the chain.",
-  );
 const stopId = z.string().min(1).max(100).describe("Stable stop ID, unique within this route.");
 export const GeoRouteOptionsSchema = z
   .object({
@@ -46,7 +38,6 @@ export const GeoRouteLegOptionsSchema = z
   .strict();
 export const GeoRoutePlanSchema = z
   .object({
-    distanceAllowanceMeters: GeoRouteDistanceAllowanceSchema.optional(),
     stops: z.array(GeoRouteStopSchema).min(2).max(GEO_ROUTE_MAX_STOPS).describe("2–26 stops in travel order, with unique IDs."),
     options: GeoRouteOptionsSchema.optional().describe("Default options for the route."),
     legOptions: z
@@ -72,7 +63,6 @@ export const GeoRouteLegSchema = z
   .strict();
 export const GeoRouteSchema = z
   .object({
-    distanceAllowanceMeters: GeoRouteDistanceAllowanceSchema,
     stops: z.array(GeoRouteResolvedStopSchema).min(2).max(GEO_ROUTE_MAX_STOPS).describe("Resolved stops in current travel order."),
     options: GeoRouteOptionsSchema.describe("Travel options; mode and avoid override only supplied fields."),
     legs: z.array(GeoRouteLegSchema).min(1).max(25).describe("Independent stopover legs in travel order."),
@@ -122,7 +112,6 @@ export const GeoRouteUpdateInputSchema = z
   .object({
     route: GeoRouteSchema,
     changes: GeoRouteChangesSchema.describe("One stateless route edit to preview."),
-    distanceAllowanceMeters: GeoRouteDistanceAllowanceSchema.optional(),
   })
   .strict();
 export const GeoRouteUpdateDataSchema = z

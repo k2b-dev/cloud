@@ -3,9 +3,12 @@ import type { DateContext } from "@k2b/stdlib";
 import {
   Button,
   Chat,
+  type ChatComposerReply,
   EmojiPicker,
   IconButtonLink,
   MessageRow,
+  type MessageRowOrigin,
+  type MessageRowQuote,
   type MessageRowStatus,
   MessageSystemRow,
   PageTitle,
@@ -38,6 +41,12 @@ export type ChatFeedItem = {
   /** Position and ID of a stored message; a send the history does not hold yet has neither. */
   seq?: number;
   messageId?: string;
+  /** Its thread's ID, or null for General; a send the history does not hold yet has its target. */
+  thread?: string | null;
+  /** The message it answers. */
+  quote?: MessageRowQuote;
+  /** Its thread, shown under it where several threads mix. */
+  origin?: MessageRowOrigin;
 };
 
 export type ChatConversationProps = {
@@ -47,6 +56,31 @@ export type ChatConversationProps = {
   chatId: string;
   title: string;
   memberCount: number;
+  /** The line under the title; the member count by default. */
+  subtitle?: string;
+  /** Beside the title, such as the thread picker. */
+  titleExtra?: JSX.Element;
+  /**
+   * The head from a 1800 px window, where the threads stand in their own column: the open thread as the title and its
+   * description below, instead of the chat's title and the picker.
+   */
+  wideTitle?: { title: string; subtitle: string };
+  /** Where the back button leads below 64 rem; the list by default. */
+  backHref?: string;
+  /** Each part of a chat keeps its own draft. */
+  draftKey?: string;
+  /** Replaces the composer, for example where the reader cannot write. */
+  composerNotice?: JSX.Element;
+  placeholder?: string;
+  /** Who the composer writes to, such as a thread; the chat's title by default. */
+  target?: string;
+  /** The message the draft answers, above the field. */
+  reply?: ChatComposerReply;
+  /** "Reply" in a message's menu, with `r` and a swipe to the right; without it, messages offer no reply. */
+  onReply?: (item: ChatFeedItem) => void;
+  /** The sentence under "Reply" and "Mark unread from here", which names the message's thread. */
+  replyHint?: (item: ChatFeedItem) => string;
+  unreadHint?: (item: ChatFeedItem) => string;
   items: readonly ChatFeedItem[];
   hasOlder: boolean;
   hasNewer: boolean;
@@ -74,6 +108,8 @@ export type ChatConversationProps = {
   /** The first and last item fully in view, for reporting what the reader has seen. */
   onVisibleChange: (visible: { first: ChatFeedItem; last: ChatFeedItem } | null) => void;
   onMarkUnreadFrom: (item: ChatFeedItem) => void;
+  /** "Copy text" in a message's menu. */
+  onCopy: (item: ChatFeedItem) => void;
   /** Esc within the chat or with no focused control, unless a field, menu, dialog, tooltip, or light-dismiss popover uses it. */
   onEscape: () => void;
 };
@@ -146,20 +182,42 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   const remember = (emoji: string) => setRecent((current) => rememberEmoji(current, emoji));
 
   return (
-    <section ref={frame} class="chat-conversation" aria-label={props.title}>
+    <section
+      ref={frame}
+      class="chat-conversation"
+      data-wide-title={props.wideTitle ? "" : undefined}
+      aria-label={props.title}
+      onKeyDown={(event) => {
+        if (event.key !== "r" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing) return;
+        const article = event.target instanceof HTMLElement && event.target.matches(".k2b-virtual-feed__item") ? event.target : null;
+        const item = article && props.items.find((entry) => entry.key === article.dataset.key);
+        if (!item?.messageId || item.kind !== "text" || !props.onReply) return;
+        event.preventDefault();
+        props.onReply(item);
+      }}
+    >
       <header class="chat-conversation__header">
         <span class="chat-conversation__back">
           <IconButtonLink
-            href={props.listHref ?? "/app/chat"}
+            href={props.backHref ?? props.listHref ?? "/app/chat"}
             navigation="enhanced"
             onNavigate={props.onBack}
-            label={t().backToChats}
+            label={props.backHref ? t().backToThreads : t().backToChats}
             tooltip={false}
           >
             <i class="ti ti-chevron-left" aria-hidden="true" />
           </IconButtonLink>
         </span>
-        <PageTitle trail={{ title: props.title, ancestors: [] }} subtitle={t().members({ count: props.memberCount })} />
+        <PageTitle trail={{ title: props.title, ancestors: [] }} subtitle={props.subtitle ?? t().members({ count: props.memberCount })} />
+        {props.titleExtra}
+        <Show when={props.wideTitle}>
+          {(wide) => (
+            <div class="chat-conversation__wide-title">
+              <h1 class="chat-conversation__wide-name">{wide().title}</h1>
+              <p class="chat-conversation__wide-subtitle">{wide().subtitle}</p>
+            </div>
+          )}
+        </Show>
         <Show when={markerAway()}>
           {(direction) => (
             <Button
@@ -223,42 +281,91 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               own={item.own}
               groupStart={startsGroup(item, props.items[index() - 1])}
               status={item.status}
+              quote={item.quote}
+              origin={item.origin}
               onRetry={item.retry}
+              onDiscard={item.discard}
               actions={
                 item.messageId
-                  ? [{ id: "unread", label: t().markUnreadFromHere, icon: "ti ti-mail", onSelect: () => props.onMarkUnreadFrom(item) }]
+                  ? [
+                      ...(props.onReply
+                        ? [
+                            {
+                              id: "reply",
+                              label: t().reply,
+                              description: props.replyHint?.(item),
+                              icon: "ti ti-arrow-back-up",
+                              shortcut: "r",
+                              gesture: "swipe-right" as const,
+                              onSelect: () => props.onReply?.(item),
+                            },
+                          ]
+                        : []),
+                      { id: "copy", label: t().copyText, icon: "ti ti-copy", immediate: true, onSelect: () => props.onCopy(item) },
+                      // The reader's own messages never count as unread.
+                      ...(item.own
+                        ? []
+                        : [
+                            {
+                              id: "unread",
+                              label: t().markUnreadFromHere,
+                              description: props.unreadHint?.(item) ?? t().markUnreadFromHereHint,
+                              icon: "ti ti-mail",
+                              altClick: true,
+                              onSelect: () => props.onMarkUnreadFrom(item),
+                            },
+                          ]),
+                    ]
                   : item.discard
-                    ? [{ id: "discard", label: t().discardMessage, icon: "ti ti-trash", onSelect: item.discard }]
+                    ? [
+                        {
+                          id: "discard",
+                          label: t().discardMessage,
+                          icon: "ti ti-trash",
+                          variant: "danger" as const,
+                          onSelect: item.discard,
+                        },
+                      ]
                     : undefined
               }
             />
           )
         }
       </VirtualFeed>
-      <div class="chat-conversation__composer">
-        <Chat.Composer
-          variant="conversation"
-          value={props.draft}
-          onValueChange={props.onDraftChange}
-          onSubmit={({ text }) => props.onSend(text)}
-          draftKey={props.chatId}
-          formatting
-          emoji={{ onOpen: setEmojiTarget, onPick: remember }}
-          placeholder={t().composerPlaceholder({ title: props.title })}
-          inputLabel={t().composerLabel({ title: props.title })}
-          disabled={!props.canWrite}
-          hint={props.hint}
-        />
-        <EmojiPicker.Popover
-          anchor={emojiTarget()?.anchor}
-          recent={recent()}
-          onPick={(emoji) => {
-            emojiTarget()?.insert(emoji);
-            remember(emoji);
-          }}
-          onClose={() => setEmojiTarget(undefined)}
-        />
-      </div>
+      <Show
+        when={!props.composerNotice}
+        fallback={
+          <div class="chat-conversation__notice" role="status">
+            {props.composerNotice}
+          </div>
+        }
+      >
+        <div class="chat-conversation__composer">
+          <Chat.Composer
+            variant="conversation"
+            value={props.draft}
+            onValueChange={props.onDraftChange}
+            onSubmit={({ text }) => props.onSend(text)}
+            draftKey={props.draftKey ?? props.chatId}
+            reply={props.reply}
+            formatting
+            emoji={{ onOpen: setEmojiTarget, onPick: remember }}
+            placeholder={props.placeholder ?? t().composerPlaceholder({ title: props.title })}
+            inputLabel={t().composerLabel({ title: props.target ?? props.title })}
+            disabled={!props.canWrite}
+            hint={props.hint}
+          />
+          <EmojiPicker.Popover
+            anchor={emojiTarget()?.anchor}
+            recent={recent()}
+            onPick={(emoji) => {
+              emojiTarget()?.insert(emoji);
+              remember(emoji);
+            }}
+            onClose={() => setEmojiTarget(undefined)}
+          />
+        </div>
+      </Show>
     </section>
   );
 }
