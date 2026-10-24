@@ -51,7 +51,7 @@ import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
-import ChatSearch from "./ChatSearch";
+import ChatSearch, { createChatSearch } from "./ChatSearch";
 import ChatSharedSection from "./ChatSharedSection";
 import ChatSystemChats, { createSystemChatList } from "./ChatSystemChats";
 import ChatThreadColumn from "./ChatThreadColumn";
@@ -429,6 +429,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [systemExpanded, setSystemExpanded] = createSignal(props.open?.conversation.kind === "system");
   /** The list's search; it lasts while the reader moves between chats and ends with "Escape" or an empty field. */
   const [searchQuery, setSearchQuery] = createSignal("");
+  const chatSearch = createChatSearch(() => searchQuery().trim());
   // A Space's or notebook's chat opened from "For you", the search, or another app shows where it lives in the list.
   createEffect(
     on(
@@ -1878,42 +1879,64 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       />
     </div>
   );
+  const listErrorLine = () => (
+    <Show when={listError()}>
+      {(error) => (
+        <InlineGuidance role="alert" tone="danger" class="chat-list-error">
+          {error()}
+          <Show when={listRetry()}>
+            <Button size="sm" variant="ghost" disabled={listPending() || listLoading()} onClick={() => listRetry()?.()}>
+              {t().retry}
+            </Button>
+          </Show>
+        </InlineGuidance>
+      )}
+    </Show>
+  );
   const listContent = (includeArchive = true) => (
     <>
       {searchField()}
       <Show
         when={!searchQuery().trim()}
         fallback={
-          <ChatSearch
-            query={searchQuery().trim()}
-            basePath={basePath}
-            active={{ chatId: openChat()?.id ?? null, view: openChat()?.view ?? "all" }}
-            chatRow={(row) => (
-              <ChatList
-                rows={[row]}
-                {...listProps()}
-                threads={undefined}
-                activeId={openChat()?.id ?? null}
-                viewerId={props.viewerId}
-                dateConfig={props.dateConfig}
-                now={now}
-                hasMore={false}
-                onOpen={(id, navigation) => {
-                  const ref = row.resource;
-                  if (row.kind !== "system") return openFromList(id, navigation);
-                  if (ref?.type === "spaces.space" || ref?.type === "notebooks.notebook")
-                    return openSystem({ type: ref.type, id: ref.id }, (href) => navigation.push(href, { scroll: "preserve" }));
-                }}
-                onMore={() => {}}
-                pending={listPending() || listLoading()}
-                onPersonal={(id, patch) => void personal(id, patch)}
-                onMarkRead={markRead}
-                onMarkUnread={(id) => void markUnread(id)}
-              />
-            )}
-            onThread={(chatId, thread, navigation) => openView(chatId, thread, navigation)}
-            onSystem={(ref) => openSystem(ref)}
-          />
+          <>
+            {/* An action on a hit that fails says so here, as it does above the list. */}
+            {listErrorLine()}
+            <ChatSearch
+              search={chatSearch}
+              basePath={basePath}
+              active={{ chatId: openChat()?.id ?? null, view: openChat()?.view ?? "all" }}
+              chatRow={(hit) => {
+                // The list's own row once the store holds it, so pinning, archiving and reading show at once.
+                const row = () => rows().find((candidate) => candidate.id === hit.id) ?? hit;
+                return (
+                  <ChatList
+                    rows={[row()]}
+                    {...listProps()}
+                    threads={undefined}
+                    activeId={openChat()?.id ?? null}
+                    viewerId={props.viewerId}
+                    dateConfig={props.dateConfig}
+                    now={now}
+                    hasMore={false}
+                    onOpen={(id, navigation) => {
+                      const ref = row().resource;
+                      if (row().kind !== "system") return openFromList(id, navigation);
+                      if (ref?.type === "spaces.space" || ref?.type === "notebooks.notebook")
+                        return openSystem({ type: ref.type, id: ref.id }, (href) => navigation.push(href, { scroll: "preserve" }));
+                    }}
+                    onMore={() => {}}
+                    pending={listPending() || listLoading()}
+                    onPersonal={(id, patch) => void personal(id, patch).then(chatSearch.retry)}
+                    onMarkRead={markRead}
+                    onMarkUnread={(id) => void markUnread(id)}
+                  />
+                );
+              }}
+              onThread={(chatId, thread, navigation) => openView(chatId, thread, navigation)}
+              onSystem={(ref) => openSystem(ref)}
+            />
+          </>
         }
       >
         <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
@@ -1949,18 +1972,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           <p role="status" aria-live="polite" class="chat-list-status">
             {!listError() && (listLoading() ? t().loadingChats : listPending() ? t().savingList : "")}
           </p>
-          <Show when={listError()}>
-            {(error) => (
-              <InlineGuidance role="alert" tone="danger" class="chat-list-error">
-                {error()}
-                <Show when={listRetry()}>
-                  <Button size="sm" variant="ghost" disabled={listPending() || listLoading()} onClick={() => listRetry()?.()}>
-                    {t().retry}
-                  </Button>
-                </Show>
-              </InlineGuidance>
-            )}
-          </Show>
+          {listErrorLine()}
         </div>
         <Show
           when={archived()}

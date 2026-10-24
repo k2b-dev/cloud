@@ -1,6 +1,6 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { AppWorkspace, Button, InlineGuidance, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { type Accessor, createEffect, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { chatMessages } from "../messages";
 import { createSearchApi, type SearchHit, type SearchResult } from "./search-api";
 import { containerIcon, systemMembers } from "./system-chats";
@@ -14,40 +14,29 @@ type SystemHit = Extract<SearchHit, { kind: "system" }>;
 const SEARCH_DELAY_MS = 200;
 
 /**
- * What the list's search finds, in place of the list: chats and channels as their ordinary rows, threads with the kind
- * of their item and where they live, and Spaces and notebooks whose chat nobody has started yet. The hits of the last
- * answer stay while the next one loads, so typing moves nothing. When Spaces or Notebooks cannot answer, the other hits
- * still show, with a line that says what is missing.
+ * One search for the whole list, however many places show it (the sidebar and the phone's list page): it asks once
+ * per pause in typing, cancels the question before, and keeps the last answer while the next one loads.
  */
-export default function ChatSearch(props: {
-  query: string;
-  basePath: string;
-  /** The open thread, so its hit carries the selection like its row in the list. */
-  active: { chatId: string | null; view: string };
-  chatRow: (row: ChatHit["conversation"]) => JSX.Element;
-  onThread: (chatId: string, thread: string, navigation: LinkNavigateEvent) => void | Promise<void>;
-  /** Starts the chat of a Space or notebook nobody has written in yet, and opens it. */
-  onSystem: (ref: SystemHit["ref"]) => void | Promise<void>;
-}): JSX.Element {
-  const locale = useLocale();
-  const t = () => chatMessages.resolve([locale()]).t;
+export const createChatSearch = (query: Accessor<string>) => {
   const api = createSearchApi();
-  const [query, setQuery] = createSignal(props.query);
+  const [settled, setSettled] = createSignal("");
   createEffect(
-    on(
-      () => props.query,
-      (next) => {
-        const timer = setTimeout(() => setQuery(next), SEARCH_DELAY_MS);
-        onCleanup(() => clearTimeout(timer));
-      },
-      { defer: true },
-    ),
+    on(query, (next) => {
+      if (!next) return setSettled("");
+      const timer = setTimeout(() => setSettled(next), SEARCH_DELAY_MS);
+      onCleanup(() => clearTimeout(timer));
+    }),
   );
   const [attempt, setAttempt] = createSignal(0);
   const [answer, setAnswer] = createSignal<{ q: string; result: SearchResult } | null>(null);
   const [status, setStatus] = createSignal<"loading" | "ready" | "failed">("loading");
   createEffect(
-    on([query, attempt], ([q]) => {
+    on([settled, attempt], ([q]) => {
+      if (!q) {
+        setAnswer(null);
+        setStatus("loading");
+        return;
+      }
       const request = new AbortController();
       onCleanup(() => request.abort());
       setStatus("loading");
@@ -62,7 +51,37 @@ export default function ChatSearch(props: {
       );
     }),
   );
-  const retry = () => setAttempt((value) => value + 1);
+  return {
+    answer,
+    /** "loading" also while the reader is still typing, so a stale "nothing found" never stands for the new text. */
+    status: () => (query() !== settled() ? "loading" : status()),
+    /** Asks again with the same text, after a failure or an action that changed a hit. */
+    retry: () => setAttempt((value) => value + 1),
+  };
+};
+export type ChatSearchState = ReturnType<typeof createChatSearch>;
+
+/**
+ * What the list's search finds, in place of the list: chats and channels as their ordinary rows, threads with the kind
+ * of their item and where they live, and Spaces and notebooks whose chat nobody has started yet. The hits of the last
+ * answer stay while the next one loads, so typing moves nothing. When Spaces or Notebooks cannot answer, the other hits
+ * still show, with a line that says what is missing.
+ */
+export default function ChatSearch(props: {
+  search: ChatSearchState;
+  basePath: string;
+  /** The open thread, so its hit carries the selection like its row in the list. */
+  active: { chatId: string | null; view: string };
+  chatRow: (row: ChatHit["conversation"]) => JSX.Element;
+  onThread: (chatId: string, thread: string, navigation: LinkNavigateEvent) => void | Promise<void>;
+  /** Starts the chat of a Space or notebook nobody has written in yet, and opens it. */
+  onSystem: (ref: SystemHit["ref"]) => void | Promise<void>;
+}): JSX.Element {
+  const locale = useLocale();
+  const t = () => chatMessages.resolve([locale()]).t;
+  const answer = () => props.search.answer();
+  const status = () => props.search.status();
+  const retry = () => props.search.retry();
   const items = () => answer()?.result.items ?? [];
   const place = (hit: ThreadHit) => {
     const title = hit.conversation.title;
@@ -90,6 +109,9 @@ export default function ChatSearch(props: {
       <div class="chat-list-feedback">
         <p role="status" aria-live="polite" class="chat-list-status">
           {status() === "loading" && answer() === null ? t().searching : ""}
+          <Show when={status() === "ready" && items().length > 0}>
+            <span class="sr-only">{t().searchResultCount({ count: items().length })}</span>
+          </Show>
         </p>
         <Show when={status() === "failed"}>
           <InlineGuidance role="alert" tone="danger" class="chat-list-error">

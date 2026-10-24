@@ -1011,6 +1011,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
         for (const chat of chats.values()) {
           const row = chat.conversation;
           const ref = row.resource;
+          // Without Spaces and Notebooks, their chats and item threads cannot be checked, so none come back.
+          if (row.kind === "system" && searchSystemUnavailable) continue;
           if (row.kind === "system" && (ref?.type === "spaces.space" || ref?.type === "notebooks.notebook")) {
             if (match(row.title)) items.push({ kind: "system", ref, name: row.title, conversation: row });
           } else if (row.member && match(row.title)) items.push({ kind: "chat", conversation: row });

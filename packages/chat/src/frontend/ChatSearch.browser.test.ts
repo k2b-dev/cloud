@@ -98,6 +98,28 @@ describe("Search in the chat list", () => {
     }
   }, 30_000);
 
+  test("archiving a hit from its menu shows at once and the hit stays findable", async () => {
+    seed();
+    const { page, errors } = await load(desktop);
+    try {
+      const sidebar = list(page, false);
+      await sidebar.getByRole("searchbox", { name: "Search" }).fill("purch");
+      const hit = sidebar.locator(".chat-search").getByRole("link", { name: /Purchasing/ });
+      const menu = async () => {
+        await hit.hover();
+        await sidebar.locator(".chat-search").getByRole("button", { name: "Actions for Purchasing" }).click();
+      };
+      await menu();
+      await page.getByRole("menuitem", { name: "Archive chat", exact: true }).click();
+      await menu();
+      await page.getByRole("menuitem", { name: "Restore", exact: true }).waitFor();
+      await page.keyboard.press("Escape");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("when Spaces and Notebooks fail, the other hits stay with a line to try again; a failed search recovers", async () => {
     seed();
     harness.searchContainer({ type: "notebooks.notebook", id: "Book01" }, "Print shop notes");
@@ -109,15 +131,22 @@ describe("Search in the chat list", () => {
       await sidebar.getByRole("searchbox", { name: "Search" }).fill("print");
       await search.getByText("Search in Spaces and Notebooks failed.").waitFor();
       await search.getByText("Thread in IT").waitFor();
+      expect(await search.getByText("Task in Spring fair").count()).toBe(0);
       harness.failSearchSystem(false);
       await search.getByRole("button", { name: "Try again" }).click();
       await search.getByText("Print shop notes").waitFor();
+      await search.getByText("Task in Spring fair").waitFor();
       expect(await search.getByText("Search in Spaces and Notebooks failed.").count()).toBe(0);
       harness.failSearch();
       await sidebar.getByRole("searchbox", { name: "Search" }).fill("printe");
       await search.getByText("Search failed. Try again.").waitFor();
+      const asked = harness.searchQueries.length;
       await search.getByRole("button", { name: "Try again" }).click();
+      await search.getByText("Search failed. Try again.").waitFor({ state: "detached" });
+      expect(harness.searchQueries.length).toBe(asked + 1);
       await search.getByText("Thread in IT").waitFor();
+      // The sidebar and the phone's list page share one search: each pause in typing asks once.
+      expect(harness.searchQueries.filter((q) => q === "printe")).toHaveLength(2);
       expect(errors.filter((error) => !error.includes("503"))).toEqual([]);
     } finally {
       await page.context().close();
