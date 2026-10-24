@@ -502,7 +502,8 @@ test("savepoints stay on the guarded connection and cannot execute cleanup from 
 test("savepoint query arrays settle their lazy SQL before release", async () => {
   const f = lifecycleFixture();
   f.query(async (statement) => (statement.startsWith("UPDATE") ? [{ saved: true }] : []));
-  const result = await withAppPwaTransaction(f.db, undefined, async (tx) =>
+  // Bun types keep Query[] here, while its runtime resolves returned query arrays.
+  const result: unknown = await withAppPwaTransaction(f.db, undefined, async (tx) =>
     tx.savepoint((nested) => [nested`UPDATE first`, nested`UPDATE second`]),
   );
   expect(result).toEqual([[{ saved: true }], [{ saved: true }]]);
