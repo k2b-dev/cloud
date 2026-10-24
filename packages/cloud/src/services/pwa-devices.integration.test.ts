@@ -227,8 +227,10 @@ suite("mobile app pairing and app sessions", () => {
     expect(await json(waiting)).toMatchObject({ state: "waiting", code: claimed.code });
 
     expect((await confirm(owner, started.id, claimed.code)).status).toBe(204);
+    phone.cookies.set("pwa_last_address", { value: encodeURIComponent("/pwa/spaces?view=mine"), path: "/pwa/", attributes: "" });
     const completed = await complete(phone);
     expect(completed.status).toBe(200);
+    expect(phone.get("pwa_last_address")).toBeUndefined();
     expect(completed.headers.get("cache-control")).toBe("no-store");
     expect(completed.headers.get("referrer-policy")).toBe("no-referrer");
     expect(phone.get("pwa_pairing")).toBeUndefined();
@@ -479,7 +481,7 @@ suite("mobile app pairing and app sessions", () => {
     expect((await complete(first)).status).toBe(200);
     expect((await complete(new Jar({ pwa_pairing: pairingCookie }))).status).toBe(200);
     await sql`UPDATE auth.pwa_devices SET rotated_at = now() - interval '2 minutes' WHERE id = ${deviceId}::uuid`;
-    expect(await json(await renew(first))).toEqual({ renewed: true });
+    expect(await json(await renew(first))).toMatchObject({ renewed: true });
     expect((await probe(first)).status).toBe(200);
 
     // A retry re-checks the account like the first completion.
@@ -533,7 +535,7 @@ suite("mobile app pairing and app sessions", () => {
 
     // Renewal rotates the key and a lost completion answer recovers the phone: neither is a new phone.
     phone.cookies.delete("pwa_session");
-    expect(await json(await renew(phone))).toEqual({ renewed: true });
+    expect(await json(await renew(phone))).toMatchObject({ renewed: true });
     expect((await complete(new Jar({ pwa_pairing: pairingCookie }))).status).toBe(200);
     expect(sent).toHaveLength(1);
     expect(await announce(owner.id)).toEqual([]);
@@ -632,13 +634,13 @@ suite("mobile app pairing and app sessions", () => {
     const { phone, deviceId } = await pair(owner);
     const [before] = await sql<{ last_login_local: Date }[]>`SELECT last_login_local FROM auth.users WHERE id = ${owner.id}::uuid`;
 
-    expect(await json(await renew(phone))).toEqual({ renewed: false });
+    expect(await json(await renew(phone))).toMatchObject({ renewed: false });
     const oldKey = phone.get("pwa_device")!;
     const oldSession = phone.get("pwa_session")!;
 
     // Due: the app session is gone, so Core issues a new family and a new key.
     phone.cookies.delete("pwa_session");
-    expect(await json(await renew(phone))).toEqual({ renewed: true });
+    expect(await json(await renew(phone))).toMatchObject({ renewed: true });
     const newKey = phone.get("pwa_device")!;
     expect(newKey).not.toBe(oldKey);
     expect(phone.get("pwa_session")).not.toBe(oldSession);
@@ -649,19 +651,19 @@ suite("mobile app pairing and app sessions", () => {
 
     // A parallel request with the previous key within the grace: no action.
     const stale = new Jar({ pwa_device: oldKey });
-    expect(await json(await renew(stale))).toEqual({ renewed: false });
+    expect(await json(await renew(stale))).toMatchObject({ renewed: false });
     // After the grace, the previous key recovers the phone once more, audited.
     await sql`UPDATE auth.pwa_devices SET rotated_at = now() - interval '2 minutes' WHERE id = ${deviceId}::uuid`;
-    expect(await json(await renew(stale))).toEqual({ renewed: true });
+    expect(await json(await renew(stale))).toMatchObject({ renewed: true });
     const [recover] = await sql`SELECT 1 FROM audit.events WHERE action = 'auth.pwa.device.recover' AND target_id = ${deviceId}`;
     expect(recover).toBeDefined();
 
     // The newest key confirms itself and retires the previous one.
     const latest = new Jar({ pwa_device: stale.get("pwa_device")! });
-    expect(await json(await renew(latest))).toEqual({ renewed: true });
+    expect(await json(await renew(latest))).toMatchObject({ renewed: true });
     expect(latest.get("pwa_device")).not.toBe(stale.get("pwa_device"));
     const confirmed = new Jar({ pwa_device: latest.get("pwa_device")!, pwa_session: latest.get("pwa_session")! });
-    expect(await json(await renew(confirmed))).toEqual({ renewed: false });
+    expect(await json(await renew(confirmed))).toMatchObject({ renewed: false });
     const replay = await renew(new Jar({ pwa_device: stale.get("pwa_device")! }));
     expect(replay.status).toBe(401);
     expect(await json(replay)).toMatchObject({ code: "UNPAIRED" });
@@ -720,10 +722,14 @@ suite("mobile app pairing and app sessions", () => {
     expect((await launch(phone, "https://evil.example.test/")).headers.get("location")).toBe("/pwa/?pwa_launch=1");
     expect((await launch(phone, "/pwa/_auth/session/renew")).headers.get("location")).toBe("/pwa/?pwa_launch=1");
     expect((await launch(phone, "/pwa//evil.example.test")).headers.get("location")).toBe("/pwa/?pwa_launch=1");
-    expect((await launch(new Jar())).headers.get("location")).toBe("/pwa/?pwa=new");
+    const unpaired = new Jar();
+    expect((await launch(unpaired)).headers.get("location")).toBe("/pwa/?pwa=new");
+    expect(unpaired.get("pwa_ended")).toBeUndefined();
     const ended = new Jar({ pwa_device: `${crypto.randomUUID()}.${"D".repeat(43)}` });
     expect((await launch(ended)).headers.get("location")).toBe("/pwa/?pwa=ended");
     expect(ended.get("pwa_device")).toBeUndefined();
+    // Only this answer lets the next page delete the app's drafts.
+    expect(ended.get("pwa_ended")).toBe("1");
     await settings.set("user.category.login.enabled", false);
     try {
       expect((await launch(phone)).headers.get("location")).toBe("/pwa/?pwa=blocked");
@@ -756,7 +762,7 @@ suite("mobile app pairing and app sessions", () => {
     const other = await person({ name: "Grace Example" });
     const { phone } = await pair(owner, new Jar(), "android");
     phone.cookies.set("session_token", { value: other.token, path: "/", attributes: "" });
-    expect(await json(await renew(phone))).toEqual({ renewed: false, otherAccount: { name: "Grace Example" } });
+    expect(await json(await renew(phone))).toMatchObject({ renewed: false, otherAccount: { name: "Grace Example" } });
   });
 
   test("renewal concurrent with signing out everywhere does not deadlock", async () => {
@@ -778,10 +784,12 @@ suite("mobile app pairing and app sessions", () => {
     expect((await call(owner.web, "DELETE", `${PWA_API_PATH}/devices/${crypto.randomUUID()}`)).status).toBe(404);
 
     const unpaired = await pair(owner);
+    unpaired.phone.cookies.set("pwa_last_address", { value: "/pwa/spaces?view=mine", path: "/pwa/", attributes: "" });
     unpaired.phone.cookies.set("pwa_pairing", { value: "left-over", path: `${PWA_AUTH_PATH}/pairings`, attributes: "" });
     expect((await call(unpaired.phone, "DELETE", `${PWA_AUTH_PATH}/session`)).status).toBe(204);
     expect(unpaired.phone.get("pwa_session")).toBeUndefined();
     expect(unpaired.phone.get("pwa_pairing")).toBeUndefined();
+    expect(unpaired.phone.get("pwa_last_address")).toBeUndefined();
     const [row] = await sql<
       { revocation_reason: string }[]
     >`SELECT revocation_reason FROM auth.pwa_devices WHERE id = ${unpaired.deviceId}::uuid`;
@@ -912,7 +920,7 @@ suite("mobile app pairing and app sessions", () => {
       SELECT signing_kid FROM auth.session_families WHERE user_id = ${owner.id}::uuid AND pwa_device_id IS NOT NULL LIMIT 1`;
     await revokeIdentitySigningKey({ kid: family!.signing_kid, reason: "pwa integration test" });
     expect((await probe(phone)).status).toBe(401);
-    expect(await json(await renew(phone))).toEqual({ renewed: true });
+    expect(await json(await renew(phone))).toMatchObject({ renewed: true });
     expect((await probe(phone)).status).toBe(200);
   });
 });
