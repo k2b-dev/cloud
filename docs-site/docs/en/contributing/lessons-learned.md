@@ -1039,3 +1039,9 @@ updates that class's row in the table.
 
 - **Error class:** asynchronous UI locator race. The Pulse Back test could resolve the settings form's Discard button before the confirmation appeared, then wait on that hidden button.
 - **Guard:** the test waits for the named confirmation dialog and its question before clicking its Discard button. It still checks Back, Escape, Cancel, draft preservation and the resulting URL.
+
+### A streaming deadline expired during connection setup
+
+- **What happened:** The slow-response transport test failed before obtaining its response on a busy runner.
+- **Root cause:** Its 80 ms caller deadline included connection setup, so it did not reliably reach the body-read assertion.
+- **Guard:** `allowed-network-fetch.test.ts` starts the same caller deadline after headers arrive and forwards its original timeout reason to the in-flight request. The server continues sending bytes until cancellation; neither the deadline nor the test timeout is increased.
