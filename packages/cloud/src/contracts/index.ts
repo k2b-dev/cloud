@@ -2,6 +2,7 @@ export * from "./account-categories";
 export * from "./announcements";
 export * from "./app";
 export * from "./app-approval";
+export * from "./avatar";
 export * from "./capabilities";
 export * from "./capability-compatibility";
 export * from "./commands";
