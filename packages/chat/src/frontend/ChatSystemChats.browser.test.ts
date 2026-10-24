@@ -621,3 +621,38 @@ test("live directory refresh preserves loaded pages and their existing row nodes
     await page.context().close();
   }
 }, 30_000);
+
+test("personal Unread and the system directory filter survive reload and Back independently", async () => {
+  const { chat, threads } = seed();
+  const { page, errors } = await load(desktop, { chat, threadsPage: true });
+  try {
+    const sidebar = page.locator(".k2b-app-workspace__sidebar");
+    const directory = page.locator(".chat-threads-page .chat-system-directory");
+    await sidebar.getByRole("button", { name: "Ungelesen", exact: true }).click();
+    await page.waitForURL(/listFilter=unread/);
+    await directory.getByRole("button", { name: "Erledigt", exact: true }).click();
+    await page.waitForURL(/filter=done/);
+    await directory.getByRole("link", { name: /Einladung freigeben/ }).click();
+    await page.waitForURL((url) => url.pathname === `/app/chat/c/${chat}/t/${threads[0]}`);
+    expect(new URL(page.url()).searchParams.get("listFilter")).toBe("unread");
+    expect(new URL(page.url()).searchParams.get("filter")).toBe("done");
+    await page.reload();
+    await page.evaluate(async () => {
+      const props = await (await fetch(`/__props?path=${encodeURIComponent(location.pathname + location.search)}`)).json();
+      window.mountChat(props, "de");
+    });
+    await sidebar.getByRole("button", { name: "Ungelesen", exact: true }).waitFor();
+    expect(await sidebar.getByRole("button", { name: "Ungelesen", exact: true }).getAttribute("aria-pressed")).toBe("true");
+    await page.goBack();
+    await page.waitForURL((url) => url.pathname === `/app/chat/c/${chat}/threads`);
+    await directory.getByRole("link", { name: /Einladung freigeben/ }).waitFor();
+    expect(await directory.getByRole("button", { name: "Erledigt", exact: true }).getAttribute("aria-pressed")).toBe("true");
+    expect(await sidebar.getByRole("button", { name: "Ungelesen", exact: true }).getAttribute("aria-pressed")).toBe("true");
+    await directory.getByRole("button", { name: "Erledigt", exact: true }).click();
+    await page.waitForURL((url) => !url.searchParams.has("filter"));
+    expect(new URL(page.url()).searchParams.get("listFilter")).toBe("unread");
+    expect(errors).toEqual([]);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);

@@ -432,9 +432,17 @@ test("all-day events without an end keep their local start date", () => {
 test("system chat links keep personal Unread separate from the thread directory filter", () => {
   const system = { ...conversation, kind: "system" as const, member: false, unread: 2, resource: { type: "spaces.space", id: "Space1" } };
   const html = render("en", {
-    ...props(), embedded: true, filter: "unread", chatId: system.id,
-    open: { conversation: system, threads: { general: { unread: 2, lastMessage: null }, items: [] }, page: { items: [], rev: 1, seqHead: 0, from: 1, to: 0 }, focus: null },
+    ...props(),
+    embedded: true,
+    filter: "unread",
+    chatId: system.id,
+    open: {
+      conversation: system,
+      threads: { general: { unread: 2, lastMessage: null }, items: [] },
+      page: { items: [], rev: 1, seqHead: 0, from: 1, to: 0 },
+      focus: null,
+    },
   });
-  expect(html).toContain('/app/chat/panel/c/Chat01?panel=info&amp;listFilter=unread');
-  expect(html).not.toContain('/app/chat/panel/c/Chat01?panel=info&amp;filter=unread');
+  expect(html).toContain("/app/chat/panel/c/Chat01?panel=info&amp;listFilter=unread");
+  expect(html).not.toContain("/app/chat/panel/c/Chat01?panel=info&amp;filter=unread");
 });

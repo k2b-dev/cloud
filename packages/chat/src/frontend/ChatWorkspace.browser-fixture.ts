@@ -764,7 +764,11 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
             query: target.searchParams.get("q") ?? "",
             panel: target.searchParams.get("panel") ?? undefined,
             archived: target.pathname.endsWith("/archive") || target.searchParams.get("list") === "archive",
-            filter: target.searchParams.get("filter") === "unread" ? "unread" : "all",
+            filter:
+              (target.searchParams.get("listFilter") ??
+                (chats.get(match?.[1] ?? "")?.conversation.kind === "system" ? null : target.searchParams.get("filter"))) === "unread"
+                ? "unread"
+                : "all",
           }),
           embedded: target.pathname === "/app/chat/panel" || target.pathname.startsWith("/app/chat/panel/"),
         });

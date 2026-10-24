@@ -421,6 +421,12 @@ suite("system chats use caller-authorized readers", () => {
       SELECT 'Unread0001', c.id, t.id, 1, 1, 'text', 'user', ${author.id}::uuid, 'Nora', 'Unread task', 'unread-task'
       FROM chat.conversations c JOIN chat.threads t ON t.conversation_id = c.id WHERE c.short_id = ${chat.id} AND t.short_id = 'p00000'`;
     await sql`UPDATE chat.conversations SET seq_head = 1, rev = 1 WHERE short_id = ${chat.id}`;
+    // An unread thread outside the candidate window does not trigger an unbounded scan.
+    const outside = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads?short=true`)).json());
+    expect(outside.items).toEqual([]);
+    // Bulk insertion bypasses sendMessage, which also advances the thread's activity.
+    await sql`UPDATE chat.threads SET last_activity_at = '2026-10-14T13:00:00Z'
+      WHERE conversation_id = (SELECT id FROM chat.conversations WHERE short_id = ${chat.id}) AND short_id = 'p00000'`;
     const unreadShort = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads?short=true`)).json());
     expect(unreadShort.items.map((item) => item.id)).toEqual(["p00000"]);
   });

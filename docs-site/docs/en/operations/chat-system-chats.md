@@ -201,3 +201,4 @@ ordinary and system chats. Recovery in `/app/chat/panel` preserves that route
 base and the current list and thread selection. System-chat addresses use
 `listFilter=all|unread` for the personal list; `filter=open|done|unread` remains
 the independent system-thread directory filter.
+All is the default personal list mode and is omitted from generated system-chat URLs.

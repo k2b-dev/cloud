@@ -274,7 +274,7 @@ describe("Chat threads on a desktop", () => {
 
       await page.getByRole("button", { name: "More actions", exact: true }).click();
       await page.getByRole("menuitem", { name: /^Archive thread/ }).click();
-      await page.getByRole("dialog").getByRole("button", { name: "Archive", exact: true }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Archive thread", exact: true }).click();
       await page.waitForURL(`**/t/general`);
       const toast = page.locator(".k2b-toast", { hasText: "“News” archived" });
       await toast.waitFor();
@@ -461,7 +461,7 @@ for (const system of [false, true])
       const other = harness.addThread(chat, { name: "Other", count: 2, end: chatTestNow });
       if (system) harness.setSystem(chat, { type: "spaces.space", id: "Space1" });
       else harness.archive(chat, true);
-      const context = await browser.newContext(desktop);
+      const context = await browser.newContext({ ...desktop, reducedMotion: "reduce" });
       const page = await context.newPage();
       page.setDefaultTimeout(5_000);
       const errors: string[] = [];
@@ -471,40 +471,65 @@ for (const system of [false, true])
       const suffix = system ? "?listFilter=unread&filter=done" : "?list=archive&filter=unread";
       try {
         await page.goto(new URL(path + suffix, harness.url).href);
+        await page.evaluate(() => document.fonts.ready);
         await page.evaluate((props) => window.mountChat(props, "en"), {
-          ...harness.props({ chat, thread: view, archived: !system, filter: "unread" }), embedded: true,
+          ...harness.props({ chat, thread: view, archived: !system, filter: "unread" }),
+          embedded: true,
         });
         await until(() => harness.subscribed(chat));
-        // Establish a visible range before the unfocused burst.
+        // Establish a visible range before hidden-tab replay.
         const feed = page.locator(".k2b-virtual-feed__viewport");
         await feed.waitFor();
         await settled(page);
         const boundary = harness.thread(chat, thread)!.read!.lastReadSeq!;
-        await page.evaluate(() => { document.hasFocus = () => false; });
+        await page.evaluate(() => {
+          Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+          document.hasFocus = () => false;
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+        await until(() => !harness.subscribed(chat));
         let last = "";
         for (let index = 0; index < 60; index++) {
           harness.receiveIn(chat, nora, `Gap arrival ${index}`, { thread });
           last = harness.messageId(chat, harness.props({ chat }).open!.page.seqHead);
           if (index % 3 === 0) harness.receiveIn(chat, nora, `Other arrival ${index}`, { thread: other });
-          if (index % 10 === 9) await page.locator(`[data-key="${last}"]`).waitFor();
         }
-        await page.locator(`[data-key="${last}"]`).waitFor();
-        await page.evaluate(() => { document.hasFocus = () => true; window.dispatchEvent(new Event("focus")); });
+        await page.evaluate(() => {
+          Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+          document.hasFocus = () => true;
+          document.dispatchEvent(new Event("visibilitychange"));
+          window.dispatchEvent(new Event("focus"));
+        });
+        await page.locator(`[data-key="${last}"] .k2b-message-row__text`).waitFor({ state: "attached" });
         const jump = page.getByRole("button", { name: "New messages", exact: true });
         await jump.waitFor();
         expect(harness.thread(chat, thread)!.read!.lastReadSeq).toBe(boundary);
         // Replace the loaded prefix with the newest page, so recovery must request this view's snapshot.
-        await page.route(`**/api/chat/conversations/${chat}/changes?*`, (route) => route.fulfill({ status: 409, json: { code: "RESYNC_REQUIRED", message: "Expired" } }), { times: 1 });
-        await page.route(`**/api/chat/conversations/${chat}/messages?before=*`, (route) => route.fulfill({ status: 503, json: { message: "Unavailable" } }));
-        const replacement = page.waitForResponse((response) => response.url().includes(`/conversations/${chat}/messages`) && response.request().method() === "GET");
+        await page.route(
+          `**/api/chat/conversations/${chat}/changes?*`,
+          (route) => route.fulfill({ status: 409, json: { code: "RESYNC_REQUIRED", message: "Expired" } }),
+          { times: 1 },
+        );
+        await page.route(`**/api/chat/conversations/${chat}/messages?before=*`, (route) =>
+          route.fulfill({ status: 503, json: { message: "Unavailable" } }),
+        );
+        const previousHeight = await feed.evaluate((element) => element.scrollHeight);
+        const replacement = page.waitForResponse(
+          (response) => response.url().includes(`/conversations/${chat}/messages`) && response.request().method() === "GET",
+        );
         harness.resync(chat);
         await replacement;
+        await page.waitForFunction(
+          (height) => document.querySelector(".k2b-virtual-feed__viewport")!.scrollHeight < height,
+          previousHeight,
+        );
         await settled(page);
         await jump.waitFor();
         const recovered = page.waitForResponse((response) => response.url().includes(`/conversations/${chat}/snapshot`) && response.ok());
         await jump.click();
         await recovered;
-        await settled(page);
+        await page.locator(`[data-key="${harness.messageId(chat, 11)}"] .k2b-message-row__text`).waitFor();
+        await jump.waitFor({ state: "hidden" });
         expect(new URL(page.url()).pathname).toBe(path);
         if (system) {
           expect(new URL(page.url()).searchParams.get("listFilter")).toBe("unread");
@@ -518,5 +543,7 @@ for (const system of [false, true])
         expect(new URL((await full.getAttribute("href"))!, page.url()).pathname).toBe(path.replace("/panel", ""));
         if (selected === "thread") expect(harness.thread(chat, other)!.read!.lastReadSeq).toBe(10);
         expect(errors).toEqual([]);
-      } finally { await context.close(); }
+      } finally {
+        await context.close();
+      }
     }, 30_000);

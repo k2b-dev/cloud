@@ -8,8 +8,8 @@ import { requireConversation } from "../service/access";
 import {
   ChatLiveEventSchema,
   ChatSnapshotSchema,
-  ConversationSchema,
   ConversationPageSchema,
+  ConversationSchema,
   MAX_THREADS,
   MESSAGE_PAGE_SIZE,
   MemberPageSchema,
@@ -74,7 +74,8 @@ suite("chat threads API", () => {
   };
 
   test("Unread filters on each thread's read state before pagination, including explicit unread marks", async () => {
-    const owner = await f.person(), writer = await f.person();
+    const owner = await f.person(),
+      writer = await f.person();
     const chat = await f.fixture(owner, [{ person: writer, permission: "write" }]);
     const thread = await create(owner, chat.shortId, "Personal unread");
     const message = await send(writer, chat.shortId, { thread: thread.id });
@@ -96,7 +97,13 @@ suite("chat threads API", () => {
     const owner = await f.person();
     const chat = await f.fixture(owner);
     expect((await f.request(owner.headers, `/${chat.shortId}`, "PATCH", { name: "News", purpose: "Team news" })).status).toBe(200);
-    expect((await f.request(owner.headers, `/${chat.shortId}/discovery`, "PUT", { entries: [{ principal: { type: "authenticated" }, permission: "read" }] })).status).toBe(200);
+    expect(
+      (
+        await f.request(owner.headers, `/${chat.shortId}/discovery`, "PUT", {
+          entries: [{ principal: { type: "authenticated" }, permission: "read" }],
+        })
+      ).status,
+    ).toBe(200);
     const saved = await f.request(owner.headers, `/${chat.shortId}/personal`, "PUT", { pinned: true, archived: true });
     expect(saved.status).toBe(200);
     expect(ConversationSchema.parse(await saved.json())).toMatchObject({ channel: true, member: true, pinnedRank: 0, archived: true });

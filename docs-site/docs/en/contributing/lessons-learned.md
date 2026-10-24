@@ -1074,6 +1074,27 @@ convention still needs a check or a test.
 - **Error class:** Reading asynchronous state before the completion condition.
 - **Guard:** `data-table-focus.browser.test.ts` waits for the destination URL, then retains its exact URL and callback-count assertions without increasing timeouts.
 
+### Personal list filters must preserve thread navigation
+
+- **What happened:** List and directory filters collided, and changing the list filter on a thread overview left the URL pointing to the message view.
+- **Root cause:** Independent feature slices reused one query key and rebuilt links without the overview route or directory context.
+- **Error class:** Feature merges combine incompatible URL-state assumptions.
+- **Guard:** The system-chat Chromium test combines personal Unread with the directory's Done filter through a thread, reload, and Back. Existing v12 cases keep default system URLs unchanged; panel recovery cases retain their selected view.
+
+### Bulk chat fixtures must maintain thread activity
+
+- **What happened:** A short system-thread refresh test expected an unread thread outside its 100-candidate activity window.
+- **Root cause:** The fixture inserted a message directly without advancing thread activity as the message service does.
+- **Error class:** Bulk fixtures omit a domain write's related projection update.
+- **Guard:** The system-chat integration test checks that an old unread thread stays outside the bounded refresh, then advances its fixed activity timestamp and checks inclusion.
+
+### Failed unread actions must resume read reporting
+
+- **What happened:** A failed “Mark unread from here” restored the visible state but left messages seen during the request unreported.
+- **Root cause:** The merged error path restored the reporter's pause flag without activating it again.
+- **Error class:** Async rollback restores state but omits the work needed to resume its lifecycle.
+- **Guard:** The desktop and phone Chromium cases hold an unread write, receive another message, reject the write, and require reading to resume.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its

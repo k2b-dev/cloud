@@ -714,7 +714,7 @@ describe("ChatWorkspace browser read state", () => {
         await page.getByText(chatMessages.resolve(["en"]).t.readStateFailed, { exact: true }).waitFor();
         expect(await page.getByRole("button", { name: "New messages", exact: true }).isVisible()).toBe(true);
         expect(harness.props({ chat }).open!.conversation.unread).toBe(40);
-        await page.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+        // Read failures stay inline beside the composer; Escape retries the same accepted-read action.
         await page.locator(".k2b-virtual-feed__viewport").click();
         await page.keyboard.press("Escape");
         await requested.promise;
@@ -1001,9 +1001,7 @@ describe("ChatWorkspace browser read state", () => {
           await route.fulfill({ status: 503, json: { message: "Unread write is temporarily unavailable." } });
         });
         const item = page.locator(`[data-key="${harness.messageId(chat, 5)}"]`);
-        if (name === "phone") await item.tap();
-        else await item.hover();
-        await item.getByRole("button", { name: "Mark unread from here", exact: true }).click();
+        await chooseFromMessageMenu(page, name, item, "Mark unread from here");
         await requested.promise;
         const before = chatReads(chat).length;
         harness.receive(chat, nora, "Visible while the unread action waits");

@@ -187,11 +187,23 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const listHref = (path = archived() ? `${basePath}/archive` : basePath) => {
     const url = new URL(path, "https://chat.invalid");
     const id = /\/c\/([^/]+)/.exec(url.pathname)?.[1];
-    const target = rows().find((row) => row.id === id) ?? (props.open?.conversation.id === id ? props.open.conversation : null);
+    const target =
+      rows().find((row) => row.id === id) ??
+      (conversation()?.id === id ? conversation() : null) ??
+      (props.open && props.open.conversation.id === id ? props.open.conversation : null);
     // The system thread directory already owns `filter`; personal list state has its own key there.
-    if (target?.kind === "system") url.searchParams.set("listFilter", filter());
-    else if (filter() === "unread") url.searchParams.set("filter", "unread");
+    if (target?.kind === "system") {
+      if (filter() === "unread") url.searchParams.set("listFilter", "unread");
+      else url.searchParams.delete("listFilter");
+    } else if (filter() === "unread") url.searchParams.set("filter", "unread");
     if (archived() && url.pathname.includes("/c/")) url.searchParams.set("list", "archive");
+    return url.pathname + url.search;
+  };
+  const viewHref = (path: string) => {
+    const url = new URL(listHref(path), location.href);
+    const source = new URL(location.href);
+    if (conversation()?.kind === "system" && /\/c\/([^/]+)/.exec(source.pathname)?.[1] === /\/c\/([^/]+)/.exec(url.pathname)?.[1])
+      for (const key of ["q", "filter"]) if (source.searchParams.has(key)) url.searchParams.set(key, source.searchParams.get(key)!);
     return url.pathname + url.search;
   };
   const [panel, setPanel] = createSignal<"info" | null>(props.panel);
@@ -712,6 +724,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         setMarker(before.marker);
         setUnreadGap(previousGap);
         paused = before.paused;
+        if (reporter === target) target?.reporter.activate();
       }
       // An action answers once: its message closes, so a second press cannot repeat it.
       const failed = toast.error(t().readStateFailed, {
@@ -819,8 +832,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       const token = ++listIntent;
       const nextArchived = url.pathname === `${basePath}/archive` || url.searchParams.get("list") === "archive";
       const id = /\/c\/([^/]+)/.exec(url.pathname)?.[1];
-      const target = rows().find((row) => row.id === id) ?? (props.open?.conversation.id === id ? props.open.conversation : null);
-      const nextFilter = (url.searchParams.get("listFilter") ?? (target?.kind === "system" ? null : url.searchParams.get("filter"))) === "unread" ? "unread" : "all";
+      const target =
+        rows().find((row) => row.id === id) ??
+        (conversation()?.id === id ? conversation() : null) ??
+        (props.open && props.open.conversation.id === id ? props.open.conversation : null);
+      const nextFilter =
+        (url.searchParams.get("listFilter") ?? (target?.kind === "system" ? null : url.searchParams.get("filter"))) === "unread"
+          ? "unread"
+          : "all";
       // A newer intent must also undo a pending request whose target has not reached the signals yet.
       const changed = nextArchived !== archived() || nextFilter !== filter();
       const reload = refresh || pendingListIntent !== null || changed;
@@ -861,10 +880,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       const token = await applyListUrl(url);
       if (token === null) return;
       const current = route();
-      const target =
-        next !== "archive" && current.chatId
-          ? listHref(panelHref(current.chatId, current.panel, current.messageId, current.view) + (system() ? directoryQuery() : ""))
-          : url.pathname + url.search;
+      const currentPath = current.chatId
+        ? current.threads
+          ? `${threadsPageHref(current.chatId)}${current.panel === "info" ? "?panel=info" : ""}`
+          : panelHref(current.chatId, current.panel, current.messageId, current.view)
+        : null;
+      const target = next !== "archive" && currentPath ? viewHref(currentPath) : url.pathname + url.search;
       if (next === "archive" && (await open(chatRoute(null))) !== "applied") return;
       if (token === listIntent) navigate(target, { scroll: "preserve" });
     } catch {
@@ -1042,7 +1063,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (route() !== previous || openToken !== token) return;
     const next = { ...previous, chatId: id, messageId: null };
     if ((await open(next)) !== "applied") return;
-    navigate(listHref(panelHref(id, next.panel, null, next.view) + (system() ? directoryQuery() : "")), { replace: true, scroll: "preserve" });
+    navigate(viewHref(panelHref(id, next.panel, null, next.view)), {
+      replace: true,
+      scroll: "preserve",
+    });
     const current = openChat();
     const start = current ? viewReadStart(current.view, current.conversation?.read ?? null, current.threads) : null;
     const first =
@@ -1061,11 +1085,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const row = rows().find((candidate) => candidate.id === id);
     if (phone?.matches && row?.kind !== "system" && chatHasThreads(row)) {
       if ((await open(chatRoute(id, "all", { threads: true }))) === "applied")
-        navigation.push(listHref(threadsPageHref(id) + (system() ? directoryQuery() : "")), { scroll: "preserve", state: { chatFromList: fromList } });
+        navigation.push(viewHref(threadsPageHref(id)), {
+          scroll: "preserve",
+          state: { chatFromList: fromList },
+        });
       return;
     }
     if ((await open(chatRoute(id))) !== "applied") return;
-    const target = listHref(panelHref(id, null));
+    const target = viewHref(panelHref(id, null));
     if (location.pathname + location.search !== target) navigation.push(target, { scroll: "preserve", state: { chatFromList: fromList } });
     if (pendingListIntent !== null) await refreshList(target);
   };
@@ -1078,24 +1105,20 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     try {
       const current = await openSystemChat({ resourceType: ref.type, resourceId: ref.id });
       if (token !== systemOpen) return;
-      if ((await open(chatRoute(current.id))) === "applied") navigation.push(listHref(threadHref(current.id, "all")), { scroll: "preserve" });
+      store?.includeSystemChats([current]);
+      if ((await open(chatRoute(current.id))) === "applied")
+        navigation.push(viewHref(threadHref(current.id, "all")), { scroll: "preserve" });
     } catch {
       if (token === systemOpen) toast.error(t().openFailed);
     } finally {
       if (token === systemOpen) setBusy(false);
     }
   };
-  const directoryQuery = () => {
-    const source = new URL(location.href).searchParams;
-    const params = new URLSearchParams();
-    for (const key of ["q", "filter"]) if (source.has(key)) params.set(key, source.get(key)!);
-    return params.size ? `?${params}` : "";
-  };
   const openOverview = async (navigation?: LinkNavigateEvent) => {
     const id = conversation()?.id;
     if (!id || (await open(chatRoute(id, "all", { threads: true }))) !== "applied") return;
-    if (navigation) navigation.push(listHref(threadsPageHref(id) + (system() ? directoryQuery() : "")), { scroll: "preserve" });
-    else navigate(listHref(threadsPageHref(id) + (system() ? directoryQuery() : "")), { scroll: "preserve" });
+    if (navigation) navigation.push(viewHref(threadsPageHref(id)), { scroll: "preserve" });
+    else navigate(viewHref(threadsPageHref(id)), { scroll: "preserve" });
   };
   /** Opens another part of the open chat, from the list, the picker, a thread chip, or a new thread. */
   const openView = async (id: string, view: ThreadView, navigation?: LinkNavigateEvent, message?: string) => {
@@ -1104,7 +1127,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const options = { scroll: "preserve" as const, state: { threadFromPage: route().threads && route().panel === null } };
     const next = chatRoute(id, view, { messageId: message ?? null });
     if ((await open(next)) !== "applied") return;
-    const href = listHref(threadHref(id, view, message) + (system() ? directoryQuery() : ""));
+    const href = viewHref(threadHref(id, view, message));
     if (navigation) navigation.push(href, options);
     else navigate(href, options);
   };
@@ -1132,7 +1155,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const id = route().chatId;
     if (state && typeof state === "object" && "threadFromPage" in state && state.threadFromPage === true) history.back();
     else if (id && (await open(chatRoute(id, route().view, { threads: true }))) === "applied")
-      navigation.push(listHref(threadsPageHref(id) + (system() ? directoryQuery() : "")), { scroll: "preserve" });
+      navigation.push(viewHref(threadsPageHref(id)), { scroll: "preserve" });
   };
 
   const openInfo = (navigation?: LinkNavigateEvent) => {
@@ -1143,8 +1166,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     setPanel("info");
     setRoute({ ...route(), chatId: id, messageId, panel: "info" });
     const options = { scroll: "preserve" as const, state: { chatFromList: listDepth() === 1, chatInfoFromChat: true } };
-    if (navigation) navigation.push(listHref(panelHref(id, "info", messageId, route().view)), options);
-    else navigate(listHref(panelHref(id, "info", messageId, route().view)), options);
+    if (navigation) navigation.push(viewHref(panelHref(id, "info", messageId, route().view)), options);
+    else navigate(viewHref(panelHref(id, "info", messageId, route().view)), options);
   };
   const infoFromChat = () => {
     const state: unknown = history.state;
@@ -1173,8 +1196,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const messageId = route().messageId;
     setPanel(null);
     setRoute({ ...route(), chatId: id, messageId, panel: null });
-    if (navigation) navigation.push(listHref(panelHref(id, null, messageId, route().view)), { scroll: "preserve" });
-    else navigate(listHref(panelHref(id, null, messageId, route().view)), { scroll: "preserve" });
+    if (navigation) navigation.push(viewHref(panelHref(id, null, messageId, route().view)), { scroll: "preserve" });
+    else navigate(viewHref(panelHref(id, null, messageId, route().view)), { scroll: "preserve" });
   };
 
   /** A chat the person just started, or chose among existing ones, opens in place like a chat from the list. */
@@ -1261,7 +1284,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     setPanel(null);
     if (route().chatId === current.id) {
       setRoute(chatRoute(current.id));
-      navigate(listHref(panelHref(current.id, null)), { replace: true, scroll: "preserve" });
+      navigate(viewHref(panelHref(current.id, null)), { replace: true, scroll: "preserve" });
     }
   };
 
@@ -1616,7 +1639,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         if (props.chatId) savedDrafts?.select(props.chatId);
         else if (selected) {
           void open(chatRoute(selected)).then((result) => {
-            if (result === "applied") navigate(panelHref(selected, null), { replace: true, scroll: "manual" });
+            if (result === "applied") navigate(listHref(panelHref(selected, null)), { replace: true, scroll: "manual" });
           });
         }
       } catch {

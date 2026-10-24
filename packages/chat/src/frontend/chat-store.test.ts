@@ -2381,7 +2381,7 @@ test("personal list changes retain and refresh nonmember system rows independent
   const system = { ...conversation, id: "System", kind: "system" as const, member: false, pinnedRank: null, archived: false };
   const { store, connection } = fixture({
     conversations: async () => ({ items: [], nextCursor: null }),
-    conversation: async (id) => id === system.id ? system : conversation,
+    conversation: async (id) => (id === system.id ? system : conversation),
   });
   try {
     store.includeSystemChats([system]);
@@ -2389,5 +2389,7 @@ test("personal list changes retain and refresh nonmember system rows independent
     expect(store.sidebar).toContainEqual(system);
     await connection.get("me").apply({ type: "membership", conversationId: conversation.id });
     expect(store.sidebar).toContainEqual(system);
-  } finally { store.dispose(); }
+  } finally {
+    store.dispose();
+  }
 });
