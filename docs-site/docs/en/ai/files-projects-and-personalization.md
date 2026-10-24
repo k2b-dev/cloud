@@ -721,6 +721,26 @@ See [Models and providers](/en/docs/ai/models-and-providers#configure-audio-tran
 for container and provider limits. Normal file storage limits do not imply
 that an audio endpoint accepts the same input size.
 
+## Store Studio app files
+
+Studio app files are shared by everyone who can use the app. They have a
+separate budget from personal and shared JSON storage. By default, a file can
+contain up to 50 MiB and each app has 250 MiB of shared file storage. Operators
+can change these limits in Studio administration; each binary transfer remains
+limited to 64 MiB. The `cloud.files.write` runtime API additionally limits each
+payload to 16 MiB.
+
+The total file budget counts payload bytes plus the PostgreSQL size of each
+file's key and media-type metadata record. Empty files are supported and consume
+metadata space. Listed file sizes show payload bytes only. Replacing a file
+replaces its quota charge, and deletion releases that charge.
+
+Existing files remain readable after an operator lowers a limit or after an
+upgrade changes accounting. A replacement may exceed a lowered limit only when
+it does not increase the corresponding usage: payload size for the per-file
+limit, or payload plus metadata for the total budget. To add more data after
+`STORAGE_FULL`, delete files or ask the operator to increase the budget.
+
 ## Explicit file transfers
 
 Assistant file references use the public `AiFileLocation` and `AiFileReference`

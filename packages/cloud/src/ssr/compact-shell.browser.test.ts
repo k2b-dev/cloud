@@ -294,7 +294,7 @@ describe("signed-in shell", () => {
     }
   });
 
-  test("neither the controller attaching nor navigating to another page moves any part of the shell", async () => {
+  test.each(devices)("$name: attaching, reloading and navigating preserve the shell", async (device) => {
     const keys = ["rail", "shell", "workspace", "bar", "sidebar", "pane", "main", "detail", "avatar"] as const;
     const same = (device: Device, step: string, actual: Geometry, expected: Geometry) => {
       for (const key of keys) {
@@ -310,27 +310,25 @@ describe("signed-in shell", () => {
     const noOverflow = async (page: Page) => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     };
-    for (const device of devices) {
-      const { context, page } = await open(device, "/app/mail/inbox", { attached: false });
-      try {
-        const served = await geometry(page, false);
-        await noOverflow(page);
-        await attach(page);
-        same(device, "attach", await geometry(page, false), served);
-        await noOverflow(page);
-        // Reload the same server path and attach again, without relying on a live HTTP server.
-        await page.setContent(await html("/app/mail/inbox"));
-        same(device, "reload served", await geometry(page, false), served);
-        await attach(page);
-        same(device, "reload attached", await geometry(page, false), served);
-        await noOverflow(page);
-        await page.setContent(await html("/app/mail/archive"));
-        await attach(page);
-        same(device, "navigate", await geometry(page, false), served);
-        await noOverflow(page);
-      } finally {
-        await context.close();
-      }
+    const { context, page } = await open(device, "/app/mail/inbox", { attached: false });
+    try {
+      const served = await geometry(page, false);
+      await noOverflow(page);
+      await attach(page);
+      same(device, "attach", await geometry(page, false), served);
+      await noOverflow(page);
+      // Reload the same server path and attach again, without relying on a live HTTP server.
+      await page.setContent(await html("/app/mail/inbox"));
+      same(device, "reload served", await geometry(page, false), served);
+      await attach(page);
+      same(device, "reload attached", await geometry(page, false), served);
+      await noOverflow(page);
+      await page.setContent(await html("/app/mail/archive"));
+      await attach(page);
+      same(device, "navigate", await geometry(page, false), served);
+      await noOverflow(page);
+    } finally {
+      await context.close();
     }
   });
 

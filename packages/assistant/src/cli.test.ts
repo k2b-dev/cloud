@@ -1643,6 +1643,7 @@ test.each(["explicit", "temporary"])("code check saves every chat output locally
   let input: unknown,
     closed = false;
   const host = spyOn(codeHost, "createCliCodeHost").mockResolvedValue({
+    machine: async () => null,
     health: async () => {},
     execute: async (call) => {
       input = call.args;

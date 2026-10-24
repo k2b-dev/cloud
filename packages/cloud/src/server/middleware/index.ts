@@ -4,6 +4,7 @@ export {
   type AuthContext,
   auth,
   type InvocationProvenance,
+  isRequestCredentialCurrent,
   type RequestActor,
   type RequestAuthority,
   type RequestCredentialKind,

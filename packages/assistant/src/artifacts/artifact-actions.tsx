@@ -75,6 +75,7 @@ export function createArtifactActions(props: {
             <Show when={!access.error && access()} fallback={<Placeholder state="error" title={t().loadFailed} />}>
               {(entries) => (
                 <StudioPermissions
+                  artifactId={item.id}
                   entries={entries()}
                   loadProjects={() => artifactClient.projects(item.id)}
                   grant={(principal, level) => artifactClient.grant(item.id, principal, level)}

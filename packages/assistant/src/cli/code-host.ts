@@ -1,9 +1,13 @@
 import { fileURLToPath } from "node:url";
 import type { AiFrontendToolHandler } from "@k2b/cloud/ai/solid";
 import type { CloudCliContext } from "@k2b/cloud/cli";
+import { LIMITS } from "../artifacts/contracts";
+import type { MachineHostInput } from "../artifacts/machine-contracts";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { createCodeHostHttp } from "./code-host-http";
 import { hostIpc } from "./code-host-ipc";
+
+let liveHosts = 0;
 
 /** Hidden `cld assistant` command that runs the code host in a child process. */
 export const CODE_HOST_COMMAND = "code-host";
@@ -25,12 +29,33 @@ type Call = Parameters<AiFrontendToolHandler>[0];
 // Each host owns one Bun process and one browser. Bun's child_process pipe
 // finalizers must never outlive a browser and close a replacement's descriptors.
 // Credentials and approval decisions stay in this parent CLI process.
+export class CodeHostBusyError extends Error {
+  constructor() {
+    super("Studio execution hosts are busy");
+  }
+}
+
 export async function createCliCodeHost(
   ctx: Pick<CloudCliContext, "fetch">,
   approve?: (request: CodeApproval) => Promise<CapabilityDecision>,
   options?: { entry?: string },
 ) {
-  const http = createCodeHostHttp(ctx);
+  if (liveHosts >= LIMITS.codeHosts) throw new CodeHostBusyError();
+  liveHosts++;
+  let released = false;
+  const release = () => {
+    if (!released) {
+      released = true;
+      liveHosts--;
+    }
+  };
+  let http: ReturnType<typeof createCodeHostHttp>;
+  try {
+    http = createCodeHostHttp(ctx);
+  } catch (error) {
+    release();
+    throw error;
+  }
   // The child reports each startup step so a missed deadline names where it stopped.
   let step = "starting the code host process";
   const ipc = hostIpc(
@@ -60,11 +85,13 @@ export async function createCliCodeHost(
       });
     } catch (error) {
       http.close();
+      release();
       ipc.close();
       throw error;
     }
   })();
   void child.exited.then(() => {
+    release();
     http.close();
     ipc.close(new Error("CLI browser host exited; no operation was replayed"));
   });
@@ -104,6 +131,7 @@ export async function createCliCodeHost(
           clearTimeout(deadline);
         }
       },
+      machine: (input: MachineHostInput, signal?: AbortSignal) => ipc.request({ operation: "machine", input }, signal),
       execute: (call: Call, signal?: AbortSignal) => ipc.request({ operation: "execute", call }, signal),
       call: (call: Call, signal?: AbortSignal) => ipc.request({ operation: "call", call }, signal),
       close,

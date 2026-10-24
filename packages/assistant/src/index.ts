@@ -1,14 +1,14 @@
 import { websocket } from "hono/bun";
-import apiRoutes from "./api";
 import { agentHost } from "./artifacts/agent-host";
 import { artifactDatabase, rsqlAllowlist } from "./artifacts/database";
 import { appChecks } from "./artifacts/html/check-service";
 import { httpService } from "./artifacts/http-service";
+import { closeMachineHosts } from "./artifacts/machine-execution";
 import { migrateArtifacts } from "./artifacts/migrate";
 import { assistantCapabilities } from "./capabilities";
 import { app } from "./config";
 import { assistantHelp } from "./help";
-import { router } from "./router";
+import { apiRoutes, router } from "./router";
 
 let hostTimer: ReturnType<typeof setInterval> | undefined;
 let hostSweep: Promise<unknown> | undefined;
@@ -46,7 +46,7 @@ const result = await app.start({
     stop: async () => {
       clearInterval(hostTimer);
       await hostSweep;
-      await agentHost.close();
+      await Promise.all([agentHost.close(), closeMachineHosts()]);
       clearInterval(databaseTimer);
       await databaseCleanup;
     },

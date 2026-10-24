@@ -107,6 +107,11 @@ For a slow handler, `setRequestTimeout`, `REQUEST_IDLE_TIMEOUT_SECONDS`, and
 `REQUEST_IDLE_TIMEOUT_MAX_SECONDS` control the bounded request idle timer;
 see [Answer slow requests](/en/docs/server/http#answer-slow-requests).
 
+`isRequestCredentialCurrent(c, { oauthAudience })` rechecks the credential that
+admitted a continuing request. It does not replace resource authorization.
+See [Studio machine execution](/en/docs/identity/studio-machine-execution#call-the-api)
+for its use alongside effect checks.
+
 See [Server APIs](/en/docs/server) for the request path.
 
 The widget setting types `WidgetSettingField`, `WidgetSettingsDeclaration`,
