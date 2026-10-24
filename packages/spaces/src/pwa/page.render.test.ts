@@ -12,6 +12,7 @@ import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import * as overview from "../service/overview";
+import * as pwaTask from "./task";
 
 const root = mkdtempSync(join(tmpdir(), "spaces-pwa-render-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -72,10 +73,34 @@ let work: Record<OverviewView, OverviewWork["items"]> = {
   upcoming: [],
 };
 
+const task: pwaTask.PwaTask = {
+  shortId: "Item01",
+  spaceShortId: "Space1",
+  spaceName: "Summer fair",
+  spaceColor: "#16a34a",
+  title: "Order the tents",
+  event: false,
+  completed: false,
+  deadline: "2026-01-02T09:00:00.000Z",
+  deadlineAllDay: false,
+  startsAt: null,
+  endsAt: null,
+  allDay: false,
+  location: null,
+  people: [{ id: person.id, kind: "user", displayName: "Mia Muster", avatarHash: null }],
+  description: "Two **large** tents.",
+  checklist: [
+    { id: "Check1", label: "Ask the rental", completed: true },
+    { id: "Check2", label: "Pay the deposit", completed: false },
+  ],
+  canWrite: false,
+};
+const taskSpy = spyOn(pwaTask, "loadPwaTask").mockImplementation(async ({ taskShortId }) => (taskShortId === task.shortId ? task : null));
 const loadSpy = spyOn(overview, "loadOverviewWork").mockImplementation(async ({ view }) => ({ view, counts, items: work[view] }));
 const tokenSpy = spyOn(session, "getToken").mockReturnValue(null);
 const sessionSpy = spyOn(session, "authenticateRequest").mockResolvedValue(null);
 const spies = [
+  taskSpy,
   loadSpy,
   tokenSpy,
   sessionSpy,
@@ -223,6 +248,70 @@ describe("Spaces in the mobile app", () => {
       expect(response.headers.get("location")).toBe(`/pwa/_auth/session/launch?to=${encodeURIComponent("/pwa/spaces?view=today")}`);
     }
     expect(loadSpy).not.toHaveBeenCalled();
+  });
+
+  test("opens a task beside the list at its own address, with what the reader may not change and why", async () => {
+    signIn("app");
+    const { response, document } = await render("/pwa/spaces/Space1/Item01?view=today");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(taskSpy.mock.calls.at(-1)?.[0]).toMatchObject({ spaceShortId: "Space1", taskShortId: "Item01" });
+    // The list keeps the view the address names; the task is the deepest level, so a phone shows it with a way back.
+    expect(loadSpy.mock.calls.at(-1)?.[0]).toMatchObject({ view: "today" });
+    expect(document.querySelector("title")?.textContent).toBe("Order the tents");
+    const levels = [...document.querySelectorAll("[data-workspace-level]")];
+    expect(levels.map((level) => level.getAttribute("data-workspace-level-shown"))).toEqual(["2 3", "1 2 3"]);
+    expect(levels[1]?.querySelector(".k2b-app-workspace__level-back")?.getAttribute("href")).toBe("/pwa/spaces?view=today");
+    expect(levels[1]?.querySelector("h2")?.textContent).toBe("Summer fair");
+    const detail = document.querySelector(".spaces-pwa-task")!;
+    expect(detail.querySelector("h3")?.textContent).toBe("Order the tents");
+    expect(detail.querySelector(".spaces-pwa-task__note")?.textContent).toBe("Read only. You cannot change tasks in “Summer fair”.");
+    expect(detail.querySelector("button.spaces-pwa__check")?.hasAttribute("disabled")).toBe(true);
+    expect(detail.querySelector("strong")?.textContent).toBe("large");
+    expect(
+      [...detail.querySelectorAll(".spaces-pwa-task__checklist input")].map((input) => [
+        input.hasAttribute("checked"),
+        input.hasAttribute("disabled"),
+      ]),
+    ).toEqual([
+      [true, true],
+      [false, true],
+    ]);
+    expect(detail.querySelector(".spaces-pwa-task__aside")?.textContent).toBe("1 of 2");
+    expect(detail.querySelector('a[href="/app/spaces/Space1?item=Item01"]')?.textContent).toContain("Open in Spaces");
+  });
+
+  test("answers the task's address with JSON for the page's own reads, and a missing or unreadable task is not found", async () => {
+    signIn("app");
+    const json = await server.request("https://cloud.example.test/pwa/spaces/Space1/Item01", {
+      headers: { Cookie: "pwa_session=test-session", Accept: "application/json" },
+    });
+    expect(json.status).toBe(200);
+    expect(json.headers.get("vary")).toContain("Accept");
+    expect(await json.json()).toEqual(task);
+    // A browser's own preference for HTML, or JSON excluded, gets the page.
+    for (const accept of ["text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "text/html, application/json;q=0"]) {
+      const page = await server.request("https://cloud.example.test/pwa/spaces/Space1/Item01", {
+        headers: { Cookie: "pwa_session=test-session", Accept: accept },
+      });
+      expect(page.headers.get("content-type")).toContain("text/html");
+    }
+    for (const accept of ["application/json", "text/html"]) {
+      const missing = await server.request("https://cloud.example.test/pwa/spaces/Space1/Other1", {
+        headers: { Cookie: "pwa_session=test-session", Accept: accept },
+      });
+      expect(missing.status).toBe(404);
+      expect(await missing.text()).not.toContain("Order the tents");
+    }
+  });
+
+  test("without a selection the list stands alone, and a wide screen holds the task's place", async () => {
+    signIn("app", person);
+    const { document } = await render("/pwa/spaces", { "Accept-Language": "de" });
+    const levels = [...document.querySelectorAll("[data-workspace-level]")];
+    expect(levels.map((level) => level.getAttribute("data-workspace-level-shown"))).toEqual(["1 2 3", "2 3"]);
+    expect(levels[1]?.textContent).toContain("Keine Aufgabe ausgewählt");
+    expect(document.querySelector(".spaces-pwa__copy")?.getAttribute("href")).toBe("/pwa/spaces/Space1/Item01");
   });
 
   test("keeps its catalog complete in every language", () => {

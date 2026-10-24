@@ -2341,7 +2341,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   @apply flex min-w-0 items-center;
   min-height: 2.25rem;
   overflow: hidden;
-  border: 1px solid transparent;
+  border: 1px solid var(--k2b-field-border, transparent);
   border-radius: var(--k2b-radius-control);
   background: var(--k2b-field-surface, var(--k2b-surface-muted));
   box-shadow: none;
@@ -6042,7 +6042,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.4375rem 0.625rem;
   color: var(--k2b-text-secondary);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-field-font-size, 0.8125rem);
   line-height: 1rem;
   text-align: left;
   cursor: pointer;
@@ -6122,7 +6122,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text);
   background: transparent;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--k2b-field-font-size, 0.8125rem);
+  /* A placeholder longer than a phone field ends in an ellipsis instead of a cut word. */
+  text-overflow: ellipsis;
 }
 
 .k2b-ui .k2b-combobox__input > input::placeholder {

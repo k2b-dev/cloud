@@ -107,4 +107,82 @@ suite("Spaces in the mobile app", () => {
     expect(work.items.map((entry) => entry.shortId)).not.toContain(item!.short_id);
     expect(work.counts.mine).toBe(0);
   });
+
+  test("a task opens at its own address only for readers of its Space, and only write access may change it", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const person = async (uid: string) => {
+      const [row] = await sql<{ id: string }[]>`
+        INSERT INTO auth.users (uid, provider, profile, display_name)
+        VALUES (${`${uid}-${suffix}`}, 'local', 'user', ${uid}) RETURNING id`;
+      users.push(row!.id);
+      return row!.id;
+    };
+    const [writer, reader, stranger] = [
+      await person("spaces-pwa-writer"),
+      await person("spaces-pwa-reader"),
+      await person("spaces-pwa-stranger"),
+    ];
+    const newSpace = async (name: string) => {
+      const [row] = await sql<{ id: string; short_id: string }[]>`
+        INSERT INTO spaces.spaces (short_id, name, color) VALUES (${newShortId()}, ${`${name} ${suffix}`}, '#16a34a') RETURNING id, short_id`;
+      spaces.push(row!.id);
+      return row!;
+    };
+    const [fair, other] = [await newSpace("Summer fair"), await newSpace("Other")];
+    for (const [userId, permission, space] of [
+      [writer, "write", fair],
+      [reader, "read", fair],
+      [stranger, "write", other],
+    ] as const) {
+      const [access] = await sql<{ id: string }[]>`
+        INSERT INTO auth.access (user_id, permission) VALUES (${userId}::uuid, ${permission}) RETURNING id`;
+      await sql`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${space.id}::uuid, ${access!.id}::uuid)`;
+    }
+    const [column] = await sql<{ id: string }[]>`
+      INSERT INTO spaces.columns (short_id, space_id, name, rank) VALUES (${newShortId()}, ${fair.id}::uuid, 'Open', 1024) RETURNING id`;
+    const [item] = await sql<{ id: string; short_id: string }[]>`
+      INSERT INTO spaces.items (short_id, space_id, column_id, title, description)
+      VALUES (${newShortId()}, ${fair.id}::uuid, ${column!.id}::uuid, 'Order the tents', 'Two large tents.') RETURNING id, short_id`;
+    await sql`INSERT INTO spaces.item_assignees (item_id, user_id) VALUES (${item!.id}::uuid, ${writer}::uuid)`;
+    const [entry] = await sql<{ short_id: string }[]>`
+      INSERT INTO spaces.item_checklist_entries (short_id, item_id, label, completed, rank)
+      VALUES (${newShortId()}, ${item!.id}::uuid, 'Ask the rental', false, 1024) RETURNING short_id`;
+
+    const read = async (userId: string, path: string, accept = "application/json") => {
+      const cookie = `pwa_session=${(await createTestAppSession(userId)).token}`;
+      return server.request(`${origin}${path}`, { headers: { cookie, accept, ...document } });
+    };
+    const address = `/pwa/spaces/${fair.short_id}/${item!.short_id}`;
+
+    const own = await read(writer, address);
+    expect(own.status).toBe(200);
+    expect(await own.json()).toMatchObject({
+      shortId: item!.short_id,
+      spaceShortId: fair.short_id,
+      title: "Order the tents",
+      description: "Two large tents.",
+      people: [{ id: writer, kind: "user" }],
+      checklist: [{ id: entry!.short_id, label: "Ask the rental", completed: false }],
+      canWrite: true,
+    });
+    const page = await read(writer, address, "text/html");
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("Two large tents.");
+
+    const readOnly = await read(reader, address);
+    expect(((await readOnly.json()) as { canWrite: boolean }).canWrite).toBe(false);
+
+    // Neither a stranger nor an address that puts the task in another Space learns that it exists.
+    for (const [userId, path] of [
+      [stranger, address],
+      [stranger, `/pwa/spaces/${other.short_id}/${item!.short_id}`],
+      [writer, `/pwa/spaces/${other.short_id}/${item!.short_id}`],
+    ] as const) {
+      for (const accept of ["application/json", "text/html"]) {
+        const response = await read(userId, path, accept);
+        expect(response.status).toBe(404);
+        expect(await response.text()).not.toContain("Order the tents");
+      }
+    }
+  });
 });

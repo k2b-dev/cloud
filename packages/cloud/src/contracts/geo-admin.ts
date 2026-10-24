@@ -55,6 +55,8 @@ export type GeoAdminUsage = {
   shares: Array<{ group: GeoUsageGroup; credits: number }>;
   /** Access subjects whose use today reached the per-person daily limit. */
   peopleAtLimit: number;
+  /** Routing estimates exceeded this month; details are in the audit view. */
+  routeCostOverruns: number;
   timezone: string;
 };
 
