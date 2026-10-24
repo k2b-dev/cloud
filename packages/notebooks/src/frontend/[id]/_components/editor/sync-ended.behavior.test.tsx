@@ -77,6 +77,12 @@ const flush = async () => {
   await Promise.resolve();
 };
 
+/** Lets timers run until the condition holds or the deadline passes. */
+const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 10));
+const waitFor = async (condition: () => boolean, timeoutMs: number) => {
+  for (const deadline = performance.now() + timeoutMs; !condition() && performance.now() < deadline; ) await nextTask();
+};
+
 const mount = ({ pending: initialPending = true, locale = "en" } = {}) => {
   let pending = initialPending;
   const dom = createDomTestHarness();
@@ -396,8 +402,10 @@ describe("sync ended editor recovery", () => {
       routeGet.mockImplementationOnce(async () => new Response("unavailable", { status: 503 }));
       savedTexts.set("Note01", `${markdown}\n\nSaved by Ada.`);
       event({ type: "note.updated", note: { id: "Note01" } });
-      await Bun.sleep(1200);
-      expect(editor.view().state.doc.toString()).toBe(`${markdown}\n\nSaved by Ada.`);
+      // The retry waits about a second; poll for its result within a bounded deadline.
+      const retried = `${markdown}\n\nSaved by Ada.`;
+      await waitFor(() => editor.view().state.doc.toString() === retried, 5000);
+      expect(editor.view().state.doc.toString()).toBe(retried);
 
       event({ type: "note.deleted", noteId: "Note01" });
       expect(reload).toHaveBeenCalledTimes(1);
