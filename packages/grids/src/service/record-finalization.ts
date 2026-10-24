@@ -703,6 +703,7 @@ export const finalizeInTransaction = async (
     expectedPolicyRevision?: number;
     dateConfig?: DateContext;
     locale?: string;
+    beforeWrite?: () => Promise<void>;
   },
 ): Promise<Result<{ record: GridRecord; outboxId: string | null; approvalRequestInternalId?: string; approvalReplay?: boolean }>> => {
   const messages = getGridsCrudMessages(params.locale);
@@ -810,6 +811,7 @@ export const finalizeInTransaction = async (
   Object.assign(data, computed.data.values);
   const changedFieldIds = [...allocations.map((allocation) => allocation.fieldId), ...Object.keys(computed.data.values)];
   const nextVersion = Number(record.row.version) + 1;
+  await params.beforeWrite?.();
   const [updated] = await client<Array<Record<string, unknown>>>`
     UPDATE grids.records
     SET data = ${data}::jsonb, finalized_computed_types = ${computed.data.types}::jsonb,

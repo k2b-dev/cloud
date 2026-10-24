@@ -6,6 +6,8 @@ test("every Grids test file runs in exactly one certification phase, behavior te
   const phases = await verificationPhases(resolve(import.meta.dir, "../../.."));
   const phase = (name: string) => phases.find((candidate) => candidate.name === name)!;
   const behavior = /\.behavior\.test\.tsx?$/;
+  expect(phase("machine-authority").files).toEqual([resolve(import.meta.dir, "../src/api/workflow-machine-authority.integration.test.ts")]);
+  expect(phase("machine-authority").flags).not.toContain("./packages/grids/scripts/verify-sync-preload.ts");
   expect(phase("dom").files.length).toBeGreaterThan(0);
   expect(phase("dom").files.every((file) => behavior.test(file))).toBe(true);
   expect(phase("dom").flags).toContain("--conditions=browser");

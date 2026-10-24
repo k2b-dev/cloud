@@ -2,7 +2,7 @@ import { describe, expect, setSystemTime, test } from "bun:test";
 import { createSignal, Show } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
-import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
+import type { AccessEntry, Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 import type { GrantableLevel } from "./PermissionEditor";
 
 const waitFor = async (condition: () => boolean, label: string) => {
@@ -276,39 +276,123 @@ describe("PermissionEditor service accounts", () => {
   }
 
   for (const locale of ["en", "de"] as const) {
-    test(`${locale}: rows, picker results, and a new grant show the same kind`, async () => {
+    for (const selectedKind of ["standalone", "agent"] as const) {
+      test(`${locale} ${selectedKind}: default picker searches service accounts and keeps their names and kinds`, async () => {
+        const dom = createDomTestHarness();
+        installPopoverApi(dom);
+        dom.document.documentElement.lang = locale;
+        const originalFetch = globalThis.fetch;
+        const requestedKinds: string[] = [];
+        globalThis.fetch = Object.assign(
+          async (input: string | URL | Request) => {
+            requestedKinds.push(new URL(input instanceof Request ? input.url : input.toString()).searchParams.get("kinds") ?? "");
+            return Response.json({
+              items: kinds.map((kind) => ({
+                kind: "service_account",
+                serviceAccount: { id: `found-${kind}`, name: `Found ${kind}`, kind, ...binding(kind) },
+              })),
+            });
+          },
+          { preconnect: originalFetch.preconnect },
+        );
+        const { default: PermissionEditor } = await import("./PermissionEditor");
+        delegateEvents(["input", "click"]);
+        const rowOf = (name: string) =>
+          Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) => row.textContent?.includes(name));
+        const granted: { principal: Principal; kind?: ServiceAccountKind }[] = [];
+        const returned: AccessEntry[] = [];
+        const dispose = render(
+          () => (
+            <PermissionEditor
+              initialEntries={[...kinds.map(serviceEntry), serviceEntry()]}
+              allowAuthenticated={false}
+              // A deferred draft builds its entry from the display metadata the picker hands over.
+              grantAccess={async (principal, permission, display) => {
+                granted.push({ principal, kind: display?.serviceAccountKind });
+                const entry: AccessEntry = { id: "access-new", principal, permission, createdAt: "2026-09-30T00:00:00.000Z", ...display };
+                returned.push(entry);
+                return entry;
+              }}
+              updateAccess={async () => {}}
+              revokeAccess={async () => {}}
+            />
+          ),
+          dom.root,
+        );
+        try {
+          for (const kind of kinds) {
+            const row = rowOf(`Granted ${kind}`)!;
+            expect(row.querySelector(`i.${icons[kind]}`)).not.toBeNull();
+            expect(row.textContent).toContain(`(${labels[locale][kind]})`);
+          }
+          // An entry whose consumer did not resolve the kind makes no claim about it.
+          const unknown = rowOf("Granted unknown")!;
+          expect(unknown.querySelector("i.ti-key")).not.toBeNull();
+          expect(unknown.textContent).not.toContain("(");
+
+          const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+          input.value = "fo";
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          await waitFor(() => dom.root.querySelectorAll("[role=option]").length === kinds.length, "the service-account results");
+          expect(requestedKinds).toContain("user,group,service_account");
+          const options = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role=option]"));
+          for (const kind of kinds) {
+            const option = options.find((element) => element.textContent?.includes(`Found ${kind}`))!;
+            expect(option.querySelector(`i.${icons[kind]}`)).not.toBeNull();
+            // Resource-bound accounts often share a name, so their result shows the binding instead.
+            expect(option.querySelector("small")?.textContent).toBe(
+              kind === "resource_bound" ? "contacts · book · book-1" : labels[locale][kind],
+            );
+          }
+
+          options.find((element) => element.textContent?.includes(`Found ${selectedKind}`))!.click();
+          await waitFor(() => rowOf(`Found ${selectedKind}`)?.hasAttribute("aria-busy") === false, "the granted agent row");
+          expect(granted).toEqual([
+            { principal: { type: "service_account", serviceAccountId: `found-${selectedKind}` }, kind: selectedKind },
+          ]);
+          const added = rowOf(`Found ${selectedKind}`)!;
+          expect(added.querySelector(`i.${icons[selectedKind]}`)).not.toBeNull();
+          expect(added.textContent).toContain(`(${labels[locale][selectedKind]})`);
+
+          // The editor changes its own copy; the entry the caller returned stays as the caller made it.
+          const edit = locale === "de" ? "Bearbeiten" : "Edit";
+          Array.from(added.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+            .find((item) => item.textContent?.startsWith(edit))!
+            .click();
+          await waitFor(() => rowOf(`Found ${selectedKind}`)?.textContent?.includes(edit) === true, "the new level");
+          expect(returned.map((entry) => entry.permission)).toEqual(["read"]);
+        } finally {
+          dispose();
+          globalThis.fetch = originalFetch;
+          dom.cleanup();
+        }
+      });
+    }
+  }
+
+  for (const expanded of [false, true])
+    test(`${expanded ? "expanded" : "compact"}: grant selection defaults to active accounts, forwards kind eligibility, and keeps existing rows`, async () => {
       const dom = createDomTestHarness();
       installPopoverApi(dom);
-      dom.document.documentElement.lang = locale;
       const originalFetch = globalThis.fetch;
+      const requests: URL[] = [];
       globalThis.fetch = Object.assign(
-        async () =>
-          Response.json({
-            items: kinds.map((kind) => ({
-              kind: "service_account",
-              serviceAccount: { id: `found-${kind}`, name: `Found ${kind}`, kind, ...binding(kind) },
-            })),
-          }),
+        async (input: string | URL | Request) => {
+          requests.push(new URL(input instanceof Request ? input.url : input.toString()));
+          return Response.json({ items: [] });
+        },
         { preconnect: originalFetch.preconnect },
       );
       const { default: PermissionEditor } = await import("./PermissionEditor");
-      delegateEvents(["input", "click"]);
-      const rowOf = (name: string) =>
-        Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) => row.textContent?.includes(name));
-      const granted: { principal: Principal; kind?: ServiceAccountKind }[] = [];
-      const returned: AccessEntry[] = [];
       const dispose = render(
         () => (
           <PermissionEditor
-            initialEntries={[...kinds.map(serviceEntry), serviceEntry()]}
+            expanded={expanded}
+            initialEntries={[{ ...serviceEntry("agent"), displayName: "Disabled agent" }]}
             allowAuthenticated={false}
-            allowServiceAccounts
-            // A deferred draft builds its entry from the display metadata the picker hands over.
-            grantAccess={async (principal, permission, display) => {
-              granted.push({ principal, kind: display?.serviceAccountKind });
-              const entry: AccessEntry = { id: "access-new", principal, permission, createdAt: "2026-09-30T00:00:00.000Z", ...display };
-              returned.push(entry);
-              return entry;
+            serviceAccountKinds={["standalone", "agent"]}
+            grantAccess={async () => {
+              throw new Error("No selection expected");
             }}
             updateAccess={async () => {}}
             revokeAccess={async () => {}}
@@ -317,44 +401,127 @@ describe("PermissionEditor service accounts", () => {
         dom.root,
       );
       try {
-        for (const kind of kinds) {
-          const row = rowOf(`Granted ${kind}`)!;
-          expect(row.querySelector(`i.${icons[kind]}`)).not.toBeNull();
-          expect(row.textContent).toContain(`(${labels[locale][kind]})`);
-        }
-        // An entry whose consumer did not resolve the kind makes no claim about it.
-        const unknown = rowOf("Granted unknown")!;
-        expect(unknown.querySelector("i.ti-key")).not.toBeNull();
-        expect(unknown.textContent).not.toContain("(");
-
+        delegateEvents(["input"]);
         const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
-        input.value = "fo";
+        input.value = "helper";
         input.dispatchEvent(new Event("input", { bubbles: true }));
-        await waitFor(() => dom.root.querySelectorAll("[role=option]").length === kinds.length, "the service-account results");
-        const options = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role=option]"));
-        for (const kind of kinds) {
-          const option = options.find((element) => element.textContent?.includes(`Found ${kind}`))!;
-          expect(option.querySelector(`i.${icons[kind]}`)).not.toBeNull();
-          // Resource-bound accounts often share a name, so their result shows the binding instead.
-          expect(option.querySelector("small")?.textContent).toBe(
-            kind === "resource_bound" ? "contacts · book · book-1" : labels[locale][kind],
-          );
-        }
+        await waitFor(() => requests.length > 0, "filtered directory request");
+        expect(requests[0]!.searchParams.get("kinds")).toBe("user,group,service_account");
+        expect(requests[0]!.searchParams.get("service_account_kinds")).toBe("standalone,agent");
+        expect(requests[0]!.searchParams.get("service_account_status")).toBe("active");
+        expect(dom.root.textContent).toContain("Disabled agent");
+      } finally {
+        dispose();
+        globalThis.fetch = originalFetch;
+        dom.cleanup();
+      }
+    });
 
-        options.find((element) => element.textContent?.includes("Found agent"))!.click();
-        await waitFor(() => rowOf("Found agent")?.hasAttribute("aria-busy") === false, "the granted agent row");
-        expect(granted).toEqual([{ principal: { type: "service_account", serviceAccountId: "found-agent" }, kind: "agent" }]);
-        const added = rowOf("Found agent")!;
-        expect(added.querySelector("i.ti-robot")).not.toBeNull();
-        expect(added.textContent).toContain(`(${labels[locale].agent})`);
+  test("an explicit status filter overrides the grant selection default", async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    const originalFetch = globalThis.fetch;
+    const requests: URL[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        requests.push(new URL(input instanceof Request ? input.url : input.toString()));
+        return Response.json({ items: [] });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    const dispose = render(
+      () => (
+        <PermissionEditor
+          initialEntries={[]}
+          serviceAccountStatus="disabled"
+          grantAccess={async () => {
+            throw new Error("No selection expected");
+          }}
+          updateAccess={async () => {}}
+          revokeAccess={async () => {}}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      delegateEvents(["input"]);
+      const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+      input.value = "helper";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(() => requests.length > 0, "explicit status directory request");
+      expect(requests[0]!.searchParams.get("service_account_status")).toBe("disabled");
+      expect(requests[0]!.searchParams.has("service_account_kinds")).toBe(false);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
 
-        // The editor changes its own copy; the entry the caller returned stays as the caller made it.
-        const edit = locale === "de" ? "Bearbeiten" : "Edit";
-        Array.from(added.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
-          .find((item) => item.textContent?.startsWith(edit))!
-          .click();
-        await waitFor(() => rowOf("Found agent")?.textContent?.includes(edit) === true, "the new level");
-        expect(returned.map((entry) => entry.permission)).toEqual(["read"]);
+  for (const scenario of [
+    { name: "unrestricted defaults", props: {}, kinds: "user,group,service_account", accountKinds: null, status: null },
+    {
+      name: "empty kinds stay unrestricted",
+      props: { serviceAccountKinds: [] },
+      kinds: "user,group,service_account",
+      accountKinds: null,
+      status: null,
+    },
+    {
+      name: "optional eligibility",
+      props: { serviceAccountKinds: ["standalone", "agent"], serviceAccountStatus: "active" },
+      kinds: "user,group,service_account",
+      accountKinds: "standalone,agent",
+      status: "active",
+    },
+    {
+      name: "excluded machines omit eligibility",
+      props: { allowServiceAccounts: false, serviceAccountKinds: ["agent"], serviceAccountStatus: "active" },
+      kinds: "user,group",
+      accountKinds: null,
+      status: null,
+    },
+  ] satisfies {
+    name: string;
+    props: { allowServiceAccounts?: boolean; serviceAccountKinds?: ServiceAccountKind[]; serviceAccountStatus?: ServiceAccountStatus };
+    kinds: string;
+    accountKinds: string | null;
+    status: string | null;
+  }[]) {
+    test(`PrincipalPicker: ${scenario.name}`, async () => {
+      const dom = createDomTestHarness();
+      installPopoverApi(dom);
+      const originalFetch = globalThis.fetch;
+      const requests: URL[] = [];
+      globalThis.fetch = Object.assign(
+        async (input: string | URL | Request) => {
+          requests.push(new URL(input instanceof Request ? input.url : input.toString()));
+          return Response.json({ items: [] });
+        },
+        { preconnect: originalFetch.preconnect },
+      );
+      const { default: PrincipalPicker } = await import("./PrincipalPicker");
+      const dispose = render(
+        () => (
+          <PrincipalPicker
+            {...scenario.props}
+            onSelect={() => {
+              throw new Error("No selection expected");
+            }}
+          />
+        ),
+        dom.root,
+      );
+      try {
+        delegateEvents(["input"]);
+        const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+        input.value = "helper";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await waitFor(() => requests.length > 0, "principal directory request");
+        expect(requests[0]!.searchParams.get("kinds")).toBe(scenario.kinds);
+        expect(requests[0]!.searchParams.get("service_account_kinds")).toBe(scenario.accountKinds);
+        expect(requests[0]!.searchParams.get("service_account_status")).toBe(scenario.status);
       } finally {
         dispose();
         globalThis.fetch = originalFetch;
@@ -750,10 +917,10 @@ describe("PermissionEditor group coverage", () => {
     try {
       expect(view.panel().textContent).toContain("Loading members…");
       await waitFor(() => view.panel().querySelectorAll("li").length === 20, "the first page");
-      // Coverage follows access resolution: direct and nested members, users only.
+      // Coverage follows access resolution for direct and nested human and machine members.
       const memberRequest = view.requests.find((url) => url.searchParams.has("member_of_group_id"))!;
       expect(Object.fromEntries(memberRequest.searchParams)).toEqual({
-        kinds: "user",
+        kinds: "user,service_account",
         member_of_group_id: groupId,
         recursive: "true",
         page: "1",
@@ -771,7 +938,7 @@ describe("PermissionEditor group coverage", () => {
       expect(view.panel().hidden).toBe(false);
       // The count leads the list, then the directory hint.
       expect(Array.from(view.panel().children, (child) => child.textContent)).toEqual([
-        "23 people receive access through this group right now.",
+        "23 accounts receive access through this group right now.",
         "This group comes from the directory. Local accounts such as guests can't be members, so give them access directly.",
         expect.stringContaining("Member 1"),
         "Show 3 more",
@@ -839,6 +1006,37 @@ describe("PermissionEditor group coverage", () => {
       dom.cleanup();
     }
   });
+
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`group coverage names a ${kind} member and its kind`, async () => {
+      const dom = createDomTestHarness();
+      installPopoverApi(dom);
+      dom.document.documentElement.lang = "en";
+      const view = await renderGroup(dom, (url) =>
+        url.searchParams.has("group_ids")
+          ? Response.json({
+              ...directoryGroup,
+              items: [{ kind: "group", group: { ...directoryGroup.items[0]!.group, provider: "local" } }],
+            })
+          : Response.json({
+              items: [{ kind: "service_account", serviceAccount: { id: "machine-member", name: "Research helper", kind } }],
+              pagination: { page: 1, per_page: 20, total: 1, total_pages: 1, has_next: false },
+            }),
+      );
+      try {
+        await waitFor(() => view.panel().querySelectorAll("li").length === 1, "machine member");
+        view.toggle().click();
+        expect(view.panel().textContent).toContain("Research helper");
+        expect(view.panel().textContent).toContain(kind === "agent" ? "Agent" : "Service account");
+        expect(view.panel().textContent).toContain("1 account receives access");
+        expect(view.panel().textContent).not.toContain("machine-member");
+        expect(view.panel().querySelector(kind === "agent" ? ".ti-robot" : ".ti-key")).not.toBeNull();
+      } finally {
+        view.done();
+        dom.cleanup();
+      }
+    });
+  }
 
   test("shows no member data when the directory withholds it", async () => {
     const dom = createDomTestHarness();

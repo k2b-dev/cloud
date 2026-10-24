@@ -1,10 +1,19 @@
 import { type SQL, sql } from "bun";
-import type { BaseUser, MutationResult, PaginationResponse, Role, User, UserProfile, UserProvider } from "../../contracts/shared";
+import type {
+  BaseUser,
+  MutationResult,
+  PaginationResponse,
+  RequestActor,
+  Role,
+  User,
+  UserProfile,
+  UserProvider,
+} from "../../contracts/shared";
 import { freeipa } from "../../server/services";
 import { createAuthLoginUrl } from "../../shared/redirect";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import type { AuditActor } from "../audit";
-import { getFreeIpaConfig } from "../freeipa-config";
+import { getFreeIpaAdminGroups, getFreeIpaConfig } from "../freeipa-config";
 import { getServiceIpaSession } from "../ipa/service-account";
 import { toPgTextArray, toPgUuidArray } from "../postgres";
 import { providers } from "../providers";
@@ -224,9 +233,10 @@ export const getMinimal = async (params: { id: string } | { uid: string }): Prom
 };
 
 /** Audience roles for a resolved access subject, including delegated users and group managers. */
-export const getRoles = async (userId: string): Promise<Role[]> => {
-  const { groupsAdmin } = await getFreeIpaConfig();
-  const [row] = await sql<DbRow[]>`SELECT u.provider, u.profile,
+export const getRoles = async (userId: string, options?: { db: typeof sql }): Promise<Role[]> => {
+  const db = options?.db ?? sql;
+  const groupsAdmin = options ? await getFreeIpaAdminGroups(db) : (await getFreeIpaConfig()).groupsAdmin;
+  const [row] = await db<DbRow[]>`SELECT u.provider, u.profile,
     CASE WHEN u.provider='local' THEN u.admin ELSE EXISTS (
       SELECT 1 FROM auth.ipa_user_effective_groups eg WHERE eg.user_id=u.id
         AND eg.group_name=ANY(${toPgTextArray(groupsAdmin)}::text[])
@@ -236,6 +246,26 @@ export const getRoles = async (userId: string): Promise<Role[]> => {
   if (!row) return [];
   const { provider, profile } = resolveProviderProfile(row);
   return buildRoles({ provider, profile, memberofGroup: [], manages: stringArray(row.manages), admin: Boolean(row.effective_admin) });
+};
+
+/**
+ * Revalidate installation authority and retain it until the caller commits.
+ * Lock users before grant/membership or mandate/profile locks, matching user
+ * deletion and provider sync. Projection and settings locks also cover rows
+ * inserted or replaced while lock acquisition was waiting.
+ */
+export const hasInstallationAdminInTransaction = async (actor: RequestActor, db: typeof sql): Promise<boolean> => {
+  if (actor.kind !== "user" || actor.sessionKind === "app" || !actor.user.roles.includes("admin")) return false;
+  const [user] = await db<{ provider: UserProvider; profile: UserProfile; expired: boolean }[]>`
+    SELECT provider, profile, (account_expires IS NOT NULL AND account_expires <= statement_timestamp()) AS expired
+    FROM auth.users WHERE id=${actor.user.id}::uuid FOR SHARE`;
+  if (!user || user.expired || user.profile !== "user") return false;
+  await db`LOCK TABLE settings.entries IN SHARE MODE`;
+  if (!(await isAccountCategoryAllowed(user, db))) return false;
+  if (user.provider === "ipa") {
+    await db`LOCK TABLE auth.ipa_user_effective_groups IN SHARE MODE`;
+  }
+  return (await getRoles(actor.user.id, { db })).includes("admin");
 };
 
 export const getByUid = async (params: { uid: string }): Promise<{ id: string; roles: Role[] } | null> => {

@@ -11,6 +11,7 @@ const fieldId = "44444444-4444-4444-8444-444444444444";
 const recordId = "55555555-5555-4555-8555-555555555555";
 const scope: GridsWorkflowActionScope = {
   runId: baseId,
+  channel: "api",
   baseId,
   workflow: { id: baseId, shortId: "WORK01", name: "Test" },
   principal: { userId: baseId, groupIds: [], serviceAccountId: null, actorServiceAccountId: null, credential: null },

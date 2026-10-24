@@ -14,7 +14,7 @@ import { createWorkflowNotificationSender } from "../notifications";
 import { logAudit } from "./audit";
 import { buildTemplateAppData, buildTemplateBusinessData } from "./documents";
 import { renderEmailTemplate } from "./email-templates";
-import { actionError, type GridsWorkflowActionScope, requireOk, workflowAuditMeta } from "./workflow-action-scope";
+import { actionError, type GridsWorkflowActionScope, requireExecution, requireOk, workflowAuditMeta } from "./workflow-action-scope";
 import {
   finishWorkflowEmailDeliveryIntent,
   getOrCreateWorkflowEmailDeliveryIntent,
@@ -107,6 +107,8 @@ export const sendWorkflowEmail = async (input: SendWorkflowEmailInput): Promise<
     if (!intent.recipientValue || !intent.subject || !intent.renderedHtml) {
       throw actionError("WORKFLOW_EMAIL_INVALID", workflowServiceText(input.locale).emailPendingIncomplete);
     }
+    // Settled deliveries are replayed above; each remaining send is a new effect.
+    await requireExecution(scope);
     const sent = await notificationSender.send({
       kind: recipient.kind,
       recipient: intent.recipientValue,

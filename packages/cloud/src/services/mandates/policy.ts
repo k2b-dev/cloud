@@ -14,6 +14,7 @@ const operationSchema = z.union([
   z.literal("search.query"),
   z.literal("runtime.http"),
   z.literal("runtime.database"),
+  z.literal("workflow.run"),
   z.string().refine((value) => {
     const [prefix, localId, extra] = value.split(":");
     return (

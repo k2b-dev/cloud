@@ -43,7 +43,7 @@ Wer einen Datensatz erstellt hat, bleibt als normale Information verfügbar. GQL
 
 ## Eine Grids App teilen {icon="app-window"}
 
-Eine Grids App hat eigenen Zugriff. Ihre einzige Stufe ist **Offen** (`read`). `none` verweigert den Zugriff. Du kannst einer Person, einer Gruppe, allen angemeldeten Konten oder der Öffentlichkeit Zugriff geben. Öffentlicher Zugriff schließt anonyme Besucher ein. Einem Dienstkonto kannst du keinen direkten Zugriff auf eine Grids App geben. Delegierte Anmeldedaten verwenden die Identität ihrer Person.
+Eine Grids App hat eigenen Zugriff. Ihre einzige Stufe ist **Offen** (`read`). `none` verweigert den Zugriff. Du kannst einer Person, einer Gruppe, einem eigenständigen Dienstkonto oder Agentenkonto, allen angemeldeten Konten oder der Öffentlichkeit Zugriff geben. Öffentlicher Zugriff schließt anonyme Besucher ein. Der Umfang der Anmeldedaten begrenzt den Kontozugriff. Ressourcengebundene Anmeldedaten können keine Grids Apps öffnen. Delegierte Anmeldedaten verwenden die Identität ihrer Person.
 
 Personen, die die App verwenden, brauchen keinen Zugriff auf die Base. Sie erhalten nur die Daten, Formulare, Felder, Dokumente und Aktionen, die in den unveränderlichen veröffentlichten Snapshot kompiliert sind. Zugriff auf eine App gibt nie den Grids-Arbeitsbereich mit Rohdaten, direkte APIs für Tabellen oder Datensätze, beliebiges GQL oder eine bearbeitbare Quellansicht.
 

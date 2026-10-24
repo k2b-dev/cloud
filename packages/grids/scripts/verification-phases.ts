@@ -15,6 +15,7 @@ export const verificationPhases = async (root: string): Promise<VerificationPhas
   const packageRoot = join(root, "packages/grids");
   const grids = (...files: string[]) => files.map((file) => join(packageRoot, file));
   const outbox = grids("src/service/record-event-outbox.integration.test.ts");
+  const machineAuthority = grids("src/api/workflow-machine-authority.integration.test.ts");
   const workflowConcurrency = grids("src/service/workflow-concurrency.integration.test.ts");
   const sync = grids("src/service/record-events.integration.test.ts", "src/service/record-event-retry.integration.test.ts");
   const ownSync = grids("src/service/evidence-exports.integration.test.ts");
@@ -27,6 +28,7 @@ export const verificationPhases = async (root: string): Promise<VerificationPhas
   const separate = new Set([
     ...outbox,
     ...workflowConcurrency,
+    ...machineAuthority,
     ...sync,
     ...ownSync,
     ...bundleChecks,
@@ -39,6 +41,9 @@ export const verificationPhases = async (root: string): Promise<VerificationPhas
     // The outbox reconciler claims database-wide work, so test it before other suites enqueue events.
     // This suite owns its Sync lifecycle for the live burst test.
     { name: "outbox", files: outbox, flags: [] },
+    // The actual-token fixture starts Core identity and owns its process Sync.
+    // Keep it out of the Grids-owned Sync preload used by standard suites.
+    { name: "machine-authority", files: machineAuthority, flags: ["--timeout", "30000"] },
     {
       name: "workflow-concurrency",
       files: workflowConcurrency,

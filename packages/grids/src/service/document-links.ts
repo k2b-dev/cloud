@@ -91,6 +91,7 @@ export const createDocumentLink = async (params: {
   ip?: string | null;
   userAgent?: string | null;
   client?: SqlClient;
+  beforeWrite?: () => Promise<void>;
   locale?: string;
 }): Promise<Result<{ link: DocumentLink; token: string }>> => {
   const t = documentServiceText(params.locale);
@@ -100,6 +101,7 @@ export const createDocumentLink = async (params: {
   const comment = normalizeDocumentLinkComment(params.input.comment);
   const create = async (tx: SqlClient): Promise<Result<{ link: DocumentLink; token: string }>> => {
     const row = await insertWithShortIdForDb(tx, "idx_grids_document_links_short_id", async (attempt, shortId) => {
+      await params.beforeWrite?.();
       const [created] = await attempt<DocumentDbRow[]>`
         INSERT INTO grids.document_links (
           short_id, document_id, base_id, table_id, record_id, token_hash, comment, created_by, expires_at

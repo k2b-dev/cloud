@@ -157,6 +157,26 @@ describe("workflow principal revalidation", () => {
     expect(expiredUser).toEqual({ ok: false, reason: "Workflow user is inactive." });
   });
 
+  test("full personal keys retain their user's grants while revalidating revocation", async () => {
+    const account = serviceAccount({ kind: "user_delegated", delegatedUserId: USER_ID, appId: null, resourceType: null, resourceId: null });
+    const source = principal();
+    if (!source.credential) throw new Error("Missing fixture credential");
+    const personal: GridsWorkflowPrincipal = {
+      ...source,
+      userId: USER_ID,
+      serviceAccountId: null,
+      credential: { ...source.credential, scopes: [], permissionCap: "admin", resourceBinding: null },
+    };
+    const dependencies = deps({
+      getServiceAccount: mock(async () => account),
+      findCredential: mock(async () => ({ ...credential([]), serviceAccount: account })),
+    });
+    expect(await revalidateWorkflowPrincipal(personal, BASE_ID, dependencies)).toMatchObject({ ok: true, permissionCap: "admin" });
+    expect(await revalidateWorkflowPrincipal(personal, BASE_ID, { ...dependencies, findCredential: mock(async () => null) })).toMatchObject(
+      { ok: false },
+    );
+  });
+
   test("applies the lower of accepted and current credential scopes", async () => {
     const result = await revalidateWorkflowPrincipal(
       principal(),

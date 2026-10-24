@@ -1,4 +1,5 @@
 // Cloud-specific server services
+export { recursiveServiceAccountGroupIdsSubquery } from "../../services/accounts/group-sql";
 
 export type {
   AccessDb,

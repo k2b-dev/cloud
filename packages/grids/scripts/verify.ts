@@ -21,7 +21,7 @@
  *                      split the phases across n jobs; combines with --phase
  *   --bootstrap        internal: migrate and seed the database named by DATABASE_URL
  *
- * Phases in order: outbox, workflow-concurrency, workflow-kernel, database-and-standard,
+ * Phases in order: outbox, machine-authority, workflow-concurrency, workflow-kernel, database-and-standard,
  * sync, evidence-exports, browser-bundle, pdf, process-crashes, recovery-and-cleanup, dom.
  * Every Grids test file runs in exactly one phase; see `verificationPhases` in ./verification-phases.ts.
  */
@@ -45,10 +45,10 @@ if (argv.includes("--bootstrap")) {
   // Callers (this script and scripts/diagnostics.ts) pass the isolated database as DATABASE_URL.
   const databaseUrl = localVerificationUrl("PostgreSQL", process.env.DATABASE_URL);
   if (!/^\/grids_verify_[a-f0-9]{16,32}(?:_test)?$/.test(databaseUrl.pathname)) throw new Error("Unexpected verification database");
-  for (const path of ["auth", "audit", "logging", "settings", "notifications", "workflows", "events"]) {
-    const { migrate } = await import(`${root}/packages/core/src/migrate/core/${path}.ts`);
-    await migrate();
-  }
+  // Match the shared integration bootstrap: real identity and session fixtures
+  // depend on Core's complete, ordered setup rather than an app-owned subset.
+  const { runCoreSetup } = await import(`${root}/packages/core/src/runtime-helpers.ts`);
+  await runCoreSetup();
   const { migrate } = await import("../src/migrate");
   await migrate();
   await sql`INSERT INTO auth.users (uid, provider, profile, given_name, sn, display_name)
