@@ -7,6 +7,8 @@ import { ConversationSchema } from "../service/contracts";
 import { chatLive } from "../service/live";
 import chatApi from ".";
 
+const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
+
 const userId = "11111111-1111-4111-8111-111111111111";
 const account = ServiceAccountSchema.parse({
   id: "22222222-2222-4222-8222-222222222222",
@@ -104,6 +106,7 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
     data: {
       outcome: "created",
       conversation: {
+        threads: 0,
         id: "abcdef",
         name: null,
         icon: null,
@@ -152,6 +155,8 @@ test("requires authentication for all conversation routes", async () => {
 });
 
 const textMessage = {
+  thread: null,
+  replyTo: null,
   id: "0123456789",
   conversationId: "abcdef",
   seq: 1,
@@ -210,6 +215,7 @@ test("rejects invalid message body and conflicting history cursors before the se
 test("snapshot reads the cursor before history and tolerates invalid message links", async () => {
   authenticate(true);
   const conversation = ConversationSchema.parse({
+    threads: 0,
     id: "abcdef",
     name: null,
     title: "You",
@@ -226,7 +232,7 @@ test("snapshot reads the cursor before history and tolerates invalid message lin
     createdAt: textMessage.createdAt,
     lastActivityAt: textMessage.createdAt,
   });
-  const data = { conversation, page: { items: [textMessage], rev: 1, seqHead: 1 }, focus: null };
+  const data = { threads: noThreads, conversation, page: { items: [textMessage], rev: 1, seqHead: 1, from: 1, to: 1 }, focus: null };
   const order: string[] = [];
   spyOn(chatLive, "cursor").mockImplementation(async () => {
     order.push("cursor");

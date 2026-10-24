@@ -1,7 +1,10 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "proxy-auth",
+  access: appAccess.roles(["admin"], {
+    publicRoutes: ["/proxy-auth/verify/:clientId", "/api/proxy-auth/openapi.json"],
+  }),
   name: "Proxy Auth",
   icon: "ti ti-load-balancer",
   description: "Configure forward-auth clients and verify callback access flows.",

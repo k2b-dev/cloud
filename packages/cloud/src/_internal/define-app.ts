@@ -1,10 +1,12 @@
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, validateAppSkillCatalog } from "../ai/app-skills";
+import { createOwnedAppAccessRoutes } from "../api/app-access";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
 import { startLiveOutbox } from "../events/live";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
 import { registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
+import { appAccessManagementPath } from "./app-access-path";
 import { invokeCapabilityStream } from "./capability-streams";
 import { withCapabilityRequestTimeout } from "./capability-timeout";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
@@ -1009,15 +1011,12 @@ export const defineApp = <
       }
 
       cleanup.push(() => stopAppAccessConnections());
+      if (meta.access?.kind === "grants") {
+        server.route(appAccessManagementPath(meta), createOwnedAppAccessRoutes(meta, opts.access?.canManage));
+      }
       server.use(
         "*",
-        requireAppAccess(meta, (c, message) =>
-          ssr.error(c, 403, {
-            title: "No access",
-            description: message,
-            layout: "minimal",
-          }),
-        ),
+        requireAppAccess(meta, (c) => ssr.appAccessDenied(c, meta)),
       );
 
       if (opts.cli && cliModules.length > 0) server.route(CLOUD_CLI_PLUGIN_ROUTE, createCliPluginRoutes(meta.id, opts.cli));

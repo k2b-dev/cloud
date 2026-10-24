@@ -28,6 +28,8 @@ type Props = {
   title: string;
   /** Disable when a bounded child such as SettingsPage owns scrolling. */
   scroll?: boolean;
+  /** Page-owned insets when its layout needs more room than the default shell spacing. */
+  contentClass?: string;
 };
 export default function AdminLayout(props: Props) {
   // Keep children lazy so Layout installs the request locale before rendering them.
@@ -46,7 +48,7 @@ export default function AdminLayout(props: Props) {
       <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1" resizable={false}>
         <AdminSidebar currentPath={currentPath} apps={runtime.apps} />
         <AppWorkspace.Content>
-          <AppWorkspace.Main scroll={scroll} class={scroll ? "p-[var(--ui-space-shell)]" : undefined}>
+          <AppWorkspace.Main scroll={scroll} class={props.contentClass ?? (scroll ? "p-[var(--ui-space-shell)]" : undefined)}>
             {props.children}
           </AppWorkspace.Main>
         </AppWorkspace.Content>
