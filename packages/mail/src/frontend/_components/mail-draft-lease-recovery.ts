@@ -2,8 +2,12 @@ import { retry } from "@k2b/sync/retry";
 import { type AcquiredDraftLease, DRAFT_LEASE_ERROR_CODES } from "../../contracts";
 
 /** Classifies transport data only; server messages never become collaboration UI. */
-export const classifyDraftLeaseAnswer = (status?: number, body?: unknown): "ok" | "held" | "not-owned" | "unavailable" | "failed" => {
-  if (status === undefined || status >= 500 || [408, 429, 401].includes(status)) return "unavailable";
+export const classifyDraftLeaseAnswer = (
+  status?: number,
+  body?: unknown,
+): "ok" | "held" | "not-owned" | "unavailable" | "unauthorized" | "failed" => {
+  if (status === 401) return "unauthorized";
+  if (status === undefined || status >= 500 || [408, 429].includes(status)) return "unavailable";
   if (status >= 200 && status < 300) return "ok";
   const code = typeof body === "object" && body !== null && "code" in body ? body.code : undefined;
   if (status === 409) {
@@ -14,7 +18,9 @@ export const classifyDraftLeaseAnswer = (status?: number, body?: unknown): "ok" 
   return "failed";
 };
 
-export type DraftLeaseResult = { kind: "ok"; lease: AcquiredDraftLease } | { kind: "held" | "not-owned" | "unavailable" | "failed" };
+export type DraftLeaseResult =
+  | { kind: "ok"; lease: AcquiredDraftLease }
+  | { kind: "held" | "not-owned" | "unavailable" | "unauthorized" | "failed" };
 
 export const recoverDraftLeaseRequest = <T extends { kind: string }>(options: {
   run: () => Promise<T>;

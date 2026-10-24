@@ -93,7 +93,7 @@ describe("draft lease answer classification", () => {
     [503, undefined, "unavailable"],
     [408, undefined, "unavailable"],
     [429, undefined, "unavailable"],
-    [401, undefined, "unavailable"],
+    [401, undefined, "unauthorized"],
     [undefined, undefined, "unavailable"],
     [400, undefined, "failed"],
     [403, undefined, "failed"],

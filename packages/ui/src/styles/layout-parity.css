@@ -3064,6 +3064,21 @@ html {
   display: block;
 }
 
+.k2b-ui .k2b-app-workspace__level-title > h2:has(> .k2b-app-workspace__level-lead) {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-app-workspace__level-title > h2 > .k2b-app-workspace__level-lead {
+  display: inline-flex;
+  flex: none;
+}
+
+.k2b-ui .k2b-app-workspace__level-title > h2:has(> .k2b-app-workspace__level-lead) > .k2b-truncate-fade {
+  min-width: 0;
+}
+
 /* The title takes focus only when a level change hid the focused control. */
 .k2b-ui .k2b-app-workspace__level-title > h2:focus {
   outline: none;
@@ -3833,6 +3848,20 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   visibility: hidden !important;
 }
 
+/* Content with its own heads hides the shell's header; from the press on a tab
+   the header stands above it as the next page's frame, and the content is
+   hidden. */
+.k2b-ui .k2b-mobile-shell[data-k2b-content-heads]:not([data-k2b-switching]) > .k2b-mobile-shell__header {
+  display: none;
+}
+
+/* The content keeps its place, so the footer under the finger never moves
+   between the press and the click that ends the tap. */
+.k2b-ui .k2b-mobile-shell[data-k2b-content-heads][data-k2b-switching] > .k2b-mobile-shell__main,
+.k2b-ui .k2b-mobile-shell[data-k2b-content-heads][data-k2b-switching] > .k2b-mobile-shell__main * {
+  visibility: hidden !important;
+}
+
 .k2b-ui .k2b-mobile-shell__main {
   display: flex;
   flex: 1;
@@ -3852,6 +3881,343 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
         var(--k2b-mobile-shell-toast-inset, 0px)
     )
     max(var(--k2b-mobile-shell-gutter, 1rem), env(safe-area-inset-left));
+}
+
+/* ---------------------------------------------------- mobile shell sidebar */
+
+/* A touch app on a wide screen: from 48rem of window width the sidebar stands
+   at the start edge, 15rem wide, and the footer goes. The server renders both;
+   the width alone decides, so rotating or resizing rebuilds nothing. The
+   sidebar is a muted surface beside the page's own, without a rule. */
+.k2b-ui .k2b-mobile-shell__sidebar,
+.k2b-ui .k2b-mobile-shell__title-wide {
+  display: none;
+}
+
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) {
+    display: grid;
+    grid-template-columns: 15rem minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    background: var(--k2b-surface);
+  }
+
+  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) > .k2b-mobile-shell__sidebar {
+    display: flex;
+    grid-row: 1 / -1;
+    grid-column: 1;
+  }
+
+  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) > :not(.k2b-mobile-shell__sidebar) {
+    grid-column: 2;
+    min-width: 0;
+  }
+
+  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) > .k2b-mobile-shell__main {
+    grid-row: 2;
+  }
+
+  /* The sidebar replaces the footer, such as a tab bar. */
+  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) > .k2b-mobile-shell__main ~ * {
+    display: none;
+  }
+
+  /* Beside the sidebar, the page is the surface and runs to the window's edge. */
+  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) > .k2b-mobile-shell__header {
+    background: var(--k2b-surface);
+    padding-inline: 1.25rem max(1.25rem, env(safe-area-inset-right));
+  }
+
+  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) .k2b-mobile-shell__body {
+    padding-inline: 1.25rem max(1.25rem, env(safe-area-inset-right));
+  }
+
+  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) .k2b-mobile-shell__back[data-with-sidebar="false"] {
+    display: none;
+  }
+
+  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) .k2b-mobile-shell__title-narrow {
+    display: none;
+  }
+
+  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) .k2b-mobile-shell__title-wide {
+    display: inline;
+  }
+
+  /* Toasts belong to the page beside the sidebar: centred at its bottom edge. */
+  html:has(.k2b-mobile-shell > .k2b-mobile-shell__sidebar):not(:has(dialog:modal)) .k2b-ui [data-k2b-toast-container] {
+    --k2b-toast-rail-left: 15rem;
+    --k2b-toast-rail-width: auto;
+    align-items: center;
+  }
+
+  html:has(.k2b-mobile-shell > .k2b-mobile-shell__sidebar):not(:has(dialog:modal))
+    .k2b-ui
+    [data-k2b-toast-container]
+    > .k2b-toast-slot {
+    width: min(100%, 26rem);
+  }
+}
+
+/* The head lines up with the page's header: the same height, and the name
+   where the page's title sits. */
+.k2b-ui .k2b-mobile-shell__sidebar {
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 0.5rem calc(env(safe-area-inset-bottom) + 0.5rem) max(0.5rem, env(safe-area-inset-left));
+  background: var(--k2b-mobile-shell-sidebar-surface, var(--k2b-surface-muted));
+}
+
+.k2b-ui[data-theme="dark"] .k2b-mobile-shell__sidebar,
+.k2b-ui.k2b-dark .k2b-mobile-shell__sidebar,
+.dark .k2b-ui .k2b-mobile-shell__sidebar {
+  --k2b-mobile-shell-sidebar-surface: var(--k2b-surface-elevated);
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+  min-height: calc(env(safe-area-inset-top) + 1.5rem + 44px);
+  padding: calc(env(safe-area-inset-top) + 0.75rem) 0.25rem 0.75rem 0.75rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar-head > img {
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  object-fit: contain;
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar-head > span {
+  min-width: 0;
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-top: 0.25rem;
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar-foot {
+  flex: none;
+  padding-top: 0.5rem;
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar h2 {
+  margin: 0.75rem 0.75rem 0.25rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar a {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border-radius: var(--k2b-radius-control, 0.5rem);
+  color: var(--k2b-text-secondary);
+  font-size: 1rem;
+  text-decoration: none;
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar a > i {
+  width: 1.25rem;
+  flex: none;
+  font-size: 1.25rem;
+  text-align: center;
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar a > .k2b-truncate-fade {
+  flex: 1;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar-count {
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The open page, and from the press on the one that is loading, in the action
+   colour and weight. Colour, weight and opacity only, so nothing moves: the
+   label fades at its end and never rewraps. */
+.k2b-ui .k2b-mobile-shell__sidebar a[aria-current="page"],
+.k2b-ui .k2b-mobile-shell__sidebar a[data-k2b-pending] {
+  color: var(--k2b-action);
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar:has(a[data-k2b-pending]) a[aria-current="page"]:not([data-k2b-pending]) {
+  color: var(--k2b-text-secondary);
+  font-weight: 400;
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar a[data-k2b-pending] > i {
+  animation: k2b-tab-bar-pending 0.8s ease-in-out 0.4s infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-mobile-shell__sidebar a[data-k2b-pending] > i {
+    animation: none;
+  }
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar a:active {
+  background: color-mix(in srgb, var(--k2b-text) 8%, transparent);
+}
+
+.k2b-ui .k2b-mobile-shell__sidebar a:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+@media (hover: hover) {
+  .k2b-ui .k2b-mobile-shell__sidebar a:hover {
+    background: var(--k2b-app-workspace-hover);
+    color: var(--k2b-text);
+  }
+
+  .k2b-ui .k2b-mobile-shell__sidebar a[aria-current="page"]:hover {
+    color: var(--k2b-action);
+  }
+}
+
+/* ------------------------------------------------- levels in a touch app */
+
+/* The levels of an AppWorkspace Main inside a MobileShell (`scroll={false}`): each
+   level is a page of the app with the shell's head, flat on its own surface.
+   Below 64rem of window width one level shows at a time, the deepest selected
+   one with its back step, as on a phone; from 64rem the levels stand side by
+   side without raising the last one, the first on the canvas and the last on
+   the surface. Levels never animate, and the server's attributes already
+   decide the first frame. */
+.k2b-ui .k2b-mobile-shell__main > .k2b-app-workspace,
+.k2b-ui .k2b-mobile-shell__main > :is(solid-island, solid-client) > .k2b-app-workspace {
+  flex: 1;
+  min-height: 0;
+  background: var(--k2b-surface-canvas);
+}
+
+.k2b-ui .k2b-mobile-shell__main > :is(solid-island, solid-client) {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__main[data-workspace-levels] {
+  background: transparent;
+}
+
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level] {
+  padding-top: 0;
+}
+
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level] {
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-head {
+  gap: 0.75rem;
+  min-height: calc(env(safe-area-inset-top) + 1.5rem + 44px);
+  padding: calc(env(safe-area-inset-top) + 0.75rem) max(1rem, env(safe-area-inset-right)) 0.75rem max(1rem, env(safe-area-inset-left));
+}
+
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-title > h2 {
+  font-size: 1.125rem;
+  line-height: 1.5rem;
+}
+
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+  margin-inline: -0.625rem -0.75rem;
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-back .ti {
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: 1.5rem;
+}
+
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-body {
+  padding: 0.5rem max(1rem, env(safe-area-inset-right)) calc(1rem + env(safe-area-inset-bottom) + var(--k2b-mobile-shell-toast-inset, 0px))
+    max(1rem, env(safe-area-inset-left));
+  scrollbar-gutter: auto;
+}
+
+/* A footer pads the bottom safe area itself; beside a sidebar the footer is gone. */
+.k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__main + *) > .k2b-mobile-shell__main .k2b-app-workspace__level-body {
+  padding-bottom: calc(1rem + var(--k2b-mobile-shell-toast-inset, 0px));
+}
+
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) > .k2b-mobile-shell__main .k2b-app-workspace__level-body {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom) + var(--k2b-mobile-shell-toast-inset, 0px));
+  }
+}
+
+@container k2b-app-area (max-width: 63.999rem) {
+  .k2b-ui
+    .k2b-mobile-shell
+    > .k2b-mobile-shell__main
+    .k2b-app-workspace__main[data-workspace-levels]
+    > [data-workspace-level-shown]:not([data-workspace-level-shown~="1"]) {
+    display: none;
+  }
+
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main [data-workspace-level-first~="1"] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+    display: inline-flex;
+  }
+
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="1"] {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 0;
+  }
+}
+
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-head,
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-body {
+    padding-inline: 1.25rem max(1.25rem, env(safe-area-inset-right));
+  }
+
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level] {
+    background: var(--k2b-surface);
+  }
+}
+
+@container k2b-app-area (min-width: 64rem) {
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level]:not(:last-of-type) {
+    background: var(--k2b-surface-canvas);
+  }
+
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main [data-workspace-level-first] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+    display: none;
+  }
 }
 
 /* ----------------------------------------------------------------- tab bar */

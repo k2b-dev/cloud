@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import { sql } from "bun";
 import { z } from "zod";
 import { listApps } from "../../_internal/registry";
+import { DownstreamBusyError, downstreamBudget } from "../downstream-budget";
 import { parsePgJsonValue } from "../postgres";
 import { get } from "../settings";
 import { deleteMailObjects, verifyMailAttachment } from "./attachments";
@@ -97,6 +98,7 @@ export const attemptOutgoingMail = async (row: MessageRow, signal?: AbortSignal)
     if (signal?.aborted) abort();
     const timer = setTimeout(abort, 60_000);
     const streams: Readable[] = [];
+    let releaseSmtp: (() => void) | undefined;
     try {
       for (const [index, ref] of refs.entries()) await verifyMailAttachment(ref, metadata[index]!, attempt.signal);
       const attachments = [];
@@ -131,6 +133,8 @@ export const attemptOutgoingMail = async (row: MessageRow, signal?: AbortSignal)
       }
       // Load the checked profile by ID: a profile deleted (or recreated under its key) since the check is profile_removed.
       credentials = await resolveMailCredentials({ id: row.profile_id });
+      releaseSmtp = await downstreamBudget.acquire({ downstream: "smtp", timeoutMs: 60_000, signal: attempt.signal });
+      attempt.signal.throwIfAborted();
       const socket = new Socket();
       // DNS can complete after cancellation; tear down a late connection too.
       socket.once("connect", () => {
@@ -182,6 +186,7 @@ export const attemptOutgoingMail = async (row: MessageRow, signal?: AbortSignal)
       signal?.removeEventListener("abort", abort);
       attempt.abort();
       for (const stream of streams) stream.destroy();
+      releaseSmtp?.();
     }
   } catch (error) {
     if (error instanceof OutgoingMailError && ["profile_unknown", "profile_removed"].includes(error.code)) {
@@ -196,7 +201,7 @@ export const attemptOutgoingMail = async (row: MessageRow, signal?: AbortSignal)
         ]
       : [];
     const message =
-      credentials || error instanceof OutgoingMailError
+      credentials || error instanceof OutgoingMailError || error instanceof DownstreamBusyError
         ? smtpFailureMessage(error, secrets)
         : "Outgoing mail delivery is temporarily unavailable.";
     const lost = error instanceof OutgoingMailError && error.code === "attachment_lost";
