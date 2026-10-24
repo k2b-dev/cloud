@@ -111,8 +111,8 @@ export type OpenChat = {
   conversation: Conversation | null;
   messages: readonly Message[];
   membershipRev: number;
-  /** Counts replacements of the loaded history (access reconciliation, the jump to the latest messages, a restore),
-   * which can remove messages without a newer revision. */
+  /** Changes with every opening and replacement of the loaded history (access reconciliation, the jump to the latest
+   * messages, a restore), which can remove messages without a newer revision. Never repeats within a store. */
   historyRev: number;
   watermark: number;
   seqHead: number;
@@ -344,6 +344,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     threadsAbort?: AbortController;
   };
   let current: Current | null = null;
+  // One sequence for every opened or replaced history, so reopening a chat never repeats an earlier value.
+  let historyGeneration = 0;
   const notify = () => {
     if (!disposed) for (const listener of listeners) listener();
   };
@@ -473,7 +475,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       conversation: keepMetadata ? currentConversation : conversation,
       watermark: page.rev,
       seqHead: page.seqHead,
-      historyRev: chat.view.historyRev + 1,
+      historyRev: ++historyGeneration,
     };
     chat.metadataRev = keepMetadata ? Math.max(chat.metadataRev, currentConversation.rev, conversation.rev) : conversation.rev;
     for (const message of arrivals) applyMessage(chat, message);
@@ -702,7 +704,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         caughtUp: false,
         conversation: next.conversation,
         membershipRev: 0,
-        historyRev: 0,
+        historyRev: ++historyGeneration,
         watermark: next.page.rev,
         seqHead,
         hasOlder: next.page.from > 1,
@@ -1204,7 +1206,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
           conversation: null,
           messages: [],
           membershipRev: 0,
-          historyRev: 0,
+          historyRev: ++historyGeneration,
           watermark: 0,
           seqHead: 0,
           hasOlder: false,
