@@ -1031,6 +1031,14 @@ convention still needs a check or a test.
 - **Root cause:** It attached the rejection assertion only after waiting for the server to accept the request, although the deadline also covers connection setup.
 - **Guard:** `fetch-file-tool.test.ts` records the pending promise outcome immediately, then asserts after triggering cancellation; a Bun rejection assertion at setup can wait before the caller reaches `abort()`. Only the caller-cancellation case waits for the server before triggering its abort; the deadline case also accepts expiry before the connection opens. The timeout remains unchanged.
 
+### Isolate PDF consumer unit tests at admission and HTTP
+
+- **What happened:** The query-export starter escaping test failed before its mocked renderer request.
+- **Root cause:** Shared PDF rendering requires downstream admission; this consumer unit test mocked HTTP but omitted the existing admission fixture.
+- **Error class:** A unit test accidentally depends on shared infrastructure.
+- **Guard:** The starter test uses the scoped PDF admission mock, asserts one admission attempt, and retains the actual template-rendering and escaping assertions. Platform and integration tests continue to exercise real admission.
+
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its
