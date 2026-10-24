@@ -1,8 +1,9 @@
 # MobileShell
 
-`MobileShell` is the full-screen frame of a phone app: a header, one scroll
-area, and an optional footer such as a [`TabBar`](/en/ui/layout/tab-bar). It
-makes an installed web app feel like an app. The document never scrolls, pinch
+`MobileShell` is the full-screen frame of a touch app: a header, one scroll
+area, an optional footer such as a [`TabBar`](/en/ui/layout/tab-bar), and on
+wide screens an optional sidebar instead of the footer. It makes an installed
+web app feel like an app on a phone, an iPad, and a monitor. The document never scrolls, pinch
 zoom and rubber-banding are off, and toasts sit above the footer.
 
 ## Import
@@ -43,6 +44,58 @@ when the page has one:
 - `class` adds a class to the root, for example to set
   `--k2b-mobile-shell-gutter` (default `1rem`), the side padding of the header
   and content.
+
+### Sidebar on wide screens
+
+Pass `MobileShell.Sidebar` as `sidebar` to lead to the same destinations as
+the tab bar, and more, on a wide screen. From 48 rem (768 px) of window width
+the sidebar stands at the start edge, 15 rem wide, and the footer goes; below
+it the sidebar is not shown. The server renders both, and the window width
+alone decides, so rotating an iPad or changing Split View rebuilds nothing:
+text, focus, selection, and scroll position stay. The width decides, not the
+device: an iPad in Split View narrower than 48 rem shows the tab bar.
+
+```tsx
+<MobileShell
+  sidebar={
+    <MobileShell.Sidebar
+      label="App"
+      title="Example Cloud"
+      logo="/branding/logo"
+      items={[{ id: "start", label: "Start", icon: "ti ti-home", href: "/app/", current: true }]}
+      sections={[{ title: "Apps", items: parts }]}
+      footer={[{ id: "settings", label: "Settings", icon: "ti ti-settings", href: "/app/settings" }]}
+    />
+  }
+  header={<MobileShell.Header title="Example Cloud" sidebarTitle="Start" />}
+  footer={<TabBar label="App" items={tabs} />}
+>
+```
+
+- The head shows the decorative `logo` and the app's `title`, as high as the
+  page's header, so both titles share one line.
+- `items`, each `sections` group, and `footer` take the tab bar's items, with
+  an optional `count` after the label, such as unread messages. A group
+  without items is left out. Rows are 44 px with 1rem labels; the open item is
+  in the action colour and weight. A press shows the item's page frame at
+  once, as a tab does, and the row of a loading page pulses.
+- The sidebar is a muted surface beside the page, without a rule. Beside it,
+  the header and the content are the page's surface and run to the window's
+  edge, with a 1.25 rem gutter.
+- `MobileShell.Header` takes `sidebarTitle` for a page whose title the
+  sidebar's head already says, such as Start titled with the app's name on the
+  phone. `back.withSidebar: false` hides Back beside the sidebar when it leads
+  to a destination the sidebar lists, such as Start from Settings.
+- Toasts stand centred at the bottom of the page beside the sidebar, never over
+  it.
+
+### Content with its own heads
+
+Pass `scroll={false}` when the content brings its own heads and scroll areas,
+such as [`AppWorkspace.Main` levels](/en/ui/layout/workspace#levels) for a
+list beside its detail. The content then fills the main area without the
+shell's scroll area. The header stays in the markup for the document's title
+and shows only as the frame of the next page while a tapped tab's page loads.
 
 The root is `position: absolute; inset: 0`, never a fixed full-viewport layer.
 Safari colours the status bar of an installed app from a fixed layer at the

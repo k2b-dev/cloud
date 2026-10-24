@@ -10,7 +10,7 @@ afterEach(() => {
 test("route client methods preserve the public inputs, caller identity and locale", async () => {
   process.env.CLOUD_CORE_INTERNAL_ORIGIN = "https://core.example.test";
   const route = await savedRouteFixture();
-  const plan = { stops: route.stops.map((stop) => ({ id: stop.id, point: stop.point })), distanceAllowanceMeters: 500000 };
+  const plan = { stops: route.stops.map((stop) => ({ id: stop.id, point: stop.point })) };
   const result = await geoClient.calculateRoute(
     { plan },
     {
@@ -30,7 +30,6 @@ test("route client methods preserve the public inputs, caller identity and local
   const input = {
     route,
     changes: { type: "options" as const, options: { avoid: ["highways" as const] } },
-    distanceAllowanceMeters: 1000000,
   };
   const summary = {
     stopIds: route.stops.map((stop) => stop.id),
