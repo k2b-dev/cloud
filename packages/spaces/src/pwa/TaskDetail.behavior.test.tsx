@@ -81,9 +81,14 @@ afterEach(() => {
 });
 
 const mount = (state: TaskDetailState) => {
-  const { ui, TaskDetail } = modules!;
   dom = createDomTestHarness();
   delegateEvents(["click", "input", "change"]);
+  return show(state);
+};
+/** Renders into the current document, as a page of an app that starts again on the same device. */
+const show = (state: TaskDetailState) => {
+  const { ui, TaskDetail } = modules!;
+  dom!.root.replaceChildren();
   dispose = render(
     () =>
       createComponent(ui.LocaleProvider, {
@@ -99,9 +104,9 @@ const mount = (state: TaskDetailState) => {
           });
         },
       }),
-    dom.root,
+    dom!.root,
   );
-  return dom.root;
+  return dom!.root;
 };
 
 const boxes = (root: HTMLElement) => [...root.querySelectorAll<HTMLInputElement>(".spaces-pwa-task__checklist input")];
@@ -183,6 +188,63 @@ test("a task that could not be loaded offers Retry; one that is gone leads back 
   root = mount({ kind: "gone" });
   expect(root.textContent).toContain("This task is no longer available.");
   expect(root.querySelector('a[href="/pwa/spaces"]')?.textContent).toBe("Back to the list");
+});
+
+const DRAFT = `cloud.pwa.draft:0b8f2d4e-1c3a-4f5b-9d6e-7a8b9c0d1e2f:${encodeURIComponent("spaces.comment:Space1:Item01")}`;
+const COMMENTS = "/api/spaces/Space1/items/Item01/comments";
+const commentField = (root: HTMLElement) => root.querySelector<HTMLTextAreaElement>(".spaces-pwa-comment textarea");
+const sendButton = (root: HTMLElement) => root.querySelector<HTMLButtonElement>('.spaces-pwa-comment button[type="submit"]')!;
+const type = (field: HTMLTextAreaElement, text: string) => {
+  field.value = text;
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+};
+
+test("only a reader who may change the task can comment, and not while the task loads", () => {
+  let root = mount({ kind: "ready", task });
+  expect(commentField(root)?.getAttribute("aria-label")).toBe("Comment");
+  expect(commentField(root)?.placeholder).toBe("Write a comment");
+  expect(sendButton(root).disabled).toBe(true);
+  dispose();
+  dom?.cleanup();
+  root = mount({ kind: "ready", task: { ...task, canWrite: false } });
+  expect(commentField(root)).toBeNull();
+  dispose();
+  dom?.cleanup();
+  root = mount({ kind: "loading", item: { ...task, priority: null } });
+  expect(commentField(root)).toBeNull();
+});
+
+test("a typed comment is a draft on the device until it is sent, then the field is empty again", async () => {
+  let root = mount({ kind: "ready", task });
+  type(commentField(root)!, "Tents are booked.");
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBe("Tents are booked.");
+  // The app was ended: the next start on this device shows the draft again.
+  dispose();
+  root = show({ kind: "ready", task });
+  expect(commentField(root)!.value).toBe("Tents are booked.");
+  answers.push(Response.json({ id: "Cmt001" }));
+  sendButton(root).click();
+  await waitFor(() => dom!.document.body.textContent?.includes("Comment sent") ?? false, "sent");
+  expect(calls.at(-1)).toEqual({ method: "POST", path: COMMENTS, body: { content: "Tents are booked." } });
+  expect(commentField(root)!.value).toBe("");
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBeNull();
+});
+
+test("a comment that fails to send keeps its text and draft, and Retry sends it again", async () => {
+  const root = mount({ kind: "ready", task });
+  type(commentField(root)!, "Deposit paid.");
+  answers.push("offline");
+  sendButton(root).click();
+  await waitFor(() => dom!.document.body.textContent?.includes("Comment on “Order the tents” not sent.") ?? false, "failure");
+  expect(commentField(root)!.value).toBe("Deposit paid.");
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBe("Deposit paid.");
+  answers.push(Response.json({ id: "Cmt002" }));
+  [...dom!.document.querySelectorAll<HTMLButtonElement>("[data-k2b-toast] button")]
+    .find((button) => button.textContent === "Retry")!
+    .click();
+  await waitFor(() => dom!.document.body.textContent?.includes("Comment sent") ?? false, "sent on retry");
+  expect(calls.filter((call) => call.path === COMMENTS)).toHaveLength(2);
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBeNull();
 });
 
 process.once("exit", () => fetchSpy.mockRestore());
