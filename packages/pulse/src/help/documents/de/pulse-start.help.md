@@ -8,6 +8,8 @@ order: 100
 ---
 Pulse sammelt Metriken, Ereignisse und Zustände in Bases. Öffne eine Base, um Quellen einzurichten und eingehende Daten zu prüfen.
 
+Öffne **Pulse** über das App-Menü. In der App-Leiste ist Pulse standardmäßig ausgeblendet. Wenn du Pulse dort eingeblendet oder angeheftet hast, bleibt deine Auswahl erhalten.
+
 ## Lies die Übersicht
 
 Eine Base öffnet die **Übersicht**. Sie zeigt, was Aufmerksamkeit braucht, bis zu vier wichtige Zahlen und letzte Änderungen. Sie aktualisiert sich alle 60 Sekunden, solange sie sichtbar ist. **Ansehen** öffnet die SQL-Abfrage eines Alarms mit ihren Parameterwerten, ohne sie auszuführen.
