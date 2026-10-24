@@ -26,7 +26,7 @@ const flush = async () => {
   for (let n = 0; n < 20; n++) await Promise.resolve();
 };
 
-describe("removing another person's phone from the mobile app", () => {
+describe("removing another person's phone from the Cloud app", () => {
   if (isServer) {
     test.skip("requires the package DOM runner", () => {});
     return;
@@ -63,11 +63,11 @@ describe("removing another person's phone from the mobile app", () => {
   test("cancelling the confirmation never removes the phone", async () => {
     const confirm = spyOn(prompts, "confirm").mockResolvedValue(false);
     const button = await mount();
-    expect(button.getAttribute("aria-label")).toBe("Remove phone Work phone");
+    expect(button.getAttribute("aria-label")).toBe("Remove device Work phone");
     button.click();
     await flush();
     expect(confirm.mock.calls[0]![0]).toContain("Work phone");
-    expect(confirm.mock.calls[0]![1]).toMatchObject({ title: "Remove phone", confirmText: "Remove phone", variant: "danger" });
+    expect(confirm.mock.calls[0]![1]).toMatchObject({ title: "Remove device", confirmText: "Remove device", variant: "danger" });
     expect(requests).toHaveLength(0);
   });
 
@@ -80,7 +80,7 @@ describe("removing another person's phone from the mobile app", () => {
     expect(requests[0]!.param).toEqual({ id: "user-id", deviceId: "device-id" });
     requests[0]!.resolve(new Response("Bad gateway", { status: 502, headers: { "content-type": "text/plain" } }));
     await flush();
-    expect(error).toHaveBeenCalledWith("The phone could not be removed.");
+    expect(error).toHaveBeenCalledWith("The device could not be removed.");
     expect(refreshed).not.toHaveBeenCalled();
 
     button.click();

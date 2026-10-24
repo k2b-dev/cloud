@@ -38,7 +38,7 @@ describe("validateAppRegistryEntry", () => {
         },
       }),
     ).toBeNull());
-  test("accepts a mobile app part only at /pwa/<id>", () => {
+  test("accepts a Cloud app part only at /pwa/<id>", () => {
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/core" } })).toBeNull();
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/core", requiresRoles: ["user"] } })).toBeNull();
     expect(validateAppRegistryEntry({ ...valid, pwa: { href: "/pwa/spaces" } })).toContain("pwa");

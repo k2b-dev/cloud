@@ -40,7 +40,7 @@ export const app = defineApp({
 
 `roles()` accepts Cloud roles, not application-defined roles. Use a group grant
 for an application-specific audience. A standalone service account has no user
-roles; it can use `signedIn`, `noGuests`, or an explicit grant. A mobile app
+roles; it can use `signedIn`, `noGuests`, or an explicit grant. A Cloud app
 session never regains the Cloud administrator role through this check.
 
 Credentials retain their scopes and resource binding. App access opens the

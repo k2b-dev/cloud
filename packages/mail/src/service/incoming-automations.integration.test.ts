@@ -1136,7 +1136,7 @@ suite("incoming automations", () => {
     ]);
   });
 
-  test("the mobile app's session never creates, widens or resumes an automation's mandate", async () => {
+  test("the Cloud app's session never creates, widens or resumes an automation's mandate", async () => {
     const appContext: MailRequestContext = {
       ...ownerContext,
       actor: ownerContext.actor.kind === "user" ? { ...ownerContext.actor, sessionKind: "app" } : ownerContext.actor,

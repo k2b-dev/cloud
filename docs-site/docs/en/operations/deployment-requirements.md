@@ -205,7 +205,7 @@ Per replica, the built-in applications reserve:
 
 | Application | Jobs and queues at the default | Larger streams, log and dead letters together | Reservation |
 | --- | --- | --- | --- |
-| Core, with the platform services it runs | 20 | [outgoing mail](/en/docs/operations/outgoing-mail) attachment store (`cloud-outgoing-mail-attachments`) 2 GiB and settled wakeups 4 MiB, AI turn streams 520 MiB, `cloud:live:core` 65 MiB, previous AI invalidations (`cloud-ai-invalidations`) 128 MiB until a later release removes them, FreeIPA backfill pump 64 MiB, app login hints 2 MiB, mobile app pairing claim hints (`cloud:pwa-pairing-claims`) 2 MiB | 4.1 GiB |
+| Core, with the platform services it runs | 20 | [outgoing mail](/en/docs/operations/outgoing-mail) attachment store (`cloud-outgoing-mail-attachments`) 2 GiB and settled wakeups 4 MiB, AI turn streams 520 MiB, `cloud:live:core` 65 MiB, previous AI invalidations (`cloud-ai-invalidations`) 128 MiB until a later release removes them, FreeIPA backfill pump 64 MiB, app login hints 2 MiB, Cloud app pairing claim hints (`cloud:pwa-pairing-claims`) 2 MiB | 4.1 GiB |
 | Gateway | 0 | `cloud-gateway-telemetry` 2 GiB | 2 GiB |
 | Gateway Ops | 2 | none | 132 MiB |
 | Grids | 2 | `grids:workflow-record-events` 1 GiB, workflow runtime events 32 MiB, workflow wake hints (`cloud:workflow-wake`) 2 MiB shared with Mail, `cloud:live:grids` 65 MiB, previous record events (`grids:records`) 1 GiB, run events 512 MiB, and metadata events 128 MiB until a later release removes them | 2.9 GiB |
@@ -283,7 +283,7 @@ names.
 ## Pass client addresses through the reverse proxy
 
 Applications rate-limit and audit requests by client address, including
-sign-in and phone pairing. Behind a reverse proxy such as Traefik, the gateway
+sign-in and device pairing. Behind a reverse proxy such as Traefik, the gateway
 only sees the proxy's address, so the proxy must name the client in
 `X-Forwarded-For`, and the gateway must trust the proxy to do so.
 
@@ -430,7 +430,7 @@ or mutate real data without approval.
 | [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, IMAP bounce polling, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
 | [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/gateway/apps` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails use notifications as app `core` and require a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |
-| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and matching broker secret. Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device` and, with Cloud Login approval enabled, one `cld login --user` request on a paired phone. Discovery alone is insufficient. |
+| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and matching broker secret. Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device` and, with Cloud Login approval enabled, one `cld login --user` request on a paired device. Discovery alone is insufficient. |
 | [Proxy Auth](/en/apps/proxy-auth) (`proxy-auth`) | Baseline | Configure a proxy-auth client and the external reverse proxy's forward-auth/callback integration. This is not an OAuth-client requirement. | Check denied and permitted access to one test upstream through that reverse proxy. |
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
@@ -1043,17 +1043,17 @@ is required.
 
 Update the Cloud Login image too. A newer Cloud still works with an older
 Cloud Login server: that server answers Action wake-ups with `400`, which
-Cloud ignores. Existing paired phones keep signing in. They show Actions
+Cloud ignores. Existing paired devices keep signing in. They show Actions
 after the authenticator app updates, without pairing again.
 
-The updated Cloud Login app no longer uses an app PIN. On a phone that still
+The updated Cloud Login app no longer uses an app PIN. On a device that still
 has one, the app asks for it one last time and then opens without it. Its
 connected Clouds stay paired. If someone forgot the PIN, **Reset Cloud Login**
 works as before; they then revoke the old device in Cloud and pair again. Tell
-users that the phone's own screen lock now protects their approvals.
+users that the device's own screen lock now protects their approvals.
 
 After the rollout, ask for an Action through `cld` or an editor bridge. Check
-that a paired phone shows the request and that its decision continues the
+that a paired device shows the request and that its decision continues the
 waiting chat. See [Approve an Action](./app-approval.md#approve-an-action)
 for the signed protocol and push rules.
 
@@ -1077,8 +1077,8 @@ keep no epoch, and the updated release treats them as ended. Pending requests
 leave lists, and decisions on them answer as expired. Unused approvals are
 cancelled when used, so the person is asked again.
 
-After the rollout, approve an Action on a paired phone, then check that the
-request records the phone and the epoch:
+After the rollout, approve an Action on a paired device, then check that the
+request records the device and the epoch:
 
 ```sql
 SELECT status, decided_via, decided_device_id IS NOT NULL AS device, approver_auth_epoch IS NOT NULL AS epoch
@@ -1358,7 +1358,7 @@ An older Core cannot accept these requests; OAuth returns HTTP 503
 
 `cld login --user` needs all three parts: Core, then OAuth with the
 `login_hint` handoff, then Cloud Login with terminal sign-ins. Only Cloud Login
-on a paired phone shows the request. Without `--ttl`, such a login lasts
+on a paired device shows the request. Without `--ttl`, such a login lasts
 `user.session.expiry_hours`; browser and `--device` logins without `--ttl` stay
 at 90 days. `--ttl` only shortens a login, the Cloud caps it at
 `user.session.expiry_hours`, and `cld` shows the actual end. Cloud Login shows

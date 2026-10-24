@@ -30,7 +30,7 @@ An existing passkey keeps working while your account type is allowed. If your ac
 
 ## Change your password {icon="shield-lock"}
 
-For a FreeIPA account, open **Sign-in** in your account, choose **Change password**, and enter your current password. Cloud then signs you out everywhere else: in other browsers, in the mobile app, in the command line, and in connected apps. Run `cld login` again to reconnect the command line.
+For a FreeIPA account, open **Sign-in** in your account, choose **Change password**, and enter your current password. Cloud then signs you out everywhere else: in other browsers, in the Cloud app, in the command line, and in connected apps. Run `cld login` again to reconnect the command line.
 
 This browser stays signed in. Your paired sign-in devices stay paired. API keys and passkeys keep working.
 
@@ -66,9 +66,9 @@ The link expires after five minutes. Do not share it outside this setup.
 
 When Cloud supplies browser details, the app shows them above the code:
 
-- Browser, system, and start time in your phone's time zone.
+- Browser, system, and start time in your device's time zone.
 - **Approximately {city}, {country}** and **Network: …**, only when Cloud's location database knows the address. The network names the operator.
-- **Same internet address as this phone**, only when true. Its absence says nothing.
+- **Same internet address as this device**, only when true. Its absence says nothing.
 - **Known browser · since …** or **Cloud does not know this browser yet**. Neither appears during the first 14 days after the update. Known means “signed in here before”, not “safe”.
 - A known browser in a new country gets a calm note about country history. A new browser can get **Did you start this sign-in?**. This warning requires no sign-in from that country in the last 90 days and existing sign-in countries for your account. A younger history uses its start date. **Deny** is then the main button, with **Approve anyway** available.
 
@@ -82,7 +82,7 @@ If the result of a sign-in is unclear, reload the page to check your session, or
 
 ## New sign-in notice {icon="bell"}
 
-After a successful sign-in, Cloud sends **New sign-in from a new browser** once for each new browser. This starts 14 days after the upgrade. It does not apply to the mobile app.
+After a successful sign-in, Cloud sends **New sign-in from a new browser** once for each new browser. This starts 14 days after the upgrade. It does not apply to the Cloud app.
 
 The notice shows the browser and time. The email also shows the sign-in method and the approximate place, when available.
 

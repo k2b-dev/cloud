@@ -79,7 +79,7 @@ wider than the card scrolls sideways inside it, as from 768 px. The card
 keeps space for the bar at its end and when scrolling to a focused control.
 The bar sits 8 px above the bottom safe area; the title row and canvas keep
 the top and side safe areas. Anonymous phones retain Home in the header, its
-bottom line, a flat surface, and document scrolling. The phone app's own flat
+bottom line, a flat surface, and document scrolling. The device app's own flat
 bottom bar is unchanged.
 
 Applications need no changes for any of this. `AppWorkspace` adds its compact
@@ -453,8 +453,8 @@ The Core sign-in, password, and consent pages use the same class.
 
 Authenticated users change the theme or language from the profile menu and
 can open `/me` for the remaining profile settings. While the installation runs
-the mobile app (the `pwa` application), the menu also shows **App**, which
-leads to `/me/app`, where people pair and remove phones. The menu ends with
+the Cloud app (the `pwa` application), the menu also shows **App**, which
+leads to `/me/app`, where people pair and remove devices. The menu ends with
 **Sign out**. Applications do not add their own link to any of these.
 Anonymous `Layout` pages expose the same preferences in the header without
 profile actions, and `MinimalLayout` pages show them in their footer.

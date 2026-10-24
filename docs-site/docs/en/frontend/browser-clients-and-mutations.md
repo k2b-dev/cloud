@@ -37,7 +37,7 @@ export const inventoryApi = api.create<InventoryApi>({
 The client infers route parameters and request payloads. Check `response.ok`
 before reading success data.
 
-On a page of the [mobile app](/en/docs/frontend/mobile-app-pages), the client
+On a page of the [Cloud app](/en/docs/frontend/mobile-app-pages), the client
 also keeps the app session alive. When a request answers `401`, the client
 renews the app session through Core and, once the phone has a valid session,
 sends the request once more. A `401` means that the server did not apply the

@@ -121,7 +121,7 @@ Select `pwa` to measure the installable app at `/pwa/`:
 bun --no-env-file scripts/perf-baseline.ts --pages pwa --runs 3
 ```
 
-Local mode builds and starts Core, the mobile app, Spaces, and the gateway.
+Local mode builds and starts Core, the Cloud app, Spaces, and the gateway.
 Through the public Spaces API it creates one Space with 12 open tasks assigned
 to the administrator, titled `Perf task 01` through `Perf task 12`. It verifies
 that all 12 appear in `GET /api/spaces/overview/work?view=mine` before measuring.
@@ -289,7 +289,7 @@ acceptance. This mode builds nothing and starts only
 the browser server on its own labelled network, with its port bound to host
 loopback. The host resolver supplies the origin's address through Docker's
 `--add-host`, so private DNS names do not depend on the bridge's resolver.
-The existing installation must serve the mobile app and Spaces.
+The existing installation must serve the Cloud app and Spaces.
 
 Remote mode seeds nothing and skips check-off, with a note explaining that it
 would change real tasks. The only measurement writes are the throwaway phone's

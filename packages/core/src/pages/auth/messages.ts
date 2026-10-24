@@ -99,7 +99,7 @@ export const authMessages = i18n.define({
       requestNewResetLink: "Request a new reset link",
       passwordChangedSignOutFailed: "Password changed. Signing out your other sign-ins did not work.",
       signOutOthersRetryHint:
-        "Other browsers, the mobile app, the command line and apps may still be signed in. Try again before you continue.",
+        "Other browsers, the Cloud app, the command line and apps may still be signed in. Try again before you continue.",
       signingOutOthers: "Signing out",
       tryAgain: "Try again",
       continueWithoutSignOut: "Continue anyway",
@@ -213,7 +213,7 @@ export const authMessages = i18n.define({
       requestNewResetLink: "Neuen Link anfordern",
       passwordChangedSignOutFailed: "Passwort geändert. Das Abmelden der anderen Anmeldungen hat nicht geklappt.",
       signOutOthersRetryHint:
-        "Andere Browser, die Mobile App, die Kommandozeile und Apps sind vielleicht noch angemeldet. Versuch es erneut, bevor du weitermachst.",
+        "Andere Browser, die Cloud-App, die Kommandozeile und Apps sind vielleicht noch angemeldet. Versuch es erneut, bevor du weitermachst.",
       signingOutOthers: "Wird abgemeldet",
       tryAgain: "Erneut versuchen",
       continueWithoutSignOut: "Trotzdem weiter",

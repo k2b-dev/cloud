@@ -818,7 +818,7 @@ const app = new Hono<AuthContext>()
       tags: ["Me"],
       summary: "Sign out every other sign-in",
       description:
-        "End other sign-ins and rotate this browser's cookie while preserving its sign-in time and expiry; signInAgain is true if this browser could not be kept. Cloud Login phones stay paired. API keys, passkeys and mandates stay valid.",
+        "End other sign-ins and rotate this browser's cookie while preserving its sign-in time and expiry; signInAgain is true if this browser could not be kept. Cloud Login devices stay paired. API keys, passkeys and mandates stay valid.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SignOutOthersResponseSchema, "Other sign-ins ended"),

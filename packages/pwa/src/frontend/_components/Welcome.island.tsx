@@ -44,7 +44,6 @@ const renderedPrompt = (platform: InstallationPlatform): InstallPrompt => ({
   failed: () => false,
   install: async () => {},
 });
-const isPhone = (platform: InstallationPlatform) => platform !== "generic" && platform !== "apple-desktop";
 
 /** "482913" reads as "482 913". */
 const groupedCode = (code: string) => `${code.slice(0, 3)} ${code.slice(3)}`;
@@ -64,7 +63,6 @@ export default function Welcome(props: WelcomeProps) {
   /** A pairing link opened in the browser, kept in memory to copy into the installed app. */
   const [link, setLink] = createSignal<string>();
   const [install, setInstall] = createSignal(renderedPrompt(props.platform));
-  const [phone, setPhone] = createSignal(isPhone(props.platform));
   const copy = clipboard.createWriter({ write: (value: string) => navigator.clipboard.writeText(value) });
   /** A browser inside another app: the installation guide copies the link itself. */
   const embedded = () => install().platform === "in-app" || install().platform === "apple-in-app";
@@ -211,8 +209,6 @@ export default function Welcome(props: WelcomeProps) {
     );
     const prompt = createInstallPrompt();
     setInstall(prompt);
-    // iPadOS reports a Mac; only the browser knows its touch screen.
-    setPhone(isPhone(prompt.platform) || matchMedia("(pointer: coarse)").matches);
     const visible = () => {
       if (document.visibilityState === "visible" && polling) {
         clearTimeout(timer);
@@ -323,7 +319,19 @@ export default function Welcome(props: WelcomeProps) {
               </>
             )}
           </Show>
-          <Show when={phone()} fallback={<p>{t().phonesOnly}</p>}>
+          <Show
+            when={props.platform !== "generic" && props.platform !== "apple-desktop"}
+            fallback={
+              <>
+                <Show when={props.platform === "apple-desktop"}>
+                  <div class="pwa-coarse-only">
+                    <InstallGuide appName={props.cloud} install={renderedPrompt("apple-mobile")} url={link() ?? props.url} />
+                  </div>
+                </Show>
+                <p class={props.platform === "apple-desktop" ? "pwa-fine-only" : undefined}>{t().phonesOnly({ cloud: props.cloud })}</p>
+              </>
+            }
+          >
             {/* Inside another app, the guide's one copy action takes the pairing link along to Safari or Chrome. If
                 copying fails, the guide shows the link to copy by hand: the app around the page already opened it, and
                 it pairs only once the code it yields is typed on the web. */}

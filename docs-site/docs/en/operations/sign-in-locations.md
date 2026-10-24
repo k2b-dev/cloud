@@ -122,7 +122,7 @@ The value is 32 random bytes encoded as 43 base64url characters without
 padding. The cookie lasts 90 days. Each successful sign-in refreshes its
 lifetime and keeps the same value. A missing or invalid value gets a new one.
 Core does not rotate it. Signing out keeps it. Failed sign-ins do not set or
-refresh it. The mobile app does not get this cookie.
+refresh it. The Cloud app does not get this cookie.
 
 ## Stored data
 
@@ -170,7 +170,7 @@ The value has no account data or raw address, and the key is per request.
 Decoys do the same work. Private or unknown addresses produce no entry.
 
 The key expires with the five-minute request and is deleted after approval or
-denial. A signed context read compares the phone's prefix with this pseudonym
+denial. A signed context read compares the device's prefix with this pseudonym
 and returns `sameNetwork: true` only on a match. Core reads the listed browser
 requests in one Valkey call after the SQL transaction. If Valkey is down,
 the hint is missing and sign-in continues. Nothing about S5 changes the level.
@@ -201,7 +201,7 @@ After a successful web sign-in from a new browser, Core hands over
 **New sign-in from a new browser** after the session transaction commits and
 before the response returns to the browser. This includes password, passkey,
 email-code, Cloud Login, password-reset, expired-password, and emergency-admin
-sign-ins. Mobile app session issuance is excluded. An email-code sign-in that
+sign-ins. Cloud app session issuance is excluded. An email-code sign-in that
 creates a guest account sends no notice, because the account did not exist
 before.
 

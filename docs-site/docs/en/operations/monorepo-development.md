@@ -30,7 +30,7 @@ The local administrator login is `/auth/login?method=admin` with token
 
 `bun run dev` starts Postgres, Valkey, a second Valkey for integration tests, a persistent single-node NATS JetStream server, Geo, Filegate, Gotenberg, and ClickHouse in the
 background. It then stays in the foreground and runs the gateway, Gateway Ops,
-Core, Dashboard, Accounts, Assistant, and the mobile app shell (`app-pwa`).
+Core, Dashboard, Accounts, Assistant, and the Cloud app shell (`app-pwa`).
 
 Use `bun run dev:full` only when you need every optional application.
 
@@ -86,13 +86,17 @@ Filegate also accepts browser requests from this origin. `bun run test` keeps
 APP_URL=https://cloud.dev.example
 ```
 
-## Test the mobile app on a phone
+## Test the Cloud app on a device
 
-The mobile app is unreleased. Its shell (`app-pwa`) runs in the core development
+On iPad, test Safari's **Share → Add to Home Screen** steps before JavaScript
+runs, then pair the installed app. When pairing on the same iPad, copy the
+link from **App → Pair a device** on the web and paste it into the app.
+
+The Cloud app is unreleased. Its shell (`app-pwa`) runs in the core development
 stack, while `compose.prod.yml` starts it only with the `unreleased` profile.
 
-A phone cannot reach `localhost`, and browsers install apps and register
-service workers only over HTTPS. To try the app on a phone:
+A device cannot reach `localhost`, and browsers install apps and register
+service workers only over HTTPS. To try the app on a device:
 
 1. Serve the stack through an HTTPS reverse proxy or tunnel, as described in
    [Serve the stack under another address](#serve-the-stack-under-another-address).
@@ -100,8 +104,8 @@ service workers only over HTTPS. To try the app on a phone:
    only while no value is stored; otherwise, change the URL in
    Administration → Settings. Pairing and renewal accept only requests whose
    `Origin` is this address.
-3. Use the same address on the computer and on the phone. Pair the phone from
-   `/me/app` on the computer, or open `/pwa/` on the phone to install the app
+3. Use the same address on the computer and on the device. Pair the device from
+   `/me/app` on the computer, or open `/pwa/` on the device to install the app
    first.
 
 ## Connect Pulse to development ClickHouse
@@ -412,7 +416,7 @@ the upgrade preflight leave it out. Compose starts it only with
 for test installations. Until its release it has no row in the
 deployment requirements and no catalog page. Chat (`app-chat`) is unreleased
 this way; in development it is an optional application, so start it with
-`bun run dev:start chat` or `bun run dev:full`. The mobile app (`app-pwa`) is
+`bun run dev:start chat` or `bun run dev:full`. The Cloud app (`app-pwa`) is
 unreleased the same way but starts with the default development stack. The
 release pull request removes the profile line.
 

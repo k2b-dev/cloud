@@ -66,12 +66,12 @@ to the same item are grouped to keep the feed useful.
 Use one Space for work that shares a team and access boundary. Create another
 when the audience or lifecycle is different.
 
-## Check off tasks in the mobile app
+## Check off tasks in the Cloud app
 
-> **Preview:** the mobile app is not released yet.
+> **Preview:** the Cloud app is not released yet.
 
 When the installation runs the
-[mobile app](/en/docs/frontend/mobile-app-pages), Spaces appears on its Start
+[Cloud app](/en/docs/frontend/mobile-app-pages), Spaces appears on its Start
 page and, when there is room, in its tab bar for people with the `user` role. Guests do not see it.
 The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
 **Upcoming** lists with their counts, across every Space you can read.

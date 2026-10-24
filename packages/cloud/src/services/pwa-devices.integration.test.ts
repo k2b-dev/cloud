@@ -182,7 +182,7 @@ const pair = async (owner: Person, phone = new Jar(), platform: "ios" | "android
   return { phone, deviceId, pairingId: started.id };
 };
 
-suite("mobile app pairing and app sessions", () => {
+suite("Cloud app pairing and app sessions", () => {
   let previousUrl: unknown;
   beforeAll(async () => {
     previousUrl = await settings.get("app.url");
@@ -337,7 +337,7 @@ suite("mobile app pairing and app sessions", () => {
     expect(body).not.toContain('"device"');
   });
 
-  test("without the mobile app nothing pairs or renews, while removal and sign-out still work", async () => {
+  test("without the Cloud app nothing pairs or renews, while removal and sign-out still work", async () => {
     const owner = await person();
     const { phone, deviceId } = await pair(owner);
     shell = false;

@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Server and browser platform detection choose different initial content | iPadOS Safari reports a Mac, so desktop guidance changes after mount. | Tests: PWA start-page renders require both iPad steps and the computer hint in English and German; a Welcome behavior test checks that both variants survive mount. CSS selects by pointer before JavaScript runs. |
 | Parse tree read before the parser finished | A test reads `syntaxTree(state)` of a fresh CodeMirror state; the first parse runs only within a short time budget, so a busy runner sees a partial tree (11 of 45 characters). | Test: Notebooks `list-structure.test.ts` finishes the parse with `ensureSyntaxTree` and applies it with `state.update({})` before reading the tree. Convention: complete an asynchronous result before asserting on it. |
 | A formatter exposes ambiguous generic TSX syntax | Removing the trailing comma from a generic arrow with a default type makes the Solid/Babel test transform parse it as JSX. | Test: `PermissionEditor.behavior.test.tsx` runs through the actual Solid DOM preload; use a generic function declaration for the deferred helper and run the test after formatting. |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
@@ -1003,6 +1004,13 @@ convention still needs a check or a test.
 - **Root cause:** Its fixture added two days to the real clock, then used fixed UTC times while asserting summer local times.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
+
+### iPad installation guidance changed after the page loaded
+
+- **What happened:** iPadOS Safari initially showed the Cloud app’s phone-only message, then changed it after mount.
+- **Root cause:** Its Mac user agent selected the desktop text on the server; a client pointer check corrected it later.
+- **Error class:** Server and browser platform detection choose different initial content.
+- **Guard:** The start-page render tests require both iPad installation steps and the computer hint for the Mac-style iPadOS user agent in English and German. CSS selects the visible variant before JavaScript runs; a behavior test checks that mounting retains both variants.
 
 ### Confirmation disabled its own focus-return target
 

@@ -54,7 +54,7 @@ create that audience grant.
 Repair is explicit administration authority, not an implicit Manage access or
 Use grant. It bypasses the application's optional `canManage` restriction so
 an administrator can restore a manager. It does not bypass credential caps;
-mobile app sessions cannot repair access. Ordinary app management still
+Cloud app sessions cannot repair access. Ordinary app management still
 requires its own manager grant and any application restriction.
 
 The shared `/_cloud/app-access/:appId` route redirects ordinary management to

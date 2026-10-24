@@ -233,7 +233,7 @@ describe("accounts CLI", () => {
     expect(revoke.lines).toEqual(["Device revoked."]);
   });
 
-  test("lists and removes a user's phones in the mobile app through the accounts API", async () => {
+  test("lists and removes a user's phones in the Cloud app through the accounts API", async () => {
     const device = {
       id: "p1",
       name: "iPhone",
@@ -279,7 +279,7 @@ describe("accounts CLI", () => {
     await accountsCli.run(remove.ctx);
     expect(remove.calls[1]?.path).toBe(`/api/accounts/users/u1/app-devices/${deviceId}`);
     expect(remove.calls[1]?.init?.method).toBe("DELETE");
-    expect(remove.lines).toEqual(["Phone removed."]);
+    expect(remove.lines).toEqual(["Device removed."]);
 
     const again = createContext(["users", "app-devices", "remove", "alice", deviceId], { yes: true }, [
       jsonResponse({ users: [user({})], pagination }),
