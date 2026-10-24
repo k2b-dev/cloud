@@ -3,9 +3,9 @@ title: OpenAI-compatible API
 navTitle: OpenAI-compatible API
 section: AI
 order: 1025
-description: Connect external text clients to your allowed Assistant models with a models-only personal API key.
+description: Connect external text clients to your allowed Assistant models with a models-only API key.
 tags: [ai, models, api, authentication, streaming]
-updated: 2026-10-11
+updated: 2026-10-23
 ---
 
 # OpenAI-compatible API
@@ -36,7 +36,7 @@ Configure the client with:
 | Field | Value |
 | --- | --- |
 | Base URL | `https://<your-cloud>/api/ai/openai/v1` |
-| API key | Your models-only personal key |
+| API key | Your models-only key |
 | Model | A profile ID from `GET /models` |
 
 Send the key as `Authorization: Bearer <key>`. Full-access personal keys,
@@ -56,6 +56,34 @@ curl 'https://<your-cloud>/api/ai/openai/v1/chat/completions' \
 Authorization: Bearer $CLOUD_MODELS_KEY
 EOF
 ```
+
+## Connect a machine account
+
+Administrators can create a models-only key for an active standalone account
+or agent in **Accounts → Service accounts → Create API key**. Select the account
+by name, choose **AI models only**, and save the key when it appears. The
+creation dialog also offers **Full access** for ordinary Cloud API clients.
+A full-access key cannot call this Models API.
+
+First create the [service account](/en/docs/identity/service-accounts), then
+grant it access to the model in **AI settings**. A machine uses its own grants,
+including any explicitly configured group or authenticated grants. Its creator's
+permissions do not contribute. An account with no matching model grant sees no
+models and cannot generate a completion.
+
+The administrator API accepts the same purpose:
+
+```http
+POST /api/admin/identity/service-accounts/<id>/api-keys
+Content-Type: application/json
+
+{"name":"Transcript cleanup","access":"models"}
+```
+
+`access` is `full` by default. `models` cannot be combined with ordinary
+credential scopes. The returned token appears only in this creation response;
+metadata and revocation remain in Accounts. Use the same base URL and model
+IDs as for a personal key. OAuth access tokens cannot call this API.
 
 ## Request fields
 
@@ -131,8 +159,10 @@ normal inference accounting.
 
 ## Limits and usage
 
-Requests use the person's model grants, account category, account expiry and
-chat allowance. The usage report attributes each call to task `openai-api`.
+Requests use the authenticated account's model grants and chat allowance.
+Personal keys also retain account category and expiry checks. Machine usage
+belongs to the service account, across all its keys. The inference ledger
+records the credential ID and attributes each call to task `openai-api`.
 No request or response content is stored in the inference ledger.
 
 - **Output:** the requested output limit is capped by the model profile's
@@ -144,9 +174,9 @@ No request or response content is stored in the inference ledger.
   1,000,000 tokens, the largest supported adapter default.
 - **Rate:** the existing `security.rate_limit_per_second` limit applies per IP.
 - **Concurrency:** `ai.openai_api_max_concurrent_requests` defaults to four
-  simultaneous requests per person across all instances. Typical clients use
+  simultaneous requests per account across all instances. Typical clients use
   one or two connections. Four leaves room for a second client while limiting
-  scripts that would crowd out other people. A Cloud process runs up to eight
+  scripts that would crowd out other accounts. A Cloud process runs up to eight
   queued chat turns; these synchronous requests bypass that queue. Operators
   with more provider capacity can raise the limit to 64.
 
@@ -188,8 +218,10 @@ settings during the request.
 
 ## Key isolation and revocation
 
-Models-only keys are personal API keys with the reserved `ai:inference` scope.
-Only personal key creation with `access: "models"` can issue that scope.
+Models-only keys carry the reserved `ai:inference` purpose. Personal key
+creation and administrator creation for standalone accounts or agents issue it
+through `access: "models"`. The Models API accepts exactly that purpose, with
+no other scopes. Resource-bound credentials cannot receive it.
 Central authentication rejects it on every other Cloud surface; only this
 endpoint authenticates it directly. Other scopes alongside it do not bypass
 the rejection. Its secret is stored with a separate hash, so applications on
@@ -198,5 +230,11 @@ instead of granting full access.
 
 Revoke the key like any personal key in your profile or with
 `cld account api-keys revoke <id-or-prefix-or-name> --yes`.
+For machines, revoke the key in Accounts or disable its service account.
+Credential revocation, expiry, account disable, and model grant removal affect
+the next request. Cloud rechecks the credential and model grant immediately
+before provider dispatch, after quota admission; rejected dispatch releases
+its reservation without charging inference usage.
+
 Turning off `ai.openai_api_enabled` stops new requests with existing keys too.
 It does not cancel provider calls already running.
