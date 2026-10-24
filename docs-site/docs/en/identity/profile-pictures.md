@@ -35,7 +35,10 @@ Every service account shows a robot drawn from its account ID. The ID is fixed
 when the account is created, so the robot never changes by itself, and existing
 accounts have one from the first start of this version on. For a standalone
 service account or agent, an administrator can change the robot's parts or
-replace it with a photo; deleting the photo shows the robot again. A robot uses its own shape set: head, antenna, eyes, mouth,
+replace it with a photo; deleting the photo shows the robot again. The
+administrator opens the same dialog with a click on the picture at the top of
+the agent's page under **Accounts → Agents**; it offers **Photo** and **Robot**,
+with **Random** for a new robot. A robot uses its own shape set: head, antenna, eyes, mouth,
 body, and colours, without skin tones, hair, beards, or headwear. People stay
 round and service accounts stay square wherever an avatar appears.
 

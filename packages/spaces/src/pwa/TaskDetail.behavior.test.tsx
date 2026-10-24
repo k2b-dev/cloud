@@ -163,6 +163,25 @@ test("a reader without write access sees why everything is off", () => {
   expect(root.querySelector<HTMLButtonElement>("button.spaces-pwa__check")!.disabled).toBe(true);
 });
 
+test("an agent among the assignees shows its robot in a square, a person their round picture", () => {
+  const agentId = "66666666-6666-4666-8666-666666666666";
+  const root = mount({
+    kind: "ready",
+    task: {
+      ...task,
+      people: [
+        { id: "22222222-2222-4222-8222-222222222222", kind: "user", displayName: "Lena Example", avatarHash: "lena-rev" },
+        { id: agentId, kind: "service_account", displayName: "Release agent", avatarHash: null },
+      ],
+    },
+  });
+  const [person, agent] = Array.from(root.querySelectorAll<HTMLImageElement>(".spaces-pwa-task__avatars img"));
+  expect(person?.getAttribute("src")).toContain("rev=lena-rev");
+  expect(person?.getAttribute("data-shape")).toBeNull();
+  expect(agent?.getAttribute("src")).toBe(`/api/accounts/users/${agentId}/avatar`);
+  expect(agent?.getAttribute("data-shape")).toBe("square");
+});
+
 test("opened from a row, the title, Space and date show at once and the rest keeps its place", () => {
   const root = mount({
     kind: "loading",

@@ -167,7 +167,12 @@ export default ssr<AuthContext>(async (c) => {
                     if (entry.owner.type === "standalone") {
                       return (
                         <div class="flex min-w-0 flex-col gap-1">
-                          <span class="truncate font-medium text-primary">{entry.owner.name}</span>
+                          <a
+                            href={`/app/accounts/agents/${entry.owner.serviceAccountId}`}
+                            class="truncate font-medium text-primary hover:underline"
+                          >
+                            {entry.owner.name}
+                          </a>
                           <span class="truncate text-xs text-dimmed">
                             {entry.owner.kind === "agent" ? t.agentServiceAccount : t.standaloneServiceAccount}
                           </span>

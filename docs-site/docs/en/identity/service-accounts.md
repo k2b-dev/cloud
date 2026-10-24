@@ -5,7 +5,7 @@ section: Identity and access
 order: 352
 description: Give an integration or a coding agent its own principal with an OAuth client or API keys, and grant it access like a user.
 tags: [identity, service-accounts, agents, oauth, client-credentials]
-updated: 2026-09-30
+updated: 2026-10-23
 ---
 
 # Standalone service accounts and agents
@@ -24,9 +24,12 @@ Every service account has one `kind`:
 | `standalone` | An integration with its own identity | Explicit grants on the account |
 | `agent` | A standalone account that surfaces as an agent | Explicit grants on the account |
 
-`agent` changes presentation only: pickers, entity search, permission editor
-rows, and the Accounts app show a robot icon and the label "Agent" instead of a
-key. It carries no extra permission and no different token rules. Use it for
+`agent` changes presentation only: pickers and the Accounts app show the label
+"Agent" instead of a key. It carries no extra permission and no different token
+rules. Every service account shows a picture, never a bare icon: a robot drawn
+from its account ID, or a photo. Administrators change a standalone account's
+picture on its page under **Accounts → Agents** or with `cld admin agents
+avatar`; see [Profile pictures](/en/docs/identity/profile-pictures). Use it for
 coding agents and other automated workers that people should recognize in
 assignee lists, activity, and audit trails.
 
