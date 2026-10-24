@@ -570,3 +570,30 @@ export const ChatLiveEventSchema = z.discriminatedUnion("type", [
     mention: z.boolean(),
   }),
 ]);
+
+export const ItemEventsQuerySchema = z.strictObject({
+  thread: z.union([ShortIdSchema, z.literal("all")]).default("all"),
+  before: z.string().datetime({ offset: true }).max(40).optional(),
+  after: z.string().datetime({ offset: true }).max(40).optional(),
+  cursor: z.string().min(1).max(256).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+export const ItemEventSchema = z.object({
+  id: z.string().max(100),
+  at: z.string().datetime({ offset: true }),
+  icon: z
+    .string()
+    .regex(/^ti ti-[a-z0-9-]+$/)
+    .max(80),
+  sentence: z.string().max(4000),
+  count: z.number().int().min(1),
+  thread: z.union([
+    z.object({ id: ShortIdSchema, name: z.string() }),
+    z.object({ ref: z.object({ type: z.enum(["spaces.item", "notebooks.note"]), id: ShortIdSchema }) }),
+  ]),
+});
+export const ItemEventsPageSchema = z.object({
+  items: z.array(ItemEventSchema).max(100),
+  nextCursor: z.string().max(256).nullable(),
+  unavailable: z.literal(true).optional(),
+});

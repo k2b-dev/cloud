@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to Spaces and Notebooks.
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 
 # Chat system conversations
@@ -13,9 +13,9 @@ updated: 2026-10-23
 Chat attaches a conversation to a Space or notebook and a thread to a task,
 event, or note. The Chat app lists these conversations under **Spaces and
 Notebooks**. Their item directory and message links work in the full page
-and below `/app/chat/panel` in the universal panel. This does not add
-navigation in Spaces or Notebooks, migrate comments, or publish item-change
-events.
+and below `/app/chat/panel` in the universal panel. Item changes can be read
+as a separate event feed alongside messages. Existing comments stay in their
+owning application.
 
 ## Open a conversation
 
@@ -54,6 +54,44 @@ Chat does not enumerate that app's members or copy their grants.
 
 Unread messages begin at each participant's first open. Reopening preserves
 that position. Messages before the first open cannot be marked unread.
+
+## Read item events
+
+`GET /conversations/:conversation/events` reads a system conversation's item
+changes with the current caller. Ordinary conversations return 404. Pass
+`thread=all` (the default) for the container or a thread ID for that item.
+The response is `{ items, nextCursor, unavailable? }`. Each row has `id`, `at`
+(the bucket's last occurrence), `icon`, a final localized `sentence`, `count`,
+and `thread`. An existing thread is `{ id, name }` with its current title;
+otherwise `{ ref }` can be passed to `threads/for-resource`.
+
+Rows are newest first. A page can be shorter to fit the capability response
+budget; follow its cursor even when fewer rows than requested arrive. Actor
+labels are limited to 1,000 characters. `limit` defaults to 50 and accepts
+1–100. Use exclusive ISO datetime bounds `after` and `before` to match a message window. Follow a
+non-null `nextCursor` by passing `cursor` with the same selection and bounds,
+including when the page is empty. IDs identify owner activity buckets;
+`count` reports the number of occurrences already recorded in that bucket.
+Clients should replace an existing row with the same ID when refreshing it.
+
+Events are read from Spaces or Notebooks rather than stored as Chat messages.
+They never advance unread state, become a conversation preview, trigger a
+notification, or enter Chat's live payloads. Comments and events for deleted
+or unreadable items are omitted. The owning app formats sentences in the
+caller's locale; Spaces receives the request's time zone for dates. An owner
+outage or malformed activity response returns HTTP 200 with
+`{ items: [], nextCursor: null, unavailable: true }`; retry this read to recover.
+Denied conversation, thread, or activity access returns 404.
+
+The owning queries are `spaces:space.activity` and
+`notebooks:notebook.activity`. They take `space` or `notebook` (container short
+ID), optional `item` (item short ID), `after`, `before`, `cursor`, and `limit`
+(default 50, maximum 100). Spaces also accepts an optional IANA `timeZone`,
+falling back to the installation zone. Each query returns a data array of
+`{ id, at, ref, actor: { type, id, name }, icon, sentence, count }` and its
+continuation in `page.nextCursor`. Item reads and activity queries use the
+same owning application's grants and credential scope checks. A notebook edit
+bucket remains one row; the query does not create additional edit records.
 
 ## Follow pages
 
