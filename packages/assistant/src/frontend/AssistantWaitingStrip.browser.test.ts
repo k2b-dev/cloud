@@ -230,7 +230,7 @@ const propsOf = (state: State, url: URL) => {
   const detail = detailOf(state, id);
   return {
     userId: "user123",
-    cloudUrl: "http://localhost:4799",
+    cloudUrl: assets.url.origin,
     status: { ok: true, enabled: true, defaultModelId: "standard", visionModelConfigured: false, error: null, models: [] },
     models: [
       { id: "standard", label: "Standard", provider: "ollama", model: "standard", capabilities: ["streaming"], dataBoundary: "private" },
@@ -257,6 +257,7 @@ const propsOf = (state: State, url: URL) => {
 };
 
 let browser: Browser;
+let assets: ReturnType<typeof Bun.serve>;
 let css: string;
 let script: string;
 beforeAll(async () => {
@@ -305,10 +306,23 @@ beforeAll(async () => {
     .map((file) => readFileSync(resolve(ui, "dist", file), "utf8").replace(/url\((["']?)(?:\.\/)?(?!data:|https?:)/g, "url($1/ui/"))
     .join("\n");
   css = [fonts, "@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
+  // Keep compiled assets off the Playwright route-fulfillment channel, including remote WebKit.
+  assets = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path === "/harness.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
+      if (path === "/harness.css") return new Response(css, { headers: { "content-type": "text/css" } });
+      if (path.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", path.slice(4))));
+      return new Response("Not found", { status: 404 });
+    },
+  });
   browser = await launchBrowser();
 }, 180_000);
 afterAll(async () => {
   await browser?.close();
+  assets?.stop(true);
 });
 
 type View = { name: string; width: number; height: number; touch: boolean; column?: string };
@@ -339,10 +353,9 @@ const open = async (
   const unrouted: string[] = [];
   const sidebarLoads: string[] = [];
   const errors = pageErrors(page);
-  await page.route("http://localhost:4799/**", async (route: Route) => {
+  await page.route(`${assets.url.href}**`, async (route: Route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/harness.js") return route.fulfill({ body: script, contentType: "text/javascript" });
-    if (url.pathname.startsWith("/ui/")) return route.fulfill({ path: resolve(ui, "dist", url.pathname.slice(4)) });
+    if (url.pathname === "/harness.js" || url.pathname === "/harness.css" || url.pathname.startsWith("/ui/")) return route.continue();
     if (url.pathname === "/app/assistant") {
       // A chat opened at a message that answers later than the stream's 500 ms reconnect delay, so the stream that
       // the navigation cancelled always opens again while the page waits, and WebKit refuses it.
@@ -359,9 +372,9 @@ const open = async (
         contentType: "text/html",
         body:
           `<!doctype html><html lang="${state.locale}" class="${options.theme ?? "light"}"><head><meta charset="utf-8">` +
-          `<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
+          `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head>` +
           `<body class="k2b-ui" style="margin:0"><div style="${column}">${inner}</div>` +
-          `<script>window.harness = ${JSON.stringify(harness).replace(/</g, "\\u003c")};</script><script src="/harness.js"></script></body></html>`,
+          `<script>window.harness = ${JSON.stringify(harness).replace(/</g, "\\u003c")};</script><script type="module" src="/harness.js"></script></body></html>`,
       });
     }
     if (url.pathname === "/api/assistant/workspace/sidebar") {
@@ -395,7 +408,7 @@ const open = async (
     unrouted.push(`${route.request().method()} ${url.pathname}`);
     return route.fulfill({ status: 503, json: { message: "unavailable" } });
   });
-  await page.goto(`http://localhost:4799${options.path ?? "/app/assistant?conversation=Wart42"}`);
+  await page.goto(`${assets.url.origin}${options.path ?? "/app/assistant?conversation=Wart42"}`);
   await page.locator("textarea").first().waitFor({ timeout: 30_000 });
   return { page, unrouted, errors, sidebarLoads, close: () => context.close() };
 };
@@ -633,7 +646,7 @@ describe("Waiting for you", () => {
         page.on("pageerror", (error) => {
           if (error.message.endsWith(" due to access control checks.")) refused.push(error.message);
         });
-        await page.goto("http://localhost:4799/app/assistant?conversation=Wart42&message=3", { timeout: 5000 + slowDocumentMs });
+        await page.goto(`${assets.url.origin}/app/assistant?conversation=Wart42&message=3`, { timeout: 5000 + slowDocumentMs });
         // WebKit did refuse a load here, so this step still exercises what pageErrors() drops.
         if (browserName === "webkit") expect(refused).not.toEqual([]);
         await strip(page).waitFor();
@@ -669,7 +682,7 @@ describe("Waiting for you", () => {
   test("a jump started while a reload still looks for a question that is gone keeps its focus", async () => {
     const { page, errors, unrouted, close } = await open(desktop, { locale: "de", scenario: "three" });
     try {
-      await page.goto("http://localhost:4799/app/assistant?conversation=Wart42&question=tool-gone");
+      await page.goto(`${assets.url.origin}/app/assistant?conversation=Wart42&question=tool-gone`);
       await strip(page).waitFor();
       // The landing looks for the gone question for 60 frames, then gives the focus to the composer.
       await strip(page).locator(".assistant-waiting__entry").nth(1).click();

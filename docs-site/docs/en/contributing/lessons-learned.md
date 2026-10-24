@@ -1039,6 +1039,14 @@ convention still needs a check or a test.
 - **Guard:** The starter test uses the scoped PDF admission mock, asserts one admission attempt, and retains the actual template-rendering and escaping assertions. Platform and integration tests continue to exercise real admission.
 
 
+
+### Keep Assistant fixture loading inside the shared browser contract
+
+- **What happened:** WaitingStrip navigation exceeded its existing deadline, while the changed context browser test was omitted by the shared browser runner.
+- **Root cause:** WaitingStrip sent its compiled assets through Playwright route fulfillment; the context test selected Chrome directly instead of the shared launcher.
+- **Error class:** Browser fixtures bypass the shared asset or engine setup.
+- **Guard:** WaitingStrip serves compiled module assets over local HTTP. The context test uses the shared launcher and a fixed fixture clock, preserving its assertions and deadlines for Chromium and WebKit.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its
