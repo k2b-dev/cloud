@@ -279,10 +279,10 @@ describe("Approvals in a browser", () => {
     });
   }
 
-  test("an empty list says nothing is waiting", async () => {
+  test("an empty list says you are all set", async () => {
     const { tab, close } = await live(1280, []);
     try {
-      await tab.getByText("Nothing is waiting for you.").waitFor();
+      await tab.getByText("You're all set.").waitFor();
     } finally {
       await close();
     }

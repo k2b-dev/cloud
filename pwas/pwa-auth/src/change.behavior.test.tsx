@@ -250,7 +250,7 @@ test("an omitted change keeps its sheet open until a complete inbox no longer li
     setMoreChanges(0);
     await Bun.sleep(30);
     expect(sheet()).toBeNull();
-    expect(dom.root.textContent).toContain("Nothing waiting for you.");
+    expect(dom.root.textContent).toContain("You're all set.");
   } finally {
     closeDialogs();
     await Bun.sleep(20);

@@ -176,7 +176,7 @@ export const authMessages = i18n.define({
       forgetWarning: "This does not revoke the device in Cloud. Revoke it under Security → Devices using another sign-in method.",
       forget: "Remove locally",
       revokeUncertain: "Revocation could not be confirmed. Check the device in Cloud before removing it locally.",
-      noRequests: "Nothing waiting for you.",
+      noRequests: "You're all set.",
       checking: "Checking for requests…",
       recoveryHelp:
         "Your connections are saved on this device. If you reset the app or change devices, sign in to your Clouds another way, remove the old device and pair again.",
@@ -446,7 +446,7 @@ export const authMessages = i18n.define({
         "Das widerruft das Gerät nicht in der Cloud. Melde dich dort mit einer anderen Methode an und widerrufe es unter Sicherheit → Geräte.",
       forget: "Lokal entfernen",
       revokeUncertain: "Der Widerruf konnte nicht bestätigt werden. Prüfe das Gerät in der Cloud, bevor du es lokal entfernst.",
-      noRequests: "Nichts wartet auf dich.",
+      noRequests: "Alles erledigt.",
       checking: "Suche nach Anfragen…",
       recoveryHelp:
         "Deine Verbindungen sind auf diesem Gerät gespeichert. Nach dem Zurücksetzen der App oder einem Gerätewechsel: anders in deinen Clouds anmelden, das alte Gerät entfernen und neu koppeln.",
