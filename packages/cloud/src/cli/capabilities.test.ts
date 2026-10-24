@@ -160,12 +160,12 @@ describe("capabilities CLI", () => {
     expect(requests).toEqual(["/api/capabilities/v1/queries/contacts/search"]);
   });
 
-  test("keeps optional resource card facts in CLI JSON output", async () => {
+  test("keeps resource card facts and ignores unfamiliar reference presentation in CLI JSON output", async () => {
     const ref = { type: "contacts.contact", id: "one", context: "Contact in Team", status: "Active" };
     const { ctx, lines } = createContext(["query", "contacts", "read"], { input: '{"id":"one"}' }, async (path) =>
       path.includes("catalog")
         ? Response.json({ protocolVersion: 2, apps: [], page: { hasMore: false } })
-        : Response.json({ data: {}, refs: [ref] }),
+        : Response.json({ data: {}, refs: [{ ...ref, futurePresentation: "ignored" }] }),
     );
     await capabilitiesCliModule.run(ctx);
     expect(JSON.parse(lines[0]!)).toMatchObject({ refs: [ref] });

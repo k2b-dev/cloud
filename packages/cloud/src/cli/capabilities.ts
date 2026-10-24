@@ -139,7 +139,7 @@ const invoke = async (config: {
     }
     throw error;
   }
-  const result = capabilityResultSchema(z.unknown()).parse(body);
+  const result = capabilityResultSchema(z.unknown(), { consumer: true }).parse(body);
   const manifests = config.manifest ? [config.manifest] : [];
   const wantedApps = new Set((result.refs ?? []).map(cloudResourceRefAppId));
   for (const manifest of manifests) wantedApps.delete(manifest.appId);
