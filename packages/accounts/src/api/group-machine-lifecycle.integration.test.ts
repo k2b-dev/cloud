@@ -10,7 +10,7 @@ import groups from "./groups";
 
 const blockedBy = async (blocker: number, waiter?: number) => {
   for (let attempt = 0; attempt < 100; attempt++) {
-    const [row] = await db<{ pid: number }[]>`SELECT pid FROM pg_stat_activity
+    const [row] = await sql<{ pid: number }[]>`SELECT pid FROM pg_stat_activity
       WHERE ${blocker}=ANY(pg_blocking_pids(pid)) AND (${waiter ?? null}::int IS NULL OR pid=${waiter ?? null})`;
     if (row) return row.pid;
     await Bun.sleep(10);
