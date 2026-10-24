@@ -712,6 +712,14 @@ const publicIds: Record<ResourceTable, Map<string, string>> = {
 
 beforeEach(() => {
   spyOn(settings, "get").mockResolvedValue("UTC");
+  spyOn(spacesService.column, "get").mockResolvedValue({
+    id: columnUuid,
+    spaceId: spaceUuid,
+    name: "In progress",
+    color: null,
+    rank: "1024",
+    isDone: false,
+  });
   const requiredPublicId = (table: ResourceTable, internalId: string): string => {
     const value = publicIds[table].get(internalId);
     if (!value) throw new Error(`Missing ${table} public ID for ${internalId}`);
@@ -2485,3 +2493,55 @@ test("panel place refs select the owning app's public resource reader", () => {
   expect(reader?.localId).toBe("space.read");
   expect(spacesCapabilities.queries["space.read"].input.parse({ id: ref.id })).toEqual({ id: ref.id });
 });
+
+for (const [locale, taskContext, eventContext, due, done] of [
+  ["en", "Task in Product", "Event in Product", "due Oct 30, 2026", "Done"],
+  ["de", "Aufgabe in Product", "Termin in Product", "fällig 30. Okt. 2026", "Erledigt"],
+] as const) {
+  test(`item reader returns current card facts in ${locale}`, async () => {
+    setSystemTime(new Date("2026-10-24T12:00:00Z"));
+    spyOn(settings, "get").mockResolvedValue("America/Los_Angeles");
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+    const get = spyOn(spacesService.item, "get").mockResolvedValue(task);
+    spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+    const column = spyOn(spacesService.column, "get").mockResolvedValue({
+      id: columnUuid,
+      spaceId: spaceUuid,
+      name: "Offen",
+      color: null,
+      rank: "1024",
+      isDone: false,
+    });
+    const read = async () => {
+      const result = await spacesCapabilities.queries["item.read"].run({ id: itemId }, { ...userContext, locale });
+      if (!result.ok) throw new Error("Expected item read");
+      expect(capabilityResultSchema(ItemDataSchema).safeParse(result.data).success).toBeTrue();
+      return result.data.refs![0]!;
+    };
+    expect(await read()).toMatchObject({ context: taskContext, status: "Offen" });
+    expect(column).toHaveBeenCalledWith({ id: columnUuid });
+    get.mockResolvedValue({ ...task, deadline: "2026-10-30", deadlineAllDay: true });
+    expect(await read()).toMatchObject({ context: `${taskContext} · ${due}`, status: "Offen" });
+    // An instant uses the app zone, while the all-day deadline above stays on October 30.
+    get.mockResolvedValue({ ...task, deadline: "2026-10-31T02:00:00Z", deadlineAllDay: false });
+    expect(await read()).toMatchObject({ context: `${taskContext} · ${due}` });
+    get.mockResolvedValue({ ...task, deadline: "2026-10-30", deadlineAllDay: true, completedAt: createdAt });
+    expect(await read()).toMatchObject({ context: taskContext, status: done });
+    get.mockResolvedValue({ ...event, startsAt: "2026-10-31T02:00:00Z", endsAt: "2026-10-31T03:00:00Z" });
+    const eventRef = await read();
+    expect(eventRef.context).toBe(`${eventContext} · ${locale === "en" ? "Oct 30, 2026" : "30. Okt. 2026"}, 19:00`);
+    expect(eventRef).not.toHaveProperty("status");
+    get.mockResolvedValue({ ...event, allDay: true, startsAt: "2026-10-31T07:00:00Z", endsAt: "2026-11-01T07:00:00Z" });
+    expect((await read()).context).toBe(`${eventContext} · ${locale === "en" ? "Oct 31, 2026" : "31. Okt. 2026"}`);
+    spyOn(spacesService.space, "get").mockResolvedValue({ ...space, name: "x".repeat(200) });
+    get.mockResolvedValue({ ...task, deadline: "2026-10-30", deadlineAllDay: true });
+    const long = await read();
+    expect(long.context).toHaveLength(200);
+    expect(long.context).toEndWith(due);
+    column.mockResolvedValue({ id: columnUuid, spaceId: spaceUuid, name: "x".repeat(100), color: null, rank: "1024", isDone: false });
+    expect((await read()).status).toHaveLength(60);
+    spyOn(spacesService.space, "get").mockResolvedValue({ ...space, name: "IT\n  planning" });
+    expect((await read()).context).not.toContain("\n");
+  });
+}

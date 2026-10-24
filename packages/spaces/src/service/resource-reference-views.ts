@@ -63,6 +63,8 @@ export const resolveReferenceViews = async (
       title: current?.title ?? reference.label,
       ...(current?.preview ? { preview: current.preview } : {}),
       ...(icon ? { icon } : {}),
+      ...(current?.context ? { context: current.context } : {}),
+      ...(current?.status ? { status: current.status } : {}),
       links: result.links,
     });
     return { ...reference, resource };

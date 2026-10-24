@@ -800,7 +800,14 @@ describe("notebooks capabilities", () => {
     expect(getByShortId).toHaveBeenCalledWith({ shortId: note.shortId });
     expect(getCurrentWithContent).toHaveBeenCalledWith({ id: note.id });
     expect(result.data.refs).toEqual([
-      { type: "notebooks.note", id: note.shortId, title: note.title, preview: notebook.name, icon: "ti ti-file-text" },
+      {
+        type: "notebooks.note",
+        id: note.shortId,
+        title: note.title,
+        preview: notebook.name,
+        icon: "ti ti-file-text",
+        context: `Note in ${notebook.name}`,
+      },
       {
         type: "notebooks.notebook",
         id: notebook.shortId,
@@ -1217,3 +1224,30 @@ test("panel place refs select the owning app's public resource reader", () => {
   expect(reader?.localId).toBe("notebook.read");
   expect(notebooksCapabilities.queries["notebook.read"].input.parse({ id: ref.id })).toEqual({ id: ref.id });
 });
+
+for (const [locale, prefix] of [
+  ["en", "Note in"],
+  ["de", "Notiz in"],
+] as const) {
+  test(`note reader returns its notebook context in ${locale}`, async () => {
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, contentMd: "Plan", yjsSnapshot: null });
+    const getNotebook = trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+    const operation = notebooksCapabilities.queries["note.read"];
+    const read = async () => {
+      const result = await operation.run(operation.input.parse({ id: note.shortId }), { ...userContext, locale });
+      if (!result.ok) throw new Error("Expected note");
+      expect(capabilityResultSchema(NoteDetailDataSchema).safeParse(result.data).success).toBeTrue();
+      const ref = result.data.refs![0]!;
+      if (ref.type !== "notebooks.note") throw new Error("Expected note reference");
+      return ref;
+    };
+    expect(await read()).toMatchObject({ context: `${prefix} ${notebook.name}` });
+    expect(await read()).not.toHaveProperty("status");
+    getNotebook.mockResolvedValue({ ...notebook, name: "x".repeat(200) });
+    expect((await read()).context).toHaveLength(200);
+    getNotebook.mockResolvedValue({ ...notebook, name: "Team\nNotes" });
+    expect((await read()).context).toBe(`${prefix} Team Notes`);
+  });
+}

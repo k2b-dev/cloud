@@ -547,7 +547,13 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
       blocksTruncated: blocks.length > 500,
     },
     summary: t.readNote({ title: note.title }),
-    refs: [noteRef(note, resolved.data.notebook.name), notebookRef(resolved.data.notebook)],
+    refs: [
+      {
+        ...noteRef(note, resolved.data.notebook.name),
+        context: t.noteInNotebook({ notebook: resolved.data.notebook.name }).replace(/\s+/g, " ").trim().slice(0, 200),
+      },
+      notebookRef(resolved.data.notebook),
+    ],
     links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, note) }],
   };
   while (notebookEnvelopeBytes(result) > ENVELOPE_DATA_BUDGET) {

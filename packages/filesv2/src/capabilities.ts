@@ -66,8 +66,18 @@ export const filesCapabilities = defineCapabilities({
         if (!actor) return fail(err.forbidden("File entries are read on behalf of a signed-in user."));
         try {
           const result = await filesService.entryById(capabilityCall(context), input.id);
+          const folder = parent(result.entry.path).split("/").at(-1) || result.base.name;
+          const t = filesCapabilityMessages(context.locale);
+          const resourceContext = result.entry.directory ? t.folderInFolder({ folder }) : t.fileInFolder({ folder });
           return ok({
-            refs: [{ type: ENTRY_TYPE, id: input.id, title: result.entry.name }],
+            refs: [
+              {
+                type: ENTRY_TYPE,
+                id: input.id,
+                title: result.entry.name,
+                context: resourceContext.replace(/\s+/g, " ").trim().slice(0, 200),
+              },
+            ],
             links: [{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(input.id)}` }],
             data: {
               id: input.id,

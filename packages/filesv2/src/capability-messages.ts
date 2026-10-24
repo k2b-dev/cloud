@@ -6,6 +6,8 @@ const messages = i18n.define({
   messages: {
     en: {
       storage: "Storage",
+      fileInFolder: ({ folder }: { folder: string }) => `File in ${folder}`,
+      folderInFolder: ({ folder }: { folder: string }) => `Folder in ${folder}`,
       path: "Path",
       size: "Size",
       targetStorage: "Target storage",
@@ -32,6 +34,8 @@ const messages = i18n.define({
     },
     de: {
       storage: "Ablage",
+      fileInFolder: ({ folder }) => `Datei in ${folder}`,
+      folderInFolder: ({ folder }) => `Ordner in ${folder}`,
       path: "Pfad",
       size: "Größe",
       targetStorage: "Zielablage",
