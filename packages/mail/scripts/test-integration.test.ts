@@ -38,7 +38,7 @@ test("Mail keeps one isolated integration process and both preloads in their ori
     "--preload",
     resolve(mailRoot, "test/integration-preload.ts"),
   ]);
-  const suites = await discoverTestSuites(workspaceRoot, { integration: true, filter: "packages/mail" });
+  const suites = await discoverTestSuites(workspaceRoot, { integration: true, filters: ["packages/mail"] });
   expect(suites).toEqual([{ name: "@k2b/cloud-app-mail", cwd: mailRoot, command: ["bun", "run", "test:integration"] }]);
 });
 
@@ -47,7 +47,7 @@ test("excluded Mail files retain normal CI coverage and the package entry point 
   expect(packageJson.scripts.test).toBe(
     "bun --cwd=../.. test --path-ignore-patterns '**/*.behavior.test.*' packages/mail/src packages/mail/scripts packages/mail/test",
   );
-  const suites = await discoverTestSuites(workspaceRoot, { integration: false, filter: "packages/mail" });
+  const suites = await discoverTestSuites(workspaceRoot, { integration: false, filters: ["packages/mail"] });
   expect(suites.find((suite) => suite.name === "@k2b/cloud-app-mail")?.command).toEqual(["bun", "run", "test"]);
   const behavior = suites.find((suite) => suite.name === "@k2b/cloud-app-mail behavior");
   const selected = new Set((await mailIntegrationCommand()).slice(9));

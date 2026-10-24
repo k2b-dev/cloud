@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-20
+updated: 2026-10-24
 ---
 
 # Testing
@@ -825,7 +825,15 @@ bun run test --integration
 the suites across parallel jobs, balanced by measured suite time, which is how
 the gate runs them. `--max-minutes <m>` fails a run that takes longer than m
 minutes. `--exclude <name>` leaves out suites whose name or path matches, and
-`--filter <name>` keeps only those.
+`--filter <name>` keeps only those. Repeat `--filter` to run suites matching
+any of the given names or workspace paths, each suite once:
+
+```bash
+bun run test --filter packages/core --filter packages/cloud
+```
+
+`--exclude` removes matches from that union before sharding. Run
+`bun run test --help` for all runner options.
 
 Suites that exercise sessions, tokens, or access against a real Core identity
 authority additionally import `scripts/fixtures/authorization-preload` right

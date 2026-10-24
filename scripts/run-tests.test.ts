@@ -125,9 +125,64 @@ describe("root test orchestration", () => {
   const names = (suites: TestSuite[]) => suites.map((suite) => suite.name);
   const weights: TestWeights = { browser: {}, unit: { a: 10, b: 1, c: 10, d: 1, e: 10, f: 1 } };
 
+  test("help explains repeated filters without acquiring a heavy slot or running suites", () => {
+    const run = Bun.spawnSync(["bun", "--no-env-file", join(workspaceRoot, "scripts", "run-tests.ts"), "--help"], {
+      cwd: workspaceRoot,
+      env: { ...process.env, CLOUD_HEAVY_LOCK: "", CI: "" },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 5000,
+    });
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout.toString()).toContain("Repeat to run the union of all matches, each suite once.");
+    expect(run.stdout.toString()).toContain("--exclude");
+    expect(run.stdout.toString()).not.toContain("test suites passed");
+    expect(run.stderr.toString()).toBe("");
+  });
+
+  test("repeated filters preserve every parser value", () => {
+    expect(parseArgs(["--filter", "packages/a", "--browser", "--filter", "packages/b"])).toEqual({
+      integration: false,
+      browser: true,
+      filters: ["packages/a", "packages/b"],
+    });
+    expect(parseArgs([])).toEqual({ integration: false });
+  });
+
+  test("repeated filters select the union by name or path exactly once in discovery order", () => {
+    const suites = makeSuites(["a", "b", "c"]);
+    const options = parseArgs(["--filter", "packages/b", "--filter", "named-a", "--filter", "packages/b", "--filter", "missing"]);
+    // Match named-a by name only; b matches its relative workspace path.
+    suites[0]!.name = "named-a";
+    suites[0]!.cwd = join(workspaceRoot, "other");
+    expect(names(selectSuites(suites, options, workspaceRoot))).toEqual(["named-a", "b"]);
+    expect(names(selectSuites(suites, parseArgs([]), workspaceRoot))).toEqual(["named-a", "b", "c"]);
+    expect(names(selectSuites(suites, parseArgs(["--filter", "missing"]), workspaceRoot))).toEqual([]);
+    expect(names(selectSuites(suites, parseArgs(["--filter", ""]), workspaceRoot))).toEqual(["named-a", "b", "c"]);
+  });
+
+  test("repeated filters apply exclusions to the union before sharding", () => {
+    const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
+    const args = ["--filter", "packages/a", "--filter", "packages/b", "--filter", "packages/c", "--exclude", "packages/b"];
+    expect(names(selectSuites(suites, parseArgs(args), workspaceRoot, weights))).toEqual(["a", "c"]);
+    expect(names(selectSuites(suites, parseArgs([...args, "--shard", "1/2"]), workspaceRoot, weights))).toEqual(["a"]);
+    expect(names(selectSuites(suites, parseArgs([...args, "--shard", "2/2"]), workspaceRoot, weights))).toEqual(["c"]);
+    expect(names(selectSuites(suites, parseArgs(["--exclude", "packages/b"]), workspaceRoot))).toEqual(["a", "c", "d", "e", "f"]);
+  });
+
+  test("repeated filters reject a missing value at every occurrence", () => {
+    for (const args of [
+      ["--filter"],
+      ["--filter", "packages/a", "--filter"],
+      ["--filter", "--filter", "packages/b"],
+      ["--filter", "packages/a", "--filter", "--browser"],
+    ])
+      expect(() => parseArgs(args)).toThrow("--filter expects a workspace substring");
+  });
+
   test("filters and shards deterministically by measured suite time", () => {
     const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
-    expect(names(selectSuites(suites, { integration: false, filter: "packages/c" }, workspaceRoot))).toEqual(["c"]);
+    expect(names(selectSuites(suites, { integration: false, filters: ["packages/c"] }, workspaceRoot))).toEqual(["c"]);
     const select = (index: number) => selectSuites(suites, { integration: false, shard: { index, total: 2 } }, workspaceRoot, weights);
     // a -> 1, c -> 2, e -> 1, then all three 1-second suites -> 2.
     expect(names(select(1))).toEqual(["a", "e"]);
@@ -142,7 +197,7 @@ describe("root test orchestration", () => {
     const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
     const options = { integration: false, exclude: "packages/e", shard: { index: 1, total: 2 } };
     expect(names(selectSuites(suites, options, workspaceRoot, weights))).toEqual(["a", "b", "f"]);
-    expect(names(selectSuites(suites, { ...options, filter: "packages/c" }, workspaceRoot, weights))).toEqual(["c"]);
+    expect(names(selectSuites(suites, { ...options, filters: ["packages/c"] }, workspaceRoot, weights))).toEqual(["c"]);
   });
 
   test("covers every suite exactly once for every shard count, including empty shards", () => {
@@ -236,7 +291,7 @@ describe("root test orchestration", () => {
   test("parses arguments and rejects malformed shards", () => {
     expect(parseArgs(["--integration", "--filter", "gateway", "--shard", "2/3"])).toEqual({
       integration: true,
-      filter: "gateway",
+      filters: ["gateway"],
       shard: { index: 2, total: 3 },
     });
     expect(parseArgs(["--browser", "--shard", "1/2"])).toEqual({ integration: false, browser: true, shard: { index: 1, total: 2 } });
