@@ -100,6 +100,7 @@ const busy: AiConversation[] = quiet.map((item) =>
 );
 
 let browser: Browser;
+let assets: ReturnType<typeof Bun.serve>;
 let css: string;
 let script: string;
 beforeAll(async () => {
@@ -142,10 +143,20 @@ beforeAll(async () => {
     }),
   );
   css = ["@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
+  // Large bundles travel over HTTP, not as an inline Playwright protocol argument.
+  assets = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      if (new URL(request.url).pathname === "/bundle.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
+      return new Response("Not found", { status: 404 });
+    },
+  });
   browser = await launchBrowser();
 }, 120_000);
 afterAll(async () => {
   await browser?.close();
+  assets?.stop(true);
 });
 
 const open = async (conversations: AiConversation[], width = 1280): Promise<Page> => {
@@ -158,10 +169,10 @@ const open = async (conversations: AiConversation[], width = 1280): Promise<Page
     `<div id="filters" style="width:${width > 1024 ? 718 : 332}px"></div>` +
     `<script>window.harness = ${JSON.stringify({ conversations })};</script></body></html>`;
   await page.clock.setFixedTime(now);
-  await page.route("http://assistant.test/", (route) => route.fulfill({ body: html, contentType: "text/html" }));
-  await page.goto("http://assistant.test/");
+  await page.route(assets.url.href, (route) => route.fulfill({ body: html, contentType: "text/html" }));
+  await page.goto(assets.url.href);
   page.setDefaultTimeout(4000);
-  await page.addScriptTag({ type: "module", content: script });
+  await page.addScriptTag({ type: "module", url: new URL("bundle.js", assets.url).href });
   await page
     .locator(width > 1024 ? ".assistant-chat-sidebar-item" : "#menu .k2b-navigation__row")
     .first()
