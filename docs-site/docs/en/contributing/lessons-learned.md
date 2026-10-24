@@ -1061,3 +1061,10 @@ updates that class's row in the table.
 
 - **Error class:** asynchronous UI locator race. The Pulse Back test could resolve the settings form's Discard button before the confirmation appeared, then wait on that hidden button.
 - **Guard:** the test waits for the named confirmation dialog and its question before clicking its Discard button. It still checks Back, Escape, Cancel, draft preservation and the resulting URL.
+
+## Exercise the intended phase before expiring a transport fixture
+
+- **What happened:** under shared-host load, a body-deadline test expired before receiving headers, and a CLI guard test exhausted its budget across four process launches.
+- **Root cause:** the transport assertion assumed wall-clock timing implied a particular protocol phase; independent CLI cases shared one test deadline.
+- **Error class:** test scheduling depended on host load.
+- **Guard:** trigger the caller deadline from the first response body chunk and give each CLI input case its own fixture and test, preserving every rejection and no-write assertion.
