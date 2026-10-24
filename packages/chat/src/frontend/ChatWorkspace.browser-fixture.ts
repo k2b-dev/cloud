@@ -154,9 +154,11 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
   const [harness, css, fontAssets] = await Promise.all([
     buildHarness(),
     Promise.all([
-      buildCss(resolve(import.meta.dir, "../../../../styles.css")),
+      // Production order (define-app.ts): the layer statement, the app's stylesheet, then Cloud's global one, so an
+      // app selector that only ties with a shared one loses here as it does in production.
       buildCss(resolve(import.meta.dir, "../styles/app.css")),
-    ]).then((parts) => parts.join("\n")),
+      buildCss(resolve(import.meta.dir, "../../../../styles.css")),
+    ]).then((parts) => ["@layer properties, theme, base, components, utilities;", ...parts].join("\n")),
     fonts(),
   ]);
   const chats = new Map<string, Chat>();

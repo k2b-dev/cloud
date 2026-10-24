@@ -961,7 +961,8 @@ convention still needs a check or a test.
 - **What happened:** The Cloud Chat tab intercepted taps on the phone conversation composer at 390 × 844 in the nightly WebKit smoke ([#1676](https://github.com/k2b-dev/cloud/issues/1676)).
 - **Root cause:** The fixed conversation’s z-index of 25 was trapped inside AppWorkspace.Main’s positioned stacking context at 1, below the sibling shell tab bar at 10. The application-only browser fixture omitted that shell boundary.
 - **Error class:** A fixed screen trapped in an ancestor stacking context.
-- **Guard:** Chat removes its Main stacking context only while the phone conversation is open. The full-shell browser test uses the actual Layout and verifies normal touch, focus and acknowledged send, first client header/composer geometry, desktop keyboard send, resize, info layering and return to the list in both engines; the original code fails at the normal textarea tap in each engine.
+- **Guard:** Chat removes its Main stacking context only while the phone conversation is open. The full-shell browser test uses the actual Layout and verifies normal touch, focus and acknowledged send, first client header/composer geometry, desktop keyboard send, resize, info layering and return to the list in both engines; the original code fails at the normal textarea tap in each engine. The rule is anchored at `.k2b-ui`, because the shared `.k2b-ui .k2b-app-workspace__main { z-index: 1 }` has the same weight and loads after the app's stylesheet in production; the Chat fixture loads the stylesheets in that order too.
+
 ### A lost Chat create response allowed a duplicate
 
 - **What happened:** On 2026-10-21, retrying a new group chat or an explicit second chat after a lost creation response could create another chat ([#1194](https://github.com/k2b-dev/cloud/issues/1194)).
