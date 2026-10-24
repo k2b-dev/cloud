@@ -1,6 +1,7 @@
 import { APP_REGISTRY_TTL_MS, listApps, watchAppRegistry } from "@k2b/cloud";
 import { getGeoIp } from "@k2b/cloud/server/request-context";
 import { deviceOffersApproval, logger, superviseRuntimeTask } from "@k2b/cloud/services";
+import { refreshBuiltAvatarHashes } from "@k2b/cloud/services/accounts/avatar";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
 /**
@@ -107,6 +108,7 @@ export const runCoreSetup = async (): Promise<void> => {
   const steps = [
     { name: "extensions", run: migrateExtensions },
     { name: "auth", run: migrateAuth },
+    { name: "avatar-hashes", run: () => refreshBuiltAvatarHashes() },
     { name: "help", run: migrateHelp },
     { name: "rail-preferences", run: migrateRailPreferences },
     { name: "panel-context-consent", run: migratePanelContextConsent },
