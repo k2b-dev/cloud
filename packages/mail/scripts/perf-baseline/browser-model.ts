@@ -28,6 +28,13 @@ export const interactions = [
     end: "The list heading names that folder and its first conversation row is in the viewport",
   },
   {
+    id: "folder-switch-full",
+    trace: true,
+    start: "Mailbox A's medium folder",
+    action: "Click A's Inbox in the sidebar (phone: inside the opened app menu)",
+    end: "The heading names Inbox, its first workspace-route page 1 row is in the viewport and the list is not busy; both destinations must have 50 rows",
+  },
+  {
     id: "conversation-open",
     start: "The fixture's first custom folder, where no live arrivals land",
     action: "Click its first conversation whose newest message has a body",

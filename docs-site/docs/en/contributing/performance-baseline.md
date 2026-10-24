@@ -5,7 +5,7 @@ section: Contributing
 order: 1311
 description: Record repeatable page weight and cold-load timings from isolated production bundles.
 tags: [contributing, performance, testing, ssr]
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 
 # Measure production page performance
@@ -897,7 +897,7 @@ The Document transfer column shows the HTML body download time
 (`responseEnd - responseStart`), its transferred bytes, and its content
 encoding. An absent `content-encoding` header is recorded as `identity`.
 
-Eight interactions share one definition for both engines and both profiles.
+Nine interactions share one definition for both engines and both profiles.
 Each sample opens its start page in its own fresh page, waits for TTI, and
 then times one action:
 
@@ -905,6 +905,7 @@ then times one action:
 | --- | --- | --- |
 | `mailbox-switch` | From A's Inbox, click B in the sidebar; on the phone, open the app navigation sheet first | B's first Inbox row from workspace-route page 1 is on screen, the pathname is `/app/mail/<B>`, the workspace island containing the row has mounted, and the list/main pane is not busy |
 | `folder-switch` | Click the fixture's first custom folder in the navigation; on the phone, in the opened app menu | The heading names that folder and its first row is on screen |
+| `folder-switch-full` | From A's medium folder, click A's Inbox in the sidebar; on the phone, in the opened app menu. Before each sample, require the Inbox and B's default workspace-route page 1 to each contain 50 rows; fail if they differ | The heading names Inbox, its first workspace-route page 1 row is on screen, and the list is not busy |
 | `conversation-open` | In the fixture's first custom folder, click the first conversation whose newest message has a body. Live arrivals land in the Inbox as envelopes without a body, so this folder keeps a body to render after any number of runs | The body of that newest message is on screen in the reader; an HTML body also needs its message frame to report its laid-out height |
 | `conversation-open-large` | Start with a mailbox-wide exact subject search for conversation 0 (`Project correspondence 0`, newest first), then click its conversation row. This isolates `plan.shape.largestThreadId` on page 1 without scrolling; live arrivals have different subjects. Before each sample, the workspace API must return that row on page 1 or the sample fails with the start href | The reader loads the newest 100 messages of the thread (180 messages by default). The newest message's body is on screen, with a body-format marker; an HTML body also needs its frame to report its laid-out height. A missing newest body fails the sample |
 | `list-scroll` | Scroll the list to its end | The first row of page 2 is in the list |
@@ -952,8 +953,9 @@ response. That sample still counts: `encodedBytes` is omitted, and request
 totals include only the known nonnegative body and header sizes. They are a
 lower bound when a size is unavailable.
 
-Definitions with `trace: true` (`mailbox-switch` and `folder-switch`) add one
-extra traced Chromium sample per profile, excluded from timing samples.
+Definitions with `trace: true` (`mailbox-switch`, `folder-switch`, and
+`folder-switch-full`) add one extra traced Chromium sample per profile,
+excluded from timing samples.
 The **Interaction breakdown** table shows elapsed total, main-request server
 and transfer time, and main-thread task time split into JavaScript execution,
 parse/compile, island render, style/layout, and other, with shares of busy
@@ -1093,7 +1095,7 @@ Server, hydrated, and settled geometry agree. The existing guards also cover
 retained document/sidebar identity and mailbox URL parity. These correctness
 checks do not change the measured checkpoint or remove its timing limitations.
 
-### Recorded retained-workspace results (22–23 October 2026)
+### Recorded retained-workspace results (22–24 October 2026)
 
 The exact compact-head base `3a471767b` was measured first. Every run used
 Chromium desktop and throttled phone, five samples per interaction/profile,
@@ -1176,6 +1178,29 @@ The frame-batched fades were removed again before merging. They left the
 bottom fade drawn for one frame after the note editor scrolled to its end, so
 its fade-aware scroll margins failed in both engines. All rows from "Frame-batched
 fades" onward still include that change; no run without it was repeated.
+
+**Fair comparison (24 October 2026).** Fresh branch `6566d4d2f` and main
+`11f3adb1b` builds used Chromium desktop and throttled phone, five timing
+samples per interaction/profile, three warm server requests, and
+`--interactions mailbox-switch,folder-switch,folder-switch-full --loads none`.
+Both destinations passed the 50-row guard; the original folder switch still
+lands on 37 rows. Each run passed all 20 server scenarios and 30 browser
+samples; six extra traces are excluded. The branch meets 1.20 on desktop but
+misses it on phone. The 32-CPU VM remained busy: one-minute boundary loads
+were 64.00 → 61.51 for the branch and 53.85 → 87.89 for main. These are
+shared-host observations, not a calm-VM confirmation. Values are medians in
+milliseconds; the ratio is mailbox / full folder.
+
+| Revision | Profile | Mailbox | Full folder | Medium folder | Ratio |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Branch | Desktop | 646.0 | 628.4 | 806.7 | 1.028 |
+| Branch | Phone | 2,706.9 | 2,068.5 | 1,905.0 | 1.309 |
+| Main | Desktop | 1,444.2 | 672.8 | 538.0 | 2.147 |
+| Main | Phone | 3,557.1 | 2,259.2 | 2,076.9 | 1.574 |
+
+Outputs: `.local/mail-perf/fair-20261024-branch` and
+`.local/mail-perf/fair-20261024-main` (copied before removing the temporary
+baseline worktree). Both mailbox fixture digests match across runs.
 
 ### Rank bottlenecks
 

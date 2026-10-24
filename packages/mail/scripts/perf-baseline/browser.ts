@@ -403,6 +403,34 @@ class MailBrowser {
           },
         };
       }
+      case "folder-switch-full": {
+        const folder = this.setup.plan.folders.find((candidate) => candidate.id === shape.largeFolderId);
+        if (!folder) throw new Error("Fixture has no Inbox folder");
+        const target = this.inbox;
+        const destination = await this.route(target);
+        const mailboxB = await this.route(`/app/mail/${this.setup.mailboxB.shortId}`, this.setup.mailboxB);
+        if (destination.listItems.length !== 50 || destination.listItems.length !== mailboxB.listItems.length)
+          throw new Error(
+            `folder-switch-full requires equal full first pages (50 rows): A's Inbox has ${destination.listItems.length}, B's default route has ${mailboxB.listItems.length}`,
+          );
+        const row = destination.listItems[0]!;
+        return {
+          startPath: this.readerFolder,
+          act: async (page, profile) => {
+            const link = await this.reveal(page, profile, `a[href="${target}"]`);
+            await this.arm(page, {
+              id,
+              action: "pointerdown",
+              conditions: [
+                { selector: "[data-mail-list-heading]", text: folder.name },
+                { selector: rowSelector(row), visible: true, interactive: true },
+              ],
+            });
+            await this.press(profile, link);
+            return null;
+          },
+        };
+      }
       case "conversation-open": {
         const { row, newest } = await this.hydratedConversation();
         return {
@@ -722,7 +750,11 @@ class MailBrowser {
           );
           // A live arrival can paint before the worker's commit acknowledgement reaches the host.
           const target =
-            id === "mailbox-switch" ? `/app/mail/${this.setup.mailboxB.shortId}` : id === "folder-switch" ? this.base : undefined;
+            id === "mailbox-switch"
+              ? `/app/mail/${this.setup.mailboxB.shortId}`
+              : id === "folder-switch" || id === "folder-switch-full"
+                ? this.base
+                : undefined;
           const sample = interactionSample(Math.max(0, hitAt - actionAt), requests, target);
           if (trace && sample.mainRequest) trace.mainRequest = sample.mainRequest;
           if (target && !sample.mainRequest) throw new Error(`${id}: no destination document or workspace request recorded`);
