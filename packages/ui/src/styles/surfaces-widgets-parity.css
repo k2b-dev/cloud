@@ -207,9 +207,11 @@
   width: 22rem;
   max-width: 100%;
   height: 4.625rem;
-  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  /* The icon's column holds its gap to the text, and the status keeps its own, so an empty status column takes no
+     room and the text keeps its inset. */
+  grid-template-columns: 2.75rem minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: 0.75rem;
+  column-gap: 0;
   overflow: hidden;
   padding-block: 0;
   padding-inline: 0.625rem 0.875rem;
@@ -245,12 +247,16 @@
   height: 2rem;
   place-items: center;
   border-radius: var(--k2b-radius-control);
-  color: var(--k2b-text-secondary);
-  background: var(--k2b-surface);
   font-size: 1.125rem;
 }
 
-/* A coloured kind takes the shared icon tile: its glyph colour over a soft chip of the same colour. */
+/* A neutral kind sits on the surface; a coloured kind takes the shared icon tile, its glyph colour over a soft chip
+   of the same colour. */
+.k2b-ui .k2b-resource-card__icon:not(.k2b-icon-tile) {
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface);
+}
+
 .k2b-ui .k2b-resource-card__icon.k2b-icon-tile {
   border-radius: 28%;
 }
@@ -258,6 +264,7 @@
 /* The element's state, quiet and at the end, so the title keeps its line. */
 .k2b-ui .k2b-resource-card__status {
   max-width: 8rem;
+  margin-inline-start: 0.75rem;
   overflow: hidden;
   padding: 0.0625rem 0.375rem;
   border-radius: calc(var(--k2b-radius-control) * 0.6);
