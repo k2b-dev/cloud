@@ -42,9 +42,9 @@ test("reads Docker Hub references and leaves other registries, local builds and 
 test("accepts mirror references at the listed digest and images pulled through pull-images.sh", async () => {
   expect(
     await findings({
-      Dockerfile: `# syntax=${bun}\nFROM --platform=$BUILDPLATFORM ${bun} AS build\nFROM build AS test\nFROM ghcr.io/k2b-dev/filegate:7.0.0\n`,
+      Dockerfile: `# syntax=${bun}\nFROM --platform=$BUILDPLATFORM ${bun} AS build\nFROM build AS test\nFROM ghcr.io/k2b-dev/filegate:7.1.0\n`,
       ".github/workflows/ci.yml": workflow(
-        `    services:\n      nats:\n        image: ${nats}\n    steps:\n      - run: |\n          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.0.0\n          docker run --detach --publish 127.0.0.1:4222:4222 \\\n            nats:2.14.3-alpine --js\n          docker run --detach cloud-core:ci\n`,
+        `    services:\n      nats:\n        image: ${nats}\n    steps:\n      - run: |\n          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0\n          docker run --detach --publish 127.0.0.1:4222:4222 \\\n            nats:2.14.3-alpine --js\n          docker run --detach cloud-core:ci\n`,
       ),
     }),
   ).toEqual([]);

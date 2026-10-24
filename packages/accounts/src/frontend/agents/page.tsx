@@ -1,6 +1,6 @@
 import { CloudAvatar } from "@k2b/cloud/account/ui";
 import type { AuthContext } from "@k2b/cloud/server";
-import { getLocale } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { accountsAppService as accountsService, serviceAccounts } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
@@ -19,7 +19,7 @@ type Agent = Awaited<ReturnType<typeof serviceAccounts.listStandalone>>["items"]
 /** Agents and standalone service accounts, each with its picture; a row opens the agent's page. */
 export default ssr<AuthContext>(async (c) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
-  const user = c.get("user");
+  const user = expectUserBackedActor(c);
   const page = parsePage(c.req.query("page"));
   const perPage = 100;
   const [pendingRequestsPage, agents] = await Promise.all([

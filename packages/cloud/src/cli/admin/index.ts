@@ -47,6 +47,7 @@ export default defineCliCommands({
     announcements: "Manage platform announcements and banners.",
     "app-credentials": "Manage per-application credentials for background work.",
     agents: "Create, list, revoke, and re-key agent accounts with OAuth client credentials, and change their pictures.",
+    "agents avatar": "Show and change an agent's picture: its robot parts or a photo.",
     "app-sign-in": "Manage app sign-in and pairing.",
     apps: "Inspect and remove registered apps.",
     documentation: "Manage the administration documentation website.",

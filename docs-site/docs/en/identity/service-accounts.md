@@ -194,3 +194,11 @@ before it expires, and obtains a new one after a `401`. Nothing else changes:
 the agent runs the same `cld` commands as a person, under its own identity, and
 only sees what it was granted. Read the CLI's `cld admin reference` for the
 complete command list.
+
+## Find names through a directory share
+
+An administrator can share exact people, groups, or accounts under **Accounts →
+Service accounts → Directory access**. A machine credential with `read` can
+then resolve those entries through `/api/accounts/entities`. Sharing a name
+does not grant resource access or disclose group relationships. See
+[Directory shares](/en/docs/identity/directory-shares).

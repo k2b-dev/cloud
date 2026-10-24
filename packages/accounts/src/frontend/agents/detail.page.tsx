@@ -1,5 +1,5 @@
 import type { AuthContext } from "@k2b/cloud/server";
-import { getLocale } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { accountsAppService as accountsService, isStandaloneServiceAccountKind, serviceAccounts } from "@k2b/cloud/services";
 import { getServiceAccountAvatarState } from "@k2b/cloud/services/accounts/avatar";
 import { Layout } from "@k2b/cloud/ssr";
@@ -15,7 +15,7 @@ import { agentIdFromPath } from "./agent-id";
 /** One agent or standalone service account: its picture, which opens "Change profile picture", and its facts. */
 export default ssr<AuthContext>(async (c) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
-  const user = c.get("user");
+  const user = expectUserBackedActor(c);
   const id = agentIdFromPath(c.req.param("id"));
   const account = id ? await serviceAccounts.get({ id }) : null;
   if (!account || !isStandaloneServiceAccountKind(account.kind)) return c.notFound();

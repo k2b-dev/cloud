@@ -452,7 +452,9 @@ describe("Provider dialog", () => {
       ui.button("Edit profile").click();
       await tick();
       ui.section("Access");
-      expect(agentRow()?.querySelector("i.ti-robot")).not.toBeNull();
+      expect(
+        agentRow()?.querySelector(`[data-shape="square"][src*="/api/accounts/users/${agent.principal.serviceAccountId}/avatar"]`),
+      ).not.toBeNull();
       expect(agentRow()?.textContent).toContain("(Agent)");
       expect(ui.requests).toHaveLength(0);
     } finally {
