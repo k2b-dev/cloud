@@ -2284,7 +2284,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     shared={
                       <ChatSharedSection
                         chatId={current().id}
-                        revision={openChat()?.seqHead ?? 0}
+                        revision={openChat()?.seqHead}
                         threads={openChat()?.threads ?? null}
                         viewerId={props.viewerId}
                         dateConfig={props.dateConfig}

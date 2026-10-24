@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, DetailPanel, FilterToggle, InlineGuidance, Select, Skeleton, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import type { SharedItem, SharedPageSchema, SharedQuerySchema } from "../service/contracts";
@@ -27,7 +27,8 @@ const KINDS = [
 export default function ChatSharedSection(props: {
   chatId: string;
   /** Changes when the history grows, so the list follows new messages while it is open. */
-  revision: number;
+  /** The chat's newest position; absent until the chat is open. */
+  revision: number | undefined;
   threads: ThreadList | null;
   viewerId: string;
   dateConfig: DateContext;
@@ -115,18 +116,19 @@ export default function ChatSharedSection(props: {
       }
     });
   };
-  createEffect(on([kind, thread, () => props.chatId], restart));
+  // The chat's record is replaced on every update; only another chat starts a new list, only a new position reads again.
+  const chatId = createMemo(() => props.chatId);
+  const revision = createMemo(() => props.revision);
+  createEffect(on([kind, thread, chatId], restart));
   // A burst of new messages reads the list once.
   let pending: ReturnType<typeof setTimeout> | undefined;
   createEffect(
-    on(
-      () => props.revision,
-      () => {
-        clearTimeout(pending);
-        pending = setTimeout(refresh, 300);
-      },
-      { defer: true },
-    ),
+    on(revision, (_next, previous) => {
+      // The first run and the chat's first known position are the history the list already reads, not a new message.
+      if (previous === undefined) return;
+      clearTimeout(pending);
+      pending = setTimeout(refresh, 300);
+    }),
   );
   onCleanup(() => clearTimeout(pending));
 
