@@ -810,6 +810,8 @@ describe("ChatWorkspace browser read state", () => {
           await target.locator(".k2b-message-row__text").click({ modifiers: ["Alt"] });
           await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 5);
           await marker(page).waitFor();
+          // It confirms with the same notice; the menu opens once that notice is there, not while it starts to show.
+          await page.locator(".k2b-toast").filter({ hasText: "Unread from Nora’s message" }).waitFor();
           // The entry teaches the shortcut and says what it does.
           const menu = await openMessageMenu(page, name, target);
           const entry = menu.getByRole("menuitem", { name: /^Mark unread from here/ });
