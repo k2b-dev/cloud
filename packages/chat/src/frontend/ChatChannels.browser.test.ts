@@ -35,11 +35,13 @@ for (const mode of [
     let context: BrowserContext, page: Page;
     const t = chatMessages.resolve([mode.locale]).t;
     beforeEach(async () => {
+      // These tests read geometry and states, not motion, so field colours do not fade while they settle.
       context = await browser.newContext({
         viewport: { width: mode.width, height: 900 },
         colorScheme: mode.width === 390 ? "dark" : "light",
         isMobile: mode.width === 390,
         hasTouch: mode.width === 390,
+        reducedMotion: "reduce",
       });
       page = await context.newPage();
       await page.addInitScript(pinPageClock, chatTestNow.getTime());
@@ -234,7 +236,11 @@ for (const mode of [
           Promise.all(
             document
               .getAnimations()
-              .filter((animation) => Number.isFinite(animation.effect?.getComputedTiming().endTime ?? Number.POSITIVE_INFINITY))
+              .filter(
+                (animation) =>
+                  animation.timeline === document.timeline &&
+                  Number.isFinite(animation.effect?.getComputedTiming().endTime ?? Number.POSITIVE_INFINITY),
+              )
               .map((animation) => animation.finished.catch(() => undefined)),
           ),
         );
