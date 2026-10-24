@@ -19,7 +19,7 @@ import { bindProcessApplicationId, clearProcessApplicationId } from "./process-i
 
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { SsrConfig } from "@k2b/ssr";
+import type { HtmlFn, SsrConfig } from "@k2b/ssr";
 import { createConfig as createSsrConfig } from "@k2b/ssr";
 import { routes } from "@k2b/ssr/hono";
 import type { Sync } from "@k2b/sync";
@@ -46,6 +46,7 @@ import {
   type CapabilityDefinitions,
   CapabilityOriginSchema,
 } from "../contracts/capabilities";
+import { type AppInstallable, installableContains, validateInstallable } from "../contracts/installable";
 import { type BoundNotificationMap, bindNotificationDefinitions, type NotificationDefinitionMap } from "../contracts/notification-types";
 import { type PlatformPermission, PlatformPermissionSchema } from "../contracts/outgoing-mail";
 import { isPwaPartId, PWA_AUTH_PATH, PWA_CANVAS_COLORS, PWA_MANIFEST_PATH, PWA_SHELL_APP_ID } from "../contracts/pwa";
@@ -94,6 +95,8 @@ import { FONT_PRELOAD_LINKS } from "./font-preloads";
 import { createHeartbeat, createRegistryMembership } from "./heartbeat";
 import { compileHelp } from "./help";
 import { createHttpDrain } from "./http-drain";
+import { createInstallableRoutes } from "./installable-assets";
+import { installableHead, installableThemeScript } from "./installable-head";
 import { createPageResponses } from "./page-responses";
 import { configurePostgresApplicationName } from "./postgres-application-name";
 import { getProcessSync, startProcessSync } from "./process-sync";
@@ -121,7 +124,12 @@ export type PageOptions = {
   pwa?: { name: string };
 };
 
-type ResolvedPageOptions = PageOptions & { performanceRoute?: string; themePreference?: CloudThemePreference; appAccent?: string };
+type ResolvedPageOptions = PageOptions & {
+  installable?: AppInstallable;
+  performanceRoute?: string;
+  themePreference?: CloudThemePreference;
+  appAccent?: string;
+};
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -199,6 +207,8 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   legalLinks?: ReadonlyArray<{ label: string; href: string; icon?: string }>;
   /** Static destinations for the global search UI; no capabilities are created. */
   searchLinks?: readonly AppSearchLink[];
+  /** One standalone App-PWA at a canonical, declared own /app/<id>/<surface>/ path. */
+  installable?: AppInstallable;
   /**
    * Preview: pages of this app in the installable mobile app. Declaring it adds
    * `/pwa/<id>` to the gateway routes and lists the app in the mobile app,
@@ -228,8 +238,8 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
    *
    * Apps with non-standard URLs (core's `/auth`, `/me`, `/legal/*`, `/impressum`;
    * oauth's `/oauth`, `/.well-known/...`) list whatever
-   * top-level paths they own. The gateway is dumb — it just builds a
-   * prefix-trie from these strings.
+   * top-level paths they own. The gateway builds a prefix trie and enforces
+   * /app/<id> ownership and the reserved /pwa paths.
    */
   routes: readonly string[];
   /** Platform services requested by this application, visible to administrators. */
@@ -432,6 +442,10 @@ export const defineApp = <
   const notifications = bindNotificationDefinitions(opts.id, opts.notifications);
   const cliModules = validateAppCliModules(opts.id, opts.cli);
   const pwaPart = validateAppPwaPart(opts);
+  const installable = opts.installable === undefined ? undefined : validateInstallable(opts.id, opts.routes, opts.installable);
+  if (installable === null)
+    throw new Error(`App "${opts.id}" declares invalid installable; use a canonical own /app/<id>/<surface>/ path covered by routes`);
+  const requestInstallable = (path: string) => (installable && installableContains(installable.path, path) ? installable : undefined);
   validateAppNavBadge(opts);
   const panel = validateAppPanel(opts);
 
@@ -446,7 +460,11 @@ export const defineApp = <
 
   // ── 1. SSR config ─────────────────────────────────────────────────────
   const rootDir = opts.appRoot ?? process.cwd();
-  const { config, plugin, html } = createSsrConfig<ResolvedPageOptions>({
+  const {
+    config,
+    plugin,
+    html: renderHtml,
+  } = createSsrConfig<ResolvedPageOptions>({
     dev: isDevelopment,
     verbose: true,
     rootDir,
@@ -455,7 +473,19 @@ export const defineApp = <
     // Every island instance already mounts inside its own error boundary; this
     // only gives the fallback Cloud's look and the reader's language.
     errorFallback: fileURLToPath(new URL("../ssr/IslandError.tsx", import.meta.url)),
-    template: ({ body, scripts, title, description, theme, themePreference, lang, performanceRoute, pwa, appAccent }) => {
+    template: ({
+      body,
+      scripts,
+      title,
+      description,
+      theme,
+      themePreference,
+      lang,
+      performanceRoute,
+      pwa,
+      appAccent,
+      installable: pageInstallable,
+    }) => {
       // A URL changes only when what it names changes: the app's own files by their content, Core's shared sheets by
       // the release of the Core build in the registry, so every app links them under one URL per Core build.
       const sharedVersion = isDevelopment ? String(developmentStamp) : sharedStylesheetVersion(registeredCoreRelease());
@@ -473,33 +503,35 @@ export const defineApp = <
       // status bar. No status-bar style: `black-translucent` lays a blur band
       // over the top edge on iOS 26.
       const canvas = resolved ? PWA_CANVAS_COLORS[resolved] : undefined;
-      const head = pwa
-        ? {
-            html: canvas ? ` style="background-color:${canvas}"` : "",
-            viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
-            app: `${
-              canvas
-                ? `<meta name="theme-color" content="${canvas}">`
-                : `<meta name="theme-color" media="(prefers-color-scheme: light)" content="${PWA_CANVAS_COLORS.light}">
+      const head = pageInstallable
+        ? installableHead(pageInstallable, resolved)
+        : pwa
+          ? {
+              html: canvas ? ` style="background-color:${canvas}"` : "",
+              viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
+              app: `${
+                canvas
+                  ? `<meta name="theme-color" content="${canvas}">`
+                  : `<meta name="theme-color" media="(prefers-color-scheme: light)" content="${PWA_CANVAS_COLORS.light}">
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="${PWA_CANVAS_COLORS.dark}">
     <style data-cloud-canvas>html{background-color:${PWA_CANVAS_COLORS.light}}@media (prefers-color-scheme: dark){html{background-color:${PWA_CANVAS_COLORS.dark}}}</style>`
-            }
+              }
     <link rel="manifest" href="${PWA_MANIFEST_PATH}">
     <link rel="apple-touch-icon" href="/branding/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-title" content="${escapeHtml(pwa.name)}">`,
-            // The web cross-fades between pages; an app page swaps at once. The browser ignores taps while a
-            // cross-document transition runs, so a tab tap right after the last one would be lost. After
-            // global.css, whose `navigation: auto` it overrides.
-            styles: `
+              // The web cross-fades between pages; an app page swaps at once. The browser ignores taps while a
+              // cross-document transition runs, so a tab tap right after the last one would be lost. After
+              // global.css, whose `navigation: auto` it overrides.
+              styles: `
     <style data-cloud-app-navigation>@view-transition{navigation:none}</style>`,
-          }
-        : {
-            html: "",
-            viewport: "width=device-width, initial-scale=1.0",
-            app: `<meta name="theme-color" content="#09090b">
+            }
+          : {
+              html: "",
+              viewport: "width=device-width, initial-scale=1.0",
+              app: `<meta name="theme-color" content="#09090b">
     <meta name="mobile-web-app-capable" content="yes">`,
-            styles: "",
-          };
+              styles: "",
+            };
       // The inline layer statement fixes the cascade order before any
       // stylesheet declares a layer. Tailwind's `properties` layer resets
       // `--tw-*` in browsers without `@property` and must stay lowest.
@@ -518,7 +550,7 @@ export const defineApp = <
     <link rel="stylesheet" href="${versionedPublicHref("/public/tabler-icons.css", sharedVersion)}">
     <link rel="stylesheet" href="${versionedPublicHref(appStylesheet, appVersion)}">
     <link rel="stylesheet" href="${versionedPublicHref("/public/global.css", sharedVersion)}">${head.styles}
-    <script>${themeBootstrapScript}</script>
+    <script>${themeBootstrapScript}</script>${pageInstallable ? `<script>${installableThemeScript(pageInstallable)}</script>` : ""}
   </head>
   <body class="k2b-ui${accentStyle ? " app-accent-scope" : ""}"${accentStyle ? ` style="${escapeHtml(accentStyle)}"` : ""} data-k2b-app-workspace-controller="global">
     ${body}
@@ -528,6 +560,13 @@ export const defineApp = <
 </html>`;
     },
   });
+
+  const html: HtmlFn<ResolvedPageOptions> = async (render, page) => {
+    if (!page?.installable) return renderHtml(render, page);
+    // Load JSX only after the standard preload/build has installed the SSR plugin.
+    const { appPwaDocument } = await import("../ssr/app-pwa-document");
+    return renderHtml(appPwaDocument(render, page.installable, normalizeLocale(page.lang)), page);
+  };
 
   // Pass PageOptions explicitly so c.get("page") in apps' SSR handlers is
   // typed as Partial<PageOptions> (with title/description/theme), not the
@@ -541,7 +580,8 @@ export const defineApp = <
   // cannot override.
   const ssr = Object.assign(
     createStatusPreservingSsrHandler<ResolvedPageOptions>(html, async (c) => {
-      if (opts.pageSwap)
+      c.get("page").installable = requestInstallable(c.req.path);
+      if (opts.pageSwap && !c.get("page").installable)
         registerPageSwap(c, isDevelopment ? String(developmentStamp) : `${buildMetadata.version}:${buildMetadata.release}`);
       c.get("page").lang = getLocale(c);
       c.get("page").themePreference = readThemePreferenceFromCookieHeader(c.req.header("Cookie"));
@@ -550,7 +590,7 @@ export const defineApp = <
         user && c.get("settings")?.observability?.web_vitals?.enabled === true ? (matchedRouteTemplate(c) ?? undefined) : undefined;
       // Pages of the mobile app render in PwaLayout, which shows no announcements, Help, or rail; reading them would
       // only delay every tab switch. Core's pages below /pwa/_auth, such as its not-found page, keep the web layout.
-      if (isAppPagePath(c.req.path)) return;
+      if (c.get("page").installable || isAppPagePath(c.req.path)) return;
       await Promise.all([
         preloadLayoutAnnouncements(c),
         preloadLayoutHelp(c),
@@ -558,7 +598,7 @@ export const defineApp = <
         user ? readRailSnapshot(user).then((snapshot) => c.set("railPreferences", snapshot)) : undefined,
       ]);
     }),
-    createPageResponses(html),
+    createPageResponses(html, (c) => ({ installable: requestInstallable(c.req.path) })),
   );
 
   // ── 2. Meta ───────────────────────────────────────────────────────────
@@ -585,6 +625,7 @@ export const defineApp = <
     legalLinks: opts.legalLinks ? [...opts.legalLinks] : undefined,
     searchLinks: opts.searchLinks?.map((link) => ({ ...link, keywords: link.keywords ? [...link.keywords] : undefined })),
     pwa: pwaPart,
+    installable: installable ?? undefined,
     panel,
     widgets: compileWidgetDeclarations(opts.id, opts.widgets),
     settingKeys: opts.settings ? Object.keys(opts.settings) : undefined,
@@ -692,6 +733,7 @@ export const defineApp = <
         pwa: meta.pwa
           ? { href: meta.pwa.href, requiresRoles: meta.pwa.requiresRoles ? [...meta.pwa.requiresRoles] : undefined }
           : undefined,
+        installable: meta.installable,
         panel: meta.panel
           ? { ...meta.panel, requiresRoles: meta.panel.requiresRoles ? [...meta.panel.requiresRoles] : undefined }
           : undefined,
@@ -810,6 +852,8 @@ export const defineApp = <
           return next();
         })
         .route("/_internal/sync", createSyncOpsRoutes(getProcessSync));
+
+      if (installable) server.route("/", createInstallableRoutes(meta.id, installable));
 
       if (compiledCapabilities) {
         const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") =>

@@ -77,17 +77,29 @@ starts with a letter; `pwa`, `settings`, and `offline` cannot have a part.
 
 Only the mobile app may serve a service worker below `/pwa`. The gateway
 answers `403` when a browser requests a worker script there from any other
-application. Only Core may send `Service-Worker-Allowed`; the gateway removes
-the header from every other application's responses. So the scope `/pwa/`
+application. The shell's worker script is exactly `/pwa/sw.js`. Only Core's
+exact `/service-worker.js` may send `Service-Worker-Allowed`; the gateway removes
+the header from every other response. So the scope `/pwa/`
 keeps the mobile app's own service worker.
+
+## Standalone application paths
+
+The gateway reserves `/app/<id>` and all descendants for app `<id>`, also for
+older registry records. Foreign ancestor and descendant claims are skipped;
+a root fallback cannot answer for a different application in this namespace.
+An app may declare one independent [App-PWA](/en/docs/frontend/app-pwa) here.
+Only its exact generated `sw.js` may load as a worker script, without a widened
+scope. Other workers are refused except the existing mobile-app worker and
+Core push worker.
 
 ## Match and normalize prefixes
 
-A prefix must start with `/`.
+A prefix must start with `/`. Encoded characters, backslashes, whitespace,
+dot segments, queries, and fragments in a declared prefix are rejected.
 
 A trailing slash is removed except for `/`, and repeated slashes count as one:
-`//app/inventory/` is `/app/inventory`. Query strings do not affect route
-selection.
+`//app/inventory/` is `/app/inventory`. A request's query string does not affect
+route selection.
 
 The gateway uses the longest matching segment path. For example,
 `/app/inventory/admin` wins over `/app/inventory` when both are registered.
