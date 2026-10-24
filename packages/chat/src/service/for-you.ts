@@ -13,7 +13,7 @@ import {
   subjectPrincipal,
 } from "./access";
 import { FOR_YOU_COUNT_CAP, FOR_YOU_PAGE_SIZE, type ForYouPageSchema, ForYouQuerySchema } from "./contracts";
-import { titles } from "./conversations";
+import { titles } from "./conversation-titles";
 import { type MessageRow, messageViews } from "./message-store";
 import { RESOURCE_PAGE_SIZE, readerBatch, readResource } from "./resource-access";
 import { visibleMessages } from "./thread-access";
