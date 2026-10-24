@@ -10,6 +10,7 @@ import { ConversationSchema, ThreadSchema } from "../service/contracts";
 import { conversationSearchTitle } from "../service/conversations";
 import { accessKey, type ResourceReaderDependencies, resourceReaderDependencies } from "../service/resource-access";
 import { SearchResultSchema } from "../service/search-contracts";
+import { READER_REQUEST_BUDGET } from "../service/thread-access";
 import chatApi from ".";
 import { messageFixtures, type Person } from "./messages.test-fixture";
 
@@ -330,6 +331,74 @@ suite("chat list search", () => {
     ]);
   });
 
+  test("item candidate selection uses the caller's container directory before its limit", async () => {
+    const owner = await person(),
+      other = await person();
+    const space = testShortId(),
+      foreignSpace = testShortId(),
+      item = testShortId();
+    grant(owner, "spaces.space", space, { name: "Planning", permission: "write" });
+    grant(owner, "spaces.item", item, { title: "Release plan", kind: "task", spaceId: space });
+    const chat = await open(owner, "spaces.space", space);
+    const visible = await itemThread(owner, chat.id, "spaces.item", item);
+    await sql`UPDATE chat.threads SET last_activity_at = '2000-01-01T00:00:00Z' WHERE short_id = ${visible.id}`;
+    const foreign = await f.fixture(other);
+    await sql`UPDATE chat.conversations SET kind = 'system', resource_type = 'spaces.space', resource_id = ${foreignSpace} WHERE id = ${foreign.id}::uuid`;
+    const newer = Array.from({ length: 100 }, () => ({ short_id: testShortId(), resource_id: testShortId() }));
+    await sql`INSERT INTO chat.threads (short_id, conversation_id, name, resource_type, resource_id, created_by_type, created_by_id, last_activity_at)
+      SELECT item_record.short_id, ${foreign.id}::uuid, 'Release other', 'spaces.item', item_record.resource_id, 'user', ${other.id}::uuid, '2100-01-01T00:00:00Z'
+      FROM jsonb_to_recordset(${JSON.stringify(newer)}::jsonb) AS item_record(short_id text, resource_id text)`;
+    calls.length = 0;
+    expect((await search(owner, "Release")).items).toEqual([
+      expect.objectContaining({ kind: "thread", thread: expect.objectContaining({ id: visible.id }) }),
+    ]);
+    expect(calls.length).toBeLessThanOrEqual(READER_REQUEST_BUDGET);
+    expect(calls.filter((call) => call.capability.endsWith(".list"))).toHaveLength(4);
+    expect(calls.some((call) => call.input.id === foreignSpace || newer.some((row) => row.resource_id === call.input.id))).toBe(false);
+  });
+
+  test("cache misses cannot exceed the shared owner-invocation budget", async () => {
+    const owner = await person();
+    const space = testShortId();
+    grant(owner, "spaces.space", space, { name: "Planning", permission: "write" });
+    const chat = await open(owner, "spaces.space", space);
+    const entries = Array.from({ length: 100 }, () => ({ short_id: testShortId(), resource_id: testShortId() }));
+    for (const entry of entries) grant(owner, "spaces.item", entry.resource_id, { title: "Release", kind: "task", spaceId: space });
+    await sql`INSERT INTO chat.threads (short_id, conversation_id, name, resource_type, resource_id, created_by_type, created_by_id, last_activity_at)
+      SELECT item_record.short_id, c.id, 'Snapshot', 'spaces.item', item_record.resource_id, 'user', ${owner.id}::uuid, ${at}::timestamptz
+      FROM jsonb_to_recordset(${JSON.stringify(entries)}::jsonb) AS item_record(short_id text, resource_id text)
+      CROSS JOIN chat.conversations c WHERE c.short_id = ${chat.id}`;
+    const originalGet = redis.get.bind(redis);
+    const cacheMiss = spyOn(redis, "get").mockImplementation(async (key) => {
+      if (typeof key === "string" && key.startsWith("chat:access:")) return null;
+      return originalGet(key);
+    });
+    calls.length = 0;
+    try {
+      const result = await chatService.search({ ...owner.context, query: { q: "Release" } });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.items.length).toBeLessThanOrEqual(8);
+        expect(result.data.systemUnavailable).toBe(true);
+      }
+      expect(calls.length).toBeLessThanOrEqual(READER_REQUEST_BUDGET);
+    } finally {
+      cacheMiss.mockRestore();
+    }
+  });
+
+  test("ordinary Unicode matching and word ranking agree with the browser matcher before LIMIT", async () => {
+    const owner = await person();
+    const unicode = await namedChat(owner, "Ärzte");
+    expect((await search(owner, "ärz")).items).toEqual([
+      expect.objectContaining({ kind: "chat", conversation: expect.objectContaining({ id: unicode.shortId }) }),
+    ]);
+    const word = await namedChat(owner, "Team IT");
+    await sql`UPDATE chat.conversations SET last_activity_at = '2000-01-01T00:00:00Z' WHERE id = ${word.id}::uuid`;
+    for (let i = 0; i < 9; i++) await namedChat(owner, `üIT${i}`);
+    expect((await search(owner, "it")).items[0]).toMatchObject({ kind: "chat", conversation: { id: word.shortId } });
+  });
+
   test("owner failure retains ordinary hits and the healthy owner, with systemUnavailable", async () => {
     const owner = await person();
     const chat = await namedChat(owner, "Release IT");
@@ -345,6 +414,18 @@ suite("chat list search", () => {
         expect.objectContaining({ kind: "system", ref: { type: "notebooks.notebook", id: book } }),
       ]),
     );
+  });
+
+  test("unavailable high-ranked containers cannot crowd ordinary hits out of the eight-result response", async () => {
+    const owner = await person();
+    const chat = await namedChat(owner, "IT Support");
+    lists.set(`${owner.headers.cookie}:spaces.space`, {
+      data: Array.from({ length: 12 }, () => ({ id: testShortId(), name: "IT", permission: "read" })),
+    });
+    readerDown = true;
+    const result = await search(owner, "IT");
+    expect(result.systemUnavailable).toBe(true);
+    expect(result.items).toEqual([expect.objectContaining({ kind: "chat", conversation: expect.objectContaining({ id: chat.shortId }) })]);
   });
 
   test("reader failures and malformed owner lists set the partial-failure flag", async () => {

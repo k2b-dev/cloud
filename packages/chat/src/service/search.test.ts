@@ -23,6 +23,7 @@ test("search validates a trimmed, nonempty literal query of at most 100 characte
 
 test("ranks exact, name prefix, word prefix and substring literally without ASCII-only boundaries", () => {
   expect(nameMatchRank("IT", "it")).toBe(0);
+  expect(nameMatchRank("Ärzte", "ärz")).toBe(1);
   expect(nameMatchRank("IT team", "it")).toBe(1);
   expect(nameMatchRank("Our IT team", "it")).toBe(2);
   expect(nameMatchRank("Mitteilung", "it")).toBe(3);

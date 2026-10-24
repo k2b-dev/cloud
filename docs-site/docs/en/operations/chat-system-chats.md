@@ -75,17 +75,20 @@ Ordinary results include only chats where the caller is a member, including
 subscribed channels. Discovery access alone does not add a result. Search
 covers ordinary titles and named threads before applying the result limit.
 It uses PostgreSQL and the existing membership indexes, with at most four
-member names inspected to derive each unnamed chat's title.
+member names used to derive each unnamed chat's title.
 
 Container discovery sends `query: q` and `limit: 100` to each owning app's
-existing list query. Item discovery inspects the 100 most recently active
-non-archived item threads across existing system conversations. Their stored
-names are snapshots: matching uses each reader's current name and completion
+existing list query. A second page of up to 100 containers per owner, without
+the text filter, scopes item discovery. Item discovery inspects the 100 most
+recently active non-archived item threads in those caller-listed containers
+and the matching container page. Their stored names are snapshots: matching uses each reader's current name and completion
 state. Container and item readers must both allow the caller, and the item's
 current parent must still match the conversation. The existing 60-second,
 credential-specific decision cache applies. Reader batches have at most eight
-concurrent calls. These candidate bounds mean an older item thread or a
-container beyond its owner's first matching page can be absent from search.
+concurrent calls. Search shares the existing 302-invocation reader budget,
+reserving two container reads for each possible system-chat summary. Budget
+exhaustion keeps available results and sets `systemUnavailable: true`.
+These candidate bounds mean an older item thread or a container beyond its owner's first matching page can be absent from search.
 
 Existing system-chat summaries include `summaryCursor: ""`: search spends
 its item-reader budget on matching and leaves summary continuation to the

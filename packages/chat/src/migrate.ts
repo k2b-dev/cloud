@@ -156,8 +156,8 @@ export const migrate = async (): Promise<void> => {
     DROP INDEX IF EXISTS chat.idx_chat_threads_name;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_threads_manual_name ON chat.threads(conversation_id, lower(name)) WHERE resource_type IS NULL;
   `.simple();
-  await sql`CREATE INDEX IF NOT EXISTS idx_chat_threads_search_activity
-    ON chat.threads(last_activity_at DESC, short_id)
+  await sql`CREATE INDEX IF NOT EXISTS idx_chat_threads_search_conversation_activity
+    ON chat.threads(conversation_id, last_activity_at DESC, short_id)
     WHERE archived_at IS NULL AND resource_type IS NOT NULL AND resource_id IS NOT NULL`;
   console.log("  ✓ chat schema");
 };
