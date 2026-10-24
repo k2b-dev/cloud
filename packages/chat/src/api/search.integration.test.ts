@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { AuthContext } from "@k2b/cloud/server";
+import { toPgTextArray } from "@k2b/cloud/services";
 import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
@@ -347,7 +348,7 @@ suite("chat list search", () => {
     const newer = Array.from({ length: 100 }, () => ({ short_id: testShortId(), resource_id: testShortId() }));
     await sql`INSERT INTO chat.threads (short_id, conversation_id, name, resource_type, resource_id, created_by_type, created_by_id, last_activity_at)
       SELECT item_record.short_id, ${foreign.id}::uuid, 'Release other', 'spaces.item', item_record.resource_id, 'user', ${other.id}::uuid, '2100-01-01T00:00:00Z'
-      FROM jsonb_to_recordset(${JSON.stringify(newer)}::jsonb) AS item_record(short_id text, resource_id text)`;
+      FROM unnest(${toPgTextArray(newer.map((row) => row.short_id))}::text[], ${toPgTextArray(newer.map((row) => row.resource_id))}::text[]) AS item_record(short_id, resource_id)`;
     calls.length = 0;
     expect((await search(owner, "Release")).items).toEqual([
       expect.objectContaining({ kind: "thread", thread: expect.objectContaining({ id: visible.id }) }),
@@ -366,7 +367,7 @@ suite("chat list search", () => {
     for (const entry of entries) grant(owner, "spaces.item", entry.resource_id, { title: "Release", kind: "task", spaceId: space });
     await sql`INSERT INTO chat.threads (short_id, conversation_id, name, resource_type, resource_id, created_by_type, created_by_id, last_activity_at)
       SELECT item_record.short_id, c.id, 'Snapshot', 'spaces.item', item_record.resource_id, 'user', ${owner.id}::uuid, ${at}::timestamptz
-      FROM jsonb_to_recordset(${JSON.stringify(entries)}::jsonb) AS item_record(short_id text, resource_id text)
+      FROM unnest(${toPgTextArray(entries.map((row) => row.short_id))}::text[], ${toPgTextArray(entries.map((row) => row.resource_id))}::text[]) AS item_record(short_id, resource_id)
       CROSS JOIN chat.conversations c WHERE c.short_id = ${chat.id}`;
     const originalGet = redis.get.bind(redis);
     const cacheMiss = spyOn(redis, "get").mockImplementation(async (key) => {
