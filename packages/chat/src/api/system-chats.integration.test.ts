@@ -419,6 +419,10 @@ suite("system chats use caller-authorized readers", () => {
       SELECT 'Unread0001', c.id, t.id, 1, 1, 'text', 'user', ${author.id}::uuid, 'Nora', 'Unread task', 'unread-task'
       FROM chat.conversations c JOIN chat.threads t ON t.conversation_id = c.id WHERE c.short_id = ${chat.id} AND t.short_id = 'p00000'`;
     await sql`UPDATE chat.conversations SET seq_head = 1, rev = 1 WHERE short_id = ${chat.id}`;
+    // A new message moves its thread up, here to just behind the four most recent (hidden) threads: the short list
+    // reads the most active threads as candidates, and the unread one is shown although it is not among the recent four.
+    await sql`UPDATE chat.threads SET last_activity_at = ${new Date(Date.UTC(2026, 9, 14, 12) - 210_000)}
+      WHERE short_id = 'p00000' AND conversation_id = (SELECT id FROM chat.conversations WHERE short_id = ${chat.id})`;
     const unreadShort = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads?short=true`)).json());
     expect(unreadShort.items.map((item) => item.id)).toEqual(["p00000"]);
   });
