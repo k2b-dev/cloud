@@ -4,7 +4,7 @@ import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { buildNotePaths, noteSlug } from "../lib/note-path";
 import { migrate } from "../migrate";
-import { type InsertedFixtureNotebook, insertFixtureNotebook } from "./large-notebook.test-fixture";
+import { type InsertedFixtureNotebook, insertFixtureNotebook, removeFixtureNotebooks } from "./large-notebook.test-fixture";
 import { childrenQuery, createAtPath, listOutline, outlinePageQuery, resolvePath } from "./note-paths";
 import { reindexBatchQuery, reindexNotebook } from "./note-refs";
 import { overviewStats } from "./notebooks";
@@ -46,7 +46,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  for (const notebook of fixtures) await notebook.remove();
+  await removeFixtureNotebooks();
   for (const id of grants) await sql`DELETE FROM auth.access WHERE id = ${id}::uuid`;
 });
 
