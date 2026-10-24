@@ -215,7 +215,14 @@ const handleApi = async (request: Request, path: string): Promise<Response> => {
   }
   const body = (await request.json()) as { before?: string; after?: string; parentId?: string | null; favorite?: boolean };
   api.requests.push({ path, body });
-  if (path.endsWith("/favorite")) return Response.json({ favorite: body.favorite });
+  const favorited = /^notes\/(\w+)\/favorite$/u.exec(path)?.[1];
+  if (favorited) {
+    // The server keeps the choice, so the next favorites list reflects it.
+    api.favoriteNoteIds = body.favorite
+      ? [...new Set([...api.favoriteNoteIds, favorited])]
+      : api.favoriteNoteIds.filter((id) => id !== favorited);
+    return Response.json({ favorite: body.favorite });
+  }
   const moved = /^notes\/(\w+)\/move$/u.exec(path)?.[1];
   const anchor = body.before ?? body.after;
   const level = levelOf(api.tree, moved && !("parentId" in body) ? parentOf(api.tree, anchor!) : (body.parentId ?? null));
@@ -461,13 +468,16 @@ describe("One notebook sidebar with quick filters", () => {
       body: document.querySelector(".k2b-app-workspace__sidebar-body")!.getBoundingClientRect().top,
       chips: document.querySelector(".notebook-sidebar-chips")!.getBoundingClientRect().height,
     }));
-  const listed = (page: Page) =>
-    page.evaluate(() =>
+  /** The rows once the filter's list has arrived from the server. */
+  const listed = async (page: Page) => {
+    await page.waitForFunction(() => !document.querySelector('[role="tree"] [data-k2b-nav-tree-id^="loading:"]'));
+    return page.evaluate(() =>
       Array.from(document.querySelectorAll<HTMLElement>('[role="tree"] > [role="treeitem"]')).map((row) => ({
         id: row.dataset.k2bNavTreeId,
         meta: row.querySelector(".k2b-app-workspace__sidebar-item-description")?.textContent ?? null,
       })),
     );
+  };
 
   for (const theme of ["light", "dark"] as const) {
     test(`chips turn the tree into a list newest first and back, and nothing above the list moves (${theme})`, async () => {
