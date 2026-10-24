@@ -433,6 +433,11 @@ exists only in the mirror. Each file starts with `id`, `title`, and
 `updatedAt` front matter, and `.cld-notebook.json` records one `path`,
 `contentHash`, `fileHash`, and `updatedAt` per note.
 
+The note list's `q` filter matches substrings in titles and words in saved
+page content. A final plain word of at least two characters also matches the
+start of a word: `backu` finds `backup`. A fragment from the middle of a body
+word does not match.
+
 `mv` also arranges a note among its siblings with `--before <note>`,
 `--after <note>`, `--first`, or `--last`, as in
 `cld notebooks mv "Docs":guide/setup --after "Docs":guide/intro`. Placing a

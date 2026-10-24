@@ -15,7 +15,7 @@ import {
   noteContentHash,
   summarizeNoteEditBlocks,
 } from "../lib/note-edit";
-import { compareNoteOrder, isHandOrdered, sortNoteLevels } from "../lib/note-order";
+import { compareNoteOrder, sortNoteLevels } from "../lib/note-order";
 import { createInitialNoteMarkdown, deriveNoteTitle, hasUsableNoteTitle } from "../lib/note-title";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate } from "../lib/note-title-template";
 import { generateUniqueShortId } from "../lib/short-id";
@@ -23,6 +23,7 @@ import { buildNotebookVisibleAccessCondition, mayReadAcrossNotebooks } from "./a
 import * as activity from "./activity";
 import { dataPropertiesForContent } from "./note-properties";
 import { reindexNoteRefsSafe } from "./note-refs";
+import { buildTextQuery } from "./search";
 import { invalidated, noteCreated, noteDeleted, noteUpdated } from "./workspace-events";
 import {
   applyYjsTopicEvent,
@@ -314,8 +315,18 @@ const readLevel = (tx: TransactionSQL, notebookId: string, parentId: string | nu
   tx<LevelNote[]>`SELECT id, short_id, title, position FROM notebooks.notes
     WHERE notebook_id = ${notebookId}::uuid AND parent_id IS NOT DISTINCT FROM ${parentId}::uuid`;
 
-const appendPosition = (level: LevelNote[]): number =>
-  isHandOrdered(level) ? level.reduce((max, note) => Math.max(max, note.position), 0) + 1 : 0;
+export const appendPositionQuery = (tx: TransactionSQL, notebookId: string, parentId: string | null) => {
+  const parent = parentId === null ? tx`parent_id IS NULL` : tx`parent_id = ${parentId}::uuid`;
+  // Nonzero positions mark a hand-ordered level, including legacy negative positions.
+  return tx<{ position: number }[]>`
+    SELECT CASE WHEN MIN(position) IS NULL OR (MIN(position) = 0 AND MAX(position) = 0)
+      THEN 0 ELSE GREATEST(0, MAX(position)) + 1 END::int AS position
+    FROM notebooks.notes WHERE notebook_id = ${notebookId}::uuid AND ${parent}
+  `;
+};
+
+const appendPosition = async (tx: TransactionSQL, notebookId: string, parentId: string | null): Promise<number> =>
+  (await appendPositionQuery(tx, notebookId, parentId))[0]!.position;
 
 const placeInLevel = async (
   tx: TransactionSQL,
@@ -441,9 +452,9 @@ export type RecentNote = {
   notebookName: string;
 };
 
-export const recentForUser = async (params: { userId: string; limit: number }): Promise<RecentNote[]> => {
+export const recentForUserQuery = (params: { userId: string; limit: number }) => {
   const principalMatch = buildNotebookVisibleAccessCondition({ userId: params.userId });
-  const rows = await sql<
+  return sql<
     {
       id: string;
       short_id: string;
@@ -458,18 +469,26 @@ export const recentForUser = async (params: { userId: string; limit: number }): 
     SELECT
       nt.id, nt.short_id, nt.notebook_id, nt.title, nt.updated_at,
       nb.short_id AS notebook_short_id, nb.icon AS notebook_icon, nb.name AS notebook_name
-    FROM notebooks.notes nt
-    JOIN notebooks.notebooks nb ON nb.id = nt.notebook_id
+    FROM notebooks.notebooks nb
+    CROSS JOIN LATERAL (
+      SELECT n.id, n.short_id, n.notebook_id, n.title, n.updated_at
+      FROM notebooks.notes n WHERE n.notebook_id = nb.id
+      ORDER BY n.updated_at DESC, n.id ASC LIMIT ${params.limit}
+    ) nt
     WHERE EXISTS (
       SELECT 1
       FROM notebooks.notebook_access na
       JOIN auth.access a ON a.id = na.access_id
-      WHERE na.notebook_id = nt.notebook_id
+      WHERE na.notebook_id = nb.id
         AND ${principalMatch}
     )
-    ORDER BY nt.updated_at DESC
+    ORDER BY nt.updated_at DESC, nt.id ASC
     LIMIT ${params.limit}
   `;
+};
+
+export const recentForUser = async (params: Parameters<typeof recentForUserQuery>[0]): Promise<RecentNote[]> => {
+  const rows = await recentForUserQuery(params);
   return rows.map((r) => ({
     id: r.id,
     shortId: r.short_id,
@@ -499,79 +518,70 @@ export const list = async (params: { notebookId: string }): Promise<Note[]> => {
   return rows.map(mapToNote);
 };
 
+/** Keyset batches for whole-notebook jobs; content-free batches build export link maps. */
+export const readBatchQuery = (params: { notebookId: string; after?: string; includeContent?: boolean }) => sql<DbNote[]>`
+    SELECT n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
+      n.yjs_history_incomplete, n.yjs_snapshot_at,
+      ${params.includeContent === false ? sql`NULL::text` : sql`n.content_md`} AS content_md,
+      n.created_by, n.created_at, n.updated_at, n.locked_at,
+      EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) AS has_children
+    FROM notebooks.notes n
+    WHERE n.notebook_id = ${params.notebookId}::uuid
+      AND ${params.after ? sql`n.id > ${params.after}::uuid` : sql`true`}
+    ORDER BY n.id LIMIT 100
+  `;
+
+export const readBatch = async (params: Parameters<typeof readBatchQuery>[0]): Promise<Note[]> =>
+  (await readBatchQuery(params)).map(mapToNote);
+
 /**
  * List notes with SQL-side filtering and pagination.
  */
-export const listPaged = async (params: {
+type NoteListParams = {
   notebookId: string;
   query?: string;
   parentId?: string | null;
   pagination?: { limit: number; offset: number };
-}): Promise<{ items: Note[]; total: number }> => {
+};
+
+const listCondition = (params: NoteListParams) => {
   const query = params.query?.trim();
-  const pattern = query && query.length > 0 ? `%${query}%` : null;
-  const parentId = params.parentId;
+  const pattern = `%${query}%`;
+  const textCondition = query
+    ? sql`(n.search_document @@ ${buildTextQuery(query)} OR (
+        notebooks.title_grams(n.title) @> notebooks.title_grams(${query}) AND n.title ILIKE ${pattern}
+      ))`
+    : sql`true`;
   const parentCondition =
-    parentId === undefined ? sql`true` : parentId === null ? sql`n.parent_id IS NULL` : sql`n.parent_id = ${parentId}::uuid`;
+    params.parentId === undefined
+      ? sql`true`
+      : params.parentId === null
+        ? sql`n.parent_id IS NULL`
+        : sql`n.parent_id = ${params.parentId}::uuid`;
+  return sql`n.notebook_id = ${params.notebookId}::uuid AND ${parentCondition} AND ${textCondition}`;
+};
 
-  const rows =
-    params.pagination === undefined
-      ? await sql<DbNote[]>`
-          SELECT
-            n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-            n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
-            EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
-          FROM notebooks.notes n
-          WHERE n.notebook_id = ${params.notebookId}::uuid
-            AND ${parentCondition}
-            AND (
-              ${pattern}::text IS NULL
-              OR n.title ILIKE ${pattern}
-              OR COALESCE(n.content_md, '') ILIKE ${pattern}
-            )
-          ORDER BY
-            CASE WHEN ${pattern}::text IS NULL THEN 0 WHEN n.title ILIKE ${pattern} THEN 0 ELSE 1 END,
-            n.position ASC,
-            n.updated_at DESC
-        `
-      : await sql<DbNote[]>`
-          SELECT
-            n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-            n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
-            EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
-          FROM notebooks.notes n
-          WHERE n.notebook_id = ${params.notebookId}::uuid
-            AND ${parentCondition}
-            AND (
-              ${pattern}::text IS NULL
-              OR n.title ILIKE ${pattern}
-              OR COALESCE(n.content_md, '') ILIKE ${pattern}
-            )
-          ORDER BY
-            CASE WHEN ${pattern}::text IS NULL THEN 0 WHEN n.title ILIKE ${pattern} THEN 0 ELSE 1 END,
-            n.position ASC,
-            n.updated_at DESC,
-            n.id DESC
-          LIMIT ${params.pagination.limit}
-          OFFSET ${params.pagination.offset}
-        `;
-
-  const [countRow] = await sql<{ count: number }[]>`
-    SELECT COUNT(*)::int AS count
-    FROM notebooks.notes n
-    WHERE n.notebook_id = ${params.notebookId}::uuid
-      AND ${parentCondition}
-      AND (
-        ${pattern}::text IS NULL
-        OR n.title ILIKE ${pattern}
-        OR COALESCE(n.content_md, '') ILIKE ${pattern}
-      )
+export const listPageQuery = (params: NoteListParams) => {
+  const query = params.query?.trim();
+  const order = query
+    ? sql`CASE WHEN n.title ILIKE ${`%${query}%`} THEN 0 ELSE 1 END, n.position ASC, n.updated_at DESC, n.id DESC`
+    : sql`n.position ASC, n.updated_at DESC, n.id DESC`;
+  return sql<DbNote[]>`
+    SELECT n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
+      n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+      EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) AS has_children
+    FROM notebooks.notes n WHERE ${listCondition(params)}
+    ORDER BY ${order}
+    ${params.pagination ? sql`LIMIT ${params.pagination.limit} OFFSET ${params.pagination.offset}` : sql``}
   `;
+};
 
-  return {
-    items: rows.map(mapToNote),
-    total: countRow?.count ?? 0,
-  };
+export const listPaged = async (params: NoteListParams): Promise<{ items: Note[]; total: number }> => {
+  const rows = await listPageQuery(params);
+  const [countRow] = await sql<{ count: number }[]>`
+    SELECT COUNT(*)::int AS count FROM notebooks.notes n WHERE ${listCondition(params)}
+  `;
+  return { items: rows.map(mapToNote), total: countRow?.count ?? 0 };
 };
 
 /**
@@ -847,8 +857,9 @@ export const create = async (params: {
     doc.destroy();
     const row = await sql.begin(async (tx) => {
       await lockTree(tx, data.notebookId);
-      const level = await readLevel(tx, data.notebookId, data.parentId ?? null);
-      const position = appendPosition(level);
+      const placement = params.placement ?? (data.position === undefined ? undefined : { position: data.position });
+      const level = placement ? await readLevel(tx, data.notebookId, data.parentId ?? null) : [];
+      const position = await appendPosition(tx, data.notebookId, data.parentId ?? null);
       const [row] = await tx<DbNote[]>`
       INSERT INTO notebooks.notes (
         short_id, notebook_id, parent_id, title, title_projection_version, position,
@@ -871,7 +882,6 @@ export const create = async (params: {
                 yjs_history_incomplete, yjs_snapshot_at, content_md, created_by, created_at, updated_at, locked_at
     `;
 
-      const placement = params.placement ?? (data.position === undefined ? undefined : { position: data.position });
       if (row && placement) {
         await placeInLevel(tx, level, row, placement, params.locale ?? params.dateConfig?.locale ?? "en");
       }
@@ -994,7 +1004,7 @@ export const move = async (params: {
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) AS has_children
       FROM notebooks.notes n WHERE n.id = ${params.id}::uuid FOR NO KEY UPDATE OF n`;
     if (!row) return { ok: false, error: "Note not found", status: 404 };
-    const level = await readLevel(tx, existing.notebookId, parentId);
+    const level = params.placement ? await readLevel(tx, existing.notebookId, parentId) : [];
     if (anchorId && !level.some((note) => note.id === anchorId)) {
       const [currentAnchor] = await tx<{ notebook_id: string }[]>`SELECT notebook_id FROM notebooks.notes WHERE id = ${anchorId}::uuid`;
       return !currentAnchor || currentAnchor.notebook_id !== row.notebook_id
@@ -1018,7 +1028,7 @@ export const move = async (params: {
     const siblings = level.filter((note) => note.id !== row.id);
     if (parentChanged) {
       const [updated] = await tx<DbNote[]>`UPDATE notebooks.notes
-        SET parent_id = ${parentId}::uuid, position = ${appendPosition(siblings)}, updated_at = now()
+        SET parent_id = ${parentId}::uuid, position = ${await appendPosition(tx, existing.notebookId, parentId)}, updated_at = now()
         WHERE id = ${row.id}::uuid RETURNING *`;
       Object.assign(row, updated);
     }
