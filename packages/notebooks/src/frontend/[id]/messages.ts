@@ -275,6 +275,9 @@ export const notebookWorkspaceMessages = i18n.define({
       copyText: "Copy text",
       discardUnsavedConfirm: "Reload the note? Changes that are not saved will be lost.",
       leaveUnsavedConfirm: "Leave the note? Changes that are not saved will be lost.",
+      firstEditsNotMerged:
+        "Someone rewrote this note while you started typing. The note shows their version; your first changes were not added.",
+      copyFirstEdits: "Copy my version",
       leaveNote: "Leave",
       signInAgain: "Sign in again",
       storageFull: "Storage is full",
@@ -732,6 +735,9 @@ export const notebookWorkspaceMessages = i18n.define({
       copyText: "Text kopieren",
       discardUnsavedConfirm: "Notiz neu laden? Nicht gespeicherte Änderungen gehen verloren.",
       leaveUnsavedConfirm: "Notiz verlassen? Nicht gespeicherte Änderungen gehen verloren.",
+      firstEditsNotMerged:
+        "Jemand hat diese Notiz umgeschrieben, während du zu tippen begonnen hast. Die Notiz zeigt diese Fassung; deine ersten Änderungen wurden nicht eingefügt.",
+      copyFirstEdits: "Meine Fassung kopieren",
       leaveNote: "Verlassen",
       signInAgain: "Erneut anmelden",
       storageFull: "Speicher ist voll",

@@ -276,8 +276,8 @@ describe("sync ended editor recovery", () => {
     expect(instance.connect).toHaveBeenCalledTimes(1);
   });
 
-  test("opening another note right after the first keystroke waits until the words reached the live note", async () => {
-    using editor = mountNoteEditor({ pending: false });
+  test("opening another note right after the first keystroke waits until the server confirmed the words", async () => {
+    using editor = mountNoteEditor({ pending: true });
     const instance = editor.providers[0]!;
     editor.view().dispatch({ changes: { from: editor.view().state.doc.length, insert: " Last words." }, userEvent: "input.type" });
     routeGet.mockClear();
@@ -290,6 +290,10 @@ describe("sync ended editor recovery", () => {
     instance.opts.doc.transact(() => ytext.insert(0, markdown), "remote");
     instance.opts.onReady?.();
     expect(ytext.toString()).toBe(`${markdown} Last words.`);
+    // In Yjs, but not yet confirmed: the other note still waits.
+    await flush();
+    expect(routeGet).not.toHaveBeenCalled();
+    editor.setPending(false);
     await navigation;
     expect(routeGet).toHaveBeenCalledTimes(1);
     expect(editor.confirmed).not.toHaveBeenCalled();
@@ -336,6 +340,41 @@ describe("sync ended editor recovery", () => {
       expect(ytext.toString()).toBe(`Mine ${markdown}\n\nAdded by Ada.`);
     } finally {
       savedTexts.clear();
+    }
+  });
+
+  test("Undo keys before the live note arrived do nothing and break nothing", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    editor.view().dispatch({ changes: { from: 0, insert: "Draft " }, userEvent: "input.type" });
+    // CodeMirror reports a failing key command to the console instead of throwing.
+    const logged = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
+        const key = new KeyboardEvent("keydown", { key: "z", code: "KeyZ", keyCode: 90, ...modifier, bubbles: true, cancelable: true });
+        editor.view().contentDOM.dispatchEvent(key);
+      }
+      expect(logged).not.toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
+    expect(editor.view().state.doc.toString()).toBe(`Draft ${markdown}`);
+  });
+
+  test("a note locked by someone else before the first edit opens again as the server shows it", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+    routeGet.mockImplementationOnce(async () => Response.json({ kind: "fallback", reason: "readonly" }));
+    try {
+      window.dispatchEvent(
+        new CustomEvent("notebooks.workspace.event", {
+          detail: { cursor: null, event: { v: 1, type: "note.updated", notebookId: "Book01", note: { id: "Note01" } }, cover: () => {} },
+        }),
+      );
+      for (let tick = 0; tick < 10; tick++) await flush();
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(editor.providers[0]!.connect).not.toHaveBeenCalled();
+    } finally {
+      reload.mockRestore();
     }
   });
 

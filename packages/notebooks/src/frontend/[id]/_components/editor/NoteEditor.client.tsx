@@ -413,14 +413,16 @@ function EditorInstance(
     resume: () => provider?.resume(),
     focusEditor: () => editorView()?.focus(),
   });
-  // Edits typed before the live note arrived exist only on screen: leaving waits for them to reach the server.
-  let firstEditsSent: () => void = () => {};
-  const firstEditsArrived = new Promise<void>((resolve) => {
-    firstEditsSent = resolve;
-  });
+  // Edits the server has not confirmed yet, also those typed before the live note arrived, hold leaving until it does.
+  const sentWaiters = new Set<() => void>();
+  const notifySent = () => {
+    if (hasUnsentChanges()) return;
+    for (const resolve of sentWaiters) resolve();
+    sentWaiters.clear();
+  };
   onCleanup(
     props.registerLeaveGuard({
-      confirmLeave: () => (pendingFirstEdits() ? leaveAfterFirstEdits() : syncEnded.confirmLeave()),
+      confirmLeave: () => (holdsLeave() ? leaveAfterSent() : syncEnded.confirmLeave()),
       releaseLeave: syncEnded.releaseLeave,
     }),
   );
@@ -483,7 +485,8 @@ function EditorInstance(
   if (!props.readOnly && undoManager) {
     addExtension(collab.of([]));
     addExtension(() => isolateYjsHistory(undoManager));
-    addExtension(() => (syncEnded.ended() ? [] : keymap.of(yUndoManagerKeymap)));
+    // The Yjs undo keys need the binding; before it, edits have no history to undo.
+    addExtension(() => (syncEnded.ended() || !collabActive() ? [] : keymap.of(yUndoManagerKeymap)));
     // Reading or switching notes needs no collaboration; the first edit starts it.
     addExtension(
       EditorView.updateListener.of((update) => {
@@ -496,9 +499,12 @@ function EditorInstance(
       }),
     );
   }
-  const leaveAfterFirstEdits = async (): Promise<boolean> => {
-    await Promise.race([firstEditsArrived, new Promise((resolve) => setTimeout(resolve, FIRST_EDITS_LEAVE_WAIT_MS))]);
-    if (!pendingFirstEdits()) return syncEnded.confirmLeave();
+  const leaveAfterSent = async (): Promise<boolean> => {
+    await Promise.race([
+      new Promise<void>((resolve) => sentWaiters.add(resolve)),
+      new Promise((resolve) => setTimeout(resolve, FIRST_EDITS_LEAVE_WAIT_MS)),
+    ]);
+    if (!holdsLeave()) return syncEnded.confirmLeave();
     const text = t();
     return (
       (await prompts.confirm(text.leaveUnsavedConfirm, {
@@ -513,6 +519,8 @@ function EditorInstance(
   const pendingFirstEdits = () => collabStarted() && !collabActive();
   /** Edits not yet confirmed by the server, including those typed before the live document arrived. */
   const hasUnsentChanges = () => pendingFirstEdits() || (provider?.hasUnsentChanges() ?? false);
+  /** Leaving waits only while this editor's own edits are on their way; an ended session has its own bar and prompt. */
+  const holdsLeave = () => collabStarted() && !syncEnded.ended() && hasUnsentChanges();
 
   /**
    * Carries the edits made before the live document arrived onto it, writes them to Yjs and binds the editor to Yjs,
@@ -522,19 +530,27 @@ function EditorInstance(
     const view = editorView();
     if (!view || collabActive()) return;
     const edited = view.state.doc.toString();
-    const { changes, text } = rebaseOnto(baseText, edited, ytext.toString());
-    applyToYText(ytext, changes, FIRST_EDITS);
+    const live = ytext.toString();
+    const rebased = rebaseOnto(baseText, edited, live);
+    if (rebased) applyToYText(ytext, rebased.changes, FIRST_EDITS);
+    const text = rebased?.text ?? live;
     if (text !== edited)
       view.dispatch({
-        changes: changesBetween(edited, text),
+        changes: changesBetween(edited, text) ?? { from: 0, to: edited.length, insert: text },
         annotations: [firstEditsSettled.of(true), Transaction.addToHistory.of(false), Transaction.remote.of(true)],
+      });
+    // Someone rewrote the note while these first edits were typed: the live note stays, and the edits stay copyable.
+    if (!rebased)
+      toast(t().firstEditsNotMerged, {
+        duration: 0,
+        action: { label: t().copyFirstEdits, onClick: () => void clipboard.copy(edited) },
       });
     view.dispatch({ effects: collab.reconfigure([yCollab(ytext, null, { undoManager: undoManager! }), remoteCursors(ytext, awareness)]) });
     undoManager?.stopCapturing();
     setCollabActive(true);
     syncState.unsentChanged();
     syncEnded.refresh();
-    firstEditsSent();
+    notifySent();
   };
 
   let cursorIdleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -695,6 +711,7 @@ function EditorInstance(
           if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
           syncState.unsentChanged();
           syncEnded.refresh();
+          notifySent();
         },
       });
 
@@ -1048,31 +1065,38 @@ function EditorInstance(
     // Before the first edit nothing is live: a save by someone else reaches this note as its new saved text.
     let savedTextRequest: AbortController | undefined;
     const onWorkspaceEvent = (raw: Event) => {
-      const { event } = (raw as CustomEvent<WorkspaceEventDetail>).detail;
+      const detail = (raw as CustomEvent<WorkspaceEventDetail>).detail;
+      const { event } = detail;
       if (props.readOnly || collabStarted() || event.type !== "note.updated" || event.note.id !== props.noteId) return;
       savedTextRequest?.abort();
       const request = new AbortController();
       savedTextRequest = request;
-      void apiClient[":id"]["route-state"]
+      const refresh = apiClient[":id"]["route-state"]
         .$get(
           { param: { id: props.notebookId }, query: { href: window.location.pathname + window.location.search } },
           { init: { signal: request.signal } },
         )
         .then(async (response) => {
-          const payload = response.ok ? await response.json() : null;
+          if (!response.ok) throw new Error(`Failed to load the saved note (${response.status})`);
+          const payload = await response.json();
           const view = editorView();
-          if (request.signal.aborted || collabStarted() || !view || payload?.kind !== "ok" || payload.state.note.id !== props.noteId)
+          if (request.signal.aborted || collabStarted() || !view) return;
+          // A note locked, deleted or moved out of reach meanwhile reopens as the server now shows it.
+          if (payload.kind !== "ok" || payload.state.note.id !== props.noteId) {
+            window.location.reload();
             return;
+          }
           const saved = (payload.state.note.contentMd ?? "").replace(/\r\n?/g, "\n");
           const shown = view.state.doc.toString();
           baseText = saved;
           if (saved !== shown)
             view.dispatch({
-              changes: changesBetween(shown, saved),
+              changes: changesBetween(shown, saved) ?? { from: 0, to: shown.length, insert: saved },
               annotations: [firstEditsSettled.of(true), Transaction.addToHistory.of(false), Transaction.remote.of(true)],
             });
-        })
-        .catch(() => undefined);
+        });
+      // The event counts as seen only once the saved text arrived, so a failed read is not skipped for good.
+      detail.cover(refresh.catch((error: unknown) => (request.signal.aborted ? undefined : Promise.reject(error))));
     };
     window.addEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
     onCleanup(() => {
@@ -1080,7 +1104,7 @@ function EditorInstance(
       savedTextRequest?.abort();
     });
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!pendingFirstEdits()) return;
+      if (!holdsLeave()) return;
       event.preventDefault();
       event.returnValue = "";
     };

@@ -1,5 +1,5 @@
 import { ChangeSet, Text } from "@codemirror/state";
-import { diffChars, diffLines } from "diff";
+import { diffChars } from "diff";
 import type * as Y from "yjs";
 
 /**
@@ -9,23 +9,30 @@ import type * as Y from "yjs";
  * have changed since the note was saved, and written to Yjs as one step.
  */
 
-/** Long notes with scattered edits fall back to a line diff after this many milliseconds. */
-const CHAR_DIFF_TIMEOUT_MS = 50;
+/** A diff that takes longer means two people rewrote the note at once; the edits then do not merge automatically. */
+const CHAR_DIFF_TIMEOUT_MS = 300;
+
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
 
 const textOf = (value: string) => Text.of(value.split("\n"));
 
-/** The edits that turn `from` into `to`, in `from`'s positions. */
-export const changesBetween = (from: string, to: string): ChangeSet => {
+/** The edits that turn `from` into `to`, in `from`'s positions; `null` when the texts are too far apart to diff in time. */
+export const changesBetween = (from: string, to: string): ChangeSet | null => {
   if (from === to) return ChangeSet.empty(from.length);
   // The shared start and end bound the diff to the edited middle, so a long note stays cheap.
   const max = Math.min(from.length, to.length);
   let start = 0;
   while (start < max && from.charCodeAt(start) === to.charCodeAt(start)) start++;
+  // Never cut a character in two: an emoji is two UTF-16 units, and half of one is no text.
+  if (start > 0 && isHighSurrogate(from.charCodeAt(start - 1))) start--;
   let end = 0;
   while (end < max - start && from.charCodeAt(from.length - 1 - end) === to.charCodeAt(to.length - 1 - end)) end++;
+  if (end > 0 && isLowSurrogate(from.charCodeAt(from.length - end))) end--;
   const removed = from.slice(start, from.length - end);
   const added = to.slice(start, to.length - end);
-  const parts = diffChars(removed, added, { timeout: CHAR_DIFF_TIMEOUT_MS }) ?? diffLines(removed, added);
+  const parts = diffChars(removed, added, { timeout: CHAR_DIFF_TIMEOUT_MS });
+  if (!parts) return null;
   const changes: Array<{ from: number; to?: number; insert?: string }> = [];
   let position = start;
   for (const part of parts) {
@@ -42,10 +49,13 @@ export const changesBetween = (from: string, to: string): ChangeSet => {
  * The person's edits of `base`, now `edited`, carried onto `live`. Text both sides inserted at one place keeps the
  * live text first; an edit inside text another editor removed is dropped with that text, as in Yjs itself.
  */
-export const rebaseOnto = (base: string, edited: string, live: string): { changes: ChangeSet; text: string } => {
+export const rebaseOnto = (base: string, edited: string, live: string): { changes: ChangeSet; text: string } | null => {
   const local = changesBetween(base, edited);
+  if (!local) return null;
   if (live === base) return { changes: local, text: edited };
-  const mapped = local.map(changesBetween(base, live));
+  const remote = changesBetween(base, live);
+  if (!remote) return null;
+  const mapped = local.map(remote);
   return { changes: mapped, text: mapped.apply(textOf(live)).toString() };
 };
 

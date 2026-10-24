@@ -3,7 +3,7 @@ import { Text } from "@codemirror/state";
 import * as Y from "yjs";
 import { applyToYText, changesBetween, rebaseOnto } from "./lazy-collab";
 
-const apply = (base: string, changes: ReturnType<typeof changesBetween>) => changes.apply(Text.of(base.split("\n"))).toString();
+const apply = (base: string, changes: ReturnType<typeof changesBetween>) => changes!.apply(Text.of(base.split("\n"))).toString();
 
 describe("carrying the first edits onto the live note", () => {
   test("the edits between two texts rebuild the second from the first", () => {
@@ -19,18 +19,18 @@ describe("carrying the first edits onto the live note", () => {
   });
 
   test("a note nobody else changed keeps exactly what the person typed", () => {
-    expect(rebaseOnto("# Plan\n\nOne", "# Plan\n\nOne, two", "# Plan\n\nOne").text).toBe("# Plan\n\nOne, two");
+    expect(rebaseOnto("# Plan\n\nOne", "# Plan\n\nOne, two", "# Plan\n\nOne")?.text).toBe("# Plan\n\nOne, two");
   });
 
   test("text another editor added meanwhile stays, and the person's edit lands where they made it", () => {
     const base = "# Plan\n\nFirst line\n\nLast line";
     const edited = "# Plan\n\nFirst line with my words\n\nLast line";
     const live = "# Plan by the team\n\nFirst line\n\nLast line, signed";
-    expect(rebaseOnto(base, edited, live).text).toBe("# Plan by the team\n\nFirst line with my words\n\nLast line, signed");
+    expect(rebaseOnto(base, edited, live)?.text).toBe("# Plan by the team\n\nFirst line with my words\n\nLast line, signed");
   });
 
   test("both inserting at one place keeps both, the live text first", () => {
-    expect(rebaseOnto("ab", "aXb", "aYb").text).toBe("aYXb");
+    expect(rebaseOnto("ab", "aXb", "aYb")?.text).toBe("aYXb");
   });
 
   test("the rebased edits write to Yjs as one step and give the same text as the editor", () => {
@@ -41,10 +41,27 @@ describe("carrying the first edits onto the live note", () => {
     const steps: unknown[] = [];
     doc.on("afterTransaction", (transaction) => steps.push(transaction.origin));
     const origin = Symbol("first edit");
-    const { changes, text } = rebaseOnto("# Plan\n\nFirst line\n\nLast line", "# Plan\n\nFirst line, edited\n\nLast line, too", live);
+    const { changes, text } = rebaseOnto("# Plan\n\nFirst line\n\nLast line", "# Plan\n\nFirst line, edited\n\nLast line, too", live)!;
     applyToYText(ytext, changes, origin);
     expect(ytext.toString()).toBe(text);
     expect(text).toBe("# Plan by the team\n\nFirst line, edited\n\nLast line, too");
     expect(steps).toEqual([origin]);
+  });
+
+  test("an emoji changed next to an unchanged one stays whole in Yjs and in the editor", () => {
+    const doc = new Y.Doc();
+    const ytext = doc.getText("codemirror");
+    ytext.insert(0, "😀");
+    const result = rebaseOnto("😀", "😁", "😀")!;
+    applyToYText(ytext, result.changes, "test");
+    expect(ytext.toString()).toBe("😁");
+    expect(apply("Note 😀 end", changesBetween("Note 😀 end", "Note 😁 end"))).toBe("Note 😁 end");
+  });
+
+  test("two rewrites of one long note never merge into duplicated text", () => {
+    const base = `${"a".repeat(5000)} KEEP ${"b".repeat(5000)}`;
+    const result = rebaseOnto(base, `${"x".repeat(5000)} KEEP ${"y".repeat(5000)}`, `${"q".repeat(5000)} KEEP ${"r".repeat(5000)}`);
+    // Either the edits merge exactly, or they do not merge and the live note stays as it is.
+    if (result) expect(result.text.split(" KEEP ").length).toBe(2);
   });
 });
