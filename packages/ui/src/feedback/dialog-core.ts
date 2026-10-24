@@ -16,6 +16,9 @@ export type OpenDialogOptions = {
   initialFocus?: "first-input" | "none" | ((dialog: HTMLDialogElement) => HTMLElement | null);
   cancelBehavior?: "resolve-undefined" | "ignore";
   ariaLabel?: string;
+  ariaDescribedBy?: string;
+  /** Use for a consequential confirmation that requires a response. Defaults to dialog. */
+  role?: "dialog" | "alertdialog";
   /**
    * Add a same-URL history entry while the dialog is open, so the browser's or the phone's Back closes the dialog
    * instead of leaving the page. Normally closing the dialog removes the entry again; the returned promise settles after that.
@@ -59,6 +62,8 @@ type DialogStackEntry = {
   opener?: HTMLElement;
   openerRing: boolean;
   ariaLabel?: string;
+  ariaDescribedBy?: string;
+  role: "dialog" | "alertdialog";
   dismissHandler?: () => void | Promise<void>;
   dismissPending?: boolean;
   modal: boolean;
@@ -108,8 +113,11 @@ const resolveInitialFocusTarget = (entry: DialogStackEntry, dialog: HTMLDialogEl
 };
 
 const applyAccessibleName = (dialog: HTMLDialogElement, entry: DialogStackEntry): void => {
+  dialog.setAttribute("role", entry.role);
   dialog.removeAttribute("aria-label");
   dialog.removeAttribute("aria-labelledby");
+  dialog.removeAttribute("aria-describedby");
+  if (entry.ariaDescribedBy) dialog.setAttribute("aria-describedby", entry.ariaDescribedBy);
   if (entry.ariaLabel) {
     dialog.setAttribute("aria-label", entry.ariaLabel);
     return;
@@ -490,6 +498,7 @@ export const createDialogCore = () => {
       dialog.onclick = null;
       dialog.removeAttribute("aria-label");
       dialog.removeAttribute("aria-labelledby");
+      dialog.removeAttribute("aria-describedby");
       if (dialog.open && typeof dialog.close === "function") dialog.close();
       else dialog.removeAttribute("open");
       dialog.remove();
@@ -565,6 +574,8 @@ export const createDialogCore = () => {
       opener: activeElement instanceof HTMLElement ? activeElement : undefined,
       openerRing: ringOnReturn(activeElement),
       ariaLabel: options.ariaLabel,
+      ariaDescribedBy: options.ariaDescribedBy,
+      role: options.role ?? "dialog",
       modal: true,
     };
 

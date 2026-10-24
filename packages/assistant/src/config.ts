@@ -1,8 +1,19 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "assistant",
+  access: appAccess.signedIn({
+    publicRoutes: [
+      "/_internal/assistant/tools/*",
+      "/app/assistant/apps/:id/run",
+      "/api/assistant/runner/app-assets",
+      "/api/assistant/runner/chunks/:name",
+      "/api/assistant/runner/:id",
+      "/api/assistant/runner/:id/app",
+      "/api/assistant/openapi.json",
+    ],
+  }),
   cli: { assistant: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Assistant",
   icon: "ti ti-sparkles",

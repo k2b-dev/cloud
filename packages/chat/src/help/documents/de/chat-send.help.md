@@ -39,6 +39,6 @@ Du kannst in einem Chat, in dem du Mitglied bist, mit Zugriff **Schreiben** oder
 :::reference
 - **Wird gesendet:** Eine Uhr zeigt, dass Chat die Nachricht sendet.
 - **Gesendet:** Ein Häkchen zeigt, dass Chat die Nachricht angenommen hat.
-- **Nicht gesendet:** Chat konnte die Nachricht nicht senden. Wähle **Erneut senden**, um dieselbe Nachricht erneut zu senden, ohne eine Kopie zu erstellen. Um eine Nachricht zu entfernen, die Chat nicht senden kann, wähle die Nachricht und dann **Nachricht verwerfen**. Spätere Nachrichten zeigen eine Uhr und warten, bis diese Nachricht gesendet oder verworfen ist. So bleibt die Reihenfolge, in der du sie geschrieben hast.
+- **Nicht gesendet:** Chat konnte die Nachricht nicht senden. Wähle **Erneut senden**, um dieselbe Nachricht erneut zu senden, ohne eine Kopie zu erstellen. Um eine Nachricht zu entfernen, die Chat nicht senden kann, wähle **Verwerfen** neben **Erneut senden**. Spätere Nachrichten zeigen eine Uhr und warten, bis diese Nachricht gesendet oder verworfen ist. So bleibt die Reihenfolge, in der du sie geschrieben hast.
 - Wenn du Chat mit noch nicht gesendeten Nachrichten verlässt oder neu lädst, fragt dein Browser zuerst nach, weil diese Nachrichten beim Verlassen verloren gehen.
 :::

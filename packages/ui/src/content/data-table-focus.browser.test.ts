@@ -132,9 +132,9 @@ for (const theme of ["light", "dark"]) {
         await page.keyboard.press("Tab");
         expect(await row.getByRole("link").evaluate((e) => e === document.activeElement)).toBe(true);
         expect(await row.evaluate((e) => e.matches(":focus-visible"))).toBe(false);
-        // Native link activation navigates after the key event returns.
         await page.keyboard.press("Enter");
-        await page.waitForFunction(() => location.hash === "#record-a");
+        await page.waitForURL((url) => url.hash === "#record-a");
+        expect(new URL(page.url()).hash).toBe("#record-a");
         expect(await page.locator("body").getAttribute("data-row-calls")).toBe("1");
         if (columns > 1) {
           await page.keyboard.press("Tab");
