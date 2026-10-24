@@ -488,7 +488,16 @@ Each mailbox can have one logo. In Mail, open the mailbox's **Settings → Writi
 to upload or replace it, change its display width or alt text, or remove it after
 confirmation. These changes require **Manage** access; people with **Edit** access
 see the logo and its values read only. Changing the width or alt text stores a new
-version with the same image. Alternatively, upload it with
+version with the same image. If another administrator changed the logo, saving
+or removing the old version reports a conflict. **Load current logo** shows the
+new image while keeping your width and alt text; review them before saving again.
+
+The API exposes `logo.versionId`. Send it as `expectedVersionId` with a PUT,
+or as a query parameter with DELETE, to reject a stale write with HTTP 409.
+PUT accepts `null` to require that no logo exists. Omitting the precondition
+keeps unconditional replacement available for clients uploading a new file.
+
+Alternatively, upload it with
 `cld mail compose logo set --file logo.png`.
 Use `{{ mailbox.logo }}` in any signature to place it in new messages,
 replies, forwards, and older signatures still marked in the body. Mail sends

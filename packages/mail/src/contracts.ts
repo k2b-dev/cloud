@@ -3066,6 +3066,7 @@ export const mailboxLogoDisplayHeight = (logo: { displayWidth: number; pixelWidt
 export const mailboxComposeLogoSchema = z.object({
   logo: z
     .object({
+      versionId: z.string().uuid(),
       contentType: z.enum(["image/png", "image/jpeg"]),
       pixelWidth: z.number().int().min(1).max(1200),
       pixelHeight: z.number().int().min(1).max(400),
@@ -3087,6 +3088,7 @@ export const mailboxLogoAltTextSchema = z
   .max(200);
 export const updateMailboxComposeLogoInputSchema = z
   .object({
+    expectedVersionId: z.string().uuid().nullable().optional(),
     content: z
       .string()
       .min(4)
@@ -3096,6 +3098,7 @@ export const updateMailboxComposeLogoInputSchema = z
     altText: mailboxLogoAltTextSchema.optional(),
   })
   .strict();
+export const removeMailboxComposeLogoQuerySchema = z.object({ expectedVersionId: z.string().uuid().optional() }).strict();
 export type UpdateMailboxComposeLogoInput = z.infer<typeof updateMailboxComposeLogoInputSchema>;
 
 export const mailboxComposeStyleSchema = z.object({

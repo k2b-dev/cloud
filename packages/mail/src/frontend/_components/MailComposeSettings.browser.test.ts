@@ -207,7 +207,7 @@ describe("Mailbox logo settings", () => {
         await loadedLogo(page);
         expect(
           await page.evaluate(() => window.logoRequests.filter((request) => request.method === "PUT").map((request) => request.body)),
-        ).toEqual([{ content: file }]);
+        ).toEqual([{ content: file, expectedVersionId: null }]);
         const uploaded = await controls(page);
         expect(uploaded.stage).toEqual(empty.stage);
         expect(uploaded.dropzone).toEqual(empty.dropzone);
@@ -237,4 +237,43 @@ describe("Mailbox logo settings", () => {
       await page.context().close();
     }
   }, 30_000);
+});
+
+describe("Mail logo conflict recovery", () => {
+  for (const [device, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+    ["tablet", { viewport: { width: 768, height: 1024 } }],
+  ] as const) {
+    for (const theme of ["light", "dark"] as const) {
+      test(`preserves details while adopting the replacement logo on ${device} in ${theme}`, async () => {
+        const page = await load(context, { locale: "en", permission: "admin", logo: "demo", conflict: true, theme });
+        try {
+          await page.evaluate(() => window.answerLogoLoad());
+          await loadedLogo(page);
+          const alt = page.getByLabel(/^Alt text/).first();
+          await alt.fill("Edited alternative text");
+          await page.getByRole("button", { name: "Save", exact: true }).click();
+          const reload = page.getByRole("button", { name: "Load current logo", exact: true });
+          await reload.waitFor();
+          expect(await alt.inputValue()).toBe("Edited alternative text");
+          await reload.click();
+          await page.waitForFunction(() => document.querySelector<HTMLImageElement>("[data-mail-logo-stage] img")?.alt === "New team logo");
+          expect(await alt.inputValue()).toBe("Edited alternative text");
+          await page.getByRole("button", { name: "Save", exact: true }).click();
+          await page.waitForFunction(() => window.logoRequests.filter((r) => r.method === "PUT").length === 2);
+          const writes = await page.evaluate(() => window.logoRequests.filter((r) => r.method === "PUT").map((r) => r.body));
+          expect(writes[0]).toMatchObject({ expectedVersionId: "10000000-0000-4000-8000-000000000001" });
+          expect(writes[1]).toMatchObject({
+            expectedVersionId: "20000000-0000-4000-8000-000000000002",
+            altText: "Edited alternative text",
+          });
+          expect(writes[1]).not.toMatchObject({ content: (writes[0] as { content: string }).content });
+          expect(page.errors).toEqual([]);
+        } finally {
+          await page.context().close();
+        }
+      });
+    }
+  }
 });

@@ -93,6 +93,7 @@ import {
   relatedConversationQuerySchema,
   relatedMailPageSchema,
   relatedMailQuerySchema,
+  removeMailboxComposeLogoQuerySchema,
   renderComposeSnippetInputSchema,
   searchBackendSchema,
   searchRequestSchema,
@@ -2542,6 +2543,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         200: jsonResponse(mailboxComposeLogoSchema, "Mailbox signature logo"),
         400: jsonResponse(ErrorResponseSchema, "Invalid logo"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        409: jsonResponse(ErrorResponseSchema, "Logo changed"),
         404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
       },
     }),
@@ -2568,12 +2570,17 @@ const mailOperationsApi = new Hono<MailApiContext>()
         200: jsonResponse(mailboxComposeLogoSchema, "Mailbox signature logo"),
         400: jsonResponse(ErrorResponseSchema, "Invalid logo"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        409: jsonResponse(ErrorResponseSchema, "Logo changed"),
         404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
       },
     }),
     v("param", mailboxParamSchema),
+    v("query", removeMailboxComposeLogoQuerySchema),
     async (c) =>
-      respondPublic(c, composeTemplates.removeMailboxComposeLogo({ context: requestContext(c), mailboxId: internalMailboxId(c) })),
+      respondPublic(
+        c,
+        composeTemplates.removeMailboxComposeLogo({ context: requestContext(c), mailboxId: internalMailboxId(c), ...c.req.valid("query") }),
+      ),
   )
   .get("/mailboxes/:mailboxId/compose-style", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, composeTemplates.getMailboxComposeStyle(requestContext(c), internalMailboxId(c))),

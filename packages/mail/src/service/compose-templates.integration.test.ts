@@ -169,6 +169,46 @@ suite("mail compose templates", () => {
     }
   });
 
+  test("stale logo detail edits never restore an administrator's replaced logo", async () => {
+    try {
+      const input = { content: logoPng().toString("base64") };
+      const first = await updateMailboxComposeLogo({ context: owner, mailboxId, input });
+      if (!first.ok || !first.data.logo) throw new Error("Missing first logo");
+      const staleVersion = { expectedVersionId: first.data.logo.versionId };
+      const replacement = await updateMailboxComposeLogo({
+        context: owner,
+        mailboxId,
+        input: { content: logoPng(2).toString("base64"), altText: "New logo" },
+      });
+      expect(replacement.ok).toBe(true);
+      const stale = await updateMailboxComposeLogo({
+        context: owner,
+        mailboxId,
+        input: { ...input, ...staleVersion, altText: "Old logo with edited text", displayWidth: 300 },
+      });
+      expect(stale).toMatchObject({ ok: false, error: { status: 409 } });
+      expect(await getMailboxComposeLogo(owner, mailboxId)).toEqual(replacement);
+      expect(await removeMailboxComposeLogo({ context: owner, mailboxId, ...staleVersion })).toMatchObject({
+        ok: false,
+        error: { status: 409 },
+      });
+      expect(await updateMailboxComposeLogo({ context: owner, mailboxId, input: { ...input, expectedVersionId: null } })).toMatchObject({
+        ok: false,
+        error: { status: 409 },
+      });
+      if (!replacement.ok || !replacement.data.logo) throw new Error("Missing replacement logo");
+      expect(
+        await removeMailboxComposeLogo({ context: owner, mailboxId, expectedVersionId: replacement.data.logo.versionId }),
+      ).toMatchObject({ ok: true });
+      expect(await updateMailboxComposeLogo({ context: owner, mailboxId, input: { ...input, ...staleVersion } })).toMatchObject({
+        ok: false,
+        error: { status: 409 },
+      });
+    } finally {
+      await removeMailboxComposeLogo({ context: owner, mailboxId });
+    }
+  });
+
   test("mailbox logo permissions, validation, previews and removal share the compose contract", async () => {
     let logoSignature: { id: string; revision: number } | null = null;
     try {
