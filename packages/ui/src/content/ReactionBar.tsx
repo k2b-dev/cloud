@@ -73,7 +73,8 @@ export function ReactionBar(props: ReactionBarProps): JSX.Element {
       if (active && active !== document.body && root.contains(active)) return;
       const index = (previous ?? []).indexOf(gone);
       const target = next[Math.min(Math.max(index, 0), next.length - 1)];
-      const chipElement = target === undefined ? null : root.querySelector<HTMLElement>(`button[data-reaction-key="${CSS.escape(target)}"]`);
+      const chipElement =
+        target === undefined ? null : root.querySelector<HTMLElement>(`button[data-reaction-key="${CSS.escape(target)}"]`);
       (chipElement ?? root.querySelector<HTMLElement>(".k2b-reaction-bar__add-button"))?.focus();
     }),
   );
