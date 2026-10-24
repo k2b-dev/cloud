@@ -5,7 +5,7 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-10-22
+updated: 2026-10-23
 ---
 
 # Resource authorization
@@ -14,6 +14,9 @@ The service that reads or changes a resource checks its permission.
 
 Every API route, SSR page, background action, and CLI command should reach the
 same permission-aware service.
+
+For machine inference, [models-only API keys](/en/docs/ai/openai-compatible-api#connect-a-machine-account)
+use the service account's explicit model grants and shared account allowance.
 
 ## Permission levels
 

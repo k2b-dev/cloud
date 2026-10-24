@@ -428,20 +428,20 @@ export const CORE_SETTINGS = {
     label: "OpenAI-compatible API",
     default: false,
     description:
-      "Let people create API keys with the access “AI models only” and call the Assistant models they may use. Checked on every request: turning this off stops existing keys too. Models without reference prices have no usage limit; only the rate limit and the concurrent request limit protect them.",
+      "Let people create personal models-only API keys and administrators issue them to standalone accounts and agents. Keys use only models granted to their account. Checked on every request: turning this off stops existing keys too. Models without reference prices have no usage limit; only the rate limit and the concurrent request limit protect them.",
   },
   // Default 4: one process runs at most 8 chat turns at once (AI_TURN_WORKER_CONCURRENCY in ai/runtime.ts), and this
-  // synchronous API bypasses that queue, so one person may hold at most half of it. Typical clients need 1-2 (one
+  // synchronous API bypasses that queue, so one account may hold at most half of it. Typical clients need 1-2 (one
   // request after another plus a connection test); 4 leaves room for a second client without letting a script in a
   // loop crowd out everyone else. Operators with more provider capacity raise it.
   "ai.openai_api_max_concurrent_requests": {
     kind: "number",
-    label: "OpenAI API concurrent requests per person",
+    label: "OpenAI API concurrent requests per account",
     integer: true,
     min: 1,
     max: 64,
     default: 4,
-    description: "Maximum simultaneous OpenAI-compatible API requests per person across all Cloud instances.",
+    description: "Maximum simultaneous OpenAI-compatible API requests per account across all Cloud instances.",
   },
   // ── PDF rendering ─────────────────────────────────────────────────────
   "gotenberg.url": {

@@ -10,11 +10,12 @@ import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/reque
 import { authenticateModelsOnlyCredential } from "../services/identity/models-only-auth";
 import { coreSettings } from "../services/settings/api";
 import { listAssistantAiModels } from "./assistant-models";
+import { aiModelAccess } from "./model-access";
 import { type OpenAiErrorCode, openAiApiMessages } from "./openai-api-messages";
 import { acquire } from "./openai-api-slots";
 import { personalAiModelPolicy } from "./personal-agent";
 import { PROVIDER_TIMEOUTS } from "./provider";
-import { inferenceProvider } from "./quota-provider";
+import { AiProviderAdmissionError, inferenceProvider } from "./quota-provider";
 import { AiQuotaError } from "./quotas";
 import { resolveAiModel } from "./settings";
 
@@ -70,12 +71,15 @@ const usageBody = (usage: Usage) => ({
   total_tokens: usage.input + usage.output,
 });
 
+class ModelsCredentialRevoked extends AiProviderAdmissionError {}
+
 type Dependencies = {
   limit?: MiddlewareHandler<AuthContext>;
   settings?: Pick<typeof coreSettings, "get">;
   authenticate?: typeof authenticateModelsOnlyCredential;
   listModels?: typeof listAssistantAiModels;
   resolveModel?: typeof resolveAiModel;
+  assertModelAccess?: typeof aiModelAccess.assertAllowed;
   acquire?: typeof acquire;
   inferenceProvider?: typeof inferenceProvider;
   keepaliveMs?: number;
@@ -86,11 +90,13 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
   const authenticate = dependencies.authenticate ?? authenticateModelsOnlyCredential;
   const listModels = dependencies.listModels ?? listAssistantAiModels;
   const resolveModel = dependencies.resolveModel ?? resolveAiModel;
+  const assertModelAccess = dependencies.assertModelAccess ?? aiModelAccess.assertAllowed;
   const acquireSlot = dependencies.acquire ?? acquire;
   const wrapProvider = dependencies.inferenceProvider ?? inferenceProvider;
   const limit = dependencies.limit ?? rateLimit();
   const app = new Hono<AuthContext>();
   app.onError((error, c) => {
+    if (error instanceof ModelsCredentialRevoked) return errorResponse(c, 401, "invalid_api_key", "authentication_error");
     if (error instanceof AiQuotaError && error.code !== "quota_conflict")
       return errorResponse(c, 429, "insufficient_quota", "insufficient_quota");
     if (error instanceof Error && "aiError" in error) {
@@ -115,8 +121,7 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
       const token = c.req.header("Authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
       const credential = await authenticate(token);
       if (!credential) return errorResponse(c, 401, "invalid_api_key", "authentication_error");
-      c.set("user", credential.user);
-      c.set("accessSubject", { type: "user", userId: credential.user.id });
+      c.set("accessSubject", credential.subject);
       c.header("Cache-Control", "no-store");
       await next();
     })
@@ -125,7 +130,7 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
       describeRoute({
         tags: ["AI"],
         summary: "List OpenAI-compatible models",
-        description: "Models-only OpenAI-compatible surface: lists the Assistant chat models this person may use.",
+        description: "Models-only OpenAI-compatible surface: lists the Assistant chat models this account may use.",
       }),
       async (c) => {
         const models = await listModels(c.get("accessSubject"));
@@ -150,7 +155,7 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
         const models = (await listModels(subject)).filter((model) => !model.capabilities.includes("transcription"));
         if (models.length === 0) return errorResponse(c, 404, "model_not_found", "invalid_request_error", "model");
         const slot = await acquireSlot({
-          userId: c.get("user").id,
+          subject,
           limit: await settings.get<number>("ai.openai_api_max_concurrent_requests"),
         });
         if (!slot) {
@@ -230,7 +235,46 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
                     ? { generationConfig: { topP: data.top_p } }
                     : { top_p: data.top_p },
           };
-          const provider: Provider = wrapProvider(resolved.provider, resolved.profile, { kind: "chat", task: "openai-api", subject });
+          const token = c.req.header("Authorization")?.match(/^Bearer\s+(\S+)$/i)?.[1];
+          const credential = await authenticate(token);
+          if (!credential) throw new ModelsCredentialRevoked();
+          // Runs inside quota accounting, after admission and immediately before provider dispatch.
+          const admit = async () => {
+            try {
+              const current = await authenticate(token);
+              if (
+                !current ||
+                current.credentialId !== credential.credentialId ||
+                JSON.stringify(current.subject) !== JSON.stringify(subject)
+              )
+                throw new ModelsCredentialRevoked();
+              await assertModelAccess(resolved.profile.id, subject);
+            } catch (error) {
+              if (error instanceof ModelsCredentialRevoked) throw error;
+              if (error instanceof Error && "aiError" in error)
+                throw Object.assign(new AiProviderAdmissionError(error.message), { aiError: error.aiError });
+              throw new AiProviderAdmissionError("Model admission could not be checked");
+            }
+          };
+          const guarded: Provider = {
+            ...resolved.provider,
+            complete: async (request) => {
+              await admit();
+              if (request.signal?.aborted) throw new AiProviderAdmissionError("Request cancelled before dispatch");
+              return resolved.provider.complete(request);
+            },
+            stream: async function* (request) {
+              await admit();
+              if (request.signal?.aborted) throw new AiProviderAdmissionError("Request cancelled before dispatch");
+              yield* resolved.provider.stream(request);
+            },
+          };
+          const provider: Provider = wrapProvider(guarded, resolved.profile, {
+            kind: "chat",
+            task: "openai-api",
+            subject,
+            credentialId: credential.credentialId,
+          });
           const id = `chatcmpl-${crypto.randomUUID()}`;
           const created = Math.floor(Date.now() / 1000);
           let events: AsyncIterator<StreamEvent> | undefined;
@@ -284,7 +328,12 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
                 await events.return?.();
               }
             } catch (error) {
-              if (error instanceof AiQuotaError) throw error;
+              if (
+                error instanceof AiQuotaError ||
+                error instanceof ModelsCredentialRevoked ||
+                (error instanceof Error && "aiError" in error)
+              )
+                throw error;
               return errorResponse(c, 502, "upstream_error", "api_error");
             } finally {
               controller.abort();
@@ -312,7 +361,8 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
             } finally {
               controller.abort();
             }
-            if (error instanceof AiQuotaError) throw error;
+            if (error instanceof AiQuotaError || error instanceof ModelsCredentialRevoked || (error instanceof Error && "aiError" in error))
+              throw error;
             return errorResponse(c, 502, "upstream_error", "api_error");
           }
           const streamEvents = events;
