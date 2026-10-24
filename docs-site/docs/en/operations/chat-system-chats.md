@@ -90,9 +90,10 @@ reserving two container reads for each possible system-chat summary. Budget
 exhaustion keeps available results and sets `systemUnavailable: true`.
 These candidate bounds mean an older item thread or a container beyond its owner's first matching page can be absent from search.
 
-Existing system-chat summaries include `summaryCursor: ""`: search spends
-its item-reader budget on matching and leaves summary continuation to the
-existing conversation route. Container activity uses General messages and
+When item threads remain, system-chat summaries include `summaryCursor: ""`:
+search spends its item-reader budget on matching and leaves summary continuation
+to the existing conversation route. Empty thread directories are complete and
+return `summaryCursor: null`. Container activity uses General messages and
 readable item candidates. Open a container with no conversation through the
 existing `POST /system-chats/:resourceType/:resourceId/open` route.
 

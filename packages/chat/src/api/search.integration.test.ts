@@ -263,7 +263,7 @@ suite("chat list search", () => {
         expect.objectContaining({
           kind: "system",
           ref: { type: "spaces.space", id: space },
-          conversation: expect.objectContaining({ id: chat.id, summaryCursor: "" }),
+          conversation: expect.objectContaining({ id: chat.id, summaryCursor: null }),
         }),
         { kind: "system", ref: { type: "notebooks.notebook", id: book }, name: "Release notes", conversation: null },
       ]),
