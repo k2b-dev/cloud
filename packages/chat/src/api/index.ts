@@ -575,6 +575,28 @@ const app = new Hono<AuthContext>()
       });
     },
   )
+  .delete(
+    "/conversations/:conversation/attachments/:attachment",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Discard an unsent upload",
+      ...requiresAuth,
+      description:
+        "Deletes the caller's own upload that no message uses yet, so it stops counting toward the 20 unsent files per chat. Repeating it, a sent file and another person's upload answer the same success without changing anything.",
+      responses: {
+        200: jsonResponse(SuccessSchema, "Discarded or already gone"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Chat not found"),
+      },
+    }),
+    validator("param", AttachmentParamSchema, invalidInput),
+    async (c) => {
+      const param = c.req.valid("param");
+      return respond(
+        c,
+        await chatService.attachments.discard({ ...context(c), conversationId: param.conversation, attachmentId: param.attachment }),
+      );
+    },
+  )
   .post(
     "/conversations/:conversation/messages",
     describeRoute({

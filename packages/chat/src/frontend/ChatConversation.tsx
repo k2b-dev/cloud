@@ -26,7 +26,7 @@ import {
   VirtualFeed,
   type VirtualFeedController,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { chatMessages } from "../messages";
 import { type AttachmentView, MAX_ATTACHMENT_BYTES, MAX_MESSAGE_ATTACHMENTS, MAX_MESSAGE_REFS } from "../service/contracts";
 import { isShownImage, rowAttachments } from "./attachment-views";
@@ -122,6 +122,8 @@ export type ChatConversationProps = {
   onSend: (text: string, refs: readonly CloudResourceRef[], attachments: readonly AttachmentView[]) => boolean | Promise<boolean>;
   /** Uploads one file for the next message; without it, nothing can be attached. */
   onUpload?: (file: File, signal: AbortSignal) => Promise<AttachmentView>;
+  /** Deletes an upload the reader removed before sending, so it stops counting toward their unsent files. */
+  onDiscard?: (attachmentId: string) => void;
   /** Reads shared elements for their cards; missing on the server, where cards show their placeholder. */
   cards?: ResourceCards;
   /** "Share a Cloud element" in the composer's add menu: picks one, or null when the reader cancels. */
@@ -164,7 +166,11 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   createEffect(
     on(
       () => props.draftKey ?? props.chatId,
-      () => setShared([]),
+      () => {
+        // Files picked for another thread's draft are not sent there: they are discarded with their chips.
+        for (const attachment of untrack(shared)) if (uploads.has(attachment.id)) discardUpload(attachment.id, uploadOf(attachment)?.view);
+        setShared([]);
+      },
       { defer: true },
     ),
   );
@@ -195,10 +201,23 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   onCleanup(() => {
     for (const id of [...uploads.keys()]) forgetUpload(id);
   });
+  // The composer empties its chips before it hands a message over and puts them back if the message is not sent.
+  // A chip that went away is therefore released one microtask later, and only when no message is being handed over.
+  let submitting = false;
+  const discardUpload = (id: string, view: AttachmentView | undefined) => {
+    forgetUpload(id);
+    if (view) props.onDiscard?.(view.id);
+  };
   const setChips = (next: readonly ChatAttachment[]) => {
     const kept = new Set(next.map((attachment) => attachment.id));
-    for (const id of [...uploads.keys()]) if (!kept.has(id)) forgetUpload(id);
+    const removed = shared().filter((attachment) => uploads.has(attachment.id) && !kept.has(attachment.id));
     setShared(next);
+    if (!removed.length) return;
+    queueMicrotask(() => {
+      if (submitting) return;
+      for (const attachment of removed)
+        if (!shared().some((current) => current.id === attachment.id)) discardUpload(attachment.id, uploadOf(attachment)?.view);
+    });
   };
   const updateChip = (id: string, change: Partial<ChatAttachment>) =>
     setShared((current) => current.map((attachment) => (attachment.id === id ? { ...attachment, ...change } : attachment)));
@@ -608,14 +627,23 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             value={props.draft}
             onValueChange={props.onDraftChange}
             onSubmit={async ({ text, attachments }) => {
-              const states = attachments.map((attachment) => uploadOf(attachment)?.state);
-              if (states.includes("pending") || states.includes("failed")) {
-                toast(states.includes("failed") ? t().attachmentsFailed : t().attachmentsUploading, { iconClass: "ti ti-info-circle" });
-                return false;
+              submitting = true;
+              try {
+                const states = attachments.map((attachment) => uploadOf(attachment)?.state);
+                if (states.includes("pending") || states.includes("failed")) {
+                  toast(states.includes("failed") ? t().attachmentsFailed : t().attachmentsUploading, { iconClass: "ti ti-info-circle" });
+                  return false;
+                }
+                const sent = await props.onSend(text, refsOf(attachments), filesOf(attachments));
+                if (sent) {
+                  // The message holds the files now: their chips and previews go, the stored files stay.
+                  for (const attachment of attachments) forgetUpload(attachment.id);
+                  setShared([]);
+                }
+                return sent;
+              } finally {
+                submitting = false;
               }
-              const sent = await props.onSend(text, refsOf(attachments), filesOf(attachments));
-              if (sent) setChips([]);
-              return sent;
             }}
             attachments={shared()}
             onAttachmentsChange={setChips}

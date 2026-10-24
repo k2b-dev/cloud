@@ -208,6 +208,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   // Uploaded files of the made-up server: bytes and view, like chat.attachments; the next uploads can fail.
   const uploads = new Map<string, { view: AttachmentView; bytes: ArrayBuffer }>();
   let failingUploads = 0;
+  const discarded: string[] = [];
   let failingSystems = 0;
   let systemThreadPageSize = 100;
   const systemRequests: { path: string; query: Record<string, string> }[] = [];
@@ -1458,6 +1459,11 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
           uploads.set(attachment, { view, bytes: await file.arrayBuffer() });
           return Response.json(view, { status: 201 });
         }
+        if (part === "attachments" && request.method === "DELETE" && accessId) {
+          discarded.push(accessId);
+          uploads.delete(accessId);
+          return Response.json({ success: true });
+        }
         if (part === "attachments" && request.method === "GET" && accessId) {
           const stored = uploads.get(accessId);
           return stored
@@ -1726,6 +1732,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     failShared: (times = 1) => {
       failingShared = times;
     },
+    /** Uploads the reader removed before sending, as the server was asked to discard them. */
+    discarded,
     /** The next uploads fail. */
     failUploads: (times = 1) => {
       failingUploads = times;
@@ -1738,6 +1746,9 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     readElsewhere: read,
     /** Isolates scenarios; IDs stay unique so a closing page cannot report against a later chat. */
     reset: () => {
+      uploads.clear();
+      discarded.length = 0;
+      failingUploads = 0;
       collapsed = [];
       allowAuthenticated = true;
       chats.clear();

@@ -320,6 +320,11 @@ Message and conversation deletion also delete their attachments.
 3. Read bytes with `GET /api/chat/conversations/:conversation/attachments/:attachment`.
    The caller needs current message visibility. Before sending, only the
    uploader can download the file. Unavailable attachments return 404.
+4. Discard an upload removed before sending with
+   `DELETE /api/chat/conversations/:conversation/attachments/:attachment`. Only
+   the uploader's own unsent file is deleted, so it stops counting toward the
+   pending limit; a sent file or another person's upload stays, and every
+   answer is `{ "success": true }`.
 
 Each file is limited to 10 MiB, with 20 pending uploads per access subject per
 conversation (409 `ATTACHMENT_LIMIT`). Uploads are limited to 20 per subject

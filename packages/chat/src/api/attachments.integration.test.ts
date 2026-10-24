@@ -236,6 +236,34 @@ suite("Chat message attachments", () => {
     expect((await download(owner, chat.shortId, first.id)).status).toBe(404);
   });
 
+  test("discard deletes only the caller's own unsent upload and answers the same for everything else", async () => {
+    const owner = await f.person(),
+      other = await f.person();
+    const chat = await f.fixture(owner, [{ person: other, permission: "write" }]);
+    const removed = await uploaded(owner, chat.shortId),
+      kept = await uploaded(owner, chat.shortId),
+      foreign = await uploaded(other, chat.shortId);
+    await send(owner, chat.shortId, { attachments: [kept.id] });
+    const discard = (person: Person, attachment: string) =>
+      f.request(person.headers, `/${chat.shortId}/attachments/${attachment}`, "DELETE");
+    for (const [person, attachment] of [
+      [owner, removed.id],
+      [owner, removed.id],
+      [owner, kept.id],
+      [owner, foreign.id],
+      [other, kept.id],
+    ] as const) {
+      const response = await discard(person, attachment);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ success: true });
+    }
+    const left = await sql<{ short_id: string }[]>`SELECT short_id FROM chat.attachments
+      WHERE short_id = ANY(${toPgTextArray([removed.id, kept.id, foreign.id])}::text[]) ORDER BY short_id`;
+    expect(left.map((row) => row.short_id).sort()).toEqual([kept.id, foreign.id].sort());
+    expect((await download(owner, chat.shortId, removed.id)).status).toBe(404);
+    expect((await discard(await f.person(), removed.id)).status).toBe(404);
+  });
+
   test("concurrent sends cannot reuse one upload and concurrent uploads respect the pending cap", async () => {
     const owner = await f.person(),
       chat = await f.fixture(owner);

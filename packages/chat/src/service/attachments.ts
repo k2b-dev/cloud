@@ -158,4 +158,26 @@ const download = async (input: Input & { attachmentId: string }) => {
   );
   return ok({ attachment: projectAttachment(row, input.conversationId), stream });
 };
-export const attachments = { upload, download };
+/**
+ * Deletes an upload its uploader removed before sending, so it no longer counts toward their unsent files. Anything
+ * else, a sent file or someone else's upload included, answers as already gone; nobody learns that it exists.
+ */
+const discard = async (input: Input & { attachmentId: string }): Promise<Result<{ success: true }>> => {
+  const allowed = await requireConversation({ ...input, required: "read" });
+  if (!allowed.ok) return allowed;
+  const subject = subjectPrincipal(input.accessSubject);
+  const deleted = await sql<{ short_id: string }[]>`DELETE FROM chat.attachments
+    WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${input.attachmentId} AND message_id IS NULL
+      AND uploader_type = ${subject.type} AND uploader_id = ${subject.id}::uuid
+    RETURNING short_id`;
+  if (deleted.length)
+    await audit.record({
+      action: "chat.attachment.discard",
+      outcome: "allowed",
+      actor: auditActor(input.actor),
+      target: { type: "chat_conversation", id: input.conversationId },
+      metadata: { attachmentId: input.attachmentId, requestId: input.requestId },
+    });
+  return ok({ success: true });
+};
+export const attachments = { upload, download, discard };

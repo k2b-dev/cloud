@@ -143,10 +143,15 @@ export const createChatSendsApi = () => {
   };
 };
 
-/** Uploads one file for the next message of a chat, into its open thread when it has one. */
+/** Uploads one file for the next message of a chat, into its open thread when it has one, and discards one removed. */
 export const createAttachmentUpload = () => {
   const client = createApiClient<ApiType>({ baseUrl: "/api/chat" });
-  return async (conversationId: string, thread: string | null, file: File, signal: AbortSignal): Promise<AttachmentView> => {
+  const discard = async (conversationId: string, attachmentId: string) => {
+    await client.conversations[":conversation"].attachments[":attachment"].$delete({
+      param: { conversation: conversationId, attachment: attachmentId },
+    });
+  };
+  const upload = async (conversationId: string, thread: string | null, file: File, signal: AbortSignal): Promise<AttachmentView> => {
     const response = await client.conversations[":conversation"].attachments.$post(
       { param: { conversation: conversationId }, form: { file, ...(thread ? { thread } : {}) } },
       { init: { signal } },
@@ -154,4 +159,5 @@ export const createAttachmentUpload = () => {
     if (!response.ok) throw new Error(`Chat upload failed (${response.status})`);
     return AttachmentViewSchema.parse(await response.json());
   };
+  return { upload, discard };
 };

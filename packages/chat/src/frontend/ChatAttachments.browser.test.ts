@@ -73,21 +73,20 @@ describe("Chat attachments", () => {
         const retry = composer.getByRole("button", { name: "Try again" });
         await retry.waitFor();
         await page.locator(".k2b-chat-composer textarea").fill("Here is the plan");
-        await page.keyboard.press("Enter");
+        await page.getByRole("button", { name: "Send message" }).click();
         await page.locator(".k2b-toast", { hasText: "A file could not be uploaded. Try again or remove it." }).waitFor();
         expect(await page.locator(".k2b-chat-composer textarea").inputValue()).toBe("Here is the plan");
         expect(harness.posted).toEqual([]);
         await retry.click();
         await retry.waitFor({ state: "detached" });
-        await page.locator(".k2b-chat-composer textarea").focus();
-        await page.keyboard.press("Enter");
+        await page.getByRole("button", { name: "Send message" }).click();
         await until(() => harness.posted.length === 1);
         // Both uploads ran at once; whichever failed first got the later ID when it was tried again.
         expect(harness.posted[0]?.body).toBe("Here is the plan");
         expect([...(harness.posted[0]?.attachments ?? [])].sort()).toEqual(["A00001", "A00002"]);
         const row = page.locator(".k2b-message-row[data-own]", { hasText: "Here is the plan" });
         // The image reserves its area from the stored size; the document names its kind and size.
-        const image = row.locator("img[alt='lager.png']");
+        const image = row.getByRole("button", { name: "lager.png", exact: true });
         await image.waitFor();
         const box = await image.boundingBox();
         expect(box && Math.round((box.width / box.height) * 100)).toBe(133);
@@ -108,6 +107,24 @@ describe("Chat attachments", () => {
     }, 30_000);
   }
 
+  test("removing an uploaded file discards it on the server; a rejected send keeps the upload and its retry", async () => {
+    const chat = harness.addChat({ members: [viewer, nora], count: 2, end: new Date(chatTestNow.getTime() - 3_600_000) });
+    const { page, errors } = await load(desktop, chat);
+    try {
+      await paste(page, [{ name: "notes.txt", type: "text/plain", text: "notes" }]);
+      const composer = page.locator(".k2b-chat-composer");
+      await composer.getByText("notes.txt").waitFor();
+      // The chip shows a spinner while it uploads; the stored upload is what removing discards.
+      await composer.locator(".animate-spin").waitFor({ state: "detached" });
+      await composer.getByRole("button", { name: /Remove notes\.txt/ }).click();
+      await until(() => harness.discarded.length === 1);
+      expect(harness.discarded).toEqual(["A00001"]);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("Shared lists images as a grid and documents as rows, each opening its message", async () => {
     const chat = harness.addChat({ members: [viewer, nora], count: 2, end: new Date(chatTestNow.getTime() - 3_600_000) });
     const { page, errors } = await load(desktop, chat);
@@ -117,8 +134,7 @@ describe("Chat attachments", () => {
         { name: "Raumplan.pdf", type: "application/pdf", text: "%PDF-1.4 plan" },
       ]);
       await page.locator(".k2b-chat-composer").getByText("Raumplan.pdf").waitFor();
-      await page.locator(".k2b-chat-composer textarea").focus();
-      await page.keyboard.press("Enter");
+      await page.getByRole("button", { name: "Send message" }).click();
       await until(() => harness.posted.length === 1);
       await page
         .getByRole("link", { name: /Chat info/ })

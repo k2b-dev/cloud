@@ -1447,7 +1447,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [reply, setReply] = createSignal<ChatFeedItem | null>(null);
   const replies = new Map<string, ChatFeedItem | null>();
   // A message that only shares Cloud elements has no text.
-  const uploadAttachment = createAttachmentUpload();
+  const uploads = createAttachmentUpload();
   const send = async (
     text: string,
     refs: readonly CloudResourceRef[] = [],
@@ -2194,8 +2194,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         draft={draft()}
                         onDraftChange={changeDraft}
                         onSend={send}
+                        // A discard that fails leaves the file to the nightly cleanup of unsent uploads (24 hours).
+                        onDiscard={(attachment) => void uploads.discard(current().id, attachment).catch(() => {})}
                         onUpload={(file, signal) =>
-                          uploadAttachment(
+                          uploads.upload(
                             current().id,
                             openChat()?.view && !["all", "general"].includes(openChat()!.view) ? openChat()!.view : null,
                             file,
