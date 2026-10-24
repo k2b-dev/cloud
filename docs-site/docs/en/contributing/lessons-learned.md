@@ -1122,6 +1122,13 @@ convention still needs a check or a test.
 - **Error class:** A repository guard rejects a supported consumer override.
 - **Guard:** `scripts/checks/css.test.ts` permits independent overrides of declared UI tokens and still rejects duplicate application-owned properties and unknown UI tokens.
 
+### Browser fixtures must load module-aware dependencies as modules
+
+- **What happened:** Three Assistant WebKit fixtures never mounted after map consumers joined their dependency graph.
+- **Root cause:** The bundled map worker loader retains `import.meta`, but the fixtures loaded the bundle as a classic script. WebKit rejected it before rendering.
+- **Error class:** A browser fixture uses the wrong JavaScript loading mode.
+- **Guard:** The activities, sidebar and waiting-strip browser suites load their bundles as modules and retain their rendering and layout assertions without changing timeouts.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its

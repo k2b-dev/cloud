@@ -161,7 +161,7 @@ const open = async (conversations: AiConversation[], width = 1280): Promise<Page
   await page.route("http://assistant.test/", (route) => route.fulfill({ body: html, contentType: "text/html" }));
   await page.goto("http://assistant.test/");
   page.setDefaultTimeout(4000);
-  await page.addScriptTag({ content: script });
+  await page.addScriptTag({ type: "module", content: script });
   await page
     .locator(width > 1024 ? ".assistant-chat-sidebar-item" : "#menu .k2b-navigation__row")
     .first()

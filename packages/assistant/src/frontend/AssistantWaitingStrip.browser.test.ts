@@ -360,7 +360,7 @@ const open = async (
           `<!doctype html><html lang="${state.locale}" class="${options.theme ?? "light"}"><head><meta charset="utf-8">` +
           `<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
           `<body class="k2b-ui" style="margin:0"><div style="${column}">${inner}</div>` +
-          `<script>window.harness = ${JSON.stringify(harness).replace(/</g, "\\u003c")};</script><script src="/harness.js"></script></body></html>`,
+          `<script>window.harness = ${JSON.stringify(harness).replace(/</g, "\\u003c")};</script><script type="module" src="/harness.js"></script></body></html>`,
       });
     }
     if (url.pathname === "/api/assistant/workspace/sidebar") {
