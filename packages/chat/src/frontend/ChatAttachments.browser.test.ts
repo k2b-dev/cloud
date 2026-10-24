@@ -79,7 +79,7 @@ describe("Chat attachments", () => {
         expect(harness.posted).toEqual([]);
         await retry.click();
         await retry.waitFor({ state: "detached" });
-        // The notice can cover the send button; it leaves on its own.
+        // The notice can cover the send button (#1913); it leaves on its own.
         await page.locator(".k2b-toast", { hasText: "A file could not be uploaded." }).waitFor({ state: "detached", timeout: 15_000 });
         await page.getByRole("button", { name: "Send message" }).click();
         await until(() => harness.posted.length === 1);
