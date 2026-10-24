@@ -1,5 +1,5 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
-import { AppWorkspace, createNavigation, type NavigationItem, Placeholder, useLocale } from "@k2b/ui";
+import { AppWorkspace, Button, createNavigation, type NavigationItem, NoticeCard, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import type { SidebarTreeState } from "../../../../lib/sidebar-tree";
@@ -176,6 +176,14 @@ export default function BookNavigator(props: BookNavigatorProps) {
         )}
       </Show>
       <AppWorkspace.SidebarSection title={t().notes}>
+        {/* A level that could not load says so, and Retry reads every open level again. */}
+        <Show when={tree.error()}>
+          <NoticeCard role="alert" tone="danger" title={t().navigationFailed}>
+            <Button variant="secondary" size="xs" onClick={() => void tree.refresh().catch(() => undefined)}>
+              {t().retry}
+            </Button>
+          </NoticeCard>
+        </Show>
         <Show
           when={(tree.level(null)?.total ?? 0) > 0}
           fallback={<Placeholder variant="inline" align="left" icon="ti ti-file-text" description={t().empty} />}
@@ -275,6 +283,9 @@ export default function BookNavigator(props: BookNavigatorProps) {
     switcher,
     items: () => [
       ...[workspaceEntry()].flatMap((entry) => (entry ? [{ id: "workspace", ...entry }] : [])),
+      ...(tree.error()
+        ? [{ id: "retry", label: t().retry, description: t().navigationFailed, icon: "ti ti-refresh", action: "retry" }]
+        : []),
       { id: "notes", label: t().notes, children: levelEntries(null) },
       ...(state().tags.length
         ? [
@@ -298,6 +309,10 @@ export default function BookNavigator(props: BookNavigatorProps) {
       if (action.startsWith("more:") || action.startsWith("earlier:")) {
         const parentId = action.slice(action.indexOf(":") + 1) || null;
         await (action.startsWith("more:") ? tree.showMore(parentId) : tree.showEarlier(parentId)).catch(() => undefined);
+        return;
+      }
+      if (action === "retry") {
+        await tree.refresh().catch(() => undefined);
         return;
       }
       if (action.startsWith("open:")) openReadingPage(action.slice("open:".length));

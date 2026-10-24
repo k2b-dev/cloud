@@ -98,6 +98,13 @@ export const readLevel = async (params: {
         >`${selectEntries} WHERE n.notebook_id = ${params.notebookId}::uuid AND n.parent_id = ${params.parentId}::uuid`;
   let entries = rows.map(toEntry);
   if (params.book && params.homepageId) {
+    // The page the start page left keeps a branch only if it has other sub-pages.
+    const [lone] = await sql<{ parent_id: string }[]>`
+      SELECT home.parent_id FROM notebooks.notes home
+      WHERE home.id = ${params.homepageId}::uuid AND home.parent_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM notebooks.notes sibling WHERE sibling.parent_id = home.parent_id AND sibling.id <> home.id)
+    `;
+    if (lone) entries = entries.map((entry) => (entry.id === lone.parent_id ? { ...entry, hasChildren: false } : entry));
     if (params.parentId !== null) entries = entries.filter((entry) => entry.id !== params.homepageId);
     else if (!entries.some((entry) => entry.id === params.homepageId)) {
       const [home] = await sql<DbTreeEntry[]>`
