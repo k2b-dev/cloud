@@ -25,7 +25,7 @@ import {
 import type { AccountsNotificationSender } from "./notification-sender";
 import { transitionIpaUserToLocal } from "./switching";
 
-export { clearAvatar, getAvatar, parseAvatarDataUrl, setAvatar } from "./avatar";
+export { clearAvatar, getAvatar, getAvatarState, parseAvatarDataUrl, setAvatar, updateAvatar } from "./avatar";
 
 type DbRow = Record<string, unknown>;
 type UserMutationTarget = BaseUser & { accountExpires: string | null; storedAdmin: boolean };
