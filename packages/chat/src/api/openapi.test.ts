@@ -38,6 +38,7 @@ test("publishes every conversation operation with typed request and response sch
   const spec = SpecSchema.parse(await generateSpecs(app));
   for (const [path, method] of [
     ["/people", "get"],
+    ["/search", "get"],
     ["/channels", "get"],
     ["/channels/options", "get"],
     ["/channels/preview", "post"],
@@ -266,4 +267,27 @@ test("reactions document read projection, empty writes and stable budget errors"
     expect(JSON.stringify(op?.responses["409"])).toContain("REACTION_MESSAGE_LIMIT");
     expect(JSON.stringify(op?.responses["204"])).not.toContain("content");
   }
+});
+
+test("search documents the required bounded query, eight-hit response and partial owner failure", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const operation = spec.paths["/api/chat/search"]?.get;
+  expect(operation?.responses["400"]).toBeDefined();
+  expect(operation?.responses["429"]).toBeDefined();
+  const params = z.array(z.object({ name: z.string(), in: z.string(), required: z.boolean().optional() })).parse(operation?.parameters);
+  expect(params).toContainEqual({ name: "q", in: "query", required: true });
+  const response = z
+    .object({
+      content: z.object({
+        "application/json": z.object({
+          schema: z.object({
+            required: z.array(z.string()),
+            properties: z.object({ items: z.object({ maxItems: z.number() }), systemUnavailable: z.unknown() }),
+          }),
+        }),
+      }),
+    })
+    .parse(operation?.responses["200"]);
+  expect(response.content["application/json"].schema.required).toEqual(["items"]);
+  expect(response.content["application/json"].schema.properties.items.maxItems).toBe(8);
 });

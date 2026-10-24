@@ -77,6 +77,7 @@ import {
 } from "../service/contracts";
 import { chatLive } from "../service/live";
 import { chatLiveChannels } from "../service/live-channels";
+import { SearchQuerySchema, SearchResultSchema } from "../service/search-contracts";
 
 const invalidInput = (c: Context) => ({ code: "BAD_INPUT", message: chatMessages.resolve([getLocale(c)]).t.invalidInput });
 const audienceUnavailableResponse = jsonResponse(
@@ -141,6 +142,24 @@ const app = new Hono<AuthContext>()
         c,
         chatService.personal.update({ ...context(c), conversationId: c.req.valid("param").conversation, input: c.req.valid("json") }),
       ),
+  )
+  .get(
+    "/search",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Search your chats, subscribed channels, containers and named threads",
+      ...requiresAuth,
+      description:
+        "Trim q to 1–100 characters. Returns at most eight literal, case-insensitive name matches: exact, prefix, word, then substring; recent activity breaks ties. Archived chats sort last. Owner lists receive the text filter and a 100-container limit each. Item names come from authorized readers on the 100 most recently active system threads. Existing system summaries have summaryCursor: empty string. Owner failures retain other results and set systemUnavailable: true. Uses the standard list request limiter and cancels further work on disconnect.",
+      responses: {
+        200: jsonResponse(SearchResultSchema, "Ranked hits with optional system-search failure"),
+        400: jsonResponse(z.object({ code: z.literal("BAD_INPUT"), message: z.string() }), "Invalid search query"),
+        429: jsonResponse(z.object({ message: z.string() }), "Request rate limit reached"),
+      },
+    }),
+    validator("query", SearchQuerySchema, invalidInput),
+    async (c) => respond(c, chatService.search({ ...context(c), query: c.req.valid("query") })),
   )
   .get(
     "/system-chats",

@@ -7,6 +7,7 @@ import { messages } from "./messages";
 import { personal } from "./personal";
 import { reactions } from "./reactions";
 import { readState } from "./read-state";
+import { search } from "./search";
 import { shared } from "./shared";
 import { systemChats } from "./system-chats";
 import { threads } from "./threads";
@@ -45,7 +46,19 @@ const health = async (): Promise<ChatHealth> => {
   return { status, observedAt: new Date().toISOString(), database: { status, latencyMs } };
 };
 
-export const chatService = { health, channels, conversations, messages, reactions, readState, personal, threads, shared, systemChats };
+export const chatService = {
+  search,
+  health,
+  channels,
+  conversations,
+  messages,
+  reactions,
+  readState,
+  personal,
+  threads,
+  shared,
+  systemChats,
+};
 
 export type ChatService = typeof chatService;
 
