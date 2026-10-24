@@ -27,7 +27,7 @@ convention still needs a check or a test.
 | A passive read outlives a newer view action | A delayed status response closes a scanner opened after the poll began. | Test: App-PWA browser regression holds a poll, opens the scanner and delivers the obsolete response. |
 | A stale poll overwrites a newer action | A late device status replaces the next pairing and discards its QR. | Test: the App-PWA example `Staff.test.ts` delays device A, issues B, delivers A and then confirms B; only B may clear its QR. |
 | A focused fixture performs unrelated startup or expensive data preparation | Route tests spend their budget importing unrelated services or compressing fixtures at maximum quality. | Tests: Gateway App-PWA routing fixtures isolate configuration/audit modules; the Brotli response fixture uses quality 4 while retaining original timeout bounds and response assertions. |
-| Transaction adapter loses driver execution semantics | Lazy query arrays are returned without executing their writes. | Test: App-PWA savepoint unit and integration guards cover array execution and rollback. |
+| Transaction adapter loses driver execution semantics | Lazy query arrays are returned without executing their writes, or closing a connection rejects an unobserved lazy query. | Test: App-PWA savepoint unit and integration guards cover array execution and rollback. |
 | Driver parameter encoding differs from the stored domain shape | Serialized JSON becomes a JSON string and plain UUID arrays fail binding. | Test: App-PWA service integration round-trips subjects, results and device lists; bind serialized JSON through text and use typed SQL arrays. |
 | A test gate reads a navigating frame instead of its requested resource | WebKit can still report the initial frame URL and bypass the intended delay. | Test: `ChatPanel.browser.test.ts` gates a provider-marked runtime URL and asserts interception before checking readiness. |
 | A formatter exposes ambiguous generic TSX syntax | Removing the trailing comma from a generic arrow with a default type makes the Solid/Babel test transform parse it as JSX. | Test: `PermissionEditor.behavior.test.tsx` runs through the actual Solid DOM preload; use a generic function declaration for the deferred helper and run the test after formatting. |
@@ -1053,10 +1053,10 @@ convention still needs a check or a test.
 
 ### Preserve lazy SQL array execution in transaction adapters
 
-- **What happened:** A savepoint could report success without executing the queries returned in its callback array.
-- **Root cause:** The guarded adapter awaited the callback but did not assimilate the array's lazy Bun queries before release.
+- **What happened:** A savepoint could report success without executing its returned query array; cancellation could surface an unhandled rejection from an unstarted query.
+- **Root cause:** The adapter did not assimilate returned query arrays. Bun also rejects unstarted reserved queries on connection close; their native promises need a rejection observer that does not execute SQL.
 - **Error class:** Transaction adapter loses driver execution semantics.
-- **Guard:** App-PWA transaction unit and PostgreSQL integration tests require array writes to execute before release and roll back together on failure.
+- **Guard:** App-PWA transaction unit and PostgreSQL tests require array execution before release, grouped rollback, no late writes and handled cancellation of unstarted queries. Explicit abort must deliver server cancellation; expiry may be enforced first by PostgreSQL’s bounded statement timeout.
 ### A frame URL did not identify a pending script request
 
 - **What happened:** The delayed PanelRuntime test sometimes observed an already ready panel in WebKit ([#1833](https://github.com/k2b-dev/cloud/issues/1833)).
