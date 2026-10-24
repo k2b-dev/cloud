@@ -41,9 +41,9 @@ import type { SqlClient } from "./audit";
 import { logAudit } from "./audit";
 import { parseJsonbRow } from "./jsonb";
 import { insertWithShortIdForDb } from "./short-id";
-import { canExecuteWorkflow } from "./workflow-action-scope";
 import { lockWorkflowCatalogMutation } from "./workflow-catalog-mutation";
 import { workflowConflict } from "./workflow-errors";
+import { canExecuteWorkflow } from "./workflow-execution-authorization";
 import { getWorkflow } from "./workflow-read";
 import { workflowServiceText } from "./workflow-service-messages";
 

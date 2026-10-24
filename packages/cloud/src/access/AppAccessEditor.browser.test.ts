@@ -133,6 +133,7 @@ describe("App access through real browser controls and same-origin transport", (
           search: "Lea",
           kinds: "user,group,service_account",
           per_page: "10",
+          service_account_status: "active",
           exclude_user_ids: transport.state.entries
             .flatMap((entry) => (entry.principal.type === "user" ? [entry.principal.userId] : []))
             .join(","),
