@@ -8,7 +8,7 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { chatService } from "../service";
 import { ConversationSchema, ThreadSchema } from "../service/contracts";
-import { conversationSearchTitle } from "../service/conversations";
+import { conversationSearchTitle } from "../service/conversation-titles";
 import { accessKey, type ResourceReaderDependencies, resourceReaderDependencies } from "../service/resource-access";
 import { SearchResultSchema } from "../service/search-contracts";
 import { READER_REQUEST_BUDGET } from "../service/thread-access";

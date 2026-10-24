@@ -81,7 +81,7 @@ describe("For you", () => {
       seed();
       const { page, errors } = await load(options, {});
       try {
-        await expect(forYouRow(page).innerText()).resolves.toContain("1");
+        expect(await forYouRow(page).innerText()).toContain("1");
         await forYouRow(page).click();
         await page.waitForURL("**/app/chat/for-you");
         const section = page.getByRole("region", { name: "For you" });
