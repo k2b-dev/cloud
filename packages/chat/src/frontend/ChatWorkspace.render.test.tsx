@@ -18,6 +18,7 @@ const { default: ChatWorkspace } = await import("./ChatWorkspace.island");
 const now = "2026-10-12T10:30:00.000Z";
 const viewerId = "11111111-1111-4111-8111-111111111111";
 const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
+  threads: 0,
   id: "Chat01",
   name: "Delivery board",
   title: "Delivery board",
@@ -39,6 +40,8 @@ const props = (): ChatWorkspaceProps => ({
   sidebar: { items: [], nextCursor: null },
   open: null,
   chatId: null,
+  view: "all",
+  threadsPage: false,
   guest: false,
   panel: null,
   viewerId,
@@ -71,6 +74,7 @@ describe("ChatWorkspace server render", () => {
           id: "Chat01",
           title: "Own last message",
           lastMessage: {
+            thread: null,
             id: "Chat010001",
             author: { type: "user", id: viewerId, name: "Robin" },
             preview: "Sent the invoice",
@@ -85,6 +89,7 @@ describe("ChatWorkspace server render", () => {
           withGuests: false,
           peerDeactivated: false,
           lastMessage: {
+            thread: null,
             id: "Chat020001",
             author: { type: "user", id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" },
             preview: "Arriving soon",
@@ -96,6 +101,7 @@ describe("ChatWorkspace server render", () => {
           id: "Chat03",
           title: "Group chat",
           lastMessage: {
+            thread: null,
             id: "Chat030001",
             author: { type: "user", id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" },
             preview: "Bring photos",
@@ -122,15 +128,23 @@ describe("ChatWorkspace server render", () => {
       test(`open ${permission} chat header and composer in ${locale}`, () => {
         const data = props();
         data.chatId = conversation.id;
-        data.open = { conversation: { ...conversation, permission }, page: { items: [], seqHead: 0, rev: 1 }, focus: null };
+        data.open = {
+          conversation: { ...conversation, permission },
+          page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+          threads: { general: { unread: 0, lastMessage: null }, items: [] },
+          focus: null,
+        };
         const html = render(locale, data);
         expect(html).toContain(conversation.title);
         expect(html).toContain(t.members({ count: 3 }));
-        expect(html).toContain(`placeholder="${t.composerPlaceholder({ title: conversation.title })}"`);
+        // Readers get a quiet line in the composer's place instead of a field they cannot use.
         if (permission === "read") {
-          expect(html).toMatch(/<textarea[^>]*disabled/);
-          expect(html).toContain(t.readOnly);
-        } else expect(html).not.toContain(t.readOnly);
+          expect(html).not.toContain("<textarea");
+          expect(html).toContain(t.readOnlyIn({ title: conversation.title }));
+        } else {
+          expect(html).toContain(`placeholder="${t.composerPlaceholder({ title: conversation.title })}"`);
+          expect(html).not.toContain(t.readOnlyIn({ title: conversation.title }));
+        }
       });
     }
     test(`no access reveals neither chat title nor address identifier in ${locale}`, () => {
@@ -149,7 +163,12 @@ test("the panel renders the same authorized chat with internal links and an expl
     embedded: true,
     sidebar: { items: [conversation], nextCursor: null },
     chatId: conversation.id,
-    open: { conversation, page: { items: [], seqHead: 0, rev: 1 }, focus: null },
+    open: {
+      conversation,
+      page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+      threads: { general: { unread: 0, lastMessage: null }, items: [] },
+      focus: null,
+    },
   });
   expect(html).toContain('href="/app/chat/panel/c/Chat01"');
   expect(html).toContain('href="/app/chat/panel"');
@@ -157,4 +176,23 @@ test("the panel renders the same authorized chat with internal links and an expl
   expect(html).toContain("Open full view");
   expect(html).toMatch(/<textarea[^>]*disabled/);
   expect(html).toContain(conversation.title);
+});
+
+test("the panel keeps a chat's threads below the panel route; the full view opens the same thread", () => {
+  const html = render("en", {
+    ...props(),
+    embedded: true,
+    sidebar: { items: [{ ...conversation, threads: 1 }], nextCursor: null },
+    chatId: conversation.id,
+    view: "general",
+    open: {
+      conversation: { ...conversation, threads: 1 },
+      page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+      threads: { general: { unread: 0, lastMessage: null }, items: [] },
+      focus: null,
+    },
+  });
+  expect(html).toContain('href="/app/chat/panel/c/Chat01/threads"');
+  expect(html).toContain('href="/app/chat/c/Chat01/t/general"');
+  expect(html).not.toContain('href="/app/chat/c/Chat01/threads"');
 });

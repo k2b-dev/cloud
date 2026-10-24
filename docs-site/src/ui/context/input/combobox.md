@@ -77,7 +77,8 @@ into its neighbour; devices without a touch screen keep the compact results.
 Use the shared `label`, `description`, reactive `error`, `required`, and
 `disabled` properties for field semantics. When surrounding UI already names
 the control, provide the native `"aria-label"` property. A placeholder is not
-a persistent label.
+a persistent label. A placeholder, or a query in a field without focus, that is
+wider than the field ends in an ellipsis.
 
 ## Runtime
 

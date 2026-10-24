@@ -10,6 +10,9 @@ const CONTROLS = new Set(["Button", "ButtonLink", "IconButton", "IconButtonLink"
 const OVERRIDE =
   /^(?:[\w-]+:)*(?:text-(?:xs|sm|base|lg|\[[^\]]*\])|opacity-\S+|(?:bg|text|border)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\S+)$/;
 
+// A control glyph has its own legible size; arbitrary colour utilities remain forbidden.
+const ICON_SIZE = /^(?:[\w-]+:)*text-(?:xs|sm|base|lg|\[(?:\d+(?:\.\d+)?|\.\d+)(?:px|rem|em)\])$/;
+
 const tagName = (node: ts.Node): string | undefined => {
   if (ts.isJsxElement(node)) return node.openingElement.tagName.getText();
   if (ts.isJsxSelfClosingElement(node)) return node.tagName.getText();
@@ -49,10 +52,11 @@ export const rule: Rule = {
       const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
       const lineOf = (node: ts.Node) => sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
 
-      const visit = (node: ts.Node, inNotice: boolean, inControl: boolean): void => {
+      const visit = (node: ts.Node, inNotice: boolean, inControl: boolean, inControlIcon: boolean): void => {
         const tag = tagName(node);
         const notice = inNotice || tag === "NoticeCard";
         const control = inControl || (tag !== undefined && CONTROLS.has(tag));
+        const controlIcon = tag === undefined ? inControlIcon : control && tag === "i";
         if (notice && tag === "i" && !control) {
           findings.push({
             file,
@@ -61,7 +65,9 @@ export const rule: Rule = {
           });
         }
         if (notice && ts.isJsxAttribute(node) && node.initializer && ["class", "bodyClass"].includes(node.name.getText())) {
-          const overrides = classTokens(node.initializer).filter((token) => OVERRIDE.test(token));
+          const overrides = classTokens(node.initializer).filter(
+            (token) => OVERRIDE.test(token) && !(controlIcon && ICON_SIZE.test(token)),
+          );
           if (overrides.length > 0) {
             findings.push({
               file,
@@ -70,9 +76,9 @@ export const rule: Rule = {
             });
           }
         }
-        ts.forEachChild(node, (child) => visit(child, notice, control));
+        ts.forEachChild(node, (child) => visit(child, notice, control, controlIcon));
       };
-      visit(sourceFile, false, false);
+      visit(sourceFile, false, false, false);
     }
     return findings;
   },

@@ -1,8 +1,11 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "notebooks",
+  access: appAccess.signedIn({
+    publicRoutes: ["/api/notebooks/openapi.json"],
+  }),
   cli: { notebooks: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Notebooks",
   icon: "ti ti-note",

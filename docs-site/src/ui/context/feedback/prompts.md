@@ -334,7 +334,7 @@ type OpenDialogOptions = {
   signal?: AbortSignal; panelClassName?: string; contentClassName?: string;
   initialFocus?: "first-input" | "none" | ((dialog: HTMLDialogElement) => HTMLElement | null);
   cancelBehavior?: "resolve-undefined" | "ignore"; ariaLabel?: string;
-  history?: boolean;
+  history?: boolean; role?: "dialog" | "alertdialog"; ariaDescribedBy?: string;
 };
 
 type DialogRender<T> = (
@@ -353,6 +353,11 @@ type DialogCore = {
   close: (result?: unknown) => void; isOpen: () => boolean;
 };
 ```
+
+Use `role: "alertdialog"` for a consequential confirmation that requires a
+response. Pass `ariaDescribedBy` with the ID of its consequence text so assistive
+technology announces it when the dialog opens. Ordinary dialogs keep the default
+`dialog` role. Both are labelled by their heading unless `ariaLabel` supplies a name.
 
 `dialogCore.open` resolves when that dialog closes. Escape/backdrop resolves
 `undefined` by default; `cancelBehavior="ignore"` disables those dismissals.
