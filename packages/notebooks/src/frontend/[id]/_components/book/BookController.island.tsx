@@ -106,7 +106,8 @@ export default function BookController(props: Props) {
       : null;
     // A focused page button keeps focus through the new HTML, and a paged list never gets shorter, so turning pages or
     // a live change moves nothing.
-    const pagerButton = !navigating && focused instanceof HTMLButtonElement && article.contains(focused) ? focused : null;
+    const pagerButton =
+      !navigating && focused instanceof HTMLElement && focused.tagName === "BUTTON" && article.contains(focused) ? focused : null;
     const pagerFocus = pagerButton?.dataset.queryLine
       ? {
           line: pagerButton.dataset.queryLine,
