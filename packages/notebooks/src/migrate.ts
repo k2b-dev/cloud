@@ -150,21 +150,6 @@ export const migrate = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_notes_created
     ON notebooks.notes(created_at, id)
   `.simple();
-  // Keep the indexed address projection identical to lib/note-path.ts's noteSlug.
-  await sql`
-    CREATE OR REPLACE FUNCTION notebooks.note_slug(value text) RETURNS text
-    LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
-      SELECT COALESCE(NULLIF(rtrim(left(trim(both '-' from regexp_replace(
-        regexp_replace(normalize(replace(replace(replace(replace(lower(value),
-          'ä', 'ae'), 'ö', 'oe'), 'ü', 'ue'), 'ß', 'ss'), NFKD), '[̀-ͯ]', '', 'g'),
-        '[^a-z0-9]+', '-', 'g')), 80), '-'), ''), 'untitled')
-    $$
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_notes_notebook_parent_slug
-    ON notebooks.notes(notebook_id, parent_id, notebooks.note_slug(title), id)
-  `.simple();
-
   // Native array GIN preserves title substrings without requiring pg_trgm. Splitting
   // LIKE metacharacters leaves only mandatory literal runs on the query side.
   await sql`

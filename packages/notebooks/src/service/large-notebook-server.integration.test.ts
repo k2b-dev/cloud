@@ -5,7 +5,7 @@ import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { buildNotePaths, noteSlug } from "../lib/note-path";
 import { migrate } from "../migrate";
 import { type InsertedFixtureNotebook, insertFixtureNotebook } from "./large-notebook.test-fixture";
-import { childTitleQuery, createAtPath, listOutline, outlinePageQuery, resolvePath } from "./note-paths";
+import { childrenQuery, createAtPath, listOutline, outlinePageQuery, resolvePath } from "./note-paths";
 import { reindexBatchQuery, reindexNotebook } from "./note-refs";
 import { overviewStats } from "./notebooks";
 import {
@@ -93,7 +93,7 @@ for (const [index, shape] of ["small", "large"].entries()) {
     const page = notebook.notes.find((note) => note.id === notebook.page.id)!;
     const resolved = await resolvePath({ notebookId: notebook.id, path: paths.get(page.id)! });
     expect(resolved.ok && resolved.note.id).toBe(page.id);
-    await indexedPlan(childTitleQuery(notebook.id, page.parentId, page.title), ["idx_notes_notebook_parent_slug"]);
+    await indexedPlan(childrenQuery(notebook.id, page.parentId), ["idx_notes_notebook_parent_position"]);
     const after = sorted[3]!.id;
     await indexedPlan(readBatchQuery({ notebookId: notebook.id, after }), ["idx_notes_notebook_id"]);
     await indexedPlan(reindexBatchQuery(notebook.id, after), ["idx_notes_notebook_id"]);
@@ -165,21 +165,7 @@ postgresTest("filter-only global search and recent notes use updated_at indexes;
   );
 });
 
-postgresTest("slug projection matches address semantics, including Unicode, truncation and collisions", async () => {
-  for (const title of [
-    "Ä Ö Ü ß",
-    "Cafe\u0301 déjà-vu",
-    "é".repeat(100),
-    "a".repeat(79) + " -- b",
-    "中文",
-    "İstanbul",
-    "① Ⅳ ﬀ",
-    "  A__B  ",
-    "---",
-  ]) {
-    const [row] = await sql<{ slug: string }[]>`SELECT notebooks.note_slug(${title}) AS slug`;
-    expect(row!.slug).toBe(noteSlug(title));
-  }
+postgresTest("paths resolve with the address slugs, including Unicode, capitals and collisions", async () => {
   const notebook = fixtures[0]!;
   const parent = notebook.notes.find((note) => note.id === notebook.folder.id)!;
   const paths = buildNotePaths(notebook.notes, { mirror: false });
@@ -388,4 +374,21 @@ postgresTest("created-time and tag-only filters start from their indexes", async
     hits: [],
     total: 0,
   });
+});
+
+postgresTest("a title that starts with a capital umlaut resolves by its address, whatever the database locale", async () => {
+  const notebook = fixtures[0]!;
+  const parent = notebook.notes.find((note) => note.id === notebook.folder.id)!;
+  const parentPath = buildNotePaths(notebook.notes, { mirror: false }).get(parent.id)!;
+  const id = crypto.randomUUID();
+  const shortId = testShortId();
+  try {
+    await sql`INSERT INTO notebooks.notes (id, short_id, notebook_id, parent_id, title, content_md) VALUES
+      (${id}::uuid, ${shortId}, ${notebook.id}::uuid, ${parent.id}::uuid, 'Übersicht Ärger', '# Übersicht Ärger')`;
+    expect(noteSlug("Übersicht Ärger")).toBe("uebersicht-aerger");
+    const result = await resolvePath({ notebookId: notebook.id, path: `${parentPath}/uebersicht-aerger` });
+    expect(result.ok && result.note.shortId).toBe(shortId);
+  } finally {
+    await sql`DELETE FROM notebooks.notes WHERE id = ${id}::uuid`;
+  }
 });

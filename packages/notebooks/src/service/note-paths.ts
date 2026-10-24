@@ -19,22 +19,25 @@ export type NotePathProblem =
   | { kind: "missing"; segment: string; parentPath: string }
   | { kind: "ambiguous"; segment: string; candidates: NotePathCandidate[] };
 
-export const childTitleQuery = (notebookId: string, parentId: string | null, title: string) => {
+/**
+ * The children of one note, without Markdown; the indexed level read stays bounded by that level. Slugs compare in
+ * JavaScript, so they match `noteSlug` exactly whatever the database's locale does to case.
+ */
+export const childrenQuery = (notebookId: string, parentId: string | null) => {
   const parent = parentId === null ? sql`parent_id IS NULL` : sql`parent_id = ${parentId}::uuid`;
   return sql<{ id: string; short_id: string; parent_id: string | null; title: string }[]>`
     SELECT id, short_id, parent_id, title FROM notebooks.notes
-    WHERE notebook_id = ${notebookId}::uuid AND ${parent} AND notebooks.note_slug(title) = ${noteSlug(title)}
+    WHERE notebook_id = ${notebookId}::uuid AND ${parent}
     ORDER BY id
   `;
 };
 
-const childrenWithTitle = async (notebookId: string, parentId: string | null, title: string): Promise<PathNode[]> =>
-  (await childTitleQuery(notebookId, parentId, title)).map((row) => ({
-    id: row.id,
-    shortId: row.short_id,
-    parentId: row.parent_id,
-    title: row.title,
-  }));
+const childrenWithTitle = async (notebookId: string, parentId: string | null, title: string): Promise<PathNode[]> => {
+  const slug = noteSlug(title);
+  return (await childrenQuery(notebookId, parentId))
+    .filter((row) => noteSlug(row.title) === slug)
+    .map((row) => ({ id: row.id, shortId: row.short_id, parentId: row.parent_id, title: row.title }));
+};
 
 const candidatesOf = (nodes: PathNode[], parentPath: string): NotePathCandidate[] =>
   nodes.map((node) => ({ shortId: node.shortId, title: node.title, path: [parentPath, noteSlug(node.title)].filter(Boolean).join("/") }));
