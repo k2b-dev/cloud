@@ -143,6 +143,37 @@ describe("For you", () => {
     }
   }, 30_000);
 
+  test("a mention in a Space's chat opens there and unfolds “Spaces and Notebooks”", async () => {
+    const space = harness.addChat({ members: [viewer, nora], name: "Spring fair", count: 2, end: chatTestNow });
+    harness.setSystem(space, { type: "spaces.space", id: "Space1" });
+    harness.setForYou([
+      {
+        kind: "mention",
+        conversation: { id: space, title: "Spring fair", kind: "system" },
+        thread: { id: "general", name: "General" },
+        message: {
+          id: "msg0000001",
+          seq: 1,
+          author: { type: "user", id: nora.id, name: nora.name },
+          preview: "@you the poster",
+          createdAt: chatTestNow.toISOString(),
+        },
+        unread: true,
+      },
+    ]);
+    const { page, errors } = await load(desktop, { forYouPage: true });
+    try {
+      const sidebar = page.locator(".k2b-app-workspace__sidebar");
+      await sidebar.getByRole("button", { name: /Spaces and Notebooks/, expanded: false }).waitFor();
+      await page.getByRole("region", { name: "For you" }).locator(".chat-for-you__row").first().click();
+      await page.waitForURL(`**/app/chat/c/${space}**`);
+      await sidebar.getByRole("button", { name: /Spaces and Notebooks/, expanded: true }).waitFor();
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("@ in the composer suggests members and sends the mention with the person's identity", async () => {
     const { it } = seed();
     const { page, errors } = await load(desktop, { chat: it });

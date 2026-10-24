@@ -425,6 +425,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }),
   );
   const [systemExpanded, setSystemExpanded] = createSignal(props.open?.conversation.kind === "system");
+  // A Space's or notebook's chat opened from "For you", the search, or another app shows where it lives in the list.
+  createEffect(
+    on(
+      () => (system() ? conversation()!.id : null),
+      (id) => id && setSystemExpanded(true),
+      { defer: true },
+    ),
+  );
   const [creatingThread, setCreatingThread] = createSignal(false);
   const canCreateThread = () => {
     const current = conversation();
