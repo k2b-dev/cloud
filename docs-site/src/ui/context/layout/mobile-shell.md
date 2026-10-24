@@ -75,8 +75,10 @@ device: an iPad in Split View narrower than 48 rem shows the tab bar.
 - The head shows the decorative `logo` and the app's `title`, as high as the
   page's header, so both titles share one line.
 - `items`, each `sections` group, and `footer` take the tab bar's items, with
-  an optional `count` after the label, such as unread messages: a number, or
-  an element that renders one, such as a count read in the browser. A group
+  an optional quiet `count` after the label, such as open tasks: a number, or
+  an element that renders one, such as a count read in the browser. An item's
+  `badge`, which calls for attention, such as unread messages, takes the
+  count's place. A group
   without items is left out. Rows are 44 px with 1rem labels; the open item is
   in the action colour and weight. A press shows the item's page frame at
   once, as a tab does, and the row of a loading page pulses.

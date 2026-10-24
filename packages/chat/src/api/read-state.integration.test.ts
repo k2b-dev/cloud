@@ -265,12 +265,12 @@ suite("personal read state", () => {
   test("the unread count covers chats beyond the first page and stops at 100", async () => {
     const viewer = await f.person(),
       other = await f.person();
-    const count = async () => {
+    const summary = async () => {
       const response = await f.request(viewer.headers, "/unread-count");
       expect(response.status).toBe(200);
-      return ((await response.json()) as { count: number }).count;
+      return (await response.json()) as { count: number; text: string };
     };
-    expect(await count()).toBe(0);
+    expect(await summary()).toEqual({ count: 0, text: "No unread messages" });
     // The only unread message lies in the oldest chat, behind a full first page of read ones.
     const oldest = await f.fixture(viewer, [{ person: other, permission: "write" }]);
     await fill(other, oldest.shortId, 3);
@@ -281,9 +281,9 @@ suite("personal read state", () => {
     }
     const page = ConversationPageSchema.parse(await (await f.request(viewer.headers, "")).json());
     expect(page.items.some((item) => item.id === oldest.shortId)).toBe(false);
-    expect(await count()).toBe(3);
+    expect(await summary()).toEqual({ count: 3, text: "3 unread" });
     await fill(other, oldest.shortId, UNREAD_TOTAL_CAP + 5);
-    expect(await count()).toBe(UNREAD_TOTAL_CAP);
+    expect(await summary()).toEqual({ count: UNREAD_TOTAL_CAP, text: "99+ unread" });
   });
 
   test("a service account without access cannot read or create a participant", async () => {

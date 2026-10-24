@@ -1,4 +1,4 @@
-import { For, type JSX } from "solid-js";
+import { For, type JSX, Show } from "solid-js";
 
 export type TabBarItem = {
   id: string;
@@ -10,6 +10,11 @@ export type TabBarItem = {
   title?: string;
   /** The page this item leads to is open. */
   current?: boolean;
+  /**
+   * A mark at the icon's corner that calls for attention, such as `AppWorkspace.SidebarItemStatus` with unread
+   * messages. Its element names the count for screen readers; an empty one takes no space.
+   */
+  badge?: JSX.Element;
 };
 
 export type TabBarProps = {
@@ -54,6 +59,9 @@ export function TabBar(props: TabBarProps): JSX.Element {
               >
                 <i class={item.icon} aria-hidden="true" />
                 <span class="k2b-truncate-fade">{item.label}</span>
+                <Show when={item.badge}>
+                  <span class="k2b-tab-bar__badge">{item.badge}</span>
+                </Show>
               </a>
             </li>
           )}

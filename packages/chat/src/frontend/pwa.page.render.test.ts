@@ -91,7 +91,12 @@ const render = async (path: string) => {
 
 describe("Chat in the Cloud app", () => {
   test("declares its part for people with the user role, with the unread count for the sidebar", () => {
-    expect(app.meta.pwa).toEqual({ href: "/pwa/chat", requiresRoles: ["user"], badge: "/api/chat/conversations/unread-count" });
+    expect(app.meta.pwa).toEqual({
+      href: "/pwa/chat",
+      requiresRoles: ["user"],
+      badge: "/api/chat/conversations/unread-count",
+      summary: "/api/chat/conversations/unread-count",
+    });
     expect(app.meta.routes).toContain("/pwa/chat");
   });
 

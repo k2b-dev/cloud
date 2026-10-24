@@ -26,6 +26,8 @@ export type AppRegistryPwaPart = {
   requiresRoles?: Role[];
   /** Count route for the part's sidebar entry; older readers ignore it. */
   badge?: string;
+  /** Summary route for the part's line on Start; older readers ignore it. */
+  summary?: string;
 };
 
 export type AppRegistryCapabilitySummary = {

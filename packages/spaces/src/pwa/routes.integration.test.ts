@@ -82,6 +82,16 @@ suite("Spaces in the mobile app", () => {
     expect(html).toContain("Order the tents");
     expect(html).toContain(`Mark “Order the tents” as done`);
 
+    // Start and the sidebar of the app say what waits in Spaces, in the reader's language.
+    const summary = async () => {
+      const response = await server.request(`${origin}/api/spaces/overview/summary`, {
+        headers: { cookie: phone, "accept-language": "en", "x-forwarded-for": uniqueCallerAddress() },
+      });
+      expect(response.status).toBe(200);
+      return response.json();
+    };
+    expect(await summary()).toEqual({ count: 1, text: "1 task for you" });
+
     // The person claims the task on the web with I'm on it; the phone completes it with that claim, as the web does.
     const itemPath = `${origin}/api/spaces/${space!.short_id}/items/${item!.short_id}`;
     const post = (cookie: string, path: string, body: unknown) =>
@@ -106,6 +116,7 @@ suite("Spaces in the mobile app", () => {
     const work = (await onTheWeb.json()) as { items: { shortId: string }[]; counts: { mine: number } };
     expect(work.items.map((entry) => entry.shortId)).not.toContain(item!.short_id);
     expect(work.counts.mine).toBe(0);
+    expect(await summary()).toEqual({ count: 0, text: "No tasks for you" });
   });
 
   test("a task opens at its own address only for readers of its Space, and only write access may change it", async () => {

@@ -25,7 +25,7 @@ export const app = defineApp({
     requiresAuth: true,
     requiresRoles: ["user", "guest"],
   },
-  pwa: { requiresRoles: ["user"], badge: UNREAD_COUNT_PATH },
+  pwa: { requiresRoles: ["user"], badge: UNREAD_COUNT_PATH, summary: UNREAD_COUNT_PATH },
   panel: { href: "/app/chat/panel", label: "Chat", icon: "ti ti-messages", requiresRoles: ["user", "guest"] },
   openapi: "/api/chat/openapi.json",
   routes: ["/api/chat", "/app/chat", "/admin/chat", "/public/chat"],

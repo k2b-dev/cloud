@@ -297,7 +297,10 @@ function MobileShellHeader(props: MobileShellHeaderProps): JSX.Element {
 }
 
 export type MobileShellSidebarItem = TabBarItem & {
-  /** A count after the label, such as unread messages: a number (0 shows nothing) or an element that renders one. */
+  /**
+   * A quiet count after the label, such as open tasks: a number (0 shows nothing) or an element that renders one. The
+   * item's `badge`, which calls for attention, takes its place.
+   */
   count?: number | JSX.Element;
 };
 
@@ -326,7 +329,7 @@ function SidebarLink(props: { item: MobileShellSidebarItem }): JSX.Element {
     >
       <i class={props.item.icon} aria-hidden="true" />
       <span class="k2b-truncate-fade">{props.item.label}</span>
-      <Show when={props.item.count}>{(count) => <span class="k2b-mobile-shell__sidebar-count">{count()}</span>}</Show>
+      <Show when={props.item.badge ?? props.item.count}>{(mark) => <span class="k2b-mobile-shell__sidebar-count">{mark()}</span>}</Show>
     </a>
   );
 }

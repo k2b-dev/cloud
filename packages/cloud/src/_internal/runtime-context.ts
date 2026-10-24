@@ -76,6 +76,7 @@ export const buildRuntimeFromRegistry = (entries: AppRegistryEntry[], capabiliti
             href: e.pwa.href,
             requiresRoles: e.pwa.requiresRoles ? ([...e.pwa.requiresRoles] as Role[]) : undefined,
             ...(e.pwa.badge ? { badge: e.pwa.badge } : {}),
+            ...(e.pwa.summary ? { summary: e.pwa.summary } : {}),
           }
         : undefined,
       openapi: e.openapi,
