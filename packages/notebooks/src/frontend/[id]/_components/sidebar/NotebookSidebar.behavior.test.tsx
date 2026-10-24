@@ -541,7 +541,7 @@ describe("notebook sidebar", () => {
       view.cleanup();
     }
   });
-  test("a refresh keeps every open branch loaded, also beyond the levels one request reads", async () => {
+  test("a refresh reads every open branch again, also beyond the levels one request reads", async () => {
     const branches = Array.from({ length: 60 }, (_, index) =>
       note(`B${String(index).padStart(5, "0")}`, `Branch ${index}`, [
         note(`C${String(index).padStart(5, "0")}`, `Child ${index}`, [], null),
@@ -552,6 +552,9 @@ describe("notebook sidebar", () => {
     // The server answers every level as it is; only the first 50 are read again.
     levels = Object.fromEntries(state.levels.map((level) => [level.parentId ?? "", level]));
     const view = await mount(ctx(null, { sidebarTree: { ...state, total: 5000 } }));
+    // Someone renames the child of the 60th open branch.
+    const last = levels.B00059!;
+    levels.B00059 = { ...last, items: [{ ...last.items[0]!, title: "Renamed child" }] };
     try {
       await new Promise<void>((done) => {
         const covered: Promise<void>[] = [];
@@ -569,6 +572,7 @@ describe("notebook sidebar", () => {
       await settle();
       expect(view.dom.root.textContent).not.toContain("Loading notes");
       expect(view.rows("B00059").map((row) => row.id)).toEqual(["C00059"]);
+      expect(view.dom.root.querySelector('[data-k2b-nav-tree-id="C00059"]')?.textContent).toContain("Renamed child");
     } finally {
       view.cleanup();
     }
