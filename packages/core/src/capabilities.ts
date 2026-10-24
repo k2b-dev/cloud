@@ -1198,13 +1198,7 @@ export const aiCapabilities = defineCapabilities({
                       input.expectedAccessRevision,
                       skillAuthority(context),
                     )
-                  : await aiSkills.revokeAccess(
-                      skill.id,
-                      input.accessId,
-                      context,
-                      input.expectedAccessRevision,
-                      skillAuthority(context),
-                    )
+                  : await aiSkills.revokeAccess(skill.id, input.accessId, context, input.expectedAccessRevision, skillAuthority(context))
                 : false;
           if (!changed) return fail(err.forbidden("The grant or permission is no longer available."));
           const readable = await readableSkill(input.skillId, context);

@@ -204,7 +204,9 @@ suite("Project and Skill credential limits and manager eligibility", () => {
           expect(await aiSkills.update(skill.id, await machine.context(["read"]), content)).toBeNull();
           const updated = await aiSkills.update(skill.id, await machine.context(["write"]), content);
           expect(updated).toMatchObject({ description: content.description, permission: "write", revision: skill.revision + 1 });
-          expect(await aiSkills.update(skill.id, await machine.context(["admin"]), { ...content, expectedRevision: updated!.revision })).not.toBeNull();
+          expect(
+            await aiSkills.update(skill.id, await machine.context(["admin"]), { ...content, expectedRevision: updated!.revision }),
+          ).not.toBeNull();
           for (const permission of ["write", "admin"] as const) {
             const created = await aiSkills.create({ subject: await machine.context([permission]), ...fields("skills") });
             resources.push({ resource: "skills", id: created.shortId });

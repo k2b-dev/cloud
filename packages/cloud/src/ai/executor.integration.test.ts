@@ -1043,7 +1043,9 @@ suite("AI executor integration", () => {
         markdown: "---\nname: skill-creator\ndescription: Create and improve reusable Assistant Skills.\n---\n\nDraft the Skill.\n",
       }),
     );
-    const creator = (await aiSkills.list(userResourceContext(owner), { authority })).find((candidate) => candidate.name === "skill-creator");
+    const creator = (await aiSkills.list(userResourceContext(owner), { authority })).find(
+      (candidate) => candidate.name === "skill-creator",
+    );
     if (!creator?.enabled) throw new Error("Expected the app's skill-creator to be enabled for a new user");
     const skill = await aiSkills.create({
       subject: userResourceContext(owner),

@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-10-12
+updated: 2026-10-24
 ---
 
 # Files, Projects, Skills, and personalization
@@ -233,8 +233,13 @@ resolved `RequestAuthority` argument (or `authority` list option) for app-entry
 checks; missing authority denies Skills whose app declares an access rule. Standalone and agent accounts
 use their own grants; their credential's `read`, `write`, or `admin` scope caps
 the granted permission. Creating a Project or Skill needs `write` or `admin`.
-Scopes alone grant no resource access. Resource-bound credentials are unsupported
-for these resources. User and user-delegated requests retain the user's grants.
+Scopes alone grant no resource access. Resource-bound credentials cannot access
+Projects or user-owned Skills. They can read an app Skill belonging to their
+bound app when app access, credential scopes, and a Skill grant all allow it.
+An independent machine with an app-prefixed scope, such as `notebooks:read`,
+can also read that app's Skills with app access and a Skill grant. These broker
+permissions allow reads only, even with a write or admin grant or app scope.
+User and user-delegated requests retain the user's grants.
 User, group, authenticated-audience, standalone-account, and agent admin grants
 can keep a resource manageable when another admin grant is removed. Delegated
 and resource-bound account grants cannot replace the last manager.

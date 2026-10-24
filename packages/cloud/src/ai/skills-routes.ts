@@ -245,13 +245,7 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
       const skill = await aiSkills.getByShortId(c.req.param("skillId")!, resourceSubject(c), "admin", appAccessAuthority(c));
       try {
         return skill &&
-          (await aiSkills.revokeAccess(
-            skill.id,
-            c.req.param("accessId")!,
-            resourceSubject(c),
-            undefined,
-            appAccessAuthority(c),
-          ))
+          (await aiSkills.revokeAccess(skill.id, c.req.param("accessId")!, resourceSubject(c), undefined, appAccessAuthority(c)))
           ? respond(c, ok({ deleted: true }))
           : respond(c, fail(err.notFound("Access entry")));
       } catch (error) {

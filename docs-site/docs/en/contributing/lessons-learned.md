@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 
 # Lessons learned
@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A shared credential cap erases a broker contract | Applying the Project and private Skill cap to app Skills rejects authorized app-scoped and resource-bound reads. | Tests: `skills-app-access.integration.test.ts` and `tests/app-access-skills-mount.integration.test.ts` require app access plus Skill grants, preserve read-only broker permissions, and reject private resources, cross-app reads, missing grants, and machine HTTP management. |
 | A formatter exposes ambiguous generic TSX syntax | Removing the trailing comma from a generic arrow with a default type makes the Solid/Babel test transform parse it as JSX. | Test: `PermissionEditor.behavior.test.tsx` runs through the actual Solid DOM preload; use a generic function declaration for the deferred helper and run the test after formatting. |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |

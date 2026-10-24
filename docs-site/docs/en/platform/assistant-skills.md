@@ -5,7 +5,7 @@ section: Platform services
 order: 585
 description: Ship app-owned Assistant Skills as Markdown files that Cloud installs, updates, and shows only to people who may open the app.
 tags: [ai, assistant, skills, markdown, agents]
-updated: 2026-10-11
+updated: 2026-10-24
 ---
 
 # Ship Assistant Skills
@@ -181,7 +181,12 @@ Unlike Help, a Skill does not need a user. A service account without a user
 with kind `standalone` or `agent` counts as signed in but has no roles: it can
 use the Skills of apps without either declaration, and other app Skills only through a direct grant. Its
 credential must allow at least `read`; write and administration also require
-the corresponding scope and grant. Resource-bound credentials are unsupported.
+the corresponding scope and grant. App-prefixed scopes also permit app Skill
+reads. Resource-bound credentials can read Skills of their bound app. Both
+require app access and a Skill grant; broker access allows reads only and does
+not extend to Projects or user-owned Skills. Skill HTTP management requires a
+user-backed actor and Core app access; see
+[Skill access](/en/docs/ai/files-projects-and-personalization#reuse-shared-skills).
 
 When the app is stopped or removed, Cloud keeps its Skills but no longer offers
 them. They do not appear in Assistant, cannot be loaded, and their reference

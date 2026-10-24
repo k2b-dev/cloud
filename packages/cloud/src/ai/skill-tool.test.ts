@@ -73,7 +73,12 @@ describe("load_skill", () => {
       mount: "/skills/weekly-status",
       files: ["/skills/weekly-status/SKILL.md", "/skills/weekly-status/references/style.md"],
     });
-    expect(aiSkills.loadForTurn).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222", "weekly-status", userResourceContext(subject), null);
+    expect(aiSkills.loadForTurn).toHaveBeenCalledWith(
+      "22222222-2222-4222-8222-222222222222",
+      "weekly-status",
+      userResourceContext(subject),
+      null,
+    );
   });
 
   test("does not expose a skill after its permission check fails", async () => {

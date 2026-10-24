@@ -132,8 +132,13 @@ describe("AI Skill routes", () => {
         expect(response.status).toBe(200);
       }
       expect(list).toHaveBeenCalledWith({ actor: resolved.actor, accessSubject: resolved.accessSubject }, { authority: resolved });
-      expect(list).toHaveBeenCalledWith({ actor: resolved.actor, accessSubject: resolved.accessSubject }, { name: "weekly-status", authority: resolved });
-      expect(search).toHaveBeenCalledWith({ actor: resolved.actor, accessSubject: resolved.accessSubject }, "weekly", 30, { authority: resolved });
+      expect(list).toHaveBeenCalledWith(
+        { actor: resolved.actor, accessSubject: resolved.accessSubject },
+        { name: "weekly-status", authority: resolved },
+      );
+      expect(search).toHaveBeenCalledWith({ actor: resolved.actor, accessSubject: resolved.accessSubject }, "weekly", 30, {
+        authority: resolved,
+      });
       expect(get).toHaveBeenCalledWith(skillShortId, { actor: resolved.actor, accessSubject: resolved.accessSubject }, "read", resolved);
     }
     // Broker reads rely on the owning-app/resource decision, not Core's registry entry.

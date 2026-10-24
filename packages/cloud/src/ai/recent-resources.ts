@@ -121,9 +121,9 @@ export const listAiRecentResources = async (input: {
   const skillIds = candidates.flatMap(({ ref }) => (ref.type === "core.ai.skill" ? [ref.id] : []));
   // Exactly the sent Skills, so a large Skill catalog never pushes one out; failing, they are left out like a reader.
   const skills = skillIds.length
-    ? withinBudget(signal, () =>
-        (deps.skills ?? aiSkills).list(input.authority, { shortIds: skillIds, authority: input.authority }),
-      ).catch(() => [])
+    ? withinBudget(signal, () => (deps.skills ?? aiSkills).list(input.authority, { shortIds: skillIds, authority: input.authority })).catch(
+        () => [],
+      )
     : Promise.resolve([]);
   const registry = candidates.some(({ ref }) => ref.type !== "core.ai.skill" && ref.type !== "assistant.artifact")
     ? withinBudget(signal, async () =>

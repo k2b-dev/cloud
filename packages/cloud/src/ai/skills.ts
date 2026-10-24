@@ -12,7 +12,7 @@ import {
   type Principal,
 } from "../server/services/access";
 import { accessRevision } from "../server/services/access-revision";
-import { usableAppIds } from "../services/app-access";
+import { evaluateAppAccess, usableAppIds } from "../services/app-access";
 import { logger } from "../services/logging";
 import { toPgTextArray, toPgUuidArray } from "../services/postgres";
 import { mountAiSkillFilePath } from "./file-mount";
@@ -217,9 +217,9 @@ const principalForSubject = (input: AiResourceContext): Principal => {
     : { type: "service_account", serviceAccountId: subject.serviceAccountId };
 };
 
-const accessMatch = (input: AiResourceContext | null): SQLQuery => {
+const accessMatch = (input: AiResourceContext | null, audience: SkillAudience): SQLQuery => {
   const subject = aiResourceAccessSubject(input);
-  return subject === null || aiResourcePermissionCap(input) === "none"
+  return subject === null || (aiResourcePermissionCap(input) === "none" && audience.brokerReadAppIds.length === 0)
     ? sql`FALSE`
     : buildAccessPrincipalCondition({
         subject,
@@ -245,7 +245,12 @@ const getRowByName = async (name: string, db: SQL = sql): Promise<SkillRow | nul
  * Resolve before opening a transaction: role lookup uses its own pool connection, and a transaction that waits for a
  * second connection can exhaust the pool under concurrent requests.
  */
-type SkillAudience = { roles: readonly string[]; usableAppIds: readonly string[]; declaredAppIds: readonly string[] };
+type SkillAudience = {
+  roles: readonly string[];
+  usableAppIds: readonly string[];
+  declaredAppIds: readonly string[];
+  brokerReadAppIds: readonly string[];
+};
 const subjectRoles = async (subject: AiResourceContext | null, authority: RequestAuthority | null = null): Promise<SkillAudience> => {
   const actor = authority?.actor ?? subject?.actor;
   const roles = actor?.kind === "user" ? actor.user.roles : (actor?.delegatedUser?.roles ?? []);
@@ -253,10 +258,28 @@ const subjectRoles = async (subject: AiResourceContext | null, authority: Reques
     logger("ai:skills").warn("App registry unavailable; app Skills are unavailable");
     return [];
   });
+  const usable = [...(await usableAppIds(authority, apps))];
+  const resourceActor = subject?.actor;
+  // App Skill brokers support independent machines, including resource bindings.
+  // Keep identity matching and credential checks even for legacy undeclared apps.
+  const brokerAuthority: RequestAuthority | null =
+    authority &&
+    resourceActor?.kind === "service_account" &&
+    !resourceActor.delegatedUser &&
+    ["standalone", "agent", "resource_bound"].includes(resourceActor.serviceAccount.kind) &&
+    subject?.accessSubject.type === "service_account" &&
+    subject.accessSubject.serviceAccountId === resourceActor.serviceAccount.id
+      ? { ...authority, actor: resourceActor, accessSubject: subject.accessSubject, scopes: resourceActor.scopes }
+      : null;
   return {
     roles,
-    usableAppIds: [...(await usableAppIds(authority, apps))],
+    usableAppIds: usable,
     declaredAppIds: apps.filter((app) => app.access !== undefined).map((app) => app.id),
+    brokerReadAppIds: usable.filter(
+      (id) =>
+        evaluateAppAccess(authority, { id, access: { kind: "signedIn" } }) &&
+        evaluateAppAccess(brokerAuthority, { id, access: { kind: "signedIn" } }),
+    ),
   };
 };
 
@@ -264,18 +287,22 @@ const subjectRoles = async (subject: AiResourceContext | null, authority: Reques
 const effectivePermission = (skillId: SQLQuery, subject: AiResourceContext | null, roles: SkillAudience) => sql`
   SELECT CASE
     WHEN permission = 'none' THEN permission
-    WHEN ${aiResourcePermissionCap(subject)} = 'none' THEN 'none'::auth.permission_level
+    WHEN ${aiResourcePermissionCap(subject)} = 'none' THEN
+      CASE WHEN EXISTS (
+        SELECT 1 FROM ai.app_skills app WHERE app.skill_id=${skillId}
+          AND app.app_id = ANY(${toPgTextArray([...roles.brokerReadAppIds])}::text[])
+      ) THEN 'read'::auth.permission_level ELSE 'none'::auth.permission_level END
     WHEN ${aiResourcePermissionCap(subject)} = 'read' THEN 'read'::auth.permission_level
     WHEN ${aiResourcePermissionCap(subject)} = 'write' AND permission = 'admin' THEN 'write'::auth.permission_level
     ELSE permission END AS permission FROM (
     SELECT access.permission, (access.user_id IS NOT NULL OR access.group_id IS NOT NULL OR access.service_account_id IS NOT NULL) AS direct
       FROM ai.skill_access link JOIN auth.access access ON access.id=link.access_id
-      WHERE link.skill_id=${skillId} AND ${accessMatch(subject)}
+      WHERE link.skill_id=${skillId} AND ${accessMatch(subject, roles)}
     UNION ALL
     SELECT 'read'::auth.permission_level, false AS direct FROM ai.project_skills link
       JOIN ai.project_access project_access ON project_access.project_id=link.project_id
       JOIN auth.access access ON access.id=project_access.access_id
-      WHERE link.skill_id=${skillId} AND access.permission <> 'none' AND ${accessMatch(subject)}
+      WHERE link.skill_id=${skillId} AND access.permission <> 'none' AND ${accessMatch(subject, roles)}
   ) grants WHERE NOT EXISTS (
     SELECT 1 FROM ai.app_skills app WHERE app.skill_id=${skillId}
       AND (NOT app.available OR NOT(app.app_id = ANY(${toPgTextArray([...roles.usableAppIds])}::text[])) OR (NOT (app.app_id = ANY(${toPgTextArray([...roles.declaredAppIds])}::text[])) AND NOT grants.direct AND app.required_roles IS NOT NULL AND NOT(app.required_roles && ${toPgTextArray([...roles.roles])}::text[])))
@@ -628,7 +655,11 @@ async function linkedSkillProjects(skillId: string, subject: AiResourceContext |
 
 export type AiConversationSkillUse = { name: string; description: string; turns: number; lastLoadedAt: string };
 
-const listSkillTurnFiles = async (turnId: string, subject: AiResourceContext | null, roles: SkillAudience): Promise<AiSkillFileToolStat[]> => {
+const listSkillTurnFiles = async (
+  turnId: string,
+  subject: AiResourceContext | null,
+  roles: SkillAudience,
+): Promise<AiSkillFileToolStat[]> => {
   const userId = aiResourceUserId(subject);
   const rows = await sql<SnapshotRow[]>`
       SELECT DISTINCT snapshot.skill_name, snapshot.description, snapshot.revision, snapshot.instructions,

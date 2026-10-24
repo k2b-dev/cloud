@@ -645,9 +645,7 @@ export const aiRoutes = (() => {
             launchedByAppId: body.launchedByAppId,
           });
           // A replay may return a conversation assigned to a Project since creation.
-          const currentProject = conversation.projectId
-            ? await aiProjects.get(conversation.projectId, resourceContext(c), "read")
-            : null;
+          const currentProject = conversation.projectId ? await aiProjects.get(conversation.projectId, resourceContext(c), "read") : null;
           if (conversation.projectId && !currentProject) return respond(c, fail(err.notFound("Project")));
           return respond(c, ok(publicConversation(conversation, currentProject?.shortId ?? null)), 201);
         } catch (error) {

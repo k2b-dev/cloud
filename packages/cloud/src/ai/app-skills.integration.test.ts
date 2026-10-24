@@ -6,9 +6,9 @@ import type { AppRegistryEntry } from "../contracts/registry";
 import type { RequestAuthority } from "../server";
 import { getRoles } from "../services/accounts/users";
 import { toPgTextArray } from "../services/postgres";
+import { serviceAccounts } from "../services/service-accounts";
 import { buildProjectedUser } from "../services/session/user";
 import { aiAppSkills, reconcileAppSkills as applyAppSkills } from "./app-skill-store";
-import { serviceAccounts } from "../services/service-accounts";
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, skill } from "./app-skills";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
@@ -113,14 +113,23 @@ databaseSuite()("app skills (integration)", () => {
         actor: { kind: "user", user: { ...actor.user, roles: [...actor.user.roles, "admin"] } },
       };
       expect(await aiSkills.get(installed.id, userResourceContext(subject), "read", adminAuthority)).not.toBeNull();
-      const updated = await aiSkills.update(installed.id, userResourceContext(subject), { ...fields, instructions: installed.instructions }, adminAuthority);
+      const updated = await aiSkills.update(
+        installed.id,
+        userResourceContext(subject),
+        { ...fields, instructions: installed.instructions },
+        adminAuthority,
+      );
       expect(updated?.revision).toBe(installed.revision + 1);
       expect(updated?.enabled).toBe(true);
       expect(updated?.references).toEqual([]);
       const restricted = { ...adminAuthority, credentialKind: "oauth" as const, scopes: ["other:read"] };
       expect(await aiSkills.get(installed.id, userResourceContext(subject), "read", restricted)).toBeNull();
-      expect(await aiSkills.update(installed.id, userResourceContext(subject), { ...fields, expectedRevision: updated!.revision }, restricted)).toBeNull();
-      expect(await aiSkills.get(installed.id, userResourceContext(subject), "read", { ...authority, actor: { ...actor, sessionKind: "app" } })).toBeNull();
+      expect(
+        await aiSkills.update(installed.id, userResourceContext(subject), { ...fields, expectedRevision: updated!.revision }, restricted),
+      ).toBeNull();
+      expect(
+        await aiSkills.get(installed.id, userResourceContext(subject), "read", { ...authority, actor: { ...actor, sessionKind: "app" } }),
+      ).toBeNull();
     } finally {
       await cleanup([entry.id]);
       await sql`DELETE FROM auth.users WHERE id=${subject.userId}::uuid`;
@@ -140,7 +149,12 @@ databaseSuite()("app skills (integration)", () => {
       scopes: ["core:read"],
     };
     const skill = await aiSkills.create(
-      { subject: userResourceContext(subject), name: `personal-${crypto.randomUUID()}`, description: "Personal skill.", instructions: "Original." },
+      {
+        subject: userResourceContext(subject),
+        name: `personal-${crypto.randomUUID()}`,
+        description: "Personal skill.",
+        instructions: "Original.",
+      },
       authority,
     );
     try {
@@ -579,7 +593,9 @@ databaseSuite()("app skills (integration)", () => {
       expect(await aiSkills.get(installed.id, userResourceContext(guest, ["guest", "local", "local/guest"]))).toBeNull();
       expect(await aiSkills.get(installed.id, delegatedGuest)).toBeNull();
       expect(await aiSkills.get(installed.id, standaloneContext)).toBeNull();
-      expect((await aiSkills.list(userResourceContext(guest, ["guest", "local", "local/guest"]))).some((row) => row.id === installed.id)).toBe(false);
+      expect(
+        (await aiSkills.list(userResourceContext(guest, ["guest", "local", "local/guest"]))).some((row) => row.id === installed.id),
+      ).toBe(false);
       await aiSkills.admin.grantAccess(installed.id, { principal: { type: "user", userId: member.userId }, permission: "admin" });
       await aiProjects.grantAccess(project.id, userResourceContext(member), {
         principal: { type: "user", userId: guest.userId },
