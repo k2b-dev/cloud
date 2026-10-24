@@ -3,8 +3,10 @@ import type { NavigationItem } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
+import type { SidebarLevel, SidebarList, SidebarListNote } from "../../../../lib/sidebar-tree";
 import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
-import type { NotebookContext, NoteTreeNode } from "./types";
+import { type FixtureTreeNode, sidebarNote, sidebarTreeState } from "./sidebar-tree.test-fixture";
+import type { NotebookContext } from "./types";
 
 describe("notebook sidebar", () => {
   if (isServer) {
@@ -12,30 +14,57 @@ describe("notebook sidebar", () => {
     return;
   }
 
-  mock.module("@/api/client", () => ({ apiClient: {} }));
+  // The server filters, sorts and pages; the fake answers what each request names.
+  const requests: string[] = [];
+  let lists: Record<string, SidebarListNote[]> = {};
+  let levels: Record<string, SidebarLevel> = {};
+  const answerLevels = (query: { levels?: string; reveal?: string }) => ({
+    levels: (query.levels ? query.levels.split(",") : []).map((entry) => {
+      const [parent = "", offset = "0", limit = "100"] = entry.split(":");
+      const level = levels[parent] ?? { parentId: parent || null, total: 0, offset: 0, items: [] };
+      return { ...level, offset: Number(offset), items: level.items.slice(Number(offset), Number(offset) + Number(limit)) };
+    }),
+    expandedIds: [],
+  });
+  mock.module("@/api/client", () => ({
+    apiClient: {
+      ":id": {
+        tree: {
+          levels: {
+            $get: async ({ query }: { query: { levels?: string; reveal?: string } }) => {
+              requests.push(`levels ${query.levels ?? ""}${query.reveal ? ` reveal ${query.reveal}` : ""}`);
+              return Response.json(answerLevels(query));
+            },
+          },
+          list: {
+            $get: async ({ query }: { query: { view: string; tag?: string } }) => {
+              requests.push(`list ${query.view}${query.tag ? ` ${query.tag}` : ""}`);
+              const items = lists[query.tag ?? query.view] ?? [];
+              return Response.json({ total: items.length, offset: 0, items } satisfies SidebarList);
+            },
+          },
+        },
+      },
+    },
+  }));
 
   const note = (
     id: string,
     title: string,
-    children: NoteTreeNode[] = [],
+    children: FixtureTreeNode[] = [],
     parentId: string | null = null,
-    extra: Partial<NoteTreeNode> = {},
-  ): NoteTreeNode => ({
-    id,
-    notebookId: "Book01",
-    parentId,
-    title,
-    position: 0,
-    hasChildren: children.length > 0,
-    yjsSnapshotAt: null,
-    contentMd: null,
-    createdBy: null,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    lockedAt: null,
-    children,
-    ...extra,
-  });
+    extra: Partial<FixtureTreeNode> = {},
+  ): FixtureTreeNode => ({ id, title, parentId, children, ...extra });
+  const listed = (node: FixtureTreeNode, tags: string[] = []): SidebarListNote => ({ ...sidebarNote(node), tags });
+  const settle = async () => {
+    for (let tick = 0; tick < 20; tick++) await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
+  const zeta = note("Zeta01", "Zeta", [], null, { updatedAt: "2026-03-01T00:00:00.000Z" });
+  const nested = note("Nest01", "Nested", [], "Proj01", { updatedAt: "2026-05-01T00:00:00.000Z" });
+  const projects = note("Proj01", "Projects", [nested, note("Home02", "Guide", [], "Proj01")]);
+  const home = note("Home01", "Overview");
+  const alpha = note("Alpha1", "Alpha", [], null, { updatedAt: "2026-02-01T00:00:00.000Z" });
 
   const ctx = (homepageNoteId: string | null, overrides: Partial<NotebookContext> = {}): NotebookContext => ({
     notebook: {
@@ -51,16 +80,11 @@ describe("notebook sidebar", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     },
-    // In title order the homepage would sit between Alpha and Projects.
-    tree: [
-      note("Zeta01", "Zeta", [], null, { updatedAt: "2026-03-01T00:00:00.000Z", contentMd: "Plans #garden #roses #soil" }),
-      note("Proj01", "Projects", [
-        note("Nest01", "Nested", [], "Proj01", { updatedAt: "2026-05-01T00:00:00.000Z", contentMd: "#garden" }),
-        note("Home02", "Guide", [], "Proj01"),
-      ]),
-      note("Home01", "Overview"),
-      note("Alpha1", "Alpha", [], null, { updatedAt: "2026-02-01T00:00:00.000Z" }),
-    ],
+    // The levels arrive in the order on screen; the server leads a level with its homepage.
+    sidebarTree: sidebarTreeState(
+      homepageNoteId === "Home01" ? [home, alpha, projects, zeta] : [alpha, { id: "Home01", title: "Overview" }, projects, zeta],
+    ),
+    sidebarList: null,
     selectedNoteId: null,
     userId: "user01",
     settings: { lastNoteId: null, richMode: "rich", treeSort: "title" },
@@ -190,25 +214,14 @@ describe("notebook sidebar", () => {
     }
   });
 
-  test("a homepage below another note leads that note's sub-notes", async () => {
-    const view = await mount(ctx("Home02"));
-    try {
-      expect(view.rows(null).map((row) => row.id)).toEqual(["Alpha1", "Home01", "Proj01", "Zeta01"]);
-      expect(view.rows("Proj01")).toEqual([
-        { id: "Home02", icon: "ti ti-home", name: "Homepage" },
-        { id: "Nest01", icon: "ti ti-file-text", name: null },
-      ]);
-    } finally {
-      view.cleanup();
-    }
-  });
-
   test("Favorites turns the tree into a list newest first with date and tags, and the address keeps it", async () => {
+    lists = { favorites: [listed(zeta, ["garden", "roses", "soil"]), listed(alpha)] };
     const view = await mount(ctx("Home01", { favoriteNoteIds: ["Alpha1", "Zeta01"] }), "/app/notebooks/Book01/notes/Alpha1?mode=write");
     try {
       const favorites = view.button("Favorites")!;
       expect(favorites.getAttribute("aria-pressed")).toBe("false");
       favorites.click();
+      await settle();
 
       expect(favorites.getAttribute("aria-pressed")).toBe("true");
       expect(window.location.search).toBe("?mode=write&view=favorites");
@@ -234,7 +247,11 @@ describe("notebook sidebar", () => {
   });
 
   test("a tag from the address lists its notes, and clearing the filter shows the tree again", async () => {
-    const view = await mount(ctx("Home01", { sidebarFilter: { view: "tag", tag: "garden" } }), "/app/notebooks/Book01?view=tag&tag=garden");
+    const garden = [listed(nested, ["garden"]), listed(zeta, ["garden", "roses", "soil"])];
+    const view = await mount(
+      ctx("Home01", { sidebarFilter: { view: "tag", tag: "garden" }, sidebarList: { total: 2, offset: 0, items: garden } }),
+      "/app/notebooks/Book01?view=tag&tag=garden",
+    );
     try {
       expect(view.rows(null).map((row) => row.id)).toEqual(["Nest01", "Zeta01"]);
       expect(view.button("Tags: garden")?.getAttribute("aria-current")).toBe("true");
@@ -250,7 +267,10 @@ describe("notebook sidebar", () => {
   });
 
   test("an empty favorites list says how to add one", async () => {
-    const view = await mount(ctx("Home01", { sidebarFilter: { view: "favorites" } }), "/app/notebooks/Book01?view=favorites");
+    const view = await mount(
+      ctx("Home01", { sidebarFilter: { view: "favorites" }, sidebarList: { total: 0, offset: 0, items: [] } }),
+      "/app/notebooks/Book01?view=favorites",
+    );
     try {
       expect(view.rows(null)).toEqual([]);
       expect(view.dom.root.textContent).toContain("No favorites yet. Add notes from their menu.");
@@ -282,7 +302,13 @@ describe("notebook sidebar", () => {
   });
 
   test("the phone menu shows a filter as a list with dates, tags and a way back to the tree", async () => {
-    const view = await mount(ctx("Home01", { sidebarFilter: { view: "recents" } }), "/app/notebooks/Book01?view=recents");
+    const recent = [nested, zeta, alpha, home, projects, note("Home02", "Guide", [], "Proj01")].map((node, index) =>
+      listed(node, index === 0 ? ["garden"] : []),
+    );
+    const view = await mount(
+      ctx("Home01", { sidebarFilter: { view: "recents" }, sidebarList: { total: 6, offset: 0, items: recent } }),
+      "/app/notebooks/Book01?view=recents",
+    );
     try {
       const section = view.phoneItems().find((item) => item.id === "filtered");
       expect(section?.label).toBe("Recently changed · 6 notes");
@@ -309,11 +335,10 @@ describe("notebook sidebar", () => {
   });
 
   test("the phone menu keeps the lock of a locked homepage next to its home icon", async () => {
-    const base = ctx("Home01");
-    const tree = base.tree.map((node) =>
-      node.id === "Home01" || node.id === "Zeta01" ? { ...node, lockedAt: "2026-02-01T00:00:00.000Z" } : node,
+    const locked = "2026-02-01T00:00:00.000Z";
+    const view = await mount(
+      ctx("Home01", { sidebarTree: sidebarTreeState([{ ...home, lockedAt: locked }, alpha, projects, { ...zeta, lockedAt: locked }]) }),
     );
-    const view = await mount({ ...base, tree });
     try {
       const notes = view.phoneNotes();
       expect(notes.find((item) => item.id === "note:Home01")).toMatchObject({
@@ -339,11 +364,80 @@ describe("notebook sidebar", () => {
     }
   });
 
-  test("without a homepage the tree keeps its sort order and the note icon", async () => {
+  test("without a homepage every row keeps the note icon", async () => {
     const view = await mount(ctx(null));
     try {
       expect(view.rows(null).map((row) => row.id)).toEqual(["Alpha1", "Home01", "Proj01", "Zeta01"]);
       expect(view.rows(null).every((row) => row.icon !== "ti ti-home")).toBe(true);
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("a large notebook opens the way to the open note; a closed branch loads when it opens", async () => {
+    requests.length = 0;
+    const children = Array.from({ length: 3 }, (_, index) => note(`Kid00${index}`, `Kid ${index}`, [], "Proj01"));
+    levels = { Proj01: { parentId: "Proj01", total: 3, offset: 0, items: children.map(sidebarNote) } };
+    const value = ctx(null, { sidebarTree: { ...sidebarTreeState([alpha, { ...projects, children: [] }, zeta]), total: 5000 } });
+    value.sidebarTree.levels[0]!.items[1]!.hasChildren = true;
+    const view = await mount(value);
+    try {
+      const branch = view.dom.root.querySelector<HTMLElement>('[data-k2b-nav-tree-id="Proj01"]')!;
+      expect(branch.getAttribute("aria-expanded")).toBe("false");
+      expect(view.rows("Proj01")).toEqual([]);
+      branch.querySelector<HTMLElement>("[data-k2b-nav-tree-toggle]")!.click();
+      await settle();
+      expect(requests).toEqual(["levels Proj01:0:100"]);
+      expect(view.rows("Proj01").map((row) => row.id)).toEqual(["Kid000", "Kid001", "Kid002"]);
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("a long level shows a page of notes and loads the next page on request", async () => {
+    requests.length = 0;
+    const many = Array.from({ length: 250 }, (_, index) => note(`N${String(index).padStart(5, "0")}`, `Note ${index}`));
+    levels = { "": { parentId: null, total: 250, offset: 0, items: many.map(sidebarNote) } };
+    const value = ctx(null, {
+      sidebarTree: {
+        total: 250,
+        levels: [{ parentId: null, total: 250, offset: 0, items: many.slice(0, 100).map(sidebarNote) }],
+        expandedIds: [],
+      },
+    });
+    const view = await mount(value);
+    try {
+      expect(view.rows(null)).toHaveLength(101);
+      const more = view.dom.root.querySelector<HTMLElement>('[data-k2b-nav-tree-id="more:"]')!;
+      expect(more.textContent).toContain("150 more notes");
+      more.querySelector<HTMLElement>("a, button, [role]")?.click() ?? more.click();
+      await settle();
+      expect(requests).toEqual(["levels :100:100"]);
+      expect(view.rows(null)).toHaveLength(201);
+      expect(view.dom.root.querySelector('[data-k2b-nav-tree-id="more:"]')?.textContent).toContain("50 more notes");
+      expect(view.phoneNotes()).toHaveLength(200);
+      expect(
+        view
+          .phoneItems()
+          .find((item) => item.id === "notes")
+          ?.children?.at(-1),
+      ).toMatchObject({ id: "more:", action: "more:" });
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  test("a note opened from elsewhere opens its way in the tree", async () => {
+    requests.length = 0;
+    const view = await mount(
+      ctx(null, { sidebarTree: { ...sidebarTreeState([alpha, projects, zeta], { expanded: false }), total: 5000 } }),
+    );
+    try {
+      window.dispatchEvent(
+        new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: { noteId: "Nest01", href: "/app/notebooks/Book01/notes/Nest01" } }),
+      );
+      await settle();
+      expect(requests).toEqual(["levels  reveal Nest01"]);
     } finally {
       view.cleanup();
     }

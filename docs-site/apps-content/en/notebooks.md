@@ -40,7 +40,8 @@ including from Book view. Use the overview to start from a template.
   dragging in the sidebar, with Alt+ArrowUp or Alt+ArrowDown, or with **Move
   up** and **Move down** in the note menu; the sidebar, Book, and export follow
   that order for everyone, and the folder menu sorts a level alphabetically
-  again.
+  again. Notebooks with thousands of notes open as fast as small ones: the
+  sidebar loads a level when it opens and shows 100 notes at a time.
 - Publish an internal handbook in Book view, with page navigation and tag
   filters but no editing controls or detail panel.
 - Discuss a page in a durable Markdown thread. New comments appear live for

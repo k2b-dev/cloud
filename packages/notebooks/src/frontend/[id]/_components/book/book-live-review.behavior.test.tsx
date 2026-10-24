@@ -89,30 +89,20 @@ describe("independent Book live metadata regression", () => {
   test.each(["write", "readonly"] as const)("workspace tree links retain explicit %s presentation", async (presentationMode) => {
     const dom = createDomTestHarness();
     const { default: NoteTree } = await import("../sidebar/NoteTree");
+    const { createSidebarTree } = await import("../sidebar/sidebar-tree");
+    const { sidebarTreeState } = await import("../sidebar/sidebar-tree.test-fixture");
     const dispose = render(
       () =>
         createComponent(NoteTree, {
           notebookId: "book01",
           selectedNoteId: "note01",
           presentationMode,
-          tree: [
-            {
-              id: "note02",
-              notebookId: "book01",
-              title: "Second",
-              parentId: null,
-              position: 0,
-              hasChildren: false,
-              historyIncomplete: false,
-              yjsSnapshotAt: null,
-              contentMd: null,
-              createdBy: null,
-              createdAt: "2026-09-04",
-              updatedAt: "2026-09-04",
-              lockedAt: null,
-              children: [],
-            },
-          ],
+          tree: createSidebarTree({
+            notebookId: () => "book01",
+            sort: () => "title",
+            initial: sidebarTreeState([{ id: "note02", title: "Second" }]),
+          }),
+          titleOf: (note) => note.title,
         }),
       dom.root,
     );

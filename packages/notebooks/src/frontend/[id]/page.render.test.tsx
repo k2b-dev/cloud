@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { mockNoteTree } from "./page-tree.test-fixture";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
@@ -78,7 +79,7 @@ const renderEmptyNotebook = async (mode: "write" | "book" | "graph" | "graph&fro
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
-  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([]));
+  spies.push(...mockNoteTree([]));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
@@ -204,7 +205,7 @@ const renderBookPage = async (preferences: Record<string, unknown> = {}) => {
   spies.push(spyOn(notebookStore, "canAccess").mockResolvedValue(true));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(
-    spyOn(notebooksService.note, "getTree").mockResolvedValue([
+    ...mockNoteTree([
       { ...page("note02", "Kapitel 10"), children: [] },
       { ...page("note03", "Kapitel 2"), hasChildren: true, children: [{ ...home, children: [] }] },
       { ...page("note01", "Anhang"), children: [] },
@@ -284,7 +285,7 @@ test.each([
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
-  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([]));
+  spies.push(...mockNoteTree([]));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.tag, "listNotesForTag").mockResolvedValue({ items: [], total: 0 }));
   spies.push(spyOn(notebooksService.tag, "countNotesForTag").mockResolvedValue(0));
@@ -343,7 +344,7 @@ const renderNotebookWithNotes = async (
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
-  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([note("note01", "Private folder"), note("note02", "Team notes")]));
+  spies.push(...mockNoteTree([note("note01", "Private folder"), note("note02", "Team notes")]));
   spies.push(
     spyOn(notebooksService.notebook, "graph").mockResolvedValue(
       query
@@ -482,7 +483,7 @@ const renderEditorPage = async (
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue("write"));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
-  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([{ ...note, children: [] }]));
+  spies.push(...mockNoteTree([{ ...note, children: [] }]));
   spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
@@ -671,7 +672,7 @@ const renderLinkedNotebook = async (
   spies.push(spyOn(notebooksService.notebook.permission, "get").mockResolvedValue(permission));
   spies.push(spyOn(notebookStore, "canAccess").mockResolvedValue(true));
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
-  spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([{ ...note, children: [] }]));
+  spies.push(...mockNoteTree([{ ...note, children: [] }]));
   spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note));
   spies.push(spyOn(noteStore, "getWithContentByShortId").mockResolvedValue({ ...note, yjsSnapshot: null }));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));

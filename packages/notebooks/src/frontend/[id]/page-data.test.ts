@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { mockNoteTree } from "./page-tree.test-fixture";
 import type { CloudRuntime, PermissionLevel, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
@@ -80,7 +81,7 @@ function fixtures(permission: PermissionLevel, defaultPresentationMode: Presenta
   track(spyOn(notebooksService.notebook.permission, "get")).mockResolvedValue(permission);
   track(spyOn(notebookStore, "canAccess")).mockResolvedValue(permission !== "none");
   track(spyOn(notebooksService.workspaceEvents, "latestCursor")).mockResolvedValue("1-0");
-  track(spyOn(notebooksService.note, "getTree")).mockResolvedValue([{ ...currentNote, children: [] }]);
+  for (const spy of mockNoteTree([{ ...currentNote, children: [] }])) track(spy);
   track(spyOn(notebooksService.note, "getByShortId")).mockResolvedValue(currentNote);
   track(spyOn(noteStore, "getWithContentByShortId")).mockResolvedValue(currentNote);
   track(spyOn(notebooksService.note, "getWithContentByShortId")).mockResolvedValue(currentNote);
@@ -248,17 +249,17 @@ describe("notebook page presentation authorization", () => {
 
   for (const [permission, opened] of [
     ["read", "note02"],
-    ["write", "note01"],
+    ["write", "note02"],
   ] as const) {
     test(`without a start page, ${permission} access opens ${permission === "read" ? "Book at its first sidebar page" : "Write at the first workspace page"}`, async () => {
       fixtures(permission);
-      // The workspace tree compares titles as text, so "Kapitel 10" arrives before "Kapitel 2".
+      // Both orders compare numbers in titles as numbers, so "Kapitel 2" comes before "Kapitel 10".
       const pages = [
         { ...note, id: "uuid-note01", shortId: "note01", title: "Kapitel 10" },
         { ...note, id: "uuid-note02", shortId: "note02", title: "Kapitel 2" },
       ];
       const byShortId = async ({ shortId }: { shortId: string }) => pages.find((page) => page.shortId === shortId) ?? null;
-      track(spyOn(notebooksService.note, "getTree")).mockResolvedValue(pages.map((page) => ({ ...page, children: [] })));
+      for (const spy of mockNoteTree(pages.map((page) => ({ ...page, children: [] })))) track(spy);
       track(spyOn(noteStore, "getWithContentByShortId")).mockImplementation(byShortId);
       track(spyOn(notebooksService.note, "getWithContentByShortId")).mockImplementation(byShortId);
       expect(await requestPageData(undefined, "/app/notebooks/book01")).toEqual({
@@ -351,7 +352,7 @@ test("a graph path note wins over the query, and invalid paths never fall back",
 
 for (const [permission, expected] of [
   ["read", "note02"],
-  ["write", "note01"],
+  ["write", "note02"],
 ] as const) {
   test(`${permission} graph with a foreign query and no cookie starts at the shell's first note`, async () => {
     fixtures(permission);
@@ -359,7 +360,7 @@ for (const [permission, expected] of [
       { ...note, shortId: "note01", title: "Kapitel 10" },
       { ...note, id: "other-id", shortId: "note02", title: "Kapitel 2" },
     ];
-    track(spyOn(notebooksService.note, "getTree")).mockResolvedValue(pages.map((page) => ({ ...page, children: [] })));
+    for (const spy of mockNoteTree(pages.map((page) => ({ ...page, children: [] })))) track(spy);
     track(spyOn(notebooksService.note, "getByShortId")).mockImplementation(
       async ({ shortId }) => pages.find((page) => page.shortId === shortId) ?? null,
     );

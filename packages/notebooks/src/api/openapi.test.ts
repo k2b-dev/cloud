@@ -55,7 +55,11 @@ test("the note tree and the book tree are separate OpenAPI components", async ()
 
   const noteTree = responseSchema(spec, "/{id}/tree")?.items?.$ref;
   expect(noteTree).toBe("#/components/schemas/NoteTreeNode");
-  expect(responseSchema(spec, "/{id}/workspace-state")?.properties?.tree?.items?.$ref).toBe(noteTree);
+  // The workspace state carries no tree; the sidebar reads bounded levels instead.
+  expect(responseSchema(spec, "/{id}/workspace-state")?.properties?.tree).toBeUndefined();
+  expect(responseSchema(spec, "/{id}/tree/levels")?.properties?.levels?.items?.properties?.items?.items?.$ref).toBe(
+    "#/components/schemas/SidebarNote",
+  );
   expect(Object.keys(schemas.NoteTreeNode?.properties ?? {})).toContain("notebookId");
   expect(schemas.NoteTreeNode?.properties?.children?.items?.$ref).toBe(noteTree);
 

@@ -22,6 +22,14 @@ export const notebookWorkspaceMessages = i18n.define({
       moveNote: "Move note",
       moveTo: ({ title }: { title: string }) => `Move ${title} to:`,
       rootLevel: "Root level",
+      moveTarget: "New place",
+      searchMoveTarget: "Search notes by title",
+      moreNotes: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: `1 more note`, other: `${count.toLocaleString("en")} more notes` }),
+      earlierNotes: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: `1 earlier note`, other: `${count.toLocaleString("en")} earlier notes` }),
+      loadingNotes: "Loading notes…",
+      failedLoadNotes: "Notes could not be loaded.",
       move: "Move",
       moveUp: "Move up",
       moveDown: "Move down",
@@ -494,6 +502,14 @@ export const notebookWorkspaceMessages = i18n.define({
       moveNote: "Notiz verschieben",
       moveTo: ({ title }) => `${title} verschieben nach:`,
       rootLevel: "Oberste Ebene",
+      moveTarget: "Neuer Ort",
+      searchMoveTarget: "Notizen nach Titel suchen",
+      moreNotes: ({ count }) =>
+        i18n.plural(count, "de", { one: `1 weitere Notiz`, other: `${count.toLocaleString("de")} weitere Notizen` }),
+      earlierNotes: ({ count }) =>
+        i18n.plural(count, "de", { one: `1 vorherige Notiz`, other: `${count.toLocaleString("de")} vorherige Notizen` }),
+      loadingNotes: "Notizen werden geladen…",
+      failedLoadNotes: "Die Notizen konnten nicht geladen werden.",
       move: "Verschieben",
       moveUp: "Nach oben verschieben",
       moveDown: "Nach unten verschieben",

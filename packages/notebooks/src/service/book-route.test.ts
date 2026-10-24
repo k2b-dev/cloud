@@ -2,6 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
 import * as tags from "./tags";
+import * as treeLevels from "./tree-levels";
 import * as workspaceEvents from "./workspace-events";
 
 await import("../frontend/[id]/_components/detail/ssr-test-plugin");
@@ -61,7 +62,9 @@ function fixture() {
   track(spyOn(notebooks, "canAccess")).mockResolvedValue(true);
   const cursor = track(spyOn(workspaceEvents, "latestCursor")).mockResolvedValue("100-0");
   const get = track(spyOn(notebooks, "get")).mockResolvedValue(notebook);
-  const tree = track(spyOn(notes, "getTree")).mockResolvedValue([{ ...note, children: [] }]);
+  const tree = track(spyOn(treeLevels, "readTitleTree")).mockResolvedValue([
+    { shortId: note.shortId, title: note.title, position: note.position, children: [] },
+  ]);
   const content = track(spyOn(notes, "getWithContentByShortId")).mockResolvedValue(note);
   const tagList = track(spyOn(tags, "listForNotebook")).mockResolvedValue([{ tag: "team", count: 101 }]);
   const tagNotes = track(spyOn(tags, "listNotesForTag")).mockResolvedValue({

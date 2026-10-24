@@ -1,15 +1,15 @@
 import { AppWorkspace, ContextMenu, Dropdown, type DropdownItem, useLocale } from "@k2b/ui";
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import type { SidebarNote } from "../../../../lib/sidebar-tree";
 import { notebookWorkspaceMessages } from "../../messages";
-import type { NoteTreeNode } from "./types";
 
-/** A note's title in a sidebar row, with its lock right after the text. */
-export function NoteRowLabel(props: { note: NoteTreeNode }) {
+/** A note's title in a sidebar row, with its lock right after the text. `title` may run ahead of the saved one. */
+export function NoteRowLabel(props: { note: SidebarNote; title?: string }) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   return (
     <span class="flex min-w-0 items-center gap-1.5">
-      <span class="k2b-truncate-fade">{props.note.title || t().untitled}</span>
+      <span class="k2b-truncate-fade">{(props.title ?? props.note.title) || t().untitled}</span>
       <Show when={props.note.lockedAt}>
         <i class="ti ti-lock shrink-0 text-xs text-amber-500" role="img" aria-label={t().locked} title={t().locked} />
       </Show>
@@ -18,7 +18,7 @@ export function NoteRowLabel(props: { note: NoteTreeNode }) {
 }
 
 /** The ⋯ button of a sidebar note row; with a mouse it shows on hover, focus, and the open note, and always on touch. */
-export function NoteRowMenu(props: { note: NoteTreeNode; items: DropdownItem[] }) {
+export function NoteRowMenu(props: { note: SidebarNote; items: DropdownItem[] }) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const label = () => t().noteActions({ title: props.note.title || t().untitled });

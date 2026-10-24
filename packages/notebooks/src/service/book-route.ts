@@ -6,8 +6,8 @@ import { bookMessages } from "../frontend/[id]/_components/book/messages";
 import { orderBookTree } from "../lib/book-tree";
 import { loadBookNote } from "./book";
 import * as notebooks from "./notebooks";
-import * as notes from "./notes";
 import * as tags from "./tags";
+import { readTitleTree } from "./tree-levels";
 import * as workspaceEvents from "./workspace-events";
 
 /** A Book refresh uses the same authorization and renderer as the direct page. */
@@ -42,10 +42,7 @@ export const loadBookRoute = async (params: {
   const cursor = await workspaceEvents.latestCursor({ notebookId: params.notebookId });
   const notebook = await notebooks.get({ id: params.notebookId });
   if (!notebook) return { kind: "not_found" as const };
-  const [tree, tagList] = await Promise.all([
-    notes.getTree({ notebookId: params.notebookId, locale: params.locale }),
-    tags.listForNotebook({ notebookId: params.notebookId }),
-  ]);
+  const [tree, tagList] = await Promise.all([readTitleTree(params.notebookId), tags.listForNotebook({ notebookId: params.notebookId })]);
   const common = {
     href: `${target.pathname}${target.search}${target.hash}`,
     notebookName: notebook.name,

@@ -3,6 +3,7 @@ import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
 import {
   AppWorkspace,
+  type AppWorkspaceNavTreeMove,
   Button,
   createNavigation,
   Dropdown,
@@ -15,12 +16,12 @@ import {
   Tooltip,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { mayDeleteOrLockNotes } from "../../../../lib/note-delete-permission";
 import { parseSidebarFilter, type SidebarFilter, withSidebarFilter } from "../../../../lib/sidebar-filter";
+import type { SidebarListNote, SidebarNote, SidebarTreeSort } from "../../../../lib/sidebar-tree";
 import { requestSoftNoteNavigation } from "../../../lib/soft-navigation";
-import { extractTags } from "../../../lib/tag-extract";
 import { buildAttachmentsUrl, buildGraphUrl, buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { NOTE_SOFT_NAVIGATED_EVENT, SIDEBAR_FILTER_CHANGED_EVENT } from "../detail/events";
@@ -30,12 +31,11 @@ import { openNotebookSettingsDialog } from "../settings/NotebookSettingsPanel";
 import { writeSettings } from "../settings/NotebookSettingsStore";
 import { showRestoredVersionNotice } from "../versions/restore-notice";
 import NavigationVisibilityControls from "./NavigationVisibilityControls";
-import NoteTree, { findNoteInLevel, noteActionItems, noteIcon, placementForMove, useNoteActions } from "./NoteTree";
+import NoteTree, { noteActionItems, noteIcon, placementForMove, useNoteActions } from "./NoteTree";
 import { createNavigationHidden, followStoredNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "./navigation-visibility";
 import { NoteRowLabel, NoteRowMenu, NoteRowsContextMenu } from "./note-rows";
 import { createNotebookSwitcher } from "./notebook-switcher";
-import { filterNotes, homepageFirst, type NoteTreeSort, sortNoteTree } from "./tree-utils";
-import type { NotebookContext, NoteTreeNode } from "./types";
+import type { NotebookContext } from "./types";
 import { useFavoriteNotes } from "./useFavoriteNotes";
 import { useNotebookWorkspaceState } from "./useNotebookWorkspaceState";
 
@@ -55,6 +55,12 @@ const currentFilter = (ctx: NotebookContext): SidebarFilter =>
 
 const sameFilter = (left: SidebarFilter, right: SidebarFilter) => left.view === right.view && left.tag === right.tag;
 
+/** The rows that load earlier or more notes are no places: a note dropped beside one lands beside the nearest note. */
+const withoutPagingRows = (move: AppWorkspaceNavTreeMove): AppWorkspaceNavTreeMove => {
+  const note = (id: string | null) => (id && !id.includes(":") ? id : null);
+  return { ...move, beforeId: note(move.beforeId), afterId: note(move.afterId) };
+};
+
 /**
  * The notebook's one sidebar: the notebook name, search, quick filters for favorites, recent notes and tags, and the
  * note tree. A filter turns the tree into a list with dates and tags, newest first. On phones the same content is
@@ -63,9 +69,12 @@ const sameFilter = (left: SidebarFilter, right: SidebarFilter) => left.view === 
 export default function NotebookSidebar(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+  const [treeSort, setTreeSort] = createSignal<SidebarTreeSort>(props.ctx.settings.treeSort);
   const {
     notebook,
-    noteTree,
+    tree,
+    list,
+    titleOf,
     favoriteNoteIds,
     selectedNoteId,
     tags,
@@ -73,12 +82,9 @@ export default function NotebookSidebar(props: Props) {
     workspaceError,
     workspaceRefreshing,
     refreshWorkspace,
-  } = useNotebookWorkspaceState(props.ctx);
+  } = useNotebookWorkspaceState(props.ctx, treeSort);
   const canWrite = props.ctx.permission === "write" || props.ctx.permission === "admin";
   const canDeleteOrLockNotes = () => mayDeleteOrLockNotes(props.ctx.permission, notebook().noteDeletePermission);
-  const [treeSort, setTreeSort] = createSignal<NoteTreeSort>(props.ctx.settings.treeSort);
-  // Like the start page of a Book, the homepage leads its own level whatever the sort order.
-  const sortedTree = createMemo(() => homepageFirst(sortNoteTree(noteTree(), treeSort(), locale()), notebook().homepageNoteId));
   // Writers rearrange the notebook order only where it is the order on screen.
   const orderable = () => canWrite && treeSort() === "title";
   const treeSortOptions = () => [
@@ -86,9 +92,11 @@ export default function NotebookSidebar(props: Props) {
     { value: "updated" as const, label: t().updatedSort },
     { value: "created" as const, label: t().createdSort },
   ];
-  const changeTreeSort = (value: NoteTreeSort) => {
+  // The server sorts every level, the homepage leading its own; another order reads the open levels from their start.
+  const changeTreeSort = (value: SidebarTreeSort) => {
     setTreeSort(value);
     writeSettings(notebook().id, { treeSort: value });
+    void tree.refresh(true).catch(() => undefined);
   };
   const attachmentsHref = () => buildAttachmentsUrl(notebook().id, props.ctx.presentationMode);
   // The graph starts from the open note and keeps the sidebar filter. It carries the page it opened from, so Close
@@ -103,7 +111,6 @@ export default function NotebookSidebar(props: Props) {
   const openSettings = () =>
     openNotebookSettingsDialog({
       notebook: notebook(),
-      tree: noteTree(),
       isAdmin: props.ctx.permission === "admin",
       canWrite,
       dateConfig: props.ctx.dateConfig,
@@ -114,10 +121,10 @@ export default function NotebookSidebar(props: Props) {
 
   // --- Filter -------------------------------------------------------------------------------------------------------
 
-  const [filter, setFilterState] = createSignal<SidebarFilter>(currentFilter(props.ctx));
+  const filter = list.filter;
   /** The address keeps the filter, so a reload, a shared link and the next note from the list show the same list. */
   const setFilter = (next: SidebarFilter) => {
-    setFilterState(next);
+    list.choose(next);
     const href = withSidebarFilter(`${window.location.pathname}${window.location.search}`, next);
     window.history.replaceState(window.history.state, "", `${href}${window.location.hash}`);
     window.dispatchEvent(new Event(SIDEBAR_FILTER_CHANGED_EVENT));
@@ -128,7 +135,7 @@ export default function NotebookSidebar(props: Props) {
     const noteId = selectedNoteId();
     if (noteId) showRestoredVersionNotice({ notebookId: notebook().id, noteId, t: t() });
     const follow = (next: SidebarFilter) => {
-      if (!sameFilter(next, filter())) setFilterState(next);
+      if (!sameFilter(next, filter())) list.follow(next);
     };
     // The editor announces another note before the history shows its address, so the event names that address.
     const onSoftNavigated = (event: Event) => {
@@ -145,13 +152,9 @@ export default function NotebookSidebar(props: Props) {
   });
 
   const favorites = useFavoriteNotes({ notebookId: notebook().id, initialFavoriteNoteIds: () => [...favoriteNoteIds()] });
-  // The order on screen, taken when a filter is chosen or the page loads, so a live change never moves a row under the
-  // pointer; choosing the filter again sorts the list anew.
-  const listOrder = createMemo(() => {
-    const current = filter();
-    return untrack(() => filterNotes(noteTree(), current, favorites.favoriteNoteIds()).map((note) => note.id));
-  });
-  const listedNotes = createMemo(() => filterNotes(noteTree(), filter(), favorites.favoriteNoteIds(), listOrder()));
+  // The list keeps the order it showed when the filter was chosen, so a live change never moves a row under the
+  // pointer; choosing the filter again sorts it anew.
+  const listedNotes = list.items;
   const filterLabel = () => {
     const current = filter();
     if (current.view === "favorites") return t().favorites;
@@ -163,12 +166,12 @@ export default function NotebookSidebar(props: Props) {
     return current.view === "tag" ? current.tag : null;
   };
   const toggleTag = (tag: string) => setFilter(tagFilter() === tag ? {} : { view: "tag", tag });
-  const listHref = (note: NoteTreeNode) => withSidebarFilter(buildNoteUrl(notebook().id, note.id, props.ctx.presentationMode), filter());
+  const listHref = (note: SidebarNote) => withSidebarFilter(buildNoteUrl(notebook().id, note.id, props.ctx.presentationMode), filter());
   /** Date and the first two tags under a listed note's title. */
-  const listMeta = (note: NoteTreeNode) =>
+  const listMeta = (note: SidebarListNote) =>
     [
       dates.formatDateTimeRelative(note.updatedAt, props.ctx.dateConfig),
-      extractTags(note.contentMd)
+      note.tags
         .slice(0, 2)
         .map((tag) => `#${tag}`)
         .join(" "),
@@ -178,9 +181,9 @@ export default function NotebookSidebar(props: Props) {
 
   // --- Note menu ----------------------------------------------------------------------------------------------------
 
-  const actions = useNoteActions(notebook().id, noteTree, { onOrderChanged: () => void refreshWorkspace() });
+  const actions = useNoteActions(notebook().id, { onOrderChanged: () => void refreshWorkspace(), findNote: tree.findNote });
   /** Everyone keeps favorites; writers also get the note's actions, with arranging where the notebook order shows. */
-  const noteMenu = (node: NoteTreeNode, level: NoteTreeNode[] | null): DropdownItem[] => {
+  const noteMenu = (node: SidebarNote, level: SidebarNote[] | null): DropdownItem[] => {
     const favorite = favorites.favoriteNoteIds().has(node.id);
     const favoriteItem: DropdownItem = {
       icon: favorite ? "ti ti-star-off" : "ti ti-star",
@@ -193,7 +196,7 @@ export default function NotebookSidebar(props: Props) {
       actions,
       t(),
       canDeleteOrLockNotes(),
-      level && orderable() ? { level, homepageId: notebook().homepageNoteId } : undefined,
+      level && orderable() ? { level, children: tree.level(node.id)?.items, homepageId: notebook().homepageNoteId } : undefined,
     );
     return [newSubnote!, favoriteItem, ...rest];
   };
@@ -224,9 +227,9 @@ export default function NotebookSidebar(props: Props) {
     if (result.kind === "applied") nav.push(result.href);
   };
 
-  const isHomepage = (node: NoteTreeNode) => node.id === notebook().homepageNoteId;
+  const isHomepage = (node: SidebarNote) => node.id === notebook().homepageNoteId;
   /** Menu items flattened for the phone menu, where a note's actions are one list. */
-  const phoneActions = (node: NoteTreeNode, level: NoteTreeNode[] | null): NavigationItem[] =>
+  const phoneActions = (node: SidebarNote, level: SidebarNote[] | null): NavigationItem[] =>
     noteMenu(node, level)
       .flatMap((item) => ("items" in item ? item.items : [item]))
       .map((item) => ({
@@ -238,9 +241,42 @@ export default function NotebookSidebar(props: Props) {
         icon: item.icon,
         disabled: item.disabled || actions.loading(),
       }));
-  const noteEntry = (node: NoteTreeNode, level: NoteTreeNode[] | null, description?: string): NavigationItem => ({
+  /** One level of the phone menu as far as it is loaded, with the rows that load earlier or more notes. */
+  const levelEntries = (parentId: string | null): NavigationItem[] => {
+    const level = tree.level(parentId);
+    const key = parentId ?? "";
+    if (!level)
+      return [{ id: `loading:${key}`, label: t().loadingNotes, icon: "ti ti-loader-2", disabled: true, action: `loading:${key}` }];
+    const later = level.total - level.offset - level.items.length;
+    return [
+      ...(level.offset > 0
+        ? [
+            {
+              id: `earlier:${key}`,
+              label: t().earlierNotes({ count: level.offset }),
+              icon: "ti ti-chevrons-up",
+              action: `earlier:${key}`,
+              keepOpen: true,
+            },
+          ]
+        : []),
+      ...level.items.map((child) => noteEntry(child, level.items)),
+      ...(later > 0
+        ? [
+            {
+              id: `more:${key}`,
+              label: t().moreNotes({ count: later }),
+              icon: "ti ti-chevrons-down",
+              action: `more:${key}`,
+              keepOpen: true,
+            },
+          ]
+        : []),
+    ];
+  };
+  const noteEntry = (node: SidebarNote, level: SidebarNote[] | null, description?: string): NavigationItem => ({
     id: `note:${node.id}`,
-    label: node.title || t().untitled,
+    label: titleOf(node) || t().untitled,
     description,
     icon: isHomepage(node) ? "ti ti-home" : node.lockedAt ? "ti ti-lock" : noteIcon(node, null),
     iconLabel: isHomepage(node) ? t().homepage : undefined,
@@ -248,8 +284,17 @@ export default function NotebookSidebar(props: Props) {
     status: isHomepage(node) ? (node.lockedAt ? { icon: "ti ti-lock", label: t().locked } : null) : undefined,
     href: level ? buildNoteUrl(notebook().id, node.id, props.ctx.presentationMode) : listHref(node),
     active: currentNoteId() === node.id,
-    children: level ? node.children.map((child) => noteEntry(child, node.children)) : undefined,
+    children: level && node.hasChildren ? (tree.isExpanded(node.id) ? levelEntries(node.id) : [loadingEntry(node.id)]) : undefined,
+    expanded: level && node.hasChildren ? tree.isExpanded(node.id) : undefined,
     actions: phoneActions(node, level),
+  });
+  // A closed branch holds one quiet row, so the menu offers to open it before its notes load.
+  const loadingEntry = (parentId: string): NavigationItem => ({
+    id: `loading:${parentId}`,
+    label: t().loadingNotes,
+    icon: "ti ti-loader-2",
+    disabled: true,
+    action: `loading:${parentId}`,
   });
   // Filters and the sort order change only what the menu shows, so the menu stays open to show the result.
   const filterEntries = (): NavigationItem[] => [
@@ -311,11 +356,22 @@ export default function NotebookSidebar(props: Props) {
       filter().view
         ? {
             id: "filtered",
-            label: `${filterLabel()} · ${t().noteCount({ count: listedNotes().length })}`,
+            label: `${filterLabel()} · ${t().noteCount({ count: list.total() })}`,
             section: true,
             children: [
               { id: "filter:clear", label: t().clearFilter, icon: "ti ti-x", action: "filter:clear", keepOpen: true },
               ...listedNotes().map((note) => noteEntry(note, null, listMeta(note))),
+              ...(list.hasMore()
+                ? [
+                    {
+                      id: "list:more",
+                      label: t().moreNotes({ count: list.total() - listedNotes().length }),
+                      icon: "ti ti-chevrons-down",
+                      action: "list:more",
+                      keepOpen: true,
+                    },
+                  ]
+                : []),
             ],
           }
         : {
@@ -336,7 +392,7 @@ export default function NotebookSidebar(props: Props) {
                   active: treeSort() === option.value,
                 })),
               },
-              ...sortedTree().map((node) => noteEntry(node, sortedTree())),
+              ...levelEntries(null),
             ],
           },
       { id: "graph", label: t().noteLinks, icon: "ti ti-affiliate", href: graphHref(), active: props.current === "graph" },
@@ -351,6 +407,9 @@ export default function NotebookSidebar(props: Props) {
       { id: "settings", label: t().settings, icon: "ti ti-settings", action: "settings" },
     ],
     onNavigate: handleSameNotebookNoteNavigate,
+    onExpandedChange: (id, expanded) => {
+      if (id.startsWith("note:")) tree.setOpen(id.slice(5), expanded);
+    },
     onAction: async (action) => {
       if (action === "new") {
         actions.handleCreateNote();
@@ -385,15 +444,24 @@ export default function NotebookSidebar(props: Props) {
         if (option) changeTreeSort(option.value);
         return;
       }
+      if (action.startsWith("more:") || action.startsWith("earlier:")) {
+        const parentId = action.slice(action.indexOf(":") + 1) || null;
+        await (action.startsWith("more:") ? tree.showMore(parentId) : tree.showEarlier(parentId)).catch(() => undefined);
+        return;
+      }
+      if (action === "list:more") {
+        list.showMore();
+        return;
+      }
       if (action.startsWith("note-action:")) {
         const rest = action.slice(12);
         const index = rest.indexOf(":");
         const id = rest.slice(0, index);
-        const found = filter().view ? null : findNoteInLevel(sortedTree(), id);
-        const node = found?.node ?? listedNotes().find((note) => note.id === id);
+        const found = filter().view ? undefined : tree.findNote(id);
+        const node = found ?? listedNotes().find((note) => note.id === id);
         const item =
           node &&
-          noteMenu(node, found?.level ?? null)
+          noteMenu(node, found ? (tree.level(found.parentId)?.items ?? null) : null)
             .flatMap((entry) => ("items" in entry ? entry.items : [entry]))
             .find((entry) => entry.label === rest.slice(index + 1));
         if (item && !item.disabled && "action" in item) item.action?.();
@@ -526,12 +594,13 @@ export default function NotebookSidebar(props: Props) {
                   }
                 >
                   <NoteTree
-                    tree={sortedTree()}
+                    tree={tree}
+                    titleOf={titleOf}
                     notebookId={notebook().id}
                     selectedNoteId={currentNoteId()}
                     presentationMode={props.ctx.presentationMode}
                     homepageId={notebook().homepageNoteId}
-                    onMove={orderable() ? (move) => actions.handlePlace(move.id, placementForMove(move)) : undefined}
+                    onMove={orderable() ? (move) => actions.handlePlace(move.id, placementForMove(withoutPagingRows(move))) : undefined}
                     noteMenu={noteMenu}
                   />
                 </AppWorkspace.SidebarSection>
@@ -539,14 +608,14 @@ export default function NotebookSidebar(props: Props) {
             >
               <div class="notebook-sidebar-filter">
                 <span class="notebook-sidebar-filter__label k2b-truncate-fade">
-                  {filterLabel()} <small>{t().noteCount({ count: listedNotes().length })}</small>
+                  {filterLabel()} <small>{t().noteCount({ count: list.total() })}</small>
                 </span>
                 <IconButton size="xs" label={t().clearFilter} tooltip={t().clearFilter} onClick={() => setFilter({})}>
                   <i class="ti ti-x" />
                 </IconButton>
               </div>
               <Show
-                when={listedNotes().length > 0}
+                when={listedNotes().length > 0 || !list.loaded()}
                 fallback={
                   <Placeholder
                     variant="inline"
@@ -558,11 +627,14 @@ export default function NotebookSidebar(props: Props) {
               >
                 <NoteRowsContextMenu menu={listMenu}>
                   <AppWorkspace.NavTree ariaLabel={filterLabel()} selectedId={currentNoteId()}>
+                    <Show when={!list.loaded()}>
+                      <AppWorkspace.NavTree.Item id="loading:list" label={t().loadingNotes} icon="ti ti-loader-2 animate-spin" disabled />
+                    </Show>
                     <For each={listedNotes()}>
                       {(note) => (
                         <AppWorkspace.NavTree.Item
                           id={note.id}
-                          label={<NoteRowLabel note={note} />}
+                          label={<NoteRowLabel note={note} title={titleOf(note)} />}
                           description={listMeta(note)}
                           icon={isHomepage(note) ? "ti ti-home" : "ti ti-file-text"}
                           iconLabel={isHomepage(note) ? t().homepage : undefined}
@@ -572,6 +644,15 @@ export default function NotebookSidebar(props: Props) {
                         />
                       )}
                     </For>
+                    <Show when={list.hasMore()}>
+                      <AppWorkspace.NavTree.Item
+                        id="more:list"
+                        label={t().moreNotes({ count: list.total() - listedNotes().length })}
+                        icon={list.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-chevrons-down"}
+                        class="notebook-tree-more"
+                        onSelect={() => list.showMore()}
+                      />
+                    </Show>
                   </AppWorkspace.NavTree>
                 </NoteRowsContextMenu>
               </Show>
