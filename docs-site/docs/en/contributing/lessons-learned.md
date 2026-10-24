@@ -199,6 +199,7 @@ convention still needs a check or a test.
 | User navigation mistaken for an async action's own navigation | Every draft-key change keeps an app opening active, leaving another chat's composer read-only. | Tests: `chat-slash.behavior.test.ts` requires `follow()` for one draft move and cancels unannounced changes; Assistant's `composer-app-commands.behavior.test.tsx` checks that editing returns before the previous save finishes. |
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
 | Workspace layout changes shape after the first render | A workspace region such as a `MainPane` mounts only after hydration, and the layout drops or moves content that was already shown. | Test: Chat `ChatThreads.browser.test.ts` switches from a chat without threads to one with threads at 1440 and 2000 px. Library fix pending in [#1752](https://github.com/k2b-dev/cloud/issues/1752). |
+| A test fixture loads stylesheets in another order than production | Production links the app stylesheet before Cloud's global one, so an app rule that only ties with a shared `@k2b/ui` rule loses there; a fixture that loads them the other way round lets the app rule win and passes. | Test: Chat `ChatWorkspace.browser-fixture.ts` loads the layer statement, `app.css`, then the global stylesheet, and `ChatThreads.browser.test.ts` measures the picker beside the title text. Mail fixtures: pending in [#1877](https://github.com/k2b-dev/cloud/issues/1877). |
 
 ## Lessons
 
@@ -1024,6 +1025,13 @@ convention still needs a check or a test.
 - **Root cause:** Awaiting keyboard dispatch did not wait for the browser's link navigation.
 - **Error class:** Reading asynchronous state before the completion condition.
 - **Guard:** `data-table-focus.browser.test.ts` waits for the destination URL, then retains its exact URL and callback-count assertions without increasing timeouts.
+
+### The thread picker stood at the far end of the Chat head
+
+- **What happened:** On the dev instance the thread picker stood at the right edge of the Chat head, while the v12 design and the Chat tests put it right beside the chat's title.
+- **Root cause:** `.chat-conversation__header > .k2b-page-title` ties in specificity with the shared `.k2b-ui .k2b-page-title { flex: 1 1 auto }`. Production links Cloud's global stylesheet after the app's, so the shared rule won; the Chat test fixture loaded them the other way round.
+- **Error class:** A test fixture loads stylesheets in another order than production.
+- **Guard:** The Chat fixture now loads the stylesheets in production order, and `ChatThreads.browser.test.ts` measures the gap between the title text and the picker. The Chat rule is anchored at `.k2b-ui`. Mail fixtures: pending in [#1877](https://github.com/k2b-dev/cloud/issues/1877).
 
 ## Add a lesson
 

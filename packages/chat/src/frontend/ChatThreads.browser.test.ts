@@ -91,6 +91,19 @@ describe("Chat threads on a desktop", () => {
       await threadRow(page, problems).click();
       await page.waitForURL(`**/c/${chat}/t/${problems}`);
       await page.locator(".chat-thread-picker", { hasText: "Problems" }).waitFor();
+      // The picker stands right beside the chat's title text, not at the far end of the head.
+      const titleEnd = await page.locator(".chat-conversation__header > .k2b-page-title").evaluate((title) => {
+        const walker = document.createTreeWalker(title, NodeFilter.SHOW_TEXT);
+        const range = document.createRange();
+        let end = 0;
+        while (walker.nextNode()) {
+          range.selectNodeContents(walker.currentNode);
+          end = Math.max(end, range.getBoundingClientRect().right);
+        }
+        return end;
+      });
+      const picker = await page.locator(".chat-conversation__picker").boundingBox();
+      expect(picker!.x - titleEnd).toBeLessThan(24);
       expect(await page.getByRole("feed").getByText("Problems: update 1", { exact: true }).count()).toBe(1);
       expect(await page.getByRole("feed").getByText("Updates: update 1", { exact: true }).count()).toBe(0);
       // "All threads" read everything it showed; the open thread reports reads for itself only.
