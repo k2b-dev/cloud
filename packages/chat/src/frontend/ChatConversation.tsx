@@ -9,6 +9,8 @@ import {
   type ChatComposerReply,
   EmojiPicker,
   IconButtonLink,
+  MessageEventGroup,
+  MessageEventRow,
   MessageRow,
   type MessageRowOrigin,
   type MessageRowQuote,
@@ -36,7 +38,12 @@ import type { Thread } from "./threads";
 export type ChatFeedItem = {
   /** The send's client ID for the reader's own messages sent from this tab, so a row keeps its key once stored. */
   key: string;
-  kind: "text" | "system";
+  /** An event and a group of events are no messages: they never count as unread and never answer anything. */
+  kind: "text" | "system" | "event" | "eventGroup";
+  /** An event's icon. */
+  icon?: string;
+  /** A group of three or more events in a row: its line, and whether its events show below it. */
+  group?: { label: string; time: string; expanded: boolean; toggle: () => void };
   authorId: string;
   authorName: string;
   body: string;
@@ -140,6 +147,7 @@ export type ChatConversationProps = {
 
 const ROW_ESTIMATE = 60;
 const SYSTEM_ESTIMATE = 36;
+const EVENT_ESTIMATE = 26;
 
 /** Header, history, and composer of one open chat. Below 48 rem it covers the visible part of the screen. */
 export default function ChatConversation(props: ChatConversationProps): JSX.Element {
@@ -233,8 +241,8 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     !previous ||
     !sameDay(item.at, previous.at, config()) ||
     startsMessageGroup(
-      { author: item.authorId, at: item.at, system: item.kind === "system" },
-      { author: previous.authorId, at: previous.at, system: previous.kind === "system" },
+      { author: item.authorId, at: item.at, system: item.kind !== "text" },
+      { author: previous.authorId, at: previous.at, system: previous.kind !== "text" },
     );
   const remember = (emoji: string) => setRecent((current) => rememberEmoji(current, emoji));
   // Another person's message gets its reaction line with its first reaction and keeps it, so removing one moves nothing.
@@ -353,10 +361,10 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         class="chat-conversation__feed"
         items={props.items}
         getKey={(item) => item.key}
-        estimateSize={(item) => (item.kind === "system" ? SYSTEM_ESTIMATE : ROW_ESTIMATE)}
+        estimateSize={(item) => (item.kind === "system" ? SYSTEM_ESTIMATE : item.kind === "text" ? ROW_ESTIMATE : EVENT_ESTIMATE)}
         label={t().history({ title: props.title })}
         itemLabel={(item) =>
-          item.kind === "system" ? undefined : `${item.own ? t().you : item.authorName}, ${messageTime(item.at, config())}`
+          item.kind === "text" ? `${item.own ? t().you : item.authorName}, ${messageTime(item.at, config())}` : undefined
         }
         separator={(item, previous) =>
           previous && sameDay(item.at, previous.at, config()) ? undefined : dayLabel(item.at, props.now(), config())
@@ -383,7 +391,19 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         }}
       >
         {(item, index) =>
-          item.kind === "system" ? (
+          item.kind === "eventGroup" && item.group ? (
+            <MessageEventGroup
+              label={item.group.label}
+              time={item.group.time}
+              dateTime={item.at}
+              expanded={item.group.expanded}
+              onToggle={item.group.toggle}
+            />
+          ) : item.kind === "event" ? (
+            <MessageEventRow icon={item.icon} origin={item.origin} time={messageTime(item.at, config())} dateTime={item.at}>
+              {item.body}
+            </MessageEventRow>
+          ) : item.kind === "system" ? (
             <MessageSystemRow time={messageTime(item.at, config())} dateTime={item.at}>
               {item.body}
             </MessageSystemRow>

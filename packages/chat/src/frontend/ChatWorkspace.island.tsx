@@ -30,6 +30,7 @@ import { chatMessages } from "../messages";
 import {
   type ConversationPageSchema,
   type ConversationSchema,
+  type ItemEventSchema,
   MAX_MESSAGE_REFS,
   MESSAGE_MAX_CODE_POINTS,
   MessageBodySchema,
@@ -55,9 +56,11 @@ import { ThreadMenu, ThreadPicker } from "./ChatThreads";
 import ChatThreadsPage from "./ChatThreadsPage";
 import { createChannelApi } from "./channel-api";
 import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
+import { messageTime, sameDay } from "./chat-format";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
 import DiscoverChannels from "./DiscoverChannels";
+import { createItemEventsApi } from "./item-events-api";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
@@ -479,6 +482,154 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       onSelect: () => void openView(chatId, view),
     };
   };
+  // Changes to the items of a Space or notebook show between its messages. They are read through the owning app
+  // for the loaded window, again when the history changes, when the page comes back and once a minute; they are no
+  // messages, so a failed read only leaves them out.
+  type ItemEvent = z.infer<typeof ItemEventSchema>;
+  const itemEvents = createItemEventsApi();
+  const [events, setEvents] = createSignal<{ key: string; list: readonly ItemEvent[] }>();
+  const [openGroups, setOpenGroups] = createSignal<ReadonlySet<string>>(new Set());
+  const eventsKey = () => {
+    const current = openChat();
+    if (!current || current.conversation?.kind !== "system" || current.view === "general") return null;
+    return JSON.stringify([
+      current.id,
+      current.view,
+      current.hasOlder ? current.messages[0]?.createdAt : null,
+      current.hasNewer ? current.messages.at(-1)?.createdAt : null,
+    ]);
+  };
+  let eventsRequest: AbortController | undefined;
+  const loadEvents = async () => {
+    const current = openChat();
+    const key = eventsKey();
+    eventsRequest?.abort();
+    if (!current || !key) return;
+    const request = new AbortController();
+    eventsRequest = request;
+    const after = current.hasOlder ? current.messages[0]?.createdAt : undefined;
+    const before = current.hasNewer ? current.messages.at(-1)?.createdAt : undefined;
+    const list: ItemEvent[] = [];
+    try {
+      let cursor: string | undefined;
+      // At most three pages: the window shows a few hundred changes at most, and older ones come with older messages.
+      for (let page = 0; page < 3; page++) {
+        const result = await itemEvents.list(
+          current.id,
+          {
+            thread: current.view === "all" ? "all" : current.view,
+            limit: 100,
+            ...(after ? { after } : {}),
+            ...(before ? { before } : {}),
+            ...(cursor ? { cursor } : {}),
+          },
+          request.signal,
+        );
+        list.push(...result.items);
+        if (!result.nextCursor) break;
+        cursor = result.nextCursor;
+      }
+      if (!request.signal.aborted) setEvents({ key, list });
+    } catch {
+      // Events are no messages: the history works without them, and the next refresh reads them again.
+    }
+  };
+  createEffect(
+    on(eventsKey, (key) => {
+      setOpenGroups(new Set<string>());
+      if (key) void loadEvents();
+      else {
+        eventsRequest?.abort();
+        setEvents(undefined);
+      }
+    }),
+  );
+  createEffect(
+    on(
+      () => openChat()?.messages.length,
+      () => void loadEvents(),
+      { defer: true },
+    ),
+  );
+  onMount(() => {
+    const visible = () => {
+      if (document.visibilityState === "visible") void loadEvents();
+    };
+    document.addEventListener("visibilitychange", visible);
+    const timer = setInterval(visible, 60_000);
+    onCleanup(() => {
+      document.removeEventListener("visibilitychange", visible);
+      clearInterval(timer);
+      eventsRequest?.abort();
+    });
+  });
+  const eventOrigin = (chatId: string, event: ItemEvent) => {
+    const thread = event.thread;
+    if ("id" in thread)
+      return {
+        label: thread.name,
+        icon: threadIcon(threadOf(openChat()?.threads ?? null, thread.id)),
+        selectLabel: t().openThread({ name: thread.name }),
+        onSelect: () => void openView(chatId, thread.id),
+      };
+    const canOpen = ["write", "admin"].includes(openChat()?.conversation?.permission ?? "");
+    return {
+      label: thread.name,
+      icon: thread.ref.type === "notebooks.note" ? "ti ti-file-text" : "ti ti-circle",
+      ...(canOpen
+        ? {
+            selectLabel: t().openThread({ name: thread.name }),
+            onSelect: () =>
+              void openResourceThread(chatId, { ref: thread.ref }).then(
+                (opened) => openView(chatId, opened.id),
+                () => toast(t().requestFailed, { iconClass: "ti ti-alert-circle" }),
+              ),
+          }
+        : {}),
+    };
+  };
+  /** Three or more events in a row on one day stand as one line that opens them. */
+  const groupEvents = (list: readonly ChatFeedItem[], mixed: boolean): ChatFeedItem[] => {
+    const result: ChatFeedItem[] = [];
+    const config = { ...props.dateConfig, locale: locale() };
+    for (let index = 0; index < list.length; ) {
+      const run: ChatFeedItem[] = [];
+      while (index < list.length && list[index]!.kind === "event" && (run.length === 0 || sameDay(run[0]!.at, list[index]!.at, config)))
+        run.push(list[index++]!);
+      if (run.length >= 3) {
+        const first = run[0]!;
+        const key = `events:${first.key}`;
+        const expanded = openGroups().has(key);
+        const names = [...new Set(run.map((item) => item.origin?.label).filter((name): name is string => Boolean(name)))];
+        result.push({
+          key,
+          kind: "eventGroup",
+          authorId: "",
+          authorName: "",
+          body: "",
+          at: first.at,
+          own: false,
+          group: {
+            label: mixed
+              ? t().eventChangesTo({ count: run.length, names: names.slice(0, 2).join(", "), more: Math.max(names.length - 2, 0) })
+              : t().eventChanges({ count: run.length }),
+            time: `${messageTime(first.at, config)}–${messageTime(run.at(-1)!.at, config)}`,
+            expanded,
+            toggle: () =>
+              setOpenGroups((open) => {
+                const next = new Set(open);
+                if (next.has(key)) next.delete(key);
+                else next.add(key);
+                return next;
+              }),
+          },
+        });
+        if (expanded) result.push(...run);
+      } else if (run.length) result.push(...run);
+      else result.push(list[index++]!);
+    }
+    return result;
+  };
   const items = createMemo<readonly ChatFeedItem[]>((previous) => {
     const current = openChat();
     if (!current) return [];
@@ -520,6 +671,36 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         messageId: message.id,
       });
     });
+    // Events stand between the stored messages by time; the window's own bounds keep out what belongs to other pages.
+    const loaded = events();
+    const first = current.messages[0]?.createdAt;
+    const last = current.messages.at(-1)?.createdAt;
+    if (loaded && loaded.key === eventsKey()) {
+      const shown = loaded.list
+        .filter((event) => (!current.hasOlder || !first || event.at >= first) && (!current.hasNewer || !last || event.at <= last))
+        .map(
+          (event): ChatFeedItem => ({
+            key: `event:${event.id}`,
+            kind: "event",
+            authorId: "",
+            authorName: "",
+            body: event.sentence,
+            icon: event.icon,
+            at: event.at,
+            own: false,
+            origin: mixed ? eventOrigin(current.id, event) : undefined,
+          }),
+        )
+        .sort((a, b) => a.at.localeCompare(b.at));
+      let next = 0;
+      const merged: ChatFeedItem[] = [];
+      for (const item of result) {
+        while (next < shown.length && shown[next]!.at < item.at) merged.push(shown[next++]!);
+        merged.push(item);
+      }
+      merged.push(...shown.slice(next));
+      result.splice(0, result.length, ...groupEvents(merged, mixed));
+    }
     // Sends wait at the end of the newest history; a window further back shows them once the reader is there.
     if (!current.hasNewer) {
       const lastSeq = current.messages.at(-1)?.seq ?? 0;

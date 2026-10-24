@@ -39,6 +39,16 @@ Titel und Status des Threads stammen vom Element. **Zur Aufgabe ↗**, **Zum Ter
 
 Eine Nachricht in **Alle Threads** geht an den Space oder das Notebook selbst. Eine Antwort geht in den Thread der beantworteten Nachricht. Die Beschriftung unter jeder Nachricht zeigt, wohin sie gehört.
 
+## Sehen, was sich geändert hat {icon="history"}
+
+Änderungen an Elementen erscheinen als ruhige Zeilen zwischen den Nachrichten, zum Beispiel „Mara hat den Status auf ‚In Prüfung‘ gesetzt“. Der Thread eines Elements zeigt nur dessen Änderungen; **Alle Threads** zeigt die Änderungen des ganzen Space oder Notebooks, jeweils mit der Beschriftung des Elements.
+
+:::reference
+- Drei oder mehr Änderungen nacheinander werden zu einer Zeile wie **4 Änderungen an …**. Wähle sie, um jede Änderung zu sehen.
+- Änderungen zählen nie als ungelesen und erscheinen nicht in der Chatliste.
+- Du siehst nur Änderungen an Elementen, die du öffnen darfst.
+:::
+
 ## Zugriff ändern {icon="users"}
 
 Ändere den Zugriff im Space oder Notebook. Im Chat kannst du dafür weder Mitglieder bearbeiten noch den Chat verlassen oder eigene Thread-Namen vergeben.

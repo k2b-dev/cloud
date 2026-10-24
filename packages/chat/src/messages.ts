@@ -281,6 +281,9 @@ export const chatMessages = i18n.define({
       allThreadsHint: "All threads mixed",
       newThread: "New thread",
       shareResource: "Share a Cloud element",
+      eventChanges: ({ count }: { count: number }) => `${count} changes`,
+      eventChangesTo: ({ count, names, more }: { count: number; names: string; more: number }) =>
+        `${count} changes to ${names}${more ? ` and ${more} more` : ""}`,
       tooManyResources: ({ count }: { count: number }) => `A message shares at most ${count} Cloud elements.`,
       shared: "Shared",
       sharedKinds: "Kind of shared items",
@@ -661,6 +664,9 @@ export const chatMessages = i18n.define({
       allThreadsHint: "Alle Threads gemischt",
       newThread: "Neuer Thread",
       shareResource: "Cloud-Element teilen",
+      eventChanges: ({ count }: { count: number }) => `${count} Änderungen`,
+      eventChangesTo: ({ count, names, more }: { count: number; names: string; more: number }) =>
+        `${count} Änderungen an ${names}${more ? ` und ${more} weiteren` : ""}`,
       tooManyResources: ({ count }) => `Eine Nachricht teilt höchstens ${count} Cloud-Elemente.`,
       shared: "Geteilt",
       sharedKinds: "Art der geteilten Inhalte",
