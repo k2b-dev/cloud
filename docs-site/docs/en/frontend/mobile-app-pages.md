@@ -348,9 +348,9 @@ Unnamed development builds do not identify a release.
 On returning to the foreground with a new version, the app reloads the current
 address when no field the person types into (text, numbers, dates, and times)
 is focused, no unsaved typing or account draft remains, and no modal dialog is
-open. Otherwise it shows a persistent quiet
-**New version · Reload** notice (**Neue Version · Neu laden** in German) in
-the work area's toast rail. Its action reloads the current page; stored drafts
+open. Otherwise it shows a persistent quiet notice with the installation's
+name, such as **New version of Example Cloud · Reload** (**Neue Version von
+Example Cloud · Neu laden** in German), in the work area's toast rail. Its action reloads the current page; stored drafts
 restore after mounting. The hourly check offers the same notice and never
 interrupts work with an automatic reload. There is no extra polling.
 

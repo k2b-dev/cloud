@@ -193,7 +193,7 @@ else {
         await waitFor(() => fetch.calls.length === 1, "renewal");
         await Bun.sleep(20);
         expect(page.reloads).toBe(0);
-        expect(page.dom.document.body.textContent).not.toContain("New version");
+        expect(page.dom.document.body.textContent).not.toContain("New version of Example Cloud");
       } finally {
         page.dispose();
         fetch.restore();
@@ -222,7 +222,7 @@ else {
           input.blur();
         }
         setVisibility(page.dom, "visible");
-        await waitFor(() => page.dom.document.body.textContent?.includes("New version") ?? false, "update notice");
+        await waitFor(() => page.dom.document.body.textContent?.includes("New version of Example Cloud") ?? false, "update notice");
         expect(page.reloads).toBe(0);
         const notice = page.dom.document.querySelector("[data-k2b-toast]")!;
         expect(notice.textContent).toContain("Reload");
@@ -252,7 +252,7 @@ else {
       page.dom.document.body.append(input);
       input.focus();
       release(Response.json({ renewed: false, builds: { inventory: "new" } }));
-      await waitFor(() => page.dom.document.body.textContent?.includes("New version") ?? false, "notice after focus");
+      await waitFor(() => page.dom.document.body.textContent?.includes("New version of Example Cloud") ?? false, "notice after focus");
       expect(page.reloads).toBe(0);
     } finally {
       page.dispose();
@@ -262,7 +262,7 @@ else {
     const later = mount({ renewedThisSession: true });
     try {
       later.intervals[0]!();
-      await waitFor(() => later.dom.document.body.textContent?.includes("New version") ?? false, "hourly notice");
+      await waitFor(() => later.dom.document.body.textContent?.includes("New version of Example Cloud") ?? false, "hourly notice");
       expect(later.reloads).toBe(0);
     } finally {
       later.dispose();
@@ -368,7 +368,7 @@ else {
       await waitFor(() => page.replaced.length === 1, "removed device");
       expect(page.dom.window.localStorage.length).toBe(0);
       expect(page.reloads).toBe(0);
-      expect(page.dom.document.body.textContent).not.toContain("New version");
+      expect(page.dom.document.body.textContent).not.toContain("New version of Example Cloud");
     } finally {
       page.dispose();
       fetch.restore();

@@ -159,7 +159,11 @@ export default function PwaRuntime(props: PwaRuntimeProps) {
         reloading = true;
         return;
       }
-      updateToast ??= toast(t().newVersion, { duration: 0, action: { label: t().reload, onClick: () => location.reload() } });
+      updateToast ??= toast(t().newVersion({ cloud: props.cloud }), {
+        duration: 0,
+        iconClass: "ti ti-refresh",
+        action: { label: t().reload, onClick: () => location.reload() },
+      });
     };
 
     if (firstPageOfSession()) void renew();
