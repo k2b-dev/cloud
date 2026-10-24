@@ -1044,3 +1044,9 @@ updates that class's row in the table.
 - **What happened:** Nightly Grids certification could not launch Chromium, and the Studio settings test rejected the empty unreadable-setting replacement list.
 - **Root cause:** The certification job omitted browser installation; the settings fixture expected the older request shape.
 - **Guard:** `nightly-grids-reports.test.ts` requires Chromium installation before certification. The Studio administration browser test checks the complete preview request, including `replaceUnreadable: []`, while retaining its no-save assertion.
+
+### A streaming deadline expired during connection setup
+
+- **What happened:** The slow-response transport test failed before obtaining its response on a busy runner.
+- **Root cause:** Its 80 ms caller deadline included connection setup, so it did not reliably reach the body-read assertion.
+- **Guard:** `allowed-network-fetch.test.ts` starts the same caller deadline after headers arrive and forwards its original timeout reason to the in-flight request. The server continues sending bytes until cancellation; neither the deadline nor the test timeout is increased.
