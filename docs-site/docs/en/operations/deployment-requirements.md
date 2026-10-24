@@ -673,6 +673,15 @@ transition and are dispatched afterwards; background notifications use the
 operator’s `app.locale` setting, and request-triggered outages retain the
 request locale.
 
+Pulse dashboards add Postgres definitions, publication hashes, and execution
+receipts to the control-data backup. Valkey stores disposable result snapshots,
+bounded to 500 entries or 64 MiB of serialized keys and data. Losing that cache
+can leave a panel waiting for its next permitted refresh; it does not permit
+another calculation in the same interval. Dashboards share SQL admission and
+read profiles but do not consume the questions quota. Public links are checked
+on every read and can be revoked by a base writer. Clearing measurements keeps
+dashboard definitions and invalidates their cached results.
+
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
 
@@ -727,6 +736,11 @@ setup lock. Restart old and new replicas of one app one at a time until all
 run this release. Keep Core first: it creates the shared schemas and the
 installation-wide `pgcrypto` extension other applications need. Updated app
 migrations no longer create that extension independently.
+
+Pulse base responses include `memberCount`, the number of configured person,
+group and agent grants with access. The sidebar reads this authorized base
+metadata; group sizes and general-access rules are not expanded into a people
+count.
 
 ### Pulse agent telemetry actions
 

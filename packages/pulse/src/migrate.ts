@@ -3,13 +3,14 @@ import { logger, get as settingsGet } from "@k2b/cloud/services";
 import { ensureSchema } from "@k2b/cloud/services/postgres";
 import { sql } from "bun";
 import { BaseTimezoneSchema } from "./base-settings";
-import { installAgentSourceOwnership, installBaseline, installOverviewAlerts, installSqlConsole } from "./schema";
+import { installAgentSourceOwnership, installBaseline, installDashboards, installOverviewAlerts, installSqlConsole } from "./schema";
 
 const MIGRATIONS = [
   { version: 3, name: "clickhouse_baseline", up: installBaseline },
   { version: 4, name: "sql_console", up: installSqlConsole },
   { version: 5, name: "overview_alerts", up: installOverviewAlerts },
   { version: 6, name: "agent_source_ownership", up: installAgentSourceOwnership },
+  { version: 7, name: "sql_dashboards", up: installDashboards },
 ];
 const log = logger("pulse:migrate");
 

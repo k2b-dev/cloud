@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { launchBrowser } from "../../../ui/test/browser";
-import { buildWorkspaceHarness, origin, workspaceFixture } from "./PulseWorkspace.browser-fixture";
+import { buildWorkspaceHarness, origin, pauseWorkspaceClock, workspaceFixture } from "./PulseWorkspace.browser-fixture";
 import { buildPulseWorkspaceHref, readWorkspacePathState } from "./workspace/routes";
 import { sqlTestLimits, sqlTestQuery, sqlTestResult } from "./workspace/sql-test-fixtures";
 import type { PulseWorkspaceProps } from "./workspace/types";
@@ -22,8 +22,7 @@ const open = async (width: number, snapshot: Partial<PulseWorkspaceProps> = {}, 
     ...snapshot,
   };
   const tab = await browser.newPage({ viewport: { width, height: 1000 } });
-  await tab.clock.install({ time: new Date("2026-10-20T14:32:00Z") });
-  await tab.clock.pauseAt(new Date("2026-10-20T14:32:00Z"));
+  await pauseWorkspaceClock(tab.clock, new Date("2026-10-20T14:32:00Z"));
   const runs: unknown[] = [];
   let response: { status: number; json: unknown } = { status: 200, json: sqlTestResult };
   await tab.route(`${origin}/api/**`, async (route) => {
@@ -476,7 +475,9 @@ test("the last of 32 parameters keeps its visible external diagnosis alongside s
     expect(await saveDiagnosis.isVisible()).toBe(true);
     expect(await assistantDiagnosis.isVisible()).toBe(true);
     expect(await saveDiagnosis.locator("..").getByRole("button", { name: "Erneut versuchen", exact: true }).isEnabled()).toBe(true);
-    expect(await assistantDiagnosis.locator("..").getByRole("button", { name: "Erneut versuchen", exact: true }).isEnabled()).toBe(true);
+    expect(await tab.locator('[data-sql-region="status"]').getByRole("button", { name: "Erneut versuchen", exact: true }).isEnabled()).toBe(
+      true,
+    );
     const visibleInStrip = () =>
       last.evaluate((element) => {
         const strip = element.closest("[data-sql-parameter-strip]")!;
@@ -632,12 +633,14 @@ test("failed runs show short status, visible recovery help and the correct retry
         await result.locator("p").filter({ hasText: help }).waitFor();
         expect(await tab.locator('[data-sql-region="status"] strong').innerText()).toBe(title!);
         expect(await result.getByRole("heading").innerText()).toBe(title!);
-        expect(await result.getByRole("button", { name: "Erneut versuchen", exact: true }).count()).toBe(code === "NO_READ_ACCESS" ? 0 : 1);
+        expect(await tab.locator('[data-sql-region="status"]').getByRole("button", { name: "Erneut versuchen", exact: true }).count()).toBe(
+          code === "NO_READ_ACCESS" ? 0 : 1,
+        );
         expect(await tab.getByRole("textbox", { name: "SQL", exact: true }).inputValue()).toBe("SELECT :host");
         if (code !== "NO_READ_ACCESS") {
           const before = runs.length;
           answer({ status: 200, json: sqlTestResult });
-          await result.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+          await tab.locator('[data-sql-region="status"]').getByRole("button", { name: "Erneut versuchen", exact: true }).click();
           await tab.getByRole("region", { name: "SQL-Ergebnis", exact: true }).waitFor();
           expect(runs.length).toBe(before + 1);
         }

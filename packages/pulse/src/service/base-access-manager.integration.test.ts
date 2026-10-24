@@ -4,17 +4,18 @@ import { sql } from "bun";
 import { inLockOrder } from "../../../../scripts/fixtures/lock-order";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { grantBaseAccess, revokeBaseAccess, updateBaseAccess } from "./base-management";
+import { getBase, grantBaseAccess, revokeBaseAccess, updateBaseAccess } from "./base-management";
 import { seedActiveBaseStore } from "./base-store.test-fixture";
 
 const suite = databaseSuite();
-const created = { bases: [] as string[], users: [] as string[], groups: [] as string[] };
+const created = { bases: [] as string[], users: [] as string[], groups: [] as string[], agents: [] as string[] };
 
 afterEach(async () => {
   for (const baseId of created.bases.splice(0)) {
     await sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM pulse.base_access WHERE base_id = ${baseId}::uuid)`;
     await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
   }
+  for (const id of created.agents.splice(0)) await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
   for (const id of created.groups.splice(0)) await sql`DELETE FROM auth.groups WHERE id = ${id}::uuid`;
   for (const id of created.users.splice(0)) await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
 });
@@ -81,7 +82,10 @@ suite("Pulse base keeps a manager", () => {
     const own = await bind(baseId, { type: "user", userId: qdt }, "admin");
     const granted = await grantBaseAccess({ baseId, user: { id: qdt }, principal: { type: "user", userId: lym }, permission: "admin" });
     expect(granted.ok).toBe(true);
+    expect(await getBase(baseId, { id: qdt })).toMatchObject({ ok: true, data: { memberCount: 2 } });
     expect((await revokeBaseAccess({ baseId, accessId: own, user: { id: qdt } })).ok).toBe(true);
+    expect(await getBase(baseId, { id: lym })).toMatchObject({ ok: true, data: { memberCount: 1 } });
+    expect(await getBase(baseId, { id: qdt })).toMatchObject({ ok: false });
 
     const groupBase = await insertBase();
     const [group] = await sql<{ id: string }[]>`
@@ -90,7 +94,26 @@ suite("Pulse base keeps a manager", () => {
     created.groups.push(group!.id);
     await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${qdt}::uuid, ${group!.id}::uuid)`;
     const groupAccess = await bind(groupBase, { type: "group", groupId: group!.id }, "admin");
+    expect(await getBase(groupBase, { id: qdt })).toMatchObject({ ok: true, data: { memberCount: 1 } });
     expectLastManager(await revokeBaseAccess({ baseId: groupBase, accessId: groupAccess, user: { id: qdt } }));
+  });
+
+  test("member counts include agents but exclude general and disabled grants", async () => {
+    const baseId = await insertBase();
+    const userId = await insertUser();
+    await bind(baseId, { type: "user", userId }, "admin");
+    const [agent] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind)
+      VALUES('Pulse member fixture','agent') RETURNING id`;
+    created.agents.push(agent!.id);
+    const [agentGrant] = await sql<{ id: string }[]>`INSERT INTO auth.access(service_account_id,permission)
+      VALUES(${agent!.id}::uuid,'read') RETURNING id`;
+    const [general] = await sql<{ id: string }[]>`INSERT INTO auth.access(authenticated_only,permission)
+      VALUES(true,'read') RETURNING id`;
+    await sql`INSERT INTO pulse.base_access(base_id,access_id)
+      VALUES(${baseId}::uuid,${agentGrant!.id}::uuid),(${baseId}::uuid,${general!.id}::uuid)`;
+    expect(await getBase(baseId, { id: userId })).toMatchObject({ ok: true, data: { memberCount: 2 } });
+    await sql`UPDATE auth.access SET permission='none' WHERE id=${agentGrant!.id}::uuid`;
+    expect(await getBase(baseId, { id: userId })).toMatchObject({ ok: true, data: { memberCount: 1 } });
   });
 
   test("of two managers lowering themselves at once, exactly one succeeds", async () => {

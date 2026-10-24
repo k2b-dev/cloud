@@ -16,13 +16,17 @@ to one ClickHouse database per base; Postgres keeps control data.
 
 Use SQL through the API, CLI, or `sql.run` capability to read measurements.
 Saved queries keep SQL and parameters for reuse. The live SQL console is a
-separate interface for these same operations; dashboards follow later.
+separate interface for these same operations. Dashboards save SQL results as
+numbers, charts, tables, and funnels.
 
 Cloud administrators open **Administration → App administration → Pulse** to
 manage the data store, bases, and internal targets. **Data store** opens first.
 Pulse uses the shared app administration list, with no separate sidebar section.
 
 ## See what needs attention
+
+The base switcher shows the number of configured members. Each person, group
+or agent counts once; general access rules do not count as individual members.
 
 A base opens on **Overview**. It shows source freshness, alert rules needing
 attention, up to four saved key numbers, and recent changes. Existing
@@ -403,6 +407,56 @@ are retained, with 240 KiB reserved for data and 16 KiB for the capability
 envelope. `saved_query.save` uses an idempotency
 key and revision checks with rememberable approval. Deletion always asks for
 approval. There is no capability for tokens or access changes.
+
+## Build a dashboard
+
+Use **Ask AI** to propose a dashboard, or save its JSON plus SQL with
+`cld pulse dashboards save --base <base-id> --file dashboard.json`.
+Read `cld pulse reference dashboards.md` for a complete website example.
+The Assistant asks before saving. Updates use the revision from
+`dashboard.read` or `dashboards get` so a stale edit cannot overwrite a newer one.
+
+A dashboard groups number, line, bar, table, and funnel panels into sections.
+A named section can include an icon, color, and caption describing its sources
+or cadence; these come from the saved definition.
+A number panel shows one numeric value. With a DateTime `x`, it uses the last
+returned row and shows up to 480 trend points. Optional String columns
+`unit`, `detail`, and `detailTone` add a unit and change label.
+Choose 24 hours, seven days, 30 days, 90 days, or a custom period. Referenced
+`:from`, `:to`, and `:bucket` parameters follow that range. Other values remain
+in the panel's `params`. Each panel declares the output `columns` it shows;
+charts also choose `x` and optionally `series`. Aggregate to at most eight
+series and 480 points per series, with 36 panels and 3,840 marks per panel.
+Excessive or truncated results show an error instead of silently losing rows.
+
+Panels retain the base's SQL profile and concurrency limits, separately from
+the questions quota. Refreshes run at most once per revision, range, and
+60-second interval. On failure, the panel keeps its last successful result
+and timestamp when available. Retries back off from one to five minutes.
+
+### Share selected results
+
+Review every output column before publishing. Anyone with the returned link
+can read those results. The public page contains presentation and selected
+columns, without SQL or parameters. Publishing requires write access and an
+explicit confirmation. Assistant publication always asks for approval.
+
+SQL, parameters, selected-column, and output changes end the existing link;
+title and layout edits retain it. Publishing again rotates the link. Revoke it
+with **Unpublish** or `cld pulse dashboards unpublish`. Clearing measurements
+preserves definitions and discards old cached results; deleting a base also
+removes its dashboards and public links.
+
+### Dashboard operations in this release
+
+This release adds Postgres dashboard definitions and durable execution
+receipts. Back them up with the other Pulse control data. Valkey holds only
+result snapshots: at most 500 entries or 64 MiB of serialized keys and data,
+evicted by oldest write. Loss or eviction of a snapshot does not permit an
+extra calculation within its current interval. Private and public reads have
+separate cache keys and validate access on every read. A store outage may
+leave a timestamped previous result available; a lost cache means waiting for
+the next permitted refresh.
 
 ## Let an agent create and write telemetry
 

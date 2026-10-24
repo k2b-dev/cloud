@@ -6,8 +6,14 @@ export const app = defineApp({
   id: "pulse",
   // APIs admit roleless service accounts; navigation keeps its narrower audience.
   access: appAccess.signedIn({
-    // Ingest-only source keys keep their scope, binding and domain checks.
-    publicRoutes: ["/api/pulse/openapi.json", "/api/pulse/ingest"],
+    // Source keys and dashboard publication tokens retain their own domain checks.
+    publicRoutes: [
+      "/api/pulse/openapi.json",
+      "/api/pulse/ingest",
+      "/app/pulse/public/:token",
+      "/api/pulse/public/:token",
+      "/api/pulse/public/:token/panels/:panelId",
+    ],
   }),
   cli: { pulse: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Pulse",

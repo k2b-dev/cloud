@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { launchBrowser } from "../../../../ui/test/browser";
 import type { AdminBaseRow, AdminBasesPage, InternalTarget, InternalTargetsPage, PulsePolicy } from "../../store/admin-contracts";
+import { pauseWorkspaceClock } from "../PulseWorkspace.browser-fixture";
 
 // Administration -> Pulse -> Bases and Internal targets: ClickHouse-backed parts load after the first frame
 // without moving anything above them, every action ends in a visible result, and both tabs fit a phone and a
@@ -146,8 +147,7 @@ const open = async (
   const page = await browser.newPage({ viewport: { width: view.width, height: view.height }, isMobile: view.touch, hasTouch: view.touch });
   // A frozen clock runs status refreshes only when the test advances it.
   if (options.frozenAt) {
-    await page.clock.install({ time: options.frozenAt });
-    await page.clock.pauseAt(options.frozenAt);
+    await pauseWorkspaceClock(page.clock, options.frozenAt);
   }
   let release = () => {};
   const released = new Promise<void>((done) => {
@@ -207,6 +207,13 @@ describe("Pulse administration tabs in a browser", () => {
       const { page, release } = await open(view, { view: "bases", policy, page: basesPage }, { locale: "de" });
       try {
         await page.getByText("ClickHouse wird geprüft …").waitFor();
+        await page.getByRole("columnheader", { name: "Profil", exact: true }).waitFor();
+        expect(
+          await page
+            .getByRole("row", { name: /Betrieb/ })
+            .getByText("Normal", { exact: true })
+            .count(),
+        ).toBe(1);
         const waiting = await layout(page);
         release();
         await page.getByText("verwaist", { exact: true }).waitFor();
@@ -282,6 +289,12 @@ describe("Pulse administration tabs in a browser", () => {
         limits: { valuesPerMinute: number };
       };
       expect(saved.limits.valuesPerMinute).toBe(5000);
+      expect(
+        await page
+          .getByRole("row", { name: /Betrieb/ })
+          .getByText("Large", { exact: true })
+          .count(),
+      ).toBe(1);
     } finally {
       await page.close();
     }
