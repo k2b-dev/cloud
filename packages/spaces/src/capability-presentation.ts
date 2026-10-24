@@ -58,6 +58,11 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "space.activity": {
+          title: "Elementereignisse lesen",
+          description:
+            "Berechtigte Änderungen an Aufgaben und Terminen eines Space lesen, neueste zuerst. Optional auf ein Element begrenzen. Kommentare und gelöschte Elemente werden ausgelassen. Dem Cursor folgen.",
+        },
         "template.list": {
           title: "Vorlagen auflisten",
           description:

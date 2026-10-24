@@ -709,3 +709,34 @@ export const EventInvitationCommitDataSchema = z
   .object({ deliveryId: UuidSchema, itemId: ResourceShortIdSchema, draftId: ResourceShortIdSchema, state: z.literal("drafted") })
   .strict();
 export const CommentDeleteDataSchema = z.object({ commentId: ResourceShortIdSchema, deleted: z.literal(true) }).strict();
+
+export const ActivityInputSchema = z.strictObject({
+  space: ResourceShortIdSchema.describe("Container short ID returned by space.list or space.read."),
+  item: ResourceShortIdSchema.optional().describe("Optional item short ID in this container."),
+  timeZone: TimeZoneInputSchema.refine((zone) => {
+    if (!zone) return true;
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: zone });
+      return true;
+    } catch {
+      return false;
+    }
+  }).describe("IANA time zone for date presentation; the installation zone when omitted."),
+  before: TimestampSchema.max(40).optional().describe("Exclusive upper bound on the last occurrence, as an ISO datetime."),
+  after: TimestampSchema.max(40).optional().describe("Exclusive lower bound on the last occurrence, as an ISO datetime."),
+  cursor: CursorSchema,
+  limit: z.number().int().min(1).max(100).default(50).describe("Maximum rows to return, from 1 to 100; defaults to 50."),
+});
+export const ActivityDataSchema = z
+  .array(
+    z.strictObject({
+      id: z.string().max(100),
+      at: TimestampSchema,
+      ref: z.strictObject({ type: z.literal("spaces.item"), id: ResourceShortIdSchema }).nullable(),
+      actor: z.strictObject({ type: z.enum(["user", "service_account", "system"]), id: z.uuid().nullable(), name: z.string().max(1000) }),
+      icon: z.string().max(80),
+      sentence: z.string().max(4000),
+      count: z.number().int().min(1),
+    }),
+  )
+  .max(100);
