@@ -15,6 +15,7 @@ import type {
   RootSummary,
 } from "../contracts";
 import type { bindings, NewBinding } from "../data/bases";
+import { machineStorage } from "../data/machine-storage";
 import { type Operation, operations, withRootLock } from "../data/operations";
 import { filegateException, pendingMigration, type UserFilesCall } from "./activity";
 import type { readConfiguration } from "./configuration";
@@ -422,6 +423,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
     return locked(state.root.name, async () => {
       const source = basePath(state.config, input);
       let binding = await deps.bindings.path(state.root.name, source);
+      if (binding && (await machineStorage.owner(binding.id))) throw new FilesError("machine_storage_owned", 409);
       if (binding && ["archived", "deleted"].includes(binding.lifecycle)) {
         const [receipt] = await sql<
           Operation[]
@@ -515,6 +517,8 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       name = strictName(input.name);
       base = basePath(state.config, { area: input.area, kind, name });
     }
+    const binding = await deps.bindings.path(state.root.name, base);
+    if (binding && (await machineStorage.owner(binding.id))) throw new FilesError("machine_storage_owned", 409);
     return { ...state, base, target: joinPath(base, relative), relative, name, kind, archiveId };
   }
   return {
@@ -556,6 +560,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         const path = basePath(state.config, input);
         const binding = await deps.bindings.path(state.root.name, path);
         if (!binding) throw new FilesError("unassigned", 409);
+        if (await machineStorage.owner(binding.id)) throw new FilesError("machine_storage_owned", 409);
         if (await operations.pending(state.root.name, path)) throw new FilesError("operation_pending", 409);
         await sql`UPDATE filesv2.bases SET lifecycle='retired' WHERE id=${binding.id}::uuid AND lifecycle='active'`;
         await audit.recordResultAfterSideEffect({
@@ -845,7 +850,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       const [cursor] = await sql<{ after_id: string | null }[]>`SELECT after_id FROM filesv2.maintenance WHERE singleton=true`;
       const rows = await sql<
         { id: string; identity_id: string; identity_name: string; kind: BaseKind; root: string; path: string }[]
-      >`SELECT id,identity_id,identity_name,kind,root,path FROM filesv2.bases WHERE area='cloud' AND lifecycle='active' AND (${cursor?.after_id ?? null}::uuid IS NULL OR id>${cursor?.after_id ?? null}::uuid) ORDER BY id LIMIT ${PAGE_SIZE}`;
+      >`SELECT id,identity_id,identity_name,kind,root,path FROM filesv2.bases WHERE area='cloud' AND lifecycle='active' AND NOT EXISTS(SELECT 1 FROM filesv2.machine_storage m WHERE m.base_id=filesv2.bases.id) AND (${cursor?.after_id ?? null}::uuid IS NULL OR id>${cursor?.after_id ?? null}::uuid) ORDER BY id LIMIT ${PAGE_SIZE}`;
       for (const base of rows) {
         if (input.signal?.aborted) break;
         await input.heartbeat?.();

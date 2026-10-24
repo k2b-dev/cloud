@@ -443,6 +443,8 @@ export type ServiceAccountRequestActor = {
   delegatedUser: User | null;
   scopes: string[];
   credentialId?: string | null;
+  /** Public OAuth client identifier, never the bearer token. */
+  oauthClientId?: string | null;
   credentialExpiresAt?: string | null;
   delegation?: InvocationProvenance;
 };

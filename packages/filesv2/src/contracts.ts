@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DOCUMENT_FORMATS, DOCUMENT_KINDS, type DocumentFormat } from "./documents";
+import type { MachineOwner } from "./machine-contracts";
 
 /** Largest content one capability stream or `cld filesv2 cat` moves through Cloud or memory. */
 export const CONTENT_STREAM_LIMIT = 50 * 1024 * 1024;
@@ -39,6 +40,7 @@ export type Availability = { localLinuxEnabled: boolean; freeipaEnabled: boolean
 export const InventoryStateSchema = z.enum(["existing", "missing", "unassigned", "conflict", "unknown", "orphaned", "retired"]);
 export type InventoryState = z.infer<typeof InventoryStateSchema>;
 export type BaseSummary = {
+  owner?: MachineOwner;
   id: string;
   /** Opaque identity of the current backend, root, path and durable binding. */
   locationKey?: string;
@@ -80,7 +82,11 @@ export type DirectoryResult = {
 export type DownloadLease = { url: string; method: "GET"; expires: string };
 export type EntryResult = { base: BaseSummary; entry: FileEntry; favorite?: boolean; resourceId?: string };
 /** A recent or favorite pointer the user may still reach; the base is resolved fresh on every read. */
-export type MarkedEntry = { base: { id: string; name: string; kind: BaseKind; area: Area }; entry: FileEntry; markedAt: string };
+export type MarkedEntry = {
+  base: { id: string; name: string; kind: BaseKind; area: Area; owner?: MachineOwner };
+  entry: FileEntry;
+  markedAt: string;
+};
 export const FavoriteInputSchema = z.object({ path: z.string().min(1).max(4096), favorite: z.boolean() });
 /** A file ID: a stable `n:<baseId>:<fileId>` ref, an inline `filesv2.entry` ref, or a persisted `p:<sha256>` one. */
 export const EntryIdSchema = z.object({ id: z.string().min(1).max(512) });
@@ -96,7 +102,7 @@ export const UploadInputSchema = z.object({
   onConflict: z.enum(["error", "overwrite"]).default("error"),
 });
 export const UploadIdSchema = z.object({ id: z.string().min(1).max(256) });
-/** Browser and CLI transfer segments straight to `url`; Cloud never sees the bytes. */
+/** Browser and CLI transfer segments to `url`; machine storage uses Cloud to reauthorize each request. */
 export type UploadSession = {
   id: string;
   path: string;
@@ -186,10 +192,11 @@ export type ShareView = {
   note: string | null;
   publicNote: string | null;
   /** `kind` is absent once the binding behind a share no longer exists. */
-  base: { id: string; name: string; kind?: BaseKind };
+  base: { id: string; name: string; kind?: BaseKind; owner?: MachineOwner };
   scope: string;
   items: string[];
   createdBy: string;
+  createdByKind?: "standalone" | "agent";
   createdAt: string;
   expiresAt: string | null;
   state: "active" | "expired" | "revoked";

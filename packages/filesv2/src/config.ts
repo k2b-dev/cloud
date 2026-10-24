@@ -4,6 +4,7 @@ export const app = defineApp({
   id: "filesv2",
   access: appAccess.signedIn({
     publicRoutes: [
+      "/share/filesv2/transfer/:ticket",
       "/share/filesv2/s/:token",
       "/share/filesv2/s/:token/*",
       "/share/filesv2/inbox/:token",

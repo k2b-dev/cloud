@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import { migrateActivity } from "./data/activity-migration";
+import { migrateMachineStorage } from "./data/machine-storage";
 import { migrateSharing } from "./data/sharing-migration";
 import { migrateTemplates } from "./data/templates";
 import { migrateTrash } from "./migrate-trash";
@@ -120,5 +121,6 @@ export async function migrate(): Promise<void> {
   await migrateTrash();
   await migrateSharing();
   await migrateActivity();
+  await migrateMachineStorage();
   await sql`CREATE TABLE IF NOT EXISTS filesv2.entry_references(id TEXT PRIMARY KEY, base_id TEXT NOT NULL, path TEXT NOT NULL)`.simple();
 }

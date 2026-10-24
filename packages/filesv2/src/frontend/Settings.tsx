@@ -25,6 +25,8 @@ import {
   type PublicConfiguration,
 } from "../contracts";
 import { useAdminMessages } from "./admin-messages";
+import MachineStorage from "./MachineStorage";
+import { useMachineMessages } from "./machine-messages";
 import { useFilesMessages } from "./messages";
 
 /** The form edits every stored key; a cleared number stays a draft until it is valid again. */
@@ -40,6 +42,8 @@ export default function Settings(props: {
   onDirtyChange: (dirty: boolean, saving: boolean) => void;
 }) {
   const t = useFilesMessages();
+  const m = useMachineMessages();
+  const [machinesOpen, setMachinesOpen] = createSignal(false);
   const a = useAdminMessages();
   const clean = (value: Configuration): Draft => ({
     url: value.url,
@@ -116,7 +120,7 @@ export default function Settings(props: {
     setInvalid(null);
   };
   const areas: Area[] = ["cloud", "freeipa"];
-  const available = (area: Area) => (area === "cloud" ? props.availability.localLinuxEnabled : props.availability.freeipaEnabled);
+  const available = (area: Area) => area === "cloud" || props.availability.freeipaEnabled;
   const submit = (event: SubmitEvent) => {
     event.preventDefault();
     if (busy() || !dirty()) return;
@@ -374,6 +378,11 @@ export default function Settings(props: {
           </InlineGuidance>
         </Show>
       </form>
+      <Disclosure summary={m().title} onValueChange={setMachinesOpen}>
+        <Show when={machinesOpen()}>
+          <MachineStorage />
+        </Show>
+      </Disclosure>
     </SettingsPage>
   );
 }

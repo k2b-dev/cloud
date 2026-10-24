@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { type ProcessSync, startProcessSync } from "@k2b/cloud";
 import { type CapabilityExecutionContext, UserSchema } from "@k2b/cloud/contracts";
 import { type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
@@ -974,23 +974,32 @@ suite("Files activity with real storage", () => {
     const [stored] = await sql<{ state: string; path_after: string }[]>`SELECT state,path_after FROM filesv2.activity`;
     expect(stored).toEqual({ state: "done", path_after: path });
   });
-  test.each(["rename", "move", "copy"] as const)("%s cannot change storage when its history insert fails", async (action) => {
+  describe.each(["rename", "move", "copy"] as const)("%s with unavailable history", (action) => {
     const name = `blocked-${action}.txt`;
     const folder = `blocked-${action}-target`;
-    await client.root("cloud").put(`${home}/${name}`, new Blob(["original"]));
-    await client.root("cloud").mkdir(`${home}/${folder}`);
     let sent = 0;
-    const transport: typeof fetch = Object.assign(
-      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-        if (init?.method === "POST" && String(input).endsWith("/transfers")) sent++;
-        return fetch(input, init);
-      },
-      { preconnect: fetch.preconnect },
-    );
-    const counted = createFilesService({ ...serviceDependencies(), connect: (configuration) => connectFilegate(configuration, transport) });
-    await sql`CREATE OR REPLACE FUNCTION filesv2.reject_activity() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'intent unavailable'; END $$`.simple();
-    await sql`CREATE TRIGGER reject_activity BEFORE INSERT ON filesv2.activity FOR EACH ROW EXECUTE FUNCTION filesv2.reject_activity()`.simple();
-    try {
+    let counted: ReturnType<typeof createFilesService>;
+    beforeEach(async () => {
+      // Keep real fixture preparation outside the assertion's unchanged 5 s budget.
+      await client.root("cloud").put(`${home}/${name}`, new Blob(["original"]));
+      await client.root("cloud").mkdir(`${home}/${folder}`);
+      sent = 0;
+      const transport: typeof fetch = Object.assign(
+        async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+          if (init?.method === "POST" && String(input).endsWith("/transfers")) sent++;
+          return fetch(input, init);
+        },
+        { preconnect: fetch.preconnect },
+      );
+      counted = createFilesService({ ...serviceDependencies(), connect: (configuration) => connectFilegate(configuration, transport) });
+      await sql`CREATE OR REPLACE FUNCTION filesv2.reject_activity() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'intent unavailable'; END $$`.simple();
+      await sql`CREATE TRIGGER reject_activity BEFORE INSERT ON filesv2.activity FOR EACH ROW EXECUTE FUNCTION filesv2.reject_activity()`.simple();
+    });
+    afterEach(async () => {
+      await sql`DROP TRIGGER IF EXISTS reject_activity ON filesv2.activity`.simple();
+      await sql`DROP FUNCTION IF EXISTS filesv2.reject_activity()`.simple();
+    });
+    test("cannot change storage when its history insert fails", async () => {
       if (action === "rename")
         await expect(counted.rename(testCall(actor), { baseId: baseId(), path: name, name: `renamed-${name}` })).rejects.toThrow(
           "intent unavailable",
@@ -1003,10 +1012,7 @@ suite("Files activity with real storage", () => {
       expect(sent).toBe(0);
       expect((await client.root("cloud").stat(`${home}/${name}`)).size).toBe(8);
       expect(await sql`SELECT id FROM filesv2.activity`).toHaveLength(0);
-    } finally {
-      await sql`DROP TRIGGER reject_activity ON filesv2.activity`.simple();
-      await sql`DROP FUNCTION filesv2.reject_activity()`.simple();
-    }
+    });
   });
   test("a move batch retains successful and refused entries under one batch ID", async () => {
     const root = client.root("cloud");
