@@ -60,6 +60,50 @@ suite("AI conversation store integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("resource presentation survives indexing, updates and user listings", async () => {
+    const userId = await insertUser();
+    const conversationIds: string[] = [];
+    try {
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      conversationIds.push(conversation.id);
+      const ref = { type: "spaces.item", id: "Itm001" };
+      await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: "mock",
+        runConfig,
+        userMessage: userMessage("Read the plan"),
+        resources: [{ ref, title: "Plan", context: "Task in Planning", status: "Open" }],
+      });
+      expect((await aiConversations.listConversationResources({ conversationId: conversation.id })).resources[0]).toMatchObject({
+        ref,
+        context: "Task in Planning",
+        status: "Open",
+      });
+      await aiConversations.indexConversationResources({
+        conversationId: conversation.id,
+        resources: [{ ref, context: "Aufgabe in Planung", status: "Erledigt" }],
+      });
+      await aiConversations.indexConversationResources({ conversationId: conversation.id, resources: [{ ref }] });
+      expect((await aiConversations.listUserConversationResources({ ownerUserId: userId })).resources[0]).toMatchObject({
+        ref,
+        title: "Plan",
+        context: "Aufgabe in Planung",
+        status: "Erledigt",
+      });
+      expect(
+        (await aiConversations.listConversationSources({ conversationId: conversation.id })).sources.find(
+          (source) => source.kind === "resource",
+        ),
+      ).toMatchObject({
+        ref,
+        context: "Aufgabe in Planung",
+        status: "Erledigt",
+      });
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
+  });
+
   test("creation request identity survives concurrency, changed input, archive and deletion", async () => {
     const userId = await insertUser();
     const otherUserId = await insertUser();

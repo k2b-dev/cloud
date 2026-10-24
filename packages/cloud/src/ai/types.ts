@@ -27,6 +27,8 @@ import type { AiTurnBlock } from "./protocol";
 /** Current reader-confirmed metadata for a recently sent resource. */
 export type AiRecentResource = {
   ref: CloudResourceRef;
+  context?: string;
+  status?: string;
   title: string;
   icon?: string;
   href?: string;
@@ -569,6 +571,8 @@ export type AiSkillFileToolSource = {
 
 export type AiConversationResourceRef = {
   ref: CloudResourceRef;
+  context?: string | null;
+  status?: string | null;
   title: string | null;
   preview: string | null;
   icon: string | null;
@@ -581,6 +585,8 @@ export type AiConversationResourceRef = {
 
 export type AiConversationResourceObservation = {
   ref: CloudResourceRef;
+  context?: string;
+  status?: string;
   title?: string;
   preview?: string;
   icon?: string;
@@ -601,6 +607,8 @@ export type AiConversationResourceOccurrence = AiConversationResourceRef & {
 export type AiConversationSourceKind = "result" | "web" | "file" | "resource" | "activity";
 
 export type AiConversationSource = {
+  context?: string | null;
+  status?: string | null;
   kind: AiConversationSourceKind;
   key: string;
   title: string;

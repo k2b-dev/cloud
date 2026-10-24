@@ -279,6 +279,8 @@ type TurnSteerRow = {
 };
 
 type ConversationResourceRefRow = {
+  context: string | null;
+  status: string | null;
   resource_type: string;
   resource_id: string;
   title: string | null;
@@ -298,6 +300,8 @@ type ConversationResourceOccurrenceRow = ConversationResourceRefRow & {
 };
 
 type ConversationSourceRow = {
+  context: string | null;
+  status: string | null;
   source_kind: AiConversationSource["kind"];
   source_key: string;
   title: string;
@@ -356,6 +360,8 @@ const iso = (value: Date | string): string => (value instanceof Date ? value.toI
 
 const rowToConversationResourceRef = (row: ConversationResourceRefRow): AiConversationResourceRef => ({
   ref: { type: row.resource_type, id: row.resource_id },
+  context: row.context,
+  status: row.status,
   title: row.title,
   preview: row.preview,
   icon: row.icon,
@@ -397,6 +403,8 @@ const rowToConversationResourceOccurrence = (row: ConversationResourceOccurrence
 
 const rowToConversationSource = (row: ConversationSourceRow): AiConversationSource => ({
   kind: row.source_kind,
+  context: row.context,
+  status: row.status,
   key: row.source_key,
   title: row.title,
   preview: row.preview,
@@ -1777,15 +1785,17 @@ export const aiConversations: AiConversationService = {
       for (const resource of resources) {
         await tx`
           INSERT INTO ai.conversation_resource_refs (
-            conversation_id, resource_type, resource_id, title, preview, icon, href, source_turn_id, source_call_id
+            conversation_id, resource_type, resource_id, title, preview, icon, href, context, status, source_turn_id, source_call_id
           ) VALUES (
             ${input.conversationId}, ${resource.ref.type}, ${resource.ref.id}, ${resource.title ?? null}, ${resource.preview ?? null},
-            ${resource.icon ?? null}, ${resource.href ?? null}, ${input.turnId ?? null}, ${input.callId ?? null}
+            ${resource.icon ?? null}, ${resource.href ?? null}, ${resource.context ?? null}, ${resource.status ?? null}, ${input.turnId ?? null}, ${input.callId ?? null}
           )
           ON CONFLICT (conversation_id, resource_type, resource_id)
           DO UPDATE SET
             title = COALESCE(EXCLUDED.title, ai.conversation_resource_refs.title),
             preview = COALESCE(EXCLUDED.preview, ai.conversation_resource_refs.preview),
+            context = COALESCE(EXCLUDED.context, ai.conversation_resource_refs.context),
+            status = COALESCE(EXCLUDED.status, ai.conversation_resource_refs.status),
             icon = COALESCE(EXCLUDED.icon, ai.conversation_resource_refs.icon),
             href = COALESCE(EXCLUDED.href, ai.conversation_resource_refs.href),
             -- Project context is indexed on every turn without a call. It must not move a resource a tool call
@@ -1811,7 +1821,7 @@ export const aiConversations: AiConversationService = {
     const pattern = searchPattern(input.search);
     const cursor = decodeResourceCursor(input.before);
     const rows = await sql<(ConversationResourceRefRow & { cursor_at: string })[]>`
-      SELECT indexed.resource_type, indexed.resource_id, indexed.title, indexed.preview, indexed.icon, indexed.href,
+      SELECT indexed.resource_type, indexed.resource_id, indexed.title, indexed.preview, indexed.icon, indexed.href, indexed.context, indexed.status,
              source_turn.short_id AS source_turn_id, indexed.source_call_id, indexed.first_seen_at, indexed.last_seen_at,
              to_char(indexed.last_seen_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
       FROM ai.conversation_resource_refs indexed
@@ -1847,7 +1857,7 @@ export const aiConversations: AiConversationService = {
     const pattern = searchPattern(input.search);
     const cursor = decodeResourceOccurrenceCursor(input.before);
     const rows = await sql<(ConversationResourceOccurrenceRow & { cursor_at: string })[]>`
-      SELECT indexed.resource_type, indexed.resource_id, indexed.title, indexed.preview, indexed.icon, indexed.href,
+      SELECT indexed.resource_type, indexed.resource_id, indexed.title, indexed.preview, indexed.icon, indexed.href, indexed.context, indexed.status,
              source_turn.short_id AS source_turn_id, indexed.source_call_id, indexed.first_seen_at, indexed.last_seen_at,
              conversation.short_id AS conversation_short_id, conversation.title AS conversation_title,
              conversation.updated_at AS conversation_updated_at,
@@ -1908,6 +1918,7 @@ export const aiConversations: AiConversationService = {
         SELECT *
         FROM (
           SELECT source.kind AS source_kind, source.source_key, source.title, source.preview,
+                 NULL::text AS context, NULL::text AS status,
                  source.icon, source.href, file.path, file.media_type, file.size,
                  source.resource_type, source.resource_id, source.occurrences,
                  turn.short_id AS source_turn_id, source.source_turn_id AS turn_uuid, source.source_call_id,
@@ -1922,6 +1933,7 @@ export const aiConversations: AiConversationService = {
 
           SELECT 'file' AS source_kind, file.path AS source_key,
                  regexp_replace(file.path, '^.*/', '') AS title, 'Attached to the conversation' AS preview,
+                 NULL::text AS context, NULL::text AS status,
                  CASE WHEN file.media_type LIKE 'image/%' THEN 'ti ti-photo' ELSE 'ti ti-file' END AS icon,
                  NULL::text AS href, file.path, file.media_type, file.size,
                  NULL::text AS resource_type, NULL::text AS resource_id, 1 AS occurrences,
@@ -1934,7 +1946,7 @@ export const aiConversations: AiConversationService = {
 
           SELECT 'resource' AS source_kind, indexed.resource_type || ':' || indexed.resource_id AS source_key,
                  COALESCE(indexed.title, indexed.resource_type || ' ' || indexed.resource_id) AS title,
-                 indexed.preview, indexed.icon, indexed.href, NULL::text AS path, NULL::text AS media_type, NULL::bigint AS size,
+                 indexed.preview, indexed.context, indexed.status, indexed.icon, indexed.href, NULL::text AS path, NULL::text AS media_type, NULL::bigint AS size,
                  indexed.resource_type, indexed.resource_id, 1 AS occurrences,
                  turn.short_id AS source_turn_id, indexed.source_turn_id AS turn_uuid, indexed.source_call_id,
                  indexed.first_seen_at, indexed.last_seen_at
@@ -3074,15 +3086,17 @@ export const aiConversations: AiConversationService = {
       for (const resource of resources) {
         await tx`
           INSERT INTO ai.conversation_resource_refs (
-            conversation_id, resource_type, resource_id, title, preview, icon, href, source_turn_id
+            conversation_id, resource_type, resource_id, title, preview, icon, href, context, status, source_turn_id
           ) VALUES (
             ${input.conversationId}, ${resource.ref.type}, ${resource.ref.id}, ${resource.title ?? null},
-            ${resource.preview ?? null}, ${resource.icon ?? null}, ${resource.href ?? null}, ${turn.id}
+            ${resource.preview ?? null}, ${resource.icon ?? null}, ${resource.href ?? null}, ${resource.context ?? null}, ${resource.status ?? null}, ${turn.id}
           )
           ON CONFLICT (conversation_id, resource_type, resource_id)
           DO UPDATE SET
             title = COALESCE(EXCLUDED.title, ai.conversation_resource_refs.title),
             preview = COALESCE(EXCLUDED.preview, ai.conversation_resource_refs.preview),
+            context = COALESCE(EXCLUDED.context, ai.conversation_resource_refs.context),
+            status = COALESCE(EXCLUDED.status, ai.conversation_resource_refs.status),
             icon = COALESCE(EXCLUDED.icon, ai.conversation_resource_refs.icon),
             href = COALESCE(EXCLUDED.href, ai.conversation_resource_refs.href),
             source_turn_id = EXCLUDED.source_turn_id,

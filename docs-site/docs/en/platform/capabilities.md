@@ -1462,6 +1462,8 @@ type CapabilityResult<T> = {
     title?: string;
     preview?: string;
     icon?: string;
+    context?: string;
+    status?: string;
   }>;
   page?:
     | { hasMore: true; nextCursor: string }
@@ -1476,10 +1478,20 @@ type CapabilityResult<T> = {
 
 Every result reference contains the stable identity fields `type` and `id`.
 When the provider already knows a useful current label, it may add `title`, a
-short plain-text `preview`, and an `icon`. These presentation fields are an
-optional snapshot for generic clients; they do not participate in identity,
+short plain-text `preview`, an `icon`, `context`, and `status`. These
+presentation fields are an optional snapshot for generic clients; they do not participate in identity,
 authorization, deduplication, or canonical-reader resolution. A bare
 `{ type, id }` reference remains valid.
+
+The owning application's canonical reader fills `context` and `status` from
+current authorized state in the request locale. Both are optional final display
+strings, never message keys; consumers show them as given. `context` has 1–200
+characters: one line saying what and where the resource is, with its most useful
+fact, such as `Task in IT planning · due 30 Oct`. `status` has 1–60 characters:
+a short current-state label, such as `Open` or `Done`. Omit it when a state label
+does not apply. Linked references and `CloudResourceView` carry the same fields.
+Consumers ignore unfamiliar optional reference fields while retaining the
+resource identity.
 
 Prefer the name a person sees in the owning app: a mailbox name, note title,
 contact name, or mail subject. Use `preview` only for concise secondary context

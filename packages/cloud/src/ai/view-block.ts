@@ -41,7 +41,7 @@ export const CLOUD_AI_DETAILS_VIEWPORT_ITEMS = 12;
 // the viewport at any width and its length counts no further.
 export const CLOUD_AI_DETAILS_MAX_CHARS = 4096;
 
-const referenceSchema = () => CloudResourceReferenceSchema.pick({ type: true, id: true, title: true });
+const referenceSchema = () => CloudResourceReferenceSchema.pick({ type: true, id: true, title: true, context: true, status: true });
 const ReferenceSchema = /* @__PURE__ */ referenceSchema();
 export type CloudAiViewReference = z.output<typeof ReferenceSchema>;
 const cellTypeSchema = () => z.enum(["text", "number", "date", "datetime", "ref"]);

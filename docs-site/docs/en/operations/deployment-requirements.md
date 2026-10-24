@@ -687,6 +687,13 @@ removes measurements while preserving sources, source credentials, settings, and
 
 ## Verify readiness and upgrades
 
+Resource readers may now return optional localized `context` and `status`
+presentation strings. Upgrade Core and capability consumers before provider
+apps start returning them: older strict reference schemas may reject the new
+fields. Core adds nullable columns to its existing Assistant reference index
+through its normal startup migration; no operator configuration is needed.
+See [result references](/en/docs/platform/capabilities).
+
 During the rollout to this release, and during a rollback to the previous
 version, replicas of the previous version write no liveness key. While they
 run, a replica that stops can still delete the shared registry entry once, and

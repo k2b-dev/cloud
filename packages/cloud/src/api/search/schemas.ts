@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CloudResourceRefSchema } from "../../contracts";
-import { CapabilitySearchTagManifestSchema } from "../../contracts/capabilities";
+import { CapabilitySearchTagManifestSchema, CloudResourceReferenceSchema } from "../../contracts/capabilities";
 
 const TAG_PATTERN = /^[^\s#]+$/;
 const SEARCH_BASE_URL = "https://cloud.invalid";
@@ -69,6 +69,8 @@ export const SearchItemSchema = z.object({
   ref: CloudResourceRefSchema,
   title: z.string(),
   href: SameOriginPathSchema,
+  context: CloudResourceReferenceSchema.shape.context,
+  status: CloudResourceReferenceSchema.shape.status,
   preview: z.string().optional(),
   icon: z.string().optional(),
   priority: z.number().int().min(0).max(9).optional(),
