@@ -50,7 +50,6 @@ describe("accounts entity routes", () => {
     const seen: unknown[] = [];
     const routes = createAccountsEntitiesRoutes({
       authenticate: authenticateAs("user"),
-      requireUser,
       listEntities: async (input) => {
         seen.push({ kinds: input.serviceAccountKinds, status: input.serviceAccountStatus });
         return { items: [], page: 1, perPage: 10, total: 0, hasNext: false };
