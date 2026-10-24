@@ -1052,4 +1052,4 @@ updates that class's row in the table.
 - **What happened:** under shared-host load, a body-deadline test expired before receiving headers, and a CLI guard test exhausted its budget across four process launches.
 - **Root cause:** the transport assertion assumed wall-clock timing implied a particular protocol phase; independent CLI cases, viewports, launcher sessions and several real PIN derivations shared one test deadline.
 - **Error class:** test scheduling depended on host load.
-- **Guard:** trigger the caller deadline from the first response body chunk and split independent CLI, viewport, launcher and PIN scenarios into separate tests with real setup hooks, preserving every rejection, no-write, crypto and layout assertion.
+- **Guard:** trigger the caller deadline from the first response body chunk, advance the Web Push deadline only after the response arrives, and split independent CLI, viewport, launcher and PIN scenarios into separate tests with real setup hooks, preserving every rejection, no-write, crypto and layout assertion.

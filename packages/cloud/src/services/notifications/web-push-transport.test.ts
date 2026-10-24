@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
 import { EventEmitter } from "node:events";
-import type { ClientRequest, IncomingMessage } from "node:http";
+import type { ClientRequest, IncomingMessage, ServerResponse } from "node:http";
 import type { RequestOptions } from "node:https";
 import type { RequestDetails } from "web-push";
 import { networkTransportFixture } from "../../../../../scripts/fixtures/network-transport";
@@ -144,13 +144,17 @@ for (const mode of ["deadline", "caller"] as const)
 
 for (const mode of ["deadline", "caller"] as const)
   test(`Web Push ${mode} closes a slowly streaming provider response`, async () => {
+    const provider = Promise.withResolvers<ServerResponse>();
+    const firstChunk = Promise.withResolvers<void>();
+    const secondChunk = Promise.withResolvers<void>();
+    let chunks = 0;
     const fixture = await networkTransportFixture((_req, res) => {
+      provider.resolve(res);
       res.writeHead(201);
       res.write("x");
-      const timer = setInterval(() => res.write("x"), 5);
-      res.once("close", () => clearInterval(timer));
     });
     const caller = new AbortController();
+    jest.useFakeTimers();
     try {
       const pending = sendPinnedWebPush(
         subscription,
@@ -160,16 +164,31 @@ for (const mode of ["deadline", "caller"] as const)
           signal: caller.signal,
           resolve: async () => [{ address: "1.1.1.1", family: 4 }],
           generateRequestDetails: requestDetails,
-          request: fixture.request,
+          request: (options, callback) =>
+            fixture.request(options, (response) => {
+              response.on("data", () => {
+                if (++chunks === 1) firstChunk.resolve();
+                else secondChunk.resolve();
+              });
+              callback(response);
+            }),
         },
       );
-      await fixture.firstResponse;
+      const rejected = expect(pending).rejects.toThrow(mode === "deadline" ? "timed out" : "cancelled");
+      await firstChunk.promise;
+      jest.advanceTimersByTime(40);
+      (await provider.promise).write("y");
+      await secondChunk.promise;
+      // A fresh body chunk must not restart the original total deadline.
       if (mode === "caller") caller.abort(new Error("cancelled"));
-      await expect(pending).rejects.toThrow(mode === "deadline" ? "timed out" : "cancelled");
+      else jest.advanceTimersByTime(40);
+      await rejected;
       expect(fixture.requests[0]!.destroyed).toBe(true);
       await fixture.disconnected();
       expect(fixture.responses[0]!.destroyed).toBe(true);
     } finally {
+      caller.abort();
+      jest.useRealTimers();
       await fixture.close();
     }
   });
