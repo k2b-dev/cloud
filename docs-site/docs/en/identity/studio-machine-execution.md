@@ -2,7 +2,7 @@
 title: Run Studio apps with a machine identity
 navTitle: Studio machine execution
 section: Identity and access
-order: 650
+order: 651
 description: Grant an agent or service account explicit Studio execution and effect rights.
 tags: [identity, studio, service-accounts, authorization]
 updated: 2026-10-23

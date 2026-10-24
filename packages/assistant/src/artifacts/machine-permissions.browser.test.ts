@@ -130,8 +130,27 @@ test("Studio machine rights recover from load/save failure and fit phone, tablet
     await secretControls.getByRole("button", { name: "Replace secret", exact: true }).click();
     expect(await secretValue.inputValue()).toBe("");
     await secretControls.getByRole("button", { name: "Cancel", exact: true }).click();
+    await secretControls.getByLabel("Secret name", { exact: true }).waitFor({ state: "hidden" });
     for (const width of [390, 820, 1440]) {
       await page.setViewportSize({ width, height: 900 });
+      // Cancel removes its hovered button; resizing can move other buttons under that pointer.
+      // Park on the persistent heading and wait for the buttons' hover-color transitions.
+      await page.getByRole("heading", { name: "Studio permissions", exact: true }).hover();
+      await page.waitForFunction(() =>
+        Array.from(document.querySelectorAll("main .k2b-button")).every(
+          (button) =>
+            !button.matches(":hover") &&
+            !button
+              .getAnimations()
+              .some(
+                (animation) =>
+                  animation.timeline === document.timeline &&
+                  animation instanceof CSSTransition &&
+                  (animation.transitionProperty === "background-color" || animation.transitionProperty === "color") &&
+                  (animation.pending || animation.playState === "running"),
+              ),
+        ),
+      );
       await settled(page);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       const layout = await page.locator("main").evaluate((main) => ({
