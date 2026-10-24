@@ -10,7 +10,6 @@ import {
 import { hasRole } from "@k2b/cloud/contracts";
 import {
   type AccessSubject,
-  type AuthContext,
   accessRevision,
   buildAccessPrincipalCondition,
   createAccess,
@@ -20,7 +19,6 @@ import {
   hasPermission,
   type PermissionLevel,
   type Principal,
-  type RequestCredentialKind,
   resolveDisplayNames,
   updateAccess,
   userFromActor,
@@ -42,37 +40,14 @@ import {
   PublicationNote,
 } from "./contracts";
 import { databaseConfigLock } from "./database-lock";
-import { machineDataRight, machineIdentity, machineRights } from "./machine-authority";
+import { ArtifactError, type ArtifactIdentity } from "./identity";
+import { machineDataRight, machineIdentity, machineRights, validateMachineGrant } from "./machine-authority";
 import { validateArtifact } from "./runtime/compile";
 import { checkStorageBudget } from "./storage-budget";
 import { STORAGE_FILE_MAX_BYTES, StorageRequest } from "./storage-contracts";
 
-export type ArtifactIdentity = {
-  credentialKind?: RequestCredentialKind;
-  client?: string | null;
-  actor: AuthContext["Variables"]["actor"];
-  accessSubject: AccessSubject;
-  machineExecution?: { version: number };
-  machineCredential?: { reference: string; isCurrent: () => Promise<boolean> };
-  conversationId?: string;
-  administrative?: boolean;
-};
-export class ArtifactError extends Error {
-  constructor(
-    readonly code:
-      | "NOT_FOUND"
-      | "ACCESS_DENIED"
-      | "CONFLICT"
-      | "STORAGE_FULL"
-      | "INVALID_INPUT"
-      | "LAST_MANAGER"
-      | "TOO_MANY_REQUESTS"
-      | "PUBLIC_READ_ONLY"
-      | "PUBLIC_SHARING_OFF",
-  ) {
-    super(code);
-  }
-}
+export { ArtifactError, type ArtifactIdentity } from "./identity";
+
 type ArtifactRow = {
   storage_revision: number;
   short_id: string;
@@ -521,7 +496,6 @@ export const artifacts = {
       id = row.id;
       if (!notMachine(identity) && !(await machineRights(db, id, row.short_id, identity)).sharing) throw new ArtifactError("ACCESS_DENIED");
       if (principal.type === "service_account") {
-        const { validateMachineGrant } = await import("./machine-service");
         await validateMachineGrant(db, row.short_id, principal.serviceAccountId);
       }
       await checkAccessRevision(db, id, expectedAccessRevision);

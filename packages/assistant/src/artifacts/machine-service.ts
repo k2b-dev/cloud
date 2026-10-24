@@ -1,5 +1,5 @@
 import { getAccess, resolveDisplayNames } from "@k2b/cloud/server";
-import { requestPublicHttps, secrets, serviceAccounts } from "@k2b/cloud/services";
+import { requestPublicHttps, secrets } from "@k2b/cloud/services";
 import { type SQL, sql } from "bun";
 import { z } from "zod";
 import { LIMITS } from "./contracts";
@@ -113,22 +113,6 @@ export const machineAccess = {
     });
   },
 };
-
-/** Public ACL service validates selected accounts; no account creator impersonation. */
-export async function validateMachineGrant(db: SQL, id: string, accountId: string) {
-  const account = await serviceAccounts.get({ id: accountId });
-  if (
-    !account ||
-    account.status !== "active" ||
-    account.kind === "user_delegated" ||
-    (account.kind === "resource_bound" &&
-      (account.appId !== "assistant" || account.resourceType !== "artifact" || account.resourceId !== id))
-  )
-    throw new ArtifactError("INVALID_INPUT");
-  const [duplicate] = await db`SELECT a.id FROM auth.access a JOIN assistant.artifact_access l ON l.access_id=a.id
-    JOIN assistant.artifacts r ON r.id=l.artifact_id WHERE r.short_id=${id} AND a.service_account_id=${accountId}::uuid`;
-  if (duplicate) throw new ArtifactError("CONFLICT");
-}
 
 /** One admitted HTTP effect. Its explicit origin/method grant is its approval. No personal approvals are consulted. */
 export async function machineHttp(

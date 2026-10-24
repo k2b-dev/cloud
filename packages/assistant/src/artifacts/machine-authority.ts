@@ -2,7 +2,7 @@ import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { MachineRights } from "./machine-contracts";
-import { ArtifactError, type ArtifactIdentity } from "./service";
+import { ArtifactError, type ArtifactIdentity } from "./identity";
 
 /** Current authority, never the account creator or a cached authentication snapshot. */
 export async function machineIdentity(identity: ArtifactIdentity, id: string, required: PermissionLevel = "read") {
@@ -92,4 +92,20 @@ export async function machineDataRight(
   await machineIdentity(identity, publicId, write ? "write" : "read");
   const rights = await machineRights(db, artifactId, publicId, identity);
   if (!hasPermission(rights[kind], write ? "write" : "read")) throw new ArtifactError("ACCESS_DENIED");
+}
+
+/** Public ACL service validates selected accounts; no account creator impersonation. */
+export async function validateMachineGrant(db: SQL, id: string, accountId: string) {
+  const account = await serviceAccounts.get({ id: accountId });
+  if (
+    !account ||
+    account.status !== "active" ||
+    account.kind === "user_delegated" ||
+    (account.kind === "resource_bound" &&
+      (account.appId !== "assistant" || account.resourceType !== "artifact" || account.resourceId !== id))
+  )
+    throw new ArtifactError("INVALID_INPUT");
+  const [duplicate] = await db`SELECT a.id FROM auth.access a JOIN assistant.artifact_access l ON l.access_id=a.id
+    JOIN assistant.artifacts r ON r.id=l.artifact_id WHERE r.short_id=${id} AND a.service_account_id=${accountId}::uuid`;
+  if (duplicate) throw new ArtifactError("CONFLICT");
 }

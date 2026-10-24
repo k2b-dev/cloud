@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Domain services import each other at runtime | A service calls an authority helper which imports its error class or grant validation back from the service, creating a runtime cycle. | Check: `cycles`; keep shared identity/errors in a leaf module and grant validation in the authority module. |
 | Test deadline expires before the asserted boundary | An aggregate browser test keeps mounting independent device fixtures until its shared deadline expires, closing a page still in use. | Tests: `compact-shell.browser.test.ts` gives each device its own attachment/reload/navigation case; `PermissionEditor.browser.test.ts` separates each width/name and last-manager comparison. All assertions and timeouts remain unchanged. |
 | A formatter exposes ambiguous generic TSX syntax | Removing the trailing comma from a generic arrow with a default type makes the Solid/Babel test transform parse it as JSX. | Test: `PermissionEditor.behavior.test.tsx` runs through the actual Solid DOM preload; use a generic function declaration for the deferred helper and run the test after formatting. |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |

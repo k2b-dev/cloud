@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { SecretSave } from "./http-contracts";
 import { MachineRights } from "./machine-contracts";
 
@@ -132,6 +132,7 @@ test("Studio machine rights recover from load/save failure and fit phone, tablet
     await secretControls.getByRole("button", { name: "Cancel", exact: true }).click();
     for (const width of [390, 820, 1440]) {
       await page.setViewportSize({ width, height: 900 });
+      await settled(page);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       const layout = await page.locator("main").evaluate((main) => ({
         display: getComputedStyle(main).display,
