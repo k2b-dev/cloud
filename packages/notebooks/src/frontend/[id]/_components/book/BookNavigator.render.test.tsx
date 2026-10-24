@@ -44,7 +44,9 @@ for (const selectedNoteId of [null, "note01"]) {
 }
 
 test("a Book level of 5,000 pages renders one page of rows and says how many more there are", async () => {
-  const items = Array.from({ length: 100 }, (_, index) => sidebarNote({ id: `N${String(index).padStart(5, "0")}`, title: `Page ${index}` }));
+  const items = Array.from({ length: 100 }, (_, index) =>
+    sidebarNote({ id: `N${String(index).padStart(5, "0")}`, title: `Page ${index}` }),
+  );
   const html = renderToString(() =>
     createComponent(LocaleProvider, {
       locale: "de",

@@ -152,7 +152,9 @@ export function createSidebarTree(options: {
     const batches: LevelRequest[][] = [];
     for (let start = 0; start < requests.length; start += SIDEBAR_MAX_LEVELS)
       batches.push(requests.slice(start, start + SIDEBAR_MAX_LEVELS));
-    const answers = await Promise.all(batches.map((part) => fetchLevels(options.notebookId(), options.sort(), part, undefined, options.book)));
+    const answers = await Promise.all(
+      batches.map((part) => fetchLevels(options.notebookId(), options.sort(), part, undefined, options.book)),
+    );
     if (refresh !== refreshes) return;
     batch(() => {
       // Closed branches are dropped, so they load fresh when they open again; open ones keep what they show.
