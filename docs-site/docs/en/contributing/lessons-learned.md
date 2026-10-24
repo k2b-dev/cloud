@@ -1029,7 +1029,7 @@ convention still needs a check or a test.
 
 - **What happened:** The stalled-connection file test reported its expected deadline error as an unhandled rejection under load.
 - **Root cause:** It attached the rejection assertion only after waiting for the server to accept the request, although the deadline also covers connection setup.
-- **Guard:** `fetch-file-tool.test.ts` observes the pending request immediately. Only the caller-cancellation case waits for the server before triggering its abort; the deadline case also accepts expiry before the connection opens. The timeout remains unchanged.
+- **Guard:** `fetch-file-tool.test.ts` records the pending promise outcome immediately, then asserts after triggering cancellation; a Bun rejection assertion at setup can wait before the caller reaches `abort()`. Only the caller-cancellation case waits for the server before triggering its abort; the deadline case also accepts expiry before the connection opens. The timeout remains unchanged.
 
 ## Add a lesson
 

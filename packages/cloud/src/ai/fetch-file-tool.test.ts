@@ -569,13 +569,19 @@ for (const mode of ["deadline", "caller"] as const)
         request: fixture.request,
       });
       // Observe the deadline before waiting for server progress: it can expire
-      // while the connection is still pending on a busy runner.
-      const rejected = expect(pending).rejects.toThrow(mode === "deadline" ? "did not respond" : "cancelled");
+      // while the connection is still pending on a busy runner. Record the outcome
+      // without an assertion that can wait before the caller reaches abort().
+      const outcome = pending.then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
       if (mode === "caller") {
         await connected.promise;
         caller.abort(new Error("cancelled"));
       }
-      await rejected;
+      expect(await outcome).toMatchObject({
+        error: { message: expect.stringContaining(mode === "deadline" ? "did not respond" : "cancelled") },
+      });
       expect(fixture.requests[0]!.destroyed).toBe(true);
       await fixture.disconnected();
     } finally {
