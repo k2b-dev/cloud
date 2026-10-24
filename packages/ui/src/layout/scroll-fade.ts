@@ -20,18 +20,26 @@ export function scrollFadeEdges(body: HTMLElement): "top" | "bottom" | "both" | 
 function observeScrollFade(body: HTMLElement) {
   let entry = active.get(body);
   if (!entry) {
-    const update = () => {
+    const apply = () => {
+      frame = 0;
       const edges = scrollFadeEdges(body);
       if (edges) {
         if (body.getAttribute("data-scroll-fade") !== edges) body.setAttribute("data-scroll-fade", edges);
       } else if (body.hasAttribute("data-scroll-fade")) body.removeAttribute("data-scroll-fade");
+    };
+    // Measuring forces layout, so changes inside the scrollport are measured once per frame, not once per change: a list
+    // that updates many rows at once, such as marking every chat read, otherwise lays the page out again for each row.
+    let frame = 0;
+    const update = () => {
+      if (!frame) frame = requestAnimationFrame(apply);
     };
     const resize = new ResizeObserver(update);
     const observe = () => {
       resize.disconnect();
       resize.observe(body);
       for (const child of Array.from(body.children)) resize.observe(child);
-      update();
+      if (frame) cancelAnimationFrame(frame);
+      apply();
     };
     const mutations = new MutationObserver((records) => {
       if (records.some((record) => record.type === "childList" && record.target === body)) observe();
@@ -49,6 +57,7 @@ function observeScrollFade(body: HTMLElement) {
     entry = {
       users: 0,
       stop: () => {
+        if (frame) cancelAnimationFrame(frame);
         resize.disconnect();
         mutations.disconnect();
         body.removeEventListener("scroll", update);
