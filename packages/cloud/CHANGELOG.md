@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.43.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.42.0...npm-cloud-v0.43.0) (2026-10-24)
+
+
+### Features
+
+* **accounts:** share exact directory entries with machine accounts ([#1832](https://github.com/k2b-dev/cloud/issues/1832)) ([e733ec2](https://github.com/k2b-dev/cloud/commit/e733ec27eec85c4c67745e1fb8b2f4a50d501848))
+* **ai:** support models-only keys for machine accounts ([#1826](https://github.com/k2b-dev/cloud/issues/1826)) ([301b4c6](https://github.com/k2b-dev/cloud/commit/301b4c6534965e46b5ee47ae80601e69ea41f2df))
+* **apps:** declare access rules for every built-in application ([#1852](https://github.com/k2b-dev/cloud/issues/1852)) ([4cf7b8e](https://github.com/k2b-dev/cloud/commit/4cf7b8eca70615fccc6f10ccbd7e0f2782804ab0))
+* **cloud:** store and serve built avatars, robots for every agent ([#1853](https://github.com/k2b-dev/cloud/issues/1853)) ([190da4c](https://github.com/k2b-dev/cloud/commit/190da4c493743aaddedba2dd894c7c9867bd5aad))
+* **core:** reserve routing costs from distance estimates ([#1766](https://github.com/k2b-dev/cloud/issues/1766)) ([5087cdd](https://github.com/k2b-dev/cloud/commit/5087cdd8dcdee10ea06ac34a93a441591dda67f1))
+* **pwa:** the Cloud app uses iPad and monitor widths, and Spaces opens a task beside the list ([#1802](https://github.com/k2b-dev/cloud/issues/1802)) ([c1026c1](https://github.com/k2b-dev/cloud/commit/c1026c1452a9cfef0545657d24be447b59e1d3e9)), closes [#1104](https://github.com/k2b-dev/cloud/issues/1104)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.32.0 to 0.33.0
+
 ## [0.42.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.41.0...npm-cloud-v0.42.0) (2026-10-23)
 
 
