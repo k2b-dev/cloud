@@ -109,6 +109,58 @@ describe("independent Book live metadata regression", () => {
     }
   });
 
+  test("a branch whose pages fail to load says so, and Retry loads it", async () => {
+    const dom = createDomTestHarness();
+    const current = [{ id: "note01", title: "Parent", children: [{ id: "note02", title: "Second", children: [] }] }];
+    let failing = true;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) =>
+        failing
+          ? Response.json({ message: "Unavailable" }, { status: 503 })
+          : Response.json(
+              answerTreeLevels(
+                current,
+                new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost"),
+              ),
+            ),
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: Navigator } = await import("./BookNavigator.island");
+    // Parent arrives closed, so its pages load when it opens.
+    const navigation = bookNavigationState(current);
+    const dispose = render(
+      () =>
+        createComponent(Navigator, {
+          notebookId: "book01",
+          notebookName: "Handbook",
+          notebookIcon: null,
+          selectedNoteId: null,
+          currentHref: "/app/notebooks/book01?mode=book",
+          navigation: { ...navigation, levels: navigation.levels.filter((level) => level.parentId === null) },
+          tags: [],
+          navigationHidden: false,
+        }),
+      dom.root,
+    );
+    try {
+      dom.root.querySelector<HTMLElement>('[data-k2b-nav-tree-id="note01"] [data-k2b-nav-tree-toggle]')!.click();
+      await Bun.sleep(20);
+      expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain("The pages could not be loaded.");
+      failing = false;
+      Array.from(dom.root.querySelectorAll("button"))
+        .find((button) => button.textContent?.trim() === "Retry")!
+        .click();
+      await Bun.sleep(20);
+      expect(dom.root.querySelector('[role="alert"]')).toBeNull();
+      expect(dom.root.querySelector('a[href="/app/notebooks/book01/notes/note02?mode=book"]')).not.toBeNull();
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
   test.each(["write", "readonly"] as const)("workspace tree links retain explicit %s presentation", async (presentationMode) => {
     const dom = createDomTestHarness();
     const { default: NoteTree } = await import("../sidebar/NoteTree");
