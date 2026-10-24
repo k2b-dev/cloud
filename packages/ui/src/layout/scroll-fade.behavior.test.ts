@@ -64,7 +64,7 @@ const flushFrames = () => {
   for (const callback of pending) callback(0);
 };
 
-test("many changes inside a scrollport are measured once per frame, not once per change", async () => {
+test("many changes inside a scrollport are measured at most twice per frame, not once per change", async () => {
   const port = document.createElement("div");
   port.setAttribute("data-scroll-fade-mode", "bottom");
   let measured = 0;
@@ -87,9 +87,16 @@ test("many changes inside a scrollport are measured once per frame, not once per
     row.className = "read";
     await new Promise((resolve) => setTimeout(resolve, 0)); // real clock: a new task, not a delay
   }
-  expect(measured).toBe(0);
-  flushFrames();
+  // The first change measures at once, so readers in the same frame see current edges; the rest wait for the frame.
   expect(measured).toBe(1);
+  flushFrames();
+  expect(measured).toBe(2);
   expect(port.getAttribute("data-scroll-fade")).toBe("bottom");
+  // A frame without further changes measures nothing more, and the next change measures at once again.
+  rows[0]!.className = "unread";
+  await new Promise((resolve) => setTimeout(resolve, 0)); // real clock: a new task, not a delay
+  expect(measured).toBe(3);
+  flushFrames();
+  expect(measured).toBe(3);
   stop?.();
 });
