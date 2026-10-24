@@ -7,6 +7,8 @@ export const pwaMessages = i18n.define({
     en: {
       tabs: "App",
       start: "Start",
+      apps: "Apps",
+      settings: "Settings",
       offline: "You're offline",
       otherAccount: ({ cloud, name }: { cloud: string; name: string }) =>
         `Chrome on this phone is signed in to ${cloud} as ${name}. Changes in the app may be saved to that account. Sign out of ${cloud} in Chrome.`,
@@ -15,6 +17,8 @@ export const pwaMessages = i18n.define({
     de: {
       tabs: "App",
       start: "Start",
+      apps: "Apps",
+      settings: "Einstellungen",
       offline: "Du bist offline",
       otherAccount: ({ cloud, name }: { cloud: string; name: string }) =>
         `Chrome auf diesem Telefon ist bei ${cloud} als ${name} angemeldet. Änderungen in der App werden womöglich in diesem Konto gespeichert. Melde dich in Chrome von ${cloud} ab.`,

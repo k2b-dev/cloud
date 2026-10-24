@@ -1,4 +1,4 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 
 /**
  * API Docs: single Scalar UI that aggregates every running app's
@@ -13,6 +13,9 @@ import { defineApp } from "@k2b/cloud";
  */
 export const app = defineApp({
   id: "api-docs",
+  access: appAccess.signedIn({
+    publicRoutes: ["/app/api-docs", "/api/api-docs/sources"],
+  }),
   cli: { "api-docs": { module: "src/cli.ts", references: "src/cli-references" } },
   name: "API Docs",
   icon: "ti ti-books",

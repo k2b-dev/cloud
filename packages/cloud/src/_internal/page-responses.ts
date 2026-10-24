@@ -1,11 +1,18 @@
 import type { HtmlFn } from "@k2b/ssr";
 import type { Context } from "hono";
 import type { ClientErrorStatusCode, ServerErrorStatusCode } from "hono/utils/http-status";
+import type { AppMeta } from "../contracts/app";
 import { PWA_AUTH_PATH, PWA_SCOPE } from "../contracts/pwa";
 import { getLocale } from "../server/locale";
-import { preloadLayoutAnnouncements } from "../server/middleware/settings";
+import { runtime } from "../server/middleware/runtime";
+import { preloadLayoutAnnouncements, settings } from "../server/middleware/settings";
+import { appAccessAuthority } from "../services/app-access";
+import { appAccessManagers, canRepairAppAccess } from "../services/app-access-management";
+import { logger } from "../services/logging";
+import { resolveAppPresentation } from "../shared/app-presentation";
 import { createLoginRedirectUrl } from "../shared/redirect";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
+import { preloadDisplayApps } from "../ssr/runtime";
 import type { PageOptions } from "./define-app";
 
 export type PageErrorOptions = {
@@ -59,5 +66,27 @@ export const createPageResponses = <T extends PageOptions>(html: HtmlFn<T>, requ
     },
   };
 
-  return { access, pwaAccess, error };
+  const appAccessDenied = async (c: Context, app: AppMeta): Promise<Response> => {
+    await runtime()(c, async () => {});
+    await settings()(c, async () => {});
+    c.set("page", { lang: getLocale(c), themePreference: readThemePreferenceFromCookieHeader(c.req.header("Cookie")) });
+    await preloadDisplayApps(c);
+    const managers =
+      app.access?.kind === "grants"
+        ? await appAccessManagers(app.id).catch((error: unknown) => {
+            logger("app-access").error("Could not load application access contacts", { appId: app.id, error });
+            // Cloud administration remains the recovery contact when the list is unavailable.
+            return [];
+          })
+        : [];
+    const authority = appAccessAuthority(c);
+    const { renderAppAccessDenied } = await import("../ssr/AppAccessDenied");
+    const response = await html(
+      renderAppAccessDenied(c, resolveAppPresentation(app, getLocale(c)), managers, !!authority && canRepairAppAccess(authority)),
+      c.get("page"),
+    );
+    response.headers.set("Cache-Control", "private, no-store");
+    return new Response(response.body, { status: 403, headers: response.headers });
+  };
+  return { access, pwaAccess, error, appAccessDenied };
 };
