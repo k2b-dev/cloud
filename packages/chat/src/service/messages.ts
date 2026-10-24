@@ -16,6 +16,7 @@ import {
 } from "./contracts";
 import { conversations } from "./conversations";
 import { chatLive } from "./live";
+import { validateMentions } from "./mentions";
 import { appendMessage, type MessageRow, messageViews } from "./message-store";
 import { openParticipant } from "./read-state";
 import { canReadThread, visibleMessages, visibleThreadIdPage } from "./thread-access";
@@ -85,7 +86,10 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
       if (!thread) return threadNotFound(input);
       if (thread.archived_at) return fail({ code: "THREAD_ARCHIVED", status: 409, message: catalog(input).threadArchived });
     }
+    const mentioned = await validateMentions(db, input, current.data, threadId, data.mentions ?? []);
+    if (!mentioned.ok) return mentioned;
     const row = await appendMessage(db, current.data, input, {
+      mentions: mentioned.data,
       kind: "text",
       clientId: data.clientId,
       body: data.body,

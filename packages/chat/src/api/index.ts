@@ -36,6 +36,8 @@ import {
   DiscoveryStateSchema,
   DiscoveryUpdateSchema,
   ForResourceSchema,
+  ForYouPageSchema,
+  ForYouQuerySchema,
   LeaveResultSchema,
   LeaveSchema,
   MarkUnreadSchema,
@@ -44,6 +46,8 @@ import {
   MemberPreviewSchema,
   MemberQuerySchema,
   MemberRemovalSchema,
+  MentionCandidateQuerySchema,
+  MentionCandidatesSchema,
   MessagePageSchema,
   MessageParamSchema,
   MessageQuerySchema,
@@ -116,6 +120,23 @@ const app = new Hono<AuthContext>()
         chatService.conversations.people({ ...context(c), query: { search, ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) } }),
       );
     },
+  )
+  .get(
+    "/for-you",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Read mentions and replies addressed to you across Chat",
+      ...requiresAuth,
+      description:
+        "Newest first, up to 30 candidate messages per page. Mention wins over reply for a message satisfying both. Current conversation and item access apply; follow nextCursor even on empty pages. Opaque cursors accept at most 256 characters.",
+      responses: {
+        200: jsonResponse(ForYouPageSchema, "Authorized mentions and replies"),
+        400: jsonResponse(z.object({ code: z.literal("BAD_INPUT"), message: z.string() }), "Invalid cursor"),
+        403: jsonResponse(z.object({ code: z.literal("FORBIDDEN"), message: z.string() }), "Personal feed unavailable for this credential"),
+      },
+    }),
+    validator("query", ForYouQuerySchema, invalidInput),
+    async (c) => respond(c, chatService.forYou.list({ ...context(c), query: c.req.valid("query") })),
   )
   .get(
     "/preferences",
@@ -479,7 +500,7 @@ const app = new Hono<AuthContext>()
       tags: ["Chat"],
       summary: "Post a Markdown message",
       description:
-        "Accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored content with the caller's current reactions.",
+        "Accepts up to 20 non-overlapping mentions with UTF-16 start/end offsets and an accessId from mention-candidates. Ranges select the typed display name inside the unchanged body. Invalid ranges return BAD_INPUT; unreadable or unavailable targets return INVALID_MENTION (400). Message views and live events include current mention names. Also accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored content with the caller's current reactions.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageViewSchema, "Idempotent retry"),
@@ -683,6 +704,32 @@ const app = new Hono<AuthContext>()
       respond(
         c,
         chatService.messages.changes({ ...context(c), conversationId: c.req.valid("param").conversation, query: c.req.valid("query") }),
+      ),
+  )
+  .get(
+    "/conversations/:conversation/mention-candidates",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Find people who can read the selected thread",
+      ...requiresAuth,
+      description:
+        "Up to 20 active principals, excluding the caller. q matches name or word prefixes case-insensitively and accepts at most 100 characters. thread defaults to general. Uses the same request limiter as member searches.",
+      responses: {
+        200: jsonResponse(MentionCandidatesSchema, "Mention candidates"),
+        400: jsonResponse(z.object({ code: z.literal("BAD_INPUT"), message: z.string() }), "Invalid search or thread selector"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Chat or thread unavailable"),
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("query", MentionCandidateQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.mentions.candidates({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          query: c.req.valid("query"),
+        }),
       ),
   )
   .get(

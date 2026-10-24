@@ -333,4 +333,38 @@ suite("Chat live delivery on two replicas", () => {
     b.socket.close();
   }, 15_000);
   useRegisteredTestApp("chat");
+  test("For you hints reach only the mentioned person on the existing personal channel", async () => {
+    const owner = await f.person("Owner"),
+      mara = await f.person("Mara"),
+      lena = await f.person("Lena");
+    const chat = await f.fixture(owner, [
+      { person: mara, permission: "write" },
+      { person: lena, permission: "write" },
+    ]);
+    const clients = await Promise.all([owner, mara, lena].map((person, index) => open(index % 2, person)));
+    try {
+      for (const client of clients) {
+        client.sub("personal", "me", {});
+        client.sub("chat", "conversation", { conversation: chat.shortId });
+        await ready(client, ["personal", "chat"]);
+      }
+      const response = await f.request(owner.headers, `/${chat.shortId}/messages`, "POST", {
+        clientId: crypto.randomUUID(),
+        body: "Mara",
+        mentions: [{ start: 0, end: 4, accessId: chat.entries.get(mara.id)! }],
+      });
+      expect(response.status).toBe(201);
+      const message = MessageViewSchema.parse(await response.json());
+      await until(() => clients[1]!.events("personal").some((event) => event.type === "for-you"));
+      await until(() =>
+        clients.every((client) => client.events("chat").some((event) => event.type === "message" && event.message.id === message.id)),
+      );
+      expect(clients[0]!.events("personal").filter((event) => event.type === "for-you")).toEqual([]);
+      expect(clients[2]!.events("personal").filter((event) => event.type === "for-you")).toEqual([]);
+      const delivered = clients[1]!.events("chat").find((event) => event.type === "message" && event.message.id === message.id);
+      expect(delivered?.type === "message" && delivered.message.mentions).toEqual(message.mentions);
+    } finally {
+      for (const client of clients) client.socket.close();
+    }
+  });
 });

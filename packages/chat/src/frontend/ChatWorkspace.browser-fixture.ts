@@ -460,6 +460,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     const thread = original ? original.thread : (target.thread ?? null);
     const message: Message = {
       reactions: [],
+      mentions: [],
       refs: target.refs ?? [],
       thread,
       replyTo: original ? { id: original.id, author: original.author, preview: original.body ?? "" } : null,

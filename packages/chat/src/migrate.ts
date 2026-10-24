@@ -156,5 +156,22 @@ export const migrate = async (): Promise<void> => {
     DROP INDEX IF EXISTS chat.idx_chat_threads_name;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_threads_manual_name ON chat.threads(conversation_id, lower(name)) WHERE resource_type IS NULL;
   `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS chat.message_mentions (
+      message_id uuid NOT NULL REFERENCES chat.messages(id) ON DELETE CASCADE,
+      access_id uuid NOT NULL,
+      principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
+      principal_id uuid NOT NULL,
+      start_offset int NOT NULL CHECK (start_offset >= 0),
+      end_offset int NOT NULL CHECK (end_offset > start_offset AND end_offset <= 40000),
+      created_at timestamptz NOT NULL,
+      seq bigint NOT NULL,
+      PRIMARY KEY (message_id, start_offset)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_mentions_subject ON chat.message_mentions(principal_type, principal_id, created_at DESC, message_id DESC);
+    CREATE INDEX IF NOT EXISTS idx_chat_mentions_access ON chat.message_mentions(access_id, created_at DESC, seq DESC);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_author ON chat.messages(author_type, author_id, conversation_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_reply ON chat.messages(conversation_id, reply_to_seq, created_at DESC, id DESC) WHERE reply_to_seq IS NOT NULL;
+  `.simple();
   console.log("  ✓ chat schema");
 };

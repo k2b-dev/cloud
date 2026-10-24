@@ -38,6 +38,8 @@ test("publishes every conversation operation with typed request and response sch
   const spec = SpecSchema.parse(await generateSpecs(app));
   for (const [path, method] of [
     ["/people", "get"],
+    ["/for-you", "get"],
+    ["/conversations/{conversation}/mention-candidates", "get"],
     ["/channels", "get"],
     ["/channels/options", "get"],
     ["/channels/preview", "post"],

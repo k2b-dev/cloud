@@ -9,6 +9,7 @@ import { type MessageSchema, type SystemMessage, SystemMessageSchema } from "./c
 import { deletedPeople } from "./former-accounts";
 import { chatLive } from "./live";
 import { chatLiveUpdates } from "./live-updates";
+import { type MentionTarget, mentionViews, publishForYou, storeMentions } from "./mention-store";
 import { extractMessageLinks } from "./message-links";
 import { reactionGroups } from "./reaction-store";
 
@@ -36,6 +37,7 @@ export const projectMessage = (
   replyTo: z.infer<typeof MessageSchema>["replyTo"] = null,
 ): z.infer<typeof MessageSchema> => ({
   reactions: [],
+  mentions: [],
   thread,
   replyTo,
   id: row.short_id,
@@ -71,6 +73,11 @@ export const messageViews = async (
   subject: ChatContext["accessSubject"],
   locale?: string,
 ) => {
+  const mentions = await mentionViews(
+    db,
+    rows.map((row) => row.short_id),
+    locale,
+  );
   const reactions = await reactionGroups(
     db,
     rows.map((row) => row.short_id),
@@ -113,6 +120,7 @@ export const messageViews = async (
     for (const person of systemPeople(message.system)) if (deleted.has(person.id)) person.name = former;
   }
   return projected.map((message, index) => {
+    message.mentions = mentions.get(message.id) ?? [];
     message.reactions = (reactions.get(message.id) ?? []).map(({ emoji, count, own }) => ({ emoji, count, own }));
     const seq = rows[index]!.reply_to_seq;
     const original = replies.get(String(seq));
@@ -147,7 +155,15 @@ export const personSnapshots = async (db: typeof sql, ids: string[], type: "user
 };
 
 type NewMessage =
-  | { kind: "text"; clientId: string; body: string; refs?: CloudResourceRef[]; threadId?: string; replyToSeq?: string | bigint }
+  | {
+      kind: "text";
+      mentions?: MentionTarget[];
+      clientId: string;
+      body: string;
+      refs?: CloudResourceRef[];
+      threadId?: string;
+      replyToSeq?: string | bigint;
+    }
   | { kind: "system"; system: SystemMessage; threadId?: string };
 // The caller holds the conversation lock until commit, so numbers cannot become visible out of order.
 export const appendMessage = async (
@@ -181,6 +197,7 @@ export const appendMessage = async (
       ON CONFLICT (short_id) DO NOTHING RETURNING *`;
   }
   if (!row) throw new Error("Chat message ID could not be allocated");
+  if (message.kind === "text") await storeMentions(db, row.short_id, message.mentions ?? []);
   if (row.thread_id) await db`UPDATE chat.threads SET last_activity_at = ${row.created_at} WHERE id = ${row.thread_id}::uuid`;
   const [view] = await messageViews(db, [row], conversation.short_id, context.accessSubject);
   if (!view) throw new Error("Chat message could not be projected");
@@ -198,5 +215,7 @@ export const appendMessage = async (
         ? { ...row, key: `${row.key.startsWith("c:") ? "t" : "s"}:${conversation.short_id}:${projected.thread}` }
         : row,
     );
+  if (message.kind === "text" && (message.mentions?.length || message.replyToSeq !== undefined))
+    await publishForYou(db, context, row.short_id, conversation.short_id);
   return row;
 };
