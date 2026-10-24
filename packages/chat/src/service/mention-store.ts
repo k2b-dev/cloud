@@ -6,14 +6,12 @@ import { type ChatContext, messages, personalChannelKey, subjectPrincipal } from
 import type { Mention, MessageSchema } from "./contracts";
 import { chatLive } from "./live";
 
-export type MentionTarget = Mention & { type: "user" | "service_account"; id: string };
 export const mentionViews = async (db: typeof sql, messageIds: string[], locale?: string) => {
   const result = new Map<string, z.infer<typeof MessageSchema>["mentions"]>();
   if (!messageIds.length) return result;
   const rows = await db<
     {
       message: string;
-      access_id: string;
       start_offset: number;
       end_offset: number;
       principal_type: "user" | "service_account";
@@ -30,7 +28,7 @@ export const mentionViews = async (db: typeof sql, messageIds: string[], locale?
     items.push({
       start: row.start_offset,
       end: row.end_offset,
-      accessId: row.access_id,
+      principal: { type: row.principal_type, id: row.principal_id },
       name: principalLabel(
         {
           principal:
@@ -46,10 +44,10 @@ export const mentionViews = async (db: typeof sql, messageIds: string[], locale?
   }
   return result;
 };
-export const storeMentions = async (db: typeof sql, messageId: string, mentions: readonly MentionTarget[]) => {
+export const storeMentions = async (db: typeof sql, messageId: string, mentions: readonly Mention[]) => {
   for (const mention of mentions)
-    await db`INSERT INTO chat.message_mentions (message_id, access_id, principal_type, principal_id, start_offset, end_offset, created_at, seq)
-      SELECT id, ${mention.accessId}::uuid, ${mention.type}, ${mention.id}::uuid, ${mention.start}, ${mention.end}, created_at, seq
+    await db`INSERT INTO chat.message_mentions (message_id, principal_type, principal_id, start_offset, end_offset, created_at)
+      SELECT id, ${mention.principal.type}, ${mention.principal.id}::uuid, ${mention.start}, ${mention.end}, created_at
       FROM chat.messages WHERE short_id = ${messageId}`;
 };
 /** Personal invalidation contains no resource identity or message content. Re-read with the receiver's current credential. */

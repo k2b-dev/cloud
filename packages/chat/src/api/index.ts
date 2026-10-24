@@ -500,7 +500,7 @@ const app = new Hono<AuthContext>()
       tags: ["Chat"],
       summary: "Post a Markdown message",
       description:
-        "Accepts up to 20 non-overlapping mentions with UTF-16 start/end offsets and an accessId from mention-candidates. Ranges select the typed display name inside the unchanged body. Invalid ranges return BAD_INPUT; unreadable or unavailable targets return INVALID_MENTION (400). Message views and live events include current mention names. Also accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored content with the caller's current reactions.",
+        "Accepts up to 20 non-overlapping mentions with UTF-16 start/end offsets and a typed principal { type: user | service_account, id: UUID } from mention-candidates. Ranges select the typed display name inside the unchanged body. Invalid ranges return BAD_INPUT. Ordinary chat/channel targets must be current readers through direct or group membership; system targets only need to be active eligible principals. Invalid targets return INVALID_MENTION (400). Message views and live events include current mention names. Also accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored content with the caller's current reactions.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageViewSchema, "Idempotent retry"),
@@ -710,10 +710,10 @@ const app = new Hono<AuthContext>()
     "/conversations/:conversation/mention-candidates",
     describeRoute({
       tags: ["Chat"],
-      summary: "Find people who can read the selected thread",
+      summary: "Find mention candidates in a conversation",
       ...requiresAuth,
       description:
-        "Up to 20 active principals, excluding the caller. q matches name or word prefixes case-insensitively and accepts at most 100 characters. thread defaults to general. Uses the same request limiter as member searches.",
+        "Up to 20 active principals as { principal: { type, id }, name, agent }, excluding the caller. Direct members plus conversation authors; system chats list authors only. q matches name or word prefixes case-insensitively and accepts at most 100 characters. thread defaults to general. Uses the same request limiter as member searches.",
       responses: {
         200: jsonResponse(MentionCandidatesSchema, "Mention candidates"),
         400: jsonResponse(z.object({ code: z.literal("BAD_INPUT"), message: z.string() }), "Invalid search or thread selector"),

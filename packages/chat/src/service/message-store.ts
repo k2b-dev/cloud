@@ -5,11 +5,11 @@ import type { sql } from "bun";
 import type { z } from "zod";
 import { messagePreview, renderSystemMessage } from "../system-messages";
 import { type ChatContext, type ConversationRow, messages, subjectPrincipal } from "./access";
-import { type MessageSchema, type SystemMessage, SystemMessageSchema } from "./contracts";
+import { type Mention, type MessageSchema, type SystemMessage, SystemMessageSchema } from "./contracts";
 import { deletedPeople } from "./former-accounts";
 import { chatLive } from "./live";
 import { chatLiveUpdates } from "./live-updates";
-import { type MentionTarget, mentionViews, publishForYou, storeMentions } from "./mention-store";
+import { mentionViews, publishForYou, storeMentions } from "./mention-store";
 import { extractMessageLinks } from "./message-links";
 import { reactionGroups } from "./reaction-store";
 
@@ -157,7 +157,7 @@ export const personSnapshots = async (db: typeof sql, ids: string[], type: "user
 type NewMessage =
   | {
       kind: "text";
-      mentions?: MentionTarget[];
+      mentions?: Mention[];
       clientId: string;
       body: string;
       refs?: CloudResourceRef[];

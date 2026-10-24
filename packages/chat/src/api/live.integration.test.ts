@@ -351,7 +351,7 @@ suite("Chat live delivery on two replicas", () => {
       const response = await f.request(owner.headers, `/${chat.shortId}/messages`, "POST", {
         clientId: crypto.randomUUID(),
         body: "Mara",
-        mentions: [{ start: 0, end: 4, accessId: chat.entries.get(mara.id)! }],
+        mentions: [{ start: 0, end: 4, principal: { type: "user", id: mara.id } }],
       });
       expect(response.status).toBe(201);
       const message = MessageViewSchema.parse(await response.json());

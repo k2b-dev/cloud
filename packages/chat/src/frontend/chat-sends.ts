@@ -49,7 +49,9 @@ export const createChatSends = (dependencies: {
       const message = await dependencies.post(entry.conversationId, {
         clientId: entry.clientId,
         body: entry.body,
-        ...(entry.mentions.length ? { mentions: entry.mentions.map((mention) => ({ ...mention })) } : {}),
+        ...(entry.mentions.length
+          ? { mentions: entry.mentions.map((mention) => ({ ...mention, principal: { ...mention.principal } })) }
+          : {}),
         ...(entry.refs.length ? { refs: [...entry.refs] } : {}),
         // A reply goes into its original's thread on the server; General needs no thread.
         ...(entry.replyTo ? { replyTo: entry.replyTo.id } : entry.thread !== "general" ? { thread: entry.thread } : {}),
@@ -80,7 +82,7 @@ export const createChatSends = (dependencies: {
         clientId: dependencies.newClientId?.() ?? crypto.randomUUID(),
         conversationId,
         body,
-        mentions: (target.mentions ?? []).map((mention) => ({ ...mention })),
+        mentions: (target.mentions ?? []).map((mention) => ({ ...mention, principal: { ...mention.principal } })),
         thread: target.thread ?? "general",
         replyTo: target.replyTo ?? null,
         refs: target.refs ?? [],

@@ -21,7 +21,7 @@ const message = {
   system: null,
   systemText: null,
   createdAt: "2026-10-24T12:00:00.000Z",
-  mentions: [{ start: 3, end: 7, accessId: id, name: "Mara" }],
+  mentions: [{ start: 3, end: 7, principal: { type: "user" as const, id }, name: "Mara" }],
 };
 const requests: { path: string; query: Record<string, string>; body: unknown }[] = [];
 let failed = false;
@@ -48,7 +48,7 @@ beforeAll(async () => {
         });
         if (failed) return Response.json({ code: "BAD_INPUT", message: "Choose the person again." }, { status: 400 });
         if (url.pathname.endsWith("mention-candidates"))
-          return Response.json({ items: [{ accessId: id, type: "user", name: "Mara", agent: false }] });
+          return Response.json({ items: [{ principal: { type: "user", id }, name: "Mara", agent: false }] });
         if (request.method === "POST") return Response.json(message, { status: 201 });
         return Response.json({
           items: [
@@ -80,16 +80,17 @@ test("typed browser transport preserves UTF-16 mentions and encodes thread searc
   try {
     const page = await context.newPage();
     await page.goto(String(server.url));
-    const result = await page.evaluate(async (accessId) => {
+    const result = await page.evaluate(async (id) => {
       const candidates = await window.forYouApi.candidates("abcdef", "Än & %", "fedcba");
       const sent = await window.forYouApi.send("abcdef", {
         clientId: "mention-send",
         body: "😀 Mara",
-        mentions: [{ start: 3, end: 7, accessId }],
+        mentions: [{ start: 3, end: 7, principal: { type: "user", id } }],
       });
       const feed = await window.forYouApi.list("opaque+/=cursor");
       return { candidates, sent, feed };
     }, id);
+    expect(result.candidates.items).toEqual([{ principal: { type: "user", id }, name: "Mara", agent: false }]);
     expect(result.sent.mentions).toEqual(message.mentions);
     expect(result.sent.body).toBe(message.body);
     expect(result.feed.items[0]?.unread).toBeTrue();
@@ -98,7 +99,7 @@ test("typed browser transport preserves UTF-16 mentions and encodes thread searc
     expect(requests.find((request) => request.path.endsWith("messages"))?.body).toEqual({
       clientId: "mention-send",
       body: "😀 Mara",
-      mentions: [{ start: 3, end: 7, accessId: id }],
+      mentions: [{ start: 3, end: 7, principal: { type: "user", id } }],
     });
     failed = true;
     const failure = await page.evaluate(async () => {

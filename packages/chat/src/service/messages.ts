@@ -86,7 +86,7 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
       if (!thread) return threadNotFound(input);
       if (thread.archived_at) return fail({ code: "THREAD_ARCHIVED", status: 409, message: catalog(input).threadArchived });
     }
-    const mentioned = await validateMentions(db, input, current.data, threadId, data.mentions ?? []);
+    const mentioned = await validateMentions(db, input, current.data, data.mentions ?? []);
     if (!mentioned.ok) return mentioned;
     const row = await appendMessage(db, current.data, input, {
       mentions: mentioned.data,

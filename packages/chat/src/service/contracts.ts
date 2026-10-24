@@ -442,6 +442,10 @@ export const ReactionSchema = z.strictObject({ emoji: EmojiSchema, count: z.numb
 export const ReactionsSchema = z.strictObject({
   items: z.array(ReactionSchema.extend({ people: z.array(z.string()).max(REACTION_PEOPLE) })).max(REACTIONS_PER_MESSAGE),
 });
+export const MentionPrincipalSchema = z.strictObject({
+  type: z.enum(["user", "service_account"]),
+  id: z.uuid().transform((id) => id.toLowerCase()),
+});
 export const MentionSchema = z.strictObject({
   start: z
     .number()
@@ -453,7 +457,7 @@ export const MentionSchema = z.strictObject({
     .int()
     .min(1)
     .max(MESSAGE_MAX_CODE_POINTS * 2),
-  accessId: z.uuid().transform((id) => id.toLowerCase()),
+  principal: MentionPrincipalSchema,
 });
 export type Mention = z.infer<typeof MentionSchema>;
 /** Offsets address the original UTF-16 body and never split a surrogate pair. */
@@ -539,8 +543,7 @@ export const MentionCandidatesSchema = z.strictObject({
   items: z
     .array(
       z.strictObject({
-        accessId: z.uuid(),
-        type: z.enum(["user", "service_account"]),
+        principal: MentionPrincipalSchema,
         name: z.string(),
         agent: z.boolean(),
       }),

@@ -269,3 +269,39 @@ test("reactions document read projection, empty writes and stable budget errors"
     expect(JSON.stringify(op?.responses["204"])).not.toContain("content");
   }
 });
+
+test("mention send, views and candidates publish principal identity while membership keeps grant identity", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const body = z.object({
+    content: z.object({
+      "application/json": z.object({ schema: z.object({ properties: z.record(z.string(), z.unknown()) }) }),
+    }),
+  });
+  const send = spec.paths["/api/chat/conversations/{conversation}/messages"]!.post!;
+  const input = body.parse(send.requestBody).content["application/json"].schema.properties.mentions;
+  const view = body.parse(send.responses["201"]).content["application/json"].schema.properties.mentions;
+  for (const mentions of [input, view]) {
+    expect(mentions).toMatchObject({
+      maxItems: 20,
+      items: {
+        required: expect.arrayContaining(["start", "end", "principal"]),
+        properties: {
+          principal: {
+            required: ["type", "id"],
+            properties: { type: { enum: ["user", "service_account"] }, id: { type: "string", format: "uuid" } },
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(mentions)).not.toContain('"accessId"');
+  }
+  const candidates = body.parse(spec.paths["/api/chat/conversations/{conversation}/mention-candidates"]!.get!.responses["200"]).content[
+    "application/json"
+  ].schema.properties.items;
+  expect(candidates).toMatchObject({
+    maxItems: 20,
+    items: { required: ["principal", "name", "agent"] },
+  });
+  expect(JSON.stringify(candidates)).not.toContain('"accessId"');
+  expect(spec.paths["/api/chat/conversations/{conversation}/members/{accessId}"]?.delete).toBeDefined();
+});
