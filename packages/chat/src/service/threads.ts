@@ -93,7 +93,7 @@ const projectList = async (
       {
         id: message.id,
         author: message.author,
-        preview: messagePreview(message.body!),
+        preview: messagePreview(message.body!, message.attachments, input.locale),
         createdAt: message.createdAt,
       },
     ]),

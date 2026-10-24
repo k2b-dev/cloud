@@ -846,7 +846,12 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       unreadRev.set(known.id, summary.rev);
     }
     if (known && summary.rev <= known.rev) return;
-    if (!known || summary.kind === "system" || summary.thread !== null) {
+    if (
+      !known ||
+      summary.kind === "system" ||
+      summary.thread !== null ||
+      (summary.preview === null && (summary.attachments?.length ?? 0) > 0)
+    ) {
       const row = await api.conversation(summary.conversationId);
       if (disposed) return;
       if (row !== null) unreadRev.set(row.id, row.rev);

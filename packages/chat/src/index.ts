@@ -22,4 +22,5 @@ const result = await app.start({
 export default { ...result, websocket };
 export type { ApiType } from "./api";
 export type { ChatHealth, ChatService } from "./service";
+export type { AttachmentView } from "./service/contracts";
 export { chatService as service };

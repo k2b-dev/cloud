@@ -1,5 +1,5 @@
 import { chatMessages } from "./messages";
-import type { SystemMessage } from "./service/contracts";
+import type { AttachmentView, SystemMessage } from "./service/contracts";
 
 export const renderSystemMessage = (system: SystemMessage, authorName: string, locale?: string): string => {
   const resolved = chatMessages.resolve(locale ? [locale] : []);
@@ -53,4 +53,17 @@ export const renderSystemMessage = (system: SystemMessage, authorName: string, l
   }
 };
 
-export const messagePreview = (body: string): string => [...body.replace(/\s+/gu, " ").trim()].slice(0, 140).join("");
+export const messagePreview = (
+  body: string,
+  attachments: readonly Pick<AttachmentView, "kind" | "name">[] = [],
+  locale?: string,
+): string => {
+  const text = body.replace(/\s+/gu, " ").trim();
+  const first = attachments[0];
+  let preview = text;
+  if (!preview && first) {
+    const t = chatMessages.resolve(locale ? [locale] : []).t;
+    preview = first.kind === "image" ? t.attachmentPhoto : t.attachmentFile({ name: first.name });
+  }
+  return [...preview].slice(0, 140).join("");
+};

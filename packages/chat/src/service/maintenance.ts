@@ -7,6 +7,15 @@ import { chatLive } from "./live";
 import { appendMessage, personSnapshots } from "./message-store";
 
 const BATCH_SIZE = 100;
+export const ORPHAN_CLEANUP_BATCH = BATCH_SIZE;
+export const cleanupAttachments = async (db: typeof sql = sql, now = new Date()) => {
+  const before = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const rows = await db<{ id: string }[]>`DELETE FROM chat.attachments WHERE id IN (
+    SELECT id FROM chat.attachments WHERE message_id IS NULL AND created_at < ${before}
+    ORDER BY created_at, id LIMIT ${ORPHAN_CLEANUP_BATCH} FOR UPDATE SKIP LOCKED
+  ) RETURNING id`;
+  return rows.length;
+};
 const log = logger("chat:maintenance");
 // Match repairMemberCount: membership includes existing accounts regardless of status or kind.
 const memberServices = (conversationId: string, db: typeof sql) => db`
@@ -20,9 +29,18 @@ export type ReconcileResult = {
   countsFixed: number;
   managersAssigned: number;
   failed: number;
+  attachmentsRemoved: number;
 };
 export const reconcile = async (run: { signal: AbortSignal; heartbeat: () => unknown }): Promise<ReconcileResult> => {
-  const result: ReconcileResult = { conversations: 0, participantsRemoved: 0, countsFixed: 0, managersAssigned: 0, failed: 0 };
+  const result: ReconcileResult = {
+    conversations: 0,
+    participantsRemoved: 0,
+    countsFixed: 0,
+    managersAssigned: 0,
+    failed: 0,
+    attachmentsRemoved: 0,
+  };
+  if (!run.signal.aborted) result.attachmentsRemoved = await cleanupAttachments();
   let cursor: string | null = null;
   while (!run.signal.aborted) {
     const rows: { id: string }[] = await sql<{ id: string }[]>`SELECT id FROM chat.conversations

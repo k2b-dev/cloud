@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 
 # Build and deploy
@@ -277,7 +277,7 @@ No configuration or external resource fetch is required.
 
 `POST /api/chat/conversations/:conversation/messages` accepts up to 10 Cloud
 resource refs (`{ type, id }`), removes duplicates and preserves their order.
-A body of `""` is accepted only with at least one ref. Refs identify resources;
+A body of `""` is accepted with at least one ref or attachment. Refs identify resources;
 clients resolve each card with the reader's session. Sharing grants no access
 to the referenced resource. Message responses and live message events always
 include `refs`, including an empty array for messages without refs. A retry
@@ -286,20 +286,69 @@ reactions.
 
 `GET /api/chat/conversations/:conversation/shared` requires chat read access.
 It returns `{ items, nextCursor }`, with up to 30 items, newest message first.
-Within each message, refs precede links, each in stored order. Each item contains
-`kind` (`element` or `link`), `ref` or `url`, `messageId`, `seq`, `thread`,
-`author`, and `createdAt`. `thread` is `null` for General.
+Within each message, refs precede links, then attachments in upload order.
+Each item contains `kind` (`element`, `link`, `image`, or `document`),
+`ref`, `url`, or `attachment`, plus `messageId`, `seq`, `thread`, `author`,
+and `createdAt`. `thread` is `null` for General.
 
 Use `kind=all|elements|links|images|documents` (default `all`) and optionally
 `thread=<thread ID>|general`. Without `thread`, the list covers the whole chat.
-Images and documents currently return empty lists. Unknown threads and chats
-the reader cannot access return 404. Pass `nextCursor` unchanged as `cursor`
+Images and documents come from visible messages; unsent uploads are excluded.
+Unknown threads and chats the reader cannot access return 404. Pass `nextCursor` unchanged as `cursor`
 with the same filters; `null` marks the end. Invalid queries return 400.
 
 New messages retain up to 20 distinct absolute HTTP/HTTPS links from Markdown
 links, autolinks and bare URLs. URLs longer than 2,048 characters are excluded.
 The shared list reads the messages themselves, so deleting a message removes
 its items from subsequent reads.
+
+## Chat message attachments after the upgrade
+
+Chat's startup migration adds `chat.attachments`; no new configuration or
+external storage service is needed. Back up this table with the Chat database.
+Message and conversation deletion also delete their attachments.
+
+1. Upload one `file` with multipart `POST /api/chat/conversations/:conversation/attachments`.
+   Optionally include a `thread` ID. Upload requires the same conversation and
+   thread access as sending, including container write and item-reader access
+   in a system chat. Archived threads reject uploads.
+2. Send the returned short IDs in the message's optional `attachments` array.
+   Include at most 10 unique IDs, all unsent, uploaded by the same access subject,
+   and in that conversation. A different, already sent, or unavailable ID returns
+   400 `INVALID_ATTACHMENT`. Binding and message insertion commit together.
+   A `clientId` retry returns the original message and attachments.
+3. Read bytes with `GET /api/chat/conversations/:conversation/attachments/:attachment`.
+   The caller needs current message visibility. Before sending, only the
+   uploader can download the file. Unavailable attachments return 404.
+
+Each file is limited to 10 MiB, with 20 pending uploads per access subject per
+conversation (409 `ATTACHMENT_LIMIT`). Uploads are limited to 20 per subject
+per minute across conversations; 429 includes `Retry-After`. Oversized files
+return 413 `ATTACHMENT_TOO_LARGE`, including early rejection when the declared
+request exceeds 10 MiB plus 64 KiB of multipart overhead. Filenames and MIME
+types are limited to 255 characters. The existing 15-minute Chat maintenance
+removes at most 100 unsent uploads older than 24 hours per run.
+
+Every message response, history snapshot, live message and available reply quote includes
+`attachments: [{ id, name, mimeType, size, kind, width?, height?, href }]` in
+upload order. `size` is the stored byte count. `kind` is `image` or `file`.
+Supported image previews are PNG, JPEG, WebP and GIF, identified from bytes;
+images include positive pixel dimensions. Uploads use the shared
+[image metadata filter](/en/docs/platform/image-upload-privacy); unreadable
+image containers return 422 `MALFORMED_IMAGE`. Other content is a document.
+Empty-text list previews use the reader's locale: “Photo” / “Foto” or
+“File: name” / “Datei: name”.
+
+Downloads stream in bounded slices. Raster images use their image MIME type and
+an inline filename; other files use `application/octet-stream` and an attachment
+filename. Responses include `nosniff`, a sandbox Content Security Policy and
+`Cache-Control: private, no-store`. Active document formats are never inline.
+
+`kind=images` and `kind=documents` in the shared list filter attachment items;
+`kind=all` includes both alongside refs and links. Attachment items contain
+`{ kind: "image" | "document", attachment, messageId, seq, thread, author, createdAt }`.
+The opaque cursor covers all 40 possible positions within one message: 10 refs,
+20 links and 10 attachments. Keep the same filters when continuing a page.
 
 ## Chat channels after the upgrade
 

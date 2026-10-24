@@ -57,6 +57,28 @@ export const migrate = async (): Promise<void> => {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_seq ON chat.messages(conversation_id, seq);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_rev ON chat.messages(conversation_id, rev);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_client ON chat.messages(conversation_id, author_type, author_id, client_id);
+    CREATE TABLE IF NOT EXISTS chat.attachments (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id text NOT NULL UNIQUE CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),
+      conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
+      message_id uuid REFERENCES chat.messages(id) ON DELETE CASCADE,
+      uploader_type text NOT NULL CHECK (uploader_type IN ('user', 'service_account')),
+      uploader_id uuid NOT NULL,
+      filename text NOT NULL CHECK (char_length(filename) BETWEEN 1 AND 255),
+      mime_type text NOT NULL CHECK (char_length(mime_type) BETWEEN 1 AND 255),
+      size_bytes int NOT NULL CHECK (size_bytes BETWEEN 0 AND 10485760),
+      kind text NOT NULL CHECK (kind IN ('image', 'file')),
+      width int,
+      height int,
+      content bytea NOT NULL CHECK (octet_length(content) = size_bytes),
+      created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+      CHECK ((kind = 'image' AND width IS NOT NULL AND height IS NOT NULL AND width > 0 AND height > 0)
+        OR (kind = 'file' AND width IS NULL AND height IS NULL))
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_attachments_message ON chat.attachments(message_id, created_at, id);
+    CREATE INDEX IF NOT EXISTS idx_chat_attachments_unsent ON chat.attachments(conversation_id, uploader_type, uploader_id)
+      WHERE message_id IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_chat_attachments_cleanup ON chat.attachments(created_at, id) WHERE message_id IS NULL;
     CREATE TABLE IF NOT EXISTS chat.message_reactions (
       message_id uuid NOT NULL REFERENCES chat.messages(id) ON DELETE CASCADE,
       principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),

@@ -267,3 +267,30 @@ test("reactions document read projection, empty writes and stable budget errors"
     expect(JSON.stringify(op?.responses["204"])).not.toContain("content");
   }
 });
+
+test("attachments expose typed multipart upload, guarded download, and message/shared projections", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const base = "/api/chat/conversations/{conversation}";
+  const upload = spec.paths[`${base}/attachments`]?.post;
+  const multipart = z
+    .object({
+      content: z.object({
+        "multipart/form-data": z.object({
+          schema: z.object({
+            required: z.array(z.string()),
+            properties: z.record(z.string(), z.unknown()),
+          }),
+        }),
+      }),
+    })
+    .parse(upload?.requestBody);
+  expect(multipart.content["multipart/form-data"].schema.required).toContain("file");
+  expect(multipart.content["multipart/form-data"].schema.properties.file).toMatchObject({ type: "string", format: "binary" });
+  expect(multipart.content["multipart/form-data"].schema.properties.thread).toMatchObject({ type: "string" });
+  for (const code of ["201", "400", "403", "404", "409", "413", "422", "429"]) expect(upload?.responses[code]).toBeDefined();
+  expect(spec.paths[`${base}/attachments/{attachment}`]?.get?.responses["200"]).toBeDefined();
+  expect(spec.paths[`${base}/attachments/{attachment}`]?.get?.responses["404"]).toBeDefined();
+  expect(JSON.stringify(spec.paths[`${base}/messages`]?.post?.requestBody)).toContain('"attachments"');
+  expect(JSON.stringify(spec.paths[`${base}/messages/{message}`]?.get?.responses["200"])).toContain('"attachments"');
+  expect(JSON.stringify(spec.paths[`${base}/shared`]?.get?.responses["200"])).toContain('"document"');
+});

@@ -144,6 +144,7 @@ class World {
     return MessageSchema.parse({
       reactions: [],
       refs: [],
+      attachments: [],
       thread: null,
       replyTo: null,
       id: id + String(m.seq).padStart(4, "0"),

@@ -11,13 +11,17 @@ import {
 } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { chatMessages } from "../messages";
 import { chatRequestContext as context } from "../request-context";
 import { ChatHealthSchema, chatService } from "../service";
+import { attachmentHeaders } from "../service/attachment-content";
 import {
   AddMembersSchema,
+  AttachmentParamSchema,
+  AttachmentViewSchema,
   ChangeSchema,
   ChangesPageSchema,
   ChangesQuerySchema,
@@ -38,6 +42,7 @@ import {
   ForResourceSchema,
   LeaveResultSchema,
   LeaveSchema,
+  MAX_ATTACHMENT_BYTES,
   MarkUnreadSchema,
   MemberPageSchema,
   MemberParamSchema,
@@ -74,11 +79,20 @@ import {
   UpdateConversationSchema,
   UpdateMemberSchema,
   UpdateThreadSchema,
+  UploadAttachmentSchema,
 } from "../service/contracts";
 import { chatLive } from "../service/live";
 import { chatLiveChannels } from "../service/live-channels";
 
 const invalidInput = (c: Context) => ({ code: "BAD_INPUT", message: chatMessages.resolve([getLocale(c)]).t.invalidInput });
+const attachmentTooLarge = (c: Context) =>
+  c.json(
+    {
+      code: "ATTACHMENT_TOO_LARGE",
+      message: chatMessages.resolve([getLocale(c)]).t.attachmentTooLarge,
+    },
+    413,
+  );
 const audienceUnavailableResponse = jsonResponse(
   z.object({ code: z.literal("AUDIENCE_UNAVAILABLE"), message: z.string() }),
   "Audience counting timed out; retry the request",
@@ -474,12 +488,100 @@ const app = new Hono<AuthContext>()
       ),
   )
   .post(
+    "/conversations/:conversation/attachments",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Upload one image or document for a message",
+      ...requiresAuth,
+      description:
+        "Multipart file and optional thread. Requires the same write access as sending. Maximum 10 MiB per file, 20 unsent uploads per subject per conversation, and 20 uploads per subject per minute. Unsent uploads expire after 24 hours.",
+      responses: {
+        201: jsonResponse(AttachmentViewSchema, "Uploaded attachment"),
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Invalid file or thread"),
+        403: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Write permission required"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Conversation or thread unavailable"),
+        409: jsonResponse(
+          z.object({ code: z.enum(["ATTACHMENT_LIMIT", "THREAD_ARCHIVED"]), message: z.string() }),
+          "Unsent budget reached or thread archived",
+        ),
+        413: jsonResponse(z.object({ code: z.literal("ATTACHMENT_TOO_LARGE"), message: z.string() }), "File too large"),
+        422: jsonResponse(z.object({ code: z.literal("MALFORMED_IMAGE"), message: z.string() }), "Image container unreadable"),
+        429: {
+          ...jsonResponse(z.object({ code: z.string().optional(), message: z.string() }), "Upload rate limit reached"),
+          headers: { "Retry-After": { description: "Seconds until retry", schema: { type: "integer", minimum: 1 } } },
+        },
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    bodyLimit({ maxSize: MAX_ATTACHMENT_BYTES + 64 * 1024, onError: attachmentTooLarge }),
+    async (c, next) => {
+      const length = Number(c.req.header("content-length") ?? 0);
+      if (Number.isFinite(length) && length > MAX_ATTACHMENT_BYTES + 64 * 1024) return attachmentTooLarge(c);
+      await next();
+    },
+    validator("form", UploadAttachmentSchema, invalidInput),
+    async (c) => {
+      const { file, thread } = c.req.valid("form");
+      if (file.size > MAX_ATTACHMENT_BYTES) return attachmentTooLarge(c);
+      const result = await chatService.attachments.upload({
+        ...context(c),
+        conversationId: c.req.valid("param").conversation,
+        thread,
+        filename: file.name,
+        mimeType: file.type,
+        content: new Uint8Array(await file.arrayBuffer()),
+      });
+      if (!result.ok && "retryAfter" in result) c.header("Retry-After", String(result.retryAfter));
+      return respond(c, result, result.ok ? 201 : undefined);
+    },
+  )
+  .get(
+    "/conversations/:conversation/attachments/:attachment",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Download a message attachment",
+      ...requiresAuth,
+      description:
+        "Requires current message visibility, including resource-thread access. An unsent upload is visible only to its uploader. Raster images render inline; other files download. Responses use private no-store caching, nosniff and a sandbox CSP.",
+      responses: {
+        200: {
+          description: "Attachment bytes",
+          content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } },
+          headers: {
+            "Content-Type": { description: "Raster image MIME type, otherwise application/octet-stream", schema: { type: "string" } },
+            "Content-Disposition": { description: "Inline raster image or attachment with encoded filename", schema: { type: "string" } },
+            "Cache-Control": { schema: { type: "string", enum: ["private, no-store"] } },
+            "X-Content-Type-Options": { schema: { type: "string", enum: ["nosniff"] } },
+            "Content-Security-Policy": { schema: { type: "string" } },
+          },
+        },
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Attachment unavailable"),
+      },
+    }),
+    validator("param", AttachmentParamSchema, invalidInput),
+    async (c) => {
+      const param = c.req.valid("param");
+      const result = await chatService.attachments.download({
+        ...context(c),
+        conversationId: param.conversation,
+        attachmentId: param.attachment,
+      });
+      if (!result.ok) return respond(c, result);
+      return new Response(result.data.stream, {
+        headers: {
+          ...attachmentHeaders(result.data.attachment),
+          "Content-Length": String(result.data.attachment.size),
+        },
+      });
+    },
+  )
+  .post(
     "/conversations/:conversation/messages",
     describeRoute({
       tags: ["Chat"],
       summary: "Post a Markdown message",
       description:
-        "Accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored content with the caller's current reactions.",
+        "Accepts up to 10 Cloud resource refs, deduplicated in input order. Accepts up to 10 unique unsent attachment IDs uploaded by the same access subject in this conversation. An empty body requires at least one ref or attachment. Attachments bind atomically with the message. Refs are stored without resolving their resources. A clientId retry returns the stored content with the caller's current reactions.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageViewSchema, "Idempotent retry"),
@@ -515,9 +617,9 @@ const app = new Hono<AuthContext>()
     "/conversations/:conversation/shared",
     describeRoute({
       tags: ["Chat"],
-      summary: "List shared links and Cloud elements",
+      summary: "List shared images, documents, links and Cloud elements",
       description:
-        "Newest messages first, up to 30 items per page. Within a message, refs precede links, each in stored order. Omit thread for the whole chat or use general. Pass nextCursor unchanged with the same filters. Images and documents currently return no items. Resource refs confer no access; resolve them with the reader's session.",
+        "Newest messages first, up to 30 items per page. Within a message, refs precede links, then attachments in upload order. Omit thread for the whole chat or use general. Pass nextCursor unchanged with the same filters. Images and documents include only attachments from visible messages. Resource refs confer no access; resolve them with the reader's session.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SharedPageSchema, "Shared items and opaque continuation cursor"),

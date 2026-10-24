@@ -6,6 +6,7 @@ import { createChatSends, createChatSendsApi } from "./chat-sends";
 const message = MessageViewSchema.parse({
   reactions: [],
   refs: [],
+  attachments: [],
   thread: null,
   replyTo: null,
   id: "message001",

@@ -1,6 +1,7 @@
 import { logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
+import { attachments } from "./attachments";
 import { channels } from "./channels";
 import { conversations } from "./conversations";
 import { messages } from "./messages";
@@ -45,7 +46,19 @@ const health = async (): Promise<ChatHealth> => {
   return { status, observedAt: new Date().toISOString(), database: { status, latencyMs } };
 };
 
-export const chatService = { health, channels, conversations, messages, reactions, readState, personal, threads, shared, systemChats };
+export const chatService = {
+  health,
+  attachments,
+  channels,
+  conversations,
+  messages,
+  reactions,
+  readState,
+  personal,
+  threads,
+  shared,
+  systemChats,
+};
 
 export type ChatService = typeof chatService;
 

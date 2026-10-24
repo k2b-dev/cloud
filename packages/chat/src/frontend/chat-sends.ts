@@ -3,10 +3,10 @@ import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import type { z } from "zod";
 import type { ApiType } from "../api";
-import { MessageViewSchema } from "../service/contracts";
+import { MessageViewSchema, type SendMessageSchema } from "../service/contracts";
 
 export type ChatSendReply = { id: string; author: string; text: string };
-export type ChatSendInput = { clientId: string; body: string; thread?: string; replyTo?: string; refs?: CloudResourceRef[] };
+export type ChatSendInput = z.input<typeof SendMessageSchema>;
 export type ChatSend = {
   clientId: string;
   conversationId: string;

@@ -461,8 +461,11 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     const message: Message = {
       reactions: [],
       refs: target.refs ?? [],
+      attachments: [],
       thread,
-      replyTo: original ? { id: original.id, author: original.author, preview: original.body ?? "" } : null,
+      replyTo: original
+        ? { id: original.id, author: original.author, preview: original.body ?? "", attachments: original.attachments }
+        : null,
       id: messageId(chat, seq),
       conversationId: chat,
       seq,

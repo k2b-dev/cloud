@@ -310,6 +310,7 @@ const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: t
           author_id: string;
           author_name: string;
           body: string;
+          attachment: { kind: "image" | "file"; name: string } | null;
           created_at: Date;
           thread_short_id: string | null;
           thread_name: string | null;
@@ -320,6 +321,8 @@ const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: t
       SELECT c.id AS conversation_id, m.*, t.short_id AS thread_short_id, t.name AS thread_name, t.resource_type, t.resource_id FROM chat.conversations c
       CROSS JOIN LATERAL (
         SELECT short_id, thread_id, author_type, author_id, author_name,
+          (SELECT jsonb_build_object('kind', a.kind, 'name', a.filename) FROM chat.attachments a
+            WHERE a.message_id = chat.messages.id ORDER BY a.created_at, a.id LIMIT 1) AS attachment,
           left(regexp_replace(body_md, ${"[\\t\\n\\v\\f\\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+"}, ' ', 'g'), 600) AS body, created_at
         FROM chat.messages WHERE conversation_id = c.id AND kind = 'text' AND ${visibility} ORDER BY seq DESC LIMIT 1
       ) m LEFT JOIN chat.threads t ON t.id = m.thread_id WHERE c.id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])
@@ -350,7 +353,7 @@ const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: t
           id: row.author_id,
           name: deleted.has(row.author_id) ? messages(context).formerAccount : row.author_name,
         },
-        preview: messagePreview(row.body),
+        preview: messagePreview(row.body, row.attachment ? [row.attachment] : [], context.locale),
         thread: row.thread_short_id === null ? null : { id: row.thread_short_id, name: row.thread_name! },
         createdAt: row.created_at.toISOString(),
       },

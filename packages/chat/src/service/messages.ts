@@ -1,4 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
+import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { z } from "zod";
 import { type ChatContext, messages as catalog, requireConversation, subjectPrincipal } from "./access";
@@ -85,11 +86,20 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
       if (!thread) return threadNotFound(input);
       if (thread.archived_at) return fail({ code: "THREAD_ARCHIVED", status: 409, message: catalog(input).threadArchived });
     }
+    if (data.attachments?.length) {
+      const author = subjectPrincipal(input.accessSubject);
+      const uploaded = await db<{ short_id: string }[]>`SELECT short_id FROM chat.attachments
+        WHERE conversation_id = ${current.data.id}::uuid AND short_id = ANY(${toPgTextArray(data.attachments)}::text[])
+          AND message_id IS NULL AND uploader_type = ${author.type} AND uploader_id = ${author.id}::uuid FOR UPDATE`;
+      if (uploaded.length !== data.attachments.length)
+        return fail({ code: "INVALID_ATTACHMENT", status: 400, message: catalog(input).attachmentUnavailable });
+    }
     const row = await appendMessage(db, current.data, input, {
       kind: "text",
       clientId: data.clientId,
       body: data.body,
       refs: data.refs,
+      attachments: data.attachments,
       threadId: threadId ?? undefined,
       replyToSeq,
     });

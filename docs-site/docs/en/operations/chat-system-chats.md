@@ -28,6 +28,12 @@ All paths below start with `/api/chat`.
 | `POST /conversations/:conversation/threads/for-resource` with `{ "ref": { "type": "spaces.item", "id": "…" } }` | Create or return an item thread. `notebooks.note` is also supported. |
 | `GET /conversations/:conversation/threads` | Authorized threads, with optional `filter=open\|done\|unread`, `q`, and `cursor`. |
 
+Message uploads and downloads use the same routes and limits as ordinary chats:
+see [Chat message attachments](/en/docs/operations/build-and-deploy#chat-message-attachments-after-the-upgrade).
+An upload's optional `thread` is checked with the item reader. A sent
+attachment's download and shared-list entry require the current container and
+item visibility of its message.
+
 System conversations have `kind: "system"` and a container `resource` ref.
 Their message views include the same viewer-specific `reactions` as ordinary
 chat messages. Reaction live events carry a refresh hint on the item thread

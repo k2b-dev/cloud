@@ -161,6 +161,7 @@ test("requires authentication for all conversation routes", async () => {
 const textMessage = {
   reactions: [],
   refs: [],
+  attachments: [],
   thread: null,
   replyTo: null,
   id: "0123456789",
@@ -355,4 +356,83 @@ test("read-all continuation survives HTTP validation and the service's second pa
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ outcome: "done", marked: 0, more: true, nextCursor: cursor });
   expect(read).toHaveBeenCalledTimes(1);
+});
+
+const attachment = {
+  id: "att001",
+  name: "picture.png",
+  mimeType: "image/png",
+  size: 3,
+  kind: "image" as const,
+  width: 1,
+  height: 1,
+  href: "/api/chat/conversations/abcdef/attachments/att001",
+};
+test("multipart upload forwards file bytes, thread, delegated subject and locale to the same service", async () => {
+  authenticate(true);
+  const upload = spyOn(chatService.attachments, "upload").mockResolvedValue({ ok: true, data: attachment });
+  const form = new FormData();
+  form.append("file", new File([new Uint8Array([1, 2, 3])], "picture.png", { type: "image/png" }));
+  form.append("thread", "thread");
+  const response = await chatApi.request("/conversations/abcdef/attachments", {
+    method: "POST",
+    headers: { authorization: "Bearer test-key", "accept-language": "de-DE" },
+    body: form,
+  });
+  expect(response.status).toBe(201);
+  expect(await response.json()).toEqual(attachment);
+  expect(upload).toHaveBeenCalledWith(
+    expect.objectContaining({
+      actor: expect.objectContaining({ kind: "service_account", delegatedUser: person }),
+      accessSubject: { type: "user", userId },
+      locale: "de-DE",
+      conversationId: "abcdef",
+      thread: "thread",
+      filename: "picture.png",
+      mimeType: "image/png",
+      content: new Uint8Array([1, 2, 3]),
+    }),
+  );
+});
+test("oversized multipart content length fails before the upload service", async () => {
+  authenticate();
+  const upload = spyOn(chatService.attachments, "upload");
+  const response = await chatApi.request("/conversations/abcdef/attachments", {
+    method: "POST",
+    headers: { authorization: "Bearer test-key", "content-length": String(10 * 1024 * 1024 + 65537) },
+    body: "x",
+  });
+  expect(response.status).toBe(413);
+  expect(await response.json()).toMatchObject({ code: "ATTACHMENT_TOO_LARGE" });
+  expect(upload).not.toHaveBeenCalled();
+});
+test("download forwards access context and streams the authorized bytes with restrictive headers", async () => {
+  authenticate();
+  const download = spyOn(chatService.attachments, "download").mockResolvedValue({
+    ok: true,
+    data: {
+      attachment,
+      stream: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3]));
+          controller.close();
+        },
+      }),
+    },
+  });
+  const response = await chatApi.request("/conversations/abcdef/attachments/att001", { headers: { authorization: "Bearer test-key" } });
+  expect(response.status).toBe(200);
+  expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+  expect(response.headers.get("content-type")).toBe("image/png");
+  expect(response.headers.get("content-disposition")).toStartWith("inline;");
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+  expect(response.headers.get("content-security-policy")).toContain("sandbox");
+  expect(download).toHaveBeenCalledWith(
+    expect.objectContaining({
+      conversationId: "abcdef",
+      attachmentId: "att001",
+      accessSubject: { type: "service_account", serviceAccountId: account.id },
+    }),
+  );
 });

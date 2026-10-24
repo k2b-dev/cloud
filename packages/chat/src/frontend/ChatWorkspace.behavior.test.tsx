@@ -85,6 +85,7 @@ const message = (seq: number, body = `Message ${seq}`) =>
   MessageViewSchema.parse({
     reactions: [],
     refs: [],
+    attachments: [],
     thread: null,
     replyTo: null,
     id: String(seq).padStart(10, "0"),
@@ -405,6 +406,7 @@ describe("ChatWorkspace interactions", () => {
         {
           reactions: [],
           refs: [],
+          attachments: [],
           thread: null,
           replyTo: null,
           id: "Chat010001",

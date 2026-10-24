@@ -5,14 +5,14 @@ section: Platform services
 order: 346
 description: Remove camera and location metadata from images embedded in application content without changing image quality.
 tags: [images, uploads, privacy, attachments]
-updated: 2026-10-08
+updated: 2026-10-24
 ---
 
 # Image upload privacy
 
-New JPEG, PNG, and WebP images uploaded to Notebooks attachments, Spaces task
-attachments, Grids record files and Form title images, Assistant conversation,
-Project and App files, Venue logos, banners, and menu images, profile avatars,
+New JPEG, PNG, WebP, and GIF images uploaded to Notebooks attachments, Spaces task
+attachments, Chat message attachments, Grids record files and Form title images,
+Assistant conversation, Project and App files, Venue logos, banners, and menu images, profile avatars,
 and inline image settings such as the installation logo and model profile logos
 lose location and device metadata before storage. This includes GPS, camera
 make and model, serial numbers, XMP, IPTC, comments, maker notes, and embedded
@@ -23,10 +23,10 @@ PNG/WebP animation data. Data after the image container is removed.
 Files keeps uploaded originals. Mail draft attachments retain their original
 bytes for outgoing mail; incoming messages are also unchanged. Contacts and Mail internal notes have no image upload path.
 
-HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unrecognized formats are stored
+HEIC, AVIF, TIFF, SVG, video, BMP, and unrecognized formats are stored
 unchanged. HEIC, AVIF, TIFF, SVG, and video can retain location or other private
-metadata. GIF and BMP are also left unchanged: they do not normally carry EXIF
-GPS, but this is **not** a guarantee that they contain no metadata. Remove
+metadata. BMP is also left unchanged: it does not normally carry EXIF
+GPS, but this is **not** a guarantee that it contains no metadata. Remove
 private metadata yourself before uploading these formats when needed.
 
 Images that the Assistant writes to conversation, Project, or App files, such
@@ -49,7 +49,7 @@ import { stripImageMetadata } from "@k2b/cloud/services/image-metadata";
 
 /** Call for authorized, size-bounded uploads classified as images. */
 export const prepareImageUpload = (bytes: Uint8Array): Uint8Array =>
-  // Throws ImageMetadataError (HTTP 422) for a malformed JPEG, PNG, or WebP.
+  // Throws ImageMetadataError (HTTP 422) for a malformed JPEG, PNG, WebP, or GIF.
   // Hono maps it to 422; custom error handlers must preserve that status.
   stripImageMetadata(bytes);
 ```
@@ -57,13 +57,13 @@ export const prepareImageUpload = (bytes: Uint8Array): Uint8Array =>
 `stripImageDataUrlMetadata(value)` applies the same rule to inline `data:`
 URLs in any letter case, with or without media type parameters, and with
 base64 or percent-encoded content. It selects the format from the decoded
-bytes, not from the declared type. A JPEG, PNG, or WebP comes back as
+bytes, not from the declared type. A JPEG, PNG, WebP, or GIF comes back as
 `data:<declared type>;base64,` with canonical base64 and without parameters.
 Other content and external URLs return the original string unchanged. Invalid
 base64 raises the same typed 422 error. Use it for inline image configuration
 before storing the value.
 
-The helper selects JPEG, PNG, or WebP from magic bytes, regardless of MIME type
+The helper selects JPEG, PNG, WebP, or GIF from magic bytes, regardless of MIME type
 or filename. Other formats return the same input object. Applications still
 own classification: Notebooks and Grids use their image file category, which
 includes the filename extension when the declared MIME type is generic; Spaces
@@ -106,6 +106,11 @@ and APNG chunks (acTL, fcTL, fdAT). WebP retains VP8/VP8L, VP8X, ALPH, ICCP,
 ANIM, and ANMF, clears EXIF/XMP flags, and updates container sizes. Other
 segments and chunks are removed. PNG CRCs and compressed codec correctness
 are not validated; container validation is not a complete image decoder.
+
+GIF retains its palettes, image frames, graphic controls, visible plain-text
+extensions, and standard animation loop extension. Comment and other application
+extensions and bytes after the trailer are removed. Truncated containers and
+invalid block lengths return `MALFORMED_IMAGE`.
 
 PNG and WebP EXIF is removed entirely, including any orientation tag there.
 JPEG is the format whose EXIF orientation is preserved.
