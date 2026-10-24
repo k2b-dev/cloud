@@ -7,7 +7,13 @@
 
 import { aiSkillsRoutes } from "@k2b/cloud/ai";
 import { aiLive, aiLiveChannels } from "@k2b/cloud/ai/live";
-import { createAiOpenAiRoutes, createCoreApiRouter, createMcpProtectedResourceRoutes, createPwaPhoneRoutes } from "@k2b/cloud/api";
+import {
+  createAiOpenAiRoutes,
+  createAppAccessRoutes,
+  createCoreApiRouter,
+  createMcpProtectedResourceRoutes,
+  createPwaPhoneRoutes,
+} from "@k2b/cloud/api";
 import { type AppContext, type AuthContext, middleware } from "@k2b/cloud/server";
 import { createIdentityPublicRoutes } from "@k2b/cloud/services/identity";
 import { Hono } from "hono";
@@ -47,6 +53,7 @@ const coreApi = new Hono()
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
+  .route("/_cloud/app-access", createAppAccessRoutes())
   .route("/", identityPublicRoutes)
   .route("/", mcpProtectedResource)
   .route("/api/ai/live", aiLive.routes(aiLiveChannels))

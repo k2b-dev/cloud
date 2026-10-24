@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "bun";
 import { suiteFor, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { createGeoAdmin, GeoAdminError } from "./admin";
-import { GEO_TEST_NOW, geoTestConfig } from "./geo.test-fixture";
+import { GEO_TEST_NOW, geoTestConfig, geoTestContext } from "./geo.test-fixture";
 import { createGeoLedger } from "./ledger";
 import { migrate } from "./migrate";
 import { readGeoConfig } from "./settings";
@@ -235,9 +235,36 @@ suiteFor("database", "valkey")("Core geo administration", () => {
         { group: "route", credits: 2 },
         { group: "address", credits: 1 },
       ],
+      routeCostOverruns: 0,
       peopleAtLimit: 1,
       timezone: "Europe/Berlin",
     });
+  });
+
+  test("administration counts every current-month routing cost overrun", async () => {
+    const ledger = createGeoLedger(sql);
+    await ledger.recordTransition(
+      "route_cost_overrun",
+      "Europe/Berlin",
+      { actor: geoTestContext.actor!, requestId: "overrun-test" },
+      GEO_TEST_NOW,
+      { reservedCredits: 1, settledCredits: 2 },
+    );
+    await ledger.recordTransition(
+      "route_cost_overrun",
+      "Europe/Berlin",
+      { actor: geoTestContext.actor!, requestId: "overrun-test" },
+      GEO_TEST_NOW,
+      { reservedCredits: 1, settledCredits: 3 },
+    );
+    await ledger.recordTransition(
+      "route_cost_overrun",
+      "Europe/Berlin",
+      { actor: geoTestContext.actor!, requestId: "overrun-test" },
+      new Date("2026-09-20T12:00:00Z"),
+      { reservedCredits: 1, settledCredits: 2 },
+    );
+    expect((await service().usage(admin)).routeCostOverruns).toBe(2);
   });
 
   test("every operation refuses a non-admin before reading or writing", async () => {
