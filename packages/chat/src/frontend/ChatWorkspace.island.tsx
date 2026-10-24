@@ -866,10 +866,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         if (pendingListIntent === token) pendingListIntent = null;
       }
     });
+  // One step can be refused twice (the link and the history entry it adds), so the notice replaces its earlier copy.
+  let preparingNotice: ReturnType<typeof toast> | undefined;
+  const notifyPreparing = () => {
+    preparingNotice?.dismiss();
+    preparingNotice = toast(t().sendPreparing);
+  };
   const changeList = async (next: "all" | "unread" | "archive") => {
     if (!store || listLoading() || listPending()) return;
     if (next === "archive" && pendingSends > 0) {
-      toast(t().sendPreparing);
+      notifyPreparing();
       return;
     }
     if ((!archived() && filter() === next) || (next === "archive" && archived() && filter() === "all" && !route().chatId)) return;
@@ -1005,7 +1011,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
     if (!store) return "failed";
     if (pendingSends > 0 && next.chatId !== route().chatId) {
-      toast(t().sendPreparing);
+      notifyPreparing();
       return "blocked";
     }
     if (
