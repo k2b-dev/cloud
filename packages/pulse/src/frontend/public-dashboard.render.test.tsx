@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { defineApp } from "@k2b/cloud";
 import type { CloudRuntime } from "@k2b/cloud/contracts";
 import { type AuthContext, err, fail, ok } from "@k2b/cloud/server";
+import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import * as config from "../config";
@@ -36,18 +37,26 @@ const document = {
   revision: dashboardTestDashboard.revision,
   panels: dashboardTestDashboard.definition.panels.map(({ sql: _sql, params: _params, ...panel }) => panel),
 };
+const panelRead = spyOn(panels, "readDashboardPanel").mockResolvedValue(fail(err.notFound("Dashboard panel")));
 const read = spyOn(panels, "readPublicDashboard").mockResolvedValue(ok(document));
 const { default: routes } = await import("./index");
+const { publicDashboardRoutes } = await import("../api/routes/dashboards");
 const pages = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>()
+  .use(
+    "*",
+    requireAppAccess(config.app.meta, async () => new Response("Pulse denied", { status: 403 })),
+  )
   .use("*", async (c, next) => {
     c.set("runtime", { apps: [] });
     await next();
   })
-  .route("/app/pulse", routes);
+  .route("/app/pulse", routes)
+  .route("/api/pulse", publicDashboardRoutes);
 afterAll(() => {
   renderer.mockRestore();
   block.mockRestore();
   read.mockRestore();
+  panelRead.mockRestore();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -114,5 +123,26 @@ test("only current workspace routes are mounted", () => {
     expect(path).not.toMatch(/\/(explorer|signals|resources|events|metrics|states|query-reference)(?:\/|$)/);
     expect(path).not.toContain("/edit");
     expect(path).not.toContain("*");
+  }
+});
+
+test("anonymous public API reaches publication checks while private neighbors stay gated", async () => {
+  const response = await pages.request("/api/pulse/public/fictional-token");
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual(document);
+  expect(response.headers.get("Cache-Control")).toContain("no-store");
+  const panel = await pages.request("/api/pulse/public/fictional-token/panels/visits");
+  expect(panel.status).toBe(404);
+  expect(panelRead).toHaveBeenCalledWith(expect.objectContaining({ token: "fictional-token", panelId: "visits" }));
+  read.mockResolvedValueOnce(fail(err.notFound("Dashboard publication")));
+  const revoked = await pages.request("/api/pulse/public/revoked-token");
+  expect(revoked.status).toBe(404);
+  for (const path of [
+    "/api/pulse/bases",
+    "/api/pulse/public/fictional-token/private",
+    "/app/pulse/public/fictional-token/private",
+    "/admin/pulse",
+  ]) {
+    expect((await pages.request(path)).status).toBe(401);
   }
 });
