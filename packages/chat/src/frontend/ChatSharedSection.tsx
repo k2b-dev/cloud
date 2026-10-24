@@ -27,8 +27,8 @@ const KINDS = [
 export default function ChatSharedSection(props: {
   chatId: string;
   /** Changes when the history grows, so the list follows new messages while it is open. */
-  /** The chat's newest position; absent until the chat is open. */
-  revision: number | undefined;
+  /** The chat's newest position and access reconciliation; absent until the chat is open. */
+  revision: string | undefined;
   threads: ThreadList | null;
   viewerId: string;
   dateConfig: DateContext;
