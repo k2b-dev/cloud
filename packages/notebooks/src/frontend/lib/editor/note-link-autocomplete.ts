@@ -35,8 +35,11 @@ import {
   type CompletionContext,
   type CompletionResult,
   type CompletionSource,
+  completionStatus,
   pickedCompletion,
+  startCompletion,
 } from "@codemirror/autocomplete";
+import { EditorView } from "@codemirror/view";
 import { apiClient } from "../../../api/client";
 import { withIcon } from "./completion-icon";
 import { isInsideFencedCode } from "./editor-scope";
@@ -194,3 +197,22 @@ export const buildNoteLinkCompletionSource = (notebookId: string): CompletionSou
       .then((data) => buildResult(word, data));
   };
 };
+
+/** A `[[` link target before the cursor, not an attachment's `![[`. */
+const LINK_TARGET_BEFORE = /(?:^|[^!])\[\[[^\]\n]*$/;
+
+/**
+ * CodeMirror asks again only while a person types, so after a target with no
+ * match, deleting back to one that matches would offer nothing. A deletion
+ * inside a `[[` target asks the server again.
+ */
+export const noteLinkSuggestionsAfterDelete = EditorView.updateListener.of((update) => {
+  if (!update.transactions.some((tr) => tr.isUserEvent("delete"))) return;
+  const { state } = update;
+  const cursor = state.selection.main;
+  if (!cursor.empty || completionStatus(state) !== null) return;
+  const line = state.doc.lineAt(cursor.head);
+  if (!LINK_TARGET_BEFORE.test(line.text.slice(0, cursor.head - line.from))) return;
+  // Starting a completion dispatches; it waits until this update is done.
+  queueMicrotask(() => startCompletion(update.view));
+});
