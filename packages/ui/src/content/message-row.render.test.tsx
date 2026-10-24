@@ -704,7 +704,12 @@ describe("MessageEventRow", () => {
 
   test("a group is one button that says whether it is open", () => {
     const closed = renderToString(() =>
-      createComponent(MessageEventGroup, { label: "4 changes to Invitation and Light test", time: "09:50–09:58", expanded: false, onToggle: () => {} }),
+      createComponent(MessageEventGroup, {
+        label: "4 changes to Invitation and Light test",
+        time: "09:50–09:58",
+        expanded: false,
+        onToggle: () => {},
+      }),
     );
     expect(closed).toMatch(/^<button type="button" class="k2b-message-event-row k2b-message-event-group" aria-expanded="false">/);
     expect(textOf(closed)).toBe("4 changes to Invitation and Light test 09:50–09:58");
