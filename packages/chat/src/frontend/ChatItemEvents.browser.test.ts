@@ -166,9 +166,19 @@ describe("Item events in a Space chat", () => {
     const { chat } = seed();
     harness.failItemEvents(1);
     const { page, errors } = await load(desktop, { chat });
+    const reads: string[] = [];
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname.endsWith("/events")) reads.push(request.url());
+    });
     try {
       await page.getByText("Die Änderungen an den Elementen konnten nicht geladen werden.").waitFor();
       expect(await feed(page).locator(".k2b-message-event-row").count()).toBe(0);
+      // An update of the chat that keeps its messages (read on another device) neither hides the notice nor asks again.
+      const asked = reads.length;
+      harness.readElsewhere(chat, 99);
+      await page.waitForTimeout(800); // real clock: gives the live update time to arrive
+      await page.getByText("Die Änderungen an den Elementen konnten nicht geladen werden.").waitFor();
+      expect(reads.length).toBe(asked);
       await page.getByRole("button", { name: "Erneut versuchen" }).click();
       await feed(page).getByText("Mara hat den Status auf „In Prüfung“ gesetzt").waitFor();
       await page.getByText("Die Änderungen an den Elementen konnten nicht geladen werden.").waitFor({ state: "detached" });
