@@ -5,7 +5,7 @@ section: Work
 order: 105
 description: Shared contact books with structured records, tags, notes, hierarchy, and access control.
 tags: [contacts, address-books, cli]
-updated: 2026-10-17
+updated: 2026-10-20
 ---
 
 # Contacts
@@ -28,6 +28,26 @@ addresses, work and personal data, notes, tags, and hierarchy links.
 
 The read-only system book projects contacts from the IPA directory. Manual
 books contain records created and maintained by Cloud users.
+
+## Find and open contacts
+
+The sidebar contains **All contacts** and the contact books. On smaller
+screens, the books appear in a row below the head. Each object has **All** and
+**Favorites** tabs at the top. Tab counts ignore search and filters.
+If the counts cannot update, a warning button beside the tabs lets you retry;
+the last known counts stay visible.
+
+Search, tags, **Sort**, and **Contact info** sit in the head row. **Reset**
+clears search and filters while keeping the tab and sort order. A result count
+appears only while filters are active.
+
+Inside a book, **…** offers **Duplicates** and **Select** with edit access,
+and **Book settings** with manage access. **New contact** opens the create
+form in the current writable book, or asks for a writable book.
+
+Select a contact to open its details beside the list. On a phone, the contact
+opens as its own page. Choose **Contacts** to return to the list at its previous
+position.
 
 ## Understand the Contacts model
 

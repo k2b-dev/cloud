@@ -20,9 +20,10 @@ Contacts keeps address books with structured contact records, tags, comments, hi
 ## Get started {icon="route"}
 
 :::reference
-- **Search first:** Use **All contacts** or **Favorites** in the overview when you do not know the book yet.
+- **Choose the object:** Open **All contacts** or a book in the sidebar. On smaller screens, books appear below the head.
+- **Choose the view:** Use the **All** and **Favorites** tabs at the top. Both tabs work across all books and inside one book.
 - **Choose a book:** Open one book when you need its tags, want to create a contact, or need the book settings.
 - **Create the contact:** Start with the name and the contact points that people use first: email, phone, website, or address.
 - **Add structure:** Add tags, work details, personal details, bank details, comments, or a parent contact when they help to find the contact later.
-- **Open the details:** Select a contact to open the detail panel. There you edit the contact, add comments, move it, or change its member links.
+- **Open the details:** Select a contact to open the detail panel. On a phone, the contact opens as its own page. Choose **Contacts** to return to the list at its previous position.
 :::

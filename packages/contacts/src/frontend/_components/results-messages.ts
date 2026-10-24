@@ -8,6 +8,19 @@ export const resultsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      contactViews: "Contact views",
+      allView: "All",
+      favoritesView: "Favorites",
+      couldNotUpdateContactCounts: "Contact counts could not be updated.",
+      retryContactCounts: "Contact counts could not be updated. Retry",
+      favoritesMoved: "Favorites are now a tab at the top.",
+      showFavorites: "Show favorites",
+      resetFilters: "Reset",
+      headResultCount: ({ total }: { total: number }) => `${total} result${total === 1 ? "" : "s"}`,
+      bookActions: "Book actions",
+      bookSettings: "Book settings",
+      stopSelecting: "Stop selecting",
+
       // Sort and filter controls
       sortLabel: "Sort",
       sortName: "Name",
@@ -26,7 +39,6 @@ export const resultsMessages = i18n.define({
       filterContacts: "Filter contacts",
       filterContactsByTag: "Filter contacts by tag",
       clearSearch: "Clear search",
-      allTagsChip: "All",
       contactBookFallback: "Contact book",
       tagInBookTitle: ({ tagName, bookName }: { tagName: string; bookName: string }) => `${tagName} · ${bookName}`,
       duplicates: "Duplicates",
@@ -94,6 +106,19 @@ export const resultsMessages = i18n.define({
       couldNotUpdateFavorite: "Could not update favorite",
     },
     de: {
+      contactViews: "Kontakte-Ansichten",
+      allView: "Alle",
+      favoritesView: "Favoriten",
+      couldNotUpdateContactCounts: "Die Kontaktzahlen konnten nicht aktualisiert werden.",
+      retryContactCounts: "Die Kontaktzahlen konnten nicht aktualisiert werden. Erneut versuchen",
+      favoritesMoved: "Favoriten sind jetzt ein Tab oben.",
+      showFavorites: "Favoriten zeigen",
+      resetFilters: "Zurücksetzen",
+      headResultCount: ({ total }) => `${total} Treffer`,
+      bookActions: "Aktionen für das Kontaktbuch",
+      bookSettings: "Buch-Einstellungen",
+      stopSelecting: "Auswahl beenden",
+
       // Sortier- und Filtersteuerung
       sortLabel: "Sortieren",
       sortName: "Name",
@@ -112,7 +137,6 @@ export const resultsMessages = i18n.define({
       filterContacts: "Kontakte filtern",
       filterContactsByTag: "Kontakte nach Tag filtern",
       clearSearch: "Suche zurücksetzen",
-      allTagsChip: "Alle",
       contactBookFallback: "Kontaktbuch",
       tagInBookTitle: ({ tagName, bookName }) => `${tagName} · ${bookName}`,
       duplicates: "Duplikate",

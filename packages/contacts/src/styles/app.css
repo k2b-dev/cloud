@@ -11,3 +11,58 @@
   background: var(--ui-app-selected-nav);
   color: var(--ui-app-accent-text);
 }
+
+/* Head row: search, tag chips, Sort and Contact info stay one line that the head scrolls sideways. */
+.contacts-view-tabs { display: flex; min-width: 0; align-items: center; gap: 0.25rem; }
+/* Reserve the recovery action in the first frame, so a failed count refresh moves no tab or neighbor. */
+.contacts-count-retry { flex: none; }
+.contacts-head-filters { display: flex; min-width: 0; align-items: center; gap: 0.375rem; }
+.contacts-head-filters > *, .k2b-ui .contacts-head-filters .k2b-filter-chip { flex: none; }
+.contacts-head-search { width: 13rem; }
+@media not all and (min-width: 48rem) { .contacts-head-search { width: 11rem; } }
+
+/* A tag is its color dot and its name in neutral text, so the name never depends on the hue (R5, #1515). */
+.contacts-tag-chip { display: contents; }
+/* ContactsHeadFilters and ContactsList supply the per-tag --app-contacts-tag-color at runtime. */
+.k2b-ui .contacts-tag-dot { display: inline-block; width: 0.5rem; height: 0.5rem; flex: none; border-radius: 999px; background: var(--app-contacts-tag-color); }
+.contacts-tag-label { display: inline-flex; min-width: 0; align-items: center; gap: 0.3125rem; color: var(--k2b-text-secondary); font-size: 0.6875rem; line-height: 1rem; white-space: nowrap; }
+@media (forced-colors: active) { .k2b-ui .contacts-tag-dot { background: CanvasText; } }
+
+/* Reset and the quiet hit count show only while a filter is active. */
+.k2b-ui .contacts-head-reset { min-height: 2rem; font-size: 0.75rem; }
+.contacts-head-count { padding-inline: 0.25rem; color: var(--k2b-text-muted); font-size: 0.75rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Email and phone show beside the name only where the list itself is wide enough, also beside the panel. */
+.contacts-list { container: contacts-list / inline-size; }
+.contacts-list__reach { display: none; }
+@container contacts-list (min-width: 46rem) { .contacts-list__reach { display: flex; } }
+
+/* One surface: rows carry a hover fill instead of sitting in a tray (R4, R6). */
+.k2b-ui .contacts-list__row:not([aria-current="true"]):hover { background: color-mix(in srgb, var(--k2b-hover) 50%, transparent); }
+@media (prefers-reduced-motion: reduce) { .k2b-ui .contacts-list__row, .k2b-ui .contacts-list__row * { transition: none; } }
+
+/* Loading keeps the row height of a contact with two lines, so the list does not jump when it arrives. */
+.contacts-list-skeleton { display: flex; flex-direction: column; gap: 0.125rem; margin: 0; padding: 0; list-style: none; }
+.contacts-list-skeleton__row { display: flex; height: 3.75rem; align-items: center; gap: 0.75rem; padding-inline: 0.75rem; }
+.contacts-list-skeleton__avatar { width: 2.25rem; height: 2.25rem; flex: none; border-radius: 999px; background: var(--k2b-surface-muted); }
+.contacts-list-skeleton__lines { display: flex; flex: 1; flex-direction: column; gap: 0.5rem; }
+.contacts-list-skeleton__lines > span { height: 0.625rem; border-radius: 999px; background: var(--k2b-surface-muted); }
+.contacts-list-skeleton__lines > span:first-child { width: min(12rem, 60%); }
+.contacts-list-skeleton__lines > span:last-child { width: min(8rem, 40%); }
+
+/* The detail is its own page on a phone: Back to the list replaces the close button there. */
+/* Loading, failure and the empty state keep the way back on the phone page too. */
+.contacts-detail-back-bar { display: none; }
+@media not all and (min-width: 48rem) { .contacts-detail-back-bar { display: flex; flex: none; padding: 0.5rem 0.5rem 0; } }
+
+/* The doubled class outweighs the button's own display rule, which the shell stylesheet loads after this one. */
+.k2b-ui .contacts-detail-back.contacts-detail-back { display: none; }
+@media not all and (min-width: 48rem) {
+  .k2b-ui .contacts-detail-back.contacts-detail-back { display: inline-flex; margin-inline-start: -0.5rem; }
+  .k2b-ui #k2b-workspace-detail-contacts-detail-panel [data-workspace-detail-close] { display: none; }
+}
+
+/* Until #1642 is fixed in @k2b/ui: a book chip hides its row actions, so its name must not keep their room. */
+@container k2b-app-area not (min-width: 64rem) {
+  .k2b-ui .contacts-sidebar[data-mobile="stacked"] .k2b-app-workspace__sidebar-item-main { --k2b-truncate-fade-inset: 0px !important; }
+}
