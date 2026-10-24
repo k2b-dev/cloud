@@ -55,6 +55,17 @@ Drücke **Esc** in einem offenen Chat, um diesen Chat als gelesen zu markieren.
 
 Kommen Nachrichten an, während du in einem anderen Tab bist, bringt dich **Neue Nachrichten** zu den übersehenen ungelesenen Nachrichten zurück. Falls nötig, lädt Chat den fehlenden Verlauf. Die Nachrichten bleiben ungelesen, bis du sie siehst.
 
+## Sehen, was für dich ist {icon="at"}
+
+**Für dich** oben in der Liste zeigt Nachrichten, die dich erwähnen, und Antworten auf deine Nachrichten, aus allen Chats, auch aus Spaces und Notebooks. Die neuesten stehen oben, und die Zahl zeigt, wie viele du noch nicht gelesen hast.
+
+:::steps
+1. Wähle **Für dich** in der Liste.
+2. Wähle einen Eintrag, um seinen Thread an der Nachricht zu öffnen.
+:::
+
+Liest du die Nachricht in ihrem Thread, ist sie auch hier gelesen. Du siehst nur Nachrichten, die du lesen darfst.
+
 ## Liste filtern {icon="filter"}
 
 Wähle **Ungelesen** über der Liste, um Chats mit neuen Nachrichten oder deiner Ungelesen-Markierung zu sehen. Ein Chat bleibt nach dem Lesen in dieser Ansicht, bis du den Filter verlässt. **Alle** zeigt wieder die ganze Liste. Die Adresse behält deinen Filter beim Neuladen und Zurückgehen.

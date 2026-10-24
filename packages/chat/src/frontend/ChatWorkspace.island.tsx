@@ -30,8 +30,10 @@ import { chatMessages } from "../messages";
 import {
   type ConversationPageSchema,
   type ConversationSchema,
+  type ForYouPageSchema,
   MAX_MESSAGE_REFS,
   MESSAGE_MAX_CODE_POINTS,
+  type Mention,
   MessageBodySchema,
   type MessagePageSchema,
   type MessageSchema,
@@ -58,6 +60,8 @@ import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
 import DiscoverChannels from "./DiscoverChannels";
+import ForYou from "./ForYou";
+import { createForYouApi } from "./for-you-api";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
@@ -94,6 +98,9 @@ export type ChatWorkspaceProps = {
   channelsPage?: boolean;
   channelQuery?: string;
   channelPage?: z.infer<typeof ConversationPageSchema> | null;
+  /** The address is the "For you" page; the server read its first page, or `null` when that failed. */
+  forYouPage?: boolean;
+  forYouInitial?: z.infer<typeof ForYouPageSchema> | null;
   /** The live cursor the server read before every part of this snapshot. */
   cursor: string;
   sidebar: z.infer<typeof ConversationPageSchema>;
@@ -157,6 +164,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const t = () => chatMessages.resolve([locale()]).t;
   const [route, setRoute] = createSignal<Route>({
     channels: props.channelsPage,
+    forYou: props.forYouPage,
     query: props.channelQuery,
     chatId: props.chatId,
     view: props.view,
@@ -167,6 +175,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [archived, setArchived] = createSignal(props.archived ?? false);
   const [filter, setFilter] = createSignal(props.filter ?? "all");
   const [collapsed, setCollapsed] = createSignal(props.collapsed ?? []);
+  // "For you": the unread count from the server's sidebar read, and a revision the page reads again on.
+  const [forYouUnread, setForYouUnread] = createSignal(props.sidebar.forYouUnread ?? 0);
+  const [forYouRevision, setForYouRevision] = createSignal(0);
   const [listRetry, setListRetry] = createSignal<(() => void) | null>(null);
   const [listError, setListError] = createSignal<string | null>(null);
   const [listPending, setListPending] = createSignal(false);
@@ -432,6 +443,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const trailTitle = createMemo<string | undefined>((previous) => {
     const id = route().chatId;
     if (route().channels) return t().browseChannels;
+    if (route().forYou) return t().forYou;
     if (!id) return undefined;
     if (chat()?.id !== id) return previous;
     return conversation()?.title ?? t().threadUnavailable;
@@ -1009,6 +1021,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       route().view === next.view &&
       route().threads === next.threads &&
       route().channels === next.channels &&
+      route().forYou === next.forYou &&
       route().messageId === next.messageId &&
       route().panel !== next.panel
     ) {
@@ -1221,6 +1234,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const initial = initialChannelPage;
     initialChannelPage = undefined;
     return initial;
+  };
+  // The server's first "For you" page seeds only the first mount; later visits read it again.
+  let initialForYou = props.forYouPage ? props.forYouInitial : undefined;
+  const takeInitialForYou = () => {
+    const initial = initialForYou;
+    initialForYou = undefined;
+    return initial;
+  };
+  const showForYou = async (navigation: LinkNavigateEvent) => {
+    if ((await open(chatRoute(null, "all", { forYou: true }))) === "applied") navigation.push(listHref(`${basePath}/for-you`));
   };
   const discover = async (navigation: LinkNavigateEvent) => {
     if ((await open(chatRoute(null, "all", { channels: true }))) === "applied") navigation.push(listHref(`${basePath}/channels`));
@@ -1442,7 +1465,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [reply, setReply] = createSignal<ChatFeedItem | null>(null);
   const replies = new Map<string, ChatFeedItem | null>();
   // A message that only shares Cloud elements has no text.
-  const send = async (text: string, refs: readonly CloudResourceRef[] = []): Promise<boolean> => {
+  const forYouApi = createForYouApi();
+  const send = async (text: string, refs: readonly CloudResourceRef[] = [], mentions: readonly Mention[] = []): Promise<boolean> => {
     const current = openChat();
     const id = draftId(route());
     const body = refs.length > 0 && !text.trim() ? "" : text;
@@ -1465,6 +1489,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       outbox.send(current.id, body, {
         thread,
         refs,
+        mentions,
         replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
       });
       setReply(null);
@@ -1527,6 +1552,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       const firstUnpinned = order().find((id) => live.sidebar.some((row) => row.id === id && row.pinnedRank === null));
       const ownTop = top?.lastMessage?.author.id === props.viewerId && top.id === live.openConversation?.id && firstUnpinned !== top.id;
       if (!collapsePending) setCollapsed(live.collapsed);
+      setForYouUnread(live.forYouUnread);
+      setForYouRevision(live.forYouRevision);
       setRows(live.sidebar);
       if (ownTop) sortRows();
       setHasMore(live.hasMoreSidebar);
@@ -1603,7 +1630,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     // The way up from a chat goes back to the list in place; a list opened before the chat is the previous entry.
     onCleanup(
       layout.handleUp((href) => {
-        if (![basePath, `${basePath}/archive`].includes(new URL(href, location.href).pathname) || (!route().chatId && !route().channels))
+        if (
+          ![basePath, `${basePath}/archive`].includes(new URL(href, location.href).pathname) ||
+          (!route().chatId && !route().channels && !route().forYou)
+        )
           return false;
         const depth = listDepth();
         if (depth > 0) history.go(-depth);
@@ -1817,6 +1847,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
         {t().newChat}
       </AppWorkspace.SidebarItem>
+      <AppWorkspace.SidebarItem
+        href={listHref(`${basePath}/for-you`)}
+        navigation="enhanced"
+        onNavigate={showForYou}
+        active={route().forYou}
+        icon="ti ti-at"
+        meta={<AppWorkspace.SidebarItemStatus unread={forYouUnread() || undefined} />}
+      >
+        {t().forYou}
+      </AppWorkspace.SidebarItem>
       <div class="chat-list-filters" role="group" aria-label={t().chats}>
         <FilterToggle
           label={t().allChats}
@@ -1986,6 +2026,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               </Show>
             </AppWorkspace.MainPane>
             <Switch>
+              <Match when={route().forYou}>
+                <ForYou
+                  initial={takeInitialForYou()}
+                  revision={forYouRevision()}
+                  basePath={basePath}
+                  dateConfig={props.dateConfig}
+                  now={now}
+                  onOpen={(item) => openView(item.conversation.id, item.thread.id, undefined, item.message.id)}
+                  onBack={backToList}
+                />
+              </Match>
               <Match when={route().channels}>
                 <DiscoverChannels
                   initial={takeInitialChannelPage()}
@@ -2181,6 +2232,21 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         draft={draft()}
                         onDraftChange={changeDraft}
                         onSend={send}
+                        people={{
+                          search: async (query, signal) =>
+                            (
+                              await forYouApi.candidates(
+                                current().id,
+                                query,
+                                openChat()?.view && openChat()!.view !== "all" ? openChat()!.view : "general",
+                                signal,
+                              )
+                            ).items.map((candidate) => ({
+                              id: `${candidate.principal.type}:${candidate.principal.id}`,
+                              name: candidate.name,
+                              agent: candidate.agent,
+                            })),
+                        }}
                         cards={cards()}
                         onPickResource={pickResource}
                         onBack={threaded() ? backToThreads : backToList}
