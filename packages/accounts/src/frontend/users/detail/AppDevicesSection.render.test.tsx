@@ -44,6 +44,7 @@ const render = (devices: PwaDeviceView[] | null, locale = "en") =>
           devices,
           locale,
           name: "Ada",
+          administrator: "Admin Example",
           cloud: "Example Cloud",
           blocked: false,
         });

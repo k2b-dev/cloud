@@ -436,6 +436,7 @@ export default ssr<AuthContext>(async (c) => {
           <AppDevicesSection
             userId={user.id}
             name={user.displayName?.trim() || user.uid}
+            administrator={sessionUser.displayName?.trim() || sessionUser.uid}
             cloud={cloudName}
             blocked={isExpired || !categoryPolicy[accountCategory(user)].enabled}
             devices={phones}

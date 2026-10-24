@@ -8,6 +8,8 @@ import RemoveAppDevice from "./RemoveAppDevice.island";
 type Props = {
   userId: string;
   name: string;
+  /** The signed-in administrator, as the person's device will name them. */
+  administrator: string;
   cloud: string;
   blocked: boolean;
   /** Null when the phones could not be loaded. */
@@ -35,7 +37,7 @@ export default function AppDevicesSection(props: Props) {
           <h2 class="text-base font-semibold text-primary">{t.cloudApp}</h2>
           <p class="mt-1 text-xs text-dimmed">{t.cloudAppDescription({ cloud: props.cloud })}</p>
         </div>
-        <PairCloudApp userId={props.userId} name={props.name} blocked={props.blocked} />
+        <PairCloudApp userId={props.userId} name={props.name} administrator={props.administrator} blocked={props.blocked} />
       </div>
       {props.devices === null ? (
         <Placeholder surface="paper" state="error" description={<>{t.appDevicesUnavailable}</>} />

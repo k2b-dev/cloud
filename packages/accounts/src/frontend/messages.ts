@@ -33,6 +33,11 @@ export const accountsMessages = i18n.define({
       cloudAppPairStepThree: "Enter the code from the device here.",
       cloudAppBlocked: ({ name }: { name: string }) => `${name}’s account is blocked. Unblock it to pair a device.`,
       cloudAppWaiting: ({ name }: { name: string }) => `Waiting for ${name} to confirm on the device.`,
+      cloudAppDevicePreview: "What the device shows",
+      cloudAppDeviceQuestion: ({ name }: { name: string }) => `Sign in as ${name}?`,
+      cloudAppDeviceHint: ({ administrator }: { administrator: string }) =>
+        `Set up by ${administrator} (Administration). Confirm only if this is your device.`,
+      cloudAppCancel: "Cancel",
       cloudAppRejected: ({ name }: { name: string }) => `${name} rejected the pairing. Nothing was paired.`,
       cloudAppSuccess: ({ name }: { name: string }) => `Paired: ${name}`,
       cloudAppSuccessHint: ({ name }: { name: string }) =>
@@ -912,6 +917,11 @@ export const accountsMessages = i18n.define({
       cloudAppPairStepThree: "Gib hier den Code vom Gerät ein.",
       cloudAppBlocked: ({ name }) => `${name}s Konto ist gesperrt. Entsperre es, um ein Gerät zu koppeln.`,
       cloudAppWaiting: ({ name }) => `Wartet, bis ${name} am Gerät bestätigt.`,
+      cloudAppDevicePreview: "So sieht es auf dem Gerät aus",
+      cloudAppDeviceQuestion: ({ name }) => `Als ${name} anmelden?`,
+      cloudAppDeviceHint: ({ administrator }) =>
+        `Eingerichtet von ${administrator} (Administration). Bestätige nur, wenn das dein Gerät ist.`,
+      cloudAppCancel: "Abbrechen",
       cloudAppRejected: ({ name }) => `${name} hat abgelehnt. Es wurde nichts gekoppelt.`,
       cloudAppSuccess: ({ name }) => `Gekoppelt: ${name}`,
       cloudAppSuccessHint: ({ name }) =>

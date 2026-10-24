@@ -1,5 +1,5 @@
 import { apiClient } from "@k2b/cloud/clients/core";
-import { PWA_LIMITS, pairingLink, PwaPairingStartResultSchema, PwaPairingStatusSchema } from "@k2b/cloud/contracts";
+import { PWA_LIMITS, PwaPairingStartResultSchema, PwaPairingStatusSchema, pairingLink } from "@k2b/cloud/contracts";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { qr } from "@k2b/stdlib/qr";
 import { Button, ButtonLink, dialogCore, PanelDialog, PinInput, useLocale } from "@k2b/ui";
@@ -12,7 +12,7 @@ const Resume = z.object({ id: z.string().uuid(), expiresAt: z.string().datetime(
 type Pairing = z.infer<typeof Resume> & { link?: string; claimUntil?: string };
 type Status = z.infer<typeof PwaPairingStatusSchema>;
 type Step = "starting" | "link" | "code" | "waiting" | "done" | "rejected" | "expired" | "locked" | "reauthenticate" | "error";
-type Props = { userId: string; name: string; blocked: boolean };
+type Props = { userId: string; name: string; administrator: string; blocked: boolean };
 
 class PairingError extends Error {
   constructor(
@@ -297,6 +297,12 @@ export default function PairCloudApp(props: Props) {
                     </Match>
                     <Match when={step() === "waiting"}>
                       <p role="status">{t().cloudAppWaiting({ name: props.name })}</p>
+                      {/* What the person sees now, so the administrator can tell them what to tap. Only the person decides. */}
+                      <figure class="m-0 flex flex-col gap-1 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-muted)] p-4">
+                        <figcaption class="text-xs text-dimmed">{t().cloudAppDevicePreview}</figcaption>
+                        <strong>{t().cloudAppDeviceQuestion({ name: props.name })}</strong>
+                        <span class="text-sm">{t().cloudAppDeviceHint({ administrator: props.administrator })}</span>
+                      </figure>
                     </Match>
                     <Match when={step() === "done"}>
                       <p>{t().cloudAppSuccess({ name: status()?.device?.name ?? "" })}</p>
@@ -327,8 +333,9 @@ export default function PairCloudApp(props: Props) {
                 </div>
               </PanelDialog.Body>
               <PanelDialog.Footer>
+                {/* While a pairing runs, closing ends it. */}
                 <Button variant="ghost" disabled={busy()} onClick={() => void requestClose()}>
-                  {t().close}
+                  {pairing() && ["link", "code", "waiting"].includes(step()) ? t().cloudAppCancel : t().close}
                 </Button>
                 <Show when={step() === "code"}>
                   <Button loading={busy()} disabled={code().length !== 6} onClick={confirm}>

@@ -121,7 +121,7 @@ else {
         createComponent(ui.LocaleProvider, {
           locale,
           get children() {
-            return createComponent(Pair, { userId: USER, name: "Ada", blocked });
+            return createComponent(Pair, { userId: USER, name: "Ada", administrator: "Max Weber", blocked });
           },
         }),
       dom.root,
@@ -168,6 +168,13 @@ else {
         text(dom).includes(locale === "de" ? "Wartet, bis Ada am Gerät bestätigt." : "Waiting for Ada to confirm on the device."),
       );
       expect(text(dom)).not.toContain(locale === "de" ? "Gekoppelt:" : "Paired:");
+      // The administrator sees the question the device asks, with their own name, so they can tell the person what to tap.
+      const preview = dom.document.querySelector("dialog figure")?.textContent ?? "";
+      expect(preview).toContain(locale === "de" ? "So sieht es auf dem Gerät aus" : "What the device shows");
+      expect(preview).toContain(locale === "de" ? "Als Ada anmelden?" : "Sign in as Ada?");
+      expect(preview).toContain(locale === "de" ? "Eingerichtet von Max Weber (Administration)." : "Set up by Max Weber (Administration).");
+      expect(dom.document.querySelectorAll("dialog figure button")).toHaveLength(0);
+      expect(button(dom, locale === "de" ? "Abbrechen" : "Cancel")).toBeDefined();
       state = "rejected";
       await waitFor(() =>
         text(dom).includes(
@@ -259,7 +266,9 @@ else {
     mount();
     button(dom, "Pair Cloud app")!.click();
     await waitFor(() => Boolean(dom.document.querySelector("dialog img")));
-    button(dom, "Close")!.click();
+    // While the pairing runs, the button says what it does: it ends the pairing.
+    expect(button(dom, "Close")).toBeUndefined();
+    button(dom, "Cancel")!.click();
     await waitFor(() => cancellations === 1);
   });
   test("the target's account limit is explained", async () => {

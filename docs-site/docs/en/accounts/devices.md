@@ -199,14 +199,15 @@ unblock or extend the account first; the disabled action explains why.
    pairing. The whole pairing expires after ten minutes.
 3. On the device, check **Sign in as …?** and **Set up by … (Administration)**.
    Choose **Confirm** only if this is the intended device. The administrator
-   dialog waits for this decision. **Reject** ends the pairing and grants no
-   access.
+   dialog waits for this decision and shows the same question under **What the
+   device shows**, so you can tell the person what to tap; only the person can
+   answer it. **Reject** ends the pairing and grants no access.
 4. Keep both screens open until the administrator dialog shows **Paired:** and
    the device name. The device appears in the person's list. The person receives
    the usual paired-device notice, including who set it up, through their
    configured notification channels.
 
-Closing the administrator dialog cancels an unfinished pairing. After a reload,
+**Cancel**, or closing the administrator dialog, ends an unfinished pairing. After a reload,
 the same tab resumes its pairing; if the device has not received the link,
 close the dialog and start again. Signing out the initiating administrator,
 ending their session, or removing their administrator role prevents completion.
