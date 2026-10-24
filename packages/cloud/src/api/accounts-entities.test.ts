@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import type { AuthContext } from "../server";
+import { audit } from "../services/audit";
 import { createAccountsEntitiesRoutes } from "./accounts-entities";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -21,18 +22,12 @@ const authenticateAs =
     await next();
   };
 
-const requireUser: MiddlewareHandler<AuthContext> = async (c, next) => {
-  if (!c.get("user")) return c.json({ code: "FORBIDDEN", message: "User-backed account required" }, 403);
-  await next();
-};
-
 describe("accounts entity routes", () => {
   test("passes an authenticated guest actor to the scoped entity service", async () => {
     let actor: unknown;
     let exactIds: unknown;
     const routes = createAccountsEntitiesRoutes({
       authenticate: authenticateAs("guest"),
-      requireUser,
       listEntities: async (input) => {
         actor = input.actor;
         exactIds = { userIds: input.userIds, groupIds: input.groupIds };
@@ -55,7 +50,6 @@ describe("accounts entity routes", () => {
     const seen: unknown[] = [];
     const routes = createAccountsEntitiesRoutes({
       authenticate: authenticateAs("user"),
-      requireUser,
       listEntities: async (input) => {
         seen.push(input.includePersonal);
         return { items: [], page: 1, perPage: 10, total: 0, hasNext: false };
@@ -72,7 +66,6 @@ describe("accounts entity routes", () => {
     let queried = false;
     const routes = createAccountsEntitiesRoutes({
       authenticate: authenticateAs("guest"),
-      requireUser,
       listEntities: async () => {
         queried = true;
         return { items: [], page: 1, perPage: 10, total: 0, hasNext: false };
@@ -92,7 +85,6 @@ describe("accounts entity routes", () => {
     let queried = false;
     const routes = createAccountsEntitiesRoutes({
       authenticate: authenticateAs("guest"),
-      requireUser,
       listEntities: async () => {
         queried = true;
         return { items: [], page: 1, perPage: 20, total: 0, hasNext: false };
@@ -106,10 +98,9 @@ describe("accounts entity routes", () => {
     expect(queried).toBe(false);
   });
 
-  test("keeps anonymous callers at 401 and userless service accounts at 403", async () => {
+  test("keeps anonymous callers at 401 and resource-bound service accounts at 403", async () => {
     const anonymous = createAccountsEntitiesRoutes({
       authenticate: async (c) => c.json({ code: "UNAUTHORIZED", message: "Authentication required" }, 401),
-      requireUser,
     });
     expect((await anonymous.request("/entities")).status).toBe(401);
 
@@ -127,7 +118,7 @@ describe("accounts entity routes", () => {
             resourceType: "entities",
             resourceId: "directory",
             createdBy: null,
-            createdAt: new Date().toISOString(),
+            createdAt: "2026-10-23T00:00:00.000Z",
           },
           delegatedUser: null,
           scopes: ["read"],
@@ -135,8 +126,15 @@ describe("accounts entity routes", () => {
         c.set("accessSubject", { type: "service_account", serviceAccountId: "22222222-2222-4222-8222-222222222222" });
         await next();
       },
-      requireUser,
     });
-    expect((await serviceAccount.request("/entities")).status).toBe(403);
+    // Exercise the real denial policy while keeping its durable audit out of this unit fixture.
+    const record = spyOn(audit, "recordResult").mockImplementation(async (params) => params.result);
+    try {
+      expect((await serviceAccount.request("/entities")).status).toBe(403);
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(record.mock.calls[0]![0].result.ok).toBe(false);
+    } finally {
+      record.mockRestore();
+    }
   });
 });

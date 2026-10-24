@@ -22,7 +22,7 @@ import { hc } from "hono/client";
 import { configPath, envLacksLocalBrowser, envLocale, envServer, envToken, posixLocale } from "./config";
 import { loginPageResponse } from "./login-page";
 import {
-  collectPluginGarbage,
+  collectAbandonedPluginDownloads,
   downloadPlugin,
   fetchAvailablePlugins,
   fetchPluginManifest,
@@ -35,7 +35,6 @@ import {
   readPluginLock,
   readServedPlugins,
   readStoredReference,
-  removeStoredPlugin,
   resolveShortNames,
   storePlugin,
 } from "./plugin-store";
@@ -1704,20 +1703,8 @@ const installedModules = (config: CloudCliConfig, profile: string, packages: Pac
     return module ? [module] : [];
   });
 
-/** Every digest used by a profile or a package record must survive garbage collection. */
-const referencedDigests = async (config: CloudCliConfig): Promise<Set<string>> =>
-  new Set([
-    ...Object.keys(config.profiles ?? {}).flatMap((name) => Object.values(profileLock(config, name)).map((entry) => entry.digest)),
-    ...Object.values(await readPackagePlugins()).map((entry) => entry.digest),
-  ]);
-
-/**
- * Sweep the shared store while holding the packages lock, so a package
- * install from another config cannot place its bundle between the snapshot
- * of package records and the sweep. Call it inside the config lock.
- */
-const collectUnusedPlugins = (config: CloudCliConfig): Promise<string[]> =>
-  withDirectoryLock(packagesLockPath(), async () => collectPluginGarbage(await referencedDigests(config)));
+/** Other CLD_CONFIG files may still lock any published bundle in the shared store. */
+const collectUnusedPluginDownloads = (): Promise<void> => withDirectoryLock(packagesLockPath(), () => collectAbandonedPluginDownloads());
 
 const resolveInstalledModule = async (name: string, global: GlobalArgs) => {
   const config = await loadConfig();
@@ -1990,7 +1977,7 @@ const saveServedPlugins = async (profileName: string, plugins: readonly CloudCli
 /**
  * Fetch, verify and lock plugins for one profile. Downloads run outside the
  * config lock; placing them in the store, updating the lock, and pruning
- * unused versions happen together under it.
+ * abandoned downloads happen together under it.
  */
 const syncProfilePlugins = async (
   cloud: PluginCloud,
@@ -2086,7 +2073,7 @@ const syncProfilePlugins = async (
     };
     await saveConfig(config);
     if (staged.length > 0) {
-      await collectUnusedPlugins(config);
+      await collectUnusedPluginDownloads();
       await syncSkills(config, locale);
     }
   });
@@ -2337,7 +2324,6 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
             const config = await loadConfig();
             check(config);
             const packages = await readPackagePlugins();
-            const previous = Object.hasOwn(packages, id) ? packages[id] : undefined;
             const replaced = Object.hasOwn(packages, id) || (await legacyPlugins()).some((plugin) => plugin.id === id);
             await placePlugin(download.incoming, manifest.digest);
             packages[id] = {
@@ -2349,9 +2335,6 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
             };
             await writePackagePlugins(packages);
             await removePlugin(id);
-            if (previous && previous.digest !== manifest.digest && !(await referencedDigests(config)).has(previous.digest)) {
-              await removeStoredPlugin(previous.digest);
-            }
             await syncSkills(config, locale);
             return replaced;
           }),
@@ -2466,7 +2449,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         latest.profiles ??= {};
         latest.profiles[profileName] = { ...latest.profiles[profileName], plugins: lock };
         await saveConfig(latest);
-        await collectUnusedPlugins(latest);
+        await collectUnusedPluginDownloads();
         await syncSkills(latest, global.locale);
       });
     } else {
@@ -2480,7 +2463,6 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
           if (previous) {
             delete packages[name];
             await writePackagePlugins(packages);
-            if (!(await referencedDigests(latest)).has(previous.digest)) await removeStoredPlugin(previous.digest);
           }
           await syncSkills(latest, locale);
         }),
@@ -2517,7 +2499,7 @@ const assertRemovableProfile = (config: CloudCliConfig, name: string): void => {
   );
 };
 
-/** `cld profile rm <name>`: sign out, delete the profile with its plugin lock, prune the store, and rewrite the skill. */
+/** `cld profile rm <name>`: sign out, delete the profile with its plugin lock, clean abandoned downloads, and rewrite the skill. */
 const removeProfile = async (args: string[], config: CloudCliConfig, global: GlobalArgs): Promise<number> => {
   const locale = global.locale;
   const parsed = parseArgs(args, new Set([...BOOLEAN_FLAGS, "yes", "y"]));
@@ -2559,7 +2541,7 @@ const removeProfile = async (args: string[], config: CloudCliConfig, global: Glo
     delete profiles[name];
     if (latest.currentProfile === name) delete latest.currentProfile;
     await saveConfig(latest);
-    await collectUnusedPlugins(latest);
+    await collectUnusedPluginDownloads();
     await syncSkills(latest, locale);
     return result;
   });

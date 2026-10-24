@@ -96,9 +96,9 @@ export type CloudCliModule = {
 
 export * from "./access";
 export * from "./address";
+export { createAppAccessCommands } from "./app-access";
 export * from "./commands";
 export * from "./locale";
 export * from "./output";
 export * from "./plugin";
-
 export * from "./resource-links";

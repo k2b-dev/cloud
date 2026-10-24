@@ -76,7 +76,7 @@ jobs:
       - run: |
           set -euo pipefail
           # The Files Filegate suites, the Notebooks shared-log suite and the Assistant artifact suite start their own containers from these images.
-          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.0.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.0.0
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.0.0
           docker run --detach --name nightly-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           "$GITHUB_WORKSPACE/.github/poppler.sh" install
       - uses: ./.github/actions/install
@@ -126,7 +126,7 @@ jobs:
         env:
           GRIDS_VERIFY_REPORTS_DIR: ${{ runner.temp }}/grids-certification
       - if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: nightly-grids-certification-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/grids-certification

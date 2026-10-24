@@ -4,6 +4,13 @@ export const accessMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      newPermission: "Permission for new entry",
+      saved: "Saved",
+      saving: "Saving",
+      you: "you",
+      clearSelection: ({ name }: { name: string }) => `Remove selection: ${name}`,
+      person: "Person",
+      group: "Group",
       view: "View",
       edit: "Edit",
       manage: "Manage",
@@ -87,6 +94,13 @@ export const accessMessages = i18n.define({
       neverUsed: "Never used",
     },
     de: {
+      newPermission: "Recht für neuen Eintrag",
+      saved: "Gespeichert",
+      saving: "Wird gespeichert",
+      you: "du",
+      clearSelection: ({ name }) => `Auswahl entfernen: ${name}`,
+      person: "Person",
+      group: "Gruppe",
       view: "Ansehen",
       edit: "Bearbeiten",
       manage: "Verwalten",

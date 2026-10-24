@@ -264,24 +264,17 @@ export const readStoredReference = async (
 };
 
 /**
- * Remove stored plugins no profile or package record uses, and incoming directories that
- * an interrupted process left behind. Run it while holding the config lock.
+ * Clean abandoned downloads, never published bundles. Config files can live
+ * anywhere; the current config cannot prove that a shared digest is unused.
  */
-export const collectPluginGarbage = async (referenced: ReadonlySet<string>, root = pluginsDirectory()): Promise<string[]> => {
+export const collectAbandonedPluginDownloads = async (root = pluginsDirectory()): Promise<void> => {
   const store = pluginStoreDirectory(root);
-  const removed: string[] = [];
   for (const entry of await readdir(store, { withFileTypes: true }).catch(() => [])) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory() || !entry.name.startsWith(INCOMING_PREFIX)) continue;
     const path = join(store, entry.name);
-    if (DIGEST.test(entry.name) && !referenced.has(entry.name)) {
-      await rm(path, { recursive: true, force: true });
-      removed.push(entry.name);
-    } else if (entry.name.startsWith(INCOMING_PREFIX)) {
-      const modified = (await stat(path).catch(() => null))?.mtimeMs ?? Date.now();
-      if (Date.now() - modified > ABANDONED_INCOMING_MS) await rm(path, { recursive: true, force: true });
-    }
+    const modified = (await stat(path).catch(() => null))?.mtimeMs ?? Date.now();
+    if (Date.now() - modified > ABANDONED_INCOMING_MS) await rm(path, { recursive: true, force: true });
   }
-  return removed;
 };
 
 /** Parse a profile's plugin lock, dropping entries that cannot be valid. */
