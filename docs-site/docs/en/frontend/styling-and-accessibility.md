@@ -5,7 +5,7 @@ section: Frontend
 order: 890
 description: Apply Cloud's visual and interaction rules without forking shared primitives.
 tags: [css, accessibility, themes, design, colors, selection]
-updated: 2026-10-20
+updated: 2026-10-23
 ---
 
 # Styling and accessibility
@@ -563,20 +563,22 @@ Before accepting a component or screen, verify:
 ## Show Cloud account avatars
 
 Import `CloudAvatar` from `@k2b/cloud/account/ui` for Cloud account identity.
-Pass the visible `username`, `userId`, and `avatarHash`; uploaded user pictures
-use the account avatar endpoint with the hash as a revision. Without a picture,
-the avatar uses initials.
+Pass the visible `username`, `userId`, and `avatarHash`. A person's picture, a
+photo or a built avatar, comes from the account avatar endpoint with the hash
+as a revision; while a person shows initials, `avatarHash` is `null` and the
+avatar draws the initials. See [Profile pictures](/en/docs/identity/profile-pictures).
 
 `kind` defaults to `"user"` and renders a circle. `"service_account"` renders a
-square robot icon; `"system"` renders a square automation icon. These two kinds
-use their semantic icon even when an avatar hash is supplied. Cloud owns this
-mapping; callers do not pass `shape`, `icon`, `name`, or `src`.
+square with the account's photo or robot from the same endpoint, also without a
+hash; its robot icon shows only while the image cannot load. `"system"` renders
+a square automation icon. Cloud owns this mapping; callers do not pass `shape`,
+`icon`, `name`, or `src`.
 
 ```tsx
 import { CloudAvatar } from "@k2b/cloud/account/ui";
 
 <CloudAvatar username="Jana Berger" userId={user.id} avatarHash={user.avatarHash} size="sm" />
-<CloudAvatar username="Stock bot" kind="service_account" size="sm" />
+<CloudAvatar username="Stock bot" userId={agent.id} kind="service_account" size="sm" />
 ```
 
 ```ts
@@ -588,5 +590,6 @@ type CloudAvatarProps = Omit<AvatarProps, "name" | "src" | "shape" | "icon"> & {
 
 Other presentation props follow [`Avatar`](/en/ui/surfaces/cards). For an
 [`AvatarStack`](/en/ui/surfaces/avatar-stack) person, `cloudAvatarSource(userId,
-avatarHash)` from the same account UI entry point supplies the uploaded picture
-URL, or `undefined` when either value is absent.
+avatarHash)` from the same account UI entry point supplies a person's picture
+URL, or `undefined` when either value is absent; `cloudAvatarImage({ kind,
+userId, avatarHash })` also covers service accounts.
