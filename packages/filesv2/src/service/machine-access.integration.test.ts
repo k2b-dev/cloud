@@ -2,17 +2,17 @@ import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:tes
 import { type ProcessSync, startProcessSync } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { type AccessSubject, type AuthContext, auth, type RequestActor, type RequestAuthority, requireInvocation } from "@k2b/cloud/server";
+import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
 import { accounts, coreSettings, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
+import { invocationAuthorityFromRequest } from "@k2b/cloud/services/identity/invocation-authority";
+import { issueInvocationToken } from "@k2b/cloud/services/identity/issue-invocation";
 import { Filegate } from "@k2b/filegate";
 import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
-import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
-import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import { invocationAuthorityFromRequest } from "@k2b/cloud/services/identity/invocation-authority";
-import { issueInvocationToken } from "@k2b/cloud/services/identity/issue-invocation";
 import { activityFilegate } from "../../test/activity-filegate";
 import { testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
@@ -47,7 +47,10 @@ suite("Files machine storage through actual API tokens", () => {
   const prefix = `machine-access-${Bun.randomUUIDv7()}`;
   const call = () => testCall(admin);
   const publicRoutes = new Hono<AuthContext>()
-    .use("*", requireAppAccess(app.meta, async (c, message) => c.text(message, 403)))
+    .use(
+      "*",
+      requireAppAccess(app.meta, async (c, message) => c.text(message, 403)),
+    )
     .route("/share/filesv2", publicApi);
   // Every synthetic client gets an independent per-IP budget in shared test Valkey.
   const publicRequest = (path: string, init: RequestInit = {}) => {
@@ -68,7 +71,12 @@ suite("Files machine storage through actual API tokens", () => {
   const request = (key: string, path: string, method = "GET", body?: unknown) =>
     api.request(path, {
       method,
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "x-request-id": "machine-files-fixture", "x-real-ip": uniqueCallerAddress() },
+      headers: {
+        authorization: `Bearer ${key}`,
+        "content-type": "application/json",
+        "x-request-id": "machine-files-fixture",
+        "x-real-ip": uniqueCallerAddress(),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   async function data<T>(response: Response): Promise<T> {
