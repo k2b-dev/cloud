@@ -212,64 +212,78 @@ const authorityFixture = async (write = false) => {
   // Credential creation accepts the UUID format used by real service accounts.
   const accountIds = [crypto.randomUUID(), crypto.randomUUID()].sort();
   const accessIds = [testUuid(), testUuid(), testUuid(), testUuid()];
-  await sql`INSERT INTO auth.users(id,uid,provider,profile,admin)
-    VALUES(${ownerId}::uuid,${`authority-owner-${ownerId}`},'local','user',TRUE),
-      (${keeperId}::uuid,${`authority-keeper-${keeperId}`},'local','user',TRUE)`;
-  await sql`INSERT INTO auth.service_accounts(id,name,kind)
-    VALUES(${accountIds[0]!}::uuid,'Inventory agent','agent'),(${accountIds[1]!}::uuid,'Inventory service','standalone')`;
-  await sql`INSERT INTO grids.bases(id,short_id,name) VALUES(${baseId}::uuid,${testShortId()},'Authority concurrency')`;
-  for (const [index, id] of [ownerId, keeperId].entries())
-    await sql`INSERT INTO auth.access(id,user_id,permission) VALUES(${accessIds[index]!}::uuid,${id}::uuid,'admin')`;
-  for (const [index, id] of accountIds.entries())
-    await sql`INSERT INTO auth.access(id,service_account_id,permission) VALUES(${accessIds[index + 2]!}::uuid,${id}::uuid,'write')`;
-  for (const id of accessIds) await sql`INSERT INTO grids.base_access(base_id,access_id) VALUES(${baseId}::uuid,${id}::uuid)`;
-  const tableId = testUuid();
-  if (write) {
-    await sql`INSERT INTO grids.tables(id,short_id,base_id,name,position) VALUES(${tableId}::uuid,${testShortId()},${baseId}::uuid,'Tasks',0)`;
-    await sql`INSERT INTO grids.fields(id,short_id,table_id,name,type,config,position)
-      VALUES(${testUuid()}::uuid,${testShortId()},${tableId}::uuid,'Name','text','{}'::jsonb,0)`;
+  let workflowId: string | undefined;
+  const cleanup = async () => {
+    await deleteTestWorkflowScope(baseId);
+    if (workflowId)
+      await sql`DELETE FROM auth.mandates WHERE owner_app_id='grids' AND workload_type='grids.workflow' AND workload_id=${workflowId}`;
+    await sql`DELETE FROM grids.bases WHERE id=${baseId}::uuid`;
+    for (const id of accessIds) await sql`DELETE FROM auth.access WHERE id=${id}::uuid`;
+    for (const id of accountIds) await sql`DELETE FROM auth.service_accounts WHERE id=${id}::uuid`;
+    await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid,${keeperId}::uuid)`;
+  };
+  try {
+    await sql`INSERT INTO auth.users(id,uid,provider,profile,admin)
+      VALUES(${ownerId}::uuid,${`authority-owner-${ownerId}`},'local','user',TRUE),
+        (${keeperId}::uuid,${`authority-keeper-${keeperId}`},'local','user',TRUE)`;
+    await sql`INSERT INTO auth.service_accounts(id,name,kind)
+      VALUES(${accountIds[0]!}::uuid,${`Inventory agent ${accountIds[0]!}`},'agent'),
+        (${accountIds[1]!}::uuid,${`Inventory service ${accountIds[1]!}`},'standalone')`;
+    await sql`INSERT INTO grids.bases(id,short_id,name) VALUES(${baseId}::uuid,${testShortId()},'Authority concurrency')`;
+    for (const [index, id] of [ownerId, keeperId].entries())
+      await sql`INSERT INTO auth.access(id,user_id,permission) VALUES(${accessIds[index]!}::uuid,${id}::uuid,'admin')`;
+    for (const [index, id] of accountIds.entries())
+      await sql`INSERT INTO auth.access(id,service_account_id,permission) VALUES(${accessIds[index + 2]!}::uuid,${id}::uuid,'write')`;
+    for (const id of accessIds) await sql`INSERT INTO grids.base_access(base_id,access_id) VALUES(${baseId}::uuid,${id}::uuid)`;
+    const tableId = testUuid();
+    if (write) {
+      await sql`INSERT INTO grids.tables(id,short_id,base_id,name,position) VALUES(${tableId}::uuid,${testShortId()},${baseId}::uuid,'Tasks',0)`;
+      await sql`INSERT INTO grids.fields(id,short_id,table_id,name,type,config,position)
+        VALUES(${testUuid()}::uuid,${testShortId()},${tableId}::uuid,'Name','text','{}'::jsonb,0)`;
+    }
+    const workflow = await createWorkflow(
+      baseId,
+      {
+        name: "Authority concurrency",
+        source: write ? "steps:\n  - createRecord:\n      table: Tasks\n      values:\n        Name: Created by machine" : source,
+        enabled: true,
+      },
+      ownerId,
+    );
+    if (!workflow.ok) throw new Error(workflow.error.message);
+    workflowId = workflow.data.id;
+    const cookie = `session_token=${await createTestSession(ownerId)}`;
+    const change = async (body: WorkflowMachineAuthorityChange) =>
+      api.request(`/workflows/${workflow.data.shortId}/machine-authority`, {
+        method: "PUT",
+        headers: { cookie, "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
+        body: JSON.stringify(body),
+      });
+    const assign = async (serviceAccountId = accountIds[0]!, expected: ReturnType<typeof snapshot> = emptyAuthority) => {
+      const response = await change({ action: "assign", serviceAccountId, expected });
+      expect(response.status, await response.clone().text()).toBe(200);
+      return WorkflowMachineAuthoritySchema.parse(await response.json());
+    };
+    return {
+      ownerId,
+      tableId,
+      keeperId,
+      baseId,
+      accountIds,
+      accessIds,
+      workflow: workflow.data,
+      change,
+      assign,
+      cleanup,
+    };
+  } catch (error) {
+    try {
+      await cleanup();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Authority fixture setup and cleanup failed");
+    }
+    throw error;
   }
-  const workflow = await createWorkflow(
-    baseId,
-    {
-      name: "Authority concurrency",
-      source: write ? "steps:\n  - createRecord:\n      table: Tasks\n      values:\n        Name: Created by machine" : source,
-      enabled: true,
-    },
-    ownerId,
-  );
-  if (!workflow.ok) throw new Error(workflow.error.message);
-  const cookie = `session_token=${await createTestSession(ownerId)}`;
-  const change = async (body: WorkflowMachineAuthorityChange) =>
-    api.request(`/workflows/${workflow.data.shortId}/machine-authority`, {
-      method: "PUT",
-      headers: { cookie, "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
-      body: JSON.stringify(body),
-    });
-  const assign = async (serviceAccountId = accountIds[0]!, expected: ReturnType<typeof snapshot> = emptyAuthority) => {
-    const response = await change({ action: "assign", serviceAccountId, expected });
-    expect(response.status, await response.clone().text()).toBe(200);
-    return WorkflowMachineAuthoritySchema.parse(await response.json());
-  };
-  return {
-    ownerId,
-    tableId,
-    keeperId,
-    baseId,
-    accountIds,
-    accessIds,
-    workflow: workflow.data,
-    change,
-    assign,
-    cleanup: async () => {
-      await deleteTestWorkflowScope(baseId);
-      await sql`DELETE FROM auth.mandates WHERE owner_app_id='grids' AND workload_type='grids.workflow' AND workload_id=${workflow.data.id}`;
-      await sql`DELETE FROM grids.bases WHERE id=${baseId}::uuid`;
-      for (const id of accessIds) await sql`DELETE FROM auth.access WHERE id=${id}::uuid`;
-      for (const id of accountIds) await sql`DELETE FROM auth.service_accounts WHERE id=${id}::uuid`;
-      await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid,${keeperId}::uuid)`;
-    },
-  };
 };
 
 // Observe the real waiter before releasing or deleting the locked row. The
