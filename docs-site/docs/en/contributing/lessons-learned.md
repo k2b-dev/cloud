@@ -1125,3 +1125,8 @@ updates that class's row in the table.
 
 - **Error class:** repeated forced layout. Updating many unread badges made the shared scroll-fade observer measure each intermediate layout, delaying Chat's batch-read response and interaction completion.
 - **Guard:** `scroll-fade.behavior.test.tsx` checks that separate row mutations share one frame measurement, scrolling still updates immediately, and disposal cancels pending work. Resize observations remain synchronous before paint. Chat's 51-conversation browser case checks both read batches with the original deadlines. The DOM test prepares the component imports before individual test deadlines, so a cold transform cannot time out and leave asynchronous cleanup running inside the next test.
+
+## Measure layout shifts once an input-driven move is over
+
+- **Error class:** timing-dependent layout-shift assertion. Opening and closing Chat info moves the reading column on purpose. The browser excludes such a move only within 500 ms of the click, so on a busy machine the move counted as a shift and the test failed now and then. A second `observeShifts()` call also left the first observer adding to the same total.
+- **Guard:** the Chat info geometry test starts a fresh observer once the panel has entered or left, and `observeShifts()` disconnects the previous one. Everything that moves after that still fails the test.
