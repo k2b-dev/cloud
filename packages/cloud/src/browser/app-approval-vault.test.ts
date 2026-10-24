@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { argon2id } from "hash-wasm";
 import { APP_APPROVAL_LIMITS, APP_APPROVAL_PATH, APP_APPROVAL_PROTOCOL } from "../contracts/app-approval";
 import { appApproval } from "./app-approval";
@@ -80,17 +80,33 @@ describe("appApproval vault", () => {
     a.session.lock();
     b.session.lock();
   });
-  test("PIN change works without changing Cloud keys and rejects the old PIN", async () => {
-    const { session, config } = await setup();
-    const key = await session.createKey();
-    const blob = await session.sealRecord({ key }, "one");
-    const pin = await session.pin("987654");
-    const changed = { ...config, methods: [pin] };
-    await expect(appApproval.vault.unlock(changed, "pin", "012345")).rejects.toThrow();
-    const unlocked = await appApproval.vault.unlock(changed, "pin", "987654");
-    expect(await unlocked.openRecord(blob, "one", record)).toMatchObject({ key: { publicKey: key.publicKey } });
-    unlocked.lock();
-    session.lock();
+  describe("PIN change", () => {
+    const prepareChangedPin = async () => {
+      const { session, config } = await setup();
+      try {
+        const key = await session.createKey();
+        const blob = await session.sealRecord({ key }, "one");
+        const pin = await session.pin("987654");
+        return { config: { ...config, methods: [pin] }, blob, publicKey: key.publicKey };
+      } finally {
+        session.lock();
+      }
+    };
+    let changed: Awaited<ReturnType<typeof prepareChangedPin>>;
+    beforeAll(async () => {
+      changed = await prepareChangedPin();
+    });
+    test("rejects the old PIN", async () => {
+      await expect(appApproval.vault.unlock(changed.config, "pin", "012345")).rejects.toThrow();
+    });
+    test("preserves Cloud keys after unlocking with the new PIN", async () => {
+      const unlocked = await appApproval.vault.unlock(changed.config, "pin", "987654");
+      try {
+        expect(await unlocked.openRecord(changed.blob, "one", record)).toMatchObject({ key: { publicKey: changed.publicKey } });
+      } finally {
+        unlocked.lock();
+      }
+    });
   });
   test("PIN envelope decrypts using the documented WebCrypto format independently of the vault decoder", async () => {
     const { session, config } = await setup();
