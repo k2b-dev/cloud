@@ -44,6 +44,7 @@ on the same permission-aware application service.
 | Create a credential for one resource | [Resource API keys](/en/docs/identity/resource-api-keys) |
 | Integrate an OAuth client | [OAuth](/en/docs/identity/oauth) |
 | Understand how a person approves an Action | [Action approvals](/en/docs/identity/approvals) |
+| Pair a shared device and authorize a customer visit | [App-PWA sessions](/en/docs/identity/app-pwa-sessions) |
 | Allow a route without a session | [Public access](/en/docs/identity/public-and-anonymous-access) |
 
 OAuth and API keys change how Cloud establishes the actor; they do not create a
