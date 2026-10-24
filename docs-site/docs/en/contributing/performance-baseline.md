@@ -1202,6 +1202,55 @@ Outputs: `.local/mail-perf/fair-20261024-branch` and
 `.local/mail-perf/fair-20261024-main` (copied before removing the temporary
 baseline worktree). Both mailbox fixture digests match across runs.
 
+#### Phone continuation comparison (24 October 2026)
+
+Fresh builds compared clean merged HEAD `bdd738e11` with three candidate
+fixes: stable row-menu dependencies, a shared Sidebar projection, and no
+departure scroll snapshot for same-address history traversal. Both runs used
+Chromium desktop and throttled phone, three warm server requests, five timing
+samples per interaction/profile, and this command:
+
+```bash
+export CLOUD_HEAVY_SLOTS=3
+bun --no-env-file packages/mail/scripts/perf-baseline.ts --runs 3 --browser chromium --browser-runs 5 --interactions mailbox-switch,folder-switch-full,folder-switch --loads none --out .local/mail-perf/fair-calm-base
+```
+
+Repeat with `--out .local/mail-perf/fair-calm-fixes` after applying the fixes.
+Both runs passed 20 server scenarios and 30 timing samples without reported
+errors; six extra traces per run are excluded. Fixture digests match. Mailbox
+and full-folder destinations each have 50 rows; the medium folder has 37.
+Values are medians in milliseconds; ratios divide mailbox by full folder.
+
+| Stage | Profile | Mailbox | Full folder | Medium folder | Ratio |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Base | Desktop | 810.3 | 398.0 | 499.0 | 2.036 |
+| Base | Phone | 2,715.5 | 1,769.0 | 1,671.0 | 1.535 |
+| Three fixes | Desktop | 566.5 | 395.2 | 427.3 | 1.433 |
+| Three fixes | Phone | 1,992.4 | 1,545.6 | 1,442.1 | 1.289 |
+
+The combined candidate reduces the observed mailbox median by 30.1% on
+desktop and 26.6% on phone, so all three fixes are retained together. Individual
+fix effects were not remeasured. Both profiles still miss the 1.20 ratio target;
+desktop also misses the preferred 300 ms absolute target.
+
+Despite their output names, neither run was calm. On 32 logical CPUs,
+ten-second observations of one-minute load ranged from 27.68 to 64.98 at base
+(19:01–19:17 UTC) and 13.14 to 34.81 with fixes (19:18–19:32 UTC). Harness
+start → end loads were 27.69 → 28.98 and 27.70 → 23.60. The fixes ran under
+lighter competing load. These sequential observations support the retention
+decision under the median criterion, but do not isolate a causal improvement
+or confirm performance on a calm VM or real phone.
+
+Earlier CPU profiles identified repeated closed-menu construction and forced
+scroll geometry reads during same-address sheet history. Regression guards
+retain menu nodes while invoking current callbacks, share the Sidebar getter,
+and skip redundant snapshots while preserving real-departure capture. No
+response fields or authorization checks were removed.
+
+Outputs: `.local/mail-perf/fair-calm-base` and
+`.local/mail-perf/fair-calm-fixes`. The reviewed candidate patch and ten-second
+load logs are retained with the local measurement report.
+
 ### Rank bottlenecks
 
 After a run, rank candidate bottlenecks against its result:

@@ -49,6 +49,9 @@ export default function MailConversationRow(props: {
 }) {
   // JSX object props are getters: share their derived context across field reads.
   const state = createMemo(() => props.state);
+  // A selection or a new controller must not rebuild an unchanged action menu.
+  const spamAction = createMemo(() => state().spamAction);
+  const canMerge = createMemo(() => Boolean(props.actions.merge));
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const actionLabel = (actionId: MailActionId): string => {
@@ -334,7 +337,7 @@ export default function MailConversationRow(props: {
                 icon: "ti ti-tags",
                 action: () => props.actions.manageTags(props.item),
               },
-              ...(["archive", "move", state().spamAction, "trash"] as const).map((actionId) => {
+              ...(["archive", "move", spamAction(), "trash"] as const).map((actionId) => {
                 // Cloud refuses to delete a kept conversation or move it to Junk; the menu says why.
                 const blocked = props.item.kept
                   ? actionId === "trash"
@@ -351,7 +354,7 @@ export default function MailConversationRow(props: {
                       action: () => props.actions.itemAction(props.item, actionId),
                     };
               }),
-              ...(props.actions.merge
+              ...(canMerge()
                 ? [
                     {
                       label: t().mergeWithConversation,

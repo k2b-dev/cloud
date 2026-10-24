@@ -65,3 +65,59 @@ test.skipIf(isServer)("shares the row context projection across rendering and re
     dom.cleanup();
   }
 });
+
+test.skipIf(isServer)("keeps menu rows through selection and callback changes, but uses the current actions", async () => {
+  const dom = createDomTestHarness();
+  const { default: MailConversationRow } = await import("./MailConversationRow");
+  const [selected, setSelected] = createSignal(false);
+  const [spamAction, setSpamAction] = createSignal<"junk" | "not_spam">("junk");
+  const called: string[] = [];
+  const [merge, setMerge] = createSignal<(() => void) | undefined>(() => {
+    called.push("old");
+  });
+  const dispose = render(
+    () =>
+      createComponent(MailConversationRow, {
+        item: mailTestRow("Conv01"),
+        requestUrl: new URL("https://cloud.test/app/mail/Box001"),
+        get state() {
+          return {
+            selectedConversationId: selected() ? "Conv01" : null,
+            selectedMessageId: null,
+            selectedConversationIds: new Set<string>(),
+            selectionMode: false,
+            canWrite: true,
+            spamAction: spamAction(),
+            dateConfig: { locale: "en", timeZone: "UTC" },
+          };
+        },
+        get actions() {
+          return { navigate: () => {}, toggleSelection: () => {}, itemAction: () => {}, manageTags: () => {}, merge: merge() };
+        },
+      }),
+    dom.root,
+  );
+  const items = () => [...dom.root.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+  try {
+    const initial = items();
+    expect(initial.length).toBeGreaterThan(0);
+    setSelected(true);
+    setMerge(() => () => {
+      called.push("current");
+    });
+    const retained = items();
+    expect(retained.length).toBe(initial.length);
+    for (let i = 0; i < initial.length; i++) expect(retained[i] === initial[i]).toBe(true);
+    expect(dom.root.querySelector(".mail-list-entry-active")).not.toBeNull();
+    retained.find((item) => item.textContent?.includes("Merge"))!.click();
+    expect(called).toEqual(["current"]);
+    setMerge(undefined);
+    expect(items().some((item) => item.textContent?.includes("Merge"))).toBe(false);
+    setSpamAction("not_spam");
+    expect(items().map((item) => item.textContent?.trim())).toContain("Not spam");
+    expect(items().map((item) => item.textContent?.trim())).not.toContain("Move to Junk");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
