@@ -1,4 +1,5 @@
 import { beforeAll, expect, test } from "bun:test";
+import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { createBaseLifecycle } from "../service/base-lifecycle";
 import { parsePrometheusMetrics } from "../service/metrics-scraper";
@@ -71,6 +72,47 @@ suiteFor("database", "clickhouse")("Pulse per-base SQL helpers", () => {
           `SELECT * FROM ${q(f.base.database)}.increase(metric='requests',from=toDateTime64('2026-10-20 10:30:00',3,'UTC'),to=toDateTime64('2026-10-20 12:00:00',3,'UTC'))`,
         ),
       ).rejects.toBeInstanceOf(StoreQueryError);
+    } finally {
+      await cleanupFixtureBase(f.base);
+    }
+  });
+  test("helpers use protected raw history instead of stale hourly values beyond direct raw retention", async () => {
+    const f = await setup(),
+      id = "11111111-1111-4111-8111-111111111111";
+    try {
+      await sql`UPDATE pulse.bases SET retention_days=1 WHERE id=${f.base.id}::uuid`;
+      await createBaseLifecycle(f.store)(f.base.id);
+      await f.store.query(`ALTER TABLE ${q(f.base.database)}._rollups REMOVE TTL`);
+      await f.addSeries(id, "requests");
+      await f.store.query(
+        `INSERT INTO ${q(f.base.database)}._rollups
+        VALUES({id:UUID},toDateTime('2026-10-15 10:00:00','UTC'),1,10,10,10,10,toDateTime64('2026-10-15 10:05:00',3,'UTC'),5,3600,1)`,
+        { id },
+      );
+      await f.addSample(id, "2026-10-15T09:05:00Z", 5);
+      await f.addSample(id, "2026-10-15T10:05:00Z", 30);
+      // Older than both policies: even protected physical data cannot enter an answer.
+      await f.addSample(id, "2025-10-15T09:05:00Z", 1);
+      await f.addSample(id, "2025-10-15T10:05:00Z", 4);
+      expect(await f.read(`SELECT * FROM ${q(f.base.database)}.samples`)).toEqual([]);
+      for (const helper of ["increase", "rate"]) {
+        const [row] = await f.read(
+          `SELECT * FROM ${q(f.base.database)}.${helper}(metric='requests',from=toDateTime64('2026-10-15 10:00:00',3,'UTC'),to=toDateTime64('2026-10-15 11:00:00',3,'UTC'))`,
+        );
+        expect(Number(row?.increase)).toBe(25);
+        expect(Number(row?.seconds)).toBe(3600);
+        if (helper === "rate") expect(Number(row?.rate)).toBeCloseTo(25 / 3600, 10);
+        await expect(
+          f.read(
+            `SELECT * FROM ${q(f.base.database)}.${helper}(metric='requests',from=toDateTime64('2026-10-15 10:00:00',3,'UTC'),to=toDateTime64('2026-10-15 10:10:00',3,'UTC'))`,
+          ),
+        ).rejects.toBeInstanceOf(StoreQueryError);
+        expect(
+          await f.read(
+            `SELECT * FROM ${q(f.base.database)}.${helper}(metric='requests',from=toDateTime64('2025-10-15 10:00:00',3,'UTC'),to=toDateTime64('2025-10-15 11:00:00',3,'UTC'))`,
+          ),
+        ).toEqual([]);
+      }
     } finally {
       await cleanupFixtureBase(f.base);
     }
