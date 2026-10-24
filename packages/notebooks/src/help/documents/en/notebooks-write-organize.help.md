@@ -85,7 +85,7 @@ The heading and list shortcuts use the physical digit keys on every keyboard lay
 
 :::reference
 - `/` at a line start or after whitespace opens the insert menu. Type a command name to filter it.
-- `[[` opens note suggestions. Choosing a note replaces the typed brackets with a Markdown link to it.
+- `[[` opens note suggestions. Type part of a title to find any note of the notebook. Choosing a note replaces the typed brackets with a Markdown link to it.
 - `![[` opens attachment suggestions. Choosing an image embeds it; choosing another file inserts a download link.
 - `==text==` highlights text. Highlight stays within one line.
 - On touch screens, **Undo** and **Redo** sit at the start of the toolbar.

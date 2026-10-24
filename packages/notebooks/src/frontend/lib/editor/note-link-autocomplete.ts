@@ -22,9 +22,9 @@
  *
  * # Fetching
  *
- * Same caching pattern as `tag-autocomplete.ts`: per-notebook
- * module-scoped Map keyed by notebookId, 45s TTL, eager warm-up at
- * source-factory time. Coalesces concurrent fetches.
+ * The server finds the notes for what the person typed, so a notebook
+ * with thousands of notes offers each of them, and the popup never
+ * loads more than one page of matches.
  *
  * # Scope
  *
@@ -38,7 +38,6 @@ import {
   pickedCompletion,
 } from "@codemirror/autocomplete";
 import { apiClient } from "../../../api/client";
-import { createNotebookFetchCache } from "./_lib/notebook-fetch-cache";
 import { withIcon } from "./completion-icon";
 import { isInsideFencedCode } from "./editor-scope";
 
@@ -48,63 +47,27 @@ type NoteRef = {
   title: string;
 };
 
-/** Cached payload — the raw refs plus a `truncated` flag so the
- *  popup can surface "+ more notes — type to filter" when the
- *  notebook has more notes than FETCH_CAP. Without this signal,
- *  notes beyond the cap were silently unreachable via [[. */
-type CachedNotes = {
+/** One page of matches and whether the notebook has more of them. */
+type NotePage = {
   notes: NoteRef[];
   truncated: boolean;
 };
 
-/** Hard ceiling on notes fetched per notebook. For autocomplete we
- *  don't need thousands of entries — pagination beyond this is
- *  unhelpful for picker UX (no one scrolls 500 options). 200 covers
- *  any realistic notebook; notes beyond the cap surface as a
- *  non-selectable "more notes" hint that points the user at the
- *  type-to-filter affordance. */
-const FETCH_CAP = 200;
-const PER_PAGE = 100;
+/** Notes offered at once; the person narrows them by typing. */
+const PER_PAGE = 50;
 
-const noteCache = createNotebookFetchCache<CachedNotes>(
-  async (notebookId) => {
-    // Fetch pages up to FETCH_CAP. We use the same paginated
-    // endpoint `nb.list()` uses so the autocomplete +
-    // other readers agree on what's in the notebook.
-    const all: NoteRef[] = [];
-    let truncated = false;
-    try {
-      for (let page = 1; all.length < FETCH_CAP; page++) {
-        const res = await apiClient[":id"].notes.$get({
-          param: { id: notebookId },
-          query: { per_page: String(PER_PAGE), page: String(page) },
-        });
-        if (!res.ok) {
-          truncated = all.length > 0;
-          break;
-        }
-        const payload = (await res.json()) as { data: Array<{ id: string; title: string }> };
-        if (payload.data.length === 0) break;
-        for (const n of payload.data) {
-          all.push({ id: n.id, title: n.title });
-        }
-        // Last page = the API returned fewer than the page size, so
-        // we're done. Otherwise: if we hit the cap on this iteration
-        // with a full page, more might exist server-side.
-        if (payload.data.length < PER_PAGE) break;
-        if (all.length >= FETCH_CAP) {
-          truncated = true;
-          break;
-        }
-      }
-    } catch (error) {
-      if (all.length === 0) throw error;
-      truncated = true;
-    }
-    return { notes: all, truncated };
-  },
-  { fallback: { notes: [], truncated: false } },
-);
+const fetchNotes = async (notebookId: string, query: string, signal: AbortSignal): Promise<NotePage> => {
+  const response = await apiClient[":id"].notes.$get(
+    { param: { id: notebookId }, query: { per_page: String(PER_PAGE), ...(query ? { q: query } : {}) } },
+    { init: { signal } },
+  );
+  if (!response.ok) return { notes: [], truncated: false };
+  const payload = (await response.json()) as { data: Array<{ id: string; title: string }>; pagination: { total: number } };
+  return {
+    notes: payload.data.map((note) => ({ id: note.id, title: note.title })),
+    truncated: payload.pagination.total > payload.data.length,
+  };
+};
 
 /** Build a markdown link string for one note.
  *
@@ -136,7 +99,7 @@ const buildMarkdownLink = (note: NoteRef): string => {
  *  to the cursor, leaving the typed `[[` stuck before the inserted
  *  link (observed bug: `[[[Title](…))`). */
 /** Non-selectable hint surfaced at the bottom of the popup when
- *  the notebook has more notes than FETCH_CAP. `apply` is a no-op
+ *  more notes match than one page shows. `apply` is a no-op
  *  (closes the popup without inserting anything); a negative
  *  `boost` keeps it pinned to the bottom regardless of how the
  *  user's typing reranks the rest. */
@@ -146,7 +109,7 @@ const truncationHint: Completion = {
   boost: -99,
   apply: (view, completion, _from, _to) => {
     // Close popup; do not modify the doc. The user can then keep
-    // typing the title to narrow the cached list.
+    // typing the title to narrow the matches.
     view.dispatch({ annotations: pickedCompletion.of(completion), userEvent: "input.complete" });
   },
 };
@@ -203,17 +166,16 @@ const buildCompletions = (notes: NoteRef[], triggerStart: number, truncated: boo
 
 /** Build a result for a given trigger match. Shared by sync + async
  *  paths so the cache-hit case can return without a Promise wrap. */
-const buildResult = (word: { from: number; to: number }, data: CachedNotes): CompletionResult | null => {
+const buildResult = (word: { from: number; to: number }, data: NotePage): CompletionResult | null => {
   if (data.notes.length === 0) return null;
   return {
-    // `from` = right after the `[[` so CM's prefix filter matches
-    // the user-typed title body (NOT the literal `[[` chars) against
-    // option labels. The apply functions take care of replacing the
+    // `from` = right after the `[[`; the apply functions replace the
     // brackets themselves via an explicit dispatch from word.from.
     from: word.from + 2,
     to: word.to,
     options: buildCompletions(data.notes, word.from, data.truncated),
-    validFor: /^[^\]\n]*$/,
+    // The server already matched what was typed; every keystroke asks it again.
+    filter: false,
   };
 };
 
@@ -222,9 +184,6 @@ const buildResult = (word: { from: number; to: number }, data: CachedNotes): Com
  * right notes endpoint. Mirrors `buildTagCompletionSource`.
  */
 export const buildNoteLinkCompletionSource = (notebookId: string): CompletionSource => {
-  // Warm the cache eagerly.
-  void noteCache.fetch(notebookId);
-
   return (context: CompletionContext): CompletionResult | Promise<CompletionResult | null> | null => {
     // Trigger: `[[` followed by zero or more "title-body" chars.
     // We allow spaces because note titles often have spaces ("My
@@ -247,8 +206,11 @@ export const buildNoteLinkCompletionSource = (notebookId: string): CompletionSou
     }
     if (isInsideFencedCode(context)) return null;
 
-    const fresh = noteCache.getFresh(notebookId);
-    if (fresh) return buildResult(word, fresh);
-    return noteCache.fetch(notebookId).then((data) => buildResult(word, data));
+    // A newer keystroke aborts this request, so only the matches for what is typed now arrive.
+    const controller = new AbortController();
+    context.addEventListener("abort", () => controller.abort());
+    return fetchNotes(notebookId, word.text.slice(2).trim(), controller.signal)
+      .then((data) => buildResult(word, data))
+      .catch(() => null);
   };
 };
