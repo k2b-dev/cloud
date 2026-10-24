@@ -283,3 +283,20 @@ test("settings that failed to load show a retry and recover with the same struct
     await page.close();
   }
 }, 30_000);
+
+for (const view of views)
+  for (const theme of ["light", "dark"]) {
+    test(`routing overruns stay visible below budget at ${view.width}px in ${theme}`, async () => {
+      const { page, errors } = await open(view, `state=cost-overrun&locale=en&theme=${theme}`);
+      try {
+        const usage = section(page, "Usage");
+        expect(await usage.innerText()).toContain("2 route calculations exceeded their estimate this month");
+        expect(await usage.innerText()).toContain("core.geo.route_cost_overrun");
+        expect(await usage.innerText()).toContain("Later route steps stopped.");
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTrue();
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    });
+  }

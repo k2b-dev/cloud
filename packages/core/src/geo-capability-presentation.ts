@@ -21,7 +21,7 @@ export const geoCapabilityPresentation = {
   "route.calculate": {
     title: "Route berechnen",
     description:
-      "Berechnet 2–26 Stopps mit Auto, Fahrrad oder zu Fuß, mit Meidewünschen und Optionen je Etappe. Beim Optimieren bleiben Start und Ziel fest. Liefert Meter, Sekunden, polyline6 und Herkunft. Mehrdeutige Adressen erfordern eine Auswahl. Reserviert vorab die ganze Kette mit einem Referenz-Streckenrahmen (ohne Angabe 500 km je Etappe); Überschreitungen werden gebucht und stoppen die Kette. Keine garantierte Grenze der Anbieterrechnung. Namensnennung beibehalten.",
+      "Berechnet 2–26 Stopps mit Auto, Fahrrad oder zu Fuß, mit Meidewünschen und Optionen je Etappe. Beim Optimieren bleiben Start und Ziel fest. Liefert Meter, Sekunden, polyline6 und Herkunft. Mehrdeutige Adressen erfordern eine Auswahl. Reserviert vorab die ganze Kette mit Luftlinie mal 2 als Kostenschätzung; unbekannte Koordinaten erfordern eine größere Reserve. Kostenüberschreitungen werden gebucht und stoppen die Kette. Keine garantierte Grenze der Anbieterrechnung. Namensnennung beibehalten.",
     input: {
       "plan.stops": "2–26 Stopps in Reisereihenfolge.",
       "plan.stops[].id": "Stabile, innerhalb der Route eindeutige Stopp-ID; Groß- und Kleinschreibung beachten.",
@@ -50,8 +50,6 @@ export const geoCapabilityPresentation = {
         "Meidewünsche für Maut, Fähren oder Autobahnen; keine Verbote. Jeder Wunsch kostet zusätzliche Credits.",
       "plan.optimize": "Zwischenstopps optimieren; Start und Ziel bleiben unverändert.",
       plan: "Routenplan mit 2–26 Stopps, Optionen, Etappenoptionen und optionaler Optimierung.",
-      "plan.distanceAllowanceMeters":
-        "Referenz-Streckenrahmen in Metern je Etappe; ohne Angabe 500000. Überschreitungen werden gebucht und stoppen die Kette.",
     },
   },
   "route.update": {
@@ -59,7 +57,6 @@ export const geoCapabilityPresentation = {
     description:
       "Ändert eine mitgelieferte Route zustandslos: Stopp an gewählter oder bester von bis zu drei Stellen einfügen, verschieben, Zwischenstopps optimieren oder Optionen insgesamt/je Etappe ändern. Etappenoptionen folgen beim Umsortieren ihrem Startstopp. Liefert Route, vorher/nachher und Unterschied. Einfügen minimiert zusätzliche Sekunden, danach Meter. Bekannte Überschreitungen werden gebucht; kein automatischer Wiederholungsversuch. Namensnennung beibehalten.",
     input: {
-      "route.distanceAllowanceMeters": "Referenz-Streckenrahmen in Metern je Etappe; keine garantierte Grenze der Anbieterrechnung.",
       "route.stops": "Aufgelöste Stopps in aktueller Reisereihenfolge.",
       "route.stops[].id": "Stabile, innerhalb der Route eindeutige Stopp-ID; Groß- und Kleinschreibung beachten.",
       "route.stops[].label": "Optionaler Anzeigename.",
@@ -116,7 +113,6 @@ export const geoCapabilityPresentation = {
       "route.inputHash": "SHA-256 des aufgelösten Routeneingangs; beim Aktualisieren beibehalten.",
       route: "Vollständige gespeicherte Route einschließlich Herkunft und Etappen.",
       changes: "Genau eine vorgeschlagene Änderung.",
-      distanceAllowanceMeters: "Optionaler neuer Referenz-Streckenrahmen in Metern je Etappe; ohne Angabe gilt der bisherige Rahmen.",
     },
   },
   "address.autocomplete": {

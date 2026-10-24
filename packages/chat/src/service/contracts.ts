@@ -3,6 +3,7 @@ import { z } from "zod";
 export const MEMBER_PAGE_SIZE = 100;
 export const CONVERSATION_PAGE_SIZE = 50;
 export const UNREAD_CAP = 100;
+export const MAX_THREADS = 100;
 export const READ_ALL_CONFIRM_FROM = 10;
 // One sidebar page bounds each transaction; the client repeats while more remain.
 export const READ_ALL_BATCH = CONVERSATION_PAGE_SIZE;
@@ -119,7 +120,46 @@ export const MemberQuerySchema = z.strictObject({
   cursor: PeopleQuerySchema.shape.cursor,
 });
 export const MessageIdSchema = z.string().regex(/^[0-9A-Za-z]{10}$/);
-const AuthorSchema = z.object({ type: z.enum(["user", "service_account"]), id: z.uuid(), name: z.string() });
+export const AuthorSchema = z.strictObject({ type: z.enum(["user", "service_account"]), id: z.uuid(), name: z.string() });
+export const ThreadIdSchema = ShortIdSchema;
+export const ThreadSelectorSchema = z.union([ThreadIdSchema, z.literal("general")]);
+export const ThreadParamSchema = ConversationParamSchema.extend({ thread: ThreadIdSchema });
+const ThreadReadSchema = z.strictObject({
+  lastReadSeq: z.number().int().min(0).nullable(),
+  unreadFromSeq: z.number().int().min(1).nullable(),
+});
+const LastMessageSchema = z.strictObject({ id: MessageIdSchema, author: AuthorSchema, preview: z.string(), createdAt: z.iso.datetime() });
+export const ThreadSchema = z.strictObject({
+  id: ThreadIdSchema,
+  name: z.string(),
+  description: z.string().nullable(),
+  archived: z.boolean(),
+  unread: z.number().int().min(0).max(UNREAD_CAP),
+  read: ThreadReadSchema.nullable(),
+  lastMessage: LastMessageSchema.nullable(),
+  lastActivityAt: z.iso.datetime(),
+  createdAt: z.iso.datetime(),
+});
+export const ThreadListSchema = z.strictObject({
+  general: z.strictObject({ unread: z.number().int().min(0).max(UNREAD_CAP), lastMessage: LastMessageSchema.nullable() }),
+  items: z.array(ThreadSchema).max(MAX_THREADS),
+});
+const ThreadDescriptionSchema = clearedText(80).refine((value) => value == null || !/[\r\n\u2028\u2029]/u.test(value));
+export const CreateThreadSchema = z.strictObject({
+  name: z.string().trim().min(1).max(80),
+  description: ThreadDescriptionSchema,
+  createKey: z
+    .uuid()
+    .transform((id) => id.toLowerCase())
+    .optional(),
+});
+export const UpdateThreadSchema = z
+  .strictObject({
+    name: z.string().trim().min(1).max(80).optional(),
+    description: ThreadDescriptionSchema,
+    archived: z.boolean().optional(),
+  })
+  .refine((value) => Object.values(value).some((field) => field !== undefined));
 export const ReadStateSchema = z.object({
   lastReadSeq: z.number().int().min(0).nullable(),
   unreadFromSeq: z.number().int().min(1).nullable(),
@@ -135,8 +175,12 @@ export const ReadUpdateSchema = ReadStateSchema.extend({
   conversationId: ShortIdSchema,
   unread: z.number().int().min(0).max(UNREAD_CAP),
   asOfRev: z.number().int().min(0),
+  threads: z.array(ThreadReadSchema.extend({ id: ThreadIdSchema, unread: z.number().int().min(0).max(UNREAD_CAP) })).max(MAX_THREADS),
 });
-export const ReadSchema = z.strictObject({ seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER) });
+export const ReadSchema = z.strictObject({
+  seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  thread: z.union([ThreadSelectorSchema, z.literal("all")]).default("general"),
+});
 export const MarkUnreadSchema = z.strictObject({ message: MessageIdSchema.optional() });
 export const ReadAllSchema = z.strictObject({ confirmed: z.boolean().default(false) });
 export const ReadAllOutcomeSchema = z.discriminatedUnion("outcome", [
@@ -144,6 +188,7 @@ export const ReadAllOutcomeSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("done"), marked: z.number().int(), more: z.boolean() }),
 ]);
 export const ConversationSchema = z.object({
+  threads: z.number().int().min(0).max(MAX_THREADS),
   unread: z.number().int().min(0).max(UNREAD_CAP),
   read: ReadStateSchema.nullable(),
   id: ShortIdSchema,
@@ -158,7 +203,7 @@ export const ConversationSchema = z.object({
   permission: PermissionSchema,
   createdAt: z.string(),
   lastActivityAt: z.string(),
-  lastMessage: z.object({ id: MessageIdSchema, author: AuthorSchema, preview: z.string(), createdAt: z.iso.datetime() }).nullable(),
+  lastMessage: LastMessageSchema.extend({ thread: z.strictObject({ id: ThreadIdSchema, name: z.string() }).nullable() }).nullable(),
 });
 export const ExistingMatchSchema = ConversationSchema.pick({ id: true, name: true, title: true, lastActivityAt: true }).extend({
   archived: z.boolean(),
@@ -197,6 +242,11 @@ export const SuccessSchema = z.object({ success: z.literal(true) });
 
 const personSnapshot = z.object({ id: z.uuid(), name: z.string() });
 export const SystemMessageSchema = z.discriminatedUnion("code", [
+  z.strictObject({
+    code: z.literal("thread_created"),
+    params: z.strictObject({ thread: z.strictObject({ id: ThreadIdSchema, name: z.string() }) }),
+  }),
+  z.strictObject({ code: z.literal("thread_renamed"), params: z.strictObject({ from: z.string(), to: z.string() }) }),
   z.object({ code: z.literal("conversation_created"), params: z.strictObject({}) }),
   z.object({
     code: z.literal("details_changed"),
@@ -216,6 +266,13 @@ export const SystemMessageSchema = z.discriminatedUnion("code", [
 ]);
 export type SystemMessage = z.infer<typeof SystemMessageSchema>;
 export const MessageSchema = z.object({
+  thread: ThreadIdSchema.nullable(),
+  replyTo: z
+    .union([
+      z.strictObject({ id: MessageIdSchema, author: AuthorSchema, preview: z.string() }),
+      z.strictObject({ deleted: z.literal(true) }),
+    ])
+    .nullable(),
   id: MessageIdSchema,
   conversationId: ShortIdSchema,
   seq: z.number().int().nonnegative(),
@@ -235,21 +292,38 @@ export const MessageBodySchema = z
 export const SendMessageSchema = z.strictObject({
   clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
   body: MessageBodySchema,
+  thread: ThreadIdSchema.optional(),
+  replyTo: MessageIdSchema.optional(),
 });
 const sequenceQuery = (minimum: number) =>
   z.union([z.number(), z.string().regex(/^\d+$/).transform(Number)]).pipe(z.number().int().min(minimum).max(Number.MAX_SAFE_INTEGER));
 export const MessageQuerySchema = z
-  .object({ before: sequenceQuery(1).optional(), after: sequenceQuery(0).optional() })
+  .strictObject({ before: sequenceQuery(1).optional(), after: sequenceQuery(0).optional(), thread: ThreadSelectorSchema.optional() })
   .refine((query) => query.before === undefined || query.after === undefined);
 export const MessageParamSchema = ConversationParamSchema.extend({ message: MessageIdSchema });
 export const ChangesQuerySchema = z.object({ afterRev: sequenceQuery(0) });
-export const MessagePageSchema = z.object({ items: z.array(MessageViewSchema), seqHead: z.number().int(), rev: z.number().int() });
+/**
+ * `from` and `to` are the positions the page covers for its thread selection: every selected message in that range is
+ * in `items`, also where other threads' messages lie between them. A client joins pages and live messages by them.
+ */
+export const MessagePageSchema = z.object({
+  items: z.array(MessageViewSchema),
+  seqHead: z.number().int(),
+  rev: z.number().int(),
+  from: z.number().int().min(1),
+  to: z.number().int().min(0),
+});
 // A stale or mistyped deep link still opens the latest history.
-export const SnapshotQuerySchema = z.object({ message: z.string().max(64).optional().catch(undefined) });
+export const SnapshotQuerySchema = z.strictObject({
+  message: z.string().max(64).optional().catch(undefined),
+  thread: ThreadSelectorSchema.optional(),
+});
 export const ChatSnapshotSchema = z.object({
   cursor: z.string(),
   conversation: ConversationSchema,
   page: MessagePageSchema,
+  /** The chat's threads; without threads only General, with its count. */
+  threads: ThreadListSchema,
   /** The requested message when it exists in this chat; the page is the window around it. */
   focus: MessageIdSchema.nullable(),
 });
@@ -262,8 +336,18 @@ export const ChangesPageSchema = z.object({
 export const ChatLiveEventSchema = z.discriminatedUnion("type", [
   ReadUpdateSchema.extend({ type: z.literal("read") }),
   z.object({ type: z.literal("membership"), conversationId: ShortIdSchema }),
+  z.strictObject({ type: z.literal("threads"), conversationId: ShortIdSchema }),
   z.object({ type: z.literal("message"), message: MessageSchema }),
-  MessageSchema.pick({ conversationId: true, id: true, seq: true, rev: true, kind: true, author: true, createdAt: true }).extend({
+  MessageSchema.pick({
+    thread: true,
+    conversationId: true,
+    id: true,
+    seq: true,
+    rev: true,
+    kind: true,
+    author: true,
+    createdAt: true,
+  }).extend({
     type: z.literal("summary"),
     preview: z.string().nullable(),
     mention: z.boolean(),

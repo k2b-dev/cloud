@@ -7,7 +7,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Locator, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
+import { browserName, pageErrors as collectPageErrors, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
 import type { MailSearchExpression } from "../contracts";
 import { resolveMailSearchRoute } from "../search-state";
 import { mailTagSearch } from "../search-url";
@@ -273,9 +273,7 @@ const open = async (path: string, width = 1440, height: number = sizes.find(([w]
   await context.addInitScript(pinPageClock, Date.parse(MAIL_SHELL_NOW));
   const page = await context.newPage();
   page.setDefaultTimeout(6000);
-  const errors: string[] = [];
-  pageErrors.set(page, errors);
-  page.on("pageerror", (error) => errors.push(error.message));
+  pageErrors.set(page, collectPageErrors(page));
   try {
     await page.goto(new URL(path, server.url).href);
     await ready(page);

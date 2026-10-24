@@ -1,8 +1,19 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 import { NOTIFICATIONS } from "./notifications";
 
 export const app = defineApp({
   id: "venue",
+  // APIs admit roleless service accounts; navigation keeps its narrower audience.
+  access: appAccess.signedIn({
+    publicRoutes: [
+      "/app/venue/public/:id",
+      "/app/venue/public/:id/feedback",
+      "/api/venue/public/:id/status",
+      "/api/venue/public/:id/feedback",
+      "/api/venue/calendar/:token",
+      "/api/venue/openapi.json",
+    ],
+  }),
   cli: { venue: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Venues",
   icon: "ti ti-building-carousel",

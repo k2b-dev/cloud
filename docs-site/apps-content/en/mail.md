@@ -456,6 +456,11 @@ run again. After a retry backfill, the automation menu in Mail settings offers
 **Retry failed messages** to continue with another retry. **Automations >
 Activity** shows how the new runs ended.
 
+When a new message first saves as a draft, the editor keeps focus and the cursor
+stays in place. If your Cloud sign-in expires, the composer keeps your text and
+shows **Sign in again**. That action returns to the same draft after sign-in
+and restores unsaved changes kept in this browser.
+
 ## Write signatures and snippets
 
 The composer shows **Signature** below your text when a signature is available.
@@ -610,8 +615,10 @@ Recipient fields still offer mailbox addresses.
 
 ### Mailbox recipient suggestions
 
-While you type in **To**, **Cc**, or **Bcc**, contact-directory suggestions come
-first. Addresses known from this mailbox follow, marked with a mail icon.
+While you type in **To**, **Cc**, or **Bcc**, addresses from the mailbox appear
+as soon as they arrive, marked with a mail icon. Contact-directory suggestions
+join them when ready and appear first; a slow or failed source does not delay
+the other source. Your highlighted address stays selected when results arrive.
 They work without the Contacts app. Duplicate addresses appear once. The arrow
 keys highlight a suggestion and Enter adds it.
 
