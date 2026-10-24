@@ -733,6 +733,8 @@ export const ActivityDataSchema = z
       id: z.string().max(100),
       at: TimestampSchema,
       ref: z.strictObject({ type: z.literal("spaces.item"), id: ResourceShortIdSchema }).nullable(),
+      /** The item's current title, for a badge where the event shows outside the item's own place. */
+      title: z.string().max(500).nullable(),
       actor: z.strictObject({ type: z.enum(["user", "service_account", "system"]), id: z.uuid().nullable(), name: z.string().max(1000) }),
       icon: z.string().max(80),
       sentence: z.string().max(4000),

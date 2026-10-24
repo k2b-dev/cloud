@@ -18,8 +18,9 @@ test("maps an owner event to the existing thread or an openable resource, withou
     icon: event.icon,
     sentence: event.sentence,
     count: 3,
-    thread: { ref: event.ref },
+    thread: { ref: event.ref, name: "" },
   });
+  expect(mapItemEvent({ ...event, title: "Invitation" }).thread).toEqual({ ref: event.ref, name: "Invitation" });
   expect(mapItemEvent(event, { id: "Thr001", name: "Current title" }).thread).toEqual({ id: "Thr001", name: "Current title" });
 });
 test("maps container and item selection, independent time bounds and opaque cursors", () => {

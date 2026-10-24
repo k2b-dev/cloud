@@ -100,7 +100,7 @@ suite("system chat item events", () => {
     const page = ItemEventsPageSchema.parse(await response.json());
     expect(page.items.map((item) => item.thread)).toEqual([
       { id: thread, name: "Current task title" },
-      { ref: { type: "spaces.item", id: missing } },
+      { ref: { type: "spaces.item", id: missing }, name: "" },
     ]);
     expect(page.nextCursor).toBe("owner-cursor");
     const call = calls.find((call) => call.capability === "space.activity")!;

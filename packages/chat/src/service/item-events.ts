@@ -11,6 +11,7 @@ const OwnerEventSchema = z.object({
   id: z.string().max(100),
   at: z.string().datetime({ offset: true }),
   ref: ItemRefSchema.nullable(),
+  title: z.string().max(500).nullable().optional(),
   actor: z.object({ type: z.enum(["user", "service_account", "system"]), id: z.uuid().nullable(), name: z.string().max(1000) }),
   icon: z
     .string()
@@ -31,7 +32,7 @@ export const mapItemEvent = (event: OwnerEvent & { ref: ItemRef }, thread?: { id
   icon: event.icon,
   sentence: event.sentence,
   count: event.count,
-  thread: thread ?? { ref: event.ref },
+  thread: thread ?? { ref: event.ref, name: event.title ?? "" },
 });
 export const activityQuery = (
   container: z.infer<typeof ContainerRefSchema>,

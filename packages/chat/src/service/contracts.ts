@@ -589,7 +589,7 @@ export const ItemEventSchema = z.object({
   count: z.number().int().min(1),
   thread: z.union([
     z.object({ id: ShortIdSchema, name: z.string() }),
-    z.object({ ref: z.object({ type: z.enum(["spaces.item", "notebooks.note"]), id: ShortIdSchema }) }),
+    z.object({ ref: z.object({ type: z.enum(["spaces.item", "notebooks.note"]), id: ShortIdSchema }), name: z.string() }),
   ]),
 });
 export const ItemEventsPageSchema = z.object({

@@ -64,6 +64,7 @@ export const notebookActivityRow = (event: NotebookActivityEvent, options: { vie
     id: event.id,
     at: event.lastOccurredAt,
     ref: event.note ? { type: "notebooks.note" as const, id: event.note.shortId } : null,
+    title: event.note ? event.note.title.slice(0, 500) : null,
     actor: { type: event.actor.kind, id: event.actor.id, name: actor },
     icon: event.action === "note.created" ? "ti ti-plus" : "ti ti-pencil",
     sentence: describe(words),

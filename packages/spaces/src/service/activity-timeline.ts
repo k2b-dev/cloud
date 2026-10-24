@@ -150,6 +150,7 @@ export const spaceActivityRow = (
     id: event.id,
     at: event.lastOccurredAt,
     ref: event.item ? { type: "spaces.item" as const, id: event.item.shortId } : null,
+    title: event.item ? event.item.title.slice(0, 500) : null,
     actor: { type: event.actor.kind, id: event.actor.id, name: actor },
     icon,
     sentence,
