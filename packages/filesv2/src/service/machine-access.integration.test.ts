@@ -598,7 +598,7 @@ suite("Files machine storage through actual API tokens", () => {
       if (!created.ok) throw new Error(created.error.code);
       const owner = created.data;
       const clientId = `files-admin-oauth-${Bun.randomUUIDv7()}`;
-      await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,scopes) VALUES('Files administrator fixture',${clientId},ARRAY[]::text[],ARRAY['read','write','admin'])`;
+      await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,scopes) VALUES(${`Files administrator ${kind} fixture`},${clientId},ARRAY[]::text[],ARRAY['read','write','admin'])`;
       const [current] = await sql<{ auth_epoch: number }[]>`SELECT auth_epoch::int AS auth_epoch FROM auth.users WHERE id=${admin.user.id}::uuid`;
       const sign = (scope: string) =>
         new SignJWT({ token_use: "access", client_id: clientId, id: admin.user.id, auth_epoch: current!.auth_epoch, scope })
