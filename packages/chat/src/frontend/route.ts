@@ -19,7 +19,9 @@ export const panelHref = (
 export const threadsPageHref = (chatId: string, basePath = "/app/chat") => `${basePath}/c/${encodeURIComponent(chatId)}/threads`;
 
 export const parseRoute = (url: URL): Route | null => {
-  const match = /^\/app\/chat(?:\/panel)?(?:\/c\/([^/]+)(?:(\/threads)|\/t\/([^/]+))?(?:\/m\/([^/]+))?)?\/?$/.exec(url.pathname);
+  const match = /^\/(?:app\/chat(?:\/panel)?|pwa\/chat)(?:\/c\/([^/]+)(?:(\/threads)|\/t\/([^/]+))?(?:\/m\/([^/]+))?)?\/?$/.exec(
+    url.pathname,
+  );
   if (!match || (match[2] && match[4])) return null;
   const chatId = match[1] ? decodeURIComponent(match[1]) : null;
   return {

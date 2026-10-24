@@ -24,6 +24,8 @@ export type AppRegistryNav = {
 export type AppRegistryPwaPart = {
   href: string;
   requiresRoles?: Role[];
+  /** Count route for the part's sidebar entry; older readers ignore it. */
+  badge?: string;
 };
 
 export type AppRegistryCapabilitySummary = {

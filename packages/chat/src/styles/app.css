@@ -386,24 +386,25 @@
 .chat-list__preview[data-collapsed-only] {
   display: none;
 }
+/* The Cloud app has no thread column, so its picker and thread rows stay at every width. */
 @media (min-width: 1800px) {
-  .chat-conversation__picker,
-  .chat-list__threads,
-  .chat-list__members {
+  .chat-workspace:not(.chat-workspace--app) .chat-conversation__picker,
+  .chat-workspace:not(.chat-workspace--app) .chat-list__threads,
+  .chat-workspace:not(.chat-workspace--app) .chat-list__members {
     display: none;
   }
-  .chat-list__preview[data-collapsed-only] {
+  .chat-workspace:not(.chat-workspace--app) .chat-list__preview[data-collapsed-only] {
     display: block;
   }
-  .chat-conversation[data-wide-title] .chat-conversation__header > .k2b-page-title,
-  .chat-conversation[data-wide-title] .chat-conversation__thread-name {
+  .chat-workspace:not(.chat-workspace--app) .chat-conversation[data-wide-title] .chat-conversation__header > .k2b-page-title,
+  .chat-workspace:not(.chat-workspace--app) .chat-conversation[data-wide-title] .chat-conversation__thread-name {
     display: none;
   }
-  .chat-conversation[data-wide-title] .chat-conversation__wide-title {
+  .chat-workspace:not(.chat-workspace--app) .chat-conversation[data-wide-title] .chat-conversation__wide-title {
     display: flex;
   }
   /* The open chat's row carries the selection again, like the shared selected row. */
-  .k2b-ui .k2b-app-workspace__sidebar-item.chat-list__open {
+  .k2b-ui .chat-workspace:not(.chat-workspace--app) .k2b-app-workspace__sidebar-item.chat-list__open {
     --k2b-text-muted: var(--k2b-text-secondary);
     color: var(--k2b-app-workspace-active);
     background: var(--k2b-app-workspace-selected);
@@ -568,4 +569,124 @@
   line-height: 1.125rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Chat in the Cloud app: the list is a column of its own on the canvas and the open chat sits beside it on the surface
+   from 64 rem of window width; below, the address decides which of the two fills the page. Heads take the app's header
+   height and title size, so every page title of the app sits on one line. */
+.chat-app {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.chat-app__list {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  background: var(--k2b-surface-canvas);
+}
+.chat-app__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: calc(env(safe-area-inset-top) + 1.5rem + 44px);
+  padding: calc(env(safe-area-inset-top) + 0.75rem) max(1rem, env(safe-area-inset-right)) 0.75rem max(1rem, env(safe-area-inset-left));
+}
+.chat-app__head h1 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+}
+.chat-app__head .k2b-icon-button {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 1.375rem;
+}
+.chat-app__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+.chat-app__rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.25rem 0.5rem calc(1rem + var(--k2b-mobile-shell-toast-inset, 0px));
+}
+.chat-app__main {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--k2b-surface);
+}
+.chat-app .chat-conversation__header {
+  min-height: calc(1.5rem + 44px);
+  padding-block: 0.75rem;
+}
+.chat-app .chat-conversation__header .k2b-page-title__title,
+.chat-app .chat-conversation__header h1 {
+  font-size: 1.125rem;
+}
+@container k2b-app-area (max-width: 63.999rem) {
+  .chat-app[data-open] > .chat-app__list,
+  .chat-app:not([data-open]) > .chat-app__main {
+    display: none;
+  }
+}
+@media (min-width: 48rem) {
+  .chat-app__head {
+    padding-inline: 1.25rem max(1.25rem, env(safe-area-inset-right));
+  }
+  .chat-app .chat-conversation__header {
+    min-height: calc(env(safe-area-inset-top) + 1.5rem + 44px);
+    padding: calc(env(safe-area-inset-top) + 0.75rem) 1.25rem 0.75rem;
+  }
+}
+@container k2b-app-area (min-width: 64rem) {
+  .chat-app__list {
+    width: 22rem;
+    flex: none;
+  }
+}
+/* The chat's info takes its own column; until the window has room for all three, the list gives way to it. */
+@container k2b-app-area (max-width: 89.999rem) {
+  .chat-app[data-info] > .chat-app__list {
+    display: none;
+  }
+}
+@container k2b-app-area (min-width: 64rem) {
+  .chat-app__to-list {
+    display: none;
+  }
+}
+/* In the Cloud app, Back carries the unread messages of the other chats; its slot keeps one width, so the title never
+   moves when the count changes. */
+.chat-conversation__back-count {
+  display: inline-grid;
+  width: 1.75rem;
+  place-items: center start;
+  color: var(--k2b-action);
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.chat-conversation__back .k2b-icon-button:has(.chat-conversation__back-count) {
+  width: auto;
+  padding-inline-end: 0.25rem;
+  color: var(--k2b-action);
+}
+.chat-conversation__back .k2b-icon-button:has(.chat-conversation__back-count) i {
+  color: var(--k2b-action);
 }

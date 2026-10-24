@@ -29,7 +29,7 @@ const rows = (count) => Array.from({ length: count }, (_, index) => {
 render(
   () =>
     createComponent(MobileShell, {
-      scroll: levels === null,
+      scroll: levels === null && !new URLSearchParams(location.search).has("bottom"),
       get sidebar() {
         return createComponent(MobileShell.Sidebar, {
           label: "App",
@@ -46,6 +46,17 @@ render(
         return createComponent(TabBar, { label: "App", items });
       },
       get children() {
+        if (new URLSearchParams(location.search).has("bottom")) {
+          const page = document.createElement("div");
+          page.style.cssText = "display:flex;flex-direction:column;flex:1;min-height:0";
+          const feed = document.createElement("div");
+          feed.style.cssText = "flex:1";
+          const composer = document.createElement("div");
+          composer.setAttribute("data-k2b-shell-bottom", "");
+          composer.style.cssText = "height:96px";
+          page.append(feed, composer);
+          return page;
+        }
         if (levels === null) return rows(30);
         return createComponent(AppWorkspace, {
           flat: true,
@@ -124,7 +135,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (width: number, height: number, levels?: "list" | "task", sibling = false): Promise<Page> => {
+const open = async (width: number, height: number, levels?: "list" | "task", sibling = false, bottom = false): Promise<Page> => {
   const context = await browser.newContext({ viewport: { width, height }, hasTouch: true });
   const page = await context.newPage();
   await page.route("https://app.test/**", (route) =>
@@ -133,7 +144,7 @@ const open = async (width: number, height: number, levels?: "list" | "task", sib
       body: `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>${css}</style></head><body class="k2b-ui"><div id="root"></div><script>${script}</script></body></html>`,
     }),
   );
-  await page.goto(`https://app.test/?${levels ? `levels=${levels}` : ""}${sibling ? "&sibling" : ""}`);
+  await page.goto(`https://app.test/?${levels ? `levels=${levels}` : ""}${sibling ? "&sibling" : ""}${bottom ? "&bottom" : ""}`);
   await page.locator(".k2b-mobile-shell").waitFor();
   return page;
 };
@@ -276,6 +287,36 @@ describe("AppWorkspace levels in a MobileShell", () => {
       expect(shown).toEqual([true, true]);
     } finally {
       await page.context().close();
+    }
+  }, 30_000);
+
+  test("content that owns the bottom edge, such as a composer, keeps toasts above itself", async () => {
+    for (const [width, height] of [
+      [390, 844],
+      [1366, 1024],
+    ] as const) {
+      const page = await open(width, height, undefined, false, true);
+      try {
+        await page.waitForFunction(() => getComputedStyle(document.body).getPropertyValue("--k2b-mobile-shell-footer-height") !== "");
+        const footer = () =>
+          page.evaluate(() => Number.parseFloat(getComputedStyle(document.body).getPropertyValue("--k2b-mobile-shell-footer-height")));
+        expect(await footer()).toBeGreaterThanOrEqual(96);
+        // The composer grows with its text and shrinks again; the room above it follows.
+        const resizeComposer = (height: string) =>
+          page.evaluate((value) => {
+            document.querySelector<HTMLElement>("[data-k2b-shell-bottom]")!.style.height = value;
+          }, height);
+        await resizeComposer("200px");
+        await page.waitForFunction(
+          () => Number.parseFloat(getComputedStyle(document.body).getPropertyValue("--k2b-mobile-shell-footer-height")) >= 200,
+        );
+        await resizeComposer("96px");
+        await page.waitForFunction(
+          () => Number.parseFloat(getComputedStyle(document.body).getPropertyValue("--k2b-mobile-shell-footer-height")) < 200,
+        );
+      } finally {
+        await page.context().close();
+      }
     }
   }, 30_000);
 });

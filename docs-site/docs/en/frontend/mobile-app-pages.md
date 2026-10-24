@@ -49,11 +49,23 @@ Cloud then:
 it, every signed-in person sees the part. The app has no `admin` role, so a part
 limited to administrators never appears.
 
+`badge` (optional) names a `GET` route of the application that answers like
+`nav.badge`, with `{ "count": n }`. The sidebar shows the count beside the
+part, read once a minute and when the app returns to the foreground; `0`, an
+error, or another answer shows none. It must be one of the application's own
+paths. Chat counts its unread messages this way:
+
+```ts
+pwa: { requiresRoles: ["user"], badge: "/api/chat/conversations/unread-count" },
+```
+
 Do not list `/pwa` paths in `routes`; `defineApp()` throws for them. See
 [Define an application](/en/docs/build/define-app#add-pages-to-the-mobile-app).
 
 Spaces adds its "My tasks" page this way, as an example of a list with a quick
-action; see [Spaces](/en/apps/spaces#check-off-tasks-in-the-mobile-app).
+action; see [Spaces](/en/apps/spaces#check-off-tasks-in-the-mobile-app). Chat
+adds `/pwa/chat` with its chats and one conversation, as an example of a list
+beside its detail with a composer at the bottom edge.
 
 ## Paths
 

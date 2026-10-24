@@ -207,7 +207,13 @@ describe("ChatWorkspace interactions", () => {
     panel: "info" | null = null,
     locale = "en",
     permission: typeof conversation.permission = "write",
-    initial: { url?: string; page?: NonNullable<ChatWorkspaceProps["open"]>["page"]; focus?: string | null; embedded?: boolean } = {},
+    initial: {
+      url?: string;
+      page?: NonNullable<ChatWorkspaceProps["open"]>["page"];
+      focus?: string | null;
+      embedded?: boolean;
+      app?: boolean;
+    } = {},
   ) => {
     const { ChatWorkspace, LocaleProvider } = modules!;
     dom.window.history.replaceState(null, "", initial.url ?? (open ? `/app/chat/c/Chat01${panel ? "?panel=info" : ""}` : "/app/chat"));
@@ -215,6 +221,7 @@ describe("ChatWorkspace interactions", () => {
       view: "all",
       threadsPage: false,
       embedded: initial.embedded,
+      app: initial.app,
       cursor: "c.0",
       sidebar: { items: sidebar, nextCursor: null },
       open: open
@@ -323,6 +330,18 @@ describe("ChatWorkspace interactions", () => {
     expect(field.value).toBe("");
     answer(Response.json(message(1, valid), { status: 201 }));
     await settle();
+    expect(consoleErrors).toEqual([]);
+  });
+  test("in the Cloud app a draft lives in the device's storage, so it survives the app being ended", async () => {
+    await mount(true, [conversation], null, "en", "write", { url: "/pwa/chat/c/Chat01", app: true });
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    field.value = "Seals arrive on Monday";
+    field.dispatchEvent(new dom.window.Event("input", { bubbles: true }) as unknown as Event);
+    await settle();
+    const stored = Object.keys(dom.window.localStorage).filter((key) => key.startsWith("cloud.pwa.draft:"));
+    expect(stored).toHaveLength(1);
+    expect(dom.window.localStorage.getItem(stored[0]!)).toBe("Seals arrive on Monday");
+    expect(Object.keys(dom.window.sessionStorage).some((key) => key.startsWith("cloud.chat.draft:"))).toBe(false);
     expect(consoleErrors).toEqual([]);
   });
   test("failed send retries the same client ID and body, then shows one sent row", async () => {

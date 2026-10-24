@@ -131,6 +131,20 @@ const app = new Hono<AuthContext>()
       return respond(c, chatService.conversations.list({ ...context(c), query: cursor ? { cursor: JSON.stringify(cursor) } : {} }));
     },
   )
+  .get(
+    "/conversations/unread-count",
+    description(
+      "Count unread messages in your most recent chats, for the Cloud app's sidebar",
+      z.object({ count: z.number().int().min(0) }),
+    ),
+    async (c) => {
+      // The first page of the list, the chats a person sees first; each chat's count stops at the unread cap.
+      const page = await chatService.conversations.list(context(c));
+      if (!page.ok) return respond(c, page);
+      c.header("Cache-Control", "private, no-store");
+      return c.json({ count: page.data.items.reduce((sum, item) => sum + item.unread, 0) });
+    },
+  )
   .post(
     "/conversations/read-all",
     description("Mark your unread chats read", ReadAllOutcomeSchema),

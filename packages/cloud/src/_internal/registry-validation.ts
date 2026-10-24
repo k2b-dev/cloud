@@ -137,6 +137,9 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
     if (value.pwa.requiresRoles !== undefined && !isStringArray(value.pwa.requiresRoles)) {
       return invalid("pwa.requiresRoles", "an array of strings");
     }
+    if (value.pwa.badge !== undefined && (!isString(value.pwa.badge) || !isOwnAppPath(value.pwa.badge, value.routes))) {
+      return invalid("pwa.badge", "a same-origin path below one of the app's routes");
+    }
   }
   if (value.widgets !== undefined) {
     if (

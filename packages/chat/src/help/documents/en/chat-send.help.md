@@ -18,6 +18,7 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 :::reference
 - On a phone, the list and the open chat are separate screens. Use the back arrow or your phone's back gesture to return to the list.
 - A link to a message opens the chat at that message and highlights it briefly.
+- In the Cloud app, Chat has its own entry. On a phone the open chat fills the screen, and the back arrow shows how many messages wait in your other chats. On a wide iPad or a monitor the list stays beside the chat.
 :::
 
 ## Write and send a message {icon="send"}

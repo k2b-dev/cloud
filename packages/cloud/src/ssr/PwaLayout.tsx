@@ -7,6 +7,7 @@ import { pwaBuild } from "../contracts/pwa-builds";
 import { getLocale } from "../server/locale";
 import { visiblePwaParts } from "./app-navigation";
 import type { LayoutContext } from "./layout-context";
+import PwaPartCount from "./PwaPartCount.island";
 import PwaRuntime from "./PwaRuntime.island";
 import { pwaMessages } from "./pwa-messages";
 import { getDisplayRuntimeContext } from "./runtime";
@@ -72,6 +73,7 @@ export default function PwaLayout(props: PwaLayoutProps) {
   // The sidebar names the installation itself, so Start is titled Start there; Settings is a destination of its own.
   const settingsHref = `${PWA_SCOPE}settings`;
   const currentPart = parts.find((part) => path === part.pwa.href || path.startsWith(`${part.pwa.href}/`));
+  const badges = parts.flatMap((part) => (part.pwa.badge ? [part.pwa.badge] : []));
   const sidebar = (
     <MobileShell.Sidebar
       label={t.tabs}
@@ -87,6 +89,7 @@ export default function PwaLayout(props: PwaLayoutProps) {
             icon: part.icon,
             href: part.pwa.href,
             current: part === currentPart,
+            count: part.pwa.badge ? <PwaPartCount endpoint={part.pwa.badge} endpoints={badges} /> : undefined,
           })),
         },
       ]}

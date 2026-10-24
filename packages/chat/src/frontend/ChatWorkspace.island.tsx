@@ -1,4 +1,5 @@
 import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { type LinkNavigateEvent, listenPopState, navigate, refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
@@ -7,6 +8,7 @@ import {
   AppWorkspace,
   announce,
   Button,
+  ButtonLink,
   Dropdown,
   dialogCore,
   IconButton,
@@ -70,6 +72,8 @@ type Sends = ReturnType<typeof createChatSends>;
 export type ChatWorkspaceProps = {
   /** The same workspace served without the Cloud shell in its provider route. */
   embedded?: boolean;
+  /** The Cloud app's Chat below `/pwa/chat`: the list beside the open chat from 64 rem, one after the other below. */
+  app?: boolean;
   /** The live cursor the server read before every part of this snapshot. */
   cursor: string;
   sidebar: z.infer<typeof ConversationPageSchema>;
@@ -122,7 +126,7 @@ const chatRoute = (chatId: string | null, view: ThreadView = "all", extra: Parti
  * Below 64 rem the list and a chat are separate pages.
  */
 export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
-  const basePath = props.embedded ? "/app/chat/panel" : "/app/chat";
+  const basePath = props.app ? "/pwa/chat" : props.embedded ? "/app/chat/panel" : "/app/chat";
   const panelHref = (id: string, info: "info" | null, message?: string | null, view: ThreadView = "all") =>
     conversationHref(id, info, message, view, basePath);
   const threadHref = (id: string, view: ThreadView, message?: string | null) => threadAddress(id, view, message, basePath);
@@ -198,9 +202,23 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       else setDraftStorageFailed(true);
     }
   };
+  /**
+   * The web keeps drafts for the tab. The Cloud app keeps them in the device's storage, so a chat's draft survives the
+   * app being ended in the background; signing out of the app deletes them.
+   */
+  const draftStorage = (): Pick<Storage, "getItem" | "setItem" | "removeItem"> =>
+    props.app
+      ? {
+          getItem: (key) => pwaDrafts.read(props.viewerId, key) ?? null,
+          setItem: (key, value) => {
+            if (!pwaDrafts.write(props.viewerId, key, value)) throw new Error("Draft storage unavailable");
+          },
+          removeItem: (key) => pwaDrafts.remove(props.viewerId, key),
+        }
+      : window.sessionStorage;
   const retryDraftStorage = () => {
     try {
-      savedDrafts = chatDrafts(props.viewerId, window.sessionStorage);
+      savedDrafts = chatDrafts(props.viewerId, draftStorage());
       for (const id of unsavedDrafts) {
         try {
           const text = drafts.get(id)!;
@@ -922,7 +940,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
   onMount(() => {
     try {
-      savedDrafts = chatDrafts(props.viewerId, window.sessionStorage);
+      savedDrafts = chatDrafts(props.viewerId, draftStorage());
     } catch {
       setDraftStorageFailed(true);
     }
@@ -1157,6 +1175,224 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     </Dropdown.Root>
   );
 
+  /** Unread messages in every chat but the open one, for the Cloud app's way back to the list. */
+  const othersUnread = (id: string) => rows().reduce((sum, row) => (row.id === id ? sum : sum + row.unread), 0);
+  const threadsPageOpen = () => (route().threads && openChat()?.id && threaded() ? conversation() : null);
+  const threadsPageView = (current: Conversation): JSX.Element => (
+    <ChatThreadsPage
+      basePath={basePath}
+      conversation={current}
+      threads={openChat()?.threads ?? null}
+      status={openChat()?.threadsStatus ?? "loading"}
+      viewerId={props.viewerId}
+      dateConfig={props.dateConfig}
+      now={now}
+      info={infoLink(current)}
+      backCount={props.app ? othersUnread(current.id) : undefined}
+      onBack={backToList}
+      onOpen={(view, navigation) => openView(current.id, view, navigation)}
+      onCreate={() => void createThread()}
+      onRetry={() => void store?.refreshThreads()}
+    />
+  );
+  const conversationView = (): JSX.Element => (
+    <>
+      {/* One history per chat: a new chat starts at its end or its linked message, never at the last chat's place. */}
+      <Show when={openChat()?.id} keyed>
+        <Show when={conversation()}>
+          {(current) => (
+            <ChatConversation
+              listHref={basePath}
+              actions={
+                <>
+                  <Show when={props.embedded}>
+                    <IconButtonLink
+                      href={conversationHref(current().id, null, route().messageId, route().view)}
+                      target={composerReady() ? undefined : "_top"}
+                      label={t().openFullView}
+                    >
+                      <i class="ti ti-arrows-maximize" aria-hidden="true" />
+                    </IconButtonLink>
+                  </Show>
+                  <Show when={current().permission === "admin"}>
+                    <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
+                      <i class="ti ti-user-plus" aria-hidden="true" />
+                    </IconButton>
+                  </Show>
+                  <Show when={current().permission === "admin" && openThread() && !openThread()?.archived}>
+                    <ThreadMenu onRename={() => void renameThread()} onArchive={() => void archiveThread()} />
+                  </Show>
+                  {infoLink(current())}
+                </>
+              }
+              chatId={current().id}
+              title={current().title}
+              // A wider window picks the thread beside the title; a phone names it there and goes back to the
+              // chat's thread page for another one. CSS decides, so server and browser render the same head.
+              titleExtra={
+                threaded() ? (
+                  <>
+                    <span class="chat-conversation__thread-name">· {viewTitle()}</span>
+                    <span class="chat-conversation__picker">
+                      <ThreadPicker
+                        chatId={current().id}
+                        threads={openChat()?.threads ?? null}
+                        unread={current().unread}
+                        view={openChat()?.view ?? "all"}
+                        canAdmin={current().permission === "admin"}
+                        onSelect={(view) => void openView(current().id, view)}
+                        onCreate={() => void createThread()}
+                      />
+                    </span>
+                  </>
+                ) : undefined
+              }
+              wideTitle={
+                threaded()
+                  ? {
+                      title: viewTitle(),
+                      subtitle:
+                        openChat()?.view === "all"
+                          ? `${current().title} · ${t().allThreadsHint}`
+                          : openChat()?.view === "general"
+                            ? `${current().title} · ${t().generalHint}`
+                            : (openThread()?.description ?? current().title),
+                    }
+                  : undefined
+              }
+              backHref={threaded() ? threadsPageHref(current().id) : undefined}
+              draftKey={`${current().id}:${openChat()?.view ?? "all"}`}
+              notice={draftNotice()}
+              composerNotice={notice()}
+              placeholder={placeholder()}
+              target={threaded() ? (openChat()?.view === "all" ? t().general : viewTitle()) : undefined}
+              reply={
+                reply()
+                  ? {
+                      author: reply()?.authorName ?? "",
+                      text: reply()?.body ?? "",
+                      onCancel: () => setReply(null),
+                      onSelect: () => {
+                        const answered = reply();
+                        if (answered?.messageId) void jumpTo(current().id, answered.messageId);
+                      },
+                    }
+                  : undefined
+              }
+              onReply={notice() ? undefined : (item) => setReply(item)}
+              replyHint={replyHint}
+              unreadHint={unreadHint}
+              memberCount={current().memberCount}
+              items={items()}
+              hasOlder={openChat()?.hasOlder ?? false}
+              hasNewer={openChat()?.hasNewer ?? false}
+              onLoadOlder={() => store?.loadOlder() ?? Promise.resolve(false)}
+              onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
+              onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
+              focusKey={focusKey()}
+              canWrite={
+                composerReady() &&
+                !busy() &&
+                current().permission !== "read" &&
+                !draftStorageFailed() &&
+                draftConflicts()[draftId(route()) ?? ""] === undefined
+              }
+              hint={draftError() ?? (liveStopped() ? t().liveStopped : waiting() ? t().messagesWaiting : undefined)}
+              draft={draft()}
+              onDraftChange={changeDraft}
+              onSend={send}
+              onBack={threaded() ? backToThreads : backToList}
+              backCount={props.app ? othersUnread(current().id) : undefined}
+              busy={busy()}
+              dateConfig={props.dateConfig}
+              now={now}
+              controller={(controller) => {
+                feed = controller;
+              }}
+              markerKey={marker()}
+              onVisibleChange={reportVisible}
+              onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
+              onCopy={copy}
+              // With the info open, Esc closes it first; the workspace owns that.
+              onEscape={() => panel() === null && markOpenRead()}
+            />
+          )}
+        </Show>
+      </Show>
+    </>
+  );
+  const noAccessView = (): JSX.Element => (
+    <Placeholder
+      variant="panel"
+      class="flex-1"
+      icon="ti ti-lock"
+      title={t().noAccessTitle}
+      description={t().noAccessDescription}
+      // In the Cloud app this view replaces the list below 64 rem, so it keeps the way back to it.
+      action={
+        props.app ? (
+          <ButtonLink class="chat-app__to-list" variant="secondary" href={basePath} navigation="enhanced" onNavigate={backToList}>
+            {t().backToChats}
+          </ButtonLink>
+        ) : undefined
+      }
+    />
+  );
+  /**
+   * The Cloud app: the list as a column of its own and the open chat beside it; one at a time below 64 rem. Threads
+   * show in the list's rows and the picker, so the app has no thread column.
+   */
+  const appView = (): JSX.Element => (
+    <div class="chat-app" data-open={openChat() || noAccess() ? "" : undefined} data-info={panel() === "info" ? "" : undefined}>
+      <section class="chat-app__list" aria-label={t().chats}>
+        <header class="chat-app__head">
+          <h1>{t().appName}</h1>
+          <Show when={liveStopped()}>
+            <span class="chat-app__status" role="status">
+              <i class="ti ti-plug-connected-x" aria-hidden="true" />
+              {t().disconnected}
+            </span>
+          </Show>
+          <IconButton label={t().newChat} onClick={() => void newChat()}>
+            <i class="ti ti-edit" aria-hidden="true" />
+          </IconButton>
+          {chatsActions()}
+        </header>
+        <div class="chat-app__rows">
+          <Show
+            when={rows().length > 0}
+            fallback={
+              <Placeholder
+                icon="ti ti-messages"
+                title={t().noChatsTitle}
+                description={t().noChatsDescription}
+                action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
+              />
+            }
+          >
+            {list()}
+          </Show>
+        </div>
+      </section>
+      <div class="chat-app__main">
+        <Switch>
+          <Match when={threadsPageOpen()}>{(current) => threadsPageView(current())}</Match>
+          <Match when={openChat()?.id}>{conversationView()}</Match>
+          <Match when={noAccess()}>{noAccessView()}</Match>
+          <Match when={true}>
+            <Placeholder
+              variant="panel"
+              class="flex-1"
+              icon="ti ti-message-circle"
+              title={t().selectChatTitle}
+              description={t().selectChatDescription}
+            />
+          </Match>
+        </Switch>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <Show when={!openChat()}>{draftNotice()}</Show>
@@ -1171,236 +1407,97 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           </IconButtonLink>
         </div>
       </Show>
-      <AppWorkspace mobileSurface="flush" class={`chat-workspace ${props.embedded ? "flex-1 min-h-0" : "h-full"}`}>
-        <AppWorkspace.Sidebar label={t().chats}>
-          <AppWorkspace.SidebarDesktop>
-            <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">
-              <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
-                {t().newChat}
-              </AppWorkspace.SidebarItem>
-              <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
-                <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().noneYet} />}>
-                  {list()}
-                </Show>
-              </AppWorkspace.SidebarSection>
-            </AppWorkspace.SidebarBody>
-          </AppWorkspace.SidebarDesktop>
-        </AppWorkspace.Sidebar>
+      <AppWorkspace
+        mobileSurface="flush"
+        class={`chat-workspace ${props.app ? "chat-workspace--app h-full" : props.embedded ? "flex-1 min-h-0" : "h-full"}`}
+      >
+        <Show when={!props.app}>
+          <AppWorkspace.Sidebar label={t().chats}>
+            <AppWorkspace.SidebarDesktop>
+              <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">
+                <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+                  {t().newChat}
+                </AppWorkspace.SidebarItem>
+                <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
+                  <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().noneYet} />}>
+                    {list()}
+                  </Show>
+                </AppWorkspace.SidebarSection>
+              </AppWorkspace.SidebarBody>
+            </AppWorkspace.SidebarDesktop>
+          </AppWorkspace.Sidebar>
+        </Show>
         <AppWorkspace.Content>
           <AppWorkspace.Main
             scroll={false}
             aria-busy={busy()}
             class={threaded() && !route().threads ? "chat-main chat-main--threads" : "chat-main"}
           >
-            {/* From a 1800 px window, a chat with threads shows them in a column of their own; CSS decides, so the server
-                render and the first frame agree, and crossing the width moves nothing in the reading column. The pane
-                stays in place for every chat, because a pane that appears later would take the conversation with it. */}
-            <AppWorkspace.MainPane
-              id="chat-threads"
-              label={t().threadsIn({ title: conversation()?.title ?? "" })}
-              class="chat-thread-pane"
-              defaultSize={336}
-              minSize={288}
-              maxSize={480}
-              scroll={false}
-            >
-              <Show when={threaded() && !route().threads ? conversation() : null}>
-                {(current) => (
-                  <ChatThreadColumn
-                    conversation={current()}
-                    threads={openChat()?.threads ?? null}
-                    status={openChat()?.threadsStatus ?? "loading"}
-                    view={openChat()?.view ?? "all"}
-                    viewerId={props.viewerId}
-                    dateConfig={props.dateConfig}
-                    now={now}
-                    onOpen={(view, navigation) => openView(current().id, view, navigation)}
-                    onCreate={() => void createThread()}
-                    onRetry={() => void store?.refreshThreads()}
-                  />
-                )}
-              </Show>
-            </AppWorkspace.MainPane>
-            <Switch>
-              <Match when={route().threads && openChat()?.id && threaded() ? conversation() : null}>
-                {(current) => (
-                  <ChatThreadsPage
-                    conversation={current()}
-                    threads={openChat()?.threads ?? null}
-                    status={openChat()?.threadsStatus ?? "loading"}
-                    viewerId={props.viewerId}
-                    dateConfig={props.dateConfig}
-                    now={now}
-                    info={infoLink(current())}
-                    onBack={backToList}
-                    onOpen={(view, navigation) => openView(current().id, view, navigation)}
-                    onCreate={() => void createThread()}
-                    onRetry={() => void store?.refreshThreads()}
-                  />
-                )}
-              </Match>
-              <Match when={openChat()?.id}>
-                {/* One history per chat: a new chat starts at its end or its linked message, never at the last chat's place. */}
-                <Show when={openChat()?.id} keyed>
-                  <Show when={conversation()}>
-                    {(current) => (
-                      <ChatConversation
-                        listHref={basePath}
-                        actions={
-                          <>
-                            <Show when={props.embedded}>
-                              <IconButtonLink
-                                href={conversationHref(current().id, null, route().messageId, route().view)}
-                                target={composerReady() ? undefined : "_top"}
-                                label={t().openFullView}
-                              >
-                                <i class="ti ti-arrows-maximize" aria-hidden="true" />
-                              </IconButtonLink>
-                            </Show>
-                            <Show when={current().permission === "admin"}>
-                              <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
-                                <i class="ti ti-user-plus" aria-hidden="true" />
-                              </IconButton>
-                            </Show>
-                            <Show when={current().permission === "admin" && openThread() && !openThread()?.archived}>
-                              <ThreadMenu onRename={() => void renameThread()} onArchive={() => void archiveThread()} />
-                            </Show>
-                            {infoLink(current())}
-                          </>
-                        }
-                        chatId={current().id}
-                        title={current().title}
-                        // A wider window picks the thread beside the title; a phone names it there and goes back to the
-                        // chat's thread page for another one. CSS decides, so server and browser render the same head.
-                        titleExtra={
-                          threaded() ? (
-                            <>
-                              <span class="chat-conversation__thread-name">· {viewTitle()}</span>
-                              <span class="chat-conversation__picker">
-                                <ThreadPicker
-                                  chatId={current().id}
-                                  threads={openChat()?.threads ?? null}
-                                  unread={current().unread}
-                                  view={openChat()?.view ?? "all"}
-                                  canAdmin={current().permission === "admin"}
-                                  onSelect={(view) => void openView(current().id, view)}
-                                  onCreate={() => void createThread()}
-                                />
-                              </span>
-                            </>
-                          ) : undefined
-                        }
-                        wideTitle={
-                          threaded()
-                            ? {
-                                title: viewTitle(),
-                                subtitle:
-                                  openChat()?.view === "all"
-                                    ? `${current().title} · ${t().allThreadsHint}`
-                                    : openChat()?.view === "general"
-                                      ? `${current().title} · ${t().generalHint}`
-                                      : (openThread()?.description ?? current().title),
-                              }
-                            : undefined
-                        }
-                        backHref={threaded() ? threadsPageHref(current().id) : undefined}
-                        draftKey={`${current().id}:${openChat()?.view ?? "all"}`}
-                        notice={draftNotice()}
-                        composerNotice={notice()}
-                        placeholder={placeholder()}
-                        target={threaded() ? (openChat()?.view === "all" ? t().general : viewTitle()) : undefined}
-                        reply={
-                          reply()
-                            ? {
-                                author: reply()?.authorName ?? "",
-                                text: reply()?.body ?? "",
-                                onCancel: () => setReply(null),
-                                onSelect: () => {
-                                  const answered = reply();
-                                  if (answered?.messageId) void jumpTo(current().id, answered.messageId);
-                                },
-                              }
-                            : undefined
-                        }
-                        onReply={notice() ? undefined : (item) => setReply(item)}
-                        replyHint={replyHint}
-                        unreadHint={unreadHint}
-                        memberCount={current().memberCount}
-                        items={items()}
-                        hasOlder={openChat()?.hasOlder ?? false}
-                        hasNewer={openChat()?.hasNewer ?? false}
-                        onLoadOlder={() => store?.loadOlder() ?? Promise.resolve(false)}
-                        onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
-                        onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
-                        focusKey={focusKey()}
-                        canWrite={
-                          composerReady() &&
-                          !busy() &&
-                          current().permission !== "read" &&
-                          !draftStorageFailed() &&
-                          draftConflicts()[draftId(route()) ?? ""] === undefined
-                        }
-                        hint={draftError() ?? (liveStopped() ? t().liveStopped : waiting() ? t().messagesWaiting : undefined)}
-                        draft={draft()}
-                        onDraftChange={changeDraft}
-                        onSend={send}
-                        onBack={threaded() ? backToThreads : backToList}
-                        busy={busy()}
-                        dateConfig={props.dateConfig}
-                        now={now}
-                        controller={(controller) => {
-                          feed = controller;
-                        }}
-                        markerKey={marker()}
-                        onVisibleChange={reportVisible}
-                        onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
-                        onCopy={copy}
-                        // With the info open, Esc closes it first; the workspace owns that.
-                        onEscape={() => panel() === null && markOpenRead()}
-                      />
-                    )}
-                  </Show>
+            <Show when={!props.app} fallback={appView()}>
+              {/* From a 1800 px window, a chat with threads shows them in a column of their own; CSS decides, so the server
+                  render and the first frame agree, and crossing the width moves nothing in the reading column. The pane
+                  stays in place for every chat, because a pane that appears later would take the conversation with it. */}
+              <AppWorkspace.MainPane
+                id="chat-threads"
+                label={t().threadsIn({ title: conversation()?.title ?? "" })}
+                class="chat-thread-pane"
+                defaultSize={336}
+                minSize={288}
+                maxSize={480}
+                scroll={false}
+              >
+                <Show when={threaded() && !route().threads ? conversation() : null}>
+                  {(current) => (
+                    <ChatThreadColumn
+                      conversation={current()}
+                      threads={openChat()?.threads ?? null}
+                      status={openChat()?.threadsStatus ?? "loading"}
+                      view={openChat()?.view ?? "all"}
+                      viewerId={props.viewerId}
+                      dateConfig={props.dateConfig}
+                      now={now}
+                      onOpen={(view, navigation) => openView(current().id, view, navigation)}
+                      onCreate={() => void createThread()}
+                      onRetry={() => void store?.refreshThreads()}
+                    />
+                  )}
                 </Show>
-              </Match>
-              <Match when={noAccess()}>
-                <Placeholder
-                  variant="panel"
-                  class="flex-1"
-                  icon="ti ti-lock"
-                  title={t().noAccessTitle}
-                  description={t().noAccessDescription}
-                />
-              </Match>
-              <Match when={rows().length === 0}>
-                <Placeholder
-                  variant="panel"
-                  class="flex-1"
-                  icon="ti ti-messages"
-                  title={t().noChatsTitle}
-                  description={t().noChatsDescription}
-                  action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
-                />
-              </Match>
-              <Match when={true}>
-                <nav class="chat-list-page" aria-label={t().chats}>
-                  <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
-                    {t().newChat}
-                  </AppWorkspace.SidebarItem>
-                  <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
-                    {list()}
-                  </AppWorkspace.SidebarSection>
-                </nav>
-                <div class="chat-select">
+              </AppWorkspace.MainPane>
+              <Switch>
+                <Match when={threadsPageOpen()}>{(current) => threadsPageView(current())}</Match>
+                <Match when={openChat()?.id}>{conversationView()}</Match>
+                <Match when={noAccess()}>{noAccessView()}</Match>
+                <Match when={rows().length === 0}>
                   <Placeholder
                     variant="panel"
                     class="flex-1"
                     icon="ti ti-messages"
-                    title={t().selectChatTitle}
-                    description={t().selectChatDescription}
+                    title={t().noChatsTitle}
+                    description={t().noChatsDescription}
+                    action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
                   />
-                </div>
-              </Match>
-            </Switch>
+                </Match>
+                <Match when={true}>
+                  <nav class="chat-list-page" aria-label={t().chats}>
+                    <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+                      {t().newChat}
+                    </AppWorkspace.SidebarItem>
+                    <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
+                      {list()}
+                    </AppWorkspace.SidebarSection>
+                  </nav>
+                  <div class="chat-select">
+                    <Placeholder
+                      variant="panel"
+                      class="flex-1"
+                      icon="ti ti-messages"
+                      title={t().selectChatTitle}
+                      description={t().selectChatDescription}
+                    />
+                  </div>
+                </Match>
+              </Switch>
+            </Show>
           </AppWorkspace.Main>
           <AppWorkspace.Detail
             id="chat-info"

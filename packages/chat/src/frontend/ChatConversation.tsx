@@ -99,6 +99,8 @@ export type ChatConversationProps = {
   busy: boolean;
   dateConfig: DateContext;
   now: () => Date;
+  /** Unread messages in the other chats, beside a back button that leads to the list, in a slot of fixed width. */
+  backCount?: number;
   /** Below 64 rem the chat is a page of its own; its back button returns to the list. */
   onBack: (navigation: LinkNavigateEvent) => void | Promise<void>;
   /** Receives the history's controller, for example to follow the end after a send. */
@@ -202,10 +204,17 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             href={props.backHref ?? props.listHref ?? "/app/chat"}
             navigation="enhanced"
             onNavigate={props.onBack}
-            label={props.backHref ? t().backToThreads : t().backToChats}
+            label={
+              props.backHref ? t().backToThreads : props.backCount ? t().backToChatsUnread({ count: props.backCount }) : t().backToChats
+            }
             tooltip={false}
           >
             <i class="ti ti-chevron-left" aria-hidden="true" />
+            <Show when={!props.backHref && props.backCount !== undefined}>
+              <span class="chat-conversation__back-count" aria-hidden="true">
+                {props.backCount ? (props.backCount > 99 ? "99+" : props.backCount) : ""}
+              </span>
+            </Show>
           </IconButtonLink>
         </span>
         <PageTitle trail={{ title: props.title, ancestors: [] }} subtitle={props.subtitle ?? t().members({ count: props.memberCount })} />
@@ -335,12 +344,12 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
       <Show
         when={!props.composerNotice}
         fallback={
-          <div class="chat-conversation__notice" role="status">
+          <div class="chat-conversation__notice" role="status" data-k2b-shell-bottom>
             {props.composerNotice}
           </div>
         }
       >
-        <div class="chat-conversation__composer">
+        <div class="chat-conversation__composer" data-k2b-shell-bottom>
           <Chat.Composer
             variant="conversation"
             value={props.draft}

@@ -108,6 +108,8 @@ export type AppPwaPart = {
   href: string;
   /** Coarse visibility in the mobile app, like `nav.requiresRoles`. Routes and services still authorize. */
   requiresRoles?: Role[];
+  /** Same-origin path of a `GET` route returning an `AppNavBadge`, counted beside the part in the app's sidebar. */
+  badge?: string;
 };
 
 /** One same-origin panel page contributed by an application. Routes and services still authorize. */
