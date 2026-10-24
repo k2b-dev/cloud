@@ -22,6 +22,10 @@ const navFill = [
   `${icon}.is-active:hover`,
   ".k2b-ui .k2b-navigation__row[data-active] > .k2b-navigation__control",
   '.k2b-ui .k2b-settings__tabs button[data-active="true"]',
+  // The open page of a touch app's sidebar, and the one a press is loading, like a web sidebar's selected row.
+  '.k2b-ui .k2b-mobile-shell__sidebar a[aria-current="page"]',
+  '.k2b-ui .k2b-mobile-shell__sidebar a[aria-current="page"]:hover',
+  ".k2b-ui .k2b-mobile-shell__sidebar a[data-k2b-pending]",
 ];
 // The stacked object chip below 64rem (#1441) is the same selected navigation fill.
 const stackedChip =

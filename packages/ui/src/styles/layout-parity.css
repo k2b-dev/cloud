@@ -4093,11 +4093,12 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
     background: var(--k2b-app-workspace-hover);
     color: var(--k2b-text);
   }
+}
 
-  .k2b-ui .k2b-mobile-shell__sidebar a[aria-current="page"]:hover {
-    color: var(--k2b-app-workspace-active);
-    background: var(--k2b-app-workspace-selected);
-  }
+/* The open page keeps its fill under the pointer; more specific than the hover above, so it holds on every device. */
+.k2b-ui .k2b-mobile-shell__sidebar a[aria-current="page"]:hover {
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-selected);
 }
 
 /* ------------------------------------------------- levels in a touch app */
