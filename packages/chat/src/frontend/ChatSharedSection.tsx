@@ -185,6 +185,41 @@ export default function ChatSharedSection(props: {
           <Match when={items().length === 0}>
             <p class="text-sm text-dimmed">{kind() === "all" && thread() === "all" ? t().nothingShared : t().nothingForFilter}</p>
           </Match>
+          <Match when={kind() === "images"}>
+            {/* Images as a grid of squares; each opens its message. */}
+            <ul class="chat-shared__grid" aria-label={t().sharedImages}>
+              <For each={items()}>
+                {(item) => (
+                  <Show when={item.kind === "image" ? item : null}>
+                    {(image) => (
+                      <li>
+                        <button
+                          type="button"
+                          class="chat-shared__thumb"
+                          aria-label={`${image().attachment.name}, ${meta(image())}`}
+                          onClick={() => props.onJump(image())}
+                        >
+                          <img src={image().attachment.href} alt="" loading="lazy" decoding="async" />
+                        </button>
+                      </li>
+                    )}
+                  </Show>
+                )}
+              </For>
+            </ul>
+            <Show when={cursor()}>
+              <Button
+                variant="text"
+                size="xs"
+                class="self-start"
+                loading={loadingMore()}
+                disabled={status() !== "ready"}
+                onClick={() => more()}
+              >
+                {t().showMoreShared}
+              </Button>
+            </Show>
+          </Match>
           <Match when={true}>
             <ul class="chat-shared__list" aria-label={t().shared}>
               <For each={items()}>
@@ -219,16 +254,28 @@ function SharedRow(props: { item: SharedItem; meta: string; cards: ResourceCards
   );
   const unavailable = () => props.item.kind === "element" && view() !== undefined && view()?.state !== "ok";
   const title = () => {
+    if (props.item.kind === "image" || props.item.kind === "document") return props.item.attachment.name;
     if (props.item.kind === "link") return props.item.url.replace(/^https?:\/\//u, "");
     if (unavailable()) return t().elementUnavailable;
     return view()?.title ?? "";
   };
-  const icon = () => (props.item.kind === "link" ? "ti ti-link" : unavailable() ? "ti ti-lock" : (view()?.icon ?? "ti ti-box"));
+  const icon = () =>
+    props.item.kind === "document"
+      ? props.item.attachment.mimeType === "application/pdf"
+        ? "ti ti-file-type-pdf"
+        : "ti ti-file-text"
+      : props.item.kind === "link"
+        ? "ti ti-link"
+        : unavailable()
+          ? "ti ti-lock"
+          : (view()?.icon ?? "ti ti-box");
   return (
     <li>
       <button type="button" class="chat-shared__row" data-unavailable={unavailable() ? "" : undefined} onClick={() => props.onJump()}>
-        <span class="chat-shared__icon" aria-hidden="true">
-          <i class={icon()} />
+        <span class="chat-shared__icon" data-image={props.item.kind === "image" ? "" : undefined} aria-hidden="true">
+          <Show when={props.item.kind === "image" ? props.item : null} fallback={<i class={icon()} />}>
+            {(image) => <img src={image().attachment.href} alt="" loading="lazy" decoding="async" />}
+          </Show>
         </span>
         <span class="chat-shared__copy">
           <span class="chat-shared__title">{title() || " "}</span>

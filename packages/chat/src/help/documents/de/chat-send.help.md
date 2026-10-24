@@ -2,7 +2,7 @@
 id: chat-send
 title: Nachricht senden
 icon: ti ti-send
-description: Öffne einen Chat, sende eine Nachricht, teile Cloud-Elemente und sende eine nicht gesendete Nachricht erneut oder verwirf sie.
+description: Öffne einen Chat, sende eine Nachricht, hänge Dateien an, teile Cloud-Elemente und sende eine nicht gesendete Nachricht erneut oder verwirf sie.
 order: 110
 ---
 
@@ -43,6 +43,22 @@ Du kannst in einem Chat, in dem du Mitglied bist, mit Zugriff **Schreiben** oder
 - Wenn du Chat mit noch nicht gesendeten Nachrichten verlässt oder neu lädst, fragt dein Browser zuerst nach, weil diese Nachrichten beim Verlassen verloren gehen.
 :::
 
+## Bilder und Dokumente anhängen {icon="paperclip"}
+
+:::steps
+1. Wähle **Dateien anhängen** neben dem Eingabefeld, oder lege Dateien auf dem Gespräch ab. Du kannst auch ein Bild einfügen.
+2. Wähle Dateien von diesem Gerät oder aus einer App wie Dateien. Jede Datei steht über dem Eingabefeld, während sie hochlädt.
+3. Schreib bei Bedarf ein paar Worte dazu und sende die Nachricht.
+:::
+
+:::reference
+- Eine Nachricht nimmt bis zu 10 Dateien mit je höchstens 10 MiB.
+- Konnte eine Datei nicht hochgeladen werden, wähle bei ihr **Erneut versuchen** oder entferne sie. Die Nachricht wartet, bis alle Dateien hochgeladen sind.
+- Bilder erscheinen in der Nachricht; wähle eines, um es groß zu sehen. Dokumente erscheinen mit Art und Größe; wähle eines, um es herunterzuladen.
+- Für eine Kopie wähle **…** an der Nachricht und speichere die Dateien in einer App wie Dateien.
+- Wer die Nachricht lesen kann, kann auch ihre Dateien öffnen. Metadaten von Bildern wie der Ort werden beim Hochladen entfernt.
+:::
+
 ## Cloud-Element teilen {icon="share"}
 
 :::steps
@@ -61,7 +77,7 @@ Du kannst in einem Chat, in dem du Mitglied bist, mit Zugriff **Schreiben** oder
 
 :::steps
 1. Wähle **Chat-Info** im Kopf des Chats.
-2. Schau unter **Geteilt**. Dort stehen Links und Cloud-Elemente, die neuesten zuerst.
+2. Schau unter **Geteilt**. Dort stehen Bilder, Dokumente, Links und Cloud-Elemente, die neuesten zuerst. **Bilder** zeigt sie als Raster.
 3. Wähle eine Art, zum Beispiel **Links** oder **Cloud-Elemente**, oder einen Thread, um die Liste einzugrenzen.
 4. Wähle einen Eintrag, um zu seiner Nachricht zu springen.
 :::

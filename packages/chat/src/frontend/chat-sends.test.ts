@@ -324,3 +324,29 @@ test("send API passes the gateway deadline signal and rejects when it aborts", a
     AbortSignal.timeout = originalTimeout;
   }
 });
+
+test("a send carries its uploaded files from the first frame and posts only their IDs", async () => {
+  const posted: unknown[] = [];
+  const box = createChatSends({
+    post: async (_conversationId, input) => {
+      posted.push(input);
+      return message;
+    },
+    newClientId: () => "client-1",
+  });
+  const photo = {
+    id: "Ph0t01",
+    name: "lager.jpg",
+    mimeType: "image/jpeg",
+    size: 2048,
+    kind: "image" as const,
+    width: 800,
+    height: 600,
+    href: "/api/chat/conversations/abcdef/attachments/Ph0t01",
+  };
+  const entry = box.send("abcdef", "", { attachments: [photo] });
+  expect(entry.attachments).toEqual([photo]);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(posted).toEqual([{ clientId: "client-1", body: "", attachments: ["Ph0t01"] }]);
+});

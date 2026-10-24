@@ -28,8 +28,10 @@ import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onC
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import {
+  type AttachmentView,
   type ConversationPageSchema,
   type ConversationSchema,
+  MAX_MESSAGE_ATTACHMENTS,
   MAX_MESSAGE_REFS,
   MESSAGE_MAX_CODE_POINTS,
   MessageBodySchema,
@@ -55,7 +57,7 @@ import { ThreadMenu, ThreadPicker } from "./ChatThreads";
 import ChatThreadsPage from "./ChatThreadsPage";
 import { createChannelApi } from "./channel-api";
 import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
-import { createChatSends, createChatSendsApi } from "./chat-sends";
+import { createAttachmentUpload, createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
 import DiscoverChannels from "./DiscoverChannels";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
@@ -494,7 +496,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         known.at === item.at &&
         known.seq === item.seq &&
         known.origin?.label === item.origin?.label &&
-        known.quote?.text === item.quote?.text
+        known.quote?.text === item.quote?.text &&
+        known.attachments?.map((attachment) => attachment.id).join() === item.attachments?.map((attachment) => attachment.id).join()
         ? known
         : item;
     };
@@ -506,6 +509,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       return reuse({
         thread: message.thread,
         refs: message.refs,
+        attachments: message.attachments,
         quote: quoteOf(current.id, message),
         origin: mixed && message.kind === "text" ? originOf(current.id, messageThread(message)) : undefined,
         key: sendKeys.get(message.id) ?? message.id,
@@ -534,6 +538,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             kind: "text",
             thread: send.thread === "general" ? null : send.thread,
             refs: send.refs,
+            attachments: send.attachments,
             origin: mixed ? originOf(current.id, send.thread) : undefined,
             quote: send.replyTo ? { author: send.replyTo.author, text: send.replyTo.text } : undefined,
             authorId: props.viewerId,
@@ -1442,15 +1447,22 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [reply, setReply] = createSignal<ChatFeedItem | null>(null);
   const replies = new Map<string, ChatFeedItem | null>();
   // A message that only shares Cloud elements has no text.
-  const send = async (text: string, refs: readonly CloudResourceRef[] = []): Promise<boolean> => {
+  const uploadAttachment = createAttachmentUpload();
+  const send = async (
+    text: string,
+    refs: readonly CloudResourceRef[] = [],
+    attachments: readonly AttachmentView[] = [],
+  ): Promise<boolean> => {
     const current = openChat();
     const id = draftId(route());
-    const body = refs.length > 0 && !text.trim() ? "" : text;
+    const shares = refs.length + attachments.length;
+    const body = shares > 0 && !text.trim() ? "" : text;
     if (
       !current ||
       !outbox ||
       refs.length > MAX_MESSAGE_REFS ||
-      (body === "" ? refs.length === 0 : !MessageBodySchema.safeParse(body).success) ||
+      attachments.length > MAX_MESSAGE_ATTACHMENTS ||
+      (body === "" ? shares === 0 : !MessageBodySchema.safeParse(body).success) ||
       draftStorageFailed() ||
       (id !== null && draftConflicts()[id] !== undefined) ||
       pendingOpen !== 0
@@ -1465,6 +1477,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       outbox.send(current.id, body, {
         thread,
         refs,
+        attachments,
         replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
       });
       setReply(null);
@@ -2181,6 +2194,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         draft={draft()}
                         onDraftChange={changeDraft}
                         onSend={send}
+                        onUpload={(file, signal) =>
+                          uploadAttachment(
+                            current().id,
+                            openChat()?.view && !["all", "general"].includes(openChat()!.view) ? openChat()!.view : null,
+                            file,
+                            signal,
+                          )
+                        }
                         cards={cards()}
                         onPickResource={pickResource}
                         onBack={threaded() ? backToThreads : backToList}
