@@ -316,21 +316,22 @@
 .chat-threads__new {
   color: var(--k2b-action);
 }
-/* A phone names the open thread after the chat's title; a wider window picks it beside the title. */
-.chat-conversation__thread-name {
+/* A phone names the open thread as the title, with the chat and its members below; a wider window picks the thread
+   beside the chat's title. */
+.chat-conversation__phone-subtitle {
   display: none;
-  flex: none;
-  margin-inline-start: 0.375rem;
-  color: var(--k2b-text-muted);
-  font-size: 0.875rem;
-  white-space: nowrap;
 }
 @media (max-width: 47.999rem) {
-  .chat-conversation__thread-name {
-    display: inline;
-  }
-  .chat-conversation__picker {
+  .chat-conversation__picker,
+  .chat-conversation[data-wide-title] .chat-conversation__header > .k2b-page-title,
+  .chat-conversation[data-wide-title] .chat-conversation__wide-subtitle {
     display: none;
+  }
+  .chat-conversation[data-wide-title] .chat-conversation__wide-title {
+    display: flex;
+  }
+  .chat-conversation[data-wide-title] .chat-conversation__phone-subtitle {
+    display: block;
   }
 }
 /* The phone's page between the chats and one thread. */
@@ -396,8 +397,7 @@
   .chat-list__preview[data-collapsed-only] {
     display: block;
   }
-  .chat-conversation[data-wide-title] .chat-conversation__header > .k2b-page-title,
-  .chat-conversation[data-wide-title] .chat-conversation__thread-name {
+  .chat-conversation[data-wide-title] .chat-conversation__header > .k2b-page-title {
     display: none;
   }
   .chat-conversation[data-wide-title] .chat-conversation__wide-title {
@@ -561,7 +561,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chat-conversation__wide-subtitle {
+.chat-conversation__wide-subtitle,
+.chat-conversation__phone-subtitle {
   margin: 0;
   overflow: hidden;
   color: var(--k2b-text-muted);

@@ -215,6 +215,9 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             <div class="chat-conversation__wide-title">
               <h1 class="chat-conversation__wide-name">{wide().title}</h1>
               <p class="chat-conversation__wide-subtitle">{wide().subtitle}</p>
+              <p class="chat-conversation__phone-subtitle">
+                {props.title} · {props.subtitle ?? t().members({ count: props.memberCount })}
+              </p>
             </div>
           )}
         </Show>

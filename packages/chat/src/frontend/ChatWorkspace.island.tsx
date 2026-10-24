@@ -1270,24 +1270,21 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         }
                         chatId={current().id}
                         title={current().title}
-                        // A wider window picks the thread beside the title; a phone names it there and goes back to the
-                        // chat's thread page for another one. CSS decides, so server and browser render the same head.
+                        // A wider window picks the thread beside the title; a phone and a window with the thread column
+                        // name the thread as the title instead. CSS decides, so server and browser render the same head.
                         titleExtra={
                           threaded() ? (
-                            <>
-                              <span class="chat-conversation__thread-name">· {viewTitle()}</span>
-                              <span class="chat-conversation__picker">
-                                <ThreadPicker
-                                  chatId={current().id}
-                                  threads={openChat()?.threads ?? null}
-                                  unread={current().unread}
-                                  view={openChat()?.view ?? "all"}
-                                  canAdmin={current().permission === "admin"}
-                                  onSelect={(view) => void openView(current().id, view)}
-                                  onCreate={() => void createThread()}
-                                />
-                              </span>
-                            </>
+                            <span class="chat-conversation__picker">
+                              <ThreadPicker
+                                chatId={current().id}
+                                threads={openChat()?.threads ?? null}
+                                unread={current().unread}
+                                view={openChat()?.view ?? "all"}
+                                canAdmin={current().permission === "admin"}
+                                onSelect={(view) => void openView(current().id, view)}
+                                onCreate={() => void createThread()}
+                              />
+                            </span>
                           ) : undefined
                         }
                         wideTitle={

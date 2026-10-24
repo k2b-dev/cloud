@@ -396,7 +396,14 @@ describe("Chat threads on a phone", () => {
       await threads.getByText("Old network", { exact: true }).waitFor();
       await threads.getByText("Problems", { exact: true }).click();
       await page.waitForURL(`**/t/${problems}`);
-      await page.locator(".chat-conversation__thread-name", { hasText: "Problems" }).waitFor();
+      // The thread is the title, the chat and its members stand below it, and neither is cut off.
+      const head = page.locator(".chat-conversation__wide-title");
+      await head.locator(".chat-conversation__wide-name", { hasText: "Problems" }).waitFor();
+      expect(await head.locator(".chat-conversation__phone-subtitle").innerText()).toBe("IT · 3 members");
+      expect(await page.locator(".chat-conversation__header > .k2b-page-title").isVisible()).toBe(false);
+      expect(await head.locator("h1, p:visible").evaluateAll((lines) => lines.every((line) => line.scrollWidth <= line.clientWidth))).toBe(
+        true,
+      );
       await page.getByRole("link", { name: "Back to the threads", exact: true }).click();
       await page.waitForURL(`**/c/${chat}/threads`);
       await threads.getByText("Problems", { exact: true }).waitFor();
