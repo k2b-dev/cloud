@@ -1,7 +1,7 @@
 import { createEffect, onCleanup } from "solid-js";
 
 const selector = "[data-scroll-fade-mode]";
-const active = new WeakMap<HTMLElement, { users: number; stop: () => void }>();
+const active = new WeakMap<HTMLElement, { users: number; measure: () => void; stop: () => void }>();
 
 /** Self-contained because the sidebar inline script embeds its source. */
 export function scrollFadeEdges(body: HTMLElement): "top" | "bottom" | "both" | undefined {
@@ -27,32 +27,29 @@ function observeScrollFade(body: HTMLElement) {
       } else if (body.hasAttribute("data-scroll-fade")) body.removeAttribute("data-scroll-fade");
     };
     // Measuring forces layout. Scrolling (the browser sends one scroll event per frame) and changes to the scrollport
-    // itself measure at once, and so does the first change of its content in a frame, so a reader such as an editor's
-    // scroll margins sees the current edges. Later content changes in that frame are measured once when it ends: a list
-    // that updates many rows at once, such as marking every chat read, otherwise lays the page out again for each row.
+    // itself measure at once; changes of its content are measured once per frame. A list that updates many rows at
+    // once, such as marking every chat read, otherwise lays the page out again for each row, and a measurement in the
+    // middle of a large change can delay the next frame enough to count as a layout shift. A reader that needs the
+    // current edges before the frame ends calls `measureScrollFade`.
     let frame = 0;
-    let stale = false;
-    const update = () => {
-      if (frame) {
-        stale = true;
-        return;
-      }
+    const measure = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
       apply();
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        if (stale) apply();
-        stale = false;
-      });
+    };
+    const update = () => {
+      if (!frame)
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          apply();
+        });
     };
     const resize = new ResizeObserver(update);
     const observe = () => {
       resize.disconnect();
       resize.observe(body);
       for (const child of Array.from(body.children)) resize.observe(child);
-      if (frame) cancelAnimationFrame(frame);
-      frame = 0;
-      stale = false;
-      apply();
+      measure();
     };
     const mutations = new MutationObserver((records) => {
       if (records.some((record) => record.type === "childList" && record.target === body)) observe();
@@ -70,6 +67,7 @@ function observeScrollFade(body: HTMLElement) {
     observe();
     entry = {
       users: 0,
+      measure,
       stop: () => {
         if (frame) cancelAnimationFrame(frame);
         resize.disconnect();
@@ -87,6 +85,14 @@ function observeScrollFade(body: HTMLElement) {
       active.delete(body);
     }
   };
+}
+
+/**
+ * Measures an observed scrollport's fades now instead of at the end of the frame. Call it before reading the fades in
+ * the same frame as a change of the scrollport's content, as an editor does when it keeps its cursor clear of them.
+ */
+export function measureScrollFade(element: HTMLElement) {
+  active.get(element)?.measure();
 }
 
 export function createScrollFade(element: () => HTMLElement | undefined, enabled: () => boolean) {
