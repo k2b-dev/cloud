@@ -1200,8 +1200,11 @@ describe("ChatWorkspace start chats and members", () => {
             const list = page.locator(name === "phone" ? ".chat-list-page" : ".k2b-app-workspace__sidebar");
             await list.locator(`a[href="/app/chat/c/${chat}"]`).click();
             await page.waitForURL(`**/app/chat/c/${chat}`);
-            await settled(page);
+            // The address changes before the page swap's view transition starts; once the chat's head stands, that
+            // transition is running and settles with the rest.
             const header = page.locator(".chat-conversation__header");
+            await header.waitFor();
+            await settled(page);
             const height = (await header.boundingBox())!.height;
             const entries = [{ entry: header.getByRole("button", { name: t.addPeople, exact: true }), title: t.addPeople }];
             if (name === "desktop") entries.push({ entry: newChat, title: t.newChat });
