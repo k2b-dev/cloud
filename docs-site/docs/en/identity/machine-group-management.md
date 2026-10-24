@@ -5,7 +5,7 @@ description: Delegate local group membership changes without granting account ad
 section: Identity and access
 order: 655
 tags: [identity, service-accounts, authorization]
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 
 # Machine group management
@@ -29,7 +29,9 @@ membership in a group that manages another group does not confer machine
 management authority for that other group.
 
 Remove the account from **Managers** to revoke management. Each membership change
-locks and checks the current grant and active account in its database transaction.
+locks and checks the current grant, active account, and API key or OAuth client in
+its database transaction. It checks credential expiration when the change is
+admitted after those locks.
 Revocation prevents the next change after it completes. Disabling the account or
 revoking its key also stops further requests. A membership change already committed
 is retained; revocation does not undo prior changes.

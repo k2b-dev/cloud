@@ -5,7 +5,7 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-10-22
+updated: 2026-10-24
 ---
 
 # Resource authorization
@@ -118,10 +118,11 @@ its person's access subject.
 Full user accounts that manage the group, and installation administrators,
 add or remove a named machine account through Accounts, its API, or
 `cld accounts groups members add <group> --service-account <id-or-name> --yes`
-(or the corresponding `remove` command). Group management remains a user-backed directory operation: membership alone does
-not authorize a machine to edit groups, search the directory, or acquire an
-installation role. A resource grant or credential scope cannot grant an
-installation role either. Applications still enforce scopes and resource
+(or the corresponding `remove` command). Membership alone does not authorize a
+machine to edit groups, search the directory, or acquire an installation role.
+Changing membership as a machine requires a separate direct
+[local group management grant](./machine-group-management.md). A resource grant or
+credential scope cannot grant an installation role either. Applications still enforce scopes and resource
 bindings when a group grant matches.
 
 This membership exists only in Cloud. It creates no Unix identity or FreeIPA
@@ -245,7 +246,11 @@ return respond(c, result);
 ```
 
 Use `accessSubject` to resolve grants. Use `actor` for audit context and
-credential limits.
+credential limits. For service-account requests, `actor.credentialId` identifies
+an API key; `actor.oauthClientId` identifies the verified OAuth client when the
+request uses OAuth. `actor.credentialExpiresAt` carries the presented credential's
+expiration. Services that serialize credential checks with a write use the
+corresponding live credential or client row within that transaction.
 
 The service should check `write` before changing the item.
 

@@ -20,16 +20,20 @@ export async function mutateMachineGroupMember(params: {
   const metadata = {
     actorServiceAccountId: actor.serviceAccount.id,
     credentialId: actor.credentialId ?? null,
+    oauthClientId: actor.oauthClientId ?? null,
     userId: params.userId ?? null,
     groupId: params.groupId ?? null,
     serviceAccountId: params.serviceAccountId ?? null,
   };
+  const unexpired = (expiration: string | Date | null | undefined) =>
+    expiration == null || (typeof expiration === "string" ? Date.parse(expiration) : expiration.getTime()) > Date.now();
   const denied = () => fail(err.forbidden("A current management grant for this group and write scope are required"));
   if (
     actor.delegatedUser ||
     !["standalone", "agent"].includes(actor.serviceAccount.kind) ||
     !actor.scopes.some((scope) => scope === "write" || scope === "admin") ||
-    (actor.credentialExpiresAt && Date.parse(actor.credentialExpiresAt) <= Date.now())
+    !unexpired(actor.credentialExpiresAt) ||
+    (!actor.credentialId && (!actor.oauthClientId || !actor.credentialExpiresAt))
   )
     return audit.recordResult({ action, target, metadata, requestId: params.requestId, result: denied() });
 
@@ -38,12 +42,17 @@ export async function mutateMachineGroupMember(params: {
     const [account] = await db`SELECT id FROM auth.service_accounts
       WHERE id = ${actor.serviceAccount.id}::uuid AND status = 'active' AND kind IN ('standalone','agent') FOR SHARE`;
     let allowed = Boolean(account);
+    let storedExpiration: Date | null = null;
     if (allowed && actor.credentialId) {
-      const [credential] = await db`SELECT id FROM auth.service_account_credentials
+      const [credential] = await db<{ expires_at: Date | null }[]>`SELECT expires_at FROM auth.service_account_credentials
         WHERE id = ${actor.credentialId}::uuid AND service_account_id = ${actor.serviceAccount.id}::uuid
-          AND status = 'active' AND (expires_at IS NULL OR expires_at > now())
+          AND status = 'active' AND (expires_at IS NULL OR expires_at > clock_timestamp())
           AND scopes && ARRAY['write','admin']::text[] FOR SHARE`;
       allowed = Boolean(credential);
+      storedExpiration = credential?.expires_at ?? null;
+    } else if (allowed) {
+      const [client] = await db`SELECT id FROM oauth.clients WHERE client_id=${actor.oauthClientId ?? null} FOR SHARE`;
+      allowed = Boolean(client);
     }
     const [group] = allowed ? await db`SELECT id FROM auth.groups WHERE id=${params.id}::uuid AND provider='local' FOR SHARE` : [];
     const [grant] = group
@@ -51,7 +60,8 @@ export async function mutateMachineGroupMember(params: {
         WHERE group_id=${params.id}::uuid AND service_account_id=${actor.serviceAccount.id}::uuid FOR SHARE`
       : [];
     let result: Result<void> = denied();
-    if (grant) {
+    // The authorization locks define admission; time must be current after any lock wait.
+    if (grant && unexpired(actor.credentialExpiresAt) && unexpired(storedExpiration)) {
       if ([params.userId, params.groupId, params.serviceAccountId].filter(Boolean).length !== 1) {
         result = fail(err.badInput("Choose exactly one member"));
       } else {
