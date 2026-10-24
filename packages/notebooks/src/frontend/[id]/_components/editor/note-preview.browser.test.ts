@@ -141,7 +141,8 @@ beforeAll(async () => {
       }
       const { text: note, snapshot: served } =
         notes[(["many", "long", "headings", "chart", "print"] as const).find((name) => url.searchParams.has(name)) ?? "markdown"];
-      servedSnapshot = served;
+      // Only the page itself names the note; other requests, such as the icon, fall through to the default one.
+      if (url.pathname === "/") servedSnapshot = served;
       const mode = url.searchParams.get("mode") === "source" ? "source" : "rich";
       const readOnly = url.searchParams.has("readonly");
       const historyIncomplete = url.searchParams.has("historyIncomplete");
