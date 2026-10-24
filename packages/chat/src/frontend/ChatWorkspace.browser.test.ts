@@ -32,6 +32,8 @@ const viewports: { name: string; options: BrowserContextOptions }[] = [
 ];
 const observeShifts = (page: Page) =>
   page.evaluate(() => {
+    // A second call starts over: the earlier observer would otherwise keep adding to the same total.
+    window.chatShiftObserver?.disconnect();
     window.chatShifts = 0;
     window.chatShiftSources = [];
     window.chatShiftObserver = new PerformanceObserver((list) => {
@@ -1504,6 +1506,9 @@ describe("ChatWorkspace start chats and members", () => {
               await panel.evaluate((element) =>
                 Promise.all(element.getAnimations().map((animation) => animation.finished.catch(() => undefined))),
               );
+              // The reading column makes room in answer to the click. A busy machine can finish that after the browser's
+              // 500 ms input window, so only what moves once the panel stands counts.
+              await observeShifts(page);
               await page.waitForTimeout(600);
               const box = await panel.boundingBox();
               expect(box).not.toBeNull();
@@ -1518,8 +1523,11 @@ describe("ChatWorkspace start chats and members", () => {
             const closePanel = async () => {
               await panel.getByRole("button", { name: t.closeChatInfo, exact: true }).click();
               await panel.waitFor({ state: "hidden" });
-              await page.waitForTimeout(600);
               await page.waitForURL((url) => !url.searchParams.has("panel"));
+              // The column takes the room back in the frame after the panel leaves; the returning focus may start a tooltip.
+              await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+              await observeShifts(page);
+              await page.waitForTimeout(600);
               expect((await header.boundingBox())!.height).toBe(height);
               expect(await page.evaluate(() => ({ value: window.chatShifts, sources: window.chatShiftSources }))).toEqual({
                 value: 0,

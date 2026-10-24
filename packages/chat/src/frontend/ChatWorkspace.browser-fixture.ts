@@ -208,6 +208,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   // Changes the owning app reports for a Space or notebook chat, as GET …/events answers them.
   const itemEvents = new Map<string, z.infer<typeof ItemEventSchema>[]>();
   let failingItemEvents = 0;
+  /** Every read of a chat's shared list, in order. */
+  const sharedReads: string[] = [];
   let failingSystems = 0;
   let systemThreadPageSize = 100;
   const systemRequests: { path: string; query: Record<string, string> }[] = [];
@@ -1446,6 +1448,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
           return open ? Response.json(open) : Response.json({ code: "NOT_FOUND", message: "Thread not found." }, { status: 404 });
         }
         if (part === "shared" && request.method === "GET") {
+          sharedReads.push(chat.conversation.id);
           if (failingShared > 0) {
             failingShared -= 1;
             return Response.json({ message: "Unavailable" }, { status: 503 });
@@ -1682,6 +1685,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     /** A message from someone else that shares elements, delivered live. */
     receiveShared: (chat: string, author: Person, body: string, refs: CloudResourceRef[]) =>
       publish(append(chat, author, body, now(), "text", { refs })),
+    sharedReads,
     /** The next shared lists fail. */
     failShared: (times = 1) => {
       failingShared = times;
@@ -1704,6 +1708,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     reset: () => {
       itemEvents.clear();
       failingItemEvents = 0;
+      sharedReads.length = 0;
       collapsed = [];
       allowAuthenticated = true;
       chats.clear();
