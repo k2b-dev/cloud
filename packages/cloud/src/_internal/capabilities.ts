@@ -11,6 +11,7 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
   CAPABILITY_PROTOCOL_VERSION,
+  CAPABILITY_RESOURCE_COLORS,
   type CapabilityActionDefinition,
   type CapabilityActionManifest,
   CapabilityActionPolicySchema,
@@ -80,7 +81,13 @@ const DECLARATION_FIELDS = {
   fileProvider: true,
 } satisfies DefinedFields<CapabilityDefinitions>;
 const FILE_PROVIDER_FIELDS = { list: true, read: true, save: true } satisfies DefinedFields<CapabilityFileProviderDeclaration>;
-const TYPE_FIELDS = { title: true, description: true, icon: true, reader: true } satisfies DefinedFields<CapabilityResourceTypeDefinition>;
+const TYPE_FIELDS = {
+  title: true,
+  description: true,
+  icon: true,
+  color: true,
+  reader: true,
+} satisfies DefinedFields<CapabilityResourceTypeDefinition>;
 const QUERY_FIELDS = {
   title: true,
   description: true,
@@ -648,6 +655,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
         title: definition.title.trim(),
         description: definition.description.trim(),
         ...(definition.icon ? { icon: definition.icon } : {}),
+        ...(definition.color !== undefined ? { color: z.enum(CAPABILITY_RESOURCE_COLORS).parse(definition.color) } : {}),
         ...(definition.reader !== undefined ? { reader: CapabilityLocalIdSchema.parse(definition.reader) } : {}),
       };
     });

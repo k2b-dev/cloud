@@ -92,6 +92,23 @@ describe("capability v1 compilation", () => {
     expect(() => compileCapabilities("example_app", example())).toThrow();
   });
 
+  test("a type keeps its icon colour from the shared palette and rejects any other", () => {
+    const coloured = example();
+    const compiled = compileCapabilities("example", {
+      ...coloured,
+      types: { item: { ...coloured.types.item, color: "emerald" } },
+    });
+    expect(compiled.manifest.types[0]?.color).toBe("emerald");
+    expect(compileCapabilities("example", example()).manifest.types[0]).not.toHaveProperty("color");
+    expect(() =>
+      compileCapabilities("example", {
+        ...coloured,
+        // @ts-expect-error a colour outside the palette
+        types: { item: { ...coloured.types.item, color: "#ff0000" } },
+      }),
+    ).toThrow();
+  });
+
   test("builds deterministic namespaced manifests and schemas", () => {
     const first = compileCapabilities("example", example());
     const second = compileCapabilities("example", example());

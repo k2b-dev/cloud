@@ -1072,7 +1072,7 @@ export const notebooksCapabilities = defineCapabilities({
       icon: "ti ti-notebook",
       reader: "notebook.read",
     },
-    note: { title: "Note", description: "A Markdown note in an accessible notebook.", icon: "ti ti-file-text", reader: "note.read" },
+    note: { title: "Note", description: "A Markdown note in an accessible notebook.", icon: "ti ti-file-text", color: "violet", reader: "note.read" },
     comment: {
       title: "Note comment",
       description: "Durable discussion context attached to one accessible note.",

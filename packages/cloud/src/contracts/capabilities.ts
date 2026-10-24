@@ -808,10 +808,16 @@ export type CapabilityExecutionContext = {
   signal: AbortSignal;
 };
 
+/** Colours a consumer may give a resource type's icon, the same palette as `@k2b/ui` cards. */
+export const CAPABILITY_RESOURCE_COLORS = ["blue", "emerald", "violet", "orange", "red", "amber", "zinc", "cyan", "rose"] as const;
+export type CapabilityResourceColor = (typeof CAPABILITY_RESOURCE_COLORS)[number];
+
 export type CapabilityResourceTypeDefinition = {
   title: string;
   description: string;
   icon?: string;
+  /** One colour per kind of resource, so a card or list shows at a glance what it stands for. */
+  color?: CapabilityResourceColor;
   reader?: string;
 };
 
@@ -978,6 +984,7 @@ export const CapabilityResourceTypeManifestSchema = z
     title: z.string().min(1).max(120),
     description: z.string().min(1).max(500),
     icon: z.string().min(1).max(120).optional(),
+    color: z.enum(CAPABILITY_RESOURCE_COLORS).optional(),
     reader: CapabilityLocalIdSchema.optional(),
   })
   .strict();

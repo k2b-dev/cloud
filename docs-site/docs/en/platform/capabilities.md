@@ -468,6 +468,12 @@ types: {
 }
 ```
 
+A Type may also name a `color` for its icon from the palette `blue`, `emerald`,
+`violet`, `orange`, `red`, `amber`, `zinc`, `cyan` and `rose`. Consumers such as
+Chat's element cards show the icon in a chip of that colour, so a card says at a
+glance what it stands for. Choose one colour per kind of resource and keep it
+stable; omit it and consumers show a neutral chip.
+
 `reader` is the Query's local ID inside the same app. Its presence tells a
 consumer that a `CloudResourceRef` of this Type can be read programmatically.
 The referenced Query is the only read implementation; do not publish a second
