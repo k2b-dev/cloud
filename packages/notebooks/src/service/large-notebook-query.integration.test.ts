@@ -4,7 +4,7 @@ import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { parseNotebookQueryBlocks } from "../lib/query-blocks";
 import { migrate } from "../migrate";
 import { loadBookNote } from "./book";
-import { type InsertedFixtureNotebook, insertFixtureNotebook } from "./large-notebook.test-fixture";
+import { type InsertedFixtureNotebook, insertFixtureNotebook, removeFixtureNotebooks } from "./large-notebook.test-fixture";
 import { resolveNoteQuery } from "./note-query";
 
 const postgresTest = testFor("database");
@@ -18,8 +18,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  await small?.remove();
-  await large?.remove();
+  await removeFixtureNotebooks();
 });
 
 const CHILDREN_QUERY = ":::query\nsource: notes\nscope: children\nsort:\n  field: $title\n  direction: asc\n:::";
