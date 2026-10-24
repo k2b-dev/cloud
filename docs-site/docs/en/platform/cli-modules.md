@@ -925,13 +925,16 @@ plugin then goes to a content-addressed store,
 `$XDG_CONFIG_HOME/cloud/cld/plugins/store/<digest>/`, and the profile locks
 the module's app, version, and digest in the `cld` config. Profiles for
 different Clouds can use different versions of the same module; identical
-versions are stored once. A version is deleted only when no profile lock or
-package record uses it.
+versions are stored once. Updates and removals retain published bundles because
+another `CLD_CONFIG` file may still lock them. This also applies when a package
+plugin is replaced or removed. Old versions therefore continue to use disk
+space; only abandoned download directories are cleaned automatically.
 Without `XDG_CONFIG_HOME`, the directory is `~/.config/cloud/cld/plugins/`.
 
 `cld profile rm <name>` removes a profile together with its lock. It signs the
-profile out first, revoking an OAuth login like `cld logout`, then deletes the
-versions no remaining profile lock or package record uses and rewrites the skill. It asks for
+profile out first, revoking an OAuth login like `cld logout`, then rewrites the
+skill without that profile. Its stored bundles remain available to other
+configurations. It asks for
 confirmation, or needs `--yes` without a terminal, and refuses the current
 profile while other profiles exist; `cld profile use <other>` selects another
 one first.
@@ -978,10 +981,9 @@ and `CLD_CONFIG`. Installing the same module again replaces its record and
 removes an old-format directory of that ID. Skill targets sync automatically
 after package install and removal too.
 
-Removing or replacing a package deletes only its own old bundle, and only if
-no profile lock in the current config or remaining package record uses it.
-Other unused bundles are removed at the next served plugin change or profile
-removal.
+Removing or replacing a package updates its global record and skill references.
+Its old bundle stays in the shared store because a profile in another config
+may still use exactly those bytes.
 
 Old packages with `cld.apiVersion` and `cld.entry` are refused. Their authors
 must re-pack with `cli-pack.ts` and publish the new package. Existing
