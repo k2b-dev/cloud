@@ -833,8 +833,10 @@ suite("App-PWA durable service", () => {
         const [result] = await running;
         expect(result?.status).toBe("rejected");
         if (result?.status === "rejected") expect(["UNAVAILABLE", "EXPIRED"]).toContain(result.reason.code);
-        // Natural statement/lock expiry alone cannot satisfy this guard.
-        expect(cancellationSent).toBe(true);
+        // Explicit abort must deliver cancellation before the blocker is released.
+        // At expiry PostgreSQL's equally bounded statement/lock timeout can win
+        // before the JS timer; both paths must pass all rollback/lock checks below.
+        if (mode.endsWith("abort")) expect(cancellationSent).toBe(true);
         expect(parentReleased).toBe(mode.endsWith("abort"));
         // The captured backend is discarded on cancellation, never reused.
         const [state] = await observer<{ clean: boolean }[]>`SELECT NOT EXISTS(

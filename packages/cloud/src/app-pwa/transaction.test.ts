@@ -80,6 +80,34 @@ test("a cancelled callback releases its lease and cannot execute late or pre-cre
   expect(f.executed()).toBe(1);
 });
 
+test("closing an unstarted native query observes its rejection without executing it", async () => {
+  const f = fixture();
+  const native = Promise.withResolvers<unknown[]>();
+  const gate = Promise.withResolvers<void>();
+  const entered = Promise.withResolvers<void>();
+  let executions = 0;
+  const lazy = Object.assign(native.promise, {
+    cancel: () => native.reject(new Error("Connection closed")),
+    then: (...args: Parameters<typeof native.promise.then>) => {
+      executions++;
+      return Promise.prototype.then.apply(native.promise, args);
+    },
+  });
+  const connection = new Proxy(f.tx, { apply: () => lazy });
+  const controller = new AbortController();
+  const running = withAppPwaTransactionLease(connection, controller.signal, async (tx) => {
+    tx`UPDATE domain SET saved=true`;
+    entered.resolve();
+    await gate.promise;
+  });
+  await entered.promise;
+  controller.abort();
+  await expect(running).rejects.toMatchObject({ code: "UNAVAILABLE" });
+  gate.resolve();
+  await Promise.resolve();
+  expect(executions).toBe(0);
+});
+
 test("a fulfilled callback also closes captured SQL and forbids connection escape", async () => {
   const f = fixture();
   let captured: TransactionSQL | undefined;
