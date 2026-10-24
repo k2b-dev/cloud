@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 // Whether a row keeps its height, whether hover moves anything, and what a link really is are results of layout,
 // paint, and the DOM in a real engine. The rows run inside VirtualFeed, as in a conversation.
@@ -116,6 +116,7 @@ const entryOf = (message) => message && { author: message.author ?? "system", at
 const actions = [
   { id: "reply", label: options.locale === "de" ? "Antworten" : "Reply", icon: "ti ti-arrow-back-up", onSelect: () => (window.replied = (window.replied ?? 0) + 1) },
   { id: "react", label: options.locale === "de" ? "Reagieren" : "React", icon: "ti ti-mood-smile", onSelect: () => {} },
+  { id: "unread", label: "Mark unread from here", icon: "ti ti-mail", description: "Starts the new messages here.", altClick: true, onSelect: () => (window.unread = (window.unread ?? 0) + 1) },
 ];
 const time = (message) => new Date(message.at).toISOString().slice(11, 16);
 const feed = () =>
@@ -295,13 +296,16 @@ const open = async (
       body: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#93c5fd"/><circle cx="${width / 2}" cy="${height / 2}" r="${Math.min(width, height) / 4}" fill="#1d4ed8"/></svg>`,
     });
   });
-  await page.setContent(
+  // A page with an address: WebKit keeps no history on about:blank, and a phone sheet runs its entry only after its
+  // history entry is gone.
+  const html =
     `<!doctype html><html lang="${options.locale ?? "en"}"><head><meta name="viewport" content="width=device-width">` +
-      `<style>${css}</style><style>${fonts}</style>` +
-      "<style>*,*::before,*::after{transition:none!important}</style></head>" +
-      `<body class="k2b-ui${options.theme === "dark" ? " k2b-dark" : ""}" style="margin:0;background:var(--k2b-surface)">` +
-      `<div id="app" style="display:flex;width:${width}px;height:1400px"></div></body></html>`,
-  );
+    `<style>${css}</style><style>${fonts}</style>` +
+    "<style>*,*::before,*::after{transition:none!important}</style></head>" +
+    `<body class="k2b-ui${options.theme === "dark" ? " k2b-dark" : ""}" style="margin:0;background:var(--k2b-surface)">` +
+    `<div id="app" style="display:flex;width:${width}px;height:1400px"></div></body></html>`;
+  await page.route(`${assets}page`, (route) => route.fulfill({ contentType: "text/html; charset=utf-8", body: html }));
+  await page.goto(`${assets}page`);
   // Fonts first: a font that arrives late changes every text's height, which is not the row's doing.
   await page.evaluate(async () => {
     await Promise.all(
@@ -367,10 +371,10 @@ const boxes = (page: Page) =>
   );
 
 const opacity = (page: Page, key: string) =>
-  rowOf(page, key).evaluate((row) => getComputedStyle(row.querySelector(".k2b-message-row__actions")!).opacity);
+  rowOf(page, key).evaluate((row) => getComputedStyle(row.querySelector(".k2b-message-row__menu-root")!).opacity);
 
 describe(`MessageRow in ${browserName}`, () => {
-  test("hover and focus show the actions without moving anything", async () => {
+  test('hover and focus show "…" beside the bubble without moving anything, and it opens the menu', async () => {
     const page = await open();
     try {
       const before = await boxes(page);
@@ -384,33 +388,124 @@ describe(`MessageRow in ${browserName}`, () => {
       await page.mouse.move(719, 1399);
       await rowOf(page, "m6").focus();
       expect(await opacity(page, "m6")).toBe("1");
-      await page.keyboard.press("Tab");
-      expect(await page.evaluate(() => document.activeElement?.closest(".k2b-message-row__actions") !== null)).toBe(true);
+      // Tab reaches the message's menu host first (Shift+F10 opens the menu there), then "…" inside the bubble.
+      for (let step = 0; step < 4; step++) {
+        await page.keyboard.press("Tab");
+        if (await page.evaluate(() => document.activeElement?.classList.contains("k2b-message-row__menu"))) break;
+      }
+      expect(await page.evaluate(() => document.activeElement?.closest('[data-key="m6"] .k2b-message-row__bubble') !== null)).toBe(true);
       expect(await opacity(page, "m6")).toBe("1");
       expect(await boxes(page)).toEqual(before);
 
+      // Below 48rem "…" opens the same entries as a sheet.
       await page.keyboard.press("Enter");
-      expect(await replied(page)).toBe(1);
+      await page.locator('dialog[open] [role="menuitem"]', { hasText: "Reply" }).click();
+      // A sheet runs its entry once it has left the history.
+      await page.waitForFunction(() => ((window as unknown as { replied?: number }).replied ?? 0) === 1);
     } finally {
       await page.close();
     }
   }, 30_000);
 
-  test("a tap where the hidden actions sit runs none of them; it focuses the message and shows them", async () => {
+  test('one reading column: rows sit in 760 px centered in a wide feed, "…" beside the bubble\'s inner side', async () => {
+    const page = await open({ width: 2000 });
+    try {
+      await settled(page);
+      const geometry = await page.evaluate(() => {
+        const feed = document.querySelector(".k2b-virtual-feed__viewport")!.getBoundingClientRect();
+        const item = document.querySelector<HTMLElement>('[data-key="m4"]')!.getBoundingClientRect();
+        return { feedLeft: feed.left, feedWidth: feed.width, itemLeft: item.left, itemWidth: item.width };
+      });
+      expect(geometry.itemWidth).toBe(760);
+      // Centered in the feed less its stable scrollbar gutter.
+      expect(Math.abs(geometry.itemLeft - geometry.feedLeft - (geometry.feedWidth - 760) / 2)).toBeLessThanOrEqual(8);
+
+      for (const key of ["m3", "m6"]) {
+        await rowOf(page, key).locator(".k2b-message-row__bubble").hover();
+        await settled(page);
+        const place = await rowOf(page, key).evaluate((row) => {
+          const bubble = row.querySelector(".k2b-message-row__bubble")!.getBoundingClientRect();
+          const menu = row.querySelector(".k2b-message-row__menu")!.getBoundingClientRect();
+          const own = row.querySelector(".k2b-message-row")!.hasAttribute("data-own");
+          return { own, gap: own ? bubble.left - menu.right : menu.left - bubble.right, top: menu.top - bubble.top, size: menu.width };
+        });
+        expect(place.gap).toBeCloseTo(4, 0);
+        expect(place.top).toBeCloseTo(4, 0);
+        expect(place.size).toBe(28);
+      }
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("right-click opens the message's menu; Alt+click runs the entry that asks for it, not on a link", async () => {
+    const page = await open();
+    try {
+      const bubble = rowOf(page, "m2").locator(".k2b-message-row__text");
+      await bubble.click({ button: "right" });
+      const menu = page.locator(".k2b-context-menu[role='menu']");
+      await menu.waitFor();
+      expect(await menu.locator("[role='menuitem']").allTextContents()).toEqual([
+        "Reply",
+        "React",
+        expect.stringContaining("Mark unread from here") as unknown as string,
+      ]);
+      expect(await menu.locator("[role='menuitem']").nth(2).textContent()).toContain("Starts the new messages here.");
+      await page.keyboard.press("Escape");
+      await settled(page);
+
+      const before = await boxes(page);
+      await bubble.click({ modifiers: ["Alt"] });
+      expect(await page.evaluate(() => (window as unknown as { unread?: number }).unread ?? 0)).toBe(1);
+      expect(await page.locator("[role='menu']:popover-open, .k2b-context-menu[role='menu']").count()).toBe(0);
+      await settled(page);
+      expect(await boxes(page)).toEqual(before);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test('a tap where the hidden "…" sits runs nothing and leaves it hidden; a long press opens the menu as a sheet', async () => {
     const page = await open({ width: 390, touch: true });
     try {
-      const reply = rowOf(page, "m4").getByRole("button", { name: "Reply" });
-      const box = (await reply.boundingBox())!;
-      const center = [box.x + box.width / 2, box.y + box.height / 2] as const;
-      expect(await opacity(page, "m4")).toBe("0");
+      await settled(page);
+      const trigger = rowOf(page, "m3").locator(".k2b-message-row__menu");
+      const box = (await trigger.boundingBox())!;
+      expect(await opacity(page, "m3")).toBe("0");
 
-      await page.touchscreen.tap(...center);
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+      await settled(page);
       expect(await replied(page)).toBe(0);
-      expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.key)).toBe("m4");
-      expect(await opacity(page, "m4")).toBe("1");
+      expect(await opacity(page, "m3")).toBe("0");
+      expect(await page.locator("dialog[open]").count()).toBe(0);
 
-      await page.touchscreen.tap(...center);
-      expect(await replied(page)).toBe(1);
+      // Playwright taps only as a whole; the held pointer's lifecycle runs as GestureMenu receives it.
+      const text = (await rowOf(page, "m3").locator(".k2b-message-row__text").boundingBox())!;
+      await page.evaluate(
+        async (point) => {
+          const target = document.elementFromPoint(point.x, point.y)!;
+          const init = {
+            pointerType: "touch",
+            isPrimary: true,
+            pointerId: 1,
+            bubbles: true,
+            cancelable: true,
+            clientX: point.x,
+            clientY: point.y,
+          };
+          target.dispatchEvent(new PointerEvent("pointerdown", init));
+          await new Promise((resolve) => setTimeout(resolve, 650));
+          target.dispatchEvent(new PointerEvent("pointerup", init));
+          target.dispatchEvent(new Event("touchend", { bubbles: true, cancelable: true }));
+        },
+        { x: text.x + 8, y: text.y + text.height / 2 },
+      );
+      const sheet = page.locator("dialog[open]");
+      await sheet.waitFor();
+      // The sheet has no keyboard, so it shows no shortcut.
+      expect(await sheet.locator(".k2b-kbd").evaluateAll((caps) => caps.filter((cap) => cap.checkVisibility()).length)).toBe(0);
+      await sheet.getByRole("menuitem", { name: /^Reply/ }).click();
+      await page.waitForFunction(() => ((window as unknown as { replied?: number }).replied ?? 0) === 1);
     } finally {
       await page.close();
     }
@@ -820,7 +915,7 @@ describe(`MessageRow in ${browserName}`, () => {
 
       await rowOf(page, "m11").focus();
       const order: string[] = [];
-      for (let step = 0; step < 7; step++) {
+      for (let step = 0; step < 6; step++) {
         await page.keyboard.press("Tab");
         order.push(
           await page.evaluate(() => {
@@ -829,14 +924,14 @@ describe(`MessageRow in ${browserName}`, () => {
           }),
         );
       }
+      // "…" belongs to the bubble, so it follows the quote and comes before the parts under the bubble.
       expect(order).toEqual([
         "k2b-message-row__quote",
+        "Message actions",
         "k2b-message-row__thread",
         "👍 4 reactions: Tobias, Mara, Robin, Minutes",
         "☕ 1 reaction: Robin",
         "Add reaction",
-        "Reply",
-        "React",
       ]);
 
       await rowOf(page, "m11").locator(".k2b-message-row__quote").focus();
@@ -1019,6 +1114,8 @@ describe(`MessageRow in ${browserName}`, () => {
 
       const list = rowOf(page, "r1").locator(".k2b-reaction-bar__scroll");
       await rowOf(page, "r1").focus();
+      // Tab passes "…" in the bubble first, then reaches the list.
+      await page.keyboard.press("Tab");
       await page.keyboard.press("Tab");
       expect(await list.evaluate((element) => element === document.activeElement)).toBe(true);
       // Arrow keys scroll the focused list; WebKit animates each step.

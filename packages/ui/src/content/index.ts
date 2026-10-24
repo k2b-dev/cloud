@@ -103,6 +103,7 @@ export type {
   MessageRowAuthor,
   MessageRowFile,
   MessageRowMedia,
+  MessageRowOrigin,
   MessageRowProgress,
   MessageRowProps,
   MessageRowQuote,

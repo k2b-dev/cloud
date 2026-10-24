@@ -8,16 +8,20 @@ import {
   type DraftIntent,
   draftEditableContentInputSchema,
   type MailDraft,
+  type MailDraftSeed,
+  materializeDraftSeedInputSchema,
   type SenderIdentity,
 } from "../../contracts";
 import MailComposer from "./MailComposer";
 import MailComposerEditor from "./MailComposerEditor";
+import { readMailDraftSeed, storeMailDraftSeed } from "./mail-draft-seed-store";
 
 export type MailComposerEditorHarnessOptions = { locale: "en" | "de" };
-export type MailComposerHarnessOptions = { locale: "en" | "de"; intent: DraftIntent; signatureTemplateId: string | null };
+export type MailComposerHarnessOptions = { locale: "en" | "de"; intent: DraftIntent; signatureTemplateId: string | null; seed?: boolean };
 
 declare global {
   interface Window {
+    expireComposerSession: () => void;
     mountComposer: (options: MailComposerHarnessOptions) => void;
     mountComposerEditor: (options: MailComposerEditorHarnessOptions) => void;
     /** Replaces the preview, as a new compose preview response does. */
@@ -160,11 +164,20 @@ window.mountComposer = (options) => {
   document.documentElement.lang = options.locale;
   const draft = { ...initialDraft, intent: options.intent, signatureTemplateId: options.signatureTemplateId };
   Object.defineProperty(window, "WebSocket", { configurable: true, value: OfflineWebSocket });
+  let expired = false;
+  window.expireComposerSession = () => {
+    expired = true;
+  };
   const originalFetch = window.fetch;
   window.fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(new URL(String(input), location.href), init);
       const path = new URL(request.url).pathname;
+      if (expired) return Response.json({ code: "UNAUTHORIZED" }, { status: 401 });
+      if (path.endsWith("/draft-seeds/materialize")) {
+        const json = materializeDraftSeedInputSchema.parse(await request.json());
+        return Response.json({ ...draft, ...json.draft });
+      }
       if (path.endsWith("/lease"))
         return Response.json({
           token: crypto.randomUUID(),
@@ -183,6 +196,35 @@ window.mountComposer = (options) => {
     },
     { preconnect: originalFetch.preconnect },
   );
+  const seed: MailDraftSeed = {
+    id: "10000000-0000-4000-8000-000000000001",
+    mailboxId: "Box001",
+    conversationId: null,
+    intent: "new",
+    sourceMessageId: null,
+    derivedFromMessageId: null,
+    derivationKind: null,
+    content: draftEditableContentInputSchema.strip().parse(draft),
+    attachments: [],
+    createdAt: now,
+    origin: {
+      kind: "compose",
+      input: {
+        senderIdentityId: "Send01",
+        to: [],
+        cc: [],
+        bcc: [],
+        subject: "",
+        body: "",
+        intent: "new",
+        conversationId: null,
+        sourceMessageId: null,
+        includeSourceAttachments: false,
+      },
+    },
+  };
+  const restoredSeed = options.seed ? (readMailDraftSeed(localStorage, "Box001", seed.id) ?? seed) : undefined;
+  if (restoredSeed) storeMailDraftSeed(localStorage, restoredSeed);
   render(
     () => (
       <LocaleProvider locale={options.locale}>
@@ -198,8 +240,9 @@ window.mountComposer = (options) => {
             ],
             personalDefaults: [{ senderIdentityId: "Send02", templateId: "Sign03" }],
           }}
-          initialDraft={draft}
-          initialPanes={layout}
+          initialDraft={options.seed ? undefined : draft}
+          initialSeed={restoredSeed}
+          initialPanes={options.seed ? { version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } } : layout}
           returnHref="/app/mail/Box001"
           dateConfig={{ locale: options.locale, timeZone: "UTC" }}
         />

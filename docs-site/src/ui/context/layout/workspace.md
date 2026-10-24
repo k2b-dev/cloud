@@ -305,7 +305,9 @@ of a list the phone no longer shows, focus moves to the title of the selected
 level.
 
 Each level head is a 46 px row without a line under it: the `label` as the
-title, an optional one-line `description`, and trailing `actions`. Every level
+title, an optional one-line `description`, and trailing `actions`. An optional
+`lead` puts a small mark before the title, such as the colour dot of the
+object's container. Every level
 starts below the same 8 px top inset, so the titles of side by side heads share
 one line when the heads have the same form, all with or all without a
 description. Selecting a row keeps every visible level where it is.
@@ -315,6 +317,15 @@ remaining width, whatever its content: a long title or text in the selected
 item never narrows the levels before it. When another level shows before it,
 it is a raised surface with an 8 px inset. On a
 phone the one level is flat. Levels do not animate.
+
+Inside a [`MobileShell`](/en/ui/layout/mobile-shell) with `scroll={false}`,
+levels follow the touch app instead: one level, with its back step, below
+64 rem of window width, as on a phone; from 64 rem the levels stand side by
+side, flat on their surfaces, the first on the canvas and the last on the
+surface, without a raised card. Each head has the shell header's height and
+title size and pads the safe areas, so a level's title sits where every page
+title of the app sits. Pass `resizable={false}` and a fixed `defaultSize`,
+`minSize`, and `maxSize` for the list, such as 352 px.
 
 Resize earlier levels by dragging their separators or using Left/Right (8 px),
 Shift+Left/Right (32 px), Home (minimum), and End (maximum). Double-click a

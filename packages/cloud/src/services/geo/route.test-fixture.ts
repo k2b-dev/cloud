@@ -48,5 +48,5 @@ export const savedRouteFixture = async () => {
     now: () => GEO_TEST_NOW,
     fetch: async (url) => Response.json(syntheticRouteResponse(url)),
   }).route(stops, options, false, GEO_TEST_KEY, "en");
-  return assembleRoute(result.stops, options, result.legs, GEO_TEST_NOW, 500000);
+  return assembleRoute(result.stops, options, result.legs, GEO_TEST_NOW);
 };
