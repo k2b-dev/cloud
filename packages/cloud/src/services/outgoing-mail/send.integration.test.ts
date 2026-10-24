@@ -53,7 +53,11 @@ const data = (result: Awaited<ReturnType<typeof mail.send>>): MailRecord => {
   return result.data;
 };
 
-suiteFor("database", "nats")("outgoing mail acceptance and Core delivery", () => {
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("outgoing mail acceptance and Core delivery", () => {
   let originalTargets: string | undefined;
   beforeEach(() => {
     originalTargets = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;

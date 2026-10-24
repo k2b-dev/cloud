@@ -21,6 +21,7 @@ export type {
   ChatCommandSearch,
   ChatCommandSection,
   ChatComposerProps,
+  ChatComposerReply,
   ChatFileSelection,
   ChatPasteHandler,
 } from "./ChatComposer";

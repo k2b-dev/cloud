@@ -25,7 +25,7 @@ import { assertPrivateDatabase } from "./private-database";
 // no `CLOUD_TEST_FILEGATE_URL` and runs wherever Docker is available, including the CI gate.
 const dockerAvailable = (await Bun.$`docker info`.quiet().nothrow()).exitCode === 0;
 const suite = dockerAvailable ? suiteFor("database", "nats") : describe.skip;
-const version = "7.0.0";
+const version = "7.1.0";
 const name = `filesv2-stable-refs-${randomUUID()}`;
 const volume = `${name}-data`;
 

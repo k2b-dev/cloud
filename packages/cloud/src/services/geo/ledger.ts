@@ -52,9 +52,21 @@ export const createGeoLedger = (db: SQL = sql) => ({
       for (const row of rows)
         await tx`INSERT INTO geo.usage(scope,subject,period) VALUES(${row.scope},${row.subject},${row.period}) ON CONFLICT DO NOTHING`;
       for (const row of rows) {
+        // Keep the refusal's available/shortfall numbers in the same row-lock snapshot as admission.
+        const [balance] = await tx<{ used: number }[]>`SELECT used::float8 AS used FROM geo.usage
+          WHERE scope=${row.scope} AND subject=${row.subject} AND period=${row.period} FOR UPDATE`;
         const changed = await tx`UPDATE geo.usage SET used=used+${cost} WHERE scope=${row.scope} AND subject=${row.subject}
           AND period=${row.period} AND used+${cost}<=${row.limit} RETURNING used`;
-        if (!changed.length) throw new GeoError("GEO_BUDGET_EXHAUSTED", { scope: row.scope, resetsAt: row.resetsAt });
+        if (!changed.length) {
+          const available = row.limit - (balance?.used ?? 0);
+          throw new GeoError("GEO_BUDGET_EXHAUSTED", {
+            scope: row.scope,
+            resetsAt: row.resetsAt,
+            requiredCredits: cost / 1000,
+            availableCredits: available / 1000,
+            shortfallCredits: (cost - available) / 1000,
+          });
+        }
       }
       for (const row of rows)
         await tx`INSERT INTO geo.shares(scope,subject,period,function_group,used)
@@ -88,15 +100,18 @@ export const createGeoLedger = (db: SQL = sql) => ({
     return { cloud: balances[0]!, person: balances[1]! };
   },
   async recordTransition(
-    event: "provider_key_rejected" | "monthly_budget_exhausted",
+    event: "provider_key_rejected" | "monthly_budget_exhausted" | "route_cost_overrun",
     timezone: string,
     context: Pick<CapabilityExecutionContext, "actor"> & Partial<Pick<CapabilityExecutionContext, "requestId">>,
     now: Date,
+    metadata: Record<string, number> = {},
   ) {
     const period = geoPeriods(now, timezone).cloud.period;
     await db.begin(async (tx) => {
       const inserted =
-        await tx`INSERT INTO geo.audit_transitions(event,period) VALUES(${event},${period}) ON CONFLICT DO NOTHING RETURNING event`;
+        event === "route_cost_overrun"
+          ? [true]
+          : await tx`INSERT INTO geo.audit_transitions(event,period) VALUES(${event},${period}) ON CONFLICT DO NOTHING RETURNING event`;
       if (!inserted.length) return;
       const actor =
         context.actor.kind === "user"
@@ -110,10 +125,10 @@ export const createGeoLedger = (db: SQL = sql) => ({
       await audit.record(
         {
           action: `core.geo.${event}`,
-          outcome: event === "provider_key_rejected" ? "failed" : "denied",
+          outcome: event === "monthly_budget_exhausted" ? "denied" : "failed",
           actor,
           requestId: context.requestId,
-          metadata: { period },
+          metadata: { period, ...metadata },
         },
         tx,
       );

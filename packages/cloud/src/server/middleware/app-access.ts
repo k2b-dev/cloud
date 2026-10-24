@@ -304,6 +304,7 @@ export const requireAppAccess = (
       const body = appAccessDeniedBody(app);
       const response = browser ? await renderDenied(c, body.message) : c.json(body, 403);
       response.headers.set("Cache-Control", "private, no-store");
+      response.headers.set("X-Cloud-App-Access-Denied", app.id);
       return response;
     }
     await next();

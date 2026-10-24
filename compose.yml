@@ -125,7 +125,7 @@ services:
       - ipa_nats_data:/data
 
   filegate:
-    image: ghcr.io/k2b-dev/filegate:7.0.0
+    image: ghcr.io/k2b-dev/filegate:7.1.0
     platform: linux/amd64
     container_name: filegate
     restart: unless-stopped
