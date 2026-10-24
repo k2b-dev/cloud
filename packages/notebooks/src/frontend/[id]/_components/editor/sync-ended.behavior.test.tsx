@@ -357,6 +357,7 @@ describe("sync ended editor recovery", () => {
 
   test("a note that is only read reports itself saved and connected, so no offline notice appears", async () => {
     using editor = mountNoteEditor({ pending: false });
+    expect(editor.providers[0]!.connect).not.toHaveBeenCalled();
     const states: SyncStateEventDetail[] = [];
     const listener = (event: Event) => states.push((event as CustomEvent<SyncStateEventDetail>).detail);
     window.addEventListener(SYNC_STATE_EVENT, listener);
