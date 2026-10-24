@@ -14,6 +14,7 @@ import {
   CreateOutcomeSchema,
   CreateThreadSchema,
   ExistingMatchSchema,
+  type ForYouItemSchema,
   LeaveResultSchema,
   LeaveSchema,
   MAX_EXISTING_MATCHES,
@@ -260,7 +261,15 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   const reads: { chat: string; seq: number }[] = [];
   // Which part of the chat each read named: "general", "all", or a thread.
   const readViews: { chat: string; seq: number; thread: string }[] = [];
-  const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string; refs?: CloudResourceRef[] }[] = [];
+  const posted: {
+    chat: string;
+    clientId: string;
+    body: string;
+    thread?: string;
+    replyTo?: string;
+    refs?: CloudResourceRef[];
+    mentions?: { start: number; end: number; principal: { type: string; id: string } }[];
+  }[] = [];
   const discoveryUpdates: { entries: unknown[]; name?: string; purpose?: string; revision?: string }[] = [];
 
   const principalId = (principal: MemberPrincipal) =>
@@ -460,6 +469,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     const thread = original ? original.thread : (target.thread ?? null);
     const message: Message = {
       reactions: [],
+      mentions: [],
       refs: target.refs ?? [],
       thread,
       replyTo: original ? { id: original.id, author: original.author, preview: original.body ?? "" } : null,
@@ -644,6 +654,9 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   };
   let allowAuthenticated = true;
   let collapsed: string[] = [];
+  // "For you" as the server answers it, set by the test; failing reads answer 503.
+  let forYou: z.infer<typeof ForYouItemSchema>[] = [];
+  let failingForYou = 0;
   const list = (archived = false, unread = false, ids?: string[], cursor?: z.infer<typeof ConversationQuerySchema>["cursor"]) => {
     const items = [...chats.values()]
       .map((chat) => chat.conversation)
@@ -669,6 +682,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     const last = page.at(-1);
     return {
       items: page,
+      forYouUnread: forYou.filter((item) => item.unread).length,
       nextCursor:
         items.length > CONVERSATION_PAGE_SIZE && last
           ? JSON.stringify({ at: last.lastActivityAt, id: last.id, rank: last.pinnedRank ?? 2147483647 })
@@ -716,6 +730,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
       thread?: string;
       threadsPage?: boolean;
       channelsPage?: boolean;
+      /** The "For you" page; the server read its first page unless "For you" fails. */
+      forYouPage?: boolean;
       query?: string;
       archived?: boolean;
       filter?: "all" | "unread";
@@ -727,6 +743,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     return {
       channelsPage: address.channelsPage,
       channelQuery: address.query,
+      forYouPage: address.forYouPage,
+      forYouInitial: address.forYouPage ? (failingForYou > 0 ? null : { items: forYou, nextCursor: null }) : undefined,
       cursor: `c.${cursor}`,
       sidebar: list(address.archived, address.filter === "unread"),
       archived: address.archived,
@@ -974,6 +992,31 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
             .sort((a, b) => a.title.localeCompare(b.title)),
           nextCursor: null,
         });
+      }
+      if (url.pathname === "/api/chat/for-you" && request.method === "GET") {
+        if (failingForYou > 0) {
+          failingForYou -= 1;
+          return Response.json({ message: "Unavailable" }, { status: 503 });
+        }
+        return Response.json({ items: forYou, nextCursor: null });
+      }
+      const candidates = /^\/api\/chat\/conversations\/([^/]+)\/mention-candidates$/.exec(url.pathname);
+      if (candidates && request.method === "GET") {
+        const query = (url.searchParams.get("q") ?? "").toLowerCase();
+        const chat = chats.get(candidates[1]!);
+        const items = (chat?.members ?? [])
+          .flatMap((member) =>
+            member.principal.type === "user" && member.principal.userId !== viewer.id
+              ? [{ principal: { type: "user" as const, id: member.principal.userId }, name: member.displayName, agent: false }]
+              : [],
+          )
+          .filter((candidate) =>
+            candidate.name
+              .toLowerCase()
+              .split(/\s+/)
+              .some((word) => word.startsWith(query)),
+          );
+        return Response.json({ items });
       }
       if (url.pathname === "/api/chat/conversations" && request.method === "GET") {
         const query = ConversationQuerySchema.parse(Object.fromEntries(url.searchParams));
@@ -1664,6 +1707,15 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     /** A message from someone else that shares elements, delivered live. */
     receiveShared: (chat: string, author: Person, body: string, refs: CloudResourceRef[]) =>
       publish(append(chat, author, body, now(), "text", { refs })),
+    /** What "For you" answers from now on; `notify` sends the reader's content-free live hint. */
+    setForYou: (items: z.infer<typeof ForYouItemSchema>[], notify = false) => {
+      forYou = items;
+      if (notify) deliver("me", "", { type: "for-you" });
+    },
+    /** The next "For you" reads fail. */
+    failForYou: (times = 1) => {
+      failingForYou = times;
+    },
     /** The next shared lists fail. */
     failShared: (times = 1) => {
       failingShared = times;

@@ -52,8 +52,18 @@ System chats reject manual thread creation, renaming, archiving, chat metadata
 edits, and membership changes. Change container permissions in its owning app.
 Chat does not enumerate that app's members or copy their grants.
 
-Unread messages begin at each participant's first open. Reopening preserves
-that position. Messages before the first open cannot be marked unread.
+Unread messages begin at each participant's first open, or immediately before
+their first incoming mention or reply. Reopening preserves that position. Earlier
+messages cannot be marked unread. Mentions and replies appear in the same
+[For you feed](/en/docs/operations/build-and-deploy#chat-mentions-and-for-you)
+as ordinary chats, subject to current container and item access.
+
+Mention targets use principal UUIDs and need only be active eligible people or
+service accounts. They need no Chat grant or previous resource read. Candidates
+are previous conversation authors, excluding the caller. Mentioning someone
+does not grant access: the feed, count, message reads, and content-bearing live
+events still use that reader's own container and item authority. The personal
+`for-you` live hint carries no content or resource identity.
 
 ## Search the chat list
 

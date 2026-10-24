@@ -303,6 +303,9 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const listeners = new Set<() => void>();
   // Rows stay in server order: a contiguous prefix of the sidebar, the whole list when `complete`.
   let collapsed = snapshot.collapsed ?? [];
+  // "For you": how many mentions of and replies to the reader are unread, and a revision its page reloads on.
+  let forYouUnread = snapshot.sidebar.forYouUnread ?? 0;
+  let forYouRevision = 0;
   let archived = snapshot.archived ?? false;
   let unread = snapshot.unread ?? false;
   let rows = [...snapshot.sidebar.items];
@@ -729,10 +732,19 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     return work;
   };
   let subscriptionsVersion = 0;
+  /** Reads the "For you" count again; the page itself reloads on the new revision. */
+  const refreshForYou = async () => {
+    const page = await api.conversations(undefined, archived, unread);
+    if (disposed) return;
+    if (page.forYouUnread !== undefined) forYouUnread = page.forYouUnread;
+    forYouRevision++;
+    notify();
+  };
   const reloadSidebar = async (nextArchived = archived, nextUnread = unread, retainedIds: readonly string[] = []) => {
     const same = nextArchived === archived && nextUnread === unread;
     const depth = same ? rows.filter((row) => row.kind !== "system").length : 0;
     let page = await api.conversations(undefined, nextArchived, nextUnread);
+    if (page.forYouUnread !== undefined) forYouUnread = page.forYouUnread;
     const loaded = [...page.items];
     while (loaded.length < depth && page.nextCursor) {
       page = await api.conversations(page.nextCursor, nextArchived, nextUnread);
@@ -914,6 +926,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         apply: (events) =>
           sidebar(async () => {
             if (events.some(({ data }) => data.type === "membership" || data.type === "personal")) await reloadSidebar();
+            // A chat joined or left changes what is for the reader, as a new mention does.
+            if (events.some(({ data }) => data.type === "for-you" || data.type === "membership")) await refreshForYou();
             for (const { data } of events)
               if (data.type === "preferences") {
                 collapsed = data.collapsed;
@@ -924,6 +938,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         resync: () =>
           sidebar(async () => {
             await reloadSidebar();
+            // Hints may have been missed: the "For you" page reads again too.
+            forYouRevision++;
             const preferences = await api.preferences();
             collapsed = preferences.collapsed;
             notify();
@@ -936,6 +952,13 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   return {
     get collapsed() {
       return collapsed;
+    },
+    get forYouUnread() {
+      return forYouUnread;
+    },
+    /** Changes when a mention or reply for the reader arrives or is read, so the "For you" page reads again. */
+    get forYouRevision() {
+      return forYouRevision;
     },
     preferences: () => api.preferences(),
     savePreferences: async (next: Parameters<ChatStoreApi["savePreferences"]>[0]) => {

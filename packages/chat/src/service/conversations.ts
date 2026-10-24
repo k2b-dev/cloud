@@ -33,6 +33,7 @@ import {
   subjectPrincipal,
 } from "./access";
 import { validateDiscovery, writeDiscovery } from "./discovery";
+import { forYouUnread } from "./for-you";
 import { TransactionFailure, value } from "./transaction-failure";
 
 export { value };
@@ -40,6 +41,7 @@ export { value };
 import {
   AddMembersSchema,
   CONVERSATION_PAGE_SIZE,
+  type ConversationPageSchema,
   ConversationQuerySchema,
   type ConversationSchema,
   CREATE_LIMIT,
@@ -300,7 +302,7 @@ export const conversationSearchTitle = (context: ChatContext, db: typeof sql) =>
 };
 
 /** One bounded query for titles across the page, including the creation transaction's own grants. */
-const titles = async (rows: ConversationRow[], context: ChatContext, db: typeof sql) => {
+export const titles = async (rows: ConversationRow[], context: ChatContext, db: typeof sql) => {
   const others = rows.length
     ? await db<{ conversation_id: string; display_name: string; given_name: string; former: boolean; group: boolean }[]>`
     SELECT c.id AS conversation_id, names.* FROM chat.conversations c
@@ -664,13 +666,13 @@ const get = (
   input: ChatContext & { conversationId: string; summaryCursor?: string; threadBudget?: ThreadBudget; selectedThread?: string | null },
   db?: typeof sql,
 ) => (db ? getInSnapshot(input, db) : sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", (tx) => getInSnapshot(input, tx)));
-const list = (input: ChatContext & { query?: unknown }) =>
+const list = (input: ChatContext & { query?: unknown }): Promise<Result<z.infer<typeof ConversationPageSchema>>> =>
   sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const parsed = parse(ConversationQuerySchema, input.query ?? {}, input);
     if (!parsed.ok) return parsed;
     const bound = boundConversation(input.actor, input.locale);
     if (!bound.ok) return fail(err.forbidden(messages(input).forbidden));
-    if (capPermission("read", input.actor) === "none") return ok({ items: [], nextCursor: null });
+    if (capPermission("read", input.actor) === "none") return ok({ items: [], nextCursor: null, forYouUnread: 0 });
     const cursor = parsed.data.cursor;
     const ids = parsed.data.ids;
     const self = subjectPrincipal(input.accessSubject);
@@ -698,6 +700,7 @@ const list = (input: ChatContext & { query?: unknown }) =>
     const last = page.at(-1);
     return ok({
       items,
+      forYouUnread: await forYouUnread(input, db),
       nextCursor:
         rows.length > CONVERSATION_PAGE_SIZE && last
           ? JSON.stringify({
