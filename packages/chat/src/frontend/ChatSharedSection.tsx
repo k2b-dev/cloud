@@ -27,7 +27,7 @@ const KINDS = [
 export default function ChatSharedSection(props: {
   chatId: string;
   /** Changes when the history grows, so the list follows new messages while it is open. */
-  /** The chat's newest position and access reconciliation; absent until the chat is open. */
+  /** Changes when a message arrives, changes or leaves, or the loaded history is replaced; absent until the chat is open. */
   revision: string | undefined;
   threads: ThreadList | null;
   viewerId: string;
@@ -116,7 +116,7 @@ export default function ChatSharedSection(props: {
       }
     });
   };
-  // The chat's record is replaced on every update; only another chat starts a new list, only a new position reads again.
+  // The chat's record is replaced on every update; only another chat starts a new list, only a changed history reads again.
   const chatId = createMemo(() => props.chatId);
   const revision = createMemo(() => props.revision);
   createEffect(on([kind, thread, chatId], restart));
