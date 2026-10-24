@@ -548,7 +548,7 @@ updates acknowledge a change only once that reload succeeded, so a failed one is
 tried again. Selecting a result's title loads the chat up to the message that
 delivered it, scrolls to the delivery (`data-call-id` on the present row,
 `data-presentation-id` on a visualization), and adds a `?message=` history
-entry. A search in the sidebar's header queries `GET /api/assistant/workspace/conversations/:id/sources`, which
+entry. A search from the sidebar's header queries `GET /api/assistant/workspace/conversations/:id/sources`, which
 takes the sources route's parameters and shows an app only while the viewer may
 read it, under its current title. It finds results by title, description, or
 path, and files and sources the chat read; Project context it never read stays
@@ -556,12 +556,18 @@ under Context. **Sources** shows the newest 100 and loads older ones from the
 same route; a new first page starts the loaded pages over. More than 200 working
 folders or 100 loose working files are counted, and search finds the rest.
 
-CSS decides the sidebar's presentation from the chat area's width: a 20 rem
-column from 56 rem, a non-modal drawer over the chat's edge below that, and a
-bottom sheet on phones that Back closes. The column is open by default. Closing
-it is remembered in the `assistant_context=closed` cookie, which the page reads
-before rendering; reopening deletes it. The workspace's **Files** tab shows the
-same list.
+**In this chat** is the workspace's shared
+[Detail](/en/ui/layout/workspace#detail-and-panel) with a
+[`DetailPanel`](/en/ui/layout/detail-panel), like the details of Mail and the
+other applications: a resizable column beside the chat when it fits next to a
+480 px chat column, otherwise a drawer behind **Details** in the workspace head,
+and a page on phones that its close button or Escape leaves. The column is open
+by default. Closing it is remembered in the `assistant_context=closed` cookie,
+which the page reads before rendering; reopening deletes it. Parking the drawer
+or the phone page is not remembered. An action that leaves the details, such as
+opening a file or jumping to a result, parks a drawer or phone page first. An
+empty **Results** section reads **None yet**. The workspace's **Files** tab
+shows the same list.
 
 The sidebar offers a trash action on uploads, voice recordings, and working
 files, and in the menu of a delivered file. It appears on row hover or keyboard

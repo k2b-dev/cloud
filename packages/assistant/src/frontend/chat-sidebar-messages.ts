@@ -14,8 +14,7 @@ export const chatSidebarMessages = i18n.define({
   messages: {
     en: {
       title: "In this chat",
-      show: "Show what is in this chat",
-      close: "Close the sidebar",
+      close: "Close chat details",
       search: "Search this chat",
       searchLabel: "Search results, files, and sources in this chat",
       clearSearch: "Close search",
@@ -29,7 +28,6 @@ export const chatSidebarMessages = i18n.define({
       appRunFailed: ({ title }: { title: string }) => `The last run of “${title}” failed`,
 
       results: "Results",
-      resultsEmpty: "Files, apps, and visualizations that the assistant creates for you appear here.",
       newResults: ({ count }: { count: number }) => `New · ${count}`,
       showNewResults: ({ count }: { count: number }) => `Show ${plural(count, "new result", "new results")}`,
       updates: "Update",
@@ -109,8 +107,7 @@ export const chatSidebarMessages = i18n.define({
     },
     de: {
       title: "In diesem Chat",
-      show: "Zeigen, was in diesem Chat ist",
-      close: "Seitenleiste schließen",
+      close: "Chatdetails schließen",
       search: "In diesem Chat suchen",
       searchLabel: "Ergebnisse, Dateien und Quellen dieses Chats durchsuchen",
       clearSearch: "Suche schließen",
@@ -124,7 +121,6 @@ export const chatSidebarMessages = i18n.define({
       appRunFailed: ({ title }: { title: string }) => `Der letzte Lauf von „${title}“ ist fehlgeschlagen`,
 
       results: "Ergebnisse",
-      resultsEmpty: "Dateien, Apps und Visualisierungen, die der Assistent für dich erstellt, erscheinen hier.",
       newResults: ({ count }: { count: number }) => `Neu · ${count}`,
       showNewResults: ({ count }: { count: number }) => `${count} ${count === 1 ? "neues Ergebnis" : "neue Ergebnisse"} anzeigen`,
       updates: "Aktualisieren",

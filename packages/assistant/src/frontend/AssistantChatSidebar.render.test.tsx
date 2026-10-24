@@ -31,7 +31,7 @@ export const renderSidebar = (snapshot: AssistantChatContextSnapshot | null, loc
       locale,
       get children() {
         return createComponent(AssistantChatSidebarPanel, {
-          id: "assistant-chat-context",
+          detailId: "assistant-chat-context",
           state: { snapshot: () => snapshot, projectContext: () => null, error: () => undefined, refresh: async () => undefined },
           actions,
           onClose: noop,
@@ -41,10 +41,10 @@ export const renderSidebar = (snapshot: AssistantChatContextSnapshot | null, loc
   );
 
 describe("Assistant chat sidebar, server render", () => {
-  test("renders a labelled region with results first, cards with their description, and collapsed secondary sections", () => {
+  test("renders the shared details header with results first, cards with their description, and collapsed secondary sections", () => {
     const html = renderSidebar(sidebarSnapshot());
-    expect(html).toContain('<aside id="assistant-chat-context"');
-    expect(html).toContain('aria-labelledby="assistant-chat-context-title"');
+    expect(html).toContain('class="assistant-context-sidebar');
+    expect(html).toContain('class="k2b-detail-panel__header');
     expect(html).toContain(">In diesem Chat</h2>");
     const order = ["Ergebnisse", "Umsatzbericht Q1-Q3.pdf", "Deine Dateien", "Quellen", "Arbeitsdateien", "Kontext"].map((label) =>
       html.indexOf(label),
@@ -55,9 +55,9 @@ describe("Assistant chat sidebar, server render", () => {
     expect(html).toContain("Interaktives Dashboard zum Filtern");
     expect(html).toContain("Herunterladen");
     expect(html).toContain("Link kopieren");
-    // The close control is static from the server on: it closes an open sidebar.
+    // The close control names the Detail, so the workspace parks a drawer or phone page with it.
     expect(html).toMatch(
-      /aria-label="Seitenleiste schließen"[^>]*aria-expanded="true"|aria-expanded="true"[^>]*aria-label="Seitenleiste schließen"/,
+      /aria-label="Chatdetails schließen"[^>]*aria-controls="k2b-workspace-detail-assistant-chat-context"|aria-controls="k2b-workspace-detail-assistant-chat-context"[^>]*aria-label="Chatdetails schließen"/,
     );
     // Working files and sources stay one level deeper: their rows are closed and their contents not rendered.
     expect(html).toContain("2 Bilder");
@@ -67,10 +67,11 @@ describe("Assistant chat sidebar, server render", () => {
     expect(html).not.toContain("Umsätze immer netto");
   });
 
-  test("keeps the results heading and explains the empty state in a chat without results", () => {
+  test("keeps the results heading with the shared empty count in a chat without results", () => {
     const html = renderSidebar(emptySidebarSnapshot());
     expect(html).toContain("Ergebnisse");
-    expect(html).toContain("Dateien, Apps und Visualisierungen, die der Assistent für dich erstellt, erscheinen hier.");
+    expect(html).toContain("Noch keine");
+    expect(html.match(/assistant-sidebar-results[\s\S]*?<\/section>/)?.[0]).not.toContain("k2b-detail-panel__section-body");
     expect(html).not.toContain("Deine Dateien");
     expect(html).not.toContain("Quellen");
     expect(html).toContain("Kontext");

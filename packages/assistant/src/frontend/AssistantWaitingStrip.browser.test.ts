@@ -352,7 +352,8 @@ const open = async (
         ? `display:flex;justify-content:flex-end;height:100vh` // The panel column sits at the right edge.
         : "display:flex;height:100vh";
       const inner = view.column
-        ? `<div id="root" style="width:${view.column};display:flex;height:100vh"></div>`
+        ? // The panel is its own frame, so its column is the app area the workspace measures.
+          `<div id="root" style="width:${view.column};display:flex;height:100vh;container:k2b-app-area / inline-size"></div>`
         : `<div id="root" style="display:flex;width:100%;height:100vh"></div>`;
       return route.fulfill({
         contentType: "text/html",

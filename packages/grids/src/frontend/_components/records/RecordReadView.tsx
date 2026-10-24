@@ -187,7 +187,7 @@ export default function RecordReadView(props: RecordReadViewProps) {
   );
 
   return (
-    <DetailPanel>
+    <DetailPanel surface="plain">
       <DetailPanel.Header
         icon={identityIcon()}
         title={recordTitle()}
