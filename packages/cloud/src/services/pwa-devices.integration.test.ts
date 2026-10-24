@@ -722,10 +722,14 @@ suite("mobile app pairing and app sessions", () => {
     expect((await launch(phone, "https://evil.example.test/")).headers.get("location")).toBe("/pwa/?pwa_launch=1");
     expect((await launch(phone, "/pwa/_auth/session/renew")).headers.get("location")).toBe("/pwa/?pwa_launch=1");
     expect((await launch(phone, "/pwa//evil.example.test")).headers.get("location")).toBe("/pwa/?pwa_launch=1");
-    expect((await launch(new Jar())).headers.get("location")).toBe("/pwa/?pwa=new");
+    const unpaired = new Jar();
+    expect((await launch(unpaired)).headers.get("location")).toBe("/pwa/?pwa=new");
+    expect(unpaired.get("pwa_ended")).toBeUndefined();
     const ended = new Jar({ pwa_device: `${crypto.randomUUID()}.${"D".repeat(43)}` });
     expect((await launch(ended)).headers.get("location")).toBe("/pwa/?pwa=ended");
     expect(ended.get("pwa_device")).toBeUndefined();
+    // Only this answer lets the next page delete the app's drafts.
+    expect(ended.get("pwa_ended")).toBe("1");
     await settings.set("user.category.login.enabled", false);
     try {
       expect((await launch(phone)).headers.get("location")).toBe("/pwa/?pwa=blocked");

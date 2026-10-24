@@ -81,10 +81,7 @@ export default function PwaRuntime(props: PwaRuntimeProps) {
     window.addEventListener(THEME_PREFERENCE_EVENT, syncTheme);
     cleanups.push(() => window.removeEventListener(THEME_PREFERENCE_EVENT, syncTheme));
 
-    if (!props.keepalive) {
-      if (url.searchParams.get("pwa") === "ended") pwaDrafts.clearAll();
-      return;
-    }
+    if (!props.keepalive) return;
 
     if (props.rememberAddress) {
       const { cookie, maxAge } = props.rememberAddress;
@@ -93,16 +90,30 @@ export default function PwaRuntime(props: PwaRuntimeProps) {
         if (address)
           document.cookie = `${cookie}=${encodeURIComponent(address)}; Path=${PWA_SCOPE}; Secure; SameSite=Lax; Max-Age=${maxAge}`;
       };
-      // The place counts when the app leaves the foreground, the moment the system may end it. Selections that
-      // parts keep in the address without a page load, such as a Spaces task, are covered this way too.
+      // The place counts when a page arrives and when the app leaves the foreground, the moment the system may end
+      // it. Selections that parts keep in the address without a page load, such as a Spaces task, are covered this
+      // way too. A document that is being left writes nothing: the next page, or a sign-out that deleted the
+      // cookie, has already answered, and the outgoing page fires "pagehide" before it turns hidden.
+      let leaving = false;
       const hidden = () => {
-        if (document.visibilityState === "hidden") remember();
+        if (document.visibilityState === "hidden" && !leaving) remember();
       };
+      const leave = () => {
+        leaving = true;
+      };
+      const back = (event: PageTransitionEvent) => {
+        if (!event.persisted) return;
+        leaving = false;
+        remember();
+      };
+      remember();
       document.addEventListener("visibilitychange", hidden);
-      window.addEventListener("pagehide", remember);
+      window.addEventListener("pagehide", leave);
+      window.addEventListener("pageshow", back);
       cleanups.push(() => {
         document.removeEventListener("visibilitychange", hidden);
-        window.removeEventListener("pagehide", remember);
+        window.removeEventListener("pagehide", leave);
+        window.removeEventListener("pageshow", back);
       });
     }
 
@@ -114,8 +125,9 @@ export default function PwaRuntime(props: PwaRuntimeProps) {
     let updateToast: ToastHandle | undefined;
     let reloading = false;
     cleanups.push(() => updateToast?.dismiss());
+    // Every control a person types into, numbers, dates and times included.
     const textField =
-      'textarea, input:not([type]), input:is([type="text"], [type="search"], [type="email"], [type="url"], [type="tel"], [type="password"]), [contenteditable]:not([contenteditable="false"])';
+      'textarea, input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"], [type="reset"], [type="hidden"], [type="file"], [type="range"], [type="color"], [type="image"]), [contenteditable]:not([contenteditable="false"])';
     const edited = new WeakSet<Element>();
     const input = (event: Event) => {
       const field = event.target instanceof Element ? event.target.closest(textField) : null;

@@ -171,6 +171,22 @@ describe("shell routes", () => {
       }
     });
 
+  test("/pwa/?pwa=ended deletes drafts only with the launch's marker, and removes the marker", async () => {
+    // The Welcome island's `clearDrafts` prop as the browser receives it (seroval: 2 is true, 3 false, 1 absent).
+    const clearDrafts = (html: string) => {
+      const props = /data-props="([^"]*)" data-file="Welcome\.island\.tsx"/.exec(html)?.[1]?.replaceAll("&quot;", '"');
+      const tree = JSON.parse(props ?? "null") as { t: { p: { k: string[]; v: { s: number }[] } } };
+      const index = tree.t.p.k.indexOf("clearDrafts");
+      return index < 0 ? undefined : tree.t.p.v[index]?.s === 2;
+    };
+    const marked = await request("/pwa/?pwa=ended", { headers: { Cookie: "cloud.locale=en; pwa_ended=1" } });
+    expect(marked.headers.getSetCookie().some((cookie) => cookie.startsWith("pwa_ended=;") && cookie.includes("Max-Age=0"))).toBe(true);
+    expect(clearDrafts(await marked.text())).toBe(true);
+    const typed = await request("/pwa/?pwa=ended", { headers: { Cookie: "cloud.locale=en" } });
+    expect(typed.headers.getSetCookie().some((cookie) => cookie.startsWith("pwa_ended="))).toBe(false);
+    expect(clearDrafts(await typed.text())).toBe(false);
+  });
+
   test("Start lists the parts and Settings, and shows a calm empty state without parts", async () => {
     signIn();
     let html = await (await request("/pwa/", { headers: { Cookie: "pwa_session=test-session; cloud.locale=en" } })).text();

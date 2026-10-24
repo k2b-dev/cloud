@@ -219,9 +219,12 @@ Start. If access to the remembered page has changed, that page shows its own
 
 The shell handles this for every part. It remembers the address in the
 `pwa_last_address` cookie: `Path=/pwa/`, `Secure`, `SameSite=Lax`,
-with the pairing's 150-day idle lifetime. Successful documents also update it
-when a part changes the address through browser history, as Spaces does for
-task selections and filters. It stores no credentials, fragments,
+with the pairing's 150-day idle lifetime. Each successful page writes its
+address when it arrives and again when the app leaves the foreground, so
+changes a part makes through browser history count too, as Spaces makes for
+task selections and filters. A page that is being left writes nothing, so it
+never replaces the next page's address or undoes a sign-out. It stores no
+credentials, fragments,
 auth endpoints, welcome states, or error pages. Without an app session, the
 launch bounce renews the session and validates the remembered destination.
 
@@ -343,8 +346,9 @@ the document; an unrelated part's release does not make this page stale.
 Unnamed development builds do not identify a release.
 
 On returning to the foreground with a new version, the app reloads the current
-address when no text field is focused, no unsaved typing or account draft
-remains, and no modal dialog is open. Otherwise it shows a persistent quiet
+address when no field the person types into (text, numbers, dates, and times)
+is focused, no unsaved typing or account draft remains, and no modal dialog is
+open. Otherwise it shows a persistent quiet
 **New version · Reload** notice (**Neue Version · Neu laden** in German) in
 the work area's toast rail. Its action reloads the current page; stored drafts
 restore after mounting. The hourly check offers the same notice and never

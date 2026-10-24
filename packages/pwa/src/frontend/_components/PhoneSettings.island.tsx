@@ -55,11 +55,11 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
     if (answer.status === 204) {
       setSaved(value);
       if (nameInput) nameInput.defaultValue = value;
-      // A person can keep typing while a save is in flight. Only the submitted text was saved.
-      if (name() === submitted) {
-        setName(value);
-        pwaDrafts.remove(props.account.id, field);
-      }
+      // A person can keep typing while a save is in flight. Only the submitted text was saved; whatever differs from
+      // it now stays a draft, also text that matches the name before the save.
+      if (name() === submitted) setName(value);
+      if (name() === value) pwaDrafts.remove(props.account.id, field);
+      else pwaDrafts.write(props.account.id, field, name());
       toast.success(t().nameSaved);
     } else if (answer.status === 401) reloadOnce("pwa-auth");
     else if (answer.status === 400) setError(t().nameInvalid);

@@ -115,7 +115,11 @@ export const createPwaPhoneRoutes = (options: PwaPhoneRouteOptions) => {
         if (result.outcome === "renewed") setAppCredentials(c, result.credentials);
         if (result.outcome === "renewed" || result.outcome === "current") return c.redirect(to, 302);
         if (result.outcome === "blocked") return c.redirect(stateUrl("blocked"), 302);
-        if (result.outcome === "ended") clearAppCredentials(c);
+        if (result.outcome === "ended") {
+          clearAppCredentials(c);
+          // Only this answer may delete the drafts: "?pwa=ended" alone is an address anyone can open.
+          setCookie(c, PWA_COOKIES.ended, "1", { ...cookie, sameSite: "Lax", path: PWA_SCOPE, maxAge: 300 });
+        }
         return c.redirect(stateUrl(result.outcome === "missing" ? "new" : "ended"), 302);
       } catch (error) {
         // Logs an unexpected failure by name only; a navigation always gets a page, never JSON.

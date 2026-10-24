@@ -23,6 +23,8 @@ export const PWA_COOKIES = {
   lastAddress: "pwa_last_address",
   device: "pwa_device",
   pairing: "pwa_pairing",
+  /** Set by the launch when the device's pairing has ended; the next page deletes the app's drafts and the marker. */
+  ended: "pwa_ended",
 } as const;
 
 export const PWA_LIMITS = {

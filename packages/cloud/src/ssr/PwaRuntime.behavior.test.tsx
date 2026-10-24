@@ -112,24 +112,55 @@ const setVisibility = (dom: DomTestHarness, state: "visible" | "hidden") => {
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
-  test("remembers the place when the app leaves the foreground, without fragments or welcome states", () => {
+  test("remembers the place when a page arrives and when the app leaves the foreground, without fragments or welcome states", () => {
     const page = mount({
       renewedThisSession: true,
       rememberAddress: true,
       before: (dom) => dom.window.happyDOM.setURL("https://cloud.example.test/pwa/spaces"),
     });
+    const remembered = () => decodeURIComponent(/pwa_last_address=([^;]*)/.exec(page.dom.document.cookie)?.[1] ?? "");
     try {
+      expect(remembered()).toBe("/pwa/spaces");
       // A part keeps a selection in the address without a page load.
       page.dom.window.history.pushState(null, "", "/pwa/spaces/demo/task?view=mine#ignored");
       setVisibility(page.dom, "hidden");
-      expect(page.dom.document.cookie).toContain("pwa_last_address=" + encodeURIComponent("/pwa/spaces/demo/task?view=mine"));
+      expect(remembered()).toBe("/pwa/spaces/demo/task?view=mine");
       setVisibility(page.dom, "visible");
-      page.dom.window.history.replaceState(null, "", "/pwa/spaces/demo/task?view=today");
-      page.dom.window.dispatchEvent(new page.dom.window.Event("pagehide"));
-      expect(page.dom.document.cookie).toContain(encodeURIComponent("/pwa/spaces/demo/task?view=today"));
       page.dom.window.history.pushState(null, "", "/pwa/?pwa=ended");
       setVisibility(page.dom, "hidden");
-      expect(page.dom.document.cookie).toContain(encodeURIComponent("/pwa/spaces/demo/task?view=today"));
+      expect(remembered()).toBe("/pwa/spaces/demo/task?view=mine");
+    } finally {
+      page.dispose();
+    }
+  });
+
+  test("a page being left never writes over the next page's address or a sign-out's deletion", () => {
+    const page = mount({
+      renewedThisSession: true,
+      rememberAddress: true,
+      before: (dom) => dom.window.happyDOM.setURL("https://cloud.example.test/pwa/spaces/demo/task"),
+    });
+    const remembered = () => decodeURIComponent(/pwa_last_address=([^;]*)/.exec(page.dom.document.cookie)?.[1] ?? "");
+    // happy-dom ignores `persisted` in the event's options, so it is set on the event.
+    const transition = (type: "pagehide" | "pageshow", persisted: boolean) =>
+      page.dom.window.dispatchEvent(Object.defineProperty(new page.dom.window.Event(type), "persisted", { value: persisted }));
+    const leave = () => {
+      transition("pagehide", false);
+      setVisibility(page.dom, "hidden");
+    };
+    try {
+      // The next page's response has set its address before this document fires its leaving events.
+      page.dom.document.cookie = `pwa_last_address=${encodeURIComponent("/pwa/chat")}; Path=/pwa/; Secure`;
+      leave();
+      expect(remembered()).toBe("/pwa/chat");
+      // A sign-out answer deleted the cookie; leaving does not bring it back.
+      page.dom.document.cookie = "pwa_last_address=; Path=/pwa/; Max-Age=0; Secure";
+      leave();
+      expect(remembered()).toBe("");
+      // A page restored from the back-forward cache is current again.
+      setVisibility(page.dom, "visible");
+      transition("pageshow", true);
+      expect(remembered()).toBe("/pwa/spaces/demo/task");
     } finally {
       page.dispose();
     }
@@ -171,16 +202,22 @@ else {
   });
 
   test("offers a persistent reload action for focused text, stored drafts, and blurred unsaved input", async () => {
-    for (const mode of ["focused", "draft", "edited"]) {
+    for (const mode of ["focused", "draft", "edited", "number focused", "date edited"]) {
       const fetch = mockRenew([Response.json({ renewed: false, builds: { inventory: "new" } })]);
       const page = mount({ renewedThisSession: true });
       try {
-        const input = page.dom.document.createElement("textarea");
+        // Numbers, dates and times are typed input too.
+        const input =
+          mode.startsWith("number") || mode.startsWith("date")
+            ? page.dom.document.createElement("input")
+            : page.dom.document.createElement("textarea");
+        if (mode.startsWith("number")) input.setAttribute("type", "number");
+        if (mode.startsWith("date")) input.setAttribute("type", "date");
         page.dom.document.body.append(input);
-        if (mode === "focused") input.focus();
+        if (mode.endsWith("focused")) input.focus();
         if (mode === "draft") page.dom.window.localStorage.setItem("cloud.pwa.draft:mia:chat", "unfinished");
-        if (mode === "edited") {
-          input.value = "unfinished";
+        if (mode.endsWith("edited")) {
+          input.value = mode.startsWith("date") ? "2026-10-24" : "unfinished";
           input.dispatchEvent(new Event("input", { bubbles: true }));
           input.blur();
         }
@@ -233,14 +270,14 @@ else {
     }
   });
 
-  test("clears drafts on a launch that reports the device removed", async () => {
+  test("an address that names an ended pairing deletes no drafts: only the launch's answer does", async () => {
     const page = mount({
       keepalive: false,
       url: "/pwa/?pwa=ended",
       before: (dom) => dom.window.localStorage.setItem("cloud.pwa.draft:mia:chat", "old"),
     });
     try {
-      expect(page.dom.window.localStorage.length).toBe(0);
+      expect(page.dom.window.localStorage.getItem("cloud.pwa.draft:mia:chat")).toBe("old");
     } finally {
       page.dispose();
     }

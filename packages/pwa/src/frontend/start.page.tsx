@@ -5,7 +5,7 @@ import { appIconVersion } from "@k2b/cloud/services/branding/app-icon-source";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { getDisplayRuntimeContext, PwaLayout, visiblePwaParts } from "@k2b/cloud/ssr";
 import { createNavigation, IconButtonLink, installationPlatform, Navigation, Placeholder } from "@k2b/ui";
-import { getCookie } from "hono/cookie";
+import { deleteCookie, getCookie } from "hono/cookie";
 import { ssr } from "../config";
 import { shellMessages } from "../messages";
 import PairingNotice from "./_components/PairingNotice.island";
@@ -88,9 +88,12 @@ export default ssr<AuthContext>(async (c) => {
   const platform = installationPlatform(c.req.header("User-Agent") ?? "", "", 0);
   // Behind the gateway the request URL names an internal hop; the public address is the configured one.
   const url = `${publicCloudOrigin(c.get("settings")?.app?.url || "localhost:3000")}${PWA_SCOPE}`;
+  // The launch marks a pairing it found ended; the address alone never deletes drafts.
+  const ended = state === "ended" && getCookie(c, PWA_COOKIES.ended) === "1";
+  if (ended) deleteCookie(c, PWA_COOKIES.ended, { path: PWA_SCOPE, secure: true, httpOnly: true, sameSite: "Lax" });
   return () => (
     <PwaLayout c={c} title={cloud}>
-      <Welcome state={state} cloud={cloud} icon={icon} platform={platform} url={url} />
+      <Welcome state={state} cloud={cloud} icon={icon} platform={platform} url={url} clearDrafts={ended} />
     </PwaLayout>
   );
 });

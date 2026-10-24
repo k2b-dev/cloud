@@ -144,6 +144,33 @@ else {
       fetch.restore();
     }
   });
+  test("typing the previous name while a save is in flight keeps it as the draft", async () => {
+    let release!: (response: Response) => void;
+    const fetch = mockFetch(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const page = mount(settings);
+    try {
+      const input = page.dom.document.querySelector<HTMLInputElement>('input[maxlength="80"]')!;
+      input.value = "New name";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      button(page.dom, "Save")!.click();
+      await waitFor(() => fetch.calls.length === 1, "save in flight");
+      input.value = "iPhone";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      release(new Response(null, { status: 204 }));
+      await waitFor(() => page.dom.document.body.textContent?.includes("Name saved") ?? false, "new name saved");
+      expect(input.value).toBe("iPhone");
+      expect(page.dom.window.localStorage.getItem("cloud.pwa.draft:mia:pwa.settings.device-name")).toBe("iPhone");
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
   test("Settings restores the account's plain-text draft, preserves empty text, and clears it only after a save", async () => {
     const page = mount(settings, {
       before: (dom) => {
@@ -265,14 +292,14 @@ else {
     }
   });
 
-  test("the unavailable state renews once on its own and returns to Start, but never loops", async () => {
+  test("the unavailable state renews once on its own and returns through the launch to the remembered place, but never loops", async () => {
     const fetch = mockFetch((_method, path) =>
       path === "/pwa/_auth/session/renew" ? Response.json({ renewed: true, builds: {} }) : undefined,
     );
     let page = mount(() => createComponent(modules!.Unavailable, {}), { url: "/pwa/?pwa=unavailable" });
     try {
-      await waitFor(() => page.replaced.length === 1, "Start");
-      expect(page.replaced).toEqual(["/pwa/"]);
+      await waitFor(() => page.replaced.length === 1, "the launch");
+      expect(page.replaced).toEqual(["/pwa/?launch"]);
       const marker = page.dom.window.sessionStorage.getItem("cloud.pwa.unavailable-retry")!;
       page.dispose();
       page = mount(() => createComponent(modules!.Unavailable, {}), {
@@ -283,14 +310,14 @@ else {
       await Bun.sleep(20);
       expect(page.replaced).toEqual([]);
       button(page.dom, "Try again")!.click();
-      expect(page.replaced).toEqual(["/pwa/"]);
+      expect(page.replaced).toEqual(["/pwa/?launch"]);
     } finally {
       page.dispose();
       fetch.restore();
     }
   });
 
-  test("a renewal that sets no cookies inside the rotation grace is tried once more after it, then returns to Start", async () => {
+  test("a renewal that sets no cookies inside the rotation grace is tried once more after it, then returns through the launch", async () => {
     const answers = [Response.json({ renewed: false, builds: {} }), Response.json({ renewed: true, builds: {} })];
     const fetch = mockFetch((_method, path) => (path === "/pwa/_auth/session/renew" ? answers.shift() : undefined));
     const delays: (number | undefined)[] = [];
@@ -300,10 +327,10 @@ else {
     }) as never);
     const page = mount(() => createComponent(modules!.Unavailable, {}), { url: "/pwa/?pwa=unavailable" });
     try {
-      await waitFor(() => page.replaced.length === 1, "Start");
+      await waitFor(() => page.replaced.length === 1, "the launch");
       expect(fetch.calls.map((call) => call.path)).toEqual(["/pwa/_auth/session/renew", "/pwa/_auth/session/renew"]);
       expect(delays).toContain(60_000);
-      expect(page.replaced).toEqual(["/pwa/"]);
+      expect(page.replaced).toEqual(["/pwa/?launch"]);
     } finally {
       timeout.mockRestore();
       page.dispose();
