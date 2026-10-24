@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { DownstreamBusyError, downstreamBudget } from "../downstream-budget";
 import {
   type GotenbergConfig,
   GotenbergRenderError,
@@ -6,6 +7,12 @@ import {
   renderFacturXHtmlToPdfWithConfig,
   renderHtmlToPdfWithConfig,
 } from "./gotenberg";
+
+let admission: ReturnType<typeof spyOn<typeof downstreamBudget, "acquire">>;
+beforeEach(() => {
+  admission = spyOn(downstreamBudget, "acquire").mockResolvedValue(() => {});
+});
+afterEach(() => admission.mockRestore());
 
 const baseConfig = {
   url: "http://gotenberg:3000",
@@ -217,4 +224,17 @@ describe("Gotenberg PDF renderer", () => {
       renderHtmlToPdfWithConfig({ html: "<h1>Hello</h1>" }, { ...baseConfig, url: "" }, { fetch: async () => pdfResponse() }),
     ).rejects.toBeInstanceOf(GotenbergRenderError);
   });
+});
+
+test("shared renderer saturation returns busy before any downstream call", async () => {
+  admission.mockRejectedValueOnce(new DownstreamBusyError("gotenberg"));
+  let fetched = false;
+  const pending = renderHtmlToPdfWithConfig({ html: "hello" }, baseConfig, {
+    fetch: async () => {
+      fetched = true;
+      return pdfResponse();
+    },
+  });
+  await expect(pending).rejects.toMatchObject({ code: "busy", status: 503 });
+  expect(fetched).toBe(false);
 });

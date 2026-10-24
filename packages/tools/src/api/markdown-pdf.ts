@@ -122,6 +122,8 @@ const renderError = (
   }
   if (error instanceof GotenbergRenderError) {
     switch (error.code) {
+      case "busy":
+        return { code: "renderer_busy", message: t.rendererBusy, status: 503 };
       case "html_too_large":
         return { code: error.code, message: t.htmlTooLarge, status: 413 };
       case "pdf_too_large":

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createLiveWebSocket } from "./live-websocket";
+import { APP_ACCESS_REVOKED_EVENT, createLiveWebSocket } from "./live-websocket";
 
 class FakeDocument extends EventTarget {
   visibilityState: DocumentVisibilityState = "visible";
@@ -348,6 +348,38 @@ describe("createLiveWebSocket", () => {
     expect(FakeWebSocket.instances).toHaveLength(1);
     expect(timers.filter(Boolean)).toHaveLength(0);
     connection.dispose();
+  });
+
+  test.each(["app_access_denied", "access_denied"])("only an app revocation signals shell recovery: %s", (reason) => {
+    installBrowser();
+    const events: Event[] = [];
+    const errors: string[] = [];
+    const listener = (event: Event) => events.push(event);
+    window.addEventListener(APP_ACCESS_REVOKED_EVENT, listener);
+    const connection = createLiveWebSocket({
+      url: "/api/example/ws?view=recent",
+      subscribe: () => ({ type: "subscribe" }),
+      parse: () => null,
+      onMessage: () => undefined,
+      onFatal: (error) => errors.push(error.code),
+    });
+    try {
+      connection.connect();
+      const socket = FakeWebSocket.instances[0]!;
+      socket.open();
+      socket.close(1008, reason);
+      expect(events).toEqual(reason === "app_access_denied" ? [expect.objectContaining({ detail: socket.url })] : []);
+      expect(errors).toEqual([reason]);
+      for (const event of resumeEvents) resume(event);
+      expect(FakeWebSocket.instances).toHaveLength(1);
+      expect(pendingTimers()).toBe(0);
+      connection.dispose();
+      socket.close(1008, "app_access_denied");
+      expect(events).toHaveLength(reason === "app_access_denied" ? 1 : 0);
+    } finally {
+      connection.dispose();
+      window.removeEventListener(APP_ACCESS_REVOKED_EVENT, listener);
+    }
   });
 
   test.each([1011, 1012, 1013])("reconnects with backoff after close code %i by default", (code) => {

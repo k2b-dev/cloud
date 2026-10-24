@@ -16,6 +16,23 @@ document.querySelector("#open").addEventListener("click", () => {
     return field;
   }, { history: true }).then((value) => window.results.push(value === undefined ? "undefined" : "value"));
 });
+document.querySelector("#role-test")?.addEventListener("click", () => {
+  void dialogCore.open(() => {
+    const button = document.createElement("button");
+    button.textContent = "Details";
+    button.onclick = () => { void dialogCore.open(() => {
+      const text = document.createElement("p");
+      text.textContent = "Details";
+      return text;
+    }, { ariaLabel: "Details" }); };
+    const container = document.createElement("div");
+    const description = document.createElement("p");
+    description.id = "consequence";
+    description.textContent = "Your access will change.";
+    container.append(description, button);
+    return container;
+  }, { role: "alertdialog", ariaLabel: "Confirm change", ariaDescribedBy: "consequence" });
+});
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the dialog island fixture for the browser.");
@@ -64,6 +81,32 @@ test(`an open dialog closes when an island is disposed and leaves history alone 
     // The page is no longer inert: a click outside the former dialog reaches its target.
     await page.click("#elsewhere");
     expect(await page.evaluate(() => document.activeElement?.id)).toBe("elsewhere");
+  } finally {
+    await page.close();
+  }
+});
+
+test("nested dialogs restore the parent's alert role and default dialogs stay ordinary", async () => {
+  const page = await browser.newPage();
+  try {
+    await page.setContent('<body class="k2b-ui"><button id="open">Open</button><button id="role-test">Confirm</button></body>');
+    await page.addScriptTag({ content: script });
+    await page.getByRole("button", { name: "Confirm", exact: true }).click();
+    const confirmation = page.getByRole("alertdialog", { name: "Confirm change", exact: true });
+    await confirmation.waitFor();
+    expect(await confirmation.getAttribute("aria-describedby")).toBe("consequence");
+    await confirmation.getByRole("button", { name: "Details", exact: true }).click();
+    await page.getByRole("dialog", { name: "Details", exact: true }).waitFor();
+    expect(await page.getByRole("dialog").getAttribute("aria-describedby")).toBeNull();
+    await page.keyboard.press("Escape");
+    await confirmation.waitFor();
+    expect(await confirmation.getAttribute("aria-describedby")).toBe("consequence");
+    expect(await confirmation.getByRole("button", { name: "Details", exact: true }).isVisible()).toBe(true);
+    await page.keyboard.press("Escape");
+    await confirmation.waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "Open", exact: true }).click();
+    await page.getByRole("dialog").waitFor();
+    expect(await page.getByRole("alertdialog").count()).toBe(0);
   } finally {
     await page.close();
   }

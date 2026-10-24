@@ -1,5 +1,5 @@
 import { afterAll, expect, setSystemTime, test } from "bun:test";
-import { renderAdminNavigation } from "./navigation.test-fixture";
+import { renderAdminNavigation } from "./app-access-pulse-admin-navigation.fixture";
 
 setSystemTime(new Date("2026-10-21T12:00:00Z"));
 afterAll(() => setSystemTime());

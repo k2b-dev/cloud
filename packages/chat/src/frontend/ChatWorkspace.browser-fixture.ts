@@ -8,6 +8,7 @@ import {
   ConversationSchema,
   CreateConversationSchema,
   CreateOutcomeSchema,
+  CreateThreadSchema,
   ExistingMatchSchema,
   LeaveSchema,
   MAX_EXISTING_MATCHES,
@@ -32,9 +33,12 @@ import {
   SendMessageSchema,
   SuccessSchema,
   type SystemMessage,
+  type ThreadListSchema,
+  type ThreadSchema,
   UNREAD_CAP,
   UpdateConversationSchema,
   UpdateMemberSchema,
+  UpdateThreadSchema,
 } from "../service/contracts";
 import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 
@@ -44,7 +48,17 @@ type Person = { id: string; name: string };
 type Group = { id: string; name: string; size: number };
 type Member = z.infer<typeof MemberSchema>;
 type Permission = z.infer<typeof PermissionSchema>;
-type Chat = { conversation: Conversation; messages: Message[]; members: Member[]; archived: boolean };
+/** A thread as the in-memory server keeps it: the viewer's read state lives on the thread. */
+type ThreadEntry = {
+  id: string;
+  name: string;
+  description: string | null;
+  archived: boolean;
+  read: { lastReadSeq: number | null; unreadFromSeq: number | null } | null;
+  createdAt: string;
+  lastActivityAt: string;
+};
+type Chat = { conversation: Conversation; messages: Message[]; members: Member[]; archived: boolean; threads: ThreadEntry[] };
 type Subscription = { socket: ServerWebSocket<unknown>; id: string; channel: string; scope: { conversation?: string } };
 
 /** Midday in Berlin keeps even the longest seeded history on one fixed calendar day. */
@@ -74,6 +88,8 @@ export const pinPageClock = (at: number) => {
 export const viewer: Person = { id: "11111111-1111-4111-8111-111111111111", name: "Robin Example" };
 export const nora: Person = { id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" };
 export const tobias: Person = { id: "33333333-3333-4333-8333-333333333333", name: "Tobias Brandt" };
+
+const threadId = (chat: string, index: number) => `T${chat.slice(-3)}${index.toString(36).padStart(2, "0")}`;
 
 const ui = new URL("../../../ui/", import.meta.url).pathname;
 const buildHarness = async (): Promise<string> => {
@@ -154,8 +170,12 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
   let nextAccess = 0;
   let nextPerson = 0;
   let failing = 0;
+  let failingUnread = 0;
+  let failingThreads = 0;
   const reads: { chat: string; seq: number }[] = [];
-  const posted: { chat: string; clientId: string; body: string }[] = [];
+  // Which part of the chat each read named: "general", "all", or a thread.
+  const readViews: { chat: string; seq: number; thread: string }[] = [];
+  const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string }[] = [];
 
   const principalId = (principal: MemberPrincipal) => (principal.type === "user" ? principal.userId : principal.groupId);
   const makeMember = (principal: MemberPrincipal, permission: Permission, addedAt: string): Member => {
@@ -210,28 +230,100 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
       subscription.socket.send(JSON.stringify({ t: "event", id: subscription.id, cursor: `c.${cursor}`, data }));
     }
   };
+  // Each thread reads from its own position, falling back to where the viewer joined; General from the chat's.
+  const startOf = (chat: Chat, thread: string | null) => {
+    const read = chat.conversation.read;
+    if (read === null) return null;
+    if (thread === null) return readStart(read);
+    const own = chat.threads.find((entry) => entry.id === thread)?.read ?? null;
+    return readStart({ lastReadSeq: own?.lastReadSeq ?? null, unreadFromSeq: own?.unreadFromSeq ?? null, joinedSeq: read.joinedSeq });
+  };
+  const unreadIn = (chat: Chat, thread: string | null) => {
+    const start = startOf(chat, thread);
+    return start === null
+      ? 0
+      : Math.min(
+          UNREAD_CAP,
+          chat.messages.filter(
+            (message) => message.thread === thread && message.seq > start && message.kind === "text" && message.author.id !== viewer.id,
+          ).length,
+        );
+  };
+  const lastIn = (chat: Chat, thread: string | null) => {
+    const message = chat.messages.findLast((entry) => entry.thread === thread && entry.kind === "text");
+    return message ? { id: message.id, author: message.author, preview: message.body ?? "", createdAt: message.createdAt } : null;
+  };
+  const threadList = (chat: Chat): z.infer<typeof ThreadListSchema> => ({
+    general: { unread: unreadIn(chat, null), lastMessage: lastIn(chat, null) },
+    items: [...chat.threads]
+      .sort(
+        (a, b) =>
+          Number(a.archived) - Number(b.archived) ||
+          (a.archived ? a.name.localeCompare(b.name) : b.lastActivityAt.localeCompare(a.lastActivityAt)),
+      )
+      .map(
+        (thread): z.infer<typeof ThreadSchema> => ({
+          id: thread.id,
+          name: thread.name,
+          description: thread.description,
+          archived: thread.archived,
+          unread: unreadIn(chat, thread.id),
+          read: thread.read,
+          lastMessage: lastIn(chat, thread.id),
+          lastActivityAt: thread.lastActivityAt,
+          createdAt: thread.createdAt,
+        }),
+      ),
+  });
   const project = (chat: Chat) => {
-    const start = readStart(chat.conversation.read);
+    const unread = [null, ...chat.threads.map((thread) => thread.id)].reduce((sum, thread) => sum + unreadIn(chat, thread), 0);
     chat.conversation = {
       ...chat.conversation,
-      unread:
-        start === null
-          ? 0
-          : Math.min(
-              UNREAD_CAP,
-              chat.messages.filter((message) => message.seq > start && message.kind === "text" && message.author.id !== viewer.id).length,
-            ),
+      threads: chat.threads.filter((thread) => !thread.archived).length,
+      unread: Math.min(UNREAD_CAP, unread),
     };
     return chat.conversation;
   };
-  const update = (id: string, changed: boolean) => {
-    const conversation = project(chats.get(id)!);
+  const update = (id: string, changed: boolean, touched: readonly string[] = []) => {
+    const chat = chats.get(id)!;
+    const conversation = project(chat);
     if (!conversation.read) throw new Error("Read update has no participant");
-    const data = { conversationId: id, ...conversation.read, unread: conversation.unread, asOfRev: conversation.rev };
+    const threads = touched.map((thread) => {
+      const entry = chat.threads.find((candidate) => candidate.id === thread)!;
+      return {
+        id: thread,
+        lastReadSeq: entry.read?.lastReadSeq ?? null,
+        unreadFromSeq: entry.read?.unreadFromSeq ?? null,
+        unread: unreadIn(chat, thread),
+      };
+    });
+    const data = { threads, conversationId: id, ...conversation.read, unread: conversation.unread, asOfRev: conversation.rev };
     if (changed) deliver("me", id, { type: "read", ...data });
     return data;
   };
-  const read = (id: string, seq: number) => {
+  // The same monotonic rule as General, on a thread's own read state.
+  const readThread = (chat: Chat, thread: ThreadEntry, seq: number) => {
+    const s = Math.min(seq, chat.messages.length);
+    const state = thread.read ?? { lastReadSeq: null, unreadFromSeq: null };
+    const last = Math.max(state.lastReadSeq ?? s, s);
+    const from = state.unreadFromSeq;
+    const next = from !== null && s >= from ? (s + 1 <= last ? s + 1 : null) : from;
+    const changed = thread.read === null || state.lastReadSeq !== last || from !== next;
+    thread.read = { lastReadSeq: last, unreadFromSeq: next };
+    return changed;
+  };
+  const read = (id: string, seq: number, view = "general") => {
+    const chat = chats.get(id)!;
+    if (view !== "general") {
+      const targets = view === "all" ? chat.threads : chat.threads.filter((thread) => thread.id === view);
+      const touched = targets.filter((thread) => readThread(chat, thread, seq)).map((thread) => thread.id);
+      if (view !== "all") return update(id, touched.length > 0, touched);
+      const general = readGeneral(id, seq);
+      return touched.length ? update(id, true, touched) : general;
+    }
+    return readGeneral(id, seq);
+  };
+  const readGeneral = (id: string, seq: number) => {
     const chat = chats.get(id)!;
     const previous = chat.conversation.read;
     const s = Math.min(seq, chat.messages.length);
@@ -248,6 +340,13 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
       ? chat.messages.find((item) => item.id === message)
       : chat.messages.findLast((item) => item.kind === "text" && item.author.id !== viewer.id);
     if (message && !target) return null;
+    const thread = target?.thread ? chat.threads.find((entry) => entry.id === target.thread) : undefined;
+    if (thread && target) {
+      const base = Math.max(thread.read?.lastReadSeq ?? 0, chat.conversation.read?.joinedSeq ?? 0);
+      const changed = target.seq <= base && target.seq !== thread.read?.unreadFromSeq;
+      if (changed) thread.read = { lastReadSeq: thread.read?.lastReadSeq ?? null, unreadFromSeq: target.seq };
+      return update(id, changed, [thread.id]);
+    }
     const previous = chat.conversation.read;
     const state = previous ?? { lastReadSeq: null, unreadFromSeq: null, joinedSeq: chat.messages.length };
     const from = target?.seq ?? chat.messages.length;
@@ -256,11 +355,22 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
     chat.conversation = { ...chat.conversation, read: { ...state, unreadFromSeq: changed ? from : state.unreadFromSeq } };
     return update(id, previous === null || changed);
   };
-  const append = (chat: string, author: Person, body: string, at: Date, kind: "text" | "system" = "text") => {
+  const append = (
+    chat: string,
+    author: Person,
+    body: string,
+    at: Date,
+    kind: "text" | "system" = "text",
+    target: { thread?: string | null; replyTo?: string } = {},
+  ) => {
     const entry = chats.get(chat)!;
     const seq = entry.messages.length + 1;
     const rev = entry.conversation.rev + 1;
+    const original = target.replyTo ? entry.messages.find((message) => message.id === target.replyTo) : undefined;
+    const thread = original ? original.thread : (target.thread ?? null);
     const message: Message = {
+      thread,
+      replyTo: original ? { id: original.id, author: original.author, preview: original.body ?? "" } : null,
       id: messageId(chat, seq),
       conversationId: chat,
       seq,
@@ -273,13 +383,21 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
       createdAt: at.toISOString(),
     };
     entry.messages.push(message);
+    const owner = thread ? entry.threads.find((candidate) => candidate.id === thread) : undefined;
+    if (owner && kind === "text") owner.lastActivityAt = message.createdAt;
     entry.conversation = {
       ...entry.conversation,
       rev,
       ...(kind === "text"
         ? {
             lastActivityAt: message.createdAt,
-            lastMessage: { id: message.id, author: message.author, preview: body, createdAt: message.createdAt },
+            lastMessage: {
+              thread: thread ? { id: thread, name: entry.threads.find((candidate) => candidate.id === thread)!.name } : null,
+              id: message.id,
+              author: message.author,
+              preview: body,
+              createdAt: message.createdAt,
+            },
           }
         : {}),
     };
@@ -292,6 +410,7 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
     const { conversationId, id, seq, rev, kind, author, createdAt } = message;
     deliver("list", conversationId, {
       type: "summary",
+      thread: message.thread,
       conversationId,
       id,
       seq,
@@ -336,6 +455,7 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
     const start = new Date(options.end.getTime() - options.count * spacing);
     chats.set(id, {
       conversation: {
+        threads: 0,
         id,
         name: options.name ?? null,
         icon: null,
@@ -361,6 +481,7 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
         ),
       ),
       archived: false,
+      threads: [],
     });
     append(id, viewer, "", start, "system");
     const lines = [
@@ -386,27 +507,53 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
   const page = (chat: Chat, query: URLSearchParams) => {
     const before = query.get("before");
     const after = query.get("after");
+    const view = query.get("thread");
     const all = chat.messages;
+    const selected = view ? all.filter((message) => (view === "general" ? message.thread === null : message.thread === view)) : all;
     const items = after
-      ? all.filter((message) => message.seq > Number(after)).slice(0, 50)
-      : all.filter((message) => (before ? message.seq < Number(before) : true)).slice(-50);
-    return { items, seqHead: all.length, rev: chat.conversation.rev };
+      ? selected.filter((message) => message.seq > Number(after)).slice(0, 50)
+      : selected.filter((message) => (before ? message.seq < Number(before) : true)).slice(-50);
+    return {
+      items,
+      seqHead: all.length,
+      rev: chat.conversation.rev,
+      from: after ? Number(after) + 1 : items.length === 50 ? items[0]!.seq : 1,
+      to: before ? Number(before) - 1 : after && items.length === 50 ? items.at(-1)!.seq : all.length,
+    };
   };
   const list = () => ({
     items: [...chats.values()].map((chat) => chat.conversation).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)),
     nextCursor: null,
   });
-  const snapshot = (id: string, focus: string | null) => {
+  const snapshot = (id: string, focus: string | null, view = "all") => {
     const chat = chats.get(id);
     if (!chat) return null;
-    const target = focus ? chat.messages.find((message) => message.id === focus) : undefined;
-    const start = readStart(chat.conversation.read);
-    const position = target ? target.seq : !focus && chat.conversation.unread > 0 && start !== null ? start + 1 : null;
-    const items = position === null ? chat.messages.slice(-50) : chat.messages.filter((message) => message.seq < position + 25).slice(-50);
+    if (view !== "all" && view !== "general" && !chat.threads.some((thread) => thread.id === view)) return null;
+    const selected =
+      view === "all" ? chat.messages : chat.messages.filter((message) => message.thread === (view === "general" ? null : view));
+    const target = focus ? selected.find((message) => message.id === focus) : undefined;
+    // The first unread position among the threads the view shows.
+    const views = view === "all" ? [null, ...chat.threads.map((thread) => thread.id)] : [view === "general" ? null : view];
+    const firstUnread = selected.find(
+      (message) =>
+        message.kind === "text" &&
+        message.author.id !== viewer.id &&
+        views.includes(message.thread) &&
+        message.seq > (startOf(chat, message.thread) ?? Number.POSITIVE_INFINITY),
+    );
+    const position = target ? target.seq : !focus && firstUnread ? firstUnread.seq : null;
+    const items = position === null ? selected.slice(-50) : selected.filter((message) => message.seq < position + 25).slice(-50);
     return {
       cursor: `c.${cursor}`,
       conversation: chat.conversation,
-      page: { items, seqHead: chat.messages.length, rev: chat.conversation.rev },
+      threads: threadList(chat),
+      page: {
+        items,
+        seqHead: chat.messages.length,
+        rev: chat.conversation.rev,
+        from: items.length === 50 ? items[0]!.seq : 1,
+        to: position === null ? chat.messages.length : Math.min(position + 24, chat.messages.length),
+      },
       focus: target?.id ?? null,
     };
   };
@@ -526,7 +673,7 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
             );
         const batch = candidates().slice(0, confirmed ? READ_ALL_BATCH : READ_ALL_CONFIRM_FROM);
         if (!confirmed && batch.length >= READ_ALL_CONFIRM_FROM) return Response.json({ outcome: "confirm" });
-        for (const chat of batch) read(chat.conversation.id, chat.messages.length);
+        for (const chat of batch) read(chat.conversation.id, chat.messages.length, "all");
         return Response.json({ outcome: "done", marked: batch.length, more: candidates().length > 0 });
       }
       const match = /^\/api\/chat\/conversations\/([^/]+)(?:\/([a-z]+)(?:\/([^/]+))?)?$/.exec(url.pathname);
@@ -537,6 +684,63 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
         if ((request.method === "PATCH" && !part) || (part === "members" && request.method !== "GET")) {
           if (chat.conversation.permission !== "admin")
             return Response.json({ code: "FORBIDDEN", message: "Manage permission is required." }, { status: 403 });
+        }
+        if (part === "threads") {
+          const thread = accessId ? chat.threads.find((entry) => entry.id === accessId) : undefined;
+          if (request.method === "GET" && !accessId) return Response.json(threadList(chat));
+          if (chat.conversation.permission !== "admin")
+            return Response.json({ code: "FORBIDDEN", message: "Manage permission is required." }, { status: 403 });
+          if (failingThreads > 0) {
+            failingThreads -= 1;
+            return Response.json({ message: "Unavailable" }, { status: 503 });
+          }
+          const taken = (name: string, except?: string) =>
+            chat.threads.some((entry) => entry.id !== except && entry.name.toLowerCase() === name.toLowerCase());
+          if (request.method === "POST" && !accessId) {
+            const input = CreateThreadSchema.parse(await request.json());
+            if (taken(input.name))
+              return Response.json({ code: "THREAD_NAME_TAKEN", message: "A thread with this name already exists." }, { status: 409 });
+            const created: ThreadEntry = {
+              id: threadId(id!, chat.threads.length + 1),
+              name: input.name,
+              description: input.description ?? null,
+              archived: false,
+              read: null,
+              createdAt: now().toISOString(),
+              lastActivityAt: now().toISOString(),
+            };
+            chat.threads.push(created);
+            announce(
+              id!,
+              { code: "thread_created", params: { thread: { id: created.id, name: created.name } } },
+              `${viewer.name} created the thread “${created.name}”`,
+            );
+            project(chat);
+            deliver("conversation", id!, { type: "threads", conversationId: id });
+            return Response.json(
+              threadList(chat).items.find((entry) => entry.id === created.id),
+              { status: 201 },
+            );
+          }
+          if (request.method === "PATCH" && thread) {
+            const input = UpdateThreadSchema.parse(await request.json());
+            if (input.name !== undefined && taken(input.name, thread.id))
+              return Response.json({ code: "THREAD_NAME_TAKEN", message: "A thread with this name already exists." }, { status: 409 });
+            const from = thread.name;
+            if (input.name !== undefined) thread.name = input.name;
+            if (input.description !== undefined) thread.description = input.description;
+            if (input.archived !== undefined) thread.archived = input.archived;
+            project(chat);
+            if (input.name !== undefined && input.name !== from) {
+              const line = append(id!, viewer, "", now(), "system", { thread: thread.id });
+              line.system = { code: "thread_renamed", params: { from, to: thread.name } };
+              line.systemText = `${viewer.name} renamed “${from}” to “${thread.name}”`;
+              publish(line);
+            }
+            deliver("conversation", id!, { type: "threads", conversationId: id });
+            return Response.json(threadList(chat).items.find((entry) => entry.id === thread.id));
+          }
+          return Response.json({ code: "NOT_FOUND", message: "Thread not found." }, { status: 404 });
         }
         if (!part && request.method === "PATCH") {
           const input = UpdateConversationSchema.parse(await request.json());
@@ -672,17 +876,25 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
           return Response.json(MemberRemovalSchema.parse({ success: true, keptThroughGroup: false }));
         }
         if (part === "read" && request.method === "POST") {
-          const { seq } = ReadSchema.parse(await request.json());
+          const { seq, thread } = ReadSchema.parse(await request.json());
           reads.push({ chat: id!, seq });
-          return Response.json(read(id!, seq));
+          readViews.push({ chat: id!, seq, thread });
+          return Response.json(read(id!, seq, thread));
         }
         if (part === "unread" && request.method === "POST") {
+          if (failingUnread > 0) {
+            failingUnread -= 1;
+            return Response.json({ message: "Unavailable" }, { status: 503 });
+          }
           const { message } = MarkUnreadSchema.parse(await request.json());
           const data = markUnread(id!, message);
           return data ? Response.json(data) : Response.json({ code: "NOT_FOUND", message: "Message not found." }, { status: 404 });
         }
         if (!part) return Response.json(chat.conversation);
-        if (part === "snapshot") return Response.json(snapshot(id!, url.searchParams.get("message")));
+        if (part === "snapshot") {
+          const open = snapshot(id!, url.searchParams.get("message"), url.searchParams.get("thread") ?? "all");
+          return open ? Response.json(open) : Response.json({ code: "NOT_FOUND", message: "Thread not found." }, { status: 404 });
+        }
         if (part === "changes") return Response.json({ rev: chat.conversation.rev, more: false, conversation: null, messages: [] });
         if (part === "messages" && request.method === "GET") return Response.json(page(chat, url.searchParams));
         if (part === "messages" && request.method === "POST") {
@@ -692,7 +904,11 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
             failing -= 1;
             return Response.json({ message: "Unavailable" }, { status: 503 });
           }
-          const message = append(id!, viewer, input.body, now());
+          const thread = input.thread ? chat.threads.find((entry) => entry.id === input.thread) : undefined;
+          if (input.thread && !thread) return Response.json({ code: "NOT_FOUND", message: "Thread not found." }, { status: 404 });
+          if (thread?.archived)
+            return Response.json({ code: "THREAD_ARCHIVED", message: "Restore this thread before sending a message." }, { status: 409 });
+          const message = append(id!, viewer, input.body, now(), "text", { thread: input.thread ?? null, replyTo: input.replyTo });
           publish(message);
           return Response.json(message, { status: 201 });
         }
@@ -790,6 +1006,7 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
     members: (chat: string): Member[] => chats.get(chat)?.members ?? [],
     posted,
     reads,
+    readViews,
     chatCount: () => chats.size,
     /** Advances the viewer's read state on another device, without recording a page report. */
     readElsewhere: read,
@@ -804,8 +1021,11 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
       nextPerson = 0;
       events.length = 0;
       reads.length = 0;
+      readViews.length = 0;
       posted.length = 0;
       failing = 0;
+      failingUnread = 0;
+      failingThreads = 0;
     },
     /** Lets tests await the live connection before publishing. */
     subscribed: (chat?: string) =>
@@ -817,6 +1037,61 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
     /** Makes the next `count` sends fail with 503. */
     failSends: (count = 1) => {
       failing = count;
+    },
+    /** Makes the next `count` thread creations or changes fail with 503. */
+    failThreads: (count = 1) => {
+      failingThreads = count;
+    },
+    /**
+     * Adds a thread with `count` messages from others, the last `unread` of them unread, one every three minutes up to
+     * `end`. Returns the thread's ID.
+     */
+    addThread: (
+      chat: string,
+      options: { name: string; description?: string; count?: number; unread?: number; archived?: boolean; end?: Date },
+    ) => {
+      const entry = chats.get(chat)!;
+      const id = threadId(chat, entry.threads.length + 1);
+      const end = options.end ?? now();
+      const count = options.count ?? 0;
+      entry.threads.push({
+        id,
+        name: options.name,
+        description: options.description ?? null,
+        archived: options.archived ?? false,
+        read: null,
+        createdAt: new Date(end.getTime() - (count + 1) * 180_000).toISOString(),
+        lastActivityAt: new Date(end.getTime() - (count + 1) * 180_000).toISOString(),
+      });
+      const authors = [nora, tobias];
+      for (let index = 0; index < count; index += 1)
+        append(
+          chat,
+          authors[index % 2]!,
+          `${options.name}: update ${index + 1}`,
+          new Date(end.getTime() - (count - index) * 180_000),
+          "text",
+          {
+            thread: id,
+          },
+        );
+      const thread = entry.threads.find((candidate) => candidate.id === id)!;
+      const incoming = entry.messages.filter((message) => message.thread === id && message.author.id !== viewer.id);
+      const first = options.unread ? incoming.slice(-options.unread)[0] : undefined;
+      thread.read = { lastReadSeq: first ? first.seq - 1 : entry.messages.length, unreadFromSeq: null };
+      // General keeps its own read state: everything in it stays read.
+      if (entry.conversation.read && !first) entry.conversation.read = { ...entry.conversation.read };
+      project(entry);
+      return id;
+    },
+    /** Stores a message from another person in a thread, or as a reply, and delivers it live. */
+    receiveIn: (chat: string, author: Person, body: string, target: { thread?: string; replyTo?: string }) =>
+      publish(append(chat, author, body, now(), "text", target)),
+    /** The viewer's state of a thread for assertions. */
+    thread: (chat: string, id: string) => chats.get(chat)?.threads.find((entry) => entry.id === id),
+    /** Makes the next `count` "mark unread" requests fail with 503. */
+    failUnread: (count = 1) => {
+      failingUnread = count;
     },
     /** Stores a message from another person and delivers it live. */
     receive: (chat: string, author: Person, body: string) => publish(append(chat, author, body, now())),
@@ -830,12 +1105,18 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
     revoke,
     messageId,
     /** The island's props for an address, as the server renders them. */
-    props: (address: { chat?: string; message?: string; panel?: string }, options: { guest?: boolean } = {}): ChatWorkspaceProps => {
-      const open = address.chat ? snapshot(address.chat, address.message ?? null) : null;
+    props: (
+      address: { chat?: string; message?: string; panel?: string; thread?: string; threadsPage?: boolean },
+      options: { guest?: boolean } = {},
+    ): ChatWorkspaceProps => {
+      const view = address.thread ?? "all";
+      const open = address.chat ? snapshot(address.chat, address.message ?? null, view) : null;
       return {
         cursor: `c.${cursor}`,
         sidebar: list(),
-        open: open && { conversation: open.conversation, page: open.page, focus: open.focus },
+        view,
+        threadsPage: address.threadsPage ?? false,
+        open: open && { threads: open.threads, conversation: open.conversation, page: open.page, focus: open.focus },
         chatId: address.chat ?? null,
         guest: options.guest ?? false,
         panel: open && address.panel === "info" ? "info" : null,
