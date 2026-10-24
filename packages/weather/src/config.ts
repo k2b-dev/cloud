@@ -1,9 +1,13 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 import { WEATHER_SETTINGS } from "@k2b/cloud/services/weather/settings";
 import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "weather",
+  // APIs admit roleless service accounts; navigation keeps its narrower audience.
+  access: appAccess.signedIn({
+    publicRoutes: ["/api/weather/openapi.json"],
+  }),
   name: "Weather",
   icon: "ti ti-temperature-celsius",
   description: "Forecasts, saved locations, and weather widgets.",
