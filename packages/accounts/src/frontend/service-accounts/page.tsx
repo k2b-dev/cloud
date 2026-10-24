@@ -16,6 +16,7 @@ import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
 import { accountsMessages } from "../messages";
 import CreateMachineKey from "./CreateMachineKey.island";
+import DirectoryShares from "./DirectoryShares.island";
 import ServiceAccountCredentialActions from "./ServiceAccountCredentialActions.island";
 import ServiceAccountsFilters from "./ServiceAccountsFilters.island";
 
@@ -116,6 +117,7 @@ export default ssr<AuthContext>(async (c) => {
 
           <div class="flex flex-wrap items-center gap-2" style="view-transition-name: accounts-service-accounts-filters">
             <ServiceAccountsFilters search={search} kind={kind} status={status} />
+            <DirectoryShares />
           </div>
 
           {credentialsPage.items.length === 0 ? (

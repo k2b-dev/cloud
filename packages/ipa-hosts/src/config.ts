@@ -1,7 +1,10 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "ipa-hosts",
+  access: appAccess.roles(["admin"], {
+    publicRoutes: ["/api/ipa-hosts/openapi.json"],
+  }),
   cli: { "ipa-hosts": { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Hosts",
   icon: "ti ti-server",
