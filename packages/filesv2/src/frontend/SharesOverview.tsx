@@ -19,6 +19,7 @@ import type { SharePage, ShareView } from "../contracts";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import { apiFailure } from "./file-preview";
+import { useMachineMessages } from "./machine-messages";
 import { useFilesMessages } from "./messages";
 import { useSharePasswordMessages } from "./share-password-messages";
 import { filesUrl } from "./urls";
@@ -33,6 +34,7 @@ export default function SharesOverview(props: {
   const locale = useLocale();
   const p = useSharePasswordMessages();
   const t = useFilesMessages();
+  const machines = useMachineMessages();
   const page = () => (Array.isArray(props.shares) ? { items: props.shares, next: null } : props.shares);
   const [shares, setShares] = createSignal(page().items);
   const [next, setNext] = createSignal(page().next);
@@ -137,8 +139,11 @@ export default function SharesOverview(props: {
                     </Show>
                   </span>
                   <span class="truncate text-xs text-dimmed">
-                    {row.kind === "inbox" ? `/${row.scope}` : b().shareItems(row.items.length)} · {b().createdBy} {row.createdBy} ·{" "}
-                    {b().shareAccess(row.accessCount)}
+                    {row.kind === "inbox" ? `/${row.scope}` : b().shareItems(row.items.length)} · {b().createdBy} {row.createdBy}{" "}
+                    <Show when={row.createdByKind}>
+                      <StatusBadge tone="neutral" label={row.createdByKind === "agent" ? machines().agent : machines().standalone} />
+                    </Show>{" "}
+                    · {b().shareAccess(row.accessCount)}
                   </span>
                 </div>
               );

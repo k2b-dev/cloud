@@ -416,7 +416,15 @@ test("caller cancellation during PUT preserves its reason and starts no further 
 });
 
 test("Bun fetch aborts a real server that accepts PUT bytes but never responds", async () => {
-  shortenDeadlines();
+  // Expire the request at the observed transport boundary. A short wall-clock
+  // deadline can expire during status/segment inspection before PUT even starts.
+  let requestDeadline: AbortController;
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation(() => {
+    requestDeadline = new AbortController();
+    controllers.push(requestDeadline);
+    return requestDeadline.signal;
+  });
+  restoreTimeout = () => timeout.mockRestore();
   const sockets = new Set<Socket>();
   let stop = () => {};
   let puts = 0;
@@ -436,6 +444,7 @@ test("Bun fetch aborts a real server that accepts PUT bytes but never responds",
         puts++;
         // Consume the whole body and leave the response pending.
         socket.removeAllListeners("data");
+        requestDeadline.abort(new DOMException("Request deadline", "TimeoutError"));
         return;
       }
       const json = JSON.stringify(headers.split("\r\n")[0]!.includes("segments=") ? { items: [] } : status(3));

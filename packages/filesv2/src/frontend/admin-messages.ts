@@ -13,9 +13,9 @@ export const adminMessages = i18n.define({
       retireConfirm: "Mark this directory as retired so automatic creation leaves it alone? Existing files remain in place.",
       rebuild: "Rebuild index",
       rebuildConfirm: "Rebuild the index for the entire root, including paths outside this area?",
-      cloudPurpose: "Files for local Cloud accounts",
+      cloudPurpose: "Cloud-managed files",
       cloudExplanation:
-        "Homes and shared folders for local POSIX groups. Cloud manages access; new files belong to the Filegate service account. Requires local Linux identities. FreeIPA users can also access folders of local groups they belong to.",
+        "Personal storage and local POSIX group folders require local Linux identities. Independent machine storage uses explicit path grants and needs no Unix identity provisioning. New files use the Filegate service identity.",
       freeipaPurpose: "Files for FreeIPA identities",
       freeipaExplanation:
         "Homes and group folders for accounts managed in FreeIPA, for example on NFS. Access follows their Unix identities and permissions. Folders created directly on the storage server are also detected.",
@@ -157,9 +157,9 @@ export const adminMessages = i18n.define({
       retireConfirm: "Dieses Verzeichnis stilllegen, damit es nicht automatisch neu erstellt wird? Bestehende Dateien bleiben erhalten.",
       rebuild: "Index neu aufbauen",
       rebuildConfirm: "Den Index für den gesamten Root neu aufbauen, auch für Pfade außerhalb dieses Bereichs?",
-      cloudPurpose: "Dateien für lokale Cloud-Konten",
+      cloudPurpose: "Von Cloud verwaltete Dateien",
       cloudExplanation:
-        "Persönliche Ablagen und gemeinsame Ordner lokaler POSIX-Gruppen. Die Cloud verwaltet den Zugriff; neue Dateien gehören dem Filegate-Servicekonto. Lokale Linux-Identitäten müssen aktiviert sein. FreeIPA-Nutzer können ebenfalls auf Ordner lokaler Gruppen zugreifen, in denen sie Mitglied sind.",
+        "Persönliche Ablagen und Ordner lokaler POSIX-Gruppen benötigen lokale Linux-Identitäten. Eigenständige Maschinenablagen verwenden ausdrückliche Pfadberechtigungen und benötigen keine Unix-Einrichtung. Neue Dateien verwenden die Filegate-Dienstidentität.",
       freeipaPurpose: "Dateien für FreeIPA-Identitäten",
       freeipaExplanation:
         "Persönliche Ablagen und Gruppenordner für Konten aus FreeIPA, zum Beispiel auf NFS. Der Zugriff folgt ihren Unix-Identitäten und Berechtigungen. Auch direkt auf dem Speicherserver angelegte Verzeichnisse werden erkannt.",

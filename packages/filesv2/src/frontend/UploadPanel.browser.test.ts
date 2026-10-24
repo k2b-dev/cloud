@@ -333,7 +333,9 @@ describe("upload panel in a browser", () => {
             uploading: "Hochladen nach „Projects“",
           },
         }[lang];
-        const shot = (state: string) => tab.screenshot({ path: `/tmp/filesv2-upload-wait-${device}-${theme}-${state}.png` });
+        const shot = async (state: string) => {
+          if (process.env.SHOTS) await tab.screenshot({ path: `${process.env.SHOTS}/filesv2-upload-wait-${device}-${theme}-${state}.png` });
+        };
         const rowState = () =>
           tab.$eval(active, (row) => {
             const reason = row.querySelector<HTMLElement>(".filesv2-upload-row__reason");
@@ -406,7 +408,10 @@ describe("upload panel in a browser", () => {
           en: { finishing: "Finishing…", status: "Finishing", busy: "File server busy, trying again soon" },
           de: { finishing: "Wird abgeschlossen…", status: "Wird abgeschlossen", busy: "Dateiserver ausgelastet, gleich neuer Versuch" },
         }[lang];
-        const shot = (state: string) => tab.screenshot({ path: `/tmp/filesv2-upload-finishing-${device}-${theme}-${state}.png` });
+        const shot = async (state: string) => {
+          if (process.env.SHOTS)
+            await tab.screenshot({ path: `${process.env.SHOTS}/filesv2-upload-finishing-${device}-${theme}-${state}.png` });
+        };
         const rowState = () =>
           tab.$eval(active, (row) => {
             const reason = row.querySelector<HTMLElement>(".filesv2-upload-row__reason");

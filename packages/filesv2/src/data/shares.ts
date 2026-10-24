@@ -18,6 +18,8 @@ export type ShareRow = {
   owner_uid: number | null;
   owner_gid: number | null;
   created_by: string;
+  created_by_kind?: "user" | "service_account";
+  created_by_machine_kind?: "agent" | "standalone" | null;
   created_by_name: string;
   created_at: Date;
   expires_at: Date | null;
@@ -41,8 +43,8 @@ export const shares = {
   ): Promise<ShareRow> {
     const [row] = await sql<
       ShareRow[]
-    >`INSERT INTO filesv2.shares(token_hash,password_hash,kind,base_id,root,base_path,scope,items,title,note,public_note,owner_uid,owner_gid,created_by,created_by_name,expires_at,max_file_size,max_total_size,show_upload_names)
-      VALUES(${input.token_hash},${input.password_hash},${input.kind},${input.base_id}::uuid,${input.root},${input.base_path},${input.scope},${input.items},${input.title},${input.note},${input.public_note},${input.owner_uid},${input.owner_gid},${input.created_by}::uuid,${input.created_by_name},${input.expires_at},${input.max_file_size},${input.max_total_size},${input.show_upload_names}) RETURNING *`;
+    >`INSERT INTO filesv2.shares(token_hash,password_hash,kind,base_id,root,base_path,scope,items,title,note,public_note,owner_uid,owner_gid,created_by,created_by_kind,created_by_machine_kind,created_by_name,expires_at,max_file_size,max_total_size,show_upload_names)
+      VALUES(${input.token_hash},${input.password_hash},${input.kind},${input.base_id}::uuid,${input.root},${input.base_path},${input.scope},${input.items},${input.title},${input.note},${input.public_note},${input.owner_uid},${input.owner_gid},${input.created_by}::uuid,${input.created_by_kind ?? "user"},${input.created_by_machine_kind ?? null},${input.created_by_name},${input.expires_at},${input.max_file_size},${input.max_total_size},${input.show_upload_names}) RETURNING *`;
     return normalize(row!);
   },
   /** An owner's management list never depends on retaining access to the old storage. */

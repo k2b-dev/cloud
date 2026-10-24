@@ -57,6 +57,14 @@ export const publicApi = new Hono<AuthContext>()
       code,
     });
   })
+  .all("/transfer/:ticket", async (c) => {
+    setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_MAX_SECONDS);
+    try {
+      return await filesService.transfer(c.req.param("ticket") ?? "", c.req.raw);
+    } finally {
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+    }
+  })
   .post(
     "/:kind/:token/api/unlock",
     rateLimit({ keyBy: "ip", limitPerSecond: 5, windowSecs: 60 }),

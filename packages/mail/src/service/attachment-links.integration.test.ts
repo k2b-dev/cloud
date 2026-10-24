@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
+import { coreSettings } from "@k2b/cloud/services";
 import { createConfig } from "@k2b/ssr";
 import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
@@ -64,9 +65,13 @@ suite("public attachment links", () => {
   let mailboxId: string;
   let messageId: string;
   let attachmentId: string;
+  let originalAppUrl: Awaited<ReturnType<typeof coreSettings.read<string>>> | undefined;
 
   beforeAll(async () => {
     await migrate();
+    originalAppUrl = await coreSettings.read<string>("app.url");
+    if (originalAppUrl.stored === "unreadable") throw new Error("Attachment-link fixture cannot read app.url");
+    await coreSettings.set("app.url", "https://mail-attachments.example.test");
     const users = await sql<{ id: string; uid: string; admin: boolean }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES
@@ -128,6 +133,8 @@ suite("public attachment links", () => {
   });
 
   afterAll(async () => {
+    if (originalAppUrl?.stored === "readable") await coreSettings.set("app.url", originalAppUrl.value);
+    else if (originalAppUrl?.stored === "none") await coreSettings.remove("app.url");
     const ownerAccess = await sql<{ access_id: string }[]>`
       SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid
     `;

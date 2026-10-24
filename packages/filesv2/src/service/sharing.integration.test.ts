@@ -216,6 +216,8 @@ suite("share authority, public privacy and durable inbox budgets", () => {
   const makeService = () =>
     createSharingService({
       authorized: authorize,
+      shareAuthority: async () => {},
+      guardShare: (current) => current,
       async writableParent(requestActor, baseId, path) {
         const current = await authorize(requestActor, baseId, path.split("/").slice(0, -1).join("/"), true);
         return { ...current, relative: path };

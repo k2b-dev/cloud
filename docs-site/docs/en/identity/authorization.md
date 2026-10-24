@@ -653,3 +653,6 @@ accounts, such as guests, cannot be members and need a direct grant. Cloud
 rejects local users in directory groups, so a person missing from the list
 is not covered by the group grant. Change the membership in the directory or
 grant the person directly.
+
+For independently owned file storage and explicit path grants, see
+[Files machine storage](/en/docs/identity/files-machine-storage).

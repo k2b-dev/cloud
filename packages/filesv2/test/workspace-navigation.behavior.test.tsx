@@ -712,7 +712,7 @@ describe("Filesv2 progressive navigation", () => {
     const source = "/app/filesv2?base=ipa";
     const failing = { items: [base], issues: [{ area: "cloud" as const, code: "local_linux_disabled" }], editor: null };
     let dispose = await mount({ source, bases: failing, selectedId: base.id, directory });
-    expect(notices()).toEqual(["Cloud: Cloud files require local Linux identities to be enabled."]);
+    expect(notices()).toEqual(["Cloud: Personal and group Cloud storage requires local Linux identities to be enabled."]);
     expect(dom.root.textContent).toContain("This folder is empty");
     dispose();
     dispose = await mount({ source, bases: { items: [base], issues: [], editor: null }, selectedId: base.id, directory });

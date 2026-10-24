@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,7 +32,7 @@ await mkdir(join(workspace, "references", "guides"), { recursive: true });
 await writeFile(join(workspace, "references", "index.md"), "# Start\n");
 await writeFile(join(workspace, "references", "guides", "setup.md"), "# Setup\n");
 
-test("packs the shared bundle contract, keeps nested references and removes stale output", async () => {
+test("packs the shared bundle contract and keeps nested references", async () => {
   const out = join(workspace, "packed");
   const result = await run(out);
   expect(result.exitCode, result.stderr).toBe(0);
@@ -50,9 +50,20 @@ test("packs the shared bundle contract, keeps nested references and removes stal
   expect(manifest).toMatchObject({ name: "packed", app: "pack-test", version: "1.2.3" });
   expect(manifest.files.map((file) => file.path)).toEqual(["cli.js", "references/guides/setup.md", "references/index.md"]);
   expect(await readFile(join(out, "references", "guides", "setup.md"), "utf8")).toBe("# Setup\n");
-  await writeFile(join(out, "references", "stale.md"), "stale");
-  expect((await run(out)).exitCode).toBe(0);
-  expect(await Bun.file(join(out, "references", "stale.md")).exists()).toBe(false);
+});
+
+describe("replacing a previously packed bundle", () => {
+  const out = join(workspace, "repacked");
+  beforeEach(async () => {
+    const result = await run(out);
+    expect(result.exitCode, result.stderr).toBe(0);
+    await writeFile(join(out, "references", "stale.md"), "stale");
+  });
+
+  test("removes stale output", async () => {
+    expect((await run(out)).exitCode).toBe(0);
+    expect(await Bun.file(join(out, "references", "stale.md")).exists()).toBe(false);
+  });
 });
 
 test("refuses foreign non-empty output untouched, with one clear error line", async () => {
@@ -90,30 +101,34 @@ test("refuses an output with a cld manifest and a foreign extra file untouched",
   expect(await readFile(join(out, "keep.txt"), "utf8")).toBe("keep");
 });
 
-test("refuses earlier-looking outputs containing the module or references, including path aliases", async () => {
-  const out = join(workspace, "protected");
-  await mkdir(join(out, "references"), { recursive: true });
-  const pkg = JSON.stringify({ cld: { manifest: "manifest.json" } });
-  const source = await readFile(join(workspace, "module.ts"), "utf8");
-  await writeFile(join(out, "package.json"), pkg);
-  await writeFile(join(out, "cli.js"), source);
-  await writeFile(join(out, "references", "index.md"), "# Protected\n");
-  await symlink(out, join(workspace, "protected-alias"));
-  await symlink(join(workspace, "module.ts"), join(out, "manifest.json"));
-  for (const [module, references, output] of [
-    [join(out, "cli.js"), "references", out],
-    ["module.ts", join(out, "references"), out],
-    [join(workspace, "protected-alias", "cli.js"), "references", out],
-    [join(out, "manifest.json"), "references", out],
-  ] as const) {
+test.each(["module", "references", "directory-alias", "module-alias"] as const)(
+  "refuses an earlier-looking output containing protected %s input",
+  async (scenario) => {
+    const out = join(workspace, `protected-${scenario}`);
+    const alias = join(workspace, `protected-alias-${scenario}`);
+    await mkdir(join(out, "references"), { recursive: true });
+    const pkg = JSON.stringify({ cld: { manifest: "manifest.json" } });
+    const source = await readFile(join(workspace, "module.ts"), "utf8");
+    await writeFile(join(out, "package.json"), pkg);
+    await writeFile(join(out, "cli.js"), source);
+    await writeFile(join(out, "references", "index.md"), "# Protected\n");
+    await symlink(out, alias);
+    await symlink(join(workspace, "module.ts"), join(out, "manifest.json"));
+    const cases = {
+      module: [join(out, "cli.js"), "references", out],
+      references: ["module.ts", join(out, "references"), out],
+      "directory-alias": [join(alias, "cli.js"), "references", out],
+      "module-alias": [join(out, "manifest.json"), "references", out],
+    } as const;
+    const [module, references, output] = cases[scenario];
     const result = await runArgs([module, "--references", references, "--out", output]);
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("Refusing --out");
     expect(await readFile(join(out, "package.json"), "utf8")).toBe(pkg);
     expect(await readFile(join(out, "cli.js"), "utf8")).toBe(source);
     expect(await readFile(join(out, "references", "index.md"), "utf8")).toBe("# Protected\n");
-  }
-});
+  },
+);
 
 test("prints usage with --help", async () => {
   const result = await run(join(workspace, "unused"), "--help");

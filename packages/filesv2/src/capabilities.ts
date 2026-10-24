@@ -1,6 +1,5 @@
 import {
   CAPABILITY_MAX_RESULT_BYTES,
-  type CapabilityExecutionContext,
   defineCapabilities,
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
@@ -36,7 +35,6 @@ const EntryDataSchema = z.object({
 });
 /** Global search fans out over every accessible base; the count of bases is the user's own membership, not user input. */
 const SEARCH_BASE_LIMIT = 10;
-const userActor = (context: CapabilityExecutionContext) => (context.actor.kind === "user" ? context.actor : null);
 const parent = (path: string) => path.split("/").slice(0, -1).join("/");
 const entryHref = (baseId: string, path: string, directory: boolean) =>
   directory ? filesUrl(baseId, path) : filesUrl(baseId, parent(path), null, path);
@@ -62,8 +60,6 @@ export const filesCapabilities = defineCapabilities({
       data: EntryDataSchema,
       openWorld: false,
       run: async (input, context) => {
-        const actor = userActor(context);
-        if (!actor) return fail(err.forbidden("File entries are read on behalf of a signed-in user."));
         try {
           const result = await filesService.entryById(capabilityCall(context), input.id);
           return ok({
@@ -99,8 +95,6 @@ export const filesCapabilities = defineCapabilities({
         tags: [{ tag: "file", title: "Files", description: "Search file and folder names.", aliases: ["files", "folder", "folders"] }],
       },
       run: async ({ query, limit }, context) => {
-        const actor = userActor(context);
-        if (!actor) return fail(err.forbidden("File search runs on behalf of a signed-in user."));
         const q = query.trim();
         const available = (await filesService.bases(capabilityCall(context))).items;
         const readable = available.filter((base) => base.status === "existing");

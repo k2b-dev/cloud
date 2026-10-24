@@ -34,7 +34,7 @@ describe("Filesv2 server-rendered feedback", () => {
         <IssueMessage code="unavailable" />
       </LocaleProvider>
     ));
-    expect(html).toContain("Cloud files require local Linux identities");
+    expect(html).toContain("Personal and group Cloud storage requires local Linux identities");
     expect(html).toContain("This directory is missing");
     expect(html).toContain("Storage is currently unavailable");
     expect(html).not.toContain("This folder is empty");

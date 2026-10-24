@@ -353,10 +353,10 @@ function TemplateAccess(props: { id: string; name: string; close: () => void }) 
                 initialEntries={items()}
                 canEdit
                 allowPublic={false}
-                allowServiceAccounts={false}
+                allowServiceAccounts={true}
                 allowedLevels={[{ level: "read", label: t().use }]}
                 grantAccess={async (principal) => {
-                  if (principal.type === "public" || principal.type === "service_account") throw new Error(t().failed);
+                  if (principal.type === "public") throw new Error(t().failed);
                   return read(
                     await apiClient.templates.admin[":id"].grants.$post({ param: { id: props.id }, json: { principal } }),
                     t().failed,

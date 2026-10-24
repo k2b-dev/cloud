@@ -177,6 +177,7 @@ const publicPaths: Record<string, string[]> = {
   ],
   faq: ["/faq"],
   filesv2: [
+    "/share/filesv2/transfer/ticket",
     "/share/filesv2/s/token",
     "/share/filesv2/s/token/api",
     "/share/filesv2/s/token/api/unlock",
@@ -285,7 +286,13 @@ const protectedPaths: Record<string, string[]> = {
   "api-docs": ["/api/api-docs/private"],
   assistant: ["/api/assistant/artifacts", "/app/assistant/apps/studio/edit", "/admin/assistant"],
   faq: ["/admin/faq", "/api/faq"],
-  filesv2: ["/api/filesv2/bases", "/api/filesv2/admin/shares", "/api/filesv2/wopi/other"],
+  filesv2: [
+    "/api/filesv2/bases",
+    "/api/filesv2/admin/shares",
+    "/api/filesv2/wopi/other",
+    "/share/filesv2/transfer",
+    "/share/filesv2/transfer/ticket/extra",
+  ],
   "gateway-ops": [
     "/api/gateway/health",
     "/admin/gateway/apps",

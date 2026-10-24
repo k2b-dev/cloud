@@ -279,7 +279,14 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
     });
 
     test("PDF export resolves queries for a notebook-bound API token as that service account", async () => {
-      token.mockResolvedValue({ kind: "service_account", payload: {}, serviceAccount: printBot, delegatedUser: null, scopes: ["read"] });
+      token.mockResolvedValue({
+        kind: "service_account",
+        payload: {},
+        oauthClientId: "notebook-print-client",
+        serviceAccount: printBot,
+        delegatedUser: null,
+        scopes: ["read"],
+      });
       const markdown = ":::query\nsource: notes\n:::";
       expect((await pdf({ markdown })).status).toBe(200);
       expect(renderPdf).toHaveBeenCalledWith(
