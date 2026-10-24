@@ -58,6 +58,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
     "markdown",
     "minLength",
     "maxLength",
+    "onKeyDown",
     "monospace",
     "multiline",
     "onClear",
@@ -101,6 +102,19 @@ export function TextInput(props: TextInputProps): JSX.Element {
     local.password || local.type === "email" || local.type === "url" || /\b(username|email|url)\b/.test(String(rest.autocomplete ?? ""));
   const input = (next: string) => local.onValueChange?.(next);
   const commit = (next: string) => local.onValueCommit?.(next);
+  const submitOnEnter = (event: KeyboardEvent) => {
+    if (local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
+      event.preventDefault();
+      local.onSubmit();
+    }
+  };
+  /** The caller's key handler runs first; Enter submits unless it handled the key. */
+  const keyDown: JSX.EventHandler<HTMLInputElement, KeyboardEvent> = (event) => {
+    const handler = local.onKeyDown;
+    if (typeof handler === "function") handler(event);
+    else if (Array.isArray(handler)) handler[0](handler[1], event);
+    if (!event.defaultPrevented) submitOnEnter(event);
+  };
   const clear = () => {
     if (local.onClear) {
       local.onClear();
@@ -161,12 +175,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
                     input(event.currentTarget.value);
                   }}
                   onChange={(event) => commit(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
-                      event.preventDefault();
-                      local.onSubmit();
-                    }
-                  }}
+                  onKeyDown={keyDown}
                 />
               }
             >
@@ -184,12 +193,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
                   input(event.currentTarget.value);
                 }}
                 onChange={(event) => commit(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
-                    event.preventDefault();
-                    local.onSubmit();
-                  }
-                }}
+                onKeyDown={submitOnEnter}
               >
                 {/* HTML consumes one leading newline in textarea content. */}
                 {isServer ? `\n${value()}` : undefined}
