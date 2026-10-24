@@ -25,7 +25,7 @@ import {
   VirtualFeed,
   type VirtualFeedController,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { chatMessages } from "../messages";
 import { MAX_MESSAGE_REFS, type Mention } from "../service/contracts";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
@@ -159,12 +159,22 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   const [shared, setShared] = createSignal<readonly ChatAttachment[]>([]);
   // People mentioned in the draft; their identity travels as "type:id" in the composer's mention.
   const [mentions, setMentions] = createSignal<readonly ChatMention[]>([]);
+  // Each draft keeps its mentions while the reader looks at another thread; coming back restores the ones whose name
+  // still stands where it was in the restored text.
+  const draftMentions = new Map<string, readonly ChatMention[]>();
   createEffect(
     on(
       () => props.draftKey ?? props.chatId,
-      () => {
+      (key, previous) => {
+        if (previous !== undefined) draftMentions.set(previous, untrack(mentions));
         setShared([]);
         setMentions([]);
+        const saved = draftMentions.get(key) ?? [];
+        draftMentions.delete(key);
+        if (saved.length)
+          queueMicrotask(() =>
+            setMentions(saved.filter((mention) => props.draft.slice(mention.start, mention.end) === mention.attachment.name)),
+          );
       },
       { defer: true },
     ),

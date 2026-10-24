@@ -153,12 +153,17 @@ const list = async (context: ChatContext & { query?: unknown }): Promise<Result<
     return ok({ items, nextCursor: scanned.length > FOR_YOU_PAGE_SIZE ? encode(position(page.at(-1)!)) : null });
   });
 };
-/** Keyset batches bound memory and concurrent readers. Stop at the display cap or exhaustion; honor request cancellation. */
+/**
+ * Keyset batches bound memory and concurrent readers. Stop at the display cap, at exhaustion, or after a fixed number
+ * of batches, because every sidebar read waits for this count: a reader with very many unread mentions they can no
+ * longer read sees a lower count rather than a slow list. Honor request cancellation.
+ */
+const FOR_YOU_COUNT_BATCHES = 5;
 export const forYouUnread = async (context: ChatContext, db: typeof sql = sql) => {
   if (!allowedPersonal(context)) return 0;
   let total = 0;
   let cursor: Cursor | null = null;
-  while (total < FOR_YOU_COUNT_CAP) {
+  for (let batch = 0; batch < FOR_YOU_COUNT_BATCHES && total < FOR_YOU_COUNT_CAP; batch++) {
     context.caller?.signal?.throwIfAborted();
     const page = await candidates(db, context, RESOURCE_PAGE_SIZE, cursor, true);
     total += (await visible(db, context, page)).rows.length;

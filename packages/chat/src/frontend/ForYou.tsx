@@ -31,10 +31,12 @@ export default function ForYou(props: {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const api = createForYouApi();
-  const [items, setItems] = createSignal<readonly ForYouItem[]>(props.initial?.items ?? []);
-  const [cursor, setCursor] = createSignal(props.initial?.nextCursor ?? null);
+  // Read once: the workspace hands the server's page over only to the first mount.
+  const initial = props.initial;
+  const [items, setItems] = createSignal<readonly ForYouItem[]>(initial?.items ?? []);
+  const [cursor, setCursor] = createSignal(initial?.nextCursor ?? null);
   const [status, setStatus] = createSignal<"loading" | "ready" | "failed">(
-    props.initial === undefined ? "loading" : props.initial === null ? "failed" : "ready",
+    initial === undefined ? "loading" : initial === null ? "failed" : "ready",
   );
   const [loadingMore, setLoadingMore] = createSignal(false);
   let request: AbortController | undefined;
@@ -75,7 +77,7 @@ export default function ForYou(props: {
     on(
       () => props.revision,
       () => void load(),
-      { defer: props.initial !== undefined },
+      { defer: initial !== undefined },
     ),
   );
   const config = () => ({ ...props.dateConfig, locale: locale() });

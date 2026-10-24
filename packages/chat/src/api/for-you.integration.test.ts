@@ -89,12 +89,13 @@ suite("mentions and For you", () => {
     const chat = await f.fixture(owner, [{ person: mara, permission: "read" }]);
     await f.fixture(outsider);
     const [before] = await sql<{ seq_head: string }[]>`SELECT seq_head FROM chat.conversations WHERE id = ${chat.id}::uuid`;
-    const invalid = await send(owner, chat.shortId, { body: "Mara", mentions: [mention(outsider.id)] });
-    expect(invalid.status).toBe(400);
-    expect(await invalid.json()).toMatchObject({ code: "INVALID_MENTION" });
     expect((await send(owner, chat.shortId, { body: "Mara", mentions: [mention(mara.id, 0, 5)] })).status).toBe(400);
     const [after] = await sql<{ seq_head: string }[]>`SELECT seq_head FROM chat.conversations WHERE id = ${chat.id}::uuid`;
     expect(String(after!.seq_head)).toBe(String(before!.seq_head));
+    // Someone who cannot read the chat is not mentioned, but the message still goes out.
+    const outsiderMention = await send(owner, chat.shortId, { body: "Mara", mentions: [mention(outsider.id)] });
+    expect(outsiderMention.status).toBe(201);
+    expect((await outsiderMention.json()).mentions).toEqual([]);
     const input = { clientId: "same-mention", body: "Mara", mentions: [mention(mara.id)] };
     const message = await posted(owner, chat.shortId, input);
     expect(message.mentions).toEqual([{ ...input.mentions[0]!, name: "Mara" }]);

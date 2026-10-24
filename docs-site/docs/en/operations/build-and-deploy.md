@@ -315,7 +315,8 @@ principal who can currently read the thread through direct or group membership.
 System chats require an active eligible principal; sending does not depend on
 that principal having opened the container or item before. User-delegated
 service-account identities and accounts bound to another resource are not
-eligible. An unavailable or invalid target returns 400 `INVALID_MENTION`.
+eligible. A mention of an unavailable or ineligible principal is dropped and
+the message is still posted, so a person who lost access never blocks a send.
 Self-mentions are allowed.
 
 `GET /api/chat/conversations/:conversation/mention-candidates?q=&thread=general`

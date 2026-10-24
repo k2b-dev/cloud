@@ -506,7 +506,14 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const peopleQuery = createMemo(() =>
     !props.people || dismissed() || composing() ? null : chatPeopleQuery(props.value, caret(), selectionEnd(), mentions()),
   );
-  const [peopleMatches, setPeopleMatches] = createSignal<readonly ChatPersonSuggestion[]>([]);
+  // Results belong to the query they answer; while a newer query is asked, the older results show nothing to pick.
+  const [peopleResults, setPeopleResults] = createSignal<{ query: string; people: readonly ChatPersonSuggestion[] }>();
+  const peopleMatches = () => {
+    const results = peopleResults();
+    return results && results.query === peopleQuery()?.query ? results.people : [];
+  };
+  const setPeopleMatches = (people: readonly ChatPersonSuggestion[], query = peopleQuery()?.query ?? "") =>
+    setPeopleResults({ query, people });
   createEffect(
     on(
       () => [peopleQuery()?.start, peopleQuery()?.query] as const,
@@ -519,10 +526,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         onCleanup(() => abort.abort());
         props.people.search(query, abort.signal).then(
           (found) => {
-            if (!abort.signal.aborted) setPeopleMatches(found.slice(0, 8));
+            if (!abort.signal.aborted) setPeopleMatches(found.slice(0, 8), query);
           },
           () => {
-            if (!abort.signal.aborted) setPeopleMatches([]);
+            if (!abort.signal.aborted) setPeopleMatches([], query);
           },
         );
       },

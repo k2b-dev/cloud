@@ -926,7 +926,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         apply: (events) =>
           sidebar(async () => {
             if (events.some(({ data }) => data.type === "membership" || data.type === "personal")) await reloadSidebar();
-            if (events.some(({ data }) => data.type === "for-you")) await refreshForYou();
+            // A chat joined or left changes what is for the reader, as a new mention does.
+            if (events.some(({ data }) => data.type === "for-you" || data.type === "membership")) await refreshForYou();
             for (const { data } of events)
               if (data.type === "preferences") {
                 collapsed = data.collapsed;
@@ -937,6 +938,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         resync: () =>
           sidebar(async () => {
             await reloadSidebar();
+            // Hints may have been missed: the "For you" page reads again too.
+            forYouRevision++;
             const preferences = await api.preferences();
             collapsed = preferences.collapsed;
             notify();

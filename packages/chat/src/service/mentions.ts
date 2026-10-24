@@ -48,9 +48,9 @@ export const validateMentions = async (db: typeof sql, context: ChatContext, con
   const allowed = new Set(
     people.filter((_, i) => permissions === null || (permissions[i] !== undefined && permissions[i] !== "none")).map(key),
   );
-  if (mentions.some((mention) => !allowed.has(key(mention.principal))))
-    return fail({ code: "INVALID_MENTION", status: 400, message: messages(context).invalidMention });
-  return ok(mentions);
+  // A mention of someone who cannot read the thread (any more) is dropped, not refused: the message still goes out,
+  // and nobody learns more than before. Only the remaining people find it under "For you".
+  return ok(mentions.filter((mention) => allowed.has(key(mention.principal))));
 };
 const candidates = async (context: ChatContext & { conversationId: string; query?: unknown }) => {
   const parsed = MentionCandidateQuerySchema.safeParse(context.query ?? {});
@@ -71,8 +71,22 @@ const candidates = async (context: ChatContext & { conversationId: string; query
             WHERE ca.conversation_id = ${allowed.data.id}::uuid AND ca.role = 'member' AND a.permission IN ('read', 'write', 'admin')
               AND ((p.type = 'user' AND a.user_id = p.id) OR (p.type = 'service_account' AND a.service_account_id = p.id)))))
       ORDER BY lower(p.name), p.type, p.id LIMIT ${PEOPLE_PAGE_SIZE}`;
+    // An author who left an ordinary chat cannot read it any more and is no candidate; system chats decide reading
+    // when the mentioned person opens the message.
+    const permissions =
+      allowed.data.kind === "chat"
+        ? await getEffectivePermissions({
+            accessIds: db`SELECT access_id FROM chat.conversation_access WHERE conversation_id = ${allowed.data.id}::uuid AND role = 'member'`,
+            subjects: rows.map((person) =>
+              person.type === "user"
+                ? { type: "user" as const, userId: person.id }
+                : { type: "service_account" as const, serviceAccountId: person.id },
+            ),
+          })
+        : null;
+    const readers = rows.filter((_, i) => permissions === null || (permissions[i] !== undefined && permissions[i] !== "none"));
     return ok({
-      items: rows.map((person) => ({
+      items: readers.map((person) => ({
         principal: { type: person.type, id: person.id },
         name: label(person, context.locale),
         agent: person.agent,

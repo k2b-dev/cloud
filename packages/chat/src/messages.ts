@@ -4,7 +4,6 @@ export const chatMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      invalidMention: "A mentioned person is unavailable in this thread. Choose the person again.",
       pinPickedUp: ({ title }: { title: string }) => `Picked up ${title}. Use the arrow keys to move, Enter to place, Escape to cancel.`,
       pinMoveTarget: ({ title }: { title: string }) => `Move beside ${title}`,
       pinMoved: "Pin order changed. Saving…",
@@ -384,7 +383,6 @@ export const chatMessages = i18n.define({
       logs: "Logs",
     },
     de: {
-      invalidMention: "Eine erwähnte Person ist in diesem Thread nicht verfügbar. Wähle die Person erneut aus.",
       pinPickedUp: ({ title }: { title: string }) =>
         `${title} aufgenommen. Mit den Pfeiltasten verschieben, mit Eingabe ablegen, mit Escape abbrechen.`,
       pinMoveTarget: ({ title }: { title: string }) => `Neben ${title} verschieben`,
