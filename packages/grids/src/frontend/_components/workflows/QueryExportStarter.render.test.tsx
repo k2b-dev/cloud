@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { mockPdfAdmission } from "../../../../../../scripts/fixtures/pdf-admission";
 import "../ssr-test-plugin";
 
 const { QueryExportStarter, queryExportMessages, queryExportTemplates } = await import("./QueryExportStarter");
@@ -26,6 +27,7 @@ test("query export starts with schema-aware GQL and requires a preview before fi
 });
 
 test("the actual PDF starter escapes headings and cells exactly once", async () => {
+  using admission = mockPdfAdmission();
   const { renderDocumentHtmlPdf } = await import("../../../service/document-rendering");
   let html = "";
   const result = await renderDocumentHtmlPdf(
@@ -45,6 +47,7 @@ test("the actual PDF starter escapes headings and cells exactly once", async () 
     },
   );
   expect(result.ok).toBe(true);
+  expect(admission).toHaveBeenCalledTimes(1);
   expect(html).toContain("<th>Name &amp; label</th>");
   expect(html).toContain("<td>&lt;Camera&gt; &amp; lens</td>");
   expect(html).not.toContain("&amp;lt;");
