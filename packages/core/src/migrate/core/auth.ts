@@ -4,6 +4,101 @@ import { migratePosix } from "./posix";
 import { migrate as migrateServiceAccountGroupManagers } from "./service-account-group-managers";
 import { migrate as migrateServiceAccountGroups } from "./service-account-groups";
 
+const AVATAR_HASH = "'^[a-f0-9]{64}$'";
+const AVATAR_DATA_URL = "'^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$'";
+const AVATAR_CONFIG = (column: string) =>
+  `${column} IS NULL OR (jsonb_typeof(${column}) = 'object' AND octet_length(${column}::text) <= 1024)`;
+
+/**
+ * Avatar checks for people and service accounts. A person shows a photo, a built avatar, or initials; a service account
+ * shows a photo or a robot, drawn from its id until someone customises it. `avatar_hash` always identifies the image
+ * others see, so every reader of the column keeps working; a person's photo stays stored while another kind is active.
+ * A NULL `avatar_kind` is a row from before built avatars: photo when one is stored, otherwise initials.
+ */
+const AVATAR_CONSTRAINTS: Array<{ table: "users" | "service_accounts"; name: string; check: string }> = [
+  { table: "users", name: "users_avatar_kind_check", check: "avatar_kind IS NULL OR avatar_kind IN ('photo', 'built', 'initials')" },
+  { table: "users", name: "users_avatar_config_check", check: AVATAR_CONFIG("avatar_config") },
+  {
+    table: "users",
+    name: "users_avatar_state_check",
+    check: `(avatar_hash IS NULL OR avatar_hash ~ ${AVATAR_HASH}) AND CASE COALESCE(avatar_kind, CASE WHEN avatar_data_url IS NULL THEN 'initials' ELSE 'photo' END)
+      WHEN 'photo' THEN avatar_data_url IS NOT NULL AND avatar_hash IS NOT NULL
+      WHEN 'built' THEN avatar_config IS NOT NULL AND avatar_hash IS NOT NULL
+      ELSE avatar_hash IS NULL
+    END`,
+  },
+  {
+    table: "service_accounts",
+    name: "service_accounts_avatar_kind_check",
+    check: "avatar_kind IS NULL OR avatar_kind IN ('photo', 'built')",
+  },
+  { table: "service_accounts", name: "service_accounts_avatar_config_check", check: AVATAR_CONFIG("avatar_config") },
+  {
+    table: "service_accounts",
+    name: "service_accounts_avatar_data_url_check",
+    check: `avatar_data_url IS NULL OR (length(avatar_data_url) <= 65536 AND avatar_data_url ~ ${AVATAR_DATA_URL})`,
+  },
+  {
+    table: "service_accounts",
+    name: "service_accounts_avatar_state_check",
+    check: `(avatar_hash IS NULL OR avatar_hash ~ ${AVATAR_HASH}) AND CASE COALESCE(avatar_kind, 'built')
+      WHEN 'photo' THEN avatar_data_url IS NOT NULL AND avatar_hash IS NOT NULL
+      ELSE (avatar_config IS NULL) = (avatar_hash IS NULL)
+    END`,
+  },
+];
+
+export const migrateBuiltAvatars = async (db = sql): Promise<void> => {
+  await db`
+    ALTER TABLE auth.users
+    ADD COLUMN IF NOT EXISTS avatar_kind TEXT,
+    ADD COLUMN IF NOT EXISTS avatar_config JSONB
+  `.simple();
+  await db`
+    ALTER TABLE auth.service_accounts
+    ADD COLUMN IF NOT EXISTS avatar_kind TEXT,
+    ADD COLUMN IF NOT EXISTS avatar_config JSONB,
+    ADD COLUMN IF NOT EXISTS avatar_data_url TEXT,
+    ADD COLUMN IF NOT EXISTS avatar_hash TEXT
+  `.simple();
+  // The photo-only hash check would reject a built avatar; the state check replaces it.
+  await db`ALTER TABLE auth.users DROP CONSTRAINT IF EXISTS users_avatar_hash_check`.simple();
+  // Adding a check takes an exclusive lock, so it is added NOT VALID and committed first; validating the existing rows
+  // afterwards takes only a lock that lets reads and writes continue.
+  for (const constraint of AVATAR_CONSTRAINTS) {
+    await db
+      .unsafe(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = '${constraint.name}' AND conrelid = 'auth.${constraint.table}'::regclass
+          ) THEN
+            ALTER TABLE auth.${constraint.table} ADD CONSTRAINT ${constraint.name} CHECK (${constraint.check}) NOT VALID;
+          END IF;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+      `)
+      .simple();
+  }
+  for (const constraint of AVATAR_CONSTRAINTS) {
+    await db
+      .unsafe(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = '${constraint.name}' AND conrelid = 'auth.${constraint.table}'::regclass AND NOT convalidated
+          ) THEN
+            ALTER TABLE auth.${constraint.table} VALIDATE CONSTRAINT ${constraint.name};
+          END IF;
+        EXCEPTION WHEN check_violation THEN
+          RAISE NOTICE 'Skipping VALIDATE for ${constraint.name}: %', SQLERRM;
+        END $$;
+      `)
+      .simple();
+  }
+};
+
 export const migrate = async (): Promise<void> => {
   await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
   console.log("  ✓ auth schema");
@@ -20,6 +115,8 @@ export const migrate = async (): Promise<void> => {
       mail TEXT,
       avatar_data_url TEXT,
       avatar_hash TEXT,
+      avatar_kind TEXT,
+      avatar_config JSONB,
       account_expires TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       last_login_local TIMESTAMPTZ,
@@ -31,14 +128,6 @@ export const migrate = async (): Promise<void> => {
         avatar_data_url IS NULL OR (
           length(avatar_data_url) <= 65536
           AND avatar_data_url ~ '^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$'
-        )
-      ),
-      CONSTRAINT users_avatar_hash_check CHECK (
-        (avatar_data_url IS NULL AND avatar_hash IS NULL)
-        OR (
-          avatar_data_url IS NOT NULL
-          AND avatar_hash IS NOT NULL
-          AND avatar_hash ~ '^[a-f0-9]{64}$'
         )
       )
     )
@@ -956,41 +1045,15 @@ export const migrate = async (): Promise<void> => {
   await sql`
     DO $$
     BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'users_avatar_hash_check'
-          AND conrelid = 'auth.users'::regclass
-      ) THEN
-        ALTER TABLE auth.users
-          ADD CONSTRAINT users_avatar_hash_check
-          CHECK (
-            (avatar_data_url IS NULL AND avatar_hash IS NULL)
-            OR (
-              avatar_data_url IS NOT NULL
-              AND avatar_hash IS NOT NULL
-              AND avatar_hash ~ '^[a-f0-9]{64}$'
-            )
-          ) NOT VALID;
-      END IF;
-    END $$;
-  `.simple();
-  await sql`
-    DO $$
-    BEGIN
       BEGIN
         ALTER TABLE auth.users
           VALIDATE CONSTRAINT users_avatar_data_url_check;
       EXCEPTION WHEN check_violation THEN
         RAISE NOTICE 'Skipping VALIDATE for users_avatar_data_url_check: %', SQLERRM;
       END;
-      BEGIN
-        ALTER TABLE auth.users
-          VALIDATE CONSTRAINT users_avatar_hash_check;
-      EXCEPTION WHEN check_violation THEN
-        RAISE NOTICE 'Skipping VALIDATE for users_avatar_hash_check: %', SQLERRM;
-      END;
     END $$;
   `.simple();
+  await migrateBuiltAvatars();
 
   // account_lifecycle_reminders: the API expects a strict set of values. Add
   // CHECK constraints as NOT VALID then VALIDATE so upgrade doesn't fail on
