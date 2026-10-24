@@ -11,6 +11,7 @@ import {
   CapabilityActionReviewSchema,
   defineCapabilities,
 } from "../contracts/capabilities";
+import { geoMapContract } from "../contracts/geo-map";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { parseMandatePolicy } from "../services/mandates/policy";
@@ -694,11 +695,143 @@ describe("AI capability catalog", () => {
     expect(searchAiTools(catalog, { query: "read email messages", appId: "mail" }).tools).toEqual([
       expect.objectContaining({ name: "mail.list" }),
     ]);
-    expect(searchAiTools(catalog, { query: "read", appId: "mail" }).tools).toEqual([]);
+    expect(searchAiTools(catalog, { query: "read", appId: "mail" }).tools).toEqual([expect.objectContaining({ name: "contacts.list" })]);
+    // Fallback must still match words: "read" is not a match for "unread".
+    expect(
+      searchAiTools(
+        catalog.filter((entry) => entry.appId === "mail"),
+        { query: "read" },
+      ).tools,
+    ).toEqual([]);
     expect(searchAiTools(catalog, { query: "missing phrase" }).tools).toEqual([]);
     expect(searchAiTools(catalog, { query: "create items", appId: "contacts" }).tools).toContainEqual(
       expect.objectContaining({ name: "contacts.create" }),
     );
+  });
+
+  test("recovers a wrong app hint through discovery, loading and execution", async () => {
+    const core = capabilityApp("core", "Core");
+    const query = core.manifest.queries[0]!;
+    core.manifest.queries = [
+      {
+        ...query,
+        localId: "map.style",
+        title: "Show a map",
+        description: "Return a Cloud map style URL.",
+        inputSchema: z.toJSONSchema(geoMapContract.style.input),
+        dataSchema: z.toJSONSchema(geoMapContract.style.data),
+      },
+      { ...query, localId: "address.geocode", title: "Find an address", description: "Resolve an address to coordinates." },
+      { ...query, localId: "route.calculate", title: "Calculate a route", description: "Calculate stops by car, bike or on foot." },
+    ];
+    core.presentation = {
+      baseLocale: "en",
+      translations: {
+        de: {
+          queries: {
+            "map.style": { title: "Karte anzeigen" },
+            "address.geocode": { title: "Adresse finden" },
+            "route.calculate": { title: "Route berechnen" },
+          },
+        },
+      },
+    };
+    const venue = capabilityApp("venue", "Venue");
+    const result = { data: { styleUrl: "/api/geo/style?theme=light&locale=de", attribution: [] } };
+    const execute = mock(async () => result);
+    const resolver = createAiToolResolver({
+      conversationId: "geo-discovery",
+      actor,
+      locale: "de",
+      staticTools: [],
+      store: createRunToolStore([]),
+      listRegistry: async () => [core, venue],
+      execute,
+    });
+    const context = {
+      signal: new AbortController().signal,
+      requestApproval: async () => false,
+      requestClientTool: async () => {
+        throw new Error("Unexpected client tool");
+      },
+    };
+    const tools = await resolver();
+    const search = tools.find((tool) => tool.def.name === "search_tools")!;
+    for (const [query, name] of [
+      ["map location", "core.map.style"],
+      ["Karte", "core.map.style"],
+      ["address", "core.address.geocode"],
+      ["Adresse", "core.address.geocode"],
+      ["route", "core.route.calculate"],
+    ]) {
+      for (const appId of ["venue", "unknown-app", undefined]) {
+        expect(await search.execute({ query, appId }, context)).toMatchObject({
+          tools: expect.arrayContaining([expect.objectContaining({ name })]),
+        });
+      }
+    }
+    // A successful scoped search stays scoped, even when other apps match.
+    expect(await search.execute({ query: "create", appId: "venue" }, context)).toMatchObject({
+      tools: [expect.objectContaining({ name: "venue.create" })],
+    });
+    const load = tools.find((tool) => tool.def.name === "load_tools")!;
+    expect(await load.execute({ names: ["core.map.style"] }, context)).toMatchObject({
+      loaded: [{ name: "core.map.style", call: "core__query__map_dot_style" }],
+    });
+    const map = (await resolver()).find((tool) => tool.def.name === "core__query__map_dot_style")!;
+    expect(await map.execute({ theme: "light" }, context)).toEqual(result);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(["scope", "mandate", "hidden", "offline"] as const)("search fallback preserves %s exclusions", async (exclusion) => {
+    const core = capabilityApp("core", "Core", { title: "Show a map", description: "Return a Cloud map style URL." });
+    const venue = capabilityApp("venue", "Venue");
+    const tools = await createAiToolResolver({
+      conversationId: "restricted-discovery",
+      actor,
+      staticTools: [],
+      store: createRunToolStore([]),
+      listRegistry: async () => (exclusion === "offline" ? [venue] : [core, venue]),
+      ...(exclusion === "scope" ? { allowedTools: ["venue.list"] } : {}),
+      ...(exclusion === "mandate"
+        ? {
+            mandatePolicy: parseMandatePolicy({
+              version: 1,
+              apps: ["venue"],
+              operations: ["capability.query:list"],
+              actions: "deny",
+              grants: [{ appId: "venue", capabilityId: "list", kind: "query", fixedInput: {} }],
+            }),
+          }
+        : {}),
+      ...(exclusion === "hidden"
+        ? {
+            listApps: async () => [
+              {
+                id: "venue",
+                name: "Venue",
+                description: "Venues",
+                icon: "ti ti-box",
+                routes: [],
+                baseUrl: "http://test.invalid",
+              },
+            ],
+          }
+        : {}),
+    })();
+    const search = tools.find((tool) => tool.def.name === "search_tools")!;
+    expect(
+      await search.execute(
+        { query: "map location", appId: "venue" },
+        {
+          signal: new AbortController().signal,
+          requestApproval: async () => false,
+          requestClientTool: async () => {
+            throw new Error("Unexpected client tool");
+          },
+        },
+      ),
+    ).toEqual({ tools: [] });
   });
 
   test("does not let a scoped app description make every operation match", () => {

@@ -295,7 +295,8 @@ export const searchAiTools = (
     .flatMap((entry) => {
       const name = normalizeSearchText(entry.name);
       const title = normalizeSearchText(entry.title);
-      const identity = `${name} ${title}`;
+      const localizedTitle = normalizeSearchText(entry.capability?.display.title ?? "");
+      const identity = `${name} ${title} ${localizedTitle}`;
       const app = normalizeSearchText(`${entry.appId ?? ""} ${entry.searchText}`);
       const description = normalizeSearchText(entry.description);
       const identityWords = searchWordForms(identity);
@@ -303,7 +304,7 @@ export const searchAiTools = (
       const descriptionWords = searchWordForms(description);
       let matchedTerms = 0;
       let score = 0;
-      if (name === phrase || title === phrase) score += 100;
+      if (name === phrase || title === phrase || localizedTitle === phrase) score += 100;
       else if (includesSearchPhrase(identity, phrase)) score += 50;
       if (!input.appId && app === phrase) score += 40;
       else if (!input.appId && includesSearchPhrase(app, phrase)) score += 20;
@@ -324,6 +325,15 @@ export const searchAiTools = (
         right.matchedTerms - left.matchedTerms || right.score - left.score || left.entry.name.localeCompare(right.entry.name),
     )
     .slice(0, DEFAULT_SEARCH_LIMIT);
+  // appId is a discovery hint, not the conversation's authorization scope. The
+  // resolver has already removed inaccessible, unoffered and disallowed tools.
+  // Keep successful scoped searches precise; recover a mistaken owner once.
+  if (matches.length === 0 && input.appId) {
+    return searchAiTools(
+      catalog.filter((entry) => entry.appId !== input.appId),
+      { query: input.query },
+    );
+  }
   return {
     tools: matches.map(({ entry }) => ({
       name: entry.name,
@@ -669,11 +679,16 @@ export const createAiToolMetaTools = (input: {
       : "";
   const search = defineAiTool({
     name: "search_tools",
-    description: `Search available Cloud tools and installed app operations by concise task terms.${liveAppDirectory} When the app is known, set its exact appId on the first attempt. Use list_apps only when the owning app is unclear. This only discovers tools; call load_tools with the exact returned names before using deferred tools.${unavailableLoadedNotice}`,
+    description: `Search available Cloud tools and installed app operations by concise task terms.${liveAppDirectory} When the app is known, set its exact appId. If that app has no matches, search also returns matching available tools from other apps or built-ins. If the owner is unclear, omit appId or use list_apps. This only discovers tools; call load_tools with the exact returned names before using deferred tools.${unavailableLoadedNotice}`,
     inputSchema: z
       .object({
         query: z.string().trim().min(1).max(200).describe("What the tool should do."),
-        appId: z.string().trim().min(1).optional().describe("Optional exact Cloud app id."),
+        appId: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("Preferred exact Cloud app id; an empty scoped search falls back to other available tools."),
       })
       .strict(),
     outputSchema: z.object({ tools: z.array(ToolCatalogItemSchema).max(DEFAULT_SEARCH_LIMIT) }).strict(),
