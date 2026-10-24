@@ -3,6 +3,8 @@ import { z } from "zod";
 export const MEMBER_PAGE_SIZE = 100;
 export const CONVERSATION_PAGE_SIZE = 50;
 export const UNREAD_CAP = 100;
+/** A count beside an entry shows "99+" above 99, so the total across chats stops at 100. */
+export const UNREAD_TOTAL_CAP = 100;
 export const MAX_THREADS = 100;
 export const READ_ALL_CONFIRM_FROM = 10;
 // One sidebar page bounds each transaction; the client repeats while more remain.

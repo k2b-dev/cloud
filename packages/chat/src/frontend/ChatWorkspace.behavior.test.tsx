@@ -426,6 +426,31 @@ describe("ChatWorkspace interactions", () => {
     expect(posted).toHaveLength(0);
   });
 
+  test("in the Cloud app a draft the device could not keep is stored on Retry, without a conflict with itself", async () => {
+    await mount(true, [conversation], null, "en", "write", { url: "/pwa/chat/c/Chat01", app: true });
+    const storage = dom.window.localStorage;
+    // The device's storage refuses the first keystroke, as a full or locked store does.
+    Object.defineProperty(dom.window, "localStorage", {
+      configurable: true,
+      get: () => {
+        throw new dom.window.DOMException("Quota exceeded", "QuotaExceededError");
+      },
+    });
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    field.value = "Seals arrive on Monday";
+    field.dispatchEvent(new dom.window.Event("input", { bubbles: true }) as unknown as Event);
+    await settle();
+    const t = chatMessages.resolve(["en"]).t;
+    expect(dom.root.textContent).toContain(t.draftNotSaved);
+    Object.defineProperty(dom.window, "localStorage", { configurable: true, value: storage });
+    button(t.retry).click();
+    await settle();
+    expect(dom.root.textContent).not.toContain(t.draftNotSaved);
+    const stored = Object.keys(storage).filter((key) => key.startsWith("cloud.pwa.draft:"));
+    expect(stored.map((key) => storage.getItem(key))).toEqual(["Seals arrive on Monday"]);
+    expect(field.value).toBe("Seals arrive on Monday");
+    expect(consoleErrors).toEqual([]);
+  });
   test("a failed initial storage read does not cache an empty draft; retry restores it", async () => {
     const storage = dom.window.sessionStorage;
     storage.setItem(`cloud.chat.draft:${viewerId}:Chat01`, "Saved before reopening");

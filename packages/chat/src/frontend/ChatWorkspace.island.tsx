@@ -1,3 +1,4 @@
+import { refreshAppBadges } from "@k2b/cloud/browser/app-badges";
 import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
@@ -49,7 +50,14 @@ import { createChatStore, type OpenChat } from "./chat-store";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
-import { panelHref as conversationHref, parseRoute, type Route, threadsPageHref as threadsPageAddress } from "./route";
+import {
+  panelHref as conversationHref,
+  parseRoute,
+  type Route,
+  routeAddress,
+  threadsPageHref as threadsPageAddress,
+  UNREAD_COUNT_PATH,
+} from "./route";
 import { openThreadDialog } from "./ThreadDialog";
 import {
   chatHasThreads,
@@ -194,7 +202,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     unsavedDrafts.add(id);
     try {
       if (!savedDrafts) throw new Error("Draft storage unavailable");
-      savedDrafts.write(id, text, savedTexts.get(id) ?? "");
+      savedDrafts.write(id, text, expectedDraft(id));
       savedTexts.set(id, text);
       unsavedDrafts.delete(id);
     } catch (error) {
@@ -202,6 +210,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       else setDraftStorageFailed(true);
     }
   };
+  /**
+   * The text another view of this tab may have saved meanwhile, such as the panel's iframe. The Cloud app is one
+   * window, and its device storage also hands back text it could not keep yet, which is no other view's edit.
+   */
+  const expectedDraft = (id: string) => (props.app ? undefined : (savedTexts.get(id) ?? ""));
   /**
    * The web keeps drafts for the tab. The Cloud app keeps them in the device's storage, so a chat's draft survives the
    * app being ended in the background; signing out of the app deletes them.
@@ -222,7 +235,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       for (const id of unsavedDrafts) {
         try {
           const text = drafts.get(id)!;
-          savedDrafts.write(id, text, savedTexts.get(id) ?? "");
+          savedDrafts.write(id, text, expectedDraft(id));
           savedTexts.set(id, text);
           unsavedDrafts.delete(id);
         } catch (error) {
@@ -305,6 +318,35 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [localBumps, setLocalBumps] = createSignal(0);
   let outbox: Sends | undefined;
   let feed: VirtualFeedController | undefined;
+
+  // The Cloud app counts unread messages in every chat, not only the loaded rows. When the rows' counts change, a read
+  // here or a message elsewhere, it reads the total again and lets the sidebar's count follow.
+  const [unreadTotal, setUnreadTotal] = createSignal<number>();
+  if (props.app) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const readTotal = async () => {
+      const response = await fetch(UNREAD_COUNT_PATH, { credentials: "same-origin", headers: { accept: "application/json" } }).catch(
+        () => null,
+      );
+      const body: unknown = response?.ok ? await response.json().catch(() => null) : null;
+      if (typeof body === "object" && body !== null && "count" in body && typeof body.count === "number") setUnreadTotal(body.count);
+    };
+    onMount(() => void readTotal());
+    createEffect(
+      on(
+        () => rows().reduce((sum, row) => sum + row.unread, 0),
+        () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            void readTotal();
+            refreshAppBadges();
+          }, 300);
+        },
+        { defer: true },
+      ),
+    );
+    onCleanup(() => clearTimeout(timer));
+  }
 
   const sortRows = () => setOrder(rows().map((row) => row.id));
   const listRows = createMemo(() => {
@@ -764,8 +806,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     setPanel("info");
     setRoute({ ...route(), chatId: id, messageId, panel: "info" });
     const options = { scroll: "preserve" as const, state: { chatFromList: listDepth() === 1, chatInfoFromChat: true } };
-    if (navigation) navigation.push(panelHref(id, "info", messageId, route().view), options);
-    else navigate(panelHref(id, "info", messageId, route().view), options);
+    if (navigation) navigation.push(routeAddress(route(), basePath), options);
+    else navigate(routeAddress(route(), basePath), options);
   };
   const infoFromChat = () => {
     const state: unknown = history.state;
@@ -782,8 +824,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const messageId = route().messageId;
     setPanel(null);
     setRoute({ ...route(), chatId: id, messageId, panel: null });
-    if (navigation) navigation.push(panelHref(id, null, messageId, route().view), { scroll: "preserve" });
-    else navigate(panelHref(id, null, messageId, route().view), { scroll: "preserve" });
+    if (navigation) navigation.push(routeAddress(route(), basePath), { scroll: "preserve" });
+    else navigate(routeAddress(route(), basePath), { scroll: "preserve" });
   };
 
   /** A chat the person just started, or chose among existing ones, opens in place like a chat from the list. */
@@ -1158,7 +1200,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const infoLink = (current: Conversation) => (
     <IconButtonLink
       label={t().chatInfo}
-      href={panelHref(current.id, panel() === "info" ? null : "info", route().messageId, route().view)}
+      href={routeAddress({ ...route(), chatId: current.id, panel: panel() === "info" ? null : "info" }, basePath)}
       navigation="enhanced"
       onNavigate={(navigation) => (panel() === "info" ? closeInfo(navigation) : openInfo(navigation))}
       aria-expanded={panel() === "info"}
@@ -1176,7 +1218,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   );
 
   /** Unread messages in every chat but the open one, for the Cloud app's way back to the list. */
-  const othersUnread = (id: string) => rows().reduce((sum, row) => (row.id === id ? sum : sum + row.unread), 0);
+  const othersUnread = (id: string) => {
+    const loaded = rows().reduce((sum, row) => (row.id === id ? sum : sum + row.unread), 0);
+    const total = unreadTotal();
+    return total === undefined ? loaded : Math.max(loaded, total - (rows().find((row) => row.id === id)?.unread ?? 0));
+  };
   const threadsPageOpen = () => (route().threads && openChat()?.id && threaded() ? conversation() : null);
   const threadsPageView = (current: Conversation): JSX.Element => (
     <ChatThreadsPage
