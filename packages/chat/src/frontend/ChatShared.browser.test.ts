@@ -148,7 +148,7 @@ test("a message shares at most ten elements; the eleventh is refused before the 
       await page.getByRole("button", { name: "Add to chat", exact: true }).click();
       await page.getByRole("menuitem", { name: "Share a Cloud element" }).click();
       await page.locator('input[role="combobox"]').fill(`Task number ${index}`);
-      await page.getByRole("option", { name: new RegExp(`Task number ${index}$`) }).click();
+      await page.getByRole("option", { name: new RegExp(`^Task number ${index}(?!\\d)`) }).click();
       await page.getByRole("dialog").getByRole("button", { name: "Add", exact: true }).click();
       await page.locator(".k2b-chat-composer").getByText(`Task number ${index}`, { exact: true }).waitFor();
     };
