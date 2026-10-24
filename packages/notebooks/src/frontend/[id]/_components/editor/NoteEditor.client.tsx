@@ -90,6 +90,8 @@ const FIRST_EDITS = Symbol("first edits");
 const firstEditsSettled = Annotation.define<boolean>();
 /** How long leaving the note waits for the first edits to reach the live note before it asks. */
 const FIRST_EDITS_LEAVE_WAIT_MS = 5_000;
+/** How often a note that is only read tries again to load a newer saved text, waiting 1, 2, then 4 s. */
+const SAVED_TEXT_RETRIES = 3;
 type LeaveGuard = Pick<ReturnType<typeof createSyncEnded>, "confirmLeave" | "releaseLeave">;
 type EditorInstanceProps = {
   noteId: string;
@@ -1064,39 +1066,54 @@ function EditorInstance(
 
     // Before the first edit nothing is live: a save by someone else reaches this note as its new saved text.
     let savedTextRequest: AbortController | undefined;
+    const readSavedText = async (request: AbortController, attempt = 0): Promise<void> => {
+      try {
+        const response = await apiClient[":id"]["route-state"].$get(
+          { param: { id: props.notebookId }, query: { href: window.location.pathname + window.location.search } },
+          { init: { signal: request.signal } },
+        );
+        if (!response.ok) throw new Error(`Failed to load the saved note (${response.status})`);
+        const payload = await response.json();
+        const view = editorView();
+        if (request.signal.aborted || collabStarted() || !view) return;
+        // A note locked, deleted or moved out of reach meanwhile reopens as the server now shows it.
+        if (payload.kind !== "ok" || payload.state.note.id !== props.noteId) {
+          window.location.reload();
+          return;
+        }
+        if (payload.state.note.historyIncomplete) setHistoryIncomplete(true);
+        const saved = (payload.state.note.contentMd ?? "").replace(/\r\n?/g, "\n");
+        const shown = view.state.doc.toString();
+        baseText = saved;
+        if (saved !== shown)
+          view.dispatch({
+            changes: changesBetween(shown, saved) ?? { from: 0, to: shown.length, insert: saved },
+            annotations: [firstEditsSettled.of(true), Transaction.addToHistory.of(false), Transaction.remote.of(true)],
+          });
+      } catch (error) {
+        if (request.signal.aborted) return;
+        // A later event may move the live cursor past this one, so the note tries again on its own.
+        if (attempt >= SAVED_TEXT_RETRIES) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+        return readSavedText(request, attempt + 1);
+      }
+    };
     const onWorkspaceEvent = (raw: Event) => {
       const detail = (raw as CustomEvent<WorkspaceEventDetail>).detail;
       const { event } = detail;
-      if (props.readOnly || collabStarted() || event.type !== "note.updated" || event.note.id !== props.noteId) return;
+      if (props.readOnly || collabStarted()) return;
+      // A note deleted elsewhere before anyone typed here reopens as the server now shows it.
+      if (event.type === "note.deleted" && event.noteId === props.noteId) {
+        window.location.reload();
+        return;
+      }
+      if (event.type !== "note.updated" || event.note.id !== props.noteId) return;
+      if (event.note.historyIncomplete) setHistoryIncomplete(true);
       savedTextRequest?.abort();
       const request = new AbortController();
       savedTextRequest = request;
-      const refresh = apiClient[":id"]["route-state"]
-        .$get(
-          { param: { id: props.notebookId }, query: { href: window.location.pathname + window.location.search } },
-          { init: { signal: request.signal } },
-        )
-        .then(async (response) => {
-          if (!response.ok) throw new Error(`Failed to load the saved note (${response.status})`);
-          const payload = await response.json();
-          const view = editorView();
-          if (request.signal.aborted || collabStarted() || !view) return;
-          // A note locked, deleted or moved out of reach meanwhile reopens as the server now shows it.
-          if (payload.kind !== "ok" || payload.state.note.id !== props.noteId) {
-            window.location.reload();
-            return;
-          }
-          const saved = (payload.state.note.contentMd ?? "").replace(/\r\n?/g, "\n");
-          const shown = view.state.doc.toString();
-          baseText = saved;
-          if (saved !== shown)
-            view.dispatch({
-              changes: changesBetween(shown, saved) ?? { from: 0, to: shown.length, insert: saved },
-              annotations: [firstEditsSettled.of(true), Transaction.addToHistory.of(false), Transaction.remote.of(true)],
-            });
-        });
       // The event counts as seen only once the saved text arrived, so a failed read is not skipped for good.
-      detail.cover(refresh.catch((error: unknown) => (request.signal.aborted ? undefined : Promise.reject(error))));
+      detail.cover(readSavedText(request));
     };
     window.addEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
     onCleanup(() => {

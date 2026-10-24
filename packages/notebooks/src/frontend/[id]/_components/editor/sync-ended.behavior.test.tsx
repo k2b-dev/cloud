@@ -378,6 +378,36 @@ describe("sync ended editor recovery", () => {
     }
   });
 
+  test("before the first edit, a deleted note reopens, a lost history shows, and a failed read tries again", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    const reload = spyOn(window.location, "reload").mockImplementation(() => {});
+    const event = (body: Record<string, unknown>) =>
+      window.dispatchEvent(
+        new CustomEvent("notebooks.workspace.event", {
+          detail: { cursor: null, event: { v: 1, notebookId: "Book01", ...body }, cover: () => {} },
+        }),
+      );
+    try {
+      event({ type: "note.updated", note: { id: "Note01", historyIncomplete: true } });
+      for (let tick = 0; tick < 10; tick++) await flush();
+      expect(editor.dom.root.textContent).toContain(notebookWorkspaceMessages.resolve(["en"]).t.historyIncompleteTitle);
+
+      // One failed read is retried by the note itself.
+      routeGet.mockImplementationOnce(async () => new Response("unavailable", { status: 503 }));
+      savedTexts.set("Note01", `${markdown}\n\nSaved by Ada.`);
+      event({ type: "note.updated", note: { id: "Note01" } });
+      await Bun.sleep(1200);
+      expect(editor.view().state.doc.toString()).toBe(`${markdown}\n\nSaved by Ada.`);
+
+      event({ type: "note.deleted", noteId: "Note01" });
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(editor.providers[0]!.connect).not.toHaveBeenCalled();
+    } finally {
+      savedTexts.clear();
+      reload.mockRestore();
+    }
+  });
+
   test("Undo takes back the edits made before the live note arrived as one step", async () => {
     using editor = mountNoteEditor({ pending: false });
     const instance = editor.providers[0]!;
