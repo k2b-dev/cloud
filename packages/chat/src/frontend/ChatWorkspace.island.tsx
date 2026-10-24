@@ -137,7 +137,7 @@ const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>, view: Thread
   conversation: open.conversation,
   messages: open.page.items,
   membershipRev: 0,
-  accessRev: 0,
+  historyRev: 0,
   watermark: open.page.rev,
   seqHead: open.page.seqHead,
   hasOlder: open.page.from > 1,
@@ -893,11 +893,15 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         if (pendingListIntent === token) pendingListIntent = null;
       }
     });
-  // One step can be refused twice (the link and the history entry it adds), so the notice replaces its earlier copy.
-  let preparingNotice: ReturnType<typeof toast> | undefined;
+  // One step can be refused twice (the link and the history entry it adds). While the notice shows, it says
+  // enough: a second copy would stack beside it and be announced twice.
+  const PREPARING_NOTICE_MS = 4_000;
+  let preparingShownAt = Number.NEGATIVE_INFINITY;
   const notifyPreparing = () => {
-    preparingNotice?.dismiss();
-    preparingNotice = toast(t().sendPreparing);
+    const shownAt = performance.now();
+    if (shownAt - preparingShownAt < PREPARING_NOTICE_MS) return;
+    preparingShownAt = shownAt;
+    toast(t().sendPreparing, { duration: PREPARING_NOTICE_MS });
   };
   const changeList = async (next: "all" | "unread" | "archive") => {
     if (!store || listLoading() || listPending()) return;
@@ -2430,7 +2434,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     shared={
                       <ChatSharedSection
                         chatId={current().id}
-                        revision={openChat() ? `${openChat()!.seqHead}:${openChat()!.accessRev}` : undefined}
+                        revision={openChat() ? `${openChat()!.watermark}:${openChat()!.historyRev}` : undefined}
                         threads={openChat()?.threads ?? null}
                         viewerId={props.viewerId}
                         dateConfig={props.dateConfig}
