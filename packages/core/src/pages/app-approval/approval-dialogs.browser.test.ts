@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page, Route } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import { appApprovalMessages } from "./messages";
 
 // Revoking a device and pairing a further one wait for approval on a paired device. Both dialogs keep one size
@@ -157,6 +157,7 @@ describe("approval on a paired device in a browser", () => {
           await page.touchscreen.tap(2, 2);
           await page.keyboard.press("Escape");
           expect(await dialog.count()).toBe(1);
+          await settled(page);
           steps.ask = await measure(page);
           await shot("ask");
           const footer = dialog.locator(".k2b-panel-dialog__footer");

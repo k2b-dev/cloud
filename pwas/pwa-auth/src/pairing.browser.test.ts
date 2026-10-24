@@ -35,7 +35,12 @@ beforeAll(async () => {
       await warm.addScriptTag({ content: built.script });
       await open(warm);
       await warm.locator("dialog[open]").waitFor();
-      await warm.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
+      await warm.waitForFunction(() =>
+        document
+          .getAnimations()
+          .filter((animation) => animation.timeline === document.timeline)
+          .every((animation) => animation.playState !== "running"),
+      );
     } finally {
       await warm.close();
     }
