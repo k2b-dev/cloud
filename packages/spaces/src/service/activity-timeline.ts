@@ -41,7 +41,7 @@ export const activityTimelineMessages = i18n.define({
       created: ({ actor, self, kind }: Words) =>
         `${actor} ${self ? "hast" : "hat"} ${kind === "task" ? "die Aufgabe" : "den Termin"} erstellt`,
       completed: ({ actor, self, kind }: Words) =>
-        `${actor} ${self ? "hast" : "hat"} ${kind === "task" ? "die Aufgabe" : "den Termin"} abgeschlossen`,
+        `${actor} ${self ? "hast" : "hat"} ${kind === "task" ? "die Aufgabe erledigt" : "den Termin abgeschlossen"}`,
       reopened: ({ actor, self, kind }: Words) =>
         `${actor} ${self ? "hast" : "hat"} ${kind === "task" ? "die Aufgabe" : "den Termin"} wieder geöffnet`,
       status: ({ actor, self, value }: Words) => `${actor} ${self ? "hast" : "hat"} den Status auf „${value}“ gesetzt`,
