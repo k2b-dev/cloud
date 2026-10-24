@@ -273,14 +273,16 @@ const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: t
           author_name: string;
           body: string;
           created_at: Date;
+          thread_short_id: string | null;
+          thread_name: string | null;
         }[]
       >`
-      SELECT c.id AS conversation_id, m.* FROM chat.conversations c
+      SELECT c.id AS conversation_id, m.*, t.short_id AS thread_short_id, t.name AS thread_name FROM chat.conversations c
       CROSS JOIN LATERAL (
-        SELECT short_id, author_type, author_id, author_name,
+        SELECT short_id, thread_id, author_type, author_id, author_name,
           left(regexp_replace(body_md, ${"[\\t\\n\\v\\f\\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+"}, ' ', 'g'), 600) AS body, created_at
         FROM chat.messages WHERE conversation_id = c.id AND kind = 'text' ORDER BY seq DESC LIMIT 1
-      ) m WHERE c.id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])
+      ) m LEFT JOIN chat.threads t ON t.id = m.thread_id WHERE c.id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])
     `
     : [];
   const deleted = await deletedPeople(
@@ -298,6 +300,7 @@ const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: t
           name: deleted.has(row.author_id) && row.author_type === "user" ? messages(context).formerAccount : row.author_name,
         },
         preview: messagePreview(row.body),
+        thread: row.thread_short_id === null ? null : { id: row.thread_short_id, name: row.thread_name! },
         createdAt: row.created_at.toISOString(),
       },
     ]),
@@ -327,7 +330,7 @@ const project = (
   title: string,
   lastMessage: z.infer<typeof ConversationSchema>["lastMessage"],
   flags: { withGuests: boolean; peerDeactivated: boolean },
-  state: Pick<z.infer<typeof ConversationSchema>, "read" | "unread">,
+  state: Pick<z.infer<typeof ConversationSchema>, "read" | "unread" | "threads">,
 ): z.infer<typeof ConversationSchema> => ({
   id: row.short_id,
   name: row.name,

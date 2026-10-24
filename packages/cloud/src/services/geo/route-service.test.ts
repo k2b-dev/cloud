@@ -16,6 +16,7 @@ const setup = (
     response?: (url: URL, init: RequestInit) => Response | Promise<Response>;
     cache?: ReturnType<typeof createGeoCache>;
     daily?: number;
+    now?: () => Date;
   } = {},
 ) => {
   const events: string[] = [];
@@ -46,10 +47,11 @@ const setup = (
   });
   const cacheGet = mock(async (_key: string): Promise<null> => null);
   const cachePut = mock(async () => {});
+  const recordTransition = mock(async (..._args: unknown[]) => {});
   const service = createGeoService({
     config: async () => ({ ...geoTestConfig, personDailyCredits: options.daily ?? 90000 }),
-    now: () => GEO_TEST_NOW,
-    adapter: new GeoapifyAdapter({ fetch, now: () => GEO_TEST_NOW }),
+    now: options.now ?? (() => GEO_TEST_NOW),
+    adapter: new GeoapifyAdapter({ fetch, now: options.now ?? (() => GEO_TEST_NOW) }),
     bucket: { acquire },
     cache: options.cache ?? { get: cacheGet, put: cachePut },
     ledger: {
@@ -59,10 +61,10 @@ const setup = (
         person: { exhausted: false, resetsAt: "2026-10-20T22:00:00.000Z" },
         cloud: { exhausted: false, resetsAt: "2026-10-31T23:00:00.000Z" },
       }),
-      recordTransition: async () => {},
+      recordTransition,
     },
   });
-  return { service, fetch, reserve, settle, acquire, cacheGet, cachePut, events, used: () => used };
+  return { service, fetch, reserve, settle, acquire, cacheGet, cachePut, recordTransition, events, used: () => used };
 };
 const calculate = (stops = routeStops(4)): GeoRouteCalculateInput => ({ plan: { stops } });
 
@@ -72,12 +74,11 @@ test("calculate uses the public contract, header-only EU transport and frozen pr
   expect(result.route).toMatchObject({
     distanceMeters: 3000,
     durationSeconds: 300,
-    distanceAllowanceMeters: 500000,
     options: { mode: "car", avoid: [] },
     provenance: { computedAt: GEO_TEST_NOW.toISOString() },
   });
   expect(GeoRouteSchema.safeParse(result.route).success).toBeTrue();
-  expect(f.events[0]).toBe("reserve:4000"); // two pairs × two distance bands
+  expect(f.events[0]).toBe("reserve:2000"); // two short pairs fit one distance band
   expect(f.used()).toBe(2000);
   const url = f.fetch.mock.calls[0]![0];
   for (const [key, value] of Object.entries({
@@ -136,6 +137,7 @@ test("all modes map to the provider, avoid preferences are normalized and walk d
         { id: "A", point: { lat: 0, lon: 0 } },
         { id: "B", point: { lat: 0, lon: 10 } },
       ],
+      options: { mode: "walk" as const },
     },
   ])
     await expect(f.service.calculateRoute({ plan }, geoTestContext)).rejects.toMatchObject({ code: "GEO_LIMIT_EXCEEDED" });
@@ -156,7 +158,7 @@ test("address geocodes and routing reserve once before the first provider call, 
   ];
   const result = await f.service.calculateRoute(calculate(stops), geoTestContext);
   expect(f.reserve).toHaveBeenCalledTimes(1);
-  expect(f.events[0]).toBe("reserve:2000");
+  expect(f.events[0]).toBe("reserve:82000"); // unknown pair: maximum great-circle distance × 2, plus one geocode
   expect(f.fetch).toHaveBeenCalledTimes(2);
   expect(f.used()).toBe(2000);
   expect(result.route.stops.every((stop) => !!stop.address)).toBeTrue();
@@ -183,7 +185,7 @@ test("budget refusal happens before geocoding, including when the route would co
   const f = setup({ daily: 1 });
   await expect(
     f.service.calculateRoute(calculate([{ id: "A", address: { text: "Fixture" } }, routeStops(2)[1]!]), geoTestContext),
-  ).rejects.toMatchObject({ code: "GEO_LIMIT_EXCEEDED", details: { limit: "reservationCredits", actual: 2, max: 1 } });
+  ).rejects.toMatchObject({ code: "GEO_LIMIT_EXCEEDED", details: { limit: "reservationCredits", actual: 82, max: 1 } });
   expect(f.fetch).not.toHaveBeenCalled();
   expect(f.acquire).not.toHaveBeenCalled();
 });
@@ -203,7 +205,7 @@ test("insertion examines exactly three candidate gaps, reuses other legs, and re
   expect(result.delta.distanceMeters).toBeCloseTo(result.after.distanceMeters - result.before.distanceMeters);
   expect(result.delta.durationSeconds).toBeCloseTo(result.after.durationSeconds - result.before.durationSeconds);
   expect(result.route.legs.filter((leg) => original.legs.some((old) => JSON.stringify(old) === JSON.stringify(leg)))).toHaveLength(6);
-  expect(f.reserve.mock.calls.at(-1)![2]).toBe(12000);
+  expect(f.reserve.mock.calls.at(-1)![2]).toBe(6000);
 });
 
 test("explicit insertion and a small route compare only the requested/existing gaps", async () => {
@@ -276,7 +278,7 @@ test("optimization fixes endpoints, validates the permutation, and reapplies out
   const result = await f.service.updateRoute({ route: original, changes: { type: "optimize" } }, geoTestContext);
   expect(result.after.stopIds).toEqual(["A", "C", "B", "D"]);
   expect(result.route.legs.find((leg) => leg.fromStopId === "B")).toMatchObject({ toStopId: "D", options: { avoid: ["highways"] } });
-  expect(f.reserve.mock.calls.at(-1)![2]).toBe(23000); // 7×3 bands + overridden pair (2)
+  expect(f.reserve.mock.calls.at(-1)![2]).toBe(9000); // optimization (7) plus one overridden pair (2)
 });
 
 test("known cost overrun truthfully debits beyond reservation and blocks all future calls", async () => {
@@ -285,12 +287,18 @@ test("known cost overrun truthfully debits beyond reservation and blocks all fut
     await f.service.calculateRoute(calculate(routeStops(2)), geoTestContext);
     throw new Error("Expected overrun");
   } catch (error) {
+    if (error && typeof error === "object" && "details" in error && "code" in error)
+      GeoErrorDetailsSchema.parse({ code: error.code, ...Object(error.details) });
     expect(error).toMatchObject({
       code: "GEO_COST_OVERRUN",
-      details: { distanceAllowanceMeters: 500000, actualDistanceMeters: 600000, costs: { settledCredits: 2, unknownCredits: 0 } },
+      details: {
+        estimatedDistanceMeters: expect.any(Number),
+        reservedCredits: 1,
+        actualCredits: 2,
+        actualDistanceMeters: 600000,
+        costs: { settledCredits: 2, unknownCredits: 0 },
+      },
     });
-    if (error && typeof error === "object" && "details" in error && "code" in error)
-      expect(GeoErrorDetailsSchema.safeParse({ code: error.code, ...Object(error.details) }).success).toBeTrue();
   }
   expect(f.used()).toBe(2000);
   await expect(f.service.calculateRoute(calculate(routeStops(2)), geoTestContext)).rejects.toMatchObject({ code: "GEO_BUDGET_EXHAUSTED" });
@@ -332,10 +340,7 @@ test("cached routes are free, preserve casing/precise coordinates, and avoid led
   expect(a).toEqual(b);
   expect(f.reserve).toHaveBeenCalledTimes(1);
   expect(f.fetch).toHaveBeenCalledTimes(1);
-  await f.service.calculateRoute(
-    { plan: { ...input.plan, optimize: false, options: { mode: "car", avoid: [] }, distanceAllowanceMeters: 500000 } },
-    geoTestContext,
-  );
+  await f.service.calculateRoute({ plan: { ...input.plan, optimize: false, options: { mode: "car", avoid: [] } } }, geoTestContext);
   expect(f.reserve).toHaveBeenCalledTimes(1);
   const lower = structuredClone(input);
   lower.plan.stops[0]!.id = "a";
@@ -415,17 +420,26 @@ test("26 stops and dense geometry fit a complete stateless update inside the cap
   expect(f.fetch.mock.calls.length).toBe(calls);
 });
 
-test("larger explicit allowances settle actual credits, and update carries its new allowance", async () => {
+test("distance estimates grow with the route and are not selectable", async () => {
+  const stops = [
+    { id: "A", point: { lat: 0, lon: 0 } },
+    { id: "B", point: { lat: 0, lon: 3 } },
+  ];
   const f = setup({ response: (url) => Response.json(syntheticRouteResponse(url, { distances: [600000] })) });
-  const result = await f.service.calculateRoute({ plan: { stops: routeStops(2), distanceAllowanceMeters: 1000000 } }, geoTestContext);
-  expect(result.route.distanceAllowanceMeters).toBe(1000000);
+  const result = await f.service.calculateRoute({ plan: { stops } }, geoTestContext);
+  expect(f.reserve.mock.calls[0]![2]).toBe(2000); // 333 km air × 2 → two pricing bands
   expect(f.used()).toBe(2000);
-  const updated = await f.service.updateRoute(
-    { route: result.route, changes: { type: "move", stopId: "A", toIndex: 0 }, distanceAllowanceMeters: 2000000 },
-    geoTestContext,
-  );
-  expect(updated.route.distanceAllowanceMeters).toBe(2000000);
+  expect(result.route).not.toHaveProperty("distanceAllowanceMeters");
+  const updated = await f.service.updateRoute({ route: result.route, changes: { type: "move", stopId: "A", toIndex: 0 } }, geoTestContext);
+  expect(updated.route).toEqual(result.route);
   expect(f.fetch).toHaveBeenCalledTimes(1);
+});
+
+test("a longer detour within the reserved credit band is not a cost overrun", async () => {
+  const f = setup({ response: (url) => Response.json(syntheticRouteResponse(url, { distances: [400000] })) });
+  const result = await f.service.calculateRoute(calculate(routeStops(2)), geoTestContext);
+  expect(result.route.distanceMeters).toBe(400000);
+  expect(f.used()).toBe(1000);
 });
 
 test("insertion skips an unreachable candidate, but every failed candidate retains its known cost", async () => {
@@ -515,22 +529,44 @@ test("a known route distance is charged even if malformed geometry prevents a re
     },
   });
   await expect(f.service.calculateRoute(calculate(routeStops(2)), geoTestContext)).rejects.toMatchObject({
-    code: "GEO_PROVIDER_FAILED",
+    code: "GEO_COST_OVERRUN",
     details: { costs: { settledCredits: 4, unknownCredits: 0 } },
   });
   expect(f.used()).toBe(4000);
+  expect(f.recordTransition).toHaveBeenCalledWith(
+    "route_cost_overrun",
+    expect.any(String),
+    expect.any(Object),
+    GEO_TEST_NOW,
+    expect.objectContaining({ actualCallCredits: 4, settlementConfirmed: 1 }),
+  );
 });
 
-test("unattainable whole-chain reservations return an actionable total-limit error before admission", async () => {
+test("local long chains no longer reserve a fixed 500 km for every leg", async () => {
   for (const plan of [{ stops: routeStops(26) }, { stops: routeStops(8), optimize: true }]) {
     const f = setup({ daily: 300 });
-    await expect(f.service.calculateRoute({ plan }, geoTestContext)).rejects.toMatchObject({
-      code: "GEO_LIMIT_EXCEEDED",
-      details: { limit: "reservationCredits", max: 300, actual: plan.optimize ? 301 : 625 },
-    });
-    expect(f.reserve).not.toHaveBeenCalled();
-    expect(f.fetch).not.toHaveBeenCalled();
+    await f.service.calculateRoute({ plan }, geoTestContext);
+    expect(f.reserve.mock.calls[0]![2]).toBe(plan.optimize ? 43000 : 25000);
   }
+});
+
+test("unattainable estimated reservations reject before admission and provider work", async () => {
+  const f = setup({ daily: 1 });
+  await expect(
+    f.service.calculateRoute(
+      {
+        plan: {
+          stops: [
+            { id: "A", point: { lat: 0, lon: 0 } },
+            { id: "B", point: { lat: 0, lon: 3 } },
+          ],
+        },
+      },
+      geoTestContext,
+    ),
+  ).rejects.toMatchObject({ code: "GEO_LIMIT_EXCEEDED", details: { limit: "reservationCredits", actual: 2, max: 1 } });
+  expect(f.reserve).not.toHaveBeenCalled();
+  expect(f.fetch).not.toHaveBeenCalled();
 });
 
 test("optimization preflight uses an order-independent bound and checks overrides only in the new order", async () => {
@@ -540,17 +576,11 @@ test("optimization preflight uses an order-independent bound and checks override
       Response.json(syntheticRouteResponse(url, url.searchParams.get("optimize_stops") === "true" ? { order: [0, 3, 2, 1, 4] } : {})),
   });
   const options = [{ fromStopId: "A", toStopId: "B", options: { avoid: ["ferries" as const] } }];
-  const result = await f.service.calculateRoute(
-    { plan: { stops: ordered, optimize: true, distanceAllowanceMeters: 20000, legOptions: options } },
-    geoTestContext,
-  );
+  const result = await f.service.calculateRoute({ plan: { stops: ordered, optimize: true, legOptions: options } }, geoTestContext);
   expect(result.route.stops.map((stop) => stop.id)).toEqual(["A", "D", "C", "B", "E"]);
   expect(f.fetch).toHaveBeenCalledTimes(2);
   const original = await f.service.calculateRoute({ plan: { stops: ordered, legOptions: options } }, geoTestContext);
-  const updated = await f.service.updateRoute(
-    { route: original.route, changes: { type: "optimize" }, distanceAllowanceMeters: 20000 },
-    geoTestContext,
-  );
+  const updated = await f.service.updateRoute({ route: original.route, changes: { type: "optimize" } }, geoTestContext);
   expect(updated.after.stopIds).toEqual(["A", "D", "C", "B", "E"]);
 });
 
@@ -566,7 +596,7 @@ test("impossible optimized lower bounds reject with zero provider calls", async 
             { id: "C", point: { lat: 0, lon: 2 } },
           ],
           optimize: true,
-          distanceAllowanceMeters: 20000,
+          options: { mode: "walk" },
         },
       },
       geoTestContext,
@@ -599,7 +629,7 @@ test("unrepresentable provider pricing retains the allocation as unknown and sto
   }
 });
 
-test("a valid overrun is cached and a larger explicit allowance reuses it without paying again", async () => {
+test("a valid overrun is cached and an explicit retry reuses it without paying again", async () => {
   const memory = new Map<string, string>();
   const redis: GeoRedis = {
     send: async (command, args) => (command === "GET" ? (memory.get(args[0]!) ?? null) : (memory.set(args[0]!, args[1]!), "OK")),
@@ -609,7 +639,7 @@ test("a valid overrun is cached and a larger explicit allowance reuses it withou
     response: (url) => Response.json(syntheticRouteResponse(url, { distances: [1600000] })),
   });
   await expect(f.service.calculateRoute(calculate(routeStops(2)), geoTestContext)).rejects.toMatchObject({ code: "GEO_COST_OVERRUN" });
-  const retried = await f.service.calculateRoute({ plan: { stops: routeStops(2), distanceAllowanceMeters: 2000000 } }, geoTestContext);
+  const retried = await f.service.calculateRoute({ plan: { stops: routeStops(2) } }, geoTestContext);
   expect(retried.route.distanceMeters).toBe(1600000);
   expect(f.fetch).toHaveBeenCalledTimes(1);
   expect(f.used()).toBe(4000);
@@ -669,5 +699,54 @@ test("failed overrun settlement exposes retained reservation and all unreconcile
       expect(GeoErrorDetailsSchema.parse({ code: error.code, ...Object(error.details) }).code).toBe("GEO_PROVIDER_FAILED");
   }
   expect(f.fetch).toHaveBeenCalledTimes(1);
+  expect(f.recordTransition).toHaveBeenCalledWith(
+    "route_cost_overrun",
+    expect.any(String),
+    expect.any(Object),
+    GEO_TEST_NOW,
+    expect.objectContaining({ actualCallCredits: 4, knownReferenceCredits: 4, settlementConfirmed: 0 }),
+  );
   expect(f.used()).toBe(1000);
+});
+
+test("a no-op update preserves provenance across a later fixed clock", async () => {
+  let now = GEO_TEST_NOW;
+  const f = setup({ now: () => now });
+  const { route } = await f.service.calculateRoute(calculate(routeStops(2)), geoTestContext);
+  now = new Date("2026-10-21T12:00:00Z");
+  const result = await f.service.updateRoute({ route, changes: { type: "move", stopId: "A", toIndex: 0 } }, geoTestContext);
+  expect(result.route).toEqual(route);
+  expect(f.fetch).toHaveBeenCalledTimes(1);
+  expect(f.reserve).toHaveBeenCalledTimes(1);
+});
+
+test("dense paid overruns fit the cache and an explicit retry does not pay again", async () => {
+  const memory = new Map<string, string>();
+  const redis: GeoRedis = {
+    send: async (command, args) => (command === "GET" ? (memory.get(args[0]!) ?? null) : (memory.set(args[0]!, args[1]!), "OK")),
+  };
+  const f = setup({
+    cache: createGeoCache(async () => redis),
+    response: (url) => {
+      const value = syntheticRouteResponse(url, { distances: Array(25).fill(600000) });
+      value.results[0]!.geometry = value.results[0]!.geometry.map(([from, to]) =>
+        Array.from({ length: 1800 }, (_, i) => {
+          const t = i / 1799;
+          return {
+            lon: from!.lon + (to!.lon - from!.lon) * t,
+            lat: from!.lat + (to!.lat - from!.lat) * t + (i === 0 || i === 1799 ? 0 : i % 2 ? 0.01 : -0.01),
+          };
+        }),
+      );
+      return Response.json(value);
+    },
+  });
+  await expect(f.service.calculateRoute(calculate(routeStops(26)), geoTestContext)).rejects.toMatchObject({ code: "GEO_COST_OVERRUN" });
+  expect(memory.size).toBe(1);
+  expect([...memory.values()].every((value) => Buffer.byteLength(value) <= GEO_MAX_JSON_BYTES)).toBeTrue();
+  const used = f.used();
+  const result = await f.service.calculateRoute(calculate(routeStops(26)), geoTestContext);
+  expect(result.route.distanceMeters).toBe(15000000);
+  expect(f.fetch).toHaveBeenCalledTimes(1);
+  expect(f.used()).toBe(used);
 });

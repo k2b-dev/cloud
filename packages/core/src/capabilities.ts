@@ -712,7 +712,7 @@ export const aiCapabilities = defineCapabilities({
     "route.calculate": {
       title: "Calculate a route",
       description:
-        "Calculate 2–26 stops by car, bike or on foot, with avoid preferences and per-leg options. Start/destination stay fixed when optimizing. Returns meters, seconds, polyline6 and provenance. Ambiguous addresses require a choice. Reserves the full chain against a reference-distance allowance (default 500 km per leg); an overrun is charged and stops the chain. This allowance is not a provider invoice ceiling. Keep attribution.",
+        "Calculate 2–26 stops by car, bike or on foot, with avoid preferences and per-leg options. Start/destination stay fixed when optimizing. Returns meters, seconds, polyline6 and provenance. Ambiguous addresses require a choice. Reserves the full chain from straight-line distance times 2; unknown coordinates need a larger reserve. Actual cost overruns are charged and stop the chain. Geoapify does not guarantee a cap on its side. Keep attribution.",
       input: geoRouteContract.calculateRoute.input,
       data: geoRouteContract.calculateRoute.data,
       openWorld: true,

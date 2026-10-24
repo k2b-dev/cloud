@@ -71,23 +71,20 @@ if (PerformanceObserver.supportedEntryTypes.includes("layout-shift"))
 `;
 const conversationSource = `
 import { createComponent, render } from "solid-js/web";
-import { GestureMenu, LocaleProvider, MessageRow, VirtualFeed } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { LocaleProvider, MessageRow, VirtualFeed } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
-window.calls = { reply: 0, react: 0, copy: 0, toolbar: 0 };
+window.calls = { reply: 0, react: 0, copy: 0 };
 const people = { nora: { name: "Nora Brandt" }, me: { name: "Robin Example" } };
 const messages = Array.from({ length: 12 }, (_, index) => ({
   id: "m" + index,
   author: index % 3 === 2 ? "me" : "nora",
   text: "Message " + index + " with enough words to fill most of a line on a phone",
 }));
+// MessageRow puts its actions into its own GestureMenu: "…", right-click, the keyboard, a long press, and gestures.
 const actions = [
-  { id: "reply", label: "Reply", icon: "ti ti-arrow-back-up", onSelect: () => window.calls.toolbar++ },
-  { id: "react", label: "React", icon: "ti ti-mood-smile", onSelect: () => window.calls.toolbar++ },
-];
-const items = [
-  { label: "Reply", icon: "ti ti-arrow-back-up", action: () => window.calls.reply++, gesture: "swipe-right" },
-  { label: "React with thumbs up", icon: "ti ti-thumb-up", action: () => window.calls.react++, gesture: "double-tap" },
-  { label: "Copy text", icon: "ti ti-copy", action: () => window.calls.copy++ },
+  { id: "reply", label: "Reply", icon: "ti ti-arrow-back-up", onSelect: () => window.calls.reply++, gesture: "swipe-right" },
+  { id: "react", label: "React with thumbs up", icon: "ti ti-thumb-up", onSelect: () => window.calls.react++, gesture: "double-tap" },
+  { id: "copy", label: "Copy text", icon: "ti ti-copy", onSelect: () => window.calls.copy++ },
 ];
 render(
   () =>
@@ -101,19 +98,13 @@ render(
           label: "Conversation",
           itemLabel: (message) => people[message.author].name,
           children: (message) =>
-            createComponent(GestureMenu, {
-              label: "Message from " + people[message.author].name,
-              items,
-              get children() {
-                return createComponent(MessageRow, {
-                  author: people[message.author],
-                  text: message.text,
-                  time: "10:42",
-                  own: message.author === "me",
-                  groupStart: true,
-                  actions,
-                });
-              },
+            createComponent(MessageRow, {
+              author: people[message.author],
+              text: message.text,
+              time: "10:42",
+              own: message.author === "me",
+              groupStart: true,
+              actions,
             }),
         });
       },
@@ -136,7 +127,7 @@ const script = await bundle(entry, fixtureSource);
 const conversationScript = await bundle(conversationEntry, conversationSource);
 
 type Fixture = { calls: { reply: number; react: number; copy: number }; swipes: number; shift: number };
-type Conversation = { calls: { reply: number; react: number; copy: number; toolbar: number } };
+type Conversation = { calls: { reply: number; react: number; copy: number } };
 
 let browser: Browser;
 beforeAll(async () => {
@@ -426,53 +417,53 @@ describe(`GestureMenu in ${browserName}`, () => {
 
   const conversation = (page: Page) =>
     page.evaluate(() => ({ calls: { ...(window as unknown as Conversation).calls } }) satisfies Conversation);
-  const toolbar = (page: Page, key: string) =>
-    page.locator(`[data-key="${key}"] .k2b-message-row__actions`).evaluate((actions) => getComputedStyle(actions).opacity);
+  const menuOpacity = (page: Page, key: string) =>
+    page.locator(`[data-key="${key}"] .k2b-message-row__menu-root`).evaluate((menu) => getComputedStyle(menu).opacity);
 
-  test("in a conversation a tap leaves the message's toolbar hidden, so a double tap where it sits reacts", async () => {
+  test('in a conversation a tap leaves the message\'s "…" hidden, so a double tap where it sits reacts', async () => {
     const { page, context } = await open(phone, { pausedClock: true, conversation: true });
     try {
-      const reply = page.locator('[data-key="m7"] .k2b-message-row__actions').getByRole("button", { name: "Reply" });
-      const box = (await reply.boundingBox())!;
+      const trigger = page.locator('[data-key="m7"] .k2b-message-row__menu');
+      const box = (await trigger.boundingBox())!;
       const point = [box.x + box.width / 2, box.y + box.height / 2] as const;
       await page.touchscreen.tap(...point);
-      expect(await toolbar(page, "m7")).toBe("0");
+      expect(await menuOpacity(page, "m7")).toBe("0");
       await page.touchscreen.tap(...point);
       await until(page, "window.calls.react === 1");
-      expect(await conversation(page)).toEqual({ calls: { reply: 0, react: 1, copy: 0, toolbar: 0 } });
-      expect(await toolbar(page, "m7")).toBe("0");
+      expect(await conversation(page)).toEqual({ calls: { reply: 0, react: 1, copy: 0 } });
+      expect(await menuOpacity(page, "m7")).toBe("0");
     } finally {
       await context.close();
     }
   }, 30_000);
 
-  test("in a conversation the keyboard shows the toolbar, and Tab then Shift+F10 open the message's menu", async () => {
+  test('in a conversation the keyboard shows "…", and Tab then Enter open the message\'s menu', async () => {
     const { page, context } = await open({ viewport: { width: 1024, height: 768 } }, { conversation: true });
     try {
       await page.mouse.move(1023, 767);
       await page.locator('[data-key="m6"]').focus();
       await page.keyboard.press("ArrowDown");
       expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.key)).toBe("m7");
-      expect(await toolbar(page, "m7")).toBe("1");
-      expect(await toolbar(page, "m6")).toBe("0");
+      expect(await menuOpacity(page, "m7")).toBe("1");
+      expect(await menuOpacity(page, "m6")).toBe("0");
 
+      // The message adds no tab stop of its own: Tab goes straight to "…".
       await page.keyboard.press("Tab");
-      const group = await page.evaluate(() => ({
-        role: document.activeElement?.getAttribute("role"),
+      const trigger = await page.evaluate(() => ({
+        name: document.activeElement?.getAttribute("aria-label"),
         popup: document.activeElement?.getAttribute("aria-haspopup"),
         row: (document.activeElement?.closest("[data-key]") as HTMLElement | null)?.dataset.key,
       }));
-      expect(group).toEqual({ role: "group", popup: "menu", row: "m7" });
-      expect(await toolbar(page, "m7")).toBe("1");
+      expect(trigger).toEqual({ name: "Message actions", popup: "menu", row: "m7" });
+      expect(await menuOpacity(page, "m7")).toBe("1");
 
-      await page.keyboard.press("Shift+F10");
-      const menu = page.locator(".k2b-context-menu[role='menu']");
+      await page.keyboard.press("Enter");
+      const menu = page.locator("[role='menu']:popover-open");
       await menu.waitFor();
       expect(await menu.locator("[role='menuitem']").allTextContents()).toEqual(["Reply", "React with thumbs up", "Copy text"]);
-      await until(page, `document.activeElement?.textContent === "Reply"`);
       await page.keyboard.press("Escape");
       expect(await menu.count()).toBe(0);
-      expect(await page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("group");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Message actions");
     } finally {
       await context.close();
     }

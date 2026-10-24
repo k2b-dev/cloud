@@ -39,6 +39,6 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 :::reference
 - **Sending:** A clock means Chat is sending the message.
 - **Sent:** A check means Chat accepted the message.
-- **Not sent:** Chat could not send the message. Choose **Retry** to send the same message again without creating a copy. To remove a message that Chat cannot send, select the message and choose **Discard message**. Later messages show a clock and wait until this message is sent or discarded. This keeps the order in which you wrote them.
+- **Not sent:** Chat could not send the message. Choose **Retry** to send the same message again without creating a copy. To remove a message that Chat cannot send, choose **Discard** next to **Retry**. Later messages show a clock and wait until this message is sent or discarded. This keeps the order in which you wrote them.
 - If you leave or reload Chat with unsent messages, your browser asks first because those messages are lost when you leave.
 :::
