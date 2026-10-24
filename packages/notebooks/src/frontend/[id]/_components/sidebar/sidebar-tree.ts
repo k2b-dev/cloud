@@ -121,20 +121,29 @@ export function createSidebarTree(options: { notebookId: Accessor<string>; initi
   const refresh = async (fromStart = false) => {
     const refresh = ++refreshes;
     const open = [...levels().values()].filter((loaded) => loaded.parentId === null || expanded().has(loaded.parentId));
-    const requests = open.slice(0, SIDEBAR_MAX_LEVELS).map((loaded) => ({
+    const requests: LevelRequest[] = open.map((loaded) => ({
       parentId: loaded.parentId,
       offset: fromStart ? 0 : loaded.offset,
       limit: Math.min(SIDEBAR_MAX_WINDOW, Math.max(SIDEBAR_PAGE_SIZE, loaded.items.length)),
     }));
+    // An open branch whose level failed to load loads again, so a retry heals it.
+    for (const id of expanded()) if (!levels().has(id)) requests.push({ parentId: id, offset: 0, limit: SIDEBAR_PAGE_SIZE });
     const keys = requests.map((request) => levelKey(request.parentId));
     const issued = issue(keys);
     commit(issued);
-    const answer = await fetchLevels(options.notebookId(), options.sort(), requests);
+    // One request reads at most SIDEBAR_MAX_LEVELS windows; every open window is read again.
+    const batches: LevelRequest[][] = [];
+    for (let start = 0; start < requests.length; start += SIDEBAR_MAX_LEVELS)
+      batches.push(requests.slice(start, start + SIDEBAR_MAX_LEVELS));
+    const answers = await Promise.all(batches.map((part) => fetchLevels(options.notebookId(), options.sort(), part)));
     if (refresh !== refreshes) return;
     batch(() => {
       // Closed branches are dropped, so they load fresh when they open again; open ones keep what they show.
       setLevels((current) => new Map([...current].filter(([, loaded]) => loaded.parentId === null || expanded().has(loaded.parentId))));
-      apply(answer.levels, issued);
+      apply(
+        answers.flatMap((answer) => answer.levels),
+        issued,
+      );
       setError(null);
     });
   };
@@ -174,8 +183,10 @@ export function createSidebarTree(options: { notebookId: Accessor<string>; initi
   const ancestorsOpen = (note: SidebarNote): boolean => {
     let parentId = note.parentId;
     while (parentId) {
-      if (!expanded().has(parentId)) return false;
-      parentId = findNote(parentId)?.parentId ?? null;
+      // A branch stays open in memory after its row left the loaded window above it; the way must be on screen.
+      const parent = findNote(parentId);
+      if (!parent || !expanded().has(parentId)) return false;
+      parentId = parent.parentId;
     }
     return true;
   };
