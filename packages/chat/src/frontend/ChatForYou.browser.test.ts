@@ -178,7 +178,7 @@ describe("For you", () => {
     const { it } = seed();
     const { page, errors } = await load(desktop, { chat: it });
     try {
-      const field = page.locator(".k2b-chat-composer textarea");
+      const field = page.getByRole("textbox", { name: "Message to IT" });
       await field.click();
       await page.keyboard.type("Hi @no");
       const list = page.getByRole("listbox", { name: "People" });
