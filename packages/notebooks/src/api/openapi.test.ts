@@ -49,7 +49,7 @@ test("graph nodes document hierarchy, manual position, and last change", async (
   ).toBe(true);
 });
 
-test("the note tree and the book tree are separate OpenAPI components", async () => {
+test("the note tree is its own component, and Book's snapshot carries no tree", async () => {
   const spec = (await generateSpecs(app)) as Spec;
   const schemas = spec.components?.schemas ?? {};
 
@@ -63,10 +63,9 @@ test("the note tree and the book tree are separate OpenAPI components", async ()
   expect(Object.keys(schemas.NoteTreeNode?.properties ?? {})).toContain("notebookId");
   expect(schemas.NoteTreeNode?.properties?.children?.items?.$ref).toBe(noteTree);
 
-  const bookTree = responseSchema(spec, "/{id}/book")?.properties?.tree?.items?.$ref;
-  expect(bookTree).toBe("#/components/schemas/BookTreeNode");
-  expect(Object.keys(schemas.BookTreeNode?.properties ?? {})).toEqual(["id", "title", "children"]);
-  expect(schemas.BookTreeNode?.properties?.children?.items?.$ref).toBe(bookTree);
+  // Book's navigation reads the same bounded levels as the sidebar.
+  expect(responseSchema(spec, "/{id}/book")?.properties?.tree).toBeUndefined();
+  expect(responseSchema(spec, "/{id}/book")?.properties?.hasNotes?.type).toBe("boolean");
 });
 
 test("a notebook created from a template documents the same fields as every other notebook", async () => {

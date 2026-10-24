@@ -19,6 +19,11 @@ export const bookMessages = i18n.define({
       tags: "Tags",
       allPages: "All pages",
       empty: "No pages yet",
+      morePages: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: "1 more page", other: `${count.toLocaleString("en")} more pages` }),
+      earlierPages: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: "1 earlier page", other: `${count.toLocaleString("en")} earlier pages` }),
+      loadingPages: "Loading pages…",
       selectNote: "Select a page",
       filterEmpty: "No pages match this tag.",
       diagramError: "The diagram could not be displayed. Its source is shown below.",
@@ -39,6 +44,10 @@ export const bookMessages = i18n.define({
       tags: "Tags",
       allPages: "Alle Seiten",
       empty: "Noch keine Seiten",
+      morePages: ({ count }) => i18n.plural(count, "de", { one: "1 weitere Seite", other: `${count.toLocaleString("de")} weitere Seiten` }),
+      earlierPages: ({ count }) =>
+        i18n.plural(count, "de", { one: "1 vorherige Seite", other: `${count.toLocaleString("de")} vorherige Seiten` }),
+      loadingPages: "Seiten werden geladen…",
       selectNote: "Wähle eine Seite",
       filterEmpty: "Keine Seiten mit diesem Tag.",
       diagramError: "Das Diagramm konnte nicht angezeigt werden. Der Quelltext steht unten.",

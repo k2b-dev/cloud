@@ -14,7 +14,7 @@ People with **View** access always see **Book**. Book is a reading view with pag
 
 In Book, page links, tag filters, search, and pagination update the content without a full reload. **Back** and **Forward** in the browser return to earlier reading positions. Saved changes refresh the page and the query results automatically. Without JavaScript, navigation still works through normal page loads.
 
-In the Book sidebar, select a page to open it. Use the arrow next to a page to show or hide its sub-pages. When Book loads, it shows the current page with its sub-pages. After that, Book keeps your choices and unfolds only the pages that contain the page you open. On a phone, the navigation menu shows the same folded pages. It keeps them when you close and reopen it, and it opens pages in place.
+In the Book sidebar, select a page to open it. Use the arrow next to a page to show or hide its sub-pages. A level shows 100 pages at a time; choose **… more pages** at its end to show the next 100. When Book loads, it shows the current page with its sub-pages. After that, Book keeps your choices and unfolds only the pages that contain the page you open. On a phone, the navigation menu shows the same folded pages. It keeps them when you close and reopen it, and it opens pages in place.
 
 The sidebar lists the notebook's start page first, with its sub-pages below it. This also applies when the start page is under another page. All other pages follow the notebook order on each level:
 

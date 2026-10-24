@@ -86,6 +86,8 @@ export const readLevel = async (params: {
   sort: TreeSort;
   locale: string;
   homepageId: string | null;
+  /** Book's reading order: the start page leads the top level wherever it lives and leaves its own level. */
+  book?: boolean;
 }): Promise<TreeEntry[]> => {
   // Separate predicates let the (notebook_id, parent_id, position) index serve both the top level and a branch.
   const rows =
@@ -94,7 +96,17 @@ export const readLevel = async (params: {
       : await sql<
           DbTreeEntry[]
         >`${selectEntries} WHERE n.notebook_id = ${params.notebookId}::uuid AND n.parent_id = ${params.parentId}::uuid`;
-  return sortLevel(rows.map(toEntry), params.sort, params.locale, params.homepageId);
+  let entries = rows.map(toEntry);
+  if (params.book && params.homepageId) {
+    if (params.parentId !== null) entries = entries.filter((entry) => entry.id !== params.homepageId);
+    else if (!entries.some((entry) => entry.id === params.homepageId)) {
+      const [home] = await sql<DbTreeEntry[]>`
+        ${selectEntries} WHERE n.id = ${params.homepageId}::uuid AND n.notebook_id = ${params.notebookId}::uuid
+      `;
+      if (home) entries.push({ ...toEntry(home), parentId: null });
+    }
+  }
+  return sortLevel(entries, params.sort, params.locale, params.homepageId);
 };
 
 /** The window of rows starting at `offset`, or the page that holds `around` when it sits in this level. */
@@ -139,8 +151,14 @@ export const revealNote = async (params: {
   sort: TreeSort;
   locale: string;
   homepageId: string | null;
+  book?: boolean;
 }): Promise<{ levels: TreeLevelWindow[]; expandedIds: string[] }> => {
-  const ancestors = await ancestorIds(params.noteId);
+  let ancestors = await ancestorIds(params.noteId);
+  // In Book the start page and its sub-pages hang from the top level.
+  if (params.book && params.homepageId) {
+    if (params.noteId === params.homepageId) ancestors = [];
+    else if (ancestors.includes(params.homepageId)) ancestors = ancestors.slice(ancestors.indexOf(params.homepageId));
+  }
   const parents = [null, ...ancestors];
   const path = [...ancestors, params.noteId];
   const levels = await Promise.all(
@@ -218,27 +236,4 @@ export const resolveNotebookNoteIds = async (notebookId: string, shortIds: strin
     WHERE notebook_id = ${notebookId}::uuid AND short_id = ANY(${sql.array(unique, "TEXT")})
   `;
   return new Map(rows.map((row) => [row.short_id, row.id]));
-};
-
-export type TitleTreeNode = { shortId: string; title: string; position: number; children: TitleTreeNode[] };
-
-/**
- * Every note's title and place, without Markdown, for the Book's reading order. It still grows with the notebook;
- * the sidebar never uses it.
- */
-export const readTitleTree = async (notebookId: string): Promise<TitleTreeNode[]> => {
-  const rows = await sql<{ id: string; short_id: string; parent_id: string | null; title: string; position: number }[]>`
-    SELECT id, short_id, parent_id, title, position FROM notebooks.notes WHERE notebook_id = ${notebookId}::uuid
-  `;
-  const nodes = new Map(
-    rows.map((row) => [row.id, { shortId: row.short_id, title: row.title, position: row.position, children: [] as TitleTreeNode[] }]),
-  );
-  const roots: TitleTreeNode[] = [];
-  for (const row of rows) {
-    const node = nodes.get(row.id)!;
-    const parent = row.parent_id ? nodes.get(row.parent_id) : undefined;
-    if (parent) parent.children.push(node);
-    else roots.push(node);
-  }
-  return roots;
 };

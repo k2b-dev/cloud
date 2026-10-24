@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { mockNoteTree } from "./page-tree.test-fixture";
 import type { CloudRuntime, PermissionLevel, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
@@ -10,6 +9,7 @@ import { notebooksService } from "../../service";
 import * as notebookStore from "../../service/notebooks";
 import * as noteStore from "../../service/notes";
 import { loadNotebookPageData } from "./page-data";
+import { mockNoteTree } from "./page-tree.test-fixture";
 
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -297,7 +297,7 @@ for (const [permission, query, shell, from] of [
     expect(data.isBookMode).toBe(false);
     expect(data.graphShell).toBe(shell);
     expect(data.graphFrom).toBe(from);
-    expect(data.bookTree).toHaveLength(shell === "book" ? 1 : 0);
+    expect(data.bookNavigation.total).toBe(shell === "book" ? 1 : 0);
     expect(data.ctx.presentationMode).toBe(from);
     expect(data.selectedNote).toMatchObject({ id: "note01", title: "Welcome", contentMd: null, yjsSnapshot: null });
     expect(data.bookHtml).toBeNull();

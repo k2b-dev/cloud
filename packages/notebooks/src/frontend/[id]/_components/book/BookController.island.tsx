@@ -105,7 +105,7 @@ export default function BookController(props: Props) {
       : null;
     // This string is produced only by the permission-aware server renderer.
     if (html !== null) article.innerHTML = html;
-    else article.textContent = metadata.tree.length ? t().selectNote : t().empty;
+    else article.textContent = metadata.hasNotes ? t().selectNote : t().empty;
     article.toggleAttribute("data-print-region", html !== null);
     article.setAttribute("aria-label", metadata.title ?? metadata.notebookName);
     const historyWarning = document.getElementById("notebook-book-history-warning");

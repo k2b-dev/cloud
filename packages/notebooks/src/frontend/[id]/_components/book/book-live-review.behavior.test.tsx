@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
+import { answerTreeLevels, bookNavigationState } from "../sidebar/sidebar-tree.test-fixture";
+import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
 import { BOOK_SNAPSHOT_EVENT, type BookMetadata } from "./book-state";
 
 const metadata: BookMetadata = {
@@ -9,7 +11,7 @@ const metadata: BookMetadata = {
   notebookName: "Updated handbook",
   title: "Second",
   selectedNoteId: "note02",
-  tree: [{ id: "note01", title: "Parent", children: [{ id: "note02", title: "Second", children: [] }] }],
+  hasNotes: true,
   tags: [{ tag: "team", count: 2 }],
   canWrite: true,
   locked: false,
@@ -55,6 +57,19 @@ describe("independent Book live metadata regression", () => {
 
   test("navigation replaces deleted entries, updates tags and expands the selected ancestry", async () => {
     const dom = createDomTestHarness();
+    const current = [{ id: "note01", title: "Parent", children: [{ id: "note02", title: "Second", children: [] }] }];
+    const originalFetch = globalThis.fetch;
+    // The navigation reads its levels from the server; the notebook now holds Parent and Second.
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) =>
+        Response.json(
+          answerTreeLevels(
+            current,
+            new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost"),
+          ),
+        ),
+      { preconnect: originalFetch.preconnect },
+    );
     const { default: Navigator } = await import("./BookNavigator.island");
     const dispose = render(
       () =>
@@ -64,24 +79,32 @@ describe("independent Book live metadata regression", () => {
           notebookIcon: null,
           selectedNoteId: "note03",
           currentHref: "/app/notebooks/book01/notes/note03?mode=book",
-          tree: [{ id: "note03", title: "Deleted", children: [] }],
+          navigation: bookNavigationState([{ id: "note03", title: "Deleted", children: [] }], "note03"),
           tags: [{ tag: "obsolete", count: 1 }],
           navigationHidden: false,
         }),
       dom.root,
     );
     try {
+      await dispatchWorkspaceEvent({ v: 1, type: "note.deleted", notebookId: "book01", noteId: "note03" }, "2-0");
       window.dispatchEvent(new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail: metadata }));
+      await Bun.sleep(20);
       expect(dom.root.textContent).not.toContain("Deleted");
       expect(dom.root.textContent).not.toContain("obsolete");
       expect(dom.root.textContent).toContain("Second");
       expect(dom.root.querySelector('a[href="/app/notebooks/book01/notes/note02?mode=book"]')).not.toBeNull();
       expect(dom.root.querySelector('a[href="/app/notebooks/book01/tags/team?mode=book"]')).not.toBeNull();
-      window.dispatchEvent(new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail: { ...metadata, selectedNoteId: null, tree: [], tags: [] } }));
+      current.length = 0;
+      await dispatchWorkspaceEvent({ v: 1, type: "note.deleted", notebookId: "book01", noteId: "note01" }, "3-0");
+      window.dispatchEvent(
+        new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail: { ...metadata, selectedNoteId: null, hasNotes: false, tags: [] } }),
+      );
+      await Bun.sleep(20);
       expect(dom.root.querySelector('a[href*="/notes/"]')).toBeNull();
       expect(dom.root.querySelector('a[href*="/tags/"]')).toBeNull();
     } finally {
       dispose();
+      globalThis.fetch = originalFetch;
       dom.cleanup();
     }
   });
