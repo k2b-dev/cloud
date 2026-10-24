@@ -366,6 +366,16 @@ export const noteActionItems = (
   },
 ];
 
+/** Moves focus to a row that just loaded, so keyboard and screen reader users continue where the new notes begin. */
+export const focusTreeRow = (id: string | undefined) => {
+  if (!id) return;
+  queueMicrotask(() =>
+    Array.from(document.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]"))
+      .find((row) => row.dataset.k2bNavTreeId === id)
+      ?.focus(),
+  );
+};
+
 /** Notes with sub-notes get the stacked icon, so a branch reads as one before it is opened. */
 export const noteIcon = (node: SidebarNote, homepageId: string | null | undefined): string =>
   node.id === homepageId ? "ti ti-home" : node.hasChildren ? "ti ti-files" : "ti ti-file-text";
@@ -405,7 +415,13 @@ function NoteTreeLevel(props: {
           label={t().earlierNotes({ count: earlier() })}
           icon={props.tree.isPending(props.parentId) ? "ti ti-loader-2 animate-spin" : "ti ti-chevrons-up"}
           class="notebook-tree-more"
-          onSelect={() => void props.tree.showEarlier(props.parentId).catch(() => undefined)}
+          onSelect={() => {
+            const shown = items().length;
+            void props.tree
+              .showEarlier(props.parentId)
+              .then(() => focusTreeRow(items()[items().length - shown - 1]?.id))
+              .catch(() => undefined);
+          }}
         />
       </Show>
       <For each={items()}>
@@ -433,7 +449,13 @@ function NoteTreeLevel(props: {
           label={t().moreNotes({ count: later() })}
           icon={props.tree.isPending(props.parentId) ? "ti ti-loader-2 animate-spin" : "ti ti-chevrons-down"}
           class="notebook-tree-more"
-          onSelect={() => void props.tree.showMore(props.parentId).catch(() => undefined)}
+          onSelect={() => {
+            const shown = items().length;
+            void props.tree
+              .showMore(props.parentId)
+              .then(() => focusTreeRow(items()[shown]?.id))
+              .catch(() => undefined);
+          }}
         />
       </Show>
     </Show>

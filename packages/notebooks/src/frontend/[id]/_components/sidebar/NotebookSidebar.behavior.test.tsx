@@ -18,6 +18,10 @@ describe("notebook sidebar", () => {
   const requests: string[] = [];
   let lists: Record<string, SidebarListNote[]> = {};
   let levels: Record<string, SidebarLevel> = {};
+  let listFails = false;
+  /** Holds back answers to reveal requests until the test lets each one through. */
+  let revealGate: ((noteId: string) => Promise<LevelsAnswer>) | null = null;
+  type LevelsAnswer = { levels: SidebarLevel[]; expandedIds: string[] };
   const answerLevels = (query: { levels?: string; reveal?: string }) => ({
     levels: (query.levels ? query.levels.split(",") : []).map((entry) => {
       const [parent = "", offset = "0", limit = "100"] = entry.split(":");
@@ -33,12 +37,14 @@ describe("notebook sidebar", () => {
           levels: {
             $get: async ({ query }: { query: { levels?: string; reveal?: string } }) => {
               requests.push(`levels ${query.levels ?? ""}${query.reveal ? ` reveal ${query.reveal}` : ""}`);
+              if (query.reveal && revealGate) return Response.json(await revealGate(query.reveal));
               return Response.json(answerLevels(query));
             },
           },
           list: {
             $get: async ({ query }: { query: { view: string; tag?: string } }) => {
               requests.push(`list ${query.view}${query.tag ? ` ${query.tag}` : ""}`);
+              if (listFails) return Response.json({ message: "Unavailable" }, { status: 503 });
               const items = lists[query.tag ?? query.view] ?? [];
               return Response.json({ total: items.length, offset: 0, items } satisfies SidebarList);
             },
@@ -414,6 +420,8 @@ describe("notebook sidebar", () => {
       await settle();
       expect(requests).toEqual(["levels :100:100"]);
       expect(view.rows(null)).toHaveLength(201);
+      // Focus moves to the first note that just loaded, so the keyboard continues there.
+      expect(view.dom.document.activeElement?.getAttribute("data-k2b-nav-tree-id")).toBe("N00100");
       expect(view.dom.root.querySelector('[data-k2b-nav-tree-id="more:"]')?.textContent).toContain("50 more notes");
       expect(view.phoneNotes()).toHaveLength(200);
       expect(
@@ -438,6 +446,129 @@ describe("notebook sidebar", () => {
       );
       await settle();
       expect(requests).toEqual(["levels  reveal Nest01"]);
+    } finally {
+      view.cleanup();
+    }
+  });
+  test("a note opened later wins over an earlier one whose way down answers late", async () => {
+    requests.length = 0;
+    const releases = new Map<string, (answer: LevelsAnswer) => void>();
+    revealGate = (noteId) => new Promise((resolve) => releases.set(noteId, resolve));
+    const view = await mount(
+      ctx(null, { sidebarTree: { ...sidebarTreeState([alpha, projects, zeta], { expanded: false }), total: 5000 } }),
+    );
+    try {
+      const open = (noteId: string) =>
+        window.dispatchEvent(
+          new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: { noteId, href: `/app/notebooks/Book01/notes/${noteId}` } }),
+        );
+      open("Nest01");
+      open("Home02");
+      await settle();
+      const way = (noteId: string) => ({
+        levels: [
+          { parentId: "Proj01", total: 2, offset: 0, items: [sidebarNote({ ...nested }), sidebarNote(note(noteId, noteId, [], "Proj01"))] },
+        ],
+        expandedIds: ["Proj01"],
+      });
+      releases.get("Home02")!(way("Home02"));
+      await settle();
+      // The earlier answer shows another window of the level; it must not replace the one that holds Home02.
+      releases.get("Nest01")!({
+        levels: [
+          {
+            parentId: "Proj01",
+            total: 2,
+            offset: 0,
+            items: [sidebarNote({ ...nested }), sidebarNote(note("Late01", "Late", [], "Proj01"))],
+          },
+        ],
+        expandedIds: ["Proj01"],
+      });
+      await settle();
+      expect(view.rows("Proj01").map((row) => row.id)).toEqual(["Nest01", "Home02"]);
+    } finally {
+      revealGate = null;
+      view.cleanup();
+    }
+  });
+
+  test("a list that cannot load says so with Retry instead of loading forever", async () => {
+    listFails = true;
+    const view = await mount(ctx("Home01"), "/app/notebooks/Book01");
+    try {
+      view.button("Favorites")!.click();
+      await settle();
+      expect(view.dom.root.textContent).not.toContain("Loading notes");
+      expect(view.dom.root.querySelector('[role="alert"]')?.textContent).toContain("Retry");
+      listFails = false;
+      lists = { favorites: [listed(alpha)] };
+      view.button("Retry")!.click();
+      await settle();
+      expect(view.rows(null).map((row) => row.id)).toEqual(["Alpha1"]);
+    } finally {
+      listFails = false;
+      view.cleanup();
+    }
+  });
+
+  test("a deleted note leaves Recent at once", async () => {
+    const recent = [listed(zeta), listed(alpha)];
+    lists = { recents: recent };
+    levels = {};
+    const view = await mount(
+      ctx("Home01", { sidebarFilter: { view: "recents" }, sidebarList: { total: 2, offset: 0, items: recent } }),
+      "/app/notebooks/Book01?view=recents",
+    );
+    try {
+      lists = { recents: [listed(alpha)] };
+      await new Promise<void>((done) => {
+        const covered: Promise<void>[] = [];
+        window.dispatchEvent(
+          new CustomEvent("notebooks.workspace.event", {
+            detail: {
+              cursor: null,
+              event: { v: 1, type: "note.deleted", notebookId: "Book01", noteId: "Zeta01" },
+              cover: (coverage: Promise<void>) => covered.push(coverage),
+            },
+          }),
+        );
+        void Promise.allSettled(covered).then(() => done());
+      });
+      await settle();
+      expect(view.rows(null).map((row) => row.id)).toEqual(["Alpha1"]);
+    } finally {
+      view.cleanup();
+    }
+  });
+  test("a refresh keeps every open branch loaded, also beyond the levels one request reads", async () => {
+    const branches = Array.from({ length: 60 }, (_, index) =>
+      note(`B${String(index).padStart(5, "0")}`, `Branch ${index}`, [
+        note(`C${String(index).padStart(5, "0")}`, `Child ${index}`, [], null),
+      ]),
+    );
+    for (const branch of branches) branch.children![0]!.parentId = branch.id;
+    const state = sidebarTreeState(branches);
+    // The server answers every level as it is; only the first 50 are read again.
+    levels = Object.fromEntries(state.levels.map((level) => [level.parentId ?? "", level]));
+    const view = await mount(ctx(null, { sidebarTree: { ...state, total: 5000 } }));
+    try {
+      await new Promise<void>((done) => {
+        const covered: Promise<void>[] = [];
+        window.dispatchEvent(
+          new CustomEvent("notebooks.workspace.event", {
+            detail: {
+              cursor: null,
+              event: { v: 1, type: "note.created", notebookId: "Book01", note: { id: "New001" } },
+              cover: (coverage: Promise<void>) => covered.push(coverage),
+            },
+          }),
+        );
+        void Promise.allSettled(covered).then(() => done());
+      });
+      await settle();
+      expect(view.dom.root.textContent).not.toContain("Loading notes");
+      expect(view.rows("B00059").map((row) => row.id)).toEqual(["C00059"]);
     } finally {
       view.cleanup();
     }

@@ -41,6 +41,7 @@ export function createSidebarTree(options: { notebookId: Accessor<string>; initi
   // A later request for a level wins over an earlier one that answers late.
   const generations = new Map<string, number>();
   let refreshes = 0;
+  let reveals = 0;
 
   const level = (parentId: string | null) => levels().get(levelKey(parentId));
   const isExpanded = (id: string) => expanded().has(id);
@@ -131,8 +132,8 @@ export function createSidebarTree(options: { notebookId: Accessor<string>; initi
     const answer = await fetchLevels(options.notebookId(), options.sort(), requests);
     if (refresh !== refreshes) return;
     batch(() => {
-      // Closed levels are dropped, so they load fresh when they open again.
-      setLevels((current) => new Map([...current].filter(([key]) => keys.includes(key))));
+      // Closed branches are dropped, so they load fresh when they open again; open ones keep what they show.
+      setLevels((current) => new Map([...current].filter(([, loaded]) => loaded.parentId === null || expanded().has(loaded.parentId))));
       apply(answer.levels, issued);
       setError(null);
     });
@@ -140,11 +141,12 @@ export function createSidebarTree(options: { notebookId: Accessor<string>; initi
 
   /** Opens the way to a note shown from elsewhere, such as a link in the editor, and loads the windows that hold it. */
   const reveal = async (noteId: string) => {
-    if (findNote(noteId)) {
-      const note = findNote(noteId)!;
-      if (!note.parentId || ancestorsOpen(note)) return;
-    }
+    const request = ++reveals;
+    const note = findNote(noteId);
+    if (note && (!note.parentId || ancestorsOpen(note))) return;
     const answer = await fetchLevels(options.notebookId(), options.sort(), [], noteId);
+    // Only the note opened last opens its way; an earlier answer that arrives late changes nothing.
+    if (request !== reveals) return;
     batch(() => {
       setLevels((current) => {
         const next = new Map(current);

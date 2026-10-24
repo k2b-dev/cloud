@@ -94,6 +94,7 @@ export function useNotebookWorkspaceState(ctx: NotebookContext, sort: () => Side
         detail.cover(Promise.resolve());
         return;
       }
+      if (detail.event.type === "note.deleted") list.forget(detail.event.noteId);
       const views = refreshViews().then(
         () => setRefreshError(null),
         (error: unknown) => {
@@ -153,7 +154,7 @@ export function useNotebookWorkspaceState(ctx: NotebookContext, sort: () => Side
     selectedNoteId,
     tags,
     attachmentCount,
-    workspaceError: () => workspace.error() ?? refreshError() ?? tree.error(),
+    workspaceError: () => workspace.error() ?? refreshError() ?? tree.error() ?? list.error(),
     workspaceRefreshing: () => workspace.refreshing() || refreshing(),
     refreshWorkspace,
   };

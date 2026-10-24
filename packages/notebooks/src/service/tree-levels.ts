@@ -202,7 +202,7 @@ export const listFiltered = async (params: {
       EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children,
       ARRAY(SELECT nt.tag FROM notebooks.note_tags nt WHERE nt.note_id = n.id ORDER BY nt.tag) AS tags
     FROM ${source}
-    ORDER BY n.updated_at DESC, n.id DESC
+    ORDER BY n.updated_at DESC, n.title, n.short_id
     LIMIT ${limit} OFFSET ${offset}
   `;
   const [count] = recents ? [{ count: rows.length }] : await sql<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM ${source}`;

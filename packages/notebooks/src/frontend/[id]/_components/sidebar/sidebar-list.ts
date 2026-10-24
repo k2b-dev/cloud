@@ -42,6 +42,7 @@ export function createSidebarList(options: { notebookId: Accessor<string>; initi
   const [error, setError] = createSignal<string | null>(null);
   let request = 0;
 
+  /** Loads a page of the list; a failure stays visible with Retry and rejects, so a live event is not covered by it. */
   const run = async (next: SidebarFilter, offset: number, limit: number, mode: "fresh" | "refresh" | "more") => {
     const current = ++request;
     setLoading(true);
@@ -64,6 +65,7 @@ export function createSidebarList(options: { notebookId: Accessor<string>; initi
       setError(null);
     } catch (cause) {
       if (current === request) setError(cause instanceof Error ? cause.message : String(cause));
+      throw cause;
     } finally {
       if (current === request) setLoading(false);
     }
@@ -76,7 +78,7 @@ export function createSidebarList(options: { notebookId: Accessor<string>; initi
       setFilter(next);
       setList(null);
       setShown([]);
-      if (next.view) void run(next, 0, SIDEBAR_PAGE_SIZE, "fresh");
+      if (next.view) void run(next, 0, SIDEBAR_PAGE_SIZE, "fresh").catch(() => undefined);
     },
     /** Follows a filter the address changed to, without reloading the same one. */
     follow: (next: SidebarFilter) => {
@@ -84,7 +86,7 @@ export function createSidebarList(options: { notebookId: Accessor<string>; initi
       setFilter(next);
       setList(null);
       setShown([]);
-      if (next.view) void run(next, 0, SIDEBAR_PAGE_SIZE, "fresh");
+      if (next.view) void run(next, 0, SIDEBAR_PAGE_SIZE, "fresh").catch(() => undefined);
     },
     items: () => keepShownOrder(list()?.items ?? [], shown()),
     total: () => list()?.total ?? 0,
@@ -93,15 +95,24 @@ export function createSidebarList(options: { notebookId: Accessor<string>; initi
       const loaded = list();
       return !!loaded && loaded.items.length < loaded.total;
     },
-    showMore: () => {
+    showMore: async () => {
       const loaded = list();
-      if (loaded && !loading()) void run(filter(), loaded.items.length, SIDEBAR_PAGE_SIZE, "more");
+      if (loaded && !loading()) await run(filter(), loaded.items.length, SIDEBAR_PAGE_SIZE, "more").catch(() => undefined);
     },
     /** Reads the shown rows again after a change; the rows keep their places. */
     refresh: async () => {
       const current = filter();
       if (!current.view) return;
       await run(current, 0, Math.min(SIDEBAR_MAX_WINDOW, Math.max(SIDEBAR_PAGE_SIZE, list()?.items.length ?? 0)), "refresh");
+    },
+    /** A deleted note leaves the list at once; Recent would otherwise keep its row until it opens again. */
+    forget: (id: string) => {
+      setShown((ids) => ids.filter((shownId) => shownId !== id));
+      setList((loaded) =>
+        loaded?.items.some((item) => item.id === id)
+          ? { ...loaded, total: Math.max(0, loaded.total - 1), items: loaded.items.filter((item) => item.id !== id) }
+          : loaded,
+      );
     },
     loading,
     error,

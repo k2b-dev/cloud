@@ -31,7 +31,7 @@ import { openNotebookSettingsDialog } from "../settings/NotebookSettingsPanel";
 import { writeSettings } from "../settings/NotebookSettingsStore";
 import { showRestoredVersionNotice } from "../versions/restore-notice";
 import NavigationVisibilityControls from "./NavigationVisibilityControls";
-import NoteTree, { noteActionItems, noteIcon, placementForMove, useNoteActions } from "./NoteTree";
+import NoteTree, { focusTreeRow, noteActionItems, noteIcon, placementForMove, useNoteActions } from "./NoteTree";
 import { createNavigationHidden, followStoredNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "./navigation-visibility";
 import { NoteRowLabel, NoteRowMenu, NoteRowsContextMenu } from "./note-rows";
 import { createNotebookSwitcher } from "./notebook-switcher";
@@ -450,7 +450,7 @@ export default function NotebookSidebar(props: Props) {
         return;
       }
       if (action === "list:more") {
-        list.showMore();
+        await list.showMore();
         return;
       }
       if (action.startsWith("note-action:")) {
@@ -627,7 +627,7 @@ export default function NotebookSidebar(props: Props) {
               >
                 <NoteRowsContextMenu menu={listMenu}>
                   <AppWorkspace.NavTree ariaLabel={filterLabel()} selectedId={currentNoteId()}>
-                    <Show when={!list.loaded()}>
+                    <Show when={!list.loaded() && !list.error()}>
                       <AppWorkspace.NavTree.Item id="loading:list" label={t().loadingNotes} icon="ti ti-loader-2 animate-spin" disabled />
                     </Show>
                     <For each={listedNotes()}>
@@ -650,7 +650,10 @@ export default function NotebookSidebar(props: Props) {
                         label={t().moreNotes({ count: list.total() - listedNotes().length })}
                         icon={list.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-chevrons-down"}
                         class="notebook-tree-more"
-                        onSelect={() => list.showMore()}
+                        onSelect={() => {
+                          const shown = listedNotes().length;
+                          void list.showMore().then(() => focusTreeRow(listedNotes()[shown]?.id));
+                        }}
                       />
                     </Show>
                   </AppWorkspace.NavTree>
