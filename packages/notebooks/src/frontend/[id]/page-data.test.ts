@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { mockNoteTree } from "./page-tree.test-fixture";
 import type { CloudRuntime, PermissionLevel, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
@@ -10,6 +9,7 @@ import { notebooksService } from "../../service";
 import * as notebookStore from "../../service/notebooks";
 import * as noteStore from "../../service/notes";
 import { loadNotebookPageData } from "./page-data";
+import { mockNoteTree } from "./page-tree.test-fixture";
 
 const user = {
   id: "11111111-1111-4111-8111-111111111111",

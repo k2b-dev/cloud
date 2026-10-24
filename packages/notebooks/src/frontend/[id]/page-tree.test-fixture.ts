@@ -45,7 +45,9 @@ export const mockNoteTree = (source: FixtureNode[] | (() => FixtureNode[])) => {
   });
   const level = (parentId: string | null, scope: { sort: treeLevels.TreeSort; locale: string; homepageId: string | null }) =>
     treeLevels.sortLevel(
-      read().all.filter((node) => node.parentId === parentId).map(entry),
+      read()
+        .all.filter((node) => node.parentId === parentId)
+        .map(entry),
       scope.sort,
       scope.locale,
       scope.homepageId,

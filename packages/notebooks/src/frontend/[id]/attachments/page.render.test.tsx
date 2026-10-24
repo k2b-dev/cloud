@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import { mockNoteTree } from "../page-tree.test-fixture";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
@@ -7,6 +6,7 @@ import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../../../tests/fixtures/rail-snapshot";
 import { selectHtml } from "../../../../../../tests/fixtures/select-html";
 import { notebooksService } from "../../../service";
+import { mockNoteTree } from "../page-tree.test-fixture";
 import "../_components/detail/ssr-test-plugin";
 
 const { default: handler } = await import("./page");
