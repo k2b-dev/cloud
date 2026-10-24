@@ -173,10 +173,10 @@ describe("Item events in a Space chat", () => {
     try {
       await page.getByText("Die Änderungen an den Elementen konnten nicht geladen werden.").waitFor();
       expect(await feed(page).locator(".k2b-message-event-row").count()).toBe(0);
-      // An update of the chat that keeps its messages (read on another device) neither hides the notice nor asks again.
+      // An update of the chat that keeps its messages (a reaction arrives) neither hides the notice nor asks again.
       const asked = reads.length;
-      harness.readElsewhere(chat, 99);
-      await page.waitForTimeout(800); // real clock: gives the live update time to arrive
+      harness.react(chat, harness.messageId(chat, 2), nora.id, "🎉");
+      await feed(page).getByRole("button", { name: /🎉/ }).waitFor();
       await page.getByText("Die Änderungen an den Elementen konnten nicht geladen werden.").waitFor();
       expect(reads.length).toBe(asked);
       await page.getByRole("button", { name: "Erneut versuchen" }).click();
