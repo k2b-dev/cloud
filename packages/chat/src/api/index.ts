@@ -86,13 +86,12 @@ import { chatLiveChannels } from "../service/live-channels";
 
 const invalidInput = (c: Context) => ({ code: "BAD_INPUT", message: chatMessages.resolve([getLocale(c)]).t.invalidInput });
 const attachmentTooLarge = (c: Context) =>
-  c.json(
-    {
-      code: "ATTACHMENT_TOO_LARGE",
-      message: chatMessages.resolve([getLocale(c)]).t.attachmentTooLarge,
-    },
-    413,
-  );
+  respond(c, {
+    ok: false,
+    status: 413,
+    code: "ATTACHMENT_TOO_LARGE",
+    error: chatMessages.resolve([getLocale(c)]).t.attachmentTooLarge,
+  });
 const audienceUnavailableResponse = jsonResponse(
   z.object({ code: z.literal("AUDIENCE_UNAVAILABLE"), message: z.string() }),
   "Audience counting timed out; retry the request",
