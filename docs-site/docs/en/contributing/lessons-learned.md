@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A second navigation surface misses a shared design rule | A rule changes the web shell, but the touch app's own sidebar keeps the old surface and selection. | Test: `mobile-shell-wide.browser.test.ts` requires the app sidebar on the page's surface and its open row in the web's selection tint, in light and dark. |
 | A formatter exposes ambiguous generic TSX syntax | Removing the trailing comma from a generic arrow with a default type makes the Solid/Babel test transform parse it as JSX. | Test: `PermissionEditor.behavior.test.tsx` runs through the actual Solid DOM preload; use a generic function declaration for the deferred helper and run the test after formatting. |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
@@ -200,6 +201,13 @@ convention still needs a check or a test.
 | Workspace layout changes shape after the first render | A workspace region such as a `MainPane` mounts only after hydration, and the layout drops or moves content that was already shown. | Test: Chat `ChatThreads.browser.test.ts` switches from a chat without threads to one with threads at 1440 and 2000 px. Library fix pending in [#1752](https://github.com/k2b-dev/cloud/issues/1752). |
 
 ## Lessons
+
+### The Cloud app's sidebar stayed grey
+
+- **What happened:** On 16.10. the web's sidebar became white with a tinted selection; the Cloud app's sidebar on iPads and monitors stayed grey with a plain selection.
+- **Root cause:** `MobileShell.Sidebar` has its own surface and selection styles, which the change to the web shell did not reach.
+- **Error class:** A second navigation surface misses a shared design rule.
+- **Guard:** The wide MobileShell browser test compares the sidebar with the page's surface and its open row with the web's selection tint, in light and dark, in Chromium and WebKit.
 
 ### Spread props never reached Pulse, Grids scanner and Weather settings islands
 
