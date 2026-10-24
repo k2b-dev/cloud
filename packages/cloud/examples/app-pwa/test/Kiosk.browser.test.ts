@@ -51,6 +51,10 @@ beforeAll(async () => {
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
+      if (url.pathname === "/away")
+        return new Response("<!doctype html><title>Andere Seite</title><p>Andere Seite</p>", {
+          headers: { "Content-Type": "text/html" },
+        });
       if (url.pathname === "/bundle.js") return new Response(bundle, { headers: { "Content-Type": "text/javascript" } });
       if (url.pathname === "/style.css") return new Response(fonts + icons + style + uiCss, { headers: { "Content-Type": "text/css" } });
       if (/^\/(fonts\/[a-z0-9-]+|tabler-icons-[a-z0-9]+)\.woff2$/.test(url.pathname))
@@ -349,7 +353,7 @@ for (const width of [390, 768])
         await page.close();
       }
     });
-    test("stale read after pagehide cannot reveal old customer data; BFCache returns a fresh customer", async () => {
+    test("stale read after pagehide cannot reveal old customer data; simulated BFCache return reads a fresh customer", async () => {
       const { page, state } = await setup(width);
       let release: (() => void) | undefined;
       try {
@@ -385,6 +389,45 @@ for (const width of [390, 768])
         await page.close();
       }
     });
+    for (const navigation of ["reload", "back"] as const)
+      test(`real ${navigation} conceals the previous visit until revalidation and discards unfinished ink`, async () => {
+        const { page, state } = await setup(width, "neutral=1");
+        const held = Promise.withResolvers<void>();
+        const observed = Promise.withResolvers<void>();
+        try {
+          await page.getByRole("heading", { name: /Ihr Vorgang/ }).waitFor();
+          state.snapshot = fixtureSnapshot();
+          await page.clock.runFor(2_000);
+          await heading(page, "Ankaufsvertrag lesen");
+          await page.getByRole("radio", { name: "Tippen", exact: true }).click();
+          await page.getByRole("textbox").fill("Noch nicht gespeichert");
+          await page.getByRole("checkbox").check();
+          expect(await page.getByRole("button", { name: "Vertrag unterschreiben", exact: true }).isEnabled()).toBe(true);
+          if (navigation === "back") await page.goto(new URL("away", server.url).href);
+          if (!state.snapshot.visit) throw new Error("Missing fixture visit");
+          state.snapshot.visit.customerName = "Neuer Beispielkunde";
+          await page.route("**/fixture/snapshot", async (route) => {
+            observed.resolve();
+            await held.promise;
+            await route.fulfill({ json: state.snapshot }).catch(() => {});
+          });
+          if (navigation === "reload") await page.reload();
+          else await page.goBack();
+          await observed.promise;
+          expect(await page.locator("body").innerText()).not.toContain("Lea Muster");
+          expect(await page.getByRole("textbox").count()).toBe(0);
+          held.resolve();
+          await page.getByText("Neuer Beispielkunde", { exact: true }).waitFor();
+          await page.getByRole("radio", { name: "Tippen", exact: true }).click();
+          expect(await page.getByRole("textbox").inputValue()).toBe("");
+          expect(await page.getByRole("checkbox").isChecked()).toBe(false);
+          expect(await page.getByRole("button", { name: "Vertrag unterschreiben", exact: true }).isDisabled()).toBe(true);
+          expect(state.signs).toBe(0);
+        } finally {
+          held.resolve();
+          await page.close();
+        }
+      });
   });
 const expectHeadingFocus = async (page: Page) =>
   expect(await page.locator("h1").evaluate((element) => element === document.activeElement)).toBe(true);
