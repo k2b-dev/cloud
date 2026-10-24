@@ -134,8 +134,9 @@ suite("Chat message attachments", () => {
       other = await f.person();
     const chat = await f.fixture(owner, [{ person: other, permission: "write" }]);
     const jpeg = withCameraMetadata(await tinyJpeg());
-    const attachment = await uploaded(owner, chat.shortId, new File([jpeg], 'Bild "ä".jpg', { type: "image/png" }));
-    expect(attachment).toMatchObject({ name: 'Bild "ä".jpg', kind: "image", width: 2, height: 3, mimeType: "image/jpeg" });
+    // Multipart bodies carry `"` as `%22` (HTML form encoding), so a backslash and an umlaut stand for unsafe header text.
+    const attachment = await uploaded(owner, chat.shortId, new File([jpeg], "Bild \\ä.jpg", { type: "image/png" }));
+    expect(attachment).toMatchObject({ name: "Bild \\ä.jpg", kind: "image", width: 2, height: 3, mimeType: "image/jpeg" });
     const [row] = await sql<{ content: Uint8Array; size_bytes: number; width: number; height: number }[]>`
       SELECT content, size_bytes, width, height FROM chat.attachments WHERE short_id = ${attachment.id}`;
     expect(row).toMatchObject({ size_bytes: attachment.size, width: 2, height: 3 });
@@ -147,7 +148,8 @@ suite("Chat message attachments", () => {
     expect(new Uint8Array(await content.arrayBuffer())).toEqual(new Uint8Array(row!.content));
     expect(content.headers.get("content-type")).toBe("image/jpeg");
     expect(content.headers.get("content-disposition")).toStartWith("inline;");
-    expect(content.headers.get("content-disposition")).toContain("%C3%A4");
+    expect(content.headers.get("content-disposition")).toContain('filename="Bild __.jpg"');
+    expect(content.headers.get("content-disposition")).toContain("%5C%C3%A4");
     expect(content.headers.get("x-content-type-options")).toBe("nosniff");
     expect(content.headers.get("content-security-policy")).toContain("sandbox");
     expect(content.headers.get("cache-control")).toBe("private, no-store");

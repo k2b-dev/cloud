@@ -1125,3 +1125,8 @@ updates that class's row in the table.
 
 - **Error class:** repeated forced layout. Updating many unread badges made the shared scroll-fade observer measure each intermediate layout, delaying Chat's batch-read response and interaction completion.
 - **Guard:** `scroll-fade.behavior.test.tsx` checks that separate row mutations share one frame measurement, scrolling still updates immediately, and disposal cancels pending work. Resize observations remain synchronous before paint. Chat's 51-conversation browser case checks both read batches with the original deadlines. The DOM test prepares the component imports before individual test deadlines, so a cold transform cannot time out and leave asynchronous cleanup running inside the next test.
+
+## Release a removed upload only after a refused send has put it back
+
+- **Error class:** cleanup ordered by microtasks. The Chat composer empties its chips before it hands a message over and restores them when the message is refused. A refusal that came back at once (an upload still failed) restored them only after the release check had run, so the upload was discarded and its "Try again" did nothing.
+- **Guard:** the release waits for the current task and skips while a message is handed over. `ChatAttachments.browser.test.ts` refuses a send with a failed upload, then retries it and sends both files.

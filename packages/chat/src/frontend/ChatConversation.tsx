@@ -201,8 +201,9 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   onCleanup(() => {
     for (const id of [...uploads.keys()]) forgetUpload(id);
   });
-  // The composer empties its chips before it hands a message over and puts them back if the message is not sent.
-  // A chip that went away is therefore released one microtask later, and only when no message is being handed over.
+  // The composer empties its chips before it hands a message over and puts them back if the message is not sent, also
+  // when the send is refused at once. A chip that went away is therefore released after the current task, and only
+  // when no message is being handed over.
   let submitting = false;
   const discardUpload = (id: string, view: AttachmentView | undefined) => {
     forgetUpload(id);
@@ -213,11 +214,11 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     const removed = shared().filter((attachment) => uploads.has(attachment.id) && !kept.has(attachment.id));
     setShared(next);
     if (!removed.length) return;
-    queueMicrotask(() => {
+    setTimeout(() => {
       if (submitting) return;
       for (const attachment of removed)
         if (!shared().some((current) => current.id === attachment.id)) discardUpload(attachment.id, uploadOf(attachment)?.view);
-    });
+    }, 0);
   };
   const updateChip = (id: string, change: Partial<ChatAttachment>) =>
     setShared((current) => current.map((attachment) => (attachment.id === id ? { ...attachment, ...change } : attachment)));

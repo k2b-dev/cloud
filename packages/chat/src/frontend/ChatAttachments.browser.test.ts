@@ -41,7 +41,7 @@ const load = async (options: BrowserContextOptions, chat: string) => {
 };
 /** Pastes files into the composer's field, as a person pasting from the clipboard. */
 const paste = (page: Page, files: { name: string; type: string; base64?: string; text?: string }[]) =>
-  page.locator(".k2b-chat-composer textarea").evaluate((field, list) => {
+  page.locator(".k2b-chat-composer textarea:not([aria-hidden])").evaluate((field, list) => {
     const data = new DataTransfer();
     for (const file of list) {
       const bytes = file.base64
@@ -72,19 +72,27 @@ describe("Chat attachments", () => {
         // The first upload failed: its chip offers "Try again", and sending waits.
         const retry = composer.getByRole("button", { name: "Try again" });
         await retry.waitFor();
-        await page.locator(".k2b-chat-composer textarea").fill("Here is the plan");
+        await page.locator(".k2b-chat-composer textarea:not([aria-hidden])").fill("Here is the plan");
         await page.getByRole("button", { name: "Send message" }).click();
         await page.locator(".k2b-toast", { hasText: "A file could not be uploaded. Try again or remove it." }).waitFor();
-        expect(await page.locator(".k2b-chat-composer textarea").inputValue()).toBe("Here is the plan");
+        expect(await page.locator(".k2b-chat-composer textarea:not([aria-hidden])").inputValue()).toBe("Here is the plan");
         expect(harness.posted).toEqual([]);
         await retry.click();
         await retry.waitFor({ state: "detached" });
+        // The notice can cover the send button; it leaves on its own.
+        await page.locator(".k2b-toast", { hasText: "A file could not be uploaded." }).waitFor({ state: "detached", timeout: 15_000 });
         await page.getByRole("button", { name: "Send message" }).click();
         await until(() => harness.posted.length === 1);
         // Both uploads ran at once; whichever failed first got the later ID when it was tried again.
         expect(harness.posted[0]?.body).toBe("Here is the plan");
         expect([...(harness.posted[0]?.attachments ?? [])].sort()).toEqual(["A00001", "A00002"]);
         const row = page.locator(".k2b-message-row[data-own]", { hasText: "Here is the plan" });
+        // The live copy can arrive before the send's answer and show beside it for a moment (#1911); wait for one row.
+        await page.waitForFunction(
+          () =>
+            [...document.querySelectorAll(".k2b-message-row[data-own]")].filter((row) => row.textContent?.includes("Here is the plan"))
+              .length === 1,
+        );
         // The image reserves its area from the stored size; the document names its kind and size.
         const image = row.getByRole("button", { name: "lager.png", exact: true });
         await image.waitFor();
