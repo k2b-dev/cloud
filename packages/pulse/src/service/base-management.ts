@@ -87,29 +87,39 @@ type BaseUpdateValues = {
   sensitiveRetentionHours: number;
 };
 
-const mapBase = async (row: BaseRow): Promise<PulseBase> => ({
-  store: await baseStoreStatus(row.id),
-  id: row.id,
-  shortId: row.short_id,
-  icon: row.icon,
-  color: row.color,
-  timezone: row.timezone,
-  name: row.name,
-  description: row.description,
-  rawRetentionDays: row.retention_days,
-  rollupRetentionDays: row.rollup_retention_days,
-  sensitiveRetentionHours: row.sensitive_retention_hours,
-  createdBy: row.created_by,
-  deletionStartedAt: isoNullable(row.deletion_started_at),
-  deletionFailedAt: isoNullable(row.deletion_failed_at),
-  deletionError: row.deletion_error,
-  dataClearStartedAt: isoNullable(row.data_clear_started_at),
-  dataClearCompletedAt: isoNullable(row.data_clear_completed_at),
-  dataClearFailedAt: isoNullable(row.data_clear_failed_at),
-  dataClearError: row.data_clear_error,
-  createdAt: iso(row.created_at),
-  updatedAt: row.updated_at_version ?? iso(row.updated_at),
-});
+const mapBase = async (row: BaseRow): Promise<PulseBase> => {
+  // Count configured members, not the people inside a group or a general access rule.
+  const [membership] = await sql<{ count: number }[]>`
+    SELECT count(*)::int AS count FROM pulse.base_access b
+    JOIN auth.access a ON a.id=b.access_id
+    WHERE b.base_id=${row.id}::uuid AND a.permission<>'none'
+      AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL OR a.service_account_id IS NOT NULL)
+  `;
+  return {
+    memberCount: membership!.count,
+    store: await baseStoreStatus(row.id),
+    id: row.id,
+    shortId: row.short_id,
+    icon: row.icon,
+    color: row.color,
+    timezone: row.timezone,
+    name: row.name,
+    description: row.description,
+    rawRetentionDays: row.retention_days,
+    rollupRetentionDays: row.rollup_retention_days,
+    sensitiveRetentionHours: row.sensitive_retention_hours,
+    createdBy: row.created_by,
+    deletionStartedAt: isoNullable(row.deletion_started_at),
+    deletionFailedAt: isoNullable(row.deletion_failed_at),
+    deletionError: row.deletion_error,
+    dataClearStartedAt: isoNullable(row.data_clear_started_at),
+    dataClearCompletedAt: isoNullable(row.data_clear_completed_at),
+    dataClearFailedAt: isoNullable(row.data_clear_failed_at),
+    dataClearError: row.data_clear_error,
+    createdAt: iso(row.created_at),
+    updatedAt: row.updated_at_version ?? iso(row.updated_at),
+  };
+};
 
 const principalFromAccessRow = (row: Pick<AccessRow, "user_id" | "group_id" | "service_account_id" | "authenticated_only">): Principal => {
   if (row.user_id) return { type: "user", userId: row.user_id };

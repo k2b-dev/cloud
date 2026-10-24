@@ -1,21 +1,38 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
-import { migrate } from "../migrate";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
-import { baseStore } from "../store/base-store";
-import { applyAlertEvaluation, claimDueAlert, evaluateDueAlerts, releaseCancelledAlert } from "./alert-evaluator";
-import { alertRules } from "./alert-rules";
-import { enqueueBaseNotice, fanoutBaseNotices } from "./base-notifications";
-import { seedActiveBaseStore } from "./base-store.test-fixture";
-import { checkSourceFreshnessBatch } from "./source-freshness";
-import { createSource, removeSource, updateSource } from "./source-management";
-import * as sqlService from "./sql-service";
+
+let migrate: typeof import("../migrate")["migrate"];
+let baseStore: typeof import("../store/base-store")["baseStore"];
+let applyAlertEvaluation: typeof import("./alert-evaluator")["applyAlertEvaluation"];
+let claimDueAlert: typeof import("./alert-evaluator")["claimDueAlert"];
+let evaluateDueAlerts: typeof import("./alert-evaluator")["evaluateDueAlerts"];
+let releaseCancelledAlert: typeof import("./alert-evaluator")["releaseCancelledAlert"];
+let alertRules: typeof import("./alert-rules")["alertRules"];
+let enqueueBaseNotice: typeof import("./base-notifications")["enqueueBaseNotice"];
+let fanoutBaseNotices: typeof import("./base-notifications")["fanoutBaseNotices"];
+let seedActiveBaseStore: typeof import("./base-store.test-fixture")["seedActiveBaseStore"];
+let checkSourceFreshnessBatch: typeof import("./source-freshness")["checkSourceFreshnessBatch"];
+let createSource: typeof import("./source-management")["createSource"];
+let removeSource: typeof import("./source-management")["removeSource"];
+let updateSource: typeof import("./source-management")["updateSource"];
+let sqlService: typeof import("./sql-service");
 
 suiteFor("database")("alert rules preserve rights, revisions and bounded control data", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
   beforeAll(async () => {
     database = await useFreshDatabase("pulse_alert_rules");
+    // Domain singletons bind only after this suite owns its disposable database.
+    ({ migrate } = await import("../migrate"));
+    ({ baseStore } = await import("../store/base-store"));
+    ({ applyAlertEvaluation, claimDueAlert, evaluateDueAlerts, releaseCancelledAlert } = await import("./alert-evaluator"));
+    ({ alertRules } = await import("./alert-rules"));
+    ({ enqueueBaseNotice, fanoutBaseNotices } = await import("./base-notifications"));
+    ({ seedActiveBaseStore } = await import("./base-store.test-fixture"));
+    ({ checkSourceFreshnessBatch } = await import("./source-freshness"));
+    ({ createSource, removeSource, updateSource } = await import("./source-management"));
+    sqlService = await import("./sql-service");
     const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
     await runCoreSetup();
     await migrate("Europe/Berlin");

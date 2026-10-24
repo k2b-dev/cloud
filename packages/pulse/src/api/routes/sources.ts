@@ -13,7 +13,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { pulseService } from "../../service";
 import { projectPublicRelations, projectSources } from "../../service/public-resources";
-import { ingestResponses, ingestTimeout, respondIngest } from "../ingest-response";
+import { ingestJsonBody, ingestResponses, ingestTimeout, respondIngest } from "../ingest-response";
 import {
   CreateSourceApiKeySchema,
   CreateSourceSchema,
@@ -57,7 +57,8 @@ const routes = new Hono<AuthContext>()
       summary: "Ingest Pulse data into an enabled source",
       responses: ingestResponses,
     }),
-    v("json", IngestBatchSchema),
+    ingestJsonBody,
+    v("json", IngestBatchSchema, () => ({ code: "BAD_INPUT", message: "Invalid ingest batch. Check telemetry fields and types." })),
     async (c) => {
       const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
       if (!baseId.ok) return respond(c, baseId.result);

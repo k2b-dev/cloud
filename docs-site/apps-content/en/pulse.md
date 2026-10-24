@@ -16,13 +16,17 @@ to one ClickHouse database per base; Postgres keeps control data.
 
 Use SQL through the API, CLI, or `sql.run` capability to read measurements.
 Saved queries keep SQL and parameters for reuse. The live SQL console is a
-separate interface for these same operations; dashboards follow later.
+separate interface for these same operations. Dashboards save SQL results as
+numbers, charts, tables, and funnels.
 
 Cloud administrators open **Administration → App administration → Pulse** to
 manage the data store, bases, and internal targets. **Data store** opens first.
 Pulse uses the shared app administration list, with no separate sidebar section.
 
 ## See what needs attention
+
+The base switcher shows the number of configured members. Each person, group
+or agent counts once; general access rules do not count as individual members.
 
 A base opens on **Overview**. It shows source freshness, alert rules needing
 attention, up to four saved key numbers, and recent changes. Existing
@@ -404,6 +408,56 @@ envelope. `saved_query.save` uses an idempotency
 key and revision checks with rememberable approval. Deletion always asks for
 approval. There is no capability for tokens or access changes.
 
+## Build a dashboard
+
+Use **Ask AI** to propose a dashboard, or save its JSON plus SQL with
+`cld pulse dashboards save --base <base-id> --file dashboard.json`.
+Read `cld pulse reference dashboards.md` for a complete website example.
+The Assistant asks before saving. Updates use the revision from
+`dashboard.read` or `dashboards get` so a stale edit cannot overwrite a newer one.
+
+A dashboard groups number, line, bar, table, and funnel panels into sections.
+A named section can include an icon, color, and caption describing its sources
+or cadence; these come from the saved definition.
+A number panel shows one numeric value. With a DateTime `x`, it uses the last
+returned row and shows up to 480 trend points. Optional String columns
+`unit`, `detail`, and `detailTone` add a unit and change label.
+Choose 24 hours, seven days, 30 days, 90 days, or a custom period. Referenced
+`:from`, `:to`, and `:bucket` parameters follow that range. Other values remain
+in the panel's `params`. Each panel declares the output `columns` it shows;
+charts also choose `x` and optionally `series`. Aggregate to at most eight
+series and 480 points per series, with 36 panels and 3,840 marks per panel.
+Excessive or truncated results show an error instead of silently losing rows.
+
+Panels retain the base's SQL profile and concurrency limits, separately from
+the questions quota. Refreshes run at most once per revision, range, and
+60-second interval. On failure, the panel keeps its last successful result
+and timestamp when available. Retries back off from one to five minutes.
+
+### Share selected results
+
+Review every output column before publishing. Anyone with the returned link
+can read those results. The public page contains presentation and selected
+columns, without SQL or parameters. Publishing requires write access and an
+explicit confirmation. Assistant publication always asks for approval.
+
+SQL, parameters, selected-column, and output changes end the existing link;
+title and layout edits retain it. Publishing again rotates the link. Revoke it
+with **Unpublish** or `cld pulse dashboards unpublish`. Clearing measurements
+preserves definitions and discards old cached results; deleting a base also
+removes its dashboards and public links.
+
+### Dashboard operations in this release
+
+This release adds Postgres dashboard definitions and durable execution
+receipts. Back them up with the other Pulse control data. Valkey holds only
+result snapshots: at most 500 entries or 64 MiB of serialized keys and data,
+evicted by oldest write. Loss or eviction of a snapshot does not permit an
+extra calculation within its current interval. Private and public reads have
+separate cache keys and validate access on every read. A store outage may
+leave a timestamped previous result available; a lost cache means waiting for
+the next permitted refresh.
+
 ## Let an agent create and write telemetry
 
 `base.create` follows the operator's base creation policy and grants the
@@ -524,6 +578,21 @@ unknown source `404`, and a disabled source, busy or blocked base, or conflictin
 key `409`. Successful ingest returns `200` with the three counts. Temporary
 refusals and their retry delays are described below.
 
+### Collector error codes
+
+A valid source token keeps identifying its source while collection is paused.
+A disabled source returns `409 PULSE_SOURCE_DISABLED`. A provisioning, clearing,
+or failed base returns `409 PULSE_BASE_NOT_WRITABLE`; keep the delivery pending
+until the operation completes or an administrator repairs the base.
+An authenticated lookup of a deleted source or base returns `404 NOT_FOUND`. Normal deletion also revokes its source
+tokens, so later requests using those tokens return `401`. Recovery blocks retain
+`409 PULSE_BASE_WRITE_BLOCKED` and their recovery guidance.
+
+Malformed JSON, schema validation failures and service input errors return
+`400 BAD_INPUT`.
+Fix the batch before retrying. Reusing an idempotency key for a different batch
+returns `409 CONFLICT`; retry only the original batch with that key.
+
 ## Timestamps, corrections, and states
 
 Omitting `ts` uses the batch's acceptance time. A supplied timestamp must be an
@@ -600,9 +669,15 @@ Values and bytes share a token bucket per base across replicas, HTTP ingest,
 CLI ingest, and scrapes. Buckets hold one minute's allowance and refill
 continuously. HTTP ingest counts original body bytes; other paths count their
 serialized batch. Completed keyed retries return their stored counts without
-using quota again. A batch larger than one minute's allowance can use a full
-bucket. Its full cost is charged, so later batches wait until enough quota has
-refilled.
+using quota again while their reset generation and committed/pending checkpoint
+identity still match the validated base. A checkpoint identity change invalidates
+that completion: retrying replays the original acceptance time and row identities
+under the ordinary quotas, and can return `429`. Successful replay renews the
+receipt's validity. Checkpoints detect hourly restore mismatches; a matching
+checkpoint does not detect every lost batch between checkpoints.
+
+A batch larger than one minute's allowance can use a full bucket. Its full cost
+is charged, so later batches wait until enough quota has refilled.
 
 | Condition | Response and recovery |
 | --- | --- |
@@ -612,12 +687,10 @@ refilled.
 | Instance disk below 10% free | `503 PULSE_STORE_DISK_LOW`, `Retry-After: 300`; reads continue. Cloud administrators receive a notification. |
 | Data store unreachable | `503 PULSE_STORE_UNAVAILABLE`, `Retry-After: 30`; retry with the same key. Scrapes fail and record the error. |
 
-Storage notifications go once per threshold crossing to direct user base
-administrators; group access is not expanded. Disk notifications go once per
-crossing to Cloud administrators. Store outages notify Cloud administrators
-once per outage; a successful disk measurement closes the outage. Delivery
-follows notification preferences. A failed or throttled scrape waits for its
-next scheduled attempt.
+Storage and disk notifications go once per threshold crossing; store outages
+notify once per outage. A successful disk measurement closes the outage.
+Delivery follows notification preferences and the recipient rules below.
+A failed or throttled scrape waits for its next scheduled attempt.
 
 ### Maintenance admission and health delivery in this release
 
@@ -657,6 +730,19 @@ current settings.
 ClickHouse TTLs expire events and state history by raw retention, hourly values
 by their own retention, and sensitive fields by a separate column TTL.
 Physical removal follows storage merges. Current states have no TTL.
+SQL reads apply the base's retention even while physical cleanup is pending.
+Events use the exact cutoff; raw samples and hourly values include the complete
+boundary hour. This applies equally to the console, CLI, Assistant, and alert
+queries. Current states remain readable until replaced or cleared.
+
+On update, Pulse reconciles each base to read-schema version 4. Retention
+changes update these read boundaries during the same base reconciliation that
+updates the storage TTLs. Delayed hourly aggregation continues reading the
+protected internal raw samples before the nightly job removes them. Counter
+and histogram helpers also use these protected samples within the longer of
+raw and hourly retention, so a delayed rollup cannot replace a newer observation
+with a stale hourly total. These samples remain hidden from direct raw reads,
+and helper windows outside raw retention still require complete hours.
 
 Raw metric samples use daily partitions. The nightly retention job at 03:17
 UTC removes a partition only when its whole day is past raw retention and all

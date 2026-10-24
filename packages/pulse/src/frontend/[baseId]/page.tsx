@@ -26,7 +26,14 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       fullWidth
       fullPage
-      title={[{ title: t.start, href: "/" }, { title: t.appName, href: "/app/pulse" }, { title: data.baseName }]}
+      title={[
+        { title: t.start, href: "/" },
+        { title: t.appName, href: "/app/pulse" },
+        { title: data.baseName, href: `/app/pulse/${workspaceProps.initialBaseId}` },
+        ...(workspaceProps.initialRouteState.view === "dashboards"
+          ? [{ title: workspaceProps.initialDashboards?.selected?.name ?? t.dashboards }]
+          : []),
+      ]}
     >
       <PulseWorkspace {...workspaceProps} />
     </Layout>

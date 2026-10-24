@@ -1,17 +1,20 @@
 import { sql } from "bun";
 import { PULSE_INTERNAL_INGEST_BATCH_LIMIT } from "../ingest-limits";
-import { baseStore } from "../store/base-store";
-import { requireBaseActive } from "./access-control";
+import { baseStore, loadStoreRow } from "../store/base-store";
+import { admitBaseWrite, sameCheckpoint } from "../store/maintenance";
+import { requireBaseWritable } from "./access-control";
 import { type IngestStore, insertStoreRows } from "./ingest-bulk";
 
 /** Commit changes first. Deleted sources remain pending tombstones until their mirror succeeds. */
 export const mirrorPendingSources = async (baseId: string, store: IngestStore = baseStore, sourceId?: string) => {
   store = { ...store, query: await store.prepare() };
+  const checkpoint = await admitBaseWrite(baseId, store);
+  if (!checkpoint) return;
   return sql.begin(async (tx) => {
-    const active = await requireBaseActive(baseId, tx);
+    const active = await requireBaseWritable(baseId, tx);
     if (!active.ok) return;
-    const [base] = await tx<{ database_name: string }[]>`SELECT database_name FROM pulse.base_stores WHERE base_id=${baseId}::uuid`;
-    if (!base) return;
+    const base = await loadStoreRow(baseId, tx);
+    if (!base || !sameCheckpoint(base, checkpoint)) return;
     // One synchronous insert, bounded by the same row budget as internal telemetry batches.
     const sources = await tx<{ id: string; short_id: string; kind: string; name: string; deleted: boolean; version: string }[]>`
     SELECT id,short_id,kind,name,deleted,floor(extract(epoch FROM updated_at)*1000000)::text AS version FROM pulse.sources

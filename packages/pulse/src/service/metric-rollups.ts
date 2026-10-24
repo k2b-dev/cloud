@@ -2,7 +2,8 @@ import { err } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { assertStoreName } from "../store/base-schema";
-import { baseStore } from "../store/base-store";
+import { baseStore, loadStoreRow } from "../store/base-store";
+import { admitBaseWrite, sameCheckpoint } from "../store/maintenance";
 import { requireBaseWritable } from "./access-control";
 import type { IngestStore } from "./ingest-bulk";
 
@@ -29,7 +30,7 @@ export const hourlyRollupSql = (database: string, prefix: string) => {
   const db = assertStoreName(database, prefix);
   return `INSERT INTO ${db}._rollups
     WITH
-    in_hour AS (SELECT series_id,ts,value FROM ${db}.samples WHERE ts>=fromUnixTimestamp64Milli({start:Int64}) AND ts<fromUnixTimestamp64Milli({end:Int64})),
+    in_hour AS (SELECT series_id,ts,argMax(src.value,src.version) AS value FROM ${db}._samples AS src WHERE ts>=fromUnixTimestamp64Milli({start:Int64}) AND ts<fromUnixTimestamp64Milli({end:Int64}) GROUP BY series_id,ts),
     ids AS (SELECT DISTINCT series_id FROM in_hour),
     raw_recent AS (SELECT src.series_id,argMax(src.value,(src.ts,src.version)) AS value,max(src.ts) AS ts FROM ${db}._samples src
       WHERE src.series_id IN ids AND src.ts<fromUnixTimestamp64Milli({start:Int64}) AND src.ts>=fromUnixTimestamp64Milli({rawFrom:Int64}) GROUP BY src.series_id),
@@ -53,18 +54,20 @@ export const createHourlyRollup =
   ({ store = baseStore, database = sql, clock = store.clock }: { store?: IngestStore; database?: typeof sql; clock?: () => Date } = {}) =>
   async (baseId?: string): Promise<{ buckets: number; done: boolean; retryAfterMs?: number }> => {
     const connectedStore = { ...store, query: await store.prepare() };
-    let failedHour: { baseId: string; hour: Date; now: Date } | undefined;
+    let failedHour: { baseId: string; hour: Date; now: Date; generation: string; revision: string } | undefined;
     try {
-      return await database.begin(async (tx) => {
-        const now = clock();
-        await tx`SET LOCAL statement_timeout='30s'`.simple();
-        await tx`SET LOCAL lock_timeout='30s'`.simple();
-        const [candidate] = await tx<{ base_id: string; hour: Date }[]>`SELECT h.base_id,h.hour FROM pulse.metric_hours h
+      const now = clock();
+      const [candidate] = await database<{ base_id: string; hour: Date }[]>`SELECT h.base_id,h.hour FROM pulse.metric_hours h
       JOIN pulse.base_stores s ON s.base_id=h.base_id
       WHERE h.state='dirty' AND (h.lease_until IS NULL OR h.lease_until<=${now}::timestamptz) AND h.hour<${new Date(Math.floor(now.getTime() / HOUR_MS) * HOUR_MS)}
         AND (${baseId ?? null}::uuid IS NULL OR h.base_id=${baseId ?? null}::uuid) AND s.state='active' AND s.write_block_reason IS NULL
       ORDER BY h.hour,h.base_id LIMIT 1`;
-        if (!candidate) return { buckets: 0, done: true };
+      if (!candidate) return { buckets: 0, done: true };
+      const checkpoint = await admitBaseWrite(candidate.base_id, connectedStore, database);
+      if (!checkpoint) return { buckets: 0, done: false };
+      return await database.begin(async (tx) => {
+        await tx`SET LOCAL statement_timeout='30s'`.simple();
+        await tx`SET LOCAL lock_timeout='30s'`.simple();
         const active = await requireBaseWritable(candidate.base_id, tx);
         if (!active.ok) return { buckets: 0, done: true };
         const [lock] =
@@ -75,10 +78,8 @@ export const createHourlyRollup =
         >`SELECT revision::text FROM pulse.metric_hours WHERE base_id=${candidate.base_id}::uuid AND hour=${candidate.hour}
       AND state='dirty' AND (lease_until IS NULL OR lease_until<=${now}::timestamptz)`;
         if (!hour) return { buckets: 0, done: false };
-        const [base] = await tx<
-          { database_name: string; retention_days: number; rollup_retention_days: number }[]
-        >`SELECT s.database_name,b.retention_days,b.rollup_retention_days FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id WHERE b.id=${candidate.base_id}::uuid`;
-        if (!base) return { buckets: 0, done: false };
+        const base = await loadStoreRow(candidate.base_id, tx);
+        if (!base || !sameCheckpoint(base, checkpoint)) return { buckets: 0, done: false };
         const [dirty] = await tx<{ hour: Date | null }[]>`SELECT min(hour) AS hour FROM pulse.metric_hours
         WHERE base_id=${candidate.base_id}::uuid AND state='dirty' AND hour<${candidate.hour}`;
         const cutoff = now.getTime() - base.retention_days * 86_400_000;
@@ -98,7 +99,7 @@ export const createHourlyRollup =
             revision: hour.revision,
           });
         } catch (error) {
-          failedHour = { baseId: candidate.base_id, hour: candidate.hour, now };
+          failedHour = { baseId: candidate.base_id, hour: candidate.hour, now, generation: base.reset_generation, revision: hour.revision };
           throw error;
         }
         // No hour lock during the insert: a concurrent T1 can bump the revision; this CAS then leaves it dirty.
@@ -106,15 +107,22 @@ export const createHourlyRollup =
         return { buckets: 1, done: false };
       });
     } catch (error) {
-      if (failedHour && error instanceof Error && error.message === "MAINTENANCE_BUSY") {
-        await database`UPDATE pulse.metric_hours SET lease_until=greatest(lease_until,${new Date(clock().getTime() + 5_000)})
-          WHERE base_id=${failedHour.baseId}::uuid AND hour=${failedHour.hour} AND state='dirty'`;
-        return { buckets: 0, done: false, retryAfterMs: 5_000 };
-      }
+      const maintenanceBusy = error instanceof Error && error.message === "MAINTENANCE_BUSY";
+      if (maintenanceBusy && !failedHour) return { buckets: 0, done: false, retryAfterMs: 5_000 };
       if (failedHour) {
-        await database`UPDATE pulse.metric_hours SET lease_until=greatest(lease_until,${failedHour.now}::timestamptz+interval '1 hour')
-          WHERE base_id=${failedHour.baseId}::uuid AND hour=${failedHour.hour} AND state='dirty'`;
-        log.warn("Pulse hourly rollup deferred", { baseId: failedHour.baseId, hour: failedHour.hour.toISOString() });
+        const failed = failedHour;
+        const retryAt = new Date(maintenanceBusy ? clock().getTime() + 5_000 : failed.now.getTime() + HOUR_MS);
+        await database.begin(async (tx) => {
+          await tx`SET LOCAL statement_timeout='30s'`.simple();
+          await tx`SET LOCAL lock_timeout='30s'`.simple();
+          const active = await requireBaseWritable(failed.baseId, tx);
+          if (!active.ok) return;
+          await tx`UPDATE pulse.metric_hours SET lease_until=greatest(lease_until,${retryAt}::timestamptz)
+            WHERE base_id=${failed.baseId}::uuid AND hour=${failed.hour} AND state='dirty' AND revision=${failed.revision}::bigint
+              AND EXISTS(SELECT 1 FROM pulse.base_stores WHERE base_id=${failed.baseId}::uuid AND reset_generation=${failed.generation}::bigint)`;
+        });
+        if (maintenanceBusy) return { buckets: 0, done: false, retryAfterMs: 5_000 };
+        log.warn("Pulse hourly rollup deferred", { baseId: failed.baseId, hour: failed.hour.toISOString() });
       }
       throw error;
     }

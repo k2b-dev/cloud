@@ -1,5 +1,5 @@
 import { dates } from "@k2b/stdlib";
-import { Button, ButtonLink, Chart, Format, IconButton, Skeleton } from "@k2b/ui";
+import { Button, ButtonLink, Chart, Format, Skeleton } from "@k2b/ui";
 import { createComputed, createMemo, createUniqueId, For, Match, on, Show, Switch } from "solid-js";
 import type { pulseMessages } from "../../messages";
 import type { Overview, OverviewActivity, OverviewAttention } from "../../overview-contracts";
@@ -416,7 +416,13 @@ export default function OverviewView(props: OverviewViewProps) {
   };
   const unavailable = () => !!data()?.storeUnavailable || props.error?.code === "STORE_UNAVAILABLE";
   const assistant = () => (
-    <Button variant="ai" loading={props.assistantPending} loadingLabel={t().sqlAssistantLaunching} onClick={props.askAssistant}>
+    <Button
+      class="pulse-workspace__desktop-action"
+      variant="ai"
+      loading={props.assistantPending}
+      loadingLabel={t().sqlAssistantLaunching}
+      onClick={props.askAssistant}
+    >
       <i class="ti ti-sparkles" aria-hidden="true" /> {t().sqlAskAssistant}
     </Button>
   );
@@ -484,16 +490,6 @@ export default function OverviewView(props: OverviewViewProps) {
                 <div class="pulse-overview__toolbar">
                   <Show when={!empty()}>
                     <div class="pulse-overview__assistant-desktop">{assistant()}</div>
-                    <div class="pulse-overview__assistant-phone">
-                      <IconButton
-                        variant="ai"
-                        label={props.assistantPending ? t().sqlAssistantLaunching : t().sqlAskAssistant}
-                        loading={props.assistantPending}
-                        onClick={props.askAssistant}
-                      >
-                        <i class="ti ti-sparkles" aria-hidden="true" />
-                      </IconButton>
-                    </div>
                   </Show>
                   <div class="pulse-overview__assistant-feedback" role="status">
                     <Show when={props.assistantError}>

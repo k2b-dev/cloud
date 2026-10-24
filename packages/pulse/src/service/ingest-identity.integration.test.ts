@@ -34,7 +34,7 @@ suiteFor(
       f.setTime("2026-10-17T12:01:00Z");
       assertWrite(await f.writeB({ states: [{ key: "door", value: "B", ts: "2026-10-17T10:01:00Z" }] }, "B"));
       assertWrite(await f.write(batchA, "A"));
-      assertWrite(await f.write(batchA, "A")); // A is done; no further effects.
+      assertWrite(await f.write(batchA, "A")); // A is done; the valid receipt returns without further effects.
       expect(await f.read("_state_changes", "value", "FINAL ORDER BY changed_at")).toEqual([{ value: '"A"' }, { value: '"B"' }]);
       expect(await f.read("states", "value")).toEqual([{ value: '"B"' }]);
       const [done] =
@@ -221,7 +221,9 @@ suiteFor(
         expect(await f.read(view, columns)).toEqual(await clean.read(view, columns));
       const [hidden] = await f.read("_events", "sensitive,payload");
       expect(hidden).toEqual({ sensitive: '{"secret":"hidden"}', payload: '{"raw":1}' });
-      f.failInsert(1); // done response cannot attempt another insert.
+      f.failInsert(1); // A valid completed receipt returns without another insert.
+      expect(await f.write(batch, "fixed")).toEqual({ ok: true, data: { metrics: 1, events: 1, states: 1 } });
+      f.recover();
       expect(await f.write(batch, "fixed")).toEqual({ ok: true, data: { metrics: 1, events: 1, states: 1 } });
       expect(await f.write({ ...batch, events: [{ kind: "other" }] }, "fixed")).toMatchObject({ ok: false, error: { status: 409 } });
       f.failInsert(2);

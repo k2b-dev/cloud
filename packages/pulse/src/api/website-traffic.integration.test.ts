@@ -126,8 +126,50 @@ suiteFor(
       // Exercise the executable example against the real authenticated HTTP route.
       const delivery = WebsiteDeliverySchema.parse(await Bun.file(`${import.meta.dir}/../../examples/website-delivery.json`).json());
       const config = { endpoint: `${ingestServer.url.origin}/api/pulse/ingest`, token: token.data.token };
+      // Existing tokens distinguish a temporary pause from a deleted source, before any writes.
+      const refused = async (status: number, code: string) => {
+        const response = await fetch(config.endpoint, {
+          method: "POST",
+          headers: { authorization: `Bearer ${config.token}`, "content-type": "application/json" },
+          body: JSON.stringify({ events: [{ kind: "paused-probe" }] }),
+        });
+        expect(response.status).toBe(status);
+        expect(await response.json()).toMatchObject({ code });
+      };
+      await sql`UPDATE pulse.sources SET enabled=FALSE WHERE id=${internalSource!.id}::uuid`;
+      await refused(409, "PULSE_SOURCE_DISABLED");
+      await sql`UPDATE pulse.sources SET enabled=TRUE WHERE id=${internalSource!.id}::uuid`;
+      for (const state of ["provisioning", "clearing", "failed"] as const) {
+        await sql`UPDATE pulse.base_stores SET state=${state} WHERE base_id=${base.id}::uuid`;
+        await refused(409, "PULSE_BASE_NOT_WRITABLE");
+      }
+      await sql`UPDATE pulse.base_stores SET state='active' WHERE base_id=${base.id}::uuid`;
+      await sql`UPDATE pulse.bases SET data_clear_started_at='2026-10-20T11:00:00Z',data_clear_completed_at=NULL WHERE id=${base.id}::uuid`;
+      await refused(409, "PULSE_BASE_NOT_WRITABLE");
+      await sql`UPDATE pulse.bases SET data_clear_completed_at='2026-10-20T11:01:00Z' WHERE id=${base.id}::uuid`;
+      // Exercise the lookup boundary while the token is still valid; normal deletion revocation is checked below.
+      await sql`UPDATE pulse.sources SET deleted=TRUE WHERE id=${internalSource!.id}::uuid`;
+      await refused(404, "NOT_FOUND");
+      await sql`UPDATE pulse.sources SET deleted=FALSE WHERE id=${internalSource!.id}::uuid`;
+      expect(await store.query(`SELECT count() AS n FROM ${q(base.database)}._events`)).toEqual([{ n: 0 }]);
       expect(await (await sendWebsiteDelivery(delivery, config)).json()).toEqual({ metrics: 0, events: 5, states: 0 });
       expect(await (await sendWebsiteDelivery(delivery, config)).json()).toEqual({ metrics: 0, events: 5, states: 0 });
+      const conflict = await fetch(config.endpoint, {
+        method: "POST",
+        headers: { authorization: `Bearer ${config.token}`, "content-type": "application/json", "idempotency-key": delivery.key },
+        body: JSON.stringify({ events: [{ kind: "different-batch" }] }),
+      });
+      expect(conflict.status).toBe(409);
+      expect(await conflict.json()).toEqual({ code: "CONFLICT", message: "Idempotency key was already used for a different ingest batch" });
+      for (const batch of ["{", { events: [{ kind: "invalid", unknown: true }] }, { metrics: [{ name: "invalid", value: "text" }] }]) {
+        const response = await fetch(config.endpoint, {
+          method: "POST",
+          headers: { authorization: `Bearer ${config.token}`, "content-type": "application/json" },
+          body: typeof batch === "string" ? batch : JSON.stringify(batch),
+        });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ code: "BAD_INPUT" });
+      }
       expect(await store.query(`SELECT count() AS n FROM ${q(base.database)}._events`)).toEqual([{ n: 5 }]);
       const sqlText = await Bun.file(`${import.meta.dir}/../../examples/website.sql`).text();
       const result = await pulseCapabilities.queries["sql.run"].run(
@@ -296,6 +338,16 @@ suiteFor(
       });
       // ClickHouse returns a Date for calendar weeks and a DateTime for minute buckets.
       expect(intervals.rows).toEqual([["2026-10-20 12:00:00", "2026-10-19"]]);
+      expect(await pulseService.source.remove({ baseId: base.id, sourceId: internalSource!.id, user: identity.actor.user })).toMatchObject({
+        ok: true,
+      });
+      const revoked = await fetch(config.endpoint, {
+        method: "POST",
+        headers: { authorization: `Bearer ${config.token}`, "content-type": "application/json" },
+        body: JSON.stringify({ events: [{ kind: "revoked" }] }),
+      });
+      expect(revoked.status).toBe(401);
+      expect(await store.query(`SELECT count() AS n FROM ${q(base.database)}._events`)).toEqual([{ n: 7 }]);
     } finally {
       await ingestServer?.stop(true);
       credentials.mockRestore();

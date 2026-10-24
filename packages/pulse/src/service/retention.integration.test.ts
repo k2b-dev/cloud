@@ -223,7 +223,7 @@ suiteFor(
       await f.cleanup();
     }
   }, 60000);
-  test("a pending keyed batch keeps the hours it may replay unsealed until its key is done", async () => {
+  test("a keyed batch keeps the hours it may replay unsealed until its key expires", async () => {
     const f = await writeFixture("pending-seal-horizon");
     try {
       const [base] = await sql<{ retention_days: number }[]>`SELECT retention_days FROM pulse.bases WHERE id=${f.base.id}::uuid`;
@@ -246,6 +246,11 @@ suiteFor(
       assertWrite(await f.write(batch, "pending-batch"));
       expect(await f.read("samples", "value")).toEqual([{ value: 1 }]);
       await sql`UPDATE pulse.metric_hours SET state='clean',lease_until=NULL WHERE base_id=${f.base.id}::uuid AND hour=${hour}`;
+      await run(f.base.id);
+      expect(
+        await sql<{ state: string }[]>`SELECT state FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid AND hour=${hour}`,
+      ).toEqual([{ state: "clean" }]);
+      f.setTime("2026-10-18T12:00:00Z");
       await run(f.base.id);
       expect(
         await sql<{ state: string }[]>`SELECT state FROM pulse.metric_hours WHERE base_id=${f.base.id}::uuid AND hour=${hour}`,

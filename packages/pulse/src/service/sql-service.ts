@@ -3,6 +3,7 @@ import { type AccessSubject, ok } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { z } from "zod";
 import { ALERT_CHECKS_PER_HOUR, ALERT_MAX_EXECUTION_MS } from "../alert-contracts";
+import { DashboardDefinitionSchema, type DashboardWindow, dashboardParameters } from "../dashboard-contracts";
 import { prepareSql, SqlInputError } from "../sql-params";
 import type { ReadProfileName } from "../store/admin-contracts";
 import { READ_LIMITS, READ_PROFILES } from "../store/setup-sql";
@@ -33,7 +34,7 @@ type RunBaseSqlInput = BaseSqlInput & {
   sql: string;
   params?: Record<string, string>;
   signal?: AbortSignal;
-  via: "api" | "capability" | "sources" | "overview";
+  via: "api" | "capability" | "sources" | "overview" | "dashboard";
   runId?: string;
 };
 const actorKey = (actor: RequestActor) => (actor.kind === "user" ? `user:${actor.user.id}` : `service_account:${actor.serviceAccount.id}`);
@@ -121,6 +122,36 @@ export const runAlertSql = async (input: {
       quotaKind: "alerts",
       freeOnly: true,
       executionDeadline,
+      signal: input.signal,
+    });
+  } catch (error) {
+    return sqlFailure(error);
+  }
+};
+
+/** Public reads can run only a currently published, persisted panel. The token,
+ * revision and clear generation are checked again by the result projection. */
+export const runPublishedDashboardSql = async (input: {
+  dashboardId: string;
+  panelId: string;
+  revision: number;
+  resetGeneration: string;
+  tokenHash: string;
+  window: DashboardWindow;
+  signal?: AbortSignal;
+}): Promise<SqlServiceResult<SqlResult>> => {
+  try {
+    const [row] = await sql<{ base_id: string; definition: unknown }[]>`
+      SELECT d.base_id,d.definition FROM pulse.dashboards d JOIN pulse.base_stores s ON s.base_id=d.base_id
+      WHERE d.id=${input.dashboardId}::uuid AND d.revision=${input.revision} AND d.public_token_hash=${input.tokenHash}
+        AND s.reset_generation=${input.resetGeneration}::bigint AND s.state='active'`;
+    const panel = row ? DashboardDefinitionSchema.parse(row.definition).panels.find((panel) => panel.id === input.panelId) : undefined;
+    if (!row || !panel) throw new SqlError("NO_READ_ACCESS", "This dashboard publication is no longer available");
+    return await executeBaseSql(await loadSqlBase(row.base_id), {
+      sql: panel.sql,
+      params: dashboardParameters(panel, input.window),
+      ownerKey: `dashboard:${input.dashboardId}:${input.revision}`,
+      countQuota: false,
       signal: input.signal,
     });
   } catch (error) {

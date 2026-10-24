@@ -132,8 +132,8 @@ suiteFor("database", "valkey")("app-access Pulse ingest-only protocol", () => {
       await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name,enabled)
         VALUES(${sourceId}::uuid,${sourceShortId},${base.id}::uuid,'http_ingest','Protocol source',false)`;
       const disabled = await ingest();
-      expect(disabled.status).toBe(404);
-      expect(await disabled.json()).toMatchObject({ message: "Ingest source not found" });
+      expect(disabled.status).toBe(409);
+      expect(await disabled.json()).toEqual({ code: "PULSE_SOURCE_DISABLED", message: "Pulse source is disabled" });
       await sql`UPDATE pulse.sources SET enabled=true WHERE id=${sourceId}::uuid`;
       const blocked = await ingest();
       expect(blocked.status).toBe(409);

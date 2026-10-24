@@ -673,6 +673,15 @@ transition and are dispatched afterwards; background notifications use the
 operator’s `app.locale` setting, and request-triggered outages retain the
 request locale.
 
+Pulse dashboards add Postgres definitions, publication hashes, and execution
+receipts to the control-data backup. Valkey stores disposable result snapshots,
+bounded to 500 entries or 64 MiB of serialized keys and data. Losing that cache
+can leave a panel waiting for its next permitted refresh; it does not permit
+another calculation in the same interval. Dashboards share SQL admission and
+read profiles but do not consume the questions quota. Public links are checked
+on every read and can be revoked by a base writer. Clearing measurements keeps
+dashboard definitions and invalidates their cached results.
+
 Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
 Postgres and its encryption keys. Restore them as a consistent set.
 
@@ -680,10 +689,39 @@ Without a saved connection, Cloud and Pulse still report ready; Pulse data APIs
 answer `503 PULSE_STORE_NOT_CONFIGURED`, and the Pulse page shows **Pulse is not
 set up yet**. Administration remains available for setup. Production Compose does not provision ClickHouse; the operator supplies it.
 
-After a restore, Pulse compares each database’s checkpoint with Postgres and
-blocks measurement writes if they differ or the database is missing. A Cloud
-admin can recheck a corrected restore or recreate an empty database. Recreating
-removes measurements while preserving sources, source credentials, settings, and access.
+Pulse verifies each base's checkpoint before accepting measurements, mirroring
+sources, computing rollups, or pruning stored data, even while its startup scan
+is still pending. An unavailable store refuses that work while other Cloud
+applications can start normally.
+
+After a restore, Pulse blocks measurement writes if the checkpoint differs
+from Postgres or the database is missing. A Cloud admin can recheck a corrected
+restore or recreate an empty database. Recreating removes measurements while
+preserving sources, source credentials, settings, and access.
+
+Within the 24-hour idempotency window, a completed receipt returns its saved
+counts without quota or repeat writes while its reset generation and both
+committed and pending checkpoint IDs match the currently validated base.
+A checkpoint identity transition invalidates that completion. The next retry
+replays the original acceptance time, event identities, and state plan, and
+rebuilds missing metric-series mirrors. Replays pass ordinary write limits,
+including quota, and can be refused until capacity is available. Only a
+successful replay renews completion for the new identity. Existing receipts
+from before this upgrade keep their acceptance times and plans; their first
+retry must replay before completion becomes valid.
+
+Raw metrics can remain longer than their retention period while an unexpired
+receipt could need them for replay. This guarantee detects hourly checkpoint
+mismatches; it does not detect per-batch data loss within a matching checkpoint.
+Checkpoints do not recover data automatically. Restore both stores as a
+consistent set.
+
+Clearing a base increments its reset generation. An earlier scrape cannot
+write measurements, scrape history, diagnostics, or source watermarks into the
+cleared generation, even if its endpoint responds after the clear completes.
+Clear also releases the previous scrape lease. An old worker cannot release a
+new generation's lease or defer its rollups after a failure. The source
+configuration and credentials remain available for the next scrape.
 
 ## Verify readiness and upgrades
 
@@ -727,6 +765,11 @@ setup lock. Restart old and new replicas of one app one at a time until all
 run this release. Keep Core first: it creates the shared schemas and the
 installation-wide `pgcrypto` extension other applications need. Updated app
 migrations no longer create that extension independently.
+
+Pulse base responses include `memberCount`, the number of configured person,
+group and agent grants with access. The sidebar reads this authorized base
+metadata; group sizes and general-access rules are not expanded into a people
+count.
 
 ### Pulse agent telemetry actions
 
