@@ -219,8 +219,12 @@ suite("chat threads API", () => {
     expect(limited.status).toBe(409);
     expect((await limited.json()).code).toBe("THREAD_LIMIT");
     expect((await list(owner, chat.shortId)).items).toHaveLength(MAX_THREADS);
+    // A channel: its owner stays a member, and everyone with an account may discover it.
     const channel = await f.fixture(owner);
-    await sql`UPDATE chat.conversation_access SET role = 'discoverable' WHERE conversation_id = ${channel.id}::uuid`;
+    const audience = await createAccess({ principal: { type: "authenticated" }, permission: "read" });
+    if (!audience.ok) throw new Error(audience.error.message);
+    await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
+      VALUES (${channel.id}::uuid, ${audience.data.id}::uuid, 'discoverable', 'user', ${owner.id}::uuid)`;
     const unavailable = await f.request(owner.headers, `/${channel.shortId}/threads`, "POST", { name: "No" });
     expect(unavailable.status).toBe(409);
     expect((await unavailable.json()).code).toBe("THREADS_UNAVAILABLE");

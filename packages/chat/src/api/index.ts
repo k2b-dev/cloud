@@ -20,6 +20,7 @@ import {
   ChangeSchema,
   ChangesPageSchema,
   ChangesQuerySchema,
+  ChannelQuerySchema,
   ChatSnapshotSchema,
   ConversationPageSchema,
   ConversationParamSchema,
@@ -28,6 +29,12 @@ import {
   CreateConversationSchema,
   CreateOutcomeSchema,
   CreateThreadSchema,
+  DiscoveryEntriesSchema,
+  DiscoveryOptionsSchema,
+  DiscoveryPreviewSchema,
+  DiscoveryStateSchema,
+  DiscoveryUpdateSchema,
+  LeaveResultSchema,
   LeaveSchema,
   MarkUnreadSchema,
   MemberPageSchema,
@@ -46,6 +53,8 @@ import {
   ReadSchema,
   ReadUpdateSchema,
   SendMessageSchema,
+  SharedPageSchema,
+  SharedQuerySchema,
   SnapshotQuerySchema,
   SuccessSchema,
   ThreadListSchema,
@@ -60,6 +69,10 @@ import { chatLiveChannels } from "../service/live-channels";
 
 const context = (c: Context<AuthContext>) => ({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) });
 const invalidInput = (c: Context) => ({ code: "BAD_INPUT", message: chatMessages.resolve([getLocale(c)]).t.invalidInput });
+const audienceUnavailableResponse = jsonResponse(
+  z.object({ code: z.literal("AUDIENCE_UNAVAILABLE"), message: z.string() }),
+  "Audience counting timed out; retry the request",
+);
 const description = (summary: string, schema: z.ZodType) =>
   describeRoute({
     tags: ["Chat"],
@@ -93,6 +106,74 @@ const app = new Hono<AuthContext>()
         chatService.conversations.people({ ...context(c), query: { search, ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) } }),
       );
     },
+  )
+  .get(
+    "/channels/options",
+    auth.requireRole("authenticated"),
+    description("Read channel audience options", DiscoveryOptionsSchema),
+    async (c) => respond(c, chatService.channels.options()),
+  )
+  .get(
+    "/channels",
+    auth.requireRole("authenticated"),
+    description("Browse discoverable channels", ConversationPageSchema),
+    validator("query", ChannelQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.channels.browse({
+          ...context(c),
+          query: { ...c.req.valid("query"), cursor: c.req.valid("query").cursor ? JSON.stringify(c.req.valid("query").cursor) : undefined },
+        }),
+      ),
+  )
+  .post(
+    "/channels/preview",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Count the discovery audience",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(DiscoveryPreviewSchema, "Audience count"), 503: audienceUnavailableResponse },
+    }),
+    validator("query", ConversationParamSchema.partial(), invalidInput),
+    validator("json", DiscoveryEntriesSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.channels.preview({ ...context(c), conversationId: c.req.valid("query").conversation, input: c.req.valid("json") }),
+      ),
+  )
+  .get(
+    "/conversations/:conversation/discovery",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Read channel discovery settings",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(DiscoveryStateSchema, "Discovery settings"), 503: audienceUnavailableResponse },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    async (c) => respond(c, chatService.channels.get({ ...context(c), conversationId: c.req.valid("param").conversation })),
+  )
+  .put(
+    "/conversations/:conversation/discovery",
+    auth.requireRole("authenticated"),
+    description("Change channel discovery settings", ConversationSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", DiscoveryUpdateSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.channels.update({ ...context(c), conversationId: c.req.valid("param").conversation, input: c.req.valid("json") }),
+      ),
+  )
+  .post(
+    "/conversations/:conversation/join",
+    auth.requireRole("authenticated"),
+    description("Join a discoverable channel", ConversationSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    async (c) => respond(c, chatService.channels.join({ ...context(c), conversationId: c.req.valid("param").conversation })),
   )
   .use("/conversations", auth.requireRole("authenticated"))
   .use("/conversations/*", auth.requireRole("authenticated"))
@@ -271,6 +352,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Chat"],
       summary: "Post a Markdown message",
+      description:
+        "Accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored message unchanged.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageViewSchema, "Idempotent retry"),
@@ -301,6 +384,32 @@ const app = new Hono<AuthContext>()
       }
       return respond(c, ok(result.data.message), result.data.created ? 201 : 200);
     },
+  )
+  .get(
+    "/conversations/:conversation/shared",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "List shared links and Cloud elements",
+      description:
+        "Newest messages first, up to 30 items per page. Within a message, refs precede links, each in stored order. Omit thread for the whole chat or use general. Pass nextCursor unchanged with the same filters. Images and documents currently return no items. Resource refs confer no access; resolve them with the reader's session.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SharedPageSchema, "Shared items and opaque continuation cursor"),
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Invalid filter or cursor"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Chat or thread not found"),
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("query", SharedQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.shared.list({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          query: c.req.valid("query"),
+        }),
+      ),
   )
   .get(
     "/conversations/:conversation/messages",
@@ -428,7 +537,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/conversations/:conversation/leave",
-    description("Leave a chat, handing over management when needed", MemberRemovalSchema),
+    description("Leave a chat, handing over management when needed", LeaveResultSchema),
     validator("param", ConversationParamSchema, invalidInput),
     validator("json", LeaveSchema, invalidInput),
     async (c) =>

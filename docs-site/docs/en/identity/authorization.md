@@ -476,7 +476,10 @@ searched through Accounts after two characters; personal Linux groups are left
 out, so people are granted directly. All signed-in users are
 available by default; `allowAuthenticated={false}` removes that option.
 Public and service-account selection require `allowPublic` and
-`allowServiceAccounts` respectively. This picker grants no access itself.
+`allowServiceAccounts` respectively. `serviceAccountFilter` narrows the offered
+service accounts to those the resource can accept, for example active
+standalone and agent accounts plus accounts bound to this resource; the service
+still checks every assignment. This picker grants no access itself.
 
 ### Keep the editor mounted across refetches
 

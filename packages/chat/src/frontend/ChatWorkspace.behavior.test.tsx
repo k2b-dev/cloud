@@ -23,6 +23,8 @@ const now = "2026-10-12T10:30:00.000Z";
 const viewerId = "11111111-1111-4111-8111-111111111111";
 const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
   threads: 0,
+  channel: false,
+  member: true,
   id: "Chat01",
   name: "Secret board",
   title: "Secret board",
@@ -79,6 +81,7 @@ class FakeWebSocket {
 const settle = () => Bun.sleep(60);
 const message = (seq: number, body = `Message ${seq}`) =>
   MessageViewSchema.parse({
+    refs: [],
     thread: null,
     replyTo: null,
     id: String(seq).padStart(10, "0"),
@@ -167,7 +170,7 @@ describe("ChatWorkspace interactions", () => {
         }
         if (url.pathname === "/api/chat/conversations/Chat01/leave" && init?.method === "POST") {
           leavePosts.push(JSON.parse(String(init.body)));
-          return Response.json({ success: true, keptThroughGroup: false });
+          return Response.json({ success: true, keptThroughGroup: false, canRejoin: false });
         }
         if (url.pathname === "/api/chat/conversations") return Response.json({ items: [], nextCursor: null });
         if (url.pathname === "/api/chat/conversations/Chat01/read" && init?.method === "POST") {
@@ -346,6 +349,7 @@ describe("ChatWorkspace interactions", () => {
     answer(
       Response.json(
         {
+          refs: [],
           thread: null,
           replyTo: null,
           id: "Chat010001",

@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-21
+updated: 2026-10-23
 ---
 
 # Build and deploy
@@ -268,6 +268,85 @@ recovery checks.
 
 See [Release process](/en/docs/contributing/release-process) for how versions
 and tags are produced.
+
+## Chat shared items after the upgrade
+
+Chat's startup migration adds empty `refs` and `links` columns and two indexes
+on messages. Existing messages keep empty arrays; older links are not backfilled.
+No configuration or external resource fetch is required.
+
+`POST /api/chat/conversations/:conversation/messages` accepts up to 10 Cloud
+resource refs (`{ type, id }`), removes duplicates and preserves their order.
+A body of `""` is accepted only with at least one ref. Refs identify resources;
+clients resolve each card with the reader's session. Sharing grants no access
+to the referenced resource. Message responses and live message events always
+include `refs`, including an empty array for messages without refs. A retry
+with the same `clientId` returns the stored message unchanged.
+
+`GET /api/chat/conversations/:conversation/shared` requires chat read access.
+It returns `{ items, nextCursor }`, with up to 30 items, newest message first.
+Within each message, refs precede links, each in stored order. Each item contains
+`kind` (`element` or `link`), `ref` or `url`, `messageId`, `seq`, `thread`,
+`author`, and `createdAt`. `thread` is `null` for General.
+
+Use `kind=all|elements|links|images|documents` (default `all`) and optionally
+`thread=<thread ID>|general`. Without `thread`, the list covers the whole chat.
+Images and documents currently return empty lists. Unknown threads and chats
+the reader cannot access return 404. Pass `nextCursor` unchanged as `cursor`
+with the same filters; `null` marks the end. Invalid queries return 400.
+
+New messages retain up to 20 distinct absolute HTTP/HTTPS links from Markdown
+links, autolinks and bare URLs. URLs longer than 2,048 characters are excluded.
+The shared list reads the messages themselves, so deleting a message removes
+its items from subsequent reads.
+
+## Chat channels after the upgrade
+
+The Chat API supports channels with a name, purpose, and discovery audience.
+The operator setting `chat.discoverable_authenticated` defaults to `true`.
+Disable it to remove discovery through the “all signed-in accounts” audience;
+existing subscriptions keep their membership. This audience includes guests
+and service accounts. No new database migration is required for channels.
+
+To create a channel, include `discovery` in `POST /api/chat/conversations`:
+an array of `{ principal, permission }` entries. A principal is
+`{ type: "group", groupId }` or `{ type: "authenticated" }`; permission is
+`read` or `write`. The audience supports up to 100 distinct entries.
+`GET /api/chat/channels/options` returns `allowAuthenticated`.
+`POST /api/chat/channels/preview` accepts the audience array and returns
+`audienceCount` and `includesAuthenticated`. Pass `?conversation=<ID>` to
+preview an existing channel as its manager.
+Without a conversation ID, preview requires a user-backed account, as does
+creation. Guests cannot preview group audiences. Audience counts include each
+eligible account once, even when groups overlap or contain cycles. Counting
+has a five-second budget; on timeout, preview and discovery settings return
+`AUDIENCE_UNAVAILABLE` (HTTP 503) without a partial count. Retry the request.
+
+`GET /api/chat/channels` accepts a search term `q` and an opaque `cursor`.
+It returns up to 50 channels in name order as `{ items, nextCursor }`.
+Conversation responses include `channel` and `member`, so clients can show
+whether a channel is already subscribed. `POST /api/chat/conversations/:conversation/join`
+subscribes with the audience's permission. The existing `leave` operation
+unsubscribes; its response adds `canRejoin`, which says whether the channel's
+audience still lets the person subscribe again. Joining and leaving publish membership hints without adding
+subscription messages to the timeline.
+Leaving with a successor requires effective `admin` permission, including the
+credential's scope limit.
+
+Managers read and replace the audience through `GET` and `PUT`
+`/api/chat/conversations/:conversation/discovery`. A replacement accepts
+`{ entries, name?, purpose?, revision? }`; changing entries writes a `discovery_changed`
+system message. `revision` comes from the `GET` response; when the stored
+audience changed since then, the replacement answers `DISCOVERY_CHANGED`
+(HTTP 409) and changes nothing. Send only `name` or `purpose` when they change. Empty entries remove discovery while keeping members.
+Channels require a nonempty name and purpose. Channels cannot create threads,
+and chats with existing threads cannot become channels (`THREADS_UNAVAILABLE`).
+
+Member inputs also accept `{ type: "service_account", serviceAccountId }`.
+Standalone and agent accounts can read, write, and manage according to their
+membership. Resource-bound accounts can be added to their own conversation.
+Member responses include `serviceAccountKind`; an active standalone or agent
+manager can receive management when another member leaves.
 
 ## AI provider upgrade: nessi 0.15
 

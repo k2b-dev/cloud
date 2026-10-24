@@ -21,7 +21,8 @@ export type Thread = z.infer<typeof ThreadSchema>;
  */
 export type ThreadView = "all" | "general" | (string & {});
 
-export const chatHasThreads = (conversation: Pick<Conversation, "threads"> | null | undefined) => (conversation?.threads ?? 0) > 0;
+export const chatHasThreads = (conversation: (Pick<Conversation, "threads"> & Partial<Pick<Conversation, "channel">>) | null | undefined) =>
+  !conversation?.channel && (conversation?.threads ?? 0) > 0;
 
 /** The address of a view; the chat's own address is "All threads". */
 export const threadHref = (chatId: string, view: ThreadView, message?: string | null, basePath = "/app/chat") =>

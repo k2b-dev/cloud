@@ -19,6 +19,8 @@ const now = "2026-10-12T10:30:00.000Z";
 const viewerId = "11111111-1111-4111-8111-111111111111";
 const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
   threads: 0,
+  channel: false,
+  member: true,
   id: "Chat01",
   name: "Delivery board",
   title: "Delivery board",
@@ -66,6 +68,21 @@ describe("ChatWorkspace server render", () => {
       expect(html).toContain(t.noneYet);
       expect(html).toContain(t.noChatsTitle);
       expect(html).toContain(t.noChatsDescription);
+    });
+    test(`channel discovery renders its authorized initial page and membership in ${locale}`, () => {
+      const channel = { ...conversation, channel: true, purpose: "Decisions for the studio" };
+      const html = render(locale, {
+        ...props(),
+        channelsPage: true,
+        channelQuery: "studio",
+        channelPage: { items: [channel], nextCursor: null },
+      });
+      expect(html).toContain(t.browseChannels);
+      expect(html).toContain(t.discoverSubtitle);
+      expect(html).toContain(channel.purpose);
+      expect(html).toContain(t.subscribed);
+      expect(html).toContain('value="studio"');
+      expect(html).not.toContain(t.noChatsTitle);
     });
     test(`list titles, sender previews, times and selection placeholder in ${locale}`, () => {
       const rows: ChatWorkspaceProps["sidebar"]["items"] = [

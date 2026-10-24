@@ -1,4 +1,6 @@
 import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
+import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { type LinkNavigateEvent, listenPopState, navigate, refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
@@ -25,28 +27,35 @@ import { chatMessages } from "../messages";
 import {
   type ConversationPageSchema,
   type ConversationSchema,
+  MAX_MESSAGE_REFS,
   MESSAGE_MAX_CODE_POINTS,
   MessageBodySchema,
   type MessagePageSchema,
   type MessageSchema,
   type ReadUpdateSchema,
+  type SharedItem,
   type ThreadListSchema,
 } from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
 import { openAddPeopleDialog } from "./AddPeopleDialog";
+import { openChannelDialog } from "./ChannelDialogs";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
+import ChatSharedSection from "./ChatSharedSection";
 import ChatThreadColumn from "./ChatThreadColumn";
 import { ThreadMenu, ThreadPicker } from "./ChatThreads";
 import ChatThreadsPage from "./ChatThreadsPage";
+import { createChannelApi } from "./channel-api";
 import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
-import { createChatStore, type OpenChat } from "./chat-store";
+import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
+import DiscoverChannels from "./DiscoverChannels";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
+import { createResourceCards, FRESH_MS } from "./resource-cards";
 import { panelHref as conversationHref, parseRoute, type Route, threadsPageHref as threadsPageAddress } from "./route";
 import { openThreadDialog } from "./ThreadDialog";
 import {
@@ -70,6 +79,9 @@ type Sends = ReturnType<typeof createChatSends>;
 export type ChatWorkspaceProps = {
   /** The same workspace served without the Cloud shell in its provider route. */
   embedded?: boolean;
+  channelsPage?: boolean;
+  channelQuery?: string;
+  channelPage?: z.infer<typeof ConversationPageSchema> | null;
   /** The live cursor the server read before every part of this snapshot. */
   cursor: string;
   sidebar: z.infer<typeof ConversationPageSchema>;
@@ -130,6 +142,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const [route, setRoute] = createSignal<Route>({
+    channels: props.channelsPage,
+    query: props.channelQuery,
     chatId: props.chatId,
     view: props.view,
     threads: props.threadsPage,
@@ -312,6 +326,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // the store already holds the next chat but the address does not name it yet.
   const trailTitle = createMemo<string | undefined>((previous) => {
     const id = route().chatId;
+    if (route().channels) return t().browseChannels;
     if (!id) return undefined;
     if (chat()?.id !== id) return previous;
     return conversation()?.title ?? t().noAccessTitle;
@@ -378,6 +393,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       const own = message.kind === "text" && message.author.id === props.viewerId;
       return reuse({
         thread: message.thread,
+        refs: message.refs,
         quote: quoteOf(current.id, message),
         origin: mixed && message.kind === "text" ? originOf(current.id, messageThread(message)) : undefined,
         key: sendKeys.get(message.id) ?? message.id,
@@ -405,6 +421,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             key: send.clientId,
             kind: "text",
             thread: send.thread === "general" ? null : send.thread,
+            refs: send.refs,
             origin: mixed ? originOf(current.id, send.thread) : undefined,
             quote: send.replyTo ? { author: send.replyTo.author, text: send.replyTo.text } : undefined,
             authorId: props.viewerId,
@@ -649,6 +666,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       route().chatId === next.chatId &&
       route().view === next.view &&
       route().threads === next.threads &&
+      route().channels === next.channels &&
       route().messageId === next.messageId &&
       route().panel !== next.panel
     ) {
@@ -753,6 +771,18 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const state: unknown = history.state;
     return !!state && typeof state === "object" && "chatInfoFromChat" in state && state.chatInfoFromChat === true;
   };
+  // A shared item jumps to its message: in place when the open view holds it, otherwise in the message's thread. A phone
+  // shows the message instead of the info page.
+  const jumpToShared = (item: SharedItem) => {
+    const current = openChat();
+    if (!current) return;
+    const view = current.view === "all" || current.view === messageThread(item) ? current.view : messageThread(item);
+    if (view === current.view && feed?.scrollToKey(sendKeys.get(item.messageId) ?? item.messageId, { highlight: true })) {
+      if (phone?.matches) closeInfo();
+      return;
+    }
+    void openView(current.id, view, undefined, item.messageId);
+  };
   const closeInfo = (navigation?: LinkNavigateEvent) => {
     if (pendingOpen !== 0) return;
     const id = route().chatId;
@@ -773,6 +803,39 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (!id) return;
     const fromList = route().chatId === null;
     if ((await open(chatRoute(id))) === "applied") navigate(panelHref(id, null), { scroll: "preserve", state: { chatFromList: fromList } });
+  };
+  const channelsApi = createChannelApi();
+  const [channelRevision, setChannelRevision] = createSignal(0);
+  // The SSR catalog seeds only the first mount. Returning later reads current membership and discovery.
+  let initialChannelPage = props.channelsPage ? props.channelPage : undefined;
+  const takeInitialChannelPage = () => {
+    const initial = initialChannelPage;
+    initialChannelPage = undefined;
+    return initial;
+  };
+  const discover = async (navigation: LinkNavigateEvent) => {
+    if ((await open(chatRoute(null, "all", { channels: true }))) === "applied") navigation.push();
+  };
+  const subscribe = async (id: string) => {
+    await channelsApi.join(id);
+    setChannelRevision((revision) => revision + 1);
+    await store?.refreshSidebar();
+    if (route().chatId === id) await open(route());
+  };
+  const editDiscovery = async () => {
+    const current = conversation();
+    if (!store || !current || current.permission !== "admin") return;
+    await openChannelDialog({
+      store,
+      viewerId: props.viewerId,
+      locale: locale(),
+      guest: props.guest,
+      conversation: current,
+      onSaved: async () => {
+        await store?.refreshSidebar();
+        if (route().chatId === current.id) await open(route());
+      },
+    });
   };
   const newChat = async () => {
     if (!store) return;
@@ -816,10 +879,49 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }
   };
 
+  const [unsubscribing, setUnsubscribing] = createSignal(false);
+  const unsubscribe = async () => {
+    const current = conversation();
+    if (!store || !current || unsubscribing()) return;
+    setUnsubscribing(true);
+    try {
+      let canRejoin = false;
+      try {
+        canRejoin = (await store.leave(current.id)).canRejoin;
+      } catch (error) {
+        if (!(error instanceof ChatRequestError) || error.status !== 409) throw error;
+        // The last manager hands over first; they gave the channel away on purpose, so nothing offers it back.
+        if (!(await openLeaveChatDialog({ store, conversation: current, viewerId: props.viewerId, locale: locale() }))) return;
+      }
+      // Only while the channel is still on screen does the page move on; a chat opened meanwhile stays.
+      if (route().chatId === current.id && pendingOpen === 0 && (await open(chatRoute(null, "all", { channels: true }))) === "applied")
+        navigate(`${basePath}/channels`, { replace: true });
+      // Subscribing again uses the channel's audience, which may not include someone a manager had added directly.
+      const done = toast(
+        t().unsubscribed({ name: current.title }),
+        canRejoin
+          ? {
+              action: {
+                label: t().subscribeAgain,
+                onClick: () => {
+                  done.dismiss();
+                  void subscribe(current.id).catch(() => toast.error(t().requestFailed));
+                },
+              },
+            }
+          : undefined,
+      );
+    } catch {
+      toast.error(t().requestFailed);
+    } finally {
+      setUnsubscribing(false);
+    }
+  };
+
   // Admins create, rename, archive, and restore threads; the server decides every request again.
   const createThread = async () => {
     const current = conversation();
-    if (!store || current?.permission !== "admin") return;
+    if (!store || current?.permission !== "admin" || current.channel) return;
     const thread = await openThreadDialog({
       store,
       chatId: current.id,
@@ -887,16 +989,35 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (current && thread && (await setArchived(current.id, thread.id, false))) toast(t().restored);
   };
 
+  // Shared elements resolve in the browser with the reader's own session; the server render shows their placeholders.
+  const [cards, setCards] = createSignal<ReturnType<typeof createResourceCards>>();
+  onMount(() => {
+    const resolver = createResourceCards();
+    setCards(resolver);
+    // Shown cards read again once a minute while the page is visible, so lost or new access shows without a reload.
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") resolver.tick();
+    }, FRESH_MS);
+    onCleanup(() => clearInterval(timer));
+  });
+  const pickResource = async () => {
+    const item = await openCloudResourcePicker({ title: t().shareResource, requireReader: true });
+    return item ? { ref: item.ref, title: item.title, icon: item.icon ?? item.appIcon } : null;
+  };
+
   // A message goes to the open thread; in "All threads" to General. A reply goes to its original's thread.
   const [reply, setReply] = createSignal<ChatFeedItem | null>(null);
   const replies = new Map<string, ChatFeedItem | null>();
-  const send = async (text: string): Promise<boolean> => {
+  // A message that only shares Cloud elements has no text.
+  const send = async (text: string, refs: readonly CloudResourceRef[] = []): Promise<boolean> => {
     const current = openChat();
     const id = draftId(route());
+    const body = refs.length > 0 && !text.trim() ? "" : text;
     if (
       !current ||
       !outbox ||
-      !MessageBodySchema.safeParse(text).success ||
+      refs.length > MAX_MESSAGE_REFS ||
+      (body === "" ? refs.length === 0 : !MessageBodySchema.safeParse(body).success) ||
       draftStorageFailed() ||
       (id !== null && draftConflicts()[id] !== undefined) ||
       pendingOpen !== 0
@@ -908,8 +1029,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       if (current.hasNewer) await store?.loadLatest();
       const answered = reply();
       const thread = answered ? (answered.thread ?? "general") : current.view === "all" ? "general" : current.view;
-      outbox.send(current.id, text, {
+      outbox.send(current.id, body, {
         thread,
+        refs,
         replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
       });
       setReply(null);
@@ -971,7 +1093,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       setChat(live.openConversation);
       if (live.openConversation?.status === "no-access") setPanel(null);
       setLiveStopped(live.liveStatus === "stopped");
+      // Subscriptions changed elsewhere, such as in another tab: the catalog reads them again.
+      if (live.subscriptionsVersion !== subscriptionsSeen) {
+        subscriptionsSeen = live.subscriptionsVersion;
+        setChannelRevision((revision) => revision + 1);
+      }
     };
+    let subscriptionsSeen = live.subscriptionsVersion;
     onCleanup(live.subscribe(sync));
     sync();
 
@@ -1021,7 +1149,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     // The way up from a chat goes back to the list in place; a list opened before the chat is the previous entry.
     onCleanup(
       layout.handleUp((href) => {
-        if (new URL(href, location.href).pathname !== basePath || !route().chatId) return false;
+        if (new URL(href, location.href).pathname !== basePath || (!route().chatId && !route().channels)) return false;
         const depth = listDepth();
         if (depth > 0) history.go(-depth);
         else void open(chatRoute(null)).then((result) => result === "applied" && navigate(basePath));
@@ -1029,6 +1157,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       }),
     );
     const activate = () => reporter?.reporter.activate();
+    // Back on the catalog after a while away, it reads current subscriptions.
+    const revisit = () => {
+      if (route().channels && document.visibilityState === "visible") setChannelRevision((revision) => revision + 1);
+    };
+    document.addEventListener("visibilitychange", revisit);
+    onCleanup(() => document.removeEventListener("visibilitychange", revisit));
     createEffect(on(panel, activate));
     phone.addEventListener("change", activate);
     document.addEventListener("visibilitychange", activate);
@@ -1060,6 +1194,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     <ChatList
       basePath={basePath}
       rows={listRows()}
+      channelsActive={route().channels}
+      onDiscover={discover}
       activeId={openChat()?.id ?? null}
       viewerId={props.viewerId}
       dateConfig={props.dateConfig}
@@ -1067,6 +1203,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       hasMore={hasMore()}
       onOpen={openFromList}
       onMore={() => void store?.loadMoreSidebar()}
+      chatsActions={chatsActions()}
       onMarkRead={markRead}
       onMarkUnread={(id) => void markUnread(id)}
       threads={
@@ -1089,8 +1226,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   );
   /** The open part of the chat, as the head names it and the composer addresses it. */
   const viewTitle = () => viewName(openChat()?.view ?? "all", openChat()?.threads ?? null, t());
-  const openThread = () => threadOf(openChat()?.threads ?? null, openChat()?.view);
+  const openThread = () => (conversation()?.channel ? undefined : threadOf(openChat()?.threads ?? null, openChat()?.view));
   const threaded = () => chatHasThreads(conversation());
+  const [subscribing, setSubscribing] = createSignal(false);
+  const subscribeOpen = async (id: string) => {
+    setSubscribing(true);
+    try {
+      await subscribe(id);
+    } catch {
+      toast.error(t().requestFailed);
+    } finally {
+      setSubscribing(false);
+    }
+  };
   // Where the reader cannot write, a quiet line replaces the composer and names why.
   const notice = (): JSX.Element | undefined => {
     const current = conversation();
@@ -1107,11 +1255,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           </Show>
         </>
       );
+    if (current.channel && !current.member)
+      return (
+        <Button loading={subscribing()} onClick={() => void subscribeOpen(current.id)}>
+          {t().subscribe}
+        </Button>
+      );
     if (current.permission === "read")
       return (
         <>
           <i class="ti ti-eye" aria-hidden="true" />
-          <span>{t().readOnlyIn({ title: current.title })}</span>
+          <span>{current.channel ? t().channelReadOnly : t().readOnlyIn({ title: current.title })}</span>
         </>
       );
     return undefined;
@@ -1178,11 +1332,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
                 {t().newChat}
               </AppWorkspace.SidebarItem>
-              <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
-                <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().noneYet} />}>
-                  {list()}
-                </Show>
-              </AppWorkspace.SidebarSection>
+              {list()}
             </AppWorkspace.SidebarBody>
           </AppWorkspace.SidebarDesktop>
         </AppWorkspace.Sidebar>
@@ -1222,6 +1372,26 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               </Show>
             </AppWorkspace.MainPane>
             <Switch>
+              <Match when={route().channels}>
+                <DiscoverChannels
+                  initial={takeInitialChannelPage()}
+                  query={route().query ?? ""}
+                  onQuery={(query) => {
+                    setRoute({ ...route(), query });
+                    // Typing only rewrites the address; it never animates the page.
+                    navigate(`${basePath}/channels${query ? `?q=${encodeURIComponent(query)}` : ""}`, {
+                      replace: true,
+                      scroll: "preserve",
+                      viewTransition: false,
+                    });
+                  }}
+                  revision={channelRevision()}
+                  onSubscribe={subscribe}
+                  onOpen={(id) => openChosen(id)}
+                  onBack={backToList}
+                  listHref={basePath}
+                />
+              </Match>
               <Match when={route().threads && openChat()?.id && threaded() ? conversation() : null}>
                 {(current) => (
                   <ChatThreadsPage
@@ -1264,6 +1434,24 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                             </Show>
                             <Show when={current().permission === "admin" && openThread() && !openThread()?.archived}>
                               <ThreadMenu onRename={() => void renameThread()} onArchive={() => void archiveThread()} />
+                            </Show>
+                            <Show when={current().channel && current().member}>
+                              <Dropdown.Root
+                                position="bottom-right"
+                                items={[
+                                  {
+                                    label: t().unsubscribe,
+                                    icon: "ti ti-bell-off",
+                                    description: t().unsubscribeDescription,
+                                    disabled: unsubscribing(),
+                                    action: () => void unsubscribe(),
+                                  },
+                                ]}
+                              >
+                                <Dropdown.Trigger iconOnly label={t().chatActions({ title: current().title })}>
+                                  <i class="ti ti-dots" />
+                                </Dropdown.Trigger>
+                              </Dropdown.Root>
                             </Show>
                             {infoLink(current())}
                           </>
@@ -1326,6 +1514,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         replyHint={replyHint}
                         unreadHint={unreadHint}
                         memberCount={current().memberCount}
+                        subtitle={current().channel ? t().subscribers({ count: current().memberCount }) : undefined}
                         items={items()}
                         hasOlder={openChat()?.hasOlder ?? false}
                         hasNewer={openChat()?.hasNewer ?? false}
@@ -1337,6 +1526,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                           composerReady() &&
                           !busy() &&
                           current().permission !== "read" &&
+                          current().member &&
                           !draftStorageFailed() &&
                           draftConflicts()[draftId(route()) ?? ""] === undefined
                         }
@@ -1344,6 +1534,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         draft={draft()}
                         onDraftChange={changeDraft}
                         onSend={send}
+                        cards={cards()}
+                        onPickResource={pickResource}
                         onBack={threaded() ? backToThreads : backToList}
                         busy={busy()}
                         dateConfig={props.dateConfig}
@@ -1371,32 +1563,20 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                   description={t().noAccessDescription}
                 />
               </Match>
-              <Match when={rows().length === 0}>
-                <Placeholder
-                  variant="panel"
-                  class="flex-1"
-                  icon="ti ti-messages"
-                  title={t().noChatsTitle}
-                  description={t().noChatsDescription}
-                  action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
-                />
-              </Match>
               <Match when={true}>
                 <nav class="chat-list-page" aria-label={t().chats}>
                   <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
                     {t().newChat}
                   </AppWorkspace.SidebarItem>
-                  <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
-                    {list()}
-                  </AppWorkspace.SidebarSection>
+                  {list()}
                 </nav>
                 <div class="chat-select">
                   <Placeholder
                     variant="panel"
                     class="flex-1"
                     icon="ti ti-messages"
-                    title={t().selectChatTitle}
-                    description={t().selectChatDescription}
+                    title={rows().length ? t().selectChatTitle : t().noChatsTitle}
+                    description={rows().length ? t().selectChatDescription : t().noChatsDescription}
                   />
                 </div>
               </Match>
@@ -1422,8 +1602,22 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     onClose={() => closeInfo()}
                     onAddPeople={() => void addPeople()}
                     onEditDetails={editDetails}
-                    onCreateThread={current().permission === "admin" ? () => void createThread() : undefined}
-                    onLeave={() => void leaveChat()}
+                    onDiscovery={current().permission === "admin" ? () => void editDiscovery() : undefined}
+                    onCreateThread={!current().channel && current().permission === "admin" ? () => void createThread() : undefined}
+                    shared={
+                      <ChatSharedSection
+                        chatId={current().id}
+                        revision={openChat()?.seqHead ?? 0}
+                        threads={openChat()?.threads ?? null}
+                        viewerId={props.viewerId}
+                        dateConfig={props.dateConfig}
+                        now={now}
+                        cards={cards()}
+                        load={(query) => (store ? store.shared(current().id, query) : Promise.reject(new Error("Chat is not live yet")))}
+                        onJump={jumpToShared}
+                      />
+                    }
+                    onLeave={() => void (current().channel ? unsubscribe() : leaveChat())}
                   />
                 )}
               </Show>

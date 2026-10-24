@@ -16,6 +16,7 @@ import {
   ConversationSchema,
   type CreateConversationSchema,
   CreateOutcomeSchema,
+  LeaveResultSchema,
   MemberPageSchema,
   MemberPreviewSchema,
   type MemberPrincipal,
@@ -27,6 +28,8 @@ import {
   ReadAllOutcomeSchema,
   ReadUpdateSchema,
   readStart,
+  SharedPageSchema,
+  type SharedQuerySchema,
   SuccessSchema,
   ThreadListSchema,
   ThreadSchema,
@@ -44,11 +47,12 @@ export type ChatStoreApi = {
   create(input: z.input<typeof CreateConversationSchema>): Promise<z.infer<typeof CreateOutcomeSchema>>;
   updateDetails(id: string, patch: { name?: string | null; icon?: string | null; purpose?: string | null }): Promise<Conversation>;
   members(id: string, query: { q?: string; cursor?: string }): Promise<z.infer<typeof MemberPageSchema>>;
+  shared(id: string, query: z.input<typeof SharedQuerySchema>): Promise<z.infer<typeof SharedPageSchema>>;
   previewMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof MemberPreviewSchema>>;
   addMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof ChangeSchema>>;
   updateMember(id: string, accessId: string, permission: z.infer<typeof PermissionSchema>): Promise<z.infer<typeof SuccessSchema>>;
   removeMember(id: string, accessId: string): Promise<z.infer<typeof MemberRemovalSchema>>;
-  leave(id: string, successor?: string): Promise<z.infer<typeof MemberRemovalSchema>>;
+  leave(id: string, successor?: string): Promise<z.infer<typeof LeaveResultSchema>>;
   people(search: string, cursor?: string, signal?: AbortSignal): Promise<z.infer<typeof PeoplePageSchema>>;
   read(id: string, seq: number, thread?: ThreadView): Promise<z.infer<typeof ReadUpdateSchema>>;
   markUnread(id: string, message?: string): Promise<z.infer<typeof ReadUpdateSchema>>;
@@ -124,6 +128,8 @@ export const createChatStoreApi = (): ChatStoreApi => {
       ),
     members: async (id, query) =>
       requiredResponse(await client.conversations[":conversation"].members.$get({ param: { conversation: id }, query }), MemberPageSchema),
+    shared: async (id, query) =>
+      requiredResponse(await client.conversations[":conversation"].shared.$get({ param: { conversation: id }, query }), SharedPageSchema),
     previewMembers: async (id, members) =>
       requiredResponse(
         await client.conversations[":conversation"].members.preview.$post({ param: { conversation: id }, json: { members } }),
@@ -150,7 +156,7 @@ export const createChatStoreApi = (): ChatStoreApi => {
     leave: async (id, successor) =>
       requiredResponse(
         await client.conversations[":conversation"].leave.$post({ param: { conversation: id }, json: { successor } }),
-        MemberRemovalSchema,
+        LeaveResultSchema,
       ),
     people: async (search, cursor, signal) =>
       requiredResponse(await client.people.$get({ query: { search, cursor } }, { init: { signal } }), PeoplePageSchema),
@@ -504,6 +510,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
           for (const { data } of events) {
             if (!active(chat)) return;
             if (data.type === "threads" && data.conversationId === chat.view.id) threadsChanged = true;
+            // A channel's subscriptions change its members without a timeline line; the members and counts follow.
+            if (data.type === "membership" && data.conversationId === chat.view.id) membership = system = true;
             if (data.type !== "message" || data.message.conversationId !== chat.view.id) continue;
             if (data.message.kind === "text" && chatHasThreads(chat.view.conversation)) threadsChanged = true;
             applyMessage(chat, data.message);
@@ -540,9 +548,12 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     sidebarWork = work.catch(() => {});
     return work;
   };
+  // Counts sidebar reloads, which follow every membership change and resync, so views of subscriptions can follow.
+  let subscriptionsVersion = 0;
   const reloadSidebar = async () => {
     const page = await api.conversations();
     if (disposed) return;
+    subscriptionsVersion++;
     rows = [...page.items];
     unreadRev.clear();
     for (const row of rows) unreadRev.set(row.id, row.rev);
@@ -658,7 +669,11 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         parse: (data) => ChatLiveEventSchema.parse(data),
         apply: (events) =>
           sidebar(async () => {
-            for (const { data } of events) if (data.type === "summary") await applySummary(data);
+            for (const { data } of events) {
+              if (data.type === "summary") await applySummary(data);
+              else if (data.type === "membership" && rows.some((row) => row.id === data.conversationId))
+                await refetchRow(data.conversationId);
+            }
           }),
         resync: () => sidebar(reloadSidebar),
         unavailable: stopped,
@@ -698,6 +713,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       return result;
     },
     members: (id: string, query: Parameters<ChatStoreApi["members"]>[1]) => api.members(id, query),
+    shared: (id: string, query: Parameters<ChatStoreApi["shared"]>[1]) => api.shared(id, query),
     previewMembers: (id: string, members: MemberPrincipal[]) => api.previewMembers(id, members),
     addMembers: async (id: string, members: MemberPrincipal[]) => {
       const result = await api.addMembers(id, members);
@@ -722,6 +738,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       await sidebar(reloadSidebar).catch(() => {});
       return result;
     },
+    refreshSidebar: () => sidebar(reloadSidebar),
     people: (search: string, signal?: AbortSignal) => api.people(search, undefined, signal),
     // Only the FIFO personal live channel applies write results; HTTP responses never change local state.
     markRead: (id: string, seq: number, thread?: ThreadView) => api.read(id, seq, thread),
@@ -735,6 +752,9 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     },
     get hasMoreSidebar() {
       return nextCursor !== null;
+    },
+    get subscriptionsVersion() {
+      return subscriptionsVersion;
     },
     loadMoreSidebar: (): Promise<void> => {
       if (moreSidebar) return moreSidebar;

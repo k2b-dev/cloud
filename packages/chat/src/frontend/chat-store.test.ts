@@ -8,6 +8,8 @@ const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
 
 const conversation = ConversationSchema.parse({
   threads: 0,
+  channel: false,
+  member: true,
   id: "abcdef",
   name: "Chat",
   title: "Chat",
@@ -26,6 +28,7 @@ const conversation = ConversationSchema.parse({
 });
 const message = (rev: number) =>
   MessageSchema.parse({
+    refs: [],
     thread: null,
     replyTo: null,
     id: String(rev).padStart(10, "0"),
@@ -76,6 +79,7 @@ class ManualConnection implements LiveConnection {
 const self = { accessId: "11111111-1111-4111-8111-111111111111", permission: "write" as const, active: true };
 const memberApi = {
   threads: async () => noThreads,
+  shared: async () => ({ items: [], nextCursor: null }),
   createThread: async () => {
     throw new Error("Unused thread request");
   },
@@ -89,7 +93,7 @@ const memberApi = {
   addMembers: async () => ({ added: 1 }),
   updateMember: async () => ({ success: true as const }),
   removeMember: async () => ({ success: true as const, keptThroughGroup: false }),
-  leave: async () => ({ success: true as const, keptThroughGroup: false }),
+  leave: async () => ({ success: true as const, keptThroughGroup: false, canRejoin: false }),
   people: async () => ({ items: [], nextCursor: null }),
 };
 const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
@@ -384,6 +388,17 @@ test("sidebar text summaries sort rows, guard revisions, and fetch missing and s
   expect(fetched).toEqual(["ghijkl", "abcdef"]);
   await connection.get("me").apply({ type: "membership", conversationId: "abcdef" });
   expect(store.sidebar.map((row) => row.id)).toEqual(["abcdef"]);
+  store.dispose();
+});
+
+test("a channel subscription by someone else updates the open chat's members and its sidebar row", async () => {
+  const { store, connection } = fixture({ conversation: async () => ({ ...conversation, channel: true, rev: 2, memberCount: 3 }) });
+  await connection.get("conversation").apply({ type: "membership", conversationId: conversation.id });
+  expect(store.openConversation?.membershipRev).toBe(1);
+  expect(store.openConversation?.conversation?.memberCount).toBe(3);
+  expect(store.openConversation?.messages).toHaveLength(1);
+  await connection.get("list").apply({ type: "membership", conversationId: conversation.id });
+  expect(store.sidebar.find((row) => row.id === conversation.id)?.memberCount).toBe(3);
   store.dispose();
 });
 
@@ -1150,7 +1165,7 @@ test("member methods forward arguments, and the reader's own changes refresh tha
     },
     leave: async (id, successor) => {
       calls.push(["leave", id, successor]);
-      return { success: true, keptThroughGroup: false };
+      return { success: true, keptThroughGroup: false, canRejoin: false };
     },
     people: async (search, cursor) => {
       calls.push(["people", search, cursor]);
@@ -1213,7 +1228,9 @@ for (const operation of ["create", "updateDetails", "addMembers", "updateMember"
             ? { added: 1 }
             : operation === "updateMember"
               ? { success: true as const }
-              : { success: true as const, keptThroughGroup: true };
+              : operation === "leave"
+                ? { success: true as const, keptThroughGroup: true, canRejoin: false }
+                : { success: true as const, keptThroughGroup: true };
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input), "http://localhost");
@@ -1278,7 +1295,7 @@ test("leaving the open chat reaches no-access on the refresh 404, without a live
   const { store, connection } = fixture({
     leave: async () => {
       left = true;
-      return { success: true, keptThroughGroup: false };
+      return { success: true, keptThroughGroup: false, canRejoin: false };
     },
     conversations: async () => ({ items: [], nextCursor: null }),
     conversation: async () => (left ? null : conversation),
@@ -1311,7 +1328,7 @@ test("leaving a chat that stays readable through another grant removes it from t
   const { store } = fixture({
     leave: async () => {
       left = true;
-      return { success: true, keptThroughGroup: false };
+      return { success: true, keptThroughGroup: false, canRejoin: false };
     },
     // The list holds only the reader's chats; the detail stays readable, as through a discoverable grant.
     conversations: async () => ({ items: left ? [] : [conversation], nextCursor: null }),
@@ -1355,7 +1372,7 @@ test("typed member requests use their routes, payloads and schemas, including bo
         return Response.json(method === "GET" ? { items: [], nextCursor: null, managers: 1, self } : { added: 1 });
       if (url.pathname.endsWith("/people")) return Response.json({ items: [], nextCursor: null });
       if (url.pathname.endsWith(conversation.id)) return Response.json(conversation);
-      return Response.json({ success: true, keptThroughGroup: true });
+      return Response.json({ success: true, keptThroughGroup: true, canRejoin: false });
     },
     { preconnect: original.preconnect },
   );
@@ -1376,7 +1393,7 @@ test("typed member requests use their routes, payloads and schemas, including bo
     await api.addMembers(conversation.id, members);
     await api.updateMember(conversation.id, "access", "admin");
     expect(await api.removeMember(conversation.id, "access")).toEqual({ success: true, keptThroughGroup: true });
-    expect(await api.leave(conversation.id, "successor")).toEqual({ success: true, keptThroughGroup: true });
+    expect(await api.leave(conversation.id, "successor")).toEqual({ success: true, keptThroughGroup: true, canRejoin: false });
     await api.people("co member", "opaque");
     expect(calls.map(({ path, method, body }) => ({ path, method, body }))).toEqual([
       { path: "/api/chat/conversations", method: "POST", body: { members, name: "New", allowDuplicate: true } },

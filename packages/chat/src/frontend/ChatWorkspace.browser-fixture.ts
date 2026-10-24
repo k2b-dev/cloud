@@ -1,5 +1,6 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import type { ServerWebSocket } from "bun";
 import { z } from "zod";
 import {
@@ -10,6 +11,7 @@ import {
   CreateOutcomeSchema,
   CreateThreadSchema,
   ExistingMatchSchema,
+  LeaveResultSchema,
   LeaveSchema,
   MAX_EXISTING_MATCHES,
   MarkUnreadSchema,
@@ -45,6 +47,14 @@ import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 type Conversation = z.infer<typeof ConversationSchema>;
 type Message = z.infer<typeof MessageViewSchema>;
 type Person = { id: string; name: string };
+type ServiceAccount = {
+  id: string;
+  name: string;
+  kind: "agent" | "standalone" | "resource_bound" | "user_delegated";
+  status?: "active" | "disabled";
+  /** A resource-bound account's binding, as `app:type:id`. */
+  binding?: string;
+};
 type Group = { id: string; name: string; size: number };
 type Member = z.infer<typeof MemberSchema>;
 type Permission = z.infer<typeof PermissionSchema>;
@@ -58,11 +68,43 @@ type ThreadEntry = {
   createdAt: string;
   lastActivityAt: string;
 };
-type Chat = { conversation: Conversation; messages: Message[]; members: Member[]; archived: boolean; threads: ThreadEntry[] };
+type Chat = {
+  discovery?: {
+    principal: { type: "authenticated" } | { type: "group"; groupId: string };
+    permission: "read" | "write";
+    displayName: string;
+  }[];
+  conversation: Conversation;
+  messages: Message[];
+  members: Member[];
+  archived: boolean;
+  threads: ThreadEntry[];
+};
 type Subscription = { socket: ServerWebSocket<unknown>; id: string; channel: string; scope: { conversation?: string } };
 
 /** Midday in Berlin keeps even the longest seeded history on one fixed calendar day. */
 export const chatTestNow = new Date("2026-10-14T10:00:00.000Z");
+
+/**
+ * Starts the page's wall clock at the harness clock and lets it flow from there; each new document starts again at that
+ * instant. Only `Date` changes: Playwright's `clock` also replaces timers, animation frames, and `performance`, and
+ * WebKit then stops reporting reads in the read-state tests.
+ */
+export const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0)
+        super(RealDate.now() + offset); // real clock: flows from the pinned instant
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset; // real clock: flows from the pinned instant
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
 
 export const viewer: Person = { id: "11111111-1111-4111-8111-111111111111", name: "Robin Example" };
 export const nora: Person = { id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" };
@@ -142,6 +184,7 @@ export const startChatHarness = async () => {
   const createIntents = new Map<string, string>();
   const people = new Map([viewer, nora, tobias].map((person) => [person.id, person]));
   const groups = new Map<string, Group>();
+  const serviceAccounts = new Map<string, ServiceAccount>();
   const subscriptions: Subscription[] = [];
   const events: { cursor: number; channel: string; chat: string; data: unknown }[] = [];
   let cursor = 0;
@@ -151,19 +194,57 @@ export const startChatHarness = async () => {
   let failing = 0;
   let failingUnread = 0;
   let failingThreads = 0;
+  let failingShared = 0;
+  // Elements of a made-up "spaces" app that messages can share; a card reads them with the viewer's access.
+  const elements = new Map<string, { id: string; title: string; preview: string; readable: boolean }>();
+  let readerCalls = 0;
+  const query = (localId: string) => ({
+    localId,
+    title: "Read a task",
+    description: "Reads one task.",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false },
+    dataSchema: { type: "object", properties: {}, additionalProperties: true },
+    schemaHash: "0".repeat(64),
+    openWorld: false,
+  });
+  const catalog = {
+    protocolVersion: 2,
+    apps: [
+      {
+        appId: "spaces",
+        appName: "Spaces",
+        appIcon: "ti ti-layout-kanban",
+        appDescription: "",
+        manifest: {
+          protocolVersion: 2,
+          appId: "spaces",
+          manifestHash: "0".repeat(64),
+          types: [{ localId: "task", title: "Task", description: "A task.", icon: "ti ti-circle", reader: "task.read" }],
+          queries: [query("task.read")],
+          actions: [],
+          commands: [],
+        },
+      },
+    ],
+    page: { hasMore: false },
+  };
   const reads: { chat: string; seq: number }[] = [];
   // Which part of the chat each read named: "general", "all", or a thread.
   const readViews: { chat: string; seq: number; thread: string }[] = [];
-  const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string }[] = [];
+  const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string; refs?: CloudResourceRef[] }[] = [];
+  const discoveryUpdates: { entries: unknown[]; name?: string; purpose?: string; revision?: string }[] = [];
 
-  const principalId = (principal: MemberPrincipal) => (principal.type === "user" ? principal.userId : principal.groupId);
+  const principalId = (principal: MemberPrincipal) =>
+    principal.type === "user" ? principal.userId : principal.type === "group" ? principal.groupId : principal.serviceAccountId;
   const makeMember = (principal: MemberPrincipal, permission: Permission, addedAt: string): Member => {
     const id = principalId(principal);
     const group = principal.type === "group" ? groups.get(id) : undefined;
     return MemberSchema.parse({
       accessId: `aaaaaaaa-aaaa-4aaa-8aaa-${String(++nextAccess).padStart(12, "0")}`,
       principal,
-      displayName: principal.type === "user" ? people.get(id)!.name : group!.name,
+      displayName:
+        principal.type === "user" ? people.get(id)!.name : principal.type === "group" ? group!.name : serviceAccounts.get(id)!.name,
+      ...(principal.type === "service_account" ? { serviceAccountKind: serviceAccounts.get(id)!.kind } : {}),
       guest: false,
       deactivated: false,
       groupSize: group?.size ?? null,
@@ -172,7 +253,7 @@ export const startChatHarness = async () => {
     });
   };
   const managers = (chat: Chat) =>
-    chat.members.filter((member) => member.principal.type === "user" && !member.deactivated && member.permission === "admin").length;
+    chat.members.filter((member) => member.principal.type !== "group" && !member.deactivated && member.permission === "admin").length;
   const refreshMembers = (chat: Chat) => {
     const others = chat.members.filter((member) => member.principal.type !== "user" || member.principal.userId !== viewer.id);
     const derived =
@@ -340,7 +421,7 @@ export const startChatHarness = async () => {
     body: string,
     at: Date,
     kind: "text" | "system" = "text",
-    target: { thread?: string | null; replyTo?: string } = {},
+    target: { thread?: string | null; replyTo?: string; refs?: CloudResourceRef[] } = {},
   ) => {
     const entry = chats.get(chat)!;
     const seq = entry.messages.length + 1;
@@ -348,6 +429,7 @@ export const startChatHarness = async () => {
     const original = target.replyTo ? entry.messages.find((message) => message.id === target.replyTo) : undefined;
     const thread = original ? original.thread : (target.thread ?? null);
     const message: Message = {
+      refs: target.refs ?? [],
       thread,
       replyTo: original ? { id: original.id, author: original.author, preview: original.body ?? "" } : null,
       id: messageId(chat, seq),
@@ -435,6 +517,8 @@ export const startChatHarness = async () => {
     chats.set(id, {
       conversation: {
         threads: 0,
+        channel: false,
+        member: true,
         id,
         name: options.name ?? null,
         icon: null,
@@ -500,8 +584,12 @@ export const startChatHarness = async () => {
       to: before ? Number(before) - 1 : after && items.length === 50 ? items.at(-1)!.seq : all.length,
     };
   };
+  let allowAuthenticated = true;
   const list = () => ({
-    items: [...chats.values()].map((chat) => chat.conversation).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)),
+    items: [...chats.values()]
+      .map((chat) => chat.conversation)
+      .filter((row) => row.member)
+      .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)),
     nextCursor: null,
   });
   const snapshot = (id: string, focus: string | null, view = "all") => {
@@ -537,6 +625,37 @@ export const startChatHarness = async () => {
     };
   };
 
+  const viewProps = (
+    address: {
+      chat?: string;
+      message?: string;
+      panel?: string;
+      thread?: string;
+      threadsPage?: boolean;
+      channelsPage?: boolean;
+      query?: string;
+    },
+    options: { guest?: boolean } = {},
+  ): ChatWorkspaceProps => {
+    const view = address.thread ?? "all";
+    const open = address.chat ? snapshot(address.chat, address.message ?? null, view) : null;
+    return {
+      channelsPage: address.channelsPage,
+      channelQuery: address.query,
+      cursor: `c.${cursor}`,
+      sidebar: list(),
+      view,
+      threadsPage: address.threadsPage ?? false,
+      open: open && { threads: open.threads, conversation: open.conversation, page: open.page, focus: open.focus },
+      chatId: address.chat ?? null,
+      guest: options.guest ?? false,
+      panel: open && address.panel === "info" ? "info" : null,
+      viewerId: viewer.id,
+      dateConfig: { locale: "en", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+      now: now().toISOString(),
+    };
+  };
+
   const server = Bun.serve<unknown, never>({
     port: 0,
     hostname: "127.0.0.1",
@@ -544,6 +663,19 @@ export const startChatHarness = async () => {
       const url = new URL(request.url);
       if (url.pathname === "/api/chat/live")
         return bun.upgrade(request, { data: undefined }) ? undefined : new Response("upgrade failed", { status: 400 });
+      if (url.pathname === "/__props") {
+        const target = new URL(url.searchParams.get("path") ?? "/app/chat", "https://chat.test");
+        const match = /^\/app\/chat\/c\/([^/]+)(?:\/m\/([^/]+))?/.exec(target.pathname);
+        return Response.json(
+          viewProps({
+            chat: match?.[1],
+            message: match?.[2],
+            panel: target.searchParams.get("panel") ?? undefined,
+            channelsPage: target.pathname === "/app/chat/channels",
+            query: target.searchParams.get("q") ?? "",
+          }),
+        );
+      }
       if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
       if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname === "/fonts.css") return new Response(fontAssets.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
@@ -553,8 +685,26 @@ export const startChatHarness = async () => {
         const search = (url.searchParams.get("search") ?? "").toLowerCase();
         const kinds = (url.searchParams.get("kinds") ?? "user,group").split(",");
         const excludedUsers = (url.searchParams.get("exclude_user_ids") ?? "").split(",");
+        const excludedServices = (url.searchParams.get("exclude_service_account_ids") ?? "").split(",");
         const excludedGroups = (url.searchParams.get("exclude_group_ids") ?? "").split(",");
         const items = [
+          ...[...serviceAccounts.values()]
+            .filter(
+              (account) =>
+                kinds.includes("service_account") && !excludedServices.includes(account.id) && account.name.toLowerCase().includes(search),
+            )
+            .map((account) => ({
+              kind: "service_account",
+              serviceAccount: {
+                id: account.id,
+                name: account.name,
+                kind: account.kind,
+                status: account.status ?? "active",
+                appId: account.binding?.split(":")[0] ?? null,
+                resourceType: account.binding?.split(":")[1] ?? null,
+                resourceId: account.binding?.split(":")[2] ?? null,
+              },
+            })),
           ...[...people.values()]
             .filter((person) => kinds.includes("user") && !excludedUsers.includes(person.id) && person.name.toLowerCase().includes(search))
             .map((person) => ({
@@ -596,6 +746,67 @@ export const startChatHarness = async () => {
           }),
         );
       }
+      // The Cloud element picker's search and the reader behind a card, for elements of a made-up "spaces" app.
+      if (url.pathname === "/api/search") {
+        const query = (url.searchParams.get("q") ?? "").toLowerCase();
+        const results = [...elements.values()]
+          .filter((element) => element.readable && element.title.toLowerCase().includes(query))
+          .map((element) => ({
+            appId: "spaces",
+            appName: "Spaces",
+            appIcon: "ti ti-layout-kanban",
+            readable: true,
+            ref: { type: "spaces.task", id: element.id },
+            title: element.title,
+            preview: element.preview,
+            href: `/app/spaces/task/${element.id}`,
+          }));
+        const lines = [
+          { type: "start", query, apps: [{ id: "spaces", name: "Spaces", icon: "ti ti-layout-kanban" }], providers: ["spaces"] },
+          { type: "provider", provider: "spaces", status: "ok", results, ms: 1 },
+          { type: "done", status: "complete", count: results.length },
+        ];
+        return new Response(lines.map((line) => `${JSON.stringify(line)}\n`).join(""), {
+          headers: { "content-type": "application/x-ndjson; charset=utf-8" },
+        });
+      }
+      if (url.pathname === "/api/capabilities/v1/catalog") return Response.json(catalog);
+      if (url.pathname === "/api/capabilities/v1/queries/spaces/task.read" && request.method === "POST") {
+        readerCalls += 1;
+        const { input } = z.object({ input: z.object({ id: z.string() }) }).parse(await request.json());
+        const element = elements.get(input.id);
+        if (!element?.readable) return Response.json({ code: "FORBIDDEN", message: "No access" }, { status: 403 });
+        return Response.json({
+          data: { id: element.id },
+          refs: [{ type: "spaces.task", id: element.id, title: element.title, preview: element.preview, icon: "ti ti-circle" }],
+          links: [{ rel: "open", href: `/app/spaces/task/${element.id}` }],
+        });
+      }
+      if (url.pathname === "/api/chat/channels/options") return Response.json({ allowAuthenticated });
+      if (url.pathname === "/api/chat/channels/preview") {
+        const entries = (await request.json()) as NonNullable<Chat["discovery"]>;
+        if (!allowAuthenticated && entries.some((entry) => entry.principal.type === "authenticated"))
+          return Response.json({ message: "Authenticated discovery is disabled." }, { status: 400 });
+        return Response.json({
+          audienceCount: entries.length ? 42 : 0,
+          includesAuthenticated: entries.some((entry) => entry.principal.type === "authenticated"),
+        });
+      }
+      if (url.pathname === "/api/chat/channels") {
+        const q = (url.searchParams.get("q") ?? "").toLowerCase();
+        return Response.json({
+          items: [...chats.values()]
+            .filter(
+              (chat) =>
+                chat.conversation.channel &&
+                (allowAuthenticated || chat.discovery?.some((entry) => entry.principal.type === "group")) &&
+                `${chat.conversation.title} ${chat.conversation.purpose}`.toLowerCase().includes(q),
+            )
+            .map((chat) => project(chat))
+            .sort((a, b) => a.title.localeCompare(b.title)),
+          nextCursor: null,
+        });
+      }
       if (url.pathname === "/api/chat/conversations" && request.method === "GET") return Response.json(list());
       if (url.pathname === "/api/chat/conversations" && request.method === "POST") {
         const input = CreateConversationSchema.parse(await request.json());
@@ -605,7 +816,7 @@ export const startChatHarness = async () => {
             status: 201,
           });
         const direct = new Set([viewer.id, ...input.members.flatMap((principal) => (principal.type === "user" ? [principal.userId] : []))]);
-        if (!input.allowDuplicate && input.members.every((principal) => principal.type === "user")) {
+        if (!input.discovery?.length && !input.allowDuplicate && input.members.every((principal) => principal.type === "user")) {
           const matches = [...chats.values()]
             .filter(
               (chat) =>
@@ -632,8 +843,17 @@ export const startChatHarness = async () => {
         });
         if (input.createKey) createIntents.set(input.createKey, id);
         const chat = chats.get(id)!;
-        chat.conversation = { ...chat.conversation, icon: input.icon ?? null, purpose: input.purpose ?? null };
-        for (const principal of input.members.filter((principal) => principal.type === "group"))
+        chat.conversation = {
+          ...chat.conversation,
+          icon: input.icon ?? null,
+          purpose: input.purpose ?? null,
+          channel: !!input.discovery?.length,
+        };
+        chat.discovery = input.discovery?.map((entry) => ({
+          ...entry,
+          displayName: entry.principal.type === "authenticated" ? "All signed-in accounts" : groups.get(entry.principal.groupId)!.name,
+        }));
+        for (const principal of input.members.filter((principal) => principal.type !== "user"))
           chat.members.push(makeMember(principal, "write", chat.conversation.createdAt));
         refreshMembers(chat);
         publish(chat.messages[0]!);
@@ -660,6 +880,73 @@ export const startChatHarness = async () => {
         const [, id, part, accessId] = match;
         const chat = chats.get(id!);
         if (!chat) return Response.json({ code: "NOT_FOUND", message: "Chat not found." }, { status: 404 });
+        if (part === "discovery") {
+          const key = (entries: NonNullable<Chat["discovery"]>) =>
+            entries
+              .map((entry) => `${entry.principal.type === "group" ? entry.principal.groupId : "authenticated"}:${entry.permission}`)
+              .sort()
+              .join(",");
+          const revision = new Bun.CryptoHasher("sha256").update(key(chat.discovery ?? [])).digest("hex");
+          if (request.method === "GET")
+            return Response.json({
+              revision,
+              entries: (chat.discovery ?? []).map((entry, index) => ({
+                ...entry,
+                displayName:
+                  entry.principal.type === "authenticated"
+                    ? "All signed-in accounts"
+                    : (groups.get(entry.principal.groupId)?.name ?? "Directory group"),
+                accessId: `cccccccc-cccc-4ccc-8ccc-${String(index).padStart(12, "0")}`,
+              })),
+              allowAuthenticated,
+              audienceCount: chat.discovery?.length ? 42 : 0,
+            });
+          const input = (await request.json()) as {
+            entries: NonNullable<Chat["discovery"]>;
+            name?: string;
+            purpose?: string;
+            revision?: string;
+          };
+          discoveryUpdates.push(input);
+          if (input.revision !== undefined && input.revision !== revision)
+            return Response.json(
+              {
+                code: "DISCOVERY_CHANGED",
+                message: "Someone changed who can find this channel in the meantime. Check the current settings and save again.",
+              },
+              { status: 409 },
+            );
+          const discoveryChanged = key(chat.discovery ?? []) !== key(input.entries);
+          const detailsChanged =
+            (input.name !== undefined && input.name !== chat.conversation.name) ||
+            (input.purpose !== undefined && input.purpose !== chat.conversation.purpose);
+          chat.discovery = input.entries;
+          chat.conversation = {
+            ...chat.conversation,
+            channel: !!input.entries.length,
+            name: input.name ?? chat.conversation.name,
+            title: input.name ?? chat.conversation.title,
+            purpose: input.purpose ?? chat.conversation.purpose,
+          };
+          if (detailsChanged)
+            announce(id!, { code: "details_changed", params: { name: input.name, purpose: input.purpose } }, "Details changed.");
+          if (discoveryChanged) announce(id!, { code: "discovery_changed", params: { count: input.entries.length } }, "Discovery changed.");
+          return Response.json(project(chat));
+        }
+        if (part === "join") {
+          if (!chat.conversation.member) {
+            const permission = chat.discovery?.some((entry) => entry.permission === "write") ? "write" : "read";
+            chat.members.push(makeMember({ type: "user", userId: viewer.id }, permission, now().toISOString()));
+            chat.conversation = { ...chat.conversation, member: true, permission, memberCount: chat.conversation.memberCount + 1 };
+            chat.conversation.rev++;
+            // As the server: a channel's subscriptions change its members without a timeline line.
+            const update = { type: "membership" as const, conversationId: id! };
+            deliver("conversation", id!, update);
+            deliver("list", id!, update);
+            deliver("me", id!, { type: "membership", conversationId: id! });
+          }
+          return Response.json(project(chat));
+        }
         if ((request.method === "PATCH" && !part) || (part === "members" && request.method !== "GET")) {
           if (chat.conversation.permission !== "admin")
             return Response.json({ code: "FORBIDDEN", message: "Manage permission is required." }, { status: 403 });
@@ -766,7 +1053,7 @@ export const startChatHarness = async () => {
             (count, principal) => count + (principal.type === "group" ? groups.get(principal.groupId)!.size : 0),
             0,
           );
-          const joining = additions.filter((principal) => principal.type === "user").length + throughGroups;
+          const joining = additions.filter((principal) => principal.type !== "group").length + throughGroups;
           if (accessId === "preview")
             return Response.json(
               MemberPreviewSchema.parse({ joining, throughGroups, memberCount: chat.conversation.memberCount + joining }),
@@ -775,7 +1062,7 @@ export const startChatHarness = async () => {
           chat.members.push(...added);
           refreshMembers(chat);
           const users = added
-            .filter((member) => member.principal.type === "user")
+            .filter((member) => member.principal.type !== "group")
             .map((member) => ({ id: principalId(member.principal), name: member.displayName }));
           const addedGroups = added
             .filter((member) => member.principal.type === "group")
@@ -799,7 +1086,7 @@ export const startChatHarness = async () => {
           if (!member) return Response.json({ code: "NOT_FOUND", message: "Member not found." }, { status: 404 });
           const permission = request.method === "PATCH" ? UpdateMemberSchema.parse(await request.json()).permission : null;
           if (
-            member.principal.type === "user" &&
+            member.principal.type !== "group" &&
             !member.deactivated &&
             member.permission === "admin" &&
             permission !== "admin" &&
@@ -843,7 +1130,7 @@ export const startChatHarness = async () => {
             );
           const next = successor
             ? chat.members.find(
-                (member) => member.accessId === successor && member !== own && member.principal.type === "user" && !member.deactivated,
+                (member) => member.accessId === successor && member !== own && member.principal.type !== "group" && !member.deactivated,
               )
             : undefined;
           if (successor && !next)
@@ -851,8 +1138,15 @@ export const startChatHarness = async () => {
           if (lastManager && next) next.permission = "admin";
           chat.members = chat.members.filter((member) => member !== own);
           refreshMembers(chat);
-          revoke(id!);
-          return Response.json(MemberRemovalSchema.parse({ success: true, keptThroughGroup: false }));
+          if (chat.conversation.channel) {
+            chat.conversation = { ...chat.conversation, member: false, permission: "read", rev: chat.conversation.rev + 1 };
+            // As the server: a channel's subscriptions change its members without a timeline line.
+            const update = { type: "membership" as const, conversationId: id! };
+            deliver("conversation", id!, update);
+            deliver("list", id!, update);
+            deliver("me", id!, { type: "membership", conversationId: id! });
+          } else revoke(id!);
+          return Response.json(LeaveResultSchema.parse({ success: true, keptThroughGroup: false, canRejoin: !!chat.discovery?.length }));
         }
         if (part === "read" && request.method === "POST") {
           const { seq, thread } = ReadSchema.parse(await request.json());
@@ -874,6 +1168,36 @@ export const startChatHarness = async () => {
           const open = snapshot(id!, url.searchParams.get("message"), url.searchParams.get("thread") ?? "all");
           return open ? Response.json(open) : Response.json({ code: "NOT_FOUND", message: "Thread not found." }, { status: 404 });
         }
+        if (part === "shared" && request.method === "GET") {
+          if (failingShared > 0) {
+            failingShared -= 1;
+            return Response.json({ message: "Unavailable" }, { status: 503 });
+          }
+          const kind = url.searchParams.get("kind") ?? "all";
+          const thread = url.searchParams.get("thread");
+          const items = chat.messages
+            .filter((message) => message.kind === "text" && (!thread || (message.thread ?? "general") === thread))
+            .toReversed()
+            .flatMap((message) => {
+              const meta = {
+                messageId: message.id,
+                seq: message.seq,
+                thread: message.thread,
+                author: message.author,
+                createdAt: message.createdAt,
+              };
+              const links = [...(message.body ?? "").matchAll(/https?:\/\/[^\s)]+/g)].map((found) => ({
+                kind: "link" as const,
+                url: found[0],
+                ...meta,
+              }));
+              const elements = message.refs.map((ref) => ({ kind: "element" as const, ref, ...meta }));
+              return [...(kind === "all" || kind === "elements" ? elements : []), ...(kind === "all" || kind === "links" ? links : [])];
+            });
+          const offset = Number(url.searchParams.get("cursor") ?? 0);
+          const next = offset + 30 < items.length ? String(offset + 30) : null;
+          return Response.json({ items: items.slice(offset, offset + 30), nextCursor: next });
+        }
         if (part === "changes") return Response.json({ rev: chat.conversation.rev, more: false, conversation: null, messages: [] });
         if (part === "messages" && request.method === "GET") return Response.json(page(chat, url.searchParams));
         if (part === "messages" && request.method === "POST") {
@@ -887,7 +1211,11 @@ export const startChatHarness = async () => {
           if (input.thread && !thread) return Response.json({ code: "NOT_FOUND", message: "Thread not found." }, { status: 404 });
           if (thread?.archived)
             return Response.json({ code: "THREAD_ARCHIVED", message: "Restore this thread before sending a message." }, { status: 409 });
-          const message = append(id!, viewer, input.body, now(), "text", { thread: input.thread ?? null, replyTo: input.replyTo });
+          const message = append(id!, viewer, input.body, now(), "text", {
+            thread: input.thread ?? null,
+            replyTo: input.replyTo,
+            refs: input.refs ?? [],
+          });
           publish(message);
           return Response.json(message, { status: 201 });
         }
@@ -947,6 +1275,27 @@ export const startChatHarness = async () => {
     url: server.url.href,
     now,
     addChat,
+    setAllowAuthenticated: (allowed: boolean) => {
+      allowAuthenticated = allowed;
+    },
+    addChannel: (name: string, purpose: string, member = false, permission: "read" | "write" = "write") => {
+      const id = addChat({ name, members: [nora], count: 3, end: now(), spacing: 1 });
+      const chat = chats.get(id)!;
+      chat.discovery = [{ principal: { type: "authenticated" }, permission, displayName: "All signed-in accounts" }];
+      if (!member) chat.members = chat.members.filter((entry) => entry.principal.type !== "user" || entry.principal.userId !== viewer.id);
+      chat.conversation = {
+        ...chat.conversation,
+        channel: true,
+        purpose,
+        member,
+        permission: member ? "admin" : "read",
+        memberCount: chat.members.length,
+      };
+      return id;
+    },
+    addServiceAccount: (account: ServiceAccount) => {
+      serviceAccounts.set(account.id, account);
+    },
     /** Adds a person to the directory available to the member pickers. */
     addPerson: (person: Person) => {
       people.set(person.id, person);
@@ -983,6 +1332,29 @@ export const startChatHarness = async () => {
     /** Returns the current member entries for assertions. */
     members: (chat: string): Member[] => chats.get(chat)?.members ?? [],
     posted,
+    discoveryUpdates,
+    /** Changes who can find a channel, as another admin would. */
+    setDiscovery: (chat: string, entries: NonNullable<Chat["discovery"]>) => {
+      chats.get(chat)!.discovery = entries;
+    },
+    /** An element of the made-up "spaces" app; `readable: false` makes its card "not available". */
+    addElement: (element: { id: string; title: string; preview?: string; readable?: boolean }) => {
+      elements.set(element.id, { preview: "", readable: true, ...element });
+      return { type: "spaces.task", id: element.id } satisfies CloudResourceRef;
+    },
+    /** Grants or takes away the viewer's access to an element of the made-up "spaces" app. */
+    setReadable: (id: string, readable: boolean) => {
+      const element = elements.get(id);
+      if (element) element.readable = readable;
+    },
+    /** A message from someone else that shares elements, delivered live. */
+    receiveShared: (chat: string, author: Person, body: string, refs: CloudResourceRef[]) =>
+      publish(append(chat, author, body, now(), "text", { refs })),
+    /** The next shared lists fail. */
+    failShared: (times = 1) => {
+      failingShared = times;
+    },
+    readerCalls: () => readerCalls,
     reads,
     readViews,
     chatCount: () => chats.size,
@@ -990,20 +1362,26 @@ export const startChatHarness = async () => {
     readElsewhere: read,
     /** Isolates scenarios; IDs stay unique so a closing page cannot report against a later chat. */
     reset: () => {
+      allowAuthenticated = true;
       chats.clear();
       createIntents.clear();
       people.clear();
       for (const person of [viewer, nora, tobias]) people.set(person.id, person);
       groups.clear();
+      serviceAccounts.clear();
       nextAccess = 0;
       nextPerson = 0;
       events.length = 0;
       reads.length = 0;
       readViews.length = 0;
       posted.length = 0;
+      discoveryUpdates.length = 0;
       failing = 0;
       failingUnread = 0;
       failingThreads = 0;
+      failingShared = 0;
+      elements.clear();
+      readerCalls = 0;
     },
     /** Lets tests await the live connection before publishing. */
     subscribed: (chat?: string) =>
@@ -1083,26 +1461,7 @@ export const startChatHarness = async () => {
     revoke,
     messageId,
     /** The island's props for an address, as the server renders them. */
-    props: (
-      address: { chat?: string; message?: string; panel?: string; thread?: string; threadsPage?: boolean },
-      options: { guest?: boolean } = {},
-    ): ChatWorkspaceProps => {
-      const view = address.thread ?? "all";
-      const open = address.chat ? snapshot(address.chat, address.message ?? null, view) : null;
-      return {
-        cursor: `c.${cursor}`,
-        sidebar: list(),
-        view,
-        threadsPage: address.threadsPage ?? false,
-        open: open && { threads: open.threads, conversation: open.conversation, page: open.page, focus: open.focus },
-        chatId: address.chat ?? null,
-        guest: options.guest ?? false,
-        panel: open && address.panel === "info" ? "info" : null,
-        viewerId: viewer.id,
-        dateConfig: { locale: "en", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
-        now: now().toISOString(),
-      };
-    },
+    props: viewProps,
     stop: () => server.stop(true),
   };
 };

@@ -94,10 +94,10 @@ suite("Chat live delivery on two replicas", () => {
         frames.filter(({ frame }) => frame.id === id && frame.t === "event").flatMap(({ frame }) => (frame.data ? [frame.data] : [])),
     };
   };
-  const send = async (person: Person, chat: string, body: string) => {
+  const send = async (person: Person, chat: string, body: string, refs: z.infer<typeof MessageViewSchema>["refs"] = []) => {
     // The timed cache test deliberately exceeds the normal send budget.
     await f.resetSendLimits([person], chat);
-    const response = await f.request(person.headers, `/${chat}/messages`, "POST", { clientId: crypto.randomUUID(), body });
+    const response = await f.request(person.headers, `/${chat}/messages`, "POST", { clientId: crypto.randomUUID(), body, refs });
     expect(response.status).toBe(201);
     return MessageViewSchema.parse(await response.json());
   };
@@ -119,12 +119,15 @@ suite("Chat live delivery on two replicas", () => {
     await ready(nonmember, ["list"]);
     await until(() => nonmember.frames("chat").length > 0);
     expect(nonmember.frames("chat")[0]!.frame).toEqual({ t: "revoked", id: "chat", code: "not_found" });
-    const message = await send(ben, chat.shortId, "readers only");
+    const refs = [{ type: "spaces.task", id: "task-shared-live" }];
+    const message = await send(ben, chat.shortId, "readers only", refs);
     await until(
       () =>
         reader.events("chat").some((event) => event.type === "message" && event.message.id === message.id) &&
         reader.events("list").some((event) => event.type === "summary" && event.id === message.id),
     );
+    const delivered = reader.events("chat").find((event) => event.type === "message" && event.message.id === message.id);
+    expect(delivered?.type === "message" && delivered.message.refs).toEqual(refs);
     await Bun.sleep(100);
     expect(nonmember.events("chat")).toEqual([]);
     expect(nonmember.events("list").filter((event) => event.type === "summary" && event.conversationId === chat.shortId)).toEqual([]);
