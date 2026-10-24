@@ -71,6 +71,12 @@ suite("mentions and For you", () => {
     expect(response.status).toBe(201);
     return MessageViewSchema.parse(await response.json());
   };
+  /** A mention of someone who cannot read the thread is dropped; the message still goes out. */
+  const droppedMention = async (...args: Parameters<typeof send>) => {
+    const response = await send(...args);
+    expect(response.status).toBe(201);
+    expect(MessageViewSchema.parse(await response.json()).mentions ?? []).toEqual([]);
+  };
   const candidates = async (person: Person, conversation: string, query = "") => {
     const response = await f.request(person.headers, `/${conversation}/mention-candidates${query}`);
     expect(response.status).toBe(200);
@@ -142,7 +148,7 @@ suite("mentions and For you", () => {
     expect((await candidates(owner, chat.shortId)).items.map((item) => item.name)).toEqual(["Lena", "Mara Weber"]);
     await sql`UPDATE auth.access SET permission = 'none' WHERE id = ${chat.entries.get(mara.id)!}::uuid`;
     expect((await candidates(owner, chat.shortId)).items.map((item) => item.name)).toEqual(["Lena"]);
-    expect((await send(owner, chat.shortId, { body: "Mara", mentions: [mention(mara.id)] })).status).toBe(400);
+    await droppedMention(owner, chat.shortId, { body: "Mara", mentions: [mention(mara.id)] });
   });
 
   test("group-only principals become candidates after writing and retain principal identity when grants change", async () => {
@@ -164,8 +170,9 @@ suite("mentions and For you", () => {
       { principal: { type: "user", id: grouped.id }, name: "Group Writer", agent: false },
     ]);
     await sql`DELETE FROM auth.user_groups_v2 WHERE user_id = ${grouped.id}::uuid AND group_id = ${group}::uuid`;
-    expect((await candidates(owner, chat.shortId)).items[0]?.principal.id).toBe(grouped.id);
-    expect((await send(owner, chat.shortId, { body: "Group Writer", mentions: [mention(grouped.id, 0, 12)] })).status).toBe(400);
+    // Without the group they no longer read the chat, so they are no longer offered.
+    expect((await candidates(owner, chat.shortId)).items).toEqual([]);
+    await droppedMention(owner, chat.shortId, { body: "Group Writer", mentions: [mention(grouped.id, 0, 12)] });
     expect((await feed(grouped)).items).toEqual([]);
     expect((await loadChatView(grouped.context, {})).sidebar.forYouUnread).toBe(0);
   });
@@ -186,8 +193,8 @@ suite("mentions and For you", () => {
     expect((await candidates(owner, chat.shortId, "?q=did")).items).toEqual([]);
     expect((await candidates(owner, chat.shortId, "?q=%2E%2A")).items).toEqual([]);
     expect((await f.request(owner.headers, `/${chat.shortId}/mention-candidates?q=${"x".repeat(101)}`)).status).toBe(400);
-    expect((await send(owner, chat.shortId, { body: "Cold", mentions: [mention(people[0]!.id)] })).status).toBe(400);
-    expect((await send(owner, chat.shortId, { body: "Cold", mentions: [mention(crypto.randomUUID())] })).status).toBe(400);
+    await droppedMention(owner, chat.shortId, { body: "Cold", mentions: [mention(people[0]!.id)] });
+    await droppedMention(owner, chat.shortId, { body: "Cold", mentions: [mention(crypto.randomUUID())] });
   });
 
   test("candidate service accounts preserve their type and agent flag and follow account eligibility", async () => {
@@ -220,12 +227,8 @@ suite("mentions and For you", () => {
     expect(message.mentions[0]?.name).toBe("Agent");
     await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${extraAccounts[0]!}::uuid`;
     expect((await candidates(owner, chat.shortId)).items.map((person) => person.name)).toEqual(["Service"]);
-    expect(
-      (await send(owner, chat.shortId, { body: "Agent", mentions: [mention(principals.get("Agent")!, 0, 5, "service_account")] })).status,
-    ).toBe(400);
-    expect(
-      (await send(owner, chat.shortId, { body: "Bound", mentions: [mention(principals.get("Bound")!, 0, 5, "service_account")] })).status,
-    ).toBe(400);
+    await droppedMention(owner, chat.shortId, { body: "Agent", mentions: [mention(principals.get("Agent")!, 0, 5, "service_account")] });
+    await droppedMention(owner, chat.shortId, { body: "Bound", mentions: [mention(principals.get("Bound")!, 0, 5, "service_account")] });
   });
 
   test("deduplicates mention plus reply, excludes self, tracks read/unread, and includes count in the SSR sidebar", async () => {
@@ -452,24 +455,29 @@ suite("mentions and For you", () => {
       });
       const inactive = await f.person("Inactive");
       await sql`UPDATE auth.users SET account_expires = '2000-01-01T00:00:00Z' WHERE id = ${inactive.id}::uuid`;
-      expect((await send(owner, chat.id, { body: "Target", mentions: [mention(inactive.id, 0, 6)] })).status).toBe(400);
-      expect((await send(owner, chat.id, { body: "Target", mentions: [mention(crypto.randomUUID(), 0, 6)] })).status).toBe(400);
-      for (const [kind, status, resource, expected] of [
-        ["agent", "active", null, 201],
-        ["agent", "disabled", null, 400],
-        ["user_delegated", "active", null, 400],
-        ["resource_bound", "active", "ZZZZZZ", 400],
-        ["resource_bound", "active", chat.id, 201],
+      await droppedMention(owner, chat.id, { body: "Target", mentions: [mention(inactive.id, 0, 6)] });
+      await droppedMention(owner, chat.id, { body: "Target", mentions: [mention(crypto.randomUUID(), 0, 6)] });
+      // Agent and standalone names are unique, so only the mentioned agent is called "Target".
+      // Ineligible accounts are dropped from the mention; the message still goes out.
+      for (const [kind, status, resource, kept] of [
+        ["agent", "active", null, true],
+        ["agent", "disabled", null, false],
+        ["user_delegated", "active", null, false],
+        ["resource_bound", "active", "ZZZZZZ", false],
+        ["resource_bound", "active", chat.id, true],
       ] as const) {
         const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts
           (name, kind, status, delegated_user_id, app_id, resource_type, resource_id)
-          VALUES ('Target', ${kind}, ${status}, ${kind === "user_delegated" ? owner.id : null}::uuid,
+          VALUES (${kind === "agent" && status === "active" ? "Target" : `Target ${kind} ${status} ${resource ?? ""}`}, ${kind}, ${status}, ${kind === "user_delegated" ? owner.id : null}::uuid,
             ${resource ? "chat" : null}, ${resource ? "conversation" : null}, ${resource}) RETURNING id`;
         extraAccounts.push(account!.id);
-        expect(
-          (await send(owner, chat.id, { body: "Target", thread: thread.id, mentions: [mention(account!.id, 0, 6, "service_account")] }))
-            .status,
-        ).toBe(expected);
+        const sent = await send(owner, chat.id, {
+          body: "Target",
+          thread: thread.id,
+          mentions: [mention(account!.id, 0, 6, "service_account")],
+        });
+        expect(sent.status).toBe(201);
+        expect((MessageViewSchema.parse(await sent.json()).mentions ?? []).length).toBe(kept ? 1 : 0);
         if (kind === "agent" && status === "active") {
           keys.add(accessKey(`service_account:${account!.id}:scopes=openid,read,write`, { type: containerType, id: space }));
           const token = await serviceAccountCredentials.createApiToken({

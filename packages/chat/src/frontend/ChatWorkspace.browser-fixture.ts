@@ -205,6 +205,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   let failingUnread = 0;
   let failingThreads = 0;
   let failingShared = 0;
+  /** Every read of a chat's shared list, in order. */
+  const sharedReads: string[] = [];
   let failingSystems = 0;
   let systemThreadPageSize = 100;
   const systemRequests: { path: string; query: Record<string, string> }[] = [];
@@ -1514,6 +1516,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
           return open ? Response.json(open) : Response.json({ code: "NOT_FOUND", message: "Thread not found." }, { status: 404 });
         }
         if (part === "shared" && request.method === "GET") {
+          sharedReads.push(chat.conversation.id);
           if (failingShared > 0) {
             failingShared -= 1;
             return Response.json({ message: "Unavailable" }, { status: 503 });
@@ -1772,6 +1775,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     failForYou: (times = 1) => {
       failingForYou = times;
     },
+    sharedReads,
     /** The next shared lists fail. */
     failShared: (times = 1) => {
       failingShared = times;
@@ -1790,6 +1794,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
       searchSystemUnavailable = false;
       failingSearch = 0;
       searchQueries.length = 0;
+      sharedReads.length = 0;
       collapsed = [];
       allowAuthenticated = true;
       chats.clear();

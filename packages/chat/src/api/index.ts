@@ -124,6 +124,7 @@ const app = new Hono<AuthContext>()
   )
   .get(
     "/for-you",
+    auth.requireRole("authenticated"),
     describeRoute({
       tags: ["Chat"],
       summary: "Read mentions and replies addressed to you across Chat",
