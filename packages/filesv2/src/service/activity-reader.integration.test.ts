@@ -79,8 +79,8 @@ suite("history reader SQL and permission projection in a private database", () =
   test("pages history over visible entries only", async () => {
     for (let index = 1; index <= 5; index++) await seed(candidate(index, { path_before: null }));
     const f = fixture();
-    f.nodes.set(`${home}/restricted`, f.node(`${home}/restricted`, "stable-a"));
-    f.denied.add("restricted");
+    const hiddenId = "20000000-0000-4000-8000-000000000009";
+    await sql`INSERT INTO filesv2.bases ${sql({ ...historyBinding, id: hiddenId, identity_id: otherId, path: "users/bob" })}`;
     async function pages() {
       const sequence = [];
       let cursor: string | undefined;
@@ -100,10 +100,24 @@ suite("history reader SQL and permission projection in a private database", () =
     await sql`INSERT INTO filesv2.activity(id,action,state,server_url,root,base_id,directory,name,
       path_after,item_after_id,actor_kind,actor_user_id,via,started_at,finished_at)
       SELECT ('40000000-0000-4000-8000-' || lpad(n::text,12,'0'))::uuid,'item.move','done',
-        ${row.server_url},'cloud',${baseId}::uuid,true,'restricted',${home + "/restricted"},
-        'stable-a','user',${otherId}::uuid,'web','2030-05-15T12:00:00Z','2030-05-15T12:00:00Z'
+        ${row.server_url},'cloud',${hiddenId}::uuid,true,'restricted','users/bob/restricted',
+        'stable-a','user',${actorId}::uuid,'web','2030-05-15T12:00:00Z','2030-05-15T12:00:00Z'
       FROM generate_series(100,1100) n`;
     expect(await pages()).toEqual(expected);
+    f.setMember(false);
+    expect(await f.reader.activity(call)).toEqual({
+      items: [],
+      next: null,
+      visibleCount: 0,
+      batches: [],
+      exhausted: true,
+      scanLimitReached: false,
+      searchLimitReached: false,
+    });
+    await expect(f.reader.activity(call, { baseId: `freeipa:users:${actorId}` })).rejects.toMatchObject({
+      code: "history_unavailable",
+      status: 409,
+    });
   });
 
   test("reads actual rows, resolves live names, strips private detail, and preserves FK name deletion", async () => {
@@ -127,23 +141,23 @@ suite("history reader SQL and permission projection in a private database", () =
     expect((await f.reader.activity(call)).items[0]?.actor).toEqual({ kind: "user", userId: null, name: null });
   });
 
-  test("guessed hidden names, old paths, IDs and batch totals remain absent after real ACL checks", async () => {
+  test("revoked local grants hide guessed names, IDs and batch totals", async () => {
     await seed(candidate(1, { path_before: null }));
     await seed(candidate(2, { path_before: null, path_after: `${home}/secret` }));
     const f = fixture();
     f.nodes.set(`${home}/secret`, f.node(`${home}/secret`, "stable-a"));
-    f.denied.add("secret");
+    f.setMember(false);
     const page = await f.reader.activity(call);
-    expect(page.items).toHaveLength(1);
-    expect(page.visibleCount).toBe(1);
-    expect(page.batches[0]?.visibleCount).toBe(1);
+    expect(page.items).toHaveLength(0);
+    expect(page.visibleCount).toBe(0);
+    expect(page.batches).toEqual([]);
     for (const query of [{ q: "secret" }, { baseId: publicBaseId, path: "secret" }])
       expect((await f.reader.activity(call, query)).items).toEqual([]);
     f.setMember(false);
     expect((await f.reader.activity(call)).items).toEqual([]);
   });
 
-  test("batch SQL counts visible peers beyond search matches, rechecks mixed-side ACLs, and retains only own snapshots", async () => {
+  test("batch SQL counts only local grant-authorized peers beyond search matches", async () => {
     const anchor = candidate(1, { path_before: null });
     await seed(anchor);
     await seed(candidate(2, { path_before: null, path_after: `${home}/secret` }));
@@ -158,9 +172,9 @@ suite("history reader SQL and permission projection in a private database", () =
     expect((await f.reader.activity(call, { q: "peer" })).items.map((row) => row.id)).toEqual([candidate(6).id, candidate(3).id]);
     expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 4, complete: true });
     f.denied.add("peer");
-    expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 2, complete: true });
+    expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 4, complete: true });
     f.setMember(false);
-    expect(await f.reader.activityBatchContext(call, { activityId: candidate(4).id })).toEqual({ visibleCount: 1, complete: true });
+    await expect(f.reader.activityBatchContext(call, { activityId: candidate(4).id })).rejects.toMatchObject({ code: "not_found" });
     for (const id of [anchor.id, candidate(99).id])
       await expect(f.reader.activityBatchContext(call, { activityId: id })).rejects.toMatchObject({ code: "not_found", status: 404 });
     await sql`UPDATE filesv2.activity SET batch_id=NULL WHERE id=${candidate(4).id}::uuid`;
@@ -179,8 +193,9 @@ suite("history reader SQL and permission projection in a private database", () =
     const f = fixture();
     f.nodes.set(`${home}/secret`, f.node(`${home}/secret`, "stable-a"));
     f.denied.add("secret");
-    expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 1, complete: false });
-    await sql`UPDATE filesv2.activity SET actor_user_id=${actorId}::uuid`;
+    await sql`UPDATE filesv2.activity SET base_id='20000000-0000-4000-8000-000000000009'::uuid WHERE id<>${anchor.id}::uuid`;
+    expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 1, complete: true });
+    await sql`UPDATE filesv2.activity SET base_id=${baseId}::uuid`;
     expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 500, complete: false });
     await sql`DELETE FROM filesv2.activity WHERE id IN (${candidate(500).id}::uuid,${candidate(501).id}::uuid)`;
     expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 499, complete: true });
@@ -272,19 +287,19 @@ suite("history reader SQL and permission projection in a private database", () =
     expect(second.next).toBeNull();
   });
 
-  test("SQL candidate limit is 500 even when all queried content is hidden", async () => {
+  test("SQL excludes inaccessible bindings before its candidate limit", async () => {
     const row = candidate();
     await sql`INSERT INTO filesv2.activity(id,action,state,server_url,root,base_id,directory,name,path_after,item_after_id,actor_kind,actor_user_id,via,started_at,finished_at)
       SELECT ('40000000-0000-4000-8000-' || lpad(n::text,12,'0'))::uuid,'item.move','done',${row.server_url},'cloud',${baseId}::uuid,true,'secret',${home + "/secret"},'stable-a','user',${otherId}::uuid,'web',${row.started_at},${row.finished_at}
       FROM generate_series(1,501) n`;
     const f = fixture();
     f.nodes.set(`${home}/secret`, f.node(`${home}/secret`, "stable-a"));
-    f.denied.add("secret");
+    f.setMember(false);
     const page = await f.reader.activity(call, { q: "secret" });
     expect(page.items).toEqual([]);
-    expect(page.scanLimitReached).toBe(true);
-    expect(page.next).not.toBeNull();
-    expect((await f.reader.activity(call, { q: "secret", cursor: page.next! })).exhausted).toBe(true);
+    expect(page.scanLimitReached).toBe(false);
+    expect(page.next).toBeNull();
+    expect(page.exhausted).toBe(true);
   });
 
   test("500+ foreign rows cannot alter empty results, guessed-name counts or continuations", async () => {
@@ -299,16 +314,18 @@ suite("history reader SQL and permission projection in a private database", () =
     expect(f.requests).toEqual([]);
   });
 
-  test("base filter includes original actor's historical binding but excludes unrelated owned actions", async () => {
+  test("historical local bindings require an administrator, regardless of original actor", async () => {
     const old = { ...historyBinding, id: "20000000-0000-4000-8000-000000000009", lifecycle: "retired", path: "archive/alice" };
     // Use a distinct retired public base so the database's unique identity constraint remains intact.
     old.identity_id = otherId;
     old.identity_name = "bob";
     await sql`INSERT INTO filesv2.bases ${sql(old)}`;
-    await seed(candidate(1, { actor_user_id: actorId, base_id: old.id, path_before: "users/bob/old", path_after: null }));
+    await seed(candidate(1, { actor_user_id: actorId, base_id: old.id, path_before: "archive/alice/old", path_after: null }));
     await seed(candidate(2, { actor_user_id: actorId }));
     const f = fixture();
     f.setMember(false);
+    expect((await f.reader.activity(call, { baseId: `cloud:users:${otherId}` })).items).toEqual([]);
+    f.setAdmin(true);
     const page = await f.reader.activity(call, { baseId: `cloud:users:${otherId}` });
     expect(page.items.map((row) => row.id)).toEqual([candidate(1).id]);
     expect(page.items[0]?.before).toMatchObject({ source: "snapshot", publicBaseId: null });
@@ -362,7 +379,7 @@ suite("history reader SQL and permission projection in a private database", () =
       await seed(source);
       await seed(replacement);
       const rows = await activityReaderData.candidates({
-        scope: { admin: false, userId: actorId, bindingIds: [baseId] },
+        scope: { admin: false, userId: actorId, bindingIds: [baseId], serverUrl: "http://filegate.test" },
         chain: { serverUrl: source.server_url, root: "cloud", baseId, path },
         position: { time: source.effective_time, id: source.id },
         direction: "asc",
@@ -426,7 +443,7 @@ suite("history reader SQL and permission projection in a private database", () =
       pending = withActivityReadBudget(controller.signal, (budget) =>
         activityReaderData.candidates(
           {
-            scope: { admin: false, userId: actorId, bindingIds: [baseId] },
+            scope: { admin: false, userId: actorId, bindingIds: [baseId], serverUrl: "http://filegate.test" },
             batch: mode === "batch" ? { id: candidate().batch_id!, anchorId: candidate().id } : undefined,
             position: null,
             direction: "desc",
@@ -494,6 +511,8 @@ suite("history reader SQL and permission projection in a private database", () =
     f.setAdmin(false);
     f.setMember(false);
     await sql`UPDATE filesv2.shares SET created_by=${actorId}::uuid WHERE id=${shareId}::uuid`;
+    await expect(f.reader.shareAccess(call, input)).rejects.toMatchObject({ code: "not_found" });
+    f.setMember(true);
     expect(await f.reader.shareAccess(call, input)).toMatchObject({
       pages: 10,
       downloads: 5,
@@ -578,7 +597,13 @@ suite("history reader SQL and permission projection in a private database", () =
     await seed(candidate(3, { base_id: null, base_after_id: "80000000-0000-4000-8000-000000000055" }));
     await withActivityReadBudget(undefined, async (budget) => {
       const rows = await activityReaderData.candidates(
-        { scope: { admin: true, userId: actorId, bindingIds: [] }, baseId: recordedPublicId, position: null, direction: "desc", limit: 50 },
+        {
+          scope: { admin: true, userId: actorId, bindingIds: [], serverUrl: "http://filegate.test" },
+          baseId: recordedPublicId,
+          position: null,
+          direction: "desc",
+          limit: 50,
+        },
         budget,
       );
       expect(rows.map((row) => row.id)).toEqual([candidate(3).id, candidate(2).id]);

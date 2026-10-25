@@ -41,17 +41,17 @@ test("projects disappeared source and current destination independently; fields 
   expect((await f.reader.activity(call)).items[0]?.actor.name).toBeNull();
 });
 
-test("a readable parent never exposes an unreadable existing same-identity leaf, guessed name or path", async () => {
+test("a local grant covers historical items even when a later leaf lookup is refused", async () => {
   const f = historyFixture([candidate(1, { path_before: null, path_after: `${home}/secret-name` })]);
   f.nodes.set(`${home}/secret-name`, f.node(`${home}/secret-name`, "stable-a"));
   f.denied.add("secret-name");
   for (const input of [{}, { q: "secret-name" }, { baseId: publicBaseId, path: "secret-name" }, { itemId: "stable-a" }]) {
     const page = await f.reader.activity(call, input);
-    expect(page.items).toEqual([]);
-    expect(page.visibleCount).toBe(0);
-    expect(page.batches).toEqual([]);
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]?.after).toMatchObject({ visibility: "full", source: "snapshot" });
   }
-  expect(f.authorized).not.toContain("");
+  f.setMember(false);
+  expect((await f.reader.activity(call)).items).toEqual([]);
 });
 
 test("a replaced identity exposes only disappearance fields to the readable parent", async () => {
@@ -101,17 +101,12 @@ test("copy sides are separate: hidden destination cannot be found through search
   expect((await f.reader.movementChain(call, { activityId: candidate().id })).hops).toEqual([]);
 });
 
-test("own and admin snapshots survive revoked access without resolving any location", async () => {
+test("own snapshots require a current local grant; administrators can read local historical bindings", async () => {
   const f = historyFixture([candidate(1, { actor_user_id: actorId })]);
+  expect((await f.reader.activity(call)).items[0]?.after).toMatchObject({ visibility: "full", source: "snapshot" });
   f.setMember(false);
-  const page = await f.reader.activity(call);
-  expect(page.items[0]?.before).toMatchObject({ visibility: "full", source: "snapshot", path: `${home}/old`, publicBaseId: null });
-  expect(page.items[0]?.after).toMatchObject({ visibility: "full", source: "snapshot", path: `${home}/new` });
-  expect(page.items[0]?.before).not.toHaveProperty("observation");
-  expect(page.items[0]?.after).not.toHaveProperty("observation");
-  expect(f.requests).toEqual([]);
-  expect(f.authorized).toEqual([]);
-  expect((await f.reader.movementChain(call, { activityId: candidate().id })).endpoint).toBeNull();
+  expect((await f.reader.activity(call)).items).toEqual([]);
+  await expect(f.reader.activityEntry(call, { activityId: candidate().id })).rejects.toMatchObject({ code: "not_found" });
   expect(f.requests).toEqual([]);
   const admin = historyFixture();
   admin.setAdmin(true);
@@ -141,7 +136,7 @@ test("no stable IDs limits both sides to minimal fields; IDs cannot be guessed t
 test("folder moves match old descendant paths segmentwise and cache repeated parents", async () => {
   const f = historyFixture([candidate(), candidate(2)]);
   expect((await f.reader.activity(call, { q: "old/child/file.txt" })).items).toHaveLength(2);
-  expect(f.authorized.filter((path) => path === "")).toHaveLength(1);
+  expect(f.authorized.filter((path) => path === "")).toHaveLength(0);
   expect((await f.reader.activity(call, { q: "older/child/file.txt" })).items).toEqual([]);
   expect((await f.reader.activity(call, { baseId: publicBaseId, path: "old/child" })).items).toHaveLength(2);
 });
@@ -153,12 +148,12 @@ test("500-candidate scans and 50-row pages count only visible batch members; cur
   const f = historyFixture(rows);
   f.nodes.set(`${home}/secret`, f.node(`${home}/secret`, "stable-a"));
   f.denied.add("secret");
-  const first = await f.reader.activity(call);
+  const first = await f.reader.activity(call, { q: "new" });
   expect(first.items).toEqual([]);
   expect(first.scanLimitReached).toBe(true);
   expect(first.exhausted).toBe(false);
   expect(first.next).not.toBeNull();
-  const second = await f.reader.activity(call, { cursor: first.next! });
+  const second = await f.reader.activity(call, { q: "new", cursor: first.next! });
   expect(second.items).toHaveLength(50);
   expect(second.batches).toEqual([{ id: batchId, visibleCount: 50 }]);
   expect(second.next).toBeNull();
@@ -197,8 +192,7 @@ test("candidate windows round outward in UTC while inclusive exact filters follo
       }),
     ),
   );
-  // Own snapshots remain legitimate with revoked membership, including exact-time filtering.
-  f.setMember(false);
+  // Exact filters apply to authorized own snapshots.
   const page = await f.reader.activity(call, {
     from: "2030-05-15T14:10:00.000+02:00",
     to: "2030-05-15T14:40:00.000+02:00",
@@ -217,7 +211,7 @@ test("candidate windows round outward in UTC while inclusive exact filters follo
     limit: 500,
     from: "2030-05-15T12:00:00.000Z",
     to: "2030-05-15T13:00:00.000Z",
-    scope: { admin: false, userId: actorId, bindingIds: [] },
+    scope: { admin: false, userId: actorId, bindingIds: [], serverUrl: "http://filegate.test" },
     baseId: undefined,
   });
   expect(f.requests).toEqual([]);
@@ -389,13 +383,13 @@ test("unknown actions fail closed and full-only version metadata stays action sp
 test("privileged 403 never means missing, and outages remain visible failures", async () => {
   const f = historyFixture([candidate(1, { path_before: null })]);
   f.statFailures.set(`${home}/new`, 403);
-  expect((await f.reader.activity(call)).items).toEqual([]);
+  expect((await f.reader.activity(call)).items[0]?.after).toMatchObject({ source: "snapshot" });
   expect(f.authorized).toEqual([]);
   f.statFailures.set(`${home}/new`, 500);
   await expect(f.reader.activity(call)).rejects.toMatchObject({ status: 500 });
 });
 
-test("an authorization race cannot turn a same-identity denial into parent visibility", async () => {
+test("a refused current target preserves the authorized local snapshot without navigation", async () => {
   const f = historyFixture([candidate(1, { path_before: null })]);
   const original = f.deps.requestContext;
   f.deps.requestContext = async (...args) => {
@@ -408,7 +402,7 @@ test("an authorization race cannot turn a same-identity denial into parent visib
       },
     };
   };
-  expect((await f.reader.activity(call)).items).toEqual([]);
+  expect((await f.reader.activity(call)).items[0]?.after).toMatchObject({ source: "snapshot" });
   expect(f.authorized).toEqual([]);
 });
 
@@ -427,7 +421,7 @@ test("share expiry is projected only for full share events, never hidden or disa
     const f = historyFixture([candidate(1, { action, share_expires_at: expiresAt, path_before: null })]);
     expect((await f.reader.activity(call)).items[0]?.share).toEqual({ expiresAt: expiresAt.toISOString() });
     const own = historyFixture([candidate(1, { action, actor_user_id: actorId, share_expires_at: expiresAt })]);
-    own.setMember(false);
+    own.setMember(true);
     expect((await own.reader.activity(call)).items[0]?.share).toEqual({ expiresAt: expiresAt.toISOString() });
     const admin = historyFixture([candidate(1, { action, share_expires_at: null })]);
     admin.setAdmin(true);
@@ -453,10 +447,10 @@ test("disappearance retains historical file/folder type without claiming snapsho
     publicBaseId,
     relativePath: "old",
   });
-  f.denied.add("");
+  f.setMember(false);
   expect((await f.reader.activity(call)).items).toEqual([]);
   const legacy = historyFixture([candidate(1, { actor_user_id: actorId, metadataUnknown: true })]);
-  legacy.setMember(false);
+  legacy.setMember(true);
   const side = (await legacy.reader.activity(call)).items[0]?.before;
   expect(side).toEqual({
     visibility: "disappearance",
@@ -505,23 +499,13 @@ test("pagination survives a new invocation and live actor-name changes while rem
   await expect(f.reader.activity(otherActor, { cursor: first.next! })).rejects.toMatchObject({ code: "invalid_cursor" });
 });
 
-test("readable no-ID leaves need no parent listing permission, while unreadable leaves cannot use it", async () => {
+test("local grants preserve minimal no-ID history when current leaf access fails", async () => {
   const f = historyFixture([candidate(1, { path_before: null, item_after_id: null })]);
   f.denied.add("");
-  expect((await f.reader.activity(call)).items[0]?.after).toEqual({
-    visibility: "disappearance",
-    name: "new",
-    path: `${home}/new`,
-    directory: true,
-    publicBaseId,
-    relativePath: "new",
-  });
-  f.denied.delete("");
+  expect((await f.reader.activity(call)).items[0]?.after.visibility).toBe("disappearance");
   f.denied.add("new");
-  expect((await f.reader.activity(call)).items).toEqual([]);
-  // IDs from a root that no longer promises stable IDs cannot prove replacement and bypass its leaf ACL.
-  f.setStableIds(false);
-  f.nodes.set(`${home}/new`, f.node(`${home}/new`, "different-untrusted-id"));
+  expect((await f.reader.activity(call)).items).toHaveLength(1);
+  f.setMember(false);
   expect((await f.reader.activity(call)).items).toEqual([]);
 });
 
@@ -554,22 +538,22 @@ test("unknown snapshot metadata stays minimal for own, admin and currently autho
     });
     const f = historyFixture([row]);
     f.setAdmin(viewer === "admin");
-    f.setMember(viewer === "reader");
+    f.setMember(viewer !== "admin");
     const page = await f.reader.activity(call);
     expect(page.items[0]?.before).toEqual({
       visibility: "disappearance",
       name: "new",
       path: `${home}/new`,
       directory: null,
-      publicBaseId: viewer === "reader" ? publicBaseId : null,
-      relativePath: viewer === "reader" ? "new" : null,
+      publicBaseId: viewer !== "admin" ? publicBaseId : null,
+      relativePath: viewer !== "admin" ? "new" : null,
     });
     expect(page.items[0]?.execution).toBeUndefined();
     expect(JSON.stringify(page)).not.toMatch(/revision|observation|stable-a|version-private/);
     expect((await f.reader.activity(call, { itemId: "stable-a" })).items).toEqual([]);
     if (viewer !== "reader") expect(f.requests).toEqual([]);
     if (viewer === "reader") {
-      f.denied.add("new");
+      f.setMember(false);
       expect((await f.reader.activity(call)).items).toEqual([]);
     }
   }
@@ -594,10 +578,10 @@ test("single event uses the same projection and returns not_found for hidden or 
   const row = candidate(1, { path_before: null, path_after: `${home}/secret-name` });
   const f = historyFixture([row]);
   f.nodes.set(`${home}/secret-name`, f.node(`${home}/secret-name`, "stable-a"));
-  f.denied.add("secret-name");
+  f.setMember(false);
   await expect(f.reader.activityEntry(call, { activityId: row.id })).rejects.toMatchObject({ code: "not_found", status: 404 });
   await expect(f.reader.activityEntry(call, { activityId: candidate(2).id })).rejects.toMatchObject({ code: "not_found", status: 404 });
-  f.denied.delete("secret-name");
+  f.setMember(true);
   const page = await f.reader.activity(call);
   expect(await f.reader.activityEntry(call, { activityId: row.id })).toEqual(page.items[0]!);
 });
@@ -906,8 +890,7 @@ test("display paths are base-relative only on independently approved sides, incl
   f.denied.add("new");
   const restricted = (await f.reader.activity(call)).items[0]!;
   expect(restricted.before).toMatchObject({ relativePath: "old" });
-  expect(restricted.after).toEqual({ visibility: "hidden" });
-  expect(JSON.stringify(restricted.after)).not.toMatch(/path|relativePath|publicBaseId|itemId|size/);
+  expect(restricted.after).toMatchObject({ visibility: "full", source: "snapshot", relativePath: "new" });
 });
 
 test("own snapshots may name a current binding without acquiring current item authority", async () => {
@@ -923,17 +906,10 @@ test("own snapshots may name a current binding without acquiring current item au
   expect(f.authorized).toEqual([]);
   expect(f.requests).toEqual([]);
   f.setMember(false);
-  expect((await f.reader.activity(call)).items[0]?.before).toMatchObject({ source: "snapshot", publicBaseId: null, relativePath: null });
+  expect((await f.reader.activity(call)).items).toEqual([]);
   const legacy = historyFixture([candidate(1, { actor_user_id: actorId, metadataUnknown: true })]);
   legacy.setMember(false);
-  expect((await legacy.reader.activity(call)).items[0]?.before).toEqual({
-    visibility: "disappearance",
-    name: "old",
-    path: `${home}/old`,
-    directory: null,
-    publicBaseId: null,
-    relativePath: null,
-  });
+  expect((await legacy.reader.activity(call)).items).toEqual([]);
 });
 
 test("an old descendant address uses its own fresh leaf, never the moved ancestor's stable identity", async () => {
@@ -1003,7 +979,7 @@ test("a descendant request must stay inside the visible before-side's current ba
   });
   const hiddenBefore = historyFixture();
   hiddenBefore.nodes.set(`${home}/old`, hiddenBefore.node(`${home}/old`, "stable-a"));
-  hiddenBefore.denied.add("old");
+  hiddenBefore.setMember(false);
   await expect(hiddenBefore.reader.movementChain(call, { activityId: candidate().id, oldPath: "old/child" })).rejects.toMatchObject({
     status: 404,
   });

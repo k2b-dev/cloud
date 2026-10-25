@@ -1,4 +1,8 @@
 const messages: Record<string, [string, string]> = {
+  history_unavailable: [
+    "History is available only for local Cloud storage. This area uses Unix permissions, which history cannot check.",
+    "Der Verlauf ist nur für lokale Cloud-Ablagen verfügbar. Dieser Bereich verwendet Unix-Rechte, die der Verlauf nicht prüfen kann.",
+  ],
   share_access_cursor_expired: [
     "The network page expired or the date range changed. Refresh the first page of link access counts.",
     "Die Netzseite ist abgelaufen oder der Zeitraum wurde geändert. Lade die erste Seite der Linkzugriffe neu.",

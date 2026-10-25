@@ -4,6 +4,7 @@ import {
   ACTIVITY_PAGE_LIMIT,
   ACTIVITY_SCAN_LIMIT,
   type ActivityEntry,
+  HistoryAction,
   type ShareAccessCounts,
   ShareAccessInput,
   ShareAccessNetwork,
@@ -52,7 +53,7 @@ export type ActivityCandidate = {
 };
 export type ActivityPosition = { time: string; id: string };
 export type CandidateInput = {
-  scope: { admin: boolean; userId: string; bindingIds: string[] };
+  scope: { admin: boolean; userId: string; bindingIds: string[]; serverUrl: string };
   baseId?: string;
   /** Only supplied after projecting a visible anchor; peers exclude that already counted event. */
   batch?: { id: string; anchorId: string };
@@ -151,7 +152,7 @@ export const activityReaderData = {
     const bindings = filter.bindingIds ? sql`id=ANY(${toPgUuidArray(filter.bindingIds)}::uuid[])` : sql`TRUE`;
     const query = sql<Pick<Binding, "id" | "area" | "kind" | "identity_id" | "identity_name" | "root" | "path">[]>`
     SELECT id,area,kind,identity_id,identity_name,root,path FROM filesv2.bases
-    WHERE (${after ?? null}::uuid IS NULL OR id>${after ?? null}::uuid) AND ${identities} AND ${bindings}
+    WHERE (${after ?? null}::uuid IS NULL OR id>${after ?? null}::uuid) AND area='cloud' AND ${identities} AND ${bindings}
     ORDER BY id LIMIT ${limit + 1}`;
     const rows = await readQuery(query, budget);
     return { items: rows.slice(0, limit), next: rows.length > limit ? rows[limit - 1]!.id : null };
@@ -167,18 +168,24 @@ export const activityReaderData = {
       s.share_expires_at,
       (detail @> '{"metadata_unknown":true}'::jsonb OR detail @> '{"snapshot_unknown":true}'::jsonb
         OR detail @> '{"directory_unknown":true}'::jsonb) AS "metadataUnknown"`;
-    const scope = input.scope.admin
-      ? sql`TRUE`
-      : sql`(
-      base_id=ANY(${toPgUuidArray(input.scope.bindingIds)}::uuid[]) OR base_after_id=ANY(${toPgUuidArray(input.scope.bindingIds)}::uuid[])
-      OR (actor_kind='user' AND actor_user_id=${input.scope.userId}::uuid))`;
-    // A public-base filter also includes the original actor's retired/historical bindings.
-    const base =
-      input.baseId === undefined
-        ? sql`TRUE`
-        : sql`EXISTS (
-      SELECT 1 FROM filesv2.bases b WHERE (b.id=base_id OR b.id=base_after_id)
-      AND b.area || ':' || b.kind || ':' || b.identity_id::text = ${input.baseId})`;
+    // Local areas have one Cloud grant boundary for the whole tree. Scope BOTH sides
+    // before LIMIT, including historical bindings for administrators. Neither authorship
+    // nor a readable other side grants access to this side.
+    const visibleSide = (after: boolean) => {
+      const id = after
+        ? sql`coalesce(activity.base_after_id,CASE WHEN coalesce(activity.root_after,activity.root)=activity.root THEN activity.base_id END)`
+        : sql`activity.base_id`;
+      const root = after ? sql`coalesce(activity.root_after,activity.root)` : sql`activity.root`;
+      const path = after ? sql`activity.path_after` : sql`activity.path_before`;
+      return sql`EXISTS (SELECT 1 FROM filesv2.bases b WHERE b.id=${id} AND b.area='cloud'
+        AND b.root=${root} AND ${path} IS NOT NULL
+        AND (${path}=b.path OR starts_with(${path},b.path || '/'))
+        AND (${input.scope.admin} OR (b.lifecycle='active' AND b.id=ANY(${toPgUuidArray(input.scope.bindingIds)}::uuid[])
+          AND activity.server_url=${input.scope.serverUrl}))
+        AND (${input.baseId ?? null}::text IS NULL OR b.area || ':' || b.kind || ':' || b.identity_id::text=${input.baseId ?? null}))`;
+    };
+    const scope = sql`(${visibleSide(false)} OR ${visibleSide(true)})
+      AND action=ANY(${toPgTextArray(HistoryAction.options)}::text[])`;
     const ancestors = input.chain ? input.chain.path.split("/").map((_, index, parts) => parts.slice(0, index + 1).join("/")) : [];
     ancestors.unshift("");
     const chain = !input.chain
@@ -205,7 +212,7 @@ export const activityReaderData = {
           'version.restore_copy','place.provision','item.rename','item.move','place.archive','place.restore')))`;
     // Actor/action filters follow projection in the service; a sparse match must not make SQL walk an unbounded range.
     const batch = input.batch ? sql`batch_id=${input.batch.id}::uuid AND activity.id<>${input.batch.anchorId}::uuid` : sql`TRUE`;
-    const filters = sql`${scope} AND ${base} AND ${chain} AND ${batch} AND (${input.from ?? null}::timestamptz IS NULL OR coalesce(finished_at,started_at)>=${input.from ?? null}::timestamptz)
+    const filters = sql`${scope} AND ${chain} AND ${batch} AND (${input.from ?? null}::timestamptz IS NULL OR coalesce(finished_at,started_at)>=${input.from ?? null}::timestamptz)
       AND (${input.to ?? null}::timestamptz IS NULL OR coalesce(finished_at,started_at)<=${input.to ?? null}::timestamptz)`;
     budget?.check();
     const query =

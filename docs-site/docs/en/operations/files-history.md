@@ -103,16 +103,22 @@ The Files history API, `cld filesv2 history`, and the `activity.list`,
 reader. Reading history never provisions storage or adopts a new binding.
 Group management grants no additional history access.
 
-Each side of a change is checked separately against current membership,
-filesystem read permissions, and stable identity. A readable old parent can
-show that an item disappeared, its old name, actor, and time. The destination
-remains hidden unless it passes its own check. Without stable identities,
-other people's entries expose only these minimal fields. A disappearance side
-also carries `directory` (null for unknown legacy metadata) and `publicBaseId`
-(null unless current access establishes that base). It carries no item ID,
-size, revision, or later observation. Own actions retain
-their recorded snapshots; those snapshots do not authorize navigation to a
-current location. Administrators can read recorded snapshots across bases.
+History is available only for local Cloud areas: Cloud grants control access to
+all items in the area, without a per-user Unix execution identity. POSIX and
+FreeIPA areas return `history_unavailable` (HTTP 409) when selected. Their item
+and area views show a notice in the viewer's language. Filegate's index does
+not contain the Unix ACLs needed to authorize historical activity, so Files
+does not offer history for those areas.
+
+Postgres selects only authorized local bindings before applying `LIMIT` or
+counting batch members. Each side of a move or copy requires its own current
+Cloud grant; a visible source does not disclose a hidden destination. Rows in
+other areas cannot change page sizes, counts, scan limits or cursor anchors.
+Losing a grant also removes access to the person's own earlier actions in that
+area. Administrators can read local snapshots, including archived bindings;
+they receive no POSIX history. Stored snapshots never authorize navigation or
+recovery: those operations check the current target separately.
+
 Names are resolved from live accounts; deleted accounts have no retained name.
 Fully visible `share.create` and `share.revoke` entries include
 `share.expiresAt` from the retained share. Null means no recorded expiry or a
@@ -129,8 +135,8 @@ available. Chains never claim complete history across retention gaps.
 `GET /api/filesv2/activity/:activityId/batch` freshly authorizes the selected
 event before reading its batch. It returns only `{visibleCount, complete}`;
 search filters and page boundaries do not restrict that count. The anchor is
-included, and each peer passes the same current ACL and own-snapshot projection
-in one request context. Unknown, denied and unbatched anchors all return 404.
+included, and Postgres scopes peers to the same authorized local areas
+before the bounded read. Unknown, denied and unbatched anchors all return 404.
 No peer names, paths, people or raw totals are returned.
 
 The read inspects at most 500 events, including the anchor. `complete: true`
@@ -162,7 +168,9 @@ own name and an explicit jump action; it never redirects automatically.
 Omitting `oldPath` keeps the existing exact-item chain behavior.
 
 Only a public link's creator and current administrators can read its access
-counts and shortened networks; a current full user profile is required.
+counts and shortened networks. The link must belong to a local Cloud area,
+and the viewer must retain its Cloud grant or be an administrator. A current
+full user profile is required.
 The access result repeats the selected inclusive UTC dates as `from` and `to`.
 Its `pages`, `downloads`, and `passwordFailed` totals cover the whole period,
 independently of either page cursor. Networks are shown only for the last 30 days,
@@ -206,7 +214,7 @@ and non-null `pageNetworks`; when null, show only the page count.
 
 Administrators use `GET /api/filesv2/admin/activity/bases?q=…&after=…` for
 history filter labels. It returns `{items,next}` with at most 50 recorded
-bindings, including archived locations. Each item has `id` (the public base ID),
+local Cloud bindings, including archived locations. Each item has `id` (the public base ID),
 `bindingId` (its UUID), `area`, `kind`, `name`, `displayName`, `root`, and `path`.
 Names come from current accounts; deleted users are labeled “Deleted account”,
 while missing groups use the recorded base name. Search matches the displayed
