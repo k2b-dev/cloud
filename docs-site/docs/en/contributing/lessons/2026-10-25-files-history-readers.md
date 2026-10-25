@@ -1,3 +1,12 @@
+---
+title: Files history reader checks
+section: Contributing
+order: 1603
+description: Verify bounded history counts, movement chains and access aggregates.
+tags: [contributing, testing]
+updated: 2026-10-25
+---
+
 # Files history checks
 
 ## A filtered page masquerades as batch context
