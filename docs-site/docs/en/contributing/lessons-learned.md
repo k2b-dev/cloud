@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A loopback smoke sends the wrong session origin | A smoke opens its page on loopback while Cloud expects the public origin; the live socket is refused with `forbidden_origin` and `1008`. | Tests: Grids `browser-smoke-live.browser.test.ts` observes the loopback browser's origin, tests the public-origin relay, and keeps other sockets untouched; `browser-smoke-live.test.ts` executes Nightly's smoke loop and checks the Grids and Chat arguments. The browser guard also checks that diagnostics omit payloads and arbitrary close reasons. |
 | A browser fixture pauses a clock at a time that already passed | Installing a running clock and pausing at its initial timestamp races browser command latency; a busy host reports “Cannot fast-forward to the past”. | Test: Pulse `WorkspaceClock.browser.test.ts` advances the clock before pausing, then verifies the exact fixture time across navigation and subsequent timer advancement. Freeze wall time before pausing and restore normal clock advancement while paused. |
 | Per-request browser fixtures repeatedly compile the server | Cold Babel and workspace imports consume the snapshot deadline before the page executes. | Test: Pulse `PulseWorkspace.browser.test.ts` renders the real page from a bundle prepared once during setup. Each render still runs in a fresh process with the unchanged 15-second deadline; only app-owned page data and platform SSR preloads are substituted. |
 | An SSR browser fixture leaves an asset request external | The generated shell requests its branding image, but the fixture intercepts only app and API routes; navigation can wait on DNS or the unavailable host instead of reaching `load`. | Test: Pulse `PulseWorkspace.browser.test.ts` supplies a local branding SVG, rejects unexpected requests, checks decoded logo images, and retains the normal navigation load wait and SSR height checks. |
@@ -1031,6 +1032,13 @@ convention still needs a check or a test.
 - **Error class:** Reading asynchronous state before the completion condition.
 - **Guard:** `data-table-focus.browser.test.ts` waits for the destination URL, then retains its exact URL and callback-count assertions without increasing timeouts.
 
+
+### Isolate PDF consumer unit tests at admission and HTTP
+
+- **What happened:** The query-export starter escaping test failed before its mocked renderer request.
+- **Root cause:** Shared PDF rendering requires downstream admission; this consumer unit test mocked HTTP but omitted the existing admission fixture.
+- **Error class:** A unit test accidentally depends on shared infrastructure.
+- **Guard:** The starter test uses the scoped PDF admission mock, asserts one admission attempt, and retains the actual template-rendering and escaping assertions. Platform and integration tests continue to exercise real admission.
 ### Browser destinations must not mount unrelated applications
 
 - **What happened:** Studio's WebKit navigation test reported runtime fetch errors while leaving its dummy edit-chat page.
