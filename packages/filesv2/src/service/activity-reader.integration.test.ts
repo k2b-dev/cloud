@@ -120,6 +120,17 @@ suite("history reader SQL and permission projection in a private database", () =
     });
   });
 
+  test("archived local locations remain readable for administrators before pagination", async () => {
+    await sql`UPDATE filesv2.bases SET lifecycle='archived' WHERE id=${baseId}::uuid`;
+    await seed(candidate(1, { action: "place.archive", path_before: null, path_after: "archive/alice/file" }));
+    const f = fixture();
+    expect((await f.reader.activity(call)).items).toHaveLength(0);
+    f.setAdmin(true);
+    const page = await f.reader.activity(call);
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]?.after).toMatchObject({ visibility: "full", source: "snapshot", path: "archive/alice/file" });
+  });
+
   test("reads actual rows, resolves live names, strips private detail, and preserves FK name deletion", async () => {
     await seed();
     const f = fixture();
