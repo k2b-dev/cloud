@@ -429,6 +429,10 @@ suite("Admin credential matrix", () => {
       `;
       expect(createdAccounts).toHaveLength(statuses.createServiceAccount === 201 ? 1 : 0);
       // PUT /api/admin/core/settings
+      // Pin the database fixture's time so successive saves cannot share the comparison baseline's clock tick.
+      await sql`
+        UPDATE settings.entries SET updated_at = '2000-01-01T00:00:00Z'::timestamptz WHERE key = ${settingKey}
+      `;
       const [settingBefore] = await sql<{ updated_at: number }[]>`
         SELECT extract(epoch FROM updated_at)::double precision AS updated_at FROM settings.entries WHERE key = ${settingKey}
       `;
