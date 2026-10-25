@@ -20,6 +20,7 @@ test("Mail integration selects every real infrastructure suite, including gated 
   expect(selected).toContain(resolve(mailRoot, "src/api/focus.test.ts"));
   expect(selected).toContain(resolve(mailRoot, "src/service/performance.integration.test.ts"));
   expect(selected).toContain(resolve(mailRoot, "src/service/connectors/connector-conformance.integration.test.ts"));
+  expect(selected).toContain(resolve(mailRoot, "test/workflow-kernel.integration.test.ts"));
   expect(selected).not.toContain(resolve(mailRoot, "src/frontend/mail-shell.browser.test.ts"));
   expect(selected).not.toContain(resolve(mailRoot, "src/contracts.test.ts"));
   expect(selected).not.toContain(import.meta.path);
