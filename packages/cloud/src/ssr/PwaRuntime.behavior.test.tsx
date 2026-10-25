@@ -50,6 +50,8 @@ type Harness = {
 const mount = (
   options: {
     keepalive?: boolean;
+    builds?: Record<string, string>;
+    rememberAddress?: boolean;
     url?: string;
     online?: boolean;
     renewedThisSession?: boolean;
@@ -59,6 +61,7 @@ const mount = (
   const { ui, PwaRuntime } = modules!;
   const dom = createDomTestHarness();
   options.before?.(dom);
+  Object.defineProperty(dom.document, "visibilityState", { configurable: true, value: "visible" });
   if (options.url) dom.window.history.replaceState(null, "", options.url);
   if (options.renewedThisSession) dom.window.sessionStorage.setItem("cloud.pwa.renewed", "1");
   const harness: Harness = { dom, registrations: [], reloads: 0, replaced: [], intervals: [], dispose: () => {} };
@@ -82,7 +85,13 @@ const mount = (
       createComponent(ui.LocaleProvider, {
         locale: "en",
         get children() {
-          return createComponent(PwaRuntime, { keepalive: options.keepalive ?? true, cloud: "Example Cloud" });
+          return createComponent(PwaRuntime, {
+            keepalive: options.keepalive ?? true,
+            accountId: "mia",
+            rememberAddress: options.rememberAddress ? { cookie: "pwa_last_address", maxAge: 12960000 } : undefined,
+            builds: options.builds ?? { inventory: "old", core: "core-old" },
+            cloud: "Example Cloud",
+          });
         },
       }),
     dom.root,
@@ -103,6 +112,176 @@ const setVisibility = (dom: DomTestHarness, state: "visible" | "hidden") => {
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
+  test("remembers the place when a page arrives and when the app leaves the foreground, without fragments or welcome states", () => {
+    const page = mount({
+      renewedThisSession: true,
+      rememberAddress: true,
+      before: (dom) => dom.window.happyDOM.setURL("https://cloud.example.test/pwa/spaces"),
+    });
+    const remembered = () => decodeURIComponent(/pwa_last_address=([^;]*)/.exec(page.dom.document.cookie)?.[1] ?? "");
+    try {
+      expect(remembered()).toBe("/pwa/spaces");
+      // A part keeps a selection in the address without a page load.
+      page.dom.window.history.pushState(null, "", "/pwa/spaces/demo/task?view=mine#ignored");
+      setVisibility(page.dom, "hidden");
+      expect(remembered()).toBe("/pwa/spaces/demo/task?view=mine");
+      setVisibility(page.dom, "visible");
+      page.dom.window.history.pushState(null, "", "/pwa/?pwa=ended");
+      setVisibility(page.dom, "hidden");
+      expect(remembered()).toBe("/pwa/spaces/demo/task?view=mine");
+    } finally {
+      page.dispose();
+    }
+  });
+
+  test("a page being left never writes over the next page's address or a sign-out's deletion", () => {
+    const page = mount({
+      renewedThisSession: true,
+      rememberAddress: true,
+      before: (dom) => dom.window.happyDOM.setURL("https://cloud.example.test/pwa/spaces/demo/task"),
+    });
+    const remembered = () => decodeURIComponent(/pwa_last_address=([^;]*)/.exec(page.dom.document.cookie)?.[1] ?? "");
+    // happy-dom ignores `persisted` in the event's options, so it is set on the event.
+    const transition = (type: "pagehide" | "pageshow", persisted: boolean) =>
+      page.dom.window.dispatchEvent(Object.defineProperty(new page.dom.window.Event(type), "persisted", { value: persisted }));
+    const leave = () => {
+      transition("pagehide", false);
+      setVisibility(page.dom, "hidden");
+    };
+    try {
+      // The next page's response has set its address before this document fires its leaving events.
+      page.dom.document.cookie = `pwa_last_address=${encodeURIComponent("/pwa/chat")}; Path=/pwa/; Secure`;
+      leave();
+      expect(remembered()).toBe("/pwa/chat");
+      // A sign-out answer deleted the cookie; leaving does not bring it back.
+      page.dom.document.cookie = "pwa_last_address=; Path=/pwa/; Max-Age=0; Secure";
+      leave();
+      expect(remembered()).toBe("");
+      // A page restored from the back-forward cache is current again.
+      setVisibility(page.dom, "visible");
+      transition("pageshow", true);
+      expect(remembered()).toBe("/pwa/spaces/demo/task");
+    } finally {
+      page.dispose();
+    }
+  });
+  test("reloads the same address on foreground when its owner or Core changed, with no unsaved text", async () => {
+    for (const builds of [
+      { inventory: "new", core: "core-old" },
+      { inventory: "old", core: "core-new" },
+    ]) {
+      const fetch = mockRenew([Response.json({ renewed: false, builds })]);
+      const page = mount({ url: "/pwa/inventory/item?view=mine", renewedThisSession: true });
+      try {
+        setVisibility(page.dom, "hidden");
+        setVisibility(page.dom, "visible");
+        await waitFor(() => page.reloads === 1, "safe foreground reload");
+        expect(page.dom.window.location.pathname + page.dom.window.location.search).toBe("/pwa/inventory/item?view=mine");
+      } finally {
+        page.dispose();
+        fetch.restore();
+      }
+    }
+  });
+
+  test("does nothing when versions match, another part changes, or the owner is temporarily absent", async () => {
+    for (const builds of [{ inventory: "old", core: "core-old", spaces: "new" }, { core: "core-old" }]) {
+      const fetch = mockRenew([Response.json({ renewed: false, builds })]);
+      const page = mount({ renewedThisSession: true });
+      try {
+        setVisibility(page.dom, "visible");
+        await waitFor(() => fetch.calls.length === 1, "renewal");
+        await Bun.sleep(20);
+        expect(page.reloads).toBe(0);
+        expect(page.dom.document.body.textContent).not.toContain("New version of Example Cloud");
+      } finally {
+        page.dispose();
+        fetch.restore();
+      }
+    }
+  });
+
+  test("offers a persistent reload action for focused text, stored drafts, and blurred unsaved input", async () => {
+    for (const mode of ["focused", "draft", "edited", "number focused", "date edited"]) {
+      const fetch = mockRenew([Response.json({ renewed: false, builds: { inventory: "new" } })]);
+      const page = mount({ renewedThisSession: true });
+      try {
+        // Numbers, dates and times are typed input too.
+        const input =
+          mode.startsWith("number") || mode.startsWith("date")
+            ? page.dom.document.createElement("input")
+            : page.dom.document.createElement("textarea");
+        if (mode.startsWith("number")) input.setAttribute("type", "number");
+        if (mode.startsWith("date")) input.setAttribute("type", "date");
+        page.dom.document.body.append(input);
+        if (mode.endsWith("focused")) input.focus();
+        if (mode === "draft") page.dom.window.localStorage.setItem("cloud.pwa.draft:mia:chat", "unfinished");
+        if (mode.endsWith("edited")) {
+          input.value = mode.startsWith("date") ? "2026-10-24" : "unfinished";
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.blur();
+        }
+        setVisibility(page.dom, "visible");
+        await waitFor(() => page.dom.document.body.textContent?.includes("New version of Example Cloud") ?? false, "update notice");
+        expect(page.reloads).toBe(0);
+        const notice = page.dom.document.querySelector("[data-k2b-toast]")!;
+        expect(notice.textContent).toContain("Reload");
+        const reload = [...notice.querySelectorAll("button")].find((button) => button.textContent === "Reload")!;
+        reload.click();
+        expect(page.reloads).toBe(1);
+        if (mode === "draft") expect(page.dom.window.localStorage.getItem("cloud.pwa.draft:mia:chat")).toBe("unfinished");
+      } finally {
+        page.dispose();
+        fetch.restore();
+      }
+    }
+  });
+
+  test("re-checks focus after renewal, and never reloads in the background or on the hourly timer", async () => {
+    let release!: (response: Response) => void;
+    const fetch = mockRenew([
+      new Promise<Response>((resolve) => {
+        release = resolve;
+      }),
+    ]);
+    const page = mount({ renewedThisSession: true });
+    try {
+      setVisibility(page.dom, "visible");
+      await waitFor(() => fetch.calls.length === 1, "renewal started");
+      const input = page.dom.document.createElement("input");
+      page.dom.document.body.append(input);
+      input.focus();
+      release(Response.json({ renewed: false, builds: { inventory: "new" } }));
+      await waitFor(() => page.dom.document.body.textContent?.includes("New version of Example Cloud") ?? false, "notice after focus");
+      expect(page.reloads).toBe(0);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+    const hourly = mockRenew([Response.json({ renewed: false, builds: { inventory: "new" } })]);
+    const later = mount({ renewedThisSession: true });
+    try {
+      later.intervals[0]!();
+      await waitFor(() => later.dom.document.body.textContent?.includes("New version of Example Cloud") ?? false, "hourly notice");
+      expect(later.reloads).toBe(0);
+    } finally {
+      later.dispose();
+      hourly.restore();
+    }
+  });
+
+  test("an address that names an ended pairing deletes no drafts: only the launch's answer does", async () => {
+    const page = mount({
+      keepalive: false,
+      url: "/pwa/?pwa=ended",
+      before: (dom) => dom.window.localStorage.setItem("cloud.pwa.draft:mia:chat", "old"),
+    });
+    try {
+      expect(page.dom.window.localStorage.getItem("cloud.pwa.draft:mia:chat")).toBe("old");
+    } finally {
+      page.dispose();
+    }
+  });
   test("registers the app's service worker for /pwa/ and removes the launch marker from the address", async () => {
     const fetch = mockRenew([]);
     const harness = mount({ url: "/pwa/inventory?view=open&pwa_launch=1#top" });
@@ -178,11 +357,34 @@ else {
     }
   });
 
+  test("a removed device during the rotation confirmation clears drafts and never triggers an update reload", async () => {
+    const fetch = mockRenew([
+      Response.json({ renewed: true, builds: { inventory: "new" } }),
+      Response.json({ code: "UNPAIRED" }, { status: 401 }),
+    ]);
+    const page = mount({ renewedThisSession: true, before: (dom) => dom.window.localStorage.setItem("cloud.pwa.draft:mia:chat", "hello") });
+    try {
+      setVisibility(page.dom, "visible");
+      await waitFor(() => page.replaced.length === 1, "removed device");
+      expect(page.dom.window.localStorage.length).toBe(0);
+      expect(page.reloads).toBe(0);
+      expect(page.dom.document.body.textContent).not.toContain("New version of Example Cloud");
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
   test("opens the signed-out pairing view when the phone is no longer paired, and the blocked state for a blocked account", async () => {
     const unpaired = mockRenew([Response.json({ code: "UNPAIRED", message: "" }, { status: 401 })]);
-    let harness = mount();
+    let harness = mount({
+      before: (dom) => {
+        dom.window.localStorage.setItem("cloud.pwa.draft:mia:chat", "hello");
+      },
+    });
     try {
       await waitFor(() => harness.replaced.length === 1, "signed-out state");
+      expect(harness.dom.window.localStorage.length).toBe(0);
       expect(harness.replaced).toEqual(["/pwa/?pwa=ended"]);
       expect(harness.reloads).toBe(0);
     } finally {

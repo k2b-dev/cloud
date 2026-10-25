@@ -13,8 +13,9 @@ import {
   wakeExpiredWorkflowRuns,
   workflowEffectKey,
 } from "@k2b/cloud/workflows/store";
-import { redis, sql } from "bun";
+import { redis, SQL, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { countPostgresRoundTrips } from "../../test/postgres-round-trips";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -58,7 +59,14 @@ import {
   loadSenderIdentityTransportRuntime,
   upsertSenderIdentityTransport,
 } from "./sender-identity-transports";
-import { claimFence, commitSyncBatch, executeBindingRediscovery, fetchReconcileStep, hydrateMessageBatch } from "./sync-runtime";
+import {
+  claimFence,
+  commitSyncBatch,
+  executeBindingRediscovery,
+  fetchReconcileStep,
+  hydrateMessageBatch,
+  ingestEnvelope,
+} from "./sync-runtime";
 import { createConversationTriageCommands } from "./triage";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -1690,6 +1698,62 @@ suite("mail lifecycle control plane", () => {
       bcc: [],
     },
     mimeStructure: {},
+  });
+
+  test("a 200-envelope first import avoids redundant database round trips", async () => {
+    const fixture = await reconcileFixture({ key: "batch-round-trips", uidValidity: "81", localUids: [] });
+    const counter = await countPostgresRoundTrips(process.env.DATABASE_URL!);
+    const measured = new SQL(counter.url, { max: 1, tls: false });
+    const messages = Array.from({ length: 200 }, (_, index) => ({
+      ...reconcileEnvelope(index + 1, "81", fixture.folderId, "round-trips"),
+      subject: `Independent message ${index + 1}`,
+      sentAt: new Date("2026-01-02T03:04:05.000Z"),
+      internalDate: new Date("2026-01-02T03:04:05.000Z"),
+    }));
+    try {
+      await measured`SELECT 1`;
+      const before = counter.count();
+      const started = performance.now();
+      const ids = await measured.begin(async (db) => {
+        const ids: string[] = [];
+        for (const message of messages)
+          ids.push(await ingestEnvelope({ db, mailboxId, remoteResourceId: fixture.resourceId, folderId: fixture.folderId, message }));
+        return ids;
+      });
+      const milliseconds = performance.now() - started;
+      const roundTrips = counter.count() - before;
+      console.log(
+        JSON.stringify({
+          benchmark: "mail-first-sync-200",
+          messages: ids.length,
+          roundTrips,
+          milliseconds: Math.round(milliseconds),
+          messagesPerSecond: Math.round(200_000 / milliseconds),
+        }),
+      );
+      expect(new Set(ids).size).toBe(200);
+      expect(roundTrips).toBeLessThanOrEqual(200 * 18 + 2);
+      // Replaying the batch must retain the same canonical contents and flags.
+      const replay = await measured.begin(async (db) => {
+        const ids: string[] = [];
+        for (const message of messages)
+          ids.push(await ingestEnvelope({ db, mailboxId, remoteResourceId: fixture.resourceId, folderId: fixture.folderId, message }));
+        return ids;
+      });
+      expect(replay).toEqual(ids);
+      const [state] = await sql<{ messages: number; unread: number; conversations: number }[]>`
+        SELECT count(DISTINCT p.message_id)::int AS messages,
+          count(*) FILTER (WHERE NOT ('\\Seen' = ANY(p.flags)))::int AS unread,
+          count(DISTINCT cm.conversation_id)::int AS conversations
+        FROM mail.message_placements p JOIN mail.conversation_messages cm ON cm.message_id = p.message_id
+        WHERE p.folder_id = ${fixture.folderId}::uuid AND p.deleted_at IS NULL
+      `;
+      expect(state).toEqual({ messages: 200, unread: 0, conversations: 200 });
+    } finally {
+      await measured.close();
+      await counter.close();
+      await dropReconcileFolders();
+    }
   });
 
   test("a reconcile window re-imports remote UIDs that are missing locally and applies their flags", async () => {
