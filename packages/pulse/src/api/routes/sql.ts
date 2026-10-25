@@ -1,4 +1,4 @@
-import { type AuthContext, jsonResponse, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, jsonResponse, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout, v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -63,15 +63,21 @@ const answer = <T>(
   return c.json(result.data, successStatus);
 };
 const routes = new Hono<AuthContext>()
-  .post("/bases/:baseId/sql", metadata("Run read-only SQL in one Pulse base", SqlResultSchema), v("json", Run), async (c) => {
-    // 5 s queue + largest profile 30 s + 2 s HTTP + 5 s KILL + replies.
-    setRequestTimeout(c, 45);
-    try {
-      return answer(c, await runBaseSql({ ...identity(c), ...c.req.valid("json"), signal: c.req.raw.signal, via: "api" }));
-    } finally {
-      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
-    }
-  })
+  .post(
+    "/bases/:baseId/sql",
+    auth.readOnly,
+    metadata("Run read-only SQL in one Pulse base", SqlResultSchema),
+    v("json", Run),
+    async (c) => {
+      // 5 s queue + largest profile 30 s + 2 s HTTP + 5 s KILL + replies.
+      setRequestTimeout(c, 45);
+      try {
+        return answer(c, await runBaseSql({ ...identity(c), ...c.req.valid("json"), signal: c.req.raw.signal, via: "api" }));
+      } finally {
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+      }
+    },
+  )
   .post(
     "/bases/:baseId/sql/cancel",
     metadata("Cancel this actor's Pulse SQL run", z.object({ cancelled: z.boolean() })),
