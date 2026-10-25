@@ -77,7 +77,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
         });
       if (path.endsWith("/app-assets")) return Response.json({ message: "Fixture stops at execution boundary" }, { status: 500 });
       return new Response(
-        '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><div id="root"></div><script type="module" src="/bundle.js"></script>',
+        '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><div id="root" style="height:100vh"></div><script type="module" src="/bundle.js"></script>',
         { headers: { "content-type": "text/html" } },
       );
     },
@@ -98,6 +98,8 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(server.url.href);
+    // Match the full-page host used by Assistant and guard against a content-sized fixture.
+    await page.waitForFunction(() => document.querySelector(".k2b-app-workspace")?.getBoundingClientRect().height === innerHeight);
     const context = page.locator(".assistant-context-sidebar");
     // One-off runs stay one level deeper, as a row under working files.
     await context.getByRole("button", { name: /Working files/ }).click();
