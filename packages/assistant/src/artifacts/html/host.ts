@@ -115,6 +115,9 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
   frame.setAttribute("sandbox", "allow-scripts allow-forms");
   frame.className = "studio-app-frame";
   frame.title = options.title;
+  // The scriptless wrapper follows the embedding element's preferred scheme.
+  // A mismatched scheme makes its transparent canvas opaque in the browser.
+  frame.style.colorScheme = theme();
   // Opacity, not visibility: a hidden cross-process frame gets no rendering updates.
   frame.style.opacity = "0";
   frame.srcdoc = composed.wrapper;
@@ -292,7 +295,10 @@ export function mountApp(container: HTMLElement, files: AppFiles, options: Mount
     }
   }
 
-  const themes = new MutationObserver(() => post({ type: "theme", value: theme() }));
+  const themes = new MutationObserver(() => {
+    frame.style.colorScheme = theme();
+    post({ type: "theme", value: theme() });
+  });
   themes.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
   addEventListener("message", receive);
   container.append(frame);
