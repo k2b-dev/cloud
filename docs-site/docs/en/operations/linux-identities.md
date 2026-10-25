@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1086
 description: Assign local UID, GID, home and shell attributes and backfill existing accounts without changing authentication.
 tags: [linux, identity, administration, freeipa]
-updated: 2026-09-09
+updated: 2026-10-25
 ---
 
 # Assign Linux identities
@@ -117,9 +117,9 @@ The private primary group created for each local account is its personal Linux
 group, named after the username. Linux needs it; people do not work with it as a
 team. Group lists and pickers therefore leave personal groups out:
 
-- The Accounts group list hides them unless **View → Linux → Personal groups**
-  is on. The count above the list includes only the groups shown, and each
-  personal group names and links its owner.
+- The Accounts group list, a person's membership list, and **My account → Access**
+  hide them. Dashboard and widget group counts include ordinary groups only.
+  Inspect the person's Linux identity section for their primary GID.
 - Sharing, permission, role and membership pickers do not offer them. Grant the
   person instead.
 - Files does not show a personal group as a group area; people use their own
