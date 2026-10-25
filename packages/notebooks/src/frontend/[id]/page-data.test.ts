@@ -262,6 +262,8 @@ describe("notebook page presentation authorization", () => {
       for (const spy of mockNoteTree(pages.map((page) => ({ ...page, children: [] })))) track(spy);
       track(spyOn(noteStore, "getWithContentByShortId")).mockImplementation(byShortId);
       track(spyOn(notebooksService.note, "getWithContentByShortId")).mockImplementation(byShortId);
+      // Write reads the note without its content once collaboration is lazy (#1898).
+      track(spyOn(notebooksService.note, "getByShortId")).mockImplementation(byShortId);
       expect(await requestPageData(undefined, "/app/notebooks/book01")).toEqual({
         kind: "redirect",
         href: `/app/notebooks/book01/notes/${opened}`,
