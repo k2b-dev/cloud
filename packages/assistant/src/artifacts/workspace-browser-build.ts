@@ -5,7 +5,7 @@ const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
 const build = await Bun.build({
   entrypoints: [new URL(process.argv[2] ?? "./workspace-browser-harness.ts", import.meta.url).pathname],
   target: "browser",
-  format: "iife",
+  format: "esm",
   plugins: [
     {
       name: "solid-workspace-test",

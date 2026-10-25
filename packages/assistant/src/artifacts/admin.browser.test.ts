@@ -30,7 +30,7 @@ test("Studio administration renders inventory and tests settings without saving 
       }
       if (path.endsWith("/access")) return Response.json([]);
       return new Response(
-        '<!doctype html><link rel="stylesheet" href="/ui.css"><body class="k2b-ui"><div id="root"></div><script src="/bundle.js"></script>',
+        '<!doctype html><link rel="stylesheet" href="/ui.css"><body class="k2b-ui"><div id="root"></div><script type="module" src="/bundle.js"></script>',
         { headers: { "Content-Type": "text/html" } },
       );
     },

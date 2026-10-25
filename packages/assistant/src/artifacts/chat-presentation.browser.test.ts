@@ -80,7 +80,7 @@ beforeAll(async () => {
         });
       }
       return new Response(
-        `<!doctype html><html lang="de" class="${url.searchParams.get("theme") ?? "light"}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0;padding:1rem"><div id="root"></div><script src="/bundle.js"></script></body></html>`,
+        `<!doctype html><html lang="de" class="${url.searchParams.get("theme") ?? "light"}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0;padding:1rem"><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>`,
         { headers: { "Content-Type": "text/html" } },
       );
     },
