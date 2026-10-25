@@ -98,6 +98,8 @@ export const notebooksService = {
       summary: async (config: { filter?: { query?: string } }) => notebooks.adminSummary({ search: config.filter?.query }),
     },
     graph: links.buildNotebookGraph,
+    /** The Links page's graph: whole while small, otherwise the bounded pages around one page. */
+    graphView: links.buildNotebookGraphView,
     access: {
       list: async (config: {
         notebookId: string;
