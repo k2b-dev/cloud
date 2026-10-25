@@ -247,7 +247,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           relativePath: currentBaseId === null ? null : relative,
         });
         const invisible = { value: hidden, base: null, relative: null };
-        if (!base || base.area !== "cloud" || base.root !== root || relative === null) return invisible;
+        if (!base || base.area !== "cloud" || base.root !== root) return invisible;
         if (admin) return { value: row.metadataUnknown ? minimal(displayBaseId) : full("snapshot"), base: publicId(base), relative };
         if (!allowed.has(base.id) || base.lifecycle !== "active" || relative === null || row.server_url !== config.url || config.unreadable)
           return invisible;
