@@ -86,7 +86,14 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
   try {
     browser = await launchBrowser();
     const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
-    await page.clock.setFixedTime(Date.parse(now));
+    // Pin wall time without replacing the browser's timers or animation frames.
+    await page.addInitScript((at) => {
+      globalThis.Date = new Proxy(Date, {
+        construct: (target, args, newTarget) => Reflect.construct(target, args.length ? args : [at], newTarget),
+        apply: (target) => new target(at).toString(),
+        get: (target, property, receiver) => (property === "now" ? () => at : Reflect.get(target, property, receiver)),
+      });
+    }, Date.parse(now));
     page.setDefaultTimeout(3000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
