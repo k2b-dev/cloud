@@ -72,6 +72,8 @@ including from Book view. Use the overview to start from a template.
   the dialog.
 - Add filtered page lists with `:::query` and page contents with `:::toc`, using
   your own named data instead of a fixed metadata schema.
+- See how notes link in **Links**. A notebook with more than 500 notes shows
+  the notes around the open note there, and says so above the graph.
 
 Use a separate notebook when content needs its own access rules, settings, or
 export boundary.

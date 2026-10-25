@@ -26,6 +26,10 @@ convention still needs a check or a test.
 | Oversized fixtures consume behavioral test deadlines | A correctness test uses far more points than needed to cross a provider limit, spending its deadline on unrelated extra work. | Tests: Geo corridor service cases use 2,101 points to retain the 16 m simplification across the 2,000-point limit, with the original corridor, filtering, truncation and accounting assertions. |
 | Replacing child rows loses asynchronous state | An unchanged address save carries a stale geocode claim while a concurrent lookup completes. | Test: Contacts `address-location.integration.test.ts` pauses replacement before child-row locks and verifies one paid lookup, retained coordinates, released failed claims and fresh claim timestamps. |
 | A resumable export changes on read, or its browser receipt disappears | Saving a large map must preserve exact bytes at one revision. A refreshed viewing clock changes its digest; missing persistence or simultaneous tabs can create duplicate notes. | Tests: Cloud `map-notebook.test.ts` freezes export bytes across viewing times; `map-widget.browser.test.ts` exercises bounded create/append, stored checkpoints, cancellation, reconciliation, completed receipts, storage failures and same-source tab exclusion. |
+| A browser fixture pauses a clock at a time that already passed | Installing a running clock and pausing at its initial timestamp races browser command latency; a busy host reports “Cannot fast-forward to the past”. | Test: Pulse `WorkspaceClock.browser.test.ts` advances the clock before pausing, then verifies the exact fixture time across navigation and subsequent timer advancement. Freeze wall time before pausing and restore normal clock advancement while paused. |
+| Per-request browser fixtures repeatedly compile the server | Cold Babel and workspace imports consume the snapshot deadline before the page executes. | Test: Pulse `PulseWorkspace.browser.test.ts` renders the real page from a bundle prepared once during setup. Each render still runs in a fresh process with the unchanged 15-second deadline; only app-owned page data and platform SSR preloads are substituted. |
+| An SSR browser fixture leaves an asset request external | The generated shell requests its branding image, but the fixture intercepts only app and API routes; navigation can wait on DNS or the unavailable host instead of reaching `load`. | Test: Pulse `PulseWorkspace.browser.test.ts` supplies a local branding SVG, rejects unexpected requests, checks decoded logo images, and retains the normal navigation load wait and SSR height checks. |
+| A browser locator captures an underlying dialog action | Before asynchronous Back opens a confirmation, an unscoped button label matches the form action. The confirmation hides that retained button, so the click waits on the wrong element. | Test: Pulse `PulseWorkspace.browser.test.ts` scopes Cancel and Discard to the named confirmation, checks that the form action is visible while the confirmation action is absent, and verifies draft preservation and final dismissal. |
 | Parse tree read before the parser finished | A test reads `syntaxTree(state)` of a fresh CodeMirror state; the first parse runs only within a short time budget, so a busy runner sees a partial tree (11 of 45 characters). | Test: Notebooks `list-structure.test.ts` finishes the parse with `ensureSyntaxTree` and applies it with `state.update({})` before reading the tree. Convention: complete an asynchronous result before asserting on it. |
 | A formatter exposes ambiguous generic TSX syntax | Removing the trailing comma from a generic arrow with a default type makes the Solid/Babel test transform parse it as JSX. | Test: `PermissionEditor.behavior.test.tsx` runs through the actual Solid DOM preload; use a generic function declaration for the deferred helper and run the test after formatting. |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
@@ -206,6 +210,7 @@ convention still needs a check or a test.
 | User navigation mistaken for an async action's own navigation | Every draft-key change keeps an app opening active, leaving another chat's composer read-only. | Tests: `chat-slash.behavior.test.ts` requires `follow()` for one draft move and cancels unannounced changes; Assistant's `composer-app-commands.behavior.test.tsx` checks that editing returns before the previous save finishes. |
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
 | Workspace layout changes shape after the first render | A workspace region such as a `MainPane` mounts only after hydration, and the layout drops or moves content that was already shown. | Test: Chat `ChatThreads.browser.test.ts` switches from a chat without threads to one with threads at 1440 and 2000 px. Library fix pending in [#1752](https://github.com/k2b-dev/cloud/issues/1752). |
+| Redundant reads after a confirmed insert | First sync repeats content updates and queries state that cannot exist for a newly inserted message, multiplying database latency. | Test: Mail `lifecycle.integration.test.ts` counts PostgreSQL commands for a 200-envelope import and replays it to check canonical IDs, conversations and read state. Only a confirmed insert skips these reads; existing and raced copies keep the full path ([#1487](https://github.com/k2b-dev/cloud/issues/1487)). |
 
 ## Lessons
 
@@ -1144,6 +1149,12 @@ convention still needs a check or a test.
 - **Error class:** A unit test accidentally depends on shared infrastructure.
 - **Guard:** The starter test uses the scoped PDF admission mock, asserts one admission attempt, and retains the actual template-rendering and escaping assertions. Platform and integration tests continue to exercise real admission.
 
+### Browser destinations must not mount unrelated applications
+
+- **What happened:** Studio's WebKit navigation test reported runtime fetch errors while leaving its dummy edit-chat page.
+- **Root cause:** The fixture mounted another autostarting Studio instance at that destination; the next navigation interrupted its requests. The fullscreen step also left before the app was ready.
+- **Error class:** A browser fixture creates unintended asynchronous work between assertions.
+- **Guard:** `apps.browser.test.ts` serves a static edit-chat destination and verifies the fullscreen app's visible revision before navigating onward. Runtime error assertions and timeouts remain unchanged.
 
 ## Add a lesson
 
@@ -1159,6 +1170,12 @@ updates that class's row in the table.
 
 A shared map result can render in full Assistant or its panel. Hardcoding the full app path in a follow-up link escapes the panel when the original map is outside loaded history. Preserve the host-relative link when fetching the current history anchor. Browser cases cover full and panel paths at desktop and phone widths.
 
+### Mail first-sync database latency (#1487)
+
+- **Error class:** Redundant reads after a confirmed insert.
+- **Cause and fix:** New content followed the same update and lookup path as existing copies. The insertion result now distinguishes a new row from an upsert conflict; only a new row skips the redundant update and four reads. Remote-reference races fall back to the full path.
+- **Guard:** The PostgreSQL integration imports 200 envelopes through `ingestEnvelope`, counts commands at the wire, and replays the batch to verify stable IDs, conversation count and read state.
+- **Measurement:** On the same local test database, the original path used 4,602 commands and 4,554 ms (44 messages/s); the fixed path used 3,602 commands and 3,641 ms (55 messages/s). Command count fell 22%; timings are observations on a shared host, not a guaranteed throughput target. Batch limits and lease scheduling are unchanged.
 ## Wait for the confirmation after browser history traversal (#1765)
 
 - **Error class:** asynchronous UI locator race. The Pulse Back test could resolve the settings form's Discard button before the confirmation appeared, then wait on that hidden button.
