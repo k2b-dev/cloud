@@ -133,3 +133,14 @@ test("preview cannot bypass administration or the export limit", async () => {
     expect(f.audits).toBe(0);
   }
 });
+
+test.each(["", "/preview"])("POSIX export%s returns the stable unavailable code without opening a snapshot", async (suffix) => {
+  const f = fixture();
+  const response = await f.api.request(
+    url.replace("/export?", `/export${suffix}?`) + "&baseId=freeipa:users:10000000-0000-4000-8000-000000000001",
+  );
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ code: "history_unavailable" });
+  expect(f.opens).toBe(0);
+  expect(response.headers.has("Content-Disposition")).toBe(false);
+});

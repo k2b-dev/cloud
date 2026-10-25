@@ -21,6 +21,7 @@ import {
 } from "./admin-history";
 import { useAdminHistoryMessages } from "./admin-history-messages";
 import { openAdminBasePicker, openExportHistoryDialog } from "./ExportHistoryDialog";
+import HistoryUnavailable, { isHistoryUnavailable } from "./HistoryUnavailable";
 import { actorOf, dayGroups, type HistoryEnvironment, type HistoryRowModel, historyRows, statusOf } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 
@@ -101,6 +102,7 @@ export default function AdminHistory(props: AdminHistoryProps) {
   const rows = createMemo(() => historyRows(entries(), { batches: true }));
   const groups = createMemo(() => dayGroups(rows(), locale(), h(), env()));
   const loadedOnce = () => visiblePages().length > 0;
+  const unavailable = () => props.filters.baseId?.startsWith("freeipa:") || isHistoryUnavailable(pages.error());
   const limited = () => visiblePages().some((page) => page.searchLimitReached);
 
   // People to filter by are the actors seen so far; the reader has no directory of them.
@@ -125,6 +127,11 @@ export default function AdminHistory(props: AdminHistoryProps) {
       () => [JSON.stringify(entries().map((entry) => entry.id)), props.filters.baseId, retryLabels(), props.bases, props.baseLabels],
       () => {
         metadata?.abort();
+        if (props.filters.baseId?.startsWith("freeipa:")) {
+          setLabelsLoading(false);
+          setLabelsFailed(false);
+          return;
+        }
         const controller = new AbortController();
         metadata = controller;
         setLabelsLoading(true);
@@ -357,7 +364,7 @@ export default function AdminHistory(props: AdminHistoryProps) {
           </Show>
         </div>
         <div class="filesv2-history-head__actions">
-          <Button size="sm" variant="secondary" onClick={exportHistory}>
+          <Button size="sm" variant="secondary" disabled={unavailable()} onClick={exportHistory}>
             <i class="ti ti-download" aria-hidden="true" />
             {a().exportButton}
           </Button>
@@ -365,6 +372,9 @@ export default function AdminHistory(props: AdminHistoryProps) {
       </div>
       <div class="filesv2-history-body" aria-busy={pages.loading() || pages.refreshing()}>
         <Switch>
+          <Match when={unavailable()}>
+            <HistoryUnavailable />
+          </Match>
           <Match when={!loadedOnce() && pages.error()}>
             <Placeholder
               state="error"

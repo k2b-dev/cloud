@@ -183,6 +183,26 @@ describe("Files administration history", () => {
   };
   const text = () => dom.document.body.textContent ?? "";
 
+  test.each(["de", "en"])("POSIX administration history shows its notice and disables export in %s", async (locale) => {
+    const { historyMessages } = await import("../src/frontend/history-messages");
+    let metadata = 0;
+    await history({
+      locale,
+      filters: { baseId: "freeipa:users:10000000-0000-4000-8000-000000000001" },
+      loadBases: async () => {
+        metadata++;
+        throw new Error("POSIX labels must not be queried");
+      },
+    });
+    expect(text()).toContain(historyMessages(locale).historyUnavailable);
+    expect(dom.root.querySelector('[role="status"]')).not.toBeNull();
+    expect(buttonNamed(dom.root, historyMessages(locale).retry)).toBeUndefined();
+    const download = buttonNamed(dom.root, locale === "de" ? "Exportieren" : "Export");
+    expect(download).toBeDefined();
+    expect(download?.disabled).toBe(true);
+    expect(metadata).toBe(0);
+  });
+
   test("a failed filter change hides the previous rows and retries only the requested filter", async () => {
     const { default: AdminHistory } = await import("../src/frontend/AdminHistory");
     const initial: AdminActivityFilters = { when: "30" };
