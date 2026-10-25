@@ -541,6 +541,37 @@ describe("notebook sidebar", () => {
       view.cleanup();
     }
   });
+  test("a live change reads the window around the open note again at its size, so no rows appear", async () => {
+    const all = Array.from({ length: 5000 }, (_, index) => note(`N${String(index).padStart(5, "0")}`, `Note ${index}`));
+    const whole = sidebarTreeState(all).levels[0]!;
+    levels = { "": whole };
+    // A page opened deep in the level shows the 20 rows around it.
+    const around = { ...whole, offset: 4320, items: whole.items.slice(4320, 4340) };
+    const view = await mount(ctx("N04321", { sidebarTree: { total: 5000, levels: [around], expandedIds: [] } }));
+    requests.length = 0;
+    try {
+      await new Promise<void>((done) => {
+        const covered: Promise<void>[] = [];
+        window.dispatchEvent(
+          new CustomEvent("notebooks.workspace.event", {
+            detail: {
+              cursor: null,
+              event: { v: 1, type: "note.created", notebookId: "Book01", note: { id: "New001" } },
+              cover: (coverage: Promise<void>) => covered.push(coverage),
+            },
+          }),
+        );
+        void Promise.allSettled(covered).then(() => done());
+      });
+      await settle();
+      expect(requests).toContain("levels :4320:20");
+      const notes = view.rows(null).filter((row) => row.id?.startsWith("N"));
+      expect(notes.map((row) => row.id)).toEqual(whole.items.slice(4320, 4340).map((item) => item.id));
+    } finally {
+      view.cleanup();
+    }
+  });
+
   test("a refresh reads every open branch again, also beyond the levels one request reads", async () => {
     const branches = Array.from({ length: 60 }, (_, index) =>
       note(`B${String(index).padStart(5, "0")}`, `Branch ${index}`, [

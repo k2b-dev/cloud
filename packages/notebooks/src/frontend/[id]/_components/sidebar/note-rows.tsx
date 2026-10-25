@@ -24,7 +24,7 @@ export function NoteRowMenu(props: { note: SidebarNote; items: DropdownItem[] })
   const label = () => t().noteActions({ title: props.note.title || t().untitled });
   return (
     <AppWorkspace.SidebarItemActions visibility="hover">
-      <Dropdown.Root position="bottom-right" width="12rem" items={props.items}>
+      <Dropdown.Root position="bottom-right" width="12rem" items={props.items} lazy>
         <Dropdown.Trigger iconOnly label={label()} tooltip={label()} size="xs">
           <i class="ti ti-dots text-xs" />
         </Dropdown.Trigger>

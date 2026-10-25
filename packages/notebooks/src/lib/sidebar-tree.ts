@@ -41,6 +41,11 @@ export type SidebarList = { total: number; offset: number; items: SidebarListNot
 
 /** Rows one level shows at once; "Show more" loads the next page. */
 export const SIDEBAR_PAGE_SIZE = 100;
+/**
+ * Rows of a level a page shows when it loads, around the open note: a page deep in a large folder stays as light as
+ * one in a small notebook. Earlier and more rows load on request, a page size at a time.
+ */
+export const SIDEBAR_FIRST_ROWS = 20;
 /** The most rows one level request returns. */
 export const SIDEBAR_MAX_WINDOW = 1000;
 /** The most levels one refresh asks for. */

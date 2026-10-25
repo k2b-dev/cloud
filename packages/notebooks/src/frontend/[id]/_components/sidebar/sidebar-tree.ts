@@ -124,7 +124,13 @@ export function createSidebarTree(options: { notebookId: Accessor<string>; initi
     const requests: LevelRequest[] = open.map((loaded) => ({
       parentId: loaded.parentId,
       offset: fromStart ? 0 : loaded.offset,
-      limit: Math.min(SIDEBAR_MAX_WINDOW, Math.max(SIDEBAR_PAGE_SIZE, loaded.items.length)),
+      // A window that reaches the level's end takes up to a page of new notes; one in the middle keeps its size.
+      limit: Math.min(
+        SIDEBAR_MAX_WINDOW,
+        loaded.offset + loaded.items.length >= loaded.total
+          ? Math.max(SIDEBAR_PAGE_SIZE, loaded.items.length)
+          : Math.max(1, loaded.items.length),
+      ),
     }));
     // An open branch whose level failed to load loads again, so a retry heals it.
     for (const id of expanded()) if (!levels().has(id)) requests.push({ parentId: id, offset: 0, limit: SIDEBAR_PAGE_SIZE });

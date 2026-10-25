@@ -69,6 +69,9 @@ describe("one level of the sidebar tree", () => {
     const around = levelWindow("parent", many, { around: "id-N04321" });
     expect(around).toMatchObject({ parentId: "parent", offset: 4300 });
     expect(around.items.some((note) => note.shortId === "N04321")).toBe(true);
+    // A smaller window holds the note in a page of its own size.
+    expect(levelWindow("parent", many, { around: "id-N04321", limit: 20 })).toMatchObject({ offset: 4320 });
+    expect(levelWindow("parent", many, { around: "id-N04321", limit: 20 }).items).toHaveLength(20);
     expect(levelWindow(null, many, { offset: 4950, limit: 100 }).items).toHaveLength(50);
     expect(levelWindow(null, many, { offset: 0, limit: 100_000 }).items).toHaveLength(1000);
   });
