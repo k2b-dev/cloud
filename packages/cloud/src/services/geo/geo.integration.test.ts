@@ -80,7 +80,11 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
     );
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(3);
     for (const result of results)
-      if (result.status === "rejected") expect(result.reason).toMatchObject({ code: "GEO_BUDGET_EXHAUSTED", details: { scope: "person" } });
+      if (result.status === "rejected")
+        expect(result.reason).toMatchObject({
+          code: "GEO_BUDGET_EXHAUSTED",
+          details: { scope: "person", requiredCredits: 1, availableCredits: 0, shortfallCredits: 1 },
+        });
     const rows = await db<
       { scope: string; used: number }[]
     >`SELECT scope,used::int AS used FROM geo.usage WHERE period IN ('2026-10','2026-10-20') ORDER BY scope`;
@@ -306,6 +310,21 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
     expect(fetches).toBe(1);
     const rows = await db<{ used: number }[]>`SELECT used::int AS used FROM geo.usage WHERE period IN ('2028-02','2028-02-12')`;
     expect(rows.map((row) => row.used)).toEqual([4000, 4000]);
+    const events = await db<{ metadata: unknown }[]>`SELECT metadata FROM audit.events WHERE action = 'core.geo.route_cost_overrun'`;
+    expect(events).toEqual([
+      {
+        metadata: {
+          period: "2028-02",
+          reservedCredits: 2,
+          settledCredits: 4,
+          unknownCredits: 0,
+          knownReferenceCredits: 4,
+          settlementConfirmed: 1,
+          estimatedCallCredits: 1,
+          actualCallCredits: 4,
+        },
+      },
+    ]);
     await expect(service.calculateRoute(input, geoTestContext)).rejects.toMatchObject({ code: "GEO_BUDGET_EXHAUSTED" });
     expect(fetches).toBe(1);
   });

@@ -1,6 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { DownstreamBusyError, downstreamBudget } from "../downstream-budget";
 import type { GotenbergConfig } from "./gotenberg";
 import { renderTemplatePdfPreview } from "./template-preview";
+
+let admission: ReturnType<typeof spyOn<typeof downstreamBudget, "acquire">>;
+beforeEach(() => {
+  admission = spyOn(downstreamBudget, "acquire").mockResolvedValue(() => {});
+});
+afterEach(() => admission.mockRestore());
 
 const baseConfig = {
   url: "http://gotenberg:3000",
@@ -125,4 +132,10 @@ describe("template PDF preview renderer", () => {
 
     expect(result).toMatchObject({ ok: false, error: { phase: "pdf", status: 502, code: "bad_response" } });
   });
+});
+
+test("template previews preserve busy admission as a retryable PDF error", async () => {
+  admission.mockRejectedValueOnce(new DownstreamBusyError("gotenberg"));
+  const result = await renderTemplatePdfPreview({ htmlTemplate: "hello", data: {} }, { config: baseConfig });
+  expect(result).toMatchObject({ ok: false, error: { phase: "pdf", status: 503, code: "busy" } });
 });

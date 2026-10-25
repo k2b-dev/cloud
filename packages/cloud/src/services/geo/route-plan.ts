@@ -84,14 +84,12 @@ export const assembleRoute = (
   defaults: GeoRouteOptions,
   originalLegs: GeoRouteLeg[],
   now: Date,
-  distanceAllowanceMeters: number,
 ): GeoRoute => {
   let legs = originalLegs;
   const build = (): GeoRoute => ({
     stops,
     options: defaults,
     legs,
-    distanceAllowanceMeters,
     distanceMeters: legs.reduce((sum, leg) => sum + leg.distanceMeters, 0),
     durationSeconds: legs.reduce((sum, leg) => sum + leg.durationSeconds, 0),
     polyline6: joinRouteLines(legs.map((leg) => leg.polyline6)),

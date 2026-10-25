@@ -3,6 +3,85 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.49.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.48.0...cloud-v0.49.0) (2026-10-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cloud:** Remove `geoService` (and `geo`, `services.geo`, legacy `GeoPlace`/`GeoService` exports); use `geoClient` or Core address capabilities with current request credentials. Remove `weather.geo_url`; configure Core's secret `geo.api_key` and budgets for its fixed Geoapify EU endpoint. Remove `GEO_ALLOWED_TARGETS`; Core's fixed provider endpoint replaces the legacy configurable target path, so no replacement allowlist is needed. Remove `weather.city.search`; use Core `address.autocomplete` with `type: "city"` and `countryCode: "DE"`, then Weather by coordinates. Remove the legacy geo container. City endpoints require authentication and consume the caller's Core geo budget; coordinate forecasts remain anonymous. The public display uses station names without paid reverse geocoding. See the operations replacement table and migration guide. This breaking scope was explicitly approved.
+* **mail:** `mail.draft.send` and the Mail send command require `expectedContentHash`. Read `draft.send.review` under the same actor and pass its `contentHash` with the current draft revision. Update external send clients with Mail. A confirmed content conflict requires a new review, approval and idempotency key; an unknown network outcome retains the existing outcome/retry identity.
+* **pulse:** Pulse now needs a ClickHouse data store that the operator provides and connects under Administration -> Pulse. This update deletes all existing Pulse data: bases, members, sources, tokens, measurements, dashboards and saved queries. The query and dashboard languages, the explorer and public dashboards are gone; SQL and new dashboards follow in the next releases. PULSE_SCRAPE_ALLOWED_TARGETS is removed; Cloud admins allow internal scrape targets per base under Administration -> Pulse -> Interne Ziele.
+
+### Features
+
+* **access:** people, groups and agents show their names instead of UUIDs in access dialogs, admin views and the CLI ([#1643](https://github.com/k2b-dev/cloud/issues/1643)) ([e364e33](https://github.com/k2b-dev/cloud/commit/e364e33119b492e84fed0bcc373e2ff70b0844af))
+* **cloud:** bound outbound requests through completion ([#1734](https://github.com/k2b-dev/cloud/issues/1734)) ([6659360](https://github.com/k2b-dev/cloud/commit/6659360cc8bf09e3a18228d2606410630ea8dbd6))
+* **cloud:** enforce declarative application access ([#1726](https://github.com/k2b-dev/cloud/issues/1726)) ([3c4ee4d](https://github.com/k2b-dev/cloud/commit/3c4ee4d529428721ccc879a1b5381153aa2cf77e))
+* **cloud:** give capability queries one 45-second deadline ([#1654](https://github.com/k2b-dev/cloud/issues/1654)) ([186ec67](https://github.com/k2b-dev/cloud/commit/186ec67989170e84dbd8384fc66d4ac6b46eb93a))
+* **cloud:** keep the shell and panel during in-app page changes ([#1653](https://github.com/k2b-dev/cloud/issues/1653)) ([7dc9247](https://github.com/k2b-dev/cloud/commit/7dc92472f4eada6534a6a55c4e9bef3d0e90168d))
+* **cloud:** offer Chat and Assistant in the universal panel ([#1693](https://github.com/k2b-dev/cloud/issues/1693)) ([3763710](https://github.com/k2b-dev/cloud/commit/37637105f57d56808ddb1b83766882848bbf2070)), closes [#1692](https://github.com/k2b-dev/cloud/issues/1692)
+* **cloud:** open apps from global search ([#1673](https://github.com/k2b-dev/cloud/issues/1673)) ([c520e4e](https://github.com/k2b-dev/cloud/commit/c520e4effbda51ef64c2e16a551a037628f4a8df))
+* **cloud:** share IPv6 request budgets by network ([#1727](https://github.com/k2b-dev/cloud/issues/1727)) ([1fc710f](https://github.com/k2b-dev/cloud/commit/1fc710f42df536c37513e8b5d9ac0f13f42da47a))
+* **cloud:** share text snapshots and reconciliation ([#1651](https://github.com/k2b-dev/cloud/issues/1651)) ([2215b05](https://github.com/k2b-dev/cloud/commit/2215b053358dc924b9c2d359854f7820003c89f1))
+* **cloud:** use Core address autocomplete for weather locations ([#1702](https://github.com/k2b-dev/cloud/issues/1702)) ([2a802b1](https://github.com/k2b-dev/cloud/commit/2a802b1529d5f380cd1b2f3d5efae7dab2156d02))
+* **core:** find addresses and places through Geoapify EU within an operator budget ([#1647](https://github.com/k2b-dev/cloud/issues/1647)) ([9bf71f9](https://github.com/k2b-dev/cloud/commit/9bf71f92eefb22536c27ccaf0de98d0216547d5a))
+* **core:** provide budgeted maps and editable routes through Geoapify EU ([#1703](https://github.com/k2b-dev/cloud/issues/1703)) ([90f996d](https://github.com/k2b-dev/cloud/commit/90f996d801fa654f14e0189d7639a30555b68aeb))
+* **filesv2:** record every upload and document save ([#1711](https://github.com/k2b-dev/cloud/issues/1711)) ([2714c3c](https://github.com/k2b-dev/cloud/commit/2714c3cee601854242a839cc12bba934cb571bff))
+* **filesv2:** record folder creation in a per-item history that no write can bypass ([#1645](https://github.com/k2b-dev/cloud/issues/1645)) ([0952f76](https://github.com/k2b-dev/cloud/commit/0952f76784605f393dcc8c8cadd8718229a990ab))
+* **filesv2:** record renames, moves and copies ([#1697](https://github.com/k2b-dev/cloud/issues/1697)) ([6604726](https://github.com/k2b-dev/cloud/commit/6604726584d7f83c1929bd57a754d72fc0dc377e))
+* **mail:** allow audited reads of approved application mail content ([#1674](https://github.com/k2b-dev/cloud/issues/1674)) ([262ebcd](https://github.com/k2b-dev/cloud/commit/262ebcdb6ccdc204383cc212ac80428cfd778fce))
+* **mail:** bind sending to complete reviewed content ([#1686](https://github.com/k2b-dev/cloud/issues/1686)) ([7369248](https://github.com/k2b-dev/cloud/commit/73692489356a889a73bbbec42f48dc066e1364bf))
+* **mail:** keep search, filters and reader actions in the workspace head ([#1665](https://github.com/k2b-dev/cloud/issues/1665)) ([c4956a5](https://github.com/k2b-dev/cloud/commit/c4956a5096fc3fd6d7016dd3f4359dd219d7232e))
+* **mail:** retain the workspace when switching mailbox contexts ([#1659](https://github.com/k2b-dev/cloud/issues/1659)) ([660704b](https://github.com/k2b-dev/cloud/commit/660704b93f17f8c242704d461ea65f1577052b20))
+* **notebooks:** print external HTTPS images in PDFs ([#1648](https://github.com/k2b-dev/cloud/issues/1648)) ([a6d5966](https://github.com/k2b-dev/cloud/commit/a6d5966f4b030407af8c3e49085795f9a751b4e5))
+* **pulse:** ask Pulse in SQL from the console, the CLI and the Assistant ([#1662](https://github.com/k2b-dev/cloud/issues/1662)) ([a74c42c](https://github.com/k2b-dev/cloud/commit/a74c42cc0cb09acc9bf828aba8f99f4cc8278d6d))
+* **pulse:** bound alert checks independently of questions ([#1704](https://github.com/k2b-dev/cloud/issues/1704)) ([44976de](https://github.com/k2b-dev/cloud/commit/44976deaf6b2d113cd805ce30c8f28b417d73a32)), closes [#1698](https://github.com/k2b-dev/cloud/issues/1698)
+* **pulse:** give every Pulse base its own ClickHouse database, read access, limits, retention and internal targets ([#1535](https://github.com/k2b-dev/cloud/issues/1535)) ([9734d0c](https://github.com/k2b-dev/cloud/commit/9734d0c96525f0a7e0bbb25899d06402ec96ed97))
+* **pulse:** let agents analyze backend website traffic ([#1707](https://github.com/k2b-dev/cloud/issues/1707)) ([d37b2c6](https://github.com/k2b-dev/cloud/commit/d37b2c6b9df591901c84709d1a0d88c322a60701))
+* **pulse:** serialize maintenance and deliver base health notices ([#1712](https://github.com/k2b-dev/cloud/issues/1712)) ([ca11415](https://github.com/k2b-dev/cloud/commit/ca114152974fe7a4220176a9b74e2d6b7e413131))
+* **pulse:** show what needs attention in a base and alert its admins through Cloud ([#1669](https://github.com/k2b-dev/cloud/issues/1669)) ([d81ee2a](https://github.com/k2b-dev/cloud/commit/d81ee2a08628e0014e809b928a2c197f4dd6ae48)), closes [#1309](https://github.com/k2b-dev/cloud/issues/1309)
+* **pulse:** store Pulse measurements in ClickHouse and drop all old Pulse data ([#1583](https://github.com/k2b-dev/cloud/issues/1583)) ([4693604](https://github.com/k2b-dev/cloud/commit/469360445d2cad6c440402dcda865cf50940dae2))
+* **runtime:** drain requests before dependencies and share service budgets ([#1736](https://github.com/k2b-dev/cloud/issues/1736)) ([9f66052](https://github.com/k2b-dev/cloud/commit/9f66052b46f8265772ad18b80f958c74585193d5)), closes [#1748](https://github.com/k2b-dev/cloud/issues/1748)
+* **settings:** preserve unreadable values in administrative editors ([#1738](https://github.com/k2b-dev/cloud/issues/1738)) ([5231c2f](https://github.com/k2b-dev/cloud/commit/5231c2f8b8c2991013b5dbc28888d0d86d3be1ef))
+* **ui:** explain rich selections with optional previews ([#1655](https://github.com/k2b-dev/cloud/issues/1655)) ([4b03a10](https://github.com/k2b-dev/cloud/commit/4b03a1040eba27660dabf23c673cfc6ec2551d8a))
+* **ui:** keep workspace controls reachable across layouts ([#1661](https://github.com/k2b-dev/cloud/issues/1661)) ([9a53dff](https://github.com/k2b-dev/cloud/commit/9a53dff2d06dd60749e15b08dc5056570652b0ca))
+
+
+### Bug Fixes
+
+* **assistant:** check project access for every capability call ([ec70b57](https://github.com/k2b-dev/cloud/commit/ec70b578c094546d2cc4e3f039296693015a149d))
+* **chat:** follow input mode for member actions ([#1699](https://github.com/k2b-dev/cloud/issues/1699)) ([8412d4b](https://github.com/k2b-dev/cloud/commit/8412d4b109997de190b307f336ad07a7b804e4ce))
+* **chat:** make chat creation retries idempotent ([#1681](https://github.com/k2b-dev/cloud/issues/1681)) ([f0a6bdc](https://github.com/k2b-dev/cloud/commit/f0a6bdc149c563ab34ebd5e1b2fa0065f36c76c8))
+* **chat:** preserve invalid message drafts ([#1675](https://github.com/k2b-dev/cloud/issues/1675)) ([ed719e7](https://github.com/k2b-dev/cloud/commit/ed719e76b9f03dde6d26d3217ef69457265300a7))
+* **ci:** build UI before nightly dependency checks ([#1678](https://github.com/k2b-dev/cloud/issues/1678)) ([30cb2d6](https://github.com/k2b-dev/cloud/commit/30cb2d6d03e66841f7b3462dd2bef27e7a635751))
+* **ci:** prevent transient download and calendar-dependent test failures ([#1696](https://github.com/k2b-dev/cloud/issues/1696)) ([2bd4750](https://github.com/k2b-dev/cloud/commit/2bd4750a6143516a9122768954a3c405297d4413))
+* **ci:** retain failed nightly Grids certification reports ([#1679](https://github.com/k2b-dev/cloud/issues/1679)) ([d9158c5](https://github.com/k2b-dev/cloud/commit/d9158c5ba0ceb8250e490760c6ca37b3a1757594))
+* **cloud:** allow safe additive capability input unions ([#1666](https://github.com/k2b-dev/cloud/issues/1666)) ([70075ae](https://github.com/k2b-dev/cloud/commit/70075aed9e4d01f31b8b4eb71a21edc146a2c32b))
+* **cloud:** keep settings validation work linear ([#1730](https://github.com/k2b-dev/cloud/issues/1730)) ([180856b](https://github.com/k2b-dev/cloud/commit/180856bcd7c6478e244469cbe90e52129b4cbd0b))
+* **cloud:** release unread badge error responses ([#1660](https://github.com/k2b-dev/cloud/issues/1660)) ([56ca88f](https://github.com/k2b-dev/cloud/commit/56ca88f957f75e3597bc8efef1c317eebb0f3b35))
+* **contacts:** keep editing feedback with its action ([#1649](https://github.com/k2b-dev/cloud/issues/1649)) ([394dfb4](https://github.com/k2b-dev/cloud/commit/394dfb48a590f47c10d9c1335a96a9108f94f1fc))
+* **deps:** remove vulnerable runtime and build dependency copies ([#1682](https://github.com/k2b-dev/cloud/issues/1682)) ([fba8cb9](https://github.com/k2b-dev/cloud/commit/fba8cb99b44b4684f74ff00a91e6e61237e17c9c))
+* **mail:** keep principal IDs out of assignee labels ([#1656](https://github.com/k2b-dev/cloud/issues/1656)) ([24dc3f9](https://github.com/k2b-dev/cloud/commit/24dc3f9a1f28e16f99fea20e2cf3a095a138a246))
+* **mail:** preserve table rows and columns in text alternatives ([#1773](https://github.com/k2b-dev/cloud/issues/1773)) ([e01e4e0](https://github.com/k2b-dev/cloud/commit/e01e4e06178131a6d78d923d13a75e02679e625b)), closes [#1607](https://github.com/k2b-dev/cloud/issues/1607)
+* **mail:** reconcile conversation rows beyond the detail page ([#1710](https://github.com/k2b-dev/cloud/issues/1710)) ([cfee488](https://github.com/k2b-dev/cloud/commit/cfee488a4b1b376ccb253fa474de3b8f3dfe9301)), closes [#1748](https://github.com/k2b-dev/cloud/issues/1748)
+* **mail:** reject stale performance ranking references ([#1709](https://github.com/k2b-dev/cloud/issues/1709)) ([fc200d4](https://github.com/k2b-dev/cloud/commit/fc200d4a927fcadf7d6a300bff92e6e211aeec89)), closes [#1748](https://github.com/k2b-dev/cloud/issues/1748)
+* **mail:** retain script transfers at fractional window boundaries ([#1694](https://github.com/k2b-dev/cloud/issues/1694)) ([906abd8](https://github.com/k2b-dev/cloud/commit/906abd82819f814503b2152442946ad61720ef77))
+* **mail:** run only infrastructure suites in integration jobs ([#1667](https://github.com/k2b-dev/cloud/issues/1667)) ([5de3500](https://github.com/k2b-dev/cloud/commit/5de35006c230ac9d0621a4bb862e7c0679e81bf3))
+* **mail:** select the smoke conversation by identity ([#1680](https://github.com/k2b-dev/cloud/issues/1680)) ([fba936f](https://github.com/k2b-dev/cloud/commit/fba936fbd10789cb867500b972cf88df75b9a93a))
+* **notebooks:** open PDF links at the public Cloud origin ([#1658](https://github.com/k2b-dev/cloud/issues/1658)) ([57fcb1b](https://github.com/k2b-dev/cloud/commit/57fcb1b5afbdace9023634276431d39860a6fa63))
+* **notebooks:** size the AI edit action like the view control ([#1700](https://github.com/k2b-dev/cloud/issues/1700)) ([e123893](https://github.com/k2b-dev/cloud/commit/e12389323e9315ac911964c1431b586b52443757))
+* **notifications:** retry registration for Bun schema errors ([#1683](https://github.com/k2b-dev/cloud/issues/1683)) ([2983a42](https://github.com/k2b-dev/cloud/commit/2983a42c1a544bdb840765954f4ef1fca7d50e57))
+* **pulse:** group settings under app administration ([#1685](https://github.com/k2b-dev/cloud/issues/1685)) ([b5a9c15](https://github.com/k2b-dev/cloud/commit/b5a9c15aab7ea16ba897228345a0826e88db9154))
+* **pulse:** serve the Pulse stylesheet through the gateway ([#1782](https://github.com/k2b-dev/cloud/issues/1782)) ([f9de239](https://github.com/k2b-dev/cloud/commit/f9de2390f4b0ad149feaec3c8da77892b56a3834))
+* **ssr:** pass spread island props to the browser ([#1781](https://github.com/k2b-dev/cloud/issues/1781)) ([9c0cc00](https://github.com/k2b-dev/cloud/commit/9c0cc00ec7a50f1790ee851300596b92a66c385c))
+* **ui:** await phone picker readiness before accessibility audits ([#1668](https://github.com/k2b-dev/cloud/issues/1668)) ([3fe4f84](https://github.com/k2b-dev/cloud/commit/3fe4f84c1a41dbb74d9702f1c3d34cc5b36ee8ee))
+* **ui:** guard formatted chart values when copying ([#1729](https://github.com/k2b-dev/cloud/issues/1729)) ([ec5a399](https://github.com/k2b-dev/cloud/commit/ec5a399faaf3aa14dff38702661065b38379bd90))
+* **ui:** keep phone workspace heads with their list pane ([#1663](https://github.com/k2b-dev/cloud/issues/1663)) ([9ac019e](https://github.com/k2b-dev/cloud/commit/9ac019e917a515e356102a01e7bf9753193d4cc6))
+* **ui:** refine workspace Details presentation and focus ([#1672](https://github.com/k2b-dev/cloud/issues/1672)) ([ceec88c](https://github.com/k2b-dev/cloud/commit/ceec88c68d11cf861614ee7a71e4c532bcb3f631))
+* **ui:** round card corners on Core Administration and every app when the sidebar is hidden ([#1644](https://github.com/k2b-dev/cloud/issues/1644)) ([e44abea](https://github.com/k2b-dev/cloud/commit/e44abeaf066dfa4404aaa56f3a6e7dbaf68ce36c))
+* **ui:** settle theme transitions before RichSelect contrast audits ([#1664](https://github.com/k2b-dev/cloud/issues/1664)) ([658b226](https://github.com/k2b-dev/cloud/commit/658b226b0db4a0e8bdc29e9452f600fc2827d99f))
+* **ui:** show a consistent resize shadow on every resizable edge ([#1652](https://github.com/k2b-dev/cloud/issues/1652)) ([8f99273](https://github.com/k2b-dev/cloud/commit/8f9927348d0466d5e09088c5fb93498c966aa8a4))
+
 ## [0.48.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.47.0...cloud-v0.48.0) (2026-10-20)
 
 

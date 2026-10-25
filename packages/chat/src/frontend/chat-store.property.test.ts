@@ -6,10 +6,19 @@ import { type ChatLiveEventSchema, ConversationSchema } from "../service/contrac
 import { rng } from "../service/rng.test-fixture";
 import { type ChatStoreApi, createChatStore } from "./chat-store";
 
+const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
+
 const unusedMemberRequest = async () => {
   throw new Error("Unused member request");
 };
 const memberApi = {
+  threads: async () => noThreads,
+  createThread: async () => {
+    throw new Error("Unused thread request");
+  },
+  updateThread: async () => {
+    throw new Error("Unused thread request");
+  },
   create: unusedMemberRequest,
   updateDetails: unusedMemberRequest,
   members: unusedMemberRequest,
@@ -57,6 +66,7 @@ test("real store converges to V5 under per-key FIFO, random cross-key order, dup
       const part = model.parts.get(viewerId);
       const latest = model.msgs.findLast((m) => m.kind === "text");
       return ConversationSchema.parse({
+        threads: 0,
         id: cid,
         name: null,
         icon: null,
@@ -71,6 +81,7 @@ test("real store converges to V5 under per-key FIFO, random cross-key order, dup
         lastActivityAt: date(latest?.rev ?? 0),
         lastMessage: latest
           ? {
+              thread: null,
               id: String(latest.seq).padStart(10, "0"),
               author: { type: "user", id: latest.author, name: "Author" },
               preview: latest.body,
@@ -108,12 +119,13 @@ test("real store converges to V5 under per-key FIFO, random cross-key order, dup
         if (update.key === "p") {
           if (update.principal !== viewerId) continue;
           key = "me";
-          event = { type: "read", conversationId: cid, ...update.read, unread: update.unread, asOfRev: update.asOfRev };
+          event = { type: "read", threads: [], conversationId: cid, ...update.read, unread: update.unread, asOfRev: update.asOfRev };
         } else {
           const m = update.message;
           key = "list";
           event = {
             type: "summary",
+            thread: null,
             conversationId: cid,
             id: String(m.seq).padStart(10, "0"),
             seq: m.seq,

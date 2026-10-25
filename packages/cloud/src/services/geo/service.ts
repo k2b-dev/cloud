@@ -81,14 +81,21 @@ export const createGeoService = (
     monthlyCredits: settings.monthlyCredits,
     personDailyCredits: settings.personDailyCredits,
   });
-  const recordTransition = async (event: "monthly_budget_exhausted" | "provider_key_rejected", timezone: string, context: GeoContext) => {
+  const recordTransition = async (
+    event: "monthly_budget_exhausted" | "provider_key_rejected" | "route_cost_overrun",
+    timezone: string,
+    context: GeoContext,
+    metadata?: Record<string, number>,
+  ) => {
     const identity = geoIdentity(context);
     try {
-      await ledger.recordTransition(event, timezone, { ...context, ...identity }, now());
+      await ledger.recordTransition(event, timezone, { ...context, ...identity }, now(), metadata);
+      return true;
     } catch {
       // The transaction rolls back the dedup row too, allowing the next refusal to record it.
       // Preserve the original recovery details and paid/unknown costs on audit outages.
       console.error("[geo] Audit transition could not be recorded", { event });
+      return false;
     }
   };
   const configured = async (context: GeoContext) => {

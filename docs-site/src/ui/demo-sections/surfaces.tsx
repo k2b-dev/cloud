@@ -876,6 +876,9 @@ const notices = [
   <NoticeCard.Grid items={notices}>
     {(notice) => <NoticeCard tone={notice.tone} title={notice.title} detail={notice.detail} />}
   </NoticeCard.Grid>
+  <NoticeCard tone="warning" icon="ti ti-alert-triangle">
+    <p><strong>No route owner.</strong> Assign an owner before the next deployment.</p>
+  </NoticeCard>
 
   <DataPanel title="Routes" subtitle="6 states">
     <div class="ui-demo-row ui-data-panel-demo-body">
@@ -911,6 +914,11 @@ const notices = [
         <NoticeCard.Grid items={notices}>
           {(notice) => <NoticeCard tone={notice.tone} title={notice.title} detail={notice.detail} />}
         </NoticeCard.Grid>
+        <NoticeCard tone="warning" icon="ti ti-alert-triangle">
+          <p>
+            <strong>No route owner.</strong> Assign an owner before the next deployment.
+          </p>
+        </NoticeCard>
         <DataPanel title="Routes" subtitle="6 states">
           <div class="ui-demo-row ui-data-panel-demo-body">
             <StatusBadge label="Online" tone="ok" />
