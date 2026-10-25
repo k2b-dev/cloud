@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-23
+updated: 2026-10-25
 ---
 
 # Lessons learned
@@ -208,8 +208,16 @@ convention still needs a check or a test.
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
 | Workspace layout changes shape after the first render | A workspace region such as a `MainPane` mounts only after hydration, and the layout drops or moves content that was already shown. | Test: Chat `ChatThreads.browser.test.ts` switches from a chat without threads to one with threads at 1440 and 2000 px. Library fix pending in [#1752](https://github.com/k2b-dev/cloud/issues/1752). |
 | Redundant reads after a confirmed insert | First sync repeats content updates and queries state that cannot exist for a newly inserted message, multiplying database latency. | Test: Mail `lifecycle.integration.test.ts` counts PostgreSQL commands for a 200-envelope import and replays it to check canonical IDs, conversations and read state. Only a confirmed insert skips these reads; existing and raced copies keep the full path ([#1487](https://github.com/k2b-dev/cloud/issues/1487)). |
+| Import-time test replacement depends on file order | A skipped integration file imports a router before a unit test installs its temporary middleware factory spy. The unit test reuses the real middleware and reaches infrastructure. | Check: `module-mocks` requires isolation for top-level spies restored after a dynamic import. Dashboard and API Docs run with `--isolate`; `module-mocks.test.ts` covers shared and isolated package commands ([#1922](https://github.com/k2b-dev/cloud/issues/1922)). |
 
 ## Lessons
+
+### A skipped suite initialized the Dashboard router before its unit test (#1922)
+
+- **What happened:** All six Dashboard settings request tests returned 500 in CI unit shard 3, although they passed alone.
+- **Root cause:** A skipped integration file statically imported the router before the unit test replaced its rate-limit factory. Bun reused the initialized router, whose real limiter read settings from the unavailable unit-test database. No database pool had been closed by the skipped test.
+- **Error class:** Import-time test replacement depends on file order.
+- **Guard:** Dashboard and API Docs isolate their test files. The `module-mocks` check rejects top-level spies restored after a dynamic import in shared suites; its tests cover the failure pattern and both package and behavior isolation.
 
 ### Spread props never reached Pulse, Grids scanner and Weather settings islands
 
