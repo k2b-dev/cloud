@@ -32,6 +32,45 @@ import { auth } from "@k2b/cloud/server";
 
 Role arguments use OR logic.
 
+Every authentication policy caps OAuth requests using methods other than GET,
+HEAD, or OPTIONS: the token must have `write` or `admin` scope. Otherwise,
+Cloud returns `403 FORBIDDEN` before the handler runs. This applies to ordinary
+resource routes, administrative routes, and optional authentication alike.
+Sessions and personal API keys keep their existing behavior. Resource-bound
+API keys retain the scope checks defined by their application.
+
+Mount administrative routes behind `auth.requireRole("admin")`. The role and
+OAuth scope checks are independent: a scope never grants an administrator role
+or resource permission. Capability Actions and write streams also require
+`write` or `admin`, including when forwarded to another application.
+
+Declare a read-only POST operation explicitly on its route:
+
+```ts
+const routes = new Hono<AuthContext>()
+  .use(auth.requireRole("authenticated"))
+  .post("/search", auth.readOnly, searchHandler)
+  .post("/items", createItemHandler);
+```
+
+`auth.readOnly` requires `read` or `admin` for OAuth callers. It permits the
+transport method; the handler still checks resource permissions and must not
+change resources, permissions, credentials, or queued work. Use it for queries,
+previews, and downloads. Register it as the first handler on a concrete method and route, never
+through `.use()` or on a wildcard path. Nested `.route()` mounts are supported.
+
+Hono represents both `.use()` middleware and `.all()` handlers as ALL routes.
+An unmarked ALL handler between authentication and the endpoint therefore keeps the
+write requirement, including one interleaved after the read-only declaration. Put common middleware before authentication, or explicitly
+mark middleware that only reads, validates, or authorizes with
+`auth.readOnlyMiddleware(handler)`. This annotation permits a later read-only endpoint;
+it never makes a mutation endpoint read-only. Do not annotate middleware that changes
+resource data or creates authority. The read-only endpoint must return its response;
+it must not fall through with `next()` into an unrelated handler.
+
+GET, HEAD, and OPTIONS handlers must be read-only. A legacy GET endpoint that
+creates authority must explicitly require `auth.requireOAuthScope("write", "admin")`.
+
 `authenticated` includes resource-bound service accounts. Add
 `auth.requireUser()` when the handler needs a user.
 

@@ -826,11 +826,12 @@ message continues the task; a failed compaction holds the reason only. A
 background run that its mandate or the background AI budget blocked keeps
 Cloud's own explanation there. `AiConversation.runTurnId` is the public ID of
 the latest turn, which `runStatus` and `runError` describe; the messages of that
-turn carry it as `loopId`. The raw cause, such as the provider's message,
-goes only to the error log entry `AI turn failed` under `ai:executor`, beside
-the `code`, and a provider call's message also stays on its
-[usage record](/en/docs/ai/usage-and-feedback#read-the-report). A stop records
-no reason.
+turn carry it as `loopId`. Provider failures and loop issues use fixed Cloud
+diagnostics in the error log entry `AI turn failed` under `ai:executor` and in
+[usage records](/en/docs/ai/usage-and-feedback#read-the-report). Provider
+messages, response bodies, and tool-validation payloads do not enter these
+diagnostics. Detailed tool-validation feedback remains in the authorized
+conversation for model repair. A stop records no reason.
 
 Provider history preserves each complete assistant message, including its
 producing `provider` and reasoning blocks' `signature`, `redacted`, and `details`.

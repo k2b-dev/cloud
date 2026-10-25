@@ -911,6 +911,7 @@ export const defineApp = <
         for (const kind of ["queries", "actions"] as const) {
           server.post(
             `/api/_internal/capabilities/v1/streams/${kind}/:capabilityId/:verb`,
+            kind === "queries" ? auth.readOnly : auth.requireOAuthScope("write", "admin"),
             capabilityAuth(kind),
             auth.requireOAuthScope(kind === "queries" ? "read" : "write", "admin"),
             async (c) => {
@@ -937,14 +938,19 @@ export const defineApp = <
         }
         const capabilityReadScope = auth.requireOAuthScope("read", "admin");
         const capabilityWriteScope = auth.requireOAuthScope("write", "admin");
-        server.post("/api/_internal/capabilities/v1/queries/:capabilityId", capabilityAuth("queries"), capabilityReadScope, (c) =>
-          invoke(c, "query"),
+        server.post(
+          "/api/_internal/capabilities/v1/queries/:capabilityId",
+          auth.readOnly,
+          capabilityAuth("queries"),
+          capabilityReadScope,
+          (c) => invoke(c, "query"),
         );
         server.post("/api/_internal/capabilities/v1/actions/:capabilityId", capabilityAuth("actions"), capabilityWriteScope, (c) =>
           invoke(c, "action"),
         );
         server.post(
           "/api/_internal/capabilities/v1/actions/:capabilityId/review",
+          auth.readOnly,
           capabilityAuth("actions", true),
           capabilityReadScope,
           (c) => invoke(c, "review"),

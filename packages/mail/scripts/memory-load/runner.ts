@@ -304,7 +304,8 @@ export async function run(options: Options): Promise<void> {
       managesGroupIds: [],
     };
     const context: MailRequestContext = { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id }, requestId: uid };
-    oauthTokens.verifyAccessToken = async (token) => (token === "memory-load" ? { kind: "user", payload: {}, user, scopes: [] } : null);
+    oauthTokens.verifyAccessToken = async (token) =>
+      token === "memory-load" ? { kind: "user", payload: {}, user, scopes: ["read"] } : null;
     const create = async (sources: Fixture[], label: string, smallFolders = options.folders): Promise<Mailbox> => {
       check();
       const mailbox = await createMailbox(context, { name: `Memory ${label}` });
