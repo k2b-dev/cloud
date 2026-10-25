@@ -184,7 +184,11 @@ export const activityReaderData = {
           AND activity.server_url=${input.scope.serverUrl}))
         AND (${input.baseId ?? null}::text IS NULL OR b.area || ':' || b.kind || ':' || b.identity_id::text=${input.baseId ?? null}))`;
     };
-    const scope = sql`(${visibleSide(false)} OR ${visibleSide(true)})
+    const indexedScope = input.scope.admin
+      ? sql`TRUE`
+      : sql`server_url=${input.scope.serverUrl} AND (base_id=ANY(${toPgUuidArray(input.scope.bindingIds)}::uuid[])
+          OR base_after_id=ANY(${toPgUuidArray(input.scope.bindingIds)}::uuid[]))`;
+    const scope = sql`${indexedScope} AND (${visibleSide(false)} OR ${visibleSide(true)})
       AND action=ANY(${toPgTextArray(HistoryAction.options)}::text[])`;
     const ancestors = input.chain ? input.chain.path.split("/").map((_, index, parts) => parts.slice(0, index + 1).join("/")) : [];
     ancestors.unshift("");
