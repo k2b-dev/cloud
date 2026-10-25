@@ -1076,7 +1076,8 @@ See [App capabilities](/en/docs/platform/capabilities) for discovery and consent
 
 ## Understand changes without a Cloud entry
 
-When Files notices that an item differs from its last confirmed Cloud change,
+In local Cloud storage, when Files notices that an item differs from its last
+confirmed Cloud change,
 the history shows what it found and when it noticed it. This can happen when
 you open an item, save a document, or when maintenance checks it. The cause,
 person and actual time of the change remain unknown.

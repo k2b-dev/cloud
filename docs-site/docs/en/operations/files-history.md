@@ -133,8 +133,9 @@ and the restore.
 
 ## Interpret changes discovered on contact
 
-Files compares the current item with the last confirmed Cloud change when the
-item or its history is opened, before a document save, and during maintenance.
+In local Cloud areas, Files compares the current item with the last confirmed
+Cloud change when the item or its history is opened, before a document save,
+and during maintenance. POSIX areas do not produce these observations.
 Opening history for a specific item compares that item after checking current
 read access; a missing path requires a readable parent. The global history view
 does not trigger comparisons of all its entries. Files records a changed revision
