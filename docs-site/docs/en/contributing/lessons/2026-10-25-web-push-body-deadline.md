@@ -1,4 +1,4 @@
-# Exercise transport deadlines after response headers
+### Exercise transport deadlines after response headers
 
 - **What happened:** The Web Push streaming-response test could time out before its response fixture was ready.
 - **Root cause:** The real 80 ms total deadline included connection setup, while the test awaited headers before observing rejection.
