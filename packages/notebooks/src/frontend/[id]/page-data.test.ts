@@ -96,7 +96,7 @@ function fixtures(permission: PermissionLevel, defaultPresentationMode: Presenta
     perPage: 30,
     hasNext: false,
   });
-  const graph = track(spyOn(notebooksService.notebook, "graph")).mockResolvedValue({ nodes: [], edges: [] });
+  const graph = track(spyOn(notebooksService.notebook, "graphView")).mockResolvedValue({ nodes: [], edges: [] });
   const versions = track(spyOn(notebooksService.note.versions, "list"));
   return { backlinks, comments, graph, versions };
 }
@@ -311,7 +311,7 @@ for (const [permission, query, shell, from] of [
     expect(data.showDetailPanel).toBe(false);
     expect(data.graph).toEqual({ nodes: [], edges: [] });
     expect(calls.graph).toHaveBeenCalledTimes(1);
-    expect(calls.graph).toHaveBeenCalledWith({ notebookId: notebook.id });
+    expect(calls.graph).toHaveBeenCalledWith({ notebookId: notebook.id, noteId: note.id });
     for (const call of [calls.backlinks, calls.comments, calls.versions, content, bookContent]) expect(call).not.toHaveBeenCalled();
   });
 }
