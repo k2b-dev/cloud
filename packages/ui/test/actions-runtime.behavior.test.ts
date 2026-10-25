@@ -130,6 +130,43 @@ describe("@k2b/ui action runtime behavior", () => {
     dom.cleanup();
   });
 
+  test("a lazy dropdown renders its entries when it first opens, then focuses the first one", async () => {
+    const dom = createDomTestHarness();
+    installPopoverStub();
+    const { Dropdown } = await import("../src/actions/Dropdown");
+    const dispose = render(
+      () =>
+        createComponent(Dropdown.Root, {
+          lazy: true,
+          items: [
+            { label: "Rename", action: () => {} },
+            { label: "Delete", action: () => {} },
+          ],
+          get children() {
+            return createComponent(Dropdown.Trigger, { label: "Row actions", children: "More" });
+          },
+        }),
+      dom.root,
+    );
+    const menu = () => dom.root.querySelector<HTMLElement>(".k2b-dropdown__menu");
+    expect(menu()?.querySelectorAll("[role='menuitem']")).toHaveLength(0);
+    // The trigger still names its menu, so assistive technology finds what it opens.
+    expect(dom.root.querySelector(".k2b-dropdown__trigger")?.getAttribute("aria-controls")).toBe(menu()?.id);
+
+    dom.root.querySelector<HTMLButtonElement>(".k2b-dropdown__trigger")?.click();
+    await flush();
+    const items = [...(menu()?.querySelectorAll<HTMLElement>("[role='menuitem']") ?? [])];
+    expect(items.map((item) => item.textContent)).toEqual(["Rename", "Delete"]);
+    expect(document.activeElement).toBe(items[0] ?? null);
+
+    // Closed again, the entries stay, so a second opening is as quick as any menu's.
+    items[0]?.click();
+    await flush();
+    expect(menu()?.querySelectorAll("[role='menuitem']")).toHaveLength(2);
+    dispose();
+    dom.cleanup();
+  });
+
   test("runs a link row's action on a plain click and leaves modified clicks to the link", async () => {
     const dom = createDomTestHarness();
     installPopoverStub();

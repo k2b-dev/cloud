@@ -1,6 +1,6 @@
 import { sql } from "bun";
 import { compareNoteOrder } from "../lib/note-order";
-import { SIDEBAR_MAX_WINDOW, SIDEBAR_PAGE_SIZE, type SidebarTreeSort } from "../lib/sidebar-tree";
+import { SIDEBAR_FIRST_ROWS, SIDEBAR_MAX_WINDOW, SIDEBAR_PAGE_SIZE, type SidebarTreeSort } from "../lib/sidebar-tree";
 
 /**
  * The note tree, one level at a time. A notebook can hold tens of thousands of
@@ -124,7 +124,7 @@ export const levelWindow = (
 ): TreeLevelWindow => {
   const limit = Math.min(SIDEBAR_MAX_WINDOW, Math.max(1, window.limit ?? SIDEBAR_PAGE_SIZE));
   const at = window.around ? level.findIndex((entry) => entry.id === window.around) : -1;
-  const offset = at >= 0 ? Math.floor(at / SIDEBAR_PAGE_SIZE) * SIDEBAR_PAGE_SIZE : Math.min(Math.max(0, window.offset ?? 0), level.length);
+  const offset = at >= 0 ? Math.floor(at / limit) * limit : Math.min(Math.max(0, window.offset ?? 0), level.length);
   return { parentId, total: level.length, offset, items: level.slice(offset, offset + limit) };
 };
 
@@ -169,7 +169,9 @@ export const revealNote = async (params: {
   const parents = [null, ...ancestors];
   const path = [...ancestors, params.noteId];
   const levels = await Promise.all(
-    parents.map(async (parentId, depth) => levelWindow(parentId, await readLevel({ ...params, parentId }), { around: path[depth] })),
+    parents.map(async (parentId, depth) =>
+      levelWindow(parentId, await readLevel({ ...params, parentId }), { around: path[depth], limit: SIDEBAR_FIRST_ROWS }),
+    ),
   );
   return { levels, expandedIds: ancestors };
 };

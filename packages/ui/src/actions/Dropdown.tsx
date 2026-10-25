@@ -119,6 +119,11 @@ export type DropdownProps = {
    * Defaults to `menu`. A controlled menu (`open`) always stays a menu.
    */
   phone?: "menu" | "sheet";
+  /**
+   * Renders the entries only once the menu first opens, for a menu repeated on every row of a long list: the page
+   * then carries each row's trigger, not each row's entries. Fixed for the menu's lifetime.
+   */
+  lazy?: boolean;
 };
 
 export type DropdownTriggerProps = Omit<
@@ -514,6 +519,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   const id = createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-");
   const menuId = `k2b-dropdown-${id}`;
   const [internalOpen, setInternalOpen] = createSignal(false);
+  const [entriesShown, setEntriesShown] = createSignal(!props.lazy);
   let triggerRef: HTMLButtonElement | undefined;
   let menuRef: HTMLDivElement | undefined;
   let triggerRing = true;
@@ -569,6 +575,8 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   const open = (focus: "first" | "last" | false = "first") => {
     if (props.disabled || !menuRef || menuRef.matches(":popover-open")) return;
     triggerRing = ringOnReturn(triggerRef);
+    // A lazy menu's entries exist before it shows, so it places and focuses them as any other.
+    setEntriesShown(true);
     menuRef.showPopover();
     // The toggle event arrives a task later; expose the open state before focus moves into the menu.
     setInternalOpen(true);
@@ -688,6 +696,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
             const nextOpen = (event as ToggleEvent).newState === "open";
             const wasOpen = (event as ToggleEvent).oldState === "open";
             setInternalOpen(nextOpen);
+            if (nextOpen) setEntriesShown(true);
             if (nextOpen) attachViewportListeners();
             else detachViewportListeners();
             if (props.open === undefined || props.open !== nextOpen) props.onOpenChange?.(nextOpen);
@@ -695,7 +704,9 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
             if (!nextOpen && props.open === true) queueMicrotask(() => props.open === true && open(false));
           }}
         >
-          <DropdownItems items={props.items} close={close} />
+          <Show when={entriesShown()}>
+            <DropdownItems items={props.items} close={close} />
+          </Show>
         </div>
       </span>
     </DropdownContext.Provider>

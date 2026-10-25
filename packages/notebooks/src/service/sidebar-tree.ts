@@ -1,4 +1,4 @@
-import type { SidebarLevel, SidebarList, SidebarNote, SidebarTreeState } from "../lib/sidebar-tree";
+import { SIDEBAR_FIRST_ROWS, type SidebarLevel, type SidebarList, type SidebarNote, type SidebarTreeState } from "../lib/sidebar-tree";
 import { resolveIdsToShortIds } from "./notes";
 import {
   countNotes,
@@ -54,7 +54,7 @@ export const loadSidebarTree = async (params: Scope & { selectedNoteId: string |
       ? await readSmallTree(params)
       : params.selectedNoteId
         ? await revealNote({ ...params, noteId: params.selectedNoteId })
-        : { levels: [levelWindow(null, await readLevel({ ...params, parentId: null }), {})], expandedIds: [] };
+        : { levels: [levelWindow(null, await readLevel({ ...params, parentId: null }), { limit: SIDEBAR_FIRST_ROWS })], expandedIds: [] };
   const { levels, shortIds } = await projectLevels(loaded.levels);
   return { total, levels, expandedIds: loaded.expandedIds.map((id) => shortIds.get(id)).filter((id): id is string => !!id) };
 };

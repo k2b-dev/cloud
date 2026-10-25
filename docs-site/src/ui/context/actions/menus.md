@@ -105,7 +105,11 @@ for a form or richer workflow. Use `Select`, `MultiSelectInput`, `SelectChip`,
 or `FilterChip` when the interaction edits a value or filter.
 
 `Dropdown.Root` accepts `items`, `open`, `onOpenChange`, `position`, `align`,
-`width`, `class`, `menuClass`, `label`, `disabled`, `phone`, and `onClose`.
+`width`, `class`, `menuClass`, `label`, `disabled`, `phone`, `lazy`, and `onClose`.
+Set `lazy` on a menu that repeats on every row of a long list, such as a tree
+or sidebar: its entries render when the menu first opens, so the page carries
+each row's trigger but not each row's entries. Opening, focus, and keyboard use
+stay the same.
 `Dropdown.Trigger` owns the native button and its SSR-visible menu semantics.
 Use its normal button appearance by default. Set `appearance="plain"` only
 when a specialized component class owns the complete visual treatment.
@@ -192,6 +196,7 @@ type DropdownProps = {
   position?: DropdownPosition | (() => DropdownPosition); variant?: "default" | "touch"; width?: string;
   class?: string; menuClass?: string; onClose?: () => void; open?: boolean;
   onOpenChange?: (open: boolean) => void; disabled?: boolean; label?: string; align?: "start" | "end"; phone?: "menu" | "sheet";
+  lazy?: boolean;
 };
 
 type ContextMenuProps = {
