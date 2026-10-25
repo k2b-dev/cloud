@@ -256,6 +256,16 @@ pass siblings as separate arguments or use shell expansion.
 
 ## History
 
+History is available for local Cloud storage, where Cloud grants govern the
+whole area. FreeIPA and other POSIX areas show a notice instead: their Unix
+permissions cannot be checked for historical activity. File versions remain
+available according to the storage root's existing version settings.
+
+You see activity only in local areas you can currently access. A move or copy
+shows each location only when you can access that area. Losing access also
+hides your earlier actions there. Hidden activity does not change the counts
+or the pages you receive.
+
 Files records folder creation, renames, moves, copies, uploads, document creation,
 template use, Office saves, trash and restores, version changes, and permanent
 deletion through the web, mobile app, API and CLI, other apps, and agents. It also

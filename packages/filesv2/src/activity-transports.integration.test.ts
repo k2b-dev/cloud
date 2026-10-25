@@ -71,11 +71,24 @@ suiteFor("database")("history projection through API, CLI and Assistant", () => 
     expect(response.status).toBe(200);
     return response.json();
   };
+  test("POSIX area returns a stable unavailable code through the API", async () => {
+    fixture();
+    const response = await app.request(`http://cloud.test/api/filesv2/activity?baseId=freeipa:users:${actorId}`);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "history_unavailable" });
+  });
   test("all three surfaces return the same authorized projection and react to lost current membership", async () => {
     const f = fixture();
     const page = await apiPage();
     expect(page.items).toHaveLength(1);
-    expect(page.items[0]?.before).toEqual({ visibility: "disappearance", name: "old", path: `${home}/old`, relativePath: "old", directory: true, publicBaseId });
+    expect(page.items[0]?.before).toEqual({
+      visibility: "disappearance",
+      name: "old",
+      path: `${home}/old`,
+      relativePath: "old",
+      directory: true,
+      publicBaseId,
+    });
     expect(page.items[0]?.after.visibility).toBe("full");
     expect(JSON.stringify(page)).not.toContain("must-not-escape");
     const capability = await filesCapabilities.queries["activity.list"].run({}, context);

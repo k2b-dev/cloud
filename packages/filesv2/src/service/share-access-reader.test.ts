@@ -53,10 +53,7 @@ test("share access gates every page before querying, using only creator or canon
   const reader = createActivityReader({
     ...f.deps,
     now: () => now,
-    requestContext: async () => {
-      throw new Error("Share counts must not load file membership/configuration");
-    },
-    shares: { get: async () => (exists ? { created_by: creator } : null) },
+    shares: { get: async () => (exists ? { created_by: creator, base_id: "20000000-0000-4000-8000-000000000001" } : null) },
     data: {
       ...f.deps.data!,
       shareAccess: async (parsed, options) => {
@@ -76,6 +73,9 @@ test("share access gates every page before querying, using only creator or canon
   await expect(reader.shareAccess(call, page)).rejects.toMatchObject({ status: 404 });
   creator = actorId;
   f.setMember(false);
+  await expect(reader.shareAccess(call, page)).rejects.toMatchObject({ status: 404 });
+  expect(queries).toBe(1);
+  f.setMember(true);
   expect((await reader.shareAccess(call, page)).pages).toBe(5);
   expect(queries).toBe(2);
   exists = false;

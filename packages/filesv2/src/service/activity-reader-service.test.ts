@@ -144,7 +144,7 @@ test("canonical guest demotion denies own activity/list, activity.get and share.
   expect(f.connect).not.toHaveBeenCalled();
 });
 
-test("unreadable configuration fails history list/detail/chain explicitly while independent share authorization survives", async () => {
+test("unreadable configuration fails all local history reads, including share aggregates", async () => {
   const f = fixture();
   f.config.unreadable = true;
   // This also covers the default/disabled configuration returned after failed decryption.
@@ -161,11 +161,11 @@ test("unreadable configuration fails history list/detail/chain explicitly while 
   expect(f.candidates).not.toHaveBeenCalled();
   expect(f.byId).not.toHaveBeenCalled();
   expect(f.connect).not.toHaveBeenCalled();
-  expect((await f.service.shareAccess(call, input)).pages).toBe(1);
+  await expect(f.service.shareAccess(call, input)).rejects.toMatchObject({ code: "configuration_unreadable", status: 409 });
   f.setForeignCreator();
   await expect(f.service.shareAccess(call, input)).rejects.toMatchObject({ code: "not_found", status: 404 });
   f.setAdmin();
-  expect((await f.service.shareAccess(call, input)).pages).toBe(1);
+  await expect(f.service.shareAccess(call, input)).rejects.toMatchObject({ code: "configuration_unreadable", status: 409 });
 });
 
 test("share list and revoke reject a canonical guest before creator or admin management shortcuts", async () => {

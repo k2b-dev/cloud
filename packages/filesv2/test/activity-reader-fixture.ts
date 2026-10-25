@@ -167,10 +167,11 @@ export function historyFixture(rows: ActivityCandidate[] = [candidate()]) {
             if (
               !input.scope.admin &&
               !input.scope.bindingIds.includes(row.base_id ?? "") &&
-              !input.scope.bindingIds.includes(row.base_after_id ?? "") &&
-              !(row.actor_kind === "user" && row.actor_user_id === input.scope.userId)
+              !input.scope.bindingIds.includes(row.base_after_id ?? "")
             )
               return false;
+            if (!input.scope.admin && row.server_url !== input.scope.serverUrl) return false;
+            if (![row.base_id, row.base_after_id].includes(baseId)) return false;
             if (input.baseId && ![row.base_id, row.base_after_id].some((id) => id === baseId && input.baseId === publicBaseId))
               return false;
             if (input.from && Date.parse(row.effective_time) < Date.parse(input.from)) return false;

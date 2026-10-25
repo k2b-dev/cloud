@@ -5,7 +5,7 @@ import { testActor, testCall } from "../../test/files-call";
 
 const call = testCall(testActor);
 
-test("batch context ignores search text, projects both ACL sides, and returns only visible count/completeness", async () => {
+test("batch context ignores search text and counts local grant-authorized peers, and returns only visible count/completeness", async () => {
   const anchor = candidate(1, { path_before: null });
   const f = historyFixture([
     anchor,
@@ -22,40 +22,35 @@ test("batch context ignores search text, projects both ACL sides, and returns on
   f.deps.displayNames = async () => {
     throw new Error("Batch context must not resolve people");
   };
-  expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 3, complete: true });
+  expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 4, complete: true });
   expect(f.database).toHaveLength(1);
   expect(f.database[0]).toEqual({
-    scope: { admin: false, userId: actorId, bindingIds: [baseId] },
+    scope: { admin: false, userId: actorId, bindingIds: [baseId], serverUrl: "http://filegate.test" },
     batch: { id: "30000000-0000-4000-8000-000000000001", anchorId: anchor.id },
     position: null,
     direction: "desc",
     limit: 499,
   });
-  f.denied.add("new");
+  f.setMember(false);
   f.database.length = 0;
   await expect(f.reader.activityBatchContext(call, { activityId: anchor.id })).rejects.toMatchObject({ code: "not_found", status: 404 });
   expect(f.database).toEqual([]);
 });
 
-test("own snapshots remain countable without membership; foreign snapshots and unknown actions remain hidden", async () => {
+test("revoked grants hide own batch snapshots before querying peers", async () => {
   const own = candidate(1, { actor_user_id: actorId });
-  const f = historyFixture([
-    own,
-    candidate(2, { actor_user_id: actorId }),
-    candidate(3),
-    candidate(4, { actor_user_id: actorId, action: "future.action" }),
-  ]);
+  const f = historyFixture([own, candidate(2, { actor_user_id: actorId })]);
   f.setMember(false);
-  expect(await f.reader.activityBatchContext(call, { activityId: own.id })).toEqual({ visibleCount: 2, complete: true });
+  await expect(f.reader.activityBatchContext(call, { activityId: own.id })).rejects.toMatchObject({ code: "not_found", status: 404 });
+  expect(f.database).toEqual([]);
   expect(f.requests).toEqual([]);
-  expect(f.authorized).toEqual([]);
 });
 
 test("unknown, denied and unbatched anchors have the same opaque 404 before querying any peers", async () => {
   const unbatched = candidate(1, { batch_id: null });
   const hidden = candidate(2, { path_before: null });
   const f = historyFixture([unbatched, hidden]);
-  f.denied.add("new");
+  f.setMember(false);
   for (const id of [unbatched.id, hidden.id, candidate(99).id])
     await expect(f.reader.activityBatchContext(call, { activityId: id })).rejects.toMatchObject({ code: "not_found", status: 404 });
   expect(f.database).toEqual([]);
@@ -66,7 +61,7 @@ test.each([499, 500, 501])(
   async (size) => {
     const rows = Array.from({ length: size }, (_, index) => candidate(index + 1, { actor_user_id: actorId }));
     const f = historyFixture(rows);
-    f.setMember(false);
+    f.setMember(true);
     expect(await f.reader.activityBatchContext(call, { activityId: rows[0]!.id })).toEqual({
       visibleCount: Math.min(size, 500),
       complete: size < 500,

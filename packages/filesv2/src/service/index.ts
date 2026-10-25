@@ -989,8 +989,11 @@ export function createFilesService(
       } catch (error) {
         if (!((error instanceof AccountIdentityError || error instanceof FilesError) && [403, 404].includes(error.status))) throw error;
       }
+      if (!admin && state.self.user.provider === "ipa" && !state.candidates.some((item) => item.area === "cloud"))
+        throw new FilesError("history_unavailable", 409);
       const allowedBindingIds: string[] = [];
       for (const item of state.candidates) {
+        if (item.area !== "cloud") continue;
         if (issueFor(state.config, item.area, state.self.availability)) continue;
         const found = await budget.run(() => deps.bindings.find(item));
         for (const binding of found)
@@ -1181,6 +1184,7 @@ export function createFilesService(
           const stable = parseStableEntryRefId(id);
           const location = stable ?? (await budget.run(() => resolveEntryRefId(id)));
           if (!location) return empty;
+          if (location.baseId.startsWith("freeipa:")) throw new FilesError("history_unavailable", 409);
           // Same read-only base/path checks as the reader: no claim, provisioning or reference writes.
           const base = await authorizedBase(call.actor, location.baseId, state, true, budget);
           if (stable) {

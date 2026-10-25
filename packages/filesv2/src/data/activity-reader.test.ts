@@ -18,7 +18,7 @@ async function read(mode: (typeof modes)[number], budget: ActivityReadBudget) {
   if (mode === "shareAccess") return activityReaderData.shareAccess({ shareId: id, from: "2030-05-01", to: "2030-05-15" }, { budget });
   return activityReaderData.candidates(
     {
-      scope: { admin: false, userId: id, bindingIds: [] },
+      scope: { admin: false, userId: id, bindingIds: [], serverUrl: "http://filegate.test" },
       batch: mode === "batch" ? { id, anchorId: id } : undefined,
       position: null,
       direction: "desc",
