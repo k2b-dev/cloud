@@ -6,6 +6,7 @@ import {
   type CloudResourceView,
   capabilityPage,
   defineCapabilities,
+  hasRole,
   UniversalSearchDataSchema,
   type UniversalSearchInput,
   UniversalSearchInputSchema,
@@ -19,10 +20,15 @@ import {
   AlertListInputSchema,
   AlertReadInputSchema,
   AlertSaveInputSchema,
+  BaseCreateInputSchema,
   BaseDataSchema,
+  BaseDestroyInputSchema,
   BaseListDataSchema,
   BaseListInputSchema,
+  BaseOperationDataSchema,
   BaseReadInputSchema,
+  IngestWriteDataSchema,
+  IngestWriteInputSchema,
   SavedQueryDataSchema,
   SavedQueryDeleteDataSchema,
   SavedQueryDeleteInputSchema,
@@ -46,6 +52,8 @@ import { pulseBaseHref, pulseSourceHref } from "./resource-hrefs";
 import { pulseService } from "./service";
 import { accessScopeFor, requireBaseAccess } from "./service/access-control";
 import { alertRules } from "./service/alert-rules";
+import { checkBaseCreation } from "./service/base-management";
+import { requireOwnedIngestSource } from "./service/owned-ingest";
 import { projectBases, projectSources, resolvePublicId } from "./service/public-resources";
 import { savedQueries } from "./service/saved-queries";
 import { runBaseSql } from "./service/sql-service";
@@ -395,6 +403,54 @@ const sourceReview = async (
   });
 };
 
+const creationTarget = async (context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
+  const scope = scopeFor(context);
+  if (!scope.ok) return scope;
+  return ok({
+    user: scope.data,
+    agent: context.actor.kind === "service_account",
+    isCloudAdmin: context.actor.kind === "user" && hasRole(context.actor.user, "admin"),
+  });
+};
+const destroyTarget = async (input: z.infer<typeof BaseDestroyInputSchema>, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
+  const scope = scopeFor(context);
+  if (!scope.ok) return scope;
+  const id = await internalId("bases", input.baseId, context.locale);
+  if (!id.ok) return id;
+  const access = await requireBaseAccess(id.data, scope.data, "admin");
+  if (!access.ok) return access;
+  const base = await pulseService.base.get(id.data, scope.data);
+  if (!base.ok) return base;
+  if (base.data.updatedAt !== input.expectedUpdatedAt) return fail(err.conflict("Base changed; read its current updatedAt and retry."));
+  return ok({ baseId: id.data, user: scope.data, base: base.data });
+};
+const destroyReview = async (input: z.infer<typeof BaseDestroyInputSchema>, context: CapabilityExecutionContext, deleting: boolean) => {
+  const target = await destroyTarget(input, context);
+  if (!target.ok) return target;
+  const de = context.locale.startsWith("de");
+  return ok({
+    message: de
+      ? `Base „${target.data.base.name}“ ${deleting ? "mit allen Quellen und Daten löschen" : "leeren und alle Messdaten löschen"}?`
+      : `${deleting ? "Delete the base, all sources and data" : "Clear all measurements in the base"} “${target.data.base.name}”?`,
+    details: [
+      { label: "Base", value: input.baseId },
+      { label: de ? "Änderungsstand" : "Revision", value: input.expectedUpdatedAt },
+    ],
+  });
+};
+const ingestTarget = async (input: z.infer<typeof IngestWriteInputSchema>, context: CapabilityExecutionContext) => {
+  if (!(await pulseStoreConfigured())) return fail({ ...PULSE_NOT_CONFIGURED, status: 500 });
+  const base = await internalId("bases", input.baseId, context.locale);
+  if (!base.ok) return base;
+  const source = await internalId("sources", input.sourceId, context.locale);
+  if (!source.ok) return source;
+  const identity = { actor: context.actor, accessSubject: context.accessSubject, expectedRevision: input.expectedRevision };
+  const owned = await requireOwnedIngestSource(base.data, source.data, identity);
+  return owned.ok ? ok({ baseId: base.data, sourceId: source.data, ownedSource: identity, name: owned.data.name }) : owned;
+};
+
 export const pulseCapabilities = defineCapabilities({
   protocolVersion: 2,
   presentation: pulseCapabilityPresentation,
@@ -540,6 +596,133 @@ export const pulseCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "base.create": {
+      title: "Create Pulse base",
+      description: "Create a base under the operator's creation policy. The creator receives admin access. Can be planned after review.",
+      input: BaseCreateInputSchema,
+      data: BaseDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const target = await creationTarget(context);
+        if (!target.ok) return target;
+        const allowed = await checkBaseCreation(target.data);
+        if (!allowed.ok) return allowed;
+        const de = context.locale.startsWith("de");
+        return ok({
+          message: de ? `Base „${input.name}“ anlegen?` : `Create base “${input.name}”?`,
+          details: [{ label: de ? "Beschreibung" : "Description", value: input.description ?? "" }],
+          approvalScope: "pulse:base:create",
+        });
+      },
+      run: async (input, context) => {
+        if (!context.idempotencyKey) return fail(err.badInput("An Idempotency-Key is required."));
+        const target = await creationTarget(context);
+        if (!target.ok) return target;
+        const result = await pulseService.base.create({ ...input, ...target.data });
+        if (!result.ok) return result;
+        const [base] = await projectBases([result.data]);
+        return ok({
+          data: mapBase(base!),
+          refs: [{ type: "pulse.base", id: base!.id }],
+          links: [{ rel: "open" as const, href: pulseBaseHref(base!.id) }],
+        });
+      },
+    },
+    "base.clear_data": {
+      title: "Clear Pulse base data",
+      description:
+        "Start clearing all measurements while preserving sources and configuration. Requires base admin, unchanged updatedAt and approval every time.",
+      input: BaseDestroyInputSchema,
+      data: BaseOperationDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      review: (input, context) => destroyReview(input, context, false),
+      run: async (input, context) => {
+        if (!context.idempotencyKey) return fail(err.badInput("An Idempotency-Key is required."));
+        const target = await destroyTarget(input, context);
+        if (!target.ok) return target;
+        const result = await pulseService.base.clearData({ ...target.data, expectedUpdatedAt: input.expectedUpdatedAt });
+        return result.ok ? ok({ data: { started: true as const } }) : result;
+      },
+    },
+    "base.delete": {
+      title: "Delete Pulse base",
+      description: "Start deleting a base, all sources and measurements. Requires base admin, unchanged updatedAt and approval every time.",
+      input: BaseDestroyInputSchema,
+      data: BaseOperationDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      review: (input, context) => destroyReview(input, context, true),
+      run: async (input, context) => {
+        if (!context.idempotencyKey) return fail(err.badInput("An Idempotency-Key is required."));
+        const target = await destroyTarget(input, context);
+        if (!target.ok) return target;
+        const result = await pulseService.base.remove({ ...target.data, expectedUpdatedAt: input.expectedUpdatedAt });
+        return result.ok ? ok({ data: { started: true as const } }) : result;
+      },
+    },
+    "ingest.write": {
+      title: "Write Pulse telemetry",
+      description:
+        "Write at most 192 KiB through an HTTP ingest source created by the current access subject, at its current revision. Requires base write access. Can be planned after review.",
+      input: IngestWriteInputSchema,
+      data: IngestWriteDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const target = await ingestTarget(input, context);
+        if (!target.ok) return target;
+        const de = context.locale.startsWith("de");
+        return ok({
+          message: de ? `Messdaten in „${target.data.name}“ schreiben?` : `Write telemetry to “${target.data.name}”?`,
+          details: [
+            { label: "Base", value: input.baseId },
+            { label: de ? "Quelle" : "Source", value: input.sourceId },
+            { label: "Revision", value: String(input.expectedRevision) },
+            ...(["metrics", "events", "states"] as const).map((key) => ({
+              label: (de
+                ? { metrics: "Metriken", events: "Ereignisse", states: "Zustände" }
+                : { metrics: "Metrics", events: "Events", states: "States" })[key],
+              value: String(input.batch[key]?.length ?? 0),
+            })),
+          ],
+          approvalScope: `pulse:source:${target.data.sourceId}:ingest`,
+        });
+      },
+      run: async (input, context) => {
+        if (!context.idempotencyKey) return fail(err.badInput("An Idempotency-Key is required."));
+        const parsed = IngestWriteInputSchema.safeParse(input);
+        if (!parsed.success) return fail(err.badInput("Invalid ingest.write input; maximum 192 KiB."));
+        const target = await ingestTarget(parsed.data, context);
+        if (!target.ok) return target;
+        const result = await pulseService.ingest.batch({
+          ...target.data,
+          batch: parsed.data.batch,
+          idempotencyKey: context.idempotencyKey,
+          requestBytes: new TextEncoder().encode(JSON.stringify(parsed.data)).byteLength,
+          locale: context.locale,
+        });
+        if (result.ok) return ok({ data: result.data });
+        if (result.error.status >= 500)
+          return {
+            ...result,
+            error: {
+              ...result.error,
+              message: context.locale.startsWith("de")
+                ? "Die Messdaten konnten nicht bestätigt werden. Prüfe den gespeicherten Stand mit SQL. Bei IDEMPOTENCY_UNCERTAIN keine neue Kennung erzeugen: Teile können bereits gespeichert sein."
+                : "Telemetry could not be confirmed. Inspect stored data with SQL. If the dispatcher reports IDEMPOTENCY_UNCERTAIN, do not create a new key: part of the batch may already be stored.",
+            },
+          };
+        return result;
+      },
+    },
     "alert.save": {
       title: "Save Pulse alert rule",
       description:

@@ -5,8 +5,15 @@
  * cross-app imports.
  */
 
+import { aiSkillsRoutes } from "@k2b/cloud/ai";
 import { aiLive, aiLiveChannels } from "@k2b/cloud/ai/live";
-import { createAiOpenAiRoutes, createCoreApiRouter, createMcpProtectedResourceRoutes, createPwaPhoneRoutes } from "@k2b/cloud/api";
+import {
+  createAiOpenAiRoutes,
+  createAppAccessRoutes,
+  createCoreApiRouter,
+  createMcpProtectedResourceRoutes,
+  createPwaPhoneRoutes,
+} from "@k2b/cloud/api";
 import { type AppContext, type AuthContext, middleware } from "@k2b/cloud/server";
 import { createIdentityPublicRoutes } from "@k2b/cloud/services/identity";
 import { Hono } from "hono";
@@ -35,12 +42,18 @@ const pages = createPagesRouter();
 const mcpProtectedResource = createMcpProtectedResourceRoutes();
 const identityPublicRoutes = createIdentityPublicRoutes();
 
-// AI task and chat routers use("*") on /api/ai/* and would reject models-only keys before this endpoint.
-const coreApi = new Hono().route("/ai/openai/v1", createAiOpenAiRoutes()).route("/ai", aiChatTaskRoutes).route("/", api);
+// Dedicated brokers must precede Task auth on /api/ai/*: models-only OpenAI keys
+// and non-user Skills readers cannot pass the Task router's user requirement.
+const coreApi = new Hono()
+  .route("/ai/openai/v1", createAiOpenAiRoutes())
+  .route("/ai/skills", aiSkillsRoutes)
+  .route("/ai", aiChatTaskRoutes)
+  .route("/", api);
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
+  .route("/_cloud/app-access", createAppAccessRoutes())
   .route("/", identityPublicRoutes)
   .route("/", mcpProtectedResource)
   .route("/api/ai/live", aiLive.routes(aiLiveChannels))

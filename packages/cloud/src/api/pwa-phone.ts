@@ -1,10 +1,14 @@
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { registeredPwaBuilds } from "../_internal/runtime-watcher";
 import { env } from "../config/env";
 import { PWA_AUTH_PATH, PWA_COOKIES, PWA_LIMITS, PWA_SCOPE, PwaClaimSchema, type PwaLaunchState, PwaRenameSchema } from "../contracts/pwa";
+import { launchTarget } from "../contracts/pwa-location";
 import { type AuthContext, auth, getLocale, rateLimit, v } from "../server";
 import { type PwaCredentials, type PwaDeviceNotifier, PwaError, pwaDevices } from "../services/pwa-devices";
 import { defaultShellAvailable, handlePwaError, type PwaRouteOptions, pwaErrorResponse, pwaInvalidRequest, pwaTransport } from "./pwa";
+
+export { launchTarget } from "../contracts/pwa-location";
 
 const PAIRING_COOKIE_PATH = `${PWA_AUTH_PATH}/pairings`;
 const cookie = { httpOnly: true, secure: !env.IS_DEVELOPMENT } as const;
@@ -19,7 +23,9 @@ const setAppCredentials = (c: Context, credentials: PwaCredentials) => {
     maxAge: PWA_LIMITS.idleDays * 86_400,
   });
 };
+const clearLastAddress = (c: Context) => deleteCookie(c, PWA_COOKIES.lastAddress, { path: PWA_SCOPE, secure: true, sameSite: "Lax" });
 const clearAppCredentials = (c: Context) => {
+  clearLastAddress(c);
   deleteCookie(c, PWA_COOKIES.session, { ...cookie, path: "/" });
   deleteCookie(c, PWA_COOKIES.device, { ...cookie, path: PWA_AUTH_PATH });
 };
@@ -33,27 +39,6 @@ const appSession = async (c: Context) => {
 const webSession = async (c: Context) => {
   const session = await authenticated(c, auth.session.getWebToken(c));
   return session?.data.kind === "web" ? session : null;
-};
-
-/**
- * A path inside the app to return to after the launch bounce; anything else becomes `/pwa/`.
- * The `pwa_launch` marker lets the page stop instead of bouncing again.
- */
-export const launchTarget = (to: string | undefined): string => {
-  const fallback = `${PWA_SCOPE}?pwa_launch=1`;
-  if (!to || to.length > 2048 || !to.startsWith(PWA_SCOPE) || to.includes("//") || to.includes("\\")) return fallback;
-  const url = new URL(to, "http://launch.invalid");
-  // Judge the path the browser will request: dot segments and escapes are resolved by then.
-  let path: string;
-  try {
-    path = decodeURIComponent(url.pathname);
-  } catch {
-    return fallback;
-  }
-  const inside = (value: string) => value.startsWith(PWA_SCOPE) && value !== PWA_AUTH_PATH && !value.startsWith(`${PWA_AUTH_PATH}/`);
-  if (url.origin !== "http://launch.invalid" || !inside(url.pathname) || !inside(path) || path.includes("//")) return fallback;
-  url.searchParams.set("pwa_launch", "1");
-  return url.pathname + url.search;
 };
 
 const stateUrl = (state: PwaLaunchState) => `${PWA_SCOPE}?pwa=${state}`;
@@ -112,6 +97,7 @@ export const createPwaPhoneRoutes = (options: PwaPhoneRouteOptions) => {
         });
         if (result.state === "waiting") return c.json(result, 202);
         if (result.credentials) setAppCredentials(c, result.credentials);
+        clearLastAddress(c);
         clearPairing(c);
         // A Home Screen app on iOS has its own cookie jar; a web session there is only a copy from Safari.
         if (result.platform === "ios" && auth.session.getWebToken(c)) deleteCookie(c, "session_token", { path: "/" });
@@ -129,7 +115,11 @@ export const createPwaPhoneRoutes = (options: PwaPhoneRouteOptions) => {
         if (result.outcome === "renewed") setAppCredentials(c, result.credentials);
         if (result.outcome === "renewed" || result.outcome === "current") return c.redirect(to, 302);
         if (result.outcome === "blocked") return c.redirect(stateUrl("blocked"), 302);
-        if (result.outcome === "ended") clearAppCredentials(c);
+        if (result.outcome === "ended") {
+          clearAppCredentials(c);
+          // Only this answer may delete the drafts: "?pwa=ended" alone is an address anyone can open.
+          setCookie(c, PWA_COOKIES.ended, "1", { ...cookie, sameSite: "Lax", path: PWA_SCOPE, maxAge: 300 });
+        }
         return c.redirect(stateUrl(result.outcome === "missing" ? "new" : "ended"), 302);
       } catch (error) {
         // Logs an unexpected failure by name only; a navigation always gets a page, never JSON.
@@ -152,7 +142,7 @@ export const createPwaPhoneRoutes = (options: PwaPhoneRouteOptions) => {
       if (result.outcome === "renewed") setAppCredentials(c, result.credentials);
       // Android shares Chrome's cookies with the app: fetches may run as that other web account.
       const otherAccount = web && web.user.id !== result.userId ? { name: web.user.displayName || web.user.uid } : undefined;
-      return c.json({ renewed: result.outcome === "renewed", ...(otherAccount ? { otherAccount } : {}) });
+      return c.json({ builds: registeredPwaBuilds(), renewed: result.outcome === "renewed", ...(otherAccount ? { otherAccount } : {}) });
     })
     .patch("/session", v("json", PwaRenameSchema, pwaInvalidRequest), async (c) => {
       await service.rename(getCookie(c, PWA_COOKIES.device), c.req.valid("json").name);

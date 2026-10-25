@@ -150,6 +150,12 @@ async function open(
       });
     const json = (body: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
     if (url.pathname === "/api/filesv2/activity") {
+      if (url.searchParams.get("baseId")?.startsWith("freeipa:"))
+        return route.fulfill({
+          status: 409,
+          contentType: "application/json",
+          body: JSON.stringify({ code: "history_unavailable", message: "History unavailable for this area" }),
+        });
       if (inspector === "paged-history") {
         if (!url.searchParams.has("cursor"))
           return json({ ...historyPage(inspectorHistory.items.slice(0, 1)), next: "older-history", exhausted: false });
@@ -757,3 +763,21 @@ test("phone activity keeps the menu beside the search and never leaves a dot at 
     await context.close();
   }
 }, 30_000);
+
+for (const lang of ["de", "en"] as const) {
+  for (const width of [390, 1440]) {
+    test(`POSIX history notice is visible in ${lang} at ${width}px`, async () => {
+      const { context, tab, errors } = await open(width, "light", "&base=freeipa:groups:10000000-0000-4000-8000-000000000001", lang);
+      try {
+        const notice = tab.locator('.filesv2-history-body [role="status"]');
+        await notice.waitFor({ state: "visible" });
+        expect(await notice.textContent()).toContain(lang === "de" ? "Unix-Rechte" : "Unix permissions");
+        expect(await tab.locator(".filesv2-history-row").count()).toBe(0);
+        expect(await tab.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 30_000);
+  }
+}

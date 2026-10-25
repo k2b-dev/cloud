@@ -389,8 +389,18 @@ Both day flags are required for `set`. Administrators can also use
 `PUT /api/admin/core/outgoing-mail/retention` with JSON
 `{ "contentDays": 90, "recordDays": 365 }`. Updates through this API require
 whole days from 1 to 36500 and record retention at least as long as content
-retention; they save both values together and audit the old and new values as
-`outgoing_mail.retention.update`.
+retention; they save supplied values together and audit the old and new values as
+`outgoing_mail.retention.update`. API updates may omit an unchanged period.
+Reads include `unreadable` by setting name. An unreadable period stays untouched
+until you select its **Replace stored value** checkbox in the dialog. Failed
+saves keep your draft open. API replacement requires that setting's name in
+`replaceUnreadable`; CLI replacement uses `--replace-unreadable-content` or
+`--replace-unreadable-records` with the day flags. Ordinary writes over an
+unreadable period return HTTP 409 `setting_unreadable`. The dialog refreshes
+unreadable metadata after that response while keeping entered periods and
+replacement selections. The API serializes retention updates and reads,
+validates, and writes the effective pair in one transaction; concurrent partial
+updates cannot commit a pair where records expire before content.
 
 Core runs daily retention in batches of at most 1000 rows,
 stopping after five minutes. Content retention removes text, HTML, and custom
@@ -563,3 +573,14 @@ email send path; IMAP credentials only in Core's bounce poller.
 Keep the same `APP_SECRET` across applications and upgrades.
 Application grants are platform policy, not isolation: applications share the
 database and `APP_SECRET`, so only install application code you trust.
+
+## Shared SMTP capacity
+
+Immediate delivery, bulk delivery, and profile test sends share eight SMTP
+places across all replicas of the installation. Worker concurrency still
+bounds each process. Admission makes one attempt within the existing
+60-second attempt deadline; a full budget or unavailable Valkey leaves queued
+mail retryable with a visible busy message. Profile test sends return HTTP 503.
+The transport closes before its place is released. See
+[Scaling and shutdown](/en/docs/operations/scaling-and-shutdown) for slot expiry
+and rollout behavior.

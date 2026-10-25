@@ -839,6 +839,7 @@ const app = new Hono<AuthContext>()
         href,
         cookieHeader: c.req.header("Cookie"),
         authorizationHeader: c.req.header("Authorization"),
+        authority: auth.getAuthority(c),
         dateConfig: getDateConfig(c),
         calendarRange: scrolling && from && to ? { from, to } : undefined,
         includeTray: includeTray === "true",
@@ -911,6 +912,7 @@ const app = new Hono<AuthContext>()
         dateConfig: getDateConfig(c),
         cookieHeader: c.req.header("Cookie"),
         authorizationHeader: c.req.header("Authorization"),
+        authority: auth.getAuthority(c),
       });
       if (result.kind === "accessDenied") return respond(c, fail(err.forbidden(result.message)));
       if (result.kind === "notFound") return respond(c, fail(err.notFound("Item")));
@@ -2327,6 +2329,7 @@ const app = new Hono<AuthContext>()
   // List Items with filtering, sorting, and pagination
   .post(
     "/:id/items/filter",
+    auth.readOnly,
     describeRoute({
       tags: ["Spaces"],
       summary: "List items with filters",

@@ -55,6 +55,45 @@ describe("Files history components", () => {
     return dom;
   };
 
+  test.each(["de", "en"])("POSIX item and area history show a localized notice in %s", async (locale) => {
+    const { default: ActivityView } = await import("../src/frontend/ActivityView");
+    const { default: ItemHistory } = await import("../src/frontend/ItemHistory");
+    const { FilesApiError } = await import("../src/frontend/file-preview");
+    const { historyMessages } = await import("../src/frontend/history-messages");
+    const [item, setItem] = createSignal(false);
+    const load = async () => {
+      throw new FilesApiError("history_unavailable", "Transport text in another language");
+    };
+    const dom = await mount(
+      () =>
+        item() ? (
+          <ItemHistory env={env} directory={false} source="posix-item" unavailable load={load} />
+        ) : (
+          <ActivityView
+            env={env}
+            filters={{ baseId: "freeipa:groups:10000000-0000-4000-8000-000000000001" }}
+            onFiltersChange={() => {}}
+            bases={[]}
+            people={[]}
+            retentionDays={365}
+            load={load}
+            loadChain={async () => chain()}
+          />
+        ),
+      locale,
+    );
+    await flush();
+    expect(dom.root.textContent).toContain(historyMessages(locale).historyUnavailable);
+    expect(dom.root.textContent).not.toContain("Transport text");
+    expect(buttonNamed(dom.root, historyMessages(locale).retry)).toBeUndefined();
+    expect(dom.root.querySelector('[role="status"]')).not.toBeNull();
+    setItem(true);
+    await flush();
+    expect(dom.root.textContent).toContain(historyMessages(locale).historyUnavailable);
+    expect(buttonNamed(dom.root, historyMessages(locale).retry)).toBeUndefined();
+    expect(dom.root.querySelectorAll(".filesv2-history-row")).toHaveLength(0);
+  });
+
   test("activity version evidence retries, restores the exact saved content, and disappears for a new row", async () => {
     const { HistoryRow } = await import("../src/frontend/ActivityView");
     const original = entry({ action: "file.overwrite", after: current("vertrieb/Proof.pdf", { directory: false }) });

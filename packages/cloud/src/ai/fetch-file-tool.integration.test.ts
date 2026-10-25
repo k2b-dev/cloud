@@ -14,6 +14,29 @@ suite("fetch_file integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("a download deadline during DNS leaves no imported conversation file", async () => {
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`
+      INSERT INTO auth.users (uid, provider, profile, display_name)
+      VALUES (${`fetch-deadline-${suffix}`}, 'local', 'user', 'Fetch Deadline Test')
+      RETURNING id
+    `;
+    if (!user) throw new Error("Failed to create download deadline user");
+    const conversation = await aiConversations.createConversation({ ownerUserId: user.id });
+    try {
+      await expect(
+        runCloudAiFetchFile(
+          { url: "https://files.example/file.txt" },
+          { conversationId: conversation.id },
+          { timeoutMs: 10, resolve: () => new Promise(() => {}) },
+        ),
+      ).rejects.toThrow("did not respond");
+      expect(await aiFileStore.list({ conversationId: conversation.id, prefix: "/imports" })).toHaveLength(0);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user.id}::uuid`;
+    }
+  });
   test("stores raw HTML and readable Markdown in imports and reads it through read_file", async () => {
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`

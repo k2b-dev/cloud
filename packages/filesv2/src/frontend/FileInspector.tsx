@@ -751,6 +751,7 @@ function EntryHistory(props: {
       <Show when={props.history}>
         {(history) => (
           <ItemHistory
+            unavailable={props.base.area === "freeipa"}
             env={history().env}
             actions={{
               ...history().actions,

@@ -246,7 +246,8 @@ or price measurements remain unavailable; reported zero values remain zero.
 Credits follow configured model prices and are not a provider invoice.
 
 Use the four views to inspect totals, compare users and models, read feedback,
-and open complete stored errors. User, model, provider-model and application
+and read fixed Cloud error diagnostics, without provider messages or response
+bodies. User, model, provider-model and application
 filters apply across views. Filter chips apply selections immediately; data
 notes are expandable.
 Lists have bounded pagination; range, filters and snapshot time remain in the URL.
@@ -326,3 +327,14 @@ Useful alerts include:
 
 Alert on sustained conditions. A single failed request is not deployment
 health.
+
+## Recover unreadable log retention
+
+Gateway Ops log settings show a warning if `logs.retention_days` cannot be
+read. Select **Replace stored value: Retention (days)** before saving a new
+period, or ask the operator to restore access. A failed save keeps the dialog
+and entered period open. The log-retention GET returns `unreadable`; its PUT
+requires `replaceUnreadable: true` to replace an unreadable saved period and
+otherwise returns HTTP 409 `setting_unreadable`. After this response, the
+dialog refreshes the warning and replacement choice while keeping the entered
+period.

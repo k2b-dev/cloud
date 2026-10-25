@@ -1,11 +1,12 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { AdminLayout, getLocalizedRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
+import { AdminLayout, getDisplayRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
 import { LinkCard } from "@k2b/ui";
 import { ssr } from "../../config";
 import { adminMessages } from "./messages";
 
 const platformTasks = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
   [
+    { href: "/admin/apps", title: t.apps, description: t.appsDescription, icon: "ti ti-apps", color: "blue" },
     { href: "/admin/rail", title: t.rail, description: t.railDescription, icon: "ti ti-layout-sidebar", color: "blue" },
     { href: "/admin/app-credentials", title: t.appCredentials, description: t.appCredentialsDescription, icon: "ti ti-key", color: "blue" },
     {
@@ -54,8 +55,10 @@ const platformTasks = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
 
 export default ssr<AuthContext>(async (c) => {
   const t = adminMessages.resolve([getLocale(c)]).t;
-  const allApps = getLocalizedRuntimeContext(c).apps;
-  const adminApps = allApps.filter((app) => !!app.adminHref && app.id !== "gateway-ops").sort((a, b) => a.name.localeCompare(b.name));
+  const allApps = getDisplayRuntimeContext(c).apps;
+  const adminApps = getDisplayRuntimeContext(c)
+    .apps.filter((app) => !!app.adminHref && app.id !== "gateway-ops")
+    .sort((a, b) => a.name.localeCompare(b.name));
   const gatewayAdminAvailable = hasDedicatedRuntimeRoute(allApps, "/admin/gateway", "core");
   const observabilityAvailable = hasDedicatedRuntimeRoute(allApps, "/admin/observability", "core");
   const primaryDestination = observabilityAvailable

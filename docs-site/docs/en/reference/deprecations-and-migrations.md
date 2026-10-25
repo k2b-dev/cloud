@@ -5,7 +5,7 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Deprecations and migrations
@@ -121,9 +121,13 @@ The following CLI groups and commands are removed, without a current query repla
 
 The removed capability IDs are `pulse.resource.search`, `pulse.resource.read`,
 `pulse.metric.search`, `pulse.field.search`, `pulse.query.compile`,
-`pulse.query.execute`, `pulse.saved_query.list`, `pulse.saved_query.read`, and
-`pulse.saved_query.execute`. Pulse's remaining capabilities find/read bases and
-sources; agents have no measurement-query capability until SQL arrives.
+`pulse.query.execute`, `pulse.saved_query.read`, and
+`pulse.saved_query.execute`. Use `pulse.sql.run` for measurement queries.
+`pulse.saved_query.list` now returns saved SQL instead of the former DSL result.
+Base/source discovery remains available. Agent writes use `base.create`,
+`base.clear_data`, `base.delete`, and source-scoped `ingest.write`; see
+[Pulse](/en/apps/pulse#let-an-agent-create-and-write-telemetry) for permissions
+and approval requirements.
 Update scripts, scheduled tasks, and agents that call the removed operations.
 
 Refresh the Pulse CLI plugin for each profile with `cld plugins update pulse`.
@@ -1430,13 +1434,15 @@ meanwhile wait in `events.outbox` and are published by the next Mail start.
 
 ## Files supports Filegate 7
 
-Files is tested with Filegate 7.0; Filegate 6.1 keeps working. Upgrading the
-Filegate daemon needs no migration: the index format, the `/v1` API, and leases
-stay the same, and the root volumes and `state_dir` stay in place.
+Files now requires Filegate 7.1.0. Follow the
+[Filegate upgrade procedure](/en/docs/operations/deployment-requirements#upgrade-filegate-to-710)
+for the one-time index rebuild and startup checks. Keep the root volumes and
+`state_dir` in place.
 
-Upgrade Cloud before or together with the daemon. Filegate 7 publishes file IDs
-only on roots with stable IDs, and earlier Files releases compare the IDs they
-recorded under Filegate 6.1. On roots with `index: true` and `managed: false`,
+When upgrading from Filegate 6.1, stop the old Files application before changing
+the daemon, then start the updated Files application after Filegate 7.1.0 is
+ready. Filegate 7 publishes file IDs only on roots with stable IDs, and earlier
+Files releases compare the IDs they recorded under Filegate 6.1. On roots with `index: true` and `managed: false`,
 those releases cannot finish these operations if they were still open when
 the daemon changed:
 
@@ -1585,7 +1591,7 @@ There is no automatic migration. Files never read the legacy application's
 settings or storage, and nothing moves on upgrade. An installation that still
 runs `app-files` must move its users to Files before it upgrades:
 
-1. Set up Files with Filegate 7.0 as described in
+1. Set up Files with Filegate 7.1.0 as described in
    [Deployment requirements](/en/docs/operations/deployment-requirements), and
    map the home and group directories the legacy app served to Files storage.
 2. Verify that users see and can open their files in `/app/filesv2`.

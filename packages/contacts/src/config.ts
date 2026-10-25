@@ -1,8 +1,12 @@
-import { defineApp } from "@k2b/cloud";
+import { appAccess, defineApp } from "@k2b/cloud";
 import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "contacts",
+  // APIs admit roleless service accounts; navigation keeps its narrower audience.
+  access: appAccess.signedIn({
+    publicRoutes: ["/api/contacts/openapi.json"],
+  }),
   cli: { contacts: { module: "src/cli.ts", references: "src/cli-references" } },
   name: "Contacts",
   icon: "ti ti-address-book",

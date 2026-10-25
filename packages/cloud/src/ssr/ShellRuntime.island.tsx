@@ -12,6 +12,7 @@ import {
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
 import { appWorkspaceCookieName, readAppWorkspaceLayoutCookie } from "../_internal/app-workspace-state";
+import { installAppAccessRecovery } from "../browser/app-access-recovery";
 import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
 import { navigationSearchItems } from "../browser/navigation-search";
@@ -36,6 +37,7 @@ import { shellShortcuts } from "./shell-shortcuts";
 import { syncTimezoneCookie } from "./timezone-cookie";
 
 export type ShellRuntimeProps = {
+  appAccess?: { id: string; routes: readonly string[] };
   /** This page has an authorized panel slot. */
   panel?: boolean;
   /** Layout pages outside focus mode: keep the current app's workspace layout in its cookie. */
@@ -78,6 +80,9 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
   onMount(() => syncTimezoneCookie(true));
+  onMount(() => {
+    if (props.appAccess) onCleanup(installAppAccessRecovery(props.appAccess));
+  });
   onMount(() => onCleanup(installInputModeController()));
 
   const togglePanel = () => {

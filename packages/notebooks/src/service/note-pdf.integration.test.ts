@@ -6,7 +6,7 @@ import { buildNotePdfHtml } from "./note-pdf";
 
 const NOTICES = ["note", "info", "success", "warning", "danger"] as const;
 
-suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
+suiteFor("gotenberg", "valkey")("note PDF export in Gotenberg", () => {
   let config: GotenbergConfig;
 
   beforeAll(() => {

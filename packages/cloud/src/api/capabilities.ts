@@ -54,11 +54,17 @@ import {
   requiresAuth,
   v,
 } from "../server/middleware";
+import { AppAccessDeniedError, appAccessDeniedBody } from "../server/middleware/app-access";
+import { oauthScopeByOperation } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
+import { hasOAuthScope } from "../server/oauth-scope";
+import { appAccessAuthority, canUseApp } from "../services/app-access";
+import { discoverableApps } from "../services/app-discovery";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
 import type { InvocationAuthority } from "../services/identity/invocation-token";
-import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
+import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
+import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { logger } from "../services/logging";
 import { withMandateIssueAuthority } from "../services/mandates";
@@ -155,13 +161,14 @@ export const loadCapabilityCatalogPage = async (
   query: { cursor?: string; limit: number },
   dependencies: Pick<CapabilityRouteDependencies, "listApps" | "getCapability"> = {},
   locale?: string,
+  authority: RequestAuthority | null = null,
 ): Promise<CapabilityCatalog> => {
   if (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > MAX_CATALOG_LIMIT) {
     throw new RangeError(`Capability catalog limit must be between 1 and ${MAX_CATALOG_LIMIT}`);
   }
   const registry = dependencies.listApps ?? listApps;
   const capabilityLookup = dependencies.getCapability ?? getCapability;
-  const entries = await registry();
+  const entries = await discoverableApps(authority, await registry());
   const liveApps = entries
     .filter((entry) => entry.capabilities?.protocolVersion === CAPABILITY_PROTOCOL_VERSION)
     .sort((left, right) => left.id.localeCompare(right.id));
@@ -384,18 +391,21 @@ const runCapabilityDispatch = async (
                   async (mandateAuthority) => {
                     deadline.check();
                     observed.subject = mandateAuthority.subject;
-                    return (params.dependencies?.signInvocation ?? signInvocationToken)({
-                      targetAppId: params.appId,
-                      callingAppId: mandate.ownerAppId,
-                      operation: invocationOperation,
-                      schemaHash: operation.schemaHash,
-                      authority: invocationAuthorityFromMandate(mandateAuthority),
-                      requestId,
-                      signer,
-                      issuer: signer.issuer,
-                    });
+                    return (params.dependencies?.signInvocation ?? signInvocationToken)(
+                      {
+                        targetAppId: params.appId,
+                        callingAppId: mandate.ownerAppId,
+                        operation: invocationOperation,
+                        schemaHash: operation.schemaHash,
+                        authority: invocationAuthorityFromMandate(mandateAuthority),
+                        requestId,
+                        signer,
+                        issuer: signer.issuer,
+                      },
+                      { db, groupsAdmin: signer.groupsAdmin },
+                    );
                   },
-                  { db },
+                  { db, groupsAdmin: signer.groupsAdmin },
                 );
               },
               { signal, timeoutMs: deadline.remainingMs() },
@@ -417,18 +427,21 @@ const runCapabilityDispatch = async (
           const signed = await deadline.wait(() =>
             (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)(
               "invocation",
-              (signer) => {
+              (signer, db) => {
                 deadline.check();
-                return (params.dependencies?.signInvocation ?? signInvocationToken)({
-                  targetAppId: params.appId,
-                  callingAppId: params.callingAppId ?? "core",
-                  operation: invocationOperation,
-                  schemaHash: operation.schemaHash,
-                  authority: invocationAuthorityFromRequest(authority),
-                  requestId,
-                  signer,
-                  issuer: signer.issuer,
-                });
+                return (params.dependencies?.signInvocation ?? signInvocationToken)(
+                  {
+                    targetAppId: params.appId,
+                    callingAppId: params.callingAppId ?? "core",
+                    operation: invocationOperation,
+                    schemaHash: operation.schemaHash,
+                    authority: invocationAuthorityFromRequest(authority),
+                    requestId,
+                    signer,
+                    issuer: signer.issuer,
+                  },
+                  { db, groupsAdmin: signer.groupsAdmin },
+                );
               },
               { signal, timeoutMs: deadline.remainingMs() },
             ),
@@ -440,6 +453,7 @@ const runCapabilityDispatch = async (
           });
         })();
   } catch (error) {
+    if (error instanceof AppAccessDeniedError) return { body: appAccessDeniedBody(error.app), status: 403 };
     if (error instanceof MandateDispatchError) {
       const denied = errorResponse(
         error.status === 409 ? "MANDATE_REVISION_CHANGED" : "MANDATE_FORBIDDEN",
@@ -752,7 +766,9 @@ export const dispatchCapability = async (params: CapabilityDispatchParams): Prom
     const startedAt = new Date();
     let outcome: CapabilityDispatchOutcome;
     try {
-      outcome = await runCapabilityDispatch(params, requestId, observed, deadline);
+      outcome = hasOAuthScope(params.authority, params.review || params.kind === "queries" ? "read" : "write", "admin")
+        ? await runCapabilityDispatch(params, requestId, observed, deadline)
+        : errorResponse("FORBIDDEN", "Insufficient OAuth scope", 403);
     } catch (error) {
       if (!deadline.signal.aborted) throw error;
       const cancelled = params.request.signal.aborted;
@@ -838,6 +854,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     .use("/capabilities/v1/*", rejectReservedWorkloadCredential)
     .post(
       "/capabilities/v1/streams/:verb",
+      oauthScopeByOperation,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Transfer or inspect one authorized binary stream",
@@ -873,7 +890,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
         const query = c.req.valid("query");
         const messages = capabilityMessages(getLocale(c));
         try {
-          return c.json(await loadCapabilityCatalogPage(query, dependencies, getLocale(c)));
+          return c.json(await loadCapabilityCatalogPage(query, dependencies, getLocale(c), appAccessAuthority(c)));
         } catch (error) {
           log.warn("Capability catalog unavailable", { error: error instanceof Error ? error.message : String(error) });
           const unavailable = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, messages.registryUnavailable, 503);
@@ -883,6 +900,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     )
     .post(
       "/capabilities/v1/commands/:appId/:capabilityId",
+      auth.readOnly,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Resolve an interactive Command link",
@@ -890,6 +908,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
         responses: {
           200: jsonResponse(CommandLinkSchema, "Command entry URL"),
           400: jsonResponse(CapabilityErrorSchema, "Invalid command input"),
+          403: jsonResponse(CapabilityErrorSchema, "Application access denied"),
           404: jsonResponse(CapabilityErrorSchema, "Command unavailable"),
           503: jsonResponse(CapabilityErrorSchema, "Route owner unavailable"),
         },
@@ -900,6 +919,9 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
         const request = body.ok ? CommandRequestSchema.safeParse(body.data) : null;
         if (!request?.success) return c.json({ code: "VALIDATION_FAILED", message: capabilityMessages(getLocale(c)).requestBodyJson }, 400);
         const appId = c.req.param("appId");
+        const apps = await (dependencies.listApps ?? listApps)();
+        const target = apps.find((app) => app.id === appId);
+        if (target && !(await canUseApp(appAccessAuthority(c), target))) return c.json(appAccessDeniedBody(target), 403);
         const entry = await (dependencies.getCapability ?? getCapability)(appId);
         const command = entry?.manifest.commands.find((command) => command.localId === c.req.param("capabilityId"));
         if (!command)
@@ -910,7 +932,6 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
             },
             404,
           );
-        const apps = await (dependencies.listApps ?? listApps)();
         const pathname = new URL(command.path, "https://cloud.invalid").pathname;
         const owner = apps
           .flatMap((app) => app.routes.map((prefix) => ({ app, prefix })))
@@ -929,6 +950,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     )
     .post(
       "/capabilities/v1/actions/:appId/:capabilityId/review",
+      auth.readOnly,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Review one live app Action",
@@ -980,6 +1002,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     )
     .post(
       "/capabilities/v1/:kind{queries|actions}/:appId/:capabilityId",
+      oauthScopeByOperation,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Invoke one live app capability",

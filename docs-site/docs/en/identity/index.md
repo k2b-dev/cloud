@@ -18,11 +18,12 @@ That split matters most for independently deployed applications: they can
 trust Cloud to establish an identity without giving Cloud enough information
 to decide whether that identity may read or change an app-owned resource.
 
-Keep three boundaries separate on every request:
+Keep these boundaries separate on every request:
 
 | Boundary | Question | Owner |
 | --- | --- | --- |
 | Authentication | Is the credential valid, and who acted? | Cloud authentication |
+| App access | May this identity use the application? | Application declaration, evaluated by Cloud |
 | Route policy | May this kind of caller enter the route? | Application middleware |
 | Resource authorization | May this caller perform this operation on this resource now? | Application service |
 
@@ -37,9 +38,11 @@ on the same permission-aware application service.
 | --- | --- |
 | Understand the actor and access subject | [Request identity](/en/docs/identity/authentication) |
 | Assign local Linux attributes and backfill existing accounts alongside FreeIPA | [Linux identities](/en/docs/operations/linux-identities) |
+| Choose who may use an application | [App access](/en/docs/identity/app-access) |
 | Decide who may enter a route | [Route policies](/en/docs/identity/route-policies) |
 | Check access to one domain resource | [Resource authorization](/en/docs/identity/authorization) |
 | Create a credential for one resource | [Resource API keys](/en/docs/identity/resource-api-keys) |
+| Show a person's or agent's picture, or let them change it | [Profile pictures](/en/docs/identity/profile-pictures) |
 | Integrate an OAuth client | [OAuth](/en/docs/identity/oauth) |
 | Understand how a person approves an Action | [Action approvals](/en/docs/identity/approvals) |
 | Allow a route without a session | [Public access](/en/docs/identity/public-and-anonymous-access) |

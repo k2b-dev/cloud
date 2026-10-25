@@ -16,6 +16,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, Match, on, Show, Switch } from "solid-js";
 import type { ActivityBatchContext, ActivityChain, ActivityEntry, ActivityInput, ActivityPage, HistoryAction } from "../activity-contracts";
+import HistoryUnavailable, { isHistoryUnavailable } from "./HistoryUnavailable";
 import {
   type ActorView,
   actorOf,
@@ -630,7 +631,7 @@ export default function ActivityView(props: ActivityViewProps) {
       </div>
       <div class="filesv2-history-body" aria-busy={pages.loading() || pages.refreshing()}>
         <Show
-          when={!props.filters.q}
+          when={!props.filters.q || props.filters.baseId?.startsWith("freeipa:") || isHistoryUnavailable(pages.error())}
           fallback={
             <MissingItemView
               query={props.filters.q ?? ""}
@@ -659,6 +660,9 @@ export default function ActivityView(props: ActivityViewProps) {
         >
           <div class="filesv2-history-list">
             <Switch>
+              <Match when={props.filters.baseId?.startsWith("freeipa:") || isHistoryUnavailable(pages.error())}>
+                <HistoryUnavailable />
+              </Match>
               <Match when={!loadedOnce() && pages.error()}>
                 <Placeholder
                   class="filesv2-history-placeholder"

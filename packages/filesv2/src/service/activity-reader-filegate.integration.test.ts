@@ -161,45 +161,23 @@ suiteFor("database", "nats")("history through real Filegate and the owning autho
     const { share_expires_at: _expiry, effective_time: _time, observed_before, observed_after, metadataUnknown: _unknown, ...stored } = row;
     await sql`INSERT INTO filesv2.activity ${sql({ ...stored, name: "recorded", detail: JSON.stringify({ observed_before, observed_after }) })}`;
   }
-  test("real Unix leaf denial, membership revocation and later observations never grant snapshot access", async () => {
-    const file = `${path}/private.txt`;
-    const node = await ipa.put(file, new Blob(["private"]), {
-      ownership: { uid: unix.uidNumber, gid: unix.primaryGidNumber, mode: "0600" },
-    });
+  test("POSIX history is unavailable regardless of leaf access or authorship", async () => {
     const row = candidate(1, {
       server_url: target.url,
       root: "freeipa",
       base_id: binding.id,
-      directory: false,
       path_before: null,
-      path_after: file,
-      item_after_id: node.id ?? null,
-      started_at: at,
-      finished_at: at,
-      observed_after: { exists: true, id: "later-hidden-id", revision: "later-hidden-revision" },
+      path_after: `${path}/private.txt`,
+      actor_user_id: actorId,
     });
     await seed(row);
-    expect((await service.activity(call)).items).toHaveLength(1);
-    await ipa.setOwnership(file, { uid: 23456, gid: 23456, mode: "0600" });
-    expect((await service.activity(call, { q: "private.txt" })).items).toEqual([]);
-    await expect(service.activityEntry(call, { activityId: row.id })).rejects.toMatchObject({ status: 404 });
-    member = false;
     requests.length = 0;
-    const managerCall = testCall(
-      actor.kind === "user"
-        ? {
-            ...actor,
-            user: { ...actor.user, managesGroupIds: [groupId] },
-          }
-        : actor,
-    );
-    expect((await service.activity(managerCall)).items).toEqual([]);
-    expect(requests).toEqual([]);
-    await sql`UPDATE filesv2.activity SET actor_user_id=${actorId}::uuid WHERE id=${row.id}::uuid`;
-    const own = await service.activityEntry(call, { activityId: row.id });
-    expect(own.after).toMatchObject({ visibility: "full", source: "snapshot" });
-    expect(own.after).not.toHaveProperty("observation");
-    expect(JSON.stringify(own)).not.toContain("later-hidden");
+    await expect(service.activity(call, { baseId: `freeipa:groups:${groupId}` })).rejects.toMatchObject({
+      code: "history_unavailable",
+      status: 409,
+    });
+    expect((await service.activity(call)).items).toEqual([]);
+    await expect(service.activityEntry(call, { activityId: row.id })).rejects.toMatchObject({ code: "not_found", status: 404 });
     expect(requests).toEqual([]);
   });
   test("real stable-ID chain resolves its endpoint and checks current access again", async () => {

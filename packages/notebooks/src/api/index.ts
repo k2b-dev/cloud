@@ -394,6 +394,10 @@ const GraphEdgeSchema = z.object({
 const NoteGraphSchema = z.object({
   nodes: z.array(GraphNodeSchema),
   edges: z.array(GraphEdgeSchema),
+  scope: z
+    .object({ around: ResourceShortIdSchema, total: z.number().int().nonnegative() })
+    .optional()
+    .describe("Present when the graph holds only the notes around one note of a large notebook"),
 });
 
 const FavoriteNoteSchema = z.object({
@@ -960,6 +964,8 @@ const notePdfError = (error: unknown, locale?: string): { message: string; statu
   }
   if (error instanceof GotenbergRenderError) {
     switch (error.code) {
+      case "busy":
+        return { message: t.pdfBusy, status: 503 };
       // The rendered note, not its Markdown, exceeds the operator's render budget.
       case "html_too_large":
       case "pdf_too_large":
@@ -1441,6 +1447,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/:id/notes/:noteId/block-preview",
+    auth.readOnly,
     describeRoute({
       tags: ["Notebooks"],
       summary: "Preview query and contents blocks",
@@ -1993,6 +2000,7 @@ const app = new Hono<AuthContext>()
   // Render the current browser-side Markdown snapshot without persisting it.
   .post(
     "/:id/notes/:noteId/pdf",
+    auth.readOnly,
     describeRoute({
       tags: ["Notebooks"],
       summary: "Download note as PDF",
@@ -2751,7 +2759,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Get link graph",
-      description: "Return all notes (nodes) and all internal note-links (edges) for the notebook.",
+      description:
+        "Return all notes (nodes) and all internal note-links (edges) for the notebook. With `around`, a notebook of more than 500 notes returns only the bounded graph around that note, with `scope`.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(z.object({ data: NoteGraphSchema }), "Graph data"),
@@ -2759,11 +2768,18 @@ const app = new Hono<AuthContext>()
         404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
       },
     }),
+    v("query", z.object({ around: ResourceShortIdSchema.optional().describe("The note the Links page draws around") })),
     async (c) => {
       let notebookId = c.req.param("id")!;
       const { notebook, error } = await checkNotebookAccess(c, notebookId);
       if (error) return error;
       notebookId = notebook!.id;
+      const { around } = c.req.valid("query");
+      if (around) {
+        const note = await requireNoteInNotebook(notebookId, around, getLocale(c));
+        if (!note.ok) return respond(c, note);
+        return respond(c, ok({ data: await notebooksService.notebook.graphView({ notebookId, noteId: note.data.id }) }));
+      }
       const graph = await notebooksService.notebook.graph({ notebookId });
       return respond(c, ok({ data: graph }));
     },
@@ -3471,6 +3487,7 @@ const requireAdmin = (c: Context<AuthContext>) => {
 };
 
 const appWithAdmin = appWithLimits
+  .use("/admin/*", auth.requireRole("admin"))
   // List all notebooks-namespaced settings
   .get(
     "/admin/settings",

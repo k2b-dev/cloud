@@ -9,6 +9,7 @@ export const historyCatalog = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      historyUnavailable: "History is available only for local Cloud storage. This area uses Unix permissions, which history cannot check.",
       activity: "Activity",
       newFeature: "New",
       activityActions: "Activity actions",
@@ -308,6 +309,8 @@ export const historyCatalog = i18n.define({
       revokeLink: "Revoke link",
     },
     de: {
+      historyUnavailable:
+        "Der Verlauf ist nur für lokale Cloud-Ablagen verfügbar. Dieser Bereich verwendet Unix-Rechte, die der Verlauf nicht prüfen kann.",
       activity: "Aktivität",
       newFeature: "Neu",
       activityActions: "Aktionen zum Verlauf",

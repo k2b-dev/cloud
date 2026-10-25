@@ -15,9 +15,11 @@ import {
   capabilityResultSchema,
 } from "../contracts/capabilities";
 import type { RequestAuthority } from "../server";
+import { AppAccessDeniedError, appAccessDeniedBody } from "../server/middleware/app-access";
+import { hasOAuthScope } from "../server/oauth-scope";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
-import { signInvocationToken } from "../services/identity/invocation-token";
+import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { logger } from "../services/logging";
 import { decryptSecret, encryptSecret } from "../services/secrets";
@@ -93,11 +95,7 @@ export async function dispatchCapabilityStream(
   if (dependencies.allow && !(await dependencies.allow(grant))) return denied();
   if (Date.parse(grant.stream.expiresAt) <= Date.now()) return denied(410, "STREAM_EXPIRED");
   if ((verb === "read") !== (grant.stream.direction === "read")) return denied();
-  if (
-    authority.credentialKind === "oauth" &&
-    !authority.scopes.some((scope) => scope === "admin" || scope === (grant.kind === "actions" ? "write" : "read"))
-  )
-    return denied();
+  if (!hasOAuthScope(authority, grant.kind === "actions" ? "write" : "read", "admin")) return denied();
   const startedAt = new Date();
   let recorded = false;
   let destructive = false;
@@ -142,17 +140,20 @@ export async function dispatchCapabilityStream(
     destructive = "destructive" in operation && operation.destructive;
     const signed = await (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
       "invocation",
-      (signer) =>
-        (dependencies.signInvocation ?? signInvocationToken)({
-          targetAppId: grant.appId,
-          callingAppId: "core",
-          operation: capabilityInvocationOperation(grant.kind, grant.capabilityId),
-          schemaHash: operation.schemaHash,
-          authority: invocationAuthorityFromRequest(authority),
-          requestId: grant.requestId,
-          signer,
-          issuer: signer.issuer,
-        }),
+      (signer, db) =>
+        (dependencies.signInvocation ?? signInvocationToken)(
+          {
+            targetAppId: grant.appId,
+            callingAppId: "core",
+            operation: capabilityInvocationOperation(grant.kind, grant.capabilityId),
+            schemaHash: operation.schemaHash,
+            authority: invocationAuthorityFromRequest(authority),
+            requestId: grant.requestId,
+            signer,
+            issuer: signer.issuer,
+          },
+          { db, groupsAdmin: signer.groupsAdmin },
+        ),
       { signal, timeoutMs: 30_000 },
     );
     const headers = new Headers({
@@ -265,7 +266,11 @@ export async function dispatchCapabilityStream(
       if (!error.success || response.status === 401) return denied(status, "STREAM_FAILED");
     } else await record(response.status);
     return Response.json(receipt.data, { status: response.status, headers: { "cache-control": "no-store" } });
-  } catch {
+  } catch (error) {
+    if (error instanceof AppAccessDeniedError) {
+      await record(403, error.code);
+      return Response.json(appAccessDeniedBody(error.app), { status: 403 });
+    }
     const status = request.signal.aborted ? 499 : signal.aborted ? 504 : 502;
     const code = status === 499 ? "REQUEST_CANCELLED" : status === 504 ? "DEADLINE_EXCEEDED" : "STREAM_FAILED";
     await record(status, code);

@@ -8,7 +8,7 @@ import {
   type TemplatePdfPreviewError,
   type TemplatePdfPreviewResult,
 } from "@k2b/cloud/services";
-import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
+import { type DateContext, err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { type Document, type DocumentTemplate, DocumentTemplateRendererSchema } from "../contracts";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { previewDslQuery } from "../query-dsl/preview";
@@ -434,7 +434,7 @@ export const renderDocumentSource = async (
 const renderFailureMessage = (error: TemplatePdfPreviewError, t: ReturnType<typeof documentServiceText>): string => {
   if (error.phase === "template") return liquidBudgetFailureMessage(error.code, t) ?? t.templateRenderFailed;
   log.warn("Document PDF rendering failed", { code: error.code, status: error.status, error: error.message });
-  return error.code === "not_configured" ? t.pdfNotConfigured : t.pdfRenderFailed;
+  return error.code === "busy" ? t.pdfBusy : error.code === "not_configured" ? t.pdfNotConfigured : t.pdfRenderFailed;
 };
 
 export const renderDocumentPdfPreview = async (
@@ -603,5 +603,6 @@ export const renderDocumentHtmlPdf = async (
   );
   if (rendered.ok) return ok(rendered.pdf);
   const message = renderFailureMessage(rendered.error, t);
+  if (rendered.error.code === "busy" && isServiceError(rendered.error)) return fail({ ...rendered.error, message });
   return fail(rendered.error.status === 400 ? err.badInput(message) : err.internal(message));
 };

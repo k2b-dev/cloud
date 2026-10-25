@@ -72,9 +72,9 @@ provider model so editing a profile does not combine different provider models.
   cost, measurement status, task, trace, and workflow/chat references. Workflow
   references open the existing workflow observability page.
 
-Each run keeps its redacted provider or transport error (for example
-`SSE stream first byte timeout after 60000ms.`), never request content or
-credentials. A run stopped by the user or by the turn's run budget has status
+Each run keeps fixed Cloud error text (for example
+`AI provider request timed out.`), never the provider message, response body,
+request content, or credentials. The same rule applies to traces and logs. A run stopped by the user or by the turn's run budget has status
 `aborted`, `cancelled: true`, and no error; it is not counted as failed.
 Runs also record request milestones measured from the moment the provider
 request left Cloud: `headersMs` (response headers), `firstByteMs` (first body

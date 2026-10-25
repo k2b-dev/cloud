@@ -168,6 +168,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/batches/preview",
+    auth.readOnly,
     describeRoute({
       tags: ["Notifications"],
       summary: "Preview notification recipients",

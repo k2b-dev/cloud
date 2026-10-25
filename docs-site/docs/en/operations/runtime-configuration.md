@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-10-16
+updated: 2026-10-23
 ---
 
 # Runtime configuration
@@ -18,6 +18,19 @@ For the services and optional integrations needed by each app, start with
 
 Cloud validates settings when it reads them. Values stored in Postgres are
 encrypted with `APP_SECRET`.
+
+## Outbound request budgets
+
+Assistant file downloads use a 20-second total budget; Mail remote images and
+one-click unsubscribe use 10 seconds; Mail provider discovery uses 5 seconds;
+Web Push delivery uses 15 seconds by default. Each budget includes DNS,
+connection attempts, redirects, headers and body reads. A slow stream cannot
+extend it. Leaving a Mail request cancels its outbound work. Discovery keeps
+candidates already found when its budget expires; manual setup remains
+available. Unused redirect and rejected response bodies are closed immediately.
+These deadlines preserve the existing destination policies and require no new
+environment variables. Applications using the shared HTTP transports supply
+[their own deadline signal](/en/docs/data/secrets-and-persistent-state#call-a-public-https-address).
 
 ## Set infrastructure variables
 
@@ -154,7 +167,6 @@ resuming traffic. There is no previous-secret overlap; mismatched replicas rejec
 issuance. Rotation alone does not invalidate existing JWTs or refresh grants.
 
 
-
 Before upgrading mandate writers, follow the coordinated schema cutover in
 [Deprecations and migrations](/en/docs/reference/deprecations-and-migrations).
 
@@ -237,21 +249,41 @@ offer after `cld login`; `cld` verifies every file against the served manifest. 
 ## Offer the OpenAI-compatible API
 
 In AI settings, enable `ai.openai_api_enabled` (**OpenAI-compatible API**) to
-let people create models-only personal API keys and use their allowed Assistant
+let people create models-only personal API keys and administrators create
+models-only keys for standalone accounts and agents to use their granted Assistant
 chat models from external clients. It is off by default. Every request checks
 the switch, so turning it off stops new requests with existing keys too;
 provider calls already running continue.
 
 `ai.openai_api_max_concurrent_requests` defaults to **4** simultaneous requests
-per person across all instances (integer, 1–64). Typical clients need one or two;
+per account across all instances (integer, 1–64). Typical clients need one or two;
 four leaves room for a second client without one script crowding out others.
 Raise it when provider capacity supports more simultaneous requests.
 
 Models without reference prices have **no usage limit** here, as in Assistant.
-Chat budgets do not protect them; only the IP rate limit and per-person
+Chat budgets do not protect them; only the IP rate limit and per-account
 concurrency limit apply. Review model prices before enabling this surface.
 See the [client reference](/en/docs/ai/openai-compatible-api) for authentication,
 supported fields and errors.
+
+### Machine model clients
+
+Administrators create machine keys in **Accounts → Service accounts** after
+enabling the API. Grant each account access to its models in AI settings and
+configure its chat allowance in Usage rules. Existing broad grants remain
+intentional grants; creating a key adds no model access. See
+[Connect a machine account](/en/docs/ai/openai-compatible-api#connect-a-machine-account).
+
+`ai.openai_api_max_concurrent_requests` applies per account across keys and
+instances. User and service-account identities have separate concurrency keys.
+During a rolling upgrade, old and new instances use different slot keys for
+personal clients; the configured concurrency limit is fully shared after all
+Core instances run the new version. Older instances reject machine model keys.
+
+The additive inference-ledger migration records a nullable credential ID.
+Existing calls retain their accounting and need no backfill. Key revocation,
+account disable, or removing a model grant blocks the next request. A call
+already dispatched continues until completion or client cancellation.
 
 ## Validate a deployment
 

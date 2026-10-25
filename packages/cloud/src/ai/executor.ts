@@ -99,6 +99,7 @@ import {
   AiTurnFailure,
   type AiTurnFailureInfo,
   type AiTurnFailureReason,
+  aiIssueDiagnostic,
   aiTurnFailureFromThrown,
   aiTurnReasonFromThrown,
   rememberProviderErrors,
@@ -799,8 +800,8 @@ export class AiTurnExecutor {
 
   /**
    * Ends the turn. A failure stores its reason twice: as a code on the turn's last message, which the chat words in
-   * the reader's language, and as text in the turn's language for readers without the chat view. The raw cause, such
-   * as a provider's own message, goes only to the log. A failed compaction left the chat as it was, so its text names
+   * the reader's language, and as text in the turn's language for readers without the chat view. The diagnostic cause,
+   * with provider and loop issues reduced to fixed text, goes only to the log. A failed compaction left the chat as it was, so its text names
    * only the reason.
    */
   private async finalize(
@@ -926,9 +927,9 @@ export class AiTurnExecutor {
     const helpEnabled = toolActor !== null;
     const toolDiscoveryEnabled = toolActor !== null;
     const appToolsEnabled = toolActor !== null && defaultToolSource?.appTools === true;
-    let capabilityAuthority: Awaited<ReturnType<typeof resolveAiCapabilityActor>> | null = null;
+    let toolAuthority: Awaited<ReturnType<typeof resolveAiCapabilityActor>> | null = null;
     try {
-      capabilityAuthority = appToolsEnabled
+      toolAuthority = toolActor
         ? await resolveAiCapabilityActor({ conversationId, persistedActor: material.actor, store: aiConversations })
         : null;
     } catch (error) {
@@ -947,7 +948,10 @@ export class AiTurnExecutor {
       );
       return;
     }
-    if (capabilityAuthority) material.actor = capabilityAuthority.actor;
+    if (toolAuthority) material.actor = toolAuthority.actor;
+    // Skills and Help need current authority even when application operations are disabled.
+    // Keep the appTools switch responsible for exposing and executing those operations.
+    const capabilityAuthority = appToolsEnabled ? toolAuthority : null;
 
     // Personalization applies to user-backed personal conversations.
     const user = aiActorUser(material.actor);
@@ -966,7 +970,9 @@ export class AiTurnExecutor {
     // executions must not gain an implicit database dependency or extra tools.
     const skillSubject =
       defaultToolSource && resolved.profile.capabilities.includes("tools") ? accessSubjectForActor(material.actor) : null;
-    const availableSkills = skillSubject ? (await aiSkills.list(skillSubject)).filter((skill) => skill.enabled) : [];
+    const availableSkills = skillSubject
+      ? (await aiSkills.list(skillSubject, { authority: toolAuthority })).filter((skill) => skill.enabled)
+      : [];
     const localClient = !config.background && !config.mandate ? config.client : undefined;
     const localContext = localClient ? config.localContext : undefined;
     const localSkills = (localContext?.skills ?? []).map((skill) => ({
@@ -1003,15 +1009,15 @@ export class AiTurnExecutor {
         : undefined;
     const skillFiles = skillSubject
       ? {
-          list: () => aiSkills.listTurnFiles(turnId, skillSubject),
-          read: (path: string) => aiSkills.readTurnFile(turnId, path, skillSubject),
+          list: () => aiSkills.listTurnFiles(turnId, skillSubject, toolAuthority),
+          read: (path: string) => aiSkills.readTurnFile(turnId, path, skillSubject, toolAuthority),
         }
       : undefined;
     const runtimeTools = [
       ...material.tools,
       ...(memoryActive ? [createCloudAiMemoryTool(query)] : []),
-      ...(skillSubject && availableSkills.length ? [createCloudAiLoadSkillTool(skillSubject)] : []),
-      ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(skillSubject, localSkills)] : []),
+      ...(skillSubject && availableSkills.length ? [createCloudAiLoadSkillTool(skillSubject, toolAuthority)] : []),
+      ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(skillSubject, localSkills, toolAuthority)] : []),
       ...(config.project && resolvedProjectId && projectSubject
         ? [
             createCloudAiSearchProjectTool(resolvedProjectId, projectSubject),
@@ -1263,7 +1269,8 @@ export class AiTurnExecutor {
     const tools = toolActor
       ? createAiToolResolver({
           conversationId,
-          actor: capabilityAuthority?.actor ?? toolActor,
+          actor: toolAuthority?.actor ?? toolActor,
+          authority: toolAuthority,
           staticTools: activeTools,
           ...(activeTools.some((tool) => tool.def.name === "load_skill") ? { skillNames: availableSkills.map((skill) => skill.name) } : {}),
           allowedTools,
@@ -1482,6 +1489,7 @@ export class AiTurnExecutor {
       turnId,
       skillSubject,
       activeTools.some((tool) => tool.def.name === "load_skill"),
+      toolAuthority,
     );
     const chat = await aiConversations.getConversation({ conversationId });
     const workingPlan = chat?.todoPlan;
@@ -1878,8 +1886,9 @@ export class AiTurnExecutor {
           if (!abortController.signal.aborted && isToolRound(event.message)) noteToolRound();
         } else if (event.type === "issue") {
           if (event.issue.kind === "malformed_tool_call" && event.issue.callId) malformedCallIds.add(event.issue.callId);
-          lastIssueMessage = event.issue.message;
-          log.warn("AI turn issue", { conversationId, turnId, kind: event.issue.kind, message: event.issue.message });
+          const diagnostic = aiIssueDiagnostic(event.issue);
+          lastIssueMessage = diagnostic.message;
+          log.warn("AI turn issue", { conversationId, turnId, ...diagnostic });
         } else if (event.type === "loop_end") {
           const stoppedAfterFailure =
             event.reason === "stop" &&
@@ -2267,7 +2276,7 @@ export class AiTurnExecutor {
       for await (const event of loop as AsyncIterable<CompactEvent>) {
         if (event.type === "compaction_start") await pipeline.applyCompaction("running");
         else if (event.type === "compaction_end") await pipeline.applyCompaction("completed");
-        else if (event.type === "issue") issueMessage = event.issue.message;
+        else if (event.type === "issue") issueMessage = aiIssueDiagnostic(event.issue).message;
         else if (event.type === "loop_end") {
           status = event.reason === "stop" ? "completed" : event.reason === "aborted" ? "aborted" : "failed";
           await pipeline.applyCompaction(status === "failed" ? "failed" : "completed", event.result);

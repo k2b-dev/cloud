@@ -8,7 +8,7 @@ import type { LayoutAnnouncementsState } from "../server/middleware/settings";
 import AdminSidebar from "./AdminSidebar";
 import Layout from "./Layout";
 import { platformMessages } from "./platform-messages";
-import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
+import { getDisplayRuntimeContext, type RuntimeContext } from "./runtime";
 
 type Breadcrumb = { title: string; href?: string };
 type AdminLayoutContext = {
@@ -28,6 +28,8 @@ type Props = {
   title: string;
   /** Disable when a bounded child such as SettingsPage owns scrolling. */
   scroll?: boolean;
+  /** Page-owned insets when its layout needs more room than the default shell spacing. */
+  contentClass?: string;
 };
 export default function AdminLayout(props: Props) {
   // Keep children lazy so Layout installs the request locale before rendering them.
@@ -36,7 +38,7 @@ export default function AdminLayout(props: Props) {
   const t = platformMessages.resolve([locale]).t;
   const url = new URL(c.req.raw.url);
   const currentPath = `${url.pathname}${url.search}`;
-  const runtime = getLocalizedRuntimeContext(c);
+  const runtime = getDisplayRuntimeContext(c);
   // Admin is the area's root, as an app's root is: the rail and the admin sidebar lead there. So it is no level
   // above an admin page, and every admin page shows its title alone, whichever app owns it.
   const overview = title === "Overview" || title === t.overview;
@@ -46,7 +48,7 @@ export default function AdminLayout(props: Props) {
       <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1" resizable={false}>
         <AdminSidebar currentPath={currentPath} apps={runtime.apps} />
         <AppWorkspace.Content>
-          <AppWorkspace.Main scroll={scroll} class={scroll ? "p-[var(--ui-space-shell)]" : undefined}>
+          <AppWorkspace.Main scroll={scroll} class={props.contentClass ?? (scroll ? "p-[var(--ui-space-shell)]" : undefined)}>
             {props.children}
           </AppWorkspace.Main>
         </AppWorkspace.Content>

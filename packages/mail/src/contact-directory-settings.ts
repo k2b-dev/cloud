@@ -182,4 +182,7 @@ export const mailContactDirectoryUpdateSchema = z
     create: optionalCapabilityIdSchema,
   })
   .strict();
+export const mailContactDirectoryPatchSchema = mailContactDirectoryUpdateSchema
+  .partial()
+  .extend({ replaceUnreadable: z.array(z.enum(Object.values(MAIL_CONTACT_DIRECTORY_SETTING_KEYS))).optional() });
 export type MailContactDirectoryUpdate = z.infer<typeof mailContactDirectoryUpdateSchema>;

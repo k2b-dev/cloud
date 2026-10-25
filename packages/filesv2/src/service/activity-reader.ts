@@ -63,7 +63,7 @@ export type ActivityReaderDependencies = {
   displayNames: typeof resolveDisplayNames;
   requireAdmin(actor: RequestActor, budget: ActivityReadBudget): Promise<void>;
   canReadShare(actor: RequestActor, creatorId: string | null, budget: ActivityReadBudget): Promise<boolean>;
-  shares: { get(id: string): Promise<Pick<ShareRow, "created_by"> | null> };
+  shares: { get(id: string): Promise<Pick<ShareRow, "created_by" | "base_id"> | null> };
   /** Default is the real SQL reader. Injection supports focused tests without a database. */
   data?: typeof activityReaderData;
   /** Internal deterministic clock; never accepted from a transport. */
@@ -153,11 +153,11 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
     // History needs the actual storage configuration, even when candidate scoping would otherwise look empty.
     if (config.unreadable) throw new FilesError("configuration_unreadable", 409);
     const allowed = new Set(allowedBindingIds);
-    const scope = { admin, userId, bindingIds: allowedBindingIds };
+    const scope = { admin, userId, bindingIds: allowedBindingIds, serverUrl: config.url };
     const bindingCache = new Map<string, Promise<Binding | null>>();
-    const accessCache = new Map<string, Promise<HistoryAccess | null>>();
     const identityCache = new Map<string, Promise<boolean>>();
     const statCache = new Map<string, Promise<Pick<Node, "id" | "directory"> | null | "denied">>();
+    const accessCache = new Map<string, Promise<HistoryAccess | null>>();
     const binding = (id: string | null) => {
       if (!id) return Promise.resolve(null);
       let value = bindingCache.get(id);
@@ -193,12 +193,10 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
       current.node.path === target;
     async function project(row: ActivityCandidate): Promise<Projection | null> {
       budget.check();
-      const ownRow = row.actor_kind === "user" && row.actor_user_id === userId;
-      if (!admin && !ownRow && !allowed.has(row.base_id ?? "") && !allowed.has(row.base_after_id ?? "")) return null;
+      if (!admin && !allowed.has(row.base_id ?? "") && !allowed.has(row.base_after_id ?? "")) return null;
       const parsed = HistoryAction.safeParse(row.action);
       if (!parsed.success) return null;
       const action = parsed.data;
-      const own = row.actor_kind === "user" && row.actor_user_id !== null && row.actor_user_id === userId;
       async function side(after: boolean): Promise<{ value: ActivitySide; base: string | null; relative: string | null }> {
         const path = after ? row.path_after : row.path_before;
         if (path === null) return { value: hidden, base: null, relative: null };
@@ -248,19 +246,15 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           publicBaseId: currentBaseId,
           relativePath: currentBaseId === null ? null : relative,
         });
-        if (admin || own)
-          return { value: row.metadataUnknown ? minimal(displayBaseId) : full("snapshot"), base: base ? publicId(base) : null, relative };
         const invisible = { value: hidden, base: null, relative: null };
-        if (
-          !base ||
-          !allowed.has(base.id) ||
-          base.lifecycle !== "active" ||
-          relative === null ||
-          row.server_url !== config.url ||
-          config.unreadable
-        )
+        if (!base || base.area !== "cloud" || base.root !== root || relative === null) return invisible;
+        if (admin) return { value: row.metadataUnknown ? minimal(displayBaseId) : full("snapshot"), base: publicId(base), relative };
+        if (!allowed.has(base.id) || base.lifecycle !== "active" || relative === null || row.server_url !== config.url || config.unreadable)
           return invisible;
-        // A privileged 403 is not absence. In particular, never recover visibility from the parent on a failed stat.
+        if (row.actor_kind === "user" && row.actor_user_id === userId)
+          return { value: row.metadataUnknown ? minimal(basePublicId) : full("snapshot"), base: basePublicId, relative };
+        // Storage refines current identity only. Cloud grants already authorize the retained
+        // local snapshot; a failed stat must never remove a row after SQL pagination.
         const key = JSON.stringify([row.server_url, root, base.id, path]);
         let stat = statCache.get(key);
         if (!stat) {
@@ -274,7 +268,8 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           statCache.set(key, stat);
         }
         const node = await stat;
-        if (node === "denied") return invisible;
+        if (node === "denied")
+          return { value: row.metadataUnknown ? minimal(basePublicId) : full("snapshot"), base: basePublicId, relative };
         let stable = identityCache.get(root);
         if (!stable) {
           stable = budget.run(() => deps.connect(config, budget.signal).root(root).info()).then((info) => info.stableIds === true);
@@ -283,7 +278,8 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
         const stableIds = await stable;
         if (node && (!stableIds || !itemId || !node.id || node.id === itemId)) {
           const current = await access(base, relative);
-          if (!matches(current, base, path)) return invisible;
+          if (!matches(current, base, path))
+            return { value: row.metadataUnknown ? minimal(basePublicId) : full("snapshot"), base: basePublicId, relative };
           if (
             stableIds &&
             itemId &&
@@ -294,15 +290,8 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           )
             return { value: full("current"), base: basePublicId, relative };
           // No stable identity promise means only the disappearance-level fields, even on a readable live leaf.
-          if (stableIds && itemId && current?.node.id && current.node.id !== itemId) return invisible;
           return { value: minimal(basePublicId), base: basePublicId, relative };
         }
-        // Only proven absence or a different stable identity can fall back to the parent.
-        if (!relative) return invisible; // A base's parent is outside that base's authority.
-        const parent = relative.split("/").slice(0, -1).join("/");
-        const current = await access(base, parent);
-        const parentTarget = parent ? `${base.path}/${parent}` : base.path;
-        if (!matches(current, base, parentTarget) || !current?.node.directory) return invisible;
         return { value: minimal(basePublicId), base: basePublicId, relative };
       }
       const before = await side(false);
@@ -391,6 +380,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
       const input = parsed.data;
       return withActivityReadBudget(call.requestAbort, async (budget) => {
         await budget.run(() => deps.requireAdmin(call.actor, budget));
+        if (input.baseId?.startsWith("freeipa:")) throw new FilesError("history_unavailable", 409);
         const items: ActivityBasesPage["items"] = [];
         let after = input.after;
         let scanned = 0;
@@ -494,6 +484,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           }
         }
         const current = await context(call, budget);
+        if (input.baseId?.startsWith("freeipa:")) throw new FilesError("history_unavailable", 409);
         const rows =
           matches >= ACTIVITY_SEARCH_LIMIT && input.q
             ? []
@@ -552,6 +543,10 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
         const share = await budget.run(() => deps.shares.get(input.shareId));
         if (!share || !(await budget.run(() => deps.canReadShare(call.actor, share.created_by, budget))))
           throw new FilesError("not_found", 404);
+        const base = await budget.run(() => deps.bindings.byId(share.base_id));
+        if (base?.area !== "cloud") throw new FilesError("history_unavailable", 409);
+        const current = await context(call, budget);
+        if (!current.scope.admin && !current.scope.bindingIds.includes(base.id)) throw new FilesError("not_found", 404);
         return budget.run(() => data.shareAccess(input, { now: deps.now?.(), budget }));
       });
     },
