@@ -247,6 +247,7 @@ In the editor, the controls appear when you point at the diagram or focus it. Af
 - **Timeline:** Notes are rows, with the last change first. Groups start with **Today**, **Yesterday**, **This week**, and **Last week**, then months and years. Links are arcs on the left, in the color of the area they start from. Point at a row or focus it to see its links. Incoming links are dashed. This display scrolls instead of zooming. It opens at the open note.
 - **Depth:** Choose **1 step** or **2 steps** in **Neighborhood**.
 - **Move to center:** Focus a note and press **Space**. On a touchscreen, select a note and choose **Move to center**. This note becomes the middle.
+- **Large notebooks:** In a notebook with more than 500 pages, the graph shows the pages around the open page: its links, their links, its sub-pages, and the pages above them. A line above the graph says how many pages it shows. To see the pages around another page, move it to the center in **Neighborhood**, or open the graph from that page.
 - **On a phone:** Links opens in **Neighborhood** unless you choose another display. Your choice stays in the address.
 - **No links here:** Choose **Show whole notebook** to see **Network**. If filters hide all links of the current note, choose **Reset filters**.
 - **Areas:** Each top-level page with sub-pages is an area with its own color. The other top-level pages are in **Top level**. The network does not move by itself. You can drag a note, and its neighbors follow a little.

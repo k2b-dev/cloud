@@ -24,6 +24,11 @@ convention still needs a check or a test.
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
 | A picker filters a capped first page | The editor's `[[` link suggestions loaded the first 200 notes, with their Markdown, and filtered them in the browser; in a large notebook every later note was unreachable. | Tests: Notebooks `note-link-autocomplete.test.ts` requires the typed text to reach the server and links a note beyond the first page; `note-titles.integration.test.ts` puts the exact title first among 20,000 matches. Convention: a picker over notebook content searches titles on the server. |
+| A loopback smoke sends the wrong session origin | A smoke opens its page on loopback while Cloud expects the public origin; the live socket is refused with `forbidden_origin` and `1008`. | Tests: Grids `browser-smoke-live.browser.test.ts` observes the loopback browser's origin, tests the public-origin relay, and keeps other sockets untouched; `browser-smoke-live.test.ts` executes Nightly's smoke loop and checks the Grids and Chat arguments. The browser guard also checks that diagnostics omit payloads and arbitrary close reasons. |
+| A browser fixture pauses a clock at a time that already passed | Installing a running clock and pausing at its initial timestamp races browser command latency; a busy host reports “Cannot fast-forward to the past”. | Test: Pulse `WorkspaceClock.browser.test.ts` advances the clock before pausing, then verifies the exact fixture time across navigation and subsequent timer advancement. Freeze wall time before pausing and restore normal clock advancement while paused. |
+| Per-request browser fixtures repeatedly compile the server | Cold Babel and workspace imports consume the snapshot deadline before the page executes. | Test: Pulse `PulseWorkspace.browser.test.ts` renders the real page from a bundle prepared once during setup. Each render still runs in a fresh process with the unchanged 15-second deadline; only app-owned page data and platform SSR preloads are substituted. |
+| An SSR browser fixture leaves an asset request external | The generated shell requests its branding image, but the fixture intercepts only app and API routes; navigation can wait on DNS or the unavailable host instead of reaching `load`. | Test: Pulse `PulseWorkspace.browser.test.ts` supplies a local branding SVG, rejects unexpected requests, checks decoded logo images, and retains the normal navigation load wait and SSR height checks. |
+| A browser locator captures an underlying dialog action | Before asynchronous Back opens a confirmation, an unscoped button label matches the form action. The confirmation hides that retained button, so the click waits on the wrong element. | Test: Pulse `PulseWorkspace.browser.test.ts` scopes Cancel and Discard to the named confirmation, checks that the form action is visible while the confirmation action is absent, and verifies draft preservation and final dismissal. |
 | Parse tree read before the parser finished | A test reads `syntaxTree(state)` of a fresh CodeMirror state; the first parse runs only within a short time budget, so a busy runner sees a partial tree (11 of 45 characters). | Test: Notebooks `list-structure.test.ts` finishes the parse with `ensureSyntaxTree` and applies it with `state.update({})` before reading the tree. Convention: complete an asynchronous result before asserting on it. |
 | A formatter exposes ambiguous generic TSX syntax | Removing the trailing comma from a generic arrow with a default type makes the Solid/Babel test transform parse it as JSX. | Test: `PermissionEditor.behavior.test.tsx` runs through the actual Solid DOM preload; use a generic function declaration for the deferred helper and run the test after formatting. |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
@@ -103,6 +108,7 @@ convention still needs a check or a test.
 | Retention blocked by a dependent check | A row's `ON DELETE SET NULL` violates its own CHECK, so every delete of the referenced row fails and an oldest-first sweep stalls for good. | Test: `chat-tasks.integration.test.ts` expires a background turn that a workflow memory learning run points at. |
 | Unreadable treated as missing | Startup replaces an unreadable or invalid stored value with an environment value. | Test: `packages/cloud/src/services/settings/bootstrap.integration.test.ts` preserves ciphertext and timestamps for undecryptable and invalid rows while reads use the environment fallback ([#1295](https://github.com/k2b-dev/cloud/issues/1295)). |
 | Read fallback written back | A read fallback hides an unreadable row and a later merge writes that fallback over saved data. | Guard: settings store refuses unreadable rows by default; `unreadable.integration.test.ts` and Files configuration tests cover explicit recovery ([#1303](https://github.com/k2b-dev/cloud/issues/1303)). |
+| Unconfirmed provider progress | A throttled FETCH ends with missing flag rows or a short body stream while the connection stays open. Advancing the cursor or storing the body makes incomplete work look complete. | Tests: real ImapFlow protocol fixtures in `packages/mail/src/service/connectors/imap-smtp.test.ts` cover empty and partial flag windows, failed confirmation, midstream throttling and an overstated size. Guard: confirm changed UIDs with MODSEQ SEARCH and short-source EOF with an empty literal at the next byte; otherwise retry with `ETHROTTLE` ([#1360](https://github.com/k2b-dev/cloud/issues/1360), [#1359](https://github.com/k2b-dev/cloud/issues/1359)). |
 | Fast results blocked by a slow independent source | Waiting for every suggestion source hides usable results until the slowest request settles. | Tests: Mail `MailRecipientInput.behavior.test.tsx` holds the contact request while asserting a usable mailbox suggestion. Guard: publish each source independently, deduplicate by address and retain the keyboard selection ([#1587](https://github.com/k2b-dev/cloud/issues/1587)). |
 | Intermediate state disables an active editor | Setting a newly saved draft before marking its pending lease briefly disables inputs and loses focus. | Tests: `mail-draft-session.behavior.test.tsx` observes every render transition; `MailComposerEditor.browser.test.ts` checks focus and caret through first autosave on desktop and phone. Guard: publish draft identity and pending-lease state in one Solid batch ([#1563](https://github.com/k2b-dev/cloud/issues/1563)). |
 | Expired authentication retried as a network failure | A 401 enters the connection retry loop and leaves the editor without a sign-in action. | Tests: Mail session behavior and composer browser recovery tests preserve local text (including an unsaved seed), wait for pending saves before navigation, stop retries and reopen the same draft with its journal. Guard: classify 401 separately and expose sign-in through the existing route policy ([#1565](https://github.com/k2b-dev/cloud/issues/1565)). |
@@ -200,6 +206,7 @@ convention still needs a check or a test.
 | User navigation mistaken for an async action's own navigation | Every draft-key change keeps an app opening active, leaving another chat's composer read-only. | Tests: `chat-slash.behavior.test.ts` requires `follow()` for one draft move and cancels unannounced changes; Assistant's `composer-app-commands.behavior.test.tsx` checks that editing returns before the previous save finishes. |
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
 | Workspace layout changes shape after the first render | A workspace region such as a `MainPane` mounts only after hydration, and the layout drops or moves content that was already shown. | Test: Chat `ChatThreads.browser.test.ts` switches from a chat without threads to one with threads at 1440 and 2000 px. Library fix pending in [#1752](https://github.com/k2b-dev/cloud/issues/1752). |
+| Redundant reads after a confirmed insert | First sync repeats content updates and queries state that cannot exist for a newly inserted message, multiplying database latency. | Test: Mail `lifecycle.integration.test.ts` counts PostgreSQL commands for a 200-envelope import and replays it to check canonical IDs, conversations and read state. Only a confirmed insert skips these reads; existing and raced copies keep the full path ([#1487](https://github.com/k2b-dev/cloud/issues/1487)). |
 
 ## Lessons
 
@@ -1026,6 +1033,20 @@ convention still needs a check or a test.
 - **Error class:** Reading asynchronous state before the completion condition.
 - **Guard:** `data-table-focus.browser.test.ts` waits for the destination URL, then retains its exact URL and callback-count assertions without increasing timeouts.
 
+
+### Isolate PDF consumer unit tests at admission and HTTP
+
+- **What happened:** The query-export starter escaping test failed before its mocked renderer request.
+- **Root cause:** Shared PDF rendering requires downstream admission; this consumer unit test mocked HTTP but omitted the existing admission fixture.
+- **Error class:** A unit test accidentally depends on shared infrastructure.
+- **Guard:** The starter test uses the scoped PDF admission mock, asserts one admission attempt, and retains the actual template-rendering and escaping assertions. Platform and integration tests continue to exercise real admission.
+### Browser destinations must not mount unrelated applications
+
+- **What happened:** Studio's WebKit navigation test reported runtime fetch errors while leaving its dummy edit-chat page.
+- **Root cause:** The fixture mounted another autostarting Studio instance at that destination; the next navigation interrupted its requests. The fullscreen step also left before the app was ready.
+- **Error class:** A browser fixture creates unintended asynchronous work between assertions.
+- **Guard:** `apps.browser.test.ts` serves a static edit-chat destination and verifies the fullscreen app's visible revision before navigating onward. Runtime error assertions and timeouts remain unchanged.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its
@@ -1036,7 +1057,18 @@ When the guard does not exist yet, write "Pending in #n" with the issue that
 tracks it, or "None, because …". A pull request that adds a guard for a class
 updates that class's row in the table.
 
+### Mail first-sync database latency (#1487)
+
+- **Error class:** Redundant reads after a confirmed insert.
+- **Cause and fix:** New content followed the same update and lookup path as existing copies. The insertion result now distinguishes a new row from an upsert conflict; only a new row skips the redundant update and four reads. Remote-reference races fall back to the full path.
+- **Guard:** The PostgreSQL integration imports 200 envelopes through `ingestEnvelope`, counts commands at the wire, and replays the batch to verify stable IDs, conversation count and read state.
+- **Measurement:** On the same local test database, the original path used 4,602 commands and 4,554 ms (44 messages/s); the fixed path used 3,602 commands and 3,641 ms (55 messages/s). Command count fell 22%; timings are observations on a shared host, not a guaranteed throughput target. Batch limits and lease scheduling are unchanged.
 ## Wait for the confirmation after browser history traversal (#1765)
 
 - **Error class:** asynchronous UI locator race. The Pulse Back test could resolve the settings form's Discard button before the confirmation appeared, then wait on that hidden button.
 - **Guard:** the test waits for the named confirmation dialog and its question before clicking its Discard button. It still checks Back, Escape, Cancel, draft preservation and the resulting URL.
+
+## Observe the promise a browser API rejects on purpose
+
+- **Error class:** unhandled rejection from a platform promise. `@k2b/ssr` nav started a view transition and dropped its handle. When a newer navigation skipped the transition, Chromium rejected its `ready` promise with "AbortError: Transition was skipped", and pages reported it as an error (seen in Chat's personal list browser test).
+- **Guard:** nav catches `ready` and leaves `updateCallbackDone` alone, so the navigation's own errors still surface. `packages/ssr/test/unit/nav.test.ts` fails on an unhandled rejection from a skipped transition.
