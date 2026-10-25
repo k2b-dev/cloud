@@ -2246,7 +2246,13 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean; hea
           <div class="k2b-app-workspace__head-views">{resolvedViews()}</div>
         </Show>
         <Show when={resolvedFilters.toArray().some(Boolean) || props.head?.filtered}>
-          <div class="k2b-app-workspace__head-filters" role="group" aria-label={filters().filters}>
+          <div
+            class="k2b-app-workspace__head-filters"
+            role="group"
+            aria-label={filters().filters}
+            data-scroll-fade-mode="both"
+            data-scroll-fade-axis="horizontal"
+          >
             {resolvedFilters()}
             <Show when={props.head?.filtered}>
               <Show

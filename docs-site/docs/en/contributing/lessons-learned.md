@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A sideways scroller without an overflow cue | A row with a hidden scrollbar cuts its last controls at a hard edge, so people cannot tell that more follow. | Test: UI `workspace-head-row.browser.test.ts` checks that overflowing head filters fade at the edge that hides chips. |
 | A browser fixture pauses a clock at a time that already passed | Installing a running clock and pausing at its initial timestamp races browser command latency; a busy host reports “Cannot fast-forward to the past”. | Test: Pulse `WorkspaceClock.browser.test.ts` advances the clock before pausing, then verifies the exact fixture time across navigation and subsequent timer advancement. Freeze wall time before pausing and restore normal clock advancement while paused. |
 | Per-request browser fixtures repeatedly compile the server | Cold Babel and workspace imports consume the snapshot deadline before the page executes. | Test: Pulse `PulseWorkspace.browser.test.ts` renders the real page from a bundle prepared once during setup. Each render still runs in a fresh process with the unchanged 15-second deadline; only app-owned page data and platform SSR preloads are substituted. |
 | An SSR browser fixture leaves an asset request external | The generated shell requests its branding image, but the fixture intercepts only app and API routes; navigation can wait on DNS or the unavailable host instead of reaching `load`. | Test: Pulse `PulseWorkspace.browser.test.ts` supplies a local branding SVG, rejects unexpected requests, checks decoded logo images, and retains the normal navigation load wait and SSR height checks. |
@@ -1009,6 +1010,12 @@ convention still needs a check or a test.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
 
+### Wrapped head filters hid chips behind a hard edge
+
+- **What happened:** In Spaces at 1194 px and on iPad, Status, Sort, and Group stopped at a hard edge in the head's second row, with no sign that more chips followed.
+- **Root cause:** The filter group scrolls sideways with a hidden scrollbar, but unlike the view strip it was not marked as a fading scrollport.
+- **Error class:** A sideways scroller without a visible overflow cue hides controls.
+- **Guard:** `workspace-head-row.browser.test.ts` ("chips that scroll on their own row fade at the edge that hides them") checks the fade at both ends of an overflowing filter row.
 ### Confirmation disabled its own focus-return target
 
 - **What happened:** Canceling an access-removal dialog sometimes left focus on the page instead of the Remove button ([#1767](https://github.com/k2b-dev/cloud/issues/1767)).
