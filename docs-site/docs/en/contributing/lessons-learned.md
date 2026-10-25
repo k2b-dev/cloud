@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A workspace patch never reaches package consumers | CSS builds succeed in the monorepo while published build scripts lose later variable color mixes in one rule. | Tests: `tailwind.test.ts` covers both Tailwind polyfill shapes; `check-cloud-packed-consumer.ts` builds mixed properties, shorthands and gradients using installed package scripts in a fresh repository. |
 | A browser fixture pauses a clock at a time that already passed | Installing a running clock and pausing at its initial timestamp races browser command latency; a busy host reports “Cannot fast-forward to the past”. | Test: Pulse `WorkspaceClock.browser.test.ts` advances the clock before pausing, then verifies the exact fixture time across navigation and subsequent timer advancement. Freeze wall time before pausing and restore normal clock advancement while paused. |
 | Per-request browser fixtures repeatedly compile the server | Cold Babel and workspace imports consume the snapshot deadline before the page executes. | Test: Pulse `PulseWorkspace.browser.test.ts` renders the real page from a bundle prepared once during setup. Each render still runs in a fresh process with the unchanged 15-second deadline; only app-owned page data and platform SSR preloads are substituted. |
 | An SSR browser fixture leaves an asset request external | The generated shell requests its branding image, but the fixture intercepts only app and API routes; navigation can wait on DNS or the unavailable host instead of reaching `load`. | Test: Pulse `PulseWorkspace.browser.test.ts` supplies a local branding SVG, rejects unexpected requests, checks decoded logo images, and retains the normal navigation load wait and SSR height checks. |
@@ -1029,6 +1030,13 @@ convention still needs a check or a test.
 - **Root cause:** Awaiting keyboard dispatch did not wait for the browser's link navigation.
 - **Error class:** Reading asynchronous state before the completion condition.
 - **Guard:** `data-table-focus.browser.test.ts` waits for the destination URL, then retains its exact URL and callback-count assertions without increasing timeouts.
+
+### Isolate PDF consumer unit tests at admission and HTTP
+
+- **What happened:** The query-export starter escaping test failed before its mocked renderer request.
+- **Root cause:** Shared PDF rendering requires downstream admission; this consumer unit test mocked HTTP but omitted the existing admission fixture.
+- **Error class:** A unit test accidentally depends on shared infrastructure.
+- **Guard:** The starter test uses the scoped PDF admission mock, asserts one admission attempt, and retains the actual template-rendering and escaping assertions. Platform and integration tests continue to exercise real admission.
 
 ### Browser destinations must not mount unrelated applications
 
