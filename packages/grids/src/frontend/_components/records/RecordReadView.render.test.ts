@@ -169,6 +169,8 @@ describe("RecordReadView", () => {
     expect(html).toContain("Historic customer");
     expect(html).not.toContain("?record=");
     expect(html).not.toContain("Unavailable record");
+    // A snapshot opens in a dialog: its sections share the dialog's surface instead of drawing cards on it.
+    expect(html).toContain('class="k2b-detail-panel" data-surface="plain"');
   });
 
   test("exposes HTML templates only through the preview action in the detail body", () => {

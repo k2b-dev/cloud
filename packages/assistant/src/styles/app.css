@@ -17,111 +17,32 @@
   width: 100%;
 }
 
-/* The timeline owns the full-width scrollport; its contents keep the same
-   column as the composer. The chat sidebar occupies the reserved column without
-   moving the native scrollbar between the two columns. */
+/* The timeline owns the scrollport above the composer. */
 .k2b-ui .assistant-chat-layout {
-  --assistant-chat-context-width: 0px;
-  /* How the sidebar shows when its toggle is used; read by the island, set by
-     the container and media queries below. */
-  --assistant-context-mode: drawer;
   position: relative;
   display: grid;
   min-width: 0;
   min-height: 0;
   flex: 1;
-  grid-template-columns: minmax(0, 1fr) var(--assistant-chat-context-width);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
-}
-
-.k2b-ui .assistant-chat-messages {
-  grid-column: 1 / -1;
-  grid-row: 1;
-}
-
-.k2b-ui .assistant-chat-composer {
-  grid-column: 1;
-  grid-row: 2;
-}
-
-.k2b-ui .assistant-chat-layout .k2b-chat-timeline__viewport {
-  padding-inline-end: var(--assistant-chat-context-width);
 }
 
 .k2b-ui .assistant-chat-layout .k2b-chat-timeline__viewport:focus-visible {
   outline: none;
 }
 
-.k2b-ui .assistant-chat-layout .k2b-chat-timeline__latest {
-  left: calc((100% - var(--assistant-chat-context-width)) / 2);
-}
-
-/* Measure the chat pane, including its sidebar column, independently of the
-   viewport and the neighboring artifact workspace. */
-.k2b-ui .assistant-chat-pane { container: assistant-chat / inline-size; }
-
-/* The chat sidebar ("In this chat"). CSS alone decides its presentation, so the
-   server's first frame is final: a 20rem column when the chat area is at least
-   56rem wide and the person has not closed it; otherwise a drawer over the
-   chat's edge that the toggle opens without changing the chat's width; on
-   phones the toggle opens a bottom sheet instead. */
-.k2b-ui .assistant-context-sidebar { display: none; }
-.k2b-ui .assistant-context-toggle {
-  position: absolute;
-  z-index: 2;
-  inset-block-start: 0.5rem;
-  inset-inline-end: 1.25rem;
-  background: var(--k2b-surface);
-}
-.k2b-ui .assistant-chat-layout[data-drawer="open"] > .assistant-context-toggle { visibility: hidden; }
-.k2b-ui .assistant-chat-layout[data-drawer="open"] > .assistant-context-sidebar {
-  display: flex;
-  position: absolute;
-  z-index: 3;
-  inset-block: 0;
-  inset-inline-end: 0;
-  width: min(20rem, 100%);
-  box-shadow: var(--k2b-shadow-side);
-  clip-path: inset(0 0 0 -4rem);
-}
-
-@media (max-width: 47.999rem) {
-  .k2b-ui .assistant-chat-layout { --assistant-context-mode: sheet; }
-}
-/* Below 56rem the toggle always shows at the top of a full-width timeline: the first message starts below it, so the
-   toggle never covers it. From 56rem the timeline's centered column keeps clear of the toggle by itself. */
-@container assistant-chat (max-width: 55.999rem) {
-  .k2b-ui .assistant-chat-layout:has(> .assistant-context-toggle) .k2b-chat-timeline__content { padding-block-start: 2.75rem; }
-}
-
-@container assistant-chat (min-width: 56rem) {
-  .k2b-ui .assistant-chat-layout { --assistant-context-mode: column; }
-  .k2b-ui .assistant-chat-layout[data-context="auto"]:has(> .assistant-context-sidebar) {
-    --assistant-chat-context-width: 20rem;
-  }
-  .k2b-ui .assistant-chat-layout[data-context="auto"] > .assistant-context-toggle { display: none; }
-  /* Above the messages' full-width scrollport, which spans this column too. */
-  .k2b-ui .assistant-chat-layout[data-context="auto"] > .assistant-context-sidebar {
-    display: flex;
-    position: relative;
-    z-index: 1;
-    width: auto;
-    grid-column: 2;
-    grid-row: 1 / -1;
-    box-shadow: none;
-  }
-}
-
-/* One surface, shared with the chat; sections are separated by space. */
+/* The chat details fill the workspace's Detail; the reading freeze listens on this element. */
 .k2b-ui .assistant-context-sidebar {
-  --k2b-detail-panel-scroll-inset: 0.75rem;
+  display: flex;
+  width: 100%;
   min-width: 0;
+  height: 100%;
   min-height: 0;
   flex-direction: column;
-  padding: 0.75rem 0.75rem 0;
-  border-inline-start: 0;
-  background: var(--k2b-surface);
 }
+.k2b-ui .assistant-context-sidebar__search { min-width: 0; flex: none; padding-block-end: 0.75rem; }
+.k2b-ui .assistant-context-tab .assistant-context-sidebar__search { padding-block-end: 0; }
 .k2b-ui .assistant-context-sidebar__header {
   display: flex;
   min-width: 0;
@@ -131,22 +52,6 @@
   gap: 0.5rem;
   padding-inline-end: var(--k2b-detail-panel-scroll-inset);
 }
-.k2b-ui .assistant-context-sidebar__title {
-  min-width: 0;
-  flex: 1;
-  margin: 0;
-  overflow: hidden;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.k2b-ui .assistant-context-sidebar__title:focus { outline: none; }
-.k2b-ui .assistant-context-sidebar__search { min-width: 0; flex: 1; }
-.k2b-ui .assistant-context-sidebar__actions { display: flex; flex: none; gap: 0.125rem; margin-inline-start: auto; }
-/* In the phone sheet, the sheet's body owns scrolling; the panel only lays out its sections. */
-.k2b-ui .k2b-detail-panel.assistant-context-sheet { height: auto; overflow: visible; }
-.k2b-ui .assistant-context-sheet .k2b-detail-panel__body { overflow: visible; }
 /* The workspace Files tab: the sidebar's surface, filling the tab. */
 .k2b-ui .assistant-context-tab {
   --k2b-detail-panel-scroll-inset: 0.75rem;

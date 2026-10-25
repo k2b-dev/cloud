@@ -49,7 +49,7 @@ Eine Routine sendet eine gespeicherte Anfrage zur gewählten Zeit zurück in ein
 
 Eine einmalige Routine verwendet einen genauen lokalen Zeitpunkt in der Zeitzone der Cloud-Anwendung. Eine wiederkehrende Routine verwendet einen Cron-Ausdruck mit fünf Feldern in derselben Zeitzone. Bitte den Assistenten, deine Routinen aufzulisten oder zu lesen. In der CLI heißen sie Tasks: `cld assistant tasks`. Schlägt eine Routine fehl, wechselt sie in den Status **Braucht dich**. Die Benachrichtigung nennt die Routine beim Namen und sagt, warum sie angehalten wurde. Beim Löschen eines Chats werden auch seine Routinen und ihr Ausführungsverlauf gelöscht.
 
-Öffne **Kontext** in der Seitenleiste **In diesem Chat** und wähle eine Routine, um sie anzupassen, zu pausieren, fortzusetzen, auszuführen oder zu löschen oder um ihren Ausführungsverlauf zu prüfen.
+Öffne **Kontext** in den Details **In diesem Chat** und wähle eine Routine, um sie anzupassen, zu pausieren, fortzusetzen, auszuführen oder zu löschen oder um ihren Ausführungsverlauf zu prüfen.
 
 **Pausiert** nennt den Grund: „Von dir pausiert am 16. Okt. 2026, 14:30. Was in der Pause passiert, wird nicht von selbst nachgeholt.“, „Pausiert, weil der Chat archiviert ist.“ oder „Pausiert, weil das Konto inaktiv ist.“
 

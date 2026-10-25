@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { chromium } from "playwright";
+import type { Browser } from "playwright";
+import { launchBrowser } from "../../../ui/test/browser";
 
 test("compact context hides runs; Studio reuses cards, menus and explicit panel starts", async () => {
   const build = Bun.spawn(["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "./context-browser-harness.tsx"], {
@@ -8,6 +9,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
   });
   const [code, error] = await Promise.all([new Response(build.stdout).text(), new Response(build.stderr).text()]);
   if (await build.exited) throw new Error(error);
+  const now = "2026-10-08T12:00:00.000Z";
   const requests: string[] = [];
   const app = {
     id: "AAAAA2",
@@ -19,7 +21,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
     revision: 1,
     publishedRevision: null,
     publishedVersion: null,
-    updatedAt: new Date().toISOString(),
+    updatedAt: now,
     forkedFromId: null,
     forkedFromRevision: null,
   };
@@ -36,7 +38,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
         return Response.json({
           chatId: "chat-one",
           viewerUserId: "test",
-          now: new Date().toISOString(),
+          now: now,
           timeZone: "UTC",
           results: [
             {
@@ -45,7 +47,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
               title: app.title,
               description: app.description,
               icon: app.icon,
-              deliveredAt: new Date().toISOString(),
+              deliveredAt: now,
               turnId: "turn-1",
               callId: "open-1",
               messageSeq: 2,
@@ -65,7 +67,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
           skills: [],
           memories: [],
           runCount: 3,
-          runs: [{ id: "run-1", status: "ready", createdAt: new Date().toISOString() }],
+          runs: [{ id: "run-1", status: "ready", createdAt: now }],
         });
       if (path.endsWith("/AAAAA2"))
         return Response.json({
@@ -75,19 +77,30 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
         });
       if (path.endsWith("/app-assets")) return Response.json({ message: "Fixture stops at execution boundary" }, { status: 500 });
       return new Response(
-        '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><div id="root"></div><script src="/bundle.js"></script>',
+        '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css"><body class="k2b-ui" style="margin:0"><div id="root" style="height:100vh"></div><script type="module" src="/bundle.js"></script>',
         { headers: { "content-type": "text/html" } },
       );
     },
   });
-  const browser = await chromium.launch({ headless: true, channel: "chrome" });
+  let browser: Browser | undefined;
   try {
+    browser = await launchBrowser();
     const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+    // Pin wall time without replacing the browser's timers or animation frames.
+    await page.addInitScript((at) => {
+      globalThis.Date = new Proxy(Date, {
+        construct: (target, args, newTarget) => Reflect.construct(target, args.length ? args : [at], newTarget),
+        apply: (target) => new target(at).toString(),
+        get: (target, property, receiver) => (property === "now" ? () => at : Reflect.get(target, property, receiver)),
+      });
+    }, Date.parse(now));
     page.setDefaultTimeout(3000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(server.url.href);
-    const context = page.locator("#assistant-chat-context");
+    // Match the full-page host used by Assistant and guard against a content-sized fixture.
+    await page.waitForFunction(() => document.querySelector(".k2b-app-workspace")?.getBoundingClientRect().height === innerHeight);
+    const context = page.locator(".assistant-context-sidebar");
     // One-off runs stay one level deeper, as a row under working files.
     await context.getByRole("button", { name: /Working files/ }).click();
     expect(await context.getByRole("button", { name: /Script runs · 3/ }).count()).toBe(1);
@@ -118,7 +131,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
     await page.getByRole("tab", { name: "Studio", exact: true }).click();
     await page.screenshot({ path: "/tmp/assistant-studio-slice.png" });
   } finally {
-    await browser.close();
+    await browser?.close();
     await server.stop(true);
   }
 }, 20000);

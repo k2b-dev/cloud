@@ -30,6 +30,7 @@ convention still needs a check or a test.
 | Parse tree read before the parser finished | A test reads `syntaxTree(state)` of a fresh CodeMirror state; the first parse runs only within a short time budget, so a busy runner sees a partial tree (11 of 45 characters). | Test: Notebooks `list-structure.test.ts` finishes the parse with `ensureSyntaxTree` and applies it with `state.update({})` before reading the tree. Convention: complete an asynchronous result before asserting on it. |
 | A formatter exposes ambiguous generic TSX syntax | Removing the trailing comma from a generic arrow with a default type makes the Solid/Babel test transform parse it as JSX. | Test: `PermissionEditor.behavior.test.tsx` runs through the actual Solid DOM preload; use a generic function declaration for the deferred helper and run the test after formatting. |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
+| Responsive tests retain an old layout contract | A test focuses a column before resize settles, keeps a desktop-only CSS flag on a phone sheet, or mounts a narrow panel outside its app-area container. | Tests: UI `detail-float.browser.test.ts` settles after widening; `app-workspace-controller.behavior.test.ts` distinguishes phone sheets from waiting phone pages; Assistant sidebar and waiting-strip browser fixtures match the shared Details layout. Check: `settle-reads` guards geometry assertions. |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
 | A visual rule confuses a control icon with prose | A notice check rejects a legible icon size as if it changed the notice text. | Test: `scripts/checks/notice-cards.test.ts` permits sizes on control icons while retaining checks on text, colours, opacity and nested text ([#1754](https://github.com/k2b-dev/cloud/issues/1754)). |
@@ -1009,6 +1010,12 @@ convention still needs a check or a test.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
 
+### Assistant chat details looked unlike every other Details
+
+- **What happened:** The Assistant's **In this chat** column was reported twice as looking different from Mail and the other applications: its own surface, header, width, and phone sheet instead of the shared Details.
+- **Root cause:** The Assistant rendered the shared `DetailPanel` in its own column, drawer, and bottom sheet inside the chat pane, so later changes to `AppWorkspace.Detail` (surface, header rhythm, resize edge, shadow, phone page) never reached it. Flattening the sections in #1661 fixed one symptom, not the host.
+- **Error class:** An application recreates a shared layout host around a shared component.
+- **Guard:** The Assistant contract test requires `<AppWorkspace.Detail` with `phone="page"`, and its browser suite checks the column, drawer, phone page, and flat sections in Chromium and WebKit. A reopenable phone page now waits behind its control, so a default-open Detail no longer needs an application host to stay off the phone screen.
 ### Confirmation disabled its own focus-return target
 
 - **What happened:** Canceling an access-removal dialog sometimes left focus on the page instead of the Remove button ([#1767](https://github.com/k2b-dev/cloud/issues/1767)).
@@ -1030,6 +1037,21 @@ convention still needs a check or a test.
 - **Error class:** Reading asynchronous state before the completion condition.
 - **Guard:** `data-table-focus.browser.test.ts` waits for the destination URL, then retains its exact URL and callback-count assertions without increasing timeouts.
 
+### Isolate PDF consumer unit tests at admission and HTTP
+
+- **What happened:** The query-export starter escaping test failed before its mocked renderer request.
+- **Root cause:** Shared PDF rendering requires downstream admission; this consumer unit test mocked HTTP but omitted the existing admission fixture.
+- **Error class:** A unit test accidentally depends on shared infrastructure.
+- **Guard:** The starter test uses the scoped PDF admission mock, asserts one admission attempt, and retains the actual template-rendering and escaping assertions. Platform and integration tests continue to exercise real admission.
+
+
+
+### Keep Assistant fixture loading inside the shared browser contract
+
+- **What happened:** WaitingStrip navigation exceeded its existing deadline, while the changed context browser test was omitted by the shared browser runner.
+- **Root cause:** WaitingStrip sent its compiled assets through Playwright route fulfillment; the context test selected Chrome directly instead of the shared launcher.
+- **Error class:** Browser fixtures bypass the shared asset or engine setup.
+- **Guard:** WaitingStrip serves compiled module assets over local HTTP. The context test uses the shared launcher and a fixed fixture clock, preserving its assertions and deadlines for Chromium and WebKit.
 ### Browser destinations must not mount unrelated applications
 
 - **What happened:** Studio's WebKit navigation test reported runtime fetch errors while leaving its dummy edit-chat page.

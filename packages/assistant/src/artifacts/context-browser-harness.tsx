@@ -3,6 +3,7 @@ import { render } from "solid-js/web";
 import { assistantChatSidebarActions, type ContextView, createAssistantChatContextState } from "../frontend/AssistantChatContext";
 import { AssistantChatSidebarPanel } from "../frontend/AssistantChatSidebar";
 import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
+import { CHAT_DETAILS_ID } from "../frontend/chat-sidebar-layout";
 import { ArtifactWorkspace, createArtifactWorkspace } from "./Workspace";
 import { appTab, contextTab, fileTab } from "./workspace-state";
 
@@ -12,7 +13,7 @@ function ChatSidebar(props: { open: (view: ContextView) => void; openApp: (id: s
   const state = createAssistantChatContextState({ chatId: "chat-one" });
   return (
     <AssistantChatSidebarPanel
-      id="assistant-chat-context"
+      detailId={CHAT_DETAILS_ID}
       state={state}
       runCount={state.snapshot()?.runCount}
       onClose={() => undefined}
@@ -55,14 +56,13 @@ render(() => {
                     </Dropdown.Trigger>
                   </Dropdown.Root>
                 </div>
-                <div class="assistant-chat-layout" data-context="auto">
+                <div class="assistant-chat-layout">
                   <div class="assistant-chat-messages">
                     <div class="k2b-chat-timeline__viewport">Messages</div>
                   </div>
                   <div class="assistant-chat-composer">
                     <input aria-label="Message" />
                   </div>
-                  <ChatSidebar open={open} openApp={(id, title) => controller.open(appTab(id, title))} />
                 </div>
               </div>
             </AppWorkspace.MainPane>
@@ -78,6 +78,16 @@ render(() => {
               />
             </AppWorkspace.MainPane>
           </AppWorkspace.Main>
+          <AppWorkspace.Detail
+            id={CHAT_DETAILS_ID}
+            phone="page"
+            openOnChoice={false}
+            open
+            onOpen={() => undefined}
+            onClose={() => undefined}
+          >
+            <ChatSidebar open={open} openApp={(id, title) => controller.open(appTab(id, title))} />
+          </AppWorkspace.Detail>
         </AppWorkspace.Content>
       </AppWorkspace>
     </AssistantLiveProvider>
