@@ -112,7 +112,8 @@ for (const [index, shape] of ["small", "large"].entries()) {
     // A path segment reads its level, whose slugs it compares in JavaScript (independent of the database locale): the
     // cost follows the level, never the notebook.
     const level = notebook.notes.filter((note) => note.parentId === page.parentId).length;
-    await boundedPlan(childrenQuery(notebook.id, page.parentId), { rows: level, reads: level + 100 });
+    // Each row also asks whether it has sub-notes: one index probe per row.
+    await boundedPlan(childrenQuery(notebook.id, page.parentId), { rows: level, reads: 2 * level + 100 });
     const after = sorted[3]!.id;
     await boundedPlan(readBatchQuery({ notebookId: notebook.id, after }));
     await boundedPlan(reindexBatchQuery(notebook.id, after));

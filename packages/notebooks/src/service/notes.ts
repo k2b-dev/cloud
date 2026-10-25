@@ -520,15 +520,18 @@ export const list = async (params: { notebookId: string }): Promise<Note[]> => {
 
 /** Keyset batches for whole-notebook jobs; content-free batches build export link maps. */
 export const readBatchQuery = (params: { notebookId: string; after?: string; includeContent?: boolean }) => sql<DbNote[]>`
-    SELECT n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_history_incomplete, n.yjs_snapshot_at,
-      ${params.includeContent === false ? sql`NULL::text` : sql`n.content_md`} AS content_md,
-      n.created_by, n.created_at, n.updated_at, n.locked_at,
-      EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) AS has_children
-    FROM notebooks.notes n
-    WHERE n.notebook_id = ${params.notebookId}::uuid
-      AND ${params.after ? sql`n.id > ${params.after}::uuid` : sql`true`}
-    ORDER BY n.id LIMIT 100
+    WITH page AS MATERIALIZED (
+      SELECT n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
+        n.yjs_history_incomplete, n.yjs_snapshot_at,
+        ${params.includeContent === false ? sql`NULL::text` : sql`n.content_md`} AS content_md,
+        n.created_by, n.created_at, n.updated_at, n.locked_at
+      FROM notebooks.notes n
+      WHERE n.notebook_id = ${params.notebookId}::uuid
+        AND ${params.after ? sql`n.id > ${params.after}::uuid` : sql`true`}
+      ORDER BY n.id LIMIT 100
+    )
+    SELECT page.*, EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = page.id) AS has_children
+    FROM page ORDER BY page.id
   `;
 
 export const readBatch = async (params: Parameters<typeof readBatchQuery>[0]): Promise<Note[]> =>
@@ -562,16 +565,20 @@ const listCondition = (params: NoteListParams) => {
 
 export const listPageQuery = (params: NoteListParams) => {
   const query = params.query?.trim();
-  const order = query
-    ? sql`CASE WHEN n.title ILIKE ${`%${query}%`} THEN 0 ELSE 1 END, n.position ASC, n.updated_at DESC, n.id DESC`
-    : sql`n.position ASC, n.updated_at DESC, n.id DESC`;
+  // A page is read first and only its rows ask for sub-notes: an `EXISTS` beside the whole match would be planned for
+  // every matching row and hash the parent index of the entire table.
   return sql<DbNote[]>`
-    SELECT n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
-      EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) AS has_children
-    FROM notebooks.notes n WHERE ${listCondition(params)}
-    ORDER BY ${order}
-    ${params.pagination ? sql`LIMIT ${params.pagination.limit} OFFSET ${params.pagination.offset}` : sql``}
+    WITH page AS MATERIALIZED (
+      SELECT n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
+        n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+        ${query ? sql`CASE WHEN n.title ILIKE ${`%${query}%`} THEN 0 ELSE 1 END` : sql`0`} AS title_rank
+      FROM notebooks.notes n WHERE ${listCondition(params)}
+      ORDER BY title_rank, n.position ASC, n.updated_at DESC, n.id DESC
+      ${params.pagination ? sql`LIMIT ${params.pagination.limit} OFFSET ${params.pagination.offset}` : sql``}
+    )
+    SELECT page.*, EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = page.id) AS has_children
+    FROM page
+    ORDER BY page.title_rank, page.position ASC, page.updated_at DESC, page.id DESC
   `;
 };
 
