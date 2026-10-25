@@ -69,9 +69,10 @@ const boundedPlan = async (
   { rows = 100, reads = 2_000, transaction }: { rows?: number; reads?: number; transaction?: TransactionSQL } = {},
 ) => {
   const check = async (tx: TransactionSQL) => {
-    // Small fixtures may rationally prefer sequential scans; this checks that an indexed plan exists and is bounded.
+    // Small fixtures may rationally prefer sequential scans; this checks that an indexed plan exists and is bounded. The
+    // plan sees the real parameters, as the first runs of a prepared statement do and as later runs keep while a generic
+    // plan, which guesses a tenth of the rows for a `LIMIT` parameter, would cost more.
     await tx`SET LOCAL enable_seqscan = off`;
-    await tx`SET LOCAL plan_cache_mode = force_generic_plan`;
     const [row] = await tx<{ "QUERY PLAN": { Plan: Plan }[] }[]>`EXPLAIN (ANALYZE, FORMAT JSON) ${query}`;
     const plan = nodes(row!["QUERY PLAN"][0]!.Plan);
     const used = plan
