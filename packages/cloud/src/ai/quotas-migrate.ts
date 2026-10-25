@@ -23,6 +23,7 @@ export async function migrateAiQuotas() {
       CHECK(cost IS NULL OR cost>=0), CHECK(reserved>=0),
       CHECK(input IS NULL OR input>=0), CHECK(output IS NULL OR output>=0)
     )`;
+    await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS credential_id UUID`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS estimated BOOLEAN NOT NULL DEFAULT false`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS error TEXT`;
     await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS cancelled BOOLEAN NOT NULL DEFAULT false`;

@@ -1,14 +1,14 @@
 /** Per-base views, owned and executed by the service definer; readers get SELECT on these names only. */
 export const SQL_HELPER_VIEWS = ["increase", "rate", "histogram_quantile"] as const;
 
-export const sqlHelperStatements = (db: string): string[] => {
+export const sqlHelperStatements = (db: string, samples = `${db}.samples`, rawCutoff?: string): string[] => {
   const view = (name: string, query: string) =>
     `CREATE OR REPLACE VIEW ${db}.${name} DEFINER = CURRENT_USER SQL SECURITY DEFINER AS ${query}`;
   // A raw day disappears atomically only after all its hourly values are sealed. Prefer raw hours whenever
   // they exist, including dirty hours, and use rollups strictly before the first retained raw hour per series.
   const counter = `WITH
     selected AS (SELECT * FROM ${db}.series WHERE metric={metric:String} AND type='counter'),
-    raw AS (SELECT p.series_id,p.ts,p.value FROM ${db}.samples p INNER JOIN selected s USING(series_id) WHERE p.ts<{to:DateTime64(3)}),
+    raw AS (SELECT p.series_id,p.ts,p.value FROM ${samples} p INNER JOIN selected s USING(series_id) WHERE p.ts<{to:DateTime64(3)}),
     floors AS (SELECT series_id,toStartOfHour(min(ts)) AS raw_floor FROM raw GROUP BY series_id),
     old AS (SELECT series_id,r.bucket AS bucket,r.increase AS increase,r.increase_seconds AS increase_seconds FROM ${db}.rollups r INNER JOIN selected s USING(series_id) LEFT JOIN floors f USING(series_id)
       WHERE r.bucket+INTERVAL 1 HOUR>{from:DateTime64(3)} AND r.bucket<{to:DateTime64(3)}
@@ -33,7 +33,7 @@ export const sqlHelperStatements = (db: string): string[] => {
     ) GROUP BY series_id)
     SELECT s.series_id AS series_id,s.metric AS metric,s.dimensions AS dimensions,s.resource_key AS resource_key,s.source_id AS source_id,
       t.delta+throwIf({from:DateTime64(3)}>={to:DateTime64(3)},'from must be before to')
-        +throwIf(t.partial=1,'Expired raw data requires complete hourly windows') AS increase,t.seconds AS seconds
+        +throwIf(t.partial=1${rawCutoff ? ` OR ({from:DateTime64(3)}<${rawCutoff} AND {from:DateTime64(3)}!=toStartOfHour({from:DateTime64(3)},'UTC')) OR ({to:DateTime64(3)}<${rawCutoff} AND {to:DateTime64(3)}!=toStartOfHour({to:DateTime64(3)},'UTC'))` : ""},'Expired raw data requires complete hourly windows') AS increase,t.seconds AS seconds
     FROM totals t INNER JOIN selected s USING(series_id)`;
   // Quantiles stay separate for every source/resource/label group. Bucket counts are cumulative; the
   // Prometheus aggregate consumes the summed reset-safe increases, never per-scrape quantiles.
@@ -43,9 +43,9 @@ export const sqlHelperStatements = (db: string): string[] => {
       -- JSON parser (JSONExtract needs simdjson CPU support on some hosts).
       replaceRegexpOne(replaceRegexpOne(dimensions,',"le":"[^"]*"',''),'^[{]"le":"[^"]*",?','{') AS labels
       FROM ${db}.series WHERE metric=concat({metric:String},'_bucket') AND type='counter'),
-    raw_floors AS (SELECT series_id,toStartOfHour(min(ts)) AS raw_floor FROM ${db}.samples WHERE series_id IN (SELECT series_id FROM buckets) GROUP BY series_id),
+    raw_floors AS (SELECT series_id,toStartOfHour(min(ts)) AS raw_floor FROM ${samples} WHERE series_id IN (SELECT series_id FROM buckets) GROUP BY series_id),
     observations AS (SELECT p.ts AS at,b.source_id AS source_id,b.resource_key AS resource_key,b.labels AS labels,arraySort(groupUniqArray(b.le)) AS bounds
-      FROM (SELECT series_id,ts FROM ${db}.samples WHERE ts>={from:DateTime64(3)} AND ts<{to:DateTime64(3)} AND series_id IN (SELECT series_id FROM buckets)
+      FROM (SELECT series_id,ts FROM ${samples} WHERE ts>={from:DateTime64(3)} AND ts<{to:DateTime64(3)} AND series_id IN (SELECT series_id FROM buckets)
         UNION ALL SELECT r.series_id,toDateTime64(r.bucket,3) AS ts FROM ${db}.rollups r LEFT JOIN raw_floors f USING(series_id)
           WHERE r.bucket>={from:DateTime64(3)} AND r.bucket<{to:DateTime64(3)} AND (r.series_id NOT IN (SELECT series_id FROM raw_floors) OR r.bucket<f.raw_floor)) p
       INNER JOIN buckets b USING(series_id) GROUP BY p.ts,b.source_id,b.resource_key,b.labels),

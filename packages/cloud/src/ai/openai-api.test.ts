@@ -103,7 +103,9 @@ function fixture(
   const app = createAiOpenAiRoutes({
     keepaliveMs: options.keepaliveMs,
     limit: async (_c, next) => next(),
-    authenticate: async (token) => (token === "models-key" && options.auth !== false ? { user, credentialId: "credential" } : null),
+    authenticate: async (token) =>
+      token === "models-key" && options.auth !== false ? { subject: { type: "user", userId: user.id }, credentialId: "credential" } : null,
+    assertModelAccess: async () => {},
     listModels: async (subject) => {
       expect(subject).toEqual({ type: "user", userId: user.id });
       return options.models ?? [profile];
@@ -114,8 +116,8 @@ function fixture(
       expect(id).toBe(profile.id);
       return { profile, provider: options.provider ?? provider };
     },
-    acquire: async ({ userId, limit }) => {
-      expect(userId).toBe(user.id);
+    acquire: async ({ subject, limit }) => {
+      expect(subject).toEqual({ type: "user", userId: user.id });
       expect(limit).toBe(4);
       acquisitions++;
       return options.slots === false
@@ -128,7 +130,7 @@ function fixture(
           };
     },
     inferenceProvider: (provider, _profile, context) => {
-      expect(context).toEqual({ kind: "chat", task: "openai-api", subject: { type: "user", userId: user.id } });
+      expect(context).toEqual({ kind: "chat", task: "openai-api", subject: { type: "user", userId: user.id }, credentialId: "credential" });
       return options.wrap ? options.wrap(provider, profile, context) : provider;
     },
   });
