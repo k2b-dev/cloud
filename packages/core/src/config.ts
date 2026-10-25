@@ -149,6 +149,7 @@ export const app = defineApp({
     "/api/auth",
     "/pwa/_auth",
     "/api/announcements",
+    "/api/notifications/inbox",
     "/api/ai",
     "/api/mcp",
     "/api/search",

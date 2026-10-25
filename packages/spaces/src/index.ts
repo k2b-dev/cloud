@@ -8,6 +8,7 @@ import { app, ssr } from "./config";
 import pageRoutes, { adminPages as adminPageRoutes } from "./frontend";
 import { spacesHelp } from "./help";
 import { migrate } from "./migrate";
+import { createTimeBlockNotificationOutbox } from "./notifications";
 import { pwaRoutes } from "./pwa";
 import { spacesService } from "./service";
 
@@ -23,6 +24,8 @@ router.get("/app/spaces/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 router.get("/admin/spaces/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 router.get("/pwa/spaces/*", auth.requireRole("*"), (c) => ssr.error(c, 404, { layout: "pwa" }));
 
+const timeBlockNotifications = createTimeBlockNotificationOutbox(app.notifications);
+
 const result = await app.start({
   capabilities: spacesCapabilities,
   fetch: router.fetch,
@@ -30,6 +33,8 @@ const result = await app.start({
   openapi: apiRoutes,
   widgets: { today: spacesTodayWidgetHandler },
   lifecycle: {
+    start: async () => timeBlockNotifications.start(),
+    stop: () => timeBlockNotifications.stop(),
     setup: async () => {
       await migrate();
     },
@@ -37,4 +42,5 @@ const result = await app.start({
 });
 export default { ...result, websocket };
 export type { ApiType } from "./api";
+export * from "./time-block-contracts";
 export { spacesService as service };

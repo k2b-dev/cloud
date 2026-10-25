@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import type { DateContext } from "@k2b/stdlib";
 import type { CalendarEvent } from "@k2b/ui";
-import { countCalendarEvents } from "./count";
+import { countCalendarEvents, countTimeBlocks } from "./count";
 
 const berlin: DateContext = { locale: "en", timeZone: "Europe/Berlin", weekStartsOn: 1 };
 const timed = (start: string, end?: string): CalendarEvent => ({ id: "Event1", title: "Event", start, end });
@@ -67,4 +67,14 @@ describe("Spaces calendar event counts", () => {
       expect(countCalendarEvents(dueInSantiago, "2026-08-01", "2026-09-01", santiago)).toBe(0);
     }
   });
+});
+
+test("time blocks count the visible day's following night and exclude its previous night", () => {
+  const blocks = [
+    { startsAt: "2030-03-14T05:00:00Z", endsAt: "2030-03-14T06:00:00Z" },
+    { startsAt: "2030-03-14T06:00:00Z", endsAt: "2030-03-14T07:00:00Z" },
+    { startsAt: "2030-03-15T05:00:00Z", endsAt: "2030-03-15T06:00:00Z" },
+    { startsAt: "2030-03-15T06:00:00Z", endsAt: "2030-03-15T07:00:00Z" },
+  ];
+  expect(countTimeBlocks(blocks, "2030-03-14", "2030-03-14", { timeZone: "UTC" })).toBe(2);
 });

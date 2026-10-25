@@ -1,4 +1,5 @@
 import { type SQL, sql } from "bun";
+import type { NotificationRecipientKind } from "../../contracts/notification-types";
 import type { MailStatus } from "../../contracts/outgoing-mail";
 import type { NotificationDeliveryStatus } from "../../contracts/user-notifications";
 import { escapeLikePattern, toPgTextArray } from "../postgres";
@@ -46,7 +47,7 @@ export type NotificationDefinitionObservabilityItem = {
   kind: string;
   label: string;
   description: string;
-  recipientKind: "user" | "email";
+  recipientKind: NotificationRecipientKind;
   recommendedChannels: string[];
   requiredChannels: string[];
   active: boolean;
@@ -98,7 +99,7 @@ type DefinitionRow = {
   kind: string;
   label: string;
   description: string;
-  recipient_kind: "user" | "email";
+  recipient_kind: NotificationRecipientKind;
   recommended_channels: string[];
   required_channels: string[];
   active: boolean;
@@ -137,6 +138,7 @@ const deliveryWhere = (filter: DeliveryFilter): SQL.Query<unknown> => {
       OR n.label ILIKE ${pattern} ESCAPE '\\'
       OR n.kind ILIKE ${pattern} ESCAPE '\\'
       OR n.app_id ILIKE ${pattern} ESCAPE '\\'
+      OR COALESCE(a.name, '') ILIKE ${pattern} ESCAPE '\\'
       OR COALESCE(u.display_name, '') ILIKE ${pattern} ESCAPE '\\'
       OR COALESCE(u.uid, '') ILIKE ${pattern} ESCAPE '\\'
       OR COALESCE(u.mail, '') ILIKE ${pattern} ESCAPE '\\'
@@ -164,20 +166,22 @@ const listDeliveries = async (input: {
       JOIN notifications.events e ON e.id = d.event_id
       JOIN notifications.definitions n ON n.id = e.definition_id
       LEFT JOIN auth.users u ON u.id = e.recipient_user_id
+      LEFT JOIN auth.service_accounts a ON a.id = e.recipient_service_account_id
       WHERE ${where}
     `,
     sql<DeliveryRow[]>`
       SELECT
         d.id, d.event_id, e.definition_id, n.app_id, n.kind, n.label,
         e.title, e.target_href,
-        COALESCE(NULLIF(u.display_name, ''), NULLIF(u.uid, ''), e.recipient_email, e.recipient_key) AS recipient_label,
-        COALESCE(NULLIF(u.mail, ''), NULLIF(u.uid, ''), e.recipient_email, e.recipient_key) AS recipient_reference,
+        COALESCE(NULLIF(u.display_name, ''), NULLIF(u.uid, ''), NULLIF(a.name, ''), e.recipient_email, e.recipient_key) AS recipient_label,
+        COALESCE(NULLIF(u.mail, ''), NULLIF(u.uid, ''), NULLIF(a.name, ''), e.recipient_email, e.recipient_key) AS recipient_reference,
         d.channel, d.destination_label, d.required, d.route_priority, d.status,
         d.outgoing_mail_id, mail.status AS outgoing_mail_status, d.attempt_count, d.error_code, d.error_message, d.created_at, d.updated_at, d.delivered_at
       FROM notifications.deliveries d
       JOIN notifications.events e ON e.id = d.event_id
       JOIN notifications.definitions n ON n.id = e.definition_id
       LEFT JOIN auth.users u ON u.id = e.recipient_user_id
+      LEFT JOIN auth.service_accounts a ON a.id = e.recipient_service_account_id
       LEFT JOIN outgoing_mail.messages mail ON mail.id = d.outgoing_mail_id
       WHERE ${where}
       ORDER BY d.created_at DESC, d.id DESC
@@ -240,6 +244,7 @@ const deliverySummary = async (
     JOIN notifications.events e ON e.id = d.event_id
     JOIN notifications.definitions n ON n.id = e.definition_id
     LEFT JOIN auth.users u ON u.id = e.recipient_user_id
+      LEFT JOIN auth.service_accounts a ON a.id = e.recipient_service_account_id
     WHERE ${where}
       AND d.created_at >= now() - (${days}::int * INTERVAL '1 day')
   `;
@@ -277,6 +282,7 @@ const deliveryTimeseries = async (
       JOIN notifications.events e ON e.id = d.event_id
       JOIN notifications.definitions n ON n.id = e.definition_id
       LEFT JOIN auth.users u ON u.id = e.recipient_user_id
+      LEFT JOIN auth.service_accounts a ON a.id = e.recipient_service_account_id
       CROSS JOIN bounds
       WHERE ${where}
         AND d.created_at >= bounds.start_at

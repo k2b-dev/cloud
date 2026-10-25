@@ -1,6 +1,6 @@
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
-import { createMemo, Show } from "solid-js";
+import { createMemo, onCleanup, Show } from "solid-js";
 import type { CalendarEvent, CalendarProps } from "./Calendar";
 import { useCalendarMessages } from "./calendar-messages";
 
@@ -62,6 +62,87 @@ export const placeCalendarPopover = (anchor: Element | DOMRect, popover: HTMLEle
 export const followCalendarHref = (owner: CalendarOwner, href: string): void => {
   if (owner.onNavigateHref) owner.onNavigateHref(href);
   else window.location.assign(href);
+};
+
+/** Arms an existing entry or resize grip after a touch hold, leaving swipes to native scrolling. */
+export const startCalendarEventGesture = (event: PointerEvent, begin: () => void): (() => void) => {
+  if (event.button !== 0 || !event.isPrimary) return () => {};
+  if (event.pointerType !== "touch") {
+    begin();
+    return () => {};
+  }
+  const target =
+    event.target instanceof Element
+      ? event.target.closest<HTMLElement>("[data-calendar-event], .k2b-calendar-band__grip, .k2b-calendar-time-grid__resize")
+      : null;
+  let held = false;
+  let clickTimer = 0;
+  let released = false;
+  const preventContextMenu = (next: Event) => next.preventDefault();
+  const preventScroll = (next: TouchEvent) => {
+    if (held) next.preventDefault();
+  };
+  const stopClick = (next: Event) => {
+    // Enter and assistive activation are not the trailing pointer click.
+    if (next instanceof MouseEvent && next.detail === 0) return;
+    next.preventDefault();
+    next.stopPropagation();
+    removeClick();
+  };
+  const removeClick = () => {
+    window.clearTimeout(clickTimer);
+    window.removeEventListener("click", stopClick, true);
+    window.removeEventListener("pointerdown", removeClick, true);
+  };
+  const cleanup = () => {
+    window.clearTimeout(timer);
+    window.removeEventListener("pointermove", watch);
+    window.removeEventListener("pointerup", release);
+    window.removeEventListener("pointercancel", release);
+    window.removeEventListener("blur", finish);
+    window.removeEventListener("keydown", escape);
+    window.removeEventListener("contextmenu", preventContextMenu, true);
+    document.removeEventListener("touchmove", preventScroll);
+    if (target) delete target.dataset.touchHeld;
+  };
+  const finish = () => {
+    cleanup();
+    if (held) {
+      held = false;
+      released = true;
+      // The host may replace the chip on commit. Swallow its trailing click even then, but never a new tap.
+      window.addEventListener("pointerdown", removeClick, true);
+      clickTimer = window.setTimeout(removeClick, 400);
+    }
+  };
+  const release = (next: PointerEvent) => {
+    if (next.pointerId === event.pointerId) finish();
+  };
+  const escape = (next: KeyboardEvent) => {
+    if (next.key === "Escape") finish();
+  };
+  const watch = (next: PointerEvent) => {
+    if (!held && next.pointerId === event.pointerId && Math.hypot(next.clientX - event.clientX, next.clientY - event.clientY) > 10)
+      finish();
+  };
+  const timer = window.setTimeout(() => {
+    held = true;
+    if (target) target.dataset.touchHeld = "true";
+    navigator.vibrate?.(8);
+    window.addEventListener("click", stopClick, true);
+    begin();
+  }, 420);
+  window.addEventListener("pointermove", watch);
+  window.addEventListener("pointerup", release);
+  window.addEventListener("pointercancel", release);
+  window.addEventListener("blur", finish);
+  window.addEventListener("keydown", escape);
+  window.addEventListener("contextmenu", preventContextMenu, true);
+  document.addEventListener("touchmove", preventScroll, { passive: false });
+  return () => {
+    cleanup();
+    if (!released) removeClick();
+  };
 };
 
 export const EventChip = (props: {
@@ -192,7 +273,50 @@ export const EventChip = (props: {
       {props.trailing}
     </>
   );
-  const isActionable = () => isInteractive() || Boolean(props.onMovePointerDown);
+  const canMove = () => props.event.editable !== false && Boolean(props.owner.onEventDrop);
+  const canResize = () => props.event.editable !== false && props.event.display !== "marker" && Boolean(props.owner.onEventResize);
+  const timedEditing = () => !props.event.allDay && Boolean(props.fill || props.timeline);
+  const editInstructions = () =>
+    [
+      canMove() ? (timedEditing() ? messages().calendarMoveTimeKeys : messages().calendarMoveDayKeys) : undefined,
+      canResize() ? (timedEditing() ? messages().calendarResizeTimeKeys : messages().calendarResizeDayKeys) : undefined,
+      canMove() && props.onMovePointerDown ? messages().calendarTouchMove : undefined,
+      canResize() && props.fill && !props.event.allDay ? messages().calendarTouchResize : undefined,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
+  const onEditKeyDown = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.isComposing || !event.altKey || event.ctrlKey || event.metaKey) return false;
+    const days = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
+    const minutes = timedEditing() ? (event.key === "ArrowUp" ? -15 : event.key === "ArrowDown" ? 15 : 0) : 0;
+    if ((!days && !minutes) || !(event.shiftKey ? canResize() : canMove())) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    const source = props.event;
+    const shift = (date: Date) => {
+      if (!days) return new Date(date.getTime() + minutes * 60_000);
+      const timeZone = dateConfig().timeZone;
+      if (timeZone) {
+        // addDays is date-only. Keep the event's wall clock across DST, including sub-minute precision.
+        const next = calendar.addZonedInstant(date, { timeZone, days, disambiguation: "compatible" });
+        return new Date(new Date(next).getTime() + date.getUTCSeconds() * 1000 + date.getUTCMilliseconds());
+      }
+      const next = new Date(date);
+      next.setDate(next.getDate() + days);
+      return next;
+    };
+    const start = event.shiftKey ? source.sourceStartDate : shift(source.sourceStartDate);
+    const end =
+      event.shiftKey || source.allDay
+        ? shift(source.sourceEndDate)
+        : new Date(start.getTime() + source.sourceEndDate.getTime() - source.sourceStartDate.getTime());
+    if (event.shiftKey && end <= start) return true;
+    const change = { start, end, allDay: Boolean(source.allDay) };
+    if (event.shiftKey) props.owner.onEventResize?.(source, change);
+    else props.owner.onEventDrop?.(source, change);
+    return true;
+  };
+  const isActionable = () => isInteractive() || canMove() || canResize();
   let suppressClickUntil = 0;
   const onClick = (event: MouseEvent) => {
     if (performance.now() < suppressClickUntil) {
@@ -213,6 +337,7 @@ export const EventChip = (props: {
   };
   /** Space on an entry with a box checks it; Enter still opens the entry. */
   const onCheckKeyDown = (event: KeyboardEvent) => {
+    if (onEditKeyDown(event)) return true;
     if (event.key !== " " || !props.onCheck || event.altKey || event.ctrlKey || event.metaKey) return false;
     event.preventDefault();
     props.onCheck();
@@ -223,22 +348,30 @@ export const EventChip = (props: {
     event.preventDefault();
     props.owner.onEventActivate?.(props.event);
   };
+  let cancelTouch: (() => void) | undefined;
+  onCleanup(() => cancelTouch?.());
   const onPointerDown = (event: PointerEvent) => {
-    if (event.pointerType === "touch") return;
-    if (props.onMovePointerDown) event.stopPropagation();
-    props.onMovePointerDown?.(event, () => {
-      suppressClickUntil = performance.now() + 400;
+    if (props.event.editable === false || !props.onMovePointerDown) return;
+    event.stopPropagation();
+    cancelTouch?.();
+    cancelTouch = startCalendarEventGesture(event, () => {
+      if (props.event.editable === false) return;
+      props.onMovePointerDown?.(event, () => {
+        if (event.pointerType !== "touch") suppressClickUntil = performance.now() + 400;
+      });
     });
   };
   const attributes = () => ({
     class: "k2b-calendar-event",
     "data-calendar-event": "",
+    "data-calendar-event-id": props.event.id,
     "data-color": props.event.colorHex ? undefined : color(),
     "data-selected": selected() ? "true" : undefined,
     "data-compact": props.compact ? "true" : undefined,
     "data-fill": props.fill ? "true" : undefined,
     "data-short": short() ? "true" : undefined,
     "data-moving": props.moving ? "true" : undefined,
+    "data-editable": props.event.editable === false ? "false" : undefined,
     "data-continues-before": props.continuesBefore ? "true" : undefined,
     "data-continues-after": props.continuesAfter ? "true" : undefined,
     "data-bar": props.bar ? "true" : undefined,
@@ -248,6 +381,7 @@ export const EventChip = (props: {
     "data-minute": props.stop?.minute,
     style: style(),
     "aria-label": ariaLabel(),
+    "aria-description": editInstructions(),
   });
 
   return props.href ? (

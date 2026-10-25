@@ -1799,3 +1799,41 @@ apply, and each user holds at most 16 disposable check copies at a time. Disposa
 scopes left by crashed hosts and queues unreachable database namespaces for deletion.
 See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
 for data-copy and output limits. No new configuration is required.
+
+
+## Spaces task time blocks
+
+Spaces adds a separate durable store for task time blocks. Its startup
+migration creates the block table and indexes in the existing Spaces
+Postgres schema. Include these records in the same database backup and
+restore boundary as tasks. Task or Space deletion preserves task time
+blocks, so deleting a task is not a retention operation for its blocks.
+
+The runtime contract adds the `spaces.time-block.*` capabilities, the
+`cld spaces blocks` command group and the `/api/spaces/blocks` routes. Refresh
+the installed CLI module after upgrading Spaces. No new environment variables
+or separately deployed application are required. Reassignment notifications
+use Cloud notifications after the ownership change commits. Upgrade Core with
+Spaces: Core's notification migration adds service-account recipients and the
+`/api/notifications/inbox` route exposes their encrypted inbox deliveries.
+Include these records in notification backups. Inbox content stays encrypted
+until its event or recipient account is deleted; there is no automatic inbox
+pruning. No extra broker or database is needed.
+
+Stop all old Core replicas before starting the upgraded Core; do not restart
+old replicas against the migrated database. Once inbox deliveries exist, the
+previous Core migration cannot read this schema safely. Keep a database
+backup from before the upgrade. A rollback requires stopping writers and
+restoring that backup together with the previous images, which discards
+changes made since the backup; prefer a forward fix to preserve those changes.
+Do not downgrade Core alone or delete inbox content to make a downgrade pass.
+
+Verify an upgrade by creating a block with an explicit UUID, retrying the same
+create and confirming there is still one block. Check that a task reader can
+see it, another task writer cannot change it, and the assigned owner can.
+Completing the task must preserve the block. Replacing one owner with one new
+assignee (person, agent or service account) must move the blocks and notify
+both. Removing the owner with no unique successor must retain the blocks,
+notify that owner and permit deletion only, including after task access loss.
+These checks cover the new contract beyond container readiness; iCal and CalDAV continue to exclude
+blocks.

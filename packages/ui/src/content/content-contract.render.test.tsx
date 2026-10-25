@@ -973,3 +973,24 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(getFileViewPreviewKind({ path: "report.json" })).toBe("json");
   });
 });
+
+test("read-only calendar events stay visible without resize controls", () => {
+  for (const dayHours of [undefined, [6, 22] as const]) {
+    const html = renderToString(() =>
+      createComponent(Calendar, {
+        date: "2030-03-14",
+        view: "day",
+        timeZone: "UTC",
+        dayHours,
+        events: [{ id: "locked", title: "Shared time", start: "2030-03-14T09:00:00Z", end: "2030-03-14T10:00:00Z", editable: false }],
+        onEventDrop: () => {},
+        onEventResize: () => {},
+        onEventActivate: () => {},
+      }),
+    );
+    expect(html).toContain('data-editable="false"');
+    expect(html).not.toContain('class="k2b-calendar-band__grip"');
+    expect(html).not.toContain('class="k2b-calendar-time-grid__resize"');
+    expect(html).toContain("Shared time");
+  }
+});

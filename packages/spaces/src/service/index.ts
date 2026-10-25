@@ -21,6 +21,7 @@ import * as reactions from "./reactions";
 import * as spaces from "./spaces";
 import * as tags from "./tags";
 import * as work from "./task-work";
+import * as timeBlocks from "./time-blocks";
 import * as wormholes from "./wormholes";
 
 const paginateItems = <T>(items: T[], pagination?: PageParams): Paginated<T> => {
@@ -46,6 +47,7 @@ const paginateItems = <T>(items: T[], pagination?: PageParams): Paginated<T> => 
 };
 
 export const spacesService = {
+  timeBlocks,
   activity,
   calendarInvitations,
   space: {

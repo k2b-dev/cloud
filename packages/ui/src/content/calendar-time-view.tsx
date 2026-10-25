@@ -44,6 +44,7 @@ import {
   ownerDateConfig,
   parseDate,
   placeCalendarPopover,
+  startCalendarEventGesture,
   validDate,
 } from "./calendar-shared";
 
@@ -404,7 +405,7 @@ export const createTimeView = (props: TimeViewProps) => {
 
   const startMove = (pointerEvent: PointerEvent, event: CalendarEvent, key: string, start: number, end: number, scroller?: HTMLElement) => {
     const marker = event.display === "marker";
-    if (!props.owner.onEventDrop) return;
+    if (!props.owner.onEventDrop || event.editable === false) return;
     const body = bodies.get(key);
     if (!body) return;
     const rect = body.element.getBoundingClientRect();
@@ -450,7 +451,7 @@ export const createTimeView = (props: TimeViewProps) => {
       },
       onCommit: (next) => {
         endGesture();
-        swallowNextClick();
+        if (pointerEvent.pointerType !== "touch") swallowNextClick();
         if (next.key === key && next.start === start && next.end === end) return;
         const source = sourceOf().get(event);
         // A moved entry keeps its real length, also when it lands across a clock change.
@@ -476,7 +477,7 @@ export const createTimeView = (props: TimeViewProps) => {
     edge: "start" | "end",
     scroller?: HTMLElement,
   ) => {
-    if (!props.owner.onEventResize) return;
+    if (!props.owner.onEventResize || event.editable === false) return;
     pointerEvent.preventDefault();
     pointerEvent.stopPropagation();
     const body = bodies.get(key);
@@ -511,7 +512,7 @@ export const createTimeView = (props: TimeViewProps) => {
         }),
       onCommit: (next) => {
         endGesture();
-        swallowNextClick();
+        if (pointerEvent.pointerType !== "touch") swallowNextClick();
         if (next.start === start && next.end === end) return;
         const source = sourceOf().get(event);
         const range = source ? resizedInDay(source, edge, key, next, props.hours, dateConfig()) : slot(key, next.start, next.end);
@@ -851,6 +852,16 @@ export const TimeBand = (props: {
 }) => {
   const view = props.view;
   const event = () => props.band.item;
+  let cancelTouch: (() => void) | undefined;
+  onCleanup(() => cancelTouch?.());
+  const resize = (pointerEvent: PointerEvent, edge: "start" | "end") => {
+    if (event().editable === false) return;
+    pointerEvent.stopPropagation();
+    cancelTouch?.();
+    cancelTouch = startCalendarEventGesture(pointerEvent, () =>
+      view.startResize(pointerEvent, event(), props.dayKey, props.band.start, props.band.end, edge, props.scroller?.()),
+    );
+  };
   const wake = () => view.wake();
   const limit = () => (props.expanded ? DAY_MINUTES : wake());
   const visibleStart = () => Math.max(0, props.band.start);
@@ -916,23 +927,21 @@ export const TimeBand = (props: {
             : undefined
         }
       />
-      <Show when={view.props.owner.onEventResize}>
+      <Show when={view.props.owner.onEventResize && event().editable !== false}>
         <span
           class="k2b-calendar-band__grip"
           data-edge="start"
           aria-hidden="true"
-          onPointerDown={(pointerEvent) =>
-            view.startResize(pointerEvent, event(), props.dayKey, props.band.start, props.band.end, "start", props.scroller?.())
-          }
+          onPointerDown={(pointerEvent) => resize(pointerEvent, "start")}
+          onClick={(event) => event.currentTarget.parentElement?.querySelector<HTMLElement>("[data-calendar-event]")?.click()}
         />
         <Show when={props.band.end <= limit()}>
           <span
             class="k2b-calendar-band__grip"
             data-edge="end"
             aria-hidden="true"
-            onPointerDown={(pointerEvent) =>
-              view.startResize(pointerEvent, event(), props.dayKey, props.band.start, props.band.end, "end", props.scroller?.())
-            }
+            onPointerDown={(pointerEvent) => resize(pointerEvent, "end")}
+            onClick={(event) => event.currentTarget.parentElement?.querySelector<HTMLElement>("[data-calendar-event]")?.click()}
           />
         </Show>
       </Show>

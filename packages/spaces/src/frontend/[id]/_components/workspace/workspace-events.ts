@@ -66,6 +66,7 @@ const routeKeyWithoutItem = (url: URL) => {
   const params = new URLSearchParams(url.search);
   params.delete("item");
   params.delete("occurrence");
+  params.delete("block");
   params.sort();
   return `${url.pathname}?${params.toString()}`;
 };
@@ -176,7 +177,7 @@ export const requestSpacesRouteNavigation = (href: string, options: { replace?: 
 export const requestSpacesDetailNavigation = (href: string, options: { replace?: boolean; scroll?: unknown } = {}) => {
   const target = new URL(href, window.location.origin);
   const current = new URL(window.location.href);
-  for (const key of ["item", "occurrence"]) {
+  for (const key of ["item", "occurrence", "block"]) {
     const value = target.searchParams.get(key);
     if (value === null) current.searchParams.delete(key);
     else current.searchParams.set(key, value);

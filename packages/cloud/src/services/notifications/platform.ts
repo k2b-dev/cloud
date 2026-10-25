@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import type { output, ZodType } from "zod";
+import { type CloudResourceRef, CloudResourceRefSchema, cloudResourceRefAppId } from "../../contracts/capabilities";
 import { isNotificationGroup, notificationGroupTag } from "../../contracts/notification-group";
 import type {
   BoundNotificationDefinition,
@@ -13,6 +14,7 @@ import { validateNotificationTargetHref } from "../../contracts/notification-typ
 import { normalizeLocale } from "../../shared/locale";
 import { logger } from "../logging";
 import { encryptSecret } from "../secrets";
+import { isStandaloneServiceAccountKind, serviceAccounts } from "../service-accounts";
 import { ensureNotificationDefinition } from "./catalog";
 import { getNotificationChannel, type NotificationDestination, type ResolvedNotificationRecipient } from "./channels";
 import { processNotificationDelivery } from "./dispatcher";
@@ -106,12 +108,53 @@ const validatePresentation = (presentation: NotificationPresentation, appId: str
 };
 
 const resolveRecipient = async (
-  recipient: { userId: string } | { email: string },
+  recipient: { userId?: string; serviceAccountId?: string; email?: string },
+  kind: NotificationRecipientKind,
+  appId: string,
+  resource?: CloudResourceRef,
 ): Promise<{
   recipient: ResolvedNotificationRecipient;
   recipientKey: string;
+  inactive?: boolean;
 }> => {
-  if ("userId" in recipient) {
+  const matchesKind =
+    kind === "user"
+      ? typeof recipient.userId === "string"
+      : kind === "email"
+        ? typeof recipient.email === "string"
+        : typeof recipient.userId === "string" || typeof recipient.serviceAccountId === "string";
+  if (Object.keys(recipient).length !== 1 || !matchesKind) {
+    throw new Error("Notification recipient must match the definition and identify exactly one recipient");
+  }
+  if (recipient.serviceAccountId !== undefined) {
+    const account = await serviceAccounts.get({ id: recipient.serviceAccountId });
+    if (!account || account.kind === "user_delegated" || account.delegatedUserId !== null) {
+      throw new Error("Notification recipient must be an existing non-delegated service account");
+    }
+    if (account.kind === "resource_bound") {
+      if (
+        !resource ||
+        account.appId !== appId ||
+        resource.type !== `${appId}.${account.resourceType}` ||
+        resource.id !== account.resourceId
+      ) {
+        throw new Error("Notification resource must match the service account's exact app, type and resource binding");
+      }
+    } else if (
+      !isStandaloneServiceAccountKind(account.kind) ||
+      account.appId !== null ||
+      account.resourceType !== null ||
+      account.resourceId !== null
+    ) {
+      throw new Error("Independent notification recipient has an invalid resource binding");
+    }
+    return {
+      recipient: { userId: null, email: null, serviceAccountId: account.id },
+      recipientKey: `service_account:${account.id}`,
+      inactive: account.status !== "active",
+    };
+  }
+  if (recipient.userId !== undefined) {
     const rows = await sql<{ id: string; mail: string | null }[]>`
       SELECT id, btrim(mail) AS mail FROM auth.users WHERE id = ${recipient.userId}::uuid LIMIT 1
     `;
@@ -123,6 +166,7 @@ const resolveRecipient = async (
     };
   }
 
+  if (typeof recipient.email !== "string") throw new Error("Notification recipient email is required");
   const email = recipient.email.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Notification recipient email is invalid");
   return { recipient: { userId: null, email }, recipientKey: `email:${email}` };
@@ -133,13 +177,15 @@ const preferredChannels = async (
   recipient: ResolvedNotificationRecipient,
   recommended: readonly NotificationChannelId[],
 ): Promise<{ channels: string[]; customized: boolean }> => {
+  if (recipient.serviceAccountId) return { channels: recommended.filter((channel) => channel === "inbox"), customized: false };
   if (!recipient.userId) return { channels: [], customized: false };
   const rows = await sql<{ channels: string[] }[]>`
     SELECT channels FROM notifications.preferences
     WHERE user_id = ${recipient.userId}::uuid AND definition_id = ${definitionId}
     LIMIT 1
   `;
-  return rows[0] ? { channels: unique(rows[0].channels), customized: true } : { channels: unique(recommended), customized: false };
+  const channels = rows[0]?.channels ?? recommended;
+  return { channels: unique(channels).filter((channel) => channel !== "inbox"), customized: !!rows[0] };
 };
 
 const prepareChannel = async (input: {
@@ -267,26 +313,30 @@ export const sendTypedNotification = async <
   const idempotencyKey = input.idempotencyKey.trim();
   if (!idempotencyKey || idempotencyKey.length > 300) throw new Error("Notification idempotencyKey must contain 1 to 300 characters");
 
+  const resource = input.resource === undefined ? undefined : CloudResourceRefSchema.parse(input.resource);
+  if (resource && cloudResourceRefAppId(resource) !== definition.appId)
+    throw new Error("Notification resource must belong to the definition's app");
   const data: output<S> = definition.data.parse(input.data);
   const renderContext = { locale: normalizeLocale(input.locale) };
   const presentation = validatePresentation(await definition.render(data, renderContext), definition.appId);
-  const resolved = await resolveRecipient(input.recipient);
+  const resolved = await resolveRecipient(input.recipient, definition.recipient, definition.appId, resource);
   const candidateEventId = crypto.randomUUID();
   await ensureNotificationDefinition(definition);
 
-  const requiredChannels = unique([...(definition.delivery?.required ?? [])]);
+  const requiredChannels = resolved.inactive ? [] : unique([...(definition.delivery?.required ?? [])]);
   const requiredChannelSet = new Set<string>(requiredChannels);
   const preference = await preferredChannels(definition.id, resolved.recipient, definition.delivery?.recommended ?? []);
-  const preferred = preference.channels.filter((channel) => !requiredChannelSet.has(channel));
+  const preferred = resolved.inactive ? [] : preference.channels.filter((channel) => !requiredChannelSet.has(channel));
 
   const identity = await sql.begin(async (tx) => {
     const eventRows = await tx<{ id: string }[]>`
       INSERT INTO notifications.events (
-        id, definition_id, recipient_user_id, recipient_email, recipient_key,
-        idempotency_key, title, target_href, sent_by
+        id, definition_id, recipient_user_id, recipient_service_account_id, recipient_email, recipient_key,
+        idempotency_key, title, target_href, sent_by, resource_type, resource_id
       ) VALUES (
-        ${candidateEventId}::uuid, ${definition.id}, ${resolved.recipient.userId}, ${resolved.recipient.userId ? null : resolved.recipient.email},
-        ${resolved.recipientKey}, ${idempotencyKey}, ${presentation.title}, ${presentation.targetHref ?? null}, ${input.sentBy ?? null}
+        ${candidateEventId}::uuid, ${definition.id}, ${resolved.recipient.userId}, ${resolved.recipient.serviceAccountId ?? null}::uuid, ${resolved.recipient.userId ? null : resolved.recipient.email},
+        ${resolved.recipientKey}, ${idempotencyKey}, ${presentation.title}, ${presentation.targetHref ?? null}, ${input.sentBy ?? null},
+        ${resource?.type.slice(definition.appId.length + 1) ?? null}, ${resource?.id ?? null}
       )
       ON CONFLICT (definition_id, recipient_key, idempotency_key) DO NOTHING
       RETURNING id
@@ -368,10 +418,12 @@ export const sendTypedNotification = async <
       required: false,
       routePriority: null,
       status: "suppressed",
-      errorCode: preference.customized ? "disabled_by_user" : "no_preferred_channel",
-      errorMessage: preference.customized
-        ? "The user disabled delivery for this notification."
-        : "No preferred delivery channel is configured.",
+      errorCode: resolved.inactive ? "recipient_inactive" : preference.customized ? "disabled_by_user" : "no_preferred_channel",
+      errorMessage: resolved.inactive
+        ? "The recipient service account is inactive."
+        : preference.customized
+          ? "The user disabled delivery for this notification."
+          : "No preferred delivery channel is configured.",
     });
   }
 
@@ -438,7 +490,7 @@ export const sendTypedNotification = async <
       if (result.status === "retry" || result.status === "pending") await enqueueNotificationDelivery(deliveryId, result.retryAfterMs);
       if (result.activatedIds?.length) await enqueueNotificationDeliveries(result.activatedIds);
     }
-    await enqueueNotificationDeliveries(persisted.pendingIds);
+    if (persisted.pendingIds.length) await enqueueNotificationDeliveries(persisted.pendingIds);
   }
 
   return summarize(identity.id, identity.created, await listDeliveries(identity.id));

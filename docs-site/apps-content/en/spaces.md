@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-19
+updated: 2026-10-22
 ---
 
 # Spaces
@@ -594,3 +594,94 @@ Files keeps originals. HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unknown
 formats remain unchanged and can retain metadata. Previously uploaded images
 are not rewritten. See [Image upload privacy](/en/docs/platform/image-upload-privacy)
 for the supported formats and limits.
+
+
+## Reserve time for a task
+
+A time block reserves an interval for work on a task. The task keeps its
+status, deadline, checklist and estimate. Each task can have several blocks;
+each block starts with the task title and keeps its own title and interval
+thereafter. Renaming a block never renames its task. Blocks are separate from
+events and task dependencies, stay out of list and Kanban item lists, and are
+excluded from iCal and CalDAV.
+
+Everyone who can read a task can see its blocks. The assigned owner can create
+and change their own blocks. People, agents and service accounts follow the
+same rule; a delegated user credential acts as that person. Independent
+accounts need their own Space access and a credential with write scope.
+Completing or deleting a task preserves its blocks. If removing an owner
+leaves exactly one assignee, the blocks move to that assignee and both receive
+Cloud notifications. With no assignee or several possible successors, blocks
+stay with the previous owner, who is notified and may only delete them. If a
+later assignment change or claim leaves one assignee, that assignee receives
+the retained blocks.
+Owners may delete their blocks even after losing access to the task. Task and
+Space references are hidden from an owner who no longer has access.
+
+Open the task and choose **Block time**. If you are not assigned, choose
+**Assign to me** first; this needs permission to change the task. Choose a
+date and start time. The duration comes from the estimate, or starts at
+60 minutes, and you can change it. A warning after the task's deadline does
+not prevent saving. On a phone, the same form opens as a sheet.
+
+You can also drag your assigned task from the day calendar's task list into
+free time. This creates a block immediately; **Undo** removes it. If saving
+fails, the form or calendar keeps the retry action. Retry that action to
+recover the same block without creating a duplicate.
+
+Click a calendar block to open its task and highlight the matching entry
+under **Time blocks**. Use **Change** to edit its title and time, or the entry's
+menu to delete it. Your blocks also appear under **My work → Today / Upcoming**.
+A deleted task leaves a grey block with **Task deleted**; opening it explains
+what happened and lets its owner delete the block.
+
+In the CLI, use `cld spaces blocks ls <task>` or list an interval:
+
+```bash
+cld spaces blocks ls --from 2026-10-23T00:00:00+02:00 --to 2026-10-24T00:00:00+02:00 --mine --json
+cld spaces blocks add Item01 --id aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa --starts-at 2026-10-23T10:00:00+02:00 --ends-at 2026-10-23T11:00:00+02:00
+cld spaces blocks show aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+cld spaces blocks set aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa --title "Review the release"
+cld spaces blocks rm aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa --yes
+```
+
+A range needs ISO date-times with offsets, an end after the start and at most
+366 days. `--space` filters the range; `--page` and `--per-page` (up to 100)
+paginate it. Follow `hasNext`. Task listing also accepts `--page` and
+`--per-page`; it returns an array, so request pages until empty. Creating a
+block requires a client-generated UUID in `--id`. Reuse that UUID, task and
+interval after a network error or lost response. Edit and delete commands use
+that UUID, not the task ID.
+
+The REST routes are `GET/POST /api/spaces/:id/items/:itemId/time-blocks`,
+`GET /api/spaces/blocks?from=…&to=…` and
+`GET/PATCH/DELETE /api/spaces/blocks/:blockId`. Range queries accept optional
+`spaceId`, `mine=true`, `page` and `perPage`, and return
+`{ items, total, page, perPage, hasNext }`. Task listing returns an array and
+accepts `page` and `perPage` (up to 100); request pages until empty. Without
+pagination, a task with more than 100 blocks returns an error asking for it.
+Create requires a client UUID `id`, `startsAt` and `endsAt`; update accepts
+only the supplied `title`, `startsAt` and `endsAt`.
+
+Blocks identify their owner with `ownerId` and `ownerKind` (`user` or
+`service_account`). They report `taskState` as `open`, `done`, `deleted` or `no_access` and expose
+`canWrite` for editing and `canDelete` for deletion. After task deletion, the
+owner may delete the block but cannot edit it. Lost task access or removal
+from the assignees also allows deletion only. An owner retains their
+block after losing task access; task and Space IDs, Space name and color are
+then hidden. Use these fields to show the
+saved planning without claiming access to its source task.
+
+Capabilities publish `spaces.time-block.read`, `spaces.time-block.list`,
+`spaces.time-block.create`, `spaces.time-block.update` and
+`spaces.time-block.delete` through the same permission-aware service. Lists
+accept an optional public task `itemId`; without it, a date range is required.
+A supplied range must include both `from` and `to` and span at most 366 days.
+Lists return at most 50 blocks per page to fit the capability response budget;
+follow `page.nextCursor` with unchanged filters and limit. Reads include a
+`revision`; updates and deletes require it and refuse concurrent changes.
+Capability creation also takes the exact `taskTitle` from `spaces.item.read`
+and refuses a task rename after review.
+Mutations ask for approval with the complete title and interval. Display names
+may be shortened, signaled by `presentationTruncated`; the title and revision
+remain complete.

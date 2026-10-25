@@ -4,6 +4,8 @@ import { notificationMailOutcome, notificationMailOutcomeById, sendNotificationM
 
 export type ResolvedNotificationRecipient = {
   userId: string | null;
+  /** Independent service-account destination; never a delegated human. */
+  serviceAccountId?: string | null;
   email: string | null;
 };
 
@@ -122,3 +124,17 @@ const emailDriver: NotificationChannelDriver = {
 };
 
 registerNotificationChannel(emailDriver);
+
+// The delivery row itself is the durable inbox. The dispatcher retains its
+// encrypted payload on acceptance, and self-read authorizes before decrypting.
+registerNotificationChannel({
+  id: "inbox",
+  resolveDestinations: async (recipient) =>
+    recipient.serviceAccountId ? [{ key: recipient.serviceAccountId, label: "Inbox", context: {} }] : [],
+  createPayload: ({ presentation }) => ({
+    title: presentation.title,
+    body: presentation.body ?? null,
+    targetHref: presentation.targetHref ?? null,
+  }),
+  deliver: async () => {},
+});

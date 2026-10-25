@@ -47,6 +47,7 @@ import {
   splitRecurringEvent,
 } from "./recurrence";
 import * as taskWork from "./task-work";
+import { reconcileAssignees } from "./time-blocks";
 
 // ==========================
 // Items Service
@@ -306,7 +307,10 @@ const shiftIsoInstant = (value: string, milliseconds: number) => new Date(new Da
 
 const replaceItemAssignees = async (db: SqlExecutor, itemId: string, principals: AssigneePrincipal[]): Promise<void> => {
   await db`DELETE FROM spaces.item_assignees WHERE item_id = ${itemId}`;
-  if (principals.length === 0) return;
+  if (principals.length === 0) {
+    await reconcileAssignees(db, itemId);
+    return;
+  }
   await db`
     INSERT INTO spaces.item_assignees (item_id, user_id, service_account_id)
     SELECT ${itemId}::uuid, id, NULL::uuid
@@ -316,6 +320,7 @@ const replaceItemAssignees = async (db: SqlExecutor, itemId: string, principals:
     FROM unnest(${toPgUuidArray(principals.filter((principal) => principal.kind === "service_account").map((principal) => principal.id))}::uuid[]) AS id
     ON CONFLICT DO NOTHING
   `;
+  await reconcileAssignees(db, itemId);
 };
 
 const replaceItemTags = async (db: SqlExecutor, itemId: string, tagIds: string[]): Promise<void> => {

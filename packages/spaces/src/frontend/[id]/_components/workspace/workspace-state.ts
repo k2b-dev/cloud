@@ -18,6 +18,8 @@ import { spacesPublicResources } from "@/service/public-resources";
 import type { ReactionViewer } from "@/service/reactions";
 import { resolveRecurringOccurrence } from "@/service/recurrence";
 import { resolveReferenceViews } from "@/service/resource-reference-views";
+import { calendarTimeBlocks, taskTimeBlocks } from "../../../../service/time-block-views";
+import type { SpaceTimeBlock } from "../../../../time-block-contracts";
 import { spaceMessages } from "../../messages";
 import { type CalendarFilter, parseCalendarFilter } from "../calendar/filter";
 import { type CalendarRange, calendarItemsEnd, calendarWindow, isBlockLoadingCalendarView } from "../calendar/range";
@@ -136,6 +138,7 @@ const projectItemDetail = async (
   return {
     item,
     work: detail.work,
+    timeBlocks: detail.timeBlocks,
     comments: { ...detail.comments, items: comments },
     commentTarget: { ...detail.commentTarget, itemId: seriesItemId },
     recurringContext: detail.recurringContext ? { ...detail.recurringContext, seriesItemId } : null,
@@ -377,6 +380,7 @@ const loadCalendarState = async (params: {
   calendarDate: Date;
   calendarRange: { from: Date; to: Date };
   calendarItems: CalendarItem[];
+  calendarTimeBlocks: SpaceTimeBlock[];
   calendarWeather: Record<string, DayWeather>;
   calendarTray: CalendarTray | null;
 }> => {
@@ -389,13 +393,21 @@ const loadCalendarState = async (params: {
     calendarRange: params.calendarRange,
   });
   if (params.currentView !== "calendar") {
-    return { calendarView, calendarDate, calendarRange, calendarItems: [], calendarWeather: {}, calendarTray: null };
+    return {
+      calendarView,
+      calendarDate,
+      calendarRange,
+      calendarItems: [],
+      calendarTimeBlocks: [],
+      calendarWeather: {},
+      calendarTray: null,
+    };
   }
 
   const { from, to } = calendarRange;
   // The night after the last day belongs to it, so the day and week views also need what lies there until 06:00.
   const itemsTo = isBlockLoadingCalendarView(calendarView) ? new Date(calendarItemsEnd(to.toISOString(), params.dateConfig)) : to;
-  const [accessibleItems, calendarWeather, calendarTray] = await Promise.all([
+  const [accessibleItems, calendarWeather, calendarTray, timeBlocks] = await Promise.all([
     spacesService.item.calendar.list({
       subject: { type: "user", userId: params.user.id },
       spaceId: params.spaceId,
@@ -412,6 +424,13 @@ const loadCalendarState = async (params: {
     calendarView === "day" && params.includeTray !== false
       ? loadCalendarTray({ spaceId: params.spaceId, filter: params.calendarFilter, userId: params.user.id, dateConfig: params.dateConfig })
       : Promise.resolve(null),
+    calendarTimeBlocks({
+      userId: params.user.id,
+      spaceId: params.spaceId,
+      filter: params.calendarFilter,
+      from: from.toISOString(),
+      to: itemsTo.toISOString(),
+    }),
   ]);
 
   return {
@@ -419,6 +438,7 @@ const loadCalendarState = async (params: {
     calendarDate,
     calendarRange,
     calendarItems: accessibleItems,
+    calendarTimeBlocks: timeBlocks,
     calendarWeather,
     calendarTray,
   };
@@ -567,7 +587,7 @@ const loadSelectedItemState = async (params: {
     pagination: { page: 1, perPage: COMMENT_PAGE_SIZE },
   });
 
-  const [work, references, links, attachments, checklist, blockedBy, blocks] = await Promise.all([
+  const [work, references, links, attachments, checklist, blockedBy, blocks, timeBlocks] = await Promise.all([
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve(undefined) : spacesService.item.work.read(detailItem.id),
     spacesService.item.references.list({ itemId: detailItem.id }),
     spacesService.item.links.listWithPreviews({ itemId: detailItem.id, spaceId: params.spaceId, mode: "cached" }),
@@ -575,9 +595,11 @@ const loadSelectedItemState = async (params: {
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.checklist.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.listBlocks({ blockerItemId: detailItem.id }),
+    detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : taskTimeBlocks(detailItem.id, params.userId),
   ]);
   return projectItemDetail({
     item: detailItem,
+    timeBlocks,
     work,
     comments,
     commentTarget,
@@ -764,6 +786,7 @@ const toViewSnapshot = async (params: {
     filter: params.publicCalendarFilter,
     range: serializeRange(params.calendarState.calendarRange),
     items: await spacesPublicResources.projectCalendarItems(params.calendarState.calendarItems),
+    timeBlocks: params.calendarState.calendarTimeBlocks,
     weather: params.calendarState.calendarWeather,
     tray: await projectCalendarTray(params.calendarState.calendarTray),
   };
@@ -867,7 +890,7 @@ export const loadSpaceItemDetail = async (params: {
     viewerUserId: params.user.id,
     pagination: { page: 1, perPage: COMMENT_PAGE_SIZE },
   });
-  const [work, references, links, attachments, checklist, blockedBy, blocks] = await Promise.all([
+  const [work, references, links, attachments, checklist, blockedBy, blocks, timeBlocks] = await Promise.all([
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve(undefined) : spacesService.item.work.read(detailItem.id),
     spacesService.item.references.list({ itemId: detailItem.id }),
     spacesService.item.links.listWithPreviews({ itemId: detailItem.id, spaceId: params.spaceId, mode: "fill" }),
@@ -875,11 +898,13 @@ export const loadSpaceItemDetail = async (params: {
     detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.checklist.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.listBlocks({ blockerItemId: detailItem.id }),
+    detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : taskTimeBlocks(detailItem.id, params.user.id),
   ]);
   return {
     kind: "ok",
     detail: await projectItemDetail({
       item: detailItem,
+      timeBlocks,
       work,
       comments,
       commentTarget,
@@ -961,6 +986,7 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     calendarFilter: publicCalendarFilter,
     calendarRange: serializeRange(calendarState.calendarRange),
     calendarItems: publicCalendarItems,
+    calendarTimeBlocks: calendarState.calendarTimeBlocks,
     calendarWeather: calendarState.calendarWeather,
     calendarTray: publicCalendarTray,
     selectedItemDetail,

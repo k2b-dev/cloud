@@ -1,5 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import type { CalendarItem, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
+import type { SpaceTimeBlock } from "../../../../time-block-contracts";
 import type { CalendarTray } from "../workspace/workspace-types";
 import type { CalendarFilter } from "./filter";
 import type { CalendarRange } from "./range";
@@ -16,6 +17,7 @@ export type DayWeather = {
 export type CalendarProps = {
   spaceId: string;
   items: CalendarItem[];
+  timeBlocks?: SpaceTimeBlock[];
   columns: SpaceColumn[];
   tags: SpaceTag[];
   /** Event templates offered when a slot creates an event. */

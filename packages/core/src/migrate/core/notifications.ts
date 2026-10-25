@@ -42,13 +42,30 @@ export const migrate = async (): Promise<void> => {
       last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       CONSTRAINT notification_definitions_recipient_kind_check
-        CHECK (recipient_kind IN ('user', 'email')),
+        CHECK (recipient_kind IN ('user', 'email', 'principal')),
       UNIQUE (app_id, kind)
     )
   `.simple();
   await sql`
     ALTER TABLE notifications.definitions
     ADD COLUMN IF NOT EXISTS presentation JSONB
+  `.simple();
+
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'notification_definitions_recipient_kind_check'
+          AND conrelid = 'notifications.definitions'::regclass
+          AND pg_get_constraintdef(oid) LIKE '%principal%'
+      ) THEN
+        ALTER TABLE notifications.definitions
+        DROP CONSTRAINT IF EXISTS notification_definitions_recipient_kind_check,
+        ADD CONSTRAINT notification_definitions_recipient_kind_check CHECK (recipient_kind IN ('user', 'email', 'principal'));
+      END IF;
+    END
+    $$
   `.simple();
 
   await sql`
@@ -99,6 +116,30 @@ export const migrate = async (): Promise<void> => {
       ),
       UNIQUE (definition_id, recipient_key, idempotency_key)
     )
+  `.simple();
+  await sql`
+    ALTER TABLE notifications.events
+    ADD COLUMN IF NOT EXISTS recipient_service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE
+  `.simple();
+  await sql`ALTER TABLE notifications.events ADD COLUMN IF NOT EXISTS resource_type TEXT`.simple();
+  await sql`ALTER TABLE notifications.events ADD COLUMN IF NOT EXISTS resource_id TEXT`.simple();
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'notification_events_recipient_check'
+          AND conrelid = 'notifications.events'::regclass
+          AND pg_get_constraintdef(oid) LIKE '%recipient_service_account_id%'
+      ) THEN
+        ALTER TABLE notifications.events
+        DROP CONSTRAINT IF EXISTS notification_events_recipient_check,
+        ADD CONSTRAINT notification_events_recipient_check CHECK (
+          num_nonnulls(recipient_user_id, recipient_email, recipient_service_account_id) = 1
+        );
+      END IF;
+    END
+    $$
   `.simple();
   await sql`
     DO $$
@@ -172,7 +213,7 @@ export const migrate = async (): Promise<void> => {
     LANGUAGE plpgsql
     AS $$
     BEGIN
-      IF NEW.status IN ('delivered', 'suppressed', 'failed') THEN
+      IF NEW.status IN ('suppressed', 'failed') OR (NEW.status = 'delivered' AND NEW.channel <> 'inbox') THEN
         NEW.payload_encrypted = NULL;
       END IF;
       RETURN NEW;
@@ -202,24 +243,22 @@ export const migrate = async (): Promise<void> => {
         SELECT 1 FROM pg_constraint
         WHERE conname = 'notification_deliveries_payload_state_check'
           AND conrelid = 'notifications.deliveries'::regclass
+          AND pg_get_constraintdef(oid) LIKE '%inbox%'
       ) THEN
         ALTER TABLE notifications.deliveries
+        DROP CONSTRAINT IF EXISTS notification_deliveries_payload_state_check,
         ADD CONSTRAINT notification_deliveries_payload_state_check CHECK (
-          (status IN ('delivered', 'suppressed', 'failed') AND payload_encrypted IS NULL)
-          OR (status IN ('deferred', 'pending', 'sending') AND payload_encrypted IS NOT NULL)
+          (status IN ('suppressed', 'failed') AND payload_encrypted IS NULL)
+          OR (status = 'delivered' AND channel <> 'inbox' AND payload_encrypted IS NULL)
+          OR ((status IN ('deferred', 'pending', 'sending') OR (status = 'delivered' AND channel = 'inbox')) AND payload_encrypted IS NOT NULL)
         ) NOT VALID;
+        UPDATE notifications.deliveries
+        SET payload_encrypted = NULL, updated_at = now()
+        WHERE (status IN ('suppressed', 'failed') OR (status = 'delivered' AND channel <> 'inbox')) AND payload_encrypted IS NOT NULL;
+        ALTER TABLE notifications.deliveries VALIDATE CONSTRAINT notification_deliveries_payload_state_check;
       END IF;
     END
     $$
-  `.simple();
-  await sql`
-    UPDATE notifications.deliveries
-    SET payload_encrypted = NULL, updated_at = now()
-    WHERE status IN ('delivered', 'suppressed', 'failed') AND payload_encrypted IS NOT NULL
-  `.simple();
-  await sql`
-    ALTER TABLE notifications.deliveries
-    VALIDATE CONSTRAINT notification_deliveries_payload_state_check
   `.simple();
 
   await sql`
@@ -229,6 +268,11 @@ export const migrate = async (): Promise<void> => {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_notification_events_recipient
     ON notifications.events(recipient_user_id, created_at DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notification_events_service_account
+    ON notifications.events(recipient_service_account_id, created_at DESC, id DESC)
+    WHERE recipient_service_account_id IS NOT NULL
   `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_notification_events_definition_created

@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Planning changes the source object's type | Dropping a task into a calendar converts it to an event, losing task behavior or failing for estimated and claimed tasks. | Tests: Spaces `api/time-blocks.integration.test.ts` and the real-API `time-blocks.browser-suite.ts` create a separate block and preserve the task, estimate, claim, checklist and deadline; a lost response retries the same client ID. |
 | A browser fixture pauses a clock at a time that already passed | Installing a running clock and pausing at its initial timestamp races browser command latency; a busy host reports “Cannot fast-forward to the past”. | Test: Pulse `WorkspaceClock.browser.test.ts` advances the clock before pausing, then verifies the exact fixture time across navigation and subsequent timer advancement. Freeze wall time before pausing and restore normal clock advancement while paused. |
 | Per-request browser fixtures repeatedly compile the server | Cold Babel and workspace imports consume the snapshot deadline before the page executes. | Test: Pulse `PulseWorkspace.browser.test.ts` renders the real page from a bundle prepared once during setup. Each render still runs in a fresh process with the unchanged 15-second deadline; only app-owned page data and platform SSR preloads are substituted. |
 | An SSR browser fixture leaves an asset request external | The generated shell requests its branding image, but the fixture intercepts only app and API routes; navigation can wait on DNS or the unavailable host instead of reaching `load`. | Test: Pulse `PulseWorkspace.browser.test.ts` supplies a local branding SVG, rejects unexpected requests, checks decoded logo images, and retains the normal navigation load wait and SSR height checks. |
@@ -1030,6 +1031,13 @@ convention still needs a check or a test.
 - **Error class:** Reading asynchronous state before the completion condition.
 - **Guard:** `data-table-focus.browser.test.ts` waits for the destination URL, then retains its exact URL and callback-count assertions without increasing timeouts.
 
+### Isolate PDF consumer unit tests at admission and HTTP
+
+- **What happened:** The query-export starter escaping test failed before its mocked renderer request.
+- **Root cause:** Shared PDF rendering requires downstream admission; this consumer unit test mocked HTTP but omitted the existing admission fixture.
+- **Error class:** A unit test accidentally depends on shared infrastructure.
+- **Guard:** The starter test uses the scoped PDF admission mock, asserts one admission attempt, and retains the actual template-rendering and escaping assertions. Platform and integration tests continue to exercise real admission.
+
 ### Browser destinations must not mount unrelated applications
 
 - **What happened:** Studio's WebKit navigation test reported runtime fetch errors while leaving its dummy edit-chat page.
@@ -1057,3 +1065,9 @@ updates that class's row in the table.
 
 - **Error class:** asynchronous UI locator race. The Pulse Back test could resolve the settings form's Discard button before the confirmation appeared, then wait on that hidden button.
 - **Guard:** the test waits for the named confirmation dialog and its question before clicking its Discard button. It still checks Back, Escape, Cancel, draft preservation and the resulting URL.
+
+### Frozen API fixtures shared an anonymous rate-limit bucket
+
+- **What happened:** The time-block API suite returned 429 in later authorization cases.
+- **Root cause:** Direct API requests had no caller address and a frozen clock, so independent fixtures accumulated in the same anonymous rate-limit window.
+- **Guard:** Every synthetic request uses `uniqueCallerAddress()` while retaining the real rate limiter and API assertions. Run the complete integration file to cover consecutive fixtures.

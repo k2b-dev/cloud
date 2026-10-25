@@ -56,6 +56,8 @@ const detailSource = (href: string) => {
   if (request.itemId) {
     url.searchParams.set("item", request.itemId);
     if (request.occurrenceId) url.searchParams.set("occurrence", request.occurrenceId);
+    const block = new URL(href, "http://spaces.local").searchParams.get("block");
+    if (block) url.searchParams.set("block", block);
   }
   return `${url.pathname}${url.search}`;
 };
@@ -72,6 +74,7 @@ const detailBaseHref = (source: string) => {
   const url = new URL(source, "http://spaces.local");
   url.searchParams.delete("item");
   url.searchParams.delete("occurrence");
+  url.searchParams.delete("block");
   return `${url.pathname}${url.search}`;
 };
 
@@ -281,6 +284,9 @@ export default function ItemDetailRoute(props: Props) {
         target.searchParams.set("item", selected.itemId!);
         if (selected.occurrenceId) target.searchParams.set("occurrence", selected.occurrenceId);
         else target.searchParams.delete("occurrence");
+        const block = new URL(selection.source, window.location.origin).searchParams.get("block");
+        if (block) target.searchParams.set("block", block);
+        else target.searchParams.delete("block");
         const href = `${target.pathname}${target.search}`;
         committedSource = request.href;
         setPending({ ...selection, source: href });
@@ -305,6 +311,7 @@ export default function ItemDetailRoute(props: Props) {
   return (
     <AppWorkspace.Detail
       id="space-detail-panel"
+      maxWidth={400}
       open={hasDetailSelection()}
       onStep={props.steppable ? (direction) => requestSpacesDetailStep(direction, detailRequest(source())) : undefined}
       onClose={() => requestSpacesRouteNavigation(detailBaseHref(source()), { scroll: "preserve" })}
@@ -349,6 +356,9 @@ export default function ItemDetailRoute(props: Props) {
               work={current().work}
               attachments={current().attachments}
               checklist={current().checklist}
+              timeBlocks={current().timeBlocks}
+              selectedBlockId={new URL(source(), "http://spaces.local").searchParams.get("block") ?? undefined}
+              calendarDay={new URL(source(), "http://spaces.local").searchParams.get("cd") ?? undefined}
               blockedBy={current().blockedBy}
               blocks={current().blocks}
               dateConfig={props.dateConfig}

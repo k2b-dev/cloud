@@ -14,6 +14,7 @@ Use `cld spaces` to list and change work, track agent handoffs, manage task depe
 - [Templates](#templates)
 - [Write Markdown](#write-markdown)
 - [Track implementation work and handoffs](#track-implementation-work-and-handoffs)
+- [Task time blocks](#task-time-blocks)
 - [Dependencies](#dependencies)
 - [Comments, checklists, references, links, and attachments](#comments-checklists-references-links-and-attachments)
 - [Calendar and invitations](#calendar-and-invitations)
@@ -152,6 +153,55 @@ Use `release <item> --claim-id <id>` when stopping work. Releasing your own clai
 `assign` and `set --assignee` or `--clear-assignees` return `409` if the replacement removes the person or service account holding an active claim. Release the claim first. A refused replacement changes nothing, including other fields sent with `set`.
 
 `progress` saves the latest full handoff note (`--content` or `--from`). `done --result` or `--from` saves a completion result atomically with completion; `--commit` records a 7–64 digit hexadecimal SHA and needs a result. Include what changed, decisions, remaining work, and verification evidence. Notes are limited to 5,000 characters. A failed result write cannot leave the task done, and reopening keeps the last result. Earlier notes stay in `activity`; follow `nextCursor` with `--cursor`. Standalone and agent accounts can record progress, results, claims, and comments under their own identity; editing or deleting comments needs a person.
+
+## Task time blocks
+
+Reserve time for a task without converting it into an event:
+
+```bash
+cld spaces blocks ls Item01 --json
+cld spaces blocks ls --from 2026-10-23T00:00:00+02:00 --to 2026-10-24T00:00:00+02:00 --mine --json
+cld spaces blocks add Item01 --id aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa --starts-at 2026-10-23T10:00:00+02:00 --ends-at 2026-10-23T11:00:00+02:00 --json
+cld spaces blocks show aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa --json
+cld spaces blocks set aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa --title "Review the release"
+cld spaces blocks rm aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa --yes
+```
+
+`blocks ls [item]` accepts a task ID or `<space>:<title>`. Without a task it
+requires `--from` and `--to`: ISO date-times with offsets, in increasing order,
+at most 366 days apart. `--space <id|name>` and `--mine` filter that interval;
+`--page` and `--per-page` (1–100) page through it. Follow `hasNext` until false.
+Task-specific listing also accepts `--page` and `--per-page`, but no interval,
+Space or mine filters. It returns an array; request the next page until empty.
+
+`add` requires a client-generated UUID in `--id`, `--starts-at` and
+`--ends-at`; the end must be later. It starts with the task's title. Multiple blocks have independent titles and
+intervals after creation; `set` changes only supplied fields. Blocks are not
+events, task dependencies, checklist entries, or extra list/Kanban items, and
+are excluded from iCal and CalDAV.
+
+Keep the UUID from `--id` when retrying an uncertain create, with the same
+task and interval. This keeps retries safe after a network error or lost
+response. `show`, `set`, and `rm` take a block UUID, never a task's six-character ID. `rm` deletes only that block.
+Read `canWrite` before editing and `canDelete` before deleting; a deleted
+task's block may allow deletion while refusing edits.
+
+Anyone who can read the task can read its blocks. Only the assigned owner
+changes them. People, agents and service accounts can own blocks; a delegated
+user token acts as its person. Independent accounts need their own Space
+access and write scope. Blocks survive task completion and deletion.
+Removing an owner transfers blocks to the sole remaining assignee and
+notifies both. If zero or several assignees remain, the previous owner is
+notified and keeps the blocks with deletion only, even without task access.
+
+A block returns `id`, public `itemId` and `spaceId` (nullable), `title`,
+`startsAt`, `endsAt`, `ownerId`, `ownerKind` (`user` or `service_account`), `ownerName`, nullable `spaceName` and
+`spaceColor`, `taskState` (`open`, `done`, `deleted`, `no_access`), and
+`canWrite` and `canDelete`. Task and Space identifiers and presentation are hidden when the
+owner no longer has access. Use the returned state and permission rather than
+inferring them from a task lookup. Range JSON is `{ items, total, page,
+perPage, hasNext }`; task JSON is an array; `show`/`add`/`set` return one block;
+`rm` returns `{ id, deleted: true }`.
 
 ## Dependencies
 

@@ -40,6 +40,7 @@ import {
 import { deadlineDayKey, formatDeadline, isDateOnlyDeadline } from "@/presentation/deadline";
 import { summarizeRecurrence } from "@/presentation/recurrence";
 import { spaceCommandMessages } from "../../../../commands";
+import type { SpaceTimeBlock } from "../../../../time-block-contracts";
 import { shouldHandleDetailClick } from "../../../lib/detail";
 import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
@@ -61,6 +62,7 @@ import { openEditItemDialog } from "../shared/editItem";
 import { DEADLINE_DEFAULT_TIME, deadlinePresets } from "../shared/item-form/date";
 import ItemReactions, { createReactionPicker } from "../shared/reactions/ItemReactions";
 import SpaceAssigneePicker from "../shared/SpaceAssigneePicker";
+import { TimeBlockAction, TimeBlocksSection } from "../time-blocks/TimeBlocksSection";
 import {
   invalidateSpacesData,
   requestSpacesRouteNavigation,
@@ -95,6 +97,9 @@ type Props = {
   work?: SpaceItemDetail["work"];
   attachments?: SpaceItemDetail["attachments"];
   checklist?: SpaceItemDetail["checklist"];
+  timeBlocks?: SpaceTimeBlock[];
+  selectedBlockId?: string;
+  calendarDay?: string;
   blockedBy?: SpaceTaskDependency[];
   blocks?: SpaceTaskDependent[];
   dateConfig?: DateContext;
@@ -1085,8 +1090,18 @@ export default function ItemDetailPanel(props: Props) {
             </>
           }
           primaryActions={
-            props.canWrite || props.recurringContext ? (
+            props.canWrite || props.recurringContext || !isEvent() ? (
               <>
+                <Show when={!isEvent()}>
+                  <TimeBlockAction
+                    item={props.item}
+                    spaceId={props.spaceId}
+                    currentUserId={props.currentUserId}
+                    canAssign={props.canWrite}
+                    dateConfig={props.dateConfig}
+                    day={props.calendarDay}
+                  />
+                </Show>
                 <Show when={canEditItem()}>
                   <Button
                     type="button"
@@ -1145,6 +1160,18 @@ export default function ItemDetailPanel(props: Props) {
             >
               <DescriptionList layout="rows" size="sm" items={planningItems()} />
             </DetailPanel.Summary>
+          </Show>
+
+          <Show when={!isEvent()}>
+            <TimeBlocksSection
+              item={props.item}
+              spaceId={props.spaceId}
+              currentUserId={props.currentUserId}
+              canAssign={props.canWrite}
+              dateConfig={props.dateConfig}
+              blocks={props.timeBlocks ?? []}
+              selectedBlockId={props.selectedBlockId}
+            />
           </Show>
 
           <Show when={canShowEventContext()}>

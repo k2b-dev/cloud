@@ -150,7 +150,8 @@ export const processNotificationDelivery = async (
       UPDATE notifications.deliveries
       SET outgoing_mail_id = COALESCE(${mailId}::uuid, outgoing_mail_id),
           status = 'delivered', delivered_at = now(), next_attempt_at = NULL,
-          error_code = NULL, error_message = NULL, payload_encrypted = NULL, updated_at = now()
+          error_code = NULL, error_message = NULL,
+          payload_encrypted = CASE WHEN channel = 'inbox' THEN payload_encrypted ELSE NULL END, updated_at = now()
       WHERE id = ${delivery.id}::uuid
     `;
     const activatedIds = delivery.required ? [] : await activateNextFallback(delivery.event_id);

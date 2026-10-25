@@ -58,6 +58,8 @@ window.loads = [];
 window.slots = [];
 window.drops = [];
 window.checks = [];
+window.edits = [];
+window.activations = [];
 window.visible = [];
 window.setDate = setDate;
 window.setRange = (from, to) => batch(() => { setFrom(from); setTo(to); });
@@ -84,7 +86,9 @@ window.dispose = render(
       getDateHref: (date, view) => "?view=" + view + "&date=" + date.toISOString(),
       getViewHref: (view) => "?view=" + view,
       onSlotActivate: (slot) => window.slots.push([slot.start.toISOString(), slot.end.toISOString()]),
-      onEventActivate: () => {},
+      onEventActivate: (event) => window.activations.push(event.id),
+      onEventDrop: options.editing ? (event) => window.edits.push(event.id) : undefined,
+      onEventResize: options.editing ? (event) => window.edits.push(event.id) : undefined,
       onEventCheck: (event, checked) => { window.checks.push([event.id, checked]); },
       onVisibleDateChange: (date) => window.visible.push(dateKey.format(date)),
       controller: (value) => (window.controller = value),
@@ -144,7 +148,7 @@ const phone: BrowserContextOptions = {
   hasTouch: true,
 };
 
-type Options = { view?: "day" | "week"; date?: string; events?: CalendarEvent[]; runningClock?: boolean };
+type Options = { view?: "day" | "week"; date?: string; events?: CalendarEvent[]; runningClock?: boolean; editing?: boolean };
 type Fixture = {
   fixtureOptions: Options;
   dispose: () => void;
@@ -152,6 +156,8 @@ type Fixture = {
   slots: string[][];
   drops: string[][];
   checks: [string, boolean][];
+  edits: string[];
+  activations: string[];
   visible: string[];
   setDate: (value: string) => void;
   setRange: (from: string, to: string) => void;
@@ -918,3 +924,40 @@ describe(`Calendar day and week views in ${browserName}`, () => {
     }
   }, 30_000);
 });
+
+for (const view of ["day", "week"] as const) {
+  test(`${view}: a read-only event opens but has no resize grips or drag effect`, async () => {
+    const page = await open(desktop, {
+      view,
+      editing: true,
+      events: [
+        {
+          id: "read-only",
+          title: "Shared focus time",
+          start: "2026-10-09T09:30:00+02:00",
+          end: "2026-10-09T10:15:00+02:00",
+          editable: false,
+        },
+      ],
+    });
+    try {
+      const entry = page.locator('[data-calendar-body="2026-10-09"] [data-calendar-entry="read-only"]');
+      const event = entry.locator(".k2b-calendar-event");
+      await event.scrollIntoViewIfNeeded();
+      expect(await event.getAttribute("data-editable")).toBe("false");
+      expect(await entry.locator(".k2b-calendar-band__grip").count()).toBe(0);
+      const box = (await event.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 35, { steps: 6 });
+      await page.mouse.up();
+      expect(await page.evaluate(() => (window as unknown as Fixture).edits)).toEqual([]);
+      await event.focus();
+      await page.keyboard.press("Enter");
+      expect(await page.evaluate(() => (window as unknown as Fixture).activations)).toContain("read-only");
+      expect(await page.locator('[data-calendar-entry="call"] .k2b-calendar-band__grip').count()).toBeGreaterThan(0);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+}
