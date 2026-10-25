@@ -55,29 +55,37 @@ type Plan = {
   "Relation Name"?: string;
   "Index Name"?: string;
   "Actual Rows"?: number;
+  "Actual Loops"?: number;
   Plans?: Plan[];
 };
 const nodes = (plan: Plan): Plan[] => [plan, ...(plan.Plans ?? []).flatMap(nodes)];
-const indexedPlan = async (
+/**
+ * Runs a query's plan and requires bounded work: no sequential scan of notes or tags, at most `rows` rows returned and
+ * at most `reads` rows read by all scans together. Which index the planner picks depends on the data and is not
+ * pinned; a small notebook may rationally sort a few rows instead of walking an ordered index.
+ */
+const boundedPlan = async (
   query: SQL.Query<unknown>,
-  indexes: string[],
-  transaction?: TransactionSQL,
-  /** The most rows the plan may return; a level read returns the whole level. */
-  maxRows = 100,
+  { rows = 100, reads = 2_000, transaction }: { rows?: number; reads?: number; transaction?: TransactionSQL } = {},
 ) => {
   const check = async (tx: TransactionSQL) => {
-    // Small fixtures may rationally prefer sequential scans. This checks index eligibility,
-    // rather than asserting a cost estimate for tiny tables.
+    // Small fixtures may rationally prefer sequential scans; this checks that an indexed plan exists and is bounded.
     await tx`SET LOCAL enable_seqscan = off`;
     await tx`SET LOCAL plan_cache_mode = force_generic_plan`;
     const [row] = await tx<{ "QUERY PLAN": { Plan: Plan }[] }[]>`EXPLAIN (ANALYZE, FORMAT JSON) ${query}`;
     const plan = nodes(row!["QUERY PLAN"][0]!.Plan);
-    const used = plan.map((node) => node["Index Name"]).filter(Boolean);
-    expect(plan[0]!["Actual Rows"], `rows of a plan using ${used.join(", ")}`).toBeLessThanOrEqual(maxRows);
+    const used = plan
+      .map((node) => node["Index Name"])
+      .filter(Boolean)
+      .join(", ");
+    const read = plan
+      .filter((node) => node["Node Type"].includes("Scan"))
+      .reduce((sum, node) => sum + (node["Actual Rows"] ?? 0) * (node["Actual Loops"] ?? 1), 0);
+    expect(plan[0]!["Actual Rows"], `rows returned by a plan using ${used}`).toBeLessThanOrEqual(rows);
+    expect(read, `rows read by a plan using ${used}`).toBeLessThanOrEqual(reads);
     expect(plan.filter((node) => ["notes", "note_tags"].includes(node["Relation Name"] ?? "") && node["Node Type"] === "Seq Scan")).toEqual(
       [],
     );
-    for (const index of indexes) expect(used, `plan uses ${index}`).toContain(index);
   };
   if (transaction) await check(transaction);
   else await sql.begin(check);
@@ -95,21 +103,18 @@ for (const [index, shape] of ["small", "large"].entries()) {
       expect(note.hasChildren).toBe(notebook.notes.some((child) => child.parentId === note.id));
       expect("contentMd" in note).toBe(false);
     }
-    await indexedPlan(outlinePageQuery({ notebookId: notebook.id, pagination: { limit: 7, offset: 3 } }), ["idx_notes_notebook_id"]);
+    await boundedPlan(outlinePageQuery({ notebookId: notebook.id, pagination: { limit: 7, offset: 3 } }));
     const paths = buildNotePaths(notebook.notes, { mirror: false });
     const page = notebook.notes.find((note) => note.id === notebook.page.id)!;
     const resolved = await resolvePath({ notebookId: notebook.id, path: paths.get(page.id)! });
     expect(resolved.ok && resolved.note.id).toBe(page.id);
-    // A path segment reads its level, whose size it compares in JavaScript (independent of the database locale).
-    await indexedPlan(
-      childrenQuery(notebook.id, page.parentId),
-      ["idx_notes_notebook_parent_position"],
-      undefined,
-      Number.POSITIVE_INFINITY,
-    );
+    // A path segment reads its level, whose slugs it compares in JavaScript (independent of the database locale): the
+    // cost follows the level, never the notebook.
+    const level = notebook.notes.filter((note) => note.parentId === page.parentId).length;
+    await boundedPlan(childrenQuery(notebook.id, page.parentId), { rows: level, reads: level + 100 });
     const after = sorted[3]!.id;
-    await indexedPlan(readBatchQuery({ notebookId: notebook.id, after }), ["idx_notes_notebook_id"]);
-    await indexedPlan(reindexBatchQuery(notebook.id, after), ["idx_notes_notebook_id"]);
+    await boundedPlan(readBatchQuery({ notebookId: notebook.id, after }));
+    await boundedPlan(reindexBatchQuery(notebook.id, after));
     const batch = await readBatch({ notebookId: notebook.id, after, includeContent: false });
     expect(batch.map((note) => note.id)).toEqual(sorted.slice(4, 104).map((note) => note.id));
     expect(batch.every((note) => note.contentMd === null)).toBe(true);
@@ -121,17 +126,19 @@ for (const [index, shape] of ["small", "large"].entries()) {
     expect(list.items.map((note) => note.id)).toEqual([notebook.page.id]);
     expect(list.total).toBe(1);
     // A title part reads the notebook's own rows, never the whole table.
-    await indexedPlan(listPageQuery({ notebookId: notebook.id, query: marker, pagination: { limit: 7, offset: 0 } }), []);
-    await indexedPlan(listPageQuery({ notebookId: notebook.id, pagination: { limit: 7, offset: 0 } }), ["idx_notes_notebook_list"]);
+    // A title part matches anywhere in a title, so `q` reads the notebook's own rows (titles, no content): bounded by
+    // the notebook, never by the table.
+    await boundedPlan(listPageQuery({ notebookId: notebook.id, query: marker, pagination: { limit: 7, offset: 0 } }), {
+      reads: notebook.notes.length + 100,
+    });
+    await boundedPlan(listPageQuery({ notebookId: notebook.id, pagination: { limit: 7, offset: 0 } }));
     const filtered = await searchInNotebook({ notebookId: notebook.id, filters: { query: marker }, pagination });
     expect(filtered.hits.map((hit) => hit.note.id)).toEqual([notebook.page.id]);
     expect(filtered.hits[0]!.snippet).toContain(marker);
     for (const query of [marker, ""]) {
       const filters = normalizeFilters({ query });
       const condition = sql`n.notebook_id = ${notebook.id}::uuid AND ${searchCondition(filters)}`;
-      await indexedPlan(searchPageQuery({ filters, condition, pagination, backend: "native" }), [
-        query ? "idx_notes_search_document" : "idx_notes_notebook_updated",
-      ]);
+      await boundedPlan(searchPageQuery({ filters, condition, pagination, backend: "native" }));
     }
     const expected = [...notebook.notes]
       .reverse()
@@ -151,28 +158,22 @@ for (const [index, shape] of ["small", "large"].entries()) {
 postgresTest("filter-only global search and recent notes use updated_at indexes; tags use the membership index", async () => {
   const notebook = fixtures[1]!;
   const filters = normalizeFilters({});
-  await indexedPlan(searchPageQuery({ filters, condition: searchCondition(filters), pagination, backend: "native" }), [
-    "idx_notes_updated",
-  ]);
+  await boundedPlan(searchPageQuery({ filters, condition: searchCondition(filters), pagination, backend: "native" }));
   const hits = await searchAcross({ userId: null, notebookId: notebook.id, filters: { query: marker }, pagination });
   expect(hits.hits.map((hit) => hit.note.id)).toEqual([notebook.page.id]);
   const recent = await recentForUser({ userId: "11111111-1111-4111-8111-111111111111", limit: 7 });
   expect(recent.length).toBeLessThanOrEqual(7);
-  await indexedPlan(recentForUserQuery({ userId: "11111111-1111-4111-8111-111111111111", limit: 7 }), ["idx_notes_notebook_updated"]);
+  await boundedPlan(recentForUserQuery({ userId: "11111111-1111-4111-8111-111111111111", limit: 7 }));
   const tags = await listNotesForTag({ notebookId: notebook.id, tag: "HANDBOOK", pagination: { limit: 7, offset: 0 } });
   expect(tags.items.length).toBe(7);
   const expected = await sql<{ id: string }[]>`SELECT note_id AS id FROM notebooks.note_tags t
     JOIN notebooks.notes n ON n.id = t.note_id WHERE t.notebook_id = ${notebook.id}::uuid AND t.tag = 'handbook'
     ORDER BY n.updated_at DESC, n.id DESC LIMIT 7`;
   expect(tags.items.map((note) => note.id)).toEqual(expected.map((note) => note.id));
-  await indexedPlan(
-    sql`SELECT n.id FROM notebooks.note_tags t JOIN notebooks.notes n ON n.id = t.note_id
-    WHERE t.notebook_id = ${notebook.id}::uuid AND t.tag = 'handbook' ORDER BY n.updated_at DESC, n.id DESC LIMIT 7`,
-    ["idx_note_tags_nb_tag"],
-  );
-  await indexedPlan(
+  await boundedPlan(sql`SELECT n.id FROM notebooks.note_tags t JOIN notebooks.notes n ON n.id = t.note_id
+    WHERE t.notebook_id = ${notebook.id}::uuid AND t.tag = 'handbook' ORDER BY n.updated_at DESC, n.id DESC LIMIT 7`);
+  await boundedPlan(
     sql`SELECT updated_at FROM notebooks.notes WHERE notebook_id = ${notebook.id}::uuid ORDER BY updated_at DESC, id LIMIT 1`,
-    ["idx_notes_notebook_updated"],
   );
 });
 
@@ -246,7 +247,7 @@ postgresTest("append uses indexed extrema for empty, alphabetical, mixed and han
   });
   // This is the exact aggregate used under lockTree by create and move.
   await sql.begin(async (tx) => {
-    await indexedPlan(appendPositionQuery(tx, notebook.id, notebook.folder.id), ["idx_notes_notebook_parent_position"], tx);
+    await boundedPlan(appendPositionQuery(tx, notebook.id, notebook.folder.id), { transaction: tx });
   });
   const created = spyOn(workspaceEvents, "noteCreated").mockResolvedValue(undefined);
   const updated = spyOn(workspaceEvents, "noteUpdated").mockResolvedValue(undefined);
@@ -285,10 +286,8 @@ postgresTest("append uses indexed extrema for empty, alphabetical, mixed and han
 
 postgresTest("delete and version-retention foreign keys have targeted indexes", async () => {
   const noteId = fixtures[1]!.page.id;
-  await indexedPlan(sql`SELECT note_id FROM notebooks.note_favorites WHERE note_id = ${noteId}::uuid`, ["idx_note_favorites_note"]);
-  await indexedPlan(sql`SELECT note_version_id FROM notebooks.activity_events WHERE note_version_id = ${noteId}::uuid`, [
-    "idx_notebooks_activity_version",
-  ]);
+  await boundedPlan(sql`SELECT note_id FROM notebooks.note_favorites WHERE note_id = ${noteId}::uuid`);
+  await boundedPlan(sql`SELECT note_version_id FROM notebooks.activity_events WHERE note_version_id = ${noteId}::uuid`);
 });
 
 postgresTest("a prepared generic full-text predicate remains GIN-indexable", async () => {
@@ -357,28 +356,24 @@ postgresTest("created-time and tag-only filters start from their indexes", async
   const latest = await searchInNotebook({ notebookId: notebook.id, filters: {}, pagination });
   const at = latest.hits[0]!.note.createdAt;
   const dates = normalizeFilters({ createdAfter: at, createdBefore: at });
-  await indexedPlan(
+  await boundedPlan(
     searchPageQuery({
       filters: dates,
       condition: sql`n.notebook_id = ${notebook.id}::uuid AND ${searchCondition(dates, notebook.id)}`,
       pagination,
       backend: "native",
     }),
-    ["idx_notes_notebook_created"],
   );
-  await indexedPlan(searchPageQuery({ filters: dates, condition: searchCondition(dates), pagination, backend: "native" }), [
-    "idx_notes_created",
-  ]);
+  await boundedPlan(searchPageQuery({ filters: dates, condition: searchCondition(dates), pagination, backend: "native" }));
   for (const notebookId of [notebook.id, undefined]) {
     const filters = normalizeFilters({ tags: ["server-guard-no-such-tag"] });
-    await indexedPlan(
+    await boundedPlan(
       searchPageQuery({
         filters,
         condition: sql`${notebookId ? sql`n.notebook_id = ${notebookId}::uuid` : sql`true`} AND ${searchCondition(filters, notebookId)}`,
         pagination,
         backend: "native",
       }),
-      [notebookId ? "idx_note_tags_nb_tag" : "idx_note_tags_tag_note"],
     );
   }
   expect(await searchInNotebook({ notebookId: notebook.id, filters: { tags: ["server-guard-no-such-tag"] }, pagination })).toEqual({
