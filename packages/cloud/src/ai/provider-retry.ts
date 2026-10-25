@@ -8,7 +8,7 @@ export const AI_PROVIDER_RETRY_DELAYS_MS: readonly number[] = [1_000, 4_000];
 /**
  * The longest Retry-After that is honored, the bound the OpenAI and Anthropic
  * SDKs apply. A provider that asks for a longer wait is unavailable for this
- * turn, so the call fails now with the provider's message.
+ * turn, so the call fails now with Cloud's fixed provider error.
  */
 const AI_PROVIDER_MAX_RETRY_AFTER_MS = 60_000;
 
