@@ -113,7 +113,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     locked: !!selected.note?.lockedAt,
   });
   const readonlyMode = presentationMode !== "write";
-  const graph = isGraphMode ? await notebooksService.notebook.graph({ notebookId }) : null;
+  const graph = isGraphMode ? await notebooksService.notebook.graphView({ notebookId, noteId: selected.internalNoteId }) : null;
   const versionHistory =
     isVersionsMode && selected.note && selected.internalNoteId
       ? await notebooksService.note.versions

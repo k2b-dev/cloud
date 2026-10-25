@@ -100,8 +100,8 @@ the exact `localhost`, `127.0.0.1`, or `::1` loopback hosts.
 Re-login replaces and remotely revokes the previous refresh grant. `cld
 logout` revokes the current grant and removes its local or fd0-backed refresh
 token reference. `cld profile rm <name>` signs a profile out the same way,
-deletes it with its plugin lock, removes plugin versions no other profile
-uses, and rewrites the agent skill. It asks first (or needs `--yes` without a
+deletes it with its plugin lock and rewrites the agent skill. Published plugin
+bundles remain in the shared store so other config files can still use them. It asks first (or needs `--yes` without a
 terminal) and refuses the current profile while other profiles exist.
 
 ```bash

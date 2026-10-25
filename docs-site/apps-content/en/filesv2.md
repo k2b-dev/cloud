@@ -105,7 +105,8 @@ others appear without a reload. PDF and office files use file-type icons in list
 direct Filegate thumbnails; PDF contents remain viewable in the details panel.
 
 Search always covers the subtree below the current folder; hits show their
-path relative to it. Files also answers the universal
+path relative to it. Filename matching ignores accents and separators and
+accepts query words in any order. Files also answers the universal
 search under the `file` tag through the `filesv2.entry` resource type, and
 each entry's Cloud reference can be copied from the details panel. A bounded or
 failed search is reported explicitly rather than presented as a complete empty
@@ -808,8 +809,10 @@ archive, restore, and permanent deletion. Comments and AI assistance inside the
 editor are not part of this version. The reserved top-level `trash` directory
 is excluded from ordinary browsing and downloads.
 
-Filegate 6.1 and later supply Unix execution, native historical copies, managed-root
-preconditions, retained upload results, and sorting/filtering before pagination.
+Files requires Filegate 7.1.0 for Unix execution, native historical copies,
+managed-root preconditions, retained upload results, and sorting/filtering before
+pagination. Follow the [Filegate upgrade procedure](/en/docs/operations/deployment-requirements#upgrade-filegate-to-710)
+before updating Files.
 This does not establish production readiness for a particular filesystem or NFS
 export. Unmanaged external-writer conflict safety
 requires separate acceptance and has no atomic guarantee.

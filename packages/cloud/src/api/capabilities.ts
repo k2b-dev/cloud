@@ -55,7 +55,9 @@ import {
   v,
 } from "../server/middleware";
 import { AppAccessDeniedError, appAccessDeniedBody } from "../server/middleware/app-access";
+import { oauthScopeByOperation } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
+import { hasOAuthScope } from "../server/oauth-scope";
 import { appAccessAuthority, canUseApp } from "../services/app-access";
 import { discoverableApps } from "../services/app-discovery";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
@@ -764,7 +766,9 @@ export const dispatchCapability = async (params: CapabilityDispatchParams): Prom
     const startedAt = new Date();
     let outcome: CapabilityDispatchOutcome;
     try {
-      outcome = await runCapabilityDispatch(params, requestId, observed, deadline);
+      outcome = hasOAuthScope(params.authority, params.review || params.kind === "queries" ? "read" : "write", "admin")
+        ? await runCapabilityDispatch(params, requestId, observed, deadline)
+        : errorResponse("FORBIDDEN", "Insufficient OAuth scope", 403);
     } catch (error) {
       if (!deadline.signal.aborted) throw error;
       const cancelled = params.request.signal.aborted;
@@ -850,6 +854,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     .use("/capabilities/v1/*", rejectReservedWorkloadCredential)
     .post(
       "/capabilities/v1/streams/:verb",
+      oauthScopeByOperation,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Transfer or inspect one authorized binary stream",
@@ -895,6 +900,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     )
     .post(
       "/capabilities/v1/commands/:appId/:capabilityId",
+      auth.readOnly,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Resolve an interactive Command link",
@@ -944,6 +950,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     )
     .post(
       "/capabilities/v1/actions/:appId/:capabilityId/review",
+      auth.readOnly,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Review one live app Action",
@@ -995,6 +1002,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     )
     .post(
       "/capabilities/v1/:kind{queries|actions}/:appId/:capabilityId",
+      oauthScopeByOperation,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Invoke one live app capability",

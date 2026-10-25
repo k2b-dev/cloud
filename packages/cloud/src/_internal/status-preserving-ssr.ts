@@ -1,8 +1,10 @@
 import type { HtmlFn, RenderFn } from "@k2b/ssr";
 import { createSSRHandler } from "@k2b/ssr/hono";
 import type { Context, Env, MiddlewareHandler, TypedResponse } from "hono";
+import { setCookie } from "hono/cookie";
 import type { StatusCode } from "hono/utils/http-status";
 import type { PanelConsentSnapshot } from "../contracts/panel-context";
+import { PWA_COOKIES, PWA_LIMITS, PWA_SCOPE } from "../contracts/pwa";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { SettingsFlat, Unflatten } from "../contracts/settings-types";
 import type { User } from "../contracts/shared";
@@ -12,7 +14,7 @@ import { measureServerPhase } from "./server-timing";
 
 type PageEnv<T extends object> = {
   Variables: {
-    page: Partial<T>;
+    page: Partial<T> & { pwaAddress?: string };
     user?: User;
     railPreferences?: RailSnapshot;
     panelConsent?: PanelConsentSnapshot;
@@ -62,6 +64,15 @@ export const createStatusPreservingSsrHandler = <T extends object>(
       response.headers.forEach((value, key) => {
         headers[key] = value;
       });
+      const address = context.get("page").pwaAddress;
+      if (address && status < 400) {
+        setCookie(context, PWA_COOKIES.lastAddress, address, {
+          path: PWA_SCOPE,
+          secure: true,
+          sameSite: "Lax",
+          maxAge: PWA_LIMITS.idleDays * 86_400,
+        });
+      }
       const document = context.newResponse(response.body, status as StatusCode, headers);
       // A rendered document carries the signed-in user's state. Without an
       // explicit policy, a browser may show it again on Back from its HTTP

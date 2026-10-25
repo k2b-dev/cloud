@@ -105,7 +105,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
   const pdf = (body: unknown) => app.request("/book01/notes/note01/pdf", { method: "POST", headers, body: JSON.stringify(body) });
 
   beforeEach(() => {
-    token.mockReset().mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    token.mockReset().mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read"] });
     getNotebook.mockReset().mockResolvedValue(notebook);
     permission.mockReset().mockResolvedValue("read");
     loadRoute.mockReset().mockResolvedValue({ kind: "ok", snapshot });
@@ -161,7 +161,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
     });
 
     test("derives the platform-admin override from the authenticated actor", async () => {
-      token.mockResolvedValue({ kind: "user", payload: {}, user: { ...user, roles: ["admin"] }, scopes: [] });
+      token.mockResolvedValue({ kind: "user", payload: {}, user: { ...user, roles: ["admin"] }, scopes: ["read"] });
       permission.mockResolvedValue("none");
       expect((await refresh()).status).toBe(200);
       expect(loadRoute.mock.calls[0]?.[0].bypassAccess).toBe(true);
@@ -286,6 +286,13 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
         expect.objectContaining({ userId: null, serviceAccountId: printBot.id, boundNotebookId: notebook.id, bypassAccess: false }),
         expect.anything(),
       );
+    });
+
+    test("PDF export reports shared renderer saturation as busy", async () => {
+      renderPdf.mockRejectedValueOnce(new GotenbergRenderError("busy", "busy"));
+      const response = await pdf({ markdown: "hello" });
+      expect(response.status).toBe(503);
+      expect(((await response.json()) as { message: string }).message).toBeTruthy();
     });
 
     test("PDF export names a note that renders beyond the PDF budget", async () => {

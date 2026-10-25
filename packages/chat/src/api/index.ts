@@ -27,6 +27,7 @@ import {
   ConversationSchema,
   CreateConversationSchema,
   CreateOutcomeSchema,
+  CreateThreadSchema,
   LeaveSchema,
   MarkUnreadSchema,
   MemberPageSchema,
@@ -47,8 +48,12 @@ import {
   SendMessageSchema,
   SnapshotQuerySchema,
   SuccessSchema,
+  ThreadListSchema,
+  ThreadParamSchema,
+  ThreadSchema,
   UpdateConversationSchema,
   UpdateMemberSchema,
+  UpdateThreadSchema,
 } from "../service/contracts";
 import { chatLive } from "../service/live";
 import { chatLiveChannels } from "../service/live-channels";
@@ -179,6 +184,7 @@ const app = new Hono<AuthContext>()
         ...context(c),
         conversationId: c.req.valid("param").conversation,
         messageId: c.req.valid("query").message,
+        thread: c.req.valid("query").thread,
       });
       return respond(c, result.ok ? ok({ cursor, ...result.data }) : result);
     },
@@ -198,6 +204,68 @@ const app = new Hono<AuthContext>()
         }),
       ),
   )
+  .get(
+    "/conversations/:conversation/threads",
+    description("List all chat threads, including archived threads", ThreadListSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    async (c) => respond(c, chatService.threads.list({ ...context(c), conversationId: c.req.valid("param").conversation })),
+  )
+  .post(
+    "/conversations/:conversation/threads",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Create a chat thread",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(ThreadSchema, "Idempotent retry"),
+        201: jsonResponse(ThreadSchema, "Created thread"),
+        403: jsonResponse(z.object({ code: z.literal("FORBIDDEN"), message: z.string() }), "Chat admin permission required"),
+        409: jsonResponse(
+          z.object({ code: z.enum(["THREAD_NAME_TAKEN", "THREAD_LIMIT", "THREADS_UNAVAILABLE", "CONFLICT"]), message: z.string() }),
+          "Name, limit, channel or create intent conflict",
+        ),
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", CreateThreadSchema, invalidInput),
+    async (c) => {
+      const result = await chatService.threads.create({
+        ...context(c),
+        conversationId: c.req.valid("param").conversation,
+        input: c.req.valid("json"),
+      });
+      return result.ok ? respond(c, ok(result.data.thread), result.data.created ? 201 : 200) : respond(c, result);
+    },
+  )
+  .patch(
+    "/conversations/:conversation/threads/:thread",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Rename, describe, archive or restore a chat thread",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(ThreadSchema, "Updated thread"),
+        403: jsonResponse(z.object({ code: z.literal("FORBIDDEN"), message: z.string() }), "Chat admin permission required"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Thread not in this chat"),
+        409: jsonResponse(
+          z.object({ code: z.literal("THREAD_NAME_TAKEN"), message: z.string() }),
+          "Name already used, including archived threads",
+        ),
+      },
+    }),
+    validator("param", ThreadParamSchema, invalidInput),
+    validator("json", UpdateThreadSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.threads.update({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          threadId: c.req.valid("param").thread,
+          input: c.req.valid("json"),
+        }),
+      ),
+  )
   .post(
     "/conversations/:conversation/messages",
     describeRoute({
@@ -207,6 +275,9 @@ const app = new Hono<AuthContext>()
       responses: {
         200: jsonResponse(MessageViewSchema, "Idempotent retry"),
         201: jsonResponse(MessageViewSchema, "Posted message"),
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Invalid input or reply thread mismatch"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Chat, thread or reply target not found"),
+        409: jsonResponse(z.object({ code: z.literal("THREAD_ARCHIVED"), message: z.string() }), "Thread is archived"),
         429: {
           ...jsonResponse(
             z.object({ code: z.literal("RATE_LIMITED").optional(), message: z.string() }),
@@ -297,6 +368,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/conversations/:conversation/members/preview",
+    auth.readOnly,
     description("Preview people joining a chat through people and groups", MemberPreviewSchema),
     validator("param", ConversationParamSchema, invalidInput),
     validator("json", AddMembersSchema, invalidInput),

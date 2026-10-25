@@ -52,11 +52,11 @@ const markdownAttachment = (c: Context, filename: string, body: string) =>
 export const createGqlApi = (options: GqlApiOptions = {}) =>
   new Hono<AuthContext>()
     .use(options.requireAuthenticated ?? auth.requireRole("authenticated"))
-    .use("/by-base/:baseId/*", requirePublicIdParam("baseId", "base", "Base", options.resolveId))
-    .use("/by-base/:baseId/views/:viewId/*", requirePublicIdParam("viewId", "view", "View", options.resolveId))
-    .use("/by-base/:baseId/preview", queryAdmissionMiddleware())
-    .use("/by-base/:baseId/execute", queryAdmissionMiddleware())
-    .use("/by-base/:baseId/views/:viewId/execute", queryAdmissionMiddleware())
+    .use("/by-base/:baseId/*", auth.readOnlyMiddleware(requirePublicIdParam("baseId", "base", "Base", options.resolveId)))
+    .use("/by-base/:baseId/views/:viewId/*", auth.readOnlyMiddleware(requirePublicIdParam("viewId", "view", "View", options.resolveId)))
+    .use("/by-base/:baseId/preview", auth.readOnlyMiddleware(queryAdmissionMiddleware()))
+    .use("/by-base/:baseId/execute", auth.readOnlyMiddleware(queryAdmissionMiddleware()))
+    .use("/by-base/:baseId/views/:viewId/execute", auth.readOnlyMiddleware(queryAdmissionMiddleware()))
     .get(
       "/by-base/:baseId/assistant/SKILL.md",
       describeRoute({
@@ -110,6 +110,7 @@ export const createGqlApi = (options: GqlApiOptions = {}) =>
     )
     .post(
       "/by-base/:baseId/preview",
+      auth.readOnly,
       describeRoute({
         tags: ["Grids:GQL"],
         summary: "Parse and preview a GQL statement",
@@ -139,6 +140,7 @@ export const createGqlApi = (options: GqlApiOptions = {}) =>
     )
     .post(
       "/by-base/:baseId/execute",
+      auth.readOnly,
       describeRoute({
         tags: ["Grids:GQL"],
         summary: "Execute a GQL statement for records/table surfaces",
@@ -167,6 +169,7 @@ export const createGqlApi = (options: GqlApiOptions = {}) =>
     )
     .post(
       "/by-base/:baseId/views/:viewId/execute",
+      auth.readOnly,
       describeRoute({
         tags: ["Grids:GQL"],
         summary: "Execute the exact stored GQL source for one saved view",
@@ -190,6 +193,7 @@ export const createGqlApi = (options: GqlApiOptions = {}) =>
     )
     .post(
       "/by-base/:baseId/autocomplete",
+      auth.readOnly,
       describeRoute({
         tags: ["Grids:GQL"],
         summary: "Return permission-safe GQL autocomplete items and diagnostics",
@@ -238,6 +242,7 @@ export const createGqlApi = (options: GqlApiOptions = {}) =>
     )
     .post(
       "/by-base/:baseId/compile-view",
+      auth.readOnly,
       describeRoute({
         tags: ["Grids:GQL"],
         summary: "Compile and canonicalize a GQL statement for a saved view",
