@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import type { AppRegistryEntry } from "../contracts/registry";
 import * as registry from "./registry";
-import { ensureRuntimeWatcher, registeredCoreRelease, stopRuntimeWatcher } from "./runtime-watcher";
+import { ensureRuntimeWatcher, registeredCoreRelease, registeredPwaBuilds, stopRuntimeWatcher } from "./runtime-watcher";
 
 test("Core's release follows registry refreshes and is cleared on stop", async () => {
   const entry = (id: string, release: string): AppRegistryEntry => ({
@@ -28,21 +28,27 @@ test("Core's release follows registry refreshes and is cleared on stop", async (
   ];
   try {
     expect(registeredCoreRelease()).toBeUndefined();
+    expect(registeredPwaBuilds()).toEqual({});
     await ensureRuntimeWatcher();
     expect(registeredCoreRelease()).toBe("sha-core-before");
+    expect(registeredPwaBuilds()).toEqual({ core: ":sha-core-before" });
     expect(onChange).toBeDefined();
     apps = [entry("core", "sha-core-after")];
     await onChange!();
     expect(registeredCoreRelease()).toBe("sha-core-after");
+    expect(registeredPwaBuilds()).toEqual({ core: ":sha-core-after" });
     apps = [entry("mail", "sha-mail")];
     await onChange!();
     expect(registeredCoreRelease()).toBeUndefined();
+    expect(registeredPwaBuilds()).toEqual({});
     apps = [entry("core", "sha-core-after")];
     await onChange!();
     await stopRuntimeWatcher();
     expect(registeredCoreRelease()).toBeUndefined();
+    expect(registeredPwaBuilds()).toEqual({});
     await ensureRuntimeWatcher();
     expect(registeredCoreRelease()).toBe("sha-core-after");
+    expect(registeredPwaBuilds()).toEqual({ core: ":sha-core-after" });
   } finally {
     await stopRuntimeWatcher();
     for (const spy of spies.toReversed()) spy.mockRestore();

@@ -30,9 +30,14 @@ const setup = async (profiles: Record<string, PluginCloudState>) => {
       ),
     }),
   );
-  const run = async (args: string[], extraPath?: string) => {
+  const run = async (args: string[], extraPath?: string, selectedConfig = configPath) => {
     const child = Bun.spawn([process.execPath, "run", join(import.meta.dir, "index.ts"), ...args], {
-      env: { PATH: [extraPath, process.env.PATH ?? ""].filter(Boolean).join(":"), HOME: dir, XDG_CONFIG_HOME: dir, CLD_CONFIG: configPath },
+      env: {
+        PATH: [extraPath, process.env.PATH ?? ""].filter(Boolean).join(":"),
+        HOME: dir,
+        XDG_CONFIG_HOME: dir,
+        CLD_CONFIG: selectedConfig,
+      },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -46,7 +51,7 @@ const setup = async (profiles: Record<string, PluginCloudState>) => {
   const store = join(dir, "cloud", "cld", "plugins", "store");
   const stored = async () => (await readdir(store).catch(() => [] as string[])).filter((name) => !name.startsWith(".")).sort();
   const config = async () => JSON.parse(await readFile(configPath, "utf8"));
-  return { dir, run, stored, config };
+  return { dir, run, stored, config, configPath };
 };
 
 test("profiles lock their own verified plugin versions and share identical ones", async () => {
@@ -119,14 +124,14 @@ test("profiles lock their own verified plugin versions and share identical ones"
   expect((await cli.run(["skills", "list"])).stdout.trim()).toBe(join(skills, "cloud-cli"));
 
   // Cloud A moves to v2: list shows the update, update installs it, and the
-  // now unused v1 leaves the store because both profiles use the same v2.
+  // previous bundle remains available to other config files.
   clouds.a.plugins = [v2];
   const outdated = await cli.run(["plugins", "list", "--all", "--json"]);
   expect(JSON.parse(outdated.stdout).plugins.map((row: { status: string }) => row.status)).toEqual(["update available", "ok"]);
   const updated = await cli.run(["plugins", "update"]);
   expect(updated.exitCode, updated.stderr).toBe(0);
   expect(updated.stdout).toContain('Updated echo 1.0.0 → 2.0.0 (profile "a")');
-  expect(await cli.stored()).toEqual([v2.manifest.digest]);
+  expect(await cli.stored()).toEqual([v1.manifest.digest, v2.manifest.digest].sort());
   // The skill followed: both profiles use 2.0.0, and the 1.0.0 folder is gone.
   expect(await readFile(join(skills, "cloud-cli", "SKILL.md"), "utf8")).toContain("| a | echo | 2.0.0 |");
   expect(await readdir(join(skills, "cloud-cli", "references", "echo"))).toEqual(["2.0.0"]);
@@ -135,9 +140,9 @@ test("profiles lock their own verified plugin versions and share identical ones"
   const removed = await cli.run(["plugins", "remove", "echo"]);
   expect(removed.exitCode, removed.stderr).toBe(0);
   expect((await cli.config()).profiles.a.plugins).toEqual({});
-  expect(await cli.stored()).toEqual([v2.manifest.digest]);
+  expect(await cli.stored()).toEqual([v1.manifest.digest, v2.manifest.digest].sort());
   expect((await cli.run(["--profile", "b", "plugins", "remove", "echo"])).exitCode).toBe(0);
-  expect(await cli.stored()).toEqual([]);
+  expect(await cli.stored()).toEqual([v1.manifest.digest, v2.manifest.digest].sort());
   expect(await readFile(join(skills, "cloud-cli", "SKILL.md"), "utf8")).toContain("No module is installed for any profile yet");
   expect((await cli.run(["skills", "remove", skills])).exitCode).toBe(0);
   expect(await readdir(skills)).toEqual([]);
@@ -322,7 +327,7 @@ test("fd0 failures report the first stderr line and continue to the next profile
   expect(json.stderr).toBe("");
 });
 
-test("profile rm signs a profile out, drops the plugin versions no other profile uses, and rewrites the skill", async () => {
+test("profile rm signs a profile out, retains shared bundles, and rewrites the skill", async () => {
   const [v1, v2] = [await servedEchoPlugin("1.0.0"), await servedEchoPlugin("2.0.0")];
   const clouds: Record<"a" | "b" | "c", PluginCloudState & { revoked: string[] }> = {
     a: { plugins: [v1], authorizations: [], revoked: [] },
@@ -378,20 +383,20 @@ test("profile rm signs a profile out, drops the plugin versions no other profile
   expect((await cli.run(["profile", "rm", "a", "-y"])).stderr).toContain("`cld profile use c`.");
 
   // A refused revocation warns on stderr like `cld logout` and still removes c; stdout stays JSON.
-  // c was the last profile on 2.0.0: that version leaves the store and the skill.
+  // c was the last profile on 2.0.0: that version leaves the skill, but stays in the shared store.
   const json = await cli.run(["--json", "profile", "rm", "c", "-y"]);
   expect(json.exitCode, json.stderr).toBe(0);
   expect(json.stderr).toBe("Warning: Remote OAuth revocation failed (503). Removing local credentials anyway.\n");
   expect(JSON.parse(json.stdout)).toEqual({ profile: "c", removed: true });
   expect(clouds.c.revoked).toEqual(["c-refresh"]);
-  expect(await cli.stored()).toEqual([v1.manifest.digest]);
+  expect(await cli.stored()).toEqual([v1.manifest.digest, v2.manifest.digest].sort());
   expect(await readdir(join(skills, "cloud-cli", "references", "echo"))).toEqual(["1.0.0"]);
 
   // The only profile may go although it is current; nothing is current afterwards.
   const last = await cli.run(["profile", "rm", "a", "--yes"]);
   expect(last).toEqual({ exitCode: 0, stdout: 'Removed profile "a".\n', stderr: "" });
   expect(await cli.config()).toEqual({ profiles: {}, skills: { targets: ["~/agent-skills"] } });
-  expect(await cli.stored()).toEqual([]);
+  expect(await cli.stored()).toEqual([v1.manifest.digest, v2.manifest.digest].sort());
   expect(await skill()).toContain("No module is installed for any profile yet");
   expect(clouds.a.revoked).toEqual([]);
 }, 30_000);
@@ -771,3 +776,21 @@ test("built-ins and package module names win, while package short-name declarati
     inactive: [],
   });
 }, 30_000);
+
+test("another config cannot delete installed bundles when updating or removing profiles", async () => {
+  const v1 = await servedEchoPlugin("1.0.0");
+  const v2 = await servedEchoPlugin("2.0.0");
+  const state = { plugins: [v1], authorizations: [] } satisfies PluginCloudState;
+  const cli = await setup({ a: state });
+  expect((await cli.run(["plugins", "install", "echo"])).exitCode).toBe(0);
+  const otherConfig = join(cli.dir, "other.json");
+  await writeFile(otherConfig, await readFile(cli.configPath));
+  state.plugins = [v2];
+  const update = await cli.run(["plugins", "update"], undefined, otherConfig);
+  expect(update.exitCode, update.stderr).toBe(0);
+  expect((await cli.run(["echo", "reference"])).stdout).toBe("# Echo 1.0.0\n");
+  const removed = await cli.run(["profile", "rm", "a", "--yes"], undefined, otherConfig);
+  expect(removed.exitCode, removed.stderr).toBe(0);
+  expect((await cli.run(["echo", "reference"])).stdout).toBe("# Echo 1.0.0\n");
+  expect((await cli.run(["echo", "whoami"])).exitCode).toBe(0);
+});

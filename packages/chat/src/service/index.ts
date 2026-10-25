@@ -4,6 +4,7 @@ import { z } from "zod";
 import { conversations } from "./conversations";
 import { messages } from "./messages";
 import { readState } from "./read-state";
+import { threads } from "./threads";
 
 const log = logger("chat:api");
 
@@ -39,7 +40,7 @@ const health = async (): Promise<ChatHealth> => {
   return { status, observedAt: new Date().toISOString(), database: { status, latencyMs } };
 };
 
-export const chatService = { health, conversations, messages, readState };
+export const chatService = { health, conversations, messages, readState, threads };
 export type ChatService = typeof chatService;
 
 export { loadChatView } from "./snapshot";

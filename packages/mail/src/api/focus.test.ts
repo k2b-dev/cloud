@@ -46,7 +46,7 @@ suite("Mail focus API", () => {
   test("projects conversation and mailbox IDs independently", async () => {
     const conversationId = "22222222-2222-4222-8222-222222222222";
     const mailboxId = "33333333-3333-4333-8333-333333333333";
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
     spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
     spyOn(focus, "listFocusConversations").mockResolvedValue({
@@ -96,7 +96,7 @@ suite("Mail focus API", () => {
 
   test("passes mailboxes hidden in the overview as internal IDs and rejects malformed ones", async () => {
     const mailboxId = "33333333-3333-4333-8333-333333333333";
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     const resolve = spyOn(publicResources, "resolveExistingPublicIds").mockResolvedValue([mailboxId]);
     const list = spyOn(focus, "listFocusConversations").mockResolvedValue({
       ok: true,
@@ -119,7 +119,7 @@ suite("Mail focus API", () => {
 
   test("saves a pin or hide for the signed-in person on the mailbox's internal ID", async () => {
     const mailboxId = "33333333-3333-4333-8333-333333333333";
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
     const save = spyOn(mailboxPreferences, "setMailboxPreference").mockResolvedValue(ok({ pinned: false, hidden: true }));
     const request = (body: unknown) =>
@@ -150,7 +150,7 @@ suite("Mail focus API", () => {
   test("resolves public mailbox and conversation IDs for overview details", async () => {
     const mailboxId = "33333333-3333-4333-8333-333333333333";
     const conversationId = "22222222-2222-4222-8222-222222222222";
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
     spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
     spyOn(publicResources, "publicIds").mockImplementation(

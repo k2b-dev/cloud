@@ -124,6 +124,25 @@ describe("shell routes", () => {
     expect(await response.text()).toContain("Can't reach Example Cloud right now.");
   });
 
+  test("a launch resumes the validated remembered address, while tapping Start opens Start", async () => {
+    const headers = { Cookie: "pwa_session=test-session; pwa_last_address=" + encodeURIComponent("/pwa/spaces/demo/task?view=mine") };
+    let response = await request("/pwa/?launch", { headers });
+    expect(response.headers.get("location")).toBe("/pwa/_auth/session/launch?to=%2Fpwa%2Fspaces%2Fdemo%2Ftask%3Fview%3Dmine");
+    signIn();
+    response = await request("/pwa/?launch", { headers });
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/pwa/spaces/demo/task?view=mine");
+    response = await request("/pwa/", { headers });
+    expect(response.status).toBe(200);
+    expect(response.headers.getSetCookie().some((cookie) => cookie.startsWith("pwa_last_address=%2Fpwa%2F;"))).toBe(true);
+    for (const address of ["https://elsewhere.example/", "/pwa/_auth/session/renew", "/pwa/?pwa=ended", "/pwa/offline"]) {
+      const response = await request("/pwa/?launch", {
+        headers: { Cookie: "pwa_session=test-session; pwa_last_address=" + encodeURIComponent(address) },
+      });
+      expect(response.headers.get("location")).toBe("/pwa/");
+    }
+  });
+
   test("a web session never opens Start", async () => {
     signIn("web");
     const response = await request("/pwa/", { headers: { Cookie: "session_token=test-session" } });
@@ -152,6 +171,22 @@ describe("shell routes", () => {
       }
     });
 
+  test("/pwa/?pwa=ended deletes drafts only with the launch's marker, and removes the marker", async () => {
+    // The Welcome island's `clearDrafts` prop as the browser receives it (seroval: 2 is true, 3 false, 1 absent).
+    const clearDrafts = (html: string) => {
+      const props = /data-props="([^"]*)" data-file="Welcome\.island\.tsx"/.exec(html)?.[1]?.replaceAll("&quot;", '"');
+      const tree = JSON.parse(props ?? "null") as { t: { p: { k: string[]; v: { s: number }[] } } };
+      const index = tree.t.p.k.indexOf("clearDrafts");
+      return index < 0 ? undefined : tree.t.p.v[index]?.s === 2;
+    };
+    const marked = await request("/pwa/?pwa=ended", { headers: { Cookie: "cloud.locale=en; pwa_ended=1" } });
+    expect(marked.headers.getSetCookie().some((cookie) => cookie.startsWith("pwa_ended=;") && cookie.includes("Max-Age=0"))).toBe(true);
+    expect(clearDrafts(await marked.text())).toBe(true);
+    const typed = await request("/pwa/?pwa=ended", { headers: { Cookie: "cloud.locale=en" } });
+    expect(typed.headers.getSetCookie().some((cookie) => cookie.startsWith("pwa_ended="))).toBe(false);
+    expect(clearDrafts(await typed.text())).toBe(false);
+  });
+
   test("Start lists the parts and Settings, and shows a calm empty state without parts", async () => {
     signIn();
     let html = await (await request("/pwa/", { headers: { Cookie: "pwa_session=test-session; cloud.locale=en" } })).text();
@@ -179,6 +214,7 @@ describe("shell routes", () => {
     expect(html).toContain("Mia Muster");
     expect(html).toContain("mia.muster@example.test");
     expect(html).toContain("&quot;iPhone&quot;");
+    expect(html).toMatch(/<input[^>]*disabled[^>]*maxlength="80"/);
     expect(html).toMatch(/Cloud \d+\.\d+\.\d+/);
     expect(html).toContain('href="/pwa/"');
   });
@@ -211,7 +247,7 @@ describe("manifest", () => {
       id: "/pwa/",
       name: "Example Cloud",
       short_name: "Example Cloud",
-      start_url: "/pwa/",
+      start_url: "/pwa/?launch",
       scope: "/pwa/",
       display: "standalone",
       background_color: "#fafafa",

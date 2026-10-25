@@ -844,6 +844,11 @@ Set `variant="conversation"` for messages between people, for example under a
 [message rows](/en/ui/content/message-rows). Without it, the composer keeps
 the assistant prompt's behavior.
 
+The conversation composer shares the feed's reading column: at most
+`--k2b-reading-column` less the 0.75 rem inset of the message rows on each
+side, centered, so field and bubbles share their edges on a wide window. A
+narrower container gives it its whole width.
+
 The conversation composer is one row without a card: an attach button with a
 plain plus, a quiet pill-shaped field, and a round Send button. The field is muted at rest
 and shows the surface with a ring while it has focus; only its paint changes.
@@ -863,6 +868,11 @@ command list and its search field instead; offer file selection as an
   collapses for a frame and the feed above keeps the newest message in place.
   A placeholder longer than the empty field stays on its one line and ends
   with an ellipsis.
+- **Reply:** `reply` shows the message the draft answers above the field,
+  on the same quiet tint as a quote in a message: the author and at most two
+  lines. Its × button calls `onCancel`; `onSelect` makes the quote a button,
+  for example to jump to the original. The application decides where the reply
+  goes and clears `reply` after sending.
 - **Hint line:** one line of fixed height above the field, always reserved,
   so a hint never moves the field. Pass `hint` for short application notes,
   such as what people without access see after a reference was attached.

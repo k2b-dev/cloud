@@ -1,10 +1,12 @@
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, validateAppSkillCatalog } from "../ai/app-skills";
+import { createOwnedAppAccessRoutes } from "../api/app-access";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
 import { startLiveOutbox } from "../events/live";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
 import { registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
+import { appAccessManagementPath } from "./app-access-path";
 import { invokeCapabilityStream } from "./capability-streams";
 import { withCapabilityRequestTimeout } from "./capability-timeout";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
@@ -47,6 +49,7 @@ import {
 import { type BoundNotificationMap, bindNotificationDefinitions, type NotificationDefinitionMap } from "../contracts/notification-types";
 import { type PlatformPermission, PlatformPermissionSchema } from "../contracts/outgoing-mail";
 import { isPwaPartId, PWA_AUTH_PATH, PWA_CANVAS_COLORS, PWA_MANIFEST_PATH, PWA_SHELL_APP_ID } from "../contracts/pwa";
+import { rememberedPwaAddress } from "../contracts/pwa-location";
 import type { AppRegistryEntry } from "../contracts/registry";
 import type { AppSettingsMap, KindToType } from "../contracts/settings-types";
 import type { Role } from "../contracts/shared";
@@ -91,6 +94,7 @@ import { cliPluginRoutePrefixes, createCliPluginRoutes, validateAppCliModules } 
 import { FONT_PRELOAD_LINKS } from "./font-preloads";
 import { createHeartbeat, createRegistryMembership } from "./heartbeat";
 import { compileHelp } from "./help";
+import { createHttpDrain } from "./http-drain";
 import { createPageResponses } from "./page-responses";
 import { configurePostgresApplicationName } from "./postgres-application-name";
 import { getProcessSync, startProcessSync } from "./process-sync";
@@ -116,6 +120,10 @@ export type PageOptions = {
   lang?: string;
   /** Renders the document as a page of the installable mobile app; set by `PwaLayout`. */
   pwa?: { name: string };
+  /** A successful app document may keep its same-document address changes. */
+  pwaAddress?: string;
+  /** The actual rendering application, including on error pages. */
+  pwaOwner?: string;
 };
 
 type ResolvedPageOptions = PageOptions & { performanceRoute?: string; themePreference?: CloudThemePreference; appAccent?: string };
@@ -547,7 +555,13 @@ export const defineApp = <
         user && c.get("settings")?.observability?.web_vitals?.enabled === true ? (matchedRouteTemplate(c) ?? undefined) : undefined;
       // Pages of the mobile app render in PwaLayout, which shows no announcements, Help, or rail; reading them would
       // only delay every tab switch. Core's pages below /pwa/_auth, such as its not-found page, keep the web layout.
-      if (isAppPagePath(c.req.path)) return;
+      if (isAppPagePath(c.req.path)) {
+        c.get("page").pwaOwner = opts.id;
+        const url = new URL(c.req.url);
+        const address = rememberedPwaAddress(url.pathname + url.search);
+        if (user && address && c.newResponse(null).status < 400) c.get("page").pwaAddress = address;
+        return;
+      }
       await Promise.all([
         preloadLayoutAnnouncements(c),
         preloadLayoutHelp(c),
@@ -555,7 +569,7 @@ export const defineApp = <
         user ? readRailSnapshot(user).then((snapshot) => c.set("railPreferences", snapshot)) : undefined,
       ]);
     }),
-    createPageResponses(html),
+    createPageResponses(html, opts.id),
   );
 
   // ── 2. Meta ───────────────────────────────────────────────────────────
@@ -599,6 +613,7 @@ export const defineApp = <
     const port = startOpts.port ?? 3000;
     const baseUrl = opts.baseUrl;
     const log = logger("app");
+    const http = createHttpDrain();
     if (!meta.access) log.warn("Application has no access declaration; legacy entry and discovery rules remain active", { appId: meta.id });
 
     // Settings are encrypted at rest, so every container needs the secret. It
@@ -896,6 +911,7 @@ export const defineApp = <
         for (const kind of ["queries", "actions"] as const) {
           server.post(
             `/api/_internal/capabilities/v1/streams/${kind}/:capabilityId/:verb`,
+            kind === "queries" ? auth.readOnly : auth.requireOAuthScope("write", "admin"),
             capabilityAuth(kind),
             auth.requireOAuthScope(kind === "queries" ? "read" : "write", "admin"),
             async (c) => {
@@ -922,14 +938,19 @@ export const defineApp = <
         }
         const capabilityReadScope = auth.requireOAuthScope("read", "admin");
         const capabilityWriteScope = auth.requireOAuthScope("write", "admin");
-        server.post("/api/_internal/capabilities/v1/queries/:capabilityId", capabilityAuth("queries"), capabilityReadScope, (c) =>
-          invoke(c, "query"),
+        server.post(
+          "/api/_internal/capabilities/v1/queries/:capabilityId",
+          auth.readOnly,
+          capabilityAuth("queries"),
+          capabilityReadScope,
+          (c) => invoke(c, "query"),
         );
         server.post("/api/_internal/capabilities/v1/actions/:capabilityId", capabilityAuth("actions"), capabilityWriteScope, (c) =>
           invoke(c, "action"),
         );
         server.post(
           "/api/_internal/capabilities/v1/actions/:capabilityId/review",
+          auth.readOnly,
           capabilityAuth("actions", true),
           capabilityReadScope,
           (c) => invoke(c, "review"),
@@ -963,15 +984,12 @@ export const defineApp = <
       }
 
       cleanup.push(() => stopAppAccessConnections());
+      if (meta.access?.kind === "grants") {
+        server.route(appAccessManagementPath(meta), createOwnedAppAccessRoutes(meta, opts.access?.canManage));
+      }
       server.use(
         "*",
-        requireAppAccess(meta, (c, message) =>
-          ssr.error(c, 403, {
-            title: "No access",
-            description: message,
-            layout: "minimal",
-          }),
-        ),
+        requireAppAccess(meta, (c) => ssr.appAccessDenied(c, meta)),
       );
 
       if (opts.cli && cliModules.length > 0) server.route(CLOUD_CLI_PLUGIN_ROUTE, createCliPluginRoutes(meta.id, opts.cli));
@@ -1066,18 +1084,36 @@ export const defineApp = <
       log.info(`Registered "${meta.id}"`, { baseUrl });
 
       // Graceful shutdown
-      let stopping = false;
-      const shutdown = async () => {
-        if (stopping) return;
-        stopping = true;
-        log.info(`Stopping: ${meta.id}`);
-        await stopStartedResources();
+      let shutdownPromise: Promise<void> | undefined;
+      const shutdown = () =>
+        (shutdownPromise ??= (async () => {
+          const drained = http.stop();
+          log.info(`Stopping: ${meta.id}`);
+          try {
+            await drained;
+          } finally {
+            await stopStartedResources();
+          }
+        })());
+
+      const stopAndExit = () =>
+        void shutdown().then(
+          () => process.exit(0),
+          (error: unknown) => {
+            log.error("HTTP shutdown failed", { appId: meta.id, error: error instanceof Error ? error.message : String(error) });
+            process.exit(1);
+          },
+        );
+      process.on("SIGTERM", stopAndExit);
+      process.on("SIGINT", stopAndExit);
+
+      return {
+        hostname: "0.0.0.0",
+        port,
+        development: isDevelopment,
+        idleTimeout: REQUEST_IDLE_TIMEOUT_SECONDS,
+        fetch: (request, bunServer) => http.fetch(request, bunServer, (request) => server.fetch(request, bunServer)),
       };
-
-      process.on("SIGTERM", () => void shutdown().then(() => process.exit(0)));
-      process.on("SIGINT", () => void shutdown().then(() => process.exit(0)));
-
-      return { hostname: "0.0.0.0", port, development: isDevelopment, idleTimeout: REQUEST_IDLE_TIMEOUT_SECONDS, fetch: server.fetch };
     } catch (error) {
       await stopStartedResources();
       throw error;

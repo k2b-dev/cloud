@@ -76,7 +76,12 @@ if (process.env.NOTEBOOKS_VERSION_RESTORE_CHILD !== "1") {
     const writer = makeUser("writer");
     const reader = makeUser("reader");
     let currentUser = writer;
-    spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async () => ({ kind: "user", payload: {}, user: currentUser, scopes: [] }));
+    spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async () => ({
+      kind: "user",
+      payload: {},
+      user: currentUser,
+      scopes: ["read", "write"],
+    }));
     const notebookId = crypto.randomUUID();
     const notebookShortId = testShortId();
     const headers = { authorization: "Bearer version-restore" };

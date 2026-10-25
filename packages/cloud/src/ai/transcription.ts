@@ -31,7 +31,18 @@ export const createAiTranscriptionProvider = (profile: AiModelProfile, apiKey?: 
       "transcription_configuration_failed",
       "Audio transcription is not set up: the audio model has no base URL. An administrator can set the audio provider URL in the AI settings.",
     );
-  return openAICompatibleTranscription(profile.model, { name: profile.provider, baseURL, apiKey });
+  const provider = openAICompatibleTranscription(profile.model, { name: profile.provider, baseURL, apiKey });
+  return {
+    name: provider.name,
+    model: provider.model,
+    transcribe: async (request) => {
+      try {
+        return await provider.transcribe(request);
+      } catch (error) {
+        throw describeTranscriptionFailure(error, "provider", request.signal?.aborted);
+      }
+    },
+  };
 };
 
 export const resolveAiAudioModel = async (
