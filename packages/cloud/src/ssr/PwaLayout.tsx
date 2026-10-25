@@ -1,6 +1,9 @@
 import { LocaleProvider, MobileShell, TabBar, type TabBarItem } from "@k2b/ui";
 import type { JSX } from "solid-js";
-import { PWA_SCOPE } from "../contracts/pwa";
+import { buildMetadata } from "../_internal/build-metadata";
+import { registeredPwaBuilds } from "../_internal/runtime-watcher";
+import { PWA_COOKIES, PWA_LIMITS, PWA_SCOPE } from "../contracts/pwa";
+import { pwaBuild } from "../contracts/pwa-builds";
 import { getLocale } from "../server/locale";
 import { visiblePwaParts } from "./app-navigation";
 import type { LayoutContext } from "./layout-context";
@@ -55,6 +58,10 @@ export default function PwaLayout(props: PwaLayoutProps) {
 
   const parts = visiblePwaParts(getDisplayRuntimeContext(c).apps, user, locale);
   const path = new URL(c.req.raw.url).pathname;
+  const owner = page.pwaOwner;
+  const ownBuild = pwaBuild(buildMetadata);
+  const coreBuild = registeredPwaBuilds().core;
+  const builds = { ...(owner && ownBuild ? { [owner]: ownBuild } : {}), ...(coreBuild ? { core: coreBuild } : {}) };
   const tabs = parts.slice(0, TAB_PARTS);
   const currentTab = tabs.find((part) => path === part.pwa.href || path.startsWith(`${part.pwa.href}/`));
   // Start is titled with the installation's name; a part's first page carries the part's name.
@@ -99,7 +106,13 @@ export default function PwaLayout(props: PwaLayoutProps) {
       >
         {props.children}
       </MobileShell>
-      <PwaRuntime keepalive={!!user} cloud={cloud} />
+      <PwaRuntime
+        keepalive={!!user}
+        accountId={user?.id}
+        builds={builds}
+        cloud={cloud}
+        rememberAddress={page.pwaAddress ? { cookie: PWA_COOKIES.lastAddress, maxAge: PWA_LIMITS.idleDays * 86_400 } : undefined}
+      />
     </LocaleProvider>
   );
 }
