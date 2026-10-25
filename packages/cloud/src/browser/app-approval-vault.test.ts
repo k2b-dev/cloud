@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { argon2id } from "hash-wasm";
 import { APP_APPROVAL_LIMITS, APP_APPROVAL_PATH, APP_APPROVAL_PROTOCOL } from "../contracts/app-approval";
 import { appApproval } from "./app-approval";
@@ -7,6 +7,17 @@ const setup = async () => {
   const session = await appApproval.vault.create();
   const method = await session.pin("012345");
   return { session, config: { version: 1 as const, id: session.id, methods: [method] } };
+};
+const changedPinFixture = async () => {
+  const { session, config } = await setup();
+  try {
+    const key = await session.createKey();
+    const blob = await session.sealRecord({ key }, "one");
+    const pin = await session.pin("987654");
+    return { config: { ...config, methods: [pin] }, blob, publicKey: key.publicKey };
+  } finally {
+    session.lock();
+  }
 };
 const record = (value: unknown) => value;
 describe("appApproval vault", () => {
@@ -80,17 +91,22 @@ describe("appApproval vault", () => {
     a.session.lock();
     b.session.lock();
   });
-  test("PIN change works without changing Cloud keys and rejects the old PIN", async () => {
-    const { session, config } = await setup();
-    const key = await session.createKey();
-    const blob = await session.sealRecord({ key }, "one");
-    const pin = await session.pin("987654");
-    const changed = { ...config, methods: [pin] };
-    await expect(appApproval.vault.unlock(changed, "pin", "012345")).rejects.toThrow();
-    const unlocked = await appApproval.vault.unlock(changed, "pin", "987654");
-    expect(await unlocked.openRecord(blob, "one", record)).toMatchObject({ key: { publicKey: key.publicKey } });
-    unlocked.lock();
-    session.lock();
+  describe("PIN changes", () => {
+    let fixture: Awaited<ReturnType<typeof changedPinFixture>>;
+    beforeAll(async () => {
+      fixture = await changedPinFixture();
+    });
+    test("reject the old PIN", async () => {
+      await expect(appApproval.vault.unlock(fixture.config, "pin", "012345")).rejects.toThrow();
+    });
+    test("preserve Cloud keys after unlocking with the new PIN", async () => {
+      const unlocked = await appApproval.vault.unlock(fixture.config, "pin", "987654");
+      try {
+        expect(await unlocked.openRecord(fixture.blob, "one", record)).toMatchObject({ key: { publicKey: fixture.publicKey } });
+      } finally {
+        unlocked.lock();
+      }
+    });
   });
   test("PIN envelope decrypts using the documented WebCrypto format independently of the vault decoder", async () => {
     const { session, config } = await setup();
