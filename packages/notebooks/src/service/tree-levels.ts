@@ -198,14 +198,20 @@ export const listFiltered = async (params: {
         ? sql`notebooks.note_tags t JOIN notebooks.notes n ON n.id = t.note_id
             WHERE t.notebook_id = ${params.notebookId}::uuid AND t.tag = ${params.tag ?? ""}`
         : sql`notebooks.notes n WHERE n.notebook_id = ${params.notebookId}::uuid`;
+  // The page is read first and only its rows ask for sub-notes and tags, so the planner never hashes those indexes
+  // for the whole table.
   const rows = await sql<(DbTreeEntry & { tags: string[] })[]>`
-    SELECT
-      n.id, n.short_id, n.parent_id, n.title, n.position, n.created_at, n.updated_at, n.locked_at,
-      EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children,
-      ARRAY(SELECT nt.tag FROM notebooks.note_tags nt WHERE nt.note_id = n.id ORDER BY nt.tag) AS tags
-    FROM ${source}
-    ORDER BY n.updated_at DESC, n.title, n.short_id
-    LIMIT ${limit} OFFSET ${offset}
+    WITH page AS MATERIALIZED (
+      SELECT n.id, n.short_id, n.parent_id, n.title, n.position, n.created_at, n.updated_at, n.locked_at
+      FROM ${source}
+      ORDER BY n.updated_at DESC, n.title, n.short_id
+      LIMIT ${limit} OFFSET ${offset}
+    )
+    SELECT page.*,
+      EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = page.id) AS has_children,
+      ARRAY(SELECT nt.tag FROM notebooks.note_tags nt WHERE nt.note_id = page.id ORDER BY nt.tag) AS tags
+    FROM page
+    ORDER BY page.updated_at DESC, page.title, page.short_id
   `;
   const [count] = recents ? [{ count: rows.length }] : await sql<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM ${source}`;
   return { total: count?.count ?? 0, items: rows.map((row) => ({ ...toEntry(row), tags: row.tags })) };
