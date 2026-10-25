@@ -61,11 +61,13 @@ Für Eingänge gelten standardmäßig 100 MiB pro Datei und 1 GiB kumulativ insg
 
 ## Aktivität prüfen und exportieren {icon="activity"}
 
-**Aktivität** listet aufgezeichnete Änderungen an Dateien und Ordnern in allen Ablagen, die neuesten zuerst, mit Zeit, Person, Änderung, Element, Ablage und Weg. Auf schmalen Bildschirmen zeigt sie dieselben Einträge als Liste wie in Dateien. Sie öffnet mit den letzten 30 Tagen. Filtere nach **Ablage**, **Wer**, **Was** und **Wann**, oder suche nach einem Namen oder einem alten Pfad. Filter und Suche bleiben in der Adresse erhalten.
+**Aktivität** listet aufgezeichnete Änderungen an Dateien und Ordnern in lokalen Cloud-Ablagen, die neuesten zuerst, mit Zeit, Person, Änderung, Element, Ablage und Weg. Auf schmalen Bildschirmen zeigt sie dieselben Einträge als Liste wie in Dateien. Sie öffnet mit den letzten 30 Tagen. Filtere nach **Ablage**, **Wer**, **Was** und **Wann**, oder suche nach einem Namen oder einem alten Pfad. Filter und Suche bleiben in der Adresse erhalten.
 
 - **Läuft:** Die Änderung hat begonnen und ist noch nicht bestätigt.
 - **Ausgang unklar:** Dateien konnte das Ergebnis nicht bestätigen. Es sucht weiter nach einem Beleg in der Ablage.
 - **Ohne Eintrag in Cloud:** Dateien hat eine Änderung außerhalb von Cloud bemerkt, etwa über ein Netzlaufwerk. Solche Einträge nennen keine Person und keine Ursache.
+
+FreeIPA und andere POSIX-Ablagen haben weder Verlauf noch Export. Ihre Verlaufsansicht zeigt einen Hinweis, weil sich die historischen Unix-Rechte nicht prüfen lassen. Eine Aktion über mehrere Ablagen zeigt nur ihre lokale Cloud-Seite.
 
 **Exportieren** lädt die Einträge, die zu den Filtern passen, als CSV oder JSON Lines herunter. Wähle einen Zeitraum von höchstens einem Jahr und auf Wunsch eine Ablage; die Filter für Person, Änderung und Suche aus der Liste bleiben erhalten. Die Schaltfläche zeigt, wie viele Zeilen der Export enthält. Ein Export enthält höchstens 100.000 Zeilen; für mehr grenze Zeitraum, Ablage oder Filter ein. In CSV bekommt eine Zelle, die wie eine Tabellenformel beginnt, ein vorangestelltes Apostroph. Jeder Export steht im Audit-Log, auch wenn du den Download abbrichst. Ein fehlgeschlagener Download speichert nichts; starte ihn erneut. Unter Einstellungen legst du fest, wie lange der Verlauf aufbewahrt wird, von 30 bis 3.650 Tagen.
 

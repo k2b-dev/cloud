@@ -61,11 +61,13 @@ Inboxes default to 100 MiB per file and 1 GiB cumulative total, including links 
 
 ## Review and export file activity {icon="activity"}
 
-**Activity** lists recorded changes to files and folders across all storage, newest first, with time, person, change, item, storage and channel. On narrow screens it shows the same entries as the list in Files. It opens on the last 30 days. Filter by **Storage**, **Who**, **What** and **When**, or search a name or an old path. Filters and search stay in the address.
+**Activity** lists recorded changes to files and folders across local Cloud storage, newest first, with time, person, change, item, storage and channel. On narrow screens it shows the same entries as the list in Files. It opens on the last 30 days. Filter by **Storage**, **Who**, **What** and **When**, or search a name or an old path. Filters and search stay in the address.
 
 - **Running:** the change has started and is not confirmed yet.
 - **Outcome unclear:** Files could not confirm the result. It keeps looking for proof in the storage.
 - **No Cloud entry:** Files noticed a change made outside Cloud, for example on a network drive. Such entries name no person and no cause.
+
+FreeIPA and other POSIX storage have no history or export. Their history view shows a notice because historical Unix permissions cannot be checked. An operation across storage areas shows only its local Cloud side.
 
 **Export** downloads the entries that match the filters as CSV or JSON Lines. Choose a period of at most one year and, optionally, one storage; the person, change and search filters of the list are kept. The button shows how many rows the export contains. An export holds at most 100,000 rows; for more, narrow the period, the storage or the filters. In CSV, a cell that starts like a spreadsheet formula gets a leading apostrophe. Every export is recorded in the audit log, also when you cancel the download. A download that fails saves nothing; start it again. Settings controls how long the history is kept, from 30 to 3,650 days.
 
