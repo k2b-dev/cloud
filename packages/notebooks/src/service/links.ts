@@ -55,7 +55,17 @@ export type GraphEdge = {
 export type NoteGraph = {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /**
+   * Present when the notebook is too large to draw whole: the graph then holds the pages around one page, and `total`
+   * is the number of pages in the notebook.
+   */
+  scope?: { around: string; total: number };
 };
+
+/** A notebook up to this size draws whole; a larger one draws the pages around one page. */
+export const GRAPH_WHOLE_NOTES = 500;
+/** The most pages the graph around one page holds, before their places in the tree are added. */
+export const GRAPH_AROUND_NOTES = 400;
 
 // ==========================
 // Link extraction
@@ -365,4 +375,116 @@ export const buildNotebookGraph = async (params: { notebookId: string }): Promis
     })),
     edges: edgeRows.map((e) => ({ source: e.source_short_id, target: e.target_short_id })),
   };
+};
+
+type GraphNoteRow = { id: string; short_id: string; title: string; parent_short_id: string | null; position: number; updated_at: Date };
+
+/** Pages linked with these pages, in either direction, inside the notebook. Bounded by `limit`. */
+const linkedWith = async (notebookId: string, ids: string[], limit: number): Promise<string[]> => {
+  if (ids.length === 0 || limit <= 0) return [];
+  const rows = await sql<{ id: string }[]>`
+    SELECT DISTINCT other.id
+    FROM (
+      SELECT target_note_id AS id FROM notebooks.note_links WHERE source_note_id = ANY(${sql.array(ids, "UUID")})
+      UNION ALL
+      SELECT source_note_id AS id FROM notebooks.note_links WHERE target_note_id = ANY(${sql.array(ids, "UUID")})
+    ) linked
+    JOIN notebooks.notes other ON other.id = linked.id AND other.notebook_id = ${notebookId}::uuid
+    LIMIT ${limit}
+  `;
+  return rows.map((row) => row.id);
+};
+
+/**
+ * The graph around one page of a large notebook: the page, the pages linked with it and with those, its own
+ * sub-pages, and the places of all of them in the tree, so areas and depths read as in the whole graph. Every query
+ * starts from these pages, so the cost does not grow with the notebook.
+ */
+export const buildNotebookGraphAround = async (params: { notebookId: string; noteId: string; total: number }): Promise<NoteGraph> => {
+  const { notebookId } = params;
+  const included = new Set<string>([params.noteId]);
+  const add = (ids: string[]) => {
+    for (const id of ids) {
+      if (included.size >= GRAPH_AROUND_NOTES) return;
+      included.add(id);
+    }
+  };
+  const first = await linkedWith(notebookId, [params.noteId], GRAPH_AROUND_NOTES);
+  add(first);
+  const children = await sql<{ id: string }[]>`
+    SELECT id FROM notebooks.notes
+    WHERE notebook_id = ${notebookId}::uuid AND parent_id = ${params.noteId}::uuid
+    ORDER BY position, title, short_id
+    LIMIT ${Math.max(0, GRAPH_AROUND_NOTES - included.size)}
+  `;
+  add(children.map((row) => row.id));
+  add(await linkedWith(notebookId, first, GRAPH_AROUND_NOTES - included.size));
+  // The way up from every page gives each one its area and depth.
+  const ancestors = await sql<{ id: string }[]>`
+    WITH RECURSIVE up AS (
+      SELECT parent_id AS id, 1 AS depth FROM notebooks.notes WHERE id = ANY(${sql.array([...included], "UUID")}) AND parent_id IS NOT NULL
+      UNION
+      SELECT n.parent_id, up.depth + 1 FROM notebooks.notes n JOIN up ON n.id = up.id WHERE n.parent_id IS NOT NULL AND up.depth < 64
+    )
+    SELECT DISTINCT id FROM up
+  `;
+  const ids = [...new Set([...included, ...ancestors.map((row) => row.id)])];
+  const idArray = sql.array(ids, "UUID");
+  const [noteRows, edgeRows, inRows] = await Promise.all([
+    sql<GraphNoteRow[]>`
+      SELECT n.id, n.short_id, n.title, p.short_id AS parent_short_id, n.position, n.updated_at
+      FROM notebooks.notes n
+      LEFT JOIN notebooks.notes p ON p.id = n.parent_id AND p.notebook_id = n.notebook_id
+      WHERE n.id = ANY(${idArray}) AND n.notebook_id = ${notebookId}::uuid
+      ORDER BY n.created_at ASC, n.short_id ASC
+    `,
+    sql<{ source_short_id: string; target_short_id: string }[]>`
+      SELECT src.short_id AS source_short_id, tgt.short_id AS target_short_id
+      FROM notebooks.note_links nl
+      JOIN notebooks.notes src ON src.id = nl.source_note_id
+      JOIN notebooks.notes tgt ON tgt.id = nl.target_note_id
+      WHERE nl.source_note_id = ANY(${idArray}) AND nl.target_note_id = ANY(${idArray})
+      ORDER BY src.short_id, tgt.short_id
+    `,
+    // A page keeps the size its links in the whole notebook give it.
+    sql<{ id: string; count: number }[]>`
+      SELECT nl.target_note_id AS id, COUNT(*)::int AS count
+      FROM notebooks.note_links nl
+      JOIN notebooks.notes src ON src.id = nl.source_note_id AND src.notebook_id = ${notebookId}::uuid
+      WHERE nl.target_note_id = ANY(${idArray})
+      GROUP BY nl.target_note_id
+    `,
+  ]);
+  const inDegree = new Map(inRows.map((row) => [row.id, row.count]));
+  const around = noteRows.find((row) => row.id === params.noteId)?.short_id ?? "";
+  return {
+    nodes: noteRows.map((n) => ({
+      id: n.short_id,
+      title: n.title,
+      inDegree: inDegree.get(n.id) ?? 0,
+      parentId: n.parent_short_id,
+      position: n.position,
+      updatedAt: n.updated_at.toISOString(),
+    })),
+    edges: edgeRows.map((e) => ({ source: e.source_short_id, target: e.target_short_id })),
+    scope: { around, total: params.total },
+  };
+};
+
+/** The graph the Links page draws: the whole notebook while it is small, otherwise the pages around one page. */
+export const buildNotebookGraphView = async (params: { notebookId: string; noteId: string | null }): Promise<NoteGraph> => {
+  const [count] = await sql<{ total: number }[]>`
+    SELECT COUNT(*)::int AS total FROM notebooks.notes WHERE notebook_id = ${params.notebookId}::uuid
+  `;
+  const total = count?.total ?? 0;
+  if (total <= GRAPH_WHOLE_NOTES) return buildNotebookGraph(params);
+  const noteId =
+    params.noteId ??
+    (
+      await sql<{ id: string }[]>`
+        SELECT id FROM notebooks.notes WHERE notebook_id = ${params.notebookId}::uuid AND parent_id IS NULL
+        ORDER BY position, title, short_id LIMIT 1
+      `
+    )[0]?.id;
+  return noteId ? buildNotebookGraphAround({ notebookId: params.notebookId, noteId, total }) : { nodes: [], edges: [] };
 };
