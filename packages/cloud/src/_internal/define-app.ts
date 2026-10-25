@@ -49,6 +49,7 @@ import {
 import { type BoundNotificationMap, bindNotificationDefinitions, type NotificationDefinitionMap } from "../contracts/notification-types";
 import { type PlatformPermission, PlatformPermissionSchema } from "../contracts/outgoing-mail";
 import { isPwaPartId, PWA_AUTH_PATH, PWA_CANVAS_COLORS, PWA_MANIFEST_PATH, PWA_SHELL_APP_ID } from "../contracts/pwa";
+import { rememberedPwaAddress } from "../contracts/pwa-location";
 import type { AppRegistryEntry } from "../contracts/registry";
 import type { AppSettingsMap, KindToType } from "../contracts/settings-types";
 import type { Role } from "../contracts/shared";
@@ -119,6 +120,10 @@ export type PageOptions = {
   lang?: string;
   /** Renders the document as a page of the installable mobile app; set by `PwaLayout`. */
   pwa?: { name: string };
+  /** A successful app document may keep its same-document address changes. */
+  pwaAddress?: string;
+  /** The actual rendering application, including on error pages. */
+  pwaOwner?: string;
 };
 
 type ResolvedPageOptions = PageOptions & { performanceRoute?: string; themePreference?: CloudThemePreference; appAccent?: string };
@@ -550,7 +555,13 @@ export const defineApp = <
         user && c.get("settings")?.observability?.web_vitals?.enabled === true ? (matchedRouteTemplate(c) ?? undefined) : undefined;
       // Pages of the mobile app render in PwaLayout, which shows no announcements, Help, or rail; reading them would
       // only delay every tab switch. Core's pages below /pwa/_auth, such as its not-found page, keep the web layout.
-      if (isAppPagePath(c.req.path)) return;
+      if (isAppPagePath(c.req.path)) {
+        c.get("page").pwaOwner = opts.id;
+        const url = new URL(c.req.url);
+        const address = rememberedPwaAddress(url.pathname + url.search);
+        if (user && address && c.newResponse(null).status < 400) c.get("page").pwaAddress = address;
+        return;
+      }
       await Promise.all([
         preloadLayoutAnnouncements(c),
         preloadLayoutHelp(c),
@@ -558,7 +569,7 @@ export const defineApp = <
         user ? readRailSnapshot(user).then((snapshot) => c.set("railPreferences", snapshot)) : undefined,
       ]);
     }),
-    createPageResponses(html),
+    createPageResponses(html, opts.id),
   );
 
   // ── 2. Meta ───────────────────────────────────────────────────────────
