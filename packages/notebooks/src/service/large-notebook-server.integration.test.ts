@@ -58,7 +58,13 @@ type Plan = {
   Plans?: Plan[];
 };
 const nodes = (plan: Plan): Plan[] => [plan, ...(plan.Plans ?? []).flatMap(nodes)];
-const indexedPlan = async (query: SQL.Query<unknown>, indexes: string[], transaction?: TransactionSQL) => {
+const indexedPlan = async (
+  query: SQL.Query<unknown>,
+  indexes: string[],
+  transaction?: TransactionSQL,
+  /** The most rows the plan may return; a level read returns the whole level. */
+  maxRows = 100,
+) => {
   const check = async (tx: TransactionSQL) => {
     // Small fixtures may rationally prefer sequential scans. This checks index eligibility,
     // rather than asserting a cost estimate for tiny tables.
@@ -66,11 +72,12 @@ const indexedPlan = async (query: SQL.Query<unknown>, indexes: string[], transac
     await tx`SET LOCAL plan_cache_mode = force_generic_plan`;
     const [row] = await tx<{ "QUERY PLAN": { Plan: Plan }[] }[]>`EXPLAIN (ANALYZE, FORMAT JSON) ${query}`;
     const plan = nodes(row!["QUERY PLAN"][0]!.Plan);
-    expect(plan[0]!["Actual Rows"]).toBeLessThanOrEqual(100);
+    const used = plan.map((node) => node["Index Name"]).filter(Boolean);
+    expect(plan[0]!["Actual Rows"], `rows of a plan using ${used.join(", ")}`).toBeLessThanOrEqual(maxRows);
     expect(plan.filter((node) => ["notes", "note_tags"].includes(node["Relation Name"] ?? "") && node["Node Type"] === "Seq Scan")).toEqual(
       [],
     );
-    for (const index of indexes) expect(plan.some((node) => node["Index Name"] === index)).toBe(true);
+    for (const index of indexes) expect(used, `plan uses ${index}`).toContain(index);
   };
   if (transaction) await check(transaction);
   else await sql.begin(check);
@@ -93,7 +100,13 @@ for (const [index, shape] of ["small", "large"].entries()) {
     const page = notebook.notes.find((note) => note.id === notebook.page.id)!;
     const resolved = await resolvePath({ notebookId: notebook.id, path: paths.get(page.id)! });
     expect(resolved.ok && resolved.note.id).toBe(page.id);
-    await indexedPlan(childrenQuery(notebook.id, page.parentId), ["idx_notes_notebook_parent_position"]);
+    // A path segment reads its level, whose size it compares in JavaScript (independent of the database locale).
+    await indexedPlan(
+      childrenQuery(notebook.id, page.parentId),
+      ["idx_notes_notebook_parent_position"],
+      undefined,
+      Number.POSITIVE_INFINITY,
+    );
     const after = sorted[3]!.id;
     await indexedPlan(readBatchQuery({ notebookId: notebook.id, after }), ["idx_notes_notebook_id"]);
     await indexedPlan(reindexBatchQuery(notebook.id, after), ["idx_notes_notebook_id"]);
