@@ -268,7 +268,7 @@ suite("contact observations with real Filegate and private history", () => {
     expect(await observations()).toHaveLength(1);
     expect((await observations())[0]!.action).toBe("item.missing");
   });
-  test("same-size revisionless writes are undetectable; changed size is observable", async () => {
+  test("POSIX changes never become history observations", async () => {
     const initial = await put("freeipa", path);
     expect(initial.id).toBeUndefined();
     expect(initial.revision).toBeUndefined();
@@ -276,8 +276,8 @@ suite("contact observations with real Filegate and private history", () => {
     await put("freeipa", path, "bbbb");
     expect(await service().check(target("freeipa"))).toBe(false);
     await put("freeipa", path, "longer");
-    expect(await service().check(target("freeipa"))).toBe(true);
-    expect((await observations())[0]!.action).toBe("item.differs");
+    expect(await service().check(target("freeipa"))).toBe(false);
+    expect(await observations()).toHaveLength(0);
   });
   test.each(["pending", "unclear"] as const)("own %s ancestors in either root suppress findings", async (state) => {
     await confirmed(await client.root("cloud").stat(path));
@@ -462,34 +462,19 @@ suite("contact observations with real Filegate and private history", () => {
     }
     expect(await sql`SELECT * FROM filesv2.bases ORDER BY id`).toEqual(claims);
   });
-  test("history contact requires actual leaf read or missing-parent read permissions", async () => {
-    const unix = { uidNumber: 12345, primaryGidNumber: 12346 };
-    const root = client.root("freeipa");
+  test("POSIX history contacts return unavailable without recording observations", async () => {
     const ipaBaseId = `freeipa:users:${userId}`;
-    const node = await put("freeipa", path);
-    await confirmed(node);
+    await confirmed(await put("freeipa", path));
     await put("freeipa", path, "external restricted item");
-    try {
-      await sql`UPDATE filesv2.bases SET uid_number=${unix.uidNumber},gid_number=${unix.primaryGidNumber} WHERE id=${ipaBinding}::uuid`;
-      await root.setOwnership(home, { uid: unix.uidNumber, gid: unix.primaryGidNumber, dirMode: "0700" });
-      await root.setOwnership(path, { uid: unix.uidNumber, gid: unix.primaryGidNumber, mode: "0200" });
-      const reader = files(undefined, unix);
-      const ref = entryRefId(ipaBaseId, "file.txt");
-      if (!ref) throw new Error("Expected inline fixture reference");
-      expect(await reader.activityForEntry(call, ref)).toMatchObject({ items: [], next: null });
-      expect(await reader.activity(call, { baseId: ipaBaseId, path: "file.txt", q: "file.txt" })).toMatchObject({ items: [], next: null });
-      expect(await observations()).toHaveLength(0);
-      await root.remove(path);
-      await root.setOwnership(home, { dirMode: "0300" }); // Traversable/writable, but not readable.
-      expect(await reader.activityForEntry(call, ref)).toMatchObject({ items: [], next: null });
-      expect(await observations()).toHaveLength(0);
-      await root.setOwnership(home, { dirMode: "0700" });
-      await reader.activityForEntry(call, ref);
-      expect((await observations())[0]).toMatchObject({ action: "item.missing" });
-    } finally {
-      await root.setOwnership(home, { uid: 0, gid: 0, dirMode: "0700" });
-      await sql`UPDATE filesv2.bases SET uid_number=NULL,gid_number=NULL WHERE id=${ipaBinding}::uuid`;
-    }
+    const reader = files(undefined, { uidNumber: 12345, primaryGidNumber: 12346 });
+    const ref = entryRefId(ipaBaseId, "file.txt");
+    if (!ref) throw new Error("Expected inline fixture reference");
+    await expect(reader.activityForEntry(call, ref)).rejects.toMatchObject({ code: "history_unavailable", status: 409 });
+    await expect(reader.activity(call, { baseId: ipaBaseId, path: "file.txt", q: "file.txt" })).rejects.toMatchObject({
+      code: "history_unavailable",
+      status: 409,
+    });
+    expect(await observations()).toHaveLength(0);
   });
   test("history contacts honor cancellation before observation or candidate reads", async () => {
     const node = await client.root("cloud").stat(path);
@@ -837,14 +822,14 @@ suite("contact observations with real Filegate and private history", () => {
     expect(await unavailable.maintain({ now: new Date(clock.getTime() + 86_400_000) })).toEqual({ checked: 0, failed: 0 });
   });
   test("real permission denial is not missing and retries stop after three attempts", async () => {
-    await confirmed(await put("freeipa", path));
+    await confirmed(await put("cloud", path));
     let clock = observedAt;
     const denied = createActivityObservations({
       readConfiguration: async () => config,
       connect: (c) => connectFilegate(c).as({ uid: 54321, gid: 54321 }),
       now: () => clock,
     });
-    await expect(denied.check(target("freeipa"))).rejects.toBeInstanceOf(FilegateError);
+    await expect(denied.check(target("cloud"))).rejects.toBeInstanceOf(FilegateError);
     expect(await observations()).toHaveLength(0);
     for (const delta of [60_000, 5 * 60_000, 30 * 60_000]) {
       clock = new Date(clock.getTime() + delta);
@@ -853,7 +838,7 @@ suite("contact observations with real Filegate and private history", () => {
     expect(await denied.maintain({ now: new Date(clock.getTime() + 86_400_000) })).toEqual({ checked: 0, failed: 0 });
     const [row] = await sql<
       { observation_error: string; observation_checks: number; observation_next_at: null; heartbeat_at: Date }[]
-    >`SELECT * FROM filesv2.activity WHERE root='freeipa'`;
+    >`SELECT * FROM filesv2.activity WHERE root='cloud'`;
     expect(row).toMatchObject({
       observation_error: "observation_unavailable",
       observation_checks: 3,

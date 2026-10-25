@@ -19,6 +19,7 @@ import {
 } from "../activity-export-contracts";
 import type { UserFilesCall } from "./activity";
 import { withActivityReadBudget } from "./activity-read-budget";
+import { FilesError } from "./errors";
 
 type Filter = ActivityExportInput & ReturnType<typeof exportWindow>;
 type Position = { time: string; id: string };
@@ -130,21 +131,34 @@ export async function openActivityExportSnapshot(
       // A fragment is never executed by itself. Bun registers tx-tagged fragments as
       // pending transaction queries and rejects them without a handler on hard close.
       // Build through the same adapter's pool; count/batch still execute it only on tx.
-      const where = database`coalesce(a.finished_at,a.started_at)>=${filter.from}::timestamptz
+      // The same local-area boundary applies to the export count, search and bytes.
+      // Redact the POSIX side of a cross-area copy independently of its visible side.
+      const visibleSide = (after: boolean) => {
+        const id = after
+          ? database`coalesce(event.base_after_id,CASE WHEN coalesce(event.root_after,event.root)=event.root THEN event.base_id END)`
+          : database`event.base_id`;
+        const root = after ? database`coalesce(event.root_after,event.root)` : database`event.root`;
+        const path = after ? database`event.path_after` : database`event.path_before`;
+        return database`EXISTS (SELECT 1 FROM filesv2.bases b WHERE b.id=${id} AND b.area='cloud'
+          AND b.root=${root} AND ${path} IS NOT NULL AND (${path}=b.path OR starts_with(${path},b.path || '/')))`;
+      };
+      const source = database`(SELECT event.*,${visibleSide(false)} AS before_visible,${visibleSide(true)} AS after_visible FROM filesv2.activity event) a`;
+      const where = database`(a.before_visible OR a.after_visible)
+        AND coalesce(a.finished_at,a.started_at)>=${filter.from}::timestamptz
         AND coalesce(a.finished_at,a.started_at)<${filter.until}::timestamptz
         AND a.action=ANY(${tx.array(ExportAction.options, "TEXT")})
-        AND (${filter.q ?? null}::text IS NULL OR strpos(lower(coalesce(a.path_before,'')),lower(${filter.q ?? null}))>0
-          OR strpos(lower(coalesce(a.path_after,'')),lower(${filter.q ?? null}))>0)
+        AND (${filter.q ?? null}::text IS NULL OR (a.before_visible AND strpos(lower(coalesce(a.path_before,'')),lower(${filter.q ?? null}))>0)
+          OR (a.after_visible AND strpos(lower(coalesce(a.path_after,'')),lower(${filter.q ?? null}))>0))
         AND (${filter.actor ?? null}::uuid IS NULL OR a.actor_user_id=${filter.actor ?? null}::uuid)
         AND (${filter.action ?? null}::text IS NULL OR a.action=${filter.action ?? null})
         AND (${filter.baseId ?? null}::text IS NULL OR EXISTS (
           SELECT 1 FROM filesv2.bases b WHERE b.area||':'||b.kind||':'||b.identity_id::text=${filter.baseId ?? null}
-          AND (b.id=a.base_id OR b.id=a.base_after_id)
+          AND ((a.before_visible AND b.id=a.base_id) OR (a.after_visible AND b.id=coalesce(a.base_after_id,CASE WHEN coalesce(a.root_after,a.root)=a.root THEN a.base_id END)))
         ))`;
       ready.resolve({
         async count() {
           const [row] = await run(tx<{ count: number }[]>`SELECT count(*)::int AS count FROM (
-            SELECT 1 FROM filesv2.activity a WHERE ${where} LIMIT ${ACTIVITY_EXPORT_LIMIT + 1}
+            SELECT 1 FROM ${source} WHERE ${where} LIMIT ${ACTIVITY_EXPORT_LIMIT + 1}
           ) bounded`);
           if (!row) throw new Error("Missing export count");
           return row.count;
@@ -158,13 +172,13 @@ export async function openActivityExportSnapshot(
           return run(tx<ExportRow[]>`SELECT a.id,a.action,a.state,coalesce(a.finished_at,a.started_at)::text AS time,
             a.started_at AS "startedAt",a.finished_at AS "finishedAt",a.actor_kind AS "actorKind",a.actor_user_id AS "actorUserId",
             a.via,CASE WHEN metadata.known THEN a.directory END AS directory,a.batch_id AS "batchId",
-            CASE WHEN metadata.known AND a.path_before IS NOT NULL THEN a.root END AS "rootBefore",
-            CASE WHEN metadata.known AND a.path_before IS NOT NULL THEN a.base_id END AS "baseBeforeId",a.path_before AS "pathBefore",
-            CASE WHEN metadata.known AND a.path_before IS NOT NULL THEN a.item_id END AS "itemBeforeId",
-            CASE WHEN metadata.known AND a.path_after IS NOT NULL THEN coalesce(a.root_after,a.root) END AS "rootAfter",
-            CASE WHEN metadata.known AND a.path_after IS NOT NULL THEN coalesce(a.base_after_id,CASE WHEN coalesce(a.root_after,a.root)=a.root THEN a.base_id END) END AS "baseAfterId",
-            a.path_after AS "pathAfter",CASE WHEN metadata.known AND a.path_after IS NOT NULL THEN a.item_after_id END AS "itemAfterId"
-            FROM filesv2.activity a CROSS JOIN LATERAL (
+            CASE WHEN metadata.known AND a.before_visible THEN a.root END AS "rootBefore",
+            CASE WHEN metadata.known AND a.before_visible THEN a.base_id END AS "baseBeforeId",CASE WHEN a.before_visible THEN a.path_before END AS "pathBefore",
+            CASE WHEN metadata.known AND a.before_visible THEN a.item_id END AS "itemBeforeId",
+            CASE WHEN metadata.known AND a.after_visible THEN coalesce(a.root_after,a.root) END AS "rootAfter",
+            CASE WHEN metadata.known AND a.after_visible THEN coalesce(a.base_after_id,CASE WHEN coalesce(a.root_after,a.root)=a.root THEN a.base_id END) END AS "baseAfterId",
+            CASE WHEN a.after_visible THEN a.path_after END AS "pathAfter",CASE WHEN metadata.known AND a.after_visible THEN a.item_after_id END AS "itemAfterId"
+            FROM ${source} CROSS JOIN LATERAL (
               SELECT NOT (a.detail @> '{"metadata_unknown":true}'::jsonb OR a.detail @> '{"snapshot_unknown":true}'::jsonb
                 OR a.detail @> '{"directory_unknown":true}'::jsonb) AS known
             ) metadata WHERE ${where}
@@ -264,6 +278,7 @@ export function createActivityExportService(deps: ActivityExportDeps) {
       try {
         signal.throwIfAborted();
         await wait(deps.requireAdmin(call.actor));
+        if (input.baseId?.startsWith("freeipa:")) throw new FilesError("history_unavailable", 409);
         await wait(
           (deps.snapshot ?? openActivityExportSnapshot)(filter, signal).then(async (value) => {
             if (closed) await value.close();
@@ -338,6 +353,7 @@ export function createActivityExportService(deps: ActivityExportDeps) {
       try {
         lifetime.signal.throwIfAborted();
         await wait(deps.requireAdmin(call.actor)); // Before SQL or history reads, including injected stores.
+        if (input.baseId?.startsWith("freeipa:")) throw new FilesError("history_unavailable", 409);
         const opening = (deps.snapshot ?? openActivityExportSnapshot)(filter, lifetime.signal).then(async (value) => {
           // Publish ownership before resuming prepare, so cancellation at this boundary cannot miss the connection.
           snapshot = value;

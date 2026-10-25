@@ -1091,3 +1091,7 @@ Administrators can export history as CSV or JSON Lines. Each export is limited
 to one calendar year and 100,000 entries, and is recorded in the security audit.
 For filters, cancellation and privacy considerations, see
 [Files history operations](/en/docs/operations/files-history#export-history-for-administration).
+
+Administrator history exports include local Cloud areas only. POSIX-only events
+are excluded from counts and downloads; cross-area operations include only
+their local side.

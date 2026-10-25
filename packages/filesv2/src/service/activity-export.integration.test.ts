@@ -88,8 +88,8 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
       if (options.boundary) {
         // Minimal valid history rows keep fixture setup out of the behavior under test.
         // All production constraints/indexes remain installed; row IDs still differ.
-        await database`INSERT INTO filesv2.activity(id,state,action,server_url,root,directory,name,path_after,actor_kind,via,started_at,finished_at)
-          SELECT ('10000000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,'failed','file.edit','http://fixture','cloud',false,'a','a','system','system',${now},${now}
+        await database`INSERT INTO filesv2.activity(id,state,action,server_url,root,base_id,directory,name,path_after,actor_kind,via,started_at,finished_at)
+          SELECT ('10000000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,'failed','file.edit','http://fixture','cloud',${baseId}::uuid,false,'a','users/alice/a','system','system',${now},${now}
           FROM generate_series(1,${count}) AS i`;
         // The fresh private database has no autovacuum statistics yet. Without
         // ANALYZE PostgreSQL estimates 87 rows instead of 100,000 and sorts every page.
@@ -215,6 +215,31 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
       expect(rows.every((row) => row.action === "item.move")).toBe(true);
       expect(authorizations).toBeGreaterThanOrEqual(4);
     });
+  });
+  test("POSIX rows do not affect export counts and cross-area copies redact the unavailable side", async () => {
+    await seed(1002);
+    await sql`UPDATE filesv2.bases SET area='freeipa' WHERE id=${otherBaseId}::uuid`;
+    await sql`UPDATE filesv2.activity SET base_id=${otherBaseId}::uuid,path_before='users/bob/hidden-source'
+      WHERE id<>'10000000-0000-4000-8000-000000000001'::uuid`;
+    await withExport(service(), input, new AbortController().signal, async (result, reader) => {
+      expect(result.count).toBe(1);
+      const rows = (await readText(reader))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        pathBefore: "users/alice/file-1",
+        pathAfter: null,
+        rootAfter: null,
+        baseAfterId: null,
+        itemAfterId: null,
+      });
+    });
+    expect(await service().preview(call, { ...input, q: "users/bob" }, new AbortController().signal)).toEqual({ count: 0 });
+    await expect(
+      service().preview(call, { ...input, baseId: `freeipa:users:${otherBaseId}` }, new AbortController().signal),
+    ).rejects.toMatchObject({ code: "history_unavailable", status: 409 });
   });
   test("committed start evidence has original actor/request and survives midstream cancellation", async () => {
     await seed(501);

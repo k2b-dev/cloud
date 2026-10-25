@@ -36,6 +36,7 @@ const stateOf = (node: Node) => ({
 export function observationBindingMatches(config: Config, binding: Binding, target: ObservationTarget): boolean {
   const area = config[binding.area];
   return (
+    binding.area === "cloud" &&
     !config.unreadable &&
     config.url === target.serverUrl &&
     area.enabled &&

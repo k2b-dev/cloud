@@ -200,6 +200,7 @@ test("configuration drift and closed bindings cannot become missing observations
   };
   const target = { serverUrl: known.server_url, root: known.root, baseId: known.base_id, path: known.path };
   expect(observationBindingMatches(config, binding, target)).toBe(true);
+  expect(observationBindingMatches(config, { ...binding, area: "freeipa" }, target)).toBe(false);
   for (const changed of [
     { ...config, url: "https://another.test" },
     { ...config, unreadable: true },

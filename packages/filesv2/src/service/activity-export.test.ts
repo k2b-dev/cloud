@@ -436,3 +436,15 @@ test("aborting audit preparation waits for rollback cleanup before rejecting", a
     expect(await outcome).toBeInstanceOf(DOMException);
   }
 });
+
+test.each(["preview", "export"] as const)("%s rejects POSIX history after checking canonical administration", async (method) => {
+  const f = fixture();
+  await expect(
+    createActivityExportService(f.deps)[method](
+      call,
+      { ...input, baseId: "freeipa:users:10000000-0000-4000-8000-000000000001" },
+      new AbortController().signal,
+    ),
+  ).rejects.toMatchObject({ code: "history_unavailable", status: 409 });
+  expect(f.events).toEqual(["admin"]);
+});

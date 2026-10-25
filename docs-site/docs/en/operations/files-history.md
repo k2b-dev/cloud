@@ -172,6 +172,10 @@ the download completed. Canceling a download stops the export and releases its
 database snapshot; its audit evidence remains. A failed or interrupted stream
 is incomplete and should be discarded before requesting a fresh export.
 
+Exports cover local Cloud areas only. Counts and search exclude POSIX-only
+events; a cross-area operation exports only its local side. Selecting a POSIX
+area returns `history_unavailable` (HTTP 409).
+
 Exports contain file names, paths and the names of accounts that still exist.
 Protect the downloaded file separately: Files retention cannot delete copies
 an administrator has downloaded. Operators should agree access and retention
