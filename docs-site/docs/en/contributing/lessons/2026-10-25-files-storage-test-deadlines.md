@@ -1,3 +1,12 @@
+---
+title: Storage test deadlines
+section: Contributing
+order: 1601
+description: Keep storage fixtures within their intended deadlines.
+tags: [contributing, testing]
+updated: 2026-10-25
+---
+
 # Storage test deadlines
 
 - **Class:** Accelerated deadlines expire prerequisite I/O, or several independent storage cases share one deadline.
