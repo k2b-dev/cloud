@@ -104,7 +104,7 @@ if (process.env.NOTEBOOKS_CLI_CHILD !== "1") {
       manages: [],
       managesGroupIds: [],
     };
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     await sync.ready();
     await migrate();
     await sql`INSERT INTO auth.users (id, uid, provider, profile) VALUES (${user.id}::uuid, ${user.uid}, 'local', 'user')`;
