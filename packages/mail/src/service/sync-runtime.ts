@@ -265,8 +265,10 @@ const counterpartyLabels = (message: ConnectorEnvelope, outbound: boolean): stri
  * server, but several copies can share one stored message, and not every copy carries every
  * address: the copy in Sent keeps its Bcc recipients, the delivered copy does not.
  */
-const upsertAddresses = async (db: typeof sql, messageId: string, message: ConnectorEnvelope): Promise<void> => {
-  const existing = await db<{ role: string; position: number; normalized_email: string }[]>`
+const upsertAddresses = async (db: typeof sql, messageId: string, message: ConnectorEnvelope, newlyInserted = false): Promise<void> => {
+  const existing = newlyInserted
+    ? []
+    : await db<{ role: string; position: number; normalized_email: string }[]>`
     SELECT role, position, normalized_email FROM mail.message_addresses WHERE message_id = ${messageId}::uuid
   `;
   const stored = new Set(existing.map((row) => `${row.role} ${row.normalized_email}`));
@@ -776,11 +778,14 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
   if (messageContentId) {
     await reopenUnprovenSendWithSentCopy(params.db, { messageId: messageContentId, sentCopyFolderId: params.folderId });
   }
+  // Only an actual insert proves there are no addresses, conversation links, manual overrides
+  // or kept placements to read. A canonical copy, upsert conflict or ref race uses the full path.
+  let newlyInserted = false;
   if (!messageContentId) {
     const messageRows = await withShortIdDb(
       params.db,
       "message",
-      (db, shortId) => db<{ id: string }[]>`
+      (db, shortId) => db<{ id: string; inserted: boolean }[]>`
       INSERT INTO mail.message_contents (
         short_id,
         mailbox_id,
@@ -827,12 +832,13 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
         size_bytes = EXCLUDED.size_bytes,
         mime_structure = EXCLUDED.mime_structure,
         protocol_facts = EXCLUDED.protocol_facts
-      RETURNING id
+      RETURNING id, (xmax = 0) AS inserted
     `,
     );
     const [messageRow] = messageRows;
     if (!messageRow) throw new Error("Message envelope insert returned no row");
     messageContentId = messageRow.id;
+    newlyInserted = messageRow.inserted;
   }
 
   const [remoteRef] = await params.db<{ id: string; message_id: string }[]>`
@@ -858,6 +864,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
   `;
   if (!remoteRef) throw new Error("Remote message reference insert returned no row");
   if (remoteRef.message_id !== messageContentId) {
+    newlyInserted = false;
     await params.db`
       DELETE FROM mail.message_contents candidate
       WHERE candidate.id = ${messageContentId}::uuid
@@ -884,7 +891,8 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
   // in time. The MIME structure and protocol facts still follow the latest copy, as hydration
   // labels the parts of the source it loads with that structure, and only a delivered copy carries
   // list headers.
-  await params.db`
+  if (!newlyInserted)
+    await params.db`
     UPDATE mail.message_contents mc
     SET
       message_id = ${params.message.messageId},
@@ -907,7 +915,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     ) other_copy
     WHERE mc.id = ${messageContentId}::uuid
   `;
-  await upsertAddresses(params.db, messageContentId, params.message);
+  await upsertAddresses(params.db, messageContentId, params.message, newlyInserted);
   await params.db`
     INSERT INTO mail.message_placements (
       remote_message_ref_id, folder_id, message_id, flags, keywords, deleted_at
@@ -929,7 +937,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       updated_at = now()
   `;
 
-  await retireKeptCopyPlacements(params.db, [{ messageId: messageContentId, remoteRefId: remoteRef.id }]);
+  if (!newlyInserted) await retireKeptCopyPlacements(params.db, [{ messageId: messageContentId, remoteRefId: remoteRef.id }]);
 
   const emitMessageReceived = async (): Promise<void> => {
     const deliveryKey = `message:${remoteRef.id}`;
@@ -1018,7 +1026,9 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       await emitMessageReceived();
   };
 
-  const [existingConversation] = await params.db<{ conversation_id: string }[]>`
+  const [existingConversation] = newlyInserted
+    ? []
+    : await params.db<{ conversation_id: string }[]>`
     SELECT conversation_id
     FROM mail.conversation_messages
     WHERE message_id = ${messageContentId}::uuid
@@ -1050,11 +1060,13 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       ),
     ),
   ].filter((address) => !mailboxAddresses.has(address));
-  const manualConversationId = await findManualConversationOverride({
-    db: params.db,
-    mailboxId: params.mailboxId,
-    messageId: messageContentId,
-  });
+  const manualConversationId = newlyInserted
+    ? null
+    : await findManualConversationOverride({
+        db: params.db,
+        mailboxId: params.mailboxId,
+        messageId: messageContentId,
+      });
   let conversationId =
     manualConversationId ??
     (await findConversation({
