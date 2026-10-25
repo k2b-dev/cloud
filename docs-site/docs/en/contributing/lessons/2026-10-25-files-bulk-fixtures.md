@@ -1,3 +1,12 @@
+---
+title: Bulk fixture query plans
+section: Contributing
+order: 1602
+description: Analyze loaded test backlogs before checking bounded maintenance.
+tags: [contributing, testing]
+updated: 2026-10-25
+---
+
 # Files history checks
 
 ## Empty-table statistics survive a bulk fixture load
