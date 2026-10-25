@@ -30,3 +30,10 @@ updated: 2026-10-25
 - **What goes wrong:** A network list sorts by its key instead of usage, or a period summary treats expired network identities as a complete count.
 - **Guard:** Tests: Files `service/activity-reader.integration.test.ts` covers combined-usage order and ties, fresh cursor aggregates, cursor expiry, bounded UTC timelines, totals before and after rollup, and page-view-only networks per bucket. `activity-transports.test.ts` requires nullable bucket `pageNetworks` and rejects private share fields and visitor details.
 - **Evidence:** The focused tests named above.
+
+## Local archive snapshots lose their location
+
+- **Class:** A current home prefix is applied to historical archive locations.
+- **What goes wrong:** An administrator's local archive event disappears because its recorded path lies outside the binding's former home.
+- **Guard:** Files `service/activity-reader.test.ts` and `service/activity-reader.integration.test.ts` preserve administrator snapshots for archived local bindings while ordinary readers require a current active grant.
+- **Evidence:** The focused tests named above.

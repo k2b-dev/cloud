@@ -179,7 +179,7 @@ export const activityReaderData = {
       const path = after ? sql`activity.path_after` : sql`activity.path_before`;
       return sql`EXISTS (SELECT 1 FROM filesv2.bases b WHERE b.id=${id} AND b.area='cloud'
         AND b.root=${root} AND ${path} IS NOT NULL
-        AND (${path}=b.path OR starts_with(${path},b.path || '/'))
+        AND (${input.scope.admin} OR ${path}=b.path OR starts_with(${path},b.path || '/'))
         AND (${input.scope.admin} OR (b.lifecycle='active' AND b.id=ANY(${toPgUuidArray(input.scope.bindingIds)}::uuid[])
           AND activity.server_url=${input.scope.serverUrl}))
         AND (${input.baseId ?? null}::text IS NULL OR b.area || ':' || b.kind || ':' || b.identity_id::text=${input.baseId ?? null}))`;

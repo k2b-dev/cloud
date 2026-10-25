@@ -1114,3 +1114,12 @@ test("folder history includes readable child uploads while exact file history ex
     (await f.reader.activity(call, { baseId: publicBaseId, path: "Docs/report.pdf", scope: "item" })).items.map((item) => item.id),
   ).toEqual([uploaded.id]);
 });
+
+test("administrators retain archive locations outside a local binding's former home", async () => {
+  const f = historyFixture([candidate(1, { action: "place.archive", path_after: "archive/alice/file" })]);
+  f.setAdmin(true);
+  f.setMember(false);
+  const result = await f.reader.activity(call);
+  expect(result.items).toHaveLength(1);
+  expect(result.items[0]?.after).toMatchObject({ visibility: "full", source: "snapshot", path: "archive/alice/file", relativePath: null });
+});
