@@ -1,4 +1,4 @@
-import { type ApiErrorResponse, type AuthContext, getLocale, respond } from "@k2b/cloud/server";
+import { type ApiErrorResponse, type AuthContext, auth, getLocale, respond } from "@k2b/cloud/server";
 import { err, fail, type Result, type ServiceError } from "@k2b/stdlib";
 import type { Context, Next, TypedResponse } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -359,13 +359,13 @@ export const internalParams = <T extends Record<string, unknown>>(c: Context<Mai
   return resolved;
 };
 
-export const resolveMailboxParam = async (c: Context<MailApiContext>, next: Next) => {
+export const resolveMailboxParam = auth.readOnlyMiddleware(async (c: Context<MailApiContext>, next: Next) => {
   const shortId = c.req.param("mailboxId");
   const mailboxId = shortId ? await publicResources.resolvePublicId("mailboxes", shortId) : null;
   if (!mailboxId) return respondPublic(c, fail(err.notFound("Mailbox")));
   c.set("internalMailboxId", mailboxId);
   await next();
-};
+});
 
 export const resolveMailboxResourceParam =
   (table: publicResources.MailboxOwnedPublicResourceTable, param: PublicParam, label: string) =>

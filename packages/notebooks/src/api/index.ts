@@ -1570,6 +1570,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/:id/notes/:noteId/block-preview",
+    auth.readOnly,
     describeRoute({
       tags: ["Notebooks"],
       summary: "Preview query and contents blocks",
@@ -2122,6 +2123,7 @@ const app = new Hono<AuthContext>()
   // Render the current browser-side Markdown snapshot without persisting it.
   .post(
     "/:id/notes/:noteId/pdf",
+    auth.readOnly,
     describeRoute({
       tags: ["Notebooks"],
       summary: "Download note as PDF",
@@ -3608,6 +3610,7 @@ const requireAdmin = (c: Context<AuthContext>) => {
 };
 
 const appWithAdmin = appWithLimits
+  .use("/admin/*", auth.requireRole("admin"))
   // List all notebooks-namespaced settings
   .get(
     "/admin/settings",
