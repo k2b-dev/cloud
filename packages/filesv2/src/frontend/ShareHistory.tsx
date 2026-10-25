@@ -5,6 +5,7 @@ import type { ShareAccessCounts, ShareAccessPeriod } from "../activity-contracts
 import type { ShareView } from "../contracts";
 import { HistoryAvatar, MetaLine } from "./ActivityView";
 import { useBrowserMessages } from "./browser-messages";
+import HistoryUnavailable, { isHistoryUnavailable } from "./HistoryUnavailable";
 import { formatDate, formatTime, type HistoryEnvironment, type MetaPart } from "./history-actions";
 import { type HistoryMessages, useHistoryMessages } from "./history-messages";
 
@@ -190,6 +191,9 @@ function ShareFacts(props: {
         <span>{byline()}</span>
       </p>
       <Switch>
+        <Match when={isHistoryUnavailable(facts.error())}>
+          <HistoryUnavailable />
+        </Match>
         <Match when={!facts.data() && facts.error()}>
           <p class="filesv2-item-history__line" role="alert">
             <i class="ti ti-alert-triangle" aria-hidden="true" />

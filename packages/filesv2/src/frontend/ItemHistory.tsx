@@ -4,6 +4,7 @@ import { createMemo, createSignal, createUniqueId, For, Match, Show, Switch } fr
 import type { ActivityPage, ShareAccessPeriod } from "../activity-contracts";
 import type { ShareView } from "../contracts";
 import { HistoryRow, SkeletonRows } from "./ActivityView";
+import HistoryUnavailable, { isHistoryUnavailable } from "./HistoryUnavailable";
 import { type HistoryActions, type HistoryEnvironment, type HistoryRowModel, historyRows } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 import { AccessRow, periodHasAccess, type ShareAccess } from "./ShareHistory";
@@ -14,6 +15,8 @@ export type ItemHistoryProps = {
   env: HistoryEnvironment;
   actions?: HistoryActions;
   directory: boolean;
+  /** POSIX storage cannot offer an authorized activity history. */
+  unavailable?: boolean;
   /** Identity of the item, such as base, location key and path; a new value starts a new history. */
   source: string;
   /** Authorized SSR snapshot of the first page for `source`. */
@@ -161,9 +164,9 @@ export default function ItemHistory(props: ItemHistoryProps) {
       <DetailPanel.Section
         title={h().history}
         tone="neutral"
-        count={complete() && lines().length > 0 ? lines().length : undefined}
+        count={!props.unavailable && complete() && lines().length > 0 ? lines().length : undefined}
         actions={
-          <Show when={props.activityHref}>
+          <Show when={!props.unavailable && props.activityHref}>
             {(href) => (
               <ButtonLink size="xs" variant="text" class="filesv2-history-link" href={href()}>
                 {h().allInActivity}
@@ -174,6 +177,9 @@ export default function ItemHistory(props: ItemHistoryProps) {
       >
         <div class="filesv2-item-history" aria-busy={history.loading() || (!loaded() && history.refreshing()) || accessWaiting()}>
           <Switch>
+            <Match when={props.unavailable || isHistoryUnavailable(history.error())}>
+              <HistoryUnavailable />
+            </Match>
             <Match when={!loaded() && history.error()}>
               <p class="filesv2-item-history__line" role="alert">
                 <i class="ti ti-alert-triangle" aria-hidden="true" />
