@@ -69,7 +69,12 @@ beforeEach(() => {
 
 describe("Mail contact directory routes", () => {
   test("resolve conversation participants through the configured directory", async () => {
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user: user(["user"]), scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({
+      kind: "user",
+      payload: {},
+      user: user(["user"]),
+      scopes: ["read", "write"],
+    });
     spyOn(publicResources, "resolvePublicId").mockResolvedValue("22222222-2222-4222-8222-222222222222");
     spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue("33333333-3333-4333-8333-333333333333");
     spyOn(publicResources, "publicIds").mockResolvedValue(new Map([["33333333-3333-4333-8333-333333333333", "cnv123"]]));
@@ -96,7 +101,12 @@ describe("Mail contact directory routes", () => {
   });
 
   test("returns field-level issues when an administrator saves an unusable mapping", async () => {
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user: user(["admin", "user"]), scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({
+      kind: "user",
+      payload: {},
+      user: user(["admin", "user"]),
+      scopes: ["read", "write"],
+    });
     const issue = { field: "suggest" as const, code: "data_mismatch" as const, message: "Suggest does not match." };
     const save = spyOn(contactDirectory, "saveContactDirectory").mockResolvedValue({ ok: false, status: 400, issues: [issue] });
     const mapping = {
@@ -124,7 +134,12 @@ describe("Mail contact directory routes", () => {
   });
 
   test("shows the stored mapping with compatible capabilities to administrators", async () => {
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user: user(["admin", "user"]), scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({
+      kind: "user",
+      payload: {},
+      user: user(["admin", "user"]),
+      scopes: ["read", "write"],
+    });
     const view = {
       config: { appId: "crm", suggest: "customer.suggest", resolve: "customer.match", read: "", listWritableBooks: "", create: "" },
       apps: null,
@@ -140,7 +155,12 @@ describe("Mail contact directory routes", () => {
   });
 
   test("keeps the contact directory view for administrators", async () => {
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user: user(["user"]), scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({
+      kind: "user",
+      payload: {},
+      user: user(["user"]),
+      scopes: ["read", "write"],
+    });
     const load = spyOn(contactDirectory, "loadContactDirectoryAdmin");
 
     const response = await api.request("/admin/contact-directory", { headers });
@@ -150,7 +170,12 @@ describe("Mail contact directory routes", () => {
   });
 
   test("keeps the save route for administrators", async () => {
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user: user(["user"]), scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({
+      kind: "user",
+      payload: {},
+      user: user(["user"]),
+      scopes: ["read", "write"],
+    });
     const save = spyOn(contactDirectory, "saveContactDirectory");
 
     const response = await api.request("/admin/contact-directory", {

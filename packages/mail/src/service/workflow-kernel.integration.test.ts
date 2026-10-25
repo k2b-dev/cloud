@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { encryptSecret } from "@k2b/cloud/services";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
+import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
+import { bindWorkflow } from "@k2b/cloud/workflows/language";
 import {
   createWorkflowRun,
   deleteWorkflowScope,
@@ -10,8 +12,18 @@ import {
 } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { createAiProvider } from "../../../cloud/src/ai/provider";
+import * as aiStructured from "../../../cloud/src/ai/structured";
+import * as workflowAiRuntime from "../../../cloud/src/workflows/ai/runtime";
+import { claimWorkflowAiTask, completeWorkflowAiTask } from "../../../cloud/src/workflows/ai/store";
+import { mailCapabilities } from "../capabilities";
+import { draftContentInputSchema } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
+import * as workflowBinder from "../workflows/binder";
+import { snapshotMailWorkflowCatalog } from "../workflows/catalog";
+import { mailWorkflows } from "../workflows/module";
+import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import {
   cancelPendingAutomaticRepliesInTransaction,
@@ -19,9 +31,9 @@ import {
   prepareAutomaticReplyInTransaction,
 } from "./automatic-reply";
 import { listActivity } from "./collaboration";
-import { executeMutationCommand } from "./command-runtime";
+import { executeMutationCommand, executeOutboxSubmission } from "./command-runtime";
 import { imapSmtpConnector } from "./connectors";
-import { getDraft, listConversationDrafts } from "./drafts";
+import { createDraft, getDraft, listConversationDrafts } from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { EMPTY_MESSAGE_PROTOCOL_FACTS } from "./message-protocol";
 import { ingestEnvelope } from "./sync-runtime";
@@ -1496,9 +1508,266 @@ steps:
     expect(effects?.count).toBe(1);
   });
 
-  test("sends one automatic reply through its command and outbox", async () => {
-    const sender = `auto-reply-${suffix}@external.test`;
-    const incoming = envelope({ uid: 7092, providerMessageId: `workflow-auto-reply-${suffix}`, from: sender });
+  for (const [scenarioIndex, scenario] of [
+    "template",
+    "legacy-queued",
+    "legacy-retry",
+    "legacy-summary",
+    "legacy-shadowed-summary",
+    "legacy-computed-summary",
+    "legacy-computed-root",
+    "legacy-nested-computed-root",
+    "legacy-expression-filter",
+    "legacy-summary-exists",
+  ].entries()) {
+    test(`automatic reply dispatch enforces stored send policy (${scenario})`, async () => {
+      const sender = `auto-reply-${scenario}-${suffix}@external.test`;
+      const incoming = envelope({
+        uid: 72000 + scenarioIndex,
+        providerMessageId: `workflow-auto-reply-${scenario}-${suffix}`,
+        from: sender,
+      });
+      await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: incoming,
+        captureWorkflowTriggers: false,
+      });
+      const [reference] = await sql<{ id: string }[]>`
+      SELECT ref.id
+      FROM mail.remote_message_refs ref
+      JOIN mail.message_contents message ON message.id = ref.message_id
+      WHERE message.mailbox_id = ${mailboxId}::uuid AND message.message_id = ${incoming.messageId}
+      LIMIT 1
+    `;
+      if (!reference) throw new Error("Failed to load the automatic reply source message");
+      // The sender's return path is what an automatic reply answers; this fixture
+      // ingests no headers, so state it before the snapshot is taken.
+      await sql`
+      UPDATE mail.message_contents
+      SET hydration_status = 'complete', plain_text = 'PRIVATE_AUTOMATIC_REPLY_BODY', sanitized_html = '<p>HTML reply source</p>',
+          protocol_facts = protocol_facts || ${{ returnPath: `<${sender}>`, autoSubmitted: "no" }}::jsonb
+      WHERE mailbox_id = ${mailboxId}::uuid AND message_id = ${incoming.messageId}
+    `;
+      const snapshot = await getWorkflowSnapshot({ mailboxId, remoteMessageRefId: reference.id });
+      if (!snapshot?.source.conversation) throw new Error("Automatic reply source has no conversation");
+      // The reply leaves the mailbox's internal domains, which is a compose
+      // safety warning. Nobody is composing it, so it must still go out.
+      await sql`
+      UPDATE mail.mailboxes
+      SET compose_safety = ${{ internalDomains: ["example.test"], largeRecipientThreshold: 20 }}::jsonb
+      WHERE id = ${mailboxId}::uuid
+    `;
+
+      const created = await createWorkflow({
+        context,
+        mailboxId,
+        input: {
+          name: `Automatic reply send ${scenario}-${suffix}`,
+          priority: 100,
+          source: `inputs:
+  message:
+    type: mailMessage
+    required: true
+  conversation:
+    type: mailConversation
+    required: true
+triggers:
+  messageReceived:
+    with:
+      message: "\${{ trigger.message }}"
+      conversation: "\${{ trigger.conversation }}"
+steps:
+  - automaticReply:
+      message: inputs.message
+      conversation: inputs.conversation
+      sender: ${senderIdentityShortId}
+      schedule:
+        mode: always
+      subject: Receipt
+      body: "We received your message: {{ inputs.message.body }}"
+`,
+          effectBudget: { ...noEffectBudget, maxSends: 1, maxDrafts: 1 },
+        },
+      });
+      if (!created.ok) throw new Error(`${created.error.code}: ${created.error.message}`);
+      const activated = await activateWorkflow({
+        context,
+        mailboxId,
+        workflowId: created.data.id,
+        input: { expectedVersionId: created.data.currentVersion.id },
+      });
+      if (!activated.ok) throw new Error(activated.error.message);
+      const emission = await emitWorkflowEvent(
+        {
+          appId: "mail",
+          scopeId: mailboxId,
+          type: "mail.messageReceived",
+          targetWorkflowId: created.data.id,
+          data: { message: snapshot.source.message, conversation: snapshot.source.conversation },
+          context: mailWorkflowEventContext(snapshot),
+          dedupeKey: `mail-workflow-auto-reply-${scenario}-${suffix}`,
+          occurredAt: new Date(snapshot.internalDate),
+        },
+        { dispatch: "now" },
+      );
+      const runId = emission.runIds[0]!;
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished" });
+
+      const commands = await sql<{ id: string; kind: string; result: { outboxSubmissionId?: string } | string }[]>`
+      SELECT id, kind, result FROM mail.commands WHERE correlation_id = ${runId}
+    `;
+      expect(commands.map((command) => command.kind)).toEqual(["send"]);
+      const submissions = await sql<{ id: string; draft_snapshot: Record<string, unknown> }[]>`
+      SELECT submission.id, submission.draft_snapshot
+      FROM mail.outbox_submissions submission
+      WHERE submission.command_id = ${commands[0]!.id}::uuid
+    `;
+      expect(submissions).toHaveLength(1);
+      expect(submissions[0]?.draft_snapshot).toMatchObject({ body: "We received your message: PRIVATE_AUTOMATIC_REPLY_BODY" });
+      const [frozen] = await sql<{ frozen_hydration: Record<string, unknown> }[]>`
+      SELECT frozen_hydration FROM mail.workflow_run_state WHERE run_id = ${runId}::uuid
+    `;
+      expect(frozen?.frozen_hydration).toEqual({ "inputs.message.bodyText": "PRIVATE_AUTOMATIC_REPLY_BODY" });
+
+      const submitted: string[] = [];
+      let attempts = 0;
+      const smtp = spyOn(imapSmtpConnector, "sendSource").mockImplementation(async (_runtime, request) => {
+        attempts++;
+        if (scenario === "legacy-retry" && attempts === 1) {
+          throw Object.assign(new Error("Fixture connection timed out before reading the message"), { code: "ETIMEDOUT" });
+        }
+        const chunks: Buffer[] = [];
+        for await (const part of request.source) chunks.push(Buffer.from(part));
+        submitted.push(Buffer.concat(chunks).toString("utf8"));
+        return { accepted: request.recipients, rejected: [], response: "250 fixture accepted", messageId: request.messageId };
+      });
+      try {
+        if (scenario === "legacy-retry") {
+          expect(await executeOutboxSubmission(submissions[0]!.id)).toBe("scheduled");
+          expect(attempts).toBe(1);
+          expect(submitted).toHaveLength(0);
+          await sql`UPDATE mail.outbox_submissions SET scheduled_at = now() - interval '1 second' WHERE id = ${submissions[0]!.id}::uuid`;
+        }
+        if (scenario !== "template") {
+          // Model a version saved and queued by a previous release, which had
+          // no publication or queue-time guard: rewrite only the stored plan.
+          const [version] = await sql<
+            { plan: WorkflowBoundPlan }[]
+          >`SELECT plan FROM workflows.version WHERE id = ${created.data.currentVersion.id}::uuid`;
+          if (!version) throw new Error("Missing historical version");
+          const legacyBody = {
+            "legacy-summary": "{{ inputs.conversation.summary }}",
+            "legacy-shadowed-summary": "{% if false %}{% assign inputs = nil %}{% endif %}{{ inputs.conversation.summary }}",
+            "legacy-computed-summary":
+              "{% if false %}{% assign inputs = nil %}{% endif %}{% assign key = 'summary' %}{{ inputs.conversation[key] }}",
+            "legacy-computed-root": "{% assign root = 'context' %}{{ [root] | json }}",
+            "legacy-nested-computed-root":
+              "{% if false %}{% assign replies = nil %}{% endif %}{% assign root = 'context' %}{{ replies[[root].source.conversation.summary] }}",
+            "legacy-expression-filter":
+              "{% assign groups = 'x' | split: ',' | group_by_exp: 'item', 'inputs.conversation.summary' %}{{ groups.first.name }}",
+          }[scenario];
+          const plan = legacyBody
+            ? {
+                ...version.plan,
+                steps: version.plan.steps.map((step) =>
+                  step.kind === "action" ? { ...step, config: { ...step.config, body: legacyBody } } : step,
+                ),
+              }
+            : scenario === "legacy-summary-exists"
+              ? {
+                  ...version.plan,
+                  steps: [
+                    ...version.plan.steps,
+                    {
+                      kind: "if",
+                      condition: { operator: "exists", reference: "inputs.conversation.summary" },
+                      sourcePath: ["steps", 1],
+                      then: [],
+                      else: [],
+                    },
+                  ],
+                }
+              : {
+                  ...version.plan,
+                  steps: [
+                    ...version.plan.steps,
+                    {
+                      kind: "if",
+                      condition: { operator: "equals", operands: [1, 2] },
+                      sourcePath: ["steps", 1],
+                      then: [
+                        {
+                          kind: "action",
+                          action: "aiGenerateText",
+                          config: { prompt: "Unused historical AI step", saveAs: "generated" },
+                          sourcePath: ["steps", 1, "then", 0],
+                        },
+                      ],
+                      else: [],
+                    },
+                  ],
+                };
+          // Versions are immutable; lift the guard only inside this transaction.
+          await sql.begin(async (tx) => {
+            await tx`ALTER TABLE workflows.version DISABLE TRIGGER version_reject_update`;
+            await tx`UPDATE workflows.version SET plan = ${plan}::jsonb WHERE id = ${created.data.currentVersion.id}::uuid`;
+            await tx`ALTER TABLE workflows.version ENABLE TRIGGER version_reject_update`;
+          });
+        }
+        expect(await executeOutboxSubmission(submissions[0]!.id)).toBe(scenario === "template" ? "sent" : "failed");
+        if (scenario === "template") {
+          expect(submitted).toHaveLength(1);
+          expect(submitted[0]).toContain("We received your message: PRIVATE_AUTOMATIC_REPLY_BODY");
+          expect(attempts).toBe(1);
+        } else {
+          expect(submitted).toHaveLength(0);
+          expect(attempts).toBe(scenario === "legacy-retry" ? 1 : 0);
+          const [failure] = await sql<
+            { last_error_code: string }[]
+          >`SELECT last_error_code FROM mail.outbox_submissions WHERE id = ${submissions[0]!.id}::uuid`;
+          expect(failure?.last_error_code).toBe("MAIL_WORKFLOW_SEND_REVIEW_REQUIRED");
+        }
+        expect(await executeOutboxSubmission(submissions[0]!.id)).toBeNull();
+        expect(attempts).toBe(scenario === "template" || scenario === "legacy-retry" ? 1 : 0);
+      } finally {
+        smtp.mockRestore();
+      }
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished" });
+      const [run] = await sql<{ state: string; effects_used: Record<string, number> | string }[]>`
+      SELECT state, effects_used FROM workflows.run WHERE id = ${runId}::uuid
+    `;
+      expect(run?.state).toBe(scenario === "template" ? "succeeded" : "failed");
+      const used = typeof run?.effects_used === "string" ? JSON.parse(run.effects_used) : run?.effects_used;
+      expect(used).toMatchObject({ maxSends: 1, maxDrafts: 1 });
+      const settled = await sql<{ id: string }[]>`SELECT id FROM mail.commands WHERE correlation_id = ${runId}`;
+      expect(settled).toHaveLength(1);
+
+      await sql`
+      UPDATE mail.mailboxes
+      SET compose_safety = ${{ internalDomains: [], largeRecipientThreshold: 20 }}::jsonb
+      WHERE id = ${mailboxId}::uuid
+    `;
+    });
+  }
+
+  const createLegacyWorkflow = async (params: Parameters<typeof createWorkflow>[0], bindings: Record<string, string>) => {
+    const binder = spyOn(workflowBinder, "bindMailWorkflow").mockImplementation(async (ir, catalog) => ({
+      ok: true,
+      plan: await bindWorkflow(ir, mailWorkflows, () => ({ catalog: snapshotMailWorkflowCatalog(catalog), bindings })),
+    }));
+    try {
+      return await createWorkflow(params);
+    } finally {
+      binder.mockRestore();
+    }
+  };
+
+  test("a saved AI automatic reply cannot materialize a send command", async () => {
+    const sender = `ai-auto-reply-${suffix}@external.test`;
+    const incoming = envelope({ uid: 7088, providerMessageId: `workflow-ai-auto-reply-${suffix}`, from: sender });
     await ingestEnvelope({
       db: sql,
       mailboxId,
@@ -1533,13 +1802,14 @@ steps:
       WHERE id = ${mailboxId}::uuid
     `;
 
-    const created = await createWorkflow({
-      context,
-      mailboxId,
-      input: {
-        name: `Automatic reply send ${suffix}`,
-        priority: 100,
-        source: `inputs:
+    const created = await createLegacyWorkflow(
+      {
+        context,
+        mailboxId,
+        input: {
+          name: `Generated automatic reply send ${suffix}`,
+          priority: 100,
+          source: `inputs:
   message:
     type: mailMessage
     required: true
@@ -1552,6 +1822,10 @@ triggers:
       message: "\${{ trigger.message }}"
       conversation: "\${{ trigger.conversation }}"
 steps:
+  - aiGenerateText:
+      prompt: Write a reply to the message.
+      input: "\${{ inputs.message.bodyText }}"
+      saveAs: reply
   - automaticReply:
       message: inputs.message
       conversation: inputs.conversation
@@ -1559,11 +1833,13 @@ steps:
       schedule:
         mode: always
       subject: Receipt
-      body: "We received your message: {{ inputs.message.body }}"
+      body: "{{ reply }}"
 `,
-        effectBudget: { ...noEffectBudget, maxSends: 1, maxDrafts: 1 },
+          effectBudget: { ...noEffectBudget, maxSends: 1, maxDrafts: 1, maxAiCalls: 1 },
+        },
       },
-    });
+      { "steps.1.automaticReply.sender": senderIdentityShortId },
+    );
     if (!created.ok) throw new Error(`${created.error.code}: ${created.error.message}`);
     const activated = await activateWorkflow({
       context,
@@ -1580,42 +1856,54 @@ steps:
         targetWorkflowId: created.data.id,
         data: { message: snapshot.source.message, conversation: snapshot.source.conversation },
         context: mailWorkflowEventContext(snapshot),
-        dedupeKey: `mail-workflow-auto-reply-${suffix}`,
+        dedupeKey: `mail-workflow-ai-auto-reply-${suffix}`,
         occurredAt: new Date(snapshot.internalDate),
       },
       { dispatch: "now" },
     );
     const runId = emission.runIds[0]!;
-    expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished" });
+    const profile = {
+      id: "fixture-model",
+      label: "Fixture",
+      provider: "openai" as const,
+      model: "fixture",
+      enabled: true,
+      capabilities: [],
+      dataBoundary: "private" as const,
+    };
+    const model = spyOn(aiStructured, "resolveAiWorkflowModel").mockResolvedValue({
+      profile,
+      provider: createAiProvider(profile, "fixture-key"),
+    });
+    const submit = spyOn(workflowAiRuntime, "submitWorkflowAiTask").mockResolvedValue(undefined);
+    try {
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished" });
+      const [task] = await sql<{ id: string; request: { kind: string } }[]>`
+        SELECT id, request FROM ai.workflow_task WHERE run_id = ${runId}::uuid
+      `;
+      expect(task?.request.kind).toBe("generate_text");
+      if (!task) throw new Error("Workflow did not reach the real durable AI action");
+      expect(await claimWorkflowAiTask(task.id)).toMatchObject({ status: "running" });
+      await completeWorkflowAiTask(task.id, "AI_GENERATED_UNREVIEWED_REPLY", { input: 12, output: 7 });
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished" });
+    } finally {
+      model.mockRestore();
+      submit.mockRestore();
+    }
 
     const commands = await sql<{ id: string; kind: string; result: { outboxSubmissionId?: string } | string }[]>`
       SELECT id, kind, result FROM mail.commands WHERE correlation_id = ${runId}
     `;
-    expect(commands.map((command) => command.kind)).toEqual(["send"]);
-    const submissions = await sql<{ id: string; draft_snapshot: Record<string, unknown> }[]>`
-      SELECT submission.id, submission.draft_snapshot
-      FROM mail.outbox_submissions submission
-      WHERE submission.command_id = ${commands[0]!.id}::uuid
-    `;
-    expect(submissions).toHaveLength(1);
-    expect(submissions[0]?.draft_snapshot).toMatchObject({ body: "We received your message: PRIVATE_AUTOMATIC_REPLY_BODY" });
-    const [frozen] = await sql<{ frozen_hydration: Record<string, unknown> }[]>`
-      SELECT frozen_hydration FROM mail.workflow_run_state WHERE run_id = ${runId}::uuid
-    `;
-    expect(frozen?.frozen_hydration).toEqual({ "inputs.message.bodyText": "PRIVATE_AUTOMATIC_REPLY_BODY" });
-
-    // The provider confirms the send, and the run resumes to observe it.
-    await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE id = ${commands[0]!.id}::uuid`;
-    expect(await wakeWorkflowRunsWaitingOn({ appId: "mail", kind: "mail.command", key: commands[0]!.id })).toContain(runId);
-    expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished" });
-    const [run] = await sql<{ state: string; effects_used: Record<string, number> | string }[]>`
-      SELECT state, effects_used FROM workflows.run WHERE id = ${runId}::uuid
-    `;
-    expect(run?.state).toBe("succeeded");
-    const used = typeof run?.effects_used === "string" ? JSON.parse(run.effects_used) : run?.effects_used;
-    expect(used).toMatchObject({ maxSends: 1, maxDrafts: 1 });
-    const settled = await sql<{ id: string }[]>`SELECT id FROM mail.commands WHERE correlation_id = ${runId}`;
-    expect(settled).toHaveLength(1);
+    expect(commands).toHaveLength(0);
+    expect(
+      await sql`SELECT id FROM mail.outbox_submissions WHERE mailbox_id = ${mailboxId}::uuid AND command_id IN (SELECT id FROM mail.commands WHERE correlation_id = ${runId})`,
+    ).toHaveLength(0);
+    expect(await sql`SELECT id FROM approvals.requests WHERE approver_user_id = ${userId}::uuid`).toHaveLength(0);
+    const [run] = await sql<{ state: string; error: { code: string } }[]>`SELECT state, error FROM workflows.run WHERE id = ${runId}::uuid`;
+    expect(run).toMatchObject({ state: "failed", error: { code: "MAIL_WORKFLOW_SEND_REVIEW_REQUIRED" } });
+    // Retrying the run cannot create a send after the refusal.
+    expect(await runMailWorkflow(runId)).toMatchObject({ state: "idle" });
+    expect(await sql`SELECT id FROM mail.commands WHERE correlation_id = ${runId}`).toHaveLength(0);
 
     await sql`
       UPDATE mail.mailboxes
@@ -1919,6 +2207,187 @@ steps:
           actor: expect.objectContaining({ kind: "workflow", displayName: `Summary action ${suffix}` }),
         }),
       );
+    }
+  });
+  test("a saved scheduled AI draft send remains refused by draft ownership", async () => {
+    const created = await createLegacyWorkflow(
+      {
+        context,
+        mailboxId,
+        input: {
+          name: `Scheduled generated draft ${suffix}`,
+          priority: 100,
+          source: `triggers:
+  schedule:
+    cron: "0 8 * * *"
+    timezone: UTC
+    with: {}
+steps:
+  - aiGenerateText:
+      prompt: Write a status message.
+      saveAs: reply
+  - createDraft:
+      sender: ${senderIdentityShortId}
+      to:
+        - address: scheduled-recipient@external.test
+      subject: Scheduled proposal
+      body: "{{ reply }}"
+      saveAs: draft
+  - scheduleDraftSend:
+      draft: draft
+      scheduledAt: "2026-10-20T08:00:00.000Z"
+`,
+          effectBudget: { ...noEffectBudget, maxSends: 1, maxDrafts: 1, maxAiCalls: 1 },
+        },
+      },
+      { "steps.1.createDraft.sender": senderIdentityShortId },
+    );
+    if (!created.ok) throw new Error(created.error.message);
+    const active = await activateWorkflow({
+      context,
+      mailboxId,
+      workflowId: created.data.id,
+      input: { expectedVersionId: created.data.currentVersion.id },
+    });
+    if (!active.ok) throw new Error(active.error.message);
+    const event = await emitWorkflowEvent(
+      {
+        appId: "mail",
+        scopeId: mailboxId,
+        type: "mail.schedule",
+        targetWorkflowId: created.data.id,
+        data: {},
+        context: {},
+        dedupeKey: `scheduled-ai-${suffix}`,
+        occurredAt: new Date("2026-10-20T08:00:00.000Z"),
+      },
+      { dispatch: "now" },
+    );
+    const runId = event.runIds[0]!;
+    const profile = {
+      id: "fixture-model",
+      label: "Fixture",
+      provider: "openai" as const,
+      model: "fixture",
+      enabled: true,
+      capabilities: [],
+      dataBoundary: "private" as const,
+    };
+    const model = spyOn(aiStructured, "resolveAiWorkflowModel").mockResolvedValue({
+      profile,
+      provider: createAiProvider(profile, "fixture-key"),
+    });
+    const submit = spyOn(workflowAiRuntime, "submitWorkflowAiTask").mockResolvedValue(undefined);
+    try {
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "waiting" } });
+      const [task] = await sql<{ id: string }[]>`SELECT id FROM ai.workflow_task WHERE run_id = ${runId}::uuid`;
+      if (!task) throw new Error("Scheduled workflow did not reach AI");
+      await claimWorkflowAiTask(task.id);
+      await completeWorkflowAiTask(task.id, "AI_SCHEDULED_PROPOSAL", { input: 3, output: 4 });
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished" });
+      const [run] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id = ${runId}::uuid`;
+      expect(run?.state).toBe("failed");
+      expect(await sql`SELECT id FROM mail.commands WHERE correlation_id = ${runId}`).toHaveLength(0);
+      const [draft] = await sql<
+        { origin: string; state: string; body_markdown: string }[]
+      >`SELECT origin, state, body_markdown FROM mail.drafts WHERE mailbox_id = ${mailboxId}::uuid AND author_kind = 'workflow' AND author_id = ${created.data.currentVersion.id}::uuid`;
+      expect(draft).toMatchObject({ origin: "user", state: "draft", body_markdown: "AI_SCHEDULED_PROPOSAL" });
+    } finally {
+      model.mockRestore();
+      submit.mockRestore();
+    }
+  });
+
+  test("direct agent send retains the documented machine authority contract", async () => {
+    const [account] = await sql<{ id: string }[]>`
+      INSERT INTO auth.service_accounts (name, kind) VALUES ('Mail send fixture agent', 'agent') RETURNING id
+    `;
+    if (!account) throw new Error("Missing agent account");
+    try {
+      const grant = await grantMailboxAccess({
+        context,
+        mailboxId,
+        principal: { type: "service_account", serviceAccountId: account.id },
+        permission: "write",
+      });
+      if (!grant.ok) throw new Error(grant.error.message);
+      const agent: MailRequestContext = {
+        requestId: `agent-send-${suffix}`,
+        accessSubject: { type: "service_account", serviceAccountId: account.id },
+        actor: {
+          kind: "service_account",
+          delegatedUser: null,
+          scopes: ["mail:write"],
+          credentialExpiresAt: "2099-01-01T00:00:00.000Z",
+          serviceAccount: {
+            id: account.id,
+            name: "Mail send fixture agent",
+            kind: "agent",
+            status: "active",
+            delegatedUserId: null,
+            appId: null,
+            resourceType: null,
+            resourceId: null,
+            createdBy: null,
+            createdAt: "2026-10-20T00:00:00.000Z",
+          },
+        },
+      };
+      const draft = await createDraft({
+        context: agent,
+        mailboxId,
+        input: {
+          ...draftContentInputSchema.parse({
+            senderIdentityId: senderIdentityShortId,
+            to: [{ address: "agent-recipient@external.test" }],
+            subject: "Agent proposal",
+            body: "AI_GENERATED_AGENT_PROPOSAL",
+            format: "plain",
+          }),
+          senderIdentityId,
+        },
+      });
+      if (!draft.ok) throw new Error(draft.error.message);
+      const [stored] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.drafts WHERE id = ${draft.data.id}::uuid`;
+      const capabilityContext = {
+        ...agent,
+        user: null,
+        origin: "http" as const,
+        requestId: `agent-send-${suffix}`,
+        idempotencyKey: `agent-send-${suffix}`,
+        signal: new AbortController().signal,
+        locale: "en",
+      };
+      const content = await mailCapabilities.queries["draft.send.review"].run(
+        { mailboxId: mailboxShortId, draftId: stored!.short_id, expectedRevision: draft.data.revision },
+        capabilityContext,
+      );
+      if (!content.ok) throw new Error(content.error.message);
+      const review = content.data.data;
+      const sent = await mailCapabilities.actions["draft.send"].run(
+        {
+          mailboxId: mailboxShortId,
+          draftId: stored!.short_id,
+          senderIdentityId: senderIdentityShortId,
+          expectedRevision: draft.data.revision,
+          expectedContentHash: review.contentHash,
+          safetyApproval: {
+            revision: review.revision,
+            fingerprint: review.fingerprint,
+            warningIds: review.warnings.map((warning) => warning.id),
+          },
+          undoSeconds: 0,
+        },
+        capabilityContext,
+      );
+      expect(sent).toMatchObject({ ok: true });
+      const submissions = await sql<
+        { draft_snapshot: { body: string } }[]
+      >`SELECT draft_snapshot FROM mail.outbox_submissions WHERE draft_id = ${draft.data.id}::uuid`;
+      expect(submissions).toHaveLength(1);
+      expect(submissions[0]?.draft_snapshot.body).toBe("AI_GENERATED_AGENT_PROPOSAL");
+    } finally {
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${account.id}::uuid`;
     }
   });
 });

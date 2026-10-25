@@ -31,7 +31,11 @@ const input: MailMessage = {
   html: "<p>Hello</p><script>bad()</script>",
   headers: { "X-Test": "bulk" },
 };
-suiteFor("database", "nats")("atomic bulk mail and paced Core delivery", () => {
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("atomic bulk mail and paced Core delivery", () => {
   let originalTargets: string | undefined;
   beforeEach(() => {
     originalTargets = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;

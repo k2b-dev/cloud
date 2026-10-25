@@ -44,14 +44,16 @@ and durable data.
 
 - Use `defineApp()` for the declaration, the Hono router for requests, and
   `app.start()` for registration and lifecycle.
+- Declare `access` for app use; Cloud applies it before app code and to discovery. Keep resource checks in services.
+  Read **App access** (`/en/docs/identity/app-access`) for public routes and migration.
 - Keep declared prefixes, mounted routes, and registration aligned. A running
   process alone does not prove route readiness.
-- Cloud authenticates and resolves access subjects. The application checks
-  resource permissions in every service path: `actor` for identity and audit,
-  `accessSubject` for grants; UI visibility and page context refs are not
-  authorization. Grant changes keep a manager (`ensureManagerRemains()`). Only a `resource_bound`
-  service account carries `appId`, `resourceType`, and `resourceId`;
-  `standalone` and `agent` accounts hold their own grants, capped by scopes.
+- Cloud authenticates requests and resolves `actor` (identity and audit) and `accessSubject` (grants). Application services enforce resource permissions on every path;
+  UI visibility and page context refs never grant access. Grant changes keep a manager (`ensureManagerRemains()`).
+  Only `resource_bound` service accounts carry `appId`, `resourceType`, and `resourceId`; `standalone` and `agent` accounts use their own grants, capped by scopes.
+- OAuth mutations require `write` or `admin`, including resource routes and forwarded capabilities; sessions and personal API keys keep their contracts.
+  For read-only POST routes, put `auth.readOnly` first in the route's handlers; never use it for mutations or subtrees.
+  Read **Route policies** (`/en/docs/identity/route-policies`).
 - Send an interactive credential only to Core. Framework-owned cross-app calls
   exchange it for a short-lived target- and operation-bound invocation; never
   forward a cookie, OAuth token, or API key directly to another application.
@@ -139,17 +141,15 @@ SolidJS library remains independent of Cloud and application domains.
   Build no back buttons for it; an app with its own header places `PageTrail` there.
 
 ## Ship CLI commands and Assistant Skills with the app
-
 Read **Application CLI modules** (`/en/docs/platform/cli-modules`) and its *Design commands* section before adding `cld` commands.
 Declare modules as `defineApp({ cli: { <name>: { module, references } } })`: `module` exports `defineCliCommands()` named
 `<name>`, `references` holds agent Markdown with `index.md`. The app image serves both at `/cli/plugins/<name>/` to signed-in
 callers `cli.plugins.access` allows; `cld` installs them per profile and writes the references into the agent skill per version. The server authorizes.
 
 Read **Ship Assistant Skills** (`/en/docs/platform/assistant-skills`) first: keep each Skill in `src/skills/<name>/SKILL.md` (+ `references/*.md`), import the files `with { type: "text" }` in `src/skills.ts`, export `SKILLS = [skill({ markdown, references })]` from `@k2b/cloud`, and pass `skills: SKILLS` to `defineApp()`.
-Cloud validates them at start and updates them by content hash; it offers them only while the app runs and to the people who may see its Help (`nav.requiresRoles`, or administrators for an app reached only through `adminHref`). A Skill grants nothing; never seed or rewrite Skill rows from code.
+Cloud validates Skills at start, updates them by content hash, and offers them only while their app runs and its access rule (legacy: Help audience) permits use. Skills grant nothing; never seed or rewrite Skill rows from code.
 
 ## Build and verify one complete slice
-
 For capability design or changes, read **App capabilities** in the Docs collection (`/en/docs/platform/capabilities`),
 especially its machine-composition and design-review guidance. Trace real task paths and consumers before choosing
 result fields or changing contracts; keep detailed API rules in that guide. Cloud records one execution row for every

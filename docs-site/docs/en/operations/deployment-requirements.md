@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Deployment requirements
@@ -26,6 +26,19 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 `app-mail`; the routing service is named `gateway`. The shared library, UI
 package, CLI and desktop development tools are not additional server apps in
 this service set.
+
+## Review Mail workflows that send automatically
+
+Mail refuses automatic send effects in workflows containing AI actions or
+reading conversation summaries, which another AI workflow may have written.
+The rule covers the entire definition, including unused branches and AI actions
+after a send. It applies to existing versions, queued sends, and retries;
+blocked sends fail with `MAIL_WORKFLOW_SEND_REVIEW_REQUIRED` before SMTP.
+
+Replace generated replies with `createDraft` or `createReplyDraft` and have a
+person review and send the complete message. Fixed operator-approved reply
+templates in workflows without AI or summary reads keep working. Direct
+machine-token Mail permissions retain their documented authorization contract.
 
 ## Size Mail for large messages
 
@@ -97,12 +110,15 @@ before storing it as the secret `geo.api_key`. There is no endpoint setting or
 new environment variable.
 Choose `geo.plan`, then review the monthly and per-person daily credit limits.
 Core creates its durable geo ledger during startup migrations.
-Routing now shares these settings and counters. Its full provider chain is
-reserved against a caller-selected reference-distance allowance (default
-500 km per leg). Known distance overruns are debited even beyond the original
-reservation, and stop subsequent paid steps; later reservations see the
-exhausted counters. This reference budget is not a guaranteed provider-invoice
-ceiling. Review [routing accounting](/en/docs/platform/places-and-maps#set-a-reference-distance-allowance)
+Routing shares these settings and counters. Core atomically reserves its full
+provider chain using straight-line distance times a fixed detour factor of 2.0.
+Unknown address coordinates need a maximum-distance reservation; choosing
+coordinates from autocomplete first reduces that estimate. Known cost overruns
+are debited beyond the reservation and stop later paid steps without automatic
+retry. The administration page and audit log expose overruns.
+This is a **technical refinement of the hard budget limit**: Cloud reserves
+conservatively before every call; Geoapify does not guarantee a cap on its side.
+Review [routing accounting](/en/docs/platform/places-and-maps#reserve-estimated-routing-costs)
 before selecting budgets for long routes or optimized tours.
 
 Search text, addresses, coordinates, categories, and route corridor geometry
@@ -440,7 +456,7 @@ or mutate real data without approval.
 | --- | --- | --- | --- |
 | [Contacts](/en/apps/contacts) (`contacts`) | Baseline | No additional external service for contact books and records. Cross-app use requires whichever consumer/provider is selected. | Create and read a disposable contact in a test book; verify another account's access boundary. |
 | [FAQ](/en/apps/faq) (`faq`) | Baseline | No additional external service for authored FAQ content. | Publish a test entry and verify its intended visibility on `/faq`. |
-| [Files](/en/apps/filesv2) (`filesv2`) | Baseline; application-owned storage assignments | Filegate 7.0 (tested) or Filegate 6.1, which does not report stable file IDs (`stableIds`), with independent roots, backend token, a browser-reachable public origin outside Cloud cookie scope, and exact CORS origins. Cloud storage requires local Linux identities; FreeIPA requires valid POSIX identities and root `execution: true` with the explicitly configured Unix-execution daemon privileges. Set `managed: true` only for exclusive Filegate writers; keep it false with external writers. File references survive rename and move only on Filegate 7 roots with `index: true` and `managed: true`. Optional: Collabora Online 26.04 or later with its own browser-reachable address and TLS; Collabora must reach Cloud's public address (or the configured WOPI origin) and Cloud must reach Collabora. Several Collabora instances need sticky routing on `WOPISrc`. | Inspect existing storage in `/admin/filesv2`, browse an authorized directory and download through a lease. Verify external filesystem additions and denied access. With Collabora configured, open one `odt` from two sessions, save, and inspect history according to the root cooldown. Verify conflicts on managed roots; unmanaged roots provide only best-effort conflict checks. Test the real mount and export before production acceptance. |
+| [Files](/en/apps/filesv2) (`filesv2`) | Baseline; application-owned storage assignments | Filegate 7.1.0 with independent roots, backend token, a browser-reachable public origin outside Cloud cookie scope, and exact CORS origins. Cloud storage requires local Linux identities; FreeIPA requires valid POSIX identities and root `execution: true` with the explicitly configured Unix-execution daemon privileges. Set `managed: true` only for exclusive Filegate writers; keep it false with external writers. File references survive rename and move only on Filegate 7 roots with `index: true` and `managed: true`. Optional: Collabora Online 26.04 or later with its own browser-reachable address and TLS; Collabora must reach Cloud's public address (or the configured WOPI origin) and Cloud must reach Collabora. Several Collabora instances need sticky routing on `WOPISrc`. | Inspect existing storage in `/admin/filesv2`, browse an authorized directory and download through a lease. Verify external filesystem additions and denied access. With Collabora configured, open one `odt` from two sessions, save, and inspect history according to the root cooldown. Verify conflicts on managed roots; unmanaged roots provide only best-effort conflict checks. Test the real mount and export before production acceptance. |
 | [Grids](/en/apps/grids) (`grids`) | Baseline | Files are stored in Postgres (`grids.max_file_size_mb` controls upload size). Document PDF rendering requires Gotenberg. Workflow email uses notifications as app `core` and requires a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). Other workflow integrations require their selected providers. | Create a test base/table/record; upload a small file. If documents are enabled, render a test PDF. |
 | [Mail](/en/apps/mail) (`mail`) | Baseline; an unconnected mailbox is not proof of provider readiness | Mailbox synchronization and delivery require configured IMAP/SMTP endpoints, TLS, credentials and network-policy approval. Users connect their own mailboxes through IMAP/SMTP; managed Google/Microsoft browser authorization is not available. Incoming automations need Mail's workload credential and mandates; AI steps need AI configuration, Spaces actions need Spaces. Recipient suggestions and participant contacts need the contact-directory app, Contacts by default (**Administration → Mail → Contact directory** or `cld mail admin contact-directory`). | Verify a test mailbox connection and synchronization; send only to an approved test recipient. Exercise one permitted automation if enabled. |
 | [Notebooks](/en/apps/notebooks) (`notebooks`) | Baseline | Live collaboration requires WebSockets. Notes and attachments use Postgres. PDF export requires Gotenberg. External images additionally require outbound HTTPS from the Notebooks container to a public image address without redirects. An export reveals the server's egress address and the export time to the image host. S3 snapshots need per-notebook endpoint, region, bucket and credentials; they are optional. `notebooks.reindex_cron` and `notebooks.snapshot_cron` schedule maintenance. BM25 ranking is optional; see [Optional BM25 search ranking](#optional-bm25-search-ranking). | Edit a test note from two sessions; reload it and download an attachment. If snapshots are enabled, run and inspect one snapshot. |
@@ -477,7 +493,8 @@ For S3 snapshots, enter credentials in the individual notebook's snapshot
 configuration, not invented global S3 credential environment keys. Snapshots upload
 to public storage by default; internal S3-compatible storage requires an operator
 allowlist as described below. Files (`filesv2`) uses
-the Filegate root and lease API of Filegate 6.1 or 7.0; see [Files](/en/apps/filesv2).
+the Filegate 7.1.0 root and lease API; see [Files](/en/apps/filesv2) and the
+[Filegate upgrade procedure](#upgrade-filegate-to-710).
 
 Cloud refuses person- and administrator-chosen outbound requests from the Webhook Tester,
 workflow HTTP steps, assistant file downloads, web push, Mail endpoints, Pulse metrics sources, Notebook S3 snapshots, Notebook PDF external images, health webhooks, Geo city search, Assistant rsql, and outgoing mail SMTP and bounce IMAP connections to
@@ -720,8 +737,21 @@ expires.
 
 During the rollout to this release, a replica of the previous version takes no
 setup lock. Restart old and new replicas of one app one at a time until all
-run this release. Keep Core first: it creates the shared schemas other
-applications need.
+run this release. Keep Core first: it creates the shared schemas and the
+installation-wide `pgcrypto` extension other applications need. Updated app
+migrations no longer create that extension independently.
+
+### Pulse agent telemetry actions
+
+Pulse adds `base.create`, `base.clear_data`, `base.delete`, and `ingest.write`
+to its capability catalog. The existing base creation policy and base grants
+apply. Creation and ingest support remembered approval; clearing and deletion
+ask every time. Source creation and update keep their existing approval rules.
+The schema update records the creating access subject on new sources. Existing
+source tokens and API writes continue working; sources without a recorded
+creator need a new source for `ingest.write`. No data backfill is required.
+Website collectors keep tokens in their backend secret store and send through
+the existing HTTP ingest endpoint. See [Pulse](/en/apps/pulse#track-a-website-from-its-backend).
 
 ### Prepare Pulse's new data store
 
@@ -1682,6 +1712,29 @@ preloads the library.
 The Filegate public origin must be reachable from the requesting user's browser
 or CLI. See [private file lists and downloads](/en/apps/filesv2#compose-private-file-lists-and-downloads)
 for the capability flow, lease expiry, and access checks.
+
+## Upgrade Filegate to 7.1.0
+
+This Cloud release uses `@k2b/filegate` 7.1.0. Upgrade the Filegate server to
+7.1.0 before starting the updated Files application. The development Compose
+configuration uses `ghcr.io/k2b-dev/filegate:7.1.0`; production operators update
+their independently managed Filegate service.
+
+Stop Filegate and take a coordinated backup of its roots, including `.filegate`,
+and its complete `state_dir`, preserving ownership, ACLs, extended attributes,
+and inode identity. Keep the root paths, configuration, token and state directory
+in place. The first 7.1.0 startup rebuilds each index still stored in format 2
+once; allow additional startup time for large roots. File IDs, managed revisions,
+versions and upload sessions are retained. Do not delete the state directory to
+force a rebuild.
+
+After startup, verify authorized browsing, filename search, upload and download,
+and denied access on each storage area. Restart any paginated query that returns
+`409 cursor_invalid`: the daemon restart invalidates old cursors. Search scans
+have a ten-second server budget; if Files reports a search limit, narrow the
+folder or query before retrying.
+
+See the [Filegate 7.1.0 release notes](https://github.com/k2b-dev/filegate/releases/tag/v7.1.0).
 
 ## Optional Mail search ranking
 

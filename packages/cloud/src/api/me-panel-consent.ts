@@ -5,6 +5,8 @@ import { z } from "zod";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { panelProviderNeedsConsent } from "../contracts/panel-context-plain";
 import { type AuthContext, jsonResponse, requiresAuth, v } from "../server";
+import { appAccessAuthority } from "../services/app-access";
+import { discoverableApps } from "../services/app-discovery";
 import { PanelConsentCancelled, panelContextConsent } from "../services/panel-context-consent";
 import { getRuntimeContext } from "../ssr/runtime";
 
@@ -15,9 +17,9 @@ const SavedSchema = ProviderSchema.extend(AnswerSchema.shape).strict();
 
 /** Mounted below /me's session and user guards. The live request registry owns provider membership. */
 export const createMePanelConsentRoutes = (service = panelContextConsent) => {
-  const providers = (c: Parameters<typeof getRuntimeContext>[0]) =>
-    getRuntimeContext(c)
-      .apps.filter((app) => app.panel && panelProviderNeedsConsent(app.id))
+  const providers = async (c: import("hono").Context<AuthContext>) =>
+    (await discoverableApps(appAccessAuthority(c), getRuntimeContext(c).apps))
+      .filter((app) => app.panel && panelProviderNeedsConsent(app.id))
       .map((app) => app.id);
   return new Hono<AuthContext>()
     .use("*", async (c, next) => {
@@ -33,7 +35,7 @@ export const createMePanelConsentRoutes = (service = panelContextConsent) => {
         ...requiresAuth,
         responses: { 200: jsonResponse(AnswersSchema, "Answers for registered panel providers") },
       }),
-      async (c) => c.json({ answers: await service.list(c.get("user").id, providers(c)) }),
+      async (c) => c.json({ answers: await service.list(c.get("user").id, await providers(c)) }),
     )
     .put(
       "/panel-consent/:provider",
@@ -53,7 +55,8 @@ export const createMePanelConsentRoutes = (service = panelContextConsent) => {
       v("json", AnswerSchema),
       async (c) => {
         const { provider } = c.req.valid("param");
-        if (!providers(c).includes(provider)) return c.json({ code: "PANEL_PROVIDER_NOT_FOUND", message: "Panel provider not found" }, 404);
+        if (!(await providers(c)).includes(provider))
+          return c.json({ code: "PANEL_PROVIDER_NOT_FOUND", message: "Panel provider not found" }, 404);
         const { allowed, revision } = c.req.valid("json");
         let saved: Awaited<ReturnType<typeof service.set>>;
         try {

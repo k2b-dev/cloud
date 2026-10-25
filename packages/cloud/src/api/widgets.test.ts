@@ -4,6 +4,7 @@ import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import type { DashboardWidget } from "../_internal/registry";
 import { CAPABILITY_QUALIFIED_ID_MAX_LENGTH, CLOUD_RESOURCE_ID_MAX_LENGTH } from "../contracts/capabilities";
+import type { AppRegistryEntry } from "../contracts/registry";
 import {
   WIDGET_ID_MAX_LENGTH,
   WIDGET_KEY_MAX_LENGTH,
@@ -16,6 +17,7 @@ import {
   widgetKey,
 } from "../contracts/widgets";
 import type { AuthContext } from "../server";
+import { AppAccessDeniedError } from "../server/middleware/app-access";
 import { WIDGET_SETTINGS_PARAM, WIDGET_SETTINGS_PARAM_MAX_LENGTH } from "../server/widget-request";
 import { type signInvocationToken, signInvocationToken as signRealInvocation } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
@@ -81,12 +83,31 @@ const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callb
   );
 };
 
-const createWidgetRoutes = (dependencies: Parameters<typeof buildWidgetRoutes>[0] = {}) =>
-  buildWidgetRoutes({
+const createWidgetRoutes = (dependencies: Parameters<typeof buildWidgetRoutes>[0] = {}) => {
+  let entries: DashboardWidget[] = [];
+  return buildWidgetRoutes({
     withActiveSigner,
     signInvocation: async () => ({ token: "target-token" }) as Awaited<ReturnType<typeof signInvocationToken>>,
     ...dependencies,
+    listWidgets: async () => {
+      entries = (await dependencies.listWidgets?.()) ?? [];
+      return entries;
+    },
+    listApps:
+      dependencies.listApps ??
+      (async () =>
+        entries.map(
+          (entry): AppRegistryEntry => ({
+            id: entry.appId,
+            name: entry.appName,
+            description: entry.description,
+            icon: entry.appIcon,
+            routes: [],
+            baseUrl: "http://test.invalid",
+          }),
+        )),
   });
+};
 
 describe("Core widget proxy", () => {
   test("requires an OAuth read scope before registry lookup or invocation issuance", async () => {
@@ -800,7 +821,7 @@ describe("widget entry stream", () => {
         enabled: { kind: "toggle", label: "Enabled", default: true },
       },
     };
-    const routes = buildWidgetRoutes({
+    const routes = createWidgetRoutes({
       authenticate,
       withActiveSigner,
       listWidgets: async () => [declared],
@@ -951,4 +972,73 @@ describe("widget entry stream", () => {
       expect((await routes.request("/widgets/v1", request)).status).toBe(503);
     }
   });
+});
+
+test("app access removes widgets from GET and POST and hides direct widgets before signing", async () => {
+  let signed = 0;
+  let called = 0;
+  const routes = createWidgetRoutes({
+    authenticate,
+    listWidgets: async () => [widget],
+    listApps: async () => [
+      {
+        id: widget.appId,
+        name: "Hidden widget app",
+        icon: widget.appIcon,
+        description: "Secret",
+        baseUrl: "http://secret.invalid",
+        routes: [],
+        access: { kind: "roles", roles: ["admin"] },
+      },
+    ],
+    signInvocation: async () => {
+      signed++;
+      throw new Error("Hidden widget must not be signed");
+    },
+    fetch: async () => {
+      called++;
+      throw new Error("Hidden widget must not be called");
+    },
+  });
+  for (const init of [
+    undefined,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ widgets: [{ id: "secret", key: "weather/current" }] }),
+    },
+  ]) {
+    const response = await routes.request("/widgets/v1", init);
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).not.toContain("weather");
+    expect(text).not.toContain("secret");
+  }
+  expect((await routes.request("/widgets/v1/weather/current")).status).toBe(404);
+  expect(signed).toBe(0);
+  expect(called).toBe(0);
+});
+
+test("a grant revoked after widget discovery returns app_access_denied before provider execution", async () => {
+  let dispatched = false;
+  const routes = createWidgetRoutes({
+    authenticate: async (c, next) => {
+      c.set("actor", { kind: "user", user });
+      c.set("accessSubject", { type: "user", userId: user.id });
+      c.set("credentialKind", "session");
+      await next();
+    },
+    listWidgets: async () => [widget],
+    signInvocation: async () => {
+      throw new AppAccessDeniedError({ id: widget.appId });
+    },
+    fetch: async () => {
+      dispatched = true;
+      return Response.json({});
+    },
+  });
+  const response = await routes.request(`/widgets/v1/${widget.appId}/${widget.widgetId}`);
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ code: "app_access_denied", app: widget.appId });
+  expect(dispatched).toBe(false);
 });

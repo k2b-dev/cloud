@@ -1,4 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: Preserve grouped service barrel exports.
+export { appAccessAuthority, canUseApp, usableAppIds } from "./app-access";
 export { ipa } from "./ipa";
 export { accounts } from "./accounts";
 export { accountsAppService } from "./accounts";
@@ -267,3 +268,14 @@ export { coreGeo, createGeoService } from "./geo/service";
 export { migrate as migrateGeo } from "./geo/migrate";
 
 export { coreGeoMap, createGeoMapService } from "./geo/map";
+
+export {
+  AppAccessManagementError,
+  appAccessGrantCounts,
+  canManageAppAccess,
+  readAppAccess,
+  changeAppAccess,
+  canRepairAppAccess,
+  requireAppAccessManager,
+  type AppAccessSnapshot,
+} from "./app-access-management";

@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, expect, test } from "bun:test";
 import { resolveDisplayNames } from "@k2b/cloud/server";
+import { secrets } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import {
@@ -74,6 +75,36 @@ suite("history reader SQL and permission projection in a private database", () =
     });
     return { ...f, reader };
   }
+
+  test("pages history over visible entries only", async () => {
+    for (let index = 1; index <= 5; index++) await seed(candidate(index, { path_before: null }));
+    const f = fixture();
+    f.nodes.set(`${home}/restricted`, f.node(`${home}/restricted`, "stable-a"));
+    f.denied.add("restricted");
+    async function pages() {
+      const sequence = [];
+      let cursor: string | undefined;
+      do {
+        const page = await f.reader.activity(call, { limit: 2, cursor });
+        // Encryption uses a fresh nonce. Compare the authenticated cursor payload,
+        // including its visible keyset anchor, rather than randomized ciphertext.
+        sequence.push({ ...page, next: page.next ? await secrets.decrypt(page.next) : null });
+        cursor = page.next ?? undefined;
+        expect(sequence.length).toBeLessThanOrEqual(3);
+      } while (cursor);
+      return sequence;
+    }
+    const expected = await pages();
+    expect(expected.map((page) => page.items.length)).toEqual([2, 2, 1]);
+    const row = candidate();
+    await sql`INSERT INTO filesv2.activity(id,action,state,server_url,root,base_id,directory,name,
+      path_after,item_after_id,actor_kind,actor_user_id,via,started_at,finished_at)
+      SELECT ('40000000-0000-4000-8000-' || lpad(n::text,12,'0'))::uuid,'item.move','done',
+        ${row.server_url},'cloud',${baseId}::uuid,true,'restricted',${home + "/restricted"},
+        'stable-a','user',${otherId}::uuid,'web','2030-05-15T12:00:00Z','2030-05-15T12:00:00Z'
+      FROM generate_series(100,1100) n`;
+    expect(await pages()).toEqual(expected);
+  });
 
   test("reads actual rows, resolves live names, strips private detail, and preserves FK name deletion", async () => {
     await seed();

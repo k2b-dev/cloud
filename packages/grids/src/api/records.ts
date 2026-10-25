@@ -225,6 +225,7 @@ export const recordsRoutes = new Hono<AuthContext>()
 
   .post(
     "/:tableId/finalization/preview",
+    auth.readOnly,
     requirePublicIdParam("tableId", "table", "Table"),
     describeRoute({
       tags: ["Grids:Record"],
@@ -1102,6 +1103,7 @@ export const recordsRoutes = new Hono<AuthContext>()
 
   .post(
     "/by-table/:tableId/export",
+    auth.readOnly,
     requirePublicIdParam("tableId", "table", "Table"),
     describeRoute({
       tags: ["Grids:Record"],

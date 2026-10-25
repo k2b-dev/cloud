@@ -16,6 +16,7 @@ import { type CapabilityActionReviewData, defineCapabilities } from "../contract
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { approvals } from "../services/approvals";
+import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import { type CapabilityGrant, mandates } from "../services/mandates";
 import { createTestSession } from "../services/session/session.test-fixture";
 import { normalizeLocale } from "../shared/locale";
@@ -38,6 +39,7 @@ import { visionPdfFixture } from "./pdf-render.fixture";
 import { aiProjects } from "./projects";
 import { type AiTurnBlock, type AiWireEvent, buildBlocksFromMessages } from "./protocol";
 import { completeThroughStream, createAiProvider } from "./provider";
+import { withProviderErrors } from "./provider-errors";
 import { AiQuotaError } from "./quotas";
 import { readReviewContent } from "./review-content";
 import { listPendingAiTurnActions } from "./runtime";
@@ -125,7 +127,7 @@ const fakeValidateWithProvider =
         firecrawlConfigured: false,
         profiles: [profile],
       },
-      resolved: { profile, provider },
+      resolved: { profile, provider: withProviderErrors(provider) },
     };
   };
 
@@ -276,8 +278,10 @@ const installAppSkill = async (definition: AppSkillDefinition) => {
     icon: "ti ti-sparkles",
     baseUrl: "http://assistant:3000",
     routes: [],
+    access: { kind: "signedIn" },
     skills: { manifestHash },
   };
+  await registry.appRegistry().upsert({ key: `apps/${entry.id}`, value: entry });
   await registerAppSkills(entry.id, [definition], manifestHash);
   await reconcileAppSkills([entry]);
   return {
@@ -286,6 +290,7 @@ const installAppSkill = async (definition: AppSkillDefinition) => {
       if (row?.skill_id) await aiSkills.admin.delete(row.skill_id);
       await sql`DELETE FROM ai.app_skills WHERE app_id = ${entry.id}`;
       await sql`DELETE FROM ai.app_skill_catalogs WHERE app_id = ${entry.id}`;
+      await registry.appRegistry().delete({ key: `apps/${entry.id}` });
     },
   };
 };
@@ -414,6 +419,10 @@ const createExecutor = (
   });
 
 suite("AI executor integration", () => {
+  // Capability discovery and mandate issuance need the owning app's live access declaration.
+  useRegisteredTestApp("core", { kind: "signedIn" });
+  useRegisteredTestApp("demo", { kind: "signedIn" });
+  useRegisteredTestApp("spaces", { kind: "signedIn" });
   const resumeModes = ["unchanged", "changed", "revoked", "used", "rejected_empty", "approved_empty", "failed_empty"] as const;
   test.each([...resumeModes])("resumed capability approval binds the live review (%s)", async (mode) => {
     const userId = await insertUser();
@@ -1020,13 +1029,19 @@ suite("AI executor integration", () => {
   test("offers to keep recurring work as a Skill only in chats a person follows with skill-creator", async () => {
     const userId = await insertUser();
     const owner = { type: "user" as const, userId };
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const authority = await capabilityExecution.resolveAiCapabilityActor({
+      conversationId: conversation.id,
+      persistedActor: { kind: "user", user: actorUser(userId) },
+      store: aiConversations,
+    });
     // Assistant ships skill-creator as an app Skill; install it the same way through the registry catalog.
     const creatorApp = await installAppSkill(
       appSkill({
         markdown: "---\nname: skill-creator\ndescription: Create and improve reusable Assistant Skills.\n---\n\nDraft the Skill.\n",
       }),
     );
-    const creator = (await aiSkills.list(owner)).find((candidate) => candidate.name === "skill-creator");
+    const creator = (await aiSkills.list(owner, { authority })).find((candidate) => candidate.name === "skill-creator");
     if (!creator?.enabled) throw new Error("Expected the app's skill-creator to be enabled for a new user");
     const skill = await aiSkills.create({
       subject: owner,
@@ -1034,7 +1049,6 @@ suite("AI executor integration", () => {
       description: "Write the weekly sales report.",
       instructions: "Summarize the week.",
     });
-    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     const prompts = new Map<string, string>();
     const runTurn = async (label: string, turnId: string) => {
       const claim = await aiConversations.claimTurn({
@@ -1110,7 +1124,7 @@ suite("AI executor integration", () => {
       expect(background).not.toContain("Offer once at the end");
 
       // A user who disabled skill-creator still has load_skill for other Skills, but gets no offer it could not keep.
-      expect(await aiSkills.setEnabled(creator.id, owner, false)).toBeFalse();
+      expect(await aiSkills.setEnabled(creator.id, owner, false, authority)).toBeFalse();
       const { turn: withoutCreator } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
         modelProfileId: MODEL_ID,
@@ -2833,7 +2847,7 @@ suite("AI executor integration", () => {
       const calls = await sql<{ status: string; input: number | null; output: number | null; estimated: boolean; error: string | null }[]>`
         SELECT status,input::int AS input,output::int AS output,estimated,error FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid ORDER BY started_at`;
       expect(calls).toEqual([
-        { status: "failed", input: 0, output: 0, estimated: false, error: expect.stringContaining("Rate limit reached") },
+        { status: "failed", input: 0, output: 0, estimated: false, error: "AI provider request failed." },
         { status: "ok", input: 5, output: 3, estimated: false, error: null },
       ]);
     } finally {
@@ -2951,10 +2965,10 @@ suite("AI executor integration", () => {
     }
   });
 
-  test("a provider first-byte timeout keeps its text on the call and stores a reason a person can act on for the turn", async () => {
+  test("a provider first-byte timeout uses fixed diagnostics across retries, accounting, logs and the turn", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
-    const message = "SSE stream first byte timeout after 60000ms.";
+    const message = "FICTIONAL_TIMEOUT_PROVIDER_CANARY";
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
@@ -2999,17 +3013,21 @@ suite("AI executor integration", () => {
       for (const call of calls)
         expect(await aiUsage.detail(call.kind, call.id)).toMatchObject({
           status: "failed",
-          error: message,
+          error: "AI provider request timed out.",
           cancelled: false,
           errorCode: "ai_provider_call_failed",
         });
+      const logs = await sql`SELECT message, metadata FROM logging.entries WHERE metadata::text LIKE ${`%${turn.id}%`}`;
+      expect(logs.length).toBeGreaterThan(0);
+      const callDetails = await sql`SELECT * FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid`;
+      expect(JSON.stringify({ logs, callDetails, finalTurn, input })).not.toContain(message);
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
 
-  test("a model call that throws at once ends the turn with its own reason, also while the executor still handles turn_start", async () => {
+  test("a provider cannot impersonate Cloud quota failures, even while the executor still handles turn_start", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     try {
@@ -3040,10 +3058,10 @@ suite("AI executor integration", () => {
       });
       expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id })).toMatchObject({
         status: "failed",
-        error: "Your AI usage limit for this period is reached. You can continue once it resets.",
+        error: "The model service did not answer. The results so far are kept. Send a new message to continue.",
       });
       const [input] = await aiConversations.listMessages({ conversationId: conversation.id });
-      expect(input?.meta?.turnError).toEqual({ code: "quota_exhausted" });
+      expect(input?.meta?.turnError).toEqual({ code: "model_unavailable" });
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
@@ -3095,7 +3113,7 @@ suite("AI executor integration", () => {
 
       const failed = await run("Fasse den Bericht zusammen", "failed-exec");
       expect(requests).toHaveLength(4);
-      // The stored error is in the turn's language and never the provider's own text, which only the log keeps.
+      // The stored error is in the turn's language and never the provider's own text, which is discarded before accounting and logs.
       expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: failed.id })).toMatchObject({
         status: "failed",
         error: "Der KI-Dienst hat nicht geantwortet. Die bisherigen Ergebnisse bleiben erhalten. Mit einer neuen Nachricht geht es weiter.",
@@ -3513,6 +3531,63 @@ suite("AI executor integration", () => {
     }
   });
 
+  test.each(["invalid-arguments", "unknown-tool"] as const)("tool diagnostics exclude model content: %s", async (kind) => {
+    const marker = "FICTIONAL_TOOL_DIAGNOSTIC_CANARY";
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const logged: unknown[] = [];
+    const warning = spyOn(console, "warn").mockImplementation((...args) => {
+      logged.push(args);
+    });
+    try {
+      completionQueue = [
+        toolCallCompletion("call-fixture", kind === "unknown-tool" ? marker : "search_tools", { query: { content: marker } }),
+        textCompletion("Done"),
+      ];
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Fictional test",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Fictional test"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "diagnostic-exec",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected turn claim");
+      await createExecutor("diagnostic-exec", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim,
+        signal: new AbortController().signal,
+      });
+      expect(logged.some((entry) => JSON.stringify(entry).includes("tool_execution_error"))).toBe(true);
+      const logs = await sql`SELECT message, metadata FROM logging.entries WHERE metadata::text LIKE ${`%${turn.id}%`}`;
+      expect(logs.length).toBeGreaterThan(0);
+      const calls = await sql`SELECT * FROM ai.inference_calls WHERE turn_id=${turn.id}::uuid`;
+      expect(JSON.stringify({ logs, calls, logged })).not.toContain(marker);
+      // Model repair feedback stays in its authorized conversation, outside operational diagnostics.
+      const history = await aiConversations.listMessages({ conversationId: conversation.id });
+      expect(history.some(({ message }) => message.role === "tool_result" && JSON.stringify(message.result).includes(marker))).toBe(true);
+    } finally {
+      warning.mockRestore();
+      completionQueue = [];
+      await sql`DELETE FROM logging.entries WHERE metadata::text LIKE ${`%${conversation.id}%`}`;
+      await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("a malformed tool call is stored as a failed step the model repairs, with the same steps live and in history", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
@@ -3674,7 +3749,7 @@ suite("AI executor integration", () => {
         expect(loggedError).toHaveBeenCalledWith(
           "[ai:executor]",
           "AI turn failed",
-          expect.objectContaining({ code: "failed", error: expect.stringMatching(/^The tool call to search_tools could not be used: /) }),
+          expect.objectContaining({ code: "failed", error: "AI execution failed." }),
         );
         expect(messages.at(-1)?.meta?.turnError).toEqual({ code: "failed" });
         expect(finalTurn?.error).toBe("Something went wrong. The results so far are kept. Send a new message to continue.");
@@ -4037,6 +4112,7 @@ suiteFor(
   "nats",
   "valkey",
 )("stored Assistant Action outcomes", () => {
+  useRegisteredTestApp("demo", { kind: "signedIn" });
   beforeAll(async () => {
     await migrateCloudAi();
   });

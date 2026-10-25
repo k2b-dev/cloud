@@ -36,6 +36,9 @@ test("publishes every conversation operation with typed request and response sch
     ["/conversations/{conversation}/messages/{message}", "get"],
     ["/conversations/{conversation}/changes", "get"],
     ["/conversations/{conversation}/snapshot", "get"],
+    ["/conversations/{conversation}/threads", "get"],
+    ["/conversations/{conversation}/threads", "post"],
+    ["/conversations/{conversation}/threads/{thread}", "patch"],
   ] as const) {
     const operation = spec.paths[`/api/chat${path}`]?.[method];
     expect(operation).toBeDefined();
@@ -86,7 +89,7 @@ test("snapshot documents its canonical response and hidden-chat 404", async () =
   const response = z
     .object({ content: z.object({ "application/json": z.object({ schema: z.object({ required: z.array(z.string()) }) }) }) })
     .parse(operation?.responses["200"]);
-  expect(response.content["application/json"].schema.required).toEqual(["cursor", "conversation", "page", "focus"]);
+  expect(response.content["application/json"].schema.required).toEqual(["cursor", "conversation", "page", "threads", "focus"]);
 });
 
 test("member list documents name search and opaque keyset cursors", async () => {
@@ -160,4 +163,18 @@ test("documents optional create identity and payload conflicts", async () => {
     .parse(create.requestBody);
   expect(body.content["application/json"].schema.properties.createKey).toBeDefined();
   expect(body.content["application/json"].schema.required ?? []).not.toContain("createKey");
+});
+
+test("thread operations document conflicts and filtered history and read selectors", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const create = spec.paths["/api/chat/conversations/{conversation}/threads"]!.post!;
+  for (const status of ["200", "201", "403", "409"]) expect(create.responses[status]).toBeDefined();
+  const update = spec.paths["/api/chat/conversations/{conversation}/threads/{thread}"]!.patch!;
+  for (const status of ["200", "403", "404", "409"]) expect(update.responses[status]).toBeDefined();
+  for (const path of ["messages", "snapshot"]) {
+    const parameters = z
+      .array(z.object({ name: z.string(), in: z.string() }))
+      .parse(spec.paths[`/api/chat/conversations/{conversation}/${path}`]!.get!.parameters);
+    expect(parameters).toContainEqual({ name: "thread", in: "query" });
+  }
 });

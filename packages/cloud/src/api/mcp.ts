@@ -46,7 +46,9 @@ import {
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestAuthority, rateLimit, rejectReservedWorkloadCredential, resolveLocale } from "../server";
 import { preferredLocale } from "../server/locale";
+import { oauthScopeByOperation } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
+import { discoverableApps } from "../services/app-discovery";
 import { createHelpReader, type HelpArticle, type HelpMetadata, type HelpReader, type HelpReaderFactory } from "../services/help";
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { logger } from "../services/logging";
@@ -494,7 +496,7 @@ const createMcpServer = (
   oauthScopes: string[] | null,
   authority?: RequestAuthority,
 ): Server => {
-  const registry = dependencies.listApps ?? listApps;
+  const registry = async () => discoverableApps(authority ?? null, await (dependencies.listApps ?? listApps)());
   const capabilityLookup = dependencies.getCapability ?? getCapability;
   let helpLocale: Promise<string> | undefined;
   const resolveHelpLocale = () =>
@@ -502,9 +504,10 @@ const createMcpServer = (
       resolveLocale(request.headers, operatorDefault),
     ));
   const helpReader = async () =>
-    (dependencies.help ?? ((locale, viewer) => createHelpReader(locale, viewer, { listApps: registry })))(
+    (dependencies.help ?? ((locale, viewer) => createHelpReader(locale, viewer, { listApps: registry, authority: authority ?? null })))(
       await resolveHelpLocale(),
       authority?.actor,
+      { authority: authority ?? null },
     );
   const hasScope = (scope: "read" | "write"): boolean =>
     oauthScopes === null || oauthScopes.includes(scope) || oauthScopes.includes("admin");
@@ -781,8 +784,8 @@ export const createMcpRoutes = (dependencies: McpRouteDependencies = {}) =>
     .use("/mcp/v1", validateMcpOrigin(dependencies.getAppUrl ?? defaultAppUrl))
     .use("/mcp/v1", dependencies.authenticate ?? mcpAuthentication(dependencies.getAppUrl ?? defaultAppUrl))
     .use("/mcp/v1", rejectReservedWorkloadCredential)
-    .use("/mcp/v1", dependencies.limit ?? rateLimit())
-    .all("/mcp/v1", async (c) =>
+    .use("/mcp/v1", auth.readOnlyMiddleware(dependencies.limit ?? rateLimit()))
+    .post("/mcp/v1", oauthScopeByOperation, async (c) =>
       withCapabilityRequestTimeout(c, "query", async () => {
         if (c.req.method !== "POST") {
           return new Response(null, { status: 405, headers: { Allow: "POST" } });
@@ -823,6 +826,7 @@ export const createMcpRoutes = (dependencies: McpRouteDependencies = {}) =>
           }
         }
       }),
-    );
+    )
+    .all("/mcp/v1", () => new Response(null, { status: 405, headers: { Allow: "POST" } }));
 
 export type McpApiType = ReturnType<typeof createMcpRoutes>;

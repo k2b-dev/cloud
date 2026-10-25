@@ -489,6 +489,12 @@ nav: {
 `section` is `primary`, `more`, or `hidden`. The layout filters entries with
 the current request identity.
 
+Cloud first filters declared applications by the caller's app access, including
+credential limits. Navigation roles may further narrow placement; they never
+grant entry. Help and app Skills use the declared access rule, while apps
+without a declaration retain their legacy audience. See
+[App access](/en/docs/identity/app-access).
+
 The live app registry supplies the navigation. Do not hardcode links to every
 other Cloud application.
 
@@ -678,7 +684,8 @@ admin sidebar leads between the pages. The page renders its own heading.
 The admin shell stays within the viewport, with independent sidebar and content
 scrolling. For a bounded child such as `SettingsPage`, pass `scroll={false}` to
 `AdminLayout`: the child then owns content scrolling and its fixed save footer.
-The default remains `scroll={true}` for ordinary admin pages.
+The default remains `scroll={true}` for ordinary admin pages. Set `contentClass`
+when the page owns its content insets; it replaces the default shell padding.
 
 App-owned admin groups come from `adminNav` in the application declaration.
 A group may declare `section: "ai"` to contribute its links to the shared AI

@@ -12,7 +12,8 @@ import { env } from "../config/env";
 import { CapabilityCatalogSchema, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { auth, type RequestAuthority } from "../server";
-import type { signInvocationToken } from "../services/identity/invocation-token";
+import { AppAccessDeniedError } from "../server/middleware/app-access";
+import { signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import {
   createCapabilityRoutes as buildCapabilityRoutes,
@@ -26,10 +27,10 @@ Object.defineProperty(env, "APP_SECRET", { value: "capability-stream-tests-only"
 // The dispatcher records executions and idempotency claims through the store.
 // This suite is a unit test of the dispatch path: keep it away from any database.
 const executionStore = await import("../capabilities/executions");
-let recordExecution: () => Promise<string> = async () => crypto.randomUUID();
+let recordExecution: typeof executionStore.recordCapabilityExecution = async () => crypto.randomUUID();
 mock.module(new URL("../capabilities/executions.ts", import.meta.url).pathname, () => ({
   ...executionStore,
-  recordCapabilityExecution: () => recordExecution(),
+  recordCapabilityExecution: (input: Parameters<typeof recordExecution>[0]) => recordExecution(input),
   claimCapabilityIdempotency: async () => ({ state: "claimed" as const }),
   completeCapabilityClaim: async () => undefined,
   releaseCapabilityClaim: async () => undefined,
@@ -163,9 +164,13 @@ const credentialAuthenticate: NonNullable<CapabilityRouteDependencies["authentic
 };
 
 const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies = {}) =>
-  buildCapabilityRoutes({ withActiveSigner, ...dependencies });
+  buildCapabilityRoutes({ withActiveSigner, signInvocation: signInvocationToken, ...dependencies });
 const dispatchCapability = (params: Parameters<typeof performDispatch>[0]) =>
-  performDispatch({ authority: resourceAuthority, ...params, dependencies: { withActiveSigner, ...params.dependencies } });
+  performDispatch({
+    authority: resourceAuthority,
+    ...params,
+    dependencies: { withActiveSigner, signInvocation: signInvocationToken, ...params.dependencies },
+  });
 
 describe("capability API", () => {
   test("paginates the live catalog deterministically", async () => {
@@ -944,6 +949,29 @@ test("Command resolution uses APP_URL and the live owning route without invoking
   expect(invalid.status).toBe(400);
 });
 
+test("Command links enforce the current target rule before loading its manifest", async () => {
+  const capability = entry();
+  let manifestReads = 0;
+  const target: AppRegistryEntry = { ...summary(capability), routes: ["/app/demo"], access: { kind: "signedIn" } };
+  const app = buildCapabilityRoutes({
+    authenticate,
+    listApps: async () => [target],
+    getCapability: async () => {
+      manifestReads++;
+      return capability;
+    },
+    appUrl: async () => "https://public.example.test",
+  });
+  // This resolved resource credential belongs to Core, not demo.
+  const denied = await app.request("/capabilities/v1/commands/demo/compose", {
+    method: "POST",
+    body: JSON.stringify({ input: {} }),
+  });
+  expect(denied.status).toBe(403);
+  expect(await denied.json()).toMatchObject({ code: "app_access_denied", app: "demo" });
+  expect(manifestReads).toBe(0);
+});
+
 test("a Command cannot direct the user into another app's owned route", async () => {
   const capability = entry();
   const app = buildCapabilityRoutes({
@@ -1005,6 +1033,7 @@ test("ordinary invocation seals a stream offer and the transfer route accepts on
     {
       getCapability: async () => app,
       withActiveSigner,
+      signInvocation: signInvocationToken,
       fetch: async (_url, init) => {
         const forwarded = JSON.parse(Buffer.from(new Headers(init?.headers).get("x-cloud-stream-offer")!, "base64url").toString());
         expect(forwarded).toEqual(offer);
@@ -1689,5 +1718,70 @@ test("a stalled execution-history write cannot hold a Query response beyond its 
     record.resolve("recorded");
     recordExecution = previous;
     clock.restore();
+  }
+});
+
+test("catalog app access filters before manifest lookup and pagination", async () => {
+  const legacy = entry("legacy");
+  const hidden = entry("hidden");
+  const lookedUp: string[] = [];
+  const dependencies: Pick<CapabilityRouteDependencies, "listApps" | "getCapability"> = {
+    listApps: async () => [summary(legacy), { ...summary(hidden), access: { kind: "roles", roles: ["admin"] } }],
+    getCapability: async (id) => {
+      lookedUp.push(id);
+      return id === legacy.appId ? legacy : hidden;
+    },
+  };
+  const catalog = await loadCapabilityCatalogPage({ limit: 1 }, dependencies, "en", resourceAuthority);
+  expect(catalog.apps.map((app) => app.appId)).toEqual(["legacy"]);
+  expect(catalog.page).toEqual({ hasMore: false });
+  expect(lookedUp).toEqual(["legacy"]);
+  const routes = createCapabilityRoutes({ ...dependencies, authenticate });
+  const response = await routes.request("/capabilities/v1/catalog");
+  expect(response.status).toBe(200);
+  expect(await response.text()).not.toContain("hidden");
+});
+
+test("invocation issuance preserves structured app denial and never reaches the provider", async () => {
+  const fetch = mock(async () => Response.json({ data: { id: "one" } }));
+  const response = await queryDispatch({
+    getCapability: async () => entry(),
+    signInvocation: async () => {
+      throw new AppAccessDeniedError(summary(entry()));
+    },
+    fetch,
+  });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ code: "app_access_denied", app: "demo" });
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+test("OAuth scope denial records exactly one denied capability execution", async () => {
+  const rows: Parameters<typeof recordExecution>[0][] = [];
+  const previous = recordExecution;
+  recordExecution = async (input) => {
+    rows.push(input);
+    return "recorded";
+  };
+  try {
+    const response = await dispatchCapability({
+      request: new Request("https://cloud.test/capabilities", { method: "POST" }),
+      kind: "actions",
+      appId: "demo",
+      capabilityId: "rename",
+      input: {},
+      origin: "http",
+      authority: { ...resourceAuthority, credentialKind: "oauth", scopes: ["read"] },
+      dependencies: {
+        getCapability: async () => {
+          throw new Error("Must reject before registry lookup");
+        },
+      },
+    });
+    expect(response.status).toBe(403);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: "denied", errorCode: "FORBIDDEN", capability: "demo.rename", kind: "action" });
+  } finally {
+    recordExecution = previous;
   }
 });

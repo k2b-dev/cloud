@@ -43,6 +43,7 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
     visitor: {
       Program(programPath: any) {
         const componentImports = new Map<string, { path: string; type: ComponentType; id: string }>();
+        let usesMergeProps = false;
 
         // Import Seroval toJSON under an alias so application imports do not collide
         programPath.node.body.unshift(
@@ -72,16 +73,33 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
 
             const wrapperTag = component.type === "island" ? "solid-island" : "solid-client";
 
-            const props = t.objectExpression(
-              path.node.openingElement.attributes
-                .filter((a: any) => a.type === "JSXAttribute")
-                .map((a: any) =>
-                  t.objectProperty(
-                    t.identifier(a.name.name),
-                    a.value?.type === "JSXExpressionContainer" ? a.value.expression : a.value || t.booleanLiteral(true),
-                  ),
-                ),
-            );
+            const attributes: any[] = path.node.openingElement.attributes;
+            const named = (a: any) =>
+              t.objectProperty(
+                t.identifier(a.name.name),
+                a.value?.type === "JSXExpressionContainer" ? a.value.expression : a.value || t.booleanLiteral(true),
+              );
+            let props: any;
+            if (attributes.some((a) => a.type === "JSXSpreadAttribute")) {
+              // Merge spreads exactly like Solid renders them: later sources win, undefined
+              // values fall back, and overridden getters are never read.
+              const sources: any[] = [];
+              let group: any[] = [];
+              for (const a of attributes) {
+                if (a.type !== "JSXSpreadAttribute") {
+                  group.push(named(a));
+                  continue;
+                }
+                if (group.length) sources.push(t.objectExpression(group));
+                group = [];
+                sources.push(a.argument);
+              }
+              if (group.length) sources.push(t.objectExpression(group));
+              props = t.callExpression(t.identifier("__solid_mergeProps"), sources);
+              usesMergeProps = true;
+            } else {
+              props = t.objectExpression(attributes.map(named));
+            }
 
             // For islands: wrap the component, for client: empty wrapper (no SSR)
             const children = component.type === "island" ? [path.node] : [];
@@ -110,6 +128,15 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
             path.skip();
           },
         });
+
+        if (usesMergeProps) {
+          programPath.node.body.unshift(
+            t.importDeclaration(
+              [t.importSpecifier(t.identifier("__solid_mergeProps"), t.identifier("mergeProps"))],
+              t.stringLiteral("solid-js"),
+            ),
+          );
+        }
 
         // Client wrappers remove their original JSX usage. Refresh bindings so
         // later presets can discard imports that became unused in this pass.
