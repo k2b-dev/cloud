@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // How far a row's label reaches depends on layout and on the painted mask,
 // which happy-dom does not model, so a real engine runs the shipped build.
@@ -207,17 +207,18 @@ describe("sidebar row label room", () => {
       const page = await load({ rtl });
       try {
         const results: Record<string, { reach: number; end: number }> = {};
+        await settled(page);
         for (const id of ["count-pin", "active", "pin", "count-pin-hide", "count-action", "status-pin", "empty-status-pin", "swap", "tree"])
           results[`${id} at rest`] = await room(page, id);
         for (const id of ["count-pin", "pin", "count-pin-hide", "count-action", "status-pin", "empty-status-pin", "swap", "tree"]) {
           await hover(page, id);
+          await settled(page);
           results[`${id} hovered`] = await room(page, id);
         }
         await page.evaluate(() => (window as unknown as { setWide: (wide: boolean) => void }).setWide(true));
         await page.locator('.k2b-app-workspace__sidebar-item:has([href="#swap"]) [aria-label="Hide"]').waitFor({ state: "attached" });
-        // Measurements land on the next frames.
-        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
         await hover(page, "swap");
+        await settled(page);
         results["swap hovered with a wider group"] = await room(page, "swap");
         // The label stays at least half opaque until its own 0.75rem fade and the row's 0.5rem gap before the first
         // control at the row's end, and never reaches under it. Before the fix, a label beside a count gave up the
