@@ -140,7 +140,7 @@ export async function openActivityExportSnapshot(
         const root = after ? database`coalesce(event.root_after,event.root)` : database`event.root`;
         const path = after ? database`event.path_after` : database`event.path_before`;
         return database`EXISTS (SELECT 1 FROM filesv2.bases b WHERE b.id=${id} AND b.area='cloud'
-          AND b.root=${root} AND ${path} IS NOT NULL AND (${path}=b.path OR starts_with(${path},b.path || '/')))`;
+          AND b.root=${root} AND ${path} IS NOT NULL)`;
       };
       const source = database`(SELECT event.*,${visibleSide(false)} AS before_visible,${visibleSide(true)} AS after_visible FROM filesv2.activity event) a`;
       const where = database`(a.before_visible OR a.after_visible)

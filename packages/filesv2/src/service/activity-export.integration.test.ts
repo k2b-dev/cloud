@@ -241,6 +241,14 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
       service().preview(call, { ...input, baseId: `freeipa:users:${otherBaseId}` }, new AbortController().signal),
     ).rejects.toMatchObject({ code: "history_unavailable", status: 409 });
   });
+  test("administrator exports retain local archive paths outside the former home", async () => {
+    await seed();
+    await sql`UPDATE filesv2.activity SET path_before=NULL,path_after='archive/alice/file'`;
+    await withExport(service(), input, new AbortController().signal, async (result, reader) => {
+      expect(result.count).toBe(1);
+      expect(JSON.parse((await readText(reader)).trim())).toMatchObject({ pathAfter: "archive/alice/file", rootAfter: "cloud" });
+    });
+  });
   test("committed start evidence has original actor/request and survives midstream cancellation", async () => {
     await seed(501);
     await withExport(service(), input, new AbortController().signal, async (_result, reader) => {
