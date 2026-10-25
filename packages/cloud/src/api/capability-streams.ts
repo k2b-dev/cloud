@@ -16,6 +16,7 @@ import {
 } from "../contracts/capabilities";
 import type { RequestAuthority } from "../server";
 import { AppAccessDeniedError, appAccessDeniedBody } from "../server/middleware/app-access";
+import { hasOAuthScope } from "../server/oauth-scope";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
 import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
@@ -94,11 +95,7 @@ export async function dispatchCapabilityStream(
   if (dependencies.allow && !(await dependencies.allow(grant))) return denied();
   if (Date.parse(grant.stream.expiresAt) <= Date.now()) return denied(410, "STREAM_EXPIRED");
   if ((verb === "read") !== (grant.stream.direction === "read")) return denied();
-  if (
-    authority.credentialKind === "oauth" &&
-    !authority.scopes.some((scope) => scope === "admin" || scope === (grant.kind === "actions" ? "write" : "read"))
-  )
-    return denied();
+  if (!hasOAuthScope(authority, grant.kind === "actions" ? "write" : "read", "admin")) return denied();
   const startedAt = new Date();
   let recorded = false;
   let destructive = false;
