@@ -151,6 +151,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphLinksUnlinked: "Only unlinked",
       graphAreas: "Areas",
       graphTopLevel: "Top level",
+      graphScope: ({ shown, total, title }: { shown: number; total: number; title: string }) =>
+        `This notebook has ${total.toLocaleString("en")} pages. The graph shows the ${shown.toLocaleString("en")} around “${title}”: its links, their links, its sub-pages and their places in the notebook. To see the pages around another page, move it to the center in Neighborhood or open the graph from there.`,
       graphNoteCount: ({ notes, links }: { notes: number; links: number }) =>
         `${notes === 1 ? "1 note" : `${notes} notes`} · ${links === 1 ? "1 link" : `${links} links`}`,
       graphLinkCounts: ({ out, incoming }: { out: number; incoming: number }) => `links to ${out} · linked from ${incoming}`,
@@ -622,6 +624,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphLinksUnlinked: "Nur ohne Verknüpfung",
       graphAreas: "Bereiche",
       graphTopLevel: "Oberste Ebene",
+      graphScope: ({ shown, total, title }) =>
+        `Dieses Notizbuch hat ${total.toLocaleString("de")} Seiten. Der Graph zeigt die ${shown.toLocaleString("de")} rund um „${title}“: ihre Links, deren Links, ihre Unterseiten und deren Orte im Notizbuch. Um die Seiten um eine andere Seite zu sehen, bringe sie in Umgebung in die Mitte oder öffne den Graphen von dort.`,
       graphNoteCount: ({ notes, links }) =>
         `${notes === 1 ? "1 Notiz" : `${notes} Notizen`} · ${links === 1 ? "1 Verknüpfung" : `${links} Verknüpfungen`}`,
       graphLinkCounts: ({ out, incoming }) => `verweist auf ${out} · verwiesen von ${incoming}`,
