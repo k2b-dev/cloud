@@ -1,0 +1,1 @@
+| Address rotation resets a network budget | Full IPv6 addresses give one client a fresh budget for each address in its /64. | Tests: `cloud/src/server/client-ip.test.ts`, `cloud/src/server/middleware/rate-limit.integration.test.ts` and `filesv2/src/public-rate-limit.integration.test.ts` check canonical keys, shared middleware budgets and public page/upload behavior (#1349). |
