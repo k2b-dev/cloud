@@ -1,0 +1,1 @@
+| A clear keeps the measured usage | Clearing a base empties its data but keeps the usage that the storage threshold reads, so ingest refuses the empty base until the next usage scan. | Test: Pulse `service/base-lifecycle.integration.test.ts` clears a base over its threshold and checks that usage and the threshold crossing are reset. |
