@@ -463,9 +463,13 @@ function EditorInstance(
   const tablePresentation = createNotebookTablePresentation({ notebookId: props.notebookId, locale });
 
   // Book's rendering of the draft, or of the saved note in read-only mode: block previews and heading lines.
-  const loadBlockPreview = async (markdown: string | undefined, abortSignal: AbortSignal) => {
+  const loadBlockPreview = async (markdown: string | undefined, abortSignal: AbortSignal, pages?: ReadonlyMap<number, number>) => {
+    const json = {
+      ...(markdown === undefined ? {} : { markdown }),
+      ...(pages?.size ? { pages: Object.fromEntries([...pages].map(([line, page]) => [String(line), page])) } : {}),
+    };
     const response = await apiClient[":id"].notes[":noteId"]["block-preview"].$post(
-      { param: { id: props.notebookId, noteId: props.noteId }, json: markdown === undefined ? {} : { markdown } },
+      { param: { id: props.notebookId, noteId: props.noteId }, json },
       { init: { signal: abortSignal } },
     );
     if (!response.ok) throw new Error(queryBlockMessages.resolve([locale()]).t.failed);
@@ -479,7 +483,7 @@ function EditorInstance(
     view: editorView,
     enabled: richMode,
     locale,
-    load: loadBlockPreview,
+    load: (markdown, pages, abortSignal) => loadBlockPreview(markdown, abortSignal, pages),
   });
   addExtension(cellFormattingKeys(tableControls));
   addExtension(tableCellSearch);

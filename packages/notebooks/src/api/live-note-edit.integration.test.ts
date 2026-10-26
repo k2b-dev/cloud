@@ -67,7 +67,7 @@ if (process.env.NOTEBOOKS_LIVE_EDIT_CHILD !== "1") {
       manages: [],
       managesGroupIds: [],
     };
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     const notebookId = crypto.randomUUID();
     const notebookShortId = testShortId();
     const live = new AbortController();

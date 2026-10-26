@@ -1,4 +1,4 @@
-import { v } from "@k2b/cloud/server";
+import { auth, v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import {
@@ -39,6 +39,7 @@ const workflowRoutes = new Hono<MailApiContext>()
   .use("/mailboxes/:mailboxId/*", resolveMailboxParam)
   .post(
     "/mailboxes/:mailboxId/workflows/autocomplete",
+    auth.readOnly,
     workflowOperation("Complete Mail workflow YAML", workflowAutocompleteSchema, "Workflow completions and diagnostics"),
     v("param", mailboxParamSchema),
     v("json", autocompleteWorkflowInputSchema),
@@ -54,6 +55,7 @@ const workflowRoutes = new Hono<MailApiContext>()
   )
   .post(
     "/mailboxes/:mailboxId/workflows/validate",
+    auth.readOnly,
     workflowOperation("Validate Mail workflow YAML", workflowValidationSchema, "Workflow validation result"),
     v("param", mailboxParamSchema),
     v("json", validateWorkflowInputSchema),

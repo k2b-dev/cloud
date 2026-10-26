@@ -213,47 +213,48 @@ export default function MailRecipientInput(props: {
       timer = null;
       const request = new AbortController();
       controller = request;
-      try {
-        const [contacts, mailbox] = await Promise.allSettled([
-          suggestTarget ? suggestContacts(suggestTarget, { query: value, limit: 8 }, request.signal) : Promise.resolve(null),
-          mailboxId
-            ? (async () => {
-                const response = await apiClient.mailboxes[":mailboxId"]["recipient-suggestions"].$get(
-                  { param: { mailboxId }, query: { query: value, limit: "8" } },
-                  { init: { signal: request.signal } },
-                );
-                if (!response.ok) throw new Error("Recipient suggestions unavailable");
-                return mailRecipientSuggestionsSchema.parse(await response.json());
-              })()
-            : Promise.resolve(null),
-        ]);
+      const contacts: RecipientSuggestion[] = [];
+      const mailbox: RecipientSuggestion[] = [];
+      const publish = () => {
         if (disposed || controller !== request) return;
+        const activeAddress = suggestionsQuery === value ? suggestions()[activeIndex()]?.address : undefined;
         const seen = new Set<string>();
-        const merged: RecipientSuggestion[] = [];
-        if (contacts.status === "fulfilled" && contacts.value) {
-          for (const contact of contacts.value.data) {
-            const context = [contact.companyName, contact.jobTitle, contact.phones[0]?.phone].filter(Boolean).join(" · ") || null;
-            for (const { email } of contact.emails) {
-              const address = email.trim().toLowerCase();
-              if (seen.has(address)) continue;
-              seen.add(address);
-              merged.push({ label: contact.displayName, address, context, source: "contacts" });
-            }
-          }
-        }
-        if (mailbox.status === "fulfilled" && mailbox.value) {
-          for (const item of mailbox.value.items) {
-            const address = item.address.trim().toLowerCase();
-            if (seen.has(address)) continue;
-            seen.add(address);
-            merged.push({ label: item.displayName ?? address, address, context: null, source: "mailbox" });
-          }
-        }
+        const merged = [...contacts, ...mailbox].filter((item) => {
+          if (seen.has(item.address)) return false;
+          seen.add(item.address);
+          return true;
+        });
         setSuggestions(merged, value);
-      } catch (error) {
-        if (!disposed && controller === request && !(error instanceof DOMException && error.name === "AbortError")) {
-          setSuggestions([]);
-        }
+        if (activeAddress) setActiveIndex(merged.findIndex((item) => item.address === activeAddress));
+      };
+      try {
+        await Promise.allSettled([
+          (async () => {
+            if (!suggestTarget) return;
+            const result = await suggestContacts(suggestTarget, { query: value, limit: 8 }, request.signal);
+            for (const contact of result.data) {
+              const context = [contact.companyName, contact.jobTitle, contact.phones[0]?.phone].filter(Boolean).join(" · ") || null;
+              for (const { email } of contact.emails) {
+                contacts.push({ label: contact.displayName, address: email.trim().toLowerCase(), context, source: "contacts" });
+              }
+            }
+            publish();
+          })(),
+          (async () => {
+            if (!mailboxId) return;
+            const response = await apiClient.mailboxes[":mailboxId"]["recipient-suggestions"].$get(
+              { param: { mailboxId }, query: { query: value, limit: "8" } },
+              { init: { signal: request.signal } },
+            );
+            if (!response.ok) throw new Error("Recipient suggestions unavailable");
+            for (const item of mailRecipientSuggestionsSchema.parse(await response.json()).items) {
+              const address = item.address.trim().toLowerCase();
+              mailbox.push({ label: item.displayName ?? address, address, context: null, source: "mailbox" });
+            }
+            publish();
+          })(),
+        ]);
+        publish();
       } finally {
         if (!disposed && controller === request) {
           controller = null;

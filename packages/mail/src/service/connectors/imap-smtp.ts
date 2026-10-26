@@ -1141,6 +1141,17 @@ const fetchFlagChanges = async (
           });
         }
         assertSelectedMailbox(client, uidValidity);
+        // Exhausted FETCH retries can yield no rows or only part of a window. SEARCH MODSEQ
+        // is inclusive, unlike CHANGEDSINCE, so start at the following sequence number.
+        const found = await client.search(
+          { uid: `${Math.max(1, lowUid)}:${Math.max(1, highUid)}`, modseq: BigInt(sinceModseq) + 1n },
+          { uid: true },
+        );
+        if (!Array.isArray(found)) throw unconfirmedAbsence();
+        const returned = new Set(changes.map((change) => change.uid));
+        const unreturned = found.filter((uid) => !returned.has(uid));
+        if (unreturned.length > 0) throw unconfirmedAbsence(unreturned);
+        assertSelectedMailbox(client, uidValidity);
         return changes;
       } finally {
         lock.release();
@@ -1204,7 +1215,8 @@ type SourceDownloadClient = SelectedMailboxClient &
  * whose partial-source probe answers metadata without a source yields nothing for the caller's
  * missing-source budget. A probe with a source retries the download; an empty retry or an
  * unanswered probe fails transiently without using that budget. A recovered source streams normally.
- * Source EOF is accepted only while the connection remains usable and the same mailbox stays selected.
+ * Source EOF requires the same usable connection; a source shorter than announced also needs
+ * an explicit empty partial-source answer at the next byte.
  * A consumer that resolves "stop" leaves the remaining sources unfetched.
  */
 export const downloadSelectedSources = async (
@@ -1224,20 +1236,27 @@ export const downloadSelectedSources = async (
       download = await client.download(request.uid, undefined, { uid: true });
       if (!download.content || !download.meta) throw unconfirmedAbsence([request.uid]);
     }
+    let receivedBytes = 0;
+    const expectedSize = download.meta.expectedSize ?? null;
+    const confirmEnd = async (): Promise<void> => {
+      assertSelectedMailbox(client, request.uidValidity);
+      if (expectedSize == null || receivedBytes >= expectedSize) return;
+      // A short source can be a provider size quirk or exhausted midstream FETCH retries.
+      // Only an explicit empty literal at the next byte proves EOF; a missing answer does not.
+      const probe = await client.fetchOne(request.uid, { uid: true, source: { start: receivedBytes, maxLength: 1 } }, { uid: true });
+      if (!probe || probe.source?.length !== 0) throw unconfirmedAbsence([request.uid]);
+      assertSelectedMailbox(client, request.uidValidity);
+    };
     const guarded = new Transform({
       transform(chunk, _encoding, callback) {
+        receivedBytes += chunk.length;
         callback(null, chunk);
       },
       flush(callback) {
-        try {
-          // ImapFlow ends the download without an error when the connection closes between chunks,
-          // e.g. while hydration waits for memory. Even a disconnect just after the last chunk
-          // retries rather than risk accepting a truncated source.
-          assertSelectedMailbox(client, request.uidValidity);
-          callback();
-        } catch (error) {
-          callback(error instanceof Error ? error : new Error(String(error)));
-        }
+        void confirmEnd().then(
+          () => callback(),
+          (error: unknown) => callback(error instanceof Error ? error : new Error(String(error))),
+        );
       },
     });
     pipeline(download.content, guarded, () => {

@@ -21,9 +21,9 @@ export default ssr<AuthContext>(async (c) => {
     : undefined;
 
   return () => (
-    <PwaLayout c={c} title={t.settings} back={{ href: PWA_SCOPE, label: t.back }}>
+    <PwaLayout c={c} title={t.settings} back={{ href: PWA_SCOPE, label: t.back, withSidebar: false }}>
       <PhoneSettings
-        account={{ name, mail: user.mail || undefined, avatar }}
+        account={{ id: user.id, name, mail: user.mail || undefined, avatar }}
         theme={readThemePreferenceFromCookieHeader(c.req.header("Cookie"))}
         name={device?.name ?? ""}
         cloud={cloud}

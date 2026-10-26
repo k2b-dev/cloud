@@ -72,6 +72,8 @@ including from Book view. Use the overview to start from a template.
   the dialog.
 - Add filtered page lists with `:::query` and page contents with `:::toc`, using
   your own named data instead of a fixed metadata schema.
+- See how notes link in **Links**. A notebook with more than 500 notes shows
+  the notes around the open note there, and says so above the graph.
 
 Use a separate notebook when content needs its own access rules, settings, or
 export boundary.
@@ -86,8 +88,11 @@ on the server with the page.
 Page links, tag filters, search, and pagination update the Book content without
 reloading the whole page when JavaScript is available. Browser Back and Forward
 preserve the reading route. Saved changes refresh the current page, navigation,
-and query results automatically. Without JavaScript, links and filters still
-work through regular page loads. Switching to Write or Read-only loads that
+and query results automatically. A query that matches more notes than one
+page shows 20 at a time, with page buttons below it; the address keeps the
+page, so a reload or a saved change shows the same rows. Without JavaScript,
+links and filters still work through regular page loads, and a query shows its
+first page. Switching to Write or Read-only loads that
 workspace as a new page.
 
 In the editor, type `:::` to insert a query, table of contents, or chart. Rich mode shows
@@ -320,8 +325,10 @@ Field names and equality are case-sensitive; text contains/prefix filters and
 tags ignore case. Negative comparisons do not match missing fields.
 
 Sort by `$title`, `$created`, or `$updated`, ascending or descending. The
-default is most recently updated first, up to 25 results; set `limit` from 1
-to 100. A notice identifies additional matches. Queries do not aggregate table
+default is most recently updated first. In Book and the editor, `limit` (1 to
+100, default 25) sets the rows per page, at most 20, and page buttons reach
+every match. The CLI, capabilities and PDFs return the first `limit` matches
+and say how many more match. Queries do not aggregate table
 rows, join datasets, evaluate expressions, or modify notes. Open **Help →
 Structured blocks** for the complete operator and limit reference.
 

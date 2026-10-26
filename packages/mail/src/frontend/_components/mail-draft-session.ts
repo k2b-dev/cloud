@@ -23,6 +23,7 @@ import {
 } from "./mail-draft-journal";
 import { classifyDraftLeaseAnswer, type DraftLeaseResult, recoverDraftLeaseRequest } from "./mail-draft-lease-recovery";
 import { isClosedMailDraft, type MailDraftLifecycleTransition, reconcileMailDraftLifecycle } from "./mail-draft-lifecycle";
+import { storeMailDraftSeed } from "./mail-draft-seed-store";
 
 import { MailUserDraftStorageEndedError, openMailUserDraftStorage } from "./mail-user-draft-storage";
 
@@ -109,6 +110,7 @@ export const createMailDraftSession = (options: {
   const sharedController = new AbortController();
   const isShared = () => draft()?.editMode === "shared";
   const [lease, setLease] = createSignal<AcquiredDraftLease | null>(null);
+  const [authenticationRequired, setAuthenticationRequired] = createSignal(false);
   const [leaseConflict, setLeaseConflict] = createSignal<MailDraftLeaseConflict | null>(null);
   const [status, setStatus] = createSignal<ComposerStatus>(options.initialSeed ? "local" : "preparing");
   const [statusMessage, setStatusMessage] = createSignal(options.initialSeed ? "" : t().preparingDraft);
@@ -146,8 +148,18 @@ export const createMailDraftSession = (options: {
     saveTimer = null;
   };
 
+  const waitForSignIn = () => {
+    stopScheduledSave();
+    stopHeartbeat();
+    setAuthenticationRequired(true);
+    setLease(null);
+    setLeaseConflict(null);
+    setStatus("readonly");
+    setStatusMessage(t().signInExpired);
+  };
+
   const applyClosedDraft = (currentDraft: MailDraft) => {
-    if (options.isDisposed()) return;
+    if (options.isDisposed() || authenticationRequired()) return;
     const transition = reconcileMailDraftLifecycle(lifecycleTransition(), currentDraft, serializedContent() !== lastSavedContent);
     if (!transition || !isClosedMailDraft(currentDraft)) return;
     stopScheduledSave();
@@ -176,6 +188,7 @@ export const createMailDraftSession = (options: {
     const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].$get({
       param: { mailboxId: options.mailboxId, draftId: currentDraft.id },
     });
+    if (response.status === 401) return waitForSignIn();
     if (!response.ok) throw new Error(await readApiError(response, t().draftStatusRefreshFailed));
     applyClosedDraft(await response.json());
   };
@@ -257,7 +270,7 @@ export const createMailDraftSession = (options: {
     knownLease?: DraftLease | null,
   ): Promise<void> => {
     const current = knownLease ?? (await readCurrentLease(currentDraft));
-    if (options.isDisposed()) return;
+    if (options.isDisposed() || authenticationRequired()) return;
     setLeaseConflict({ lease: current, reason });
     setStatus("readonly");
     setStatusMessage(current ? t().editingByNamed({ name: current.holder.displayName }) : t().draftOpenAnotherSession);
@@ -276,7 +289,7 @@ export const createMailDraftSession = (options: {
 
   const failLease = async () => {
     await refreshDraftLifecycle().catch(() => undefined);
-    if (options.isDisposed() || lifecycleTransition()) return;
+    if (options.isDisposed() || lifecycleTransition() || authenticationRequired()) return;
     stopHeartbeat();
     setLease(null);
     setLeaseConflict(null);
@@ -382,7 +395,8 @@ export const createMailDraftSession = (options: {
           if (!options.isDisposed() && !lifecycleTransition()) await reportLeaseConflict(currentDraft, reason, current);
           return null;
         }
-        if (result.kind === "unavailable") waitForConnection();
+        if (result.kind === "unauthorized") waitForSignIn();
+        else if (result.kind === "unavailable") waitForConnection();
         else await failLease();
         return null;
       }
@@ -506,6 +520,7 @@ export const createMailDraftSession = (options: {
   };
 
   const ensureDraft = (): Promise<MailDraft | null> => {
+    if (authenticationRequired()) return Promise.resolve(null);
     if (draft() && (lease() || shared())) return Promise.resolve(draft());
     if (initializePromise) return initializePromise;
     initializePromise = initialize()
@@ -530,6 +545,7 @@ export const createMailDraftSession = (options: {
 
   const persist = async (): Promise<MailDraft | null> => {
     return await serializeMutation(async () => {
+      if (lifecycleTransition() || authenticationRequired()) return null;
       if (isShared()) {
         const current = await ensureDraft();
         const client = shared();
@@ -544,7 +560,6 @@ export const createMailDraftSession = (options: {
           return null;
         }
       }
-      if (lifecycleTransition()) return null;
       let currentDraft = draft();
       if (!currentDraft && options.initialSeed) {
         const nextContent = options.content();
@@ -560,15 +575,23 @@ export const createMailDraftSession = (options: {
         });
         if (!response.ok) {
           if (options.isDisposed()) return null;
+          if (response.status === 401) {
+            waitForSignIn();
+            return null;
+          }
           setStatus("error");
           setStatusMessage(await readApiError(response, t().draftSaveFailed));
           return null;
         }
         currentDraft = await response.json();
         lastSavedContent = serializeMailDraftContent(draftEditableContent(currentDraft));
-        setDraft(currentDraft);
+        batch(() => {
+          setMaterializedLeasePending(true);
+          setDraft(currentDraft);
+        });
         try {
           options.onMaterialized(currentDraft);
+          localStorage.removeItem(draftKey(options.initialSeed.id));
         } catch {
           // URL and local-seed cleanup are best-effort; the durable draft remains authoritative.
         }
@@ -587,7 +610,6 @@ export const createMailDraftSession = (options: {
           }
         }
         // The person keeps typing while the first lease arrives; the journal and the save below keep that text.
-        setMaterializedLeasePending(true);
         const acquired = await acquireLease(currentDraft, false, LEASE_HEARTBEAT_MS).finally(() => setMaterializedLeasePending(false));
         // A retried materialization returns the draft its first request stored, which can predate the
         // editor's current content; the save below brings the draft up to date before anyone uses it.
@@ -628,7 +650,11 @@ export const createMailDraftSession = (options: {
       });
       if (!response.ok) {
         if (options.isDisposed()) return null;
-        if (lifecycleTransition()) return null;
+        if (lifecycleTransition() || authenticationRequired()) return null;
+        if (response.status === 401) {
+          waitForSignIn();
+          return null;
+        }
         if (await isDraftLeaseHeldResponse(response)) {
           stopHeartbeat();
           setLease(null);
@@ -662,6 +688,7 @@ export const createMailDraftSession = (options: {
       if (options.isDisposed()) return saved;
       setDraft(saved);
       lastSavedContent = serialized;
+      if (authenticationRequired()) return null;
       setStatus("saved");
       setStatusMessage("");
       return saved;
@@ -672,7 +699,7 @@ export const createMailDraftSession = (options: {
   const resumeCurrentLease = async ({ quiet = false }: { quiet?: boolean } = {}): Promise<void> => {
     const currentDraft = draft();
     const currentLease = lease();
-    if (options.isDisposed() || !currentDraft) return;
+    if (options.isDisposed() || !currentDraft || authenticationRequired()) return;
     if (isShared()) {
       shared()?.provider.reconnectNow();
       return;
@@ -704,6 +731,7 @@ export const createMailDraftSession = (options: {
     }
     if (options.isDisposed() || generation !== heartbeatGeneration) return;
     if (heartbeat.kind === "ok") return acceptLease(heartbeat.lease);
+    if (heartbeat.kind === "unauthorized") return waitForSignIn();
     if (heartbeat.kind === "unavailable") return waitForConnection();
     if (heartbeat.kind === "not-owned" || heartbeat.kind === "held") {
       await regainLease(currentDraft, "lost");
@@ -785,7 +813,9 @@ export const createMailDraftSession = (options: {
       return;
     }
     if (options.initialSeed) {
+      const recovered = recoverJournal(draftKey(options.initialSeed.id), 0);
       setInitialized(true);
+      if (recovered) options.onRecovered();
       return;
     }
     // A send, a discard, or another person's lease on this draft arrives as a change of its conversation or
@@ -840,6 +870,23 @@ export const createMailDraftSession = (options: {
     lease,
     setLease,
     materializedLeasePending,
+    authenticationRequired,
+    // Let a pending save advance the journal revision before navigation. A storage failure leaves the editor open.
+    prepareSignIn: () =>
+      serializeMutation(async () => {
+        const currentDraft = draft();
+        const seed = options.initialSeed;
+        if (!currentDraft && seed) storeMailDraftSeed(draftStorage(), { ...seed, createdAt: new Date().toISOString() });
+        if (currentDraft || seed) {
+          draftStorage().setItem(
+            draftKey(currentDraft?.id ?? seed!.id),
+            JSON.stringify({
+              revision: currentDraft?.revision ?? 0,
+              content: options.content(),
+            } satisfies MailDraftJournal),
+          );
+        }
+      }),
     leaseConflict,
     lifecycleTransition,
     status,

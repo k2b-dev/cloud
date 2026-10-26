@@ -187,6 +187,7 @@ export default function MailComposer(props: {
     if (!props.initialSeed || !seedStorage) return;
     try {
       removeMailDraftSeed(seedStorage, props.mailboxId, props.initialSeed.id);
+      seedStorage.removeItem(draftSession.draftKey(props.initialSeed.id));
     } catch {
       // Expired local seed cleanup must never block leaving the composer.
     }
@@ -255,6 +256,8 @@ export default function MailComposer(props: {
     isShared,
     lease,
     materializedLeasePending,
+    authenticationRequired,
+    prepareSignIn,
     leaseConflict,
     lifecycleTransition,
     status,
@@ -1215,10 +1218,29 @@ export default function MailComposer(props: {
   };
   const connectionUnavailable = () => status() === "readonly" && Boolean(lease()) && !leaseConflict();
   const readonlyActionLabel = () => {
+    if (authenticationRequired()) return t().signInAgain;
     const conflict = leaseConflict();
     return conflict ? mailDraftCollaborationCopy(conflict, props.currentActor, locale()).takeoverLabel : t().retry;
   };
-  const handleReadonlyAction = () => (leaseConflict() ? void presentLeaseConflict() : void resumeCurrentLease());
+  const [signingIn, setSigningIn] = createSignal(false);
+  const handleReadonlyAction = async () => {
+    if (authenticationRequired()) {
+      // The route policy takes this exact draft/seed URL through sign-in and back. The local
+      // journal survives the reload and is recovered after the new session acquires its lease.
+      try {
+        setSigningIn(true);
+        await prepareSignIn();
+        window.location.reload();
+      } catch {
+        toast.error(t().draftSaveFailed);
+      } finally {
+        setSigningIn(false);
+      }
+      return;
+    }
+    if (leaseConflict()) void presentLeaseConflict();
+    else void resumeCurrentLease();
+  };
 
   const [senderSettingsOpening, setSenderSettingsOpening] = createSignal(false);
   const openSenderSettings = async () => {
@@ -1350,8 +1372,15 @@ export default function MailComposer(props: {
               {collaborationStatus()}
             </span>
           </Show>
-          <Show when={status() === "readonly" && draft() && (lease() || leaseConflict())}>
-            <Button variant="secondary" size="sm" type="button" onClick={handleReadonlyAction}>
+          <Show when={status() === "readonly" && (authenticationRequired() || (draft() && (lease() || leaseConflict())))}>
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              disabled={signingIn()}
+              aria-busy={signingIn()}
+              onClick={handleReadonlyAction}
+            >
               {readonlyActionLabel()}
             </Button>
           </Show>
@@ -1379,8 +1408,15 @@ export default function MailComposer(props: {
           role="status"
         >
           <span class="min-w-0 flex-1 truncate">{collaborationStatus()}</span>
-          <Show when={status() === "readonly" && draft() && (lease() || leaseConflict())}>
-            <Button variant="secondary" size="sm" type="button" onClick={handleReadonlyAction}>
+          <Show when={status() === "readonly" && (authenticationRequired() || (draft() && (lease() || leaseConflict())))}>
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              disabled={signingIn()}
+              aria-busy={signingIn()}
+              onClick={handleReadonlyAction}
+            >
               {readonlyActionLabel()}
             </Button>
           </Show>

@@ -229,3 +229,36 @@ describe("invocation middleware", () => {
     expect(verified).toBeFalse();
   });
 });
+
+test("new invocation mutation routes inherit OAuth scope limits and declared queries remain readable", async () => {
+  const { auth } = await import("./auth");
+  for (const credentialKind of ["oauth", "session", "api_key"] as const) {
+    for (const scopes of [[], ["read"], ["write"], ["admin"]]) {
+      let writes = 0;
+      const app = new Hono<AuthContext>()
+        .use(
+          requireInvocation(expected, {
+            getApp: async () => ({ id: "demo" }),
+            verify: async () => ({ ...claims, credential_kind: credentialKind, scopes }),
+            resolve: async () => ({
+              actor: { kind: "user", user },
+              accessSubject: { type: "user", userId: user.id },
+              credentialKind: "invocation",
+              scopes,
+            }),
+          }),
+        )
+        .post("/mutate", (c) => {
+          writes++;
+          return c.text("written");
+        })
+        .post("/query", auth.readOnly, (c) => c.text("read"));
+      const headers = { authorization: `Bearer ${invocationCandidate}` };
+      const allowed = credentialKind !== "oauth" || scopes.includes("write") || scopes.includes("admin");
+      expect((await app.request("/mutate", { method: "POST", headers })).status).toBe(allowed ? 200 : 403);
+      expect(writes).toBe(Number(allowed));
+      const readable = credentialKind !== "oauth" || scopes.includes("read") || scopes.includes("admin");
+      expect((await app.request("/query", { method: "POST", headers })).status).toBe(readable ? 200 : 403);
+    }
+  }
+});

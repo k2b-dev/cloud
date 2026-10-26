@@ -4,6 +4,7 @@ import { createRenderEffect, createRoot, createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 import type { DraftEditableContent, DraftLease, MailDraft, MailDraftSeed } from "../../contracts";
+import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
 const MAILBOX_ID = "Box001";
 const DRAFT_ID = "Drf001";
@@ -168,9 +169,10 @@ describe("Mail draft session", () => {
     });
     const { createMailDraftSession } = await import("./mail-draft-session");
     const [current, setCurrent] = createSignal(content("First meaningful edit", "first@example.test"));
+    const editingGaps: boolean[] = [];
     const session = createRoot((disposeRoot) => {
       dispose = disposeRoot;
-      return createMailDraftSession({
+      const session = createMailDraftSession({
         mailboxId: MAILBOX_ID,
         currentActor: { kind: "user", id: "Usr001" },
         initialSeed: seed,
@@ -182,12 +184,15 @@ describe("Mail draft session", () => {
         onMaterialized: () => undefined,
         locale: () => "en",
       });
+      createRenderEffect(() => editingGaps.push(Boolean(session.draft()) && !session.lease() && !session.materializedLeasePending()));
+      return session;
     });
 
     // Before the next autosave, the user changes the recipient and the text, then selects Send.
     setCurrent(content("Final text", "second@example.test"));
     const saved = await session.persist();
 
+    expect(editingGaps).not.toContain(true);
     expect(saved?.revision).toBe(2);
     expect(saved?.body).toBe("Final text");
     expect(saved?.to).toEqual([{ name: null, address: "second@example.test" }]);
@@ -245,6 +250,161 @@ describe("Mail draft session", () => {
     socket.message({ t: "event", id: "1", cursor: "s6t.mail.7", data: { conversationId: null } });
     await Bun.sleep(20);
     expect({ checks: checks(), heartbeats: heartbeats() }).toEqual({ checks: 2, heartbeats: 2 });
+  });
+
+  test("expired authentication preserves the journal and stops automatic lease retries", async () => {
+    let expired = false;
+    respondWith((method, url) => {
+      if (expired) return Response.json({ code: "UNAUTHORIZED" }, { status: 401 });
+      if (url.endsWith("/lease") && method === "POST") return Response.json({ ...lease, token: "lease-token" });
+      return Response.json({}, { status: 404 });
+    });
+    const { createMailDraftSession } = await import("./mail-draft-session");
+    const [current, setCurrent] = createSignal(content("Saved", "first@example.test"));
+    const session = createRoot((disposeRoot) => {
+      dispose = disposeRoot;
+      return createMailDraftSession({
+        mailboxId: MAILBOX_ID,
+        currentActor: { kind: "user", id: "Usr001" },
+        initialDraft: draft(3, current()),
+        hasVerifiedIdentity: () => true,
+        content: current,
+        applyDraftContent: setCurrent,
+        isDisposed: () => false,
+        onRecovered: () => undefined,
+        onMaterialized: () => undefined,
+        locale: () => "en",
+      });
+    });
+    await session.ensureDraft();
+    setCurrent(content("Unsaved text", "first@example.test"));
+    expired = true;
+    await session.resumeCurrentLease();
+    expect(session.statusMessage()).toBe("Your sign-in expired. Sign in again to continue with this draft.");
+    expect(session.status()).toBe("readonly");
+    expect(JSON.parse(openMailUserDraftStorage(localStorage, "Usr001").getItem(session.draftKey(DRAFT_ID))!).content.body).toBe(
+      "Unsaved text",
+    );
+    const before = requests.length;
+    await session.resumeCurrentLease();
+    expect(requests).toHaveLength(before);
+  });
+
+  test("sign-in recovery stores edits before a seed has a server draft", async () => {
+    respondWith(() => Response.json({ code: "UNAUTHORIZED" }, { status: 401 }));
+    const { createMailDraftSession } = await import("./mail-draft-session");
+    const { readMailDraftSeed } = await import("./mail-draft-seed-store");
+    const [current, setCurrent] = createSignal(content("Unsaved seed text", "first@example.test"));
+    const session = createRoot((disposeRoot) => {
+      dispose = disposeRoot;
+      return createMailDraftSession({
+        mailboxId: MAILBOX_ID,
+        currentActor: { kind: "user", id: "Usr001" },
+        initialSeed: seed,
+        hasVerifiedIdentity: () => true,
+        content: current,
+        applyDraftContent: setCurrent,
+        isDisposed: () => false,
+        onRecovered: () => undefined,
+        onMaterialized: () => undefined,
+        locale: () => "en",
+      });
+    });
+    await session.persist();
+    expect(session.authenticationRequired()).toBe(true);
+    expect(session.draft()).toBeNull();
+    await session.prepareSignIn();
+    expect(readMailDraftSeed(openMailUserDraftStorage(localStorage, "Usr001"), MAILBOX_ID, seed.id)?.content).toEqual(seed.content);
+    expect(JSON.parse(openMailUserDraftStorage(localStorage, "Usr001").getItem(session.draftKey(seed.id))!).content).toEqual(current());
+    expect(localStorage.getItem(session.draftKey(seed.id))).toBeNull();
+    expect(readMailDraftSeed(localStorage, MAILBOX_ID, seed.id)).toBeNull();
+    const write = spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new Error("Storage full");
+    });
+    try {
+      await expect(session.prepareSignIn()).rejects.toThrow("Storage full");
+    } finally {
+      write.mockRestore();
+    }
+    localStorage.setItem("cloud:user-epoch:Usr001", "ended");
+    await expect(session.prepareSignIn()).rejects.toThrow("This browser session ended");
+  });
+
+  test("a late successful save cannot hide expired sign-in or discard newer journal text", async () => {
+    const pending = Promise.withResolvers<Response>();
+    respondWith((method, url) => {
+      if (url.endsWith("/lease"))
+        return method === "POST"
+          ? Response.json({ ...lease, token: "lease-token" })
+          : Response.json({ code: "UNAUTHORIZED" }, { status: 401 });
+      return pending.promise;
+    });
+    const { createMailDraftSession } = await import("./mail-draft-session");
+    const [current, setCurrent] = createSignal(content("Saved", "first@example.test"));
+    const session = createRoot((disposeRoot) => {
+      dispose = disposeRoot;
+      return createMailDraftSession({
+        mailboxId: MAILBOX_ID,
+        currentActor: { kind: "user", id: "Usr001" },
+        initialDraft: draft(3, current()),
+        hasVerifiedIdentity: () => true,
+        content: current,
+        applyDraftContent: setCurrent,
+        isDisposed: () => false,
+        onRecovered: () => undefined,
+        onMaterialized: () => undefined,
+        locale: () => "en",
+      });
+    });
+    await session.ensureDraft();
+    setCurrent(content("Saving", "first@example.test"));
+    const saving = session.persist();
+    for (let i = 0; i < 100 && !requests.some((r) => r.method === "PUT" && !r.url.endsWith("/lease")); i++) await Bun.sleep(1);
+    setCurrent(content("Newer text", "first@example.test"));
+    await session.resumeCurrentLease();
+    let ready = false;
+    const prepare = session.prepareSignIn().then(() => {
+      ready = true;
+    });
+    await Bun.sleep(1);
+    expect(ready).toBe(false);
+    pending.resolve(Response.json(draft(4, content("Saving", "first@example.test"))));
+    await saving;
+    await prepare;
+    expect(ready).toBe(true);
+    expect(session.status()).toBe("readonly");
+    expect(session.statusMessage()).toBe("Your sign-in expired. Sign in again to continue with this draft.");
+    expect(session.authenticationRequired()).toBe(true);
+    expect(JSON.parse(openMailUserDraftStorage(localStorage, "Usr001").getItem(session.draftKey(DRAFT_ID))!)).toEqual({
+      revision: 4,
+      content: current(),
+    });
+  });
+
+  test("a lease failure followed by lifecycle 401 keeps the sign-in action", async () => {
+    respondWith((_method, url) =>
+      Response.json({ code: url.endsWith("/lease") ? "FORBIDDEN" : "UNAUTHORIZED" }, { status: url.endsWith("/lease") ? 403 : 401 }),
+    );
+    const { createMailDraftSession } = await import("./mail-draft-session");
+    const session = createRoot((disposeRoot) => {
+      dispose = disposeRoot;
+      return createMailDraftSession({
+        mailboxId: MAILBOX_ID,
+        currentActor: { kind: "user", id: "Usr001" },
+        initialDraft: draft(3, content("Saved", "first@example.test")),
+        hasVerifiedIdentity: () => true,
+        content: () => content("Saved", "first@example.test"),
+        applyDraftContent: () => undefined,
+        isDisposed: () => false,
+        onRecovered: () => undefined,
+        onMaterialized: () => undefined,
+        locale: () => "en",
+      });
+    });
+    await session.ensureDraft();
+    expect(session.authenticationRequired()).toBe(true);
+    expect(session.status()).toBe("readonly");
+    expect(session.statusMessage()).toBe("Your sign-in expired. Sign in again to continue with this draft.");
   });
 
   test("a composer that lost its connection becomes editable again once Mail answers, without a live update", async () => {

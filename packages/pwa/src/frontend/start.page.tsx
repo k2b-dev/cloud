@@ -1,9 +1,11 @@
-import { PWA_AUTH_PATH, PWA_SCOPE } from "@k2b/cloud/contracts";
+import { PWA_AUTH_PATH, PWA_COOKIES, PWA_SCOPE } from "@k2b/cloud/contracts";
+import { rememberedPwaAddress } from "@k2b/cloud/contracts/pwa-location";
 import { type AuthContext, getLocale, getUserBackedActor } from "@k2b/cloud/server";
 import { appIconVersion } from "@k2b/cloud/services/branding/app-icon-source";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { getDisplayRuntimeContext, PwaLayout, visiblePwaParts } from "@k2b/cloud/ssr";
 import { createNavigation, IconButtonLink, installationPlatform, Navigation, Placeholder } from "@k2b/ui";
+import { deleteCookie, getCookie } from "hono/cookie";
 import { ssr } from "../config";
 import { shellMessages } from "../messages";
 import PairingNotice from "./_components/PairingNotice.island";
@@ -26,6 +28,9 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = shellMessages.resolve([locale]);
   const cloud = c.get("settings")?.app?.name || "Cloud";
 
+  const remembered = rememberedPwaAddress(getCookie(c, PWA_COOKIES.lastAddress)) ?? PWA_SCOPE;
+  if (user && c.req.query("launch") !== undefined) return c.redirect(remembered, 302);
+
   if (user) {
     const parts = visiblePwaParts(getDisplayRuntimeContext(c).apps, user, locale);
     const apps = createNavigation({
@@ -36,11 +41,15 @@ export default ssr<AuthContext>(async (c) => {
       <PwaLayout
         c={c}
         title={cloud}
-        // Settings sits in the header, as in a phone's own apps, so Start stays one list of parts.
+        sidebarTitle={t.start}
+        // On the phone Settings sits in the header, as in a phone's own apps, so Start stays one list of parts. The
+        // sidebar of a wide screen lists it itself.
         actions={
-          <IconButtonLink href={`${PWA_SCOPE}settings`} label={t.settings} tooltip={false}>
-            <i class="ti ti-settings" aria-hidden="true" />
-          </IconButtonLink>
+          <span class="pwa-phone-only">
+            <IconButtonLink href={`${PWA_SCOPE}settings`} label={t.settings} tooltip={false}>
+              <i class="ti ti-settings" aria-hidden="true" />
+            </IconButtonLink>
+          </span>
         }
       >
         <div class="pwa-start">
@@ -73,15 +82,18 @@ export default ssr<AuthContext>(async (c) => {
       </PwaLayout>
     );
   }
-  if (!isWelcomeState(state)) return c.redirect(`${PWA_AUTH_PATH}/session/launch?to=${encodeURIComponent(PWA_SCOPE)}`, 302);
+  if (!isWelcomeState(state)) return c.redirect(`${PWA_AUTH_PATH}/session/launch?to=${encodeURIComponent(remembered)}`, 302);
 
   const icon = `/branding/pwa-icon-192.png?v=${await appIconVersion()}`;
   const platform = installationPlatform(c.req.header("User-Agent") ?? "", "", 0);
   // Behind the gateway the request URL names an internal hop; the public address is the configured one.
   const url = `${publicCloudOrigin(c.get("settings")?.app?.url || "localhost:3000")}${PWA_SCOPE}`;
+  // The launch marks a pairing it found ended; the address alone never deletes drafts.
+  const ended = state === "ended" && getCookie(c, PWA_COOKIES.ended) === "1";
+  if (ended) deleteCookie(c, PWA_COOKIES.ended, { path: PWA_SCOPE, secure: true, httpOnly: true, sameSite: "Lax" });
   return () => (
     <PwaLayout c={c} title={cloud}>
-      <Welcome state={state} cloud={cloud} icon={icon} platform={platform} url={url} />
+      <Welcome state={state} cloud={cloud} icon={icon} platform={platform} url={url} clearDrafts={ended} />
     </PwaLayout>
   );
 });

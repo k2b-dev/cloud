@@ -136,6 +136,73 @@ const manyWarnings: ComposeFormattingWarning[] = Array.from({ length: 20 }, (_, 
   element: `x-tag${index}`,
 }));
 
+describe("Mail composer recovery", () => {
+  for (const [label, context] of [
+    ["desktop", desktop],
+    ["phone", phone],
+    ["tablet dark", { viewport: { width: 768, height: 1024 } }],
+  ] as const) {
+    test(`first autosave keeps focus and expired sign-in returns to preserved text on ${label}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      try {
+        await page.clock.install({ time: new Date("2026-10-11T10:00:00.000Z") });
+        await page.goto(server.url.href);
+        if (label === "tablet dark") await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
+        await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null, seed: true }));
+        const editor = page.locator("textarea").first();
+        await editor.fill("First autosave text");
+        await editor.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(6, 6));
+        await page.clock.fastForward(800);
+        await page.waitForURL(/Draft1/);
+        await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("button.mail-composer-signature")?.disabled);
+        expect(
+          await editor.evaluate((element: HTMLTextAreaElement) => ({
+            focused: document.activeElement === element,
+            caret: element.selectionStart,
+          })),
+        ).toEqual({ focused: true, caret: 6 });
+        await page.evaluate(() => window.expireComposerSession());
+        await editor.fill("Preserved after sign-in expires");
+        await page.clock.fastForward(800);
+        const signIn = page.getByRole("button", { name: "Sign in again", exact: true });
+        await signIn.waitFor();
+        expect(await editor.inputValue()).toBe("Preserved after sign-in expires");
+        const returnUrl = page.url();
+        await Promise.all([page.waitForEvent("load"), signIn.click()]);
+        expect(page.url()).toBe(returnUrl);
+        // The route has returned from authentication: the new editor holds a lease and restores its local journal.
+        await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null }));
+        await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("button.mail-composer-signature")?.disabled);
+        await page.getByRole("tab", { name: "Write", exact: true }).click();
+        expect(await page.locator("textarea").first().inputValue()).toBe("Preserved after sign-in expires");
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+  test("sign-in before first autosave restores seed text on reload", async () => {
+    const page = await (await browser.newContext(desktop)).newPage();
+    try {
+      await page.clock.install({ time: new Date("2026-10-11T10:00:00.000Z") });
+      await page.goto(server.url.href);
+      await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null, seed: true }));
+      await page.evaluate(() => window.expireComposerSession());
+      await page.locator("textarea").first().fill("Preserved before first save");
+      await page.clock.fastForward(800);
+      const signIn = page.getByRole("button", { name: "Sign in again", exact: true });
+      await signIn.waitFor();
+      await Promise.all([page.waitForEvent("load"), signIn.click()]);
+      await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null, seed: true }));
+      expect(await page.locator("textarea").first().inputValue()).toBe("Preserved before first save");
+      await page.clock.fastForward(800);
+      await page.waitForURL(/Draft1/);
+      expect(await page.locator("textarea").first().inputValue()).toBe("Preserved before first save");
+    } finally {
+      await page.context().close();
+    }
+  });
+});
+
 describe("Mail composer preview", () => {
   for (const [label, context] of [
     ["desktop", desktop],

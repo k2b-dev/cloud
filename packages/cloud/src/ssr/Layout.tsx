@@ -314,7 +314,12 @@ export default function Layout(props: LayoutProps) {
           data-layout-full-page="true"
           data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
         >
-          <ShellRuntime pageTrail help={runtimeHelp} panel={panel ? true : undefined} />
+          <ShellRuntime
+            {...(currentApp?.access ? { appAccess: { id: currentApp.id, routes: currentApp.routes } } : {})}
+            pageTrail
+            help={runtimeHelp}
+            panel={panel ? true : undefined}
+          />
           <PageTrailProvider trail={pageTrail}>
             <main class="min-h-0 min-w-0 flex-1" data-cloud-app-area="">
               <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
@@ -355,6 +360,7 @@ export default function Layout(props: LayoutProps) {
         data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
       >
         <ShellRuntime
+          {...(currentApp?.access ? { appAccess: { id: currentApp.id, routes: currentApp.routes } } : {})}
           panel={panel ? true : undefined}
           workspace={{ appId: currentApp?.id }}
           pageTrail

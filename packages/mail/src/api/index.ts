@@ -2460,7 +2460,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
       }),
     );
   })
-  .post("/mailboxes/:mailboxId/search", v("param", mailboxParamSchema), v("json", searchRequestSchema), async (c) =>
+  .post("/mailboxes/:mailboxId/search", auth.readOnly, v("param", mailboxParamSchema), v("json", searchRequestSchema), async (c) =>
     respondMessages(
       c,
       search.searchMessages({
@@ -2618,35 +2618,50 @@ const mailOperationsApi = new Hono<MailApiContext>()
       }),
     ),
   )
-  .post("/mailboxes/:mailboxId/compose-preview", v("param", mailboxParamSchema), v("json", composePreviewInputSchema), async (c) =>
-    respondPublic(
-      c,
-      composeTemplates.previewComposeDraft({
-        context: requestContext(c),
-        mailboxId: internalMailboxId(c),
-        input: await internalInput(c, c.req.valid("json")),
-      }),
-    ),
+  .post(
+    "/mailboxes/:mailboxId/compose-preview",
+    auth.readOnly,
+    v("param", mailboxParamSchema),
+    v("json", composePreviewInputSchema),
+    async (c) =>
+      respondPublic(
+        c,
+        composeTemplates.previewComposeDraft({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          input: await internalInput(c, c.req.valid("json")),
+        }),
+      ),
   )
-  .post("/mailboxes/:mailboxId/compose-snippet", v("param", mailboxParamSchema), v("json", renderComposeSnippetInputSchema), async (c) =>
-    respondPublic(
-      c,
-      composeTemplates.renderComposeSnippet({
-        context: requestContext(c),
-        mailboxId: internalMailboxId(c),
-        input: await internalInput(c, c.req.valid("json")),
-      }),
-    ),
+  .post(
+    "/mailboxes/:mailboxId/compose-snippet",
+    auth.readOnly,
+    v("param", mailboxParamSchema),
+    v("json", renderComposeSnippetInputSchema),
+    async (c) =>
+      respondPublic(
+        c,
+        composeTemplates.renderComposeSnippet({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          input: await internalInput(c, c.req.valid("json")),
+        }),
+      ),
   )
-  .post("/mailboxes/:mailboxId/compose-suggestions", v("param", mailboxParamSchema), v("json", composeSuggestionsInputSchema), async (c) =>
-    respondPublic(
-      c,
-      composeTemplates.renderComposeSuggestions({
-        context: requestContext(c),
-        mailboxId: internalMailboxId(c),
-        input: await internalInput(c, c.req.valid("json")),
-      }),
-    ),
+  .post(
+    "/mailboxes/:mailboxId/compose-suggestions",
+    auth.readOnly,
+    v("param", mailboxParamSchema),
+    v("json", composeSuggestionsInputSchema),
+    async (c) =>
+      respondPublic(
+        c,
+        composeTemplates.renderComposeSuggestions({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          input: await internalInput(c, c.req.valid("json")),
+        }),
+      ),
   )
   .post("/mailboxes/:mailboxId/sender-identities", v("param", mailboxParamSchema), v("json", createSenderIdentityInputSchema), async (c) =>
     respondSenderIdentities(
@@ -2789,12 +2804,15 @@ const mailOperationsApi = new Hono<MailApiContext>()
       const result = await readDraftDocument({ context: requestContext(c), ...params, signal: c.req.raw.signal });
       if (!result.ok) return respond(c, result);
       const value = result.data;
-      return c.json({
-        ...value,
-        fresh: { ...value.fresh, state: toBase64(value.fresh.state) },
-        durable: { ...value.durable, state: toBase64(value.durable.state) },
-        frozen: value.frozen ? { ...value.frozen, state: toBase64(value.frozen.state) } : null,
-      });
+      return respond(
+        c,
+        ok({
+          ...value,
+          fresh: { ...value.fresh, state: toBase64(value.fresh.state) },
+          durable: { ...value.durable, state: toBase64(value.durable.state) },
+          frozen: value.frozen ? { ...value.frozen, state: toBase64(value.frozen.state) } : null,
+        }),
+      );
     },
   )
   .post(
@@ -2824,8 +2842,9 @@ const mailOperationsApi = new Hono<MailApiContext>()
       const result = await acceptDraftDocumentUpdate({ context: requestContext(c), ...params, ...input, update, signal: c.req.raw.signal });
       if (!result.ok) return respond(c, result);
       const value = result.data;
-      return c.json(
-        value.status === "accepted" ? { ...value, durable: { ...value.durable, state: toBase64(value.durable.state) } } : value,
+      return respond(
+        c,
+        ok(value.status === "accepted" ? { ...value, durable: { ...value.durable, state: toBase64(value.durable.state) } } : value),
       );
     },
   )
@@ -2888,7 +2907,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         signal: c.req.raw.signal,
       });
       if (!saved.ok) return respond(c, saved);
-      return c.json({ ...saved.data, durable: { ...saved.data.durable, state: toBase64(saved.data.durable.state) } });
+      return respond(c, ok({ ...saved.data, durable: { ...saved.data.durable, state: toBase64(saved.data.durable.state) } }));
     },
   )
   .post("/mailboxes/:mailboxId/draft-seeds", v("param", mailboxParamSchema), v("json", prepareDraftSeedInputSchema), async (c) =>
@@ -3353,6 +3372,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
   )
   .post(
     "/mailboxes/:mailboxId/commands/outcomes",
+    auth.readOnly,
     describeRoute({
       tags: ["Mail:Commands"],
       summary: "Read the current state of queued commands",

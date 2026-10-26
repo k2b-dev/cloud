@@ -82,7 +82,7 @@ const renderEmptyNotebook = async (mode: "write" | "book" | "graph" | "graph&fro
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
-  spies.push(spyOn(notebooksService.notebook, "graph").mockResolvedValue({ nodes: [], edges: [] }));
+  spies.push(spyOn(notebooksService.notebook, "graphView").mockResolvedValue({ nodes: [], edges: [] }));
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
@@ -347,7 +347,7 @@ const renderNotebookWithNotes = async (
   spies.push(spyOn(notebooksService.workspaceEvents, "latestCursor").mockResolvedValue("1-0"));
   spies.push(spyOn(notebooksService.note, "getTree").mockResolvedValue([note("note01", "Private folder"), note("note02", "Team notes")]));
   spies.push(
-    spyOn(notebooksService.notebook, "graph").mockResolvedValue(
+    spyOn(notebooksService.notebook, "graphView").mockResolvedValue(
       query
         ? {
             nodes: ["note01", "note02"].map((id, position) => ({
@@ -490,7 +490,7 @@ const renderEditorPage = async (
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
-  spies.push(spyOn(notebooksService.notebook, "graph").mockResolvedValue({ nodes: [], edges: [] }));
+  spies.push(spyOn(notebooksService.notebook, "graphView").mockResolvedValue({ nodes: [], edges: [] }));
   spies.push(spyOn(notebooksService.note.versions, "list").mockRejectedValue(new Error("No saved versions in this fixture")));
   spies.push(
     spyOn(notebooksService.note.comments, "listPage").mockResolvedValue({ items: [], page: 1, perPage: 30, total: 0, hasNext: false }),
@@ -650,6 +650,7 @@ const renderLinkedNotebook = async (
   query: string,
   locale = "en",
   defaultPresentationMode: PresentationMode = "write",
+  scope?: { around: string; total: number },
 ) => {
   const linkedNotebook = { ...notebook, defaultPresentationMode };
   const note = {
@@ -681,9 +682,10 @@ const renderLinkedNotebook = async (
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   spies.push(
-    spyOn(notebooksService.notebook, "graph").mockResolvedValue({
+    spyOn(notebooksService.notebook, "graphView").mockResolvedValue({
       nodes: [{ id: "note01", title: "Welcome", inDegree: 0, parentId: null, position: 0, updatedAt: timestamp }],
       edges: [],
+      ...(scope ? { scope } : {}),
     }),
   );
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
@@ -700,6 +702,19 @@ const renderLinkedNotebook = async (
   expect(response.status).toBe(200);
   return response.text();
 };
+
+for (const [locale, line] of [
+  ["en", "This notebook has 20,000 pages. The graph shows the 1 around “Welcome”"],
+  ["de", "Dieses Notizbuch hat 20.000 Seiten. Der Graph zeigt die 1 rund um „Welcome“"],
+]) {
+  test(`a large notebook's graph says from its first paint that it shows the pages around one page (${locale})`, async () => {
+    const html = await renderLinkedNotebook("write", "graph", locale, "write", { around: "note01", total: 20_000 });
+    const [scope] = await select(html, ".notebook-graph__scope");
+    expect(scope?.attributes.role).toBe("note");
+    expect(scope?.text).toContain(line);
+    expect(await select(await renderLinkedNotebook("write", "graph", locale), ".notebook-graph__scope")).toHaveLength(0);
+  });
+}
 
 for (const [locale, label] of [
   ["en", "Links"],
