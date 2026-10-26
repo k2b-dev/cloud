@@ -586,13 +586,10 @@ export async function contactsShellSuite(shotsDirectory?: string) {
       }
     }, 30_000);
 
-    test("10. German phone tabs fit and lead the card", async () => {
-      // Both pages have a way up in Cloud's trail (Start, Kontakte), so the shared head puts the title row first and the
-      // tabs directly below it, at the top of the card's content (F4).
-      for (const [path, title] of [
-        ["/app/contacts", true],
-        ["/app/contacts/kunden", true],
-      ] as const) {
+    test("10. Phone objects precede the head and German tabs fit below its title", async () => {
+      // The shared flush phone layout puts object chips before the head (#1661).
+      // Both pages have a Cloud trail, so the head's title precedes its views.
+      for (const path of ["/app/contacts", "/app/contacts/kunden"]) {
         const page = await open(path, 390);
         try {
           const labels = tabs(page).locator(".k2b-view-tabs__label");
@@ -602,14 +599,13 @@ export async function contactsShellSuite(shotsDirectory?: string) {
               expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
           const views = await box(tabs(page));
           const filters = await box(head(page).locator(".k2b-app-workspace__head-filters"));
-          const card = await box(page.locator(".k2b-app-workspace"));
-          if (title) {
-            const heading = await box(head(page).locator(".k2b-page-title").first());
-            expect(views.y).toBeGreaterThanOrEqual(heading.y + heading.height - 1);
-            expect(views.y - (heading.y + heading.height)).toBeLessThanOrEqual(16);
-          } else expect(views.y - card.y).toBeLessThanOrEqual(16);
+          const objects = await box(sidebar(page));
+          const workspaceHead = await box(head(page));
+          const heading = await box(head(page).locator(".k2b-page-title").first());
+          expect(workspaceHead.y).toBeGreaterThanOrEqual(objects.y + objects.height - 1);
+          expect(views.y).toBeGreaterThanOrEqual(heading.y + heading.height - 1);
+          expect(views.y - (heading.y + heading.height)).toBeLessThanOrEqual(16);
           expect(filters.y).toBeGreaterThanOrEqual(views.y + views.height - 1);
-          expect((await box(sidebar(page))).y).toBeGreaterThanOrEqual(views.y + views.height - 1);
         } finally {
           await close(page);
         }
