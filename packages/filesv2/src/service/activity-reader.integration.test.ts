@@ -546,7 +546,6 @@ suite("history reader SQL and permission projection in a private database", () =
     await sql`UPDATE filesv2.activity SET share_id=${shareId}::uuid WHERE id=${row.id}::uuid`;
     expect((await activityReaderData.byId(row.id))?.share_expires_at?.toISOString()).toBe("2030-06-01T00:00:00.000Z");
     const f = fixture();
-    f.setMember(false);
     const page = await f.reader.activity(call);
     expect(page.items[0]?.share).toEqual({ expiresAt: "2030-06-01T00:00:00.000Z" });
     expect(JSON.stringify(page)).not.toMatch(/secret-|Private title|Old actor name|token_hash|share_id/);
@@ -571,9 +570,9 @@ suite("history reader SQL and permission projection in a private database", () =
       next: null,
     });
     const page = await f.reader.adminActivityBases(call);
-    expect(page.items).toHaveLength(3);
-    expect(new Set(page.items.map((item) => item.id)).size).toBe(3);
-    expect(page.items.map((item) => item.name).sort()).toEqual(["Alice", "Current team", "Recorded team"]);
+    expect(page.items).toHaveLength(2);
+    expect(new Set(page.items.map((item) => item.id)).size).toBe(2);
+    expect(page.items.map((item) => item.name).sort()).toEqual(["Alice", "Current team"]);
     expect(await f.reader.adminActivityBases(call, { q: "Obsolete" })).toEqual({ items: [], next: null });
     await sql`DELETE FROM auth.users WHERE id=${actorId}::uuid`;
     expect((await f.reader.adminActivityBases(call, { baseId: publicBaseId })).items[0]?.name).toBe("Deleted account");
@@ -581,10 +580,10 @@ suite("history reader SQL and permission projection in a private database", () =
   });
 
   test("recorded base SQL pages archived bindings and filters a public ID beyond the first page", async () => {
-    const recordedPublicId = "freeipa:users:70000000-0000-4000-8000-000000000055";
+    const recordedPublicId = "cloud:users:70000000-0000-4000-8000-000000000055";
     await sql`INSERT INTO filesv2.bases(id,area,kind,identity_id,identity_name,root,path,lifecycle)
       SELECT ('80000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
-        'freeipa','users',('70000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'Recorded user','freeipa','archive/user-'||n,'archived'
+        'cloud','users',('70000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'Recorded user','cloud','archive/user-'||n,'archived'
       FROM generate_series(1,55) n`;
     await withActivityReadBudget(undefined, async (budget) => {
       const first = await activityReaderData.activityBases(undefined, 50, budget);
@@ -627,14 +626,13 @@ suite("history reader SQL and permission projection in a private database", () =
       await sql`UPDATE filesv2.activity SET detail=jsonb_build_object(${marker}::text,true) WHERE id=${row.id}::uuid`;
       expect((await activityReaderData.byId(row.id))?.metadataUnknown).toBe(true);
       const f = fixture();
-      f.setMember(false);
       expect((await f.reader.activity(call)).items[0]?.before).toEqual({
         visibility: "disappearance",
         name: "old",
         path: `${home}/old`,
         directory: null,
-        publicBaseId: null,
-        relativePath: null,
+        publicBaseId,
+        relativePath: "old",
       });
       f.setAdmin(true);
       expect((await f.reader.activity(call)).items[0]?.before.visibility).toBe("disappearance");

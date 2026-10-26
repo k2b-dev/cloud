@@ -55,6 +55,7 @@ export type ActivityReaderDependencies = {
     admin: boolean;
     config: Config;
     allowedBindingIds: string[];
+    historyAvailable: boolean;
     readOnlyAuthorized(publicBaseId: string, path: string): Promise<HistoryAccess>;
   }>;
   bindings: Pick<typeof bindings, "byId">;
@@ -138,7 +139,7 @@ const arrivalActions = new Set<HistoryAction>([
 export function createActivityReader(deps: ActivityReaderDependencies) {
   const data = deps.data ?? activityReaderData;
   async function context(call: ActivityReadCall, budget: ActivityReadBudget) {
-    const { userId, admin, config, allowedBindingIds, readOnlyAuthorized } = await budget.run(() =>
+    const { userId, admin, config, allowedBindingIds, historyAvailable, readOnlyAuthorized } = await budget.run(() =>
       deps.requestContext(call.actor, budget),
     );
     // History needs the actual storage configuration, even when candidate scoping would otherwise look empty.
@@ -315,7 +316,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
         },
       };
     }
-    return { project, access, matches, binding, config, scope, budget };
+    return { project, access, matches, binding, config, scope, budget, historyAvailable };
   }
   async function names(items: Pick<ActivityEntry, "actor">[], budget: ActivityReadBudget) {
     budget.check();
@@ -478,7 +479,8 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           }
         }
         const current = await context(call, budget);
-        if (input.baseId?.startsWith("freeipa:")) throw new FilesError("history_unavailable", 409);
+        if (input.baseId?.startsWith("freeipa:") || (!input.baseId && !current.historyAvailable))
+          throw new FilesError("history_unavailable", 409);
         const rows =
           matches >= ACTIVITY_SEARCH_LIMIT && input.q
             ? []
