@@ -5,7 +5,7 @@ section: Data
 order: 430
 description: Let people and agents edit the same text through a retained log and application-owned snapshots.
 tags: [data, text, collaboration, sync, yjs]
-updated: 2026-10-19
+updated: 2026-10-26
 ---
 
 # Shared text documents
@@ -110,7 +110,10 @@ Yjs documents are destroyed. When `signal` aborts before publication,
 `edit` throws its reason and publishes nothing; an aborted signal also skips
 the callback. An abort after publication ends as `persistFailed`.
 
-For changed text, `edit` applies a minimal diff against the replayed text,
+For changed text, `edit` compares lines and then characters within changed blocks
+against the replayed text, preserving unchanged Yjs items and their relative
+positions. Diff work is bounded by the log’s payload budget; an expensive region
+falls back to one replacement. It
 publishes the update with its actor, then replays from the original snapshot
 to the published cursor in a second document. It saves this second document,
 including other accepted updates up to that cursor. It never saves the local
