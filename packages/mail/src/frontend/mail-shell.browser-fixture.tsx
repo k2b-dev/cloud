@@ -6,6 +6,7 @@ import { resolveMailSearchRoute } from "../search-state";
 import type { MailboxListView, MailboxPageData } from "../service/workspace";
 import { normalizeMailConversationToolbarActions } from "./_components/mail-conversation-toolbar";
 import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtures";
+import { summaryState } from "./_components/mail-summary-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
 import MailOverview from "./MailOverview.island";
@@ -318,7 +319,7 @@ export function mailboxData(url: URL): MailboxPageData {
           ]
       : [],
     conversationSummary: selectedConversationId
-      ? { summary: "Invented request summary.", summaryRevision: 1, conversationRevision: 1 }
+      ? summaryState({ summary: "Invented request summary.", summaryRevision: 1, conversationRevision: 1 })
       : null,
     conversationDrafts: [],
     detailError: null,

@@ -8,10 +8,41 @@ import { type MailActivityChange, mailLive } from "./live";
 
 type SqlClient = typeof sql;
 
+/** Who wrote the current summary text. */
+export type ConversationSummaryAuthor = { kind: "user" | "workflow"; id: string; name: string };
+export type ConversationSummaryStatus = "idle" | "pending" | "writing" | "failed" | "limited";
+export type ConversationSummaryFailureCode = "timeout" | "provider_unavailable" | "input_too_large" | "allowance_exhausted" | "internal";
+
 export type ConversationContentSummary = {
   summary: string | null;
   summaryRevision: number;
   conversationRevision: number;
+  /** `person` = a person wrote or edited the text; `workflow` = a rule's AI step; `manual_ai` = AI on a person's request. */
+  source: "person" | "workflow" | "manual_ai" | null;
+  author: ConversationSummaryAuthor | null;
+  /** The current text was written by AI. */
+  ai: boolean;
+  generatedAt: string | null;
+  coveredMessageCount: number | null;
+  /** The AI saw only the newest messages that fit its input budget. */
+  truncated: boolean;
+  nextStep: { text: string; due: string | null } | null;
+  /** Messages that arrived after the current text was written. */
+  newMessagesSince: number;
+  /** `pending` = bundled and waiting for its quiet period; `writing` = the AI call runs. */
+  status: ConversationSummaryStatus;
+  failure: {
+    code: ConversationSummaryFailureCode;
+    attempts: number;
+    lastAttemptAt: string;
+    workflow: { id: string; name: string } | null;
+  } | null;
+  /** Only while a rule wanted to summarize today and its daily limit stopped it. */
+  limit: { scope: "rule" | "mailbox"; workflow: { id: string; name: string } | null; limit: number; resetsAt: string } | null;
+  /** The viewing person's own AI allowance for a summary on request; amounts stay hidden. */
+  allowance: { unlimited: boolean; usedPercent: number | null; resetsAt: string | null } | null;
+  /** The viewing person may ask the AI for a summary now. */
+  canGenerate: boolean;
 };
 
 type SummaryRow = {
@@ -29,6 +60,19 @@ const mapSummary = (row: SummaryRow): ConversationContentSummary => ({
   summary: row.summary,
   summaryRevision: Number(row.summary_revision),
   conversationRevision: Number(row.revision),
+  source: row.summary === null ? null : "person",
+  author: null,
+  ai: false,
+  generatedAt: null,
+  coveredMessageCount: null,
+  truncated: false,
+  nextStep: null,
+  newMessagesSince: 0,
+  status: "idle",
+  failure: null,
+  limit: null,
+  allowance: null,
+  canGenerate: false,
 });
 
 const loadSummary = async (params: {
