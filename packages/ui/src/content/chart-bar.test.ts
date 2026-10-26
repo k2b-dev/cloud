@@ -80,7 +80,11 @@ describe("bar chart labels", () => {
   });
 
   test("axis titles name the categories and the value", () => {
-    const { svg } = draw({ data: fruits.map((label, value) => ({ label, value })), xAxis: { label: "Sorte" }, yAxis: { label: "Umsatz (€)" } });
+    const { svg } = draw({
+      data: fruits.map((label, value) => ({ label, value })),
+      xAxis: { label: "Sorte" },
+      yAxis: { label: "Umsatz (€)" },
+    });
     expect(texts(svg, "stdlib-chart-axis-label")).toEqual(["Sorte", "Umsatz (€)"]);
     const columns = draw({ data: [{ label: "A", value: 1 }], xAxis: { label: "Sorte" }, yAxis: { label: "Kisten" } }).svg;
     expect(texts(columns, "stdlib-chart-axis-label").sort()).toEqual(["Kisten", "Sorte"]);
@@ -110,17 +114,26 @@ describe("bar chart labels", () => {
     });
     expect(texts(svg, "stdlib-chart-bar-value")).toEqual([]);
     expect(svg.match(/class="stdlib-chart-tick-label"/g)?.length).toBeGreaterThan(1);
-    const bars = [...svg.matchAll(/class="stdlib-chart-bar[^"]*" x="([\d.]+)" y="[\d.]+" width="([\d.]+)"/g)].map((match) => [Number(match[1]), Number(match[2])]);
+    const bars = [...svg.matchAll(/class="stdlib-chart-bar[^"]*" x="([\d.]+)" y="[\d.]+" width="([\d.]+)"/g)].map((match) => ({
+      x: Number(match[1]),
+      width: Number(match[2]),
+    }));
     const zero = Number(/class="stdlib-chart-axis" x1="([\d.]+)"/.exec(svg)?.[1]);
-    expect(bars[0]![0]).toBeCloseTo(zero, 1);
-    expect(bars[1]![0] + bars[1]![1]).toBeCloseTo(zero, 1);
-    expect(bars.every(([, width]) => width! > 40)).toBe(true);
+    expect(bars[0]?.x).toBeCloseTo(zero, 1);
+    expect((bars[1]?.x ?? 0) + (bars[1]?.width ?? 0)).toBeCloseTo(zero, 1);
+    expect(bars.every((bar) => bar.width > 40)).toBe(true);
   });
 
   test("printed negative column values stay above the category labels", () => {
-    const { layout, svg } = draw({ data: [{ label: "A", value: -10 }, { label: "B", value: -5 }] });
+    const { layout, svg } = draw({
+      data: [
+        { label: "A", value: -10 },
+        { label: "B", value: -5 },
+      ],
+    });
     expect(layout).toBe("columns");
-    const baseline = (name: string) => [...svg.matchAll(new RegExp(`class="[^"]*${name}[^"]*" x="[\\d.]+" y="([\\d.]+)"`, "g"))].map((match) => Number(match[1]));
+    const baseline = (name: string) =>
+      [...svg.matchAll(new RegExp(`class="[^"]*${name}[^"]*" x="[\\d.]+" y="([\\d.]+)"`, "g"))].map((match) => Number(match[1]));
     const values = baseline("stdlib-chart-bar-value");
     expect(values).toHaveLength(2);
     // 11px text: a value's baseline sits a full line above the top of the category labels.

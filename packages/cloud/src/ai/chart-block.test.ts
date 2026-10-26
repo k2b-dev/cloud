@@ -303,7 +303,18 @@ describe("chart table", () => {
 
 describe("chart render options", () => {
   test("make room for long tick labels and show a legend for several series", () => {
-    const values = (y: number) => ({ kind: "line", title: "Y", series: [{ data: [{ x: 1, y: 0 }, { x: 2, y }] }] });
+    const values = (y: number) => ({
+      kind: "line",
+      title: "Y",
+      series: [
+        {
+          data: [
+            { x: 1, y: 0 },
+            { x: 2, y },
+          ],
+        },
+      ],
+    });
     const small = cloudAiChartRenderOptions(parse(values(5)), "en");
     const large = cloudAiChartRenderOptions(parse(values(1_250_000)), "de");
     const left = (options: typeof small) => ("padding" in options && typeof options.padding === "object" ? (options.padding.left ?? 0) : 0);
@@ -362,7 +373,9 @@ describe("chart render options", () => {
     const svg = renderBarChartSvg({ ...options, width: 480, height: layout.height });
     const labels = [...svg.matchAll(/stdlib-chart-category-label"[^>]*>([^<]*)</g)].map((match) => match[1]);
     expect(labels).toEqual(months.map((label) => `${label} 2026`));
-    expect([...svg.matchAll(/stdlib-chart-bar-value"[^>]*>([^<]*)</g)].map((match) => match[1])).toEqual(months.map((_, value) => `${value}`));
+    expect([...svg.matchAll(/stdlib-chart-bar-value"[^>]*>([^<]*)</g)].map((match) => match[1])).toEqual(
+      months.map((_, value) => `${value}`),
+    );
     expect(cloudAiChartTable(input, "en").rows.map((row) => row.cells.label)).toEqual(months.map((label) => `${label} 2026`));
   });
 });

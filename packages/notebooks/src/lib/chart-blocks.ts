@@ -132,7 +132,9 @@ const parseChart = (
     if (entry) {
       const key = entry[1]!;
       section = "";
-      if (!["type", "title", "subtitle", "data", "columns", "rows", "x", "y", "label", "value", "format", "unit", "tooltip"].includes(key)) {
+      if (
+        !["type", "title", "subtitle", "data", "columns", "rows", "x", "y", "label", "value", "format", "unit", "tooltip"].includes(key)
+      ) {
         add("unknown-key", key, line);
         continue;
       }

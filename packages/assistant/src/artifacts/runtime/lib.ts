@@ -12,21 +12,7 @@ import {
   cloudAiChartTooltip,
 } from "@k2b/cloud/ai/browser";
 // Named renderers, not the `charts` namespace, so app frames leave out the map and state timeline renderers.
-import {
-  barGauge,
-  boxplot,
-  donut,
-  escapeXml,
-  gauge,
-  heatmap,
-  histogram,
-  line,
-  money,
-  pie,
-  scatter,
-  sparkline,
-  stat,
-} from "@k2b/stdlib";
+import { barGauge, boxplot, donut, escapeXml, gauge, heatmap, histogram, line, money, pie, scatter, sparkline, stat } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
 import { CloudError } from "./errors";

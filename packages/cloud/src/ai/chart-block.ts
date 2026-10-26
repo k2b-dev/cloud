@@ -345,12 +345,7 @@ export function cloudAiChartRenderOptions(
           references,
           ...(options.width === undefined ? {} : { displayWidth: options.width }),
         };
-      const left = leftPadding(
-        [...input.data.flatMap((item) => item.values), ...referencesOf(input, "y")],
-        yAxis,
-        format.tick,
-        factor,
-      );
+      const left = leftPadding([...input.data.flatMap((item) => item.values), ...referencesOf(input, "y")], yAxis, format.tick, factor);
       return {
         kind: "boxplot",
         groups: thinned(input.data, left, width, factor),

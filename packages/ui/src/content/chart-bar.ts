@@ -191,7 +191,8 @@ export const barChartLayout = (opts: BarChartOptions, width = 480): { layout: Ba
 
 const columnGeometry = (opts: BarChartOptions, finite: Plan["finite"], width: number, height: number) => {
   const units = width / narrow(opts);
-  const given = typeof opts.padding === "number" ? { top: opts.padding, right: opts.padding, bottom: opts.padding, left: opts.padding } : opts.padding;
+  const given =
+    typeof opts.padding === "number" ? { top: opts.padding, right: opts.padding, bottom: opts.padding, left: opts.padding } : opts.padding;
   const values = finite.map(({ item }) => item.value);
   const scale = valueScale(values, opts.yAxis, true);
   const ticks = tickFormat(opts);
@@ -226,8 +227,12 @@ const rowGeometryWith = (opts: BarChartOptions, finite: Plan["finite"], width: n
   const twoLines = labels.some((label) => label.lines.length > 1);
   const labelPx = Math.min(maxLabelPx, Math.max(0, ...labels.flatMap((label) => label.lines.map((line) => chartTextWidth(line)))));
   const format = valueFormat(opts);
-  const positivePx = showValues ? Math.max(0, ...finite.filter(({ item }) => item.value >= 0).map(({ item }) => chartTextWidth(format(item.value)))) : 0;
-  const negativePx = showValues ? Math.max(0, ...finite.filter(({ item }) => item.value < 0).map(({ item }) => chartTextWidth(format(item.value)))) : 0;
+  const positivePx = showValues
+    ? Math.max(0, ...finite.filter(({ item }) => item.value >= 0).map(({ item }) => chartTextWidth(format(item.value))))
+    : 0;
+  const negativePx = showValues
+    ? Math.max(0, ...finite.filter(({ item }) => item.value < 0).map(({ item }) => chartTextWidth(format(item.value))))
+    : 0;
   const refLabels = (opts.references ?? []).some((ref) => (ref.axis ?? "y") === "y" && ref.label);
   const titled = !!(opts.xAxis?.label || opts.yAxis?.label || refLabels);
   const top = header + (titled ? 20 : 4);
@@ -271,7 +276,9 @@ const renderHeader = (opts: BarChartOptions, width: number) => {
     y += 14;
   }
   if (opts.subtitle)
-    parts.push(`<text class="stdlib-chart-subtitle" x="${fmt(width / 2)}" y="${y}" text-anchor="middle">${escapeXml(opts.subtitle)}</text>`);
+    parts.push(
+      `<text class="stdlib-chart-subtitle" x="${fmt(width / 2)}" y="${y}" text-anchor="middle">${escapeXml(opts.subtitle)}</text>`,
+    );
   return parts.join("");
 };
 
@@ -293,11 +300,15 @@ const renderColumns = (opts: BarChartOptions, plan: Plan, width: number, height:
   const parts: string[] = [renderHeader(opts, width)];
   const y = (value: number) => project(g.scale, value, [g.plotBottom, g.y0]);
   if (opts.yAxis?.label)
-    parts.push(`<text class="stdlib-chart-axis-label" x="0" y="${fmt(g.y0 - 8)}" text-anchor="start">${escapeXml(opts.yAxis.label)}</text>`);
+    parts.push(
+      `<text class="stdlib-chart-axis-label" x="0" y="${fmt(g.y0 - 8)}" text-anchor="start">${escapeXml(opts.yAxis.label)}</text>`,
+    );
   for (const tick of g.scale.ticks) {
     const ty = y(tick);
     parts.push(`<line class="stdlib-chart-grid" x1="${fmt(g.x0)}" y1="${fmt(ty)}" x2="${fmt(g.x1)}" y2="${fmt(ty)}"/>`);
-    parts.push(`<text class="stdlib-chart-tick-label" x="${fmt(g.x0 - GAP_PX * units)}" y="${fmt(ty + 4)}" text-anchor="end">${escapeXml(ticks(tick))}</text>`);
+    parts.push(
+      `<text class="stdlib-chart-tick-label" x="${fmt(g.x0 - GAP_PX * units)}" y="${fmt(ty + 4)}" text-anchor="end">${escapeXml(ticks(tick))}</text>`,
+    );
   }
   if (opts.yAxis?.minorTicks && !g.scale.log)
     g.scale.ticks.slice(1).forEach((tick, index) => {
@@ -314,7 +325,9 @@ const renderColumns = (opts: BarChartOptions, plan: Plan, width: number, height:
   const labelY = g.y1 + 16;
   finite.forEach(({ item, index }, position) => {
     const center = g.x0 + slot * (position + 0.5);
-    parts.push(`<text class="stdlib-chart-tick-label stdlib-chart-category-label" x="${fmt(center)}" y="${fmt(labelY)}" text-anchor="middle">${escapeXml(item.label)}</text>`);
+    parts.push(
+      `<text class="stdlib-chart-tick-label stdlib-chart-category-label" x="${fmt(center)}" y="${fmt(labelY)}" text-anchor="middle">${escapeXml(item.label)}</text>`,
+    );
     if (g.scale.log && item.value <= 0) return;
     const valueY = y(item.value);
     const top = Math.min(valueY, baseline);
@@ -334,11 +347,14 @@ const renderColumns = (opts: BarChartOptions, plan: Plan, width: number, height:
       );
   });
   for (const ref of opts.references ?? []) {
-    if ((ref.axis ?? "y") !== "y" || !Number.isFinite(ref.value) || ref.value < g.scale.domain[0] || ref.value > g.scale.domain[1]) continue;
+    if ((ref.axis ?? "y") !== "y" || !Number.isFinite(ref.value) || ref.value < g.scale.domain[0] || ref.value > g.scale.domain[1])
+      continue;
     const ry = y(ref.value);
     parts.push(`<line class="stdlib-chart-reference" x1="${fmt(g.x0)}" y1="${fmt(ry)}" x2="${fmt(g.x1)}" y2="${fmt(ry)}"/>`);
     if (ref.label)
-      parts.push(`<text class="stdlib-chart-reference-label" x="${fmt(g.x1 - 4)}" y="${fmt(ry - 4)}" text-anchor="end">${escapeXml(ref.label)}</text>`);
+      parts.push(
+        `<text class="stdlib-chart-reference-label" x="${fmt(g.x1 - 4)}" y="${fmt(ry - 4)}" text-anchor="end">${escapeXml(ref.label)}</text>`,
+      );
   }
   if (opts.xAxis?.label)
     parts.push(
@@ -376,15 +392,21 @@ const renderRows = (opts: BarChartOptions, plan: Plan, width: number, inspect: b
   const thickness = Math.min(BAR_MAX, g.pitch - (g.twoLines ? 14 : 8));
   const parts: string[] = [renderHeader(opts, width)];
   if (opts.xAxis?.label)
-    parts.push(`<text class="stdlib-chart-axis-label" x="0" y="${fmt(g.top - 8)}" text-anchor="start">${escapeXml(opts.xAxis.label)}</text>`);
+    parts.push(
+      `<text class="stdlib-chart-axis-label" x="0" y="${fmt(g.top - 8)}" text-anchor="start">${escapeXml(opts.xAxis.label)}</text>`,
+    );
   if (opts.yAxis?.label)
-    parts.push(`<text class="stdlib-chart-axis-label" x="${width}" y="${fmt(g.top - 8)}" text-anchor="end">${escapeXml(opts.yAxis.label)}</text>`);
+    parts.push(
+      `<text class="stdlib-chart-axis-label" x="${width}" y="${fmt(g.top - 8)}" text-anchor="end">${escapeXml(opts.yAxis.label)}</text>`,
+    );
   if (!g.showValues) {
     const ticks = tickFormat(opts);
     for (const tick of scale.ticks) {
       const tx = x(tick);
       parts.push(`<line class="stdlib-chart-grid" x1="${fmt(tx)}" y1="${fmt(g.top)}" x2="${fmt(tx)}" y2="${fmt(plotBottom)}"/>`);
-      parts.push(`<text class="stdlib-chart-tick-label" x="${fmt(tx)}" y="${fmt(plotBottom + 16)}" text-anchor="middle">${escapeXml(ticks(tick))}</text>`);
+      parts.push(
+        `<text class="stdlib-chart-tick-label" x="${fmt(tx)}" y="${fmt(plotBottom + 16)}" text-anchor="middle">${escapeXml(ticks(tick))}</text>`,
+      );
     }
   }
   finite.forEach(({ item, index }, position) => {
@@ -394,7 +416,9 @@ const renderRows = (opts: BarChartOptions, plan: Plan, width: number, inspect: b
     const title = label.truncated ? `<title>${escapeXml(item.label)}</title>` : "";
     label.lines.forEach((line, lineIndex) => {
       const lineY = middle + 4 + (label.lines.length > 1 ? (lineIndex === 0 ? -6.5 : 6.5) : 0);
-      parts.push(`<text class="stdlib-chart-tick-label stdlib-chart-category-label" x="${fmt(g.labelEnd)}" y="${fmt(lineY)}" text-anchor="end">${title}${escapeXml(line)}</text>`);
+      parts.push(
+        `<text class="stdlib-chart-tick-label stdlib-chart-category-label" x="${fmt(g.labelEnd)}" y="${fmt(lineY)}" text-anchor="end">${title}${escapeXml(line)}</text>`,
+      );
     });
     if (scale.log && item.value <= 0) return;
     const valueX = x(item.value);
@@ -421,7 +445,9 @@ const renderRows = (opts: BarChartOptions, plan: Plan, width: number, inspect: b
     const rx = x(ref.value);
     parts.push(`<line class="stdlib-chart-reference" x1="${fmt(rx)}" y1="${fmt(g.top)}" x2="${fmt(rx)}" y2="${fmt(plotBottom)}"/>`);
     if (ref.label)
-      parts.push(`<text class="stdlib-chart-reference-label" x="${fmt(rx)}" y="${fmt(g.top - 8)}" text-anchor="middle">${escapeXml(ref.label)}</text>`);
+      parts.push(
+        `<text class="stdlib-chart-reference-label" x="${fmt(rx)}" y="${fmt(g.top - 8)}" text-anchor="middle">${escapeXml(ref.label)}</text>`,
+      );
   }
   return parts.join("");
 };

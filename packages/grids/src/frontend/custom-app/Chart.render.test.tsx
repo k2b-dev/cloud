@@ -66,7 +66,10 @@ test("bar charts name every category, print every value and title both axes insi
     expect(named.join(" ")).toBe(categories.join(" "));
     const values = [...html.matchAll(/stdlib-chart-bar-value"[^>]*>([^<]*)</g)].map((match) => match[1]);
     expect(values).toEqual(categories.map((_, index) => `${index + 1} kg`));
-    expect([...html.matchAll(/stdlib-chart-axis-label"[^>]*>([^<]*)</g)].map((match) => match[1]).sort()).toEqual(["Ticket status", "Tickets"]);
+    expect([...html.matchAll(/stdlib-chart-axis-label"[^>]*>([^<]*)</g)].map((match) => match[1]).sort()).toEqual([
+      "Ticket status",
+      "Tickets",
+    ]);
     expect(html).not.toContain("data-chart-category");
   }
 });

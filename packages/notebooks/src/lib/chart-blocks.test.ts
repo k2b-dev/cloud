@@ -79,30 +79,44 @@ describe("notebook chart mapping", () => {
   });
 
   test("the chart format and unit write the value axis and tooltips; the tooltip label names the value axis", () => {
-    expect(input(chart(`${inline}
+    expect(
+      input(
+        chart(`${inline}
 format: EUR
-unit: netto`))).toMatchObject({
+unit: netto`),
+      ),
+    ).toMatchObject({
       yAxis: { label: "Revenue", format: { style: "currency", currency: "EUR", unit: "netto" } },
       tooltip: { label: "Revenue", format: { style: "currency", currency: "EUR", unit: "netto" } },
     });
     // An existing tooltip format also reaches the axis; a chart format wins there.
-    expect(input(chart(`${inline}
+    expect(
+      input(
+        chart(`${inline}
 tooltip:
   label: Umsatz
-  format: EUR`))).toMatchObject({
+  format: EUR`),
+      ),
+    ).toMatchObject({
       yAxis: { label: "Umsatz", format: { style: "currency", currency: "EUR" } },
     });
-    expect(input(chart(`${inline}
+    expect(
+      input(
+        chart(`${inline}
 format: number
 tooltip:
-  format: EUR`))).toMatchObject({
+  format: EUR`),
+      ),
+    ).toMatchObject({
       yAxis: { format: { style: "number" } },
       tooltip: { format: { style: "currency", currency: "EUR" } },
     });
-    expect(parseNotebookChartBlocks(chart(`${inline}
-format: euro`)).diagnostics).toEqual([
-      { code: "invalid-type", line: 2 + inline.split("\n").length, path: "chart.format" },
-    ]);
+    expect(
+      parseNotebookChartBlocks(
+        chart(`${inline}
+format: euro`),
+      ).diagnostics,
+    ).toEqual([{ code: "invalid-type", line: 2 + inline.split("\n").length, path: "chart.format" }]);
   });
 
   test("several series get a legend with their column names; one named series titles the value axis", () => {
