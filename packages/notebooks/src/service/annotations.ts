@@ -1,6 +1,6 @@
 import { env } from "@k2b/cloud/config";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
-import { hasPermission } from "@k2b/cloud/server";
+import { hasPermission, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { SHARED_TEXT_NAME } from "@k2b/cloud/shared-text";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import { SQL, sql, type TransactionSQL } from "bun";
@@ -55,7 +55,7 @@ const messages = i18n.define({
       pending: "Another suggestion operation is pending. Retry its operation ID.",
       retry: "The suggestion could not be saved. Retry with the same operation ID.",
       cursor: "Invalid comment cursor",
-      busy: "Comments are being updated. Retry this request.",
+      busy: "Timed out waiting for another comment update. Retry this request.",
     },
     de: {
       unavailable: "Notiz oder Kommentar nicht gefunden",
@@ -73,7 +73,7 @@ const messages = i18n.define({
       pending: "Ein anderer Vorschlagsvorgang ist offen. Bitte dessen Vorgangs-ID erneut verwenden.",
       retry: "Der Vorschlag konnte nicht gespeichert werden. Bitte mit derselben Vorgangs-ID erneut versuchen.",
       cursor: "Ungültiger Kommentar-Cursor",
-      busy: "Kommentare werden gerade aktualisiert. Bitte erneut versuchen.",
+      busy: "Eine andere Kommentaränderung dauert zu lange. Bitte erneut versuchen.",
     },
   },
 });
@@ -215,26 +215,38 @@ const mapReply = (row: ReplyRow, context: AnnotationContext, canWrite: boolean) 
   canEdit: !row.deleted_at && mutable(row, context, canWrite),
   canDelete: !row.deleted_at && mutable(row, context, canWrite),
 });
-// One dedicated transaction connection per process keeps annotation coordination
-// from consuming the shared pool that the document store needs while saving.
+// Match Bun SQL's default pool size (10), separately from the text store's
+// pool: independent notes can progress while a write replays a large document,
+// and advisory-lock waiters cannot consume the store's save connections.
 let transactionPool: SQL | undefined;
-const annotationTransactions = () => (transactionPool ??= new SQL({ url: env.DATABASE_URL, max: 1 }));
+const annotationTransactions = () => (transactionPool ??= new SQL({ url: env.DATABASE_URL, max: 10 }));
+// Spend at most half the normal request idle budget waiting, leaving time to
+// replay/save the document and send a retryable conflict before the socket closes.
+const ANNOTATION_LOCK_TIMEOUT_MS = (REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2;
 export const close = async () => {
   const pool = transactionPool;
   transactionPool = undefined;
   await pool?.close();
 };
-const withNoteLock = <T>(noteId: string, context: AnnotationContext, run: (tx: TransactionSQL) => Promise<Result<T>>): Promise<Result<T>> =>
-  annotationTransactions().begin(async (tx) => {
-    context.signal.throwIfAborted();
-    // Serialize across replicas without waiting connections exhausting the pool:
-    // the text store needs its own SQL connection to save a prepared operation.
-    const [lock] = await tx<
-      { acquired: boolean }[]
-    >`SELECT pg_try_advisory_xact_lock(hashtextextended(${`notebooks.annotations:${noteId}`}, 0)) AS acquired`;
-    if (!lock?.acquired) return conflict(words(context).busy);
-    return run(tx);
-  });
+const withNoteLock = async <T>(
+  noteId: string,
+  context: AnnotationContext,
+  run: (tx: TransactionSQL) => Promise<Result<T>>,
+): Promise<Result<T>> => {
+  try {
+    return await annotationTransactions().begin(async (tx) => {
+      context.signal.throwIfAborted();
+      // Only the fixed platform budget is interpolated into SET LOCAL.
+      await tx.unsafe(`SET LOCAL lock_timeout = '${ANNOTATION_LOCK_TIMEOUT_MS}ms'`);
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`notebooks.annotations:${noteId}`}, 0))`;
+      context.signal.throwIfAborted();
+      return run(tx);
+    });
+  } catch (error) {
+    if (error instanceof SQL.PostgresError && error.errno === "55P03") return conflict(words(context).busy, { retryable: true });
+    throw error;
+  }
+};
 const loadRoot = async (noteId: string, id: string) => {
   const [row] = await sql<
     RootRow[]
@@ -352,51 +364,47 @@ export const list = async (
   } catch {
     return fail(err.badInput(words(context).cursor));
   }
-  return withNoteLock(access.data.note.id, context, async () => {
-    const head = await loadHead(access.data.note.id, context);
-    try {
-      const rows = await sql<RootRow[]>`SELECT *, created_at::text AS cursor_at, restore_revision::text FROM notebooks.annotations
-        WHERE note_id = ${access.data.note.id}::uuid AND deleted_at IS NULL
-          AND (${cursor?.at ?? null}::timestamptz IS NULL OR (created_at, id) > (${cursor?.at ?? null}::timestamptz, ${cursor?.id ?? null}::uuid))
-        ORDER BY created_at, id LIMIT ${parsed.data.limit + 1}`;
-      const projection: AnnotationProjection = {
-        text: options.compact ? "" : head.text,
-        contentHash: noteContentHash(head.text),
-        cursor: head.cursor,
-        restoreRevision: head.restoreRevision,
-        items: [],
-        nextCursor: null,
-      };
-      for (const row of rows.slice(0, parsed.data.limit)) {
-        context.signal.throwIfAborted();
-        const item = await projectRoot(row, head, noteId, context, access.data.canWrite);
-        if (projection.items.length && bytes([...projection.items, item]) > DATA_BUDGET) break;
-        projection.items.push(item);
-      }
-      if (projection.items.length < rows.length) {
-        const last = rows[projection.items.length - 1];
-        if (last) projection.nextCursor = encodeCursor(last);
-      }
-      return ok(projection);
-    } finally {
-      head.doc.destroy();
+  const head = await loadHead(access.data.note.id, context);
+  try {
+    const rows = await sql<RootRow[]>`SELECT *, created_at::text AS cursor_at, restore_revision::text FROM notebooks.annotations
+      WHERE note_id = ${access.data.note.id}::uuid AND deleted_at IS NULL
+        AND (${cursor?.at ?? null}::timestamptz IS NULL OR (created_at, id) > (${cursor?.at ?? null}::timestamptz, ${cursor?.id ?? null}::uuid))
+      ORDER BY created_at, id LIMIT ${parsed.data.limit + 1}`;
+    const projection: AnnotationProjection = {
+      text: options.compact ? "" : head.text,
+      contentHash: noteContentHash(head.text),
+      cursor: head.cursor,
+      restoreRevision: head.restoreRevision,
+      items: [],
+      nextCursor: null,
+    };
+    for (const row of rows.slice(0, parsed.data.limit)) {
+      context.signal.throwIfAborted();
+      const item = await projectRoot(row, head, noteId, context, access.data.canWrite);
+      if (projection.items.length && bytes([...projection.items, item]) > DATA_BUDGET) break;
+      projection.items.push(item);
     }
-  });
+    if (projection.items.length < rows.length) {
+      const last = rows[projection.items.length - 1];
+      if (last) projection.nextCursor = encodeCursor(last);
+    }
+    return ok(projection);
+  } finally {
+    head.doc.destroy();
+  }
 };
 export const read = async (noteId: string, id: string, context: AnnotationContext) => {
   if (!AnnotationIdSchema.safeParse(id).success) return notFound(context);
   const access = await authorize(noteId, context);
   if (!access.ok) return access;
-  return withNoteLock(access.data.note.id, context, async () => {
-    const row = await loadRoot(access.data.note.id, id);
-    if (!row || row.deleted_at) return notFound(context);
-    const head = await loadHead(access.data.note.id, context);
-    try {
-      return ok(await projectRoot(row, head, noteId, context, access.data.canWrite));
-    } finally {
-      head.doc.destroy();
-    }
-  });
+  const row = await loadRoot(access.data.note.id, id);
+  if (!row || row.deleted_at) return notFound(context);
+  const head = await loadHead(access.data.note.id, context);
+  try {
+    return ok(await projectRoot(row, head, noteId, context, access.data.canWrite));
+  } finally {
+    head.doc.destroy();
+  }
 };
 export const readResource = async (id: string, context: AnnotationContext) => {
   if (!AnnotationIdSchema.safeParse(id).success) return notFound(context);
@@ -799,7 +807,8 @@ export const operate = async (
       }
       await sql.begin(async (tx) => {
         await tx`UPDATE notebooks.annotation_operations SET status = 'applied', updated_at = now() WHERE id = ${op.id}::uuid`;
-        if (kind === "undo" && op.start_rel && op.end_rel)
+        // Accept follows the inserted items; undo follows the restored items.
+        if (op.start_rel && op.end_rel)
           await tx`UPDATE notebooks.annotations SET start_rel = ${Buffer.from(op.start_rel)}, end_rel = ${Buffer.from(op.end_rel)}, restore_revision = ${op.restore_revision}::bigint WHERE id = ${id}::uuid`;
         await tx`UPDATE notebooks.annotations SET state = ${kind === "accept" ? "accepted" : "open"}, state_by_kind = ${identity.kind}, state_by_id = ${identity.id}::uuid, state_by_name = ${identity.name}, state_at = now(), updated_at = now() WHERE id = ${id}::uuid`;
       });
