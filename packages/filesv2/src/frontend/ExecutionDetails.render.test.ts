@@ -4,6 +4,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { current, entry, hidden, snapshot } from "../../test/history-fixtures";
 import type { ActivityEntry, ActivitySide } from "../activity-contracts";
+
 await import("../../test/solid-ssr-preload");
 const { default: ExecutionDetails } = await import("./ExecutionDetails");
 

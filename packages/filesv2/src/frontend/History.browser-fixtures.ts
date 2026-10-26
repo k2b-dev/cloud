@@ -1,6 +1,6 @@
 import type { ActivityChain, ActivityEntry, ActivityPage, ActivitySide } from "../activity-contracts";
 import type { BaseSummary, DirectoryResult, FileEntry, FileVersion } from "../contracts";
-import { filesUrl } from "./urls";
+import { filesUrl, parseActivityFilters } from "./urls";
 import type { WorkspaceSnapshot } from "./workspace-state";
 
 // Fictional data only. The clock and identities are fixed for both browser engines.
@@ -164,6 +164,6 @@ export function historySnapshot(source: string): WorkspaceSnapshot {
     directory: null,
     errorCode: null,
     now: historyNow,
-    activity: { filters: query ? { q: query } : {}, page: query ? historySearch : historyActivity },
+    activity: { filters: parseActivityFilters(params) ?? {}, page: query ? historySearch : historyActivity },
   };
 }
