@@ -175,6 +175,13 @@ six-digit accent works. See
 [Define an application](/en/docs/build/define-app#set-the-application-appearance) and
 [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#keep-color-roles-independent).
 
+Cyan means AI. `--k2b-ai-accent` marks AI surfaces, which also carry ✦ or the
+word "KI", so no app color may look like it: keep the accent and every
+background stop at least 20° of OKLCH hue away from both AI accents. Near-gray
+colors carry no hue and are fine. Only the Assistant, the AI app itself, may
+use cyan. In the Cloud repository the `ai-color` check enforces this for every
+built-in app and for the launchpad's fallback tile colors.
+
 ## Import
 
 ```css

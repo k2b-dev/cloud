@@ -230,6 +230,9 @@ link text stays body ink, and only its underline takes the app ink. See
 [Colors and selection](/en/ui/surfaces/color).
 The accent also reaches dialogs and sheets opened from the app's pages,
 with no application code.
+Cyan is reserved for AI surfaces, so keep the accent and background colors
+clearly apart from it; see
+[Colors and selection](/en/ui/surfaces/color#app-color-in-cloud).
 
 | Background field | Default | Accepted range |
 | --- | --- | --- |

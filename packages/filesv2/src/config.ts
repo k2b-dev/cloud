@@ -21,7 +21,7 @@ export const app = defineApp({
     baseLocale: "en",
     translations: { de: { name: "Dateien", description: "Cloud- und FreeIPA-Dateien mit direkten Downloads." } },
   },
-  appearance: { accent: "#1d4ed8", background: { from: "#2563eb", to: "#38bdf8", angle: 135 } },
+  appearance: { accent: "#1d4ed8", background: { from: "#2563eb", to: "#60a5fa", angle: 135 } },
   basePath: "/app/filesv2",
   baseUrl: "http://app-filesv2:3000",
   adminHref: "/admin/filesv2",

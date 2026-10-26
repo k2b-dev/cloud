@@ -52,7 +52,7 @@ const open = async (current: string) => {
   });
   await page.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
   await page.setContent(
-    `<!doctype html><html lang="en" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/public/fonts.css"><style>${css}</style></head><body class="k2b-ui"><div class="cloud-app-canvas" style="--app-accent:#155e75;${appColorStyle("#155e75")}"><div id="range-host">${content(current)}</div></div></body></html>`,
+    `<!doctype html><html lang="en" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/public/fonts.css"><style>${css}</style></head><body class="k2b-ui"><div class="cloud-app-canvas" style="--app-accent:#57534e;${appColorStyle("#57534e")}"><div id="range-host">${content(current)}</div></div></body></html>`,
   );
   await settled(page);
   return page;

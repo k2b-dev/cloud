@@ -31,7 +31,7 @@ const { buildTablerIconAssets } = await import("../../../scripts/tabler-assets")
 const publicDir = join(root, "public");
 const origin = "https://cloud.example.test";
 const CORE_CANVAS =
-  "--app-accent:#0284c7;--app-canvas-from:#38bdf8;--app-canvas-via:#ffffff;--app-canvas-to:#60a5fa;--app-canvas-angle:135deg;--app-canvas-strength:20%;--app-canvas-dark-strength:10%";
+  "--app-accent:#0284c7;--app-canvas-from:#3b82f6;--app-canvas-via:#ffffff;--app-canvas-to:#60a5fa;--app-canvas-angle:135deg;--app-canvas-strength:20%;--app-canvas-dark-strength:10%";
 
 /** Invented demo account and phones. */
 const user: User = {

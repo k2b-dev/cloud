@@ -52,7 +52,7 @@ export const app = defineApp({
   // urgent signal. Deep cyan stays clear of every status colour — the blue
   // used for "running" is a much lighter tone — and reads as an instrument
   // panel rather than an alarm.
-  appearance: { accent: "#155e75", background: { from: "#0e7490", to: "#155e75", angle: 135 } },
+  appearance: { accent: "#57534e", background: { from: "#78716c", to: "#57534e", angle: 135 } },
   basePath: "/admin/gateway",
   baseUrl: `http://app-gateway-ops:${port}`,
   adminHref: "/admin/gateway",

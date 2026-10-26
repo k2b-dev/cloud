@@ -117,7 +117,7 @@ export const app = defineApp({
       },
     },
   },
-  appearance: { accent: "#0284c7", background: { from: "#38bdf8", to: "#60a5fa", angle: 135 } },
+  appearance: { accent: "#0284c7", background: { from: "#3b82f6", to: "#60a5fa", angle: 135 } },
   baseUrl: "http://app-core:3000",
   settings: CORE_SETTINGS,
   notifications: { ...NOTIFICATIONS, ...AI_NOTIFICATIONS },
