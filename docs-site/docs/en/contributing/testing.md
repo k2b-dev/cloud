@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Testing
@@ -1171,7 +1171,8 @@ Hub image: `ghcr.io/k2b-dev/mirror/dbip-lite:<YYYY-MM>`. It is referenced by
 tag and pinned by the gzip checksums in the Dockerfile. `.github/mirror-images.sh`
 copies it from DB-IP while DB-IP still serves that month. It holds only data
 and is pushed for `linux/amd64`; the Dockerfile takes that manifest with
-`FROM --platform=linux/amd64`, so arm64 release builds resolve it too.
+`FROM --platform=linux/amd64`, so source builds for other architectures can
+copy the same data. Published release images target `linux/amd64` only.
 
 The `mirror-images` check fails when a workflow or Dockerfile would pull a
 Docker Hub image directly, including through BuildKit's default SBOM generator,

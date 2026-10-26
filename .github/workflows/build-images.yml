@@ -1,7 +1,7 @@
 name: Build images
 
-# Reusable: builds every release image natively per architecture, pushes by
-# digest, merges the platform digests into one index per image, attests the
+# Reusable: builds every release image for linux/amd64, pushes by
+# digest, publishes one index per image with its SBOM and provenance, attests the
 # provenance of that index, and publishes `release-images.json`.
 # Tags are always immutable: `sha-<12>` plus the extra `inputs.tags`.
 
@@ -65,12 +65,10 @@ jobs:
       max-parallel: 12
       matrix:
         image: ${{ fromJSON(needs.list.outputs.images) }}
-        arch: [amd64, arm64]
+        arch: [amd64]
         include:
           - arch: amd64
             runner: ubuntu-24.04
-          - arch: arm64
-            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -158,15 +156,14 @@ jobs:
         run: |
           set -euo pipefail
           amd64=$(cat "$RUNNER_TEMP/digests/amd64")
-          arm64=$(cat "$RUNNER_TEMP/digests/arm64")
           tags=$(jq -nc --arg release "$RELEASE" --argjson extra "$EXTRA_TAGS" '[$release] + $extra | unique')
           [[ "$(jq -r '.[]' <<<"$tags" | grep -cE '^(main|latest)$')" == "0" ]] || { echo "Mutable tags are never published." >&2; exit 1; }
-          sources=("$IMAGE@$amd64" "$IMAGE@$arm64")
+          sources=("$IMAGE@$amd64")
           # Never look the new index up by tag: GHCR can answer "not found"
           # for a tag it accepted a moment ago. Check the index before
           # pushing it and take its digest from the push itself.
           platforms=$(docker buildx imagetools create --dry-run "${sources[@]}" | jq -r '.manifests[].platform | "\(.os)/\(.architecture)"')
-          for platform in linux/amd64 linux/arm64; do
+          for platform in linux/amd64; do
             grep -qx "$platform" <<<"$platforms" || { echo "$IMAGE index lacks $platform" >&2; exit 1; }
           done
           args=()

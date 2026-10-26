@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-21
+updated: 2026-10-26
 ---
 
 # Build and deploy
@@ -200,6 +200,20 @@ The monorepo Dockerfiles take the Bun base images and the Dockerfile frontend
 from the public mirror `ghcr.io/k2b-dev/mirror`, pinned to the same digests as
 on Docker Hub. A build from source needs no Docker Hub or GitHub login, but it
 must be able to reach `ghcr.io`.
+
+## Container architectures
+
+Published Cloud container images support `linux/amd64` only. This includes
+every application, the documentation website, and Cloud Login. Tags remain
+image indexes with build provenance and SBOMs.
+
+Before upgrading an ARM host, build the images from the release's source for
+that host, or stay on an earlier release that provides `linux/arm64` images.
+Existing ARM64 images remain available under their previous release tags.
+ARM container builds are no longer built or tested in Cloud's CI.
+
+The `cld` CLI still ships all four binaries: `darwin_arm64`, `darwin_x64`,
+`linux_arm64`, and `linux_x64`. ARM clients can connect to an AMD64 deployment.
 
 ## Deploy the service
 
