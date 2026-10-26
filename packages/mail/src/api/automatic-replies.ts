@@ -1,4 +1,4 @@
-import { getLocale, v } from "@k2b/cloud/server";
+import { auth, getLocale, v } from "@k2b/cloud/server";
 import { err, fail } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import {
@@ -80,6 +80,7 @@ export default new Hono<MailApiContext>()
   )
   .post(
     "/mailboxes/:mailboxId/automatic-replies/preview",
+    auth.readOnly,
     v("param", mailboxParamSchema),
     v("json", automaticReplyPreviewInputSchema),
     async (c) => {

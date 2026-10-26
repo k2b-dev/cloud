@@ -384,6 +384,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/conversations/:conversation/members/preview",
+    auth.readOnly,
     description("Preview people joining a chat through people and groups", MemberPreviewSchema),
     validator("param", ConversationParamSchema, invalidInput),
     validator("json", AddMembersSchema, invalidInput),

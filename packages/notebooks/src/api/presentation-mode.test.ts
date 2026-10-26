@@ -68,7 +68,7 @@ if (process.env.NOTEBOOKS_PRESENTATION_API_TEST !== "1") {
     });
 
   beforeEach(() => {
-    token.mockReset().mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    token.mockReset().mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     getNotebook.mockReset().mockResolvedValue(notebook);
     permission.mockReset().mockResolvedValue("write");
     update.mockReset().mockImplementation(async ({ data }) => ({ ok: true, data: { ...notebook, ...data } }));

@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-20
+updated: 2026-10-25
 ---
 
 # Testing
@@ -685,6 +685,13 @@ the mocked part in a child process, as
 when `--isolate` would make the package suite much slower. `bun run check`
 fails on a top-level `mock.module` in a suite that shares one process.
 
+The same isolation rule applies when a test installs a top-level `spyOn`,
+imports a module, and restores the spy before running its tests. The imported
+module can retain the replacement after restoration. If another file imported
+that module first, the replacement never takes effect. Even a skipped
+integration suite evaluates its static imports, so it can trigger this failure.
+The `module-mocks` check also rejects these import-time spies in shared suites.
+
 ## Run integration tests
 
 Integration tests gate themselves on `CLOUD_TEST_*` variables through
@@ -1239,6 +1246,13 @@ reports before attributing a phase failure to a specific test.
 The smokes accept pending legal documents using the version
 rendered in the consent page's `data-legal-version` attribute; they must not read
 island props, whose encoding is internal.
+
+Grids and Chat also receive `--app-url` for the public origin. When the browser
+reaches the stack over loopback, their smokes relay the application's session
+live socket with that public origin and the fixture's session cookie. The
+application's origin checks still apply. Grids reports only known refusal
+codes and close metadata; it does not print cookies, frame bodies, or arbitrary
+close reasons.
 
 ### Read slow statements from a CI run
 

@@ -2355,6 +2355,7 @@ const app = new Hono<AuthContext>()
   // List Items with filtering, sorting, and pagination
   .post(
     "/:id/items/filter",
+    auth.readOnly,
     describeRoute({
       tags: ["Spaces"],
       summary: "List items with filters",

@@ -45,7 +45,7 @@ limit: 25
 - Queries read saved notes in the current notebook only. Draft preview changes the query and headings, not the indexed data, even for the current note. No joins, table-row sources, JavaScript, SQL, network access or write effects.
 - `scope`: `notebook` includes the current note; `children` and `descendants` are relative to it and exclude it. `match`: `all` or `any`; zero filters matches every note in scope. Defaults: notebook, all, updated descending, 25 results. Omit optional settings for defaults rather than leaving values blank.
 - Select/filter `$title`, `$created`, `$updated`, `$tags` or `block.key`. Sort only by title/created/updated with `asc` or `desc`. Omit columns for linked titles; selected columns produce a table.
-- Limits: 20 query blocks per page; 32 filters, 16 distinct columns, 1–100 results per query; filter lists contain 1–100 values and strings at most 2,000 characters. A result limit is not pagination: narrow filters if truncated.
+- Limits: 20 query blocks per page; 32 filters, 16 distinct columns, 1–100 results per query; filter lists contain 1–100 values and strings at most 2,000 characters. For a reader, Book and the editor page a query 20 rows at a time; a query result you read through the CLI holds the first `limit` rows, so narrow filters if it is truncated.
 - Use two spaces for list items and sort fields, four for filter continuations. Query lists are inline, for example `[active, draft]`. Quote comma-containing items. Comments, aliases, nested filter groups and expressions are unsupported.
 
 Choose operators by field:
