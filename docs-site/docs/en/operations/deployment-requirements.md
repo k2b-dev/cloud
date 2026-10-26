@@ -809,8 +809,9 @@ manifest. See [Calendar sources](/en/docs/platform/calendar-sources).
 
 Spaces adds read-only `calendar.list` and `calendar.events` Queries and
 `GET /api/spaces/calendar/sources` and `GET /api/spaces/calendar/events` for
-unbound user-backed callers. The existing Space iCal link and `event.agenda`
-remain available. No new service, configuration, migration, or subscription is
+unbound user-backed callers, and the read-only page `/app/spaces/calendar`
+(**Calendar** in the Spaces sidebar), which shows every source a person can
+read. The existing Space iCal link and `event.agenda` remain available. No new service, configuration, migration, or subscription is
 needed. Verify source discovery and one authorized event read after upgrading;
 a healthy container alone does not prove that the caller can read a calendar.
 The aggregate reader has a 42-day view range, 100-calendar selection,
