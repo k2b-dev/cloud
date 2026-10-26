@@ -13,7 +13,9 @@ updated: 2026-10-24
 Notebooks brings company handbooks, wikis, and working notes into one
 permission-scoped workspace. Notes use Markdown and can link to other notes,
 tags, and uploaded files. Editors work together in real time; readers see a
-dedicated Book view.
+dedicated Book view. A note opens with its saved text and connects for
+real-time editing on the first change, so reading and moving between notes
+costs no collaboration connection.
 
 Book keeps the normal Cloud navigation around its page tree and reading area,
 including on tag pages. It still requires sign-in and notebook access; choosing
