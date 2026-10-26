@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type ChartDatum, charts } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
+import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
 import { z } from "zod";
 import {
   chartDateTime,
@@ -302,8 +303,9 @@ describe("chart table", () => {
 
 describe("chart render options", () => {
   test("make room for long tick labels and show a legend for several series", () => {
-    const small = cloudAiChartRenderOptions(parse({ kind: "bar", title: "Small", data: [{ label: "A", value: 5 }] }), "en");
-    const large = cloudAiChartRenderOptions(parse({ kind: "bar", title: "Large", data: [{ label: "A", value: 1_250_000 }] }), "de");
+    const values = (y: number) => ({ kind: "line", title: "Y", series: [{ data: [{ x: 1, y: 0 }, { x: 2, y }] }] });
+    const small = cloudAiChartRenderOptions(parse(values(5)), "en");
+    const large = cloudAiChartRenderOptions(parse(values(1_250_000)), "de");
     const left = (options: typeof small) => ("padding" in options && typeof options.padding === "object" ? (options.padding.left ?? 0) : 0);
     expect(left(large)).toBeGreaterThan(left(small));
     const two = (locale: string) =>
@@ -337,7 +339,7 @@ describe("chart render options", () => {
     expect(pie.kind === "pie" && pie.legend).toBe(true);
   });
 
-  test("show every n-th long category label on the axis while the table keeps them all", () => {
+  test("label every long category in a bar row and print its value, like the table", () => {
     const months = [
       "January",
       "February",
@@ -354,9 +356,13 @@ describe("chart render options", () => {
     ];
     const input = parse({ kind: "bar", title: "Months", data: months.map((label, value) => ({ label: `${label} 2026`, value })) });
     const options = cloudAiChartRenderOptions(input, "en");
-    const shown = options.kind === "bar" ? options.data.map((item) => item.label).filter(Boolean) : [];
-    expect(shown.length).toBeGreaterThan(1);
-    expect(shown.length).toBeLessThan(months.length);
+    if (options.kind !== "bar") throw new Error("Expected bar");
+    const layout = barChartLayout(options);
+    expect(layout.layout).toBe("rows");
+    const svg = renderBarChartSvg({ ...options, width: 480, height: layout.height });
+    const labels = [...svg.matchAll(/stdlib-chart-category-label"[^>]*>([^<]*)</g)].map((match) => match[1]);
+    expect(labels).toEqual(months.map((label) => `${label} 2026`));
+    expect([...svg.matchAll(/stdlib-chart-bar-value"[^>]*>([^<]*)</g)].map((match) => match[1])).toEqual(months.map((_, value) => `${value}`));
     expect(cloudAiChartTable(input, "en").rows.map((row) => row.cells.label)).toEqual(months.map((label) => `${label} 2026`));
   });
 });
@@ -421,7 +427,7 @@ describe("richer chart contracts", () => {
     expect(cloudAiChartTable(input, "en").rows[0]?.cells.value).toBe("21%");
     const options = cloudAiChartRenderOptions(input, "en");
     if (options.kind !== "bar") throw new Error("Expected bar");
-    const svg = charts.bar({ ...options, width: 480, height: 280 });
+    const svg = renderBarChartSvg({ ...options, width: 480, height: barChartLayout(options).height });
     expect(/class="stdlib-chart-bar-value"[^>]*>([^<]*)</.exec(svg)?.[1]).toBe("21%");
     expect(options.yAxis?.format?.(0.05)).toBe("5%");
   });
@@ -463,7 +469,7 @@ describe("richer chart contracts", () => {
       expect(parseCloudAiChartInput({ kind: "gauge", title: "G", value: 1, format })).toBeUndefined();
   });
 
-  test("references extend domains, keep zero and include their labels in the padding", () => {
+  test("references extend domains and keep zero", () => {
     const plain = parse({ kind: "bar", title: "B", data: [{ label: "A", value: 2 }] });
     const input = parse({ ...plain, references: [{ value: 100000000 }] });
     const options = cloudAiChartRenderOptions(input, "en");
@@ -471,10 +477,8 @@ describe("richer chart contracts", () => {
     if (options.kind !== "bar" || before.kind !== "bar") throw new Error("Expected bar");
     expect(options.yAxis?.domain?.[0]).toBeLessThanOrEqual(0);
     expect(options.yAxis?.domain?.[1]).toBeGreaterThanOrEqual(100000000);
-    expect(typeof options.padding === "object" && options.padding.left).toBeGreaterThan(
-      typeof before.padding === "object" ? before.padding.left! : 0,
-    );
-    expect(charts.bar({ ...options, inspect: true })).toContain("stdlib-chart-reference");
+    expect(before.yAxis?.domain).toBeUndefined();
+    expect(renderBarChartSvg({ ...options, width: 480, height: 280, inspect: true })).toContain("stdlib-chart-reference");
     for (const kind of ["line", "scatter"] as const) {
       const dateInput = parse({
         kind,
@@ -667,14 +671,14 @@ describe("richer chart contracts", () => {
     const input = parse({
       kind: "bar",
       title: "B",
-      data: Array.from({ length: 12 }, (_, value) => ({ label: `Month ${value}`, value: 1250000 })),
+      data: Array.from({ length: 6 }, (_, value) => ({ label: `Month ${value}`, value: 1250000 })),
     });
     const narrow = cloudAiChartRenderOptions(input, "en"),
       wide = cloudAiChartRenderOptions(input, "en", { width: 480 });
-    if (narrow.kind !== "bar" || wide.kind !== "bar" || typeof narrow.padding !== "object" || typeof wide.padding !== "object")
-      throw new Error("Expected padding");
-    expect(wide.padding.left!).toBeLessThan(narrow.padding.left!);
-    expect(wide.data.filter((item) => item.label).length).toBeGreaterThan(narrow.data.filter((item) => item.label).length);
+    if (narrow.kind !== "bar" || wide.kind !== "bar") throw new Error("Expected bar");
+    // Six labels fit below columns at 480 measured pixels, not in a phone-wide column.
+    expect(barChartLayout(narrow).layout).toBe("rows");
+    expect(barChartLayout(wide).layout).toBe("columns");
     const heat = cloudAiChartRenderOptions(parse({ kind: "heatmap", title: "H", data: [{ x: "A", y: "Long row label", value: 1 }] }), "en");
     if (heat.kind !== "heatmap") throw new Error("Expected heatmap");
     expect(typeof heat.padding === "object" && heat.padding.left).toBeGreaterThan(100);

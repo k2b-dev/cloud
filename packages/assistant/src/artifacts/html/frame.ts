@@ -303,6 +303,9 @@ const charts = new ResizeObserver((entries) => {
     const height = Number.parseFloat(element.style.getPropertyValue("--k2b-chart-height")) || 280;
     element.style.setProperty("--k2b-chart-width", `${width}px`);
     element.innerHTML = chartSvg(options, config.context.locale, width, height);
+    // Bar rows at a new width can wrap their labels differently and take another height.
+    const drawnHeight = element.querySelector("svg")?.viewBox.baseVal.height;
+    if (drawnHeight) element.style.setProperty("--k2b-chart-height", `${drawnHeight}px`);
     const chart = element.closest(".k2b-chart");
     if (chart) {
       chartTooltips.delete(chart);

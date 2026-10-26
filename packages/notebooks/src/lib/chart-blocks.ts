@@ -132,7 +132,7 @@ const parseChart = (
     if (entry) {
       const key = entry[1]!;
       section = "";
-      if (!["type", "title", "subtitle", "data", "columns", "rows", "x", "y", "label", "value", "tooltip"].includes(key)) {
+      if (!["type", "title", "subtitle", "data", "columns", "rows", "x", "y", "label", "value", "format", "unit", "tooltip"].includes(key)) {
         add("unknown-key", key, line);
         continue;
       }
@@ -238,13 +238,21 @@ const parseChart = (
       if (cell.result.kind === "error") once("not-a-number", key, { name, row: index + 1 });
       return isFormula(cell.raw) && cell.result.kind === "ok" ? String(cell.result.value) : cell.raw.trim();
     });
-  let format: CloudAiNumberFormat | undefined;
-  const formatName = string("format", tooltip);
-  const unit = string("unit", tooltip);
-  if (formatName === "number" || formatName === "percent") format = { style: formatName };
-  else if (formatName && /^[A-Z]{3}$/.test(formatName)) format = { style: "currency", currency: formatName };
-  else if (formatName) add("invalid-type", "tooltip.format", tooltip.get("format")?.line);
-  if (unit) format = { ...format, unit };
+  const readFormat = (entries: Map<string, Entry>): CloudAiNumberFormat | undefined => {
+    let format: CloudAiNumberFormat | undefined;
+    const name = string("format", entries);
+    const unit = string("unit", entries);
+    if (name === "number" || name === "percent") format = { style: name };
+    else if (name && /^[A-Z]{3}$/.test(name)) format = { style: "currency", currency: name };
+    else if (name) add("invalid-type", entries === tooltip ? "tooltip.format" : "format", entries.get("format")?.line);
+    return unit ? { ...format, unit } : format;
+  };
+  // The chart's format writes its axis, printed values and tooltips; a tooltip format applies to tooltips first.
+  const chartFormat = readFormat(top);
+  const tooltipFormat = readFormat(tooltip);
+  const format = tooltipFormat ?? chartFormat;
+  const axisFormat = chartFormat ?? tooltipFormat;
+  const namedValue = string("label", tooltip);
   let valueLabel: string | undefined;
   let mapped: unknown;
   const common = { title, ...(subtitle ? { subtitle } : {}) };
@@ -289,9 +297,21 @@ const parseChart = (
         // The implicit `label` and `value` of a list or data block are no names a reader wrote: the contract's own
         // localized value label stays.
         if (ys.length === 1 && !data.implicit) valueLabel = String(ys[0]);
+        // Axis titles name what a reader wrote: the x column and the value, as the tooltip calls it.
+        const valueTitle = namedValue ?? valueLabel;
+        const yAxis =
+          valueTitle || axisFormat
+            ? { yAxis: { ...(valueTitle ? { label: valueTitle } : {}), ...(axisFormat ? { format: axisFormat } : {}) } }
+            : {};
         if (type === "bar") {
           const values = numbers(String(ys[0]), "y");
-          mapped = { ...common, kind: "bar", data: labels(x, "x").map((label, i) => ({ label, value: values[i] })) };
+          mapped = {
+            ...common,
+            kind: "bar",
+            data: labels(x, "x").map((label, i) => ({ label, value: values[i] })),
+            ...(data.implicit ? {} : { xAxis: { label: x } }),
+            ...yAxis,
+          };
         } else {
           const xs = cells(x).map((cell, i) => {
             if (cell.result.kind === "error") {
@@ -310,13 +330,14 @@ const parseChart = (
             kind: type === "area" ? "line" : type,
             ...(type === "area" ? { area: true } : {}),
             ...(data.implicit ? {} : { xAxis: { label: x } }),
+            ...yAxis,
             series: ys.map((name) => ({ label: name, data: numbers(String(name), "y").map((y, i) => ({ x: xs[i], y })) })),
           };
         }
       }
     }
   }
-  const tooltipLabel = string("label", tooltip) ?? valueLabel;
+  const tooltipLabel = namedValue ?? valueLabel;
   const parsed = chartSchema.safeParse({
     ...(typeof mapped === "object" && mapped !== null ? mapped : {}),
     ...(tooltipLabel || format ? { tooltip: { ...(tooltipLabel ? { label: tooltipLabel } : {}), ...(format ? { format } : {}) } } : {}),
@@ -327,27 +348,32 @@ const parseChart = (
     for (const issue of parsed.error.issues) {
       const path = issue.path.map(String);
       const first = path[0];
-      const tooltipField =
-        first === "tooltip" || first === "format"
-          ? first === "tooltip" && path[1] === "label"
-            ? "label"
-            : path.includes("unit")
-              ? "unit"
-              : "format"
-          : undefined;
+      // The axis and printed values share the format and value name with the tooltip; an issue points at the entry the
+      // value came from, once.
+      const yLabel = first === "yAxis" && path[1] === "label";
+      const formatField = path.includes("unit") ? "unit" : "format";
+      const fromTooltip =
+        first === "tooltip" ||
+        (first === "format" && !!tooltipFormat) ||
+        (first === "yAxis" && (yLabel ? !!namedValue : path.includes("format") && !chartFormat));
+      const tooltipField = fromTooltip ? ((first === "tooltip" && path[1] === "label") || yLabel ? "label" : formatField) : undefined;
       const key = tooltipField
         ? `tooltip.${tooltipField}`
-        : first === "series"
-          ? path.includes("x")
-            ? "x"
-            : "y"
-          : first === "data" || first === "sparkline"
-            ? dataKey
-            : first === "xAxis"
+        : first === "format" || (first === "yAxis" && path.includes("format"))
+          ? formatField
+          : first === "series"
+            ? path.includes("x")
               ? "x"
-              : first === "kind"
-                ? "type"
-                : (first ?? "");
+              : "y"
+            : first === "data" || first === "sparkline"
+              ? dataKey
+              : first === "xAxis"
+                ? "x"
+                : first === "yAxis"
+                  ? "y"
+                  : first === "kind"
+                    ? "type"
+                    : (first ?? "");
       const line = (tooltipField ? (tooltip.get(tooltipField)?.line ?? top.get("tooltip")?.line) : top.get(key)?.line) ?? directive.line;
       const id = `${line}:${key}`;
       if (unsupported.has(id)) continue;

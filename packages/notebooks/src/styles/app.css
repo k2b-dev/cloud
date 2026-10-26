@@ -593,6 +593,19 @@
 .notebook-book-chart .k2b-chart__svg {
   height: 100%;
 }
+/* Bar rows take the height their labels need, known on the server: the frame grows with many categories instead of
+   hiding labels, and a short list keeps the usual frame. */
+.notebook-book-chart__viewport:has(svg[data-bar-layout="rows"]) {
+  height: auto;
+  min-height: 18rem;
+}
+.notebook-book-chart__viewport:has(svg[data-bar-layout="rows"]) > .k2b-chart {
+  flex: none;
+  min-height: 0;
+}
+.notebook-book-chart .k2b-chart__svg:has(> svg[data-bar-layout="rows"]) {
+  height: var(--k2b-chart-height);
+}
 /* Loading and failure messages stand inside the frame they wait for. */
 .notebook-book-content .notebook-book-chart__status {
   margin: auto;

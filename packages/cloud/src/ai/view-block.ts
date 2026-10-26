@@ -371,7 +371,7 @@ const ExplorerViewSchema = ExplorerDataSchema.superRefine((value, ctx) => {
       };
     }
     const domains = [
-      ...("xAxis" in input && input.xAxis?.domain ? [input.xAxis.domain] : []),
+      ...("xAxis" in input && input.kind !== "bar" && input.xAxis?.domain ? [input.xAxis.domain] : []),
       ...("yAxis" in input && input.yAxis?.domain ? [input.yAxis.domain] : []),
     ];
     const stepping = domains.some(

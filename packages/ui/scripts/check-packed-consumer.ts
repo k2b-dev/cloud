@@ -145,6 +145,13 @@ try {
     }
   `;
   run([process.execPath, "--no-install", "-e", inspectionSmoke], consumer);
+  const chartsSmoke = `
+    const { renderBarChartSvg } = await import("@k2b/ui/charts");
+    if (!renderBarChartSvg({ data: [{ label: "A", value: 1 }], width: 480, height: 280 }).includes('data-bar-layout="columns"')) {
+      throw new Error("packed @k2b/ui/charts did not draw a bar chart");
+    }
+  `;
+  run([process.execPath, "--no-install", "-e", chartsSmoke], consumer);
   run([process.execPath, "--no-install", "--conditions=browser", "-e", inspectionSmoke], consumer);
 
   const inspectionEntry = join(consumer, "inspection-entry.ts");

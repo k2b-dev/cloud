@@ -68,6 +68,43 @@ keyboard inspection and linked cursors follow the actual plot below the legend.
   series={[{ label: "Orders", data: [{ x: 1, y: 12 }, { x: 2, y: 18 }] }]} />
 ```
 
+## Bar charts
+
+A bar chart labels every category; it never thins or drops labels. The layout
+follows from the data alone, so the server and the browser draw the same thing:
+
+- **Columns** when every label fits below its column in a 320px phone column.
+  Values stand on the columns when they fit their slot.
+- **Rows** otherwise: one row per category, the label left of its bar and the
+  value at the bar's end, negative bars to the left of the zero line. Labels
+  wrap to two lines; longer ones end with an ellipsis and keep the full text
+  as a title, in the tooltip, and in the table. Rows keep their pixel height:
+  the drawing grows with the categories, and a box with a fixed height scrolls
+  them. Give a bar chart a box that can grow when it may hold many categories.
+
+`xAxis.label` and `yAxis.label` title the categories and the value: above the
+rows, or above the value axis and below the categories of columns. Format the
+value with its unit in `yAxis.format` (or `valueFormat` when printed values
+need more precision than ticks), for example
+`new Intl.NumberFormat(locale, { style: "currency", currency: "EUR" }).format`.
+Set `showValues={false}` to keep a value axis instead of printed values.
+A host that draws at its measured width passes it as `displayWidth`.
+`renderBarChartSvg` and `barChartLayout` from `@k2b/ui/charts` draw the same
+SVG without the component.
+
+A single bar chart has one series and no legend: the title names it, and the
+value title names the measure. Charts with several series, such as lines, show
+a legend.
+
+Axis, category and value text uses the UI font with tabular figures.
+
+```tsx
+<Chart kind="bar"
+  data={[{ label: "Äpfel", value: 418000 }, { label: "Birnen", value: 212500 }]}
+  xAxis={{ label: "Sorte" }}
+  yAxis={{ label: "Umsatz", format: (v) => euro.format(v) }} />
+```
+
 ## Props reference
 
 Use the discriminated `ChartProps` union to type data builders without widening
@@ -124,7 +161,7 @@ Solid signal. Boolean options default to `false` unless stated otherwise.
 | --- | --- | --- |
 | `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`. |
 | `scatter` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`, `autoVariant=false`, `trendline=false`; `sizeRange?: [number, number]`, default `[3, 12]`, applies only if a point has finite `size`. No `pointRadius` prop. UI markers have a fixed visual enlargement independent of plot width. |
-| `bar` | `data: { label: string; value: number }[]` | `yAxis`, `references`, `colorByBar=false`, `showValues=false`, `legend=false` (used only with `colorByBar`). Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. No grouped/stacked bar mode or `xAxis` option. |
+| `bar` | `data: { label: string; value: number }[]` | `xAxis?: { label?: string }` titles the categories; `yAxis` (its `label` names the value, its `format` writes ticks and values), `valueFormat?: (number) => string` for printed values and tooltips, `references`, `colorByBar=false`, `showValues` (default: when readable), `legend=false` (used only with `colorByBar` in columns), `displayWidth?: number`. Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. No grouped/stacked bar mode. See [Bar charts](#bar-charts). |
 | `pie`, `donut` | `data: { label: string; value: number }[]` | `showLabels=false`, `legend=false`, `innerRadius?: number` (outer-radius fraction, clamped to 0–0.95; defaults: pie 0, donut 0.6). Items accept `colorIndex?: number`. Only positive finite values produce slices. Prefer a legend for many small slices. |
 | `sparkline` | `data: number[]` or `Point[]` | `smooth=true`, `area=false`, `showLast=false`, `showMinMax=false`. Numeric arrays use the original array index as X; points sort by X. |
 | `histogram` | `data: number[]` of observations | `bins?: number` (equal-width bin count) or `number[]` (ordered bin edges); omitted uses `ceil(log2(n)) + 1`. `xAxis`, `yAxis`, `references`. Supply at least two distinct finite edges. Bins exclude the upper boundary except for the last bin. |

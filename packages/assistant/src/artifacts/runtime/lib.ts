@@ -13,7 +13,6 @@ import {
 } from "@k2b/cloud/ai/browser";
 // Named renderers, not the `charts` namespace, so app frames leave out the map and state timeline renderers.
 import {
-  bar,
   barGauge,
   boxplot,
   donut,
@@ -29,6 +28,7 @@ import {
   stat,
 } from "@k2b/stdlib";
 import { isChartDatum } from "@k2b/ui/chart-inspection";
+import { barChartLayout, renderBarChartSvg } from "@k2b/ui/charts";
 import { CloudError } from "./errors";
 import { normalizeChartDates } from "./views";
 
@@ -62,6 +62,8 @@ type ChartOptions = Record<string, unknown> & {
 };
 type StoredChart = {
   input: CloudAiChartInput;
+  /** The author's logical height; bar rows take the height their labels need instead. */
+  height?: number;
   title?: string;
   format?: (value: number) => string;
   xFormat?: (value: number) => string;
@@ -92,9 +94,11 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
     const common = { width, height, title: options.title, subtitle: options.input.subtitle, inspect: true };
     let svg: string;
     switch (mapped.kind) {
-      case "bar":
-        svg = bar({ ...mapped, ...common });
+      case "bar": {
+        const layout = barChartLayout(mapped, width);
+        svg = renderBarChartSvg({ ...mapped, ...common, height: layout.layout === "rows" ? layout.height : (options.height ?? height) });
         break;
+      }
       case "line":
         svg = line({ ...mapped, ...common });
         break;
@@ -208,8 +212,10 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
   // A sparkline is an inline word-sized graphic; other charts use the shared 480 × 280 drawing.
   const width = Number(logicalWidth) || (input.kind === "sparkline" ? 160 : 480);
   const height = Number(logicalHeight) || (input.kind === "sparkline" ? 40 : 280);
-  const prepared = { input, ...stored, title: typeof options.title === "string" ? options.title : undefined };
+  const prepared = { input, ...stored, height, title: typeof options.title === "string" ? options.title : undefined };
   const { svg, table } = drawChart(prepared, locale, width, height);
+  // Bar rows take the height their labels need; the box reserves it.
+  const drawnHeight = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(svg)?.[1]) || height;
   const stretch = !KEEP_ASPECT.has(input.kind);
   const title = typeof options.title === "string" ? options.title : "";
   const subtitle = typeof options.subtitle === "string" ? options.subtitle : "";
@@ -232,7 +238,7 @@ export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): 
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${input.kind}"${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="--k2b-chart-width:${width}px;--k2b-chart-height:${height}px">${svg}</div></div>${values}`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="--k2b-chart-width:${width}px;--k2b-chart-height:${drawnHeight}px">${svg}</div></div>${values}`,
   );
 }
 

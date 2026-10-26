@@ -16,6 +16,7 @@ import {
   type ChartTooltipFormatter,
   closeChartInspectionOnOutside,
 } from "./chart-inspection-core";
+import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "./chart-bar";
 import { lineGapsSvg } from "./chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
 import { useChartMessages } from "./chart-messages";
@@ -131,7 +132,11 @@ export type ChartProps = {
           legendPlacement?: "top-start";
         }
       : {}) &
-    (K extends "stateTimeline" ? StateTimelineChartOptions : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
+    (K extends "stateTimeline"
+      ? StateTimelineChartOptions
+      : K extends "bar"
+        ? BarChartOptions
+        : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
 }[ChartKind];
 
 /** Pure renderer options: component layout, events and inspection are configured elsewhere. */
@@ -145,6 +150,7 @@ export type ChartRenderOptions = {
 /** Keep the fixed 28-unit bar-gauge rows inside the shared SSR/browser coordinate space. */
 export const chartRenderHeight = (props: ChartRenderOptions): number => {
   if (props.kind === "stateTimeline") return stateTimelineHeight(props.rows.length, props.legend !== false);
+  if (props.kind === "bar") return barChartLayout(props).height;
   if (props.kind === "barGauge") return Math.max(280, (props.title || props.subtitle ? 42 : 16) + props.data.length * 28 + 14);
   return 280;
 };
@@ -192,6 +198,7 @@ export const renderChartSvg = (
       }),
     );
   }
+  if (kind === "bar") return responsiveChartSvg(renderBarChartSvg({ ...(opts as BarChartOptions), width, height, inspect: true }));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let svg = (charts[kind] as (o: unknown) => string)({
     ...(opts as any),
