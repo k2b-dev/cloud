@@ -798,6 +798,16 @@ database-wide listing with a limit, such as
 the oldest candidates of a background job, runs in a private database from
 `useFreshDatabase()` in `scripts/fixtures/test-infra`.
 
+Each integration file must declare the settings its requests and assertions
+need. For example, call `useTestSettings({ "app.url": "http://localhost:3000" })`
+from `@k2b/cloud/services/settings/settings.test-fixture` inside the gated
+suite. It restores stored values and removes previously absent rows after the
+suite, invalidating the Valkey and identity configuration caches. A suite that
+chooses values during setup, such as a temporary server's URL, calls
+`preserveTestSettings(keys)` before registering its setup hooks. Include every
+shared setting the suite changes; a fresh process does not reset the database
+or Valkey between files.
+
 The same rule holds for NATS. The development broker keeps the application
 streams in the `DEV` account, which accepts connections without credentials,
 and bounds tests in the `TEST` account
@@ -954,16 +964,27 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in five shards and WebKit tests in seven, balanced by
-`scripts/test-weights.json`: measured seconds per suite, longest first. An
-unknown suite counts as the median of its table. Each shard prints its
-predicted and actual time. It fails with an annotation when it runs longer
-than 20 of its 30 minutes, even when every suite passed. To refresh the weights,
-run `bun scripts/test-weights.ts --run <id> <id> <id>` with the three newest
-green merge-queue runs. Add a shard when the printed slowest shard exceeds
-15 minutes. One third of the job limit stays in reserve because setup and
-GitHub's job finalization count against it. Finalization took up to about
-5 minutes during a GitHub Actions incident.
+Unit tests run in five shards, WebKit tests in seven, and integration tests in
+three. Each mode uses its own measured seconds per suite in
+`scripts/test-weights.json`, assigning the longest suites first. An unknown
+suite counts as the median of its table. Integration keeps the Grids exclusion;
+Grids certification runs in its own path-filtered job. Every integration shard
+gets fresh service containers, and `gate` requires the whole matrix to succeed.
+
+Each shard prints its predicted and actual time. Its runner stops an active
+suite and fails with an annotation at the 20-minute budget, before the
+30-minute job limit. The budget also includes NATS housekeeping and integration database bootstrap.
+To refresh the weights, run
+`bun scripts/test-weights.ts --run <id> <id> <id>` with the three newest green
+merge-queue runs; add `--mode integration` to refresh only integration timings.
+Add a shard when the printed slowest shard exceeds 15 minutes. The runner tests
+check that the integration shards cover the unsharded selection exactly once
+and that each predicted shard fits 15 minutes. Inspect a selection without
+starting services with `bun run test --integration --exclude grids --shard 1/3 --list`.
+
+One third of the job limit stays in reserve because setup and GitHub's job
+finalization count against it. Finalization took up to about 5 minutes during
+a GitHub Actions incident.
 
 The `packed` job packs `@k2b/cloud`, `@k2b/ui`, and `@k2b/ssr` with
 `npm pack`, using the same file list as `npm publish`. It installs them in a

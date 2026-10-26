@@ -5,6 +5,7 @@ import { type AppTerminalLogins, appApproval, oauthTokens, readAppApprovalConfig
 import { session } from "@k2b/cloud/services/session";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import * as settings from "@k2b/cloud/services/settings";
+import { useTestSettings } from "@k2b/cloud/services/settings/settings.test-fixture";
 import { redis, sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";
@@ -173,6 +174,7 @@ const expectTokensEndBy = (tokens: Record<string, unknown>, endsAt: Date) => {
 };
 
 suite("OAuth device authorization grant", () => {
+  useTestSettings({ "app.url": ISSUER });
   test("signing out everywhere ends device refresh and access tokens on the next request", () =>
     withFrozenTime(async () => {
       const who = await person();
