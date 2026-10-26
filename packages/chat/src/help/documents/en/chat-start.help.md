@@ -23,12 +23,6 @@ These people must be direct members of a shared chat.
 If a chat with exactly these people exists, choose **Open existing** to use it.
 Choose **Create a new chat anyway** to start another one with the same people.
 
-From Files history, **Message …** opens **New chat** with that person selected.
-Chat checks whether the person is still available to you, using the same guest restrictions.
-Opening the form creates no chat and sends no message. Choose **Start chat** to continue;
-if several chats match, choose the one you want. **Cancel** leaves you in Chat, and browser Back returns to Files.
-Reloading after the form opens does not reopen it.
-
 ## If confirmation is missing {icon="refresh"}
 
 If **Try again** appears, choose it to finish the same request. The people and name stay fixed so a lost response does not create a second chat.

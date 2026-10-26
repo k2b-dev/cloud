@@ -1,6 +1,5 @@
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
-import { chatCapabilities } from "./capabilities";
 import { app } from "./config";
 import { chatHelp } from "./help";
 import { migrate } from "./migrate";
@@ -9,7 +8,6 @@ import { chatService } from "./service";
 import { maintenanceLifecycle } from "./service/maintenance";
 
 const result = await app.start({
-  capabilities: chatCapabilities,
   fetch: router.fetch,
   help: chatHelp,
   openapi: apiRoutes,
