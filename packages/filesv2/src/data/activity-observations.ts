@@ -211,10 +211,11 @@ export async function observationFailed(id: string, now: Date): Promise<void> {
     WHERE id=${id}::uuid AND state='done' AND actor_kind<>'observed'`;
 }
 /** Contention is deferred work, not a failed observation or a spent retry. Update only due evidence. */
-export async function observationDeferred(id: string, now: Date): Promise<void> {
-  await sql`UPDATE filesv2.activity SET observation_next_at=${now}::timestamptz+interval '1 minute'
+export async function observationDeferred(id: string, now: Date, claimed = false): Promise<void> {
+  await sql`UPDATE filesv2.activity SET observation_next_at=${now}::timestamptz+interval '1 minute',
+    observation_checks=greatest(0,observation_checks-CASE WHEN ${claimed} AND observation_error IS NOT NULL THEN 1 ELSE 0 END)
     WHERE id=${id}::uuid AND state='done' AND actor_kind<>'observed'
-      AND coalesce(observation_next_at,'-infinity'::timestamptz)<=${now}`;
+      AND (${claimed} OR coalesce(observation_next_at,'-infinity'::timestamptz)<=${now})`;
 }
 export async function observationChecked(id: string, now: Date, claimed = false): Promise<void> {
   await sql`UPDATE filesv2.activity SET observation_next_at=${now}::timestamptz+interval '1 minute',observation_error=NULL,observation_checks=0

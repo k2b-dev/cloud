@@ -208,8 +208,8 @@ export function createActivityObservations(deps: {
     } catch (error) {
       options.signal?.throwIfAborted();
       if (!entered && error instanceof Error && error.message === "operation_busy") {
-        if (evidence.observation_next_at === null || evidence.observation_next_at <= now())
-          await observationDeferred(evidence.id, now()).catch((failure) =>
+        if (options.evidence || evidence.observation_next_at === null || evidence.observation_next_at <= now())
+          await observationDeferred(evidence.id, now(), !!options.evidence).catch((failure) =>
             log.error("Busy observation could not be rescheduled", { activityId: evidence.id, error: failure }),
           );
         return false;

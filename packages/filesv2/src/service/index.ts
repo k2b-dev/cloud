@@ -1602,7 +1602,8 @@ export function createFilesService(
       if (!z.string().uuid().safeParse(input.idempotencyKey).success) throw new FilesError("upload_changed", 409);
       const current = await writableParent(actor, input.baseId, input.path);
       const target = joinPath(current.target, current.name);
-      // Publication observes an overwrite under its existing root lock. Starting a session is not publication.
+      // Compare external changes before the open upload journal suppresses contact observation.
+      await observeContact(current, target);
       const previous = await uploads.get(input.idempotencyKey, current.state.self.user.id);
       if (previous) {
         // A managed absent target is always create-only. Both conflict choices have the same effective intent.

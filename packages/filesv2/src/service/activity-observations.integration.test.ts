@@ -3,6 +3,7 @@ import { type ProcessSync, startProcessSync } from "@k2b/cloud";
 import { resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities } from "@k2b/cloud/services";
 import { Filegate, FilegateError, type Node } from "@k2b/filegate";
+import { DirectSession } from "@k2b/filegate/utils";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { activityFilegate } from "../../test/activity-filegate";
@@ -226,6 +227,41 @@ suite("contact observations with real Filegate and private history", () => {
     expect(await observations()).toHaveLength(0);
     await files().abortUpload(call, { baseId, id: uploadId });
     expect(await service().check(target())).toBe(true);
+  });
+  test("overwrite upload records the external comparison before its published overwrite", async () => {
+    await confirmed(await client.root("cloud").stat(path));
+    await put("cloud", path, "external-change");
+    const service = files();
+    const opened = await service.upload(call, {
+      baseId,
+      path: "file.txt",
+      size: 4,
+      onConflict: "overwrite",
+      idempotencyKey: Bun.randomUUIDv7(),
+    });
+    const lease = await service.uploadLease(call, { baseId, id: opened.id });
+    await new DirectSession(lease.url).put(0, new Blob(["next"]));
+    await service.commitUpload(call, { baseId, id: opened.id });
+    const rows = await sql`SELECT action,state FROM filesv2.activity WHERE action IN ('item.differs','file.overwrite') ORDER BY id`;
+    expect(rows).toEqual([
+      { action: "item.differs", state: "done" },
+      { action: "file.overwrite", state: "done" },
+    ]);
+    expect(await (await client.root("cloud").contentRaw(path)).text()).toBe("next");
+  });
+  test("busy maintenance reschedules previously failed evidence without spending its retry budget", async () => {
+    const id = await confirmed(await client.root("cloud").stat(path));
+    await sql`UPDATE filesv2.activity SET observation_error='observation_unavailable',observation_checks=1,
+      observation_next_at=${confirmedAt} WHERE id=${id}::uuid`;
+    await withRootLock("cloud", async () => {
+      expect(await service().maintain({})).toEqual({ checked: 1, failed: 0 });
+    });
+    const [row] = await sql`SELECT observation_checks,observation_error,observation_next_at FROM filesv2.activity WHERE id=${id}::uuid`;
+    expect(row).toEqual({
+      observation_checks: 1,
+      observation_error: "observation_unavailable",
+      observation_next_at: new Date(observedAt.getTime() + 60_000),
+    });
   });
   test("Office save waits for the local publish lock instead of failing its preliminary observation", async () => {
     const officePath = `${home}/busy.odt`;
