@@ -46,6 +46,7 @@ import {
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestAuthority, rateLimit, rejectReservedWorkloadCredential, resolveLocale } from "../server";
 import { preferredLocale } from "../server/locale";
+import { oauthScopeByOperation } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
 import { discoverableApps } from "../services/app-discovery";
 import { createHelpReader, type HelpArticle, type HelpMetadata, type HelpReader, type HelpReaderFactory } from "../services/help";
@@ -783,8 +784,8 @@ export const createMcpRoutes = (dependencies: McpRouteDependencies = {}) =>
     .use("/mcp/v1", validateMcpOrigin(dependencies.getAppUrl ?? defaultAppUrl))
     .use("/mcp/v1", dependencies.authenticate ?? mcpAuthentication(dependencies.getAppUrl ?? defaultAppUrl))
     .use("/mcp/v1", rejectReservedWorkloadCredential)
-    .use("/mcp/v1", dependencies.limit ?? rateLimit())
-    .all("/mcp/v1", async (c) =>
+    .use("/mcp/v1", auth.readOnlyMiddleware(dependencies.limit ?? rateLimit()))
+    .post("/mcp/v1", oauthScopeByOperation, async (c) =>
       withCapabilityRequestTimeout(c, "query", async () => {
         if (c.req.method !== "POST") {
           return new Response(null, { status: 405, headers: { Allow: "POST" } });
@@ -825,6 +826,7 @@ export const createMcpRoutes = (dependencies: McpRouteDependencies = {}) =>
           }
         }
       }),
-    );
+    )
+    .all("/mcp/v1", () => new Response(null, { status: 405, headers: { Allow: "POST" } }));
 
 export type McpApiType = ReturnType<typeof createMcpRoutes>;

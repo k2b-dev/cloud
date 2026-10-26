@@ -237,7 +237,7 @@ Auf einem erreichbaren Pfad können beliebig viele Änderungen mit `addFlag`, `r
 
 ## E-Mails mit KI klassifizieren und Entwürfe erstellen {icon="sparkles"}
 
-Mail aktiviert die gemeinsamen KI-Aktionen ausdrücklich. KI erzeugt nur einen Wert. Tags, Zuweisung, Ordner, Entwürfe und Versand bleiben Effekte von Mail-Aktionen, mit dem normalen Zugriff auf das Postfach und den Ausführungslimits.
+Mail aktiviert die gemeinsamen KI-Aktionen für Klassifizierung, Tags, Zuweisung, Zusammenfassungen und Entwürfe, mit dem normalen Zugriff auf das Postfach und den Ausführungslimits. Workflows mit einer KI-Aktion dürfen weder `automaticReply` noch `scheduleDraftSend` nutzen. Das gilt auch, wenn die KI-Aktion in einem anderen Zweig steht oder nur zwischen festen Antworten auswählt. Eine Person muss den entstandenen Entwurf prüfen und senden. Die Versandprüfung bindet den vollständigen Inhalt, Empfänger, Anhänge und Versandzeitpunkt.
 
 Dieses Beispiel ordnet eine Nachricht mehreren Labels zu. Es nutzt die exakte Array-Zugehörigkeit, um die Unterhaltung zu taggen und zuzuweisen, und erstellt einen Entwurf, ohne ihn zu senden:
 
@@ -338,7 +338,7 @@ Ein optionales `model` wählt für eine Aktion ein aktiviertes Profil aus. Ander
 
 KI-Aufgaben überstehen Neustarts von Workern. Brichst du die Mail-Ausführung ab, stoppt sie die laufende Inferenz, wo das möglich ist, und verwirft verspätete Ausgaben. Eine Testausführung kann die KI-Ausgabe nicht vorhersagen. Deshalb meldet sie den nicht verfügbaren Wert, statt mit einer erfundenen Klassifizierung oder einem erfundenen Entwurf fortzufahren.
 
-Mail speichert Prompts, Eingaben und Ausgaben mit der dauerhaften Aufgabe. Nimm nur die Nachrichtenfelder auf, die für die Entscheidung benötigt werden. Behalte erzeugte Antworten als Entwürfe, wenn eine Person sie prüfen soll. Ergänze `scheduleDraftSend` nur, wenn der Versand ohne Prüfung bewusst genehmigt ist.
+Mail speichert Prompts, Eingaben und Ausgaben mit der dauerhaften Aufgabe. Nimm nur die benötigten Nachrichtenfelder auf. Erstelle erzeugte Nachrichten mit `createDraft` oder `createReplyDraft` und lass eine Person den Entwurf prüfen und senden. Automatische Sendungen dürfen auch keine Zusammenfassungen von Unterhaltungen lesen oder ganze Unterhaltungen in Werte kopieren: Ein anderer KI-Workflow kann die Zusammenfassung geschrieben haben. Diese Regeln gelten für die gesamte Definition, einschließlich ungenutzter Zweige. Mail prüft ältere gespeicherte Versionen und wartende Sendungen erneut vor dem Versand. Ein verweigerter Versand scheitert mit `MAIL_WORKFLOW_SEND_REVIEW_REQUIRED`.
 
 Ein Workflow mit dem Trigger `messageReceived` kann `scheduleDraftSend` gar nicht nutzen. Antworten auf eingehende E-Mails müssen über `automaticReply` und dessen Schleifenschutz laufen.
 
@@ -403,7 +403,7 @@ Du kannst die Aktion gefahrlos wiederholen. Sie vergibt für dieselbe Unterhaltu
 
 ## Eine geschützte automatische Antwort senden {icon="send"}
 
-`automaticReply` ist nur gültig, wenn jeder Trigger im Workflow `messageReceived` ist.
+`automaticReply` ist nur gültig, wenn jeder Trigger im Workflow `messageReceived` ist. Nutze eine vom Betreiber freigegebene Vorlage in einem Workflow ohne KI-Aktionen und ohne Zugriff auf Zusammenfassungen von Unterhaltungen. Solche Vorlagen können weiterhin Nachrichtenfelder wie den eingegangenen Betreff verwenden. Erzeugte Antworten müssen als Entwürfe auf eine menschliche Prüfung warten.
 
 ```yaml
 inputs:

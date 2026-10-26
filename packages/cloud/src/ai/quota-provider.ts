@@ -28,6 +28,8 @@ export function inferenceProvider(
   completeContext = context,
   lifecycle = callLifecycle,
 ): Provider {
+  // createAiProvider normalizes adapter diagnostics before trusted dispatch guards wrap it.
+  // Accounting must preserve those guards' error identity and zero-usage semantics.
   const begin = async (request: Parameters<Provider["complete"]>[0], ctx: AiCallContext) => {
     const messages = request.messages.map((message) =>
       message.role === "user"

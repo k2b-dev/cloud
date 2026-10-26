@@ -27,10 +27,10 @@ Object.defineProperty(env, "APP_SECRET", { value: "capability-stream-tests-only"
 // The dispatcher records executions and idempotency claims through the store.
 // This suite is a unit test of the dispatch path: keep it away from any database.
 const executionStore = await import("../capabilities/executions");
-let recordExecution: () => Promise<string> = async () => crypto.randomUUID();
+let recordExecution: typeof executionStore.recordCapabilityExecution = async () => crypto.randomUUID();
 mock.module(new URL("../capabilities/executions.ts", import.meta.url).pathname, () => ({
   ...executionStore,
-  recordCapabilityExecution: () => recordExecution(),
+  recordCapabilityExecution: (input: Parameters<typeof recordExecution>[0]) => recordExecution(input),
   claimCapabilityIdempotency: async () => ({ state: "claimed" as const }),
   completeCapabilityClaim: async () => undefined,
   releaseCapabilityClaim: async () => undefined,
@@ -1754,4 +1754,34 @@ test("invocation issuance preserves structured app denial and never reaches the 
   expect(response.status).toBe(403);
   expect(await response.json()).toMatchObject({ code: "app_access_denied", app: "demo" });
   expect(fetch).not.toHaveBeenCalled();
+});
+
+test("OAuth scope denial records exactly one denied capability execution", async () => {
+  const rows: Parameters<typeof recordExecution>[0][] = [];
+  const previous = recordExecution;
+  recordExecution = async (input) => {
+    rows.push(input);
+    return "recorded";
+  };
+  try {
+    const response = await dispatchCapability({
+      request: new Request("https://cloud.test/capabilities", { method: "POST" }),
+      kind: "actions",
+      appId: "demo",
+      capabilityId: "rename",
+      input: {},
+      origin: "http",
+      authority: { ...resourceAuthority, credentialKind: "oauth", scopes: ["read"] },
+      dependencies: {
+        getCapability: async () => {
+          throw new Error("Must reject before registry lookup");
+        },
+      },
+    });
+    expect(response.status).toBe(403);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: "denied", errorCode: "FORBIDDEN", capability: "demo.rename", kind: "action" });
+  } finally {
+    recordExecution = previous;
+  }
 });

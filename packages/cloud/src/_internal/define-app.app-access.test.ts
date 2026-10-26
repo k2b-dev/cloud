@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { env } from "../config/env";
 import { appAccess } from "../contracts/app-access";
 import { defineHelp } from "../server/help";
-import { auth } from "../server/middleware/auth";
+import * as authMiddleware from "../server/middleware/auth";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
 import { defineApp } from "./define-app";
@@ -34,12 +34,12 @@ test("the framework gate precedes real CLI/OpenAPI/application mounts while asse
     spyOn(watcher, "getCurrentRuntime").mockReturnValue({ apps: [] }),
     spyOn(notificationCatalog, "startNotificationDefinitionRegistration").mockResolvedValue(() => {}),
     spyOn(settingsService, "loadCache").mockResolvedValue(undefined),
-    spyOn(auth, "requireRole").mockImplementation(() => async (c, next) => {
+    spyOn(authMiddleware, "loadAuthenticatedActor").mockImplementation(async (c) => {
       authenticated++;
       c.set("actor", { kind: "user", user: person });
       c.set("accessSubject", { type: "user", userId: person.id });
       c.set("credentialKind", "session");
-      await next();
+      return { token: "test-session", user: person, actor: c.get("actor") };
     }),
   ];
   try {

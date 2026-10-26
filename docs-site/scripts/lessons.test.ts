@@ -111,6 +111,8 @@ test("independent Git additions merge cleanly and reach every Fibel content surf
   await git("add", ".");
   await git("commit", "-m", "First lesson");
   await git("checkout", "-b", "fix/second", "main");
+  // Git removes the first branch's directory: empty directories are not tracked.
+  await mkdir(entries, { recursive: true });
   await writeFile(join(entries, "2026-10-24-second.md"), lesson("Second independent fix"));
   await git("add", ".");
   await git("commit", "-m", "Second lesson");
