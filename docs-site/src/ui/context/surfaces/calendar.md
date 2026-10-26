@@ -109,7 +109,8 @@ commands stay. `getDateHref`, `getViewHref`, and
 `customViews` adds views after the built-in ones, each with a `value` and a
 `label`. While `view` is one of them, the calendar keeps its header and
 `toolbarContent` and shows `children` as the body; `events` are not drawn.
-The header names the day of `date` and pages by one day, as in the day view.
+The header names the day of `date` and pages by one day, as in the day view,
+or by `days` when the view sets it, such as 14 for a two-week list.
 The view's value reaches `getViewHref`, `getDateHref`, `onViewChange`, and
 `onDateChange` like a built-in one, and JSX infers its type from
 `customViews`. The application renders the body from its own data, for
@@ -514,7 +515,7 @@ type CalendarDayBadge = {
 };
 
 type CalendarCustomView<V extends string = string> = {
-  value: V; label: string;
+  value: V; label: string; days?: number;
 };
 
 ```

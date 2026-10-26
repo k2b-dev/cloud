@@ -54,7 +54,9 @@ import {
   mergeItems,
   nextBlock,
   normalizeSelection,
+  requestBatches,
   requestRanges,
+  SEVERITY,
   type SourcedCalendarItem,
   shiftDateKey,
   splitCalendarKey,
@@ -78,8 +80,6 @@ export type CloudCalendarProps = {
 };
 
 const PHONE_QUERY = "(max-width: 47.999rem)";
-/** Worst first: one failed window makes the source failed, one still open makes it pending. */
-const SEVERITY: Record<CalendarReadState, number> = { failed: 3, pending: 2, truncated: 1, ok: 0 };
 
 /** Every calendar a person can see in Cloud, in one view: all their Spaces and the calendars other apps offer. */
 export default function CloudCalendar(props: CloudCalendarProps) {
@@ -93,7 +93,17 @@ export default function CloudCalendar(props: CloudCalendarProps) {
   const [selection, setSelection] = createSignal<string[]>(props.route.selection ?? defaultSelection(props.sources ?? []));
   const [items, setItems] = createSignal(props.items);
   const [range, setRange] = createSignal(props.range);
-  const [reads, setReads] = createSignal(new Map(props.reads.map((read) => [read.appId, read])));
+  /** The state of each chosen calendar's last read, by calendar key; the server reports it per app. */
+  const [reads, setReads] = createSignal(
+    new Map(
+      selection().flatMap((key) => {
+        const read = props.reads.find((entry) => entry.appId === splitCalendarKey(key)?.appId);
+        return read ? [[key, read] as const] : [];
+      }),
+    ),
+  );
+  /** Whether the person chose calendars; without a choice the page follows what the sources suggest. */
+  const [explicit, setExplicit] = createSignal(props.route.selection !== null);
   const [date, setDate] = createSignal(props.route.date);
   const [visible, setVisible] = createSignal<{ first: string; last: string } | null>(null);
   const [detail, setDetail] = createSignal<{ key: string; anchor: DOMRect } | null>(null);
@@ -115,93 +125,115 @@ export default function CloudCalendar(props: CloudCalendarProps) {
   // ---------------------------------------------------------------- reading
   const controller = new AbortController();
   onCleanup(() => controller.abort());
-  const setStates = (states: Map<string, CalendarSourceRead>) =>
+  const setStates = (states: ReadonlyMap<string, CalendarSourceRead>) =>
     setReads((current) => {
       const next = new Map(current);
-      for (const [appId, read] of states) next.set(appId, read);
+      for (const [key, read] of states) next.set(key, read);
       return next;
     });
   /**
-   * Reads calendars for the given days, one request of at most six weeks after the other. A source that answers
-   * replaces what it showed there; one that fails keeps what it showed and is marked. `mark` shows the calendars as
-   * loading meanwhile, for a choice or a retry the person waits for, not for a refresh in the background.
+   * One read at a time, so an older answer never overwrites a newer one; each read decides what it covers when it
+   * starts, so a choice made while the view loaded more days still covers those days.
    */
-  const read = async (ranges: CalendarRange[], wanted: readonly string[], options: { mark: boolean }) => {
+  let queue: Promise<void> = Promise.resolve();
+  const enqueue = (job: () => Promise<void>): Promise<void> => {
+    const run = queue.then(job, job);
+    queue = run.catch(() => undefined);
+    return run;
+  };
+  const known = (keys: readonly string[]) => keys.filter((key) => lookup().has(key));
+  const markPending = (keys: readonly string[]) =>
+    setStates(new Map(keys.map((key) => [key, { appId: splitCalendarKey(key)?.appId ?? "", state: "pending" as const, error: null }])));
+  /**
+   * Reads calendars for the given days in requests the route accepts. A source that answers replaces what it showed
+   * there; one that fails keeps what it showed, and its calendars are marked.
+   */
+  const runRead = async (ranges: readonly CalendarRange[], wanted: readonly string[]) => {
     // Only calendars a source still offers; a stale key in the URL asks nobody.
-    const keys = wanted.filter((key) => lookup().has(key));
-    const apps = [...new Set(keys.flatMap((key) => splitCalendarKey(key)?.appId ?? []))];
-    if (apps.length === 0 || ranges.length === 0) return;
-    if (options.mark) setStates(new Map(apps.map((appId) => [appId, { appId, state: "pending", error: null }])));
-    const outcome = new Map<string, CalendarSourceRead>(apps.map((appId) => [appId, { appId, state: "ok", error: null }]));
-    const worse = (read: CalendarSourceRead) => {
-      const current = outcome.get(read.appId);
-      if (!current || SEVERITY[read.state] > SEVERITY[current.state]) outcome.set(read.appId, read);
+    const keys = known(wanted);
+    if (keys.length === 0 || ranges.length === 0) return;
+    const outcome = new Map<string, CalendarSourceRead>(
+      keys.map((key) => [key, { appId: splitCalendarKey(key)?.appId ?? "", state: "ok", error: null }]),
+    );
+    const worse = (key: string, read: CalendarSourceRead) => {
+      const current = outcome.get(key);
+      if (!current || SEVERITY[read.state] > SEVERITY[current.state]) outcome.set(key, read);
     };
-    for (const part of ranges) {
-      try {
-        const answer = await fetchCalendarEvents(part, keys, controller.signal);
-        for (const source of answer.sources) worse(source);
-        const answered = new Set(
-          answer.sources.filter((source) => source.state === "ok" || source.state === "truncated").map((s) => s.appId),
-        );
-        const covered = new Set(keys.filter((key) => answered.has(splitCalendarKey(key)?.appId ?? "")));
-        setItems((current) => mergeItems(current, answer.items, { range: part, calendars: covered }, props.dateConfig));
-      } catch {
-        if (controller.signal.aborted) return;
-        for (const appId of apps) worse({ appId, state: "failed", error: { code: "UNAVAILABLE", retryable: true } });
+    for (const part of ranges.flatMap((range) => requestRanges(range, props.dateConfig)))
+      for (const batch of requestBatches(keys)) {
+        const appOf = (key: string) => splitCalendarKey(key)?.appId ?? "";
+        try {
+          const answer = await fetchCalendarEvents(part, batch, controller.signal);
+          const byApp = new Map(answer.sources.map((source) => [source.appId, source]));
+          for (const key of batch) worse(key, byApp.get(appOf(key)) ?? { appId: appOf(key), state: "failed", error: null });
+          const covered = new Set(batch.filter((key) => ["ok", "truncated"].includes(byApp.get(appOf(key))?.state ?? "")));
+          setItems((current) => mergeItems(current, answer.items, { range: part, calendars: covered }, props.dateConfig));
+        } catch {
+          if (controller.signal.aborted) return;
+          for (const key of batch) worse(key, { appId: appOf(key), state: "failed", error: { code: "UNAVAILABLE", retryable: true } });
+        }
       }
-    }
     // A source still pending after the browser's own budget has failed for now; the person can try again.
-    for (const [appId, value] of outcome)
-      if (value.state === "pending") outcome.set(appId, { appId, state: "failed", error: { code: "TIMEOUT", retryable: true } });
+    for (const [key, value] of outcome)
+      if (value.state === "pending") outcome.set(key, { ...value, state: "failed", error: { code: "TIMEOUT", retryable: true } });
     setStates(outcome);
   };
-  const keysOf = (apps: ReadonlySet<string>) => selection().filter((key) => apps.has(splitCalendarKey(key)?.appId ?? ""));
+  /** Queues a read; `mark` shows the calendars as loading at once, for a choice or a retry the person waits for. */
+  const read = (plan: () => { ranges: CalendarRange[]; keys: string[] }, options: { mark: boolean; keys?: string[] }) => {
+    if (options.mark && options.keys) markPending(known(options.keys));
+    return enqueue(async () => {
+      const { ranges, keys } = plan();
+      await runRead(ranges, keys);
+    });
+  };
+  const readAll = (keys: () => string[], mark: boolean) =>
+    read(() => ({ ranges: [range()], keys: keys() }), { mark, keys: mark ? keys() : undefined });
+  /** Calendars whose last read failed or stopped, and chosen ones never read. */
+  const unread = () => selection().filter((key) => !["ok", "pending"].includes(reads().get(key)?.state ?? "none"));
+  /** New sources: without a choice of their own the person sees what the sources now suggest. */
+  const adoptSources = (next: CalendarSourceView[]) => {
+    setSources(next);
+    if (!explicit()) setSelection(defaultSelection(next));
+  };
   const retry = async () => {
-    const failed = new Set(
-      [...reads().values()].filter((entry) => entry.state === "failed" || entry.state === "truncated").map((e) => e.appId),
-    );
     // A source that could not list its calendars is asked again for them first.
     if (sources().some((source) => source.state === "failed")) {
       try {
-        const next = await fetchCalendarSources(controller.signal);
-        setSources(next);
-        for (const source of next) if (source.state === "ok") failed.add(source.appId);
+        adoptSources(await fetchCalendarSources(controller.signal));
       } catch {
         return;
       }
     }
-    await read(requestRanges(range(), props.dateConfig), keysOf(failed), { mark: true });
+    await readAll(unread, true);
   };
   const retryCatalog = async () => {
     setCatalogRetrying(true);
     try {
-      const next = await fetchCalendarSources(controller.signal);
-      setSources(next);
+      adoptSources(await fetchCalendarSources(controller.signal));
       setCatalogFailed(false);
-      setSelection(props.route.selection ?? defaultSelection(next));
-      await read(requestRanges(range(), props.dateConfig), selection(), { mark: true });
+      await readAll(() => selection(), true);
     } catch {
       setCatalogFailed(true);
     } finally {
       setCatalogRetrying(false);
     }
   };
-  const loadBlock = async (edge: "earlier" | "later") => {
-    const block = nextBlock(range(), edge, view(), props.dateConfig);
-    if (!block) return;
-    await read([block], selection(), { mark: false });
-    setRange((current) => extendRange(current, block));
-  };
+  const loadBlock = (edge: "earlier" | "later") =>
+    enqueue(async () => {
+      const block = nextBlock(range(), edge, view(), props.dateConfig);
+      if (!block) return;
+      await runRead([block], selection());
+      setRange((current) => extendRange(current, block));
+    });
   onMount(() => {
     // Sources the server had no time for load once in the browser; what is still open then counts as failed.
-    const pending = new Set(props.reads.filter((entry) => entry.state === "pending").map((entry) => entry.appId));
-    if (pending.size > 0) void read(requestRanges(range(), props.dateConfig), keysOf(pending), { mark: true });
+    const pending = selection().filter((key) => reads().get(key)?.state === "pending");
+    if (pending.length > 0) void readAll(() => pending, true);
     let last = Date.now();
     const refresh = () => {
       if (document.visibilityState !== "visible" || Date.now() - last < CALENDAR_REFRESH_MS) return;
       last = Date.now();
-      void read(requestRanges(range(), props.dateConfig), selection(), { mark: false });
+      void readAll(() => selection(), false);
     };
     const timer = window.setInterval(refresh, 30_000);
     document.addEventListener("visibilitychange", refresh);
@@ -216,31 +248,33 @@ export default function CloudCalendar(props: CloudCalendarProps) {
   const openChooser = () => chipHost?.querySelector<HTMLButtonElement>("button")?.click();
   const choose = (next: string[]) => {
     const added = next.filter((key) => !chosen().has(key));
+    setExplicit(true);
     setSelection(next);
     replaceUrl();
-    if (added.length > 0) void read(requestRanges(range(), props.dateConfig), added, { mark: true });
+    if (added.length > 0) void readAll(() => added, true);
   };
-  /** The state at the end of a chooser row; it follows the reads itself, so the open menu keeps its rows. */
-  const ChooserState = (stateProps: { appId: string; calendarKey: string; busy: boolean }) => {
-    const state = () => (chosen().has(stateProps.calendarKey) ? reads().get(stateProps.appId)?.state : undefined);
+  /**
+   * The state at the end of a chooser row. It follows the reads itself, so the open menu keeps its rows, and its icon
+   * keeps one place whether it shows or not, so the menu never changes width.
+   */
+  const ChooserState = (stateProps: { calendarKey: string; busy: boolean }) => {
+    const state = () => (chosen().has(stateProps.calendarKey) ? reads().get(stateProps.calendarKey)?.state : undefined);
     return (
-      <Show
-        when={state() === "pending" || state() === "failed"}
-        fallback={
-          <Show when={stateProps.busy}>
-            <span class="spaces-calendar-chooser__note">{t.busyNote}</span>
-          </Show>
-        }
-      >
+      <>
+        <Show when={stateProps.busy}>
+          <span class="spaces-calendar-chooser__note">{t.busyNote}</span>
+        </Show>
         <span
           class="spaces-calendar-chooser__state"
           data-tone={state() === "failed" ? "warning" : undefined}
-          role="img"
-          aria-label={state() === "failed" ? t.unreachable : t.loadingState}
+          role={state() === "pending" || state() === "failed" ? "img" : undefined}
+          aria-label={state() === "failed" ? t.unreachable : state() === "pending" ? t.loadingState : undefined}
         >
-          <i class={state() === "failed" ? "ti ti-alert-triangle" : "ti ti-loader-2 animate-spin"} aria-hidden="true" />
+          <Show when={state() === "pending" || state() === "failed"}>
+            <i class={state() === "failed" ? "ti ti-alert-triangle" : "ti ti-loader-2 animate-spin"} aria-hidden="true" />
+          </Show>
         </span>
-      </Show>
+      </>
     );
   };
   const chooserOptions = createMemo((): FilterChipSection[] =>
@@ -254,7 +288,7 @@ export default function CloudCalendar(props: CloudCalendarProps) {
           value: key,
           label: calendar.name,
           color: calendar.color,
-          trailing: <ChooserState appId={source.appId} calendarKey={key} busy={calendar.visibility === "busy"} />,
+          trailing: <ChooserState calendarKey={key} busy={calendar.visibility === "busy"} />,
         };
       }),
     })),
@@ -264,9 +298,16 @@ export default function CloudCalendar(props: CloudCalendarProps) {
 
   // ---------------------------------------------------------------- detail
   const isPhone = () => typeof matchMedia === "function" && matchMedia(PHONE_QUERY).matches;
-  let lastPointer: HTMLElement | null = null;
+  /** The entry a pointer pressed just now; a keyboard activation opens beside the focused entry instead. */
+  let lastPointer: { element: HTMLElement | null; at: number } | null = null;
   const onPointerDown = (event: PointerEvent) => {
-    if (event.target instanceof Element) lastPointer = event.target.closest<HTMLElement>("a,button,[data-calendar-event]");
+    if (event.target instanceof Element)
+      lastPointer = { element: event.target.closest<HTMLElement>("a,button,[data-calendar-event]"), at: Date.now() };
+  };
+  const activationAnchor = (): HTMLElement | null => {
+    const pressed = lastPointer && Date.now() - lastPointer.at < 1_000 ? lastPointer.element : null;
+    lastPointer = null;
+    return pressed ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
   };
   const openDetail = (item: SourcedCalendarItem, anchor: HTMLElement | null) => {
     const found = lookup().get(calendarKey(item.appId, item.calendarId));
@@ -357,7 +398,8 @@ export default function CloudCalendar(props: CloudCalendarProps) {
     if (!sources().some((source) => source.calendars.length > 0))
       return sources().some((source) => source.state === "failed") ? null : "sources";
     if (selection().length === 0) return "selection";
-    if (loading() || shownCount() > 0) return null;
+    // A source that failed may have events here; the status line says so instead of claiming there are none.
+    if (loading() || status()?.kind === "failed" || status()?.kind === "truncated" || shownCount() > 0) return null;
     return "events";
   };
   const noEventsTitle = () => ({ day: t.noEventsDay, week: t.noEventsWeek, month: t.noEventsMonth, list: t.noEventsList })[view()];
@@ -366,15 +408,7 @@ export default function CloudCalendar(props: CloudCalendarProps) {
   const viewHref = (next: CloudCalendarView, day = date()) => cloudCalendarHref(route({ view: next, date: day }));
   const asView = (value: string): CloudCalendarView =>
     value === "day" || value === "week" || value === "month" || value === "list" ? value : "week";
-  /** The list pages by its 14 days; the calendar steps it by one day as it does a custom view. */
-  const dateHref = (target: Date, next: string) => {
-    let key = dates.formatDateKey(target, props.dateConfig);
-    if (asView(next) === "list" && view() === "list" && key !== todayKey()) {
-      const step = Math.round((Date.parse(`${key}T12:00:00Z`) - Date.parse(`${date()}T12:00:00Z`)) / 86_400_000);
-      if (Math.abs(step) === 1) key = shiftDateKey(date(), step * CALENDAR_LIST_DAYS);
-    }
-    return viewHref(asView(next), key);
-  };
+  const dateHref = (target: Date, next: string) => viewHref(asView(next), dates.formatDateKey(target, props.dateConfig));
   const viewTabs = () =>
     (
       [
@@ -579,7 +613,8 @@ export default function CloudCalendar(props: CloudCalendarProps) {
               <Calendar
                 class="flex-1"
                 view={view() === "list" ? "list" : view()}
-                customViews={[{ value: "list", label: t.list }]}
+                views={["day", "week", "month"]}
+                customViews={[{ value: "list", label: t.list, days: CALENDAR_LIST_DAYS }]}
                 viewSwitcher={false}
                 date={date()}
                 events={view() === "list" ? [] : events()}
@@ -605,7 +640,7 @@ export default function CloudCalendar(props: CloudCalendarProps) {
                 selectedEventId={detail()?.key}
                 onEventActivate={(event) => {
                   const item = itemsByKey().get(event.id);
-                  if (item) openDetail(item, lastPointer ?? (document.activeElement as HTMLElement | null));
+                  if (item) openDetail(item, activationAnchor());
                 }}
                 toolbarContent={
                   <>

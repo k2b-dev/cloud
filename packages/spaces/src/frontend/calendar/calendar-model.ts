@@ -10,6 +10,10 @@ export const CLOUD_CALENDAR_VIEWS = ["day", "week", "month", "list"] as const;
 export type CloudCalendarView = (typeof CLOUD_CALENDAR_VIEWS)[number];
 /** The widest range one events request covers: the six weeks of a month view, the Spaces route's budget. */
 export const CALENDAR_REQUEST_DAYS = 42;
+/** The route counts elapsed time, so six weeks across a clock change are one hour too long for one request. */
+export const CALENDAR_REQUEST_MS = CALENDAR_REQUEST_DAYS * 24 * 60 * 60 * 1000;
+/** Calendars one request may name, the route's and the contract's limit. */
+export const CALENDAR_REQUEST_CALENDARS = 100;
 /** The list shows two weeks from its date. */
 export const CALENDAR_LIST_DAYS = 14;
 /** The widest range the scrolling views hold, as in a Space's calendar; past it they stop loading. */
@@ -32,6 +36,8 @@ export type CalendarSourceView = {
 };
 export type CalendarReadState = "ok" | "pending" | "failed" | "truncated";
 export type CalendarSourceRead = { appId: string; state: CalendarReadState; error: CalendarSourceError | null };
+/** Worst first: one failed window makes a source failed, one still open makes it pending. */
+export const SEVERITY: Record<CalendarReadState, number> = { failed: 3, pending: 2, truncated: 1, ok: 0 };
 export type SourcedCalendarItem = CalendarItem & { appId: string };
 export type CalendarRange = { from: string; to: string };
 /** What the page shows, as its URL says: `null` selection means the default calendars. */
@@ -43,7 +49,8 @@ export const splitCalendarKey = (key: string): { appId: string; calendarId: stri
   const at = key.indexOf(":");
   return at > 0 && at < key.length - 1 ? { appId: key.slice(0, at), calendarId: key.slice(at + 1) } : null;
 };
-export const itemKey = (item: SourcedCalendarItem) => `${item.appId}:${item.calendarId}:${item.id}`;
+/** The identity of an item across sources: IDs are opaque and may hold any character, so it is a tuple. */
+export const itemKey = (item: SourcedCalendarItem) => JSON.stringify([item.appId, item.calendarId, item.id]);
 
 const isView = (value: string | null): value is CloudCalendarView => CLOUD_CALENDAR_VIEWS.includes(value as CloudCalendarView);
 const isDateKey = (value: string | null): value is string =>
@@ -129,17 +136,26 @@ export const nextBlock = (
   return Date.parse(to) - Date.parse(from) > CALENDAR_MAX_DAYS * DAY_MS ? null : block;
 };
 
-/** Splits loaded days into requests of at most six weeks, for a refresh or a retry. */
+/** Splits days into requests the route accepts: at most six weeks and at most 42 × 24 hours each. */
 export const requestRanges = (range: CalendarRange, dateConfig?: DateContext): CalendarRange[] => {
   const ranges: CalendarRange[] = [];
   let from = range.from;
   while (Date.parse(from) < Date.parse(range.to)) {
-    const end = midnight(dayOf(from, dateConfig), CALENDAR_REQUEST_DAYS, dateConfig);
-    const to = Date.parse(end) < Date.parse(range.to) ? end : range.to;
+    const days = Date.parse(midnight(dayOf(from, dateConfig), CALENDAR_REQUEST_DAYS, dateConfig));
+    const end = Math.min(days, Date.parse(from) + CALENDAR_REQUEST_MS, Date.parse(range.to));
+    const to = end === Date.parse(range.to) ? range.to : new Date(end).toISOString();
     ranges.push({ from, to });
     from = to;
   }
   return ranges;
+};
+
+/** Splits chosen calendars into requests of at most 100. */
+export const requestBatches = (keys: readonly string[]): string[][] => {
+  const batches: string[][] = [];
+  for (let index = 0; index < keys.length; index += CALENDAR_REQUEST_CALENDARS)
+    batches.push(keys.slice(index, index + CALENDAR_REQUEST_CALENDARS));
+  return batches;
 };
 
 /** The instants an item covers: an event its time, a deadline the point it is due. */
@@ -252,6 +268,7 @@ export type CalendarStatus =
 export const calendarStatus = (
   selection: readonly string[],
   sources: readonly CalendarSourceView[],
+  /** The state of each chosen calendar's last read, by calendar key. */
   reads: ReadonlyMap<string, CalendarSourceRead>,
 ): CalendarStatus => {
   const lookup = calendarLookup(sources);
@@ -259,18 +276,18 @@ export const calendarStatus = (
     const entry = lookup.get(key);
     return entry ? [{ key, ...entry }] : [];
   });
-  const stateOf = (appId: string) => reads.get(appId)?.state ?? "pending";
-  const loading = chosen.filter((entry) => stateOf(entry.source.appId) === "pending").length;
+  const stateOf = (key: string) => reads.get(key)?.state ?? "pending";
+  const loading = chosen.filter((entry) => stateOf(entry.key) === "pending").length;
   if (loading > 0) return { kind: "loading", count: loading, total: chosen.length };
   // A source that could not even list its calendars counts as failed, whatever the person chose.
   const failed = [
     ...new Set([
       ...sources.filter((source) => source.state === "failed").map((source) => source.name),
-      ...chosen.filter((entry) => stateOf(entry.source.appId) === "failed").map((entry) => entry.source.name),
+      ...chosen.filter((entry) => stateOf(entry.key) === "failed").map((entry) => entry.source.name),
     ]),
   ];
   if (failed.length > 0) return { kind: "failed", apps: failed, count: failed.length };
-  if (chosen.some((entry) => stateOf(entry.source.appId) === "truncated")) return { kind: "truncated" };
+  if (chosen.some((entry) => stateOf(entry.key) === "truncated")) return { kind: "truncated" };
   const busy = chosen.filter((entry) => entry.calendar.visibility === "busy").map((entry) => calendarLabel(entry.source, entry.calendar));
   return busy.length > 0 ? { kind: "busy", names: busy } : null;
 };

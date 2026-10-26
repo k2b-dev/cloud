@@ -181,6 +181,8 @@ export type CalendarController = {
 export type CalendarCustomView<V extends string = string> = {
   value: V;
   label: string;
+  /** Days the previous and next buttons and keys move, such as 14 for a two-week list. Defaults to one day. */
+  days?: number;
 };
 
 export type CalendarProps<V extends string = never> = {
@@ -672,10 +674,18 @@ const addMonthsClamped = (date: Date, months: number, dateConfig: DateContext): 
 };
 
 /** Custom views page by day, like the day view. */
-const adjacentCalendarDate = (date: Date, view: string, direction: -1 | 1, dateConfig: DateContext) => {
+const adjacentCalendarDate = (
+  date: Date,
+  view: string,
+  direction: -1 | 1,
+  dateConfig: DateContext,
+  customViews?: readonly CalendarCustomView[],
+) => {
   if (view === "year") return addMonthsClamped(date, direction * 12, dateConfig);
   if (view === "month" || view === "mobile-month") return addMonthsClamped(date, direction, dateConfig);
-  return calendar.addDays(date, direction * (view === "week" ? 7 : 1), dateConfig);
+  const custom = customViews?.find((option) => option.value === view)?.days;
+  const days = view === "week" ? 7 : custom && Number.isInteger(custom) && custom > 0 ? custom : 1;
+  return calendar.addDays(date, direction * days, dateConfig);
 };
 
 /** Opens a view at a day through the host's callbacks. Hosts may keep the view and the date apart, so both hear it. */
@@ -732,8 +742,8 @@ const CalendarHeader = <V extends string>(props: {
     const shown = timeView()?.visibleKeys().first;
     return shown ? parseKey(shown) : (monthView()?.stepFrom() ?? props.date);
   };
-  const previous = () => adjacentCalendarDate(base(), props.view, -1, dateConfig());
-  const next = () => adjacentCalendarDate(base(), props.view, 1, dateConfig());
+  const previous = () => adjacentCalendarDate(base(), props.view, -1, dateConfig(), props.owner.customViews);
+  const next = () => adjacentCalendarDate(base(), props.view, 1, dateConfig(), props.owner.customViews);
   /** The day view's title, such as "Fri, Oct 9, 2026" or "Fr, 9. Okt 2026". */
   const formatDayTitle = (date: Date) =>
     compactGermanDate(
@@ -3586,7 +3596,7 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
   };
   const step = (direction: -1 | 1) => {
     if (scrollingView()?.step(direction)) return;
-    go(adjacentCalendarDate(monthView()?.stepFrom() ?? shownDay() ?? date(), view(), direction, dateConfig()), view());
+    go(adjacentCalendarDate(monthView()?.stepFrom() ?? shownDay() ?? date(), view(), direction, dateConfig(), props.customViews), view());
   };
   const goToday = () => {
     if (scrollingView()?.today()) return;

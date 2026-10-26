@@ -242,6 +242,8 @@
 /* The status keeps one line of its own height after the chips, so loading, a failure, and quiet never move them. */
 .spaces-calendar-status { display: flex; min-width: 0; flex: 1 1 12rem; align-items: center; gap: .4375rem; height: 2rem; overflow: hidden; color: var(--ui-text-dimmed); font-size: .75rem; white-space: nowrap; }
 .spaces-calendar-status > .ti { flex: 0 0 auto; font-size: .9375rem; }
+/* A long message shortens with an ellipsis, so Try again always stays in view; the full text is still the status. */
+.spaces-calendar-status > span:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .spaces-calendar-status[data-tone="warning"] { color: var(--color-amber-700); }
 .dark .spaces-calendar-status[data-tone="warning"] { color: var(--color-amber-400); }
 .spaces-calendar-status__retry { flex: 0 0 auto; padding: 0; border: 0; background: none; color: var(--k2b-action); font: inherit; font-weight: 500; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; cursor: pointer; }
@@ -249,7 +251,7 @@
 .spaces-calendar-status__fade { min-width: 0; overflow: hidden; color: var(--ui-text-dimmed); mask-image: linear-gradient(90deg, #000 calc(100% - 1.5rem), transparent); }
 .spaces-calendar-chooser { display: contents; }
 .spaces-calendar-chooser__note { flex: 0 0 auto; color: var(--ui-text-dimmed); font-size: .6875rem; }
-.spaces-calendar-chooser__state { display: inline-flex; flex: 0 0 auto; color: var(--ui-text-dimmed); font-size: .875rem; }
+.spaces-calendar-chooser__state { display: inline-flex; width: .875rem; flex: 0 0 auto; justify-content: center; color: var(--ui-text-dimmed); font-size: .875rem; }
 .spaces-calendar-chooser__state[data-tone="warning"] { color: var(--color-amber-600); }
 /* Empty and failed states sit over the calendar's grid, which stays in place behind them. */
 .spaces-calendar-empty { position: absolute; top: 46%; left: 50%; z-index: 7; width: min(22.5rem, calc(100% - 2rem)); transform: translate(-50%, -50%); }

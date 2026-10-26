@@ -12,7 +12,11 @@ import {
   type CalendarSourceRead,
   type CalendarSourceView,
   defaultSelection,
+  itemKey,
   parseCloudCalendarRoute,
+  requestBatches,
+  requestRanges,
+  SEVERITY,
   type SourcedCalendarItem,
   splitCalendarKey,
   viewWindow,
@@ -46,20 +50,32 @@ export default ssr<AuthContext>(async (c) => {
   let items: SourcedCalendarItem[] = [];
   let reads: CalendarSourceRead[] = [];
   if (sources && calendars.length > 0) {
-    try {
-      const answer = await loadCalendarEvents(c, {
-        from: range.from,
-        to: range.to,
-        calendars,
-        deadlineMs: Math.max(0, SSR_BUDGET_MS - (Date.now() - started)),
-      });
-      items = answer.items;
-      reads = answer.sources;
-    } catch (error) {
-      log.warn("Could not read calendar events", { error: error instanceof Error ? error.message : "Unknown error" });
-      // The browser asks once more for every source the server could not read.
-      reads = [...new Set(calendars.map((entry) => entry.appId))].map((appId) => ({ appId, state: "pending", error: null }));
-    }
+    // Requests the route accepts: six weeks across a clock change and many calendars take more than one.
+    const byKey = new Map<string, SourcedCalendarItem>();
+    const byApp = new Map<string, CalendarSourceRead>();
+    const worse = (read: CalendarSourceRead) => {
+      const current = byApp.get(read.appId);
+      if (!current || SEVERITY[read.state] > SEVERITY[current.state]) byApp.set(read.appId, read);
+    };
+    for (const part of requestRanges(range, dateConfig))
+      for (const batch of requestBatches(calendars.map((entry) => `${entry.appId}:${entry.calendarId}`))) {
+        const chosen = batch.flatMap((key) => splitCalendarKey(key) ?? []);
+        try {
+          const answer = await loadCalendarEvents(c, {
+            ...part,
+            calendars: chosen,
+            deadlineMs: Math.max(0, SSR_BUDGET_MS - (Date.now() - started)),
+          });
+          for (const item of answer.items) byKey.set(itemKey(item), item);
+          for (const read of answer.sources) worse(read);
+        } catch (error) {
+          log.warn("Could not read calendar events", { error: error instanceof Error ? error.message : "Unknown error" });
+          // The browser asks once more for every source the server could not read.
+          for (const entry of chosen) worse({ appId: entry.appId, state: "pending", error: null });
+        }
+      }
+    items = [...byKey.values()];
+    reads = [...byApp.values()];
   }
   const sidebar = await sidebarPromise;
 

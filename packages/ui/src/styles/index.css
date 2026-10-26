@@ -5806,9 +5806,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   visibility: visible;
 }
 
+/* On a touch screen the second action is always there and as tall as its row, the 44 px of a touch target. */
 @media (any-pointer: coarse) {
   .k2b-ui .k2b-dropdown__secondary {
     visibility: visible;
+    align-self: stretch;
+    min-height: 2.75rem;
+  }
+
+  .k2b-ui .k2b-dropdown__label-action {
+    min-height: 2.75rem;
   }
 }
 

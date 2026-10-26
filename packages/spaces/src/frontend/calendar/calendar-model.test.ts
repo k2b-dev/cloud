@@ -10,6 +10,7 @@ import {
   nextBlock,
   normalizeSelection,
   parseCloudCalendarRoute,
+  requestBatches,
   requestRanges,
   type SourcedCalendarItem,
   splitCalendarKey,
@@ -110,12 +111,25 @@ describe("ranges", () => {
     expect(nextBlock({ from: "2026-01-01T00:00:00.000Z", to: "2026-12-30T00:00:00.000Z" }, "later", "week", dateConfig)).toBeNull();
   });
 
+  test("the month across the clock change becomes two requests the route accepts", () => {
+    const month = viewWindow("month", "2026-10-27", dateConfig);
+    expect(Date.parse(month.to) - Date.parse(month.from)).toBe(CALENDAR_REQUEST_DAYS * DAY + 3_600_000);
+    const parts = requestRanges(month, dateConfig);
+    expect(parts.length).toBe(2);
+    for (const part of parts) expect(Date.parse(part.to) - Date.parse(part.from)).toBeLessThanOrEqual(CALENDAR_REQUEST_DAYS * DAY);
+    expect(parts[0]!.from).toBe(month.from);
+    expect(parts[1]!.to).toBe(month.to);
+    expect(requestBatches(Array.from({ length: 205 }, (_, index) => `spaces:S${index}`)).map((batch) => batch.length)).toEqual([
+      100, 100, 5,
+    ]);
+  });
+
   test("a refresh splits the loaded days into requests of at most six weeks without gaps", () => {
     const parts = requestRanges({ from: "2026-09-27T22:00:00.000Z", to: "2027-01-03T23:00:00.000Z" }, dateConfig);
     expect(parts[0]!.from).toBe("2026-09-27T22:00:00.000Z");
     expect(parts.at(-1)!.to).toBe("2027-01-03T23:00:00.000Z");
     for (const [index, part] of parts.entries()) {
-      expect(Date.parse(part.to) - Date.parse(part.from)).toBeLessThanOrEqual(CALENDAR_REQUEST_DAYS * DAY + 3_600_000);
+      expect(Date.parse(part.to) - Date.parse(part.from)).toBeLessThanOrEqual(CALENDAR_REQUEST_DAYS * DAY);
       if (index > 0) expect(part.from).toBe(parts[index - 1]!.to);
     }
   });
@@ -135,6 +149,16 @@ describe("items", () => {
       dateConfig,
     );
     expect(merged.map((item) => item.id).sort()).toEqual(["kept", "new", "other"]);
+  });
+
+  test("opaque IDs with colons never collide", () => {
+    const one = { ...event("c", "2026-10-27T08:00:00Z", "2026-10-27T09:00:00Z", "a:b") };
+    const two = { ...event("b:c", "2026-10-27T08:00:00Z", "2026-10-27T09:00:00Z", "a") };
+    const merged = mergeItems([], [one, two], {
+      range: { from: "2026-10-26T00:00:00Z", to: "2026-10-28T00:00:00Z" },
+      calendars: new Set(),
+    });
+    expect(merged.length).toBe(2);
   });
 
   test("busy time carries no detail, deadlines are markers, dates stay dates", () => {
@@ -177,17 +201,25 @@ describe("items", () => {
 
 describe("status", () => {
   const selection = ["spaces:Space1", "meetings:board:a"];
+  const reads = (spaces: string, meetings: string) =>
+    new Map([
+      ["spaces:Space1", { appId: "spaces", state: spaces, error: null }],
+      ["meetings:board:a", { appId: "meetings", state: meetings, error: null }],
+    ] as never);
   test("loading comes first, then a failure, then busy-only calendars", () => {
-    const reads = (spaces: string, meetings: string) =>
-      new Map([
-        ["spaces", { appId: "spaces", state: spaces, error: null }],
-        ["meetings", { appId: "meetings", state: meetings, error: null }],
-      ] as const);
-    expect(calendarStatus(selection, sources, reads("ok", "pending") as never)).toEqual({ kind: "loading", count: 1, total: 2 });
-    expect(calendarStatus(selection, sources, reads("failed", "ok") as never)).toEqual({ kind: "failed", apps: ["Spaces"], count: 1 });
-    expect(calendarStatus(selection, sources, reads("ok", "truncated") as never)).toEqual({ kind: "truncated" });
-    expect(calendarStatus(selection, sources, reads("ok", "ok") as never)).toEqual({ kind: "busy", names: ["Meetings · Board"] });
-    expect(calendarStatus(["spaces:Space1"], sources, reads("ok", "ok") as never)).toBeNull();
+    expect(calendarStatus(selection, sources, reads("ok", "pending"))).toEqual({ kind: "loading", count: 1, total: 2 });
+    expect(calendarStatus(selection, sources, reads("failed", "ok"))).toEqual({ kind: "failed", apps: ["Spaces"], count: 1 });
+    expect(calendarStatus(selection, sources, reads("ok", "truncated"))).toEqual({ kind: "truncated" });
+    expect(calendarStatus(selection, sources, reads("ok", "ok"))).toEqual({ kind: "busy", names: ["Meetings · Board"] });
+    expect(calendarStatus(["spaces:Space1"], sources, reads("ok", "ok"))).toBeNull();
+  });
+
+  test("a failed calendar stays failed when another calendar of its app answers", () => {
+    const states = new Map([
+      ["spaces:Space1", { appId: "spaces", state: "failed" as const, error: null }],
+      ["spaces:Space2", { appId: "spaces", state: "ok" as const, error: null }],
+    ]);
+    expect(calendarStatus(["spaces:Space1", "spaces:Space2"], sources, states)).toEqual({ kind: "failed", apps: ["Spaces"], count: 1 });
   });
 
   test("a source that could not list its calendars counts as failed", () => {
@@ -195,10 +227,8 @@ describe("status", () => {
       ...sources,
       { appId: "absence", name: "Abwesenheiten", icon: null, state: "failed", error: null, calendars: [] },
     ];
-    expect(calendarStatus(["spaces:Space1"], broken, new Map([["spaces", { appId: "spaces", state: "ok", error: null }]]))).toEqual({
-      kind: "failed",
-      apps: ["Abwesenheiten"],
-      count: 1,
-    });
+    expect(
+      calendarStatus(["spaces:Space1"], broken, new Map([["spaces:Space1", { appId: "spaces", state: "ok" as const, error: null }]])),
+    ).toEqual({ kind: "failed", apps: ["Abwesenheiten"], count: 1 });
   });
 });

@@ -1,5 +1,5 @@
 import type { CalendarDescriptor } from "@k2b/cloud/contracts";
-import type { DateContext } from "@k2b/stdlib";
+import { type DateContext, dates } from "@k2b/stdlib";
 import { ButtonLink, IconButton } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import { summarizeRecurrence } from "@/presentation/recurrence";
@@ -67,8 +67,15 @@ export default function EventDetail(props: Props) {
       zone !== null &&
       zone !== props.dateConfig?.timeZone &&
       timeIn(time.start, zone, locale()) !== timeIn(time.start, props.dateConfig?.timeZone, locale());
+    // A timed event over midnight names both days, so it never seems to end before it starts.
+    const lastInstant = new Date(Math.max(Date.parse(time.start), Date.parse(time.end) - 1)).toISOString();
+    const startDay = dates.formatDateKey(time.start, props.dateConfig);
+    const endDay = dates.formatDateKey(lastInstant, props.dateConfig);
     return {
-      main: instantDay(time.start, props.dateConfig),
+      main:
+        startDay === endDay
+          ? instantDay(time.start, props.dateConfig)
+          : `${dayLabel(startDay, props.dateConfig, "short")} – ${dayLabel(endDay, props.dateConfig, "short")}`,
       sub: differs
         ? `${t.yourTime({ range: own })} · ${t.inZone({
             range: `${timeIn(time.start, zone, locale())}–${timeIn(time.end, zone, locale())}`,
