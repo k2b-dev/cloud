@@ -178,6 +178,7 @@ export const processWorkflowAiTask = async (
   }, options.cancelPollMs);
 
   try {
+    controller.signal.throwIfAborted();
     const aborted = new Promise<never>((_resolve, reject) => {
       const onAbort = () => reject(controller.signal.reason);
       if (controller.signal.aborted) onAbort();
@@ -220,6 +221,7 @@ let activeJob: Job<{ taskId: string }> | null = null;
 let activeWorker: Worker | null = null;
 let recoveryTimer: ReturnType<typeof setInterval> | null = null;
 let recovery: Promise<void> | null = null;
+let shutdown: AbortController | null = null;
 
 const recover = (): Promise<void> => {
   recovery ??= expireWorkflowAiTasks(env.WORKFLOW_AI_QUEUE_TIMEOUT_MS).finally(() => {
@@ -238,11 +240,22 @@ export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {
   };
   const next = workflowAiJob();
   activeJob = next;
+  const controller = new AbortController();
+  shutdown = controller;
   try {
     activeWorker = await next.process({ concurrency: env.WORKFLOW_AI_BUDGET.globalConcurrent }, async (context) => {
       try {
-        await processWorkflowAiTask(context.input.taskId, context, options);
+        await processWorkflowAiTask(
+          context.input.taskId,
+          { signal: AbortSignal.any([context.signal, controller.signal]), heartbeat: () => context.heartbeat() },
+          options,
+        );
       } catch (caught) {
+        if (controller.signal.aborted) {
+          // Shutdown is not a provider failure. Persist before drain lets the process exit.
+          if (!(await markWorkflowAiTaskCanceledIfRequested(context.input.taskId))) await requeueWorkflowAiTask(context.input.taskId);
+          throw caught;
+        }
         const error =
           caught instanceof WorkflowAiAttemptError
             ? caught
@@ -265,7 +278,7 @@ export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {
       void recover().catch((error) => console.error("Workflow AI recovery failed", error));
     }, HEARTBEAT_INTERVAL_MS);
   } catch (error) {
-    stopWorkflowAiRuntime();
+    await stopWorkflowAiRuntime();
     throw error;
   }
 };
@@ -285,11 +298,22 @@ export const submitWorkflowAiTask = async (taskId: string): Promise<void> => {
   }
 };
 
-export const stopWorkflowAiRuntime = (): void => {
-  activeWorker?.stop();
+export const stopWorkflowAiRuntime = async (): Promise<void> => {
+  const worker = activeWorker;
+  worker?.stop();
+  shutdown?.abort(new Error("Workflow AI runtime stopped"));
   if (recoveryTimer) clearInterval(recoveryTimer);
   recoveryTimer = null;
 
-  activeWorker = null;
-  activeJob = null;
+  // Sync's existing drain budget bounds settlement; do not exit before DB requeue.
+  try {
+    await worker?.drain();
+  } finally {
+    // The recovery timer already reports its failure. Always allow a later start,
+    // including when drain rejects, while preserving the drain error for callers.
+    await recovery?.catch(() => {});
+    activeWorker = null;
+    activeJob = null;
+    shutdown = null;
+  }
 };

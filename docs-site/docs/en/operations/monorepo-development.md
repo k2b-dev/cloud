@@ -602,7 +602,10 @@ enforce their own authorization. See [Universal search](/en/docs/platform/search
 Workflow AI uses `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` and
 `WORKFLOW_AI_QUEUE_TIMEOUT_MS` (both 60,000 ms by default). Keep these budgets
 consistent across workers. Queue overload rejects new work; failed run details
-provide the recovery path after capacity recovers.
+provide the recovery path after capacity recovers. The queue deadline includes
+application downtime: pending tasks older than the queue budget fail visibly on
+restart and require a workflow retry. Graceful shutdown requeues interrupted
+attempts before draining the worker.
 
 The reject-on-full policy uses the new `cloud.workflow-ai.v2` Sync resource,
 because an existing discard-oldest stream cannot change that policy in place.
@@ -626,7 +629,10 @@ Deploy the same value to all Mail workers. Postgres serializes short admission
 transactions across replicas; reservations count queued and running work.
 Capacity and rate admission rejections use bounded workflow retries; source and
 daily limits are terminal. Exhaustion remains visible in run details. The rolling ledger
-survives deletion of a workflow run and is pruned after 24 hours. Successful
+survives deletion of a workflow run and is pruned after 24 hours. Failed or
+canceled tasks release their logical source slot; minute/day accounting stays
+charged. Non-message Mail runs use the run identity as source, within the same
+mailbox and installation budget. Successful
 cache entries live with their source task, rather than acquiring a second
 retention policy.
 
@@ -636,7 +642,9 @@ concurrent calls. The mailbox minute/day limits constrain spend and isolate a
 burst until real arrival rates and configured prices justify a change. Existing
 priced background cost stops still apply. Check run details for the stable
 capacity, rate, daily, source and provider failure codes, then inspect or retry
-messages. `--retry-failed --recompute-ai` deliberately bypasses successful-result
+messages. Exhausted capacity/rate retries retain their AI error code with
+`details.retryExhausted: true`; a large backfill may require another retry.
+`--retry-failed --recompute-ai` deliberately bypasses successful-result
 reuse while preserving every admission limit and permission check.
 
 The shared Workflow AI consumer also uses the registry budget’s `globalConcurrent`

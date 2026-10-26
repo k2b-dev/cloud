@@ -13,6 +13,7 @@ natsSuite()("workflow AI delivery admission", () => {
     const job = fixture.sync.job<string>({
       id: "ai-reject",
       whenFull: "reject",
+      dedupeWindowMs: 1_000,
       retention: { maxMessages: 1, maxAgeMs: 60_000, maxBytes: 1024 * 1024 },
     });
     try {
@@ -64,7 +65,7 @@ natsSuite()("workflow AI delivery admission", () => {
       expect(submitted).toEqual(["task:first", "task:second", "task:third"]);
       expect(fail).toHaveBeenCalledWith("first", expect.objectContaining({ code: "WORKFLOW_AI_SUBMISSION_FAILED" }));
     } finally {
-      stopWorkflowAiRuntime();
+      await stopWorkflowAiRuntime();
       unbindProcessSync();
       expire.mockRestore();
       pending.mockRestore();
@@ -74,4 +75,66 @@ natsSuite()("workflow AI delivery admission", () => {
       await fixture.close();
     }
   });
+  for (const failure of ["recovery", "drain"] as const)
+    test(`a failed ${failure} during stop clears runtime state for restart`, async () => {
+      const fixture = await openSync(`workflow-ai-stop-${failure}`);
+      const declare = fixture.sync.job.bind(fixture.sync);
+      let starts = 0;
+      const drained = Promise.withResolvers<void>();
+      const jobSpy = spyOn(fixture.sync, "job").mockImplementation(<Input>(options: Parameters<typeof fixture.sync.job>[0]) => {
+        const job = declare<Input>(options);
+        const process = job.process.bind(job);
+        spyOn(job, "process").mockImplementation(async (options, handler) => {
+          starts += 1;
+          const worker = await process(options, handler);
+          if (starts === 1) {
+            const drain = worker.drain.bind(worker);
+            spyOn(worker, "drain").mockImplementationOnce(async () => {
+              await drain();
+              drained.resolve();
+              if (failure === "drain") throw new Error("Synthetic drain failure");
+            });
+          }
+          return worker;
+        });
+        return job;
+      });
+      const expire = spyOn(store, "expireWorkflowAiTasks").mockResolvedValue(undefined);
+      const pending = spyOn(store, "listRecoverableWorkflowAiTaskIds").mockResolvedValue([]);
+      const timer = spyOn(globalThis, "setInterval");
+      const log = spyOn(console, "error").mockImplementation(() => {});
+      bindProcessSync(fixture.sync);
+      try {
+        await startWorkflowAiRuntime();
+        if (failure === "recovery") {
+          const interval = timer.mock.calls.at(-1);
+          expect(interval?.[1]).toBe(10_000);
+          const tick = interval?.[0];
+          if (typeof tick !== "function") throw new Error("Missing recovery timer");
+          const failed = Promise.withResolvers<void>();
+          expire.mockImplementationOnce(() => failed.promise);
+          tick();
+          const stopping = stopWorkflowAiRuntime();
+          await drained.promise;
+          await Promise.resolve();
+          failed.reject(new Error("Synthetic recovery failure"));
+          await stopping;
+          expect(log).toHaveBeenCalledWith("Workflow AI recovery failed", expect.any(Error));
+        } else {
+          await expect(stopWorkflowAiRuntime()).rejects.toThrow("Synthetic drain failure");
+        }
+        await startWorkflowAiRuntime();
+        expect(starts).toBe(2);
+        await stopWorkflowAiRuntime();
+      } finally {
+        await stopWorkflowAiRuntime();
+        unbindProcessSync();
+        expire.mockRestore();
+        pending.mockRestore();
+        timer.mockRestore();
+        log.mockRestore();
+        jobSpy.mockRestore();
+        await fixture.close();
+      }
+    });
 });

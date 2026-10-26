@@ -203,3 +203,29 @@ test("continuous SSE keepalive chunks do not extend the absolute inference deadl
     cancel.mockRestore();
   }
 });
+
+test("shutdown before claim returns does not start another provider call", async () => {
+  const claim = spyOn(store, "claimWorkflowAiTask").mockResolvedValue(task);
+  const cancel = spyOn(store, "workflowAiTaskCancellationRequested").mockResolvedValue(false);
+  let calls = 0;
+  try {
+    await expect(
+      processWorkflowAiTask(
+        task.id,
+        { signal: AbortSignal.abort(), heartbeat: async () => {} },
+        {
+          maxAttempts: 3,
+          cancelPollMs: 500,
+          runStructured: async () => {
+            calls += 1;
+            throw new Error("must not call");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: "WORKFLOW_AI_INTERRUPTED", retryable: true });
+    expect(calls).toBe(0);
+  } finally {
+    claim.mockRestore();
+    cancel.mockRestore();
+  }
+});

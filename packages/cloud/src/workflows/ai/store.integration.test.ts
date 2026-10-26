@@ -1,10 +1,12 @@
-import { expect } from "bun:test";
+import { expect, spyOn } from "bun:test";
 import { StructuredOutputError } from "@k2b/nessi";
 import { sql } from "bun";
 import type { z } from "zod";
 import { databaseSuite, testFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrate as migrateWorkflows } from "../../../../core/src/migrate/core/workflows";
+import { openSync } from "../../../test/integration/sync-contracts/harness";
 import { createWorkflowIntegrationFixture } from "../../../test/workflows/integration-fixture";
+import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "../../ai";
 import type { WorkflowBoundPlan } from "../contracts";
 import { hashWorkflowJson } from "../language/canonical";
@@ -12,7 +14,14 @@ import { defineWorkflowModule } from "../module";
 import { createWorkflow, publishWorkflowVersion } from "../store/definitions";
 import { emitWorkflowEvent } from "../store/events";
 import { requestWorkflowRunCancel } from "../store/runs";
-import { processWorkflowAiTask, settleWorkflowAiAttemptFailure } from "./runtime";
+import {
+  processWorkflowAiTask,
+  settleWorkflowAiAttemptFailure,
+  startWorkflowAiRuntime,
+  stopWorkflowAiRuntime,
+  submitWorkflowAiTask,
+} from "./runtime";
+import * as aiStore from "./store";
 import {
   claimWorkflowAiTask,
   completeWorkflowAiTask,
@@ -492,5 +501,57 @@ test("global admission reserves at most four outstanding tasks across mailboxes"
     await expect(scopedTask(await createRun())).rejects.toMatchObject({ code: "WORKFLOW_AI_CAPACITY" });
   } finally {
     for (const id of tasks) await succeed(id);
+  }
+});
+
+test("failed logical inference releases its source slot while daily and rate accounting remain", async () => {
+  await ready();
+  const run = await createRun();
+  const first = await scopedTask(run, { prompt: "Classify" });
+  await succeed(first.task.id);
+  const failed = await scopedTask(await createRun(run), { prompt: "Extract" });
+  await failWorkflowAiTask(failed.task.id, { code: "WORKFLOW_AI_TIMEOUT", message: "Synthetic failure" });
+  const retry = await scopedTask(await createRun(run), { prompt: "Extract" });
+  expect(retry.task.status).toBe("queued");
+  await succeed(retry.task.id);
+  const [ledger] =
+    await sql`SELECT count(*)::int AS admissions, count(DISTINCT logical_key)::int AS logical FROM ai.workflow_scope_admission WHERE scope_id = ${run.scopeId}`;
+  expect(ledger).toMatchObject({ admissions: 3, logical: 2 });
+  await expect(scopedTask(await createRun(run), { prompt: "Third step" })).rejects.toMatchObject({ code: "WORKFLOW_AI_SOURCE_BUDGET" });
+});
+
+testFor("database", "nats")("shutdown drains an interrupted attempt into queued before returning", async () => {
+  await ready();
+  const run = await createRun();
+  const created = await createWorkflowAiTask({
+    runId: run.runId,
+    stepKey: "shutdown",
+    effectKey: `workflow:${run.runId}:shutdown`,
+    request: { kind: "classify", prompt: "Choose", input: "hello", choices: ["a", "b"] },
+    modelProfileId: "model",
+  });
+  const fixture = await openSync("workflow-ai-shutdown");
+  const pending = spyOn(aiStore, "listRecoverableWorkflowAiTaskIds").mockResolvedValue([]);
+  const entered = Promise.withResolvers<void>();
+  let providerSignal: AbortSignal | undefined;
+  bindProcessSync(fixture.sync);
+  try {
+    await startWorkflowAiRuntime({
+      runStructured: async ({ signal }) => {
+        providerSignal = signal;
+        entered.resolve();
+        return new Promise(() => {});
+      },
+    });
+    await submitWorkflowAiTask(created.task.id);
+    await entered.promise;
+    await stopWorkflowAiRuntime();
+    expect(providerSignal?.aborted).toBe(true);
+    expect(await getWorkflowAiTask(created.task.id)).toMatchObject({ status: "queued", errorCode: null });
+  } finally {
+    await stopWorkflowAiRuntime();
+    unbindProcessSync();
+    pending.mockRestore();
+    await fixture.close();
   }
 });

@@ -483,7 +483,9 @@ the failed Mail messages. No automatic classification is inferred from a failure
 
 The `cloud.workflow-ai.v2` job rejects new work when full. Submission failures
 become `WORKFLOW_AI_QUEUE_FULL` or `WORKFLOW_AI_SUBMISSION_FAILED`, with a retry
-path after capacity or connectivity recovers. Postgres remains authoritative.
+path after capacity or connectivity recovers. Postgres remains authoritative. Runtime shutdown aborts local attempts and awaits
+the existing Sync drain budget while their handlers persist requeue/cancellation,
+so a normal restart can resume them.
 
 The complete durable task request must fit 100,000 UTF-8 bytes, including prompt,
 choices or field schema, and JSONB formatting. Validation checks both the compact
@@ -517,18 +519,26 @@ before persistence can still incur another call: this remains at least once.
 
 Mail reserves new inference against `WORKFLOW_AI_BUDGET`, independently of
 per-run effect caps and the installation's existing priced background budget.
-The pilot defaults are two new logical tasks per message in a rolling 24 hours,
+The pilot defaults are two active or successful logical requests per message in a rolling 24 hours,
 10 tasks per minute per mailbox with burst 20, 2,000 distinct messages per
 mailbox in rolling 24 hours, one outstanding task per mailbox and four globally.
 Retries and structured repairs belong to their existing logical task; provider
 usage accounting records their actual calls. Cache hits consume no new mailbox
-admission. Deliberate recomputation consumes the same budget as new inference.
+admission. Deliberate recomputation consumes a fresh logical slot. A failed or
+canceled task releases its logical slot atomically, so a later retry can recover;
+its minute-rate admission and distinct-source daily accounting remain charged.
+
+Scheduled and manual Mail runs without a durable source message use their run
+identity as source/revision within the same mailbox budget. They keep their
+previous inference behavior and do not share results across unrelated runs.
 
 Capacity includes queued work: reservation happens before publishing, so there
 is no unbounded task waiting list. `WORKFLOW_AI_CAPACITY` and
 `WORKFLOW_AI_RATE_LIMIT` defer through the existing bounded workflow step retry
 policy (exponential backoff, at most eight consecutive failures). Exhaustion
-leaves a visible failed run. `WORKFLOW_AI_SOURCE_BUDGET` and
+leaves a visible failed run with the last AI admission code and
+`details.retryExhausted: true`. Large backfills can need another explicit retry
+after capacity recovers. `WORKFLOW_AI_SOURCE_BUDGET` and
 `WORKFLOW_AI_DAILY_BUDGET` fail permanently. Inspect the original mail manually,
 or retry failed messages after the applicable budget or capacity recovers. Rejected work does not consume admission tokens or a message slot.
 These technical failures do not produce an automatic classification or route

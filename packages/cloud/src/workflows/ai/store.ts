@@ -148,7 +148,7 @@ export const migrateWorkflowAi = async (db: SQL = sql): Promise<void> => {
     );
     CREATE TABLE IF NOT EXISTS ai.workflow_scope_admission (
       app_id TEXT NOT NULL, scope_id TEXT NOT NULL, source_id TEXT NOT NULL,
-      task_id UUID NOT NULL PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      task_id UUID NOT NULL PRIMARY KEY, logical_key TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS idx_ai_workflow_scope_admission ON ai.workflow_scope_admission(app_id, scope_id, created_at, source_id)
   `.simple();
@@ -241,7 +241,7 @@ export const createWorkflowAiTask = async (
   `;
     if (rows[0]) {
       if (input.scope && !cached)
-        await db`INSERT INTO ai.workflow_scope_admission(app_id, scope_id, source_id, task_id) VALUES (${run.app_id}, ${run.scope_id}, ${input.scope.sourceId}, ${rows[0].id}::uuid)`;
+        await db`INSERT INTO ai.workflow_scope_admission(app_id, scope_id, source_id, task_id, logical_key) VALUES (${run.app_id}, ${run.scope_id}, ${input.scope.sourceId}, ${rows[0].id}::uuid, ${input.scope.recompute ? rows[0].id : cacheKey})`;
       return { task: taskFromRow(rows[0]), created: true };
     }
     const existing = await getWorkflowAiTaskByEffectKey(input.effectKey, db);
@@ -299,7 +299,8 @@ export const wakeWorkflowAiTask = async (task: Pick<WorkflowAiTask, "appId" | "i
 };
 
 export const markWorkflowAiTaskCanceledIfRequested = async (id: string, db: SQL = sql): Promise<WorkflowAiTask | null> => {
-  const rows = await db<WorkflowAiTaskRow[]>`
+  const rows = await withTransaction(db, async (db) => {
+    const rows = await db<WorkflowAiTaskRow[]>`
     UPDATE ai.workflow_task AS task
     SET status = 'canceled',
         output = NULL,
@@ -316,6 +317,9 @@ export const markWorkflowAiTaskCanceledIfRequested = async (id: string, db: SQL 
       AND task.status IN ('queued', 'running')
     RETURNING ${db.unsafe(TASK_COLUMNS)}
   `;
+    if (rows[0]) await db`UPDATE ai.workflow_scope_admission SET logical_key = NULL WHERE task_id = ${id}::uuid`;
+    return rows;
+  });
   const task = rows[0] ? taskFromRow(rows[0]) : null;
   if (task) await wakeWorkflowAiTask(task);
   return task;
@@ -359,7 +363,8 @@ export const failWorkflowAiTask = async (
   error: { code: string; message: string },
   db: SQL = sql,
 ): Promise<WorkflowAiTask | null> => {
-  const rows = await db<WorkflowAiTaskRow[]>`
+  const rows = await withTransaction(db, async (db) => {
+    const rows = await db<WorkflowAiTaskRow[]>`
     UPDATE ai.workflow_task AS task
     SET status = 'failed',
         output = NULL,
@@ -376,6 +381,9 @@ export const failWorkflowAiTask = async (
       AND task.status IN ('queued', 'running')
     RETURNING ${db.unsafe(TASK_COLUMNS)}
   `;
+    if (rows[0]) await db`UPDATE ai.workflow_scope_admission SET logical_key = NULL WHERE task_id = ${id}::uuid`;
+    return rows;
+  });
   const task = rows[0] ? taskFromRow(rows[0]) : null;
   if (task) {
     await wakeWorkflowAiTask(task);
@@ -390,7 +398,8 @@ export const heartbeatWorkflowAiTask = async (id: string, db: SQL = sql): Promis
 };
 
 export const expireWorkflowAiTasks = async (queueTimeoutMs: number, db: SQL = sql): Promise<void> => {
-  const rows = await db<{ id: string; app_id: string }[]>`
+  const rows = await withTransaction(db, async (db) => {
+    const rows = await db<{ id: string; app_id: string }[]>`
     UPDATE ai.workflow_task AS task
     SET status = CASE WHEN run.cancel_requested_at IS NOT NULL OR run.state = 'canceled' THEN 'canceled' ELSE 'failed' END,
         completed_at = now(), updated_at = now(),
@@ -408,6 +417,9 @@ export const expireWorkflowAiTasks = async (queueTimeoutMs: number, db: SQL = sq
     )
     RETURNING task.id::text, task.app_id
   `;
+    for (const row of rows) await db`UPDATE ai.workflow_scope_admission SET logical_key = NULL WHERE task_id = ${row.id}::uuid`;
+    return rows;
+  });
   for (const row of rows) await wakeWorkflowAiTask({ id: row.id, appId: row.app_id });
   // A crash between terminal persistence and the wake must also be repaired.
   const waiting = await db<{ id: string; app_id: string }[]>`
@@ -418,6 +430,7 @@ export const expireWorkflowAiTasks = async (queueTimeoutMs: number, db: SQL = sq
       WHEN step.dependency ->> 'kind' = 'ai.workflow-task' THEN (step.dependency ->> 'key')::uuid END
       AND task.run_id = run.id
     WHERE step.state = 'waiting' AND run.state = 'waiting'
+      AND step.dependency ->> 'kind' = 'ai.workflow-task'
       AND task.status IN ('succeeded', 'failed', 'canceled')
     ORDER BY step.run_id, step.step_key LIMIT 100
   `;
@@ -432,7 +445,7 @@ const reserveWorkflowAiBudget = async (db: SQL, run: { app_id: string; scope_id:
   for (const value of Object.values(budget)) if (!Number.isSafeInteger(value) || value < 1) throw new Error("Invalid workflow AI budget.");
   await db`DELETE FROM ai.workflow_scope_admission WHERE app_id = ${run.app_id} AND scope_id = ${run.scope_id} AND created_at <= now() - interval '24 hours'`;
   const [counts] = await db<{ source_steps: number; sources: number; seen_source: boolean }[]>`
-    SELECT count(*) FILTER (WHERE source_id = ${scope.sourceId})::int AS source_steps,
+    SELECT count(DISTINCT logical_key) FILTER (WHERE source_id = ${scope.sourceId})::int AS source_steps,
       count(DISTINCT source_id)::int AS sources, bool_or(source_id = ${scope.sourceId}) AS seen_source
     FROM ai.workflow_scope_admission WHERE app_id = ${run.app_id} AND scope_id = ${run.scope_id}
   `;

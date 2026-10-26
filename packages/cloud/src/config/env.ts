@@ -90,7 +90,7 @@ const registry = defineEnv({
       })
       .pipe(budgetSchema),
     default: { maxStepsPerSource: 2, tasksPerMinute: 10, burst: 20, sourcesPer24Hours: 2_000, scopeConcurrent: 1, globalConcurrent: 4 },
-    doc: "JSON scoped workflow inference budget: logical tasks per message/24h, token-bucket admission per minute and burst, distinct messages per rolling 24h, outstanding tasks per mailbox and globally; capacity/rate overload uses bounded workflow retries, daily/source limits fail visibly, and cache hits consume no reservation.",
+    doc: "JSON scoped workflow inference budget: active or successful logical requests per source/24h, token-bucket admission per minute and burst, distinct sources per rolling 24h, outstanding tasks per scope and globally; capacity/rate overload uses bounded workflow retries, daily/source limits fail visibly, and cache hits consume no reservation.",
   },
 
   // Workflow inference: p95 ~4s in the pilot; 60s bounds a whole attempt,

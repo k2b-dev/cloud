@@ -184,10 +184,15 @@ export const runOneWorkflow = async (options: WorkflowWorkerOptions & { runId?: 
       const incompatible = await validateCurrentModule(claim, options.module);
       if (incompatible) return incompatible;
       if (claim.consecutiveFailures >= WORKFLOW_RUN_MAX_CONSECUTIVE_FAILURES) {
+        const [prior] = await db<{ code: string | null; message: string | null }[]>`
+          SELECT error ->> 'code' AS code, error ->> 'message' AS message FROM workflows.run WHERE id = ${claim.runId}::uuid
+        `;
+        const aiCode = prior?.code?.startsWith("WORKFLOW_AI_") ? prior.code : null;
         const error = {
-          code: "WORKFLOW_RETRY_EXHAUSTED",
-          message: `workflow failed ${claim.consecutiveFailures} consecutive attempts`,
+          code: aiCode ?? "WORKFLOW_RETRY_EXHAUSTED",
+          message: `${aiCode && prior?.message ? `${prior.message} ` : ""}Workflow failed ${claim.consecutiveFailures} consecutive attempts. Inspect the source or retry after capacity recovers.`,
           retryable: false,
+          ...(aiCode ? { details: { retryExhausted: true } } : {}),
         };
         await db`
           UPDATE workflows.step_outcome AS s

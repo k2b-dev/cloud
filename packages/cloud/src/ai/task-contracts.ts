@@ -90,7 +90,7 @@ export class AiTaskInputTooLargeError extends Error {
   readonly retryable = false;
   constructor() {
     super(
-      "AI input exceeds the 100,000-byte task budget. Narrow the supplied content or inspect the original message manually; nothing was truncated.",
+      "AI input exceeds the 100,000-byte task budget. Narrow the supplied content or inspect the original source manually; nothing was truncated.",
     );
   }
 }
