@@ -443,6 +443,8 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  personColor: "Documented person color for avatars, cursors and comments in Colors and selection (/en/ui/surfaces/color).",
+  PERSON_COLORS: "Documented person color palette in Colors and selection (/en/ui/surfaces/color).",
   MapAttribution: "Linked credits for OpenMapTiles maps; documented with the host tile and glyph setup on the MapView page.",
   mapAttribution: "Plain attribution data for custom map credits; documented on the MapView page.",
   mapStyle: "OpenMapTiles style builder requiring host tile and glyph templates; documented on the MapView page.",
