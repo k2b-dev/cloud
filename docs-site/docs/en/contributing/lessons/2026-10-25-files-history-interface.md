@@ -58,3 +58,10 @@ updated: 2026-10-25
 - **What goes wrong:** Name-only grouping combines homonyms, folder details omit child changes, a late lookup overrides navigation, or elapsed hours misplace local midnight.
 - **Guard:** Tests: Files `history-actions.test.ts` separates visible identities, `history-requests.test.ts` and `urls.test.ts` preserve folder scope, `history-ranges.test.ts` pins DST boundaries, and `history-workspace.behavior.test.tsx` covers child uploads and obsolete navigation results/errors. `files-ui.render.test.tsx` and the workspace behavior test keep moved notices exclusive of load errors.
 - **Evidence:** The focused tests named above.
+
+## Shared rows import the enclosing view
+
+- **Class:** Two composed views import each other's runtime components.
+- **What goes wrong:** The activity list and its search results form an import cycle by sharing row helpers through the enclosing view.
+- **Guard:** Shared history rows live in `history-rows.tsx`; the `cycles --apps` repository rule rejects runtime cycles. The existing history behavior and browser suites cover both consumers.
+- **Evidence:** The repository rule and focused suites named above.

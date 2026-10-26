@@ -13,7 +13,6 @@ import {
 } from "@k2b/ui";
 import { createMemo, For, type JSX, Match, Show, Switch } from "solid-js";
 import type { ActivityBatchContext, ActivityChain, ActivityEntry } from "../activity-contracts";
-import { HistoryAvatar, HistoryRow, MetaLine, MoreFooter, restoreFromTrash, Sentence, SkeletonRows, useRowAction } from "./ActivityView";
 import {
   actorOf,
   actorParts,
@@ -43,6 +42,7 @@ import {
   visible,
 } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
+import { HistoryAvatar, HistoryRow, MetaLine, MoreFooter, restoreFromTrash, Sentence, SkeletonRows, useRowAction } from "./history-rows";
 
 export type MissingItemViewProps = {
   query: string;
@@ -414,13 +414,8 @@ function MissingHit(props: {
     await props.actions.onMoveBack(lead(), point);
     toast.success(h().movedBack.replace("{name}", itemName()));
   };
-  const button = (action: RowAction, primary: boolean) => (
-    <Button
-      variant={primary ? "primary" : "secondary"}
-      loading={runner.pending()}
-      disabled={runner.pending()}
-      onClick={() => void runner.run(action)}
-    >
+  const button = (action: RowAction, variant: "primary" | "secondary") => (
+    <Button variant={variant} loading={runner.pending()} disabled={runner.pending()} onClick={() => void runner.run(action)}>
       <i class={action.icon} aria-hidden="true" />
       {action.label}
     </Button>
@@ -444,7 +439,7 @@ function MissingHit(props: {
                   )}
                 </Show>
                 <Show when={actions.onMoveBack && (!actions.loadRecovery || allowed()?.canMoveBack)}>
-                  {button({ label: t.moveBack, icon: "ti ti-arrow-back-up", run: moveBack }, false)}
+                  {button({ label: t.moveBack, icon: "ti ti-arrow-back-up", run: moveBack }, "secondary")}
                 </Show>
               </>
             )}
@@ -455,7 +450,7 @@ function MissingHit(props: {
         return (
           <>
             <Show when={actions.onRestoreTrash && (!actions.loadRecovery || allowed()?.trash?.canRestore)}>
-              {button({ label: t.restoreItem, icon: "ti ti-arrow-back-up", run: restore }, true)}
+              {button({ label: t.restoreItem, icon: "ti ti-arrow-back-up", run: restore }, "primary")}
             </Show>
             <Show when={actions.onShowTrash && allowed()?.trash}>
               {(trash) => (
@@ -474,7 +469,7 @@ function MissingHit(props: {
         return (
           <>
             <Show when={actions.onRecheck}>
-              {(recheck) => button({ label: t.recheck, icon: "ti ti-refresh", run: () => recheck()(lead()) }, true)}
+              {(recheck) => button({ label: t.recheck, icon: "ti ti-refresh", run: () => recheck()(lead()) }, "primary")}
             </Show>
             <Show when={actions.onOpenOldLocation && allowed()?.oldLocation}>
               {(place) => (

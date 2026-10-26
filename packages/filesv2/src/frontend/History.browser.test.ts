@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import {
   historyActivity,
   historyBase,
@@ -128,7 +128,19 @@ async function open(
 ) {
   const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: "reduce", hasTouch: touch });
   const tab = await context.newPage();
-  await tab.clock.setFixedTime(new Date(historyNow));
+  await tab.addInitScript((at) => {
+    const RealDate = Date;
+    class PinnedDate extends RealDate {
+      constructor(...args: ConstructorParameters<DateConstructor> | []) {
+        if (args.length === 0) super(at);
+        else super(...(args as ConstructorParameters<DateConstructor>));
+      }
+      static override now() {
+        return at;
+      }
+    }
+    globalThis.Date = PinnedDate as DateConstructor;
+  }, new Date(historyNow).getTime());
   const errors: string[] = [];
   tab.on("pageerror", (error) => errors.push(error.message));
   let fail = false;
@@ -662,6 +674,7 @@ for (const width of [1440, 390])
       const restore = tab.locator(".filesv2-history-section").getByRole("button", { name: "Wiederherstellen", exact: true });
       await restore.waitFor();
       await tab.mouse.move(0, 0);
+      await settled(tab);
       // Without hover or focus: the row's action is the reason the row is shown.
       expect(await restore.evaluate((button) => getComputedStyle(button.closest(".filesv2-history-row__action")!).opacity)).toBe("1");
       if (width === 390) {
@@ -689,7 +702,12 @@ test("phone activity keeps the menu beside the search and never leaves a dot at 
       () =>
         !document
           .getAnimations()
-          .some((animation) => animation.playState === "running" && animation.effect?.getTiming().iterations !== Infinity),
+          .some(
+            (animation) =>
+              animation.timeline === document.timeline &&
+              animation.playState === "running" &&
+              animation.effect?.getTiming().iterations !== Infinity,
+          ),
     );
     const chipsFit = await tab.locator(".filesv2-history-head__filters .k2b-filter-chip").evaluateAll((chips) =>
       chips.slice(0, 4).every((chip) => {
