@@ -95,7 +95,7 @@ describe("Files history components", () => {
   });
 
   test("activity version evidence retries, restores the exact saved content, and disappears for a new row", async () => {
-    const { HistoryRow } = await import("../src/frontend/ActivityView");
+    const { HistoryRow } = await import("../src/frontend/history-rows");
     const original = entry({ action: "file.overwrite", after: current("vertrieb/Proof.pdf", { directory: false }) });
     const [value, setValue] = createSignal(original);
     const requests: { signal: AbortSignal; reply: ReturnType<typeof deferred<ActivityVersion | null>> }[] = [];
@@ -586,7 +586,7 @@ describe("Files history components", () => {
     expect(dom.root.querySelector("[role='alert']")?.textContent).toBe("Der Link konnte nicht widerrufen werden.");
   });
   test("rows use the approved avatar sizes, a finding without a Cloud entry reads as a warning, and link figures stay flat", async () => {
-    const { HistoryAvatar } = await import("../src/frontend/ActivityView");
+    const { HistoryAvatar } = await import("../src/frontend/history-rows");
     const { default: ShareHistory, createShareAccess } = await import("../src/frontend/ShareHistory");
     const share = {
       id: "22222222-2222-4222-8222-222222222222",

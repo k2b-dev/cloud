@@ -16,7 +16,7 @@ describe("Files execution navigation and disclosure", () => {
     const dom = createDomTestHarness();
     cleanup = () => dom.cleanup();
     const { LocaleProvider } = await import("@k2b/ui");
-    const { HistoryRow } = await import("../src/frontend/ActivityView");
+    const { HistoryRow } = await import("../src/frontend/history-rows");
     const { executionUrl, historyExecutionHref } = await import("../src/frontend/execution-url");
     const value = entry({
       id: "30000000-0000-4000-8000-000000000003",
