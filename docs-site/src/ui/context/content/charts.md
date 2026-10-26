@@ -70,8 +70,9 @@ keyboard inspection and linked cursors follow the actual plot below the legend.
 
 ## Bar charts
 
-A bar chart labels every category; it never thins or drops labels. The layout
-follows from the data alone, so the server and the browser draw the same thing:
+A bar chart labels every category; it never thins or drops category labels.
+The layout follows from the data alone, so the server and the browser draw the
+same thing:
 
 - **Columns** when every label fits below its column in a 320px phone column.
   Values stand on the columns when they fit their slot.
@@ -81,6 +82,11 @@ follows from the data alone, so the server and the browser draw the same thing:
   as a title, in the tooltip, and in the table. Rows keep their pixel height:
   the drawing grows with the categories, and a box with a fixed height scrolls
   them. Give a bar chart a box that can grow when it may hold many categories.
+
+Set `xAxis={{ ordered: true }}` when the categories follow each other, such as
+days or steps. They stay columns in any number, and only every n-th label shows
+when they do not all fit, as on a time axis. The tooltip and the table keep
+every label.
 
 `xAxis.label` and `yAxis.label` title the categories and the value: above the
 rows, or above the value axis and below the categories of columns. Format the
@@ -161,7 +167,7 @@ Solid signal. Boolean options default to `false` unless stated otherwise.
 | --- | --- | --- |
 | `line` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`; `smooth=true`, `area=false`, `step?: "before" / "after" / "middle"` (overrides smoothing), `autoVariant=false`, `errorBand=false`. |
 | `scatter` | `series: Series[]` | `xAxis`, `yAxis`, `references`, `legend`, `autoVariant=false`, `trendline=false`; `sizeRange?: [number, number]`, default `[3, 12]`, applies only if a point has finite `size`. No `pointRadius` prop. UI markers have a fixed visual enlargement independent of plot width. |
-| `bar` | `data: { label: string; value: number }[]` | `xAxis?: { label?: string }` titles the categories; `yAxis` (its `label` names the value, its `format` writes ticks and values), `valueFormat?: (number) => string` for printed values and tooltips, `references`, `colorByBar=false`, `showValues` (default: when readable), `legend=false` (used only with `colorByBar` in columns), `displayWidth?: number`. Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. No grouped/stacked bar mode. See [Bar charts](#bar-charts). |
+| `bar` | `data: { label: string; value: number }[]` | `xAxis?: { label?: string; ordered?: boolean }` titles the categories, and `ordered` keeps days or steps in columns with sparse labels; `yAxis` (its `label` names the value, its `format` writes ticks and values), `valueFormat?: (number) => string` for printed values and tooltips, `references`, `colorByBar=false`, `showValues` (default: when readable), `legend=false` (used only with `colorByBar` in columns), `displayWidth?: number`. Negative values are supported; baseline includes zero. Items accept `colorIndex?: number` when `colorByBar` is enabled. No grouped/stacked bar mode. See [Bar charts](#bar-charts). |
 | `pie`, `donut` | `data: { label: string; value: number }[]` | `showLabels=false`, `legend=false`, `innerRadius?: number` (outer-radius fraction, clamped to 0–0.95; defaults: pie 0, donut 0.6). Items accept `colorIndex?: number`. Only positive finite values produce slices. Prefer a legend for many small slices. |
 | `sparkline` | `data: number[]` or `Point[]` | `smooth=true`, `area=false`, `showLast=false`, `showMinMax=false`. Numeric arrays use the original array index as X; points sort by X. |
 | `histogram` | `data: number[]` of observations | `bins?: number` (equal-width bin count) or `number[]` (ordered bin edges); omitted uses `ceil(log2(n)) + 1`. `xAxis`, `yAxis`, `references`. Supply at least two distinct finite edges. Bins exclude the upper boundary except for the last bin. |

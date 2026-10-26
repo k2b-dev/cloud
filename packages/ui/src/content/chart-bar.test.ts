@@ -45,6 +45,27 @@ describe("bar chart labels", () => {
     expect(svg.match(/data-chart-datum=/g)).toHaveLength(30);
   });
 
+  test("ordered categories stay columns and label every n-th day, as a time axis does", () => {
+    const data = Array.from({ length: 30 }, (_, index) => ({ label: `${index + 1}. Okt.`, value: (index * 7) % 11 }));
+    expect(draw({ data }).layout).toBe("rows");
+    const { layout, height, svg } = draw({ data, xAxis: { ordered: true } });
+    expect(layout).toBe("columns");
+    expect(height).toBe(280);
+    const labels = texts(svg, "stdlib-chart-category-label");
+    expect(labels[0]).toBe("1. Okt.");
+    expect(labels.length).toBeGreaterThan(2);
+    expect(labels.length).toBeLessThan(30);
+    // Evenly spaced: the shown labels are every n-th day.
+    const step = data.findIndex((item) => item.label === labels[1]);
+    expect(labels).toEqual(data.filter((_, index) => index % step === 0).map((item) => item.label));
+    // Neighboring labels never overlap on the narrowest chart, and every day stays inspectable.
+    const xs = [...svg.matchAll(/stdlib-chart-category-label" x="([\d.]+)"/g)].map((match) => Number(match[1]));
+    expect(chartTextWidth("30. Okt.") + 6).toBeLessThanOrEqual((xs[1]! - xs[0]!) / (480 / 296));
+    expect(svg.match(/data-chart-datum=/g)).toHaveLength(30);
+    // A few ordered columns that fit keep every label.
+    expect(texts(draw({ data: data.slice(0, 3), xAxis: { ordered: true } }).svg, "stdlib-chart-category-label")).toHaveLength(3);
+  });
+
   test("long labels wrap to two lines and keep their full text when shortened", () => {
     const long = "Genossenschaft der Obstbauern im nordwestlichen Küstenvorland";
     const { svg } = draw({

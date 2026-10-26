@@ -22,8 +22,12 @@ export type BarChartOptions = {
   data: BarItem[];
   /** Value axis. `label` titles it, `format` writes its ticks and, without `valueFormat`, the printed values. */
   yAxis?: AxisOptions;
-  /** Category axis. `label` titles it. */
-  xAxis?: { label?: string };
+  /**
+   * Category axis. `label` titles it. `ordered` marks categories that follow each other, such as days or steps: they
+   * stay columns, and only every n-th label shows when they would not fit, as on a time axis. Unordered categories each
+   * keep their label and turn into rows instead.
+   */
+  xAxis?: { label?: string; ordered?: boolean };
   /** Writes printed values and tooltip values. Defaults to `yAxis.format`. */
   valueFormat?: (value: number) => string;
   colorByBar?: boolean;
@@ -178,7 +182,7 @@ const barChartPlan = (opts: BarChartOptions, width = 480): Plan => {
   const finite = finiteItems(opts.data);
   const header = headerHeight(opts);
   if (!finite.length) return { layout: "columns", height: 280, finite, header };
-  if (columnsFit(opts, finite, width)) return { layout: "columns", height: 280, finite, header };
+  if (opts.xAxis?.ordered || columnsFit(opts, finite, width)) return { layout: "columns", height: 280, finite, header };
   const rows = rowGeometry(opts, finite, width, header);
   return { layout: "rows", height: rows.height, finite, header };
 };
@@ -323,11 +327,15 @@ const renderColumns = (opts: BarChartOptions, plan: Plan, width: number, height:
   const slot = (g.x1 - g.x0) / finite.length;
   const barWidth = Math.min(slot * 0.8, COLUMN_MAX);
   const labelY = g.y1 + 16;
+  // Unordered columns fit every label (see columnsFit); ordered ones label every n-th column that leaves room.
+  const labelPx = Math.max(...finite.map(({ item }) => chartTextWidth(item.label))) + GAP_PX;
+  const labelStep = Math.max(1, Math.ceil(labelPx / (slot / units)));
   finite.forEach(({ item, index }, position) => {
     const center = g.x0 + slot * (position + 0.5);
-    parts.push(
-      `<text class="stdlib-chart-tick-label stdlib-chart-category-label" x="${fmt(center)}" y="${fmt(labelY)}" text-anchor="middle">${escapeXml(item.label)}</text>`,
-    );
+    if (position % labelStep === 0)
+      parts.push(
+        `<text class="stdlib-chart-tick-label stdlib-chart-category-label" x="${fmt(center)}" y="${fmt(labelY)}" text-anchor="middle">${escapeXml(item.label)}</text>`,
+      );
     if (g.scale.log && item.value <= 0) return;
     const valueY = y(item.value);
     const top = Math.min(valueY, baseline);
