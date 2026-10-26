@@ -37,3 +37,10 @@ updated: 2026-10-25
 - **What goes wrong:** An administrator's local archive event disappears because its recorded path lies outside the binding's former home.
 - **Guard:** Files `service/activity-reader.test.ts` and `service/activity-reader.integration.test.ts` preserve administrator snapshots for archived local bindings while ordinary readers require a current active grant.
 - **Evidence:** The focused tests named above.
+
+## A missing actor name becomes an identifier
+
+- **Class:** A human history label falls back to a principal ID.
+- **What goes wrong:** A deleted or unnamed actor appears as a UUID in CLI text.
+- **Guard:** Files `activity-transports.test.ts` checks English and German unknown-person labels through the CLI table projection; the `principal-id-labels` rule also rejects identifier fallbacks.
+- **Evidence:** The focused test and repository rule named above.
