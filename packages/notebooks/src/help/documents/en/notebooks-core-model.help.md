@@ -27,10 +27,10 @@ A notebook is a shared workspace. A note is a Markdown source document in it. Na
 :::reference
 - **Write:** Edit the Markdown together with others.
 - **Read-only:** Keep the workspace and the detail panel, without editing the note text.
-- **Book:** Read the note as a web page with navigation and tag filters. Book has no editor and no discussion panel.
+- **Book:** Read the note as a web page with navigation and tag filters. Book has no editor, no discussion panel and no comments on the text.
 :::
 
-**View** access always opens Book. With **Edit** or **Manage** access, you can switch views. People with **Manage** access choose the shared default view in the settings. A view in the URL comes before the default. Locked notes open in **Read-only** instead of **Write**. In **Book**, **Write** at the top of the navigation opens the note for editing. People with **Edit** or **Manage** access see it.
+**View** access opens Book. To read comments on the text, open **Read-only**. With **Edit** or **Manage** access, you can switch to every view. People with **Manage** access choose the shared default view in the settings. A view in the URL comes before the default. Locked notes open in **Read-only** instead of **Write**. In **Book**, **Write** at the top of the navigation opens the note for editing. People with **Edit** or **Manage** access see it.
 
 **Links** at the bottom of the navigation opens the graph in every view, also with **View** access.
 
