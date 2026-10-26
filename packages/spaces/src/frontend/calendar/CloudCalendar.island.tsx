@@ -204,7 +204,9 @@ export default function CloudCalendar(props: CloudCalendarProps) {
         return;
       }
     }
-    await readAll(unread, true);
+    // Fixed now: marking them as loading takes them out of what is unread.
+    const keys = unread();
+    await readAll(() => keys, true);
   };
   const retryCatalog = async () => {
     setCatalogRetrying(true);
