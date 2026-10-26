@@ -217,7 +217,9 @@ beforeAll(async () => {
         socket.send(
           JSON.stringify({ type: notebooksYjs.wsType.syncPush, payload: { noteId: "note01", historyIncomplete: false, updates } }),
         );
-        socket.send(JSON.stringify({ type: notebooksYjs.wsType.replayReady, payload: { noteId: "note01", cursor: null, restoreRevision: "0" } }));
+        socket.send(
+          JSON.stringify({ type: notebooksYjs.wsType.replayReady, payload: { noteId: "note01", cursor: null, restoreRevision: "0" } }),
+        );
       },
       message() {},
     },
