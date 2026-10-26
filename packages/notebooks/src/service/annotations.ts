@@ -5,7 +5,7 @@ import { SHARED_TEXT_NAME } from "@k2b/cloud/shared-text";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import { SQL, sql, type TransactionSQL } from "bun";
 import * as Y from "yjs";
-import type { z } from "zod";
+import { z } from "zod";
 import {
   absoluteAnnotationPosition,
   annotationContext,
@@ -309,6 +309,7 @@ const projectRoot = async (
   };
 };
 type Cursor = { at: string; id: string };
+const CursorTimeSchema = z.iso.datetime({ offset: true });
 const encodeCursor = (row: { cursor_at: string; id: string }) =>
   Buffer.from(JSON.stringify({ at: row.cursor_at, id: row.id })).toString("base64url");
 const decodeCursor = (value: string | undefined): Cursor | null => {
@@ -320,7 +321,7 @@ const decodeCursor = (value: string | undefined): Cursor | null => {
       cursor !== null &&
       "at" in cursor &&
       typeof cursor.at === "string" &&
-      Number.isFinite(Date.parse(cursor.at)) &&
+      CursorTimeSchema.safeParse(cursor.at.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00")).success &&
       "id" in cursor &&
       AnnotationIdSchema.safeParse(cursor.id).success
     )

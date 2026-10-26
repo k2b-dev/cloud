@@ -389,6 +389,8 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
       if (!result.ok) throw new Error(result.error.message);
       ids.push(result.data.id);
     }
+    const invalidCursor = Buffer.from(JSON.stringify({ at: "0", id: ids[0] })).toString("base64url");
+    expect(await annotations.list(note.shortId, { cursor: invalidCursor }, writer)).toMatchObject({ ok: false, error: { status: 400 } });
     const seen: string[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < 5; page++) {
