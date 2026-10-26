@@ -11,8 +11,8 @@ import type {
   ShareAccessPeriod,
 } from "../src/activity-contracts";
 import type { ShareView } from "../src/contracts";
-import type { ActivityFilters, ActivityRequest } from "../src/frontend/ActivityView";
 import type { ActivityVersion, HistoryActions, RestoreOutcome } from "../src/frontend/history-actions";
+import type { ActivityFilters, ActivityRequest } from "../src/frontend/history-requests";
 import type { ShareAccessRequest } from "../src/frontend/ShareHistory";
 import type { ActivityRecovery } from "../src/service/activity-actions";
 import { chain, current, entry, env, gone, hidden, page } from "./history-fixtures";

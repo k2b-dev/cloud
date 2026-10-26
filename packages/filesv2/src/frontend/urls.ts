@@ -1,7 +1,7 @@
 import { HistoryAction } from "../activity-contracts";
 import type { BrowseOptions } from "../contracts";
 import { parseStableEntryRefId } from "../resource-ref";
-import type { ActivityFilters, ActivityWhen } from "./ActivityView";
+import type { ActivityFilters, ActivityWhen } from "./history-requests";
 export function filesUrl(
   baseId?: string,
   path = "",

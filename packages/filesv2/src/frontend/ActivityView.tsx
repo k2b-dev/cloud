@@ -1,29 +1,15 @@
-import { startOfDay } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import { Button, Dropdown, FilterChip, Placeholder, Skeleton, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
-import type { ActivityBatchContext, ActivityChain, ActivityEntry, ActivityInput, ActivityPage, HistoryAction } from "../activity-contracts";
+import type { ActivityBatchContext, ActivityChain, ActivityEntry, ActivityPage, HistoryAction } from "../activity-contracts";
 import HistoryUnavailable, { isHistoryUnavailable } from "./HistoryUnavailable";
 import { dayGroups, type HistoryActions, type HistoryEnvironment, historyRows } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
+import { type ActivityFilters, type ActivityRequest, type ActivityWhen, activityRequest } from "./history-requests";
 import { HistoryRow, MoreFooter, SkeletonRows } from "./history-rows";
 import MissingItemView from "./MissingItemView";
 
 /* ------------------------------------------------------------------ activity view */
-
-export type ActivityWhen = "today" | "7" | "30" | "365";
-/** URL state of the Activity view; the parent keeps it in the address so reload and back restore it. */
-export type ActivityFilters = {
-  baseId?: string;
-  /** A base-relative item or folder path; "All in Activity" preserves its scope. */
-  path?: string;
-  scope?: ActivityInput["scope"];
-  actor?: string;
-  action?: HistoryAction;
-  when?: ActivityWhen;
-  q?: string;
-};
-export type ActivityRequest = Omit<ActivityInput, "itemId" | "limit">;
 
 const WHAT: readonly HistoryAction[] = [
   "folder.create",
@@ -42,25 +28,6 @@ const WHAT: readonly HistoryAction[] = [
   "item.differs",
   "item.missing",
 ];
-const DAYS: Record<ActivityWhen, number> = { today: 0, "7": 7, "30": 30, "365": 365 };
-
-/** Start of the range in the request's zone. "Today" starts at local midnight. */
-export function rangeStart(when: ActivityWhen, env: HistoryEnvironment): string {
-  const now = new Date(env.now);
-  if (when !== "today") return new Date(now.getTime() - DAYS[when] * 86_400_000).toISOString();
-  return startOfDay(now, { timeZone: env.timeZone }).toISOString();
-}
-
-export function activityRequest(filters: ActivityFilters, env: HistoryEnvironment): ActivityRequest {
-  return {
-    ...(filters.baseId ? { baseId: filters.baseId } : {}),
-    ...(filters.baseId && filters.path !== undefined ? { path: filters.path, scope: filters.scope ?? "item" } : {}),
-    ...(filters.actor ? { actor: filters.actor } : {}),
-    ...(filters.action ? { action: filters.action } : {}),
-    ...(filters.when ? { from: rangeStart(filters.when, env) } : {}),
-    ...(filters.q ? { q: filters.q } : {}),
-  };
-}
 const filterKey = (filters: ActivityFilters) =>
   JSON.stringify([
     filters.baseId ?? null,

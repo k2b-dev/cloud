@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { activityRequest, rangeStart } from "./ActivityView";
+import { activityRequest, rangeStart } from "./history-requests";
 
 test.each([
   ["2026-10-25T12:30:00.123Z", "Europe/Berlin", "2026-10-24T22:00:00.000Z"],

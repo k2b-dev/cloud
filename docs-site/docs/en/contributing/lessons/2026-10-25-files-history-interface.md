@@ -65,3 +65,10 @@ updated: 2026-10-25
 - **What goes wrong:** The activity list and its search results form an import cycle by sharing row helpers through the enclosing view.
 - **Guard:** Shared history rows live in `history-rows.tsx`; the `cycles --apps` repository rule rejects runtime cycles. The existing history behavior and browser suites cover both consumers.
 - **Evidence:** The repository rule and focused suites named above.
+
+## Pure request logic imports JSX
+
+- **Class:** A pure request helper is owned by a component module.
+- **What goes wrong:** A unit test or server caller loads the whole view and requires a JSX runtime even though it only needs filters and dates.
+- **Guard:** Shared activity request types, date ranges, and request construction live in `history-requests.ts`. The existing fixed-date `history-ranges.test.ts` exercises that module without importing a component.
+- **Evidence:** Files package and integration runners both execute the range tests.

@@ -2,10 +2,9 @@ import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
 import { type EntryResult, ErrorSchema, type FileEntry, type ShareView } from "../contracts";
 import { stableEntryRefId } from "../resource-ref";
-import type { ActivityRequest } from "./ActivityView";
 import { apiFailure } from "./file-preview";
 import type { HistoryTarget, RestoreOutcome } from "./history-actions";
-import type { ItemHistoryRequest } from "./history-requests";
+import type { ActivityRequest, ItemHistoryRequest } from "./history-requests";
 import type { ShareAccessRequest } from "./ShareHistory";
 import { filesUrl } from "./urls";
 
