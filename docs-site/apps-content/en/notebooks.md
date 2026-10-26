@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-24
+updated: 2026-10-26
 ---
 
 # Notebooks
@@ -395,6 +395,47 @@ Notebooks owns notes, hierarchy, attachments, realtime document state, search,
 exports, and snapshots. Cloud supplies identity, resource access,
 resource-bound API keys, settings, background schedules, dashboard widgets,
 application discovery, and the shared Help surface.
+
+### Automate passage comments
+
+`notebooks.annotation` identifies an inline comment thread owned by Notebooks.
+`annotation.list` and `annotation.read` return anchored source offsets, quoted
+text, status, replies, current author permissions, and `headingPath`.
+`annotation.replies` continues a thread's `repliesNextCursor`. Lists include
+resolved and accepted comments and omit deleted comments. Follow `nextCursor`
+(or the capability envelope's `page.nextCursor`); pages contain at most 30
+roots or replies and may be shorter to fit the response budget.
+
+Use `annotation.create`, `annotation.reply`, `annotation.edit`,
+`annotation.delete`, `annotation.restore`, and `annotation.resolve`
+(`resolved: false` reopens) with write access. Agents and service accounts use
+the same grants as people. Editing, deleting, and restoring require the author
+and the original ten-minute window; a root with replies cannot be deleted.
+Create and reply require `Idempotency-Key`; changing the payload under a used
+key returns 409. `via` comes from the platform's Assistant or MCP origin and
+cannot be supplied by the caller.
+
+`annotation.accept` and `annotation.undo-accept` require an unlocked note and
+a caller-stable `operationId` UUID. Retry that ID after an uncertain result.
+Accept compares the live passage against `expectedText` (the quote by default);
+undo compares the accepted text before restoring only that range. A conflict
+returns 409 with `details.currentText` and `details.operationId`. Conflict text
+is capped at 2,000 UTF-16 characters; longer passages also return
+`details.currentTextTruncated: true` and `details.currentTextLength`. Select a
+smaller passage to make a new suggestion.
+
+REST uses `/api/notebooks/notes/:noteId/annotations`. Its list returns
+`{ text, contentHash, cursor, restoreRevision, items, nextCursor }`; offsets
+refer to exactly that Markdown snapshot. Capability lists omit `text`; compare
+`contentHash` with `note.read` before using the offsets. A deleted passage
+remains an orphan unless its exact surrounding context can be recovered
+unambiguously nearby. Quotes and suggestions allow 2,000 UTF-16 characters,
+context 32 on each side, and comment/reply text 5,000.
+
+The CLI offers `cld notebooks annotations list|add|reply|edit|delete|restore|resolve|reopen|accept|undo`.
+Run `cld notebooks annotations --help` for flags and use the bundled
+`annotations.md` CLI reference for retry IDs and reply pagination. Creating a comment records an
+`annotation.create` activity row; replies do not create activity rows.
 
 ## Find detailed product help
 
