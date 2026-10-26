@@ -1,14 +1,4 @@
----
-title: Deterministic test baselines
-navTitle: Test baselines
-section: Contributing
-order: 1307
-description: Compare test findings independently of directory order and pin database timestamp fixtures before writes.
-tags: [contributing, testing, quality]
-updated: 2026-10-25
----
-
-# Deterministic test baselines
+### Deterministic test baselines
 
 - **What happened:** The module-mocks tests passed locally but failed in CI when findings arrived in another directory order. An integration test's timestamp comparison also obscured a response mismatch.
 - **Root cause:** The guard fixture compared an unordered collection as an ordered list. The integration fixture checked timestamps before responses, used outdated expected responses, and did not control the starting timestamp.
