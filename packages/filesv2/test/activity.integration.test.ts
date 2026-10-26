@@ -183,7 +183,7 @@ suite("Files activity with real storage", () => {
       publicOrigin: async () => "https://cloud.test",
       userById: async () => null,
       transfer: fetch,
-      connect: connectFilegate,
+      connect: (config, signal) => connectFilegate(config, undefined, signal),
     });
   });
   beforeEach(async () => {
@@ -723,7 +723,7 @@ suite("Files activity with real storage", () => {
       publicOrigin: async () => "https://cloud.test",
       userById: async () => null,
       transfer: fetch,
-      connect: connectFilegate,
+      connect: (config, signal) => connectFilegate(config, undefined, signal),
     };
   }
   function guardedTransport() {
