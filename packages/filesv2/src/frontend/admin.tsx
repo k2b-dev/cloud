@@ -5,11 +5,11 @@ import { FilegateError } from "@k2b/filegate";
 import { ssr } from "../config";
 import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
-import { activityRequest } from "./ActivityView";
 import AdminWorkspace from "./AdminWorkspace.island";
 import { adminActivityHref, loadAdminBaseLabels, parseAdminActivityFilters } from "./admin-history";
 import { AdminLocationSchema, type AdminSnapshot, adminHref } from "./admin-location";
 import { adminMessages } from "./admin-messages";
+import { activityRequest } from "./history-requests";
 import { filesMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {

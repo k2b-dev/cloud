@@ -8,7 +8,6 @@ import {
   type ActivitySide,
 } from "../activity-contracts";
 import { ActivityExportError, ActivityExportInput, exportWindow } from "../activity-export-contracts";
-import type { ActivityFilters, ActivityWhen } from "./ActivityView";
 import type { AdminHistoryMessages } from "./admin-history-messages";
 import {
   actorOf,
@@ -21,6 +20,7 @@ import {
   viaLabel,
 } from "./history-actions";
 import type { HistoryMessages } from "./history-messages";
+import type { ActivityFilters, ActivityWhen } from "./history-requests";
 import { parseActivityFilters } from "./urls";
 
 /*
