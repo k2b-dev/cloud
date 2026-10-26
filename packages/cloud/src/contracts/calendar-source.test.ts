@@ -160,6 +160,7 @@ test("range, limit, dates, deadlines and write inputs enforce the calendar contr
   expect(calendar.CalendarEventTimeSchema.safeParse({ kind: "date", start: "2026-01-01", end: "2026-01-01" }).success).toBe(false);
   expect(calendar.CalendarDueTimeSchema.safeParse({ kind: "date", date: "2026-02-30" }).success).toBe(false);
   expect(calendar.CalendarDueTimeSchema.safeParse({ kind: "instant", at: input.from, timeZone: "Europe/Berlin" }).success).toBe(true);
+  expect(calendar.CalendarDueTimeSchema.safeParse({ kind: "instant", at: input.from, timeZone: "+01:00" }).success).toBe(false);
   const write = { calendarId: "a", id: "i", version: "v" };
   expect(calendar.CalendarMoveInputSchema.safeParse(write).success).toBe(false);
   const time = { kind: "date", start: "2026-01-01", end: "2026-01-02" };
