@@ -160,6 +160,10 @@ export const update = async (params: { id: string; description: string }): Promi
   return { ok: true, data: undefined };
 };
 
+/**
+ * Deletes a local group; foreign keys remove its memberships, nesting and grants.
+ * Refuses an account's personal Linux group, which retires only with its account.
+ */
 export const remove = async (params: { id: string }): Promise<MutationResult<void>> => {
   const group = await getLocalGroupById(params.id);
   if (!group) return { ok: false, error: "Group not found", status: 404 };
