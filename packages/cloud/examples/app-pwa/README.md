@@ -145,6 +145,13 @@ Cloud service operation and has no cross-app credential.
 
 ## Verification
 
+Inside the Cloud checkout, `tsconfig.json` maps the example's public Cloud
+entry points to their current workspace implementations, as the documentation
+fixtures do. Bun uses these mappings for tests and browser bundles, and
+TypeScript uses them for source and test checks. There is no root Cloud
+dependency. After copying the example out, the workspace targets are absent
+and resolution uses the installed packages instead.
+
 From the Cloud source checkout, run the focused checks:
 
 ```sh

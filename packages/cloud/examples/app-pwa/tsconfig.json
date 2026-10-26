@@ -15,7 +15,16 @@
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true
+    "noImplicitOverride": true,
+    "paths": {
+      "@k2b/cloud": ["../../src/index.ts"],
+      "@k2b/cloud/app-pwa": ["../../src/app-pwa/index.ts"],
+      "@k2b/cloud/app-pwa/browser": ["../../src/app-pwa/protocol.ts"],
+      "@k2b/cloud/server": ["../../src/server/index.ts"],
+      "@k2b/cloud/services": ["../../src/services/index.ts"],
+      "@k2b/cloud/shared": ["../../src/shared/index.ts"],
+      "@k2b/cloud/ssr": ["../../src/ssr/index.ts"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"]
 }
