@@ -448,3 +448,5 @@ keys; the migration does not rekey existing reservations. New incoming content
 carries its activity ID in Filegate metadata for later saved-version attribution.
 Direct-write scopes also bind ownership, ACLs, publication conditions, and this
 metadata marker to the persisted intent.
+
+Contact observation never waits for a busy root publication lock. It leaves the read usable and defers due comparison work for one minute without spending a failed retry. Editor saves observe under their existing publish lock; upload start leaves observation to publication. Repeated healthy detail reads do not update comparison schedules before they are due. Storage and history-write failures retain their explicit error behavior.

@@ -11,6 +11,7 @@ import {
   observationBlocked,
   observationChecked,
   observationDestination,
+  observationDeferred,
   observationFailed,
   observationObsolete,
   recordObservation,
@@ -178,7 +179,8 @@ export function createActivityObservations(deps: {
         const recorded = finding
           ? await recordObservation(source, known, finding, observationKey(known, finding), now(), options.signal)
           : false;
-        await observationChecked(known.id, now());
+        if (options.evidence || known.observation_next_at === null || known.observation_next_at <= now())
+          await observationChecked(known.id, now(), !!options.evidence);
         return recorded;
       } catch (error) {
         if (!options.signal?.aborted) {
@@ -191,10 +193,29 @@ export function createActivityObservations(deps: {
       }
     };
     // An untouched object has no comparison to order, and must never acquire a read baseline.
-    if (!options.evidence && !(await knownIdentityActivity(target))) return false;
+    const evidence = options.evidence ?? (await knownIdentityActivity(target));
+    if (!evidence) return false;
     options.signal?.throwIfAborted();
     // The existing root lock also orders contact against Cloud namespace/content publication.
-    return options.underRootLock ? run() : withRootLock(target.root, run, options.signal);
+    if (options.underRootLock) return run();
+    let entered = false;
+    try {
+      // Observation never waits behind publication. The request signal still cancels reads inside run().
+      return await withRootLock(target.root, () => {
+        entered = true;
+        return run();
+      });
+    } catch (error) {
+      options.signal?.throwIfAborted();
+      if (!entered && error instanceof Error && error.message === "operation_busy") {
+        if (evidence.observation_next_at === null || evidence.observation_next_at <= now())
+          await observationDeferred(evidence.id, now()).catch((failure) =>
+            log.error("Busy observation could not be rescheduled", { activityId: evidence.id, error: failure }),
+          );
+        return false;
+      }
+      throw error;
+    }
   }
   async function maintain(input: {
     now?: Date;

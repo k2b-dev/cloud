@@ -13,6 +13,7 @@ export type KnownActivity = {
   directory: boolean;
   size: string | null;
   revision: string | null;
+  observation_next_at: Date | null;
 };
 export type ObservationAction = "item.differs" | "item.missing" | "item.elsewhere";
 export type ObservedState = { exists: false } | { exists: true; directory: boolean; id?: string; size: number; revision?: string };
@@ -70,8 +71,9 @@ export async function knownActivity(target: ObservationTarget, db: Database = sq
       directory: boolean;
       size: string | null;
       revision_after: string | null;
+      observation_next_at: Date | null;
     }[]
-  >`SELECT id,action,server_url,root,root_after,base_id,base_after_id,path_after,item_after_id,directory,size::text,revision_after
+  >`SELECT id,action,server_url,root,root_after,base_id,base_after_id,path_after,item_after_id,directory,size::text,revision_after,observation_next_at
     FROM filesv2.activity WHERE server_url=${target.serverUrl} AND state='done' AND finished_at IS NOT NULL AND actor_kind<>'observed'
       AND action NOT IN ('admin.read','share.create','share.revoke','version.comment','version.delete')
       AND ((root=${target.root} AND action NOT IN ('item.copy','version.restore_copy') AND left(path_before,400)=ANY(${db.array(prefixes, "TEXT")}) AND path_before=ANY(${db.array(paths, "TEXT")})) OR
@@ -107,6 +109,7 @@ export async function knownActivity(target: ObservationTarget, db: Database = sq
     directory: row.directory,
     size: row.size,
     revision: row.revision_after,
+    observation_next_at: row.observation_next_at,
   };
 }
 
@@ -207,9 +210,16 @@ export async function observationFailed(id: string, now: Date): Promise<void> {
       WHEN 1 THEN ${now}::timestamptz+interval '5 minutes' WHEN 2 THEN ${now}::timestamptz+interval '30 minutes' ELSE NULL END
     WHERE id=${id}::uuid AND state='done' AND actor_kind<>'observed'`;
 }
-export async function observationChecked(id: string, now: Date): Promise<void> {
+/** Contention is deferred work, not a failed observation or a spent retry. Update only due evidence. */
+export async function observationDeferred(id: string, now: Date): Promise<void> {
+  await sql`UPDATE filesv2.activity SET observation_next_at=${now}::timestamptz+interval '1 minute'
+    WHERE id=${id}::uuid AND state='done' AND actor_kind<>'observed'
+      AND coalesce(observation_next_at,'-infinity'::timestamptz)<=${now}`;
+}
+export async function observationChecked(id: string, now: Date, claimed = false): Promise<void> {
   await sql`UPDATE filesv2.activity SET observation_next_at=${now}::timestamptz+interval '1 minute',observation_error=NULL,observation_checks=0
-    WHERE id=${id}::uuid AND state='done' AND actor_kind<>'observed'`;
+    WHERE id=${id}::uuid AND state='done' AND actor_kind<>'observed'
+      AND (${claimed} OR coalesce(observation_next_at,'-infinity'::timestamptz)<=${now})`;
 }
 export async function observationObsolete(id: string): Promise<void> {
   await sql`UPDATE filesv2.activity SET observation_next_at='infinity',observation_error=NULL,observation_checks=0
@@ -239,5 +249,5 @@ export async function claimObservationRetries(now: Date, root?: { serverUrl: str
       AND (${due}) ${scope}
       ORDER BY coalesce(observation_next_at,'-infinity'::timestamptz),id LIMIT 50 FOR UPDATE SKIP LOCKED)
     RETURNING id,server_url,coalesce(root_after,root) AS root,
-      coalesce(base_after_id,base_id) AS base_id,path_after AS path,item_after_id AS item_id,directory,size::text,revision_after AS revision`;
+      coalesce(base_after_id,base_id) AS base_id,path_after AS path,item_after_id AS item_id,directory,size::text,revision_after AS revision,observation_next_at`;
 }

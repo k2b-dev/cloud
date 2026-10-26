@@ -14,6 +14,7 @@ const known: KnownActivity = {
   directory: false,
   size: "4",
   revision: "r1",
+  observation_next_at: null,
 };
 const node: Node = {
   root: known.root,

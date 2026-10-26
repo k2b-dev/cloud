@@ -15,6 +15,7 @@ import {
   type ObservationTarget,
   observationBlocked,
 } from "../data/activity-observations";
+import { withRootLock } from "../data/operations";
 import { bindings } from "../data/bases";
 import { migrate } from "../migrate";
 import { entryRefId } from "../resource-ref";
@@ -198,6 +199,86 @@ suite("contact observations with real Filegate and private history", () => {
     }
   });
 
+  test("held local root skips contact without breaking detail, stable lookup or upload start", async () => {
+    const node = await client.root("cloud").stat(path);
+    const evidence = await confirmed(node);
+    await put("cloud", path, "outside");
+    const ref = `n:${baseId}:${node.id}`;
+    let uploadId = "";
+    await withRootLock("cloud", async () => {
+      expect(await service().check(target())).toBe(false);
+      expect((await files().entry(call, { baseId, path: "file.txt" })).entry.path).toBe("file.txt");
+      expect((await files().entryById(call, ref)).entry.path).toBe("file.txt");
+      const session = await files().upload(call, {
+        baseId,
+        path: "file.txt",
+        size: 4,
+        onConflict: "overwrite",
+        idempotencyKey: Bun.randomUUIDv7(),
+      });
+      uploadId = session.id;
+      expect(session).toBeDefined();
+    });
+    const [scheduled] =
+      await sql`SELECT observation_next_at,observation_error,observation_checks FROM filesv2.activity WHERE id=${evidence}::uuid`;
+    expect(scheduled).toMatchObject({ observation_error: null, observation_checks: 0 });
+    expect(scheduled!.observation_next_at.getTime()).toBeGreaterThan(observedAt.getTime());
+    expect(await observations()).toHaveLength(0);
+    await files().abortUpload(call, { baseId, id: uploadId });
+    expect(await service().check(target())).toBe(true);
+  });
+  test("Office save waits for the local publish lock instead of failing its preliminary observation", async () => {
+    const officePath = `${home}/busy.odt`;
+    const node = await put("cloud", officePath, "before");
+    await confirmed(node);
+    const previous = config;
+    config = { ...config, collabora: { ...config.collabora, url: "https://office.example.test" } };
+    const token = signEditorToken({ userId, baseId, path: "busy.odt", expiresAt: observedAt.getTime() + 60_000 });
+    const ref = entryRefId(baseId, "busy.odt")!;
+    let release!: () => void;
+    let acquired!: () => void;
+    const held = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holder = withRootLock("cloud", async () => {
+      acquired();
+      await wait;
+    });
+    await held;
+    let save: Promise<unknown> | undefined;
+    try {
+      const read = new Promise<void>((resolve) => {
+        save = files().editorSave(token, ref, {
+          timestamp: null,
+          read: async () => {
+            resolve();
+            return new Blob(["after"]);
+          },
+        });
+      });
+      await Promise.race([read, save!]);
+      release();
+      await holder;
+      expect(await save).toHaveProperty("modified");
+      expect(await sql`SELECT id FROM filesv2.activity WHERE action='file.edit' AND state='done'`).toHaveLength(1);
+    } finally {
+      release();
+      await holder;
+      config = previous;
+    }
+  });
+  test("repeated healthy details do not update a comparison schedule before it is due", async () => {
+    const id = await confirmed(await client.root("cloud").stat(path));
+    await service().check(target());
+    const [before] = await sql`SELECT xmin::text,observation_next_at FROM filesv2.activity WHERE id=${id}::uuid`;
+    await files().entry(call, { baseId, path: "file.txt" });
+    await files().entry(call, { baseId, path: "file.txt" });
+    const [after] = await sql`SELECT xmin::text,observation_next_at FROM filesv2.activity WHERE id=${id}::uuid`;
+    expect(after).toEqual(before);
+  });
   test("contact records same-size managed revision mismatch once, at observation time only", async () => {
     const known = await confirmed(await client.root("cloud").stat(path));
     await put("cloud", path, "bbbb");
