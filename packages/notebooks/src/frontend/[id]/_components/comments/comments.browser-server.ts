@@ -61,7 +61,7 @@ export const NOW = Date.parse("2026-10-26T15:00:00.000Z");
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
 
 let serial = 0;
-const comment = (
+const make = (
   by: keyof typeof people,
   quote: string,
   body: string,
@@ -103,8 +103,9 @@ const comment = (
   };
 };
 
-const base = () => {
+const base = (text = NOTE) => {
   serial = 0;
+  const comment = (...args: Parameters<typeof make>) => make(args[0], args[1], args[2], args[3], args[4], text);
   return [
     comment("cl", "das zehnte Lebensjahr vollendet hat", "Im Kinderkurs rudern schon Achtjährige mit. Sollen wir das Alter senken?", 180, {
       suggestion: "das achte Lebensjahr vollendet hat",
@@ -132,6 +133,7 @@ const base = () => {
     comment("cl", "Der Austritt ist zum Ende eines Quartals", "Quartal ist für die Kasse einfacher als Monatsende. Bitte so lassen.", 40),
   ];
 };
+const comment = make;
 const many = () => [
   ...base(),
   comment("ir", "Sitz in Uferstadt", "Der Sitz ist seit dem Umzug Uferstadt-Nord. Bitte prüfen.", 60),
@@ -154,7 +156,7 @@ const resolvedSet = () => {
 const ORPHAN_QUOTE = " und die Pflege des Bootshauses";
 const orphanText = NOTE.replace(ORPHAN_QUOTE, "");
 const orphanSet = () => {
-  const items = base();
+  const items = base(orphanText);
   const at = orphanText.indexOf("Regatten.") + "Regatten".length;
   serial++;
   items.push({
@@ -316,6 +318,10 @@ export const startCommentsServer = async () => {
     async fetch(request, server) {
       const url = new URL(request.url);
       if (url.pathname === "/editor.js") return new Response(bundle, { headers: { "content-type": "text/javascript" } });
+      if (url.pathname.startsWith("/ui/")) {
+        const file = Bun.file(resolve(ui, "dist", url.pathname.slice(4)));
+        return (await file.exists()) ? new Response(file) : new Response("Not found", { status: 404 });
+      }
       if (url.pathname === "/api/notebooks/ws" && server.upgrade(request, { data: undefined })) return;
       if (url.pathname.includes("/annotations")) return api(request, url);
       if (url.pathname.endsWith("/block-preview")) return Response.json({ markdown: text, blocks: [], diagnostics: [], headings: [] });
@@ -370,7 +376,7 @@ export const startCommentsServer = async () => {
       const serialized = Bun.escapeHTML(JSON.stringify(toJSON(props)));
       return new Response(
         `<!doctype html><html lang="de"${url.searchParams.has("dark") ? ' class="dark"' : ""}><head>
-        <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>
+        <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>
         <style>solid-client,solid-island{display:contents}#layout{display:flex;height:100dvh}#navigation{width:264px;flex:none;padding:16px;font:14px sans-serif;color:#555}#main{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column}#panel{width:360px;flex:none;padding:16px;font:14px sans-serif}@media(max-width:700px){#navigation{display:none}}</style>
         </head><body class="k2b-ui" style="margin:0"><div id="layout"><nav id="navigation">Ruderverein Seewind</nav><main id="main">
         <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col" data-comments=""${fullWidth ? " data-full-width" : ""}${panel ? " data-detail-open" : ""}><solid-client data-id="note-editor" data-props="${serialized}"></solid-client>${preview}</div>

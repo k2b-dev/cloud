@@ -154,19 +154,17 @@ export function CommentMargin(props: Props) {
     }
   };
 
+  const failed = () => (
+    <>
+      <span class="notebook-comments__error">{t().loadFailed}</span>
+      <button type="button" class="notebook-comments__retry" onClick={() => void ui.store.refresh()}>
+        {t().retry}
+      </button>
+    </>
+  );
   const head = () => (
     <div class="notebook-comments__head" aria-live="polite">
-      <Show
-        when={!ui.store.error() || ui.store.projection()}
-        fallback={
-          <>
-            <span class="notebook-comments__error">{t().loadFailed}</span>
-            <button type="button" class="notebook-comments__retry" onClick={() => void ui.store.refresh()}>
-              {t().retry}
-            </button>
-          </>
-        }
-      >
+      <Show when={!ui.store.error()} fallback={failed()}>
         <Show when={ui.store.projection()} fallback={<span>{t().loading}</span>}>
           <Show
             when={ui.counts().open || ui.counts().resolved}
@@ -216,7 +214,7 @@ export function CommentMargin(props: Props) {
             onKeyDown={onKeyDown}
           >
             {head()}
-            <Show when={!ui.store.error() || ui.store.projection()}>
+            <Show when={ui.store.projection()}>
               <For each={ui.visible()}>
                 {(item) => (
                   <CommentCard
@@ -256,13 +254,10 @@ export function CommentMargin(props: Props) {
                 </button>
               )}
             </For>
-            <Show when={ui.store.error() && !ui.store.projection()}>
+            <Show when={ui.store.error()}>
               <div class="notebook-comments-popover" style={{ top: `${MIN_TOP}px`, left: `${Math.max(0, col().right - POPOVER_WIDTH)}px` }}>
-                <div class="notebook-comment" data-active="">
-                  <span class="notebook-comments__error">{t().loadFailed}</span>{" "}
-                  <button type="button" class="notebook-comments__retry" onClick={() => void ui.store.refresh()}>
-                    {t().retry}
-                  </button>
+                <div class="notebook-comment" data-active="" role="alert">
+                  {failed()}
                 </div>
               </div>
             </Show>
