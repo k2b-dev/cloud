@@ -3,6 +3,14 @@ import * as Y from "yjs";
 import { ANNOTATION_CONTEXT_LENGTH } from "./annotation-contracts";
 
 type Selector = { quote: string; prefix: string; suffix: string };
+/** Keep context within its UTF-16 bound without cutting an adjacent surrogate pair. */
+export const annotationContext = (text: string, from: number, to: number) => {
+  let start = Math.max(0, from - ANNOTATION_CONTEXT_LENGTH);
+  let end = Math.min(text.length, to + ANNOTATION_CONTEXT_LENGTH);
+  if (start > 0 && /[\uDC00-\uDFFF]/.test(text[start]!)) start++;
+  if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1]!)) end--;
+  return { prefix: text.slice(start, from), suffix: text.slice(to, end) };
+};
 export const annotationPositions = (doc: Y.Doc, from: number, to: number) => {
   const text = doc.getText(SHARED_TEXT_NAME);
   return {
@@ -12,8 +20,9 @@ export const annotationPositions = (doc: Y.Doc, from: number, to: number) => {
 };
 export const absoluteAnnotationPosition = (doc: Y.Doc, position: Uint8Array): number | null => {
   try {
+    const text = doc.getText(SHARED_TEXT_NAME);
     const absolute = Y.createAbsolutePositionFromRelativePosition(Y.decodeRelativePosition(position), doc, false);
-    return absolute?.type === doc.getText(SHARED_TEXT_NAME) ? absolute.index : null;
+    return absolute?.type === text ? absolute.index : null;
   } catch {
     return null;
   }
@@ -32,7 +41,11 @@ export const locateAnnotation = (text: string, selector: Selector, offsetHint?: 
   return match + selector.prefix.length;
 };
 export const resolveAnnotation = (config: {
-  doc: Y.Doc; start: Uint8Array; end: Uint8Array; selector: Selector; sameRevision: boolean;
+  doc: Y.Doc;
+  start: Uint8Array;
+  end: Uint8Array;
+  selector: Selector;
+  sameRevision: boolean;
 }) => {
   const from = absoluteAnnotationPosition(config.doc, config.start);
   const to = absoluteAnnotationPosition(config.doc, config.end);
@@ -65,7 +78,8 @@ export const annotationHeadingPath = (text: string, offset: number): string[] =>
     if (!match) continue;
     const level = match[1]!.length;
     while (headings.length && headings[headings.length - 1]!.level >= level) headings.pop();
-    headings.push({ level, text: match[2]! });
+    // Match the existing note/activity title presentation bound.
+    headings.push({ level, text: match[2]!.slice(0, 500) });
   }
   return headings.map((heading) => heading.text);
 };

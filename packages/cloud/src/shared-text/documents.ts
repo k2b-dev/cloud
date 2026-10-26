@@ -67,7 +67,11 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
     async edit(
       docId: string,
       options: { actor: SharedTextActor | null; context?: Context; signal?: AbortSignal },
-      update: (current: { text: string; contributors: SharedTextContributor[]; state(): Uint8Array }) => string | { update: Uint8Array } | Promise<string | { update: Uint8Array }>,
+      update: (current: {
+        text: string;
+        contributors: SharedTextContributor[];
+        state(): Uint8Array;
+      }) => string | { update: Uint8Array } | Promise<string | { update: Uint8Array }>,
     ): Promise<SharedTextEditResult<Saved>> {
       const requestedAt = Date.now();
       const stored = await store.load(docId, { signal: options.signal });

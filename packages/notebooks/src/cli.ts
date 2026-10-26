@@ -125,6 +125,9 @@ const api = (notebookId: string, suffix = "") => `/api/notebooks/${encodeURIComp
 const noteApi = (target: { notebookId: string; noteId: string }, suffix = "") =>
   api(target.notebookId, `/notes/${encodeURIComponent(target.noteId)}${suffix}`);
 
+const annotationApi = (target: { noteId: string }, suffix = "") =>
+  `/api/notebooks/notes/${encodeURIComponent(target.noteId)}/annotations${suffix}`;
+
 const isHttpStatus = (error: unknown, status: number): boolean => error instanceof Error && error.message.startsWith(`${status} `);
 
 const expandHome = (path: string): string => (path === "~" || path.startsWith("~/") ? join(homedir(), path.slice(1)) : path);
@@ -1862,7 +1865,7 @@ function notebooksCommands(locale?: string) {
           const suffix = flags.annotation ? `/${encodeURIComponent(flags.annotation)}${flags.replies ? "/replies" : ""}` : "";
           const payload = await ctx.readJson<
             AnnotationProjection | Annotation | { items: Array<{ id: string; body: string }>; nextCursor: string | null }
-          >(await ctx.fetch(withQuery(noteApi(target, `/annotations${suffix}`), { cursor: flags.cursor, limit: flags.limit })));
+          >(await ctx.fetch(withQuery(annotationApi(target, suffix), { cursor: flags.cursor, limit: flags.limit })));
           if (printStructured(ctx, payload)) return;
           if ("items" in payload) {
             for (const item of payload.items) ctx.print(`${item.id} ${item.body.replace(/\s+/g, " ").slice(0, 120)}`);
@@ -1915,7 +1918,7 @@ function notebooksCommands(locale?: string) {
           const target = await resolveNote(ctx, args.note);
           const body = (await readContentSource(flags.from, flags.content)) ?? "";
           const payload = await ctx.readJson<Annotation>(
-            await ctx.fetch(noteApi(target, "/annotations"), {
+            await ctx.fetch(annotationApi(target), {
               method: "POST",
               headers: JSON_HEADERS,
               body: JSON.stringify({
@@ -1954,7 +1957,7 @@ function notebooksCommands(locale?: string) {
           const target = await resolveNote(ctx, args.note);
           const body = await requireContent(flags.from, flags.content);
           const payload = await ctx.readJson<{ id: string }>(
-            await ctx.fetch(noteApi(target, `/annotations/${encodeURIComponent(args.annotation)}/replies`), {
+            await ctx.fetch(annotationApi(target, `/${encodeURIComponent(args.annotation)}/replies`), {
               method: "POST",
               headers: JSON_HEADERS,
               body: JSON.stringify({ body, idempotencyKey: flags.idempotencyKey }),
@@ -1991,9 +1994,9 @@ function notebooksCommands(locale?: string) {
           const body = await requireContent(flags.from, flags.content);
           const payload = await ctx.readJson<{ id: string }>(
             await ctx.fetch(
-              noteApi(
+              annotationApi(
                 target,
-                `/annotations/${encodeURIComponent(args.annotation)}${flags.reply ? `/replies/${encodeURIComponent(flags.reply)}` : ""}`,
+                `/${encodeURIComponent(args.annotation)}${flags.reply ? `/replies/${encodeURIComponent(flags.reply)}` : ""}`,
               ),
               {
                 method: "PATCH",
@@ -2026,9 +2029,9 @@ function notebooksCommands(locale?: string) {
           const target = await resolveNote(ctx, args.note);
           const payload = await ctx.readJson<{ id: string }>(
             await ctx.fetch(
-              noteApi(
+              annotationApi(
                 target,
-                `/annotations/${encodeURIComponent(args.annotation)}${flags.reply ? `/replies/${encodeURIComponent(flags.reply)}` : ""}`,
+                `/${encodeURIComponent(args.annotation)}${flags.reply ? `/replies/${encodeURIComponent(flags.reply)}` : ""}`,
               ),
               { method: "DELETE" },
             ),
@@ -2054,9 +2057,9 @@ function notebooksCommands(locale?: string) {
           const target = await resolveNote(ctx, args.note);
           const payload = await ctx.readJson<{ id: string }>(
             await ctx.fetch(
-              noteApi(
+              annotationApi(
                 target,
-                `/annotations/${encodeURIComponent(args.annotation)}${flags.reply ? `/replies/${encodeURIComponent(flags.reply)}` : ""}/restore`,
+                `/${encodeURIComponent(args.annotation)}${flags.reply ? `/replies/${encodeURIComponent(flags.reply)}` : ""}/restore`,
               ),
               { method: "POST" },
             ),
@@ -2074,7 +2077,7 @@ function notebooksCommands(locale?: string) {
         async run({ ctx, args, flags }) {
           const target = await resolveNote(ctx, args.note);
           const payload = await ctx.readJson<{ id: string }>(
-            await ctx.fetch(noteApi(target, `/annotations/${encodeURIComponent(args.annotation)}/resolve`), {
+            await ctx.fetch(annotationApi(target, `/${encodeURIComponent(args.annotation)}/resolve`), {
               method: "POST",
               headers: JSON_HEADERS,
               body: JSON.stringify({ resolved: true }),
@@ -2093,7 +2096,7 @@ function notebooksCommands(locale?: string) {
         async run({ ctx, args, flags }) {
           const target = await resolveNote(ctx, args.note);
           const payload = await ctx.readJson<{ id: string }>(
-            await ctx.fetch(noteApi(target, `/annotations/${encodeURIComponent(args.annotation)}/resolve`), {
+            await ctx.fetch(annotationApi(target, `/${encodeURIComponent(args.annotation)}/resolve`), {
               method: "POST",
               headers: JSON_HEADERS,
               body: JSON.stringify({ resolved: false }),
@@ -2131,7 +2134,7 @@ function notebooksCommands(locale?: string) {
           await confirm(flags.yes, t({ en: "Accept a passage suggestion?", de: "Änderungsvorschlag übernehmen?" }));
           const target = await resolveNote(ctx, args.note);
           const payload = await ctx.readJson<{ id: string }>(
-            await ctx.fetch(noteApi(target, `/annotations/${encodeURIComponent(args.annotation)}/accept`), {
+            await ctx.fetch(annotationApi(target, `/${encodeURIComponent(args.annotation)}/accept`), {
               method: "POST",
               headers: JSON_HEADERS,
               body: JSON.stringify({ operationId: flags.operationId, expectedText: flags.expectedText }),
@@ -2169,7 +2172,7 @@ function notebooksCommands(locale?: string) {
           await confirm(flags.yes, t({ en: "Undo an accepted suggestion?", de: "Übernommenen Vorschlag rückgängig machen?" }));
           const target = await resolveNote(ctx, args.note);
           const payload = await ctx.readJson<{ id: string }>(
-            await ctx.fetch(noteApi(target, `/annotations/${encodeURIComponent(args.annotation)}/undo-accept`), {
+            await ctx.fetch(annotationApi(target, `/${encodeURIComponent(args.annotation)}/undo-accept`), {
               method: "POST",
               headers: JSON_HEADERS,
               body: JSON.stringify({ operationId: flags.operationId, expectedText: flags.expectedText }),

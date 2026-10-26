@@ -9,53 +9,125 @@ export const ANNOTATION_SUGGESTION_MAX_LENGTH = ANNOTATION_QUOTE_MAX_LENGTH;
 export const ANNOTATION_PAGE_SIZE = 30;
 export const AnnotationIdSchema = z.uuid();
 export const AnnotationKeySchema = z.string().trim().min(1).max(200);
-export const AnnotationCreateSchema = z.object({
-  quote: z.string().min(1).max(ANNOTATION_QUOTE_MAX_LENGTH).describe("Exact selected Markdown passage, up to 2,000 UTF-16 characters."),
-  prefix: z.string().max(ANNOTATION_CONTEXT_LENGTH).default("").describe("Exact adjacent Markdown context, up to 32 UTF-16 characters."),
-  suffix: z.string().max(ANNOTATION_CONTEXT_LENGTH).default("").describe("Exact adjacent Markdown context, up to 32 UTF-16 characters."),
-  offsetHint: z.number().int().nonnegative().optional().describe("Optional UTF-16 start offset in note Markdown, excluding mirror front matter."),
-  body: z.string().trim().max(ANNOTATION_BODY_MAX_LENGTH).default("").describe("Markdown comment text, up to 5,000 characters; may be empty when a suggestion changes the quote."),
-  suggestion: z.string().max(ANNOTATION_SUGGESTION_MAX_LENGTH).nullable().optional().describe("Optional replacement passage, up to 2,000 characters. Empty means deletion; null means no suggestion."),
-  idempotencyKey: AnnotationKeySchema.describe("Stable author-scoped retry key for this exact payload."),
-}).strict().refine((value) => value.body.length > 0 || (value.suggestion != null && value.suggestion !== value.quote), {
-  message: "A comment needs text or a suggestion that changes the passage",
-});
-export const AnnotationReplySchema = z.object({
-  body: z.string().trim().min(1).max(ANNOTATION_BODY_MAX_LENGTH).describe("Non-empty Markdown reply, up to 5,000 characters."),
-  idempotencyKey: AnnotationKeySchema.describe("Stable author-scoped retry key for this exact payload."),
-}).strict();
-export const AnnotationEditSchema = z.object({
-  body: z.string().trim().max(ANNOTATION_BODY_MAX_LENGTH).describe("Replacement comment or reply text, up to 5,000 characters."),
-  suggestion: z.string().max(ANNOTATION_SUGGESTION_MAX_LENGTH).nullable().optional().describe("Optional replacement passage, up to 2,000 characters. Empty means deletion; null means no suggestion."),
-}).strict();
-export const AnnotationPageSchema = z.object({
-  cursor: z.string().max(500).optional().describe("Opaque nextCursor or repliesNextCursor from the preceding page."),
-  limit: z.coerce.number().int().min(1).max(ANNOTATION_PAGE_SIZE).default(ANNOTATION_PAGE_SIZE).describe("Maximum comments or replies in a page, 1–30; byte limits can shorten it."),
-}).strict();
-export const AnnotationOperationSchema = z.object({
-  operationId: z.uuid().describe("Caller-stable operation UUID. Reuse it to recover an uncertain accept or undo outcome."),
-  expectedText: z.string().max(ANNOTATION_QUOTE_MAX_LENGTH).optional().describe("Expected current passage; defaults to the quote on accept and inserted text on undo."),
-}).strict();
+export const AnnotationCreateSchema = z
+  .object({
+    quote: z.string().min(1).max(ANNOTATION_QUOTE_MAX_LENGTH).describe("Exact selected Markdown passage, up to 2,000 UTF-16 characters."),
+    prefix: z.string().max(ANNOTATION_CONTEXT_LENGTH).default("").describe("Exact adjacent Markdown context, up to 32 UTF-16 characters."),
+    suffix: z.string().max(ANNOTATION_CONTEXT_LENGTH).default("").describe("Exact adjacent Markdown context, up to 32 UTF-16 characters."),
+    offsetHint: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe("Optional UTF-16 start offset in note Markdown, excluding mirror front matter."),
+    body: z
+      .string()
+      .trim()
+      .max(ANNOTATION_BODY_MAX_LENGTH)
+      .default("")
+      .describe("Markdown comment text, up to 5,000 characters; may be empty when a suggestion changes the quote."),
+    suggestion: z
+      .string()
+      .max(ANNOTATION_SUGGESTION_MAX_LENGTH)
+      .nullable()
+      .optional()
+      .describe("Optional replacement passage, up to 2,000 characters. Empty means deletion; null means no suggestion."),
+    idempotencyKey: AnnotationKeySchema.describe("Stable author-scoped retry key for this exact payload."),
+  })
+  .strict()
+  .refine((value) => value.body.length > 0 || (value.suggestion != null && value.suggestion !== value.quote), {
+    message: "A comment needs text or a suggestion that changes the passage",
+  });
+export const AnnotationReplySchema = z
+  .object({
+    body: z.string().trim().min(1).max(ANNOTATION_BODY_MAX_LENGTH).describe("Non-empty Markdown reply, up to 5,000 characters."),
+    idempotencyKey: AnnotationKeySchema.describe("Stable author-scoped retry key for this exact payload."),
+  })
+  .strict();
+export const AnnotationEditSchema = z
+  .object({
+    body: z.string().trim().max(ANNOTATION_BODY_MAX_LENGTH).describe("Replacement comment or reply text, up to 5,000 characters."),
+    suggestion: z
+      .string()
+      .max(ANNOTATION_SUGGESTION_MAX_LENGTH)
+      .nullable()
+      .optional()
+      .describe("Optional replacement passage, up to 2,000 characters. Empty means deletion; null means no suggestion."),
+  })
+  .strict();
+export const AnnotationPageSchema = z
+  .object({
+    cursor: z.string().max(500).optional().describe("Opaque nextCursor or repliesNextCursor from the preceding page."),
+    limit: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(ANNOTATION_PAGE_SIZE)
+      .default(ANNOTATION_PAGE_SIZE)
+      .describe("Maximum comments or replies in a page, 1–30; byte limits can shorten it."),
+  })
+  .strict();
+export const AnnotationOperationSchema = z
+  .object({
+    operationId: z.uuid().describe("Caller-stable operation UUID. Reuse it to recover an uncertain accept or undo outcome."),
+    expectedText: z
+      .string()
+      .max(ANNOTATION_QUOTE_MAX_LENGTH)
+      .optional()
+      .describe("Expected current passage; defaults to the quote on accept and inserted text on undo."),
+  })
+  .strict();
 export const AnnotationPersonSchema = z.object({
-  kind: z.enum(["user", "service_account"]), id: z.uuid(), name: z.string(), avatarHash: z.string().nullable().optional(),
+  kind: z.enum(["user", "service_account"]),
+  id: z.uuid(),
+  name: z.string(),
+  avatarHash: z.string().nullable().optional(),
 });
 export const AnnotationReplyDataSchema = z.object({
-  id: z.uuid(), author: AnnotationPersonSchema, via: z.enum(["assistant", "mcp"]).nullable(), body: z.string(),
-  createdAt: z.string(), editedAt: z.string().nullable(), canEdit: z.boolean(), canDelete: z.boolean(),
+  id: z.uuid(),
+  author: AnnotationPersonSchema,
+  via: z.enum(["assistant", "mcp"]).nullable(),
+  body: z.string(),
+  createdAt: z.string(),
+  editedAt: z.string().nullable(),
+  canEdit: z.boolean(),
+  canDelete: z.boolean(),
 });
 export const AnnotationDataSchema = z.object({
-  id: z.uuid(), noteId: z.string(), from: z.number().int().nonnegative(), to: z.number().int().nonnegative(), orphan: z.boolean(),
-  startRel: z.string(), endRel: z.string(), restoreRevision: z.string(),
-  quote: z.string(), prefix: z.string(), suffix: z.string(), body: z.string(), suggestion: z.string().nullable(),
-  state: z.enum(["open", "resolved", "accepted"]), stateBy: AnnotationPersonSchema.nullable(), stateAt: z.string().nullable(),
-  author: AnnotationPersonSchema, via: z.enum(["assistant", "mcp"]).nullable(),
-  createdAt: z.string(), editedAt: z.string().nullable(), canEdit: z.boolean(), canDelete: z.boolean(),
-  replies: z.array(AnnotationReplyDataSchema), repliesNextCursor: z.string().nullable(), headingPath: z.array(z.string()),
+  id: z.uuid(),
+  noteId: z.string(),
+  from: z.number().int().nonnegative(),
+  to: z.number().int().nonnegative(),
+  orphan: z.boolean(),
+  startRel: z.string(),
+  endRel: z.string(),
+  restoreRevision: z.string(),
+  quote: z.string(),
+  prefix: z.string(),
+  suffix: z.string(),
+  body: z.string(),
+  suggestion: z.string().nullable(),
+  state: z.enum(["open", "resolved", "accepted"]),
+  stateBy: AnnotationPersonSchema.nullable(),
+  stateAt: z.string().nullable(),
+  author: AnnotationPersonSchema,
+  via: z.enum(["assistant", "mcp"]).nullable(),
+  createdAt: z.string(),
+  editedAt: z.string().nullable(),
+  canEdit: z.boolean(),
+  canDelete: z.boolean(),
+  replies: z.array(AnnotationReplyDataSchema),
+  repliesNextCursor: z.string().nullable(),
+  headingPath: z.array(z.string()),
   acceptedOperationId: z.uuid().nullable(),
 });
 export const AnnotationProjectionSchema = z.object({
-  text: z.string(), contentHash: z.string(), cursor: z.string().nullable(), restoreRevision: z.string(),
-  items: z.array(AnnotationDataSchema), nextCursor: z.string().nullable(),
+  text: z.string(),
+  contentHash: z.string(),
+  cursor: z.string().nullable(),
+  restoreRevision: z.string(),
+  items: z.array(AnnotationDataSchema),
+  nextCursor: z.string().nullable(),
 });
 export type Annotation = z.infer<typeof AnnotationDataSchema>;
 export type AnnotationProjection = z.infer<typeof AnnotationProjectionSchema>;

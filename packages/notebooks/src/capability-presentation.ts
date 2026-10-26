@@ -3,20 +3,63 @@ import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   sentences: {
-    "annotation.create": { approval: "Add a passage comment", done: "Added a passage comment", rejected: "Comment not added", notRun: "Comment not added" },
-    "annotation.reply": { approval: "Reply to a passage comment", done: "Added the reply", rejected: "Reply not added", notRun: "Reply not added" },
-    "annotation.edit": { approval: "Edit a passage comment", done: "Edited the comment", rejected: "Comment not edited", notRun: "Comment not edited" },
-    "annotation.delete": { approval: "Delete a passage comment", done: "Deleted the comment", rejected: "Comment not deleted", notRun: "Comment not deleted" },
-    "annotation.restore": { approval: "Restore a passage comment", done: "Restored the comment", rejected: "Comment not restored", notRun: "Comment not restored" },
-    "annotation.resolve": { approval: "Change passage comment status", done: "Changed the comment status", rejected: "Status not changed", notRun: "Status not changed" },
-    "annotation.accept": { approval: "Accept a passage suggestion", done: "Accepted the suggestion", rejected: "Suggestion not accepted", notRun: "Suggestion not accepted" },
-    "annotation.undo-accept": { approval: "Undo an accepted suggestion", done: "Undid the suggestion", rejected: "Suggestion not undone", notRun: "Suggestion not undone" },
+    "annotation.create": {
+      approval: "Add a passage comment",
+      done: "Added a passage comment",
+      rejected: "Comment not added",
+      notRun: "Comment not added",
+    },
+    "annotation.reply": {
+      approval: "Reply to a passage comment",
+      done: "Added the reply",
+      rejected: "Reply not added",
+      notRun: "Reply not added",
+    },
+    "annotation.edit": {
+      approval: "Edit a passage comment",
+      done: "Edited the comment",
+      rejected: "Comment not edited",
+      notRun: "Comment not edited",
+    },
+    "annotation.delete": {
+      approval: "Delete a passage comment",
+      done: "Deleted the comment",
+      rejected: "Comment not deleted",
+      notRun: "Comment not deleted",
+    },
+    "annotation.restore": {
+      approval: "Restore a passage comment",
+      done: "Restored the comment",
+      rejected: "Comment not restored",
+      notRun: "Comment not restored",
+    },
+    "annotation.resolve": {
+      approval: "Change passage comment status",
+      done: "Changed the comment status",
+      rejected: "Status not changed",
+      notRun: "Status not changed",
+    },
+    "annotation.accept": {
+      approval: "Accept a passage suggestion",
+      done: "Accepted the suggestion",
+      rejected: "Suggestion not accepted",
+      notRun: "Suggestion not accepted",
+    },
+    "annotation.undo-accept": {
+      approval: "Undo an accepted suggestion",
+      done: "Undid the suggestion",
+      rejected: "Suggestion not undone",
+      notRun: "Suggestion not undone",
+    },
   },
   translations: {
     de: {
       commands: { "note.compose": { title: "Neue Notiz", description: "Notizbuch auswählen und eine Notiz schreiben." } },
       types: {
-        annotation: { title: "Textstellenkommentar", description: "Ein Kommentar zu einer Textstelle mit Antworten und optionalem Änderungsvorschlag." },
+        annotation: {
+          title: "Textstellenkommentar",
+          description: "Ein Kommentar zu einer Textstelle mit Antworten und optionalem Änderungsvorschlag.",
+        },
         note: {
           title: "Notiz",
           description: "Eine Markdown-Notiz in einem Notizbuch, auf das du Zugriff hast.",
@@ -31,9 +74,20 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
-        "annotation.list": { title: "Textstellenkommentare auflisten", description: "Kommentare einer Notiz mit Positionen, Status, Überschriftenpfad und verwaisten Stellen lesen. Dem nextCursor folgen; Antworten sind separat paginiert. contentHash und cursor bezeichnen den zugehörigen Markdown-Stand." },
-        "annotation.read": { title: "Textstellenkommentar lesen", description: "Einen notebooks.annotation-Verweis mit Antworten und aktuellen Rechten lesen. repliesNextCursor mit annotation.replies fortsetzen." },
-        "annotation.replies": { title: "Kommentarantworten auflisten", description: "Weitere Antworten eines Textstellenkommentars mit vollständigem Text und aktuellen Bearbeitungsrechten lesen." },
+        "annotation.list": {
+          title: "Textstellenkommentare auflisten",
+          description:
+            "Kommentare einer Notiz mit Positionen, Status, Überschriftenpfad und verwaisten Stellen lesen. Dem nextCursor folgen; Antworten sind separat paginiert. contentHash und cursor bezeichnen den zugehörigen Markdown-Stand.",
+        },
+        "annotation.read": {
+          title: "Textstellenkommentar lesen",
+          description:
+            "Einen notebooks.annotation-Verweis mit Antworten und aktuellen Rechten lesen. repliesNextCursor mit annotation.replies fortsetzen.",
+        },
+        "annotation.replies": {
+          title: "Kommentarantworten auflisten",
+          description: "Weitere Antworten eines Textstellenkommentars mit vollständigem Text und aktuellen Bearbeitungsrechten lesen.",
+        },
         "notebook.activity": {
           title: "Notizereignisse lesen",
           description:
@@ -215,14 +269,90 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
-        "annotation.create": { title: "Textstelle kommentieren", description: "Einen Kommentar oder Änderungsvorschlag zu einer beschreibbaren Notiz hinzufügen. Idempotency-Key ist erforderlich.", sentences: { approval: "Kommentar hinzufügen", done: "Kommentar hinzugefügt", rejected: "Kommentar nicht hinzugefügt", notRun: "Kommentar nicht hinzugefügt" } },
-        "annotation.reply": { title: "Auf einen Textstellenkommentar antworten", description: "Mit Schreibzugriff als Benutzer, Agent oder Dienstkonto antworten. Idempotency-Key ist erforderlich.", sentences: { approval: "Auf einen Kommentar antworten", done: "Antwort hinzugefügt", rejected: "Antwort nicht hinzugefügt", notRun: "Antwort nicht hinzugefügt" } },
-        "annotation.edit": { title: "Eigenen neuen Kommentar bearbeiten", description: "Eigenen Kommentar oder eigene Antwort innerhalb von zehn Minuten mit aktuellem Schreibzugriff bearbeiten.", sentences: { approval: "Kommentar bearbeiten", done: "Kommentar bearbeitet", rejected: "Kommentar nicht bearbeitet", notRun: "Kommentar nicht bearbeitet" } },
-        "annotation.delete": { title: "Eigenen neuen Kommentar löschen", description: "Eigenen Kommentar oder eigene Antwort innerhalb von zehn Minuten löschen. Kommentare mit Antworten können nicht gelöscht werden.", sentences: { approval: "Kommentar löschen", done: "Kommentar gelöscht", rejected: "Kommentar nicht gelöscht", notRun: "Kommentar nicht gelöscht" } },
-        "annotation.restore": { title: "Eigenen gelöschten Kommentar wiederherstellen", description: "Gelöschten Kommentar oder gelöschte Antwort innerhalb des ursprünglichen Zehn-Minuten-Fensters wiederherstellen.", sentences: { approval: "Kommentar wiederherstellen", done: "Kommentar wiederhergestellt", rejected: "Kommentar nicht wiederhergestellt", notRun: "Kommentar nicht wiederhergestellt" } },
-        "annotation.resolve": { title: "Kommentar erledigen oder wieder öffnen", description: "Jeder mit Schreibzugriff kann Kommentare erledigen oder wieder öffnen, auch in gesperrten Notizen.", sentences: { approval: "Kommentarstatus ändern", done: "Kommentarstatus geändert", rejected: "Status nicht geändert", notRun: "Status nicht geändert" } },
-        "annotation.accept": { title: "Änderungsvorschlag übernehmen", description: "Nur die verankerte Textstelle einer entsperrten Notiz ersetzen. Bei unklarem Ergebnis dieselbe operationId erneut verwenden.", sentences: { approval: "Änderungsvorschlag übernehmen", done: "Änderungsvorschlag übernommen", rejected: "Vorschlag nicht übernommen", notRun: "Vorschlag nicht übernommen" } },
-        "annotation.undo-accept": { title: "Übernommenen Vorschlag rückgängig machen", description: "Nur unveränderten eingesetzten Text zurücksetzen. Benötigt Schreibzugriff und eine entsperrte Notiz. Dieselbe operationId bei Wiederholung verwenden.", sentences: { approval: "Änderungsvorschlag rückgängig machen", done: "Änderungsvorschlag rückgängig gemacht", rejected: "Vorschlag nicht rückgängig gemacht", notRun: "Vorschlag nicht rückgängig gemacht" } },
+        "annotation.create": {
+          title: "Textstelle kommentieren",
+          description:
+            "Einen Kommentar oder Änderungsvorschlag zu einer beschreibbaren Notiz hinzufügen. Idempotency-Key ist erforderlich.",
+          sentences: {
+            approval: "Kommentar hinzufügen",
+            done: "Kommentar hinzugefügt",
+            rejected: "Kommentar nicht hinzugefügt",
+            notRun: "Kommentar nicht hinzugefügt",
+          },
+        },
+        "annotation.reply": {
+          title: "Auf einen Textstellenkommentar antworten",
+          description: "Mit Schreibzugriff als Benutzer, Agent oder Dienstkonto antworten. Idempotency-Key ist erforderlich.",
+          sentences: {
+            approval: "Auf einen Kommentar antworten",
+            done: "Antwort hinzugefügt",
+            rejected: "Antwort nicht hinzugefügt",
+            notRun: "Antwort nicht hinzugefügt",
+          },
+        },
+        "annotation.edit": {
+          title: "Eigenen neuen Kommentar bearbeiten",
+          description: "Eigenen Kommentar oder eigene Antwort innerhalb von zehn Minuten mit aktuellem Schreibzugriff bearbeiten.",
+          sentences: {
+            approval: "Kommentar bearbeiten",
+            done: "Kommentar bearbeitet",
+            rejected: "Kommentar nicht bearbeitet",
+            notRun: "Kommentar nicht bearbeitet",
+          },
+        },
+        "annotation.delete": {
+          title: "Eigenen neuen Kommentar löschen",
+          description:
+            "Eigenen Kommentar oder eigene Antwort innerhalb von zehn Minuten löschen. Kommentare mit Antworten können nicht gelöscht werden.",
+          sentences: {
+            approval: "Kommentar löschen",
+            done: "Kommentar gelöscht",
+            rejected: "Kommentar nicht gelöscht",
+            notRun: "Kommentar nicht gelöscht",
+          },
+        },
+        "annotation.restore": {
+          title: "Eigenen gelöschten Kommentar wiederherstellen",
+          description: "Gelöschten Kommentar oder gelöschte Antwort innerhalb des ursprünglichen Zehn-Minuten-Fensters wiederherstellen.",
+          sentences: {
+            approval: "Kommentar wiederherstellen",
+            done: "Kommentar wiederhergestellt",
+            rejected: "Kommentar nicht wiederhergestellt",
+            notRun: "Kommentar nicht wiederhergestellt",
+          },
+        },
+        "annotation.resolve": {
+          title: "Kommentar erledigen oder wieder öffnen",
+          description: "Jeder mit Schreibzugriff kann Kommentare erledigen oder wieder öffnen, auch in gesperrten Notizen.",
+          sentences: {
+            approval: "Kommentarstatus ändern",
+            done: "Kommentarstatus geändert",
+            rejected: "Status nicht geändert",
+            notRun: "Status nicht geändert",
+          },
+        },
+        "annotation.accept": {
+          title: "Änderungsvorschlag übernehmen",
+          description:
+            "Nur die verankerte Textstelle einer entsperrten Notiz ersetzen. Bei unklarem Ergebnis dieselbe operationId erneut verwenden.",
+          sentences: {
+            approval: "Änderungsvorschlag übernehmen",
+            done: "Änderungsvorschlag übernommen",
+            rejected: "Vorschlag nicht übernommen",
+            notRun: "Vorschlag nicht übernommen",
+          },
+        },
+        "annotation.undo-accept": {
+          title: "Übernommenen Vorschlag rückgängig machen",
+          description:
+            "Nur unveränderten eingesetzten Text zurücksetzen. Benötigt Schreibzugriff und eine entsperrte Notiz. Dieselbe operationId bei Wiederholung verwenden.",
+          sentences: {
+            approval: "Änderungsvorschlag rückgängig machen",
+            done: "Änderungsvorschlag rückgängig gemacht",
+            rejected: "Vorschlag nicht rückgängig gemacht",
+            notRun: "Vorschlag nicht rückgängig gemacht",
+          },
+        },
         "comment.update": {
           title: "Notizkommentar bearbeiten",
           description:
