@@ -23,6 +23,8 @@ const now = "2026-10-12T10:30:00.000Z";
 const viewerId = "11111111-1111-4111-8111-111111111111";
 const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
   threads: 0,
+  channel: false,
+  member: true,
   id: "Chat01",
   name: "Secret board",
   title: "Secret board",
@@ -31,6 +33,8 @@ const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
   memberCount: 2,
   unread: 0,
   read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+  archived: false,
+  pinnedRank: null,
   withGuests: false,
   peerDeactivated: false,
   permission: "write",
@@ -79,6 +83,8 @@ class FakeWebSocket {
 const settle = () => Bun.sleep(60);
 const message = (seq: number, body = `Message ${seq}`) =>
   MessageViewSchema.parse({
+    reactions: [],
+    refs: [],
     thread: null,
     replyTo: null,
     id: String(seq).padStart(10, "0"),
@@ -136,6 +142,8 @@ describe("ChatWorkspace interactions", () => {
     const fetchChat = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+        if (url.pathname === "/api/chat/preferences") return Response.json({ collapsed: [] });
+        if (url.pathname === "/api/chat/system-chats") return Response.json({ items: [], spacesCursor: null, notebooksCursor: null });
         const snapshot = /^\/api\/chat\/conversations\/([^/]+)\/snapshot$/.exec(url.pathname);
         if (snapshot) {
           const pending = pendingSnapshots.get(snapshot[1]!);
@@ -167,13 +175,21 @@ describe("ChatWorkspace interactions", () => {
         }
         if (url.pathname === "/api/chat/conversations/Chat01/leave" && init?.method === "POST") {
           leavePosts.push(JSON.parse(String(init.body)));
-          return Response.json({ success: true, keptThroughGroup: false });
+          return Response.json({ success: true, keptThroughGroup: false, canRejoin: false });
         }
         if (url.pathname === "/api/chat/conversations") return Response.json({ items: [], nextCursor: null });
         if (url.pathname === "/api/chat/conversations/Chat01/read" && init?.method === "POST") {
           const { seq } = JSON.parse(String(init.body));
           readPosts.push(seq);
-          return Response.json({ lastReadSeq: seq, unreadFromSeq: null, joinedSeq: 0 });
+          return Response.json({
+            conversationId: conversation.id,
+            lastReadSeq: seq,
+            unreadFromSeq: null,
+            joinedSeq: 0,
+            unread: 0,
+            asOfRev: 1,
+            threads: [],
+          });
         }
         if (url.pathname === "/api/chat/conversations/Chat01") return Response.json({ ...conversation, permission: "admin" });
         if (url.pathname === "/api/chat/conversations/Chat01/messages" && init?.method === "POST") {
@@ -251,7 +267,7 @@ describe("ChatWorkspace interactions", () => {
     if (!found) throw new Error(`Missing button ${label}`);
     return found;
   };
-  const mountVisibleUnread = async (phoneWidth: boolean) => {
+  const mountVisibleUnread = async (phoneWidth: boolean, permission: typeof conversation.permission = "write", ready = true) => {
     const changes = new dom.window.EventTarget();
     const phone = {
       matches: phoneWidth,
@@ -268,9 +284,12 @@ describe("ChatWorkspace interactions", () => {
       ...message(1),
       author: { type: "user", id: "22222222-2222-4222-8222-222222222222", name: "Alex" },
     });
-    await mount(true, [conversation], "info", "en", "write", {
+    await mount(true, [conversation], "info", "en", permission, {
       page: { items: [unread], seqHead: 1, rev: 1, from: 1, to: 1 },
     });
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    if (ready) socket.message({ t: "ready", id: socket.conversationSubscription, cursor: "c.0" });
     const feed = dom.root.querySelector<HTMLElement>(".k2b-virtual-feed__viewport")!;
     Object.defineProperty(feed, "clientHeight", { configurable: true, value: 600 });
     feed.dispatchEvent(new Event("scroll"));
@@ -292,6 +311,44 @@ describe("ChatWorkspace interactions", () => {
       expect(consoleErrors).toEqual([]);
     });
   }
+  test("visible unread reporting waits for the conversation replay to finish", async () => {
+    await mountVisibleUnread(false, "write", false);
+    expect(readPosts).toEqual([]);
+    const socket = FakeWebSocket.instances[0]!;
+    socket.message({ t: "ready", id: socket.conversationSubscription, cursor: "c.0" });
+    await settle();
+    expect(readPosts).toEqual([1]);
+    expect(consoleErrors).toEqual([]);
+  });
+  for (const permission of ["write", "read"] as const)
+    test(`automatic read failures leave a stable visible retry and recover for ${permission}`, async () => {
+      const delegate = globalThis.fetch;
+      let fail = true;
+      globalThis.fetch = Object.assign(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (String(input).endsWith("/read") && fail) return Response.json({ message: "Unavailable" }, { status: 503 });
+          return delegate(input, init);
+        },
+        { preconnect: delegate.preconnect },
+      );
+      await mountVisibleUnread(false, permission);
+      expect(dom.root.textContent).toContain("The read state could not be changed.");
+      const region = permission === "read" ? ".chat-conversation__notice" : ".k2b-chat-composer__hint";
+      const hint = dom.root.querySelector(region);
+      const feed = dom.root.querySelector(".chat-conversation__feed");
+      const preceding = feed?.previousElementSibling;
+      expect(hint?.textContent).toContain("The read state could not be changed.");
+      expect(hint?.textContent).toContain("Try again");
+      fail = false;
+      button("Try again").click();
+      await settle();
+      expect(dom.root.textContent).not.toContain("The read state could not be changed.");
+      expect(readPosts).toEqual([1]);
+      expect(dom.root.querySelector(region)).toBe(hint);
+      expect(dom.root.querySelector(".chat-conversation__feed")).toBe(feed);
+      expect(feed?.previousElementSibling).toBe(preceding);
+    });
+
   test("desktop info keeps reporting visible unread messages", async () => {
     await mountVisibleUnread(false);
     expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
@@ -346,6 +403,8 @@ describe("ChatWorkspace interactions", () => {
     answer(
       Response.json(
         {
+          reactions: [],
+          refs: [],
           thread: null,
           replyTo: null,
           id: "Chat010001",
@@ -434,7 +493,7 @@ describe("ChatWorkspace interactions", () => {
     await settle();
     expect(dom.window.location.pathname).toBe("/app/chat/c/Chat01");
     const area = dom.root.querySelector(".k2b-app-workspace__main")!;
-    expect(area.textContent).toContain("No access");
+    expect(area.textContent).toContain("Thread unavailable");
     expect(area.textContent).toContain("This chat does not exist, or you are not a member of it.");
     expect(area.textContent).not.toContain("Secret board");
     // The open stayed in place: no document-navigation fallback.
@@ -761,6 +820,10 @@ describe("ChatWorkspace interactions", () => {
       const socket = FakeWebSocket.instances[0]!;
       socket.open();
       expect(socket.conversationSubscription).toBeDefined();
+      socket.message({ t: "ready", id: socket.conversationSubscription, cursor: "c.0" });
+      await settle();
+      // Catch-up alone is not a membership change and must not reload the panel.
+      expect(membersRequests).toBe(1);
       memberName = "Changed by someone else";
       socket.message({
         t: "event",

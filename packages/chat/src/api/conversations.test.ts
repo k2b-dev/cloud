@@ -3,7 +3,7 @@ import { ServiceAccountCredentialSchema, ServiceAccountSchema, UserSchema } from
 import * as platform from "@k2b/cloud/services";
 import { redis } from "bun";
 import { chatService } from "../service";
-import { ConversationSchema } from "../service/contracts";
+import { ConversationSchema, ReadAllSchema } from "../service/contracts";
 import { chatLive } from "../service/live";
 import chatApi from ".";
 
@@ -75,11 +75,11 @@ beforeEach(() => {
 });
 afterEach(() => mock.restore());
 
-test("admits a service account to the service and returns the localized people-only error", async () => {
+test("admits a service account to the service and returns the localized personal-account creation requirement", async () => {
   authenticate();
   const response = await post("/conversations", {}, "de-DE");
   expect(response.status).toBe(400);
-  expect(await response.json()).toEqual({ code: "BAD_INPUT", message: "Nur Personen und Gruppen können Chat-Mitglieder sein." });
+  expect(await response.json()).toEqual({ code: "BAD_INPUT", message: "Erstelle Chats mit einem persönlichen Konto." });
 });
 test("forwards the acting account, delegated subject, and request locale to member mutations", async () => {
   authenticate(true);
@@ -107,6 +107,8 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
       outcome: "created",
       conversation: {
         threads: 0,
+        channel: false,
+        member: true,
         id: "abcdef",
         name: null,
         icon: null,
@@ -115,6 +117,8 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
         memberCount: 1,
         unread: 0,
         read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+        archived: false,
+        pinnedRank: null,
         withGuests: false,
         peerDeactivated: false,
         lastMessage: null,
@@ -155,6 +159,8 @@ test("requires authentication for all conversation routes", async () => {
 });
 
 const textMessage = {
+  reactions: [],
+  refs: [],
   thread: null,
   replyTo: null,
   id: "0123456789",
@@ -216,6 +222,8 @@ test("snapshot reads the cursor before history and tolerates invalid message lin
   authenticate(true);
   const conversation = ConversationSchema.parse({
     threads: 0,
+    channel: false,
+    member: true,
     id: "abcdef",
     name: null,
     title: "You",
@@ -224,6 +232,8 @@ test("snapshot reads the cursor before history and tolerates invalid message lin
     memberCount: 1,
     unread: 0,
     read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+    archived: false,
+    pinnedRank: null,
     withGuests: false,
     peerDeactivated: false,
     lastMessage: null,
@@ -289,4 +299,60 @@ test("people forwards trimmed search and a re-encoded strict cursor to the servi
   expect(people).toHaveBeenCalledWith(
     expect.objectContaining({ accessSubject: { type: "user", userId }, query: { search: "Lea", cursor } }),
   );
+});
+
+test("account preferences require a readable account-wide credential", async () => {
+  for (const serviceAccount of [
+    { ...account, kind: "resource_bound" as const, appId: "chat", resourceType: "conversation", resourceId: "abcdef" },
+    account,
+  ]) {
+    spyOn(platform.serviceAccountCredentials, "authenticateApiToken").mockResolvedValue({
+      credential: { ...credential, scopes: serviceAccount.kind === "resource_bound" ? ["openid", "read"] : ["openid"] },
+      serviceAccount,
+      delegatedUser: null,
+    });
+    for (const method of ["GET", "PUT"]) {
+      const response = await chatApi.request("/preferences", {
+        method,
+        headers: { authorization: "Bearer test-key", "content-type": "application/json" },
+        ...(method === "PUT" ? { body: JSON.stringify({ collapsed: ["pinned"] }) } : {}),
+      });
+      expect(response.status).toBe(403);
+    }
+    const personal = await chatApi.request("/conversations/abcdef/personal", {
+      method: "PUT",
+      headers: { authorization: "Bearer test-key", "content-type": "application/json" },
+      body: JSON.stringify({ pinned: true }),
+    });
+    expect(personal.status).toBe(403);
+  }
+});
+
+test("passes the authenticated caller credential into system chat discovery", async () => {
+  authenticate();
+  const list = spyOn(chatService.systemChats, "list").mockResolvedValue({
+    ok: true,
+    data: { items: [], spacesCursor: null, notebooksCursor: null },
+  });
+  const response = await chatApi.request("/system-chats?spacesCursor=next", { headers: { authorization: "Bearer test-key" } });
+  expect(response.status).toBe(200);
+  expect(list).toHaveBeenCalledWith(
+    expect.objectContaining({
+      caller: expect.objectContaining({ authorization: "Bearer test-key" }),
+      query: { spacesCursor: "next" },
+    }),
+  );
+});
+
+test("read-all continuation survives HTTP validation and the service's second parse", async () => {
+  authenticate(true);
+  const cursor = JSON.stringify({ at: "2026-10-01T00:00:00.000123Z", id: "abcdef", thread: "" });
+  const read = spyOn(chatService.readState, "readAll").mockImplementation(async ({ input }) => {
+    expect(ReadAllSchema.parse(input)).toEqual({ confirmed: true, cursor: JSON.parse(cursor) });
+    return { ok: true, data: { outcome: "done", marked: 0, more: true, nextCursor: cursor } };
+  });
+  const response = await post("/conversations/read-all", { confirmed: true, cursor });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ outcome: "done", marked: 0, more: true, nextCursor: cursor });
+  expect(read).toHaveBeenCalledTimes(1);
 });

@@ -1,19 +1,28 @@
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { LIVE_LIMITS, startLiveOutbox } from "@k2b/cloud/events/testing";
 import { type AuthContext, createAccess } from "@k2b/cloud/server";
 import { get as getSetting } from "@k2b/cloud/services";
 import { useRegisteredTestApp } from "@k2b/cloud/services/identity/application.test-fixture";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
-import { sql } from "bun";
+import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
-import { ChatLiveEventSchema, MemberPageSchema, MessageViewSchema } from "../service/contracts";
+import {
+  ChatLiveEventSchema,
+  ConversationSchema,
+  MemberPageSchema,
+  MessageViewSchema,
+  ThreadListSchema,
+  ThreadSchema,
+} from "../service/contracts";
 import { chatLive } from "../service/live";
 import { chatLiveChannels } from "../service/live-channels";
+import { accessKey, resourceReaderDependencies } from "../service/resource-access";
 import chatApi from ".";
 import { messageFixtures, type Person } from "./messages.test-fixture";
 
@@ -23,6 +32,7 @@ const FrameSchema = z.object({
   t: z.string(),
   id: z.string().optional(),
   code: z.string().optional(),
+  cursor: z.string().optional(),
   data: ChatLiveEventSchema.optional(),
 });
 type Frame = z.infer<typeof FrameSchema>;
@@ -88,21 +98,109 @@ suite("Chat live delivery on two replicas", () => {
     });
     return {
       socket,
-      sub: (id: string, channel: string, scope: unknown) => socket.send(JSON.stringify({ t: "sub", id, channel, scope })),
+      sub: (id: string, channel: string, scope: unknown, cursor?: string) =>
+        socket.send(JSON.stringify({ t: "sub", id, channel, scope, after: cursor })),
       frames: (id: string) => frames.filter(({ frame }) => frame.id === id),
       events: (id: string) =>
         frames.filter(({ frame }) => frame.id === id && frame.t === "event").flatMap(({ frame }) => (frame.data ? [frame.data] : [])),
     };
   };
-  const send = async (person: Person, chat: string, body: string) => {
+  const send = async (person: Person, chat: string, body: string, refs: z.infer<typeof MessageViewSchema>["refs"] = []) => {
     // The timed cache test deliberately exceeds the normal send budget.
     await f.resetSendLimits([person], chat);
-    const response = await f.request(person.headers, `/${chat}/messages`, "POST", { clientId: crypto.randomUUID(), body });
+    const response = await f.request(person.headers, `/${chat}/messages`, "POST", { clientId: crypto.randomUUID(), body, refs });
     expect(response.status).toBe(201);
     return MessageViewSchema.parse(await response.json());
   };
   const ready = async (socket: Awaited<ReturnType<typeof open>>, ids: string[]) =>
     until(() => ids.every((id) => socket.frames(id).some(({ frame }) => frame.t === "ready")));
+
+  test("new item hints reach two warm viewers before either has an item decision", async () => {
+    const owner = await f.person("Owner"),
+      allowed = await f.person("Reader"),
+      denied = await f.person("Denied item");
+    const space = testShortId(),
+      item = testShortId();
+    const keys = [owner, allowed, denied].flatMap((person) => [
+      accessKey(`user:${person.id}`, { type: "spaces.space", id: space }),
+      accessKey(`user:${person.id}`, { type: "spaces.item", id: item }),
+    ]);
+    const reader = spyOn(resourceReaderDependencies, "invoke").mockImplementation(async (_app, capability, _input, caller) => {
+      if (capability === "space.read")
+        return { data: { id: space, name: "Project", permission: "write" }, links: [{ rel: "open", href: `/app/spaces/${space}` }] };
+      if (capability === "item.read" && caller.cookie !== denied.headers.cookie)
+        return {
+          data: { id: item, title: "Private task", kind: "task", spaceId: space },
+          links: [{ rel: "open", href: `/app/spaces/${space}/${item}` }],
+        };
+      return null;
+    });
+    let a: Awaited<ReturnType<typeof open>> | undefined, b: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      const response = await new Hono<AuthContext>().route("/api/chat", chatApi).fetch(
+        new Request(`http://127.0.0.1:${pods[0]!.port}/api/chat/system-chats/spaces.space/${space}/open`, {
+          method: "POST",
+          headers: { ...owner.headers, "x-forwarded-for": uniqueCallerAddress() },
+        }),
+      );
+      const chat = ConversationSchema.parse(await response.json());
+      f.trackChat(chat.id);
+      // Populate only container decisions using authorized HTTP, before the item exists.
+      for (const person of [allowed, denied]) {
+        expect((await f.request(person.headers, `/${chat.id}`)).status).toBe(200);
+        expect(await redis.get(accessKey(`user:${person.id}`, { type: "spaces.space", id: space }))).not.toBeNull();
+        expect(await redis.get(accessKey(`user:${person.id}`, { type: "spaces.item", id: item }))).toBeNull();
+      }
+      a = await open(0, allowed);
+      b = await open(1, denied);
+      for (const socket of [a, b]) socket.sub("chat", "conversation", { conversation: chat.id });
+      await ready(a, ["chat"]);
+      await ready(b, ["chat"]);
+      const createdAt = Date.now();
+      const created = ThreadSchema.parse(
+        await (
+          await f.request(owner.headers, `/${chat.id}/threads/for-resource`, "POST", { ref: { type: "spaces.item", id: item } })
+        ).json(),
+      );
+      await until(() => [a!, b!].every((socket) => socket.events("chat").some((event) => event.type === "threads")), 5_000);
+      expect(Date.now() - createdAt).toBeLessThan(5_000); // Well before the 60-second item/cache discovery interval.
+      for (const socket of [a, b]) expect(socket.events("chat")).toEqual([{ type: "threads", conversationId: chat.id }]);
+      // The hint's consumer refreshes over HTTP; only the authorized viewer discovers the thread.
+      const visible = ThreadListSchema.parse(await (await f.request(allowed.headers, `/${chat.id}/threads`)).json());
+      const hidden = ThreadListSchema.parse(await (await f.request(denied.headers, `/${chat.id}/threads`)).json());
+      expect(visible.items.map((thread) => thread.id)).toEqual([created.id]);
+      expect(hidden.items).toEqual([]);
+      const sent = MessageViewSchema.parse(
+        await (
+          await f.request(owner.headers, `/${chat.id}/messages`, "POST", {
+            clientId: crypto.randomUUID(),
+            body: "Private item payload",
+            thread: created.id,
+          })
+        ).json(),
+      );
+      // Renew the existing subscriptions at their hint cursors, as the store does after discovery.
+      // The item message was committed during the HTTP-to-renewal gap and must replay.
+      for (const socket of [a, b]) {
+        const cursor = socket.frames("chat").find(({ frame }) => frame.data?.type === "threads")?.frame.cursor;
+        expect(cursor).toBeString();
+        socket.socket.send(JSON.stringify({ t: "unsub", id: "chat" }));
+        socket.sub("chat", "conversation", { conversation: chat.id }, cursor);
+      }
+      await until(() => a!.events("chat").some((event) => event.type === "message" && event.message.id === sent.id));
+      const barrier = await send(owner, chat.id, "General barrier");
+      await until(() => b!.events("chat").some((event) => event.type === "message" && event.message.id === barrier.id));
+      expect(b.events("chat").some((event) => event.type === "message" && event.message.id === sent.id)).toBeFalse();
+      expect(JSON.stringify(b.events("chat"))).not.toContain("Private task");
+      expect(JSON.stringify(b.events("chat"))).not.toContain("Private item payload");
+      expect((await f.request(denied.headers, `/${chat.id}/messages/${sent.id}`)).status).toBe(404);
+    } finally {
+      a?.socket.close();
+      b?.socket.close();
+      reader.mockRestore();
+      await redis.send("DEL", keys);
+    }
+  });
 
   test("conversation and sidebar events reach readers across pods; strangers learn no chat", async () => {
     const ben = await f.person("Ben"),
@@ -118,13 +216,18 @@ suite("Chat live delivery on two replicas", () => {
     await ready(reader, ["chat", "list"]);
     await ready(nonmember, ["list"]);
     await until(() => nonmember.frames("chat").length > 0);
-    expect(nonmember.frames("chat")[0]!.frame).toEqual({ t: "revoked", id: "chat", code: "not_found" });
-    const message = await send(ben, chat.shortId, "readers only");
+    // Conversation subscriptions are collections so item-thread keys can appear later.
+    // An unreadable conversation starts as an empty collection.
+    expect(nonmember.frames("chat")[0]!.frame).toMatchObject({ t: "ready", id: "chat" });
+    const refs = [{ type: "spaces.task", id: "task-shared-live" }];
+    const message = await send(ben, chat.shortId, "readers only", refs);
     await until(
       () =>
         reader.events("chat").some((event) => event.type === "message" && event.message.id === message.id) &&
         reader.events("list").some((event) => event.type === "summary" && event.id === message.id),
     );
+    const delivered = reader.events("chat").find((event) => event.type === "message" && event.message.id === message.id);
+    expect(delivered?.type === "message" && delivered.message.refs).toEqual(refs);
     await Bun.sleep(100);
     expect(nonmember.events("chat")).toEqual([]);
     expect(nonmember.events("list").filter((event) => event.type === "summary" && event.conversationId === chat.shortId)).toEqual([]);
@@ -147,6 +250,7 @@ suite("Chat live delivery on two replicas", () => {
     await ready(b, ["chat"]);
     const members = MemberPageSchema.parse(await (await f.request(ben.headers, `/${chat.shortId}/members`)).json());
     const accessId = members.items.find((member) => member.principal.type === "user" && member.principal.userId === ana.id)!.accessId;
+    const beforeRemoval = a.frames("chat").length;
     const response = await fetch(`${pods[1]!.url}api/chat/conversations/${chat.shortId}/members/${accessId}`, {
       method: "DELETE",
       signal: AbortSignal.timeout(5_000),
@@ -155,10 +259,20 @@ suite("Chat live delivery on two replicas", () => {
     expect(response.status).toBe(200);
     const answered = Date.now();
     const sent = await send(ben, chat.shortId, "after removal");
-    await until(() => a.frames("chat").some(({ frame }) => frame.t === "revoked"), 1_000);
-    const revoked = a.frames("chat").find(({ frame }) => frame.t === "revoked")!;
-    expect(revoked.frame).toEqual({ t: "revoked", id: "chat", code: "access_denied" });
-    expect(revoked.at - answered).toBeLessThanOrEqual(1_000);
+    await until(
+      () =>
+        a
+          .frames("chat")
+          .slice(beforeRemoval)
+          .some(({ frame }) => frame.t === "resync"),
+      1_000,
+    );
+    const resync = a
+      .frames("chat")
+      .slice(beforeRemoval)
+      .find(({ frame }) => frame.t === "resync")!;
+    expect(resync.frame).toMatchObject({ t: "resync", id: "chat" });
+    expect(resync.at - answered).toBeLessThanOrEqual(1_000);
     await until(() => a.events("me").some((event) => event.type === "membership" && event.conversationId === chat.shortId));
     await until(
       () =>
@@ -206,15 +320,15 @@ suite("Chat live delivery on two replicas", () => {
       expired = await send(ben, chat.shortId, `directory message ${sends++}`);
       await Bun.sleep(100);
     } while (Date.parse(expired.createdAt) <= removedAt + LIVE_LIMITS.cacheMs);
-    await until(() => a.frames("chat").some(({ frame }) => frame.t === "revoked"));
-    const revoked = a.frames("chat").find(({ frame }) => frame.t === "revoked")!;
-    expect(revoked.frame.code).toBe("access_denied");
+    await until(() => a.frames("chat").some(({ frame, at }) => frame.t === "resync" && at >= removedAt));
+    const resync = a.frames("chat").find(({ frame, at }) => frame.t === "resync" && at >= removedAt)!;
+    expect(resync.frame).toMatchObject({ t: "resync", id: "chat" });
     expect(
       a.events("chat").filter((event) => event.type === "message" && Date.parse(event.message.createdAt) > removedAt + LIVE_LIMITS.cacheMs),
     ).toEqual([]);
     expect(a.events("chat").filter((event) => event.type === "message" && event.message.id === expired.id)).toEqual([]);
     await until(() => b.events("chat").filter((event) => event.type === "message").length === sends + 1);
-    expect(a.frames("chat").at(-1)?.frame).toEqual(revoked.frame);
+    expect(a.frames("chat").at(-1)?.frame).toEqual(resync.frame);
     a.socket.close();
     b.socket.close();
   }, 15_000);

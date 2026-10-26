@@ -2,11 +2,22 @@ import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { AppWorkspace, Button, Dropdown, useLocale } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { chatMessages } from "../messages";
-import { activeThreads, archivedThreads, type ThreadList, type ThreadView, threadHref, threadOf, viewName, viewUnread } from "./threads";
+import {
+  activeThreads,
+  archivedThreads,
+  systemThreadRows,
+  type ThreadList,
+  type ThreadView,
+  threadHref,
+  threadIcon,
+  threadOf,
+  viewName,
+  viewUnread,
+} from "./threads";
 
 /** The icon of a view, the same in the list, the head, the badges, and the phone's thread page. */
-export const viewIcon = (view: ThreadView) =>
-  view === "all" ? "ti ti-list-details" : view === "general" ? "ti ti-messages" : "ti ti-hash";
+export const viewIcon = (view: ThreadView, threads?: ThreadList | null) =>
+  view === "all" ? "ti ti-list-details" : view === "general" ? "ti ti-messages" : threadIcon(threadOf(threads ?? null, view));
 
 type RowsProps = {
   chatId: string;
@@ -19,6 +30,10 @@ type RowsProps = {
   /** The open view, or null when another chat or page is open. */
   view: ThreadView | null;
   canAdmin: boolean;
+  system?: boolean;
+  total?: number;
+  creating?: boolean;
+  onOverview?: (navigation?: LinkNavigateEvent) => void | Promise<void>;
   /** Shows archived threads collapsed at the end, where they can be opened and restored. */
   archived?: boolean;
   onNavigate: (view: ThreadView, navigation: LinkNavigateEvent) => void | Promise<void>;
@@ -48,7 +63,7 @@ export function ThreadRows(props: RowsProps): JSX.Element {
         active={props.view === view}
         data={{ thread: view }}
       >
-        <AppWorkspace.SidebarItemIcon icon={viewIcon(view)} />
+        <AppWorkspace.SidebarItemIcon icon={viewIcon(view, props.threads)} />
         <AppWorkspace.SidebarItemLabel marquee={false}>{viewName(view, props.threads, t())}</AppWorkspace.SidebarItemLabel>
         <AppWorkspace.SidebarItemMeta>
           <AppWorkspace.SidebarItemStatus unread={(props.view === view && !marked()) || unread() === 0 ? undefined : unread()} />
@@ -79,9 +94,11 @@ export function ThreadRows(props: RowsProps): JSX.Element {
         }
       >
         {row("all")}
-        {row("general")}
-        <For each={activeThreads(props.threads)}>{(thread) => row(thread.id)}</For>
-        <Show when={props.archived && archivedThreads(props.threads).length > 0}>
+        <Show when={!props.system}>{row("general")}</Show>
+        <For each={props.system ? systemThreadRows(props.threads, props.view) : activeThreads(props.threads)}>
+          {(thread) => row(thread.id)}
+        </For>
+        <Show when={!props.system && props.archived && archivedThreads(props.threads).length > 0}>
           <AppWorkspace.SidebarItem
             depth={1}
             icon={archiveOpen() ? "ti ti-chevron-down" : "ti ti-chevron-right"}
@@ -93,9 +110,26 @@ export function ThreadRows(props: RowsProps): JSX.Element {
             <For each={archivedThreads(props.threads)}>{(thread) => row(thread.id, 2)}</For>
           </Show>
         </Show>
+        <Show when={props.system}>
+          <AppWorkspace.SidebarItem
+            depth={1}
+            href={`${props.basePath ?? "/app/chat"}/c/${encodeURIComponent(props.chatId)}/threads`}
+            navigation="enhanced"
+            onNavigate={(event) => props.onOverview?.(event)}
+            icon="ti ti-list"
+          >
+            {props.total === undefined ? t().browseAllThreads : t().allThreadCount({ count: props.total })}
+          </AppWorkspace.SidebarItem>
+        </Show>
         <Show when={props.canAdmin}>
-          <AppWorkspace.SidebarItem depth={1} icon="ti ti-plus" class="chat-threads__new" onClick={() => props.onCreate()}>
-            {t().newThread}
+          <AppWorkspace.SidebarItem
+            depth={1}
+            icon="ti ti-plus"
+            class="chat-threads__new"
+            disabled={props.creating}
+            onClick={() => props.onCreate()}
+          >
+            {props.system ? t().discussElement : t().newThread}
           </AppWorkspace.SidebarItem>
         </Show>
       </Show>
@@ -125,7 +159,7 @@ export function ThreadPicker(
     const unread = view === "all" ? props.unread : viewUnread(view, null, props.threads);
     return {
       label: viewName(view, props.threads, t()),
-      icon: viewIcon(view),
+      icon: viewIcon(view, props.threads),
       class: unread > 0 && view !== props.view ? "chat-thread-picker__unread" : undefined,
       trailing: unread > 0 && view !== props.view ? <span class="chat-thread-count">{unread > 99 ? "99+" : unread}</span> : undefined,
       href: threadHref(props.chatId, view, null, props.basePath),
@@ -137,8 +171,16 @@ export function ThreadPicker(
       position="bottom-left"
       label={t().threadsIn({ title: name() })}
       items={[
-        { items: [entry("all"), entry("general"), ...activeThreads(props.threads).map((thread) => entry(thread.id))] },
-        ...(archivedThreads(props.threads).length
+        {
+          items: [
+            entry("all"),
+            ...(props.system ? [] : [entry("general")]),
+            ...(props.system ? systemThreadRows(props.threads, props.view) : activeThreads(props.threads)).map((thread) =>
+              entry(thread.id),
+            ),
+          ],
+        },
+        ...(!props.system && archivedThreads(props.threads).length
           ? [
               {
                 sectionLabel: t().archivedThreads({ count: archivedThreads(props.threads).length }),
@@ -146,11 +188,47 @@ export function ThreadPicker(
               },
             ]
           : []),
-        ...(props.canAdmin ? [{ items: [{ label: t().newThread, icon: "ti ti-plus", action: () => props.onCreate() }] }] : []),
+        ...(props.system
+          ? [
+              {
+                items: [
+                  {
+                    label: props.total === undefined ? t().browseAllThreads : t().allThreadCount({ count: props.total }),
+                    icon: "ti ti-list",
+                    href: `${props.basePath ?? "/app/chat"}/c/${encodeURIComponent(props.chatId)}/threads`,
+                    action: () => props.onOverview?.(),
+                  },
+                ],
+              },
+            ]
+          : []),
+        ...(props.canAdmin
+          ? [
+              {
+                items: [
+                  {
+                    label: props.system ? t().discussElement : t().newThread,
+                    icon: "ti ti-plus",
+                    disabled: props.creating,
+                    action: () => props.onCreate(),
+                  },
+                ],
+              },
+            ]
+          : []),
       ]}
     >
-      <Dropdown.Trigger appearance="plain" class="chat-thread-picker" label={t().switchThread({ name: name() })} tooltip={false}>
-        <i class={viewIcon(props.view)} aria-hidden="true" />
+      <Dropdown.Trigger
+        appearance="plain"
+        class={
+          props.system && props.view !== "all" && props.view !== "general"
+            ? "chat-thread-picker chat-thread-picker--item"
+            : "chat-thread-picker"
+        }
+        label={t().switchThread({ name: name() })}
+        tooltip={false}
+      >
+        <i class={viewIcon(props.view, props.threads)} aria-hidden="true" />
         <span class="chat-thread-picker__name">{name()}</span>
         <span class="chat-thread-picker__dot" data-on={othersUnread() ? "" : undefined} aria-hidden="true" />
         <Show when={othersUnread()}>
