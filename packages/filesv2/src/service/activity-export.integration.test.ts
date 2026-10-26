@@ -73,7 +73,7 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
       text += decoder.decode(chunk.value, { stream: true });
     }
   }
-  async function seed(count = 1, options: { time?: Date; action?: string; boundary?: boolean } = {}) {
+  async function seed(count = 1, options: { time?: Date; action?: string; boundary?: boolean; first?: number } = {}) {
     // A timed-out seed belongs to the fixture, not to an export request. Own its connection
     // so afterEach can stop it before another test truncates or repopulates the same tables.
     const database = new SQL({ ...sql.options, max: 1 });
@@ -90,7 +90,7 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
         // All production constraints/indexes remain installed; row IDs still differ.
         await database`INSERT INTO filesv2.activity(id,state,action,server_url,root,base_id,directory,name,path_after,actor_kind,via,started_at,finished_at)
           SELECT ('10000000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,'failed','file.edit','http://fixture','cloud',${baseId}::uuid,false,'a','users/alice/a','system','system',${now},${now}
-          FROM generate_series(1,${count}) AS i`;
+          FROM generate_series(${options.first ?? 1},${(options.first ?? 1) + count - 1}) AS i`;
         // The fresh private database has no autovacuum statistics yet. Without
         // ANALYZE PostgreSQL estimates 87 rows instead of 100,000 and sorts every page.
         await database`ANALYZE filesv2.activity`;
@@ -309,7 +309,8 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
     });
   });
   describe("over-limit fixture", () => {
-    beforeEach(() => seed(100001, { boundary: true }));
+    // Each hook owns a bounded piece of setup; no individual hook outlives Bun's normal deadline.
+    for (let first = 1; first <= 100001; first += 20000) beforeEach(() => seed(Math.min(20000, 100002 - first), { boundary: true, first }));
     test("100001 rows rejects before any response/audit and returns snapshot connection", async () => {
       await expect(withExport(service(), input, new AbortController().signal)).rejects.toMatchObject({
         code: "activity_export_limit",
@@ -319,7 +320,7 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
     });
   });
   describe("maximum-size fixture", () => {
-    beforeEach(() => seed(100000, { boundary: true }));
+    for (let first = 1; first <= 100000; first += 20000) beforeEach(() => seed(20000, { boundary: true, first }));
     test("exactly 100000 rows pass the SQL count and stream in bounded batches", async () => {
       await withExport(service(), input, new AbortController().signal, async (result, reader) => {
         expect(result.count).toBe(100000);
@@ -346,11 +347,12 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
       await blocker`LOCK filesv2.activity IN ACCESS EXCLUSIVE MODE`;
       pending = withExport(service(), input, request.signal);
       void pending.catch(() => undefined);
-      // Observe the count waiting on our table lock before cancelling it.
+      // Observe this export waiting on our exact table lock before cancelling it.
+      // Query text is truncated in pg_stat_activity and cannot identify the expanded count SQL.
       let blocked = false;
       for (let attempt = 0; attempt < 50; attempt++) {
         const [state] = await sql<{ blocked: boolean }[]>`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
-          WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%bounded%') AS blocked`;
+          WHERE datname=current_database() AND ${backend!.pid}=ANY(pg_blocking_pids(pid))) AS blocked`;
         if (state?.blocked) {
           blocked = true;
           break;
