@@ -181,6 +181,7 @@ describe("Workflow dry run in the editor", () => {
       await page.locator(panel).getByText("Der Probelauf wartet, bis die Regel gültig ist.").waitFor();
       const button = page.getByRole("button", { name: /^Probelauf/ }).last();
       expect(await button.isDisabled()).toBe(true);
+      await page.locator(panel).getByRole("heading").click();
       await page.keyboard.press("p");
       expect(await page.evaluate(() => window.dryRunRequests.length)).toBe(0);
       await page.locator(panel).scrollIntoViewIfNeeded();
@@ -196,7 +197,7 @@ describe("Workflow dry run in the editor", () => {
       await startDryRun(page, "de");
       await page.getByText("Erneut versuchen").waitFor();
       expect(await page.locator(`${panel} li[data-outcome]`).count()).toBe(10);
-      await page.locator(panel).scrollIntoViewIfNeeded();
+      await page.locator(`${panel} [role="alert"]`).scrollIntoViewIfNeeded();
       await keep(page, "editor-error-light-desktop");
     } finally {
       await page.context().close();
