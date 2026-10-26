@@ -226,6 +226,7 @@ export const close = async () => {
 };
 const withNoteLock = <T>(noteId: string, context: AnnotationContext, run: (tx: TransactionSQL) => Promise<Result<T>>): Promise<Result<T>> =>
   annotationTransactions().begin(async (tx) => {
+    context.signal.throwIfAborted();
     // Serialize across replicas without waiting connections exhausting the pool:
     // the text store needs its own SQL connection to save a prepared operation.
     const [lock] = await tx<
