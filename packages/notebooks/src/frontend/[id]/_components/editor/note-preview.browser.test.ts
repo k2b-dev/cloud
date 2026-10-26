@@ -162,6 +162,7 @@ beforeAll(async () => {
         initialPanelOpen: false,
         initialRichMode: mode,
         readOnly,
+        canWrite: false,
         initialHref: "/app/notebooks/book01/notes/note01",
         initialDetail: {
           noteAuthors: { createdBy: null, lastEditedBy: null },

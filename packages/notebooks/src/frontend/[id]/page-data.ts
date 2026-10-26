@@ -11,6 +11,7 @@ import { parseQueryPages, QUERY_PAGES_PARAM } from "@/lib/query-blocks";
 import { parseSidebarFilter } from "@/lib/sidebar-filter";
 import { notebooksService } from "@/service";
 import { loadBookNote } from "@/service/book";
+import * as annotations from "@/service/annotations";
 import { loadSelectedNoteRouteState, type SelectedNoteRouteState } from "@/service/route-state";
 import { buildNoteUrl } from "../params";
 import { extractTocFromMarkdown } from "./_components/detail/toc";
@@ -145,6 +146,24 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
         })
       : Promise.resolve(null),
   ]);
+  // The margin's comments arrive with the page, so its first render already shows them where they belong.
+  const initialAnnotations =
+    selectedCommentNote?.notebookId === notebookId && selected.note
+      ? await annotations
+          .list(
+            selected.note.id,
+            {},
+            {
+              actor: c.get("actor"),
+              accessSubject: c.get("accessSubject"),
+              locale: getLocale(c),
+              requestId: c.req.raw.headers.get("x-request-id")?.slice(0, 200) ?? crypto.randomUUID(),
+              signal: c.req.raw.signal,
+            },
+          )
+          .then((result) => (result.ok ? result.data : null))
+          .catch(() => null)
+      : null;
   const initialCommentsPage =
     commentsPage && selected.note
       ? {
@@ -209,6 +228,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     panelAttachments: selected.routeState?.panelAttachments ?? [],
     backlinks: selected.routeState?.backlinks ?? [],
     initialCommentsPage,
+    initialAnnotations,
     dateConfig: ctx.dateConfig,
   };
 }

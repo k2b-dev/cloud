@@ -9,11 +9,15 @@ import { MARK_REGEX, SPECIAL_CHAR_REGEX, SUB_REGEX, SUP_REGEX, TAG_REGEX } from 
 import { blockMathPattern, inlineMathPattern } from "../../../lib/editor/_lib/math-syntax";
 
 export const NOTE_PREVIEW_ID = "notebook-note-preview";
-export type NotePreviewPart = string | { className: string; children: NotePreviewPart[] };
+export type NotePreviewPart =
+  | string
+  | { className: string; children: NotePreviewPart[]; attributes?: Record<string, string> };
+/** A comment's passage in the preview, drawn as the editor's annotations extension draws it. */
+export type NotePreviewMark = { id: string; from: number; to: number; color: string; label: string; orphan: boolean };
 export type NotePreviewLine = { parts: NotePreviewPart[] };
 
 type Range = { from: number; to: number };
-type StyledRange = Range & { className: string; order: number };
+type StyledRange = Range & { className: string; order: number; attributes?: Record<string, string> };
 const prefix = "notebook-note-preview__";
 const allowedNodes = new Set([
   "Document",
@@ -69,7 +73,12 @@ export const NOTE_PREVIEW_BUDGET = { lines: Math.ceil((2160 + 1000) / 19.6), cha
  * otherwise (lists, links, tags, ligatures, blocks and other widgets): those
  * lines arrive with the editor, below the preview, so no text moves.
  */
-export const notePreviewLines = (markdown: string, mode: "rich" | "source", budget = NOTE_PREVIEW_BUDGET): NotePreviewLine[] => {
+export const notePreviewLines = (
+  markdown: string,
+  mode: "rich" | "source",
+  budget = NOTE_PREVIEW_BUDGET,
+  marks: readonly NotePreviewMark[] = [],
+): NotePreviewLine[] => {
   // EditorState normalizes every supported line separator to LF.
   const text = markdown.replace(/\r\n?/g, "\n");
   const lines = text.split("\n");
@@ -79,7 +88,15 @@ export const notePreviewLines = (markdown: string, mode: "rich" | "source", budg
     end += lines[count]!.length + 1;
     count++;
   }
-  if (mode === "source") return lines.slice(0, count).map((line) => ({ parts: line ? [line] : [] }));
+  const { passages, orphans } = markRanges(marks);
+  if (mode === "source") {
+    let start = 0;
+    return lines.slice(0, count).map((line) => {
+      const parts = line ? linePartsWithDots(text, start, start + line.length, passages, [], orphans) : [];
+      start += line.length + 1;
+      return { parts };
+    });
+  }
 
   let cut = frontMatterLength(text) ? 0 : count < lines.length ? end : text.length + 1;
   // These extensions currently scan code too; keep their existing behavior.
@@ -130,6 +147,7 @@ export const notePreviewLines = (markdown: string, mode: "rich" | "source", budg
     },
   });
   highlightTree(tree, highlighter, (from, to, className) => styled.push({ from, to, className, order: 2 }));
+  styled.push(...passages);
 
   for (const match of text.matchAll(TAG_REGEX)) {
     const from = match.index + (match[1]?.length ?? 0);
@@ -163,7 +181,7 @@ export const notePreviewLines = (markdown: string, mode: "rich" | "source", budg
     for (; nextStyled < styled.length && styled[nextStyled]!.from < to; nextStyled++) styledOnLine.push(styled[nextStyled]!);
     hiddenOnLine = hiddenOnLine.filter((range) => range.to > from);
     for (; nextHidden < hidden.length && hidden[nextHidden]!.from < to; nextHidden++) hiddenOnLine.push(hidden[nextHidden]!);
-    result.push({ parts: lineParts(text, from, to, styledOnLine, hiddenOnLine) });
+    result.push({ parts: linePartsWithDots(text, from, to, styledOnLine, hiddenOnLine, orphans) });
     from = to + 1;
   }
   return result;
@@ -187,6 +205,48 @@ export const notePreviewChart = (markdown: string, lines: NotePreviewLine[]) => 
       body.findIndex((entry) => /^ {0,3}:::[ \t]*$/.test(entry)),
     ),
   );
+};
+
+/** Passages as innermost styled ranges, and the dots of comments whose passage was deleted. */
+const markRanges = (marks: readonly NotePreviewMark[]) => ({
+  passages: marks
+    .filter((mark) => !mark.orphan && mark.to > mark.from)
+    .map(
+      (mark): StyledRange => ({
+        from: mark.from,
+        to: mark.to,
+        className: "cm-annotation",
+        order: 3,
+        attributes: { "data-annotation": mark.id, style: `--annotation-color: ${mark.color}`, "aria-description": mark.label },
+      }),
+    ),
+  orphans: marks.filter((mark) => mark.orphan).sort((a, b) => a.from - b.from),
+});
+
+/** A line's parts, with the dot of each comment whose passage was deleted where the editor draws it. */
+const linePartsWithDots = (
+  text: string,
+  from: number,
+  to: number,
+  styled: StyledRange[],
+  hidden: Range[],
+  orphans: readonly NotePreviewMark[],
+): NotePreviewPart[] => {
+  const dots = orphans.filter((mark) => mark.from >= from && mark.from <= to);
+  if (!dots.length) return lineParts(text, from, to, styled, hidden);
+  const parts: NotePreviewPart[] = [];
+  let start = from;
+  for (const dot of dots) {
+    if (dot.from > start) parts.push(...lineParts(text, start, dot.from, styled, hidden));
+    parts.push({
+      className: "cm-annotation-orphan",
+      children: [],
+      attributes: { "data-annotation": dot.id, style: `--annotation-color: ${dot.color}`, role: "button", "aria-label": dot.label },
+    });
+    start = dot.from;
+  }
+  if (to > start) parts.push(...lineParts(text, start, to, styled, hidden));
+  return parts;
 };
 
 const lineParts = (text: string, from: number, to: number, styled: StyledRange[], hidden: Range[]): NotePreviewPart[] => {
@@ -229,7 +289,11 @@ const lineParts = (text: string, from: number, to: number, styled: StyledRange[]
     stack = stack.slice(0, shared);
     for (const { range } of active.slice(shared)) {
       const children: NotePreviewPart[] = [];
-      (stack.at(-1)?.children ?? parts).push({ className: range.className, children });
+      (stack.at(-1)?.children ?? parts).push({
+        className: range.className,
+        children,
+        ...(range.attributes ? { attributes: range.attributes } : {}),
+      });
       stack.push({ range, children });
     }
     (stack.at(-1)?.children ?? parts).push(text.slice(start, end));

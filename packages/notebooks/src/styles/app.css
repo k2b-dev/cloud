@@ -2541,3 +2541,406 @@
   cursor: default;
   opacity: 0.4;
 }
+
+/* Inline comments. A comment's passage is tinted in its author's person color
+   (`personColor` of @k2b/ui), the open one stronger and underlined. The editor
+   (`lib/editor/annotations.ts`) and the server preview (`NotePreview.tsx`)
+   draw the same classes, so nothing changes when the editor takes over. */
+.cm-annotation {
+  border-radius: 2px;
+  background-color: color-mix(in srgb, var(--annotation-color) 20%, transparent);
+  cursor: pointer;
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+.cm-annotation[data-strong] {
+  background-color: color-mix(in srgb, var(--annotation-color) 42%, transparent);
+}
+.cm-annotation[data-active] {
+  box-shadow: inset 0 -2px 0 var(--annotation-color);
+}
+.cm-annotation[data-resolved] {
+  background-color: color-mix(in srgb, var(--k2b-text-muted) 12%, transparent);
+}
+.cm-annotation[data-resolved][data-strong] {
+  background-color: color-mix(in srgb, var(--k2b-text-muted) 26%, transparent);
+}
+.cm-annotation-draft {
+  background-color: color-mix(in srgb, var(--annotation-color) 22%, transparent);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--annotation-color) 70%, transparent);
+}
+.cm-annotation-orphan {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin: 0 3px;
+  border-radius: 50%;
+  vertical-align: 0.1em;
+  background-color: var(--annotation-color);
+  cursor: pointer;
+}
+.cm-annotation-orphan[data-strong] {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--annotation-color) 30%, transparent);
+}
+.cm-annotation-delete,
+.cm-annotation-delete * {
+  color: var(--k2b-danger-text);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+.cm-annotation-insert,
+.cm-annotation-flash {
+  border-radius: 3px;
+  color: var(--k2b-success-text);
+  background-color: var(--k2b-success-surface);
+  text-decoration: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cm-annotation {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .cm-annotation {
+    text-decoration: underline dotted;
+  }
+  .cm-annotation[data-active] {
+    text-decoration: underline solid;
+  }
+  .cm-annotation-orphan {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
+
+/* Where comments stand depends only on the width of the note's surface, never
+   on how many there are (F2): beside the centered column from 90 rem, beside
+   the column moved to the left from 69.5 rem, otherwise as dots beside the
+   lines with a popover, and in sheets on a phone. Full width and the open
+   detail panel use dots. The margin reads the layout from
+   `--notebook-comments-layout`. */
+.notebook-document-surface[data-comments] {
+  container: notebook-surface / inline-size;
+}
+.notebook-comments-host {
+  position: relative;
+  --notebook-comments-layout: phone;
+}
+@container notebook-surface (min-width: 48rem) {
+  .notebook-comments-host {
+    --notebook-comments-layout: compact;
+  }
+  /* Room for the dots beside the column. */
+  .notebook-comments-host .cm-content,
+  [data-comments] .notebook-note-preview__content {
+    max-width: min(100% - 5rem, var(--notebook-measure));
+  }
+}
+@container notebook-surface (min-width: 69.5rem) {
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) .notebook-comments-host {
+    --notebook-comments-layout: shift;
+  }
+  /* The column moves left so the margin (40 + 288 px) fits beside it. */
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) :is(.notebook-comments-host .cm-content, .notebook-note-preview__content) {
+    max-width: var(--notebook-measure);
+    margin-inline: max(1.5rem, (100cqi - 66.5rem) / 2) auto;
+  }
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) .notebook-comments-host .cm-gutters {
+    margin-left: max(1.5rem, (100cqi - 66.5rem) / 2);
+  }
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) [data-mode="source"] .notebook-note-preview__content {
+    justify-content: start;
+    margin-inline: 0;
+    padding-inline-start: max(1.5rem, (100cqi - 66.5rem) / 2);
+  }
+}
+@container notebook-surface (min-width: 90rem) {
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) .notebook-comments-host {
+    --notebook-comments-layout: wide;
+  }
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) :is(.notebook-comments-host .cm-content, .notebook-note-preview__content) {
+    margin-inline: auto;
+  }
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) .notebook-comments-host .cm-gutters {
+    margin-left: auto;
+  }
+  .notebook-document-surface:not([data-full-width], [data-detail-open]) [data-mode="source"] .notebook-note-preview__content {
+    justify-content: center;
+    padding-inline-start: 0;
+  }
+}
+
+.notebook-comments {
+  position: absolute;
+  top: 0;
+  width: 18rem;
+  height: 100%;
+}
+.notebook-comments__head {
+  position: absolute;
+  top: 1rem;
+  inset-inline: 0;
+  display: flex;
+  min-height: 2.75rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.625rem;
+  padding: 0 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comments__head b {
+  color: var(--k2b-text);
+  font-weight: 600;
+}
+.notebook-comments__hint {
+  flex-basis: 100%;
+  font-size: 0.78rem;
+  color: var(--k2b-text-muted);
+  opacity: 0.8;
+}
+.notebook-comments__toggle {
+  color: var(--k2b-text-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--k2b-border);
+}
+.notebook-comments__toggle:hover {
+  color: var(--k2b-text);
+}
+.notebook-comments__error {
+  color: var(--k2b-danger-text);
+}
+.notebook-comments__retry {
+  color: var(--k2b-action);
+  font-weight: 600;
+}
+
+.notebook-comment {
+  position: absolute;
+  left: 0;
+  width: 18rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--k2b-text-secondary);
+  transition:
+    top var(--k2b-motion-base) var(--k2b-ease-out),
+    background-color var(--k2b-motion-fast) var(--k2b-ease-out),
+    box-shadow var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+.notebook-comment[data-hover] {
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text);
+}
+.notebook-comment[data-active] {
+  z-index: 3;
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  color: var(--k2b-text);
+}
+.notebook-comment[data-resolved] {
+  color: var(--k2b-text-muted);
+}
+.notebook-comment:focus-visible {
+  outline: var(--k2b-focus-width, 2px) solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+.notebook-comment__who {
+  display: flex;
+  min-height: 1.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+.notebook-comment__who b {
+  color: var(--k2b-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.notebook-comment[data-resolved] .notebook-comment__who b {
+  color: var(--k2b-text-muted);
+}
+.notebook-comment__time {
+  color: var(--k2b-text-muted);
+  white-space: nowrap;
+}
+.notebook-comment__actions {
+  display: flex;
+  margin-inline-start: auto;
+  gap: 0.125rem;
+  opacity: 0;
+}
+.notebook-comment:is([data-active], [data-hover], :focus-within) .notebook-comment__actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .notebook-comment__actions {
+    opacity: 1;
+  }
+}
+.notebook-comment__text {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.notebook-comment:not([data-active]) > .notebook-comment__text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.notebook-comment__edited {
+  font-size: 0.75rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comment__orphan {
+  margin: 0.375rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comment__suggestion {
+  margin-top: 0.5rem;
+  font-size: 0.84rem;
+}
+.notebook-comment__label {
+  display: block;
+  margin-bottom: 0.125rem;
+  font-size: 0.75rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comment:not([data-active]) .notebook-comment__suggestion {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+.notebook-comment:not([data-active]) .notebook-comment__suggestion .notebook-comment__label {
+  display: inline;
+  margin-inline-end: 0.25rem;
+}
+.notebook-comment__del {
+  border-radius: 3px;
+  padding: 0 2px;
+  color: var(--k2b-danger-text);
+  background: var(--k2b-danger-surface);
+  text-decoration: line-through;
+}
+.notebook-comment__ins {
+  border-radius: 3px;
+  padding: 0 2px;
+  color: var(--k2b-success-text);
+  background: var(--k2b-success-surface);
+  text-decoration: none;
+}
+.notebook-comment__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.625rem;
+}
+.notebook-comment__hint {
+  margin-inline-start: auto;
+  font-size: 0.75rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comment__row > .k2b-button:first-child + .notebook-comment__hint {
+  margin-inline-start: 0;
+}
+.notebook-comment__state {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0.375rem 0 0;
+  font-size: 0.78rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comment__link {
+  color: var(--k2b-action);
+  font-weight: 600;
+}
+.notebook-comment__more {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comment__replies {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  margin: 0.625rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.notebook-comment__reply,
+.notebook-comment__compose {
+  margin-top: 0.625rem;
+}
+.notebook-comment__suggest {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--k2b-action);
+}
+.notebook-comment__diff {
+  margin: 0.375rem 0 0;
+  font-size: 0.8125rem;
+}
+.notebook-comment__error {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--k2b-danger-text);
+}
+
+/* Dots beside the lines and the popover they open, where there is no margin. */
+.notebook-comments-dot {
+  position: absolute;
+  display: inline-flex;
+  height: 1.5rem;
+  min-width: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0 0.375rem;
+  border-radius: 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-elevated);
+  box-shadow: 0 0 0 1px var(--k2b-border);
+}
+.notebook-comments-dot > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.notebook-comments-dot[data-active] {
+  box-shadow: 0 0 0 2px var(--k2b-action);
+}
+.notebook-comments-popover {
+  position: absolute;
+  z-index: 25;
+  width: min(21.25rem, 100%);
+}
+.notebook-comments-popover > .notebook-comment {
+  position: relative;
+  width: auto;
+}
+
+/* Comments belong to the working view only: print and PDF show the text alone. */
+@media print {
+  .cm-annotation,
+  .cm-annotation-draft,
+  .cm-annotation-flash {
+    background: none !important;
+    box-shadow: none !important;
+  }
+  .cm-annotation-orphan,
+  .notebook-comments,
+  .notebook-comments-gutter {
+    display: none !important;
+  }
+}
