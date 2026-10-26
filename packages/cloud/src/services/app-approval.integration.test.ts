@@ -131,7 +131,9 @@ const OldPendingLoginSchema = z
 
 suite("isolated app approval protocol", () => {
   preserveTestSettings([
+    "app.name",
     "app.url",
+    "user.app_approval.label",
     "security.rate_limit_per_second",
     "user.app_approval.enabled",
     "user.app_approval.origin",
@@ -902,7 +904,6 @@ suite("isolated app approval protocol", () => {
   });
 
   test("Cloud Login label uses the display name by default and reaches new pairing payloads", async () => {
-    const previous = await settings.get<string>("app.name");
     try {
       await settings.set("user.app_approval.enabled", true);
       await settings.set("app.name", "Hoffmann Druck");
@@ -919,7 +920,6 @@ suite("isolated app approval protocol", () => {
       await settings.set("user.app_approval.label", "x".repeat(100));
       expect((await readAppApprovalConfig()).label).toHaveLength(80);
     } finally {
-      await settings.set("app.name", previous);
       await settings.remove("user.app_approval.label");
       await settings.remove("user.app_approval.enabled");
     }
