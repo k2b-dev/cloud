@@ -42,6 +42,7 @@ on the same permission-aware application service.
 | Decide who may enter a route | [Route policies](/en/docs/identity/route-policies) |
 | Check access to one domain resource | [Resource authorization](/en/docs/identity/authorization) |
 | Create a credential for one resource | [Resource API keys](/en/docs/identity/resource-api-keys) |
+| Show a person's or agent's picture, or let them change it | [Profile pictures](/en/docs/identity/profile-pictures) |
 | Integrate an OAuth client | [OAuth](/en/docs/identity/oauth) |
 | Understand how a person approves an Action | [Action approvals](/en/docs/identity/approvals) |
 | Allow a route without a session | [Public access](/en/docs/identity/public-and-anonymous-access) |

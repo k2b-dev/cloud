@@ -1,4 +1,4 @@
-import { getLocale, v } from "@k2b/cloud/server";
+import { auth, getLocale, v } from "@k2b/cloud/server";
 import { err, fail } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { validator } from "hono-openapi";
@@ -125,6 +125,7 @@ export default new Hono<MailApiContext>()
   )
   .post(
     "/mailboxes/:mailboxId/incoming-automations/preview",
+    auth.readOnly,
     v("param", mailboxParamSchema),
     v("json", previewIncomingAutomationMatchesInputSchema),
     async (c) => {

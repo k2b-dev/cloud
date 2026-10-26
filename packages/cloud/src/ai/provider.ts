@@ -1,5 +1,6 @@
 import type { Provider, ReasoningEffort } from "@k2b/nessi/ai";
 import { anthropic, completeFromStream, gemini, mistral, ollama, openAICompatible, openai, openrouter } from "@k2b/nessi/ai";
+import { withProviderErrors } from "./provider-errors";
 import type { AiModelProfile } from "./types";
 
 /** Bound the first response chunk and every gap between chunks to 60s, for chat and complete() calls. */
@@ -39,7 +40,7 @@ const commonOptions = (profile: AiModelProfile, apiKey?: string) => ({
 
 export const createAiProvider = (profile: AiModelProfile, apiKey?: string, headers?: Record<string, string>): Provider => {
   if (profile.capabilities.includes("transcription")) throw new Error("Transcription profiles cannot be used for chat generation.");
-  return completeThroughStream(createAdapter(profile, apiKey, headers));
+  return withProviderErrors(completeThroughStream(createAdapter(profile, apiKey, headers)));
 };
 
 const createAdapter = (profile: AiModelProfile, apiKey?: string, headers?: Record<string, string>): Provider => {
