@@ -7,6 +7,7 @@ import { IconButton } from "../actions/Button";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "./chart-bar";
 import type { ChartCursor } from "./chart-cursor";
 import { createChartInspection } from "./chart-inspection";
 import {
@@ -16,7 +17,6 @@ import {
   type ChartTooltipFormatter,
   closeChartInspectionOnOutside,
 } from "./chart-inspection-core";
-import { type BarChartOptions, barChartLayout, renderBarChartSvg } from "./chart-bar";
 import { lineGapsSvg } from "./chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
 import { useChartMessages } from "./chart-messages";
