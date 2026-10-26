@@ -1,6 +1,6 @@
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
-import { Button, TextInput, toast, useLocale } from "@k2b/ui";
-import { createSignal, onCleanup, onMount } from "solid-js";
+import { Button, NoticeCard, TextInput, toast, useLocale } from "@k2b/ui";
+import { createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { createRetryToasts } from "../frontend/lib/feedback";
 import { overviewMessages } from "../frontend/overview-messages";
@@ -33,12 +33,15 @@ export default function TaskComment(props: Props) {
   });
   const [text, setText] = createSignal("");
   const [sending, setSending] = createSignal(false);
+  const storageErrorId = createUniqueId();
+  const [storageFailed, setStorageFailed] = createSignal(false);
   // The server renders an empty field; the draft arrives after mounting, so both renders agree.
   const [mounted, setMounted] = createSignal(false);
   onMount(() => {
     setText(pwaDrafts.read(props.userId, field()) ?? "");
     requestId = text() ? pwaDrafts.read(props.userId, requestField()) : undefined;
     if (!text()) pwaDrafts.remove(props.userId, requestField());
+    if (text()) setStorageFailed(!pwaDrafts.write(props.userId, field(), text()));
     setMounted(true);
   });
 
@@ -48,8 +51,11 @@ export default function TaskComment(props: Props) {
       pwaDrafts.remove(props.userId, requestField());
     }
     setText(value);
-    if (value) pwaDrafts.write(props.userId, field(), value);
-    else pwaDrafts.remove(props.userId, field());
+    if (value) setStorageFailed(!pwaDrafts.write(props.userId, field(), value));
+    else {
+      pwaDrafts.remove(props.userId, field());
+      setStorageFailed(false);
+    }
   };
 
   const send = async () => {
@@ -58,7 +64,11 @@ export default function TaskComment(props: Props) {
     requestId ??= crypto.randomUUID();
     const id = requestId;
     // A plain request token follows the device draft across a restart. An ambiguous send retries the same comment.
-    pwaDrafts.write(props.userId, requestField(), id);
+    if (!pwaDrafts.write(props.userId, field(), text()) || !pwaDrafts.write(props.userId, requestField(), id)) {
+      setStorageFailed(true);
+      return;
+    }
+    setStorageFailed(false);
     setSending(true);
     const response = await apiClient[":id"].items[":itemId"].comments
       .$post({ param: { id: props.task.spaceShortId, itemId: props.task.shortId }, query: {}, json: { requestId: id, content } })
@@ -83,27 +93,35 @@ export default function TaskComment(props: Props) {
   };
 
   return (
-    <form
-      class="spaces-pwa-comment"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void send();
-      }}
-    >
-      <TextInput
-        aria-label={t().comment}
-        multiline
-        lines={2}
-        icon={false}
-        maxLength={COMMENT_MAX_LENGTH}
-        placeholder={t().commentPlaceholder}
-        value={text}
-        onValueChange={change}
-        disabled={!mounted()}
-      />
-      <Button type="submit" variant="secondary" loading={sending()} disabled={!mounted() || !text().trim()}>
-        {t().send}
-      </Button>
-    </form>
+    <>
+      <Show when={storageFailed()}>
+        <NoticeCard id={storageErrorId} role="alert" tone="warning">
+          {t().commentStorageFailed}
+        </NoticeCard>
+      </Show>
+      <form
+        class="spaces-pwa-comment"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+      >
+        <TextInput
+          aria-label={t().comment}
+          aria-describedby={storageFailed() ? storageErrorId : undefined}
+          multiline
+          lines={2}
+          icon={false}
+          maxLength={COMMENT_MAX_LENGTH}
+          placeholder={t().commentPlaceholder}
+          value={text}
+          onValueChange={change}
+          disabled={!mounted()}
+        />
+        <Button type="submit" variant="secondary" loading={sending()} disabled={!mounted() || !text().trim()}>
+          {t().send}
+        </Button>
+      </form>
+    </>
   );
 }

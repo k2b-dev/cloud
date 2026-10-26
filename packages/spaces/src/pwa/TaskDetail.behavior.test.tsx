@@ -289,4 +289,33 @@ test("a changed committed comment keeps the draft and directs the reader to Spac
   expect([...dom!.document.querySelectorAll("[data-k2b-toast] button")].some((button) => button.textContent === "Retry")).toBe(false);
 });
 
+test("a token-only storage failure sends nothing, so a fresh runtime cannot duplicate a committed comment", async () => {
+  let root = mount({ kind: "ready", task });
+  type(commentField(root)!, "Ready to send");
+  const storage = dom!.window.localStorage;
+  const write = storage.setItem.bind(storage);
+  const blocked = spyOn(storage, "setItem").mockImplementation((key, value) => {
+    if (key.endsWith(encodeURIComponent(":request"))) throw new Error("Quota exceeded");
+    write(key, value);
+  });
+  try {
+    sendButton(root).click();
+    await waitFor(() => root.textContent?.includes("Device storage is full") ?? false, "storage failure");
+    expect(calls.filter((call) => call.path === COMMENTS)).toHaveLength(0);
+    expect(storage.getItem(DRAFT)).toBe("Ready to send");
+  } finally {
+    blocked.mockRestore();
+  }
+  const persistedText = storage.getItem(DRAFT)!;
+  dispose();
+  // A fresh runtime loses the helper's memory map and keeps only the durable text.
+  (await import("@k2b/cloud/browser/pwa-drafts")).pwaDrafts.clearAll();
+  storage.setItem(DRAFT, persistedText);
+  root = show({ kind: "ready", task });
+  answers.push(Response.json({ id: "Cmt005" }));
+  sendButton(root).click();
+  await waitFor(() => dom!.document.body.textContent?.includes("Comment sent") ?? false, "safe send after restart");
+  expect(calls.filter((call) => call.path === COMMENTS)).toHaveLength(1);
+});
+
 process.once("exit", () => fetchSpy.mockRestore());

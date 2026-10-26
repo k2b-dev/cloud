@@ -126,7 +126,9 @@ anyone else the address does not exist.
 - **Comment** sends a comment to the task. What you type stays on the device
   until it is sent, also when the app is closed in between. When it cannot be
   sent, the text stays and **Retry** safely repeats the send, including after
-  restarting the app. A late answer cannot clear a newer draft. Without write access to
+  restarting the app. A late answer cannot clear a newer draft. If device
+  storage is full or blocked, the app keeps the text on screen and asks you
+  to free space before sending. Without write access to
   the Space, there is no comment field.
 - **Open in Spaces** opens the task in Spaces on the web, to edit everything
   else.

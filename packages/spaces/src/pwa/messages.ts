@@ -43,6 +43,8 @@ export const myTasksMessages = i18n.define({
       commentPlaceholder: "Write a comment",
       send: "Send",
       commentSent: "Comment sent",
+      commentStorageFailed:
+        "Device storage is full or unavailable. Allow storage or free space, then send again. Your text stays here until you leave.",
       commentChanged: "This comment was already sent and has changed. Open it in Spaces; your draft stays here.",
       commentFailed: ({ title }: { title: string }) => `Comment on “${title}” not sent.`,
       markDone: "Mark as done",
@@ -89,6 +91,8 @@ export const myTasksMessages = i18n.define({
       commentPlaceholder: "Kommentar schreiben",
       send: "Senden",
       commentSent: "Kommentar gesendet",
+      commentStorageFailed:
+        "Der Gerätespeicher ist voll oder nicht verfügbar. Erlaube das Speichern oder schaffe Platz und sende erneut. Dein Text bleibt bis zum Verlassen hier.",
       commentChanged: "Dieser Kommentar wurde bereits gesendet und inzwischen geändert. Öffne ihn in Spaces; dein Entwurf bleibt hier.",
       commentFailed: ({ title }) => `Kommentar zu „${title}“ nicht gesendet.`,
       markDone: "Als erledigt markieren",
