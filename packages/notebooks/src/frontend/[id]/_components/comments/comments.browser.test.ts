@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../../../ui/test/browser";
 import { NOW, startCommentsServer } from "./comments.browser-server";
 
 // Where comments stand is layout: the margin's width rule, the column that never moves, the marks the server
@@ -16,11 +16,19 @@ afterAll(async () => {
   server?.stop();
 });
 
+/**
+ * The fake clock runs the app's timers; a reply from the harness can still start a card's short move or tint while the
+ * page settles, which `settled` reports. Such a move ends by itself, so settling starts again a few times.
+ */
 const settle = async (page: Page) => {
   await page.clock.runFor(400);
-  await page.evaluate(
-    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))),
-  );
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await settled(page);
+    } catch (error) {
+      if (attempt >= 4 || !String(error).includes("kept animating")) throw error;
+    }
+  }
 };
 const open = async (query: string, width = 1440, height = 900, waitForEditor = true) => {
   const page = await (await browser.newContext({ viewport: { width, height } })).newPage();
@@ -89,6 +97,7 @@ describe("inline comments", () => {
         });
         await page.goto(`${server.url}/?s=base`, { waitUntil: "commit" });
         await page.waitForSelector("#notebook-note-preview [data-annotation]");
+        // settled: the server preview's first frame, before the editor mounts, is the subject.
         const before = await marks(page, "#notebook-note-preview");
         expect(Object.keys(before).length).toBe(5);
         await page.waitForSelector(".cm-editor [data-annotation]");
@@ -146,6 +155,7 @@ describe("inline comments", () => {
       expect(await page.locator("[data-annotation-card][data-active]").count()).toBe(1);
       expect(await text()).toEqual(before);
       await page.keyboard.press("Escape");
+      await settle(page);
       await select(page, "regelmäßiges Training");
       await page.locator(".k2b-selection-toolbar").getByRole("button", { name: "Kommentieren" }).click();
       await settle(page);
