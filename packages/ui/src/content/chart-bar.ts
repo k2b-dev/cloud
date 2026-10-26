@@ -1,9 +1,9 @@
 import {
   type AxisOptions,
   type BarItem,
-  bar as emptyBarChart,
   chartDatumSvg,
   computeDomain,
+  bar as emptyBarChart,
   escapeXml,
   extendDomainToNice,
   mapLog,
