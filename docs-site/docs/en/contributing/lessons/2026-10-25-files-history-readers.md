@@ -44,3 +44,10 @@ updated: 2026-10-25
 - **What goes wrong:** A deleted or unnamed actor appears as a UUID in CLI text.
 - **Guard:** Files `activity-transports.test.ts` checks English and German unknown-person labels through the CLI table projection; the `principal-id-labels` rule also rejects identifier fallbacks.
 - **Evidence:** The focused test and repository rule named above.
+
+## Area availability replaces a direct lookup result
+
+- **Class:** An area-level availability check runs before every resource lookup.
+- **What goes wrong:** A person with only POSIX areas receives an unavailable-area response for a direct activity lookup instead of the ordinary not-found result.
+- **Guard:** Files `service/activity-reader-filegate.integration.test.ts` checks area-history availability separately from direct entry, batch, and movement-chain lookups after a membership change.
+- **Evidence:** The real stable-ID chain integration test.
