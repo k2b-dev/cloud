@@ -75,7 +75,9 @@ The layout follows from the data alone, so the server and the browser draw the
 same thing:
 
 - **Columns** when every label fits below its column in a 320px phone column.
-  Values stand on the columns when they fit their slot.
+  Values stand on the columns when they fit their slot. Category labels keep
+  their pixel distance from the axis: in a box shorter than the drawing they
+  hang below it, so leave room for one line of text below a short chart.
 - **Rows** otherwise: one row per category, the label left of its bar and the
   value at the bar's end, negative bars to the left of the zero line. Labels
   wrap to two lines; longer ones end with an ellipsis and keep the full text
@@ -85,8 +87,8 @@ same thing:
 
 Set `xAxis={{ ordered: true }}` when the categories follow each other, such as
 days or steps. They stay columns in any number, and only every n-th label shows
-when they do not all fit, as on a time axis. The tooltip and the table keep
-every label.
+when they do not all fit, as on a time axis, starting with the first label that
+fits inside the drawing. The tooltip and the table keep every label.
 
 `xAxis.label` and `yAxis.label` title the categories and the value: above the
 rows, or above the value axis and below the categories of columns. Format the

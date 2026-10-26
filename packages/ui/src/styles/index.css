@@ -1619,6 +1619,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: visible;
 }
 
+/* Labels below columns keep their pixel distance from the axis; in a box shorter
+ * than the drawing they hang below it instead of crossing the axis. */
+.k2b-ui .k2b-chart__svg > svg[data-bar-layout="columns"] {
+  overflow: visible;
+}
+
 /* Horizontal bar rows keep their own height: one row per category never shrinks
  * below its text. A shorter box scrolls; a taller one leaves room below. */
 .k2b-ui .k2b-chart:has(> .k2b-chart__svg > svg[data-bar-layout="rows"]) {

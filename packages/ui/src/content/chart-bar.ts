@@ -311,7 +311,7 @@ const renderColumns = (opts: BarChartOptions, plan: Plan, width: number, height:
     const ty = y(tick);
     parts.push(`<line class="stdlib-chart-grid" x1="${fmt(g.x0)}" y1="${fmt(ty)}" x2="${fmt(g.x1)}" y2="${fmt(ty)}"/>`);
     parts.push(
-      `<text class="stdlib-chart-tick-label" x="${fmt(g.x0 - GAP_PX * units)}" y="${fmt(ty + 4)}" text-anchor="end">${escapeXml(ticks(tick))}</text>`,
+      `<text class="stdlib-chart-tick-label" x="${fmt(g.x0 - GAP_PX * units)}" y="${fmt(ty)}" dy="4" text-anchor="end">${escapeXml(ticks(tick))}</text>`,
     );
   }
   if (opts.yAxis?.minorTicks && !g.scale.log)
@@ -326,15 +326,27 @@ const renderColumns = (opts: BarChartOptions, plan: Plan, width: number, height:
   parts.push(`<line class="stdlib-chart-axis" x1="${fmt(g.x0)}" y1="${fmt(baseline)}" x2="${fmt(g.x1)}" y2="${fmt(baseline)}"/>`);
   const slot = (g.x1 - g.x0) / finite.length;
   const barWidth = Math.min(slot * 0.8, COLUMN_MAX);
-  const labelY = g.y1 + 16;
-  // Unordered columns fit every label (see columnsFit); ordered ones label every n-th column that leaves room.
+  // Text keeps its pixel size around its x/y anchor (`.k2b-chart` CSS), and so does a `dy` offset: labels anchored on
+  // the plot's bottom edge stay clear of the axis in a box shorter than the drawing.
+  const labelY = g.y1;
+  // Unordered columns fit every label (see columnsFit); ordered ones label every n-th column that leaves room, from
+  // the first column whose label stays inside the drawing.
   const labelPx = Math.max(...finite.map(({ item }) => chartTextWidth(item.label))) + GAP_PX;
   const labelStep = Math.max(1, Math.ceil(labelPx / (slot / units)));
+  const inside = (position: number) => {
+    const half = (chartTextWidth(finite[position]!.item.label) / 2) * units;
+    const center = g.x0 + slot * (position + 0.5);
+    return center - half >= 0 && center + half <= width;
+  };
+  const firstLabel = Math.max(
+    0,
+    finite.findIndex((_, position) => inside(position)),
+  );
   finite.forEach(({ item, index }, position) => {
     const center = g.x0 + slot * (position + 0.5);
-    if (position % labelStep === 0)
+    if (position >= firstLabel && (position - firstLabel) % labelStep === 0 && inside(position))
       parts.push(
-        `<text class="stdlib-chart-tick-label stdlib-chart-category-label" x="${fmt(center)}" y="${fmt(labelY)}" text-anchor="middle">${escapeXml(item.label)}</text>`,
+        `<text class="stdlib-chart-tick-label stdlib-chart-category-label" x="${fmt(center)}" y="${fmt(labelY)}" dy="16" text-anchor="middle">${escapeXml(item.label)}</text>`,
       );
     if (g.scale.log && item.value <= 0) return;
     const valueY = y(item.value);
@@ -366,7 +378,7 @@ const renderColumns = (opts: BarChartOptions, plan: Plan, width: number, height:
   }
   if (opts.xAxis?.label)
     parts.push(
-      `<text class="stdlib-chart-axis-label" x="${fmt((g.x0 + g.x1) / 2)}" y="${fmt(labelY + 18)}" text-anchor="middle">${escapeXml(opts.xAxis.label)}</text>`,
+      `<text class="stdlib-chart-axis-label" x="${fmt((g.x0 + g.x1) / 2)}" y="${fmt(labelY)}" dy="34" text-anchor="middle">${escapeXml(opts.xAxis.label)}</text>`,
     );
   if (g.legendRows) {
     const legend = legendLayout(opts, finite, width);

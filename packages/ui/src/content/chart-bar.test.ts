@@ -62,6 +62,16 @@ describe("bar chart labels", () => {
     const xs = [...svg.matchAll(/stdlib-chart-category-label" x="([\d.]+)"/g)].map((match) => Number(match[1]));
     expect(chartTextWidth("30. Okt.") + 6).toBeLessThanOrEqual((xs[1]! - xs[0]!) / (480 / 296));
     expect(svg.match(/data-chart-datum=/g)).toHaveLength(30);
+    // A label wider than the room left of its column starts the sequence at the next column that keeps it whole.
+    const stamps = Array.from({ length: 30 }, (_, index) => ({ label: `2026-10-${String(index + 1).padStart(2, "0")} 12:00`, value: 1 }));
+    const drawn = draw({ data: stamps, xAxis: { ordered: true } }).svg;
+    const positions = [...drawn.matchAll(/stdlib-chart-category-label" x="([\d.]+)"/g)].map((match) => Number(match[1]));
+    const half = (chartTextWidth("2026-10-01 12:00") / 2) * (480 / 296);
+    expect(positions.length).toBeGreaterThan(1);
+    for (const x of positions) {
+      expect(x - half).toBeGreaterThanOrEqual(0);
+      expect(x + half).toBeLessThanOrEqual(480);
+    }
     // A few ordered columns that fit keep every label.
     expect(texts(draw({ data: data.slice(0, 3), xAxis: { ordered: true } }).svg, "stdlib-chart-category-label")).toHaveLength(3);
   });
@@ -154,7 +164,9 @@ describe("bar chart labels", () => {
     });
     expect(layout).toBe("columns");
     const baseline = (name: string) =>
-      [...svg.matchAll(new RegExp(`class="[^"]*${name}[^"]*" x="[\\d.]+" y="([\\d.]+)"`, "g"))].map((match) => Number(match[1]));
+      [...svg.matchAll(new RegExp(`class="[^"]*${name}[^"]*" x="[\\d.]+" y="([\\d.]+)"(?: dy="([\\d.]+)")?`, "g"))].map(
+        (match) => Number(match[1]) + Number(match[2] ?? 0),
+      );
     const values = baseline("stdlib-chart-bar-value");
     expect(values).toHaveLength(2);
     // 11px text: a value's baseline sits a full line above the top of the category labels.
