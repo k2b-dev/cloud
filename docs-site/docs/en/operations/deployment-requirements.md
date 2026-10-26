@@ -27,6 +27,19 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 package, CLI and desktop development tools are not additional server apps in
 this service set.
 
+## Review Mail workflows that send automatically
+
+Mail refuses automatic send effects in workflows containing AI actions or
+reading conversation summaries, which another AI workflow may have written.
+The rule covers the entire definition, including unused branches and AI actions
+after a send. It applies to existing versions, queued sends, and retries;
+blocked sends fail with `MAIL_WORKFLOW_SEND_REVIEW_REQUIRED` before SMTP.
+
+Replace generated replies with `createDraft` or `createReplyDraft` and have a
+person review and send the complete message. Fixed operator-approved reply
+templates in workflows without AI or summary reads keep working. Direct
+machine-token Mail permissions retain their documented authorization contract.
+
 ## Size Mail for large messages
 
 Each Mail process loads message bodies and extracts attachment text within one

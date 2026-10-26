@@ -3,6 +3,7 @@ import { renderToString } from "solid-js/web";
 import BookTagContent from "../frontend/[id]/_components/book/BookTagContent";
 import { type BookSnapshot, bookNavigationTarget } from "../frontend/[id]/_components/book/book-state";
 import { bookMessages } from "../frontend/[id]/_components/book/messages";
+import { parseQueryPages, QUERY_PAGES_PARAM } from "../lib/query-blocks";
 import { loadBookNote } from "./book";
 import * as notebooks from "./notebooks";
 import * as tags from "./tags";
@@ -63,7 +64,11 @@ export const loadBookRoute = async (params: {
     return { kind: "ok" as const, snapshot };
   }
   if (kind === "notes") {
-    const loaded = await loadBookNote({ ...params, noteShortId: resource });
+    const loaded = await loadBookNote({
+      ...params,
+      noteShortId: resource,
+      pages: parseQueryPages(target.searchParams.get(QUERY_PAGES_PARAM)),
+    });
     if (!loaded) return { kind: "not_found" as const };
     const snapshot: BookSnapshot = {
       ...common,
