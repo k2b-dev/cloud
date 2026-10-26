@@ -10,6 +10,7 @@ import {
   ButtonLink,
   CodeDisplay,
   dialogCore,
+  Kbd,
   NoticeCard,
   NumberInput,
   PanelDialog,
@@ -18,6 +19,7 @@ import {
   prompts,
   StatusBadge,
   TextInput,
+  Tooltip,
   toast,
   useLocale,
 } from "@k2b/ui";
@@ -29,13 +31,16 @@ import type {
   MailWorkflowVersion,
   WorkflowAutocomplete,
   WorkflowEffectBudget,
+  WorkflowTryResult,
   WorkflowValidation,
 } from "../../contracts";
 import type { ConversationReferenceConfiguration } from "../../service/conversation-reference";
 import { readApiError } from "./api-response";
 import { MailReferenceConfigurationForm } from "./MailResponsePolicySettings";
+import MailWorkflowDryRun from "./MailWorkflowDryRun";
 import { waitForMailPageTransition } from "./mail-page-transition";
 import { mailRemainingMessages } from "./mail-remaining-messages";
+import { mailWorkflowDryRunMessages } from "./mail-workflow-dry-run-messages";
 
 const DEFAULT_BUDGET: WorkflowEffectBudget = {
   maxTargets: 1_000,
@@ -60,7 +65,29 @@ steps:
       keyword: Review
 `;
 const workflowHighlight = createWorkflowYamlHighlighter();
+const DRY_RUN_WINDOW = 50;
+const DRY_RUN_BATCH = 10;
 const WORKFLOW_REFERENCE_HREF = "/app/mail/help/mail-workflows";
+
+/** One dry-run batch for unsaved YAML or a saved workflow; the panel loops over the cursor. */
+const fetchDryRunBatch = async (
+  mailboxId: string,
+  target: { source: string } | { workflowId: string },
+  cursor: string | null,
+  signal: AbortSignal,
+  fallback: string,
+): Promise<WorkflowTryResult> => {
+  const response = await apiClient.mailboxes[":mailboxId"].workflows.try.$post(
+    { param: { mailboxId }, json: { ...target, last: DRY_RUN_WINDOW, cursor, batch: DRY_RUN_BATCH } },
+    { init: { signal } },
+  );
+  if (!response.ok) throw new Error(await readApiError(response, fallback));
+  return response.json();
+};
+
+/** Typing in a field never starts a dry run; P only acts outside text entry. */
+const isTypingTarget = (target: EventTarget | null) =>
+  target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 
 const asSummary = (workflow: MailWorkflowDetail): MailWorkflow => ({
   id: workflow.id,
@@ -77,6 +104,7 @@ const asSummary = (workflow: MailWorkflowDetail): MailWorkflow => ({
 
 function WorkflowEditor(props: {
   mailboxId: string;
+  mailboxName: string;
   workflow: MailWorkflowDetail | null;
   referenceConfiguration: ConversationReferenceConfiguration | null;
   onReferenceConfigurationChange: (configuration: ConversationReferenceConfiguration) => void;
@@ -104,6 +132,22 @@ function WorkflowEditor(props: {
   const [validation, setValidation] = createSignal<WorkflowValidation | null>(null);
   const [referenceConfiguration, setReferenceConfiguration] = createSignal(props.referenceConfiguration);
   const [validationSource, setValidationSource] = createSignal(source());
+  const dryRunText = createMemo(() => mailWorkflowDryRunMessages.resolve([locale()]).t);
+  const [dryRunToken, setDryRunToken] = createSignal(0);
+  let dryRunSection: HTMLDivElement | undefined;
+  const dryRunBlocked = () => !source().trim() || validation()?.valid === false;
+  const startDryRun = () => {
+    if (dryRunBlocked()) return;
+    setDryRunToken((token) => token + 1);
+    dryRunSection?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
+  const onDryRunKey = (event: KeyboardEvent) => {
+    if (event.key.toLowerCase() !== "p" || event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
+    event.preventDefault();
+    startDryRun();
+  };
+  document.addEventListener("keydown", onDryRunKey);
+  onCleanup(() => document.removeEventListener("keydown", onDryRunKey));
 
   const budget = (): WorkflowEffectBudget => ({
     maxTargets: maxTargets(),
@@ -346,6 +390,19 @@ function WorkflowEditor(props: {
             )}
           </Show>
         </PanelDialog.Section>
+        <PanelDialog.Section title={dryRunText().titleShort} subtitle={dryRunText().footer} icon="ti ti-player-play">
+          <div ref={dryRunSection}>
+            <MailWorkflowDryRun
+              mailboxName={props.mailboxName}
+              startToken={dryRunToken()}
+              blocked={dryRunBlocked()}
+              last={DRY_RUN_WINDOW}
+              run={(cursor, signal) =>
+                fetchDryRunBatch(props.mailboxId, { source: source() }, cursor, signal, messages().workflowValidationFailed)
+              }
+            />
+          </div>
+        </PanelDialog.Section>
         <PanelDialog.Section title={messages().effectBudget} subtitle={messages().effectBudgetDescription} icon="ti ti-gauge">
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <NumberInput
@@ -422,9 +479,17 @@ function WorkflowEditor(props: {
         </PanelDialog.Section>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <Button variant="secondary" size="sm" type="button" disabled={validating()} onClick={() => void runValidation(true)}>
-          <i class={`ti ${validating() ? "ti-loader-2 animate-spin" : "ti-shield-check"}`} aria-hidden="true" /> {messages().validate}
-        </Button>
+        <div class="flex items-center gap-2">
+          <Button variant="secondary" size="sm" type="button" disabled={validating()} onClick={() => void runValidation(true)}>
+            <i class={`ti ${validating() ? "ti-loader-2 animate-spin" : "ti-shield-check"}`} aria-hidden="true" /> {messages().validate}
+          </Button>
+          <Tooltip.Anchor content={dryRunBlocked() ? dryRunText().waiting : dryRunText().footer}>
+            <Button variant="secondary" size="sm" type="button" disabled={dryRunBlocked()} onClick={startDryRun}>
+              <i class="ti ti-player-play" aria-hidden="true" /> {dryRunText().button}
+              <Kbd keys="p" class="k2b-kbd-hint" />
+            </Button>
+          </Tooltip.Anchor>
+        </div>
         <div class="flex items-center gap-2">
           <Button variant="ghost" size="sm" type="button" onClick={props.close}>
             {messages().cancel}
@@ -491,8 +556,37 @@ function WorkflowVersionViewer(props: {
   );
 }
 
+/** The saved workflow's current version on the last mails, for a check without opening the editor. */
+function WorkflowDryRunDialog(props: { mailboxId: string; mailboxName: string; workflow: MailWorkflow; close: () => void }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const dryRunText = createMemo(() => mailWorkflowDryRunMessages.resolve([locale()]).t);
+  return (
+    <PanelDialog>
+      <PanelDialog.Header title={props.workflow.name} subtitle={dryRunText().titleShort} icon="ti ti-player-play" close={props.close} />
+      <PanelDialog.Body>
+        <MailWorkflowDryRun
+          mailboxName={props.mailboxName}
+          startToken={1}
+          last={DRY_RUN_WINDOW}
+          run={(cursor, signal) =>
+            fetchDryRunBatch(props.mailboxId, { workflowId: props.workflow.id }, cursor, signal, messages().failedLoadWorkflow)
+          }
+        />
+      </PanelDialog.Body>
+      <PanelDialog.Footer>
+        <span />
+        <Button variant="ghost" size="sm" type="button" onClick={props.close}>
+          {messages().close}
+        </Button>
+      </PanelDialog.Footer>
+    </PanelDialog>
+  );
+}
+
 export default function MailWorkflowSettings(props: {
   mailboxId: string;
+  mailboxName: string;
   initialWorkflows: MailWorkflow[];
   referenceConfiguration: ConversationReferenceConfiguration | null;
   onReferenceConfigurationChange: (configuration: ConversationReferenceConfiguration) => void;
@@ -502,6 +596,7 @@ export default function MailWorkflowSettings(props: {
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const dryRunText = createMemo(() => mailWorkflowDryRunMessages.resolve([locale()]).t);
   let disposed = false;
   const [workflows, setWorkflows] = createSignal(props.initialWorkflows);
   const [versions, setVersions] = createSignal<Record<string, MailWorkflowVersion[]>>({});
@@ -538,6 +633,7 @@ export default function MailWorkflowSettings(props: {
       (close) => (
         <WorkflowEditor
           mailboxId={props.mailboxId}
+          mailboxName={props.mailboxName}
           workflow={detail}
           referenceConfiguration={props.referenceConfiguration}
           onReferenceConfigurationChange={props.onReferenceConfigurationChange}
@@ -548,6 +644,13 @@ export default function MailWorkflowSettings(props: {
       panelDialogWorkspaceOptions,
     );
   };
+  const openDryRun = (workflow: MailWorkflow) =>
+    dialogCore.open<void>(
+      (close) => (
+        <WorkflowDryRunDialog mailboxId={props.mailboxId} mailboxName={props.mailboxName} workflow={workflow} close={() => close()} />
+      ),
+      panelDialogWorkspaceOptions,
+    );
   let openedInitialEditor = false;
   createEffect(() => {
     if (!props.openNew || openedInitialEditor) return;
@@ -699,6 +802,9 @@ export default function MailWorkflowSettings(props: {
                 </Show>
                 <Button variant="ghost" size="sm" type="button" onClick={() => void toggleVersions(workflow)}>
                   <i class="ti ti-history" aria-hidden="true" /> {messages().versions}
+                </Button>
+                <Button variant="ghost" size="sm" type="button" onClick={() => void openDryRun(workflow)}>
+                  <i class="ti ti-player-play" aria-hidden="true" /> {dryRunText().button}
                 </Button>
                 <Button variant="ghost" size="sm" type="button" onClick={() => void openEditor(workflow)}>
                   <i class="ti ti-code" aria-hidden="true" /> {messages().editYaml}
