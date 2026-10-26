@@ -182,3 +182,21 @@ recovery, waiting, budget limits, and scope deletion.
 
 A dry run is useful product behavior, not a substitute for tests. Verify that
 its planned outputs and issues match the real action declarations.
+
+## Keep unavailable dry-run values unknown
+
+An action plan without an output must not invent an output for later steps.
+When it reports an issue and saves a value, that value remains unavailable.
+Conditions, including `exists`, cannot select a branch from it. The runtime
+inspects the possible branches and marks their dry-run action contexts with
+`dependsOnUnknown`. Applications can show these effects as conditional and
+count AI calls as a range. Dry-run AI costs count logical calls without
+creating or reading AI tasks.
+
+Use an in-memory repository with `dryRunWorkflowPlan` for a preview that must
+leave no durable run, step, effect or activity records. The regular durable
+dry-run worker still records its planning history.
+
+`WorkflowValueWaiting` from `@k2b/cloud/workflows/runtime` identifies an unresolved
+reference raised by `evaluate` or `resolveReference`. Its `reference` and `dependency`
+let preview adapters distinguish unavailable output from an unrelated error.

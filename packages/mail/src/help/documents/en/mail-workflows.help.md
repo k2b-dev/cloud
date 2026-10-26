@@ -50,6 +50,24 @@ steps:
 
 Choose **Validate** before saving. Validation checks strict YAML, the Mail vocabulary, value paths, accessible catalog names, and incompatible action combinations.
 
+## Try a workflow without AI {icon="player-play"}
+
+Choose **Dry run** to check the latest 50 messages, newest first. You can check
+up to 100 messages. A dry run changes no mail, sends nothing, creates no drafts
+and makes no AI calls. Cancel stops further batches.
+
+Each result shows the condition values and the actions that would run.
+**Skipped** means an explicit exclusion matched, such as a newsletter excluded
+with `not`. **None** means the conditions did not match.
+
+AI steps show that they would start. Results and branches that depend on AI
+remain unknown. The AI call range shows the certain calls and the maximum
+possible calls across those branches. Targets are checked before the preview;
+missing targets and targets without mailbox access appear as problems.
+
+Anyone who can view a saved workflow can try its current version. Trying
+unsaved YAML requires the same mailbox administration permission as saving it.
+
 ## Declare inputs {icon="point"}
 
 Mail supports two input types:

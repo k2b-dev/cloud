@@ -9,8 +9,11 @@ import {
   deactivateWorkflowInputSchema,
   ResourceShortIdSchema,
   restoreWorkflowVersionInputSchema,
+  tryWorkflowInputSchema,
   updateWorkflowMetadataInputSchema,
   validateWorkflowInputSchema,
+  type WorkflowTryResult,
+  workflowTryResultSchema,
 } from "../contracts";
 import { type MailRequestContext, workflows } from "../service";
 import { internalMailboxId, type MailApiContext, mailboxParamSchema, resolveMailboxParam, respondPublic } from "./public-resource-boundary";
@@ -35,8 +38,24 @@ const workflowParams = <T extends { mailboxId: string }>(c: Context<MailApiConte
   mailboxId: internalMailboxId(c),
 });
 
+const workflowTryResponseSchema: z.ZodType<WorkflowTryResult> = workflowTryResultSchema;
+const workflowTryRoutes = new Hono<MailApiContext>().post(
+  "/mailboxes/:mailboxId/workflows/try",
+  auth.readOnly,
+  workflowOperation("Try a Mail workflow without AI", workflowTryResponseSchema, "Workflow preview batch", [404, 422]),
+  v("param", mailboxParamSchema),
+  v("json", tryWorkflowInputSchema),
+  async (c) => {
+    const result = await workflows.tryWorkflow({ context: requestContext(c), mailboxId: internalMailboxId(c), input: c.req.valid("json") });
+    if (!result.ok) return respondPublic(c, result);
+    if ("valid" in result.data) return c.json(result.data, 422);
+    return c.json(result.data);
+  },
+);
+
 const workflowRoutes = new Hono<MailApiContext>()
   .use("/mailboxes/:mailboxId/*", resolveMailboxParam)
+  .route("/", workflowTryRoutes)
   .post(
     "/mailboxes/:mailboxId/workflows/autocomplete",
     auth.readOnly,

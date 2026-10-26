@@ -7,6 +7,7 @@ import workflowRoutes from "./workflows";
 const app = () => new Hono<AuthContext>().route("/", workflowRoutes);
 
 const expectedOperations = [
+  ["post", "/mailboxes/{mailboxId}/workflows/try", "Try a Mail workflow without AI", ["200", "400", "401", "403", "404", "422"]],
   ["post", "/mailboxes/{mailboxId}/workflows/autocomplete", "Complete Mail workflow YAML", ["200", "400", "401", "403"]],
   ["post", "/mailboxes/{mailboxId}/workflows/validate", "Validate Mail workflow YAML", ["200", "400", "401", "403"]],
   ["get", "/mailboxes/{mailboxId}/workflows", "List Mail workflows", ["200", "400", "401", "403"]],

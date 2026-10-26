@@ -622,3 +622,25 @@ The Mail API manages definitions and activations only. Runtime observability and
 | References | `reference-number config show|set`, `reference-number list|ensure|find` |
 | Workflow lifecycle | `workflow list|get|validate|create|update|export|activate|deactivate`, `workflow version list|get|create|restore` |
 | Runtime operations | `cld admin workflows health|runs|show|cancel|effects|resolve|events` |
+
+## Try a workflow without AI
+
+```bash
+cld mail workflow try <workflow-id> --last 50
+cld --json mail workflow try <workflow-id> --last 100
+cld mail workflow try --file workflow.yaml --last 50
+```
+
+Use a stable workflow ID for the current saved version, or `--file` for unsaved
+YAML. Unsaved YAML requires mailbox administration permission. Saved versions
+require the existing workflow read permission. `--last` accepts 1–100 and
+defaults to 50. Only visible messages are checked, newest first.
+
+The command collects batches and prints a count and one line per message.
+`--json` returns the merged items and AI call range. A dry run changes no mail,
+sends nothing, creates no drafts and calls no AI. AI-dependent actions are
+marked as uncertain; no category or generated result is predicted.
+
+`match` means an action or AI step would run. `skipped` means an explicit
+exclusion matched. `none` means the conditions did not match. Target problems
+are shown per item; the preflight also checks static targets in other branches.

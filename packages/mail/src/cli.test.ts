@@ -5978,3 +5978,74 @@ test("compose logo get/set/remove support structured output and require confirma
   expect(summary.exitCode).toBe(0);
   for (const text of ["image/png", "1x1", "250", "Team", "aaaaaaaaaaaa"]) expect(summary.stdout).toContain(text);
 });
+
+test("workflow try follows cursors, merges AI ranges and supports unsaved YAML files", async () => {
+  const requests: unknown[] = [];
+  const fixture = (checked: number) => ({
+    window: { last: 2, total: 2 },
+    checked,
+    cursor: checked === 1 ? "next-preview" : null,
+    items: [
+      {
+        messageId: checked === 1 ? "Messg1" : "Messg2",
+        conversationId: "Convo1",
+        from: { name: "Mara", email: "mara@example.test" },
+        subject: `Offer ${checked}`,
+        receivedAt: "2026-10-20T12:00:00.000Z",
+        outcome: checked === 1 ? "match" : "none",
+        reason: null,
+        facts: [],
+        effects: [],
+        stoppedAtAi: checked === 1,
+        problems: [],
+        aiCalls: { min: checked === 1 ? 1 : 0, max: checked === 1 ? 2 : 0 },
+      },
+    ],
+    aiCalls: { min: checked === 1 ? 1 : 0, max: checked === 1 ? 2 : 0 },
+    maxAiCallsPerDay: null,
+    preflight: { targets: [], sends: false, writesDrafts: false, aiSteps: 2 },
+  });
+  const server = withMailbox(async (request) => {
+    if (new URL(request.url).pathname.endsWith("/workflows/try")) {
+      const body = await request.json();
+      requests.push(body);
+      return api(fixture(body.cursor ? 2 : 1));
+    }
+    return api({}, { status: 404 });
+  });
+  servers.push(server);
+  const text = await runCli(server.url.origin, ["mail", "workflow", "try", WORKFLOW_ID, "--mailbox", MAILBOX_ID, "--last", "2"]);
+  expect(text.exitCode).toBe(0);
+  expect(text.stdout).toContain("1 match · 0 skipped · 1 none · 1–2 AI calls would be needed, none made");
+  expect(text.stdout).toContain("match · Mara · Offer 1 · Messg1");
+  expect(requests.slice(0, 2)).toEqual([
+    { workflowId: WORKFLOW_ID, last: 2, cursor: null, batch: 25 },
+    { workflowId: WORKFLOW_ID, last: 2, cursor: "next-preview", batch: 25 },
+  ]);
+  const structured = await runCli(server.url.origin, [
+    "--json",
+    "mail",
+    "workflow",
+    "try",
+    WORKFLOW_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--last",
+    "2",
+  ]);
+  expect(structured.exitCode).toBe(0);
+  expect(JSON.parse(structured.stdout)).toMatchObject({
+    checked: 2,
+    cursor: null,
+    items: [fixture(1).items[0], fixture(2).items[0]],
+    aiCalls: { min: 1, max: 2 },
+  });
+  const path = join(tmpdir(), `workflow-try-${crypto.randomUUID()}.yaml`);
+  temporaryFiles.push(path);
+  await writeFile(path, "steps:\n  - succeed: { message: Done }\n");
+  const unsaved = await runCli(server.url.origin, ["mail", "workflow", "try", "--file", path, "--mailbox", MAILBOX_ID, "--last", "2"]);
+  expect(unsaved.exitCode).toBe(0);
+  expect(requests.at(-1)).toMatchObject({ source: "steps:\n  - succeed: { message: Done }\n", last: 2 });
+  const invalid = await runCli(server.url.origin, ["mail", "workflow", "try", WORKFLOW_ID, "--file", path, "--mailbox", MAILBOX_ID]);
+  expect(invalid.exitCode).not.toBe(0);
+});

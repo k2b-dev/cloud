@@ -78,7 +78,10 @@ type WorkflowActionContextBase<Mode extends WorkflowInvocationMode> = {
 };
 
 export type WorkflowExecuteActionContext = WorkflowActionContextBase<"execute">;
-export type WorkflowDryRunActionContext = WorkflowActionContextBase<"dryRun">;
+export type WorkflowDryRunActionContext = WorkflowActionContextBase<"dryRun"> & {
+  /** The containing branch cannot be selected without an unavailable value. */
+  dependsOnUnknown?: boolean;
+};
 
 export type WorkflowExecuteActionHandler = {
   execute(context: WorkflowExecuteActionContext, step: WorkflowActionStep): Promise<WorkflowStepOutcome>;
@@ -120,6 +123,7 @@ export interface WorkflowDryRunActionPort {
  * carried a copy of it would be one more thing to keep in step.
  */
 export type WorkflowTraceEvent =
+  | { type: "condition.evaluated"; path: Array<string | number>; matched: boolean }
   | { type: "run.started"; run: WorkflowRuntimeRunIdentity }
   | { type: "step.started"; step: WorkflowRuntimeStepIdentity }
   | { type: "step.restored"; step: WorkflowRuntimeStepIdentity; restored: WorkflowRestoredStep }

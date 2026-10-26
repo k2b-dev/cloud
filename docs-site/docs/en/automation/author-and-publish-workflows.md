@@ -315,3 +315,27 @@ data in the same transaction as kernel publication.
 
 Use [Start workflow runs](/en/docs/automation/emit-events-and-start-runs) after
 publication.
+
+## Try Mail workflows before activation
+
+Mail provides **Dry run** for a saved workflow's current version or unsaved
+YAML. It checks the latest 50 visible messages by default, up to 100, newest
+first. The preview changes no mail, sends nothing, creates no drafts and calls
+no AI. It reports condition values, planned actions and target problems.
+
+AI steps report that they would start. Their output remains unavailable;
+branches and actions that need that output stay uncertain. The AI call range
+counts certain calls and the maximum possible calls across those branches.
+
+Use `cld mail workflow try <workflow-id> --last 50`, or
+`cld mail workflow try --file workflow.yaml`. Saved workflows keep their read
+permission; unsaved YAML needs mailbox administration permission.
+
+API clients post exactly one of `source` or `workflowId` to
+`/api/mail/mailboxes/:mailboxId/workflows/try`. `last` accepts 1–100 (default 50)
+and `batch` accepts 1–25 (default 10). Repeat the request with the returned
+opaque `cursor` until it is `null`; keep the source and window size unchanged.
+`checked` is cumulative, while `items` and `aiCalls: { min, max }` describe the
+new batch. Stop requesting batches to cancel. `preflight` reports static user
+and folder targets, possible sends and drafts, and the number of AI steps.
+Invalid YAML returns HTTP 422 with the workflow validation diagnostics.
