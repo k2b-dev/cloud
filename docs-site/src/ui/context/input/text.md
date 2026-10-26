@@ -22,9 +22,7 @@ edit. `onValueCommit` receives the committed string, normally when the field
 loses focus.
 
 `clearable` adds a clear button to a single-line field. Without `onClear`,
-clearing emits an empty string through both value callbacks. Clearing returns
-keyboard focus to the field before notifying the caller; an `onClear` handler
-can then navigate or move focus if its action requires it.
+clearing emits an empty string through both value callbacks.
 
 ## Input modes
 
