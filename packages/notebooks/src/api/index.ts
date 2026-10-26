@@ -1024,7 +1024,7 @@ const app = new Hono<AuthContext>()
   .use(rateLimit())
   .use(auth.requireRole("authenticated"))
   .route("/templates", templatesRoutes)
-  .route("/:id/notes/:noteId/annotations", annotationRoutes)
+  .route("/notes/:noteId/annotations", annotationRoutes)
 
   // ==========================
   // NOTEBOOKS

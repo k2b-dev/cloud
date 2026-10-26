@@ -128,3 +128,42 @@ test("PDF response documents the optional bounded omission report header", async
   expect(header?.description).toContain("marked in place");
   expect(header?.description).toContain("did not fit");
 });
+
+test("inline comment routes expose every action and one Markdown snapshot projection", async () => {
+  const spec = (await generateSpecs(app)) as Spec;
+  const base = "/notes/{noteId}/annotations";
+  const actions = [
+    [base, "get"],
+    [base, "post"],
+    [`${base}/{annotationId}`, "get"],
+    [`${base}/{annotationId}`, "patch"],
+    [`${base}/{annotationId}`, "delete"],
+    ...["restore", "resolve", "accept", "undo-accept"].map((action) => [`${base}/{annotationId}/${action}`, "post"]),
+    [`${base}/{annotationId}/replies`, "get"],
+    [`${base}/{annotationId}/replies`, "post"],
+    [`${base}/{annotationId}/replies/{replyId}`, "patch"],
+    [`${base}/{annotationId}/replies/{replyId}`, "delete"],
+    [`${base}/{annotationId}/replies/{replyId}/restore`, "post"],
+  ];
+  for (const [path, method] of actions) expect(spec.paths[path!]).toHaveProperty(method!);
+  const projection = responseSchema(spec, base);
+  expect(Object.keys(projection?.properties ?? {}).sort()).toEqual([
+    "contentHash",
+    "cursor",
+    "items",
+    "nextCursor",
+    "restoreRevision",
+    "text",
+  ]);
+  expect(projection?.properties?.items?.items?.properties).toHaveProperty("startRel");
+  expect(projection?.properties?.items?.items?.properties).toHaveProperty("repliesNextCursor");
+  const requests: string[] = [];
+  const client = hc<typeof app>("http://example.test", {
+    fetch: async (input: RequestInfo | URL) => {
+      requests.push(String(input));
+      return Response.json({});
+    },
+  });
+  await client.notes[":noteId"].annotations.$get({ param: { noteId: "note01" }, query: {} });
+  expect(requests).toEqual(["http://example.test/notes/note01/annotations"]);
+});

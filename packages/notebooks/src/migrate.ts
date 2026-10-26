@@ -201,7 +201,6 @@ export const migrate = async (): Promise<void> => {
       via TEXT CHECK (via IN ('assistant', 'mcp')),
       idempotency_key TEXT NOT NULL CHECK (char_length(idempotency_key) BETWEEN 1 AND 200),
       payload_hash TEXT NOT NULL, request_id TEXT NOT NULL,
-      activity_recorded BOOLEAN NOT NULL DEFAULT false,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       edited_at TIMESTAMPTZ, deleted_at TIMESTAMPTZ,
       CHECK (length(trim(body)) > 0 OR (suggestion IS NOT NULL AND suggestion <> quote)),

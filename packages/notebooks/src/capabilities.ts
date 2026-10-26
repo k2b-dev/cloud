@@ -1097,7 +1097,12 @@ export const notebooksCapabilities = defineCapabilities({
   },
   presentation: notebooksCapabilityPresentation,
   types: {
-    annotation: { title: "Inline comment", description: "A passage comment and its replies, owned by Notebooks.", icon: "ti ti-message", reader: "annotation.read" },
+    annotation: {
+      title: "Inline comment",
+      description: "A passage comment and its replies, owned by Notebooks.",
+      icon: "ti ti-message",
+      reader: "annotation.read",
+    },
     notebook: {
       title: "Notebook",
       description: "A permission-scoped collection of Markdown notes.",

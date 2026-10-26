@@ -970,3 +970,77 @@ test("ls and tree display hand order and numeric alphabetical order", async () =
     for (const note of outline.filter((note) => note.parentId === null)) note.position = 0;
   }
 });
+
+test("every annotation command uses the canonical note routes, including reply mutations", async () => {
+  const annotationId = "11111111-1111-4111-8111-111111111111";
+  const replyId = "22222222-2222-4222-8222-222222222222";
+  const operationId = "33333333-3333-4333-8333-333333333333";
+  const requests: Array<{ method: string; path: string; body: unknown }> = [];
+  const base = "/api/notebooks/notes/note01/annotations";
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/api/notebooks/notes/note01") return Response.json(noteFixture);
+      if (!path.startsWith(base)) return Response.json({ message: `Unexpected route ${path}` }, { status: 500 });
+      requests.push({ method: request.method, path, body: request.headers.has("content-type") ? await request.json() : null });
+      return Response.json(request.method === "GET" ? { items: [], nextCursor: null } : { id: annotationId });
+    },
+  });
+  servers.push(server);
+  const cases: Array<{ args: string[]; method: string; suffix: string; body?: unknown }> = [
+    { args: ["list", "note01"], method: "GET", suffix: "" },
+    { args: ["list", "note01", "--annotation", annotationId], method: "GET", suffix: `/${annotationId}` },
+    { args: ["list", "note01", "--annotation", annotationId, "--replies"], method: "GET", suffix: `/${annotationId}/replies` },
+    {
+      args: ["add", "note01", "--quote", "target", "--content", "Review", "--idempotency-key", "create"],
+      method: "POST",
+      suffix: "",
+      body: { quote: "target", body: "Review", prefix: "", suffix: "", idempotencyKey: "create" },
+    },
+    {
+      args: ["reply", "note01", annotationId, "--content", "Reply", "--idempotency-key", "reply"],
+      method: "POST",
+      suffix: `/${annotationId}/replies`,
+      body: { body: "Reply", idempotencyKey: "reply" },
+    },
+    { args: ["edit", "note01", annotationId, "--content", "Edit"], method: "PATCH", suffix: `/${annotationId}`, body: { body: "Edit" } },
+    {
+      args: ["edit", "note01", annotationId, "--reply", replyId, "--content", "Edit reply"],
+      method: "PATCH",
+      suffix: `/${annotationId}/replies/${replyId}`,
+      body: { body: "Edit reply" },
+    },
+    { args: ["delete", "note01", annotationId, "--yes"], method: "DELETE", suffix: `/${annotationId}` },
+    {
+      args: ["delete", "note01", annotationId, "--reply", replyId, "--yes"],
+      method: "DELETE",
+      suffix: `/${annotationId}/replies/${replyId}`,
+    },
+    { args: ["restore", "note01", annotationId], method: "POST", suffix: `/${annotationId}/restore` },
+    {
+      args: ["restore", "note01", annotationId, "--reply", replyId],
+      method: "POST",
+      suffix: `/${annotationId}/replies/${replyId}/restore`,
+    },
+    { args: ["resolve", "note01", annotationId], method: "POST", suffix: `/${annotationId}/resolve`, body: { resolved: true } },
+    { args: ["reopen", "note01", annotationId], method: "POST", suffix: `/${annotationId}/resolve`, body: { resolved: false } },
+    {
+      args: ["accept", "note01", annotationId, "--operation-id", operationId, "--yes"],
+      method: "POST",
+      suffix: `/${annotationId}/accept`,
+      body: { operationId },
+    },
+    {
+      args: ["undo", "note01", annotationId, "--operation-id", operationId, "--yes"],
+      method: "POST",
+      suffix: `/${annotationId}/undo-accept`,
+      body: { operationId },
+    },
+  ];
+  for (const entry of cases) {
+    const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "notebooks", "annotations", ...entry.args]);
+    expect({ command: entry.args[0], code: result.exitCode, error: result.stderr }).toEqual({ command: entry.args[0], code: 0, error: "" });
+  }
+  expect(requests).toEqual(cases.map(({ method, suffix, body }) => ({ method, path: base + suffix, body: body ?? null })));
+}, 60_000);

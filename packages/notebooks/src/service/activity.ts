@@ -1,5 +1,5 @@
 import { toPgTextArray } from "@k2b/cloud/services";
-import { sql } from "bun";
+import { type SQL, sql } from "bun";
 import {
   isNotebookActivityAction,
   NOTEBOOK_ACTIVITY_ACTIONS,
@@ -122,21 +122,24 @@ const assertActorShape = (actor: NotebookActivityIdentity): void => {
   }
 };
 
-export const record = async (params: {
-  notebookId: string;
-  noteId?: string | null;
-  noteVersionId?: string | null;
-  actor: NotebookActivityIdentity;
-  action: NotebookActivityAction;
-  metadata?: Record<string, unknown>;
-  bucketStartedAt?: Date | null;
-  occurredAt?: Date;
-}): Promise<string> => {
+export const record = async (
+  params: {
+    notebookId: string;
+    noteId?: string | null;
+    noteVersionId?: string | null;
+    actor: NotebookActivityIdentity;
+    action: NotebookActivityAction;
+    metadata?: Record<string, unknown>;
+    bucketStartedAt?: Date | null;
+    occurredAt?: Date;
+  },
+  db: SQL = sql,
+): Promise<string> => {
   assertActorShape(params.actor);
   const action = params.action.trim();
   if (action.length === 0 || action.length > 200) throw new Error("Activity action must be between 1 and 200 characters");
   const occurredAt = params.occurredAt ?? new Date();
-  const [row] = await sql<{ id: string | number }[]>`
+  const [row] = await db<{ id: string | number }[]>`
     INSERT INTO notebooks.activity_events (
       notebook_id,
       note_id,

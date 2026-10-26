@@ -87,7 +87,7 @@ const define = (topicConfig: Readonly<Pick<TopicConfig, "id" | "retention" | "de
       return 0;
     },
     withStore<Saved, Context>(store: SharedTextStore<Saved, Context>) {
-      return bindDocuments({ topic, replay }, store);
+      return bindDocuments({ topic, replay, maxPayloadBytes: topicConfig.maxPayloadBytes }, store);
     },
   };
 };
