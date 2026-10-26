@@ -126,7 +126,9 @@ export default function CloudCalendar(props: CloudCalendarProps) {
    * replaces what it showed there; one that fails keeps what it showed and is marked. `mark` shows the calendars as
    * loading meanwhile, for a choice or a retry the person waits for, not for a refresh in the background.
    */
-  const read = async (ranges: CalendarRange[], keys: readonly string[], options: { mark: boolean }) => {
+  const read = async (ranges: CalendarRange[], wanted: readonly string[], options: { mark: boolean }) => {
+    // Only calendars a source still offers; a stale key in the URL asks nobody.
+    const keys = wanted.filter((key) => lookup().has(key));
     const apps = [...new Set(keys.flatMap((key) => splitCalendarKey(key)?.appId ?? []))];
     if (apps.length === 0 || ranges.length === 0) return;
     if (options.mark) setStates(new Map(apps.map((appId) => [appId, { appId, state: "pending", error: null }])));
