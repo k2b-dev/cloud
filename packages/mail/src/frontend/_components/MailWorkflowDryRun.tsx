@@ -9,8 +9,13 @@ type Filter = "all" | WorkflowTryItem["outcome"];
 type AiCalls = WorkflowTryResult["aiCalls"];
 
 export type MailWorkflowDryRunProps = {
-  /** Loads one batch; the panel calls it again with the returned cursor until it is null. */
-  run: (cursor: string | null, signal: AbortSignal) => Promise<WorkflowTryResult>;
+  /**
+   * Starts one dry run and returns its batch loader; the panel calls the loader with the returned cursor until it is
+   * null. The rule is captured when the run starts, so later edits never mix into a running dry run.
+   */
+  createRun: () => (cursor: string | null, signal: AbortSignal) => Promise<WorkflowTryResult>;
+  /** Changes whenever the checked rule changes; results of an older rule are dropped. */
+  ruleKey?: string;
   /** Each new value starts a fresh run, for example from the Probelauf button or the P key. */
   startToken: number;
   /** Shown instead of a run while the rule cannot be checked, for example while the YAML is invalid. */
@@ -27,7 +32,6 @@ export type MailWorkflowDryRunProps = {
   now?: () => number;
 };
 
-const SKELETON_ROWS = 2;
 /** Below this width the panel shows two rows of 25 dots and leaves out the filters, as on a phone. */
 const COMPACT_WIDTH = 480;
 
@@ -38,6 +42,7 @@ export default function MailWorkflowDryRun(props: MailWorkflowDryRunProps) {
   const [phase, setPhase] = createSignal<Phase>("idle");
   const [items, setItems] = createSignal<WorkflowTryItem[]>([]);
   const [total, setTotal] = createSignal(props.last ?? 50);
+  const [checked, setChecked] = createSignal(0);
   const [aiCalls, setAiCalls] = createSignal<AiCalls>({ min: 0, max: 0 });
   const [dailyLimit, setDailyLimit] = createSignal<number | null>(null);
   const [preflight, setPreflight] = createSignal<WorkflowTryPreflight | null>(null);
@@ -50,6 +55,14 @@ export default function MailWorkflowDryRun(props: MailWorkflowDryRunProps) {
   const compact = () => props.compact ?? narrow();
   let controller: AbortController | null = null;
   let panel: HTMLElement | undefined;
+  let header: HTMLElement | undefined;
+  let restartButton: HTMLButtonElement | undefined;
+  /** Keyboard users keep their place when Cancel disappears: focus moves to Restart in the same spot. */
+  const keepHeaderFocus = (change: () => void) => {
+    const focused = header?.contains(document.activeElement) ?? false;
+    change();
+    if (focused) queueMicrotask(() => restartButton?.focus());
+  };
   onMount(() => {
     if (!panel || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(([entry]) => setNarrow((entry?.contentRect.width ?? COMPACT_WIDTH) < COMPACT_WIDTH));
@@ -64,10 +77,14 @@ export default function MailWorkflowDryRun(props: MailWorkflowDryRunProps) {
   });
 
   const start = async () => {
+    if (props.blocked) return;
     controller?.abort();
     const current = new AbortController();
     controller = current;
+    const load = props.createRun();
     setItems([]);
+    setChecked(0);
+    setTotal(props.last ?? 50);
     setAiCalls({ min: 0, max: 0 });
     setError(null);
     setFinishedAt(null);
@@ -77,20 +94,21 @@ export default function MailWorkflowDryRun(props: MailWorkflowDryRunProps) {
     let cursor: string | null = null;
     try {
       do {
-        const batch: WorkflowTryResult = await props.run(cursor, current.signal);
+        const batch: WorkflowTryResult = await load(cursor, current.signal);
         if (current.signal.aborted) return;
         setTotal(batch.window.total);
+        setChecked(batch.checked);
         setItems((previous) => [...previous, ...batch.items]);
         setAiCalls((previous) => ({ min: previous.min + batch.aiCalls.min, max: previous.max + batch.aiCalls.max }));
         setDailyLimit(batch.maxAiCallsPerDay);
         setPreflight(batch.preflight);
         cursor = batch.cursor;
       } while (cursor !== null);
-      setPhase("done");
+      keepHeaderFocus(() => setPhase("done"));
     } catch (failure) {
       if (current.signal.aborted) return;
       setError(failure instanceof Error ? failure.message : String(failure));
-      setPhase("failed");
+      keepHeaderFocus(() => setPhase("failed"));
     } finally {
       if (controller === current) {
         controller = null;
@@ -104,8 +122,17 @@ export default function MailWorkflowDryRun(props: MailWorkflowDryRunProps) {
     if (!controller) return;
     controller.abort();
     controller = null;
-    setPhase("canceled");
+    keepHeaderFocus(() => setPhase("canceled"));
     setFinishedAt(now());
+  };
+
+  /** Back to the start: no run, no results. Used when the rule changes under the results. */
+  const reset = () => {
+    controller?.abort();
+    controller = null;
+    setItems([]);
+    setChecked(0);
+    setPhase("idle");
   };
 
   createEffect(
@@ -118,10 +145,9 @@ export default function MailWorkflowDryRun(props: MailWorkflowDryRunProps) {
   );
   createEffect(
     on(
-      () => props.blocked,
-      (blocked) => {
-        if (blocked && controller) cancel();
-      },
+      () => props.ruleKey,
+      () => reset(),
+      { defer: true },
     ),
   );
 
@@ -140,7 +166,7 @@ export default function MailWorkflowDryRun(props: MailWorkflowDryRunProps) {
   };
   const aiLine = () => {
     const calls = aiCalls();
-    if (calls.max === 0) return phase() === "done" ? t().noAi : null;
+    if (calls.max === 0) return phase() === "done" ? t().noAi : "";
     const limit = dailyLimit();
     const base = t().aiCalls(calls);
     if (!limit) return base;
@@ -149,7 +175,9 @@ export default function MailWorkflowDryRun(props: MailWorkflowDryRunProps) {
   };
   const selected = () => active() ?? (phase() === "done" && items().length > 0 ? 0 : null);
   const hasRun = () => phase() !== "idle";
-  const done = () => items().length;
+  const done = () => checked();
+  /** Placeholders for every mail not checked yet, so the list ends where it will end and nothing below moves. */
+  const pendingRows = () => (phase() === "running" && filter() === "all" ? Math.max(total() - checked(), 0) : 0);
 
   return (
     <section
@@ -159,7 +187,7 @@ export default function MailWorkflowDryRun(props: MailWorkflowDryRunProps) {
       data-mail-workflow-dry-run={phase()}
     >
       {/* The right side keeps one width in every phase, so the title wraps the same while running and when done. */}
-      <header class="grid min-h-8 items-center gap-x-2.5 gap-y-1" classList={{ "grid-cols-[minmax(0,1fr)_auto]": !compact() }}>
+      <header ref={header} class="grid min-h-8 items-center gap-x-2.5 gap-y-1" classList={{ "grid-cols-[minmax(0,1fr)_auto]": !compact() }}>
         <h3 id="mail-workflow-dry-run-title" class="min-w-0 text-sm font-semibold text-primary">
           {hasRun() || !props.blocked ? t().title({ last: props.last ?? 50 }) : t().titleShort}
         </h3>
@@ -174,7 +202,14 @@ export default function MailWorkflowDryRun(props: MailWorkflowDryRunProps) {
             fallback={
               <Show when={hasRun()}>
                 <Tooltip.Anchor content={t().restart}>
-                  <IconButton size="sm" variant="ghost" label={t().restart} disabled={props.blocked} onClick={() => void start()}>
+                  <IconButton
+                    ref={restartButton}
+                    size="sm"
+                    variant="ghost"
+                    label={t().restart}
+                    disabled={props.blocked}
+                    onClick={() => void start()}
+                  >
                     <i class="ti ti-refresh" aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
@@ -216,7 +251,7 @@ export default function MailWorkflowDryRun(props: MailWorkflowDryRunProps) {
         >
           <For
             each={[
-              { count: counts().match, label: t().match, accent: true },
+              { count: counts().match, label: t().match({ count: counts().match }), accent: true },
               { count: counts().skipped, label: t().skipped, accent: false },
               { count: counts().none, label: t().none, accent: false },
             ]}
@@ -242,28 +277,17 @@ export default function MailWorkflowDryRun(props: MailWorkflowDryRunProps) {
           columns={compact() ? 25 : undefined}
           label={t().stripLabel({ total: total(), ...counts() })}
         />
-        <Show when={aiLine()}>
-          {(line) => (
-            <p class="flex items-center gap-1.5 text-xs text-dimmed">
-              <Show when={aiCalls().max > 0}>
-                <i class="ti ti-sparkles text-[color:var(--k2b-ai-accent)]" aria-hidden="true" />
-              </Show>
-              <span>{line()}</span>
-            </p>
-          )}
+        {/* Reserved in every phase: the line that appears when a run finishes moves nothing below it. */}
+        <p class="flex min-h-[1.125rem] items-center gap-1.5 text-xs text-dimmed" data-dry-run-ai-line>
+          <Show when={aiCalls().max > 0}>
+            <i class="ti ti-sparkles text-[color:var(--k2b-ai-accent)]" aria-hidden="true" />
+          </Show>
+          <span>{aiLine()}</span>
+        </p>
+        <Show when={props.aiChoiceHint}>
+          <p class="min-h-[1.125rem] text-xs text-dimmed">{t().aiChoiceHint}</p>
         </Show>
-        <Show when={props.aiChoiceHint && aiCalls().max > 0}>
-          <p class="text-xs text-dimmed">{t().aiChoiceHint}</p>
-        </Show>
-        <Show when={phase() === "failed"}>
-          <div class="flex flex-wrap items-center gap-2" role="alert">
-            <p class="text-sm text-primary">{t().failed({ reason: error() ?? "" })}</p>
-            <Button size="sm" variant="secondary" onClick={() => void start()}>
-              {t().retry}
-            </Button>
-          </div>
-        </Show>
-        <Show when={!compact() && items().length > 0}>
+        <Show when={!compact()}>
           <ChoiceChips
             aria-label={t().filterLabel}
             value={filter()}
@@ -340,14 +364,20 @@ export default function MailWorkflowDryRun(props: MailWorkflowDryRunProps) {
               );
             }}
           </For>
-          <Show when={phase() === "running"}>
-            <For each={Array.from({ length: SKELETON_ROWS }, (_, index) => index)}>
-              {(index) => (
-                <li class="flex min-h-13 items-center px-2" aria-hidden="true">
-                  <Skeleton class={`h-3 rounded ${index === 0 ? "w-4/5" : "w-2/3"}`} />
-                </li>
-              )}
-            </For>
+          <For each={Array.from({ length: pendingRows() }, (_, index) => index)}>
+            {(index) => (
+              <li class="flex min-h-13 items-center px-2" aria-hidden="true" data-dry-run-pending>
+                <Skeleton class={`h-3 rounded ${index % 2 === 0 ? "w-4/5" : "w-2/3"}`} />
+              </li>
+            )}
+          </For>
+          <Show when={phase() === "failed"}>
+            <li class="flex flex-wrap items-center gap-2 px-2 py-1.5" role="alert">
+              <p class="text-sm text-primary">{t().failed({ reason: error() ?? "" })}</p>
+              <Button size="sm" variant="secondary" disabled={props.blocked} onClick={() => void start()}>
+                {t().retry}
+              </Button>
+            </li>
           </Show>
           <Show when={phase() !== "running" && items().length > 0 && visible().length === 0}>
             <li class="px-2 py-1.5 text-sm text-dimmed">{t().emptyFilter}</li>

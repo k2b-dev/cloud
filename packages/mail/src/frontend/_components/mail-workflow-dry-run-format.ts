@@ -43,8 +43,16 @@ export const formatDryRunEffect = (effect: Effect, t: MailWorkflowDryRunText): s
       }
       case "addLocalTag":
         return t.effectTag({ tag: text(params.tag) ?? "" });
+      case "removeLocalTag":
+        return t.effectUntag({ tag: text(params.tag) ?? "" });
+      case "addKeyword":
+        return t.effectKeyword({ keyword: text(params.keyword) ?? "" });
+      case "removeKeyword":
+        return t.effectRemoveKeyword({ keyword: text(params.keyword) ?? "" });
       case "moveMessage":
         return t.effectMove({ folder: text(params.folder) ?? "" });
+      case "copyMessage":
+        return t.effectCopy({ folder: text(params.folder) ?? "" });
       case "archiveMessage":
         return t.effectArchive;
       case "trashMessage":
@@ -52,9 +60,23 @@ export const formatDryRunEffect = (effect: Effect, t: MailWorkflowDryRunText): s
       case "junkMessage":
         return t.effectJunk;
       case "addFlag":
-        return params.flag === "seen" ? t.effectMarkRead : t.effectOther({ kind: effect.kind });
+        return params.flag === "seen"
+          ? t.effectMarkRead
+          : params.flag === "flagged"
+            ? t.effectFlag
+            : t.effectAddFlag({ flag: text(params.flag) ?? "" });
+      case "removeFlag":
+        return params.flag === "seen"
+          ? t.effectMarkUnread
+          : params.flag === "flagged"
+            ? t.effectUnflag
+            : t.effectRemoveFlag({ flag: text(params.flag) ?? "" });
       case "setConversationStatus":
         return t.effectStatus({ status: statusLabel(text(params.status), t) });
+      case "setConversationSummary":
+        return t.effectSummary;
+      case "ensureConversationReference":
+        return t.effectReference;
       case "aiClassify":
       case "aiClassifyMany":
         return t.effectClassify;
@@ -65,12 +87,21 @@ export const formatDryRunEffect = (effect: Effect, t: MailWorkflowDryRunText): s
       case "addComment":
         return t.effectComment;
       case "createDraft":
+        return t.effectNewDraft;
       case "createReplyDraft":
         return t.effectDraft;
-      case "notifyUser":
-        return t.effectNotify;
-      case "setConversationSummary":
-        return t.effectSummary;
+      case "scheduleDraftSend":
+        return t.effectScheduleSend;
+      case "automaticReply":
+        return t.effectAutomaticReply;
+      case "notifyUser": {
+        const name = text(params.user);
+        return name ? t.effectNotifyUser({ name }) : t.effectNotify;
+      }
+      case "linkSpaceItem":
+        return t.effectLinkSpaceItem;
+      case "createSpaceEvent":
+        return t.effectSpaceEvent;
       default:
         return t.effectOther({ kind: effect.kind });
     }

@@ -17,6 +17,8 @@ const mount = async (options: { blocked?: boolean; locale?: "en" | "de" } = {}) 
   const signals: AbortSignal[] = [];
   const [token, setToken] = createSignal(0);
   const [blocked, setBlocked] = createSignal(options.blocked ?? false);
+  const [rule, setRule] = createSignal("rule-1");
+  const rulesStarted: string[] = [];
   const { default: MailWorkflowDryRun } = await import("./MailWorkflowDryRun");
   const dispose = render(
     () =>
@@ -28,10 +30,16 @@ const mount = async (options: { blocked?: boolean; locale?: "en" | "de" } = {}) 
         get blocked() {
           return blocked();
         },
+        get ruleKey() {
+          return rule();
+        },
         now: () => NOW,
-        run: (cursor, signal) => {
-          signals.push(signal);
-          return new Promise<WorkflowTryResult>((resolve, reject) => pending.push({ cursor, resolve, reject }));
+        createRun: () => {
+          rulesStarted.push(rule());
+          return (cursor, signal) => {
+            signals.push(signal);
+            return new Promise<WorkflowTryResult>((resolve, reject) => pending.push({ cursor, resolve, reject }));
+          };
         },
       }),
     dom.root,
@@ -44,7 +52,7 @@ const mount = async (options: { blocked?: boolean; locale?: "en" | "de" } = {}) 
   };
   const text = () => dom.root.textContent ?? "";
   const counts = () => [...dom.root.querySelectorAll(".text-\\[1\\.75rem\\]")].map((node) => node.textContent);
-  return { dom, pending, signals, setToken, setBlocked, answerNext, text, counts, dispose };
+  return { dom, pending, signals, setToken, setBlocked, setRule, rulesStarted, answerNext, text, counts, dispose };
 };
 
 test.skipIf(isServer)("de: the dry run fills from the left, counts only grow and ends with the mockup totals", async () => {
@@ -59,6 +67,7 @@ test.skipIf(isServer)("de: the dry run fills from the left, counts only grow and
     await view.answerNext();
     expect(view.text()).toContain("10 von 50 geprüft");
     expect(view.dom.root.querySelectorAll('[data-state="pending"]')).toHaveLength(40);
+    expect(view.dom.root.querySelectorAll("li[data-dry-run-pending]")).toHaveLength(40);
     const seen: number[][] = [];
     while (view.pending.length > 0) {
       seen.push(view.counts().map(Number));
@@ -77,6 +86,7 @@ test.skipIf(isServer)("de: the dry run fills from the left, counts only grow and
     expect(view.text()).toContain("118 Zeichen · 1 Nachricht");
     expect(view.text()).toContain("Der Probelauf ändert keine Mail, sendet nichts und ruft keine KI auf.");
     expect(view.dom.root.querySelectorAll('[data-state="pending"]')).toHaveLength(0);
+    expect(view.dom.root.querySelectorAll("li[data-dry-run-pending]")).toHaveLength(0);
     expect(view.dom.root.querySelector("[data-selected]")).not.toBeNull();
     expect(view.dom.root.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
       "Letzte 50 Mails: 17 treffen zu, 6 übersprungen, 27 nicht",
@@ -125,6 +135,14 @@ test.skipIf(isServer)("de: cancel stops asking, keeps what was checked and can s
     restart.click();
     await settle();
     expect(view.text()).toContain("0 von 50 geprüft");
+    // The canceled run's late answer must not reach the new run.
+    view.pending.shift()?.resolve(dryRunFixtureBatch("20"));
+    await settle();
+    expect(view.text()).toContain("0 von 50 geprüft");
+    expect(view.dom.root.querySelectorAll("li[data-outcome]")).toHaveLength(0);
+    await view.answerNext();
+    expect(view.text()).toContain("10 von 50 geprüft");
+    expect(view.dom.root.querySelector("li[data-outcome]")?.textContent).toContain("Jana Berger");
   } finally {
     view.dispose();
     view.dom.cleanup();
@@ -153,7 +171,7 @@ test.skipIf(isServer)("de: a failed batch says nothing changed and offers to try
   }
 });
 
-test.skipIf(isServer)("de: an invalid rule waits and an invalidated rule cancels a running dry run", async () => {
+test.skipIf(isServer)("de: an invalid rule waits, and an edited rule drops the running dry run and its results", async () => {
   const view = await mount({ blocked: true });
   try {
     expect(view.text()).toContain("Der Probelauf wartet, bis die Regel gültig ist.");
@@ -164,9 +182,40 @@ test.skipIf(isServer)("de: an invalid rule waits and an invalidated rule cancels
     view.setToken(2);
     await settle();
     expect(view.pending).toHaveLength(1);
+    await view.answerNext();
+    expect(view.dom.root.querySelectorAll("li[data-outcome]")).toHaveLength(10);
+    view.setRule("rule-2");
     view.setBlocked(true);
     await settle();
     expect(view.signals[0]?.aborted).toBe(true);
+    expect(view.dom.root.querySelectorAll("li[data-outcome]")).toHaveLength(0);
+    expect(view.text()).toContain("Der Probelauf wartet, bis die Regel gültig ist.");
+    // A late answer for the edited rule changes nothing.
+    view.pending.shift()?.resolve(dryRunFixtureBatch("10"));
+    await settle();
+    expect(view.dom.root.querySelectorAll("li[data-outcome]")).toHaveLength(0);
+    view.setBlocked(false);
+    view.setToken(3);
+    await settle();
+    expect(view.rulesStarted).toEqual(["rule-1", "rule-2"]);
+  } finally {
+    view.dispose();
+    view.dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("de: one match reads in the singular", async () => {
+  const view = await mount();
+  try {
+    view.setToken(1);
+    await settle();
+    const one = dryRunFixtureItems.slice(0, 1);
+    view.pending.shift()?.resolve(dryRunFixtureBatch(null, { items: one }));
+    await settle();
+    expect(view.text()).toContain("1trifft zu");
+    expect(view.dom.root.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
+      "Letzte 1 Mails: 1 trifft zu, 0 übersprungen, 0 nicht",
+    );
   } finally {
     view.dispose();
     view.dom.cleanup();

@@ -103,12 +103,16 @@ const open = async (context: BrowserContextOptions, options: DryRunHarnessOption
 };
 
 const panel = "[data-mail-workflow-dry-run]";
-/** The parts above the growing list: a finished run must leave them where the running one had them. */
+/**
+ * Header, bar, dots, AI line and the footer below the list: a finished run must leave them where the running one had
+ * them. The footer stays because the list reserves a row for every mail not checked yet; on a phone a row can wrap to a
+ * second line once its text arrives, so there only the parts above the list must hold still.
+ */
 const fixedParts = (page: Page) =>
   page.locator(panel).evaluate((section) => {
     // Relative to the panel, so scrolling the dialog does not count as a shift.
     const origin = section.getBoundingClientRect();
-    return ["header", ".h-1\\.5", ".k2b-dot-strip"].map((selector) => {
+    return ["header", ".h-1\\.5", ".k2b-dot-strip", "[data-dry-run-ai-line]", ":scope > p:last-child"].map((selector) => {
       const box = section.querySelector(selector)?.getBoundingClientRect();
       return box ? { selector, x: box.x - origin.x, y: box.y - origin.y, width: box.width, height: box.height } : { selector };
     });
@@ -137,7 +141,9 @@ describe("Workflow dry run in the editor", () => {
 
         await page.evaluate(() => window.releaseDryRun());
         await page.locator(`${panel}[data-mail-workflow-dry-run="done"]`).waitFor();
-        expect(await fixedParts(page)).toEqual(running);
+        const finished = await fixedParts(page);
+        if (device === "desktop") expect(finished).toEqual(running);
+        else expect(finished.slice(0, 4)).toEqual(running.slice(0, 4));
         expect(await page.locator(`${panel} [data-state="pending"]`).count()).toBe(0);
         expect(await page.locator(`${panel} [role="img"]`).getAttribute("aria-label")).toBe(
           "Letzte 50 Mails: 17 treffen zu, 6 übersprungen, 27 nicht",
@@ -150,6 +156,24 @@ describe("Workflow dry run in the editor", () => {
       }
     }, 30_000);
   }
+
+  test("Cancel by keyboard keeps focus in place and keeps what was checked", async () => {
+    const page = await open(desktop, { locale: "de", answerBatches: 2 });
+    try {
+      await startDryRun(page, "de");
+      await page.getByText("20 von 50 geprüft").waitFor();
+      await page.locator(panel).getByRole("button", { name: "Abbrechen" }).focus();
+      await page.keyboard.press("Enter");
+      await page.getByText("Abgebrochen bei 20 von 50").waitFor();
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Neu starten");
+      expect(await page.locator(`${panel} li[data-outcome]`).count()).toBe(20);
+      expect(await page.locator(`${panel} li[data-dry-run-pending]`).count()).toBe(0);
+      await page.locator(panel).scrollIntoViewIfNeeded();
+      await keep(page, "editor-canceled-light-desktop");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
 
   test("an invalid rule blocks the dry run and says why", async () => {
     const page = await open(desktop, { locale: "de", answerBatches: 5, invalid: true });

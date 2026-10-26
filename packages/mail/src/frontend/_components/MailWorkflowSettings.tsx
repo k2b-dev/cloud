@@ -135,14 +135,24 @@ function WorkflowEditor(props: {
   const dryRunText = createMemo(() => mailWorkflowDryRunMessages.resolve([locale()]).t);
   const [dryRunToken, setDryRunToken] = createSignal(0);
   let dryRunSection: HTMLDivElement | undefined;
-  const dryRunBlocked = () => !source().trim() || validation()?.valid === false;
+  /** Only a rule that validated as it stands now may run: an edit waits for its own validation. */
+  const dryRunBlocked = () => {
+    const result = validation();
+    return !source().trim() || result?.source !== source() || !result.valid;
+  };
   const startDryRun = () => {
     if (dryRunBlocked()) return;
     setDryRunToken((token) => token + 1);
     dryRunSection?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   };
   const onDryRunKey = (event: KeyboardEvent) => {
-    if (event.key.toLowerCase() !== "p" || event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return;
+    if (event.key.toLowerCase() !== "p" || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.repeat || event.isComposing || event.defaultPrevented || isTypingTarget(event.target)) return;
+    // Only this editor's own dialog: a prompt opened on top keeps the editor mounted but hidden.
+    const editor = dryRunSection?.closest("dialog");
+    const topmost = [...document.querySelectorAll("dialog[open]")].at(-1) === editor;
+    const inside = event.target instanceof Node && (editor?.contains(event.target) ?? false);
+    if (!editor || !topmost || !(inside || event.target === document.body)) return;
     event.preventDefault();
     startDryRun();
   };
@@ -396,10 +406,13 @@ function WorkflowEditor(props: {
               mailboxName={props.mailboxName}
               startToken={dryRunToken()}
               blocked={dryRunBlocked()}
+              ruleKey={source()}
               last={DRY_RUN_WINDOW}
-              run={(cursor, signal) =>
-                fetchDryRunBatch(props.mailboxId, { source: source() }, cursor, signal, messages().workflowValidationFailed)
-              }
+              createRun={() => {
+                const rule = source();
+                return (cursor, signal) =>
+                  fetchDryRunBatch(props.mailboxId, { source: rule }, cursor, signal, messages().workflowValidationFailed);
+              }}
             />
           </div>
         </PanelDialog.Section>
@@ -569,7 +582,7 @@ function WorkflowDryRunDialog(props: { mailboxId: string; mailboxName: string; w
           mailboxName={props.mailboxName}
           startToken={1}
           last={DRY_RUN_WINDOW}
-          run={(cursor, signal) =>
+          createRun={() => (cursor, signal) =>
             fetchDryRunBatch(props.mailboxId, { workflowId: props.workflow.id }, cursor, signal, messages().failedLoadWorkflow)
           }
         />
