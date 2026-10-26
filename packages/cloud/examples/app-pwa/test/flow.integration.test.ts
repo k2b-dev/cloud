@@ -86,7 +86,12 @@ suiteFor(
     for (const documentId of ["contract", "receipt"]) {
       const command = { visitId: visit.id, attemptId: crypto.randomUUID(), input: { documentId, revision: 1, signature, consent: true } };
       const result = await json(await post(`${guest}/command/sign-${documentId}`, command, cookie, csrf));
-      expect(result.completed).toBe(documentId === "receipt");
+      // A completing command ends content access, so its response carries no domain result.
+      expect(result).toEqual(
+        documentId === "receipt"
+          ? { state: "committed", completed: true, result: null, replayed: false }
+          : { result: { completed: false }, replayed: false },
+      );
       const replay = await json(await post(`${guest}/command/sign-${documentId}`, command, cookie, csrf));
       expect(replay.replayed).toBe(true);
     }
