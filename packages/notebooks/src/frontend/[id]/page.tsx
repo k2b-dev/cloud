@@ -97,6 +97,7 @@ export default ssr<AuthContext>(async (c) => {
           cursor={data.ctx.workspaceCursor}
           navigationHidden={data.ctx.navigationHidden}
           fullWidth={data.ctx.fullWidth}
+          openComments={data.bookOpenComments}
         />
       </Layout>
     );

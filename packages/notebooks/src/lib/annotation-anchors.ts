@@ -32,7 +32,11 @@ export const locateAnnotation = (text: string, selector: Selector, offsetHint?: 
   return match + selector.prefix.length;
 };
 export const resolveAnnotation = (config: {
-  doc: Y.Doc; start: Uint8Array; end: Uint8Array; selector: Selector; sameRevision: boolean;
+  doc: Y.Doc;
+  start: Uint8Array;
+  end: Uint8Array;
+  selector: Selector;
+  sameRevision: boolean;
 }) => {
   const from = absoluteAnnotationPosition(config.doc, config.start);
   const to = absoluteAnnotationPosition(config.doc, config.end);

@@ -289,7 +289,7 @@ export const createEditorComments = (options: {
     />
   );
 
-  // A link to a comment (?annotation=…) opens it once the comments are there.
+  // A link to a comment (?annotation=<id>, or "first") opens it once the comments are there.
   const requested = new URLSearchParams(window.location.search).get("annotation");
   if (requested) {
     createEffect(
@@ -297,7 +297,12 @@ export const createEditorComments = (options: {
         () => store.projection(),
         (projection, _previous, done) => {
           if (done || !projection) return done;
-          const item = projection.items.find((entry) => entry.id === requested);
+          // "first" comes from Book's comments entry: the first open comment in the text.
+          const item =
+            requested === "first"
+              ? [...projection.items].filter(isOpen).sort((a, b) => a.from - b.from)[0]
+              : projection.items.find((entry) => entry.id === requested);
+          if (requested === "first" && !item) return true;
           if (!item) return false;
           if (!isOpen(item)) ui.setShowResolved(true);
           ui.setActive(item.id);

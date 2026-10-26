@@ -195,8 +195,17 @@ describe("notebook page presentation authorization", () => {
     });
   }
 
-  for (const mode of [undefined, "write", "readonly", "versions", "book"]) {
-    test(`read grants always load Book instead of ${mode ?? "the Write default"}`, async () => {
+  test("read grants may open Read, where comments show, and still never Write", async () => {
+    fixtures("read");
+    const data = await load("readonly");
+    expect(data.presentationMode).toBe("readonly");
+    expect(data.isBookMode).toBe(false);
+    expect(data.readonlyMode).toBe(true);
+    expect(data.canWrite).toBe(false);
+  });
+
+  for (const mode of [undefined, "write", "versions", "book"]) {
+    test(`read grants load Book instead of ${mode ?? "the Write default"}`, async () => {
       const calls = fixtures("read");
       const data = await load(mode);
       expect(data.presentationMode).toBe("book");

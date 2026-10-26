@@ -13,6 +13,8 @@ export type BookSnapshot = {
   locked: boolean;
   historyIncomplete: boolean;
   cursor: string | null;
+  /** Open inline comments of the selected note; Book shows only their number. */
+  openComments?: number;
 };
 
 export type BookMetadata = Omit<BookSnapshot, "html">;

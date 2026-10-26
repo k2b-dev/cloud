@@ -2,11 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { isPresentationMode, PRESENTATION_MODES, resolvePresentationMode } from "./presentation-mode";
 
 describe("notebook presentation modes", () => {
-  test("readers always use Book, regardless of default, URL, or lock", () => {
+  test("readers use Book unless they ask for Read, never Write, regardless of default or lock", () => {
     for (const defaultPresentationMode of PRESENTATION_MODES) {
-      for (const requestedMode of PRESENTATION_MODES) {
-        for (const permission of ["read", "none"]) {
-          expect(resolvePresentationMode({ permission, defaultPresentationMode, requestedMode })).toBe("book");
+      for (const requestedMode of [undefined, ...PRESENTATION_MODES]) {
+        for (const locked of [false, true]) {
+          expect(resolvePresentationMode({ permission: "read", defaultPresentationMode, requestedMode, locked })).toBe(
+            requestedMode === "readonly" ? "readonly" : "book",
+          );
+          expect(resolvePresentationMode({ permission: "none", defaultPresentationMode, requestedMode, locked })).toBe("book");
         }
       }
     }

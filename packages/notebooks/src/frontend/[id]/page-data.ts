@@ -10,6 +10,7 @@ import { requestedPresentationMode } from "@/lib/presentation-url";
 import { parseQueryPages, QUERY_PAGES_PARAM } from "@/lib/query-blocks";
 import { parseSidebarFilter } from "@/lib/sidebar-filter";
 import { notebooksService } from "@/service";
+import { countOpenAnnotations } from "@/service/annotation-count";
 import * as annotations from "@/service/annotations";
 import { loadBookNote } from "@/service/book";
 import { loadSelectedNoteRouteState, type SelectedNoteRouteState } from "@/service/route-state";
@@ -229,6 +230,8 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     backlinks: selected.routeState?.backlinks ?? [],
     initialCommentsPage,
     initialAnnotations,
+    // Without the count Book just leaves out its comments entry; the note itself still opens.
+    bookOpenComments: isBookMode && selected.internalNoteId ? await countOpenAnnotations(selected.internalNoteId).catch(() => 0) : 0,
     dateConfig: ctx.dateConfig,
   };
 }
