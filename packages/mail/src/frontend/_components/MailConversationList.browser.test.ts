@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
 import { appColors } from "@k2b/cloud/ssr/app-color";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import type { MailConversationPreview } from "../../contracts";
 import type { MailFolderView } from "../../service/messages";
 import type { MailListHarnessOptions } from "./MailConversationList.browser-harness";
@@ -191,8 +191,7 @@ const load = async (
   const page = await (await browser.newContext(options.context ?? desktop)).newPage();
   const stylesheet = options.css;
   if (stylesheet) await page.route("**/styles.css", (route) => route.fulfill({ contentType: "text/css; charset=utf-8", body: stylesheet }));
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Every API request of the page, and whether the page aborted it. The page looks up once, while idle, which apps
   // store files for "Save to Files"; that lookup is not one of the list's requests.
   const requests: { path: string; aborted: boolean }[] = [];

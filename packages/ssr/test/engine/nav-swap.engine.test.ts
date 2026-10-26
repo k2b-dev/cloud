@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, setDefaultTimeout, test } from
 import { rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { toJSON } from "seroval";
-import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { browserName, launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { buildIslands } from "../../src/build";
 import { islandIdFromFile } from "../../src/island-id";
 import { makeTempRoot } from "../temp-root";
@@ -471,8 +471,7 @@ test(`${browserName}: a throwing swap listener reports an error without loading 
   try {
     const page = await context.newPage();
     await open(page);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     const documents = trackDocuments(page);
     await page.evaluate(() =>
       window.addEventListener("ssr:nav-swapped", () => {
@@ -481,7 +480,7 @@ test(`${browserName}: a throwing swap listener reports an error without loading 
     );
     await page.click("#B");
     await page.waitForFunction(() => document.title === "B");
-    expect(errors).toEqual(["fixture swap listener"]);
+    expect(errors).toEqual(["Error: fixture swap listener"]);
     expect(documents).toEqual([]);
   } finally {
     await context.close();

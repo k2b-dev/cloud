@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { CreateConversationSchema, CreateOutcomeSchema } from "../service/contracts";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
@@ -95,8 +95,7 @@ const load = async (
     await context.addInitScript(recordReadStarts);
     const page = await context.newPage();
     page.setDefaultTimeout(5_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     const path = address.chat ? `/app/chat/c/${address.chat}${address.message ? `/m/${address.message}` : ""}` : "/app/chat";
     const url = new URL(path, harness.url);
     if (presentation.theme) url.searchParams.set("theme", presentation.theme);

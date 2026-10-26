@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { appHostCss } from "../../ui/test/app-host-fixture";
-import { launchBrowser } from "../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../ui/test/browser";
 
 const ui = resolve(import.meta.dir, "../../ui");
 let browser: Awaited<ReturnType<typeof launchBrowser>>;
@@ -47,8 +47,7 @@ for (const width of [390, 768, 1280])
   for (const dark of [false, true]) {
     test(`machine key dialog ${width} ${dark ? "dark" : "light"}: named selection, error recovery and one-time key`, async () => {
       const tab = await browser.newPage({ viewport: { width, height: 900 } });
-      const errors: string[] = [];
-      tab.on("pageerror", (error) => errors.push(error.message));
+      const errors = pageErrors(tab);
       let fail = true;
       let submitted: unknown;
       try {

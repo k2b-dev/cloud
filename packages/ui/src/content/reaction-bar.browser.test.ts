@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, pageErrors } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -346,8 +346,7 @@ describe("ReactionBar in the browser", () => {
   }, 30_000);
   test("unmount removes the open hint, timers and document/window listeners", async () => {
     const page = await open();
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     const before = await page.evaluate(() => fixture.listeners());
     await chip(page).hover();
     await page.waitForTimeout(350);

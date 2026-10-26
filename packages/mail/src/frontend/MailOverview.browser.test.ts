@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import type { MailFocusPage } from "../contracts";
 import type { MailOverviewHarnessOptions } from "./MailOverview.browser-harness";
 
@@ -112,8 +112,7 @@ const viewports: [string, BrowserContextOptions][] = [
 const load = async (context: BrowserContextOptions, options: MailOverviewHarnessOptions) => {
   held.length = 0;
   const page = await (await browser.newContext(context)).newPage();
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.addInitScript(() => {
     const RealDate = Date;
     const start = performance.now();

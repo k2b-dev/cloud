@@ -7,7 +7,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { buildIslands } from "../../../ssr/src/build";
 import { islandIdFromFile } from "../../../ssr/src/island-id";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 
 setDefaultTimeout(30_000);
 const rootDir = resolve(import.meta.dir, "../..");
@@ -167,8 +167,7 @@ async function fixture(width = 1440, path = "/app/fixture/A") {
   await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: origin }]);
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(`${origin}${path}`);
   await column(page, path.split("/").at(-1) ?? "A");
   const documents = trackDocuments(page);
@@ -465,12 +464,13 @@ for (const destination of ["protected-login", "forbidden", "revoked"]) {
       await f.page.waitForLoadState("load");
       const actual = { title: await f.page.title(), text: await f.page.locator("main").innerText(), path: new URL(f.page.url()).pathname };
       const fresh = await f.context.newPage();
-      fresh.on("pageerror", (error) => f.errors.push(error.message));
+      const freshErrors = pageErrors(fresh);
       await fresh.goto(url);
       await fresh.waitForLoadState("load");
       expect({ title: await fresh.title(), text: await fresh.locator("main").innerText(), path: new URL(fresh.url()).pathname }).toEqual(
         actual,
       );
+      expect(freshErrors).toEqual([]);
       expect(f.documents.length).toBe(destination === "protected-login" ? 2 : 1); // The sign-in document follows the HTTP redirect.
     } finally {
       await f.close();

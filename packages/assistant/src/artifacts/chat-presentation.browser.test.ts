@@ -4,7 +4,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { appAssetsJson } from "./html/test-assets";
 
 const FILES = [
@@ -98,8 +98,7 @@ test("a chat app keeps its height, starts on a click, exports a static copy and 
   const context = await browser.newContext({ viewport: { width: 900, height: 800 }, acceptDownloads: true });
   try {
     const page = await context.newPage();
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     await page.goto(server.url.href);
     const card = page.locator(".assistant-chat-presentation");
     await card.waitFor();

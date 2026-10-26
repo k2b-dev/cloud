@@ -421,7 +421,14 @@ See the tray Undo test in
 
 Collect page errors with `pageErrors(page)` from `packages/ui/test/browser.ts`
 and assert `expect(errors).toEqual([])`; new tests do not register a
-`pageerror` listener of their own. While a page waits for its next document,
+`pageerror` or context `weberror` listener of their own. The `browser-page-errors` repository check
+enforces this across packages, including shared browser suites, fixtures, and harnesses. Its only
+exceptions are the two existing raw diagnostic probes that assert the WebKit
+refusal actually occurred alongside the shared collector. Keep separate
+console assertions for hydration messages, expected warnings, and telemetry;
+`pageErrors()` collects uncaught page errors, not console output.
+
+While a page waits for its next document,
 WebKit refuses every load that the page starts, such as a stream that opens
 again after the navigation cancelled it. It logs the refusal as
 `Fetch API cannot load <url> due to access control checks.`, also for a

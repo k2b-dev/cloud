@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chromium } from "playwright";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 
 // Use the monorepo's existing UI test compiler; this does not change the app build.
 const ui = new URL("../../../ui/", import.meta.url).pathname;
@@ -38,10 +38,10 @@ test("source tabs preserve drafts and history, guard closing, and fill the works
       );
     },
   });
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await launchBrowser({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1300, height: 900 } });
-    page.on("pageerror", (error) => console.error(error));
+    const errors = pageErrors(page);
     await page.goto(server.url.href);
     await page.getByRole("button", { name: "Source", exact: true }).click();
     await page.getByRole("treeitem", { name: /helper.js/ }).waitFor();
@@ -69,6 +69,7 @@ test("source tabs preserve drafts and history, guard closing, and fill the works
     await page.getByRole("textbox").waitFor();
     expect(await input.inputValue()).toBe("export default () => 42;");
     expect(requests.some((path) => path.endsWith("/compiled"))).toBe(false);
+    expect(errors).toEqual([]);
   } finally {
     await browser.close();
     await server.stop(true);
@@ -109,10 +110,10 @@ test("a read-only source tab scrolls its whole file on the tab surface and keeps
       );
     },
   });
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await launchBrowser({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1300, height: 700 } });
-    page.on("pageerror", (error) => console.error(error));
+    const errors = pageErrors(page);
     // Text source and script source take different renderers; both are read-only code without a preview frame.
     for (const file of ["style.css", "main.js"]) {
       await page.goto(`${server.url.href}?workspace=${encodeURIComponent(JSON.stringify(["source", id, file]))}`);
@@ -130,6 +131,7 @@ test("a read-only source tab scrolls its whole file on the tab surface and keeps
       const last = await panel.locator(".k2b-content-code-display__line").last().boundingBox();
       expect(last!.y + last!.height).toBeLessThanOrEqual(700);
     }
+    expect(errors).toEqual([]);
   } finally {
     await browser.close();
     await server.stop(true);

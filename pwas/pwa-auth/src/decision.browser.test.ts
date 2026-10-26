@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContext, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../packages/ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../packages/ui/test/browser";
 import { type DecisionAnswer, type DecisionState, decisionPage } from "./decision.browser-harness";
 
 // The request and its ending share one grid cell, so the sign-in sheet keeps its height when an ending replaces
@@ -90,8 +90,7 @@ function sharedContext(view: BrowserContextOptions, theme: "light" | "dark") {
   return async (run: (page: Page) => Promise<void>) => {
     const page = await context.newPage();
     try {
-      const errors: string[] = [];
-      page.on("pageerror", (error) => errors.push(error.message));
+      const errors = pageErrors(page);
       await run(page);
       expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
       expect(errors).toEqual([]);

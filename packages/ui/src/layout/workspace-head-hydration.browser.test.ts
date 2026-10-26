@@ -6,7 +6,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { launchBrowser, pageErrors, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-ui-head-hydration-"));
@@ -162,9 +162,8 @@ const boxes = (page: Page) =>
 describe("workspace head hydration", () => {
   test("reuses every SSR head part without moving it and opens More after hydration", async () => {
     const page = await browser!.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
-    const errors: string[] = [];
+    const errors = pageErrors(page);
     const hydrationMessages: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => {
       if ((message.type() === "error" || message.type() === "warning") && /hydrat/i.test(message.text()))
         hydrationMessages.push(message.text());
@@ -215,8 +214,7 @@ describe("workspace head hydration", () => {
 for (const width of [390, 834, 1440]) {
   test(`stacked objects and explicit head hydrate once at ${width}px`, async () => {
     const page = await browser!.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     try {
       await page.goto(`${origin}?stacked=1`);
       await settled(page);

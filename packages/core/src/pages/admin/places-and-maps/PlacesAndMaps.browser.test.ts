@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../../../ui/test/browser";
 import { placesAndMapsBrowserFixture } from "./PlacesAndMaps.browser-fixture";
 
 let browser: Browser;
@@ -26,8 +26,7 @@ const open = async (view: { width: number; height: number }, query: string) => {
     isMobile: view.width < 600,
     hasTouch: view.width < 600,
   });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(`${fixture.url}?${query}`);
   await page.locator('#places-and-maps-fixture[data-ready="true"]').waitFor();
   return { page, errors };

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { SecretSave, SecretView } from "./http-contracts";
 
 test("trusted secret dialogs store directly, clear values, support replacement and never return credentials to chat", async () => {
@@ -75,8 +75,7 @@ test("trusted secret dialogs store directly, clear values, support replacement a
   const browser = await launchBrowser({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1100, height: 850 } }),
-      errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+      errors = pageErrors(page);
     await page.goto(server.url.href);
     await page.getByRole("button", { name: "Request secret", exact: true }).click();
     await page.getByLabel("Allowed HTTPS origin", { exact: true }).fill("not-a-url");

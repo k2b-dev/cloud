@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { appRuntimeRoute } from "./html/test-assets";
 import { renameSource } from "./rename-source";
 
@@ -28,11 +28,7 @@ test("Studio editor keeps pending edits and file sessions; SQL and local data ar
   try {
     const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
     page.setDefaultTimeout(6000);
-    const errors: string[] = [];
-    page.on("pageerror", (e) => {
-      errors.push(e.message);
-      console.error(e.message);
-    });
+    const errors = pageErrors(page);
     let revision = 1,
       publishedRevision = 1;
     let hasTables = true;

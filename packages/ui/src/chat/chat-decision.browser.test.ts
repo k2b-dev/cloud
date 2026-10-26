@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { launchBrowser, pageErrors, settled } from "../../test/browser";
 import type {} from "../../test/chat-decision.browser-harness";
 
 let browser: Browser;
@@ -232,8 +232,7 @@ test("dark question, done icon and added marks use the inherited dark tokens", a
 
 test("a rejected outcome action reaches onActionError instead of going unhandled", async () => {
   const page = await open();
-  const unhandled: string[] = [];
-  page.on("pageerror", (error) => unhandled.push(error.message));
+  const unhandled = pageErrors(page);
   try {
     await page.evaluate(() => window.__fail());
     const again = page.getByRole("button", { name: "Send again", exact: true });
@@ -251,8 +250,7 @@ test("a rejected outcome action reaches onActionError instead of going unhandled
 
 test("marking a line later keeps its retained children in place", async () => {
   const page = await open();
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   try {
     await page.evaluate(() => window.__mark());
     expect(errors).toEqual([]);

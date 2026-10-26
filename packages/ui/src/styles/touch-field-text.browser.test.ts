@@ -9,7 +9,7 @@ import solid from "babel-preset-solid";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, settled } from "../../test/browser";
+import { launchBrowser, pageErrors, settled } from "../../test/browser";
 
 // iOS Safari zooms the page when a focused field's text is smaller than 16 px.
 // Font size and the boxes around a field are layout results, which happy-dom
@@ -399,8 +399,7 @@ document.body.dataset.hydrated = "true";
   const { markup, hydrationScript }: { markup: string; hydrationScript: string } = await import(serverPath);
   const script = await bundle(false);
   const tab = await browser.newPage(phone);
-  const errors: string[] = [];
-  tab.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(tab);
   tab.on("console", (message) => {
     if ((message.type() === "warning" || message.type() === "error") && /hydrat/i.test(message.text())) errors.push(message.text());
   });

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chromium } from "playwright";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 
 test("compact context hides runs; Studio reuses cards, menus and explicit panel starts", async () => {
   const build = Bun.spawn(["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "./context-browser-harness.tsx"], {
@@ -80,12 +80,11 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
       );
     },
   });
-  const browser = await chromium.launch({ headless: true, channel: "chrome" });
+  const browser = await launchBrowser({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
     page.setDefaultTimeout(3000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     await page.goto(server.url.href);
     const context = page.locator("#assistant-chat-context");
     // One-off runs stay one level deeper, as a row under working files.

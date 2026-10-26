@@ -7,7 +7,7 @@ import typescript from "@babel/preset-typescript";
 import type { BunPlugin } from "bun";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, ConsoleMessage } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 
 const solid = (await import(Bun.resolveSync("babel-preset-solid", `${import.meta.dir}/`))).default;
 
@@ -136,8 +136,7 @@ for (const mount of ["island", "hydrate"] as const)
     for (const width of [390, 768, 1440]) {
       test(`${mount} ${mode} ${width}: the client keeps the server's shortcut geometry and key caps`, async () => {
         const page = await browser.newPage({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
-        const errors: string[] = [];
-        page.on("pageerror", (error) => errors.push(error.message));
+        const errors = pageErrors(page);
         page.on("console", (message: ConsoleMessage) => {
           if (message.type() === "error") errors.push(message.text());
         });

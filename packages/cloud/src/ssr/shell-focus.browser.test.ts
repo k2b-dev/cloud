@@ -7,7 +7,7 @@ import typescript from "@babel/preset-typescript";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
+import { browserName, launchBrowser, pageErrors, settled, storedCookie } from "../../../ui/test/browser";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-shell-focus-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -191,8 +191,7 @@ for (const [width, height, touch, inset] of [
     try {
       await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: origin }]);
       const page = await context.newPage();
-      const errors: string[] = [];
-      page.on("pageerror", (error) => errors.push(error.message));
+      const errors = pageErrors(page);
       await page.goto(`${origin}/app/focus`);
       await settle(page);
       const original = await boxes(page);

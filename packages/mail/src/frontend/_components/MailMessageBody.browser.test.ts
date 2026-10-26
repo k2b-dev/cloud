@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { deflateSync } from "node:zlib";
 import type { BrowserContextOptions, Frame, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import { renderComposeContent } from "../../service/compose-renderer";
 import { sanitizeIncomingMailHtml } from "../../service/message-hydration";
 import type {} from "./MailMessageBody.browser-harness";
@@ -149,11 +149,10 @@ const withOpenedMessage = async (
       reducedMotion: options.reducedMotion,
       viewport: options.viewport,
     });
-    const errors: string[] = [];
+    const errors = pageErrors(page);
     page.on("console", (message) => {
       if (message.type() === "error" && !message.text().includes("502")) errors.push(message.text());
     });
-    page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(server.url.href + (options.pageQuery ?? ""));
     if (options.hostMotion) await page.evaluate(() => document.documentElement.setAttribute("data-k2b-motion", "reduced"));
     await page.evaluate(

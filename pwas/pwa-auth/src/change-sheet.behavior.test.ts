@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../packages/ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../packages/ui/test/browser";
 
 // A request to pair or remove a device opens like a sign-in: a bottom sheet on a phone, a centered dialog on a
 // tablet. This runs the real build and stylesheet and pins that the sheet keeps its size from the first frame
@@ -129,7 +129,7 @@ describe("a device change request in Cloud Login", () => {
           ] as const) {
             // Each request opens in a fresh app page, as a woken app does.
             const page = await context.newPage();
-            page.on("pageerror", (error) => console.error(`${kind}: ${error.message}`));
+            const errors = pageErrors(page);
             await page.goto(server.url.href);
             await page.addScriptTag({ content: fixture });
             // Only the first launch in this browser opens the install introduction.
@@ -176,6 +176,7 @@ describe("a device change request in Cloud Login", () => {
             await shot("approved");
             await page.locator("dialog[open] .auth-decision-actions__done button").click();
             await page.waitForFunction(() => !document.querySelector("dialog[open]"));
+            expect(errors).toEqual([]);
             await page.close();
           }
         } finally {

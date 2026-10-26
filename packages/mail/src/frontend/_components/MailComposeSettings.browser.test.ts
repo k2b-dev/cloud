@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
 import type { ComposeSettingsHarnessOptions } from "./MailComposeSettings.browser-harness";
 
 // Whether the logo keeps its box while the image loads, and whether a state change moves the controls around it, is
@@ -95,8 +95,7 @@ const load = async (
 ) => {
   const page = await (await browser.newContext(context)).newPage();
   page.setDefaultTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(server.url.href);
   if (options.theme === "dark") await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
   await page.evaluate(async ({ theme: _theme, ...harnessOptions }) => {

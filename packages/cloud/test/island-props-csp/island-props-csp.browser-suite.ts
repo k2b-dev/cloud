@@ -7,7 +7,7 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
-import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { browserName, launchBrowser, pageErrors } from "../../../ui/test/browser";
 import type { PageOptions } from "../../src/_internal/define-app";
 import type { RailSnapshot } from "../../src/contracts/rail-preferences";
 import type { User } from "../../src/contracts/shared";
@@ -145,8 +145,7 @@ test(`rich props and the Cloud shell mount under CSP in ${browserName}`, async (
     );
   });
   const page = await context.newPage();
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   try {
     const response = await page.goto(server.url.href);
     expect(response?.headers()["content-security-policy"]).toBe(policy);

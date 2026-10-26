@@ -6,7 +6,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, pageErrors } from "../../test/browser";
 
 // The unit harness compiles without hydration keys. This bundle compiles the
 // components for the server with hydration keys, in a build of its own: a
@@ -106,9 +106,11 @@ if (!build.success) throw new AggregateError(build.logs, "Could not bundle Kbd h
 const script = await build.outputs[0]!.text();
 let browser: Browser;
 let page: Page;
+let errors: string[];
 beforeAll(async () => {
   browser = await launchBrowser();
   page = await browser.newPage();
+  errors = pageErrors(page);
 });
 afterAll(async () => {
   await page?.close();
@@ -117,22 +119,16 @@ afterAll(async () => {
 
 for (const mode of ["other", "apple"] as const)
   test(`real hydration preserves the first ${mode} markup on Apple`, async () => {
-    const errors: string[] = [];
-    const onError = (error: Error) => errors.push(error.message);
-    page.on("pageerror", onError);
-    try {
-      await page.setContent(
-        `<html lang="en"><body class="k2b-ui" data-mode="${mode}"><div id="app">${serverCaps[mode]}</div>${hydrationScript}</body></html>`,
-      );
-      await page.addScriptTag({ content: script });
-      await page.waitForSelector('body[data-ready="true"]');
-      expect(await page.locator("body").getAttribute("data-first")).toBe(serverCaps[mode]);
-      expect(await page.locator("body").getAttribute("data-reused")).toBe("true");
-      expect(await page.locator(".k2b-kbd__keys").textContent()).toBe("⌘K");
-      expect(errors).toEqual([]);
-    } finally {
-      page.off("pageerror", onError);
-    }
+    errors.length = 0;
+    await page.setContent(
+      `<html lang="en"><body class="k2b-ui" data-mode="${mode}"><div id="app">${serverCaps[mode]}</div>${hydrationScript}</body></html>`,
+    );
+    await page.addScriptTag({ content: script });
+    await page.waitForSelector('body[data-ready="true"]');
+    expect(await page.locator("body").getAttribute("data-first")).toBe(serverCaps[mode]);
+    expect(await page.locator("body").getAttribute("data-reused")).toBe("true");
+    expect(await page.locator(".k2b-kbd__keys").textContent()).toBe("⌘K");
+    expect(errors).toEqual([]);
   });
 test("a client render detects Apple on its first render", async () => {
   await page.setContent('<!doctype html><html lang="en"><body data-mode="client"><div id="app"></div></body></html>');

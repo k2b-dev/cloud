@@ -6,7 +6,7 @@ import { toJSON } from "seroval";
 import type { ComponentProps } from "solid-js";
 import { createComponent, renderToString } from "solid-js/web";
 import * as Y from "yjs";
-import { launchBrowser } from "../../../../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../../../../ui/test/browser";
 import { renderNotebookBook } from "../../../../lib/book-renderer";
 import { notebooksYjs } from "../../../../lib/yjs";
 import type NoteEditor from "./NoteEditor.client";
@@ -270,8 +270,7 @@ for (const fixture of [
       isMobile: fixture.width === 390,
       hasTouch: fixture.width === 390,
     });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     let release: (() => void) | undefined;
     const blocked = new Promise<void>((resolve) => {
       release = resolve;
@@ -334,8 +333,7 @@ for (const fixture of [
 
 test("a note longer than the preview keeps the editor's gutter and lines: source, 1280px", async () => {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   let release: (() => void) | undefined;
   const blocked = new Promise<void>((resolve) => {
     release = resolve;
@@ -394,8 +392,7 @@ for (const fixture of [
       isMobile: fixture.width === 390,
       hasTouch: fixture.width === 390,
     });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     let release: (() => void) | undefined;
     const blocked = new Promise<void>((resolve) => {
       release = resolve;
@@ -454,8 +451,7 @@ for (const width of [375, 1280]) {
   test(`a chart keeps the box the preview reserved, while it loads and once it is drawn: ${width}px`, async () => {
     expect(notePreviewChart(chartMarkdown, notePreviewLines(chartMarkdown, "rich"))).toMatchObject({ kind: "line", area: true });
     const page = await browser.newPage({ viewport: { width, height: 900 }, isMobile: width < 600, hasTouch: width < 600 });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     let releaseEditor: (() => void) | undefined;
     let releasePreview: (() => void) | undefined;
     const editorHeld = new Promise<void>((resolve) => {
@@ -515,8 +511,7 @@ for (const width of [375, 1280]) {
 for (const readOnly of [false, true])
   test(`prints the whole note from its Book copy, with text typed just before: ${readOnly ? "read-only" : "write"}`, async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     try {
       await page.goto(`${server.url}?print${readOnly ? "&readonly" : ""}`);
       await page.waitForSelector(".cm-content");

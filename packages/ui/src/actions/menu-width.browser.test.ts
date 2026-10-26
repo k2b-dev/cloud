@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, pageErrors } from "../../test/browser";
 
 // A menu's width now follows its entries, which only a real layout engine
 // measures, so the shipped browser build opens real menus here.
@@ -412,8 +412,7 @@ describe("@k2b/ui menus size to their entries", () => {
 
     test(`at ${options.viewport.width} px a menu whose entries grow while it is open stays in place inside the viewport`, async () => {
       const page = await load(options);
-      const errors: string[] = [];
-      page.on("pageerror", (error) => errors.push(error.message));
+      const errors = pageErrors(page);
       try {
         // A right-aligned dropdown keeps its right edge on its trigger's.
         const trigger = page.getByRole("button", { name: "Growing", exact: true });
@@ -438,8 +437,7 @@ describe("@k2b/ui menus size to their entries", () => {
 
     test(`at ${options.viewport.width} px a context menu whose entries grow while it is open stays inside the viewport`, async () => {
       const page = await load(options);
-      const errors: string[] = [];
-      page.on("pageerror", (error) => errors.push(error.message));
+      const errors = pageErrors(page);
       try {
         const x = options.viewport.width - 230;
         await contextMenuAt(page, "Growing note", x, 100);

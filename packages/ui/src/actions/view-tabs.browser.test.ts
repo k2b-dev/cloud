@@ -6,7 +6,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { launchBrowser, pageErrors, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-ui-view-tabs-"));
@@ -251,8 +251,7 @@ for (const labels of ["en", "de"]) {
 for (const dir of ["ltr", "rtl"]) {
   test(`the ${dir} server frame settles the current view before hydration and hydration keeps every box`, async () => {
     const page = await browser!.newPage(phone);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     page.on("console", (message) => {
       if (["error", "warning"].includes(message.type()) && /hydrat/i.test(message.text())) errors.push(message.text());
     });

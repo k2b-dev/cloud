@@ -6,7 +6,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, storedCookie } from "../../test/browser";
+import { launchBrowser, pageErrors, storedCookie } from "../../test/browser";
 import { type AppWorkspaceLayoutState, appWorkspaceLayoutStyle, parseAppWorkspaceLayoutState } from "./app-workspace-state";
 
 const ui = resolve(import.meta.dir, "../..");
@@ -200,8 +200,7 @@ for (const width of [390, 768, 1024, 1440, 1920])
   for (const selected of ["item", "sections"])
     test(`${width}px, ${selected}: SSR window, hydration and navigation`, async () => {
       const page = await browser!.newPage({ viewport: { width, height: 900 } });
-      const errors: string[] = [];
-      page.on("pageerror", (error) => errors.push(error.message));
+      const errors = pageErrors(page);
       try {
         await page.goto(`${origin}/?level=${selected}&hydrate=0`);
         const expected =
