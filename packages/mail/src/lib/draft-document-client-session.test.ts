@@ -100,9 +100,9 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
       sockets.push(this);
       queueMicrotask(() => {
         if (this.readyState === 0) {
-          if (new URL(url).searchParams.get("expectedUserId") !== currentUser) {
+          if (expired || new URL(url).searchParams.get("expectedUserId") !== currentUser) {
             this.readyState = 3;
-            // Browsers hide an HTTP 403 upgrade response behind an abnormal close.
+            // Browsers hide an HTTP 401/403 upgrade response behind an abnormal close.
             this.onclose?.({ code: 1006, reason: "" });
             return;
           }
@@ -193,6 +193,9 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
     },
     closeDraft: () => {
       closed = true;
+    },
+    replaceGeneration: (next: string) => {
+      generation = next;
     },
     loseRecoveryAnswer: () => {
       restFailsOnce = true;
@@ -290,6 +293,58 @@ test("an expired socket session also requests sign-in while retaining unsaved in
     expect(f.authenticationRequests()).toBe(1);
     expect(client.state()).toMatchObject({ terminal: true, dirty: true });
     expect(client.content().body).toBe("Pending input");
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("retry after a rejected socket handshake requests sign-in through HTTP and retains unsaved input", async () => {
+  const f = fixture();
+  try {
+    const client = await f.open();
+    f.disconnect();
+    client.edit({ ...client.content(), body: "Pending disconnected input" });
+    f.expireSession();
+    // Exercise the same failed upgrade as an automatic reconnect; no protocol packet can arrive.
+    client.provider.reconnectNow();
+    await Bun.sleep(0);
+    expect(f.sockets).toHaveLength(2);
+    expect(f.sockets[1]!.readyState).toBe(3);
+    expect(f.sockets[1]!.sent).toEqual([]);
+    expect(client.state()).toMatchObject({ connected: false, ready: false, dirty: true });
+    expect(f.authenticationRequests()).toBe(0);
+    await expect(client.retry()).rejects.toThrow("Session expired");
+    expect(f.authenticationRequests()).toBe(1);
+    expect(f.requests).toHaveLength(2);
+    expect(f.requests[1]!.body).toBeNull();
+    expect(new URL(f.requests[1]!.url, "http://localhost").pathname).toEndWith("/document");
+    expect(f.sockets).toHaveLength(2);
+    expect(client.content().body).toBe("Pending disconnected input");
+    expect(await client.flushLocal()).toBe(false);
+    await expect(client.retry()).rejects.toThrow("Session expired");
+    expect(f.authenticationRequests()).toBe(2);
+    expect(f.sockets).toHaveLength(2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test.each(["closed", "replaced"])("disconnected retry recovers a %s draft without reconnecting the old generation", async (change) => {
+  const f = fixture();
+  try {
+    const client = await f.open();
+    f.disconnect();
+    client.edit({ ...client.content(), body: "Pending disconnected input" });
+    if (change === "closed") f.closeDraft();
+    else f.replaceGeneration("2");
+    expect(await client.retry()).toMatchObject({ status: "unchanged" });
+    expect(f.sockets).toHaveLength(1);
+    const recovery = f.requests.find((request) => new URL(request.url, "http://localhost").pathname.endsWith("/rest"));
+    expect(recovery?.body).toMatchObject({ generation: "1" });
+    expect(client.generation).toBe("1");
+    expect(client.content().body).toBe("Pending disconnected input");
+    expect(client.state()).toMatchObject({ connected: false, ready: false, dirty: true });
+    expect(f.authenticationRequests()).toBe(0);
   } finally {
     await f.cleanup();
   }

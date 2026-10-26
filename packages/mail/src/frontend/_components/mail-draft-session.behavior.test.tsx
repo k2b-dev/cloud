@@ -328,6 +328,81 @@ describe("Mail draft session", () => {
     },
   );
 
+  test.each(["saved", "pending-save"])("invalidated shared storage blocks sign-in reload: %s", async (mode) => {
+    const generations = spyOn(sharedText, "listSharedTextOfflineGenerations").mockResolvedValue([]);
+    localStorage.setItem(`cloud:mail:shared:Usr001:${DRAFT_ID}:1:remember`, "yes");
+    const controller = new AbortController();
+    const write = Promise.withResolvers<void>();
+    const writeStarted = Promise.withResolvers<void>();
+    let delayWrite = false;
+    const storage: { state: Uint8Array | null } = { state: null };
+    const offline = spyOn(sharedText, "openAuthorizedSharedTextOffline").mockImplementation(async (_identity, authorize) => ({
+      authorization: await authorize(controller.signal),
+      state: storage.state,
+      baseCursor: "s6t.fixture.1",
+      session: {
+        signal: controller.signal,
+        load: async () => storage.state,
+        loadPending: async () => (storage.state ? { state: storage.state, baseCursor: "s6t.fixture.1" } : null),
+        save: async (bytes) => {
+          const saved = bytes.slice();
+          if (delayWrite) {
+            writeStarted.resolve();
+            await write.promise;
+          }
+          if (!controller.signal.aborted) storage.state = saved;
+          return saved;
+        },
+        acknowledgeSnapshot: async () => false,
+        forget: async () => {},
+        close: () => controller.abort(),
+      },
+    }));
+    try {
+      const f = await sharedFixture();
+      await f.session.ensureDraft();
+      const client = f.session.shared()!;
+      f.setCurrent({ ...f.current(), body: "Only on this device" });
+      client.edit(f.current());
+      expect(await client.flushLocal()).toBe(true);
+      expect(storage.state).toEqual(Y.encodeStateAsUpdate(client.doc));
+      expect(client.state().locallySaved).toBe(true);
+      if (mode === "pending-save") {
+        delayWrite = true;
+        f.setCurrent({ ...f.current(), body: "More unsent input" });
+        client.edit(f.current());
+        await writeStarted.promise;
+      }
+      const unsent = f.current();
+      // Invalidation deletes the saved bytes while this tab retains its unsent document.
+      storage.state = null;
+      controller.abort(new Error("Offline store invalidated"));
+      expect(client.state()).toMatchObject({ terminal: true, dirty: true, locallySaved: false, error: true });
+      // A write may already have completed before invalidation; deliver its result afterwards.
+      write.resolve();
+      expect(await client.flushLocal()).toBe(false);
+      expect(storage.state).toBeNull();
+      expect(client.state()).toMatchObject({ locallySaved: false, error: true });
+      respondWith(() => Response.json({ message: "Session expired" }, { status: 401 }));
+      await expect(client.retry()).rejects.toThrow("Session expired");
+      expect(f.session.authenticationRequired()).toBe(true);
+      expect(f.session.statusMessage()).toBe("Your sign-in expired. Sign in again to continue with this draft.");
+      await expect(f.session.prepareSignIn()).rejects.toThrow("Draft could not be saved");
+      expect(await client.flushLocal()).toBe(false);
+      expect(client.content()).toEqual(unsent);
+      expect(f.current()).toEqual(unsent);
+      const leaving = new window.Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(leaving);
+      expect(leaving.defaultPrevented).toBe(true);
+    } finally {
+      write.resolve();
+      dispose();
+      await Bun.sleep(0);
+      offline.mockRestore();
+      generations.mockRestore();
+    }
+  });
+
   test("a send after a lost save response stores the current recipients and text before it uses the draft", async () => {
     // The first save reached the server, but its response was lost, so the browser still has no draft.
     const stored = draft(1, content("First meaningful edit", "first@example.test"));

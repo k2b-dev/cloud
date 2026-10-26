@@ -353,16 +353,17 @@ export async function openMailDraftDocumentClient(options: {
     let pendingSnapshot: Uint8Array | null = null;
     let storageRunning = false;
     const pumpStorage = () => {
-      if (storageRunning || !offline || !remembering) return;
+      if (storageRunning || !offline || offline.signal.aborted || !remembering) return;
       storageRunning = true;
       const store = offline;
       storageQueue = (async () => {
         // Coalesce full states while IndexedDB is busy. At most one next input and snapshot stay in memory.
-        while (offline === store && remembering && (pendingLocal || pendingSnapshot)) {
+        while (offline === store && !store.signal.aborted && remembering && (pendingLocal || pendingSnapshot)) {
           if (pendingLocal) {
             const input = pendingLocal;
             pendingLocal = null;
             await store.save(input.bytes, input.baseCursor);
+            store.signal.throwIfAborted();
             storageFailure = null;
             state.locallySaved = input.version === storageVersion && !metadataFailure;
             emit();
@@ -371,6 +372,7 @@ export async function openMailDraftDocumentClient(options: {
               version = storageVersion;
             pendingSnapshot = null;
             const covered = await store.acknowledgeSnapshot({ identity, state: bytes, durability: "durable" });
+            store.signal.throwIfAborted();
             if (covered && version === storageVersion && !pendingLocal && deviceStorage?.getItem(pendingGenerationKey) === generation) {
               deviceStorage?.removeItem(pendingGenerationKey);
             }
@@ -546,6 +548,8 @@ export async function openMailDraftDocumentClient(options: {
     let rejectedExternalEdit = false;
     const storeAborted = () => {
       if (disposed) return;
+      storageFailure = new Error(t().storageFailed);
+      state.locallySaved = false;
       provider.dispose();
       providerClosed = true;
       state.terminal = true;
@@ -735,16 +739,20 @@ export async function openMailDraftDocumentClient(options: {
         options.onDurable(current.durable.content, current.revision);
       },
       retry: async () => {
-        if (state.terminal) {
+        if (state.terminal || !state.connected) {
           const current = await authorize(options.signal);
+          options.signal.throwIfAborted();
+          if (disposed) return;
           if (current.generation !== generation || current.frozen || current.lifecycle !== "draft") return recover();
           if (providerClosed) throw new Error(t().generation);
-          state.terminal = false;
-          state.error = false;
-          state.message = t().connecting;
-          emit();
-          provider.resume();
-          return;
+          if (state.terminal) {
+            state.terminal = false;
+            state.error = false;
+            state.message = t().connecting;
+            emit();
+            provider.resume();
+            return;
+          }
         }
         if (remembering) persistLocal(Y.encodeStateAsUpdate(doc));
         provider.reconnectNow();
@@ -794,7 +802,10 @@ export async function openMailDraftDocumentClient(options: {
       },
       flushLocal: async () => {
         await flushStorage();
-        return !rejectedExternalEdit && (!state.dirty || (remembering && state.locallySaved && !storageFailure));
+        return (
+          !rejectedExternalEdit &&
+          (!state.dirty || (remembering && offline !== undefined && !offline.signal.aborted && state.locallySaved && !storageFailure))
+        );
       },
       discardLocal: async () => {
         // Called only after the person confirmed discard and the server committed it.
