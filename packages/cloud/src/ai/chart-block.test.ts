@@ -429,6 +429,32 @@ describe("richer chart contracts", () => {
     expect(cloudAiNumberFormatters(undefined, "en").tick(1250000)).toBe("1.25M");
   });
 
+  test("a currency without decimals writes cents only when a value has them", () => {
+    const euro = { style: "currency", currency: "EUR" } as const;
+    const space = (text: string) => text.replace(/[\u00a0\u202f]/g, " ");
+    expect(space(cloudAiNumberFormatters(euro, "de", [418000, 12]).value(418000))).toBe("418.000 €");
+    expect(space(cloudAiNumberFormatters(euro, "de", [418000, 12.5]).value(418000))).toBe("418.000,00 €");
+    expect(space(cloudAiNumberFormatters(euro, "de").value(418000))).toBe("418.000,00 €");
+    expect(space(cloudAiNumberFormatters({ ...euro, decimals: 2 }, "de", [418000]).value(418000))).toBe("418.000,00 €");
+    // The chart's printed values and its tooltip rows read the same values.
+    const input = parse({
+      kind: "bar",
+      title: "Umsatz",
+      data: [
+        { label: "Nord", value: 418000 },
+        { label: "Süd", value: 97000 },
+      ],
+      yAxis: { format: euro },
+      tooltip: { format: euro },
+    });
+    const options = cloudAiChartRenderOptions(input, "de");
+    if (options.kind !== "bar") throw new Error("Expected bar options.");
+    expect(space(options.valueFormat!(418000))).toBe("418.000 €");
+    const svg = space(renderBarChartSvg({ ...options, width: 480, height: barChartLayout(options).height }));
+    expect(svg).toContain("418.000 €");
+    expect(svg).not.toContain(",00 €");
+  });
+
   test("bar showValues prints values with the value precision, which the y ticks then share", () => {
     const input = parse({
       kind: "bar",
@@ -828,7 +854,7 @@ describe("shared chart tooltip", () => {
       expect(values.length).toBeGreaterThan(0);
       for (const column of values) {
         expect(column.label).toBe("Umsatz");
-        expect(table.rows.find((row) => row.values[column.id] === 1200)?.cells[column.id]).toBe("1.200,00\u00a0€");
+        expect(table.rows.find((row) => row.values[column.id] === 1200)?.cells[column.id]).toBe("1.200\u00a0€");
       }
     }
   });
@@ -1010,7 +1036,7 @@ describe("function formats in chart rows", () => {
     const rows = cloudAiChartRows({ ...input, tooltip: { format: { style: "currency", currency: "EUR" } } }, "de", {
       formats: { x, y, value },
     });
-    expect(rows.add(datum).cells).toEqual({ x: "day 1", y: "1.200,00\u00a0€" });
+    expect(rows.add(datum).cells).toEqual({ x: "day 1", y: "1.200\u00a0€" });
   });
 
   test("histogram bounds use x functions and counts follow the count axis", () => {

@@ -207,18 +207,22 @@ type Formats = {
   x: { tick: (value: number) => string; value: (value: number) => string };
 };
 
-/** Value precision and tick precision share the same style and units; ticks must remain distinct. */
-export const cloudAiNumberFormatters = (format: CloudAiNumberFormat | undefined, locale: string) => {
+/**
+ * Value precision and tick precision share the same style and units; ticks must remain distinct. A currency without
+ * `decimals` writes cents only when one of the formatted `values` has them: 418,000 € rather than 418,000.00 €.
+ */
+export const cloudAiNumberFormatters = (format: CloudAiNumberFormat | undefined, locale: string, values?: readonly number[]) => {
   const common: Intl.NumberFormatOptions = {
     style: format?.style === "number" ? "decimal" : format?.style,
     currency: format?.currency,
   };
+  const decimals = format?.decimals ?? (format?.style === "currency" && values?.length && values.every(Number.isInteger) ? 0 : undefined);
   const value = new Intl.NumberFormat(
     locale,
     format
       ? {
           ...common,
-          ...(format.decimals === undefined ? {} : { minimumFractionDigits: format.decimals, maximumFractionDigits: format.decimals }),
+          ...(decimals === undefined ? {} : { minimumFractionDigits: decimals, maximumFractionDigits: decimals }),
           ...(format.compact ? { notation: "compact" } : {}),
         }
       : { maximumSignificantDigits: 15 },
@@ -236,9 +240,32 @@ export const cloudAiNumberFormatters = (format: CloudAiNumberFormat | undefined,
   return { value: (v: number) => `${value.format(v)}${unit}`, tick: (v: number) => `${tickValue(v)}${unit}` };
 };
 const numberFormat = (format: CloudAiFormat | undefined) => (format && !("date" in format) ? format : undefined);
+/** The values a chart writes with its value format, for whole-number currency. */
+const formattedValues = (input: CloudAiChartInput): number[] => {
+  switch (input.kind) {
+    case "line":
+    case "scatter":
+      return [...input.series.flatMap((series) => series.data.map((point) => point.y)), ...referencesOf(input, "y")];
+    case "bar":
+      return [...input.data.map((item) => item.value), ...referencesOf(input, "y")];
+    case "boxplot":
+      return [...input.data.flatMap((item) => item.values), ...referencesOf(input, "y")];
+    case "pie":
+    case "donut":
+    case "heatmap":
+    case "barGauge":
+      return input.data.map((item) => item.value);
+    case "stat":
+      return [input.value, ...(input.delta === undefined ? [] : [input.delta]), ...(input.sparkline ?? [])];
+    case "gauge":
+      return [input.value];
+    default:
+      return [];
+  }
+};
 const formats = (input: CloudAiChartInput, locale: string): Formats => {
   const yFormat = "yAxis" in input ? numberFormat(input.yAxis?.format) : "format" in input ? input.format : undefined;
-  const y = cloudAiNumberFormatters(yFormat, locale);
+  const y = cloudAiNumberFormatters(yFormat, locale, formattedValues(input));
   const xFormat = "xAxis" in input && input.kind !== "bar" ? input.xAxis?.format : undefined;
   const x = cloudAiNumberFormatters(numberFormat(xFormat), locale);
   // An unformatted x axis often counts years or steps, which compact notation would turn into 2.02K.
@@ -552,7 +579,7 @@ export function cloudAiChartRows(
   const t = labels.resolve([locale]).t;
   const format = formats(input, locale);
   const valueFormat = input.tooltip?.format
-    ? cloudAiNumberFormatters(input.tooltip.format, locale).value
+    ? cloudAiNumberFormatters(input.tooltip.format, locale, formattedValues(input)).value
     : (options.formats?.value ?? (input.kind === "histogram" ? undefined : options.formats?.y) ?? format.value);
   const xFormat = options.formats?.x ?? format.x.value;
   const series = seriesOf(input);

@@ -6,6 +6,7 @@ import {
   CHART_MAX_BLOCKS,
   chartBlockFrame,
   notebookChartFrameHtml,
+  notebookChartHeight,
   parseNotebookChartBlocks,
   renderNotebookChartFigure,
 } from "./chart-blocks";
@@ -136,9 +137,15 @@ format: euro`),
     const figure = renderNotebookChartFigure(parseNotebookChartBlocks(markdown).blocks[0]!.input, "de")!;
     const labels = [...figure.matchAll(/stdlib-chart-category-label"[^>]*>([^<]*)</g)].map((match) => match[1]);
     expect(labels).toEqual(Array.from({ length: 15 }, (_, index) => `Sorte ${index + 1}`));
-    expect(figure).toMatch(/>15\.000,00\s€</);
+    // Whole euros print without cents.
+    expect(figure).toMatch(/>15\.000\s€</);
     expect([...figure.matchAll(/stdlib-chart-axis-label"[^>]*>([^<]*)</g)].map((match) => match[1])).toEqual(["Sorte", "Umsatz"]);
     expect(figure).toContain('data-bar-layout="rows"');
+    // The frame takes the drawing's height, which an editor placeholder reads from the same block.
+    const height = notebookChartHeight(parseNotebookChartBlocks(markdown).blocks[0]!.input, "de");
+    expect(height).toBeGreaterThan(288);
+    expect(figure).toContain(`style="--notebook-chart-height:${height}px"`);
+    expect(figure).toContain(`--k2b-chart-height:${height}px`);
   });
 
   test("keeps raw numeric-looking table labels and evaluates formula labels", () => {
