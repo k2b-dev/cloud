@@ -220,6 +220,16 @@ suite("Mail no-AI workflow dry run HTTP boundary", () => {
     expect(result.aiCalls).toEqual({ min: 3, max: 6 });
     expect(result.items.every((item) => item.stoppedAtAi && item.aiCalls.min === 1 && item.aiCalls.max === 2)).toBe(true);
     expect(result.preflight).toEqual({ targets: [], sends: false, writesDrafts: false, aiSteps: 2 });
+    const terminal = await batch({
+      source:
+        header +
+        `  - if: { equals: ["\${{ inputs.message.isBulk }}", false] }
+    then:
+      - aiGenerateText: { prompt: Hello, saveAs: generated }
+      - succeed: { message: Done }
+`,
+    });
+    expect(terminal.aiCalls).toEqual({ min: 2, max: 2 });
     expect(await state()).toEqual(before);
   });
   test("reports missing and inaccessible static targets, even before conditions match", async () => {

@@ -188,6 +188,32 @@ test("exclusive AI branches use their largest call count", async () => {
   expect(item.aiCalls).toEqual({ min: 1, max: 3 });
 });
 
+test.each([
+  `  - if: { equals: ["\${{ inputs.message.isBulk }}", false] }
+    then:
+      - aiGenerateText: { prompt: Hello, saveAs: generated }
+      - succeed: { message: Done }
+`,
+  `  - switch: selected
+    cases:
+      - when: selected
+        do:
+          - aiGenerateText: { prompt: Hello, saveAs: generated }
+          - fail: { message: Done }
+`,
+  `  - if: { equals: ["\${{ inputs.message.isBulk }}", false] }
+    then:
+      - if: { equals: ["\${{ inputs.message.subject }}", Offer] }
+        then:
+          - aiGenerateText: { prompt: Hello, saveAs: generated }
+          - succeed: { message: Done }
+`,
+])("counts AI reached inside a known control branch before termination: %s", async (steps) => {
+  const item = await preview(steps);
+  expect(item.effects.map((effect) => effect.kind)).toEqual(["aiGenerateText"]);
+  expect(item.aiCalls).toEqual({ min: 1, max: 1 });
+});
+
 test("an AI-dependent terminal branch makes later calls optional", async () => {
   const item = await preview(`  - aiGenerateText: { prompt: Hello, saveAs: generated }
   - if: { equals: ["\${{ generated }}", Hello] }

@@ -135,18 +135,19 @@ export const planMailWorkflowTryItem = async (params: {
         max += counted.max;
         continue;
       }
-      if (!result || result.mode !== "dryRun" || result.outcome.state !== "planned" || !result.outcome.control) continue;
-      const control = result.outcome.control;
-      if (step.kind === "forEach" && control.kind === "forEach") {
+      if (!result || result.mode !== "dryRun" || (result.outcome.state !== "planned" && result.outcome.state !== "terminal")) continue;
+      // A terminal control result has no traversal metadata, but its completed
+      // descendants still identify the AI calls reached before termination.
+      if (step.kind === "forEach") {
         const unknown = result.outcome.issues?.some((issue) => workflowPathKey(issue.step.sourcePath) === workflowPathKey(step.sourcePath));
         if (unknown) max += countSteps(step.steps, [...iterations, 0]).max * (plan.maxLoopItems ?? DEFAULT_MAX_LOOP_ITEMS);
         else
-          for (let index = 0; index < control.items.length; index++) {
+          for (let index = 0; step.steps.some((child) => results.has(key(child, [...iterations, index]))); index++) {
             const child = countSteps(step.steps, [...iterations, index]);
             min += child.min;
             max += child.max;
           }
-      } else if ((step.kind === "if" && control.kind === "if") || (step.kind === "switch" && control.kind === "switch")) {
+      } else if (step.kind === "if" || step.kind === "switch") {
         const branches = childWorkflowSteps(step).map((branch) => countSteps(branch, iterations));
         max += Math.max(0, ...branches.map((branch) => branch.max));
         // A selected branch can contain certain AI steps; unknown branches report min=0 themselves.
