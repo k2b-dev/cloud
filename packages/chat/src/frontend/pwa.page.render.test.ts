@@ -3,15 +3,18 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RuntimeAppMeta, User } from "@k2b/cloud/contracts";
-import type { AuthContext } from "@k2b/cloud/server";
+import { type AuthContext, ok } from "@k2b/cloud/server";
 import { announcements } from "@k2b/cloud/services/announcements";
 import { session } from "@k2b/cloud/services/session";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { channels } from "../service/channels";
+import { conversations as conversationService } from "../service/conversations";
+import { personal } from "../service/personal";
 import * as snapshot from "../service/snapshot";
-import { chatView } from "./pwa-fixtures.test-fixture";
+import { chatView, conversations } from "./pwa-fixtures.test-fixture";
 
 const root = mkdtempSync(join(tmpdir(), "chat-pwa-render-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -43,12 +46,17 @@ const person: User = {
 const guest: User = { ...person, id: "22222222-2222-4222-8222-222222222222", uid: "gast", profile: "guest", roles: ["guest"] };
 const shell: RuntimeAppMeta = { id: "pwa", name: "Cloud app", icon: "ti ti-device-mobile", description: "", routes: ["/pwa"] };
 
-const viewSpy = spyOn(snapshot, "loadChatView").mockImplementation((async (_context: unknown, input: { conversationId?: string }) =>
-  chatView(input.conversationId)) as never);
+const viewSpy = spyOn(snapshot, "loadChatView").mockImplementation(async (_context, input) => chatView(input.conversationId));
+const preferencesSpy = spyOn(personal, "preferences").mockResolvedValue(ok({ collapsed: [] }));
+const channelsSpy = spyOn(channels, "browse").mockResolvedValue(ok({ items: [], nextCursor: null }));
+const sidebarSpy = spyOn(conversationService, "list").mockResolvedValue(ok({ items: conversations, nextCursor: null }));
 const tokenSpy = spyOn(session, "getToken").mockReturnValue(null);
 const sessionSpy = spyOn(session, "authenticateRequest").mockResolvedValue(null);
 const spies = [
   viewSpy,
+  preferencesSpy,
+  channelsSpy,
+  sidebarSpy,
   tokenSpy,
   sessionSpy,
   stubRailSnapshot(),
@@ -56,6 +64,11 @@ const spies = [
 ];
 afterEach(() => {
   viewSpy.mockClear();
+  viewSpy.mockImplementation(async (_context, input) => chatView(input.conversationId));
+  preferencesSpy.mockClear();
+  channelsSpy.mockClear();
+  channelsSpy.mockResolvedValue(ok({ items: [], nextCursor: null }));
+  sidebarSpy.mockClear();
   tokenSpy.mockReturnValue(null);
   sessionSpy.mockResolvedValue(null);
 });
@@ -128,6 +141,37 @@ describe("Chat in the Cloud app", () => {
     expect(document.querySelector(".chat-conversation__back-count")?.textContent).toBe("2");
     expect(document.querySelector(".chat-conversation__back a")?.getAttribute("aria-label")).toBe("Back to chats, 2 unread");
     expect(document.querySelector(".chat-conversation__composer")?.hasAttribute("data-k2b-shell-bottom")).toBe(true);
+  });
+
+  test("archive and Unread survive a direct PWA reload with the app caller context", async () => {
+    signIn("app");
+    const { response, document } = await render("/pwa/chat/archive?filter=unread");
+    expect(response.status).toBe(200);
+    expect(viewSpy.mock.calls.at(-1)?.[1]).toMatchObject({ archived: true, unread: true });
+    expect(viewSpy.mock.calls.at(-1)?.[0]).toMatchObject({ credentialPrincipal: `user:${person.id}:app`, caller: { locale: "en" } });
+    expect(document.querySelector('.chat-app__list a[href="/pwa/chat/archive"]')).not.toBeNull();
+    expect(document.querySelector('.chat-app__list a[href^="/app/chat"]')).toBeNull();
+  });
+
+  test("channel discovery restores its search inside the PWA's open page", async () => {
+    signIn("app");
+    channelsSpy.mockResolvedValue(ok({ items: [{ ...conversations[0]!, channel: true, purpose: "Studio decisions" }], nextCursor: null }));
+    const { response, document } = await render("/pwa/chat/channels?q=studio");
+    expect(response.status).toBe(200);
+    expect(channelsSpy.mock.calls.at(-1)?.[0]).toMatchObject({ query: { q: "studio" } });
+    expect(document.querySelector(".chat-app")?.hasAttribute("data-open")).toBe(true);
+    expect(document.querySelector(".chat-app__main")?.textContent).toContain("Studio decisions");
+    expect(document.querySelector('.chat-app__main input[value="studio"]')).not.toBeNull();
+  });
+
+  test("a system thread filter does not turn into the personal Unread list on reload", async () => {
+    signIn("app");
+    const view = chatView("Werk01");
+    if (!view.open) throw new Error("Open fixture missing");
+    viewSpy.mockResolvedValue({ ...view, open: { ...view.open, conversation: { ...view.open.conversation, kind: "system" } } });
+    const { response } = await render("/pwa/chat/c/Werk01?filter=unread");
+    expect(response.status).toBe(200);
+    expect(sidebarSpy.mock.calls.at(-1)?.[0]).toMatchObject({ query: { archived: "false" } });
   });
 
   test("a guest, a web session and no session never reach it", async () => {

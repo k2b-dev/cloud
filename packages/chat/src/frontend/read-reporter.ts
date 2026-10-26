@@ -5,7 +5,7 @@ type Timer = ReturnType<typeof setTimeout> | number;
  * older exists.
  */
 export const seenRange = (
-  items: readonly { seq?: number; kind: "text" | "system"; own: boolean }[],
+  items: readonly { seq?: number; kind: "text" | "system" | "event" | "eventGroup"; own: boolean }[],
   firstIndex: number,
   lastIndex: number,
   hasOlder = true,
@@ -27,7 +27,13 @@ type Timers = {
   clearTimeout(timer: Timer): void;
   now(): number;
 };
-export const createReadReporter = (options: { start: number; post(seq: number): Promise<unknown>; active(): boolean; timers?: Timers }) => {
+export const createReadReporter = (options: {
+  start: number;
+  post(seq: number): Promise<unknown>;
+  active(): boolean;
+  onGap?(from: number | null): void;
+  timers?: Timers;
+}) => {
   const timers: Timers = options.timers ?? {
     setTimeout: (callback, delay) => setTimeout(callback, delay),
     clearTimeout: (timer) => clearTimeout(timer),
@@ -77,6 +83,7 @@ export const createReadReporter = (options: { start: number; post(seq: number): 
       frontier = range.last;
       schedule();
     }
+    options.onGap?.(range.first > frontier + 1 ? frontier + 1 : null);
   };
   return {
     seen(first: number, last: number) {
@@ -85,7 +92,21 @@ export const createReadReporter = (options: { start: number; post(seq: number): 
     },
     activate,
     async settled() {
+      // A following unread write or recovery snapshot must see all progress already painted.
+      if (timer !== undefined) {
+        timers.clearTimeout(timer);
+        timer = undefined;
+        flush();
+      }
       await Promise.all(inFlight);
+    },
+    // An explicit read's HTTP response may arrive before older live read events. Advance progress,
+    // but retain the live baseline so those earlier events are not mistaken for a new unread mark.
+    advance(next: number) {
+      frontier = Math.max(frontier, next);
+      posted = Math.max(posted, next);
+      sent = Math.max(sent, next);
+      if (options.active()) options.onGap?.(range && range.first > frontier + 1 ? frontier + 1 : null);
     },
     setStart(next: number) {
       if (next < start) {
@@ -97,6 +118,7 @@ export const createReadReporter = (options: { start: number; post(seq: number): 
         sent = Math.max(sent, next);
       }
       start = next;
+      if (options.active()) options.onGap?.(range && range.first > frontier + 1 ? frontier + 1 : null);
     },
     dispose() {
       if (disposed) return;

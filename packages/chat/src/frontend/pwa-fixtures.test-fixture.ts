@@ -1,3 +1,7 @@
+import type { loadChatView } from "../service/snapshot";
+
+type ChatView = Awaited<ReturnType<typeof loadChatView>>;
+
 /** Invented chats for render tests and previews, after the approved mockup of 15.10.2026. */
 const people = {
   mia: { type: "user" as const, id: "11111111-1111-4111-8111-111111111111", name: "Mia Berger" },
@@ -12,7 +16,12 @@ const conv = (
   members: number,
   unread: number,
   last: { author: keyof typeof people; text: string; at: string } | null,
-) => ({
+): ChatView["sidebar"]["items"][number] => ({
+  archived: false,
+  pinnedRank: null,
+  threads: 0,
+  channel: false,
+  member: true,
   unread,
   read: { lastReadSeq: 1, unreadFromSeq: unread ? 2 : null, joinedSeq: 0 },
   id,
@@ -27,7 +36,7 @@ const conv = (
   permission: "write" as const,
   createdAt: at(8, 0, 1),
   lastActivityAt: last?.at ?? at(8, 0, 1),
-  lastMessage: last ? { id: `${id}0001`, author: people[last.author], preview: last.text, createdAt: last.at } : null,
+  lastMessage: last ? { id: `${id}0001`, author: people[last.author], preview: last.text, createdAt: last.at, thread: null } : null,
 });
 export const conversations = [
   conv("Werk01", "Werkstatt-Team", 4, 3, { author: "jana", text: "Die Ersatzteile sind bestellt 👍", at: at(14, 32) }),
@@ -35,7 +44,17 @@ export const conversations = [
   conv("Nora01", "Nora Weber", 2, 0, { author: "mia", text: "Passt, bis nachher!", at: at(10, 5) }),
   conv("Jana01", "Jana Schmidt", 2, 0, { author: "jana", text: "Danke dir!", at: at(16, 52, 14) }),
 ];
-const msg = (conversationId: string, seq: number, author: keyof typeof people, body: string, time: string) => ({
+const msg = (
+  conversationId: string,
+  seq: number,
+  author: keyof typeof people,
+  body: string,
+  time: string,
+): NonNullable<ChatView["open"]>["page"]["items"][number] => ({
+  reactions: [],
+  refs: [],
+  thread: null,
+  replyTo: null,
   id: `${conversationId}${String(seq).padStart(4, "0")}`,
   conversationId,
   seq,
@@ -56,11 +75,17 @@ const log = [
   msg("Werk01", 6, "jana", "Dichtungen und Luftfilter sind da, Lieferung am Montag.", at(14, 30)),
   msg("Werk01", 7, "jana", "Die Ersatzteile sind bestellt 👍", at(14, 32)),
 ];
-export const chatView = (conversationId?: string) => ({
+export const chatView = (conversationId?: string): ChatView => ({
   cursor: "0",
   sidebar: { items: conversations, nextCursor: null },
+  noAccess: conversationId !== undefined && conversationId !== "Werk01",
   open:
     conversationId === "Werk01"
-      ? { conversation: { ...conversations[0]!, unread: 0 }, page: { items: log, seqHead: 7, rev: 7 }, focus: null }
+      ? {
+          conversation: { ...conversations[0]!, unread: 0 },
+          page: { items: log, seqHead: 7, rev: 7, from: 1, to: 7 },
+          threads: { general: { unread: 0, lastMessage: null }, items: [] },
+          focus: null,
+        }
       : null,
 });

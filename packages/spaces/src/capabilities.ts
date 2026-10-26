@@ -21,6 +21,8 @@ import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Resu
 import type { z } from "zod";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import {
+  ActivityDataSchema,
+  ActivityInputSchema,
   CalendarDestinationListDataSchema,
   CalendarDestinationListInputSchema,
   CalendarInvitationImportCapabilityDataSchema,
@@ -134,6 +136,8 @@ import { buildSpaceItemHref } from "./routes";
 import type { ItemAcrossKind, SpaceWithPermission } from "./service";
 import { spacesService } from "./service";
 import { isSpaceResourceId, resolveSpaceApiKeyPermission, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./service/access";
+import * as activity from "./service/activity";
+import { spaceActivityRow } from "./service/activity-timeline";
 import type { CommentAuthor } from "./service/comments";
 import { localizeSpacesError, type SpacesMessages, spacesMessages } from "./service/messages";
 import { spacesPublicResources } from "./service/public-resources";
@@ -342,6 +346,47 @@ const requireItem = async (
   return internalId
     ? requireItemUuid(internalId, context, required, viewer)
     : capabilityFail(context, err.notFound("Item"), "itemNotFound");
+};
+
+export const runSpaceActivity = async (input: z.output<typeof ActivityInputSchema>, context: CapabilityExecutionContext) => {
+  const access = await requireSpace(input.space, context);
+  if (!access.ok) return access;
+  const item = input.item ? await requireItem(input.item, context) : null;
+  if (item && (!item.ok || item.data.internalSpaceId !== access.data.internalId))
+    return capabilityFail(context, err.notFound("Item"), "itemNotFound");
+  try {
+    context.signal.throwIfAborted();
+    const page = await activity.list({
+      subject: context.accessSubject,
+      spaceId: access.data.internalId,
+      itemId: item?.ok ? item.data.internalId : undefined,
+      timeline: true,
+      before: input.before,
+      after: input.after,
+      cursor: input.cursor,
+      limit: input.limit,
+    });
+    const dateConfig = await capabilityDateConfig(context);
+    const data = page.items.map((event) =>
+      spaceActivityRow(event, {
+        viewer: spaceActivityActor(context),
+        assigneeId: context.accessSubject.type === "user" ? context.accessSubject.userId : context.accessSubject.serviceAccountId,
+        locale: context.locale,
+        timeZone: input.timeZone ?? dateConfig.timeZone,
+      }),
+    );
+    const result = (count: number) => ({
+      data: data.slice(0, count),
+      page: capabilityPage(count < data.length ? page.items[count - 1]!.cursor : page.nextCursor),
+    });
+    let count = data.length;
+    while (count > 1 && Buffer.byteLength(JSON.stringify(result(count)), "utf8") > CAPABILITY_MAX_RESULT_BYTES) count--;
+    return ok(result(count));
+  } catch (error) {
+    if (error instanceof activity.InvalidActivityCursorError)
+      return capabilityFail(context, err.badInput("Invalid cursor"), "invalidCursor");
+    throw error;
+  }
 };
 
 const isEvent = (item: SpaceItem): item is SpaceItem & { startsAt: string; endsAt: string } => Boolean(item.startsAt && item.endsAt);
@@ -2205,6 +2250,15 @@ export const spacesCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "space.activity": {
+      title: "Read item activity",
+      description:
+        "Read a newest-first page of authorized item changes in one Space, optionally for one item. Sentences use the caller's locale. Comments and deleted items are omitted. Follow page.nextCursor with cursor; before and after are exclusive time bounds.",
+      input: ActivityInputSchema,
+      data: ActivityDataSchema,
+      openWorld: false,
+      run: runSpaceActivity,
+    },
     "task.work.read": {
       title: "Read task work state",
       description:

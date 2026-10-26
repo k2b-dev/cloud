@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-19
+updated: 2026-10-24
 ---
 
 # Spaces
@@ -408,6 +408,14 @@ and tag IDs when an action needs them; a second read is not required simply
 to confirm a Space already selected from an authorized list.
 Space lists may shorten descriptions to fit a full page; when
 `descriptionTruncated` is true, `space.read` returns the full description.
+
+`space.activity` reads item changes for one `space` short ID, optionally one
+`item`. Rows contain an actor, icon, localized sentence, last occurrence time,
+resource ref, and bucket count. Comments and deleted items are omitted. Pass
+`timeZone` for date presentation; follow `page.nextCursor` with `cursor`.
+`before` and `after` are exclusive ISO datetime bounds; `limit` defaults to 50
+and accepts 1–100. See [Chat system conversations](/en/docs/operations/chat-system-chats#read-item-events)
+for the shared event contract.
 
 `template.list` and `template.read` return a Space's templates with their
 rule and next proposed dates in the given `timeZone`, or in the application

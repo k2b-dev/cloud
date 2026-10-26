@@ -78,7 +78,9 @@ Do not list `/pwa` paths in `routes`; `defineApp()` throws for them. See
 Spaces adds its "My tasks" page this way, as an example of a list with a quick
 action; see [Spaces](/en/apps/spaces#check-off-tasks-in-the-mobile-app). Chat
 adds `/pwa/chat` with its chats and one conversation, as an example of a list
-beside its detail with a composer at the bottom edge.
+beside its detail with a composer at the bottom edge. Its archive and channel
+search also stay below `/pwa/chat`; reloading preserves the selected list,
+search, and open thread.
 
 ## Paths
 

@@ -5,7 +5,15 @@ import { type ThreadView, threadHref } from "./threads";
  * `threads` is the phone's page with the chat's threads, which a wider window shows as "All threads". Inside the
  * universal panel the same addresses start with `/app/chat/panel`.
  */
-export type Route = { chatId: string | null; view: ThreadView; threads: boolean; messageId: string | null; panel: "info" | null };
+export type Route = {
+  channels?: boolean;
+  query?: string;
+  chatId: string | null;
+  view: ThreadView;
+  threads: boolean;
+  messageId: string | null;
+  panel: "info" | null;
+};
 
 export const panelHref = (
   chatId: string,
@@ -29,7 +37,17 @@ export const routeAddress = (route: Route, basePath = "/app/chat"): string => {
 };
 
 export const parseRoute = (url: URL): Route | null => {
-  const match = /^\/(?:app\/chat(?:\/panel)?|pwa\/chat)(?:\/c\/([^/]+)(?:(\/threads)|\/t\/([^/]+))?(?:\/m\/([^/]+))?)?\/?$/.exec(
+  if (/^\/(?:app\/chat(?:\/panel)?|pwa\/chat)\/channels\/?$/.test(url.pathname))
+    return {
+      chatId: null,
+      view: "all",
+      threads: false,
+      messageId: null,
+      panel: null,
+      channels: true,
+      query: (url.searchParams.get("q") ?? "").trim().slice(0, 100),
+    };
+  const match = /^\/(?:app\/chat(?:\/panel)?|pwa\/chat)(?:\/archive|\/c\/([^/]+)(?:(\/threads)|\/t\/([^/]+))?(?:\/m\/([^/]+))?)?\/?$/.exec(
     url.pathname,
   );
   if (!match || (match[2] && match[4])) return null;

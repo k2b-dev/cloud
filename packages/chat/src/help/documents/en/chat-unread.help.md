@@ -52,3 +52,9 @@ Use this when you have read something but want to come back to it later.
 :::
 
 Press **Esc** in an open chat to mark that chat read.
+
+If messages arrive while you are away from the tab, **New messages** takes you back to the unread messages you skipped. It loads the missing history if needed. Skipped messages stay unread until you see them.
+
+## Filter the list {icon="filter"}
+
+Choose **Unread** above the list to show chats with new messages or your unread mark. A chat stays in that view after you read it, until you leave the filter. **All** returns to the whole list. The address keeps your filter when you reload or go back.

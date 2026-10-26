@@ -52,3 +52,9 @@ Nutze das, wenn du etwas gelesen hast, es aber später bearbeiten willst.
 :::
 
 Drücke **Esc** in einem offenen Chat, um diesen Chat als gelesen zu markieren.
+
+Kommen Nachrichten an, während du in einem anderen Tab bist, bringt dich **Neue Nachrichten** zu den übersehenen ungelesenen Nachrichten zurück. Falls nötig, lädt Chat den fehlenden Verlauf. Die Nachrichten bleiben ungelesen, bis du sie siehst.
+
+## Liste filtern {icon="filter"}
+
+Wähle **Ungelesen** über der Liste, um Chats mit neuen Nachrichten oder deiner Ungelesen-Markierung zu sehen. Ein Chat bleibt nach dem Lesen in dieser Ansicht, bis du den Filter verlässt. **Alle** zeigt wieder die ganze Liste. Die Adresse behält deinen Filter beim Neuladen und Zurückgehen.
