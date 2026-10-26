@@ -76,7 +76,7 @@ import {
   NAVIGATION_VISIBILITY_EVENT,
   NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT,
 } from "../sidebar/navigation-visibility";
-import { dispatchWorkspaceEvent, WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
+import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
 import { openAttachmentPicker } from "./AttachmentPicker";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
