@@ -146,7 +146,7 @@ describe("Files history components", () => {
     );
     const text = historyMessages(locale).historyOverviewUnavailable;
     expect(dom.root.textContent).toContain(text);
-    pending.resolve(page([entry()]));
+    pending.resolve(page([entry({ action: "file.upload" })]));
     await flush();
     expect(dom.root.querySelectorAll(".filesv2-history-row").length).toBeGreaterThan(0);
     expect(dom.root.textContent).toContain(text);

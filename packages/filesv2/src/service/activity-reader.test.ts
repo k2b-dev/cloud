@@ -1127,6 +1127,7 @@ test("administrators retain archive locations outside a local binding's former h
 for (const surface of ["page", "entry", "batch", "chain", "share"] as const) {
   test(`admin ${surface} read records foreign scope once, while own history stays unaudited`, async () => {
     const f = historyFixture();
+    if (surface === "share") f.deps.shares.get = async () => ({ created_by: actorId, base_id: baseId });
     f.setAdmin(true);
     const read = () =>
       surface === "page"
