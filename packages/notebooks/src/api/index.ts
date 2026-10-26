@@ -49,8 +49,8 @@ import { NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY }
 import { NOTE_PATH_MAX_LENGTH, NOTE_PATH_MAX_SEGMENTS } from "@/lib/note-path";
 import { encodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, NOTE_PDF_OMISSIONS_HEADER_MAX_BYTES } from "@/lib/pdf-omissions";
 import { PRESENTATION_MODES } from "@/lib/presentation-mode";
-import { SIDEBAR_MAX_LEVELS, SIDEBAR_MAX_WINDOW, SIDEBAR_PAGE_SIZE } from "@/lib/sidebar-tree";
 import { QUERY_MAX_BLOCKS } from "@/lib/query-blocks";
+import { SIDEBAR_MAX_LEVELS, SIDEBAR_MAX_WINDOW, SIDEBAR_PAGE_SIZE } from "@/lib/sidebar-tree";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
 import { InvalidActivityCursorError, NOTEBOOK_ACTIVITY_ACTIONS } from "../service/activity";
