@@ -798,6 +798,16 @@ database-wide listing with a limit, such as
 the oldest candidates of a background job, runs in a private database from
 `useFreshDatabase()` in `scripts/fixtures/test-infra`.
 
+Each integration file must declare the settings its requests and assertions
+need. For example, call `useTestSettings({ "app.url": "http://localhost:3000" })`
+from `@k2b/cloud/services/settings/settings.test-fixture` inside the gated
+suite. It restores stored values and removes previously absent rows after the
+suite, invalidating the Valkey and identity configuration caches. A suite that
+chooses values during setup, such as a temporary server's URL, calls
+`preserveTestSettings(keys)` before registering its setup hooks. Include every
+shared setting the suite changes; a fresh process does not reset the database
+or Valkey between files.
+
 The same rule holds for NATS. The development broker keeps the application
 streams in the `DEV` account, which accepts connections without credentials,
 and bounds tests in the `TEST` account
