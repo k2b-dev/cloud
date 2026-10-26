@@ -22,6 +22,22 @@ describe("selectionToolbarPosition", () => {
     });
   });
 
+  test("a boundary scrolled above the window limits at the window's top edge", () => {
+    expect(selectionToolbarPosition({ top: 20, bottom: 40, left: 400, width: 100 }, toolbar, { ...viewport, top: -200 })).toEqual({
+      left: 350,
+      top: 48,
+      side: "below",
+    });
+  });
+
+  test("never covers the selection near the bottom edge: below goes above when only that fits", () => {
+    expect(selectionToolbarPosition({ top: 760, bottom: 780, left: 400, width: 100 }, toolbar, viewport, "below")).toEqual({
+      left: 350,
+      top: 714,
+      side: "above",
+    });
+  });
+
   test("always goes below on request and stays inside the viewport", () => {
     expect(selectionToolbarPosition({ top: 300, bottom: 320, left: 0, width: 20 }, toolbar, viewport, "below")).toEqual({
       left: 8,

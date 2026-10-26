@@ -688,7 +688,8 @@ const actions = [
 };
 
 const SelectionToolbarDemo = () => {
-  const [anchor, setAnchor] = createSignal<HTMLElement>();
+  // A new value for every completed selection, so the toolbar moves to it even when it was open already.
+  const [anchor, setAnchor] = createSignal<{ at: number } | undefined>(undefined, { equals: false });
   const [lastAction, setLastAction] = createSignal("Select words in the text");
   let text!: HTMLParagraphElement;
   const selectionRect = () => {
@@ -701,7 +702,8 @@ const SelectionToolbarDemo = () => {
       id="selection-toolbar"
       chip={{ kind: "component", name: "SelectionToolbar", from: "@k2b/ui" }}
       description="Actions for selected text float over the selection after the pointer is released, go below it near the top of their area, and keep the selection when pressed."
-      code={`const [open, setOpen] = createSignal(false);
+      code={`// A new value for every completed selection, so an open toolbar moves to the next one.
+const [open, setOpen] = createSignal(false, { equals: false });
 <p onPointerUp={() => setOpen(!getSelection()?.isCollapsed)}>…</p>
 <SelectionToolbar
   label="Selection"
@@ -717,7 +719,7 @@ const SelectionToolbarDemo = () => {
       <p
         ref={text}
         style={{ "max-width": "36rem", "line-height": "1.7" }}
-        onPointerUp={() => queueMicrotask(() => setAnchor(getSelection()?.isCollapsed ? undefined : text))}
+        onPointerUp={() => queueMicrotask(() => setAnchor(getSelection()?.isCollapsed ? undefined : { at: Date.now() }))}
       >
         The association promotes rowing for all age groups, mainly through regular training, taking part in regattas, and looking after the
         boathouse. Select a few words to see the toolbar.
