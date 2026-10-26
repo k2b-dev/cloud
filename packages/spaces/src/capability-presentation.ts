@@ -58,6 +58,16 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "calendar.list": {
+          title: "Kalender auflisten",
+          description:
+            "Lesbare Space-Kalender auflisten; Kalender mit Mitgliedschaft werden vorgeschlagen. Diese Version bietet nur Lesezugriff.",
+        },
+        "calendar.events": {
+          title: "Kalendereinträge lesen",
+          description:
+            "Offene Termine und Fristen lesbarer Space-Kalender in höchstens 31 verstrichenen Tagen lesen. Spaces erweitert Wiederholungen; Seiten sind chronologisch.",
+        },
         "template.list": {
           title: "Vorlagen auflisten",
           description:
