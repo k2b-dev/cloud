@@ -9,6 +9,7 @@ import {
   rebindMailWorkflowRestoredOutput,
   restoreMailWorkflowProjectedState,
 } from "./workflow-projected-state";
+import { projectMailWorkflowFrozenMessage } from "./workflow-runtime-values";
 
 const plan = {
   inputs: [
@@ -35,8 +36,16 @@ describe("Mail workflow projected state", () => {
     expect(source.message.folderId).toBe("inbox");
   });
 
-  test("rebinds nested restored message and conversation aliases without changing other objects", async () => {
-    const message = { id: "message", flags: [] };
+  test.each([false, true])("rebinds nested restored aliases after body hydration: %s", async (hydrated) => {
+    const message: Record<string, WorkflowJsonValue> = {
+      id: "message",
+      flags: [],
+      body: "",
+      bodyText: "",
+      bodyHtml: "",
+      bodyAvailable: false,
+      textLength: null,
+    };
     const conversation = { id: "conversation", workStatus: "done" };
     const output = {
       nested: [{ message: structuredClone(message), conversation: structuredClone(conversation) }],
@@ -45,17 +54,20 @@ describe("Mail workflow projected state", () => {
       built: { id: "message", note: "kept" },
       scalar: null,
     };
+    if (hydrated) projectMailWorkflowFrozenMessage("message", message, { "inputs.message.bodyText": "Reply" });
     const ctx = { invocation: { context: { source: { message, conversation } } } } as unknown as WorkflowExecuteActionContext;
     const handler = rebindMailWorkflowRestoredOutput({
       execute: async () => ({ state: "completed" }),
       restoreCompleted: (_ctx, _step, restored) => {
-        expect(restored.output).toEqual(output);
         const value = restored.output;
         if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.nested))
           throw new Error("Expected nested output");
         const nested = value.nested[0];
         if (!nested || typeof nested !== "object" || Array.isArray(nested)) throw new Error("Expected nested aliases");
         expect(nested.message).toBe(message);
+        expect(message.textLength).toBe(hydrated ? 5 : null);
+        applyMailMessageTransition(message, "addFlag", "seen");
+        expect(nested.message).toMatchObject({ flags: ["seen"], bodyText: hydrated ? "Reply" : "" });
         expect(nested.conversation).toBe(conversation);
         expect(value.built).not.toBe(message);
         expect(value.built).toEqual({ id: "message", note: "kept" });
