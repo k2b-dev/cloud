@@ -185,4 +185,13 @@ describe("Chat in the Cloud app", () => {
     }
     expect(viewSpy).not.toHaveBeenCalled();
   });
+
+  test("an unavailable chat keeps the app's responsive return to its own list", async () => {
+    signIn("app");
+    const { response, document } = await render("/pwa/chat/c/Gone01");
+    expect(response.status).toBe(200);
+    expect(document.querySelector(".chat-app")?.hasAttribute("data-open")).toBe(true);
+    expect(document.querySelector(".chat-app__to-list")?.getAttribute("href")).toBe("/pwa/chat");
+    expect(document.querySelector(".chat-app__main")?.textContent).not.toContain("Gone01");
+  });
 });

@@ -118,6 +118,7 @@ describe("ChatWorkspace interactions", () => {
   const pendingSnapshots = new Map<string, Promise<Response>>();
   let membersRequests = 0;
   let memberName: string | null = null;
+  let aggregateUnread = 0;
   let answer: (response: Response) => void;
   beforeEach(() => {
     setSystemTime(new Date(now));
@@ -130,6 +131,7 @@ describe("ChatWorkspace interactions", () => {
     pendingSnapshots.clear();
     membersRequests = 0;
     memberName = null;
+    aggregateUnread = 0;
     FakeWebSocket.instances = [];
     consoleErrors.length = 0;
     console.error = (...args: unknown[]) => {
@@ -144,6 +146,7 @@ describe("ChatWorkspace interactions", () => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
         if (url.pathname === "/api/chat/preferences") return Response.json({ collapsed: [] });
         if (url.pathname === "/api/chat/system-chats") return Response.json({ items: [], spacesCursor: null, notebooksCursor: null });
+        if (url.pathname === "/api/chat/conversations/unread-count") return Response.json({ count: aggregateUnread });
         const snapshot = /^\/api\/chat\/conversations\/([^/]+)\/snapshot$/.exec(url.pathname);
         if (snapshot) {
           const pending = pendingSnapshots.get(snapshot[1]!);
@@ -229,6 +232,7 @@ describe("ChatWorkspace interactions", () => {
       focus?: string | null;
       embedded?: boolean;
       app?: boolean;
+      conversation?: NonNullable<ChatWorkspaceProps["open"]>["conversation"];
     } = {},
   ) => {
     const { ChatWorkspace, LocaleProvider } = modules!;
@@ -243,7 +247,7 @@ describe("ChatWorkspace interactions", () => {
       open: open
         ? {
             threads: noThreads,
-            conversation: { ...conversation, permission },
+            conversation: { ...(initial.conversation ?? conversation), permission },
             page: initial.page ?? { items: [], seqHead: 0, rev: 0, from: 1, to: 0 },
             focus: initial.focus ?? null,
           }
@@ -399,6 +403,19 @@ describe("ChatWorkspace interactions", () => {
     expect(stored).toHaveLength(1);
     expect(dom.window.localStorage.getItem(stored[0]!)).toBe("Seals arrive on Monday");
     expect(Object.keys(dom.window.sessionStorage).some((key) => key.startsWith("cloud.chat.draft:"))).toBe(false);
+    expect(consoleErrors).toEqual([]);
+  });
+  test("opening a system chat keeps the private unread total intact at Back", async () => {
+    const system = { ...conversation, kind: "system" as const, unread: 5 };
+    const privateChat = { ...conversation, id: "Chat02", unread: 10 };
+    const anotherSystem = { ...system, id: "Chat03", unread: 60 };
+    aggregateUnread = 40;
+    await mount(true, [system, privateChat, anotherSystem], null, "en", "write", {
+      url: "/pwa/chat/c/Chat01",
+      app: true,
+      conversation: system,
+    });
+    expect(dom.root.querySelector(".chat-conversation__back-count")?.textContent).toBe("40");
     expect(consoleErrors).toEqual([]);
   });
   test("failed send retries the same client ID and body, then shows one sent row", async () => {

@@ -73,7 +73,15 @@ const readStarts = (page: Page, chat: string) =>
   page.evaluate((chat) => window.chatReadStarts.filter((start) => start.chat === chat).map((start) => start.at), chat);
 const load = async (
   options: BrowserContextOptions,
-  address: { chat?: string; message?: string; panel?: "info"; archived?: boolean; filter?: "all" | "unread"; embedded?: boolean },
+  address: {
+    chat?: string;
+    message?: string;
+    panel?: "info";
+    archived?: boolean;
+    filter?: "all" | "unread";
+    embedded?: boolean;
+    app?: boolean;
+  },
   observe = false,
   prepare?: (page: Page) => Promise<void>,
   presentation: { locale?: string; theme?: "light" | "dark"; guest?: boolean } = {},
@@ -86,7 +94,7 @@ const load = async (
     page.setDefaultTimeout(5_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    const base = address.embedded ? "/app/chat/panel" : "/app/chat";
+    const base = address.app ? "/pwa/chat" : address.embedded ? "/app/chat/panel" : "/app/chat";
     const path = address.chat ? `${base}/c/${address.chat}${address.message ? `/m/${address.message}` : ""}` : base;
     const url = new URL(path, harness.url);
     if (presentation.theme) url.searchParams.set("theme", presentation.theme);
@@ -102,7 +110,7 @@ const load = async (
     if (observe) await observeShifts(page);
     await prepare?.(page);
     await page.evaluate(({ props, locale }) => window.mountChat(props, locale), {
-      props: { ...harness.props(address, { guest: presentation.guest }), embedded: address.embedded },
+      props: { ...harness.props(address, { guest: presentation.guest }), embedded: address.embedded, app: address.app },
       locale: presentation.locale ?? "en",
     });
     await settled(page);
@@ -138,6 +146,25 @@ const inFeed = async (page: Page, selector: string) => {
 };
 
 describe("ChatWorkspace browser full view", () => {
+  for (const viewport of viewports) {
+    test(`${viewport.name}: the PWA no-access view keeps Back only while the chat list is hidden`, async () => {
+      const { page, errors } = await load(viewport.options, { chat: "Gone01", app: true });
+      try {
+        const back = page.locator(".chat-app__to-list");
+        expect(await back.getAttribute("href")).toBe("/pwa/chat");
+        expect(await back.isVisible()).toBe(viewport.name === "phone");
+        expect(await page.locator(".chat-app__list").isVisible()).toBe(viewport.name === "desktop");
+        if (viewport.name === "phone") {
+          await back.click();
+          await page.waitForURL("**/pwa/chat");
+          await page.locator(".chat-app__list").waitFor({ state: "visible" });
+        }
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
   for (const { name, options } of viewports) {
     test(`live arrivals keep layout stable and follow the newest message on ${name}`, async () => {
       const chat = harness.addChat({ members: [viewer, nora], count: 40, end: harness.now() });

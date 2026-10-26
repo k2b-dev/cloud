@@ -759,7 +759,9 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
         return bun.upgrade(request, { data: undefined }) ? undefined : new Response("upgrade failed", { status: 400 });
       if (url.pathname === "/__props") {
         const target = new URL(url.searchParams.get("path") ?? "/app/chat", "https://chat.test");
-        const match = /^\/app\/chat(?:\/panel)?\/c\/([^/]+)(?:\/t\/([^/]+)|(\/threads))?(?:\/m\/([^/]+))?/.exec(target.pathname);
+        const match = /^\/(?:app\/chat(?:\/panel)?|pwa\/chat)\/c\/([^/]+)(?:\/t\/([^/]+)|(\/threads))?(?:\/m\/([^/]+))?/.exec(
+          target.pathname,
+        );
         return Response.json({
           ...viewProps({
             chat: match?.[1],
@@ -777,6 +779,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
                 : "all",
           }),
           embedded: target.pathname === "/app/chat/panel" || target.pathname.startsWith("/app/chat/panel/"),
+          app: target.pathname === "/pwa/chat" || target.pathname.startsWith("/pwa/chat/"),
         });
       }
       if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });

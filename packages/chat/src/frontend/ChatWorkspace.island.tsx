@@ -11,6 +11,7 @@ import {
   AppWorkspace,
   announce,
   Button,
+  ButtonLink,
   Dropdown,
   dialogCore,
   FilterToggle,
@@ -2104,9 +2105,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
   /** Unread messages in every chat but the open one, for the Cloud app's way back to the list. */
   const othersUnread = (id: string) => {
-    const loaded = rows().reduce((sum, row) => (row.id === id ? sum : sum + row.unread), 0);
+    const chats = rows().filter((row) => row.kind !== "system");
+    const loaded = chats.reduce((sum, row) => (row.id === id ? sum : sum + row.unread), 0);
     const total = unreadTotal();
-    return total === undefined ? loaded : Math.max(loaded, total - (rows().find((row) => row.id === id)?.unread ?? 0));
+    return total === undefined ? loaded : Math.max(loaded, total - (chats.find((row) => row.id === id)?.unread ?? 0));
   };
   const threadsPageOpen = () => (route().threads && openChat()?.id && threaded() ? conversation() : null);
   const threadsPageView = (current: Conversation): JSX.Element => (
@@ -2316,9 +2318,18 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       icon="ti ti-lock"
       title={t().threadUnavailable}
       action={
-        <Link href={basePath} onNavigate={backToList}>
-          {t().backToChats}
-        </Link>
+        <Show
+          when={props.app}
+          fallback={
+            <Link href={basePath} onNavigate={backToList}>
+              {t().backToChats}
+            </Link>
+          }
+        >
+          <ButtonLink class="chat-app__to-list" variant="secondary" href={basePath} navigation="enhanced" onNavigate={backToList}>
+            {t().backToChats}
+          </ButtonLink>
+        </Show>
       }
       description={t().noAccessDescription}
     />
