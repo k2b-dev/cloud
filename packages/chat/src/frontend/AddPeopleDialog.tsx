@@ -197,6 +197,7 @@ export function AddPeopleDialog(
           chosen={chosen()}
           excluded={[{ type: "user", userId: props.viewerId }]}
           people={props.store.people}
+          conversationId={props.conversation.id}
           disabled={busy() || added() || !!intent.pending()}
           onChange={setChosen}
         />
@@ -241,15 +242,20 @@ export function AddPeopleDialog(
       <Show when={error()}>
         <DialogError message={error()} />
       </Show>
+      {/* Membership loading decides whether a fresh chat is possible. Its own reserved row keeps the main actions still. */}
+      <Show when={unnamed() || intent.pending()}>
+        <div class="chat-add-people__alternative">
+          <Show when={intent.pending() || (!added() && freshMembers())}>
+            <Button variant="secondary" disabled={busy() || (!intent.pending() && !ready())} onClick={() => void startFresh()}>
+              {intent.pending() ? t().retry : t().startWithoutHistory}
+            </Button>
+          </Show>
+        </div>
+      </Show>
       <DialogActions>
         <Button variant="secondary" disabled={busy()} onClick={cancel}>
           {t().cancel}
         </Button>
-        <Show when={intent.pending() || (!added() && freshMembers())}>
-          <Button variant="secondary" disabled={busy() || (!intent.pending() && !ready())} onClick={() => void startFresh()}>
-            {intent.pending() ? t().retry : t().startWithoutHistory}
-          </Button>
-        </Show>
         <Button type="submit" form="chat-add-people" loading={busy()} disabled={!!intent.pending() || !ready()}>
           {added() ? t().saveName : t().add}
         </Button>

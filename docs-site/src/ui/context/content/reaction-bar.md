@@ -18,6 +18,8 @@ import { ReactionBar, reactionPeople, type ReactionBarItem, type ReactionBarProp
 
 - `reactions` is an ordered list of `{ key, emoji, count, own?, label?, busy? }`.
   A chip keeps its element and focus for its `key` when new objects arrive.
+  When the focused chip's key goes away, focus moves to the chip now in its
+  place, else the one before it, else "Add reaction".
   `own` highlights the reader's reaction. `busy` adds `aria-busy="true"`
   while an intent is saving; the application decides how to handle further
   presses and failures.

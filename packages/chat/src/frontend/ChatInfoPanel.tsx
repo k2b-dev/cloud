@@ -8,16 +8,18 @@ import {
   InlineGuidance,
   prompts,
   SelectChip,
+  StatusBadge,
   TextInput,
   Tooltip,
   toast,
 } from "@k2b/ui";
-import { createEffect, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 import type { z } from "zod";
 import type { MemberSchema, PermissionSchema } from "../service/contracts";
 import { type ChatDialogStore, type Conversation, errorMessage, useChatMessages } from "./chat-dialog";
 import { MemberAvatar } from "./MemberPicker";
+import { containerIcon, systemMembers } from "./system-chats";
 
 type Member = z.infer<typeof MemberSchema>;
 type Permission = z.infer<typeof PermissionSchema>;
@@ -43,6 +45,9 @@ export default function ChatInfoPanel(props: {
   onEditDetails: () => void;
   /** For admins: "New thread", also where the chat has none yet. */
   onCreateThread?: () => void;
+  /** What the chat shared, below its members. */
+  shared?: JSX.Element;
+  onDiscovery?: () => void;
   onLeave: () => void;
 }): JSX.Element {
   const t = useChatMessages();
@@ -55,7 +60,10 @@ export default function ChatInfoPanel(props: {
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [moreFailed, setMoreFailed] = createSignal(false);
   const [changing, setChanging] = createSignal(false);
-  const manager = () => props.conversation.permission === "admin";
+  const conversationId = createMemo(() => props.conversation.id);
+  const membershipRevision = createMemo(() => props.revision);
+  const system = () => props.conversation.kind === "system";
+  const manager = () => !system() && props.conversation.permission === "admin";
   let list: HTMLUListElement | undefined;
   let retryMore: HTMLButtonElement | undefined;
   let request = 0;
@@ -119,10 +127,11 @@ export default function ChatInfoPanel(props: {
     }),
   );
   createEffect(
-    on([() => props.active, () => props.store, query, () => props.revision], ([active, store, q], previous) => {
+    on([() => props.active, () => props.store, query, membershipRevision, conversationId], ([active, store, q, , id], previous) => {
       // Only a new search starts again from the first page; a membership change or a return to the panel keeps the
       // rows the reader loaded.
-      if (active && store) void load(!!previous && previous[1] === store && previous[2] === q && rows.length > 0);
+      if (active && store && !system())
+        void load(!!previous && previous[1] === store && previous[2] === q && previous[4] === id && rows.length > 0);
     }),
   );
 
@@ -151,7 +160,7 @@ export default function ChatInfoPanel(props: {
   const remove = async (member: Member) => {
     const store = props.store;
     if (!store || changing()) return;
-    const confirmed = await prompts.confirm(t().removeMemberDescription, {
+    const confirmed = await prompts.confirm(props.conversation.channel ? t().removeChannelMemberDescription : t().removeMemberDescription, {
       title: t().removeMemberTitle({ name: member.displayName }),
       icon: "ti ti-user-minus",
       confirmText: t().remove,
@@ -173,23 +182,40 @@ export default function ChatInfoPanel(props: {
   };
 
   // The chat's own commands sit in the header: below a member list that loads, they would move.
-  const commands = (): DropdownItem[] => [
-    ...(props.conversation.permission !== "read" ? [{ label: t().editDetails, icon: "ti ti-pencil", action: props.onEditDetails }] : []),
-    ...(props.onCreateThread
-      ? [{ label: t().newThread, icon: "ti ti-hash", description: t().newThreadHint, action: props.onCreateThread }]
-      : []),
-    // Alone in a chat there is nobody to leave it to.
-    ...(props.conversation.memberCount > 1
-      ? [{ label: t().leaveChat, icon: "ti ti-logout", variant: "danger" as const, action: props.onLeave }]
-      : []),
-  ];
+  const commands = (): DropdownItem[] =>
+    system()
+      ? []
+      : [
+          ...(manager() && props.onDiscovery ? [{ label: t().discoverySettings, icon: "ti ti-compass", action: props.onDiscovery }] : []),
+          ...(props.conversation.permission !== "read"
+            ? [{ label: t().editDetails, icon: "ti ti-pencil", action: props.onEditDetails }]
+            : []),
+          ...(props.onCreateThread
+            ? [{ label: t().newThread, icon: "ti ti-hash", description: t().newThreadHint, action: props.onCreateThread }]
+            : []),
+          // Alone in a chat there is nobody to leave it to.
+          ...(props.conversation.member && (props.conversation.channel || props.conversation.memberCount > 1)
+            ? [
+                {
+                  label: props.conversation.channel ? t().unsubscribe : t().leaveChat,
+                  icon: props.conversation.channel ? "ti ti-bell-off" : "ti ti-logout",
+                  variant: "danger" as const,
+                  action: props.onLeave,
+                },
+              ]
+            : []),
+        ];
 
   return (
     <DetailPanel>
       <DetailPanel.Header
-        icon={props.conversation.icon ?? (props.conversation.memberCount <= 2 ? "ti ti-user" : "ti ti-users")}
+        icon={
+          system()
+            ? containerIcon(props.conversation.resource?.type)
+            : (props.conversation.icon ?? (props.conversation.memberCount <= 2 ? "ti ti-user" : "ti ti-users"))
+        }
         title={props.conversation.title}
-        subtitle={t().members({ count: props.conversation.memberCount })}
+        subtitle={system() ? systemMembers(props.conversation.resource?.type, t()) : t().members({ count: props.conversation.memberCount })}
         actions={
           <>
             <Show when={commands().length > 0}>
@@ -220,77 +246,86 @@ export default function ChatInfoPanel(props: {
         }
       />
       <DetailPanel.Body scrollPreserveKey={`chat-info-${props.conversation.id}`}>
-        <DetailPanel.Section icon="ti ti-target-arrow" title={t().purpose}>
-          <Show when={props.conversation.purpose} fallback={<p class="text-sm text-dimmed">{t().noPurpose}</p>}>
-            {(purpose) => <p class="chat-info__purpose">{purpose()}</p>}
-          </Show>
-        </DetailPanel.Section>
-        <DetailPanel.Section icon="ti ti-users" title={t().membersTitle}>
-          <div class="flex flex-col gap-2" aria-busy={status() === "loading"}>
-            <TextInput
-              type="search"
-              aria-label={t().searchMembers}
-              placeholder={t().searchMembers}
-              icon="ti ti-search"
-              maxLength={100}
-              value={input}
-              onValueChange={setInput}
-            />
-            <Show when={status() === "error"}>
-              <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
-                {t().membersFailed}{" "}
-                <Button variant="text" size="xs" onClick={() => void load()}>
-                  {t().retry}
-                </Button>
-              </InlineGuidance>
+        <Show when={!system()}>
+          <DetailPanel.Section icon="ti ti-target-arrow" title={t().purpose}>
+            <Show when={props.conversation.purpose} fallback={<p class="text-sm text-dimmed">{t().noPurpose}</p>}>
+              {(purpose) => <p class="chat-info__purpose">{purpose()}</p>}
             </Show>
-            <Show when={status() === "loading" && rows.length === 0}>
-              <InlineGuidance loading>{t().membersLoading}</InlineGuidance>
-            </Show>
-            <Show when={status() === "ready" && rows.length === 0 && query()}>
-              <p class="text-sm text-dimmed">{t().noMemberMatches({ q: query() })}</p>
-            </Show>
-            <ul ref={list} tabindex="-1" aria-label={t().membersTitle} class="flex flex-col outline-none">
-              <For each={rows}>
-                {(member) => (
-                  <ChatMemberRow
-                    member={member}
-                    own={member.principal.type === "user" && member.principal.userId === props.viewerId}
-                    manager={manager()}
-                    locked={member.principal.type === "user" && !member.deactivated && managers() === 1 && isManagerEntry(member)}
-                    disabled={changing()}
-                    onPermission={(permission) => void changePermission(member, permission)}
-                    onRemove={() => void remove(member)}
-                  />
-                )}
-              </For>
-            </ul>
-            <Show when={cursor()}>
-              <Show
-                when={moreFailed()}
-                fallback={
-                  <Button
-                    variant="text"
-                    size="xs"
-                    class="self-start"
-                    loading={loadingMore()}
-                    disabled={status() !== "ready"}
-                    onClick={() => void more()}
-                  >
-                    {t().showMoreMembers}
-                  </Button>
-                }
-              >
+          </DetailPanel.Section>
+          <DetailPanel.Section icon="ti ti-users" title={t().membersTitle}>
+            <div class="flex flex-col gap-2" aria-busy={status() === "loading"}>
+              <TextInput
+                type="search"
+                aria-label={t().searchMembers}
+                placeholder={t().searchMembers}
+                icon="ti ti-search"
+                maxLength={100}
+                value={input}
+                onValueChange={setInput}
+              />
+              <Show when={status() === "error"}>
                 <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
                   {t().membersFailed}{" "}
-                  <Button ref={retryMore} variant="text" size="xs" loading={loadingMore()} onClick={() => void more()}>
+                  <Button variant="text" size="xs" onClick={() => void load()}>
                     {t().retry}
                   </Button>
                 </InlineGuidance>
               </Show>
-            </Show>
-          </div>
-        </DetailPanel.Section>
+              <Show when={status() === "loading" && rows.length === 0}>
+                <InlineGuidance loading>{t().membersLoading}</InlineGuidance>
+              </Show>
+              <Show when={status() === "ready" && rows.length === 0 && query()}>
+                <p class="text-sm text-dimmed">{t().noMemberMatches({ q: query() })}</p>
+              </Show>
+              <ul ref={list} tabindex="-1" aria-label={t().membersTitle} class="flex flex-col outline-none">
+                <For each={rows}>
+                  {(member) => (
+                    <ChatMemberRow
+                      member={member}
+                      own={member.principal.type === "user" && member.principal.userId === props.viewerId}
+                      manager={manager()}
+                      locked={member.principal.type !== "group" && !member.deactivated && managers() === 1 && isManagerEntry(member)}
+                      disabled={changing()}
+                      onPermission={(permission) => void changePermission(member, permission)}
+                      onRemove={() => void remove(member)}
+                    />
+                  )}
+                </For>
+              </ul>
+              <Show when={cursor()}>
+                <Show
+                  when={moreFailed()}
+                  fallback={
+                    <Button
+                      variant="text"
+                      size="xs"
+                      class="self-start"
+                      loading={loadingMore()}
+                      disabled={status() !== "ready"}
+                      onClick={() => void more()}
+                    >
+                      {t().showMoreMembers}
+                    </Button>
+                  }
+                >
+                  <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+                    {t().membersFailed}{" "}
+                    <Button ref={retryMore} variant="text" size="xs" loading={loadingMore()} onClick={() => void more()}>
+                      {t().retry}
+                    </Button>
+                  </InlineGuidance>
+                </Show>
+              </Show>
+            </div>
+          </DetailPanel.Section>
+        </Show>
+        <Show when={system()}>
+          <p class="chat-system-chats__membership">
+            {systemMembers(props.conversation.resource?.type, t())}. {t().systemAccessHint}
+          </p>
+        </Show>
+        {/* The first member page owns this space. Showing shared items before it arrives would push them out of view. */}
+        <Show when={system() || status() !== "loading" || rows.length > 0}>{props.shared}</Show>
       </DetailPanel.Body>
     </DetailPanel>
   );
@@ -328,12 +363,31 @@ export function ChatMemberRow(props: {
       props.member.groupSize === null ? null : size(props.member.groupSize),
     ].filter((marker) => marker !== null);
   // Groups always write; only a direct person's level changes.
-  const editable = () => props.manager && props.member.principal.type === "user";
+  const editable = () => props.manager && props.member.principal.type !== "group";
   return (
     <li class="chat-member-row">
       <MemberAvatar principal={props.member.principal} displayName={props.member.displayName} avatarHash={props.member.avatarHash} />
       <span class="chat-member-row__name">
-        <span class="truncate text-sm">{props.member.displayName}</span>
+        <span class="flex min-w-0 items-center gap-1">
+          <span class="truncate text-sm">{props.member.displayName}</span>
+          <Show when={props.member.serviceAccountKind}>
+            {(kind) => (
+              <StatusBadge
+                tone="neutral"
+                variant="text"
+                label={
+                  kind() === "agent"
+                    ? t().agentAccount
+                    : kind() === "standalone"
+                      ? t().standaloneAccount
+                      : kind() === "resource_bound"
+                        ? t().resourceAccount
+                        : t().delegatedAccount
+                }
+              />
+            )}
+          </Show>
+        </span>
         <Show when={markers().length > 0}>
           <span class="truncate text-xs text-dimmed">{markers().join(" · ")}</span>
         </Show>

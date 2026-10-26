@@ -7,6 +7,8 @@ import { chatMessages } from "../messages";
 import type { ConversationSchema } from "../service/contracts";
 import { viewIcon } from "./ChatThreads";
 import { listTime } from "./chat-format";
+import SystemThreadDirectory from "./SystemThreadDirectory";
+import { systemMembers } from "./system-chats";
 import { activeThreads, archivedThreads, type Thread, type ThreadList, type ThreadView, threadHref } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
@@ -27,6 +29,9 @@ export default function ChatThreadColumn(props: {
   now: () => Date;
   onOpen: (view: ThreadView, navigation: LinkNavigateEvent) => void | Promise<void>;
   onCreate: () => void;
+  canCreate: boolean;
+  creating?: boolean;
+  revision?: number;
   onRetry: () => void;
 }): JSX.Element {
   const locale = useLocale();
@@ -51,7 +56,7 @@ export default function ChatThreadColumn(props: {
         data-unread={count() > 0 ? "" : undefined}
         data-thread={view}
       >
-        <i class={`${viewIcon(view)} chat-thread-column__icon`} aria-hidden="true" />
+        <i class={`${viewIcon(view, props.threads)} chat-thread-column__icon`} aria-hidden="true" />
         <span class="chat-thread-column__copy">
           <span class="chat-thread-column__line">
             <span class="chat-thread-column__name">{name}</span>
@@ -84,43 +89,84 @@ export default function ChatThreadColumn(props: {
       <header class="chat-thread-column__head">
         <span class="chat-thread-column__title">
           <span class="chat-thread-column__chat">{props.conversation.title}</span>
-          <span class="chat-thread-column__members">{t().members({ count: props.conversation.memberCount })}</span>
+          <span class="chat-thread-column__members">
+            {props.conversation.kind === "system"
+              ? systemMembers(props.conversation.resource?.type, t())
+              : t().members({ count: props.conversation.memberCount })}
+          </span>
         </span>
-        <Show when={props.conversation.permission === "admin"}>
-          <IconButton label={t().newThread} variant="ghost" onClick={() => props.onCreate()}>
+        <Show when={props.canCreate}>
+          <IconButton
+            label={props.conversation.kind === "system" ? t().discussElement : t().newThread}
+            variant="ghost"
+            disabled={props.creating}
+            onClick={() => props.onCreate()}
+          >
             <i class="ti ti-plus" aria-hidden="true" />
           </IconButton>
         </Show>
       </header>
       <nav class="chat-thread-column__list" aria-label={t().threadsIn({ title: props.conversation.title })}>
         <Show
-          when={props.status !== "failed"}
+          when={props.conversation.kind === "system"}
           fallback={
-            <div class="chat-threads__error" role="status">
-              <span>{t().threadsLoadFailed}</span>
-              <Button size="xs" variant="ghost" onClick={() => props.onRetry()}>
-                {t().retry}
-              </Button>
-            </div>
+            <>
+              <Show
+                when={props.status !== "failed"}
+                fallback={
+                  <div class="chat-threads__error" role="status">
+                    <span>{t().threadsLoadFailed}</span>
+                    <Button size="xs" variant="ghost" onClick={() => props.onRetry()}>
+                      {t().retry}
+                    </Button>
+                  </div>
+                }
+              >
+                {row("all", t().allThreads, t().allThreadsHint, props.conversation.unread, props.conversation.lastMessage)}
+                {row(
+                  "general",
+                  t().general,
+                  t().generalHint,
+                  props.threads?.general.unread ?? 0,
+                  props.threads?.general.lastMessage ?? null,
+                )}
+                <For each={activeThreads(props.threads)}>{thread}</For>
+                <Show when={props.status === "ready" && activeThreads(props.threads).length === 0}>
+                  <p class="chat-threads-page__empty">
+                    {(
+                      props.conversation.kind === "system"
+                        ? props.conversation.permission !== "read"
+                        : props.conversation.permission === "admin"
+                    )
+                      ? t().noThreadsYetAdmin
+                      : t().noThreadsYet}
+                  </p>
+                </Show>
+                <Show when={archivedThreads(props.threads).length > 0}>
+                  <AppWorkspace.SidebarItem
+                    icon={archiveOpen() ? "ti ti-chevron-down" : "ti ti-chevron-right"}
+                    onClick={() => setArchiveOpen((open) => !open)}
+                  >
+                    {t().archivedThreads({ count: archivedThreads(props.threads).length })}
+                  </AppWorkspace.SidebarItem>
+                  <Show when={archiveOpen()}>
+                    <For each={archivedThreads(props.threads)}>{thread}</For>
+                  </Show>
+                </Show>
+              </Show>
+            </>
           }
         >
-          {row("all", t().allThreads, t().allThreadsHint, props.conversation.unread, props.conversation.lastMessage)}
-          {row("general", t().general, t().generalHint, props.threads?.general.unread ?? 0, props.threads?.general.lastMessage ?? null)}
-          <For each={activeThreads(props.threads)}>{thread}</For>
-          <Show when={props.status === "ready" && activeThreads(props.threads).length === 0}>
-            <p class="chat-threads-page__empty">{props.conversation.permission === "admin" ? t().noThreadsYetAdmin : t().noThreadsYet}</p>
-          </Show>
-          <Show when={archivedThreads(props.threads).length > 0}>
-            <AppWorkspace.SidebarItem
-              icon={archiveOpen() ? "ti ti-chevron-down" : "ti ti-chevron-right"}
-              onClick={() => setArchiveOpen((open) => !open)}
-            >
-              {t().archivedThreads({ count: archivedThreads(props.threads).length })}
-            </AppWorkspace.SidebarItem>
-            <Show when={archiveOpen()}>
-              <For each={archivedThreads(props.threads)}>{thread}</For>
-            </Show>
-          </Show>
+          <SystemThreadDirectory
+            basePath={props.basePath}
+            viewerId={props.viewerId}
+            dateConfig={props.dateConfig}
+            now={props.now}
+            conversation={props.conversation}
+            view={props.view}
+            revision={props.revision ?? 0}
+            onOpen={props.onOpen}
+          />
         </Show>
       </nav>
     </section>

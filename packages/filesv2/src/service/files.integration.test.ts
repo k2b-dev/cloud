@@ -2374,9 +2374,18 @@ suite("Files service and durable bindings", () => {
     await sql`INSERT INTO auth.user_groups_v2 VALUES(${id(actor)},${personal!.id}),(${id(actor)},${team!.id})`;
     await sql`INSERT INTO auth.user_posix(user_id,managed_by,uid_number,primary_gid_number,primary_group_id,home_directory,login_shell)
       VALUES(${id(actor)},'local',200001,200004,${personal!.id},'/home/quinn','/bin/bash')`;
+    const ownership = await sql<{ owner_id: string }[]>`SELECT owner_id FROM auth.personal_groups WHERE group_id=${personal!.id}`;
+    expect(ownership).toEqual([{ owner_id: id(actor) }]);
     const bases = await service.bases(testCall(actor));
     expect(bases.issues).toEqual([]);
     expect(bases.items.map((item) => [item.area, item.kind, item.name])).toEqual([
+      ["cloud", "users", "quinn"],
+      ["cloud", "groups", "team"],
+    ]);
+    await sql`DELETE FROM auth.user_posix WHERE user_id=${id(actor)}`;
+    const removedPosix = await service.bases(testCall(actor));
+    expect(removedPosix.issues).toEqual([]);
+    expect(removedPosix.items.map((item) => [item.area, item.kind, item.name])).toEqual([
       ["cloud", "users", "quinn"],
       ["cloud", "groups", "team"],
     ]);

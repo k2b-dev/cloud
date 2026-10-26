@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-21
+updated: 2026-10-23
 ---
 
 # Build and deploy
@@ -268,6 +268,86 @@ recovery checks.
 
 See [Release process](/en/docs/contributing/release-process) for how versions
 and tags are produced.
+
+## Chat shared items after the upgrade
+
+Chat's startup migration adds empty `refs` and `links` columns and two indexes
+on messages. Existing messages keep empty arrays; older links are not backfilled.
+No configuration or external resource fetch is required.
+
+`POST /api/chat/conversations/:conversation/messages` accepts up to 10 Cloud
+resource refs (`{ type, id }`), removes duplicates and preserves their order.
+A body of `""` is accepted only with at least one ref. Refs identify resources;
+clients resolve each card with the reader's session. Sharing grants no access
+to the referenced resource. Message responses and live message events always
+include `refs`, including an empty array for messages without refs. A retry
+with the same `clientId` returns the stored content with the caller's current
+reactions.
+
+`GET /api/chat/conversations/:conversation/shared` requires chat read access.
+It returns `{ items, nextCursor }`, with up to 30 items, newest message first.
+Within each message, refs precede links, each in stored order. Each item contains
+`kind` (`element` or `link`), `ref` or `url`, `messageId`, `seq`, `thread`,
+`author`, and `createdAt`. `thread` is `null` for General.
+
+Use `kind=all|elements|links|images|documents` (default `all`) and optionally
+`thread=<thread ID>|general`. Without `thread`, the list covers the whole chat.
+Images and documents currently return empty lists. Unknown threads and chats
+the reader cannot access return 404. Pass `nextCursor` unchanged as `cursor`
+with the same filters; `null` marks the end. Invalid queries return 400.
+
+New messages retain up to 20 distinct absolute HTTP/HTTPS links from Markdown
+links, autolinks and bare URLs. URLs longer than 2,048 characters are excluded.
+The shared list reads the messages themselves, so deleting a message removes
+its items from subsequent reads.
+
+## Chat channels after the upgrade
+
+The Chat API supports channels with a name, purpose, and discovery audience.
+The operator setting `chat.discoverable_authenticated` defaults to `true`.
+Disable it to remove discovery through the “all signed-in accounts” audience;
+existing subscriptions keep their membership. This audience includes guests
+and service accounts. No new database migration is required for channels.
+
+To create a channel, include `discovery` in `POST /api/chat/conversations`:
+an array of `{ principal, permission }` entries. A principal is
+`{ type: "group", groupId }` or `{ type: "authenticated" }`; permission is
+`read` or `write`. The audience supports up to 100 distinct entries.
+`GET /api/chat/channels/options` returns `allowAuthenticated`.
+`POST /api/chat/channels/preview` accepts the audience array and returns
+`audienceCount` and `includesAuthenticated`. Pass `?conversation=<ID>` to
+preview an existing channel as its manager.
+Without a conversation ID, preview requires a user-backed account, as does
+creation. Guests cannot preview group audiences. Audience counts include each
+eligible account once, even when groups overlap or contain cycles. Counting
+has a five-second budget; on timeout, preview and discovery settings return
+`AUDIENCE_UNAVAILABLE` (HTTP 503) without a partial count. Retry the request.
+
+`GET /api/chat/channels` accepts a search term `q` and an opaque `cursor`.
+It returns up to 50 channels in name order as `{ items, nextCursor }`.
+Conversation responses include `channel` and `member`, so clients can show
+whether a channel is already subscribed. `POST /api/chat/conversations/:conversation/join`
+subscribes with the audience's permission. The existing `leave` operation
+unsubscribes; its response adds `canRejoin`, which says whether the channel's
+audience still lets the person subscribe again. Joining and leaving publish membership hints without adding
+subscription messages to the timeline.
+Leaving with a successor requires effective `admin` permission, including the
+credential's scope limit.
+
+Managers read and replace the audience through `GET` and `PUT`
+`/api/chat/conversations/:conversation/discovery`. A replacement accepts
+`{ entries, name?, purpose?, revision? }`; changing entries writes a `discovery_changed`
+system message. `revision` comes from the `GET` response; when the stored
+audience changed since then, the replacement answers `DISCOVERY_CHANGED`
+(HTTP 409) and changes nothing. Send only `name` or `purpose` when they change. Empty entries remove discovery while keeping members.
+Channels require a nonempty name and purpose. Channels cannot create threads,
+and chats with existing threads cannot become channels (`THREADS_UNAVAILABLE`).
+
+Member inputs also accept `{ type: "service_account", serviceAccountId }`.
+Standalone and agent accounts can read, write, and manage according to their
+membership. Resource-bound accounts can be added to their own conversation.
+Member responses include `serviceAccountKind`; an active standalone or agent
+manager can receive management when another member leaves.
 
 ## AI provider upgrade: nessi 0.15
 
@@ -544,6 +624,59 @@ Use a separate browser profile without an employee sign-in on shared devices.
 Installing under another path does not create a separate origin. The example
 and this release do not migrate existing application share links or change
 Cloud mobile-app pairing.
+## Chat reactions after the upgrade
+
+Chat's additive startup migration creates the message reaction table and indexes.
+Existing messages have no reactions. No configuration or backfill is needed.
+Reactions apply to every chat, including channels and named or archived threads.
+
+Anyone who can read a text message can react, including read-only members,
+channel audience readers, guests and service accounts. Credentials also need
+`write` or `admin` scope: reacting writes the reader's own state, so a
+read-scoped token cannot react. Resource grants still need only `read`.
+User-delegated credentials react as their person; other service and agent
+credentials react as their service account. Reacting does not join a channel.
+
+Use these endpoints below `/api/chat/conversations/:conversation/messages/:message`:
+
+| Method and path | Result |
+| --- | --- |
+| `PUT /reactions/:emoji` | Add your reaction; 204 with no body |
+| `DELETE /reactions/:emoji` | Remove your reaction; 204 with no body |
+| `GET /reactions` | `{ items: [{ emoji, count, own, people }] }` |
+
+URL-encode the emoji path segment. Each reaction is one Unicode emoji grapheme,
+validated with `Intl.Segmenter` and Unicode pictographic or regional-indicator
+properties, including ZWJ sequences, skin tones, flags and keycaps. It must fit
+in 32 UTF-8 bytes; invalid input returns 400. Each principal can hold at most
+20 different emoji on one message, the product budget for one picker row group.
+A message can carry at most 50 distinct emoji, the reaction bar's budget for
+two wrapped lines. Exceeding these limits returns 409 with
+`REACTION_PERSON_LIMIT` or `REACTION_MESSAGE_LIMIT`. Remove a reaction before
+adding another. Repeated adds or removes preserve the same state and revision.
+Reactions share the existing send limits: 10 writes per principal and chat in
+10 seconds and 60 per principal in 60 seconds. A limit returns 429 with
+`Retry-After`; retry after that many seconds.
+
+Groups are ordered by their first remaining reaction. `own` refers to the
+caller's access subject; `people` contains up to 10 display names, newest
+reaction first, with the standard principal-label fallback and no account IDs.
+History, snapshots, single-message reads, send responses and changes include
+`reactions: [{ emoji, count, own }]`, or an empty array. Pages load their reaction
+summaries in one grouped query. Unavailable chats or messages, including system
+and deleted messages, return the same `NOT_FOUND` 404 as message reads.
+
+A changed reaction advances the message and conversation revisions. Changes
+reads therefore include that message again. One conversation live hint carries
+`{ type: "reactions", conversationId, messageId, rev }`; consumers fetch
+`GET /reactions` for their own projection. Message live events carry no
+viewer-specific reactions. The browser store updates optimistically, restores
+failed changes and throws the failure for the caller to display. It fetches
+once per loaded message in a live batch and ignores older revisions.
+
+Reactions leave read state, unread counts, sidebar order and notifications
+unchanged. Leaving a chat preserves the principal and display name on existing
+reactions; deleting the message removes them.
 
 ## Mobile app runtime updates
 
