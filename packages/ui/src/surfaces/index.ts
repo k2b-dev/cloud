@@ -24,6 +24,7 @@ export type { ProgressBarProps, ProgressBarTone } from "./ProgressBar";
 export { ProgressBar } from "./ProgressBar";
 export type { ProgressRingProps, ProgressRingTone } from "./ProgressRing";
 export { ProgressRing } from "./ProgressRing";
+export { PERSON_COLORS, personColor, personTint } from "./person-color";
 export type { ResourceCardProps, ResourceCardState } from "./ResourceCard";
 export { ResourceCard } from "./ResourceCard";
 export { Skeleton, type SkeletonProps } from "./Skeleton";
