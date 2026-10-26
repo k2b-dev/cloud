@@ -59,6 +59,7 @@ import { requireAppAccess, stopAppAccessConnections } from "../server/middleware
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { requireInvocation } from "../server/middleware/invocation";
 import "../events/app-access";
+import { createNestedCapabilityQuery } from "../capabilities/nested";
 import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-template";
 import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
 import { preloadLayoutAnnouncements, settings as settingsMiddleware } from "../server/middleware/settings";
@@ -859,6 +860,7 @@ export const defineApp = <
               input: body.input,
               expectedSchemaHash: c.req.header("x-cloud-capability-schema-hash") ?? null,
               context: {
+                query: createNestedCapabilityQuery(c.req.raw),
                 authority: auth.getAuthority(c),
                 actor,
                 accessSubject: c.get("accessSubject"),

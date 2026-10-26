@@ -1535,6 +1535,35 @@ secrets, and old image set if rollback is necessary. See the
 for token compatibility and [Identity key operations](/en/docs/operations/identity-key-operations)
 for key recovery.
 
+## Enable nested capability Queries
+
+Upgrade Core and the applications taking part in a nested Query to the same
+Cloud release before using `context.query()`. Older invocation verifiers reject
+the child token's new parent binding. Core adds three nullable columns to
+`capabilities.executions` during its normal migration; existing history remains
+readable.
+
+Set the existing `CLOUD_CORE_INTERNAL_ORIGIN` on the calling application and
+allow its private requests to Core's
+`POST /api/_internal/identity/v1/invoke-child` route. Core and the target
+application need their shared Valkey connection. Core holds a short-lived
+exchange lease there, containing revocation coordinates and turn metadata,
+never the original session cookie or bearer credential. Optional lease setup
+runs after signing commits and gets 1% of the 30-second parent-token window
+(300 ms); a failed or stalled store disables nesting. Leases expire within
+the parent's 30-second token lifetime. Cleanup starts when dispatch ends and
+does not delay the original response; expiry bounds cleanup failures.
+Unavailable or lost lease state disables nesting without failing the original
+invocation. It denies the nested Query; do not substitute an
+application permission cache.
+
+The initial budget permits one child Query and no further nesting. Mandate
+policies and Assistant tool restrictions must include that Query explicitly.
+Check a permitted reader, a denied reader and cancellation before enabling the
+consuming workflow. Use `requestId`, `parentInvocationId` and `viaAppId` in
+capability execution history to inspect the chain. See
+[App capabilities](/en/docs/platform/capabilities#read-from-another-capability-handler).
+
 ## Upgrade from Sync v5
 
 The Redis-backed Sync v5 runtime cannot read or write Sync v6 state. Finish or
