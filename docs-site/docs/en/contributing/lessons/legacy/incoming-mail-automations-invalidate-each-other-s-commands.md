@@ -1,0 +1,7 @@
+### Incoming Mail automations invalidate each other's commands
+
+- **What happened:** Matching incoming automations could fail when one marked a message read and another moved it ([#1036](https://github.com/k2b-dev/cloud/issues/1036)).
+- **Root cause:** Flag and keyword steps did not check another run's move, and provider preconditions projected only the current run's writes.
+- **Error class:** Ordering and concurrency.
+- **Guard:** `incoming-automations.integration.test.ts` covers both read/move orders, already moved messages, moves that land while a read command is created, queued reads that find the message gone, and sibling keywords. Another client's move that sync has not seen yet still fails the read. Only writes that other incoming automations confirmed after the run captured the message extend expected state; external drift still fails. `workflow-message-preconditions.test.ts` checks transition order and modseq retention without writes.
+- **Follow-up:** The placement turn checked for a moved message before checking that the run is an incoming automation, so a hand-written workflow's move step skipped silently ([#1246](https://github.com/k2b-dev/cloud/issues/1246)). Error class: role check after the outcome it gates. Guard: `workflow-placement-steps.integration.test.ts` covers move, archive, trash, and junk of a hand-written workflow on a moved message and on a message another command is moving.

@@ -6,7 +6,7 @@ Closes #
 
 ## How do we prevent this next time? (guard: check/test/convention, or why none)
 
-<!-- A fix also adds its lesson to docs-site/docs/en/contributing/lessons-learned.md. -->
+<!-- A fix also adds its own docs-site/docs/en/contributing/lessons/YYYY-MM-DD-<unique-slug>.md. Do not edit the shared lessons-learned.md page. -->
 
 ## Checklist
 
