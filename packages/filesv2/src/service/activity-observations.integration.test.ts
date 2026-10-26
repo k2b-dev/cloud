@@ -15,8 +15,8 @@ import {
   type ObservationTarget,
   observationBlocked,
 } from "../data/activity-observations";
-import { withRootLock } from "../data/operations";
 import { bindings } from "../data/bases";
+import { withRootLock } from "../data/operations";
 import { migrate } from "../migrate";
 import { entryRefId } from "../resource-ref";
 import { createActivityObservations } from "./activity-observations";
