@@ -24,10 +24,11 @@ const row = (
 });
 
 type FixtureEffect = "summary" | "tag";
+type FixtureStep = { kind: string; params: WorkflowTryItem["effects"][number]["params"]; ai?: boolean };
 
 /** `summary` is the mockup's rule (S2); `tag` the same rule with a step that exists before S2. */
 const fixtureItems = (effect: FixtureEffect): WorkflowTryItem[] => {
-  const summarize = (existingSummary: boolean) =>
+  const summarize = (existingSummary: boolean): FixtureStep =>
     effect === "summary"
       ? { kind: "summarizeConversation", params: { mode: "rolling", existingSummary } }
       : { kind: "addLocalTag", params: { tag: "Lang" }, ai: false };
