@@ -1,0 +1,1 @@
+| Optional app absence shown as an error | The consumer could not tell an app that is not installed from a failed call. | Mail: one registry-aware resolver, explicit `absent` contact state, and conversation-context render and behavior tests. |
