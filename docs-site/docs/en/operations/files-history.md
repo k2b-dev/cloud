@@ -293,7 +293,7 @@ Revoking a link still works when its creator has lost access to its original
 folder. The recorded paths describe the original selection; they do not grant
 access to the history reader. Repeating a revocation produces no second event.
 
-The overall activity overview persistently explains that POSIX areas have no history when the person has any POSIX bases, including while searching, loading or showing an error.
+The overall activity overview persistently explains that POSIX areas have no history when the person has both Cloud and POSIX bases, including while searching, loading or showing an ordinary load error. A POSIX-only overview, or a history-unavailable response, shows the single unavailable notice instead.
 
 ## Public-link and administrative reads
 
