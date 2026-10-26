@@ -62,11 +62,22 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Kalender auflisten",
           description:
             "Lesbare Space-Kalender auflisten; Kalender mit Mitgliedschaft werden vorgeschlagen. Diese Version bietet nur Lesezugriff.",
+          input: {
+            cursor: "Cursor aus next der vorigen Seite; für die erste Seite weglassen.",
+            limit: "Maximale Anzahl von Kalendern pro Seite, höchstens 100.",
+          },
         },
         "calendar.events": {
           title: "Kalendereinträge lesen",
           description:
             "Offene Termine und Fristen lesbarer Space-Kalender in höchstens 31 verstrichenen Tagen lesen. Spaces erweitert Wiederholungen; Seiten sind chronologisch.",
+          input: {
+            calendarIds: "IDs der Kalender aus calendar.list; unbekannte oder nicht mehr lesbare IDs werden ausgelassen.",
+            from: "Beginn des Zeitraums einschließlich, als Zeitstempel mit Offset.",
+            to: "Ende des Zeitraums ausschließlich, als Zeitstempel mit Offset; höchstens 31 verstrichene Tage nach from.",
+            cursor: "Cursor aus next der vorigen Seite bei unveränderten Eingaben; für die erste Seite weglassen.",
+            limit: "Maximale Anzahl von Einträgen pro Seite, höchstens 100.",
+          },
         },
         "template.list": {
           title: "Vorlagen auflisten",
