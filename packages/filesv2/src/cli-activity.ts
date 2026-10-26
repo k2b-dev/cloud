@@ -10,6 +10,7 @@ import {
   printRows,
   printStructured,
 } from "@k2b/cloud/cli";
+import { principalLabel } from "@k2b/cloud/shared";
 import type { ActivityChain, ActivityEntry, ActivityInput, ActivityPage, ShareAccessCounts } from "./activity-contracts";
 import { ACTIVITY_PAGE_LIMIT, HistoryAction } from "./activity-contracts";
 import type { ApiType } from "./api";
@@ -125,7 +126,17 @@ export function activityCommands(locale?: string) {
           { key: "time", label: t({ en: "Time", de: "Zeit" }) },
           { key: "action", label: t({ en: "Action", de: "Aktion" }) },
           { key: "state", label: t({ en: "State", de: "Zustand" }) },
-          { key: "actor", label: t({ en: "Who", de: "Wer" }), value: (row) => row.actor.name ?? row.actor.userId ?? row.actor.kind },
+          {
+            key: "actor",
+            label: t({ en: "Who", de: "Wer" }),
+            value: (row) =>
+              row.actor.kind === "user"
+                ? principalLabel(
+                    { principal: { type: "user", userId: row.actor.userId ?? "" }, displayName: row.actor.name },
+                    ctx.options.locale,
+                  )
+                : (row.actor.name ?? row.actor.kind),
+          },
           {
             key: "before",
             label: t({ en: "Before", de: "Vorher" }),
