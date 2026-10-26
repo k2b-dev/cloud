@@ -64,7 +64,7 @@ export type NoteGraph = {
 
 /** A notebook up to this size draws whole; a larger one draws the pages around one page. */
 export const GRAPH_WHOLE_NOTES = 500;
-/** The most pages the graph around one page holds, before their places in the tree are added. */
+/** The most pages the graph around one page holds, their places in the tree included. */
 export const GRAPH_AROUND_NOTES = 400;
 
 // ==========================
@@ -379,8 +379,8 @@ export const buildNotebookGraph = async (params: { notebookId: string }): Promis
 
 type GraphNoteRow = { id: string; short_id: string; title: string; parent_short_id: string | null; position: number; updated_at: Date };
 
-/** Pages linked with these pages, in either direction, inside the notebook. Bounded by `limit`. */
-const linkedWith = async (notebookId: string, ids: string[], limit: number): Promise<string[]> => {
+/** Pages linked with these pages, in either direction, inside the notebook, other than `except`. Bounded by `limit`. */
+const linkedWith = async (notebookId: string, ids: string[], except: Iterable<string>, limit: number): Promise<string[]> => {
   if (ids.length === 0 || limit <= 0) return [];
   const rows = await sql<{ id: string }[]>`
     SELECT DISTINCT other.id
@@ -390,6 +390,8 @@ const linkedWith = async (notebookId: string, ids: string[], limit: number): Pro
       SELECT source_note_id AS id FROM notebooks.note_links WHERE target_note_id = ANY(${sql.array(ids, "UUID")})
     ) linked
     JOIN notebooks.notes other ON other.id = linked.id AND other.notebook_id = ${notebookId}::uuid
+    WHERE other.id <> ALL(${sql.array([...except], "UUID")})
+    ORDER BY other.id
     LIMIT ${limit}
   `;
   return rows.map((row) => row.id);
@@ -397,39 +399,41 @@ const linkedWith = async (notebookId: string, ids: string[], limit: number): Pro
 
 /**
  * The graph around one page of a large notebook: the page, the pages linked with it and with those, its own
- * sub-pages, and the places of all of them in the tree, so areas and depths read as in the whole graph. Every query
- * starts from these pages, so the cost does not grow with the notebook.
+ * sub-pages, and the places of all of them in the tree, so areas and depths read as in the whole graph. A page joins
+ * only with its whole way up, and the ways up count toward the bound, so no tree shape makes the graph larger. Every
+ * query starts from these pages, so the cost does not grow with the notebook.
  */
 export const buildNotebookGraphAround = async (params: { notebookId: string; noteId: string; total: number }): Promise<NoteGraph> => {
   const { notebookId } = params;
-  const included = new Set<string>([params.noteId]);
-  const add = (ids: string[]) => {
-    for (const id of ids) {
-      if (included.size >= GRAPH_AROUND_NOTES) return;
-      included.add(id);
-    }
-  };
-  const first = await linkedWith(notebookId, [params.noteId], GRAPH_AROUND_NOTES);
-  add(first);
+  const first = await linkedWith(notebookId, [params.noteId], [params.noteId], GRAPH_AROUND_NOTES);
   const children = await sql<{ id: string }[]>`
     SELECT id FROM notebooks.notes
     WHERE notebook_id = ${notebookId}::uuid AND parent_id = ${params.noteId}::uuid
     ORDER BY position, title, short_id
-    LIMIT ${Math.max(0, GRAPH_AROUND_NOTES - included.size)}
+    LIMIT ${GRAPH_AROUND_NOTES}
   `;
-  add(children.map((row) => row.id));
-  add(await linkedWith(notebookId, first, GRAPH_AROUND_NOTES - included.size));
-  // The way up from every page gives each one its area and depth.
-  const ancestors = await sql<{ id: string }[]>`
-    WITH RECURSIVE up AS (
-      SELECT parent_id AS id, 1 AS depth FROM notebooks.notes WHERE id = ANY(${sql.array([...included], "UUID")}) AND parent_id IS NOT NULL
+  const nearer = new Set([params.noteId, ...first, ...children.map((row) => row.id)]);
+  const second = await linkedWith(notebookId, first, nearer, GRAPH_AROUND_NOTES);
+  const candidates = [...nearer, ...second];
+  // Each candidate's way up. UNION ends the walk even if a broken tree loops.
+  const ways = await sql<{ start: string; id: string }[]>`
+    WITH RECURSIVE up(start, id) AS (
+      SELECT id, parent_id FROM notebooks.notes WHERE id = ANY(${sql.array(candidates, "UUID")}) AND parent_id IS NOT NULL
       UNION
-      SELECT n.parent_id, up.depth + 1 FROM notebooks.notes n JOIN up ON n.id = up.id WHERE n.parent_id IS NOT NULL AND up.depth < 64
+      SELECT up.start, n.parent_id FROM notebooks.notes n JOIN up ON n.id = up.id WHERE n.parent_id IS NOT NULL
     )
-    SELECT DISTINCT id FROM up
+    SELECT start, id FROM up
   `;
-  const ids = [...new Set([...included, ...ancestors.map((row) => row.id)])];
-  const idArray = sql.array(ids, "UUID");
+  const wayUp = new Map<string, string[]>();
+  for (const row of ways) wayUp.set(row.start, [...(wayUp.get(row.start) ?? []), row.id]);
+  // Nearest first; the open page and its way up always belong.
+  const included = new Set<string>();
+  for (const id of candidates) {
+    const missing = [id, ...(wayUp.get(id) ?? [])].filter((entry) => !included.has(entry));
+    if (id !== params.noteId && included.size + missing.length > GRAPH_AROUND_NOTES) continue;
+    for (const entry of missing) included.add(entry);
+  }
+  const idArray = sql.array([...included], "UUID");
   const [noteRows, edgeRows, inRows] = await Promise.all([
     sql<GraphNoteRow[]>`
       SELECT n.id, n.short_id, n.title, p.short_id AS parent_short_id, n.position, n.updated_at
