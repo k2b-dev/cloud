@@ -217,6 +217,30 @@ describe("@k2b/ssr/nav", () => {
     expect(navigations).toEqual([{ state: { tab: "two" }, url: "https://example.test/app?tab=two" }]);
   });
 
+  test("a skipped view transition raises no unhandled rejection", async () => {
+    setupBrowserMocks();
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", record);
+    let called = false;
+    Object.assign(globalThis.document, {
+      startViewTransition: (callback: () => void) => {
+        callback();
+        return { ready: Promise.reject(new DOMException("Transition was skipped", "AbortError")) };
+      },
+    });
+    try {
+      startViewTransition(() => {
+        called = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(called).toBe(true);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", record);
+    }
+  });
+
   test("startViewTransition uses the browser API when available", () => {
     setupBrowserMocks({ startViewTransition: true });
     let called = false;

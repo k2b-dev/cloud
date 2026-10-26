@@ -103,17 +103,23 @@ const Grant = z
 
 export const createArtifactServiceRoutes = (caller: (context: Context<AuthContext>) => CapabilityCaller = capabilityCaller) =>
   new Hono<AuthContext>()
-    .use("*", (c, next) =>
-      c.req.path.endsWith("/storage/file") ||
-      c.req.path.endsWith("/runtime/pdf") ||
-      /\/runtime\/capabilities\/[^/]+\/stream\/(read|write|status|abort)$/.test(c.req.path)
-        ? next()
-        : bodyLimit({ maxSize: c.req.path.includes("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c, next),
+    .use(
+      "*",
+      auth.readOnlyMiddleware((c, next) =>
+        c.req.path.endsWith("/storage/file") ||
+        c.req.path.endsWith("/runtime/pdf") ||
+        /\/runtime\/capabilities\/[^/]+\/stream\/(read|write|status|abort)$/.test(c.req.path)
+          ? next()
+          : bodyLimit({ maxSize: c.req.path.includes("/storage") ? STORAGE_TRANSPORT_BYTES : LIMITS.rpcBytes })(c, next),
+      ),
     )
-    .use("*", async (c, next) => {
-      c.header("Cache-Control", "private, no-store");
-      await next();
-    })
+    .use(
+      "*",
+      auth.readOnlyMiddleware(async (c, next) => {
+        c.header("Cache-Control", "private, no-store");
+        await next();
+      }),
+    )
     .onError((error, c) => {
       if (error instanceof AiViewInvalidError) return respond(c, { ok: false, code: "INVALID_INPUT", status: 400, error: error.message });
       if (error instanceof SettingUnreadableError) return respond(c, { ok: false, code: error.code, status: 409, error: error.message });
@@ -241,21 +247,27 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
         return respond(c, ok({ recorded: true }));
       },
     )
-    .post("/runtime/check/gate", v("json", z.object({ id: CodeResourceId, conversationId: ChatReference }).strict()), async (c) => {
-      const input = c.req.valid("json");
-      // Only the code_open tool (operation "open") reaches the gate; scoped chats grant it separately from code_run.
-      const chat = await requireToolChat(input.conversationId, identity(c), "code_open");
-      const opened = await sql.begin(async (db) => {
-        await databaseConfigLock(db);
-        const { row, permission } = await requireArtifact(db, input.id, identity(c), "read");
-        const app = await readArtifactRevision(db, row, permission, permission === "admin" ? row.revision : row.published_revision!);
-        await appChecks.assert(app.source, app.id, identity(c), chat.id, db);
-        return { id: app.id, title: app.title };
-      });
-      return respond(c, ok(opened));
-    })
+    .post(
+      "/runtime/check/gate",
+      auth.readOnly,
+      v("json", z.object({ id: CodeResourceId, conversationId: ChatReference }).strict()),
+      async (c) => {
+        const input = c.req.valid("json");
+        // Only the code_open tool (operation "open") reaches the gate; scoped chats grant it separately from code_run.
+        const chat = await requireToolChat(input.conversationId, identity(c), "code_open");
+        const opened = await sql.begin(async (db) => {
+          await databaseConfigLock(db);
+          const { row, permission } = await requireArtifact(db, input.id, identity(c), "read");
+          const app = await readArtifactRevision(db, row, permission, permission === "admin" ? row.revision : row.published_revision!);
+          await appChecks.assert(app.source, app.id, identity(c), chat.id, db);
+          return { id: app.id, title: app.title };
+        });
+        return respond(c, ok(opened));
+      },
+    )
     .post(
       "/runtime/check/capability",
+      auth.readOnly,
       v(
         "json",
         z.object({ name: z.string(), input: z.json(), conversationId: ChatReference, artifactId: CodeResourceId.optional() }).strict(),
@@ -283,6 +295,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     })
     .post(
       "/runtime/pdf",
+      auth.readOnly,
       async (c, next) => {
         await studioPdf.authorize({ resourceId: c.req.query("resourceId"), conversationId: c.req.query("conversationId") }, identity(c));
         await next();
@@ -306,7 +319,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
         });
       },
     )
-    .post("/runtime/secrets/list", v("json", HttpScope), async (c) =>
+    .post("/runtime/secrets/list", auth.readOnly, v("json", HttpScope), async (c) =>
       respond(c, ok(await httpService.list(c.req.valid("json"), identity(c)))),
     )
     .put("/runtime/secrets", v("json", z.object({ scope: HttpScope, secret: SecretSave }).strict()), async (c) => {
@@ -398,11 +411,11 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
       respond(c, ok(await artifactDatabase.call(id(c), c.req.valid("json"), identity(c), c.req.raw.signal, "maintenance"))),
     )
     .post("/:id/database/connect", async (c) => respond(c, ok(await artifactDatabase.connect(id(c), identity(c), c.req.raw.signal))))
-    .post("/files/list", v("json", CODE_SOURCE_TOOLS.code_files.input), async (c) => {
+    .post("/files/list", auth.readOnly, v("json", CODE_SOURCE_TOOLS.code_files.input), async (c) => {
       const input = c.req.valid("json");
       return respond(c, ok(await studioFiles.list(input, identity(c), input.after, input.limit)));
     })
-    .post("/files/stat", v("json", CODE_SOURCE_TOOLS.code_file_stat.input), async (c) => {
+    .post("/files/stat", auth.readOnly, v("json", CODE_SOURCE_TOOLS.code_file_stat.input), async (c) => {
       const file = await studioFiles.read(c.req.valid("json").file, identity(c));
       return respond(
         c,
@@ -448,7 +461,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
     .post("/:id/database", v("json", FlatDatabaseRequest), async (c) =>
       respond(c, ok(await artifactDatabase.call(id(c), c.req.valid("json"), identity(c), c.req.raw.signal))),
     )
-    .post("/:id/database/inspect", v("json", DatabaseRequest), async (c) =>
+    .post("/:id/database/inspect", auth.readOnly, v("json", DatabaseRequest), async (c) =>
       respond(c, ok(await artifactDatabase.call(id(c), c.req.valid("json"), identity(c), c.req.raw.signal, "inspect"))),
     )
     .post("/runtime/capabilities/:callId/stream/:verb", async (c) =>
@@ -542,7 +555,7 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
         }
       },
     )
-    .post("/validate", v("json", ArtifactSource), async (c) => {
+    .post("/validate", auth.readOnly, v("json", ArtifactSource), async (c) => {
       try {
         await compileArtifact(c.req.valid("json"));
         return respond(c, ok({ valid: true, diagnostics: [] }));
@@ -709,4 +722,5 @@ export const createArtifactServiceRoutes = (caller: (context: Context<AuthContex
 export const artifactApi = new Hono<AuthContext>()
   .use("*", auth.requireRole("authenticated"))
   .use("*", auth.requireUser())
+  .use("/admin/*", auth.requireRole("admin"))
   .route("/", createArtifactServiceRoutes());

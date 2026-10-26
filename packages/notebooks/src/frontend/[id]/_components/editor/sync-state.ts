@@ -37,9 +37,13 @@ export const createSyncStateBridge = (options: { hasUnsentChanges: () => boolean
       );
     }
   };
-  connectionChanged(false);
   return {
     connectionChanged,
+    /**
+     * Collaboration starts with the first edit; until then the note shows its saved text and reports itself
+     * connected, with nothing to send.
+     */
+    start: () => connectionChanged(false),
     ready: () => {
       ready = true;
       confirmSaved();

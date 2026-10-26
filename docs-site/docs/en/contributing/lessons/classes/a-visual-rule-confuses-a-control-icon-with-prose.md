@@ -1,0 +1,1 @@
+| A visual rule confuses a control icon with prose | A notice check rejects a legible icon size as if it changed the notice text. | Test: `scripts/checks/notice-cards.test.ts` permits sizes on control icons while retaining checks on text, colours, opacity and nested text ([#1754](https://github.com/k2b-dev/cloud/issues/1754)). |

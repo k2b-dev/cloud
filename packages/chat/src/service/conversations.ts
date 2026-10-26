@@ -8,6 +8,7 @@ import {
   type PermissionLevel,
   type Result,
   ratelimit,
+  resolveDisplayNames,
   type ServiceError,
   updateAccess,
 } from "@k2b/cloud/server";
@@ -15,6 +16,7 @@ import { audit, toPgUuidArray } from "@k2b/cloud/services";
 import { crypto } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
+import { ChatComposeInputSchema } from "../commands";
 import { messagePreview } from "../system-messages";
 import {
   actingPrincipal,
@@ -936,9 +938,33 @@ const people = async (input: ChatContext & { query?: unknown }) => {
   });
 };
 
+/** Resolve only a currently selectable person. Command input and a source app's display name grant nothing. */
+const resolvePerson = async (input: ChatContext & { input: unknown }) => {
+  const t = messages(input);
+  const bound = boundConversation(input.actor, input.locale);
+  if (input.accessSubject.type !== "user" || !bound.ok || bound.data !== null) return fail(err.forbidden(t.forbidden));
+  const parsed = parse(ChatComposeInputSchema, input.input, input);
+  if (!parsed.ok) return parsed;
+  const userId = parsed.data.userId.toLowerCase();
+  const callerId = input.accessSubject.userId;
+  return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
+    const [caller] = await db<{ active: boolean }[]>`SELECT (account_expires IS NULL OR account_expires > now()) AS active
+      FROM auth.users WHERE id = ${callerId}::uuid`;
+    if (!caller?.active) return fail(err.badInput(t.contactUnavailable));
+    const principal = { type: "user" as const, userId };
+    const valid = await validateMembers(userId === callerId ? [] : [principal], input, db, false);
+    // Do not distinguish unknown, expired, and inaccessible people or resolve their names.
+    if (!valid.ok) return fail(err.badInput(t.contactUnavailable));
+    const [person] = await resolveDisplayNames([{ principal }]);
+    if (!person?.displayName) return fail(err.badInput(t.contactUnavailable));
+    return ok({ id: userId, displayName: person.displayName });
+  });
+};
+
 export const conversations = {
   create,
   people,
+  resolvePerson,
   list,
   get,
   update,
