@@ -19,6 +19,7 @@ import {
   Paper,
   RemoveButton,
   SegmentedControl,
+  SelectionToolbar,
   SplitButton,
   SpotlightButton,
   type SpotlightSearchResolver,
@@ -686,6 +687,55 @@ const actions = [
   );
 };
 
+const SelectionToolbarDemo = () => {
+  const [anchor, setAnchor] = createSignal<HTMLElement>();
+  const [lastAction, setLastAction] = createSignal("Select words in the text");
+  let text!: HTMLParagraphElement;
+  const selectionRect = () => {
+    const selection = getSelection();
+    if (!anchor() || !selection?.rangeCount || selection.isCollapsed) return null;
+    return text.contains(selection.anchorNode) ? selection.getRangeAt(0).getBoundingClientRect() : null;
+  };
+  return (
+    <DemoCard
+      id="selection-toolbar"
+      chip={{ kind: "component", name: "SelectionToolbar", from: "@k2b/ui" }}
+      description="Actions for selected text float over the selection after the pointer is released, go below it near the top of their area, and keep the selection when pressed."
+      code={`const [open, setOpen] = createSignal(false);
+<p onPointerUp={() => setOpen(!getSelection()?.isCollapsed)}>…</p>
+<SelectionToolbar
+  label="Selection"
+  anchor={() => (open() ? getSelection()?.getRangeAt(0).getBoundingClientRect() : null)}
+  onEscape={() => setOpen(false)}
+>
+  <Toolbar.Action label="Bold" icon="ti ti-bold" keys="mod+b" onClick={bold} />
+  <Toolbar.Action label="Italic" icon="ti ti-italic" keys="mod+i" onClick={italic} />
+  <Toolbar.Separator />
+  <Button size="sm" variant="ghost" onClick={comment}><i class="ti ti-message-plus" /> Comment</Button>
+</SelectionToolbar>`}
+    >
+      <p
+        ref={text}
+        style={{ "max-width": "36rem", "line-height": "1.7" }}
+        onPointerUp={() => queueMicrotask(() => setAnchor(getSelection()?.isCollapsed ? undefined : text))}
+      >
+        The association promotes rowing for all age groups, mainly through regular training, taking part in regattas, and looking after the
+        boathouse. Select a few words to see the toolbar.
+      </p>
+      <SelectionToolbar label="Selection" anchor={selectionRect} onEscape={() => setAnchor(undefined)}>
+        <Toolbar.Action label="Bold" icon="ti ti-bold" keys="mod+b" onClick={() => setLastAction("Bold")} />
+        <Toolbar.Action label="Italic" icon="ti ti-italic" keys="mod+i" onClick={() => setLastAction("Italic")} />
+        <Toolbar.Separator />
+        <Button size="sm" variant="ghost" onClick={() => setLastAction("Comment")}>
+          <i class="ti ti-message-plus" aria-hidden="true" />
+          Comment
+        </Button>
+      </SelectionToolbar>
+      <output aria-live="polite">{lastAction()}</output>
+    </DemoCard>
+  );
+};
+
 export const FilterDemo = () => {
   const [onlyMine, setOnlyMine] = createSignal(false);
   const [clearValue, setClearValue] = createSignal<string[]>(["open", "ui"]);
@@ -954,6 +1004,7 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <ToolbarDemo />
       <FloatingToolbarDemo />
+      <SelectionToolbarDemo />
     </DemoGrid>
   ),
   spotlight: () => (

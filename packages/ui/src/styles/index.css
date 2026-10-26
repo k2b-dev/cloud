@@ -13665,6 +13665,51 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__separator {
   height: 1.5rem;
 }
+/* A toolbar at a text selection (SelectionToolbar): in the top layer, so no scroll container clips it. */
+.k2b-ui .k2b-selection-toolbar {
+  position: fixed;
+  inset: unset;
+  margin: 0;
+  border: 0;
+  padding: 0.25rem;
+  overflow: visible;
+  border-radius: 0.6875rem;
+  color: var(--k2b-text);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--k2b-motion-fast) var(--k2b-ease-out),
+    transform var(--k2b-motion-fast) var(--k2b-ease-out),
+    display var(--k2b-motion-fast) allow-discrete,
+    overlay var(--k2b-motion-fast) allow-discrete;
+}
+.k2b-ui .k2b-selection-toolbar:not(:popover-open) {
+  display: none;
+  opacity: 0;
+  transform: translateY(2px);
+}
+@starting-style {
+  .k2b-ui .k2b-selection-toolbar:popover-open {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+.k2b-ui .k2b-selection-toolbar > .k2b-toolbar {
+  gap: 0.125rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-selection-toolbar {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .k2b-ui .k2b-selection-toolbar {
+    border: 1px solid CanvasText;
+  }
+}
+
 .k2b-ui .k2b-toolbar__label {
   min-inline-size: 0;
   max-inline-size: 10rem;
