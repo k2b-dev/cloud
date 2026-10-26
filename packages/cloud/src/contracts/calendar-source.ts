@@ -21,8 +21,8 @@ const TimeZoneSchema = z
   .max(200)
   .refine((zone) => {
     try {
-      new Intl.DateTimeFormat("en", { timeZone: zone });
-      return true;
+      // Intl also accepts fixed offsets; the contract requires a named IANA zone.
+      return !/^[+-]/.test(new Intl.DateTimeFormat("en", { timeZone: zone }).resolvedOptions().timeZone);
     } catch {
       return false;
     }
@@ -105,7 +105,7 @@ const details = {
   ...identity,
   title: z.string().max(500),
   occurrence: CalendarOccurrenceSchema.nullable(),
-  ref: CloudResourceRefSchema.nullable(),
+  ref: CloudResourceRefSchema.loose().nullable(),
   open: OpenSchema.nullable(),
   version: IdSchema,
 };

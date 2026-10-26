@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import type { EphemeralConfig, MutexConfig } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
-import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
 import { calendarSourceIssues } from "../contracts/calendar-source";
+import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
 import { fileProviderIssues } from "../contracts/file-provider";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type Role, RoleSchema } from "../contracts/shared";

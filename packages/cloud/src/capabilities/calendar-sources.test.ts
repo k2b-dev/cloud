@@ -57,7 +57,7 @@ const busy = {
   status: "confirmed",
   transparency: "busy",
 } as const;
-const range = { from: "2026-03-20T00:00:00+01:00", to: "2026-04-30T00:00:00+02:00" };
+const range = { from: "2026-03-20T00:00:00+01:00", to: "2026-05-01T01:00:00+02:00" };
 const shortRange = { from: "2026-03-20T00:00:00Z", to: "2026-03-21T00:00:00Z" };
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 type Call = { appId: string; operation: string; input: Record<string, unknown>; signal: AbortSignal };
@@ -137,6 +137,7 @@ test("42-day views split into elapsed 31-day windows across DST and dedupe overl
     range,
   );
   expect(windows).toHaveLength(2);
+  expect(Date.parse(String(windows[1]!.to)) - Date.parse(String(windows[0]!.from))).toBe(42 * 86_400_000);
   expect(Date.parse(String(windows[0]!.to)) - Date.parse(String(windows[0]!.from))).toBe(31 * 86_400_000);
   expect(windows[1]!.from).toBe(windows[0]!.to);
   expect(windows[1]!.to).toBe(new Date(range.to).toISOString());
@@ -212,6 +213,7 @@ test("zero calendars is empty without discovery; invalid ranges fail before call
   };
   expect(await events(credentials, { calendars: [] })).toEqual({ items: [], sources: [] });
   await expect(events(credentials, { to: "2027-01-01T00:00:00Z" })).rejects.toThrow();
+  await expect(events(credentials, { ...range, to: new Date(Date.parse(range.to) + 1).toISOString() })).rejects.toThrow();
   expect(calls).toBe(0);
 });
 

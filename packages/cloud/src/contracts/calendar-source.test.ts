@@ -77,6 +77,10 @@ test("calendar sources compile read-only or with all reserved writes", () => {
 });
 
 test("startup refuses missing, wrong-kind, streaming, open-world and non-idempotent operations", () => {
+  for (const declaration of [{ calendars: "calendars" }, { events: "events" }, { calendars: "calendars", events: 1 }]) {
+    // JavaScript callers can omit a required name or supply the wrong type.
+    expect(() => compileCapabilities("calendar", Object.assign(definitions(), { calendarSource: declaration }))).toThrow();
+  }
   for (const name of calendar.CALENDAR_SOURCE_FUNCTIONS) {
     expect(() =>
       compileCapabilities("calendar", { ...definitions(), calendarSource: { ...definitions().calendarSource!, [name]: "missing" } }),
@@ -160,6 +164,7 @@ test("range, limit, dates, deadlines and write inputs enforce the calendar contr
   expect(calendar.CalendarEventTimeSchema.safeParse({ kind: "date", start: "2026-01-01", end: "2026-01-01" }).success).toBe(false);
   expect(calendar.CalendarDueTimeSchema.safeParse({ kind: "date", date: "2026-02-30" }).success).toBe(false);
   expect(calendar.CalendarDueTimeSchema.safeParse({ kind: "instant", at: input.from, timeZone: "Europe/Berlin" }).success).toBe(true);
+  expect(calendar.CalendarDueTimeSchema.safeParse({ kind: "instant", at: input.from, timeZone: "+01:00" }).success).toBe(false);
   const write = { calendarId: "a", id: "i", version: "v" };
   expect(calendar.CalendarMoveInputSchema.safeParse(write).success).toBe(false);
   const time = { kind: "date", start: "2026-01-01", end: "2026-01-02" };
@@ -205,5 +210,33 @@ test("reader projection retains no extra or private busy fields, including neste
     time: { kind: "instant", start: "2026-01-01T00:00:00Z", end: "2026-01-01T01:00:00Z", timeZone: null },
     status: "confirmed",
     transparency: "busy",
+  });
+});
+
+test("reader projection accepts and discards newer fields in detailed item references", () => {
+  const raw = {
+    type: "deadline",
+    id: "i",
+    calendarId: "a",
+    title: "Task",
+    due: { kind: "date", date: "2026-03-01", extra: true },
+    done: false,
+    occurrence: { seriesId: "series", originalStart: "2026-03-01", rule: null, extra: true },
+    ref: { type: "x.y", id: "z", extra: true },
+    open: { rel: "open", href: "/app/example", extra: true },
+    version: "v",
+    extra: true,
+  };
+  expect(calendar.projectCalendarItem(calendar.CalendarItemSchema.parse(raw))).toEqual({
+    type: "deadline",
+    id: "i",
+    calendarId: "a",
+    title: "Task",
+    due: { kind: "date", date: "2026-03-01" },
+    done: false,
+    occurrence: { seriesId: "series", originalStart: "2026-03-01", rule: null },
+    ref: { type: "x.y", id: "z" },
+    open: { rel: "open", href: "/app/example" },
+    version: "v",
   });
 });

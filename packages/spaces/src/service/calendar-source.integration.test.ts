@@ -122,6 +122,9 @@ suite("Spaces Cloud calendar source", () => {
       expect(west.items.find((entry) => entry.type === "deadline" && entry.title === "Date deadline")).toMatchObject({
         due: { kind: "date", date: "2026-03-02" },
       });
+      expect(west.items.findIndex((entry) => entry.type === "event" && entry.title === "All-day legacy")).toBeLessThan(
+        west.items.findIndex((entry) => entry.type === "deadline" && entry.title === "Timed deadline"),
+      );
       expect(all.find((entry) => entry.type === "deadline" && entry.title === "Date deadline")).toMatchObject({
         type: "deadline",
         due: { kind: "date", date: "2026-03-02" },
