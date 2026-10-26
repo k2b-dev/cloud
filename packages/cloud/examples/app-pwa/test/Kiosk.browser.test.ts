@@ -42,7 +42,11 @@ beforeAll(async () => {
   });
   if (!build.success || !build.outputs[0]) throw new AggregateError(build.logs, "Example build failed");
   bundle = await build.outputs[0].text();
-  const uiCss = await Bun.file(resolve(ui, "dist/styles.css")).text();
+  // Cloud pages link the app stylesheet before Core's global stylesheet, which carries the Tailwind reset and @k2b/ui.
+  const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(ui, "../cloud")))).default;
+  const global = await Bun.build({ entrypoints: [resolve(ui, "../../styles.css")], plugins: [tailwind] });
+  if (!global.success || !global.outputs[0]) throw new AggregateError(global.logs, "Global stylesheet build failed");
+  const globalCss = await global.outputs[0].text();
   const fonts = await Bun.file(resolve(ui, "dist/plex.css")).text();
   const icons = await Bun.file(resolve(ui, "dist/tabler.css")).text();
   const style = await Bun.file(resolve(import.meta.dir, "../src/style.css")).text();
@@ -56,7 +60,8 @@ beforeAll(async () => {
           headers: { "Content-Type": "text/html" },
         });
       if (url.pathname === "/bundle.js") return new Response(bundle, { headers: { "Content-Type": "text/javascript" } });
-      if (url.pathname === "/style.css") return new Response(fonts + icons + style + uiCss, { headers: { "Content-Type": "text/css" } });
+      if (url.pathname === "/style.css")
+        return new Response(fonts + icons + style + globalCss, { headers: { "Content-Type": "text/css" } });
       if (/^\/(fonts\/[a-z0-9-]+|tabler-icons-[a-z0-9]+)\.woff2$/.test(url.pathname))
         return new Response(Bun.file(resolve(ui, "dist", url.pathname.slice(1))));
       const initial = fixtureSnapshot();
@@ -375,10 +380,9 @@ for (const width of [390, 768])
         release?.();
         expect(await page.locator("body").innerText()).not.toContain("Lea Muster");
         await page.unroute("**/fixture/snapshot");
-        if (state.snapshot.visit) {
-          state.snapshot.visit.id = "10000000-0000-4000-8000-000000000002";
-          state.snapshot.visit.customerName = "Neuer Beispielkunde";
-        }
+        // The fresh customer's documents name only that customer.
+        state.snapshot = fixtureSnapshot("Neuer Beispielkunde");
+        if (state.snapshot.visit) state.snapshot.visit.id = "10000000-0000-4000-8000-000000000002";
         await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
         await page.getByText("Neuer Beispielkunde", { exact: true }).waitFor();
         expect(await page.locator("body").innerText()).not.toContain("Lea Muster");
@@ -435,7 +439,8 @@ const expectHeadingFocus = async (page: Page) =>
 for (const width of [390, 600, 768, 1440])
   describe(`Staff pairing at ${width}px`, () => {
     test("stable retry, claimed nullable QR, new pairing, pagination and visit QR renewal", async () => {
-      const page = await browser.newPage({ viewport: { width, height: 1024 } });
+      // The 2-second device poll keeps fading the list buttons; the QR measurement needs a still page.
+      const page = await browser.newPage({ viewport: { width, height: 1024 }, reducedMotion: "reduce" });
       await page.clock.install({ time: new Date("2026-10-23T10:00:00Z") });
       await seedPage(page);
       const id = "10000000-0000-4000-8000-000000000002";
@@ -494,7 +499,8 @@ for (const width of [390, 600, 768, 1440])
         await page.getByRole("button", { name: "Dieselbe Anfrage wiederholen", exact: true }).click();
         await heading(page, "Laden-iPad gekoppelt");
         expect(pairRequests[0]).toBe(pairRequests[1]);
-        expect(await page.getByRole("textbox", { name: "Gerätename" }).isEnabled()).toBe(true);
+        // Pairing holds the form until the device list shows the new device.
+        await page.waitForFunction(() => !document.querySelector<HTMLInputElement>(".kiosk-staff input")?.disabled);
         await page.getByRole("textbox", { name: "Gerätename" }).fill("Zweites Laden-iPad");
         await page.getByRole("button", { name: "Laden-iPad koppeln", exact: true }).click();
         await page.waitForFunction(() => !document.querySelector<HTMLInputElement>(".kiosk-staff input")?.disabled);
