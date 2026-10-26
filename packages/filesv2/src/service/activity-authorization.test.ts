@@ -230,7 +230,7 @@ test("history on a missing auto-created home never provisions; the normal path s
 test("history never adopts an unbound FreeIPA home; the normal path still claims", async () => {
   const f = fixture(true);
   f.bound = false;
-  await expect(f.read()).rejects.toMatchObject({ status: 409, code: "history_unavailable" });
+  await expect(f.read()).rejects.toMatchObject({ status: 403, code: "unassigned" });
   expect(f.claim).not.toHaveBeenCalled();
   expect(provisions).toBe(0);
   // An unreadable leaf stops the normal path after its existing claim behavior, before reference writes.
