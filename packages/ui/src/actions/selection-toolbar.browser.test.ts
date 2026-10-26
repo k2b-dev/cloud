@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // The top layer, selection geometry, and whether a press keeps the selection are browser behavior, so a real engine
 // runs the shipped build against a text in a clipping scroll container below a sticky bar.
@@ -91,8 +91,7 @@ const geometry = (page: Page) =>
       range: range && { top: range.top, bottom: range.bottom, center: range.left + range.width / 2 },
     };
   });
-const settle = (page: Page) =>
-  page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(done)))));
+const settle = (page: Page) => settled(page);
 
 describe("SelectionToolbar", () => {
   test("opens centered above the selection, follows it while scrolling, and goes below under the sticky bar", async () => {
