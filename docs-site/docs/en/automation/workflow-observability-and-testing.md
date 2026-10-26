@@ -136,6 +136,9 @@ whether the effect happened.
 The worker trace port receives run and step transitions. Events identify the
 run and transition. Read current store state when a consumer needs detail.
 
+Dry-run traces also report `condition.evaluated` for explicit `not` conditions,
+with the run identity, condition path and match result.
+
 Trace delivery is best effort. A trace failure never changes a run outcome.
 
 Map workflow transitions to [Cloud tracing](/en/docs/platform/tracing) when the

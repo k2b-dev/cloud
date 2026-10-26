@@ -123,7 +123,7 @@ export interface WorkflowDryRunActionPort {
  * carried a copy of it would be one more thing to keep in step.
  */
 export type WorkflowTraceEvent =
-  | { type: "condition.evaluated"; path: Array<string | number>; matched: boolean }
+  | { type: "condition.evaluated"; run: WorkflowRuntimeRunIdentity; path: Array<string | number>; matched: boolean }
   | { type: "run.started"; run: WorkflowRuntimeRunIdentity }
   | { type: "step.started"; step: WorkflowRuntimeStepIdentity }
   | { type: "step.restored"; step: WorkflowRuntimeStepIdentity; restored: WorkflowRestoredStep }

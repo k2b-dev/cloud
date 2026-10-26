@@ -315,7 +315,7 @@ const evaluateCondition = async (
   }
   if (condition.operator === "not") {
     const matched = !(await evaluateCondition(state, scope, condition.condition, [...path, "not"]));
-    await emit(state, { type: "condition.evaluated", path, matched });
+    if (state.options.mode === "dryRun") await emit(state, { type: "condition.evaluated", run: state.run, path, matched });
     return matched;
   }
   if (condition.operator === "exists") {
