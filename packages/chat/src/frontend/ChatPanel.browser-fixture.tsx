@@ -118,7 +118,15 @@ export async function startConversationPanelFixture() {
           const assistantPage = url.pathname.startsWith("/app/assistant");
           const chatPage = url.pathname.startsWith("/app/chat");
           const id = /\/c\/([^/]+)/.exec(url.pathname)?.[1];
-          const snapshot = { ...backend.props({ chat: id }), embedded };
+          const snapshot = {
+            ...backend.props({
+              chat: id,
+              archived: url.pathname.endsWith("/archive") || url.searchParams.get("list") === "archive",
+              filter: url.searchParams.get("filter") === "unread" ? "unread" : "all",
+              panel: url.searchParams.get("panel") ?? undefined,
+            }),
+            embedded,
+          };
           const content = () =>
             assistantPage ? (
               <>

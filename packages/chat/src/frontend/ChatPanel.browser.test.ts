@@ -1212,10 +1212,17 @@ for (const historyFailure of [false, true]) {
       await panel.getByRole("button", { name: "Send message", exact: true }).click();
       await reading;
       expect(fixture.backend.posted).toHaveLength(0);
+      // The same archive action is visible in a wide full view; a narrow panel keeps it in the list.
+      const archive = panel.locator('a[href="/app/chat/panel/archive"]').first();
+      await archive.evaluate((element: HTMLAnchorElement) => element.click());
+      expect(await archive.getAttribute("aria-current")).not.toBe("page");
+      expect(await panel.locator("html").evaluate(() => location.search)).toBe("");
       await panel.getByRole("link", { name: "Back to chats", exact: true }).click();
       await panel
         .getByRole("region", { name: "Notifications", exact: true })
         .getByText("Your message is being prepared. Wait before switching chats.", { exact: true })
+        // Archive and Back can each notify after the throttle elapses; expiration is not the subject of this guard.
+        .first()
         .waitFor();
       expect(await panel.locator("html").evaluate(() => location.pathname)).toBe(`/app/chat/panel/c/${id}`);
       await page.locator("[data-cloud-panel-close]").click();
@@ -1543,7 +1550,7 @@ for (const { embedded, width } of [
         await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, `resource-recovery-${embedded ? "panel" : "fullview"}.png`) });
       }
     } catch (error) {
-      console.error(await (embedded ? page.frameLocator("[data-cloud-panel-frame]") : page).locator("body").innerText());
+      console.error("Catalog recovery failed", { url: page.url(), frames: page.frames().map((frame) => frame.url()) });
       throw error;
     } finally {
       releaseInitial();

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { afterEach, beforeAll, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { type AuthContext, createAccess, type PermissionLevel } from "@k2b/cloud/server";
 import { serviceAccountCredentials, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
@@ -8,13 +8,18 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
+import { UserSchema } from "@k2b/cloud/contracts";
+import { app as chatApp } from "../config";
 import { migrate } from "../migrate";
+import { conversationAccessQuery, requireConversation } from "../service/access";
 import {
   ChangesPageSchema,
   ChatSnapshotSchema,
   ConversationPageSchema,
   ConversationSchema,
   CreateOutcomeSchema,
+  DiscoveryPreviewSchema,
+  DiscoveryStateSchema,
   MemberPageSchema,
   MemberPreviewSchema,
   MemberRemovalSchema,
@@ -22,6 +27,7 @@ import {
   MessageViewSchema,
   PeoplePageSchema,
 } from "../service/contracts";
+import { chatLiveChannels } from "../service/live-channels";
 import chatApi from ".";
 
 setDefaultTimeout(30_000);
@@ -123,29 +129,37 @@ suite("chat conversations, people, and directory groups", () => {
   beforeAll(async () => {
     await migrate();
   });
-  afterAll(async () => {
+  afterEach(async () => {
     // Junctions cascade from the conversation, but platform access entries have their own owner.
     const rows = conversations.length
       ? await sql<{ access_id: string }[]>`SELECT ca.access_id FROM chat.conversation_access ca
       JOIN chat.conversations c ON c.id = ca.conversation_id WHERE c.short_id = ANY(${toPgTextArray(conversations)}::text[])`
       : [];
-    for (const shortId of conversations) {
-      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key IN (${"c:" + shortId}, ${"l:" + shortId})`;
-      await sql`DELETE FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ${shortId}`;
-      await sql`DELETE FROM chat.conversations WHERE short_id = ${shortId}`;
+    // One statement per table: the shared test database keeps audit rows of earlier runs, and a scan per
+    // conversation outlasted the hook's budget.
+    if (conversations.length) {
+      const keys = conversations.flatMap((shortId) => ["c:" + shortId, "l:" + shortId]);
+      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ANY(${toPgTextArray(keys)}::text[])`;
+      await sql`DELETE FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ANY(${toPgTextArray(conversations)}::text[])`;
+      await sql`DELETE FROM chat.conversations WHERE short_id = ANY(${toPgTextArray(conversations)}::text[])`;
     }
     const allAccess = [...new Set([...accessIds, ...rows.map((row) => row.access_id)])];
     if (allAccess.length) await sql`DELETE FROM auth.access WHERE id = ANY(${toPgUuidArray(allAccess)}::uuid[])`;
     if (groups.length) await sql`DELETE FROM auth.groups WHERE id = ANY(${toPgUuidArray(groups)}::uuid[])`;
+    if (accounts.length)
+      await sql`DELETE FROM chat.account_prefs WHERE principal_type = 'service_account' AND principal_id = ANY(${toPgUuidArray(accounts)}::uuid[])`;
     for (const id of accounts) {
+      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ${"p:service_account:" + id}`;
       await sql`DELETE FROM audit.events WHERE target_id = ${id} OR actor_uid = ${id} OR metadata->>'serviceAccountId' = ${id}`;
       await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
     }
     if (users.length) {
+      await sql`DELETE FROM chat.account_prefs WHERE principal_type = 'user' AND principal_id = ANY(${toPgUuidArray(users)}::uuid[])`;
       await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ANY(${toPgTextArray(users.map((id) => "p:" + id))}::text[])`;
       await sql`DELETE FROM audit.events WHERE actor_user_id = ANY(${toPgUuidArray(users)}::uuid[]) OR target_id = ANY(${toPgTextArray(users)}::text[])`;
       await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(users)}::uuid[])`;
     }
+    users.length = accounts.length = groups.length = conversations.length = accessIds.length = 0;
   });
 
   test("person preselection reads current guest membership and expiration without creating a chat", async () => {
@@ -288,12 +302,12 @@ suite("chat conversations, people, and directory groups", () => {
       const account = await credential(kind, null, ["openid", "read", "write", "admin"]);
       const response = await request(account.headers, "", "POST", {});
       expect(response.status).toBe(400);
-      expect((await response.json()).message).toBe("Only people and groups can be chat members.");
+      expect((await response.json()).message).toBe("Create chats with a personal account.");
       const ownerHeaders = await cookie(owner);
       for (const path of ["", `/${chat.shortId}/members`]) {
         const rejected = await request(ownerHeaders, path, "POST", { members: [{ type: "user", userId: account.id }] });
         expect(rejected.status).toBe(400);
-        expect((await rejected.json()).message).toBe("Only people and groups can be chat members.");
+        expect((await rejected.json()).message).toBe("A selected account does not exist or is no longer active.");
       }
       const path = `/${chat.shortId}`;
       for (const [suffix, method, body] of [
@@ -1338,16 +1352,15 @@ suite("chat conversations, people, and directory groups", () => {
     });
     const ownerPage = MemberPageSchema.parse(await (await request(await cookie(owner), `${path}/members`)).json());
     expect(ownerPage.items.find((entry) => entry.principal.type === "group")?.groupSize).toBe(1);
-    // A direct-user preview proves the account's grant and scopes authorize management.
+    // Discovery never authorizes management, even for a credential with admin scope.
     const newcomer = await user();
     const preview = await request(account.headers, `${path}/members/preview`, "POST", { members: [{ type: "user", userId: newcomer }] });
-    expect(preview.status).toBe(200);
-    expect(MemberPreviewSchema.parse(await preview.json())).toEqual({ joining: 1, throughGroups: 0, memberCount: 2 });
+    expect(preview.status).toBe(403);
     const members = [{ type: "group", groupId: await group([newcomer]) }];
     for (const suffix of ["/members/preview", "/members"]) {
       const rejected = await request(account.headers, path + suffix, "POST", { members });
-      expect(rejected.status).toBe(400);
-      expect(await rejected.json()).toMatchObject({ code: "BAD_INPUT", message: "Only full accounts can add groups to chats." });
+      expect(rejected.status).toBe(403);
+      expect(await rejected.json()).toMatchObject({ code: "FORBIDDEN" });
     }
     const after = MemberPageSchema.parse(await (await request(await cookie(owner), `${path}/members`)).json());
     expect(after).toEqual(ownerPage);
@@ -1447,5 +1460,733 @@ suite("chat conversations, people, and directory groups", () => {
       expect(preview.status).toBe(400);
       expect(await preview.json()).toEqual(await add.json());
     }
+  });
+  test("personal archive survives incoming messages and restores its saved pin position without changing membership", async () => {
+    const owner = await user(),
+      other = await user();
+    const headers = await cookie(owner),
+      otherHeaders = await cookie(other);
+    const first = await fixture(owner, [{ id: other, permission: "write" }]);
+    const second = await fixture(owner);
+    const personal = (id: string, patch: unknown, caller = headers) => request(caller, `/${id}/personal`, "PUT", patch);
+    expect((await personal(first.shortId, { pinned: true })).status).toBe(200);
+    expect((await personal(second.shortId, { pinned: true })).status).toBe(200);
+    const archived = ConversationSchema.parse(await (await personal(first.shortId, { archived: true })).json());
+    expect(archived).toMatchObject({ archived: true, pinnedRank: 0, member: true });
+    const sent = await request(otherHeaders, `/${first.shortId}/messages`, "POST", { clientId: "archive-message", body: "Still archived" });
+    expect(sent.status).toBe(201);
+    expect(ConversationSchema.parse(await (await request(headers, `/${first.shortId}`)).json()).archived).toBe(true);
+    expect(ConversationPageSchema.parse(await (await request(headers)).json()).items.map((row) => row.id)).toEqual([second.shortId]);
+    expect(ConversationPageSchema.parse(await (await request(headers, "?archived=true")).json()).items.map((row) => row.id)).toEqual([
+      first.shortId,
+    ]);
+    expect(ConversationPageSchema.parse(await (await request(otherHeaders)).json()).items.map((row) => row.id)).toContain(first.shortId);
+    expect((await personal(first.shortId, { archived: false })).status).toBe(200);
+    expect(ConversationPageSchema.parse(await (await request(headers)).json()).items.map((row) => row.id)).toEqual([
+      first.shortId,
+      second.shortId,
+    ]);
+    const [count] = await sql<
+      { count: number }[]
+    >`SELECT count(*)::int AS count FROM chat.conversation_access WHERE conversation_id = ${first.id}::uuid AND role = 'member'`;
+    expect(count!.count).toBe(2);
+  });
+
+  test("personal pin order is saved, retry-safe, unbounded at fifteen, and validates neighbors before writes", async () => {
+    const owner = await user(),
+      outsider = await user();
+    const headers = await cookie(owner);
+    const chats = [];
+    for (let i = 0; i < 18; i++) chats.push(await fixture(owner));
+    const pin = (id: string, patch: unknown, caller = headers) => request(caller, `/${id}/personal`, "PUT", patch);
+    const results = await Promise.all(chats.map((chat) => pin(chat.shortId, { pinned: true })));
+    expect(results.every((response) => response.status === 200)).toBe(true);
+    const page = async () => ConversationPageSchema.parse(await (await request(headers)).json());
+    const original = (await page()).items.map((row) => row.id);
+    expect(original).toHaveLength(18);
+    expect(new Set((await page()).items.map((row) => row.pinnedRank)).size).toBe(18);
+    const last = original.at(-1)!;
+    expect((await pin(last, { pinned: true, before: original[0] })).status).toBe(200);
+    expect((await pin(last, { pinned: true, before: original[0] })).status).toBe(200);
+    expect((await pin(last, { pinned: true })).status).toBe(200);
+    expect((await page()).items.map((row) => row.id)).toEqual([last, ...original.slice(0, -1)]);
+    expect((await pin(last, { archived: true, pinned: true, before: last })).status).toBe(400);
+    expect((await page()).items[0]!.archived).toBe(false);
+    expect((await pin(last, { pinned: true, before: "ZZZZZZ" })).status).toBe(400);
+    expect((await pin(last, { pinned: true, after: original[0] })).status).toBe(200);
+    expect((await pin(last, { pinned: true, after: original[0] })).status).toBe(200);
+    expect((await page()).items.slice(0, 3).map((row) => row.id)).toEqual([original[0]!, last, original[1]!]);
+    expect((await pin(last, { pinned: true, after: last })).status).toBe(400);
+    expect((await pin(last, { pinned: true, before: original[0], after: original[1] })).status).toBe(400);
+    expect((await pin(last, { pinned: false })).status).toBe(200);
+    expect((await page()).items.find((row) => row.id === last)!.pinnedRank).toBeNull();
+    expect((await pin(last, { archived: true }, await cookie(outsider))).status).toBe(404);
+  });
+
+  test("sidebar pages preserve pins ahead of activity and archive pagination is separate", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    const chats = [];
+    for (let i = 0; i < 53; i++) chats.push(await fixture(owner));
+    const oldest = chats[0]!;
+    await sql`UPDATE chat.conversations SET last_activity_at = '2020-01-01T00:00:00Z'::timestamptz WHERE id = ${oldest.id}::uuid`;
+    expect((await request(headers, `/${oldest.shortId}/personal`, "PUT", { pinned: true })).status).toBe(200);
+    const first = ConversationPageSchema.parse(await (await request(headers)).json());
+    expect(first.items[0]!.id).toBe(oldest.shortId);
+    expect(first.items).toHaveLength(50);
+    expect(first.nextCursor).not.toBeNull();
+    const second = ConversationPageSchema.parse(await (await request(headers, `?cursor=${encodeURIComponent(first.nextCursor!)}`)).json());
+    expect(second.items).toHaveLength(3);
+    expect(new Set([...first.items, ...second.items].map((row) => row.id)).size).toBe(53);
+    expect(ConversationPageSchema.parse(await (await request(headers, "?unread=true")).json()).items).toEqual([]);
+    expect((await request(headers, `/${oldest.shortId}/personal`, "PUT", { pinned: false })).status).toBe(200);
+    expect((await request(headers, `/${oldest.shortId}/messages`, "POST", { clientId: "explicit-mark", body: "Own message" })).status).toBe(
+      201,
+    );
+    expect((await request(headers, `/${oldest.shortId}/read`, "POST", { seq: 1 })).status).toBe(200);
+    expect((await request(headers, `/${oldest.shortId}/unread`, "POST", {})).status).toBe(200);
+    await sql`UPDATE chat.conversations SET last_activity_at = '2020-01-01T00:00:00Z'::timestamptz WHERE id = ${oldest.id}::uuid`;
+    expect(ConversationPageSchema.parse(await (await request(headers)).json()).items.map((row) => row.id)).not.toContain(oldest.shortId);
+    expect(ConversationPageSchema.parse(await (await request(headers, "?unread=true")).json()).items.map((row) => row.id)).toEqual([
+      oldest.shortId,
+    ]);
+    expect(
+      ConversationPageSchema.parse(await (await request(headers, `?ids=${oldest.shortId}`)).json()).items.map((row) => row.id),
+    ).toEqual([oldest.shortId]);
+    const outsider = await cookie(await user());
+    expect(ConversationPageSchema.parse(await (await request(outsider, `?ids=${oldest.shortId}`)).json()).items).toEqual([]);
+    // Seed pagination data without making an artificial burst of personal writes against the real user rate limit.
+    await sql`UPDATE chat.participants SET archived_at = now()
+      WHERE principal_type = 'user' AND principal_id = ${owner}::uuid
+        AND conversation_id = ANY(${toPgUuidArray(chats.map((chat) => chat.id))}::uuid[])`;
+    expect(ConversationPageSchema.parse(await (await request(headers)).json()).items).toEqual([]);
+    const archived = ConversationPageSchema.parse(await (await request(headers, "?archived=true")).json());
+    const remainder = ConversationPageSchema.parse(
+      await (await request(headers, `?archived=true&cursor=${encodeURIComponent(archived.nextCursor!)}`)).json(),
+    );
+    expect(new Set([...archived.items, ...remainder.items].map((row) => row.id)).size).toBe(53);
+  });
+
+  test("collapsed sections are persisted per account and anonymous requests cannot read or write them", async () => {
+    const owner = await user(),
+      other = await user();
+    const pref = (headers: Headers, method = "GET", body?: unknown) =>
+      server.request("https://cloud.example.test/api/chat/preferences", {
+        method,
+        headers: { "x-forwarded-for": uniqueCallerAddress(), ...headers, "content-type": "application/json" },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    const ownerHeaders = await cookie(owner);
+    const saved = await pref(ownerHeaders, "PUT", { collapsed: ["pinned", "chats", "channels"] });
+    expect(saved.status).toBe(200);
+    expect(await (await pref(ownerHeaders)).json()).toEqual({ collapsed: ["pinned", "chats", "channels"] });
+    expect(await (await pref(await cookie(other))).json()).toEqual({ collapsed: [] });
+    expect((await pref(ownerHeaders, "PUT", { collapsed: ["invented"] })).status).toBe(400);
+    expect((await pref({})).status).toBe(401);
+    expect((await pref({}, "PUT", { collapsed: [] })).status).toBe(401);
+    await sql`DELETE FROM chat.account_prefs WHERE principal_id = ${owner}::uuid`;
+  });
+
+  test("a 300-chat sidebar pages every chat with bounded responses", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    for (let offset = 0; offset < 300; offset += 10) await Promise.all(Array.from({ length: 10 }, () => fixture(owner)));
+    const ids = new Set<string>();
+    let cursor: string | null = null;
+    do {
+      const response = await request(headers, cursor ? `?cursor=${encodeURIComponent(cursor)}` : "");
+      expect(response.status).toBe(200);
+      const page = ConversationPageSchema.parse(await response.json());
+      expect(page.items.length).toBeLessThanOrEqual(50);
+      for (const row of page.items) {
+        expect(ids.has(row.id)).toBe(false);
+        ids.add(row.id);
+      }
+      cursor = page.nextCursor;
+    } while (cursor);
+    expect(ids.size).toBe(300);
+    const elapsed: number[] = [];
+    for (let sample = 0; sample < 20; sample++) {
+      const start = performance.now();
+      const response = await request(headers);
+      expect(response.status).toBe(200);
+      expect(ConversationPageSchema.parse(await response.json()).items).toHaveLength(50);
+      elapsed.push(performance.now() - start);
+    }
+    elapsed.sort((a, b) => a - b);
+    console.info(
+      `300-chat sidebar endpoint p95: ${elapsed[Math.ceil(elapsed.length * 0.95) - 1]!.toFixed(2)} ms (20 warm reads, local integration fixture)`,
+    );
+  });
+
+  test("Unread excludes inherited chats until their participant read position exists", async () => {
+    const owner = await user(),
+      reader = await user();
+    const chat = await fixture(owner);
+    const groupId = await group([reader]);
+    await groupGrant(chat, groupId, owner, "read");
+    expect(
+      (await request(await cookie(owner), `/${chat.shortId}/messages`, "POST", { clientId: "inherited-unread", body: "Earlier message" }))
+        .status,
+    ).toBe(201);
+    const response = await request(await cookie(reader), "?unread=true");
+    expect(response.status).toBe(200);
+    expect(ConversationPageSchema.parse(await response.json()).items).toEqual([]);
+  });
+
+  const userContext = (id: string) => ({
+    accessSubject: { type: "user" as const, userId: id },
+    actor: {
+      kind: "user" as const,
+      user: UserSchema.parse({
+        id,
+        uid: "fixture",
+        provider: "local",
+        profile: "user",
+        roles: ["user"],
+        givenname: "Fixture",
+        sn: "",
+        displayName: "Fixture",
+        mail: null,
+        avatarHash: null,
+        ipa: null,
+        accountExpires: null,
+        lastLoginLocal: null,
+        memberofGroup: [],
+        memberofGroupIds: [],
+        manages: [],
+        managesGroupIds: [],
+      }),
+    },
+  });
+
+  test("bound and delegated service accounts cannot become inactive direct members", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    const chat = await fixture(owner);
+    for (const kind of ["resource_bound", "user_delegated"] as const) {
+      const [account] = await sql<
+        { id: string }[]
+      >`INSERT INTO auth.service_accounts (name, kind, delegated_user_id, app_id, resource_type, resource_id)
+        VALUES ('Unavailable member', ${kind}, ${kind === "user_delegated" ? owner : null}::uuid, ${kind === "resource_bound" ? "chat" : null}, ${kind === "resource_bound" ? "conversation" : null}, ${kind === "resource_bound" ? testShortId() : null}) RETURNING id`;
+      if (!account) throw new Error("Missing fixture service account");
+      accounts.push(account.id);
+      const response = await request(headers, `/${chat.shortId}/members`, "POST", {
+        members: [{ type: "service_account", serviceAccountId: account.id }],
+      });
+      expect(response.status).toBe(400);
+    }
+  });
+
+  const discoveryRequest = (headers: Headers, path: string, method = "GET", body?: unknown) =>
+    server.request(`https://cloud.example.test/api/chat/channels${path}`, {
+      method,
+      headers: { ...headers, "x-forwarded-for": uniqueCallerAddress(), "content-type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  test("discovery audience counts independent accounts and only credentials bound to this channel", async () => {
+    const owner = await user(),
+      outsider = await user();
+    const headers = await cookie(owner),
+      outsiderHeaders = await cookie(outsider);
+    const entries = [{ principal: { type: "authenticated" }, permission: "write" }];
+    const channel = await create(headers, [], { name: "Audience", purpose: "Count eligible readers", discovery: entries });
+    const count = async (conversation?: string) => {
+      const response = await discoveryRequest(headers, `/preview${conversation ? `?conversation=${conversation}` : ""}`, "POST", entries);
+      expect(response.status).toBe(200);
+      return DiscoveryPreviewSchema.parse(await response.json()).audienceCount;
+    };
+    const before = await count();
+    await credential("standalone");
+    await credential("agent");
+    await credential("user_delegated", owner);
+    const disabled = await credential("standalone");
+    await sql`UPDATE auth.service_accounts SET status = 'disabled' WHERE id = ${disabled.id}::uuid`;
+    for (const binding of [
+      { appId: "chat", resourceType: "conversation", resourceId: channel.id },
+      { appId: "chat", resourceType: "conversation", resourceId: testShortId() },
+      { appId: "files", resourceType: "file", resourceId: testShortId() },
+    ]) {
+      const [row] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
+        VALUES ('Audience binding', 'resource_bound', ${binding.appId}, ${binding.resourceType}, ${binding.resourceId}) RETURNING id`;
+      accounts.push(row!.id);
+    }
+    expect(await count()).toBe(before + 2);
+    expect(await count(channel.id)).toBe(before + 3);
+    const settings = await request(headers, `/${channel.id}/discovery`);
+    expect(settings.status).toBe(200);
+    expect(DiscoveryStateSchema.parse(await settings.json()).audienceCount).toBe(before + 3);
+    expect((await discoveryRequest(outsiderHeaders, `/preview?conversation=${channel.id}`, "POST", entries)).status).toBe(403);
+  });
+  test("a bound channel manager can preview only its existing channel audience", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    const entries = [{ principal: { type: "authenticated" }, permission: "read" }];
+    const channel = await create(headers, [], { name: "Bound manager", purpose: "Manage this channel", discovery: entries });
+    const other = await fixture(owner);
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
+      VALUES ('Bound channel manager', 'resource_bound', 'chat', 'conversation', ${channel.id}) RETURNING id`;
+    accounts.push(account!.id);
+    expect(
+      (
+        await request(headers, `/${channel.id}/members`, "POST", {
+          members: [{ type: "service_account", serviceAccountId: account!.id }],
+        })
+      ).status,
+    ).toBe(200);
+    const members = MemberPageSchema.parse(await (await request(headers, `/${channel.id}/members`)).json());
+    const member = members.items.find(
+      (entry) => entry.principal.type === "service_account" && entry.principal.serviceAccountId === account!.id,
+    );
+    if (!member) throw new Error("Missing bound channel member");
+    expect((await request(headers, `/${channel.id}/members/${member.accessId}`, "PATCH", { permission: "admin" })).status).toBe(200);
+    const token = await serviceAccountCredentials.createApiToken({
+      serviceAccountId: account!.id,
+      name: "channel manager",
+      scopes: ["openid", "read", "admin"],
+    });
+    if (!token.ok) throw new Error(token.error.message);
+    const managerHeaders = { authorization: `Bearer ${token.data.token}` };
+    const preview = await discoveryRequest(managerHeaders, `/preview?conversation=${channel.id}`, "POST", entries);
+    expect(preview.status).toBe(200);
+    expect(DiscoveryPreviewSchema.parse(await preview.json()).includesAuthenticated).toBe(true);
+    expect((await discoveryRequest(managerHeaders, "/preview", "POST", entries)).status).toBe(403);
+    expect((await discoveryRequest(managerHeaders, `/preview?conversation=${other.shortId}`, "POST", entries)).status).toBe(403);
+  });
+  test("channel create intents compare normalized audience order and reject changed roles", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    const groupId = await group([owner]);
+    const anotherGroupId = await group();
+    const createKey = crypto.randomUUID();
+    const discovery = [
+      { principal: { type: "group", groupId }, permission: "read" },
+      { principal: { type: "authenticated" }, permission: "write" },
+      { principal: { type: "group", groupId: anotherGroupId }, permission: "write" },
+    ];
+    const chat = await create(headers, [], { createKey, name: "Research", purpose: "Shared planning", discovery });
+    const replay = await request(headers, "", "POST", {
+      createKey: createKey.toUpperCase(),
+      name: " Research ",
+      purpose: "Shared planning",
+      discovery: [
+        { principal: { type: "group", groupId: anotherGroupId.toUpperCase() }, permission: "write" },
+        { principal: { type: "authenticated" }, permission: "write" },
+        { principal: { type: "group", groupId: groupId.toUpperCase() }, permission: "read" },
+      ],
+    });
+    expect(replay.status).toBe(201);
+    expect(CreateOutcomeSchema.parse(await replay.json())).toMatchObject({ outcome: "created", conversation: { id: chat.id } });
+    for (const changed of [[{ principal: { type: "group", groupId }, permission: "write" }, ...discovery.slice(1)], discovery.slice(1)]) {
+      const response = await request(headers, "", "POST", { createKey, name: "Research", purpose: "Shared planning", discovery: changed });
+      expect(response.status).toBe(409);
+      expect((await response.json()).code).toBe("CONFLICT");
+    }
+    const [count] = await sql<
+      { count: number }[]
+    >`SELECT count(*)::int AS count FROM chat.conversations WHERE created_by_id = ${owner}::uuid`;
+    expect(count!.count).toBe(1);
+  });
+
+  test("empty and omitted discovery retain ordinary chat create intent meaning", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    for (const explicit of [false, true]) {
+      const createKey = crypto.randomUUID();
+      const body = { createKey, allowDuplicate: true, ...(explicit ? { discovery: [] } : {}) };
+      const chat = await create(headers, [], body);
+      const replay = await request(headers, "", "POST", { createKey, allowDuplicate: true, ...(!explicit ? { discovery: [] } : {}) });
+      expect(replay.status).toBe(201);
+      expect(CreateOutcomeSchema.parse(await replay.json())).toMatchObject({
+        outcome: "created",
+        conversation: { id: chat.id, channel: false },
+      });
+    }
+  });
+
+  test("channel discovery is read-only until joining, removal keeps joined members", async () => {
+    const owner = await user(),
+      reader = await user(),
+      outsider = await user();
+    const ownerHeaders = await cookie(owner),
+      readerHeaders = await cookie(reader),
+      outsiderHeaders = await cookie(outsider);
+    const channel = await create(ownerHeaders, [], {
+      name: "Project Atlas",
+      purpose: "Coordinate the Atlas work",
+      discovery: [{ principal: { type: "authenticated" }, permission: "write" }],
+    });
+    const readKey = await credential("standalone");
+    expect((await request(readKey.headers, `/${channel.id}/join`, "POST")).status).toBe(403);
+
+    const browse = ConversationPageSchema.parse(await (await discoveryRequest(readerHeaders, "?q=Atlas")).json());
+    expect(browse.items.some((row) => row.id === channel.id && !row.member && row.permission === "read")).toBe(true);
+    expect((await request(readerHeaders, `/${channel.id}/messages`)).status).toBe(200);
+    expect(
+      (await request(readerHeaders, `/${channel.id}/messages`, "POST", { clientId: "before-join", body: "Should not send" })).status,
+    ).toBe(403);
+    expect((await request(ownerHeaders, `/${channel.id}`, "PATCH", { purpose: null })).status).toBe(400);
+    expect(
+      (
+        await request(ownerHeaders, `/${channel.id}/discovery`, "PUT", {
+          purpose: " ",
+          entries: [{ principal: { type: "authenticated" }, permission: "write" }],
+        })
+      ).status,
+    ).toBe(400);
+    expect(ConversationSchema.parse(await (await request(readerHeaders, `/${channel.id}/join`, "POST")).json())).toMatchObject({
+      member: true,
+      permission: "write",
+    });
+    expect((await request(readerHeaders, `/${channel.id}/join`, "POST")).status).toBe(200);
+    expect((await request(readerHeaders, `/${channel.id}/messages`, "POST", { clientId: "after-join", body: "Joined" })).status).toBe(201);
+    const before = MemberPageSchema.parse(await (await request(ownerHeaders, `/${channel.id}/members`)).json());
+    expect(before.items).toHaveLength(2);
+    expect((await request(ownerHeaders, `/${channel.id}/discovery`, "PUT", { entries: [] })).status).toBe(200);
+    expect((await request(outsiderHeaders, `/${channel.id}`)).status).toBe(404);
+    expect(ConversationSchema.parse(await (await request(readerHeaders, `/${channel.id}`)).json())).toMatchObject({
+      member: true,
+      channel: false,
+    });
+    expect(MemberPageSchema.parse(await (await request(ownerHeaders, `/${channel.id}/members`)).json()).items).toHaveLength(2);
+  });
+  test("directory discovery rechecks nested group membership and join permission", async () => {
+    const owner = await user(),
+      reader = await user(),
+      outsider = await user();
+    const child = await group([reader]),
+      parent = await group([]);
+    await sql`INSERT INTO auth.group_groups_v2 (parent_group_id, child_group_id) VALUES (${parent}::uuid, ${child}::uuid)`;
+    const chat = await fixture(owner);
+    const ownerHeaders = await cookie(owner),
+      readerHeaders = await cookie(reader);
+    const entries = [{ principal: { type: "group", groupId: parent }, permission: "read" }];
+    expect((await request(ownerHeaders, `/${chat.shortId}/discovery`, "PUT", { name: "Design", entries })).status).toBe(400);
+    expect(
+      (await request(ownerHeaders, `/${chat.shortId}/discovery`, "PUT", { name: "Design", purpose: "Design decisions", entries })).status,
+    ).toBe(200);
+    expect(ConversationSchema.parse(await (await request(ownerHeaders, `/${chat.shortId}`)).json())).toMatchObject({
+      channel: true,
+    });
+    const stable = async () =>
+      sql`SELECT c.rev, a.id AS access_id FROM chat.conversations c JOIN chat.conversation_access ca ON ca.conversation_id = c.id JOIN auth.access a ON a.id = ca.access_id WHERE c.id = ${chat.id}::uuid ORDER BY a.id`;
+    const unchanged = await stable();
+    expect(
+      (await request(ownerHeaders, `/${chat.shortId}/discovery`, "PUT", { name: " Design ", purpose: " Design decisions ", entries }))
+        .status,
+    ).toBe(200);
+    expect(await stable()).toEqual(unchanged);
+    expect((await request(await cookie(outsider), `/${chat.shortId}`)).status).toBe(404);
+    const timeline = () => sql`SELECT seq, system_code FROM chat.messages WHERE conversation_id = ${chat.id}::uuid ORDER BY seq`;
+    const beforeJoin = await timeline();
+    expect((await request(readerHeaders, `/${chat.shortId}/join`, "POST")).status).toBe(200);
+    expect(await timeline()).toEqual(beforeJoin);
+    expect(ConversationSchema.parse(await (await request(readerHeaders, `/${chat.shortId}`)).json()).permission).toBe("read");
+    expect((await request(readerHeaders, `/${chat.shortId}/messages`, "POST", { clientId: "read-member", body: "No" })).status).toBe(403);
+    expect((await request(readerHeaders, `/${chat.shortId}/leave`, "POST", {})).status).toBe(200);
+    expect(await timeline()).toEqual(beforeJoin);
+    expect(ConversationSchema.parse(await (await request(ownerHeaders, `/${chat.shortId}`)).json()).memberCount).toBe(1);
+    expect((await request(readerHeaders, `/${chat.shortId}`)).status).toBe(200);
+    await sql`DELETE FROM auth.user_groups_v2 WHERE user_id = ${reader}::uuid AND group_id = ${child}::uuid`;
+    expect((await request(readerHeaders, `/${chat.shortId}`)).status).toBe(404);
+    expect(ConversationPageSchema.parse(await (await discoveryRequest(readerHeaders, "?q=Design")).json()).items).toEqual([]);
+  });
+  test("service accounts join, send, appear in counts and members, take management, leave and rejoin", async () => {
+    const owner = await user();
+    const ownerHeaders = await cookie(owner);
+    const agent = await credential("agent", null, ["openid", "read", "write", "admin"]);
+    const channel = await create(ownerHeaders, [], {
+      name: "Automation",
+      purpose: "Coordinate automated work",
+      discovery: [{ principal: { type: "authenticated" }, permission: "write" }],
+    });
+    expect((await request(agent.headers, `/${channel.id}/messages`, "POST", { clientId: "agent-before", body: "No" })).status).toBe(403);
+    const joined = ConversationSchema.parse(await (await request(agent.headers, `/${channel.id}/join`, "POST")).json());
+    expect(joined).toMatchObject({ memberCount: 2, member: true, permission: "write" });
+    expect((await request(agent.headers, `/${channel.id}/messages`, "POST", { clientId: "agent-after", body: "Agent here" })).status).toBe(
+      201,
+    );
+    const members = MemberPageSchema.parse(await (await request(agent.headers, `/${channel.id}/members`)).json());
+    const self = members.items.find((row) => row.principal.type === "service_account" && row.principal.serviceAccountId === agent.id)!;
+    expect(self.serviceAccountKind).toBe("agent");
+    expect(members.self?.accessId).toBe(self.accessId);
+    expect((await request(ownerHeaders, `/${channel.id}/members/${self.accessId}`, "PATCH", { permission: "admin" })).status).toBe(200);
+    expect((await request(ownerHeaders, `/${channel.id}/leave`, "POST", {})).status).toBe(200);
+    // The active agent is the sole manager; removing its own admin grant is refused.
+    expect((await request(agent.headers, `/${channel.id}/members/${self.accessId}`, "PATCH", { permission: "read" })).status).toBe(409);
+    expect((await request(ownerHeaders, `/${channel.id}/join`, "POST")).status).toBe(200);
+    const back = MemberPageSchema.parse(await (await request(agent.headers, `/${channel.id}/members`)).json());
+    const successor = back.items.find((row) => row.principal.type === "user" && row.principal.userId === owner)!;
+    expect((await request(agent.headers, `/${channel.id}/leave`, "POST", { successor: successor.accessId })).status).toBe(200);
+    const history = MessagePageSchema.parse(await (await request(ownerHeaders, `/${channel.id}/messages`)).json());
+    expect(history.items.at(-1)?.system).toMatchObject({ code: "permission_changed", params: { permission: "admin" } });
+    expect((await request(agent.headers, `/${channel.id}/join`, "POST")).status).toBe(200);
+  });
+  test("deleted service accounts retain messages and a former-account title marker", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    const account = await credential("standalone", null, ["openid", "read", "write"]);
+    const chat = await create(headers, [], { members: [{ type: "service_account", serviceAccountId: account.id }] });
+    expect((await request(account.headers, `/${chat.id}/messages`, "POST", { clientId: "service-history", body: "Retained" })).status).toBe(
+      201,
+    );
+    await sql`DELETE FROM auth.service_accounts WHERE id = ${account.id}::uuid`;
+    expect(ConversationSchema.parse(await (await request(headers, `/${chat.id}`)).json())).toMatchObject({
+      title: "Former account",
+      lastMessage: { author: { name: "Former account" } },
+    });
+    const history = MessagePageSchema.parse(await (await request(headers, `/${chat.id}/messages`)).json());
+    expect(history.items.find((row) => row.body === "Retained")?.author.name).toBe("Former account");
+  });
+  test("a 5000-member channel resolves permission with the SQL principal condition", async () => {
+    const owner = await user(),
+      outside = await user();
+    const chat = await fixture(owner);
+    const ids = await bulkUsers(4999);
+    await sql`WITH grants AS (INSERT INTO auth.access (user_id, permission) SELECT id, 'write' FROM auth.users WHERE id = ANY(${toPgUuidArray(ids)}::uuid[]) RETURNING id)
+      INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id) SELECT ${chat.id}::uuid, id, 'member', 'user', ${owner}::uuid FROM grants`;
+    await sql`UPDATE chat.conversations SET name = 'Large channel', member_count = 5000 WHERE id = ${chat.id}::uuid`;
+    const discovery = await createAccess({ principal: { type: "authenticated" }, permission: "read" });
+    if (!discovery.ok) throw new Error(discovery.error.message);
+    await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id) VALUES (${chat.id}::uuid, ${discovery.data.id}::uuid, 'discoverable', 'user', ${owner}::uuid)`;
+    const member = ids.at(-1)!;
+    const allowed = await requireConversation({ ...userContext(member), conversationId: chat.shortId, required: "write" });
+    expect(allowed.ok && allowed.data.member_count).toBe(5000);
+    const denied = await requireConversation({ ...userContext(outside), conversationId: chat.shortId, required: "write" });
+    expect(!denied.ok && denied.error.status).toBe(403);
+    // Explain the exact predicate used by requireConversation, without expanding 5000 IDs in JavaScript.
+    type PlanNode = {
+      "Node Type": string;
+      "Relation Name"?: string;
+      "Actual Rows": number;
+      "Actual Loops": number;
+      Filter?: string;
+      "Index Cond"?: string;
+      Plans?: PlanNode[];
+    };
+    const plan = await sql<{ "QUERY PLAN": { Plan: PlanNode }[] }[]>`
+      EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${conversationAccessQuery(sql, { ...userContext(member), conversationId: chat.shortId }, true)}`;
+    const root = plan[0]!["QUERY PLAN"][0]!.Plan;
+    const nodes = (node: PlanNode): PlanNode[] => [node, ...(node.Plans ?? []).flatMap(nodes)];
+    const executed = nodes(root);
+    expect(root["Actual Rows"]).toBe(1);
+    expect(root["Actual Loops"]).toBe(1);
+    // PostgreSQL reduces the matching grants to one permission rank before returning the conversation.
+    expect(executed.some((node) => node["Node Type"] === "Aggregate" && node["Actual Rows"] === 1 && node["Actual Loops"] === 1)).toBe(
+      true,
+    );
+    expect(executed.some((node) => node["Relation Name"] === "conversation_access")).toBe(true);
+    const principalFilters = executed
+      .filter((node) => node["Relation Name"] === "access")
+      .map((node) => `${node.Filter ?? ""} ${node["Index Cond"] ?? ""}`)
+      .join(" ");
+    expect(principalFilters).toContain(member);
+    expect(principalFilters).toContain("user_id");
+    expect(principalFilters).toContain("permission");
+    const full = await request(await cookie(outside), `/${chat.shortId}/join`, "POST");
+    expect(full.status).toBe(400);
+    expect((await full.json()).message).toContain("5,000");
+  });
+  test("disabling authenticated discovery removes nonmembers from reads, browse and live while keeping members", async () => {
+    const owner = await user(),
+      joined = await user(),
+      outside = await user("guest");
+    const ownerHeaders = await cookie(owner),
+      joinedHeaders = await cookie(joined),
+      outsideHeaders = await cookie(outside);
+    const channel = await create(ownerHeaders, [], {
+      name: "Operations",
+      purpose: "Daily coordination",
+      discovery: [{ principal: { type: "authenticated" }, permission: "write" }],
+    });
+    expect((await request(outsideHeaders, `/${channel.id}`)).status).toBe(200);
+    expect((await request(joinedHeaders, `/${channel.id}/join`, "POST")).status).toBe(200);
+    const view = { ...userContext(outside), id: "guest-viewer", scopes: [] };
+    expect(await chatLiveChannels.conversation.authorize(`c:${channel.id}`, [view])).toEqual(new Set([view.id]));
+    const setting = spyOn(chatApp.settings, "get").mockResolvedValue(false);
+    try {
+      expect((await request(outsideHeaders, `/${channel.id}`)).status).toBe(404);
+      expect((await request(joinedHeaders, `/${channel.id}`)).status).toBe(200);
+      expect(ConversationPageSchema.parse(await (await discoveryRequest(outsideHeaders, "?q=Operations")).json()).items).toEqual([]);
+      expect(await chatLiveChannels.conversation.authorize(`c:${channel.id}`, [view])).toEqual(new Set());
+      expect((await request(ownerHeaders, `/${channel.id}/discovery`, "PUT", { entries: [] })).status).toBe(200);
+    } finally {
+      setting.mockRestore();
+    }
+  });
+  test("browse searches literally and pages only the viewer's audience, including subscriptions", async () => {
+    const owner = await user(),
+      reader = await user(),
+      outside = await user();
+    const headers = await cookie(owner),
+      readerHeaders = await cookie(reader);
+    const audience = await group([reader]);
+    const privateAudience = await group([outside]);
+    // Bulk fixtures exercise the public page size without consuming the create rate budget.
+    const ids: string[] = [];
+    for (let i = 0; i < 53; i++) {
+      const chat = await fixture(owner);
+      ids.push(chat.shortId);
+      await sql`UPDATE chat.conversations SET name = ${`Paging ${String(i).padStart(2, "0")}`}, purpose = 'Search 100%_literal' WHERE id = ${chat.id}::uuid`;
+      const access = await createAccess({ principal: { type: "group", groupId: audience }, permission: "read" });
+      if (!access.ok) throw new Error(access.error.message);
+      accessIds.push(access.data.id);
+      await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
+        VALUES (${chat.id}::uuid, ${access.data.id}::uuid, 'discoverable', 'user', ${owner}::uuid)`;
+    }
+    await create(headers, [], {
+      name: "Paging hidden",
+      purpose: "Search 100%_literal",
+      discovery: [{ principal: { type: "group", groupId: privateAudience }, permission: "read" }],
+    });
+    expect((await request(readerHeaders, `/${ids[0]}/join`, "POST")).status).toBe(200);
+    const first = ConversationPageSchema.parse(await (await discoveryRequest(readerHeaders, "?q=100%25_literal")).json());
+    expect(first.items).toHaveLength(50);
+    expect(first.items[0]).toMatchObject({ id: ids[0], channel: true, member: true, permission: "read" });
+    expect(first.items.slice(1).every((row) => !row.member)).toBeTrue();
+    const second = ConversationPageSchema.parse(
+      await (await discoveryRequest(readerHeaders, `?q=100%25_literal&cursor=${encodeURIComponent(first.nextCursor!)}`)).json(),
+    );
+    expect(second.items).toHaveLength(3);
+    expect(second.nextCursor).toBeNull();
+    expect([...first.items, ...second.items].map((row) => row.id)).toEqual(ids);
+    expect(ConversationPageSchema.parse(await (await discoveryRequest(readerHeaders, "?q=missing")).json()).items).toEqual([]);
+  });
+
+  test("guest discovery excludes groups for reads, browse, join, preview and live", async () => {
+    const owner = await user(),
+      guest = await user("guest"),
+      reader = await user();
+    const headers = await cookie(owner),
+      guestHeaders = await cookie(guest);
+    const groupId = await group([guest, reader]);
+    const entries = [{ principal: { type: "group", groupId }, permission: "write" }];
+    const channel = await create(headers, [], { name: "Group discovery", purpose: "Team updates", discovery: entries });
+    expect((await request(guestHeaders, `/${channel.id}`)).status).toBe(404);
+    expect((await request(guestHeaders, `/${channel.id}/join`, "POST")).status).toBe(404);
+    expect(ConversationPageSchema.parse(await (await discoveryRequest(guestHeaders, "?q=Group discovery")).json()).items).toEqual([]);
+    expect((await discoveryRequest(guestHeaders, "/preview", "POST", entries)).status).toBe(400);
+    expect((await request(guestHeaders, "", "POST", { name: "Guest channel", purpose: "Updates", discovery: entries })).status).toBe(400);
+    const viewer = { ...userContext(guest), id: "guest", scopes: [] };
+    expect(await chatLiveChannels.conversation.authorize(`c:${channel.id}`, [viewer])).toEqual(new Set());
+    const preview = DiscoveryPreviewSchema.parse(await (await discoveryRequest(headers, "/preview", "POST", entries)).json());
+    expect(preview.audienceCount).toBe(1);
+    const publicEntries = [{ principal: { type: "authenticated" }, permission: "read" }];
+    expect((await request(headers, `/${channel.id}/discovery`, "PUT", { entries: publicEntries })).status).toBe(200);
+    expect((await request(guestHeaders, `/${channel.id}/join`, "POST")).status).toBe(200);
+    const history = MessagePageSchema.parse(await (await request(headers, `/${channel.id}/messages`)).json());
+    expect(history.items.some((row) => row.system?.code === "discovery_changed")).toBeTrue();
+  });
+
+  test("audience removal refuses joins, and channel subscriptions update reads, list and live hints", async () => {
+    const owner = await user(),
+      reader = await user(),
+      outside = await user();
+    const headers = await cookie(owner),
+      readerHeaders = await cookie(reader),
+      outsideHeaders = await cookie(outside);
+    const groupId = await group([reader]);
+    const entries = [{ principal: { type: "group", groupId }, permission: "read" }];
+    const channel = await create(headers, [], { name: "Read channel", purpose: "Read updates", discovery: entries });
+    expect((await request(outsideHeaders, `/${channel.id}/join`, "POST")).status).toBe(404);
+    expect((await request(readerHeaders, `/${channel.id}/join`, "POST")).status).toBe(200);
+    const sent = MessageViewSchema.parse(
+      await (await request(headers, `/${channel.id}/messages`, "POST", { clientId: "channel-unread", body: "Update" })).json(),
+    );
+    expect(ConversationSchema.parse(await (await request(readerHeaders, `/${channel.id}`)).json()).unread).toBe(1);
+    expect((await request(readerHeaders, `/${channel.id}/read`, "POST", { seq: sent.seq })).status).toBe(200);
+    expect(ConversationSchema.parse(await (await request(readerHeaders, `/${channel.id}`)).json()).unread).toBe(0);
+    const viewer = { ...userContext(reader), id: "reader", scopes: [] };
+    expect(await chatLiveChannels.list.keys({}, viewer)).toContain(`l:${channel.id}`);
+    // Access hints ({ a: true }) carry no data; the membership and summary events follow them.
+    const hints = await sql<
+      { ordering_key: string; payload: { a?: true; d?: { type: string } } }[]
+    >`SELECT ordering_key, payload FROM events.outbox WHERE app_id = 'chat'
+      AND ordering_key IN (${"c:" + channel.id}, ${"l:" + channel.id}, ${"p:" + reader}) ORDER BY seq`;
+    for (const key of [`c:${channel.id}`, `l:${channel.id}`, `p:${reader}`])
+      expect(hints.some((row) => row.ordering_key === key && row.payload.d?.type === "membership")).toBeTrue();
+    expect(hints.some((row) => row.ordering_key === `l:${channel.id}` && row.payload.d?.type === "summary")).toBeTrue();
+    expect((await request(readerHeaders, `/${channel.id}/leave`, "POST", {})).status).toBe(200);
+    expect(ConversationPageSchema.parse(await (await request(readerHeaders)).json()).items).toEqual([]);
+    expect(await chatLiveChannels.list.keys({}, viewer)).not.toContain(`l:${channel.id}`);
+    expect(ConversationPageSchema.parse(await (await discoveryRequest(readerHeaders, "?q=Read channel")).json()).items).toHaveLength(1);
+    expect((await request(headers, `/${channel.id}/discovery`, "PUT", { entries: [] })).status).toBe(200);
+    expect((await request(readerHeaders, `/${channel.id}/join`, "POST")).status).toBe(404);
+  });
+
+  test("channels reject existing threads and operator-disabled authenticated discovery", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    const chat = await create(headers, [], { name: "Threaded", purpose: "Discussion" });
+    expect((await request(headers, `/${chat.id}/threads`, "POST", { name: "Topic" })).status).toBe(201);
+    const entries = [{ principal: { type: "authenticated" }, permission: "read" }];
+    const conversion = await request(headers, `/${chat.id}/discovery`, "PUT", { entries });
+    expect(conversion.status).toBe(409);
+    expect((await conversion.json()).code).toBe("THREADS_UNAVAILABLE");
+    const setting = spyOn(chatApp.settings, "get").mockResolvedValue(false);
+    try {
+      expect((await request(headers, "", "POST", { name: "Disabled", purpose: "Updates", discovery: entries })).status).toBe(400);
+      expect((await discoveryRequest(headers, "/preview", "POST", entries)).status).toBe(400);
+      expect(await (await discoveryRequest(headers, "/options")).json()).toEqual({ allowAuthenticated: false });
+    } finally {
+      setting.mockRestore();
+    }
+  });
+  test("service-account memberships keep scope caps and bound discovery stays in one conversation", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    const service = await credential("standalone", null, ["openid", "read", "write", "admin"]);
+    const channel = await create(headers, [], {
+      name: "Scoped account",
+      purpose: "Account updates",
+      members: [{ type: "service_account", serviceAccountId: service.id }],
+      discovery: [{ principal: { type: "authenticated" }, permission: "read" }],
+    });
+    const members = MemberPageSchema.parse(await (await request(headers, `/${channel.id}/members`)).json());
+    const entry = members.items.find((member) => member.principal.type === "service_account")!;
+    expect((await request(headers, `/${channel.id}/members/${entry.accessId}`, "PATCH", { permission: "admin" })).status).toBe(200);
+    for (const scope of ["read", "write", "admin"] as const) {
+      const result = await serviceAccountCredentials.createApiToken({
+        serviceAccountId: service.id,
+        name: scope,
+        scopes: ["openid", scope],
+      });
+      if (!result.ok) throw new Error(result.error.message);
+      const scoped = { authorization: `Bearer ${result.data.token}` };
+      expect(ConversationSchema.parse(await (await request(scoped, `/${channel.id}`)).json()).permission).toBe(scope);
+      expect((await request(scoped, `/${channel.id}/messages`, "POST", { clientId: scope, body: "Scoped message" })).status).toBe(
+        scope === "read" ? 403 : 201,
+      );
+      expect((await request(scoped, `/${channel.id}/discovery`)).status).toBe(scope === "admin" ? 200 : 403);
+    }
+    const [bound] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
+      VALUES ('Bound member', 'resource_bound', 'chat', 'conversation', ${channel.id}) RETURNING id`;
+    accounts.push(bound!.id);
+    expect(
+      (await request(headers, `/${channel.id}/members`, "POST", { members: [{ type: "service_account", serviceAccountId: bound!.id }] }))
+        .status,
+    ).toBe(200);
+    const token = await serviceAccountCredentials.createApiToken({
+      serviceAccountId: bound!.id,
+      name: "bound",
+      scopes: ["openid", "read", "admin"],
+    });
+    if (!token.ok) throw new Error(token.error.message);
+    const boundHeaders = { authorization: `Bearer ${token.data.token}` };
+    const other = await create(headers, [], {
+      name: "Other scoped channel",
+      purpose: "Other updates",
+      discovery: [{ principal: { type: "authenticated" }, permission: "read" }],
+    });
+    expect(ConversationPageSchema.parse(await (await discoveryRequest(boundHeaders, "")).json()).items.map((row) => row.id)).toEqual([
+      channel.id,
+    ]);
+    expect(ConversationPageSchema.parse(await (await request(boundHeaders)).json()).items.map((row) => row.id)).toEqual([channel.id]);
+    for (const path of [`/${other.id}`, `/${other.id}/discovery`]) expect((await request(boundHeaders, path)).status).toBe(403);
+    expect((await request(boundHeaders, `/${other.id}/join`, "POST")).status).toBe(403);
+    expect(
+      (await request(headers, `/${other.id}/members`, "POST", { members: [{ type: "service_account", serviceAccountId: bound!.id }] }))
+        .status,
+    ).toBe(400);
   });
 });

@@ -32,11 +32,12 @@ export type NotebookActivityEvent = {
   } | null;
   noteVersionId: string | null;
   actor: NotebookActivityActor;
-  action: NotebookActivityAction;
+  action: string;
   metadata: Record<string, unknown>;
   occurrenceCount: number;
   createdAt: string;
   lastOccurredAt: string;
+  cursor?: string;
 };
 
 export type NotebookActivityPage = {
@@ -78,6 +79,7 @@ type ActivityRow = {
   occurrence_count: number;
   created_at: Date | string;
   last_occurred_at: Date | string;
+  cursor_at: string;
 };
 
 const MAX_PAGE_SIZE = 100;
@@ -180,6 +182,9 @@ export const list = async (params: {
   cursor?: string;
   limit?: number;
   actions?: readonly NotebookActivityAction[];
+  timeline?: boolean;
+  before?: string;
+  after?: string;
 }): Promise<NotebookActivityPage> => {
   const principalMatch = buildNotebookVisibleAccessCondition({
     userId: params.userId,
@@ -218,7 +223,8 @@ export const list = async (params: {
       activity.metadata,
       activity.occurrence_count,
       activity.created_at,
-      activity.last_occurred_at
+      activity.last_occurred_at,
+      activity.last_occurred_at::text AS cursor_at
     FROM notebooks.activity_events activity
     JOIN notebooks.notebooks notebook ON notebook.id = activity.notebook_id
     LEFT JOIN notebooks.notes note ON note.id = activity.note_id
@@ -238,7 +244,9 @@ export const list = async (params: {
     }
       AND (${params.notebookId ?? null}::uuid IS NULL OR activity.notebook_id = ${params.notebookId ?? null}::uuid)
       AND (${params.noteId ?? null}::uuid IS NULL OR activity.note_id = ${params.noteId ?? null}::uuid)
-      AND activity.action = ANY(${actions}::text[])
+      AND ${params.timeline ? sql`note.id IS NOT NULL AND note.notebook_id = activity.notebook_id AND activity.action NOT LIKE 'comment.%'` : sql`activity.action = ANY(${actions}::text[])`}
+      AND (${params.before ?? null}::timestamptz IS NULL OR activity.last_occurred_at < ${params.before ?? null}::timestamptz)
+      AND (${params.after ?? null}::timestamptz IS NULL OR activity.last_occurred_at > ${params.after ?? null}::timestamptz)
       AND (
         ${cursor?.lastOccurredAt ?? null}::timestamptz IS NULL
         OR (activity.last_occurred_at, activity.id) <
@@ -250,10 +258,11 @@ export const list = async (params: {
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
   const items = pageRows.flatMap<NotebookActivityEvent>((row) =>
-    isNotebookActivityAction(row.action)
+    params.timeline || isNotebookActivityAction(row.action)
       ? [
           {
             id: String(row.id),
+            ...(params.timeline ? { cursor: encodeActivityCursor({ id: String(row.id), lastOccurredAt: row.cursor_at }) } : {}),
             notebook: {
               id: row.notebook_id,
               shortId: row.notebook_short_id,
@@ -283,7 +292,7 @@ export const list = async (params: {
   const last = pageRows.at(-1);
   return {
     items,
-    nextCursor: hasMore && last ? encodeActivityCursor({ id: String(last.id), lastOccurredAt: toIso(last.last_occurred_at) }) : null,
+    nextCursor: hasMore && last ? encodeActivityCursor({ id: String(last.id), lastOccurredAt: last.cursor_at }) : null,
   };
 };
 

@@ -1,11 +1,12 @@
 import { createApiClient } from "@k2b/cloud/browser";
+import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import type { z } from "zod";
 import type { ApiType } from "../api";
 import { MessageViewSchema } from "../service/contracts";
 
 export type ChatSendReply = { id: string; author: string; text: string };
-export type ChatSendInput = { clientId: string; body: string; thread?: string; replyTo?: string };
+export type ChatSendInput = { clientId: string; body: string; thread?: string; replyTo?: string; refs?: CloudResourceRef[] };
 export type ChatSend = {
   clientId: string;
   conversationId: string;
@@ -14,6 +15,8 @@ export type ChatSend = {
   thread: string;
   /** The answered message, shown as its quote until the stored message replaces the send. */
   replyTo: ChatSendReply | null;
+  /** Shared Cloud elements, shown as cards from the first frame. */
+  refs: readonly CloudResourceRef[];
   createdAt: string;
   status: "pending" | "sent" | "failed";
   /** The stored message once the server accepted it. */
@@ -45,6 +48,7 @@ export const createChatSends = (dependencies: {
       const message = await dependencies.post(entry.conversationId, {
         clientId: entry.clientId,
         body: entry.body,
+        ...(entry.refs.length ? { refs: [...entry.refs] } : {}),
         // A reply goes into its original's thread on the server; General needs no thread.
         ...(entry.replyTo ? { replyTo: entry.replyTo.id } : entry.thread !== "general" ? { thread: entry.thread } : {}),
       });
@@ -65,13 +69,18 @@ export const createChatSends = (dependencies: {
     unsent: (): boolean => [...entries.values()].some((entry) => entry.status !== "sent"),
     sends: (conversationId: string): readonly ChatSend[] =>
       [...entries.values()].filter((entry) => entry.conversationId === conversationId),
-    send: (conversationId: string, body: string, target: { thread?: string; replyTo?: ChatSendReply | null } = {}): ChatSend => {
+    send: (
+      conversationId: string,
+      body: string,
+      target: { thread?: string; replyTo?: ChatSendReply | null; refs?: readonly CloudResourceRef[] } = {},
+    ): ChatSend => {
       const entry: ChatSend = {
         clientId: dependencies.newClientId?.() ?? crypto.randomUUID(),
         conversationId,
         body,
         thread: target.thread ?? "general",
         replyTo: target.replyTo ?? null,
+        refs: target.refs ?? [],
         createdAt: (dependencies.now?.() ?? new Date()).toISOString(),
         status: "pending",
         message: null,
