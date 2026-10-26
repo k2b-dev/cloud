@@ -73,7 +73,9 @@ describe("Contact book settings", () => {
   });
 
   test("exposes modal settings actions in desktop and mobile navigation", () => {
-    const html = renderToString(() => <ContactsSidebar books={[book]} active={book.id} adminBookIds={[book.id]} />);
+    const html = renderToString(() => (
+      <ContactsSidebar favoritesHref="/app/contacts?favorites=true" books={[book]} active={book.id} adminBookIds={[book.id]} />
+    ));
 
     expect(html.match(/aria-label="Open settings for Suppliers"/g)).toHaveLength(1);
     const navigationJson = html.match(/<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s)?.[1];
@@ -96,7 +98,9 @@ describe("Contact book settings", () => {
   });
 
   test("omits settings actions from both navigations without book administration", () => {
-    const html = renderToString(() => <ContactsSidebar books={[book]} active={book.id} adminBookIds={[]} />);
+    const html = renderToString(() => (
+      <ContactsSidebar favoritesHref="/app/contacts?favorites=true" books={[book]} active={book.id} adminBookIds={[]} />
+    ));
 
     expect(html).not.toContain("Open settings for Suppliers");
     expect(html).not.toContain(`settings:${book.id}`);

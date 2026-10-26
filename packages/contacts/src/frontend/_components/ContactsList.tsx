@@ -1,4 +1,4 @@
-import { Checkbox, IconButtonLink, Placeholder, Tag, useLocale } from "@k2b/ui";
+import { Checkbox, IconButtonLink, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import type { Contact } from "../../service";
 import { resolveContactInitials, resolveContactName } from "../../shared";
@@ -110,12 +110,7 @@ export default function ContactsList(props: Props) {
         />
       }
     >
-      <ul
-        ref={listRef}
-        class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1.5"
-        aria-label={t().contactsListLabel}
-        onKeyDown={moveFocus}
-      >
+      <ul ref={listRef} class="contacts-list flex flex-col gap-0.5" aria-label={t().contactsListLabel} onKeyDown={moveFocus}>
         <For each={props.contacts}>
           {(contact) => {
             const name = () => resolveContactName(contact, t().unnamedContact);
@@ -140,7 +135,7 @@ export default function ContactsList(props: Props) {
                 </Show>
                 <a
                   href={buildContactDetailHref(props.detailBaseHref, contact.id, contact.bookId)}
-                  class="flex w-full min-w-0 items-center gap-3 rounded-[var(--ui-radius-control)] py-2.5 pl-3 pr-[3rem] text-left focus-visible:outline-[length:var(--k2b-focus-width)] focus-visible:outline-solid focus-visible:outline-[var(--k2b-focus-ring)] focus-visible:outline-offset-[var(--k2b-focus-offset)] [@media(min-width:640px)]:pr-[7rem]"
+                  class="contacts-list__row flex w-full min-w-0 items-center gap-3 rounded-[var(--ui-radius-control)] py-2.5 pl-3 pr-[3rem] text-left focus-visible:outline-[length:var(--k2b-focus-width)] focus-visible:outline-solid focus-visible:outline-[var(--k2b-focus-ring)] focus-visible:outline-offset-[var(--k2b-focus-offset)] [@media(min-width:640px)]:pr-[7rem]"
                   classList={{ "pl-10": props.selectionMode, "bg-[var(--ui-app-selected)]": isSelected() }}
                   aria-label={t().openContact({ name: name() })}
                   aria-current={isSelected() ? "true" : undefined}
@@ -161,7 +156,7 @@ export default function ContactsList(props: Props) {
                   <span class="min-w-0 flex-1">
                     <span class="flex min-w-0 items-center gap-2">
                       <span
-                        class="truncate text-sm font-medium transition-colors group-hover/contact:text-[var(--ui-app-accent-text)] group-focus-within/contact:text-[var(--ui-app-accent-text)]"
+                        class="k2b-truncate-fade min-w-0 text-sm font-medium transition-colors group-hover/contact:text-[var(--ui-app-accent-text)] group-focus-within/contact:text-[var(--ui-app-accent-text)]"
                         classList={{ "app-accent-text": isSelected(), "text-primary": !isSelected() }}
                       >
                         {name()}
@@ -175,7 +170,7 @@ export default function ContactsList(props: Props) {
 
                     <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-dimmed">
                       <Show when={context()}>
-                        <span class="truncate">{context()}</span>
+                        <span class="k2b-truncate-fade min-w-0">{context()}</span>
                       </Show>
                       <Show when={contact.parent}>
                         {(parent) => (
@@ -190,9 +185,11 @@ export default function ContactsList(props: Props) {
                       </Show>
                       <For each={visibleTags()}>
                         {(tag) => (
-                          <Tag color={tag.color} icon="ti ti-point">
+                          // Neutral text beside the tag's color dot: light tag hues stay readable (#1515).
+                          <span class="contacts-tag-label" style={{ "--app-contacts-tag-color": tag.color }}>
+                            <i class="contacts-tag-dot" aria-hidden="true" />
                             {tag.name}
-                          </Tag>
+                          </span>
                         )}
                       </For>
                       <Show when={hiddenTagCount() > 0}>
@@ -201,7 +198,7 @@ export default function ContactsList(props: Props) {
                     </span>
                   </span>
 
-                  <span class="hidden w-52 shrink-0 flex-col items-end gap-0.5 text-xs text-dimmed xl:flex">
+                  <span class="contacts-list__reach w-52 shrink-0 flex-col items-end gap-0.5 text-xs text-dimmed">
                     <Show when={email()}>
                       <span class="max-w-full truncate" title={email() ?? undefined}>
                         {email()}

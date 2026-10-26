@@ -2,7 +2,6 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale, hasPermission } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ok } from "@k2b/stdlib";
-import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../../config";
 import { contactsService } from "../../service";
 import { captureContactLiveCursor } from "../../service/live";
@@ -16,11 +15,11 @@ import {
   resolvePublicId,
 } from "../../service/public-resources";
 import ContactCreateLauncher from "../_components/ContactCreateLauncher.island";
-import ContactDetailPanel from "../_components/ContactDetailPanel.island";
 import ContactsLiveEvents from "../_components/ContactsLiveEvents.island";
-import ContactsSidebar from "../_components/ContactsSidebar";
-import ContactsWorkspaceMain from "../_components/ContactsWorkspaceMain";
+import ContactsWorkspace from "../_components/ContactsWorkspace";
 import DesktopDetailLayoutSync from "../_components/DesktopDetailLayoutSync.island";
+import { contactsFavoritesHintOpen } from "../contacts-hints";
+import { contactsFiltered } from "../contacts-query";
 import {
   CONTACTS_PER_PAGE,
   loadContactBookPermissions,
@@ -142,66 +141,55 @@ export default ssr<AuthContext>(async (c) => {
   const resultHref = `${requestUrl.pathname}${requestUrl.search}`;
   const initialSelectedContactId = selectedPublicContact?.id ?? selectedContactIdFromUrl ?? null;
   const initialSelectedBookId = selectedPublicContact ? publicBookId : selectedContactIdFromUrl ? publicBookId : null;
-  const hasDesktopDetailSelection = Boolean(selectedPublicContact);
+  const favoritesHintOpen = contactsFavoritesHintOpen(c, books.length);
+  // Reuse the current unfiltered total. Each other view is one bounded count read.
+  const countView = async (favorites: boolean) => {
+    if (!contactsFiltered(resultHref) && favorites === queryOptions.favorites) return contactsResult.data.total;
+    const result = await contactsService.contact.list({
+      actor: c.get("actor"),
+      accessSubject: c.get("accessSubject"),
+      bookId,
+      pagination: { page: 1, perPage: 1 },
+      filter: { favoriteUserId: favorites ? user.id : undefined },
+    });
+    return result.ok ? result.data.total : null;
+  };
+  const [allCount, favoritesCount] = await Promise.all([countView(false), countView(true)]);
+  if (allCount === null || favoritesCount === null) return ssr.error(c, 403);
   return () => (
     <Layout
       c={c}
       fullWidth
+      context={{ scope: { type: "contacts.book", id: publicBookId } }}
       title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbContacts, href: "/app/contacts" }, { title: currentBook.name }]}
     >
       <ContactsLiveEvents scope={{ kind: "book", bookId: publicBookId }} initialCursor={initialLiveCursor} />
-      <AppWorkspace mobileSurface="flush">
-        <ContactsSidebar books={books} active={currentBook.id} adminBookIds={adminBookIds} />
-
-        <AppWorkspace.Content>
-          <ContactsWorkspaceMain
-            scope="book"
-            title={currentBook.name}
-            description={currentBook.description ?? t.sharedBookDescription}
-            total={contactsResult.data.total}
-            search={search}
-            resultHref={resultHref}
-            bookId={publicBookId}
-            perPage={perPage}
-            searchPlaceholder={t.filterBookPlaceholder({ name: currentBook.name })}
-            contacts={contacts}
-            bookNames={bookNames}
-            initialSelectedContactId={initialSelectedContactId}
-            initialSelectedBookId={initialSelectedBookId}
-            writableBooks={writableBooks}
-            defaultCreateBookId={canWrite ? currentBook.id : (writableBooks[0]?.id ?? null)}
-            chooseBookOnCreate={!canWrite}
-            currentPage={contactsResult.data.page}
-            totalPages={totalPages}
-            tags={bookTags}
-            activeTagId={activeTagId}
-            filtersBasePath={`/app/contacts/${publicBookId}`}
-            initialFavoriteKeys={favoriteKeys}
-          />
-
-          <AppWorkspace.Detail
-            id="contacts-detail-panel"
-            open={hasDesktopDetailSelection}
-            width="lg"
-            viewTransitionName="contacts-detail-panel-shell"
-          >
-            <ContactCreateLauncher writableBooks={writableBooks} defaultBookId={canWrite ? currentBook.id : undefined} />
-            <ContactDetailPanel
-              initialContact={selectedPublicContact}
-              initialContactId={initialSelectedContactId}
-              initialBookId={initialSelectedBookId}
-              initialNotesPage={initialNotesPage}
-              contacts={contacts}
-              bookNames={bookNames}
-              writableBooks={writableBooks}
-              adminBookIds={adminBookIds}
-              currentUserId={user.id}
-              showEmpty={false}
-              initialFavoriteKeys={favoriteKeys}
-            />
-          </AppWorkspace.Detail>
-        </AppWorkspace.Content>
-      </AppWorkspace>
+      <ContactsWorkspace
+        scope="book"
+        total={contactsResult.data.total}
+        resultHref={resultHref}
+        bookId={publicBookId}
+        perPage={perPage}
+        searchPlaceholder={t.filterBookPlaceholder({ name: currentBook.name })}
+        contacts={contacts}
+        bookNames={bookNames}
+        initialSelectedContactId={initialSelectedContactId}
+        initialSelectedBookId={initialSelectedBookId}
+        writableBooks={writableBooks}
+        currentPage={contactsResult.data.page}
+        totalPages={totalPages}
+        tags={bookTags}
+        initialFavoriteKeys={favoriteKeys}
+        books={books}
+        adminBookIds={adminBookIds}
+        currentUserId={user.id}
+        initialContact={selectedPublicContact}
+        initialNotesPage={initialNotesPage}
+        allCount={allCount}
+        favoritesCount={favoritesCount}
+        favoritesHintOpen={favoritesHintOpen}
+        detailLauncher={<ContactCreateLauncher writableBooks={writableBooks} defaultBookId={canWrite ? currentBook.id : undefined} />}
+      />
       <DesktopDetailLayoutSync detailPanelId="contacts-detail-panel" />
     </Layout>
   );

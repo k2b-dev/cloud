@@ -31,6 +31,7 @@ import { createContactQuerySource, isCurrentQuerySnapshot, parseContactQuerySour
 import { contactFavoriteKey, listenForContactFavoriteChanges } from "./contacts-favorites";
 import { listenForContactsLiveInvalidation, requiresSelectedContactRefresh } from "./contacts-live";
 import {
+  backFromContactDetail,
   CONTACT_DETAIL_EVENT,
   type ContactDetailPayload,
   clearSelectedContactInUrl,
@@ -316,37 +317,47 @@ export default function ContactDetailPanel(props: Props) {
     <Show
       when={contact()}
       fallback={
-        <Show
-          when={detailQuery.error()}
-          fallback={
-            <Show
-              when={detailQuery.loading() || detailQuery.refreshing()}
-              fallback={
-                props.showEmpty === false ? null : (
-                  <Placeholder icon="ti ti-id" class="h-full min-h-0 justify-center" description={<>{t().selectContactHint}</>} />
-                )
-              }
-            >
-              <Placeholder state="loading" variant="panel" class="h-full min-h-0 justify-center" title={t().loadingContact} />
-            </Show>
-          }
-        >
-          {(error) => (
-            <Placeholder
-              state="error"
-              variant="panel"
-              align="left"
-              class="h-full min-h-0 justify-center"
-              title={t().couldNotLoadContact}
-              description={error().message}
-              action={
-                <Button variant="secondary" size="sm" onClick={retrySelectedContact}>
-                  {t().tryAgain}
-                </Button>
-              }
-            />
-          )}
-        </Show>
+        <>
+          <Show when={props.showEmpty !== false || detailQuery.error() || detailQuery.loading() || detailQuery.refreshing()}>
+            <div class="contacts-detail-back-bar">
+              <Button variant="ghost" class="contacts-detail-back" onClick={backFromContactDetail}>
+                <i class="ti ti-arrow-left" aria-hidden="true" />
+                {t().backToContacts}
+              </Button>
+            </div>
+          </Show>
+          <Show
+            when={detailQuery.error()}
+            fallback={
+              <Show
+                when={detailQuery.loading() || detailQuery.refreshing()}
+                fallback={
+                  props.showEmpty === false ? null : (
+                    <Placeholder icon="ti ti-id" class="h-full min-h-0 justify-center" description={<>{t().selectContactHint}</>} />
+                  )
+                }
+              >
+                <Placeholder state="loading" variant="panel" class="h-full min-h-0 justify-center" title={t().loadingContact} />
+              </Show>
+            }
+          >
+            {(error) => (
+              <Placeholder
+                state="error"
+                variant="panel"
+                align="left"
+                class="h-full min-h-0 justify-center"
+                title={t().couldNotLoadContact}
+                description={error().message}
+                action={
+                  <Button variant="secondary" size="sm" onClick={retrySelectedContact}>
+                    {t().tryAgain}
+                  </Button>
+                }
+              />
+            )}
+          </Show>
+        </>
       }
     >
       {(selectedContact) => {
@@ -409,7 +420,15 @@ export default function ContactDetailPanel(props: Props) {
             fallback={
               <DetailPanel>
                 <DetailPanel.Header
-                  leading={<Avatar name={resolveContactName(c(), t().unnamedContact)} fallback={resolveContactInitials(c())} size="sm" />}
+                  leading={
+                    <>
+                      <Button variant="ghost" class="contacts-detail-back" onClick={backFromContactDetail}>
+                        <i class="ti ti-arrow-left" aria-hidden="true" />
+                        {t().backToContacts}
+                      </Button>
+                      <Avatar name={resolveContactName(c(), t().unnamedContact)} fallback={resolveContactInitials(c())} size="sm" />
+                    </>
+                  }
                   title={resolveContactName(c(), t().unnamedContact)}
                   subtitle={[c().jobTitle, c().companyName, props.bookNames[c().bookId]].filter(Boolean).join(" · ")}
                   primaryActions={
