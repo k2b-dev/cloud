@@ -201,6 +201,9 @@ suite("contact observations with real Filegate and private history", () => {
   });
 
   test("held local root skips contact without breaking detail, stable lookup or upload start", async () => {
+    // Real upload reservations and leases use the Postgres/Filegate clock, not the evidence fixture year.
+    const [clock] = await sql<{ now: Date }[]>`SELECT current_timestamp AS now`;
+    setSystemTime(clock!.now);
     const node = await client.root("cloud").stat(path);
     const evidence = await confirmed(node);
     await put("cloud", path, "outside");
@@ -229,7 +232,10 @@ suite("contact observations with real Filegate and private history", () => {
     expect(await service().check(target())).toBe(true);
   });
   test("overwrite upload records the external comparison before its published overwrite", async () => {
-    await confirmed(await client.root("cloud").stat(path));
+    // Freeze the service clock beside the real reservation and lease timestamps.
+    const [clock] = await sql<{ now: Date }[]>`SELECT current_timestamp AS now`;
+    setSystemTime(clock!.now);
+    await confirmed(await client.root("cloud").stat(path), new Date(clock!.now.getTime() - 86_400_000));
     await put("cloud", path, "external-change");
     const service = files();
     const opened = await service.upload(call, {
