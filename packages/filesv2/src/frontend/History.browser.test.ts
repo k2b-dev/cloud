@@ -767,8 +767,9 @@ test("phone activity keeps the menu beside the search and never leaves a dot at 
 for (const lang of ["de", "en"] as const) {
   for (const width of [390, 1440]) {
     test(`POSIX history notice is visible in ${lang} at ${width}px`, async () => {
-      const { context, tab, errors } = await open(width, "light", "&base=freeipa:groups:10000000-0000-4000-8000-000000000001", lang);
+      const { context, tab, errors } = await open(width, "light", "", lang);
       try {
+        await tab.goto("http://files-history.test/app/filesv2?view=activity&base=freeipa:groups:10000000-0000-4000-8000-000000000001");
         const notice = tab.locator('.filesv2-history-body [role="status"]');
         await notice.waitFor({ state: "visible" });
         expect(await notice.textContent()).toContain(lang === "de" ? "Unix-Rechte" : "Unix permissions");

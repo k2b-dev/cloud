@@ -238,7 +238,7 @@ test("history on a missing auto-created home never provisions; the normal path s
 test("history never adopts an unbound FreeIPA home; the normal path still claims", async () => {
   const f = fixture(true);
   f.bound = false;
-  await expect(f.read()).rejects.toMatchObject({ status: 403, code: "unassigned" });
+  await expect(f.read()).rejects.toMatchObject({ status: 409, code: "history_unavailable" });
   expect(f.claim).not.toHaveBeenCalled();
   expect(provisions).toBe(0);
   // An unreadable leaf stops the normal path after its existing claim behavior, before reference writes.
@@ -246,20 +246,29 @@ test("history never adopts an unbound FreeIPA home; the normal path still claims
   await expect(f.service.entry(testCall(actor), { baseId: f.baseId, path: "file.txt" })).rejects.toMatchObject({ status: 403 });
   expect(f.claim).toHaveBeenCalledTimes(1);
 });
-test("read-only inspection preserves RequestActor, current membership, execution and Unix leaf rights", async () => {
-  const f = fixture(true);
+test("local history inspection preserves RequestActor and current grants without Unix execution", async () => {
+  const f = fixture();
   const result = await f.read();
   expect(result.target).toBe("users/alice/file.txt");
   expect(f.seenActor).toBe(actor);
-  expect(f.requests.some((request) => request.execution && JSON.parse(request.execution).uid === 1000)).toBe(true);
+  expect(f.requests.every((request) => request.execution === null)).toBe(true);
   f.leafMode = "0000";
-  await expect(f.read()).rejects.toMatchObject({ status: 403 });
-  f.leafMode = "0600";
-  f.denyAncestor = true;
-  await expect(f.read()).rejects.toMatchObject({ status: 403 });
-  f.denyAncestor = false;
+  expect((await f.read()).target).toBe("users/alice/file.txt");
   f.member = false;
   await expect(f.read()).rejects.toMatchObject({ status: 404 });
+  expect(f.claim).not.toHaveBeenCalled();
+  expect(provisions).toBe(0);
+});
+
+test("POSIX history rejects both entry references before Filegate or candidate reads", async () => {
+  const f = fixture(true);
+  for (const ref of [pathRef, `n:${f.baseId}:${fileId}`])
+    await expect(f.service.activityForEntry(testCall(actor), ref)).rejects.toMatchObject({
+      status: 409,
+      code: "history_unavailable",
+    });
+  expect(f.requests).toEqual([]);
+  expect(readerActivity).not.toHaveBeenCalled();
   expect(f.claim).not.toHaveBeenCalled();
   expect(provisions).toBe(0);
 });
@@ -285,7 +294,7 @@ test("entry-reference history authorizes stable identity and path before delegat
 });
 
 test("unknown and registered unreadable refs return identical empty pages without invoking the candidate reader", async () => {
-  const f = fixture(true);
+  const f = fixture();
   const call = testCall(actor);
   const empty = await f.service.activityForEntry(call, `p:${"b".repeat(64)}`);
   expect(empty).toEqual({
@@ -298,24 +307,23 @@ test("unknown and registered unreadable refs return identical empty pages withou
     searchLimitReached: false,
   });
   expect(f.requests).toEqual([]);
-  f.leafMode = "0000";
+  f.statFailures.set("users/alice/file.txt", 403);
   expect(await f.service.activityForEntry(call, pathRef)).toEqual(empty);
   expect(await f.service.activityForEntry(call, `n:${f.baseId}:${fileId}`)).toEqual(empty);
-  // Inspection stats the base; no execution-scoped parent authorization may rescue the existing leaf.
-  expect(f.requests.filter((request) => request.execution && request.target === "users/alice")).toEqual([]);
+  // Each reference inspects the base once; a refused leaf never falls back to its parent.
+  expect(f.requests.filter((request) => request.path.endsWith("/stat") && request.target === "users/alice")).toHaveLength(2);
   expect(readerActivity).not.toHaveBeenCalled();
   expect(f.claim).not.toHaveBeenCalled();
   expect(provisions).toBe(0);
 });
 
 test("only a proven missing path may authorize its readable parent before history candidates", async () => {
-  const f = fixture(true);
+  const f = fixture();
   const call = testCall(actor);
-  f.leafMode = "0000";
   f.statFailures.set("users/alice/file.txt", 404);
   await f.service.activityForEntry(call, pathRef);
   expect(readerActivity).toHaveBeenCalledTimes(1);
-  expect(f.requests.some((request) => request.execution && request.target === "users/alice")).toBe(true);
+  expect(f.requests.filter((request) => request.path.endsWith("/stat") && request.target === "users/alice")).toHaveLength(2);
   readerActivity.mockClear();
   f.statFailures.set("users/alice/file.txt", 403);
   expect((await f.service.activityForEntry(call, pathRef)).next).toBeNull();
@@ -367,14 +375,15 @@ test("entry refs cannot bypass membership checks or provision a missing home", a
 });
 
 test("one request resolves identity/config/groups once and read-only base once, with fresh leaf checks", async () => {
-  const f = fixture(true);
+  const f = fixture();
   await withActivityReadBudget(undefined, async (budget) => {
     const current = await f.requestContext(actor, budget);
     for (const path of ["one.txt", "two.txt", "two.txt"]) await current.readOnlyAuthorized(f.baseId, path);
   });
   expect(f.counts).toEqual({ self: 1, groups: 1, config: 1, bindings: 2 });
   expect(f.requests.filter((request) => /\/roots\/[^/]+$/.test(request.path))).toHaveLength(1);
-  expect(f.requests.filter((request) => request.path.endsWith("/stat") && request.execution)).toHaveLength(6);
+  expect(f.requests.filter((request) => request.path.endsWith("/stat"))).toHaveLength(4);
+  expect(f.requests.every((request) => request.execution === null)).toBe(true);
   expect(f.claim).not.toHaveBeenCalled();
   expect(provisions).toBe(0);
 });
