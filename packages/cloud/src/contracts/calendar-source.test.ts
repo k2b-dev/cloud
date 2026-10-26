@@ -77,6 +77,10 @@ test("calendar sources compile read-only or with all reserved writes", () => {
 });
 
 test("startup refuses missing, wrong-kind, streaming, open-world and non-idempotent operations", () => {
+  for (const declaration of [{ calendars: "calendars" }, { events: "events" }, { calendars: "calendars", events: 1 }]) {
+    // JavaScript callers can omit a required name or supply the wrong type.
+    expect(() => compileCapabilities("calendar", Object.assign(definitions(), { calendarSource: declaration }))).toThrow();
+  }
   for (const name of calendar.CALENDAR_SOURCE_FUNCTIONS) {
     expect(() =>
       compileCapabilities("calendar", { ...definitions(), calendarSource: { ...definitions().calendarSource!, [name]: "missing" } }),

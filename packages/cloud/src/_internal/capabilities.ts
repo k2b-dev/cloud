@@ -6,6 +6,7 @@ export { capabilityHash } from "./capability-schemas";
 
 import { isServiceError, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
+import { calendarSourceIssues } from "../contracts/calendar-source";
 import {
   CAPABILITY_ERROR_STATUSES,
   CAPABILITY_FRAMEWORK_ERROR_CODES,
@@ -17,6 +18,8 @@ import {
   CapabilityActionPolicySchema,
   type CapabilityActionReviewResult,
   type CapabilityActionSentences,
+  type CapabilityCalendarSourceDeclaration,
+  CapabilityCalendarSourceManifestSchema,
   type CapabilityCommandDefinition,
   type CapabilityCommandManifest,
   CapabilityCommandManifestSchema,
@@ -25,7 +28,6 @@ import {
   CapabilityErrorSchema,
   type CapabilityExecutionContext,
   type CapabilityFileProviderDeclaration,
-  type CapabilityCalendarSourceDeclaration,
   CapabilityIdempotencyKeySchema,
   type CapabilityInvocationResult,
   CapabilityLocalIdSchema,
@@ -45,7 +47,6 @@ import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "../contracts/capabilities";
-import { calendarSourceIssues } from "../contracts/calendar-source";
 import { fileProviderIssues } from "../contracts/file-provider";
 import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../shared/locale";
 import { capabilityActionReceiptIssues, capabilityActionReviewIssues, capabilityQueryChecksActionOutcome } from "./capability-reviews";
@@ -638,7 +639,11 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     throw new Error(`Unsupported capability protocol version ${String(definitions.protocolVersion)}`);
   }
   assertDefinedFields(definitions, DECLARATION_FIELDS, "Capability declaration");
-  if (definitions.calendarSource) assertDefinedFields(definitions.calendarSource, CALENDAR_SOURCE_FIELDS, "calendarSource");
+  if (definitions.calendarSource !== undefined) {
+    assertDefinedFields(definitions.calendarSource, CALENDAR_SOURCE_FIELDS, "calendarSource");
+    // Author declarations must fail here; the manifest reader deliberately drops unreadable declarations.
+    CapabilityCalendarSourceManifestSchema.parse(definitions.calendarSource);
+  }
   if (definitions.fileProvider) assertDefinedFields(definitions.fileProvider, FILE_PROVIDER_FIELDS, "fileProvider");
 
   const localIds = new Set<string>();
