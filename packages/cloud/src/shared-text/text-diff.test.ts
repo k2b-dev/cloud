@@ -77,3 +77,11 @@ test("seeded random edits round-trip exactly, including emoji, CRLF, empty and r
   applyHunks("", "😀\r\n");
   expect(applyHunks("same 😀", "same 😀")).toEqual([]);
 });
+
+test("a large note with two distant edits keeps the unchanged text between them", () => {
+  const paragraph = (index: number) => `Paragraph ${index}: ${"steady words ".repeat(20)}\n\n`;
+  const before = Array.from({ length: 2_000 }, (_, index) => paragraph(index)).join("");
+  expect(before.length).toBeGreaterThan(128 * 1024);
+  const after = before.replace("Paragraph 3:", "Paragraph three:").replace("Paragraph 1996:", "Paragraph last:");
+  expect(applyHunks(before, after)).toHaveLength(2);
+});

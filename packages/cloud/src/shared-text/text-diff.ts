@@ -52,8 +52,9 @@ const replacements = (parts: ArrayChange<string>[], offset: number): TextDiff[] 
 /**
  * Ascending, non-overlapping hunks. Unchanged lines are matched first; only
  * changed blocks are refined into Unicode code points (never half a surrogate).
- * The log's payload budget bounds comparisons across both passes, weighted by
- * token length, and the square root bounds Myers's quadratic edit frontier.
+ * The log's payload budget bounds comparisons across both passes; comparing two
+ * tokens of equal length costs one more unit per 64 characters, since only those
+ * compare beyond their length. The square root bounds Myers's quadratic edit frontier.
  * When either budget runs out, retain the old prefix/suffix replacement for
  * that region: text correctness takes precedence over best-effort item identity.
  */
@@ -62,7 +63,7 @@ export const textDiffHunks = (before: string, after: string, maxPayloadBytes: nu
   let remaining = maxPayloadBytes;
   const exhausted = Symbol("diff budget exhausted");
   const compare = (a: string, b: string) => {
-    remaining -= Math.max(a.length, b.length);
+    remaining -= 1 + (a.length === b.length ? a.length >> 6 : 0);
     if (remaining < 0) throw exhausted;
     return a === b;
   };
@@ -76,9 +77,17 @@ export const textDiffHunks = (before: string, after: string, maxPayloadBytes: nu
     }
   };
   const lines = (text: string) => text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
-  const lineParts = diff(lines(before), lines(after));
+  // Lines both texts share at the start and end cost no budget, so a large note with small edits still diffs.
+  const a = lines(before);
+  const b = lines(after);
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let end = 0;
+  while (end < a.length - start && end < b.length - start && a[a.length - 1 - end] === b[b.length - 1 - end]) end++;
+  const offset = a.slice(0, start).reduce((length, line) => length + line.length, 0);
+  const lineParts = diff(a.slice(start, a.length - end), b.slice(start, b.length - end));
   if (!lineParts) return [minimalTextDiff(before, after)];
-  return replacements(lineParts, 0).flatMap((block) => {
+  return replacements(lineParts, offset).flatMap((block) => {
     const oldText = before.slice(block.index, block.index + block.deleteCount);
     const trimmed = minimalTextDiff(oldText, block.insert);
     const index = block.index + trimmed.index;
