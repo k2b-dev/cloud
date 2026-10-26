@@ -6,6 +6,33 @@ export const QUERY_MAX_LIMIT = 100;
 export const QUERY_MAX_BLOCKS = 20;
 export const QUERY_MAX_VALUES = 100;
 export const QUERY_MAX_STRING_LENGTH = 2_000;
+/** Rows a query shows at once in Book and the editor; the page buttons below it show the others. */
+export const QUERY_PAGE_SIZE = 20;
+/** The address keeps the page of each query as `blocks=<line>.<page>,…`, so a reload or a live refresh shows the same rows. */
+export const QUERY_PAGES_PARAM = "blocks";
+const QUERY_MAX_PAGE = 1_000_000;
+
+/** Rows per page of one query: its limit, at most a page. */
+export const queryPageSize = (query: Pick<QueryBlock, "limit">): number => Math.min(query.limit, QUERY_PAGE_SIZE);
+
+/** The one-based page of each query, by the query's source line; anything malformed is page 1. */
+export const parseQueryPages = (value: string | null | undefined): Map<number, number> => {
+  const pages = new Map<number, number>();
+  for (const entry of (value ?? "").split(",").slice(0, QUERY_MAX_BLOCKS)) {
+    const match = /^(\d{1,7})\.(\d{1,7})$/.exec(entry);
+    const line = Number(match?.[1]);
+    const page = Number(match?.[2]);
+    if (match && line >= 1 && page > 1 && page <= QUERY_MAX_PAGE) pages.set(line, page);
+  }
+  return pages;
+};
+
+export const formatQueryPages = (pages: ReadonlyMap<number, number>): string =>
+  [...pages]
+    .filter(([, page]) => page > 1)
+    .sort(([left], [right]) => left - right)
+    .map(([line, page]) => `${line}.${page}`)
+    .join(",");
 
 export type NotebookBlockDiagnosticCode =
   | "duplicate-key"

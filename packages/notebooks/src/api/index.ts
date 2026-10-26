@@ -49,6 +49,7 @@ import { NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY }
 import { NOTE_PATH_MAX_LENGTH, NOTE_PATH_MAX_SEGMENTS } from "@/lib/note-path";
 import { encodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, NOTE_PDF_OMISSIONS_HEADER_MAX_BYTES } from "@/lib/pdf-omissions";
 import { PRESENTATION_MODES } from "@/lib/presentation-mode";
+import { QUERY_MAX_BLOCKS } from "@/lib/query-blocks";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
 import { InvalidActivityCursorError, NOTEBOOK_ACTIVITY_ACTIONS } from "../service/activity";
@@ -564,7 +565,16 @@ const BookSnapshotSchema = z.object({
 // Same request envelope budget as a collaboration sync payload. Preview never
 // persists the draft; query block/row work is further bounded by its parser.
 const BLOCK_PREVIEW_MAX_REQUEST_BYTES = 8_000_000;
-const BlockPreviewInputSchema = z.object({ markdown: z.string().max(BLOCK_PREVIEW_MAX_REQUEST_BYTES).optional() }).strict();
+const BlockPreviewInputSchema = z
+  .object({
+    markdown: z.string().max(BLOCK_PREVIEW_MAX_REQUEST_BYTES).optional(),
+    pages: z
+      .record(z.string().regex(/^\d{1,7}$/), z.number().int().min(1).max(1_000_000))
+      .refine((pages) => Object.keys(pages).length <= QUERY_MAX_BLOCKS)
+      .optional()
+      .describe("The page each query shows, by the query's one-based source line; other queries show their first page"),
+  })
+  .strict();
 const BlockPreviewSchema = z.object({
   markdown: z.string(),
   blocks: z.array(z.object({ line: z.number().int().positive(), html: z.string() })),
@@ -1479,7 +1489,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const actor = requireUserBackedActor(c);
       if (!actor.ok) return respond(c, actor);
-      const { markdown } = c.req.valid("json");
+      const { markdown, pages } = c.req.valid("json");
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, markdown === undefined ? "read" : "write");
       if (error) return error;
       const result = await loadBookBlockPreview({
@@ -1490,6 +1500,7 @@ const app = new Hono<AuthContext>()
         bypassAccess: hasRole(actor.data, "admin"),
         locale: getLocale(c),
         ...(markdown === undefined ? {} : { markdown }),
+        pages: new Map(Object.entries(pages ?? {}).map(([line, page]) => [Number(line), page])),
       });
       c.header("Cache-Control", "private, no-store");
       if (result.kind === "denied") return respond(c, fail(err.forbidden(messages(c).accessDenied)));

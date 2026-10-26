@@ -5,7 +5,8 @@
   "type": "module",
   "module": "src/index.ts",
   "scripts": {
-    "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
+    "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false",
+    "test": "bun test --isolate"
   },
   "dependencies": {
     "@k2b/cloud": "workspace:*",
