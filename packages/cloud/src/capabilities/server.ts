@@ -6,8 +6,10 @@ import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabiliti
 import { env } from "../config/env";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
+  CAPABILITY_MAX_CATALOG_BYTES,
   CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
   CapabilityActionReviewDataSchema,
+  CapabilityCatalogSchema,
   type CapabilityOrigin,
   capabilityResultSchema,
 } from "../contracts/capabilities";
@@ -186,7 +188,7 @@ export const invokeCapabilityWithDataSchema = <TDataSchema extends z.ZodType, TI
 ): Promise<CapabilityClientResult<z.output<TDataSchema>>> => invokeCapabilityWithResultSchema(invocation, dataSchema, caller);
 
 export const listCapabilityCatalog = async (
-  options: { cursor?: string; limit?: number; locale?: string; authority?: RequestAuthority | null } = {},
+  options: { cursor?: string; limit?: number; locale?: string; authority?: RequestAuthority | null; caller?: CapabilityCaller } = {},
 ): Promise<CapabilityCatalogClientResult> => {
   const limit = options.limit ?? 25;
   const messages = capabilityMessages(options.locale);
@@ -197,6 +199,27 @@ export const listCapabilityCatalog = async (
     };
   }
   try {
+    if (options.caller) {
+      const caller = options.caller;
+      if (options.authority) throw new Error("Use one catalog authority source");
+      if (caller.authority && (caller.authorization || caller.cookie || caller.mandate || caller.transport))
+        throw new Error("Use exactly one capability authority source");
+      if (caller.authority)
+        return {
+          ok: true,
+          data: await loadCapabilityCatalogPage({ cursor: options.cursor, limit }, {}, caller.locale ?? options.locale, caller.authority),
+        };
+      if (caller.mandate) throw new Error("Calendar discovery requires request credentials");
+      const query = new URLSearchParams({ limit: String(limit) });
+      if (options.cursor) query.set("cursor", options.cursor);
+      const request = new Request(await callerRequest(caller, `/api/capabilities/v1/catalog?${query}`), { method: "GET" });
+      return await readCapabilityResponse(
+        await (caller.transport ?? fetch)(request),
+        CapabilityCatalogSchema,
+        CAPABILITY_MAX_CATALOG_BYTES,
+        caller.signal,
+      );
+    }
     return {
       ok: true,
       data: await loadCapabilityCatalogPage({ cursor: options.cursor, limit }, {}, options.locale, options.authority ?? null),
@@ -333,6 +356,22 @@ export async function transferCapabilityStream(
   return caller.transport ? caller.transport(request) : fetch(request, { redirect: "error" });
 }
 
+export {
+  CALENDAR_VIEW_MAX_RANGE_MS,
+  type CalendarReadResult,
+  CalendarReadResultSchema,
+  type CalendarSelection,
+  CalendarSourceErrorSchema,
+  type CalendarSourceListEntry,
+  CalendarSourceListEntrySchema,
+  type CalendarSourceState,
+  CalendarSourceStateSchema,
+  type CalendarSourceSummary,
+  CalendarSourceSummarySchema,
+  CalendarViewRangeSchema,
+  listCalendarSources,
+  readCalendarEvents,
+} from "./calendar-sources";
 export {
   actionReview,
   type CapabilityReviewForms,
