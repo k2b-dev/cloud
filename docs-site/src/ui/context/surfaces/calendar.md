@@ -98,7 +98,9 @@ follow, the hour gutter stays in view, and the vertical scrollbar stays at the
 frame's edge. An event or day that is selected or focused at the start edge
 stops beside the hour gutter, not under it.
 
-Limit the switcher with `views`. `getDateHref`, `getViewHref`, and
+Limit the switcher with `views`, or leave it out with `viewSwitcher={false}`
+when the page shows the views elsewhere, such as tabs in its head; the view
+commands stay. `getDateHref`, `getViewHref`, and
 `getEventHref` keep navigation functional in the server response.
 `onNavigate` progressively enhances those links after mount.
 
@@ -556,7 +558,7 @@ type CalendarEventTimeChange = {
 
 ```ts
 type CalendarProps<V extends string = never> = {
-  date: Date | string; events: CalendarEvent[]; view?: CalendarView | V; views?: CalendarView[];
+  date: Date | string; events: CalendarEvent[]; view?: CalendarView | V; views?: CalendarView[]; viewSwitcher?: boolean;
   customViews?: CalendarCustomView<V>[]; children?: JSX.Element; labels?: CalendarLabels; dateConfig?: DateContext; timeZone?: string; firstDayOfWeek?: 0 | 1;
   withWeekNumbers?: boolean; startHour?: number; endHour?: number;
   dayHours?: readonly [start: number, end: number]; range?: CalendarRange;

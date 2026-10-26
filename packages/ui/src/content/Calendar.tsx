@@ -188,6 +188,11 @@ export type CalendarProps<V extends string = never> = {
   events: CalendarEvent[];
   view?: CalendarView | V;
   views?: CalendarView[];
+  /**
+   * `false` leaves the view switcher out of the toolbar, for a host that shows the views elsewhere, such as tabs in
+   * its page head. The view commands stay.
+   */
+  viewSwitcher?: boolean;
   /** Views after the built-in ones. While one is active, `children` is the body and the header pages by day. */
   customViews?: CalendarCustomView<V>[];
   /** The body of the active custom view. */
@@ -975,19 +980,21 @@ const CalendarHeader = <V extends string>(props: {
       </Show>
       <div class="k2b-calendar-header__actions">
         {todayButton()}
-        <Show
-          when={!props.owner.onViewChange && props.owner.getViewHref}
-          fallback={
-            <SegmentedControl
-              class="k2b-calendar-view-switcher"
-              value={() => (props.view === "mobile-month" ? "month" : props.view)}
-              onValueChange={goView}
-              ariaLabel={calendarMessages().calendarView}
-              options={viewOptions()}
-            />
-          }
-        >
-          <CalendarViewLinks owner={props.owner} view={props.view} options={viewOptions()} focusDay={props.focusDay} />
+        <Show when={props.owner.viewSwitcher !== false}>
+          <Show
+            when={!props.owner.onViewChange && props.owner.getViewHref}
+            fallback={
+              <SegmentedControl
+                class="k2b-calendar-view-switcher"
+                value={() => (props.view === "mobile-month" ? "month" : props.view)}
+                onValueChange={goView}
+                ariaLabel={calendarMessages().calendarView}
+                options={viewOptions()}
+              />
+            }
+          >
+            <CalendarViewLinks owner={props.owner} view={props.view} options={viewOptions()} focusDay={props.focusDay} />
+          </Show>
         </Show>
         {props.owner.toolbarActions}
         <Show when={props.nav.commands().length > 0}>

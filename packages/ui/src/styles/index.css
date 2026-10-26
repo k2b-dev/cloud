@@ -5757,6 +5757,82 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: min(var(--k2b-focus-offset), 1px);
 }
 
+/* A row with a secondary action, such as "Only": the action keeps its place while hidden, so the row never changes
+   width, and shows while the row is hovered or focused, and always where the pointer is coarse. */
+.k2b-ui .k2b-dropdown__pair {
+  display: flex;
+  align-items: center;
+  border-radius: 0.375rem;
+  transition: background-color 150ms ease-out;
+}
+
+.k2b-ui .k2b-dropdown__pair:hover,
+.k2b-ui .k2b-dropdown__pair:focus-within {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-dropdown__pair > .k2b-dropdown__item {
+  min-width: 0;
+  flex: 1;
+}
+
+.k2b-ui .k2b-dropdown__pair > .k2b-dropdown__item:hover,
+.k2b-ui .k2b-dropdown__pair > .k2b-dropdown__item:focus-visible {
+  background: transparent;
+}
+
+.k2b-ui :is(.k2b-dropdown__secondary, .k2b-dropdown__label-action) {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-muted);
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-dropdown__secondary {
+  margin-inline-end: 0.25rem;
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-dropdown__pair:is(:hover, :focus-within) > .k2b-dropdown__secondary {
+  visibility: visible;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-dropdown__secondary {
+    visibility: visible;
+  }
+}
+
+.k2b-ui :is(.k2b-dropdown__secondary, .k2b-dropdown__label-action):hover {
+  color: var(--k2b-text);
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui :is(.k2b-dropdown__secondary, .k2b-dropdown__label-action):focus-visible {
+  color: var(--k2b-text);
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
+}
+
+/* The label row keeps the label's own spacing; its action sits at the end without making the row taller. */
+.k2b-ui .k2b-dropdown__label--action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-block: 0.25rem 0;
+  padding-inline-end: 0.25rem;
+}
+
 /* Opt-in touch menus leave the compact default and shared ContextMenu rows unchanged. */
 .k2b-ui .k2b-dropdown__menu[data-variant="touch"] {
   min-width: min(18rem, 100vw - 2rem);
@@ -5873,6 +5949,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* A tag's colour sits beside its name, never alone. */
+/* The colors of the chosen options, overlapping a little, in the place of the icon. */
+.k2b-ui .k2b-filter-chip__swatches {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding-inline-end: 0.125rem;
+}
+
+.k2b-ui .k2b-filter-chip__swatches > .k2b-filter-chip__dot {
+  margin: 0;
+  box-shadow: 0 0 0 1.5px var(--k2b-surface);
+  vertical-align: middle;
+}
+
+.k2b-ui .k2b-filter-chip__swatches > .k2b-filter-chip__dot + .k2b-filter-chip__dot {
+  margin-inline-start: -0.1875rem;
+}
+
 .k2b-ui .k2b-filter-chip__dot {
   display: inline-block;
   width: 0.5rem;
