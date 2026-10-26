@@ -593,7 +593,7 @@ test("app tooltips keep German currency spacing and function formats through red
       expect(JSON.parse(decodeChartAttribute(mark[2]!))).toEqual(cloudAiChartTooltip(rows.columns(), row));
       expect(svg).toContain(
         "tooltip" in extra
-          ? "<title>Jan · Umsatz: 1.200,00\u00a0€</title>"
+          ? "<title>Jan · Umsatz: 1.200\u00a0€</title>"
           : `<title>Jan · Wert: 1200 ${"format" in extra ? "units" : "kWh"}</title>`,
       );
     }
@@ -613,7 +613,7 @@ test("chart print tables preserve German currency, custom formats and escaped te
     ),
   );
   expect(printedTable(currency).headers.map((col) => col.label)).toEqual(["Kategorie", "Umsatz"]);
-  expect(printedTable(currency).rows).toEqual([["Jan", "1.200,00\u00a0€"]]);
+  expect(printedTable(currency).rows).toEqual([["Jan", "1.200\u00a0€"]]);
 
   const custom = String(
     chart(

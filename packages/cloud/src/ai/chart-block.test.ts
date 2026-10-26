@@ -436,6 +436,20 @@ describe("richer chart contracts", () => {
     expect(space(cloudAiNumberFormatters(euro, "de", [418000, 12.5]).value(418000))).toBe("418.000,00 €");
     expect(space(cloudAiNumberFormatters(euro, "de").value(418000))).toBe("418.000,00 €");
     expect(space(cloudAiNumberFormatters({ ...euro, decimals: 2 }, "de", [418000]).value(418000))).toBe("418.000,00 €");
+    // Compact notation keeps its fraction, so neighbors stay distinct.
+    expect(space(cloudAiNumberFormatters({ ...euro, compact: true }, "de", [1200, 1400]).value(1200))).not.toBe(
+      space(cloudAiNumberFormatters({ ...euro, compact: true }, "de", [1200, 1400]).value(1400)),
+    );
+    // Computed or bounding values count too: quartiles of whole observations, gauge bounds and sparklines.
+    const cells = (input: unknown) =>
+      cloudAiChartTable(parse(input), "de")
+        .rows.flatMap((row) => Object.values(row.cells))
+        .map(space);
+    expect(cells({ kind: "boxplot", title: "B", data: [{ label: "A", values: [1, 2, 3, 4] }], yAxis: { format: euro } })).toContain(
+      "1,75 €",
+    );
+    expect(cells({ kind: "gauge", title: "G", value: 1, min: 0.5, max: 2.5, format: euro })).toContain("0,50 €");
+    expect(cells({ kind: "sparkline", title: "S", data: [1, 2, 3], tooltip: { format: euro } })).toContain("2 €");
     // The chart's printed values and its tooltip rows read the same values.
     const input = parse({
       kind: "bar",

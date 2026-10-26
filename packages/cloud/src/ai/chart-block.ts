@@ -209,14 +209,18 @@ type Formats = {
 
 /**
  * Value precision and tick precision share the same style and units; ticks must remain distinct. A currency without
- * `decimals` writes cents only when one of the formatted `values` has them: 418,000 € rather than 418,000.00 €.
+ * `decimals` or compact notation writes cents only when one of the formatted `values` has them: 418,000 € rather than
+ * 418,000.00 €.
  */
 export const cloudAiNumberFormatters = (format: CloudAiNumberFormat | undefined, locale: string, values?: readonly number[]) => {
   const common: Intl.NumberFormatOptions = {
     style: format?.style === "number" ? "decimal" : format?.style,
     currency: format?.currency,
   };
-  const decimals = format?.decimals ?? (format?.style === "currency" && values?.length && values.every(Number.isInteger) ? 0 : undefined);
+  // Compact notation keeps its fraction: 1.2K and 1.4K must not both read 1K.
+  const decimals =
+    format?.decimals ??
+    (format?.style === "currency" && !format.compact && values?.length && values.every(Number.isInteger) ? 0 : undefined);
   const value = new Intl.NumberFormat(
     locale,
     format
@@ -248,17 +252,21 @@ const formattedValues = (input: CloudAiChartInput): number[] => {
       return [...input.series.flatMap((series) => series.data.map((point) => point.y)), ...referencesOf(input, "y")];
     case "bar":
       return [...input.data.map((item) => item.value), ...referencesOf(input, "y")];
-    case "boxplot":
-      return [...input.data.flatMap((item) => item.values), ...referencesOf(input, "y")];
     case "pie":
     case "donut":
     case "heatmap":
-    case "barGauge":
       return input.data.map((item) => item.value);
+    case "barGauge":
+      return [...input.data.flatMap((item) => [item.value, item.min, item.max]), input.min, input.max].filter(
+        (value) => value !== undefined,
+      );
     case "stat":
       return [input.value, ...(input.delta === undefined ? [] : [input.delta]), ...(input.sparkline ?? [])];
     case "gauge":
-      return [input.value];
+      return [input.value, input.min, input.max].filter((value) => value !== undefined);
+    case "sparkline":
+      return input.data;
+    // Box plots write quartiles they compute, and histograms bin edges: those keep their cents.
     default:
       return [];
   }

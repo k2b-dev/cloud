@@ -309,7 +309,8 @@ export function createQueryBlockPreviews(options: {
       const source = block.type === "chart" ? document.slice(block.from, block.to) : "";
       const html = result?.blocks.find((entry) => entry.line === block.line)?.html ?? (source ? drawnCharts.get(source) : undefined);
       const frame = block.type === "chart" ? chartBlockFrame(source.split("\n").slice(1, block.closed ? -1 : undefined)) : null;
-      const height = frame && html === undefined ? heightAt(block.line) : undefined;
+      // A failed refresh shows the placeholder in place of a kept drawing: it keeps that drawing's height too.
+      const height = frame && (html === undefined || next.failed) ? heightAt(block.line) : undefined;
       const chart = frame && height ? { ...frame, height } : frame;
       const diagnostic = result?.diagnostics
         .filter((entry) => entry.line >= block.line && entry.line <= state.doc.lineAt(block.to).number)
