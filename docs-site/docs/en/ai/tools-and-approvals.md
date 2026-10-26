@@ -213,12 +213,14 @@ Axes accept `label`, `domain: [min, max]`, `ticks` (2..12), `scale: "linear" |
 "currency", currency?, unit?, decimals?, compact?}`. Currency requires an
 uppercase three-letter code exactly when style is currency; percent takes
 fractions, decimals is 0..10, and unit is a suffix of at most 12 characters.
+A currency without decimals shows cents only when a value of the chart has
+them.
 Date x axes take `{date: "day" | "minute" | "second"}`. Bar charts label every
 category and print each value with the y axis format when it stays readable;
 `showValues: false` turns the values off, `true` keeps them even where they
 need rows. Few short labels stand below columns. Many or long labels make one
-row per category, with long labels wrapped onto two lines; the rows scroll
-inside a chat chart's fixed frame. Pie and donut slices show shares, so their
+row per category, with long labels wrapped onto two lines; a single chat chart
+grows with its rows up to 40rem and scrolls them inside beyond it. Pie and donut slices show shares, so their
 format applies to the values in tooltips and the data table.
 
 Every chart kind accepts `tooltip: {label?, format?}`; groups do not. `label`
