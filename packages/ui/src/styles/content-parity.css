@@ -1880,8 +1880,11 @@
   white-space: nowrap;
 }
 
+/* One line of all-day chips is always there, empty or not, so a late all-day entry moves nothing. */
 .k2b-ui .k2b-calendar-days__all-day {
+  box-sizing: border-box;
   display: flex;
+  min-height: 2rem;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.375rem;

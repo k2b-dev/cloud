@@ -281,7 +281,9 @@ and the visible hours.
   there, and in the week view the arrow keys reach the chips after the
   waking hours.
 - **The day view** is one scroll through the loaded days with each day's
-  heading on top while the day is in view. Runs of empty days merge into one
+  heading on top while the day is in view. Each day keeps one line for its
+  all-day entries, also while it has none, so an entry that loads later moves
+  nothing; more entries add lines. Runs of empty days merge into one
   row, "Nothing planned", that opens them; today, the day of `date`, and a day
   that Go to finds inside such a run never fold. When loaded days join a run
   at either end, it stays the same row, so its focused "Nothing planned"
@@ -299,8 +301,9 @@ and the visible hours.
   view stays there. The previous and next buttons move to the start of the week before or after,
   and Today returns to this week, on a phone to today within it. Nights open
   for the whole strip when an entry of the shown week lies in one. The all-day
-  row is as high as the weeks in view need, so a week that loads off screen
-  moves nothing. It opens at the start of the week of `date`, or on a phone
+  row is as high as the weeks in view need, at least one line, so a week that
+  loads off screen moves nothing, and neither does an entry that arrives for an
+  empty row. It opens at the start of the week of `date`, or on a phone
   at that day within its week.
 - **Entries.** Timed events are bands as long as they last, side by side when
   they overlap, with their time; the running one fills up with the time that
