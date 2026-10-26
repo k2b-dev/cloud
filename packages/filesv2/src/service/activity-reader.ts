@@ -58,6 +58,14 @@ export type ActivityReaderDependencies = {
     historyAvailable: boolean;
     readOnlyAuthorized(publicBaseId: string, path: string): Promise<HistoryAccess>;
   }>;
+  /** One durable read record before a foreign administrator snapshot is exposed. */
+  recordAdminRead(
+    call: ActivityReadCall,
+    bases: AuditBinding[],
+    config: Config,
+    scope: Record<string, unknown>,
+    budget: ActivityReadBudget,
+  ): Promise<void>;
   bindings: Pick<typeof bindings, "byId">;
   /** Service-scoped identity reads carry the request signal through the transport. */
   connect(config: Config, signal?: AbortSignal): FilesFilegate;
@@ -96,7 +104,9 @@ const cursorSchema = z
     matches: z.number().int().min(0).max(ACTIVITY_SEARCH_LIMIT),
   })
   .strict();
+type AuditBinding = Pick<Binding, "id" | "root" | "path" | "identity_name">;
 type Projection = {
+  foreignBindings: AuditBinding[];
   directory: boolean;
   effectiveTime: string;
   entry: ActivityEntry;
@@ -147,13 +157,25 @@ export function parseActivityInput(rawInput: ActivityInput) {
 /** One request-local projection context; caches never survive a request or a membership change. */
 export function createActivityReader(deps: ActivityReaderDependencies) {
   const data = deps.data ?? activityReaderData;
-  async function context(call: ActivityReadCall, budget: ActivityReadBudget) {
+  async function context(call: ActivityReadCall, budget: ActivityReadBudget, readScope: Record<string, unknown>) {
     const { userId, admin, config, allowedBindingIds, historyAvailable, readOnlyAuthorized } = await budget.run(() =>
       deps.requestContext(call.actor, budget),
     );
     // History needs the actual storage configuration, even when candidate scoping would otherwise look empty.
     if (config.unreadable) throw new FilesError("configuration_unreadable", 409);
     const allowed = new Set(allowedBindingIds);
+    const selectedBindings = new Map<string, AuditBinding>();
+    function select(projected: Projection) {
+      for (const base of projected.foreignBindings) selectedBindings.set(base.id, base);
+    }
+    function selectBinding(base: AuditBinding) {
+      if (admin && !allowed.has(base.id)) selectedBindings.set(base.id, base);
+    }
+    async function finish<T>(result: T): Promise<T> {
+      if (selectedBindings.size)
+        await budget.run(() => deps.recordAdminRead(call, [...selectedBindings.values()], config, readScope, budget));
+      return result;
+    }
     const scope = { admin, userId, bindingIds: allowedBindingIds, serverUrl: config.url };
     const bindingCache = new Map<string, Promise<Binding | null>>();
     const identityCache = new Map<string, Promise<boolean>>();
@@ -194,6 +216,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
       current.node.path === target;
     async function project(row: ActivityCandidate): Promise<Projection | null> {
       budget.check();
+      const foreignBindings = new Map<string, AuditBinding>();
       if (!admin && !allowed.has(row.base_id ?? "") && !allowed.has(row.base_after_id ?? "")) return null;
       const parsed = HistoryAction.safeParse(row.action);
       if (!parsed.success) return null;
@@ -249,7 +272,10 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
         });
         const invisible = { value: hidden, base: null, relative: null };
         if (!base || base.area !== "cloud" || base.root !== root) return invisible;
-        if (admin) return { value: row.metadataUnknown ? minimal(displayBaseId) : full("snapshot"), base: publicId(base), relative };
+        if (admin) {
+          if (!allowed.has(base.id)) foreignBindings.set(base.id, base);
+          return { value: row.metadataUnknown ? minimal(displayBaseId) : full("snapshot"), base: publicId(base), relative };
+        }
         if (!allowed.has(base.id) || base.lifecycle !== "active" || relative === null || row.server_url !== config.url || config.unreadable)
           return invisible;
         if (row.actor_kind === "user" && row.actor_user_id === userId)
@@ -300,6 +326,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
       if (before.value.visibility === "hidden" && after.value.visibility === "hidden") return null;
       const full = before.value.visibility === "full" || after.value.visibility === "full";
       return {
+        foreignBindings: [...foreignBindings.values()],
         directory: !row.metadataUnknown && row.directory,
         effectiveTime: row.effective_time,
         bases: { before: before.base, after: after.base },
@@ -325,7 +352,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
         },
       };
     }
-    return { project, access, matches, binding, config, scope, budget, historyAvailable };
+    return { project, access, matches, binding, config, scope, budget, historyAvailable, select, selectBinding, finish };
   }
   async function names(items: Pick<ActivityEntry, "actor">[], budget: ActivityReadBudget) {
     budget.check();
@@ -433,18 +460,19 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
     async activityEntry(call: ActivityReadCall, input: { activityId: string }): Promise<ActivityEntry> {
       return withActivityReadBudget(call.requestAbort, async (budget) => {
         const id = z.uuid().parse(input.activityId);
-        const current = await context(call, budget);
+        const current = await context(call, budget, { endpoint: "entry", activityId: id });
         const row = await budget.run(() => data.byId(id, budget));
         const projected = row ? await current.project(row) : null;
         if (!projected) throw new FilesError("not_found", 404);
         await names([projected.entry], budget);
-        return projected.entry;
+        current.select(projected);
+        return current.finish(projected.entry);
       });
     },
     async activityBatchContext(call: ActivityReadCall, input: { activityId: string }): Promise<ActivityBatchContext> {
       return withActivityReadBudget(call.requestAbort, async (budget) => {
         const id = z.uuid().parse(input.activityId);
-        const current = await context(call, budget);
+        const current = await context(call, budget, { endpoint: "batch", activityId: id });
         const anchor = await budget.run(() => data.byId(id, budget));
         const projected = anchor ? await current.project(anchor) : null;
         const batchId = anchor?.batch_id;
@@ -455,9 +483,16 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           data.candidates({ scope: current.scope, batch: { id: batchId, anchorId: id }, position: null, direction: "desc", limit }, budget),
         );
         let visibleCount = 1;
-        for (const peer of peers) if (await current.project(peer)) visibleCount++;
+        current.select(projected);
+        for (const peer of peers) {
+          const visible = await current.project(peer);
+          if (visible) {
+            visibleCount++;
+            current.select(visible);
+          }
+        }
         budget.check();
-        return { visibleCount, complete: peers.length < limit };
+        return current.finish({ visibleCount, complete: peers.length < limit });
       });
     },
     async activity(call: ActivityReadCall, rawInput: ActivityInput = {}): Promise<ActivityPage> {
@@ -484,7 +519,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
             throw new FilesError("invalid_cursor");
           }
         }
-        const current = await context(call, budget);
+        const current = await context(call, budget, { endpoint: "activity", ...input });
         if (input.baseId?.startsWith("freeipa:") || (!input.baseId && !current.historyAvailable))
           throw new FilesError("history_unavailable", 409);
         const rows =
@@ -514,6 +549,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           position = positionOf(row);
           const projected = await current.project(row);
           if (!projected || !filter(projected, input)) continue;
+          current.select(projected);
           items.push(projected.entry);
           matches++;
           if (items.length >= input.limit || (input.q && matches >= ACTIVITY_SEARCH_LIMIT)) break;
@@ -528,7 +564,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
             : null;
         const batches = new Map<string, number>();
         for (const item of items) if (item.batchId) batches.set(item.batchId, (batches.get(item.batchId) ?? 0) + 1);
-        return {
+        return current.finish({
           items,
           next,
           visibleCount: items.length,
@@ -536,7 +572,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           exhausted,
           scanLimitReached,
           searchLimitReached,
-        };
+        });
       });
     },
     async shareAccess(call: ActivityReadCall, rawInput: ShareAccessInput): Promise<ShareAccessCounts> {
@@ -547,16 +583,18 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           throw new FilesError("not_found", 404);
         const base = await budget.run(() => deps.bindings.byId(share.base_id));
         if (base?.area !== "cloud") throw new FilesError("history_unavailable", 409);
-        const current = await context(call, budget);
+        const current = await context(call, budget, { endpoint: "shareAccess", ...input });
         if (!current.scope.admin && !current.scope.bindingIds.includes(base.id)) throw new FilesError("not_found", 404);
-        return budget.run(() => data.shareAccess(input, { now: deps.now?.(), budget }));
+        const counts = await budget.run(() => data.shareAccess(input, { now: deps.now?.(), budget }));
+        current.selectBinding(base);
+        return current.finish(counts);
       });
     },
     async movementChain(call: ActivityReadCall, raw: MovementChainInput): Promise<ActivityChain> {
       return withActivityReadBudget(call.requestAbort, async (budget) => {
         const input = MovementChainInput.parse(raw);
         const id = input.activityId;
-        const current = await context(call, budget);
+        const current = await context(call, budget, { endpoint: "chain", ...input });
         const source = await budget.run(() => data.byId(id, budget));
         const projected = source ? await current.project(source) : null;
         if (!source || !projected) throw new FilesError("not_found", 404);
@@ -569,7 +607,8 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           truncated: false,
         };
         // Copy has its own destination identity and never continues the source's movement chain.
-        if (!movementActions.has(projected.entry.action) || projected.entry.state !== "done" || source.metadataUnknown) return result;
+        if (!movementActions.has(projected.entry.action) || projected.entry.state !== "done" || source.metadataUnknown)
+          return current.finish(result);
         let entry = projected.entry;
         let path = source.path_after;
         let root = source.root_after ?? source.root;
@@ -600,8 +639,9 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
         // An ancestor's stable ID identifies that folder, never the descendant opened under its old address.
         // Keep suffix-derived chains path-only throughout, including after later exact child moves.
         const itemId = suffix ? null : (source.item_after_id ?? source.item_id);
-        if (path === null || entry.after.visibility === "hidden") return result;
+        if (path === null || entry.after.visibility === "hidden") return current.finish(result);
         if (suffix) path = path ? path + suffix : suffix.slice(1);
+        current.select(projected);
         result.hops.push({
           activityId: entry.id,
           time: entry.time,
@@ -682,6 +722,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           path = candidate.path_after + suffix;
           root = candidate.root_after ?? candidate.root;
           baseId = candidate.base_after_id ?? candidate.base_id;
+          current.select(next);
           entry = next.entry;
           result.hops.push({
             activityId: entry.id,
@@ -697,7 +738,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           result.hops.map((hop) => ({ actor: hop.actor })),
           budget,
         );
-        if (result.truncated && !itemId) return result;
+        if (result.truncated && !itemId) return current.finish(result);
         const base = await current.binding(baseId);
         if (
           !base ||
@@ -706,28 +747,28 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           source.server_url !== current.config.url ||
           current.config.unreadable
         )
-          return result;
+          return current.finish(result);
         // Even own saved snapshots do not authorize resolving or exposing a new location.
         const baseAccess = await current.access(base, "");
-        if (!current.matches(baseAccess, base, base.path) || !baseAccess?.node.directory) return result;
+        if (!current.matches(baseAccess, base, base.path) || !baseAccess?.node.directory) return current.finish(result);
         if (itemId) {
-          if (!baseAccess.info.stableIds) return result;
+          if (!baseAccess.info.stableIds) return current.finish(result);
           try {
             const resolved = await budget.run(() => deps.connect(current.config, budget.signal).root(root).resolve(itemId));
-            if (resolved.id !== itemId || resolved.directory !== source.directory) return result;
+            if (resolved.id !== itemId || resolved.directory !== source.directory) return current.finish(result);
             path = resolved.path;
           } catch (error) {
-            if (error instanceof FilegateError && [400, 403, 404, 409].includes(error.status)) return result;
+            if (error instanceof FilegateError && [400, 403, 404, 409].includes(error.status)) return current.finish(result);
             throw error;
           }
         }
         const relative = relativeTo(path, base.path);
-        if (relative === null) return result;
+        if (relative === null) return current.finish(result);
         const endpoint = await current.access(base, relative, true);
-        if (!current.matches(endpoint, base, path) || (itemId && endpoint?.node.id !== itemId)) return result;
+        if (!current.matches(endpoint, base, path) || (itemId && endpoint?.node.id !== itemId)) return current.finish(result);
         result.endpoint = { baseId: publicId(base), path: relative, itemId };
         result.certainty = itemId ? "verified" : "probable";
-        return result;
+        return current.finish(result);
       });
     },
   };

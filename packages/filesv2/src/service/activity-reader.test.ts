@@ -1123,3 +1123,26 @@ test("administrators retain archive locations outside a local binding's former h
   expect(result.items).toHaveLength(1);
   expect(result.items[0]?.after).toMatchObject({ visibility: "full", source: "snapshot", path: "archive/alice/file", relativePath: null });
 });
+
+for (const surface of ["page", "entry", "batch", "chain", "share"] as const) {
+  test(`admin ${surface} read records foreign scope once, while own history stays unaudited`, async () => {
+    const f = historyFixture();
+    f.setAdmin(true);
+    const read = () =>
+      surface === "page"
+        ? f.reader.activity(call)
+        : surface === "entry"
+          ? f.reader.activityEntry(call, { activityId: candidate().id })
+          : surface === "batch"
+            ? f.reader.activityBatchContext(call, { activityId: candidate().id })
+            : surface === "chain"
+              ? f.reader.movementChain(call, { activityId: candidate().id })
+              : f.reader.shareAccess(call, { shareId: "50000000-0000-4000-8000-000000000001", from: "2030-05-01", to: "2030-05-15" });
+    await read();
+    expect(f.adminReads).toHaveLength(0);
+    f.setMember(false);
+    await read();
+    expect(f.adminReads).toHaveLength(1);
+    expect(f.adminReads[0]).toHaveProperty("endpoint");
+  });
+}

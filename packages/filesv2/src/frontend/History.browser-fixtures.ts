@@ -147,10 +147,13 @@ export const historyActivity = historyPage([
 export function historySnapshot(source: string): WorkspaceSnapshot {
   const params = new URL(source, "https://files-history.test").searchParams;
   const query = params.get("q");
+  const bases = params.has("mixed")
+    ? [historyBase, { ...historyBase, id: historyBase.id.replace("cloud:", "freeipa:"), area: "freeipa" as const, name: "POSIX" }]
+    : [historyBase];
   if (params.get("file") === historyFile.path)
     return {
       source,
-      bases: { items: [historyBase], issues: [], editor: null },
+      bases: { items: bases, issues: [], editor: null },
       selectedId: historyBase.id,
       directory: historyDirectory,
       detail: { base: historyBase, entry: historyFile },
@@ -159,7 +162,7 @@ export function historySnapshot(source: string): WorkspaceSnapshot {
     };
   return {
     source,
-    bases: { items: [historyBase], issues: [], editor: null },
+    bases: { items: bases, issues: [], editor: null },
     selectedId: historyBase.id,
     directory: null,
     errorCode: null,

@@ -30,8 +30,11 @@ export type NoteQueryResult = {
   columns: QueryField[];
   items: NoteQueryItem[];
   total: number;
+  /** The most rows this result holds: the query's limit, or the page size of a paged result. */
   limit: number;
   truncated: boolean;
+  /** For a paged result, the index of its first row among all matches. */
+  offset?: number;
   diagnostics: NoteQueryDiagnostic[];
 };
 
@@ -372,6 +375,8 @@ export const resolveNoteQuery = async (params: {
   boundNotebookId?: string | null;
   /** Only trusted server callers may supply the platform-admin override. */
   bypassAccess?: boolean;
+  /** One page of the matches instead of the first `limit`; a page past the end shows the last one. */
+  page?: { offset: number; size: number };
 }): Promise<NoteQueryResult> => {
   const validation = validateNoteQuery(params.query);
   if (!validation.query) return invalidResult(validation.diagnostics);
@@ -420,7 +425,7 @@ export const resolveNoteQuery = async (params: {
       AND (${predicates})
   `;
 
-  const rows = await sql<DbQueryNote[]>`
+  const select = (limit: number, offset: number) => sql<DbQueryNote[]>`
     SELECT
       n.short_id,
       nb.short_id AS notebook_short_id,
@@ -435,8 +440,18 @@ export const resolveNoteQuery = async (params: {
       COUNT(*) OVER()::int AS total
     ${visibleMatches}
     ORDER BY ${sortRows(query.sort.field, query.sort.direction)}
-    LIMIT ${query.limit}
+    LIMIT ${limit}
+    OFFSET ${offset}
   `;
+  const limit = params.page ? Math.max(1, params.page.size) : query.limit;
+  let offset = params.page ? Math.max(0, params.page.offset) : 0;
+  let rows = await select(limit, offset);
+  if (rows.length === 0 && offset > 0) {
+    // Past the end, for instance after notes left the list: show its last page.
+    const [count] = await sql<{ total: number }[]>`SELECT COUNT(*)::int AS total ${visibleMatches}`;
+    offset = Math.max(0, Math.ceil((count?.total ?? 0) / limit) - 1) * limit;
+    rows = await select(limit, offset);
+  }
 
   const columns = query.columns.length > 0 ? query.columns : (["$title"] as QueryField[]);
   const total = rows[0]?.total ?? 0;
@@ -449,8 +464,9 @@ export const resolveNoteQuery = async (params: {
       values: Object.fromEntries(columns.map((column) => [column, selectedValue(row, column)])),
     })),
     total,
-    limit: query.limit,
-    truncated: total > rows.length,
+    limit,
+    truncated: total > offset + rows.length || offset > 0,
+    ...(params.page ? { offset } : {}),
     diagnostics: [],
   };
 };

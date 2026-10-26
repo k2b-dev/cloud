@@ -800,3 +800,23 @@ for (const lang of ["de", "en"] as const) {
     }, 30_000);
   }
 }
+
+for (const lang of ["de", "en"] as const) {
+  for (const width of [390, 1440]) {
+    test(`mixed overview keeps POSIX guidance in ${lang} at ${width}px`, async () => {
+      const { context, tab, errors } = await open(width, "light", "", lang);
+      try {
+        await tab.goto("http://files-history.test/app/filesv2?view=activity&mixed=1");
+        const notice = tab
+          .locator('.filesv2-history-body [role="status"]')
+          .filter({ hasText: lang === "de" ? "POSIX-Bereiche" : "POSIX areas" });
+        await notice.waitFor({ state: "visible" });
+        expect(await tab.locator(".filesv2-history-row").count()).toBeGreaterThan(0);
+        expect(await tab.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 30_000);
+  }
+}

@@ -1448,6 +1448,16 @@ suite("Files activity with real storage", () => {
     expect(rows).toHaveLength(2);
     expect(rows[1]).toMatchObject({ state: "done", item_id: before.id, item_after_id: before.id });
   });
+  test("history move-back at the original location returns without re-locking or writing", async () => {
+    await service.mkdir(testCall(actor), { baseId: baseId(), path: "history-no-op-original" });
+    await service.rename(testCall(actor), { baseId: baseId(), path: "history-no-op-original", name: "history-no-op-moved" });
+    const [activity] = await sql<{ id: string }[]>`SELECT id FROM filesv2.activity WHERE action='item.rename'`;
+    await service.moveActivityBack(testCall(actor), { activityId: activity!.id });
+    const before = await sql`SELECT id,xmin::text FROM filesv2.activity ORDER BY id`;
+    const result = await service.moveActivityBack(testCall(actor), { activityId: activity!.id });
+    expect(result.entry.path).toBe("history-no-op-original");
+    expect(await sql`SELECT id,xmin::text FROM filesv2.activity ORDER BY id`).toEqual(before);
+  });
   test("history move-back refuses a replacement at the former destination without publishing or recording a move", async () => {
     await service.mkdir(testCall(actor), { baseId: baseId(), path: "history-replaced-original" });
     await service.rename(testCall(actor), { baseId: baseId(), path: "history-replaced-original", name: "history-replaced-moved" });
