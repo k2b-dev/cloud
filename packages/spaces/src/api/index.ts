@@ -1127,6 +1127,7 @@ const app = new Hono<AuthContext>()
             mimeType: file.type || "application/octet-stream",
             content: new Uint8Array(await file.arrayBuffer()),
             userId: access.user?.id ?? null,
+            actor: getSpaceActivityActor(c),
           }),
         );
       } catch (error) {
@@ -1210,6 +1211,7 @@ const app = new Hono<AuthContext>()
           shortId: c.req.param("attachmentId") ?? "",
           itemId: item.data.id,
           spaceId: access.internalId!,
+          actor: getSpaceActivityActor(c),
         }),
         "attachmentDeleted",
       );

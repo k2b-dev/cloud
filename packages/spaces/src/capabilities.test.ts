@@ -861,6 +861,7 @@ describe("spaces capabilities", () => {
       "item.reference.find",
       "item.reference.list",
       "item.search",
+      "space.activity",
       "space.assignee.list",
       "space.browse",
       "space.list",
@@ -2486,4 +2487,49 @@ test("panel place refs select the owning app's public resource reader", () => {
   const reader = resolveCapabilityResourceReader(manifest, ref);
   expect(reader?.localId).toBe("space.read");
   expect(spacesCapabilities.queries["space.read"].input.parse({ id: ref.id })).toEqual({ id: ref.id });
+});
+
+test("space.activity bounds escaped actor labels and resumes without dropping bucket positions", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  const rows = Array.from({ length: 100 }, (_, index) => ({
+    id: String(index + 1),
+    cursor: `position-${index + 1}`,
+    space: { id: spaceUuid, shortId: spaceId, name: space.name, color: space.color },
+    item: { id: itemUuid, shortId: itemId, title: task.title },
+    actor: { kind: "user" as const, id: serviceAccountId, displayName: "\u0001".repeat(5000), avatarHash: null },
+    action: "task.updated",
+    metadata: {},
+    occurrenceCount: 1,
+    createdAt,
+    lastOccurredAt: createdAt,
+  }));
+  spyOn(spacesService.activity, "list").mockImplementation(async (input) => {
+    const offset = input.cursor ? Number(input.cursor.replace("position-", "")) : 0;
+    return { items: rows.slice(offset), nextCursor: null };
+  });
+  const operation = spacesCapabilities.queries["space.activity"];
+  const ids: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const result = await operation.run(operation.input.parse({ space: spaceId, limit: 100, cursor }), userContext);
+    if (!result.ok) throw new Error("Expected an activity page");
+    expect(Buffer.byteLength(JSON.stringify(result.data))).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
+    expect(capabilityResultSchema(operation.data).safeParse(result.data).success).toBeTrue();
+    ids.push(...result.data.data.map((row) => row.id));
+    cursor = result.data.page?.hasMore ? result.data.page.nextCursor : undefined;
+    if (ids.length > rows.length) throw new Error("Activity cursor repeated a page");
+  } while (cursor);
+  expect(ids).toEqual(rows.map((row) => row.id));
+});
+
+test("space.activity stops before listing when the owning reader denies the container", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("none");
+  const list = spyOn(spacesService.activity, "list").mockResolvedValue({ items: [], nextCursor: null });
+  const operation = spacesCapabilities.queries["space.activity"];
+  const result = await operation.run(operation.input.parse({ space: spaceId }), userContext);
+  expect(result.ok).toBeFalse();
+  if (!result.ok) expect(result.error.status).toBe(404);
+  expect(list).not.toHaveBeenCalled();
 });

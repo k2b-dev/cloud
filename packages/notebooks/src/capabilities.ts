@@ -14,6 +14,8 @@ import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/clo
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
 import {
+  ActivityDataSchema,
+  ActivityInputSchema,
   CommentBrowseDataSchema,
   CommentCreateInputSchema,
   CommentDataSchema,
@@ -52,6 +54,8 @@ import { notebooksCapabilityPresentation } from "./capability-presentation";
 import { NoteComposeInputSchema } from "./commands";
 import { noteContentHash, summarizeNoteEditBlocks } from "./lib/note-edit";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "./service/access";
+import * as activity from "./service/activity";
+import { notebookActivityRow } from "./service/activity-timeline";
 import { resolveNotebookApiKeyPermission } from "./service/api-key-permissions";
 import { loadBookBlockPreview } from "./service/book";
 import * as commentStore from "./service/comments";
@@ -206,6 +210,38 @@ const requireNoteByShortId = async (shortId: string, context: CapabilityExecutio
   if (!note) return capabilityNotFound(t.noteNotFound);
   const access = await requireNotebook(note.notebookId, context, required);
   return access.ok ? ok({ note, notebook: access.data.notebook, permission: access.data.permission }) : capabilityNotFound(t.noteNotFound);
+};
+
+export const runNotebookActivity = async (input: z.output<typeof ActivityInputSchema>, context: CapabilityExecutionContext) => {
+  const access = await requireNotebookByShortId(input.notebook, context);
+  if (!access.ok) return access;
+  const note = input.item ? await requireNoteByShortId(input.item, context) : null;
+  if (note && (!note.ok || note.data.note.notebookId !== access.data.notebook.id))
+    return capabilityNotFound(capabilityMessages(context).noteNotFound);
+  try {
+    context.signal.throwIfAborted();
+    const page = await activity.list({
+      ...principalIds(context),
+      notebookId: access.data.notebook.id,
+      noteId: note?.ok ? note.data.note.id : undefined,
+      timeline: true,
+      before: input.before,
+      after: input.after,
+      cursor: input.cursor,
+      limit: input.limit,
+    });
+    const data = page.items.map((event) => notebookActivityRow(event, { viewer: activityActor(context), locale: context.locale }));
+    const result = (count: number) => ({
+      data: data.slice(0, count),
+      page: capabilityPage(count < data.length ? page.items[count - 1]!.cursor : page.nextCursor),
+    });
+    let count = data.length;
+    while (count > 1 && notebookEnvelopeBytes(result(count)) > ENVELOPE_DATA_BUDGET) count--;
+    return ok(result(count));
+  } catch (error) {
+    if (error instanceof activity.InvalidActivityCursorError) return fail(err.badInput(capabilityMessages(context).invalidCursor));
+    throw error;
+  }
 };
 
 const mapNotebook = (notebook: Notebook, permission: Exclude<PermissionLevel, "none">) => ({
@@ -1075,6 +1111,15 @@ export const notebooksCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "notebook.activity": {
+      title: "Read note activity",
+      description:
+        "Read a newest-first page of authorized note changes in one notebook, optionally for one note. Sentences use the caller's locale, one row per recorded edit bucket. Comments and deleted notes are omitted. Follow page.nextCursor with cursor; before and after are exclusive time bounds.",
+      input: ActivityInputSchema,
+      data: ActivityDataSchema,
+      openWorld: false,
+      run: runNotebookActivity,
+    },
     "note.preview": {
       title: "Check note blocks",
       description:

@@ -8,6 +8,8 @@ const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
 
 const conversation = ConversationSchema.parse({
   threads: 0,
+  channel: false,
+  member: true,
   id: "abcdef",
   name: "Chat",
   title: "Chat",
@@ -16,6 +18,8 @@ const conversation = ConversationSchema.parse({
   memberCount: 2,
   unread: 0,
   read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+  archived: false,
+  pinnedRank: null,
   withGuests: false,
   peerDeactivated: false,
   lastMessage: null,
@@ -26,6 +30,8 @@ const conversation = ConversationSchema.parse({
 });
 const message = (rev: number) =>
   MessageSchema.parse({
+    reactions: [],
+    refs: [],
     thread: null,
     replyTo: null,
     id: String(rev).padStart(10, "0"),
@@ -41,26 +47,39 @@ const message = (rev: number) =>
 const page = (rev: number) => ({ items: [{ ...message(rev), systemText: null }], rev, seqHead: rev, from: rev, to: rev });
 type Controls = {
   apply(data: unknown): Promise<void>;
-  applyBatch(data: unknown[]): Promise<void>;
+  applyBatch(data: unknown[], cursors?: string[]): Promise<void>;
   resync(): Promise<void>;
   revoked(): void;
   unavailable(): void;
+  caughtUp(value: boolean): void;
   closed: boolean;
   cursor: string | null;
 };
 class ManualConnection implements LiveConnection {
   channels = new Map<string, Controls>();
   subscribe<T>(channel: string, _scope: unknown, handlers: LiveSubscriptionHandlers<T>) {
+    let confirmed = true;
+    const run = async (apply: () => Promise<void>) => {
+      handlers.caughtUp?.(false);
+      await apply();
+      if (confirmed) handlers.caughtUp?.(true);
+    };
     const controls: Controls = {
-      apply: async (data) => handlers.apply([{ data: handlers.parse(data), cursor: "cursor" }]),
-      applyBatch: async (data) => handlers.apply(data.map((event) => ({ data: handlers.parse(event), cursor: "cursor" }))),
-      resync: handlers.resync,
+      apply: (data) => run(() => handlers.apply([{ data: handlers.parse(data), cursor: "cursor" }])),
+      applyBatch: (data, cursors) =>
+        run(() => handlers.apply(data.map((event, i) => ({ data: handlers.parse(event), cursor: cursors?.[i] ?? "cursor" })))),
+      resync: () => run(handlers.resync),
       revoked: () => handlers.revoked?.("access_denied"),
       unavailable: handlers.unavailable,
+      caughtUp: (value) => {
+        confirmed = value;
+        handlers.caughtUp?.(value);
+      },
       closed: false,
       cursor: handlers.cursor,
     };
     this.channels.set(channel, controls);
+    controls.caughtUp(true);
     return {
       close: () => {
         controls.closed = true;
@@ -76,6 +95,9 @@ class ManualConnection implements LiveConnection {
 const self = { accessId: "11111111-1111-4111-8111-111111111111", permission: "write" as const, active: true };
 const memberApi = {
   threads: async () => noThreads,
+  react: async () => {},
+  reactions: async () => ({ items: [] }),
+  shared: async () => ({ items: [], nextCursor: null }),
   createThread: async () => {
     throw new Error("Unused thread request");
   },
@@ -89,13 +111,18 @@ const memberApi = {
   addMembers: async () => ({ added: 1 }),
   updateMember: async () => ({ success: true as const }),
   removeMember: async () => ({ success: true as const, keptThroughGroup: false }),
-  leave: async () => ({ success: true as const, keptThroughGroup: false }),
+  leave: async () => ({ success: true as const, keptThroughGroup: false, canRejoin: false }),
   people: async () => ({ items: [], nextCursor: null }),
 };
-const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
+const fixture = (overrides: Partial<ChatStoreApi> = {}, options: { unread?: boolean; nextCursor?: string } = {}) => {
   const connection = new ManualConnection();
   const api: ChatStoreApi = {
     ...memberApi,
+    personal: async () => {
+      throw new Error("Unused personal write");
+    },
+    preferences: async () => ({ collapsed: [] }),
+    savePreferences: async (collapsed) => ({ collapsed }),
     read: async () => ({
       threads: [],
       conversationId: conversation.id,
@@ -124,15 +151,54 @@ const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
   };
   const store = createChatStore(
     {
+      ...options,
       viewerId: "22222222-2222-4222-8222-222222222222",
       cursor: "cursor",
-      sidebar: { items: [conversation], nextCursor: null },
+      sidebar: { items: [conversation], nextCursor: options.nextCursor ?? null },
       open: { threads: noThreads, view: "all", conversation, page: page(1) },
     },
     { api, connection },
   );
   return { api, connection, store };
 };
+
+test("replay publishes one complete feed window when caught up and retains accepted data when unavailable", async () => {
+  for (const outcome of ["ready", "unavailable"] as const) {
+    const { store, connection } = fixture();
+    const live = connection.get("conversation");
+    live.caughtUp(false);
+    const windows: number[][] = [];
+    store.subscribe(() => windows.push(store.openConversation!.messages.map((message) => message.seq)));
+    for (const rev of [2, 3]) await live.apply({ type: "message", message: message(rev) });
+    expect(store.openConversation?.watermark).toBe(3);
+    expect(store.openConversation?.messages.map((message) => message.seq)).toEqual([1]);
+    expect(windows).toEqual([]);
+    if (outcome === "ready") live.caughtUp(true);
+    else live.unavailable();
+    expect(windows).toHaveLength(1);
+    expect(windows.every((window) => window.join() === "1,2,3")).toBe(true);
+    expect(store.openConversation?.caughtUp).toBe(outcome === "ready");
+    expect(store.openConversation?.status).toBe(outcome === "ready" ? "live" : "stopped");
+    store.dispose();
+  }
+});
+
+test("personal writes and list refreshes preserve the open conversation's catch-up state", async () => {
+  const { store, connection } = fixture({ personal: async () => conversation });
+  try {
+    for (const caughtUp of [false, true]) {
+      connection.get("conversation").caughtUp(caughtUp);
+      await store.personal(conversation.id, { pinned: true });
+      expect(store.openConversation?.caughtUp).toBe(caughtUp);
+      await store.showArchive(false, true);
+      expect(store.openConversation?.caughtUp).toBe(caughtUp);
+      await connection.get("me").apply({ type: "personal" });
+      expect(store.openConversation?.caughtUp).toBe(caughtUp);
+    }
+  } finally {
+    store.dispose();
+  }
+});
 
 for (const historical of [false, true]) {
   test(`membership revisions count every author once per live batch${historical ? " outside the displayed history" : ""}`, async () => {
@@ -206,6 +272,26 @@ test("a failed conversation resync does not invalidate members", async () => {
   store.dispose();
 });
 
+test("a system chat resync replaces the history and counts the replacement, also at the same position", async () => {
+  const system = { ...conversation, kind: "system" as const, resource: { type: "spaces.space", id: "Space1" } };
+  const { store, connection } = fixture({
+    snapshot: async () => ({ threads: noThreads, cursor: "snapshot", conversation: system, page: page(1), focus: null }),
+    conversation: async () => system,
+    messages: async () => page(1),
+  });
+  await store.openChat(conversation.id);
+  const before = store.openConversation!;
+  await connection.get("conversation").resync();
+  // A revoked item removes its messages without a new position; readers of the history must read again.
+  expect(store.openConversation?.seqHead).toBe(before.seqHead);
+  const resynced = store.openConversation!.historyRev;
+  expect(resynced).not.toBe(before.historyRev);
+  // Opening the same chat again starts a new history too, never an earlier value.
+  await store.openChat(conversation.id);
+  expect([before.historyRev, resynced]).not.toContain(store.openConversation!.historyRev);
+  store.dispose();
+});
+
 test("resync after live text messages asks only for the gap", async () => {
   const afters: number[] = [];
   const { store, connection } = fixture({
@@ -231,6 +317,8 @@ test("a restore below the watermark after live text messages replaces the histor
   await connection.get("conversation").resync();
   expect(store.openConversation?.watermark).toBe(5);
   expect(store.openConversation?.messages).toEqual([message(5)]);
+  // Readers of the history (Shared) read again: the replacement can remove messages at an older revision.
+  expect(store.openConversation?.historyRev).toBeGreaterThan(1);
   const restored = { ...message(6), id: "restored06" };
   await connection.get("conversation").apply({ type: "message", message: restored });
   expect(store.openConversation?.messages).toContainEqual(restored);
@@ -387,6 +475,17 @@ test("sidebar text summaries sort rows, guard revisions, and fetch missing and s
   store.dispose();
 });
 
+test("a channel subscription by someone else updates the open chat's members and its sidebar row", async () => {
+  const { store, connection } = fixture({ conversation: async () => ({ ...conversation, channel: true, rev: 2, memberCount: 3 }) });
+  await connection.get("conversation").apply({ type: "membership", conversationId: conversation.id });
+  expect(store.openConversation?.membershipRev).toBe(1);
+  expect(store.openConversation?.conversation?.memberCount).toBe(3);
+  expect(store.openConversation?.messages).toHaveLength(1);
+  await connection.get("list").apply({ type: "membership", conversationId: conversation.id });
+  expect(store.sidebar.find((row) => row.id === conversation.id)?.memberCount).toBe(3);
+  store.dispose();
+});
+
 test("unavailable exposes stopped live updates and notifies listeners", () => {
   const { store, connection } = fixture();
   let notifications = 0;
@@ -441,6 +540,11 @@ test("a system event already in the SSR page still refreshes older SSR metadata"
   });
   const api: ChatStoreApi = {
     ...memberApi,
+    personal: async () => {
+      throw new Error("Unused personal write");
+    },
+    preferences: async () => ({ collapsed: [] }),
+    savePreferences: async (collapsed) => ({ collapsed }),
     read: async () => ({
       threads: [],
       conversationId: conversation.id,
@@ -493,6 +597,11 @@ const storeAt = (rev: number, api: Partial<ChatStoreApi>, sidebar = { items: [co
     {
       api: {
         ...memberApi,
+        personal: async () => {
+          throw new Error("Unused personal write");
+        },
+        preferences: async () => ({ collapsed: [] }),
+        savePreferences: async (collapsed) => ({ collapsed }),
         read: async () => {
           throw new Error("Unused write");
         },
@@ -775,8 +884,11 @@ test("openChat 404 replaces the current chat without leaking its details", async
     view: "all",
     threads: null,
     threadsStatus: "ready",
+    threadsRevision: 0,
     membershipRev: 0,
+    historyRev: expect.any(Number),
     status: "no-access",
+    caughtUp: false,
     conversation: null,
     messages: [],
     watermark: 0,
@@ -1150,7 +1262,7 @@ test("member methods forward arguments, and the reader's own changes refresh tha
     },
     leave: async (id, successor) => {
       calls.push(["leave", id, successor]);
-      return { success: true, keptThroughGroup: false };
+      return { success: true, keptThroughGroup: false, canRejoin: false };
     },
     people: async (search, cursor) => {
       calls.push(["people", search, cursor]);
@@ -1213,7 +1325,9 @@ for (const operation of ["create", "updateDetails", "addMembers", "updateMember"
             ? { added: 1 }
             : operation === "updateMember"
               ? { success: true as const }
-              : { success: true as const, keptThroughGroup: true };
+              : operation === "leave"
+                ? { success: true as const, keptThroughGroup: true, canRejoin: false }
+                : { success: true as const, keptThroughGroup: true };
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input), "http://localhost");
@@ -1278,7 +1392,7 @@ test("leaving the open chat reaches no-access on the refresh 404, without a live
   const { store, connection } = fixture({
     leave: async () => {
       left = true;
-      return { success: true, keptThroughGroup: false };
+      return { success: true, keptThroughGroup: false, canRejoin: false };
     },
     conversations: async () => ({ items: [], nextCursor: null }),
     conversation: async () => (left ? null : conversation),
@@ -1311,7 +1425,7 @@ test("leaving a chat that stays readable through another grant removes it from t
   const { store } = fixture({
     leave: async () => {
       left = true;
-      return { success: true, keptThroughGroup: false };
+      return { success: true, keptThroughGroup: false, canRejoin: false };
     },
     // The list holds only the reader's chats; the detail stays readable, as through a discoverable grant.
     conversations: async () => ({ items: left ? [] : [conversation], nextCursor: null }),
@@ -1355,7 +1469,7 @@ test("typed member requests use their routes, payloads and schemas, including bo
         return Response.json(method === "GET" ? { items: [], nextCursor: null, managers: 1, self } : { added: 1 });
       if (url.pathname.endsWith("/people")) return Response.json({ items: [], nextCursor: null });
       if (url.pathname.endsWith(conversation.id)) return Response.json(conversation);
-      return Response.json({ success: true, keptThroughGroup: true });
+      return Response.json({ success: true, keptThroughGroup: true, canRejoin: false });
     },
     { preconnect: original.preconnect },
   );
@@ -1376,7 +1490,7 @@ test("typed member requests use their routes, payloads and schemas, including bo
     await api.addMembers(conversation.id, members);
     await api.updateMember(conversation.id, "access", "admin");
     expect(await api.removeMember(conversation.id, "access")).toEqual({ success: true, keptThroughGroup: true });
-    expect(await api.leave(conversation.id, "successor")).toEqual({ success: true, keptThroughGroup: true });
+    expect(await api.leave(conversation.id, "successor")).toEqual({ success: true, keptThroughGroup: true, canRejoin: false });
     await api.people("co member", "opaque");
     expect(calls.map(({ path, method, body }) => ({ path, method, body }))).toEqual([
       { path: "/api/chat/conversations", method: "POST", body: { members, name: "New", allowDuplicate: true } },
@@ -1432,6 +1546,186 @@ test("HTTP errors retain server messages, optional rate-limit codes and required
   }
 });
 
+test("personal archive events refresh membership-filtered rows and never resurrect an archived row on new activity", async () => {
+  let archived = false;
+  const { store, connection } = fixture({
+    personal: async (_id, patch) => {
+      archived = patch.archived ?? archived;
+      return { ...conversation, archived };
+    },
+    conversation: async () => ({ ...conversation, archived }),
+    conversations: async (_cursor, mode) => ({ items: archived === !!mode ? [{ ...conversation, archived }] : [], nextCursor: null }),
+  });
+  try {
+    await store.personal(conversation.id, { archived: true });
+    expect(store.sidebar).toEqual([]);
+    expect(store.openConversation?.conversation?.archived).toBe(true);
+    await connection.get("list").applyBatch([
+      {
+        type: "summary",
+        thread: null,
+        mention: false,
+        conversationId: conversation.id,
+        id: "0000000002",
+        seq: 2,
+        rev: 2,
+        kind: "text",
+        author: message(2).author,
+        createdAt: message(2).createdAt,
+        preview: "Still archived",
+      },
+    ]);
+    expect(store.sidebar).toEqual([]);
+    await store.showArchive(true);
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id]);
+    archived = false;
+    await connection.get("me").applyBatch([{ type: "personal" }]);
+    expect(store.sidebar).toEqual([]);
+    await store.showArchive(false);
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a failed archive navigation leaves the active list mode intact for later live events", async () => {
+  const { store, connection } = fixture({
+    conversations: async (_cursor, archived) => {
+      if (archived) throw new Error("Unavailable archive");
+      return { items: [conversation], nextCursor: null };
+    },
+  });
+  try {
+    await expect(store.showArchive(true)).rejects.toThrow("Unavailable archive");
+    await connection.get("me").applyBatch([{ type: "personal" }]);
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("Unread retains read rows but rechecks their authorization on membership refresh", async () => {
+  let accessible = true;
+  const { store, connection } = fixture(
+    {
+      conversations: async (_cursor, _archived, _unread, ids) => ({ items: ids && accessible ? [conversation] : [], nextCursor: null }),
+      conversation: async () => (accessible ? conversation : null),
+    },
+    { unread: true },
+  );
+  try {
+    await connection.get("me").applyBatch([{ type: "personal" }]);
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id]);
+    accessible = false;
+    await connection.get("me").applyBatch([{ type: "membership", conversationId: conversation.id }]);
+    expect(store.sidebar).toEqual([]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("preferences events preserve loaded sidebar depth without querying conversations", async () => {
+  const next = { ...conversation, id: "ghijkl" };
+  let requests = 0;
+  const { store, connection } = fixture(
+    {
+      conversations: async () => {
+        requests++;
+        return { items: [next], nextCursor: null };
+      },
+    },
+    { nextCursor: "page2" },
+  );
+  try {
+    await store.loadMoreSidebar();
+    const before = requests;
+    const ids = store.sidebar.map((row) => row.id);
+    expect(ids).toEqual([conversation.id, next.id]);
+    await connection.get("me").applyBatch([{ type: "preferences", collapsed: ["pinned"] }]);
+    expect(store.collapsed).toEqual(["pinned"]);
+    expect(store.sidebar.map((row) => row.id)).toEqual(ids);
+    expect(requests).toBe(before);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("text bursts from another list mode fetch once until membership or resync changes it", async () => {
+  let reads = 0;
+  let archived = true;
+  const hidden = { ...conversation, id: "ghijkl" };
+  const { store, connection } = fixture({
+    conversation: async (id) => (id === hidden.id ? (reads++, { ...hidden, archived }) : conversation),
+  });
+  const summary = (rev: number) => chatLiveUpdates(hidden.id, { ...message(rev), conversationId: hidden.id }, null, [])[1]!.data;
+  try {
+    for (let rev = 2; rev < 22; rev++) await connection.get("list").apply(summary(rev));
+    expect(reads).toBe(1);
+    expect(store.sidebar.map((row) => row.id)).not.toContain(hidden.id);
+    archived = false;
+    await connection.get("me").apply({ type: "membership", conversationId: hidden.id });
+    await connection.get("list").apply(summary(22));
+    expect(reads).toBe(2);
+    expect(store.sidebar.map((row) => row.id)).toContain(hidden.id);
+    await store.showArchive(true);
+    await connection.get("list").apply(summary(23));
+    expect(reads).toBe(3);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("personal writes expose refresh failures for visible retry and refresh obsolete pin targets", async () => {
+  let refreshes = 0;
+  const { store } = fixture({
+    personal: async () => conversation,
+    conversations: async () => {
+      refreshes++;
+      throw new Error("Refresh unavailable");
+    },
+  });
+  try {
+    await expect(store.personal(conversation.id, { archived: true })).rejects.toThrow("Refresh unavailable");
+    expect(refreshes).toBe(1);
+  } finally {
+    store.dispose();
+  }
+  const invalid = new ChatRequestError("Target removed", "BAD_INPUT", 400);
+  const next = fixture({
+    personal: async () => {
+      throw invalid;
+    },
+    conversations: async () => {
+      refreshes++;
+      return { items: [], nextCursor: null };
+    },
+  });
+  try {
+    await expect(next.store.personal(conversation.id, { pinned: true, before: "ghijkl" })).rejects.toBe(invalid);
+    expect(refreshes).toBe(2);
+    expect(next.store.sidebar).toEqual([]);
+  } finally {
+    next.store.dispose();
+  }
+});
+
+test("retained read rows keep activity order when a personal action refreshes Unread", async () => {
+  const older = { ...conversation, id: "ghijkl", unread: 1, lastActivityAt: "2026-10-11T00:00:00.000Z" };
+  const { store } = fixture(
+    {
+      personal: async () => conversation,
+      conversations: async (_cursor, _archived, _unread, ids) => ({ items: ids ? [conversation] : [older], nextCursor: null }),
+    },
+    { unread: true },
+  );
+  try {
+    await store.personal(conversation.id, { pinned: false });
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id, older.id]);
+  } finally {
+    store.dispose();
+  }
+});
+
 test("a thread refresh asked for while the previous one finishes still runs", async () => {
   let calls = 0;
   const { store } = fixture({
@@ -1452,4 +1746,673 @@ test("a thread refresh asked for while the previous one finishes still runs", as
   expect(calls).toBe(2);
   unsubscribe();
   store.dispose();
+});
+
+test("read-all forwards continuation even when the preceding page marked no chats", async () => {
+  const seen: (string | undefined)[] = [];
+  const { store } = fixture({
+    readAll: async (_confirmed, cursor) => {
+      seen.push(cursor);
+      return cursor
+        ? { outcome: "done", marked: 1, more: false, nextCursor: null }
+        : { outcome: "done", marked: 0, more: true, nextCursor: "hidden-page" };
+    },
+  });
+  const first = await store.readAll(true);
+  if (first.outcome !== "done") throw new Error("Expected a completed page");
+  expect(await store.readAll(true, first.nextCursor ?? undefined)).toMatchObject({ marked: 1, more: false });
+  expect(seen).toEqual([undefined, "hidden-page"]);
+  store.dispose();
+});
+
+test("automatic system refresh reads one short page and never exhausts directory cursors", async () => {
+  const queries: unknown[] = [];
+  const { store } = systemFixture(
+    {
+      threads: async (_id, query) => {
+        queries.push(query);
+        return { ...noThreads, nextCursor: "Older1" };
+      },
+    },
+    "Chosen",
+  );
+  try {
+    await store.refreshThreads();
+    expect(queries).toEqual([{ short: "true", selected: "Chosen" }]);
+    expect(store.openConversation?.threads?.nextCursor).toBe("Older1");
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a failed open projection leaves a list-mode switch atomic", async () => {
+  const calls: boolean[] = [];
+  let fail = true;
+  const { store, connection } = fixture({
+    conversations: async (_cursor, archived) => {
+      calls.push(!!archived);
+      return { items: archived ? [] : [conversation], nextCursor: null };
+    },
+    conversation: async () => {
+      if (fail) throw new Error("Projection unavailable");
+      return conversation;
+    },
+  });
+  try {
+    await expect(store.showArchive(true)).rejects.toThrow("Projection unavailable");
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id]);
+    fail = false;
+    await connection.get("me").apply({ type: "personal" });
+    expect(calls).toEqual([true, false]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a failed pin-target refresh preserves the definitive 400", async () => {
+  const invalid = new ChatRequestError("Target removed", "BAD_INPUT", 400);
+  const { store } = fixture({
+    personal: async () => {
+      throw invalid;
+    },
+    conversations: async () => {
+      throw new Error("Refresh unavailable");
+    },
+  });
+  try {
+    await expect(store.personal(conversation.id, { pinned: true, before: "ghijkl" })).rejects.toBe(invalid);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a failed short read keeps the selected resource and is retryable; closing cancels a running refresh", async () => {
+  const system = { ...conversation, kind: "system" as const };
+  let fail = true;
+  let pending = false;
+  let aborted = false;
+  const { store } = fixture({
+    threads: async (_id, query, signal) => {
+      if (pending)
+        return new Promise((resolve) =>
+          signal?.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              resolve(null);
+            },
+            { once: true },
+          ),
+        );
+      if (fail) throw new Error("Unavailable");
+      return noThreads;
+    },
+  });
+  try {
+    store.open({ cursor: "cursor", conversation: system, threads: noThreads, page: page(1), view: "all" });
+    await store.refreshThreads();
+    expect(store.openConversation?.threadsStatus).toBe("failed");
+    expect(store.openConversation?.conversation?.id).toBe(conversation.id);
+    fail = false;
+    await store.refreshThreads();
+    expect(store.openConversation?.threadsStatus).toBe("ready");
+    pending = true;
+    const request = store.refreshThreads();
+    await Promise.resolve();
+    store.closeConversation();
+    await request;
+    expect(aborted).toBe(true);
+    expect(store.openConversation).toBeNull();
+  } finally {
+    store.dispose();
+  }
+});
+
+test("retry restores retained read rows from the visible Unread visit after a superseded mode load", async () => {
+  let accessible = true;
+  const idsRead: string[][] = [];
+  const { store } = fixture(
+    {
+      conversations: async (_cursor, _archived, unread, ids) => {
+        if (ids) idsRead.push([...ids]);
+        return { items: ids ? (accessible ? [conversation] : []) : unread ? [] : [conversation], nextCursor: null };
+      },
+    },
+    { unread: true },
+  );
+  try {
+    await store.showArchive(false, false);
+    await store.showArchive(false, true, [conversation.id]);
+    expect(idsRead).toEqual([[conversation.id]]);
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id]);
+    accessible = false;
+    await store.showArchive(false, true, [conversation.id]);
+    expect(store.sidebar).toEqual([]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("reactions update optimistically and restore the previous counts on failure", async () => {
+  const pending = deferred<void>();
+  const { store } = fixture({ react: () => pending.promise });
+  const before = store.sidebar;
+  const writing = store.react(conversation.id, message(1).id, "👍", true);
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 1, own: true }]);
+  pending.reject(new Error("Try again"));
+  await expect(writing).rejects.toThrow("Try again");
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([]);
+  expect(store.sidebar).toBe(before);
+  store.dispose();
+});
+
+test("reactions add and remove optimistically, preserve other people and serialize rapid toggles", async () => {
+  const first = deferred<void>();
+  const second = deferred<void>();
+  let calls = 0;
+  const { store, connection } = fixture({
+    react: () => (++calls === 1 ? first.promise : second.promise),
+    reactions: async () => ({ items: [{ emoji: "👍", count: 2, own: false, people: ["Ana", "Lea"] }] }),
+  });
+  await connection.get("conversation").apply({ type: "reactions", conversationId: conversation.id, messageId: message(1).id, rev: 2 });
+  const add = store.react(conversation.id, message(1).id, "👍", true);
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 3, own: true }]);
+  const remove = store.react(conversation.id, message(1).id, "👍", false);
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 2, own: false }]);
+  first.resolve();
+  await add;
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 2, own: false }]);
+  second.resolve();
+  await remove;
+  expect(calls).toBe(2);
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 2, own: false }]);
+  store.dispose();
+});
+
+test("a late write answer never outlives newer reactions from elsewhere", async () => {
+  const write = deferred<void>();
+  // The server has the latest state: another tab took the reaction back after this tab's write.
+  const { store, connection } = fixture({ react: () => write.promise, reactions: async () => ({ items: [] }) });
+  const add = store.react(conversation.id, message(1).id, "👍", true);
+  await connection.get("conversation").apply({ type: "reactions", conversationId: conversation.id, messageId: message(1).id, rev: 3 });
+  write.resolve();
+  await add;
+  await Bun.sleep(0);
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([]);
+  store.dispose();
+});
+
+test("reaction hint batches coalesce per loaded message and skip old or foreign hints", async () => {
+  const calls: string[] = [];
+  const { store, connection } = fixture({
+    reactions: async (id, message) => {
+      calls.push(`${id}:${message}`);
+      return { items: [{ emoji: "👍", count: 2, own: false, people: ["Ana", "Lea"] }] };
+    },
+  });
+  const hint = { type: "reactions", conversationId: conversation.id, messageId: message(1).id, rev: 2 };
+  await connection
+    .get("conversation")
+    .applyBatch([
+      hint,
+      { ...hint, rev: 3 },
+      { ...hint, rev: 2 },
+      { ...hint, messageId: message(9).id },
+      { ...hint, conversationId: "ghijkl" },
+    ]);
+  expect(calls).toEqual([`${conversation.id}:${message(1).id}`]);
+  expect(store.openConversation?.messages[0]).toMatchObject({ rev: 3, reactions: [{ emoji: "👍", count: 2, own: false }] });
+  await connection.get("conversation").applyBatch([hint, { ...hint, rev: 1 }, { ...hint, rev: 3 }]);
+  expect(calls).toHaveLength(1);
+  store.dispose();
+});
+
+test("a failed reaction hint read rejects the live batch for retry", async () => {
+  const { store, connection } = fixture({
+    reactions: async () => {
+      throw new Error("Offline");
+    },
+  });
+  await expect(
+    connection.get("conversation").apply({ type: "reactions", conversationId: conversation.id, messageId: message(1).id, rev: 2 }),
+  ).rejects.toThrow("Offline");
+  expect(store.openConversation?.messages[0]?.rev).toBe(1);
+  store.dispose();
+});
+
+test("reaction HTTP client encodes emoji paths, accepts empty 204s and preserves failures", async () => {
+  const original = globalThis.fetch;
+  const requests: { url: string; method: string }[] = [];
+  try {
+    globalThis.fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        requests.push({ url: String(input), method: init?.method ?? "GET" });
+        return init?.method === "GET"
+          ? Response.json({ items: [{ emoji: "👍🏽", count: 1, own: true, people: ["Ana"] }] })
+          : new Response(null, { status: 204 });
+      },
+      { preconnect: original.preconnect },
+    );
+    const api = createChatStoreApi();
+    await api.react(conversation.id, message(1).id, "👍🏽", true);
+    await api.react(conversation.id, message(1).id, "👍🏽", false);
+    expect((await api.reactions(conversation.id, message(1).id)).items[0]?.own).toBeTrue();
+    expect(requests.map(({ url, method }) => [new URL(url, "https://cloud.example.test").pathname, method])).toEqual([
+      [`/api/chat/conversations/${conversation.id}/messages/${message(1).id}/reactions/${encodeURIComponent("👍🏽")}`, "PUT"],
+      [`/api/chat/conversations/${conversation.id}/messages/${message(1).id}/reactions/${encodeURIComponent("👍🏽")}`, "DELETE"],
+      [`/api/chat/conversations/${conversation.id}/messages/${message(1).id}/reactions`, "GET"],
+    ]);
+    globalThis.fetch = Object.assign(
+      async () => Response.json({ code: "REACTION_PERSON_LIMIT", message: "Remove a reaction." }, { status: 409 }),
+      { preconnect: original.preconnect },
+    );
+    await expect(api.react(conversation.id, message(1).id, "👍🏽", true)).rejects.toMatchObject({
+      status: 409,
+      code: "REACTION_PERSON_LIMIT",
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("reaction hint reads cannot overwrite a newly opened chat", async () => {
+  const pending = deferred<Awaited<ReturnType<ChatStoreApi["reactions"]>>>();
+  const { store, connection } = fixture({ reactions: () => pending.promise });
+  const hinted = connection
+    .get("conversation")
+    .apply({ type: "reactions", conversationId: conversation.id, messageId: message(1).id, rev: 2 });
+  await connection.get("conversation").resync();
+  store.open({
+    threads: noThreads,
+    view: "all",
+    cursor: "new",
+    conversation,
+    page: { ...page(1), items: [{ ...message(1), rev: 3, reactions: [{ emoji: "❤️", count: 1, own: false }], systemText: null }] },
+  });
+  pending.resolve({ items: [{ emoji: "👍", count: 1, own: true, people: ["Ana"] }] });
+  await hinted;
+  expect(store.openConversation?.messages[0]).toMatchObject({ rev: 3, reactions: [{ emoji: "❤️", count: 1, own: false }] });
+  store.dispose();
+});
+
+test("failed optimistic reactions keep other people's updates received while the write waits", async () => {
+  const pending = deferred<void>();
+  const { store, connection } = fixture({
+    react: () => pending.promise,
+    reactions: async () => ({ items: [{ emoji: "👍", count: 2, own: false, people: ["Ana", "Lea"] }] }),
+  });
+  const writing = store.react(conversation.id, message(1).id, "👍", true);
+  await connection.get("conversation").apply({ type: "reactions", conversationId: conversation.id, messageId: message(1).id, rev: 2 });
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 3, own: true }]);
+  pending.reject(new Error("Try again"));
+  await expect(writing).rejects.toThrow("Try again");
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 2, own: false }]);
+  store.dispose();
+});
+
+const systemConversation = { ...conversation, kind: "system" as const, resource: { type: "spaces.space", id: "Space1" }, unread: 5 };
+const systemFixture = (overrides: Partial<ChatStoreApi> = {}, view = "all") => {
+  const fixtureState = fixture({ conversation: async () => systemConversation, ...overrides });
+  fixtureState.store.open({ cursor: "cursor", conversation: systemConversation, threads: noThreads, page: page(1), view });
+  return fixtureState;
+};
+
+test("system resync replaces loaded messages with the current authorized window", async () => {
+  const { store, connection } = systemFixture({ messages: async () => ({ ...page(1), items: [] }) });
+  try {
+    expect(store.openConversation?.messages).toHaveLength(1);
+    await connection.get("conversation").resync();
+    expect(store.openConversation?.messages).toHaveLength(0);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a selected item that becomes unavailable clears its messages and thread metadata", async () => {
+  const { store, connection } = systemFixture({ messages: async () => null }, "Thread");
+  try {
+    await connection.get("conversation").resync();
+    expect(store.openConversation).toMatchObject({ status: "no-access", messages: [], threads: null });
+  } finally {
+    store.dispose();
+  }
+});
+
+test("system read and unread HTTP results update boundaries without a personal event", async () => {
+  const { store } = systemFixture({ conversation: async () => ({ ...systemConversation, unread: 0 }) });
+  try {
+    await store.markRead(conversation.id, 1, "all");
+    expect(store.openConversation?.conversation?.read?.lastReadSeq).toBe(1);
+    expect(store.sidebar.find((row) => row.id === conversation.id)?.unread).toBe(0);
+    await store.markUnread(conversation.id);
+    expect(store.openConversation?.conversation?.read?.unreadFromSeq).toBe(1);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("system All reads continue empty pages with the same seq and selection", async () => {
+  const seen: unknown[] = [];
+  const { store } = systemFixture({
+    read: async (id, seq, thread, cursor) => {
+      seen.push([id, seq, thread, cursor]);
+      return {
+        conversationId: id,
+        lastReadSeq: seq,
+        unreadFromSeq: null,
+        joinedSeq: 0,
+        unread: 0,
+        asOfRev: 1,
+        threads: [],
+        summaryCursor: cursor === "Page02" ? null : cursor === "Page01" ? "Page02" : "Page01",
+      };
+    },
+  });
+  try {
+    await store.markRead(conversation.id, 1, "all");
+    expect(seen).toEqual([
+      [conversation.id, 1, "all", undefined],
+      [conversation.id, 1, "all", "Page01"],
+      [conversation.id, 1, "all", "Page02"],
+    ]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("thread hints invalidate the sidebar through its canonical read", async () => {
+  let reads = 0;
+  const { store, connection } = systemFixture({
+    conversation: async () => {
+      reads++;
+      return systemConversation;
+    },
+  });
+  try {
+    await connection.get("list").apply({ type: "threads", conversationId: conversation.id });
+    expect(reads).toBe(1);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("thread discovery renews the existing conversation subscription from the hint cursor", async () => {
+  const { store, connection } = systemFixture();
+  try {
+    const original = connection.get("conversation");
+    const revision = store.openConversation?.threadsRevision ?? 0;
+    await original.apply({ type: "threads", conversationId: conversation.id });
+    expect(original.closed).toBe(true);
+    expect(connection.get("conversation").cursor).toBe("cursor");
+    expect(store.openConversation?.threadsRevision).toBeGreaterThan(revision);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("All-thread read continuation failures reject; retry preserves the target and cancellation stops later pages", async () => {
+  let fail = true;
+  const cursors: (string | undefined)[] = [];
+  const { store } = systemFixture({
+    read: async (id, seq, _thread, cursor) => {
+      cursors.push(cursor);
+      if (cursor && fail) throw new Error("offline");
+      return {
+        conversationId: id,
+        lastReadSeq: seq,
+        unreadFromSeq: null,
+        joinedSeq: 0,
+        unread: 0,
+        asOfRev: 1,
+        threads: [],
+        summaryCursor: cursor ? null : "Page01",
+      };
+    },
+  });
+  try {
+    await expect(store.markRead(conversation.id, 1, "all")).rejects.toThrow("offline");
+    fail = false;
+    await store.markRead(conversation.id, 1, "all");
+    expect(cursors).toEqual([undefined, "Page01", undefined, "Page01"]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("closing a selection aborts its All-thread read before another continuation", async () => {
+  let calls = 0;
+  let signal: AbortSignal | undefined;
+  const first = deferred<Awaited<ReturnType<ChatStoreApi["read"]>>>();
+  const { store } = systemFixture({
+    read: async (_id, _seq, _view, _cursor, requestSignal) => {
+      calls++;
+      signal = requestSignal;
+      return first.promise;
+    },
+  });
+  const pending = store.markRead(conversation.id, 1, "all");
+  store.closeConversation();
+  first.resolve({
+    conversationId: conversation.id,
+    lastReadSeq: 1,
+    unreadFromSeq: null,
+    joinedSeq: 0,
+    unread: 0,
+    asOfRev: 1,
+    threads: [],
+    summaryCursor: "Page01",
+  });
+  try {
+    await expect(pending).rejects.toThrow();
+    expect(signal?.aborted).toBe(true);
+    expect(calls).toBe(1);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("selection-only system receipts refresh the aggregate instead of replacing it with a selection count", async () => {
+  let reads = 0;
+  const { store } = systemFixture({
+    conversation: async () => {
+      reads++;
+      return { ...systemConversation, unread: 4, read: { lastReadSeq: 1, unreadFromSeq: null, joinedSeq: 0 } };
+    },
+    read: async (id) => ({
+      conversationId: id,
+      lastReadSeq: 1,
+      unreadFromSeq: null,
+      joinedSeq: 0,
+      unread: 0,
+      asOfRev: 1,
+      threads: [],
+      summaryCursor: "",
+    }),
+  });
+  try {
+    await store.markRead(conversation.id, 1, "Thread");
+    expect(reads).toBe(1);
+    expect(store.openConversation?.conversation?.unread).toBe(4);
+    expect(store.sidebar.find((row) => row.id === conversation.id)?.unread).toBe(4);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a repeated All-thread receipt cursor fails instead of looping", async () => {
+  let calls = 0;
+  const { store } = systemFixture({
+    read: async (id) => {
+      calls++;
+      return {
+        conversationId: id,
+        lastReadSeq: 1,
+        unreadFromSeq: null,
+        joinedSeq: 0,
+        unread: 0,
+        asOfRev: 1,
+        threads: [],
+        summaryCursor: "Page01",
+      };
+    },
+  });
+  try {
+    await expect(store.markRead(conversation.id, 1, "all")).rejects.toThrow("Repeated chat read cursor");
+    expect(calls).toBe(2);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("system Jump to latest retains an acknowledged arrival newer than its snapshot", async () => {
+  const latest = deferred<ReturnType<typeof windowPage>>();
+  const { store, connection } = systemFixture({ messages: async () => latest.promise });
+  store.open({ cursor: "middle", conversation: systemConversation, threads: noThreads, view: "all", page: windowPage(1, 1, 5, 1) });
+  try {
+    const loading = store.loadLatest();
+    await connection.get("conversation").apply({ type: "message", message: message(6) });
+    latest.resolve(windowPage(1, 5));
+    await loading;
+    expect(store.openConversation).toMatchObject({ watermark: 6, seqHead: 6, hasNewer: false });
+    expect(store.openConversation?.messages.map((row) => row.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("system revocation reconciliation drops concurrent arrivals outside the authorized snapshot", async () => {
+  const latest = deferred<ReturnType<typeof windowPage>>();
+  const { store, connection } = systemFixture({ messages: async () => latest.promise });
+  try {
+    const loading = connection.get("conversation").resync();
+    await connection.get("conversation").apply({ type: "message", message: message(6) });
+    latest.resolve(windowPage(1, 5));
+    await loading;
+    expect(store.openConversation?.messages.map((row) => row.seq)).toEqual([1, 2, 3, 4, 5]);
+  } finally {
+    store.dispose();
+  }
+});
+
+for (const channel of ["conversation", "list"]) {
+  test(`${channel} batched discovery resumes at the first relevant hint, then deduplicates replay`, async () => {
+    const { store, connection } = systemFixture();
+    try {
+      const subscription = connection.get(channel);
+      const known = { ...message(3), rev: 30 };
+      const missed = { ...message(2), rev: 20 };
+      const event =
+        channel === "conversation" ? { type: "message", message: known } : chatLiveUpdates(conversation.id, known, "known", [])[1]!.data;
+      await subscription.applyBatch(
+        [
+          { type: "threads", conversationId: "Other1" },
+          { type: "threads", conversationId: conversation.id },
+          { type: "threads", conversationId: conversation.id },
+          event,
+        ],
+        ["5", "10", "25", "30"],
+      );
+      expect(connection.get(channel).cursor).toBe("10");
+      expect(subscription.closed).toBe(true);
+      await connection
+        .get(channel)
+        .applyBatch(channel === "conversation" ? [{ type: "message", message: missed }, event, event] : [event, event]);
+      if (channel === "conversation") expect(store.openConversation?.messages.map((row) => row.seq)).toEqual([1, 2, 3]);
+    } finally {
+      store.dispose();
+    }
+  });
+}
+
+test("sidebar discovery authorizes a recent thread outside the summary page before renewal", async () => {
+  const order: string[] = [];
+  const { store, connection } = systemFixture({
+    conversation: async () => {
+      order.push("summary:ids-1-100");
+      return systemConversation;
+    },
+    threads: async (_id, query) => {
+      order.push(`recent:${query?.short}`);
+      return noThreads;
+    },
+  });
+  try {
+    const original = connection.get("list");
+    await original.apply({ type: "threads", conversationId: conversation.id });
+    expect(order).toEqual(["summary:ids-1-100", "recent:true"]);
+    expect(original.closed).toBe(true);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("failed sidebar recent-thread authorization leaves discovery unacknowledged for retry", async () => {
+  const { store, connection } = systemFixture({
+    threads: async () => {
+      throw new Error("reader unavailable");
+    },
+  });
+  try {
+    const original = connection.get("list");
+    await expect(original.apply({ type: "threads", conversationId: conversation.id })).rejects.toThrow("reader unavailable");
+    expect(original.closed).toBe(false);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a latest response started during revocation and finishing first cannot cancel it", async () => {
+  const reconcile = deferred<ReturnType<typeof windowPage>>();
+  let calls = 0;
+  const { store, connection } = systemFixture({
+    messages: async () => (++calls === 1 ? reconcile.promise : windowPage(1, 5)),
+  });
+  store.open({ cursor: "middle", conversation: systemConversation, threads: noThreads, view: "all", page: windowPage(1, 1, 5, 1) });
+  try {
+    expect(store.openConversation?.hasNewer).toBe(true);
+    const resync = connection.get("conversation").resync();
+    // The reader jumps to the latest messages while access is being reconciled; that read answers first.
+    await store.loadLatest();
+    reconcile.resolve({ ...windowPage(1, 5), items: [] });
+    await resync;
+    expect(store.openConversation?.messages).toEqual([]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a latest response started before revocation cannot restore the superseded authorized window", async () => {
+  const latest = deferred<ReturnType<typeof windowPage>>();
+  let calls = 0;
+  const { store, connection } = systemFixture({
+    messages: async () => (++calls === 1 ? latest.promise : { ...windowPage(1, 5), items: [] }),
+  });
+  store.open({ cursor: "middle", conversation: systemConversation, threads: noThreads, view: "all", page: windowPage(1, 1, 5, 1) });
+  try {
+    const loading = store.loadLatest();
+    await connection.get("conversation").resync();
+    expect(store.openConversation?.messages).toEqual([]);
+    latest.resolve(windowPage(1, 5));
+    await loading;
+    expect(store.openConversation?.messages).toEqual([]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("personal list changes retain and refresh nonmember system rows independently of archive mode", async () => {
+  const system = { ...conversation, id: "System", kind: "system" as const, member: false, pinnedRank: null, archived: false };
+  const { store, connection } = fixture({
+    conversations: async () => ({ items: [], nextCursor: null }),
+    conversation: async (id) => (id === system.id ? system : conversation),
+  });
+  try {
+    store.includeSystemChats([system]);
+    await store.showArchive(true);
+    expect(store.sidebar).toContainEqual(system);
+    await connection.get("me").apply({ type: "membership", conversationId: conversation.id });
+    expect(store.sidebar).toContainEqual(system);
+  } finally {
+    store.dispose();
+  }
 });
