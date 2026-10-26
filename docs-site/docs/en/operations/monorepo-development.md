@@ -596,3 +596,16 @@ catalog, including Administration for administrators. Application aliases reuse
 data migration. Deploy the shared Cloud package and application declarations
 together through the normal image release. Destination routes continue to
 enforce their own authorization. See [Universal search](/en/docs/platform/search).
+
+Workflow AI uses `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` and
+`WORKFLOW_AI_QUEUE_TIMEOUT_MS` (both 60,000 ms by default). Keep these budgets
+consistent across workers. Queue overload rejects new work; failed run details
+provide the recovery path after capacity recovers.
+
+The reject-on-full policy uses the new `cloud.workflow-ai.v2` Sync resource,
+because an existing discard-oldest stream cannot change that policy in place.
+On upgrade, Postgres recovery submits pending tasks to the new resource and
+expires missing deliveries visibly. Drain old workers before removing the legacy
+`cloud.workflow-ai` resource through the installation's NATS administration;
+retain its diagnostics until every associated Postgres task is terminal. Do not
+delete pending domain tasks to clear a queue.

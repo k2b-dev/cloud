@@ -188,6 +188,7 @@ export const listRecoverableWorkflowAiTaskIds = async (db: SQL = sql): Promise<s
     FROM ai.workflow_task
     WHERE status IN ('queued', 'running')
     ORDER BY updated_at, id
+    LIMIT 100
   `;
   return rows.map((row) => row.id);
 };
@@ -208,7 +209,7 @@ export const claimWorkflowAiTask = async (id: string, db: SQL = sql): Promise<Wo
       AND run.id = task.run_id
       AND run.cancel_requested_at IS NULL
       AND run.state <> 'canceled'
-      AND task.status IN ('queued', 'running')
+      AND task.status = 'queued'
     RETURNING ${db.unsafe(TASK_COLUMNS)}
   `;
   return rows[0] ? taskFromRow(rows[0]) : markWorkflowAiTaskCanceledIfRequested(id, db);
@@ -313,4 +314,26 @@ export const failWorkflowAiTask = async (
     return task;
   }
   return markWorkflowAiTaskCanceledIfRequested(id, db);
+};
+
+/** DB liveness is separate from NATS heartbeat: lost/expired deliveries must settle. */
+export const heartbeatWorkflowAiTask = async (id: string, db: SQL = sql): Promise<void> => {
+  await db`UPDATE ai.workflow_task SET updated_at = now() WHERE id = ${id}::uuid AND status = 'running'`;
+};
+
+export const expireWorkflowAiTasks = async (queueTimeoutMs: number, db: SQL = sql): Promise<void> => {
+  const rows = await db<{ id: string; app_id: string }[]>`
+    UPDATE ai.workflow_task AS task
+    SET status = 'failed', completed_at = now(), updated_at = now(),
+        error_code = CASE WHEN task.status = 'queued' THEN 'WORKFLOW_AI_QUEUE_TIMEOUT' ELSE 'WORKFLOW_AI_INTERRUPTED' END,
+        error_message = 'Workflow AI delivery expired or its worker stopped. Retry the workflow after checking capacity and provider health.'
+    WHERE task.id IN (
+      SELECT id FROM ai.workflow_task
+      WHERE (status = 'queued' AND updated_at < now() - ${queueTimeoutMs} * interval '1 millisecond')
+         OR (status = 'running' AND updated_at < now() - interval '30 seconds')
+      ORDER BY updated_at, id LIMIT 100 FOR UPDATE SKIP LOCKED
+    )
+    RETURNING task.id::text, task.app_id
+  `;
+  for (const row of rows) await wakeWorkflowAiTask({ id: row.id, appId: row.app_id });
 };

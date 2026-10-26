@@ -83,7 +83,7 @@ const dependencies = async (): Promise<WorkflowAiActionDependencies> => {
 const failureCode = (error: unknown): string => {
   const code =
     (error as { aiError?: { code?: unknown }; code?: unknown } | null)?.aiError?.code ?? (error as { code?: unknown } | null)?.code;
-  return typeof code === "string" ? `WORKFLOW_AI_${code.toUpperCase()}` : "WORKFLOW_AI_UNAVAILABLE";
+  return typeof code === "string" ? (code.startsWith("WORKFLOW_AI_") ? code : `WORKFLOW_AI_${code.toUpperCase()}`) : "WORKFLOW_AI_UNAVAILABLE";
 };
 
 const taskResult = (task: WorkflowAiTask): WorkflowActionResult<WorkflowJsonValue> | null => {

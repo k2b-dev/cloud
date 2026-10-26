@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-10-22
+updated: 2026-10-26
 ---
 
 # Configuration reference
@@ -33,6 +33,8 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `NATS_CREDS_FILE` | string | runtime | unset | no | Path to a mounted NATS `.creds` file (JWT and NKey); unset means server-side no-auth. |
 | `NATS_TLS_CA_FILE` | string | runtime | unset | no | Path to a mounted CA certificate that enables TLS to NATS; unset means plain TCP. |
 | `NATS_IGNORE_CLUSTER_UPDATES` | boolean | runtime | `true` | no | Only dial the listed servers and ignore cluster-advertised peer addresses; set to `false` when every advertised address is reachable. |
+| `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` | number | runtime | `60000` | no | Absolute workflow AI attempt budget in milliseconds, including admission and repair; expiry aborts the provider and follows the bounded retry policy. |
+| `WORKFLOW_AI_QUEUE_TIMEOUT_MS` | number | runtime | `60000` | no | Maximum workflow AI queue wait in milliseconds; recovery fails overdue or lost deliveries visibly so an operator can retry the workflow. |
 | `APP_URL` | string | runtime | unset | no | Public Cloud URL used to bootstrap the `app.url` setting; the stored setting wins once written. |
 | `GOTENBERG_URL` | string | runtime | unset | no | Internal Gotenberg base URL used to bootstrap the `gotenberg.url` PDF rendering setting; the stored setting wins once written. |
 | `APP_SECRET` | string | secret | empty | no | Deployment-wide secret for at-rest settings encryption and signed cursors; generate once with `openssl rand -hex 32` and never change it after data has been written. |

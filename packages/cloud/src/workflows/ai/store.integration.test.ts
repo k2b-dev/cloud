@@ -17,6 +17,7 @@ import {
   completeWorkflowAiTask,
   createWorkflowAiTask,
   failWorkflowAiTask,
+  expireWorkflowAiTasks,
   getWorkflowAiTask,
   migrateWorkflowAi,
 } from "./store";
@@ -301,4 +302,21 @@ describe("durable workflow AI tasks", () => {
 
     expect(await getWorkflowAiTask(created.task.id)).toMatchObject({ status: "canceled", output: null });
   });
+});
+
+
+test("a lost queued delivery fails visibly and wakes its workflow without restarting the worker", async () => {
+  if (!(await ready())) return;
+  const { runId, appId } = await createRun();
+  const { task } = await createWorkflowAiTask({
+    runId, stepKey: "lost", effectKey: `workflow:${runId}:lost`,
+    request: { kind: "classify", prompt: "Choose", input: "hello", choices: ["a", "b"] },
+    modelProfileId: "model",
+  });
+  await sql`UPDATE ai.workflow_task SET updated_at = now() - interval '61 seconds' WHERE id = ${task.id}::uuid`;
+  await expireWorkflowAiTasks(60_000);
+  expect(await getWorkflowAiTask(task.id)).toMatchObject({ status: "failed", errorCode: "WORKFLOW_AI_QUEUE_TIMEOUT" });
+  const [signal] = await sql`SELECT key FROM workflows.dependency_signal WHERE app_id = ${appId} AND key = ${task.id}`;
+  expect(signal?.key).toBe(task.id);
+  expect(await claimWorkflowAiTask(task.id)).toBeNull();
 });

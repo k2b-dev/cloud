@@ -122,3 +122,25 @@ for (const retryable of [true, false])
       requeue.mockRestore();
     }
   });
+
+test("a keepalive-only or non-settling runner cannot hold a workflow attempt past its absolute budget", async () => {
+  const claim = spyOn(store, "claimWorkflowAiTask").mockResolvedValue(task);
+  const cancel = spyOn(store, "workflowAiTaskCancellationRequested").mockResolvedValue(false);
+  let providerSignal: AbortSignal | undefined;
+  try {
+    await expect(processWorkflowAiTask(task.id, {
+      signal: new AbortController().signal, heartbeat: async () => {},
+    }, {
+      maxAttempts: 3, cancelPollMs: 500, attemptTimeoutMs: 20,
+      runStructured: async (input) => {
+        providerSignal = input.signal;
+        // An SSE provider may continue sending comments without ever completing.
+        return new Promise(() => {});
+      },
+    })).rejects.toMatchObject({ code: "WORKFLOW_AI_TIMEOUT", retryable: true });
+    expect(providerSignal?.aborted).toBe(true);
+  } finally {
+    claim.mockRestore();
+    cancel.mockRestore();
+  }
+});

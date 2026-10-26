@@ -66,6 +66,19 @@ const registry = defineEnv({
     doc: "Only dial the listed servers and ignore cluster-advertised peer addresses; set to `false` when every advertised address is reachable.",
   },
 
+  // Workflow inference: p95 ~4s in the pilot; 60s bounds a whole attempt,
+  // including admission and structured-output repair, not just stream idleness.
+  WORKFLOW_AI_ATTEMPT_TIMEOUT_MS: {
+    schema: z.coerce.number().int().positive(),
+    default: 60_000,
+    doc: "Absolute workflow AI attempt budget in milliseconds, including admission and repair; expiry aborts the provider and follows the bounded retry policy.",
+  },
+  WORKFLOW_AI_QUEUE_TIMEOUT_MS: {
+    schema: z.coerce.number().int().positive(),
+    default: 60_000,
+    doc: "Maximum workflow AI queue wait in milliseconds; recovery fails overdue or lost deliveries visibly so an operator can retry the workflow.",
+  },
+
   // Installation
   APP_URL: {
     schema: z.string(),

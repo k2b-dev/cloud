@@ -1,5 +1,6 @@
 import { StructuredOutputError } from "@k2b/nessi";
-import type { Job, Worker } from "@k2b/sync";
+import { StoreFullError, type Job, type Worker } from "@k2b/sync";
+import { env } from "../../config/env";
 import { lazySync } from "../../_internal/process-sync";
 import { isAiSettingsError, runAiStructured } from "../../ai";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
@@ -7,6 +8,8 @@ import { executeAiTask } from "../../ai/task-execution";
 
 import {
   claimWorkflowAiTask,
+  expireWorkflowAiTasks,
+  heartbeatWorkflowAiTask,
   completeWorkflowAiTask,
   failWorkflowAiTask,
   getWorkflowAiTask,
@@ -18,7 +21,7 @@ import {
 } from "./store";
 import type { WorkflowAiTask } from "./types";
 
-const JOB_ID = "cloud.workflow-ai";
+export const WORKFLOW_AI_JOB_ID = "cloud.workflow-ai.v2";
 const MAX_ATTEMPTS = 3;
 const DEFAULT_CANCEL_POLL_MS = 500;
 const HEARTBEAT_INTERVAL_MS = 10_000;
@@ -28,14 +31,19 @@ type StructuredRunner = typeof runAiStructured;
 export type WorkflowAiRuntimeOptions = {
   runStructured?: StructuredRunner;
   cancelPollMs?: number;
+  attemptTimeoutMs?: number;
 };
 
 /** Attempt budget shared by the job declaration and the Postgres-side settle logic. */
-export type WorkflowAiProcessOptions = Required<WorkflowAiRuntimeOptions> & { maxAttempts: number };
+export type WorkflowAiProcessOptions = Required<Omit<WorkflowAiRuntimeOptions, "attemptTimeoutMs">> & {
+  maxAttempts: number;
+  attemptTimeoutMs?: number;
+};
 
 const workflowAiJob = lazySync((sync) =>
   sync.job<{ taskId: string }>({
-    id: JOB_ID,
+    id: WORKFLOW_AI_JOB_ID,
+    whenFull: "reject",
     owner: "cloud",
     delivery: { ackWaitMs: 30_000, maxAttempts: MAX_ATTEMPTS, backoffMs: [1_000, 2_000] },
   }),
@@ -113,12 +121,18 @@ export const processWorkflowAiTask = async (
   if (task.status === "canceled") return;
 
   const controller = new AbortController();
+  let timedOut = false;
+  const deadline = setTimeout(() => {
+    timedOut = true;
+    controller.abort(new Error("Workflow AI attempt deadline exceeded. Retry the workflow or inspect the provider."));
+  }, options.attemptTimeoutMs ?? env.WORKFLOW_AI_ATTEMPT_TIMEOUT_MS);
   let canceled = false;
   let monitorError: unknown;
   let checking = false;
   let lastHeartbeat = Date.now();
   const abortForShutdown = () => controller.abort(ctx.signal.reason ?? new Error("Workflow AI runtime stopped"));
   ctx.signal.addEventListener("abort", abortForShutdown, { once: true });
+  if (ctx.signal.aborted) abortForShutdown();
 
   const monitor = setInterval(() => {
     if (checking || controller.signal.aborted) return;
@@ -132,6 +146,7 @@ export const processWorkflowAiTask = async (
         }
         if (Date.now() - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
           await ctx.heartbeat();
+          await heartbeatWorkflowAiTask(task.id);
           lastHeartbeat = Date.now();
         }
       } catch (error) {
@@ -144,7 +159,12 @@ export const processWorkflowAiTask = async (
   }, options.cancelPollMs);
 
   try {
-    const result = await executeWorkflowAiRequest(task, options.runStructured, controller.signal);
+    const aborted = new Promise<never>((_resolve, reject) => {
+      const onAbort = () => reject(controller.signal.reason);
+      if (controller.signal.aborted) onAbort();
+      else controller.signal.addEventListener("abort", onAbort, { once: true });
+    });
+    const result = await Promise.race([executeWorkflowAiRequest(task, options.runStructured, controller.signal), aborted]);
     if (canceled || (await workflowAiTaskCancellationRequested(task.id))) {
       await markWorkflowAiTaskCanceledIfRequested(task.id);
       return;
@@ -154,6 +174,9 @@ export const processWorkflowAiTask = async (
     if (canceled || (await workflowAiTaskCancellationRequested(task.id))) {
       await markWorkflowAiTaskCanceledIfRequested(task.id);
       return;
+    }
+    if (timedOut) {
+      throw new WorkflowAiAttemptError("WORKFLOW_AI_TIMEOUT", "Workflow AI attempt deadline exceeded. Retry the workflow or inspect the provider.", true);
     }
     if (ctx.signal.aborted || monitorError) {
       throw new WorkflowAiAttemptError("WORKFLOW_AI_INTERRUPTED", "Workflow AI task was interrupted.", true);
@@ -165,12 +188,20 @@ export const processWorkflowAiTask = async (
     );
   } finally {
     clearInterval(monitor);
+    clearTimeout(deadline);
     ctx.signal.removeEventListener("abort", abortForShutdown);
   }
 };
 
 let activeJob: Job<{ taskId: string }> | null = null;
 let activeWorker: Worker | null = null;
+let recoveryTimer: ReturnType<typeof setInterval> | null = null;
+let recovery: Promise<void> | null = null;
+
+const recover = (): Promise<void> => {
+  recovery ??= expireWorkflowAiTasks(env.WORKFLOW_AI_QUEUE_TIMEOUT_MS).finally(() => { recovery = null; });
+  return recovery;
+};
 
 export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {}): Promise<void> => {
   if (activeJob) return;
@@ -178,6 +209,7 @@ export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {
     runStructured: input.runStructured ?? runAiStructured,
     maxAttempts: MAX_ATTEMPTS,
     cancelPollMs: input.cancelPollMs ?? DEFAULT_CANCEL_POLL_MS,
+    attemptTimeoutMs: input.attemptTimeoutMs ?? env.WORKFLOW_AI_ATTEMPT_TIMEOUT_MS,
   };
   const next = workflowAiJob();
   activeJob = next;
@@ -195,7 +227,11 @@ export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {
         // Postgres owns the terminal result, including intentional cancellation.
       }
     });
+    await recover();
     for (const taskId of await listRecoverableWorkflowAiTaskIds()) await submitWorkflowAiTask(taskId);
+    recoveryTimer = setInterval(() => {
+      void recover().catch((error) => console.error("Workflow AI recovery failed", error));
+    }, HEARTBEAT_INTERVAL_MS);
   } catch (error) {
     stopWorkflowAiRuntime();
     throw error;
@@ -204,11 +240,23 @@ export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {
 
 export const submitWorkflowAiTask = async (taskId: string): Promise<void> => {
   if (!activeJob) throw new Error("Workflow AI runtime is not started.");
-  await activeJob.submit({ key: `task:${taskId}`, coalesce: true, input: { taskId } });
+  try {
+    await activeJob.submit({ key: `task:${taskId}`, coalesce: true, input: { taskId } });
+  } catch (error) {
+    const failure = new WorkflowAiAttemptError(
+      error instanceof StoreFullError ? "WORKFLOW_AI_QUEUE_FULL" : "WORKFLOW_AI_SUBMISSION_FAILED",
+      "Workflow AI queue could not accept the task. Retry the workflow after capacity or connectivity recovers.",
+      true,
+    );
+    await failWorkflowAiTask(taskId, failure);
+    throw failure;
+  }
 };
 
 export const stopWorkflowAiRuntime = (): void => {
   activeWorker?.stop();
+  if (recoveryTimer) clearInterval(recoveryTimer);
+  recoveryTimer = null;
 
   activeWorker = null;
   activeJob = null;

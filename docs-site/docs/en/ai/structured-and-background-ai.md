@@ -465,3 +465,20 @@ from the model's prose. Reads, failed calls and rejected calls are excluded. The
 Deleting the routine does not delete this receipt. Recovery can deliver the
 line once from a terminal deleted-routine turn completed within the last day.
 It does not deliver into an archived chat.
+
+Workflow inference has an absolute attempt budget, including admission and
+structured-output repair. `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` defaults to 60,000 ms:
+the pilot p95 was about four seconds, so a minute leaves substantial headroom
+while bounding occupied capacity. Timeout aborts the provider with
+`WORKFLOW_AI_TIMEOUT` and follows the existing three-attempt retry policy.
+
+`WORKFLOW_AI_QUEUE_TIMEOUT_MS` defaults to 60,000 ms. Recovery checks every ten
+seconds in bounded batches. Overdue queued tasks become
+`WORKFLOW_AI_QUEUE_TIMEOUT`; a worker without a heartbeat for 30 seconds becomes
+`WORKFLOW_AI_INTERRUPTED`. Both persist a failure and wake the waiting workflow.
+The run details retain the failure; inspect provider health or capacity and retry
+the failed Mail messages. No automatic classification is inferred from a failure.
+
+The `cloud.workflow-ai.v2` job rejects new work when full. Submission failures
+become `WORKFLOW_AI_QUEUE_FULL` or `WORKFLOW_AI_SUBMISSION_FAILED`, with a retry
+path after capacity or connectivity recovers. Postgres remains authoritative.
