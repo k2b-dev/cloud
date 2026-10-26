@@ -17,6 +17,7 @@ import {
 import { type EvalResult, evaluateTableCell, isFormula, isTotalRow } from "@k2b/cloud/shared";
 import { highlight, text } from "@k2b/stdlib";
 import { prepareChartSnapshot } from "@k2b/ui";
+import { barChartLayout } from "@k2b/ui/charts";
 import { Lexer, type Tokens } from "marked";
 import { evaluatePrettyTable } from "../frontend/lib/pretty-table";
 import { bookRendererMessages } from "./book-renderer-messages";
@@ -32,7 +33,8 @@ import {
 
 export const CHART_MAX_BLOCKS = QUERY_MAX_BLOCKS;
 export type ChartBlock = { line: number; input: CloudAiChartInput };
-type Frame = { kind: CloudAiChartInput["kind"]; area?: boolean; title: string; subtitle?: string };
+/** `height` is the drawing's own height in CSS pixels when it needs more than the kind's frame (app.css). */
+type Frame = { kind: CloudAiChartInput["kind"]; area?: boolean; title: string; subtitle?: string; height?: number };
 type Entry = { value: string; line: number };
 type Cell = { raw: string; result: EvalResult };
 type SourceData = { columns: string[]; rows: Cell[][]; implicit: boolean; entries?: NamedDataEntry[]; invalid?: boolean };
@@ -451,9 +453,21 @@ export const chartBlockFrame = (body: string[]): Frame | null => {
 };
 
 /**
+ * The height of a chart's drawing where it grows past the kind's frame: bar rows take one line per category, so many
+ * categories make the drawing taller. The server and an editor placeholder read it from the same parsed block, so
+ * both reserve the same box. Undefined for every other drawing, which fits the frame.
+ */
+export const notebookChartHeight = (input: CloudAiChartInput, locale: string): number | undefined => {
+  const options = cloudAiChartRenderOptions(input, locale, { legend: "outside" });
+  if (options.kind !== "bar") return undefined;
+  const layout = barChartLayout(options);
+  return layout.layout === "rows" ? layout.height : undefined;
+};
+
+/**
  * The figure around a chart: title, subtitle, a place for the chart's controls and a viewport whose height comes from
- * the kind alone (app.css). The editor draws the same frame with an empty viewport while a preview loads, so the
- * drawing never moves the text. `input` is the drawn chart for the browser enhancement (`notebook-charts.tsx`): it adds
+ * the kind (app.css), or from `frame.height` where the drawing needs more. The editor draws the same frame with an
+ * empty viewport while a preview loads, so the drawing never moves the text. `input` is the drawn chart for the browser enhancement (`notebook-charts.tsx`): it adds
  * tooltips, the table view and Copy data in place, so the controls' box is reserved here. Print frames have no controls.
  */
 export const notebookChartFrameHtml = (
@@ -461,7 +475,7 @@ export const notebookChartFrameHtml = (
   viewportHtml: string,
   options: { legend?: boolean; input?: CloudAiChartInput; print?: boolean } = {},
 ): string =>
-  `<figure class="notebook-book-chart" data-kind="${frame.kind === "line" && frame.area ? "area" : frame.kind}"${options.input ? ` data-chart="${escape(JSON.stringify(options.input))}"` : ""}><figcaption class="notebook-book-chart__header"><span class="notebook-book-chart__title">${escape(frame.title)}</span>${frame.subtitle ? `<span class="notebook-book-chart__subtitle">${escape(frame.subtitle)}</span>` : ""}</figcaption>${options.print ? "" : '<div class="notebook-book-chart__actions"></div>'}<div class="notebook-book-chart__viewport"${options.legend ? ' data-legend="true"' : ""}>${viewportHtml}</div></figure>`;
+  `<figure class="notebook-book-chart" data-kind="${frame.kind === "line" && frame.area ? "area" : frame.kind}"${options.input ? ` data-chart="${escape(JSON.stringify(options.input))}"` : ""}><figcaption class="notebook-book-chart__header"><span class="notebook-book-chart__title">${escape(frame.title)}</span>${frame.subtitle ? `<span class="notebook-book-chart__subtitle">${escape(frame.subtitle)}</span>` : ""}</figcaption>${options.print ? "" : '<div class="notebook-book-chart__actions"></div>'}<div class="notebook-book-chart__viewport"${options.legend ? ' data-legend="true"' : ""}${frame.height ? ` style="--notebook-chart-height:${frame.height}px"` : ""}>${viewportHtml}</div></figure>`;
 
 /** A chart's data as a note table: the PDF prints it below the figure, and the table view shows it in the frame. */
 export const notebookChartTableHtml = (table: CloudAiChartTable, options: { label?: string; className?: string } = {}): string =>
@@ -486,7 +500,11 @@ export const renderNotebookChartFigure = (input: CloudAiChartInput, locale: stri
       ? `<ul class="k2b-chart-legend" aria-label="${escape(t.chartLegend)}">${legend.map((entry) => `<li><span class="k2b-chart-legend__swatch"${entry.style && entry.style !== "solid" ? ` data-style="${entry.style}"` : ""}${entry.reference ? ' data-reference="true"' : ""} style="--k2b-chart-legend-color:var(--stdlib-chart-c${(entry.color % 8) + 1})" aria-hidden="true"></span>${escape(entry.label)}</li>`).join("")}</ul>`
       : "";
     const viewport = `<div class="k2b-chart" data-chart-kind="${snapshot.kind}"><div class="k2b-chart__svg"${snapshot.stretch ? ' data-stretch="true"' : ""} style="--k2b-chart-width:${snapshot.width}px;--k2b-chart-height:${snapshot.height}px">${snapshot.svg}</div></div>${legendHtml}`;
-    const figure = notebookChartFrameHtml(input, viewport, { legend: legend.length > 0, ...(options.print ? { print: true } : { input }) });
+    const height = notebookChartHeight(input, locale);
+    const figure = notebookChartFrameHtml(height ? { ...input, height } : input, viewport, {
+      legend: legend.length > 0,
+      ...(options.print ? { print: true } : { input }),
+    });
     if (!options.print) return figure;
     return `${figure}${notebookChartTableHtml(cloudAiChartTable(input, locale))}`;
   } catch {

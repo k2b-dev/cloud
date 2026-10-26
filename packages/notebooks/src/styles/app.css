@@ -575,13 +575,15 @@
   font-size: 0.875rem;
   line-height: 1.25rem;
 }
+/* The server writes `--notebook-chart-height` where the drawing needs more than the frame: bar rows grow with their
+   categories instead of hiding labels. Placeholder, drawing and table view keep that one height in every engine. */
 .notebook-book-chart__viewport {
   grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   min-width: 0;
-  height: 18rem;
+  height: max(18rem, var(--notebook-chart-height, 0px));
 }
 .notebook-book-chart[data-kind="stat"] .notebook-book-chart__viewport {
   height: 10rem;
@@ -591,20 +593,7 @@
   min-height: 60%;
 }
 .notebook-book-chart .k2b-chart__svg {
-  height: 100%;
-}
-/* Bar rows take the height their labels need, known on the server: the frame grows with many categories instead of
-   hiding labels, and a short list keeps the usual frame. */
-.notebook-book-chart__viewport:has(svg[data-bar-layout="rows"]) {
-  height: auto;
-  min-height: 18rem;
-}
-.notebook-book-chart__viewport:has(svg[data-bar-layout="rows"]) > .k2b-chart {
-  flex: none;
-  min-height: 0;
-}
-.notebook-book-chart .k2b-chart__svg:has(> svg[data-bar-layout="rows"]) {
-  height: var(--k2b-chart-height);
+  height: var(--notebook-chart-height, 100%);
 }
 /* Loading and failure messages stand inside the frame they wait for. */
 .notebook-book-content .notebook-book-chart__status {

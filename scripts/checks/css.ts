@@ -266,6 +266,7 @@ export const rule: Rule = {
       "--cloud-panel-width-set", // Layout.tsx and browser/panel-slot.ts: the panel width the reader saved
       "--assistant-waiting-accent", // AssistantWaitingStrip.tsx: the accent of the app that asks
       "--k2b-chart-height", // @k2b/ui Chart.tsx and ChartSnapshotView.tsx: the rendered chart height
+      "--notebook-chart-height", // notebooks chart-blocks.ts: the height of a drawing taller than its frame
     ]);
     // Cloud imports the UI package stylesheet. Its defaults are valid owners,
     // while Cloud and application styles may override those theme tokens.
