@@ -9,6 +9,7 @@ export const historyCatalog = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      historyOverviewUnavailable: "Your POSIX areas have no history. This overview shows only local Cloud storage.",
       historyUnavailable: "History is available only for local Cloud storage. This area uses Unix permissions, which history cannot check.",
       activity: "Activity",
       newFeature: "New",
@@ -309,6 +310,7 @@ export const historyCatalog = i18n.define({
       revokeLink: "Revoke link",
     },
     de: {
+      historyOverviewUnavailable: "Für deine POSIX-Bereiche gibt es keinen Verlauf. Diese Übersicht zeigt nur lokalen Cloud-Speicher.",
       historyUnavailable:
         "Der Verlauf ist nur für lokale Cloud-Ablagen verfügbar. Dieser Bereich verwendet Unix-Rechte, die der Verlauf nicht prüfen kann.",
       activity: "Aktivität",

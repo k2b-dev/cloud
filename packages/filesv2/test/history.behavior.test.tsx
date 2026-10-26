@@ -94,6 +94,70 @@ describe("Files history components", () => {
     expect(dom.root.querySelectorAll(".filesv2-history-row")).toHaveLength(0);
   });
 
+  test.each(["de", "en"])("POSIX-only overview shows one accurate unavailable notice in %s", async (locale) => {
+    const { default: ActivityView } = await import("../src/frontend/ActivityView");
+    const { FilesApiError } = await import("../src/frontend/file-preview");
+    const { historyMessages } = await import("../src/frontend/history-messages");
+    const dom = await mount(
+      () => (
+        <ActivityView
+          env={env}
+          filters={{}}
+          onFiltersChange={() => {}}
+          bases={[{ id: "freeipa:users:alice", label: "POSIX" }]}
+          people={[]}
+          retentionDays={365}
+          load={async () => {
+            throw new FilesApiError("history_unavailable", "unavailable");
+          }}
+          loadChain={async () => chain()}
+        />
+      ),
+      locale,
+    );
+    await flush();
+    expect(dom.root.textContent).toContain(historyMessages(locale).historyUnavailable);
+    expect(dom.root.textContent).not.toContain(historyMessages(locale).historyOverviewUnavailable);
+    expect(dom.root.querySelectorAll('[role="status"]')).toHaveLength(1);
+  });
+
+  test.each(["de", "en"])("mixed-area overview keeps POSIX guidance through loading, data, search and errors in %s", async (locale) => {
+    const { default: ActivityView } = await import("../src/frontend/ActivityView");
+    const { historyMessages } = await import("../src/frontend/history-messages");
+    const pending = deferred<ActivityPage>();
+    const [filters, setFilters] = createSignal<ActivityFilters>({});
+    const dom = await mount(
+      () => (
+        <ActivityView
+          env={env}
+          filters={filters()}
+          onFiltersChange={setFilters}
+          bases={[
+            { id: "cloud:users:alice", label: "Cloud" },
+            { id: "freeipa:users:alice", label: "POSIX" },
+          ]}
+          people={[]}
+          retentionDays={365}
+          load={() => (filters().q ? Promise.reject(new Error("offline")) : pending.promise)}
+          loadChain={async () => chain()}
+        />
+      ),
+      locale,
+    );
+    const text = historyMessages(locale).historyOverviewUnavailable;
+    expect(dom.root.textContent).toContain(text);
+    pending.resolve(page([entry()]));
+    await flush();
+    expect(dom.root.querySelectorAll(".filesv2-history-row").length).toBeGreaterThan(0);
+    expect(dom.root.textContent).toContain(text);
+    setFilters({ q: "missing" });
+    await flush();
+    expect(dom.root.textContent).toContain(text);
+    setFilters({ baseId: "cloud:users:alice" });
+    await flush();
+    expect(dom.root.textContent).not.toContain(text);
+  });
+
   test("activity version evidence retries, restores the exact saved content, and disappears for a new row", async () => {
     const { HistoryRow } = await import("../src/frontend/history-rows");
     const original = entry({ action: "file.overwrite", after: current("vertrieb/Proof.pdf", { directory: false }) });

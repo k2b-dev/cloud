@@ -3,6 +3,7 @@ import { resolveDisplayNames } from "@k2b/cloud/server";
 import { secrets } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import {
   actorId,
   baseId,
@@ -21,6 +22,7 @@ import { shares } from "../data/shares";
 import { migrate } from "../migrate";
 import { withActivityReadBudget } from "./activity-read-budget";
 import { createActivityReader } from "./activity-reader";
+import { recordAdminHistoryRead } from "./admin-history-read";
 
 const suite = suiteFor("database");
 const call = testCall(testActor);
@@ -36,6 +38,7 @@ suite("history reader SQL and permission projection in a private database", () =
     await sql`CREATE TABLE auth.groups(id uuid PRIMARY KEY,name text)`.simple();
     await sql`CREATE TABLE auth.access(id uuid PRIMARY KEY)`.simple();
     await migrate();
+    await migrateAudit();
     // PR5 is a merge prerequisite. Until it lands, these private test-only tables exercise its read contract.
     await sql`CREATE TABLE IF NOT EXISTS filesv2.share_access (
       share_id uuid,hour timestamptz,network text,client text,pages bigint,downloads bigint,password_failed bigint,
@@ -44,7 +47,7 @@ suite("history reader SQL and permission projection in a private database", () =
       share_id uuid,day date,pages bigint,downloads bigint,password_failed bigint,PRIMARY KEY(share_id,day))`.simple();
   });
   beforeEach(async () => {
-    await sql`TRUNCATE auth.users,auth.groups,filesv2.bases,filesv2.shares,filesv2.share_access,filesv2.share_access_daily CASCADE`.simple();
+    await sql`TRUNCATE audit.events,auth.users,auth.groups,filesv2.bases,filesv2.shares,filesv2.share_access,filesv2.share_access_daily CASCADE`.simple();
     await sql`INSERT INTO auth.users(id,uid,display_name) VALUES(${actorId}::uuid,'alice','Alice'),(${otherId}::uuid,'bob','Live Bob')`;
     await sql`INSERT INTO filesv2.bases ${sql(historyBinding)}`;
   });
@@ -68,6 +71,7 @@ suite("history reader SQL and permission projection in a private database", () =
     const reader = createActivityReader({
       ...f.deps,
       data: activityReaderData,
+      recordAdminRead: recordAdminHistoryRead,
       bindings,
       shares,
       displayNames: resolveDisplayNames,
@@ -76,6 +80,69 @@ suite("history reader SQL and permission projection in a private database", () =
     return { ...f, reader };
   }
 
+  test("foreign admin history records one scoped atomic audit per page, while own and denied reads do not", async () => {
+    for (let index = 1; index <= 4; index++) await seed(candidate(index, { action: "item.rename" }));
+    const f = fixture();
+    f.setAdmin(true);
+    await f.reader.activity(call, { action: "item.rename", limit: 2 });
+    expect(await sql`SELECT id FROM audit.events`).toHaveLength(0);
+    f.setMember(false);
+    const first = await f.reader.activity(call, { action: "item.rename", limit: 2 });
+    expect(first.items).toHaveLength(2);
+    const [record] = await sql`SELECT id,request_id,detail,xmin::text FROM filesv2.activity WHERE action='admin.read'`;
+    const [event] = await sql`SELECT action,request_id,metadata,xmin::text FROM audit.events`;
+    expect(record).toMatchObject({ detail: { operation: "history", scope: { endpoint: "activity", action: "item.rename", limit: 2 } } });
+    expect(event).toMatchObject({
+      action: "filesv2.admin.read",
+      request_id: call.requestId,
+      metadata: { operation: "history", historyId: record!.id, scope: record!.detail.scope },
+      xmin: record!.xmin,
+    });
+    await f.reader.activity(call, { action: "item.rename", limit: 2, cursor: first.next! });
+    expect(await sql`SELECT id FROM filesv2.activity WHERE action='admin.read'`).toHaveLength(2);
+    expect(await sql`SELECT id FROM audit.events`).toHaveLength(2);
+    await f.reader.activityEntry(call, { activityId: candidate().id });
+    expect(await sql`SELECT id FROM audit.events`).toHaveLength(3);
+    f.setAdmin(false);
+    expect((await f.reader.activity(call)).items).toHaveLength(0);
+    expect(await sql`SELECT id FROM audit.events`).toHaveLength(3);
+  });
+  test("one page audits all returned foreign bindings, while rejected filters leave no read record", async () => {
+    const secondId = "20000000-0000-4000-8000-000000000009";
+    await sql`INSERT INTO filesv2.bases ${sql({ ...historyBinding, id: secondId, identity_id: otherId, path: "users/bob" })}`;
+    await seed(candidate(1));
+    await seed(candidate(2, { base_id: secondId, path_before: "users/bob/old", path_after: "users/bob/new" }));
+    const f = fixture();
+    f.setAdmin(true);
+    f.setMember(false);
+    expect((await f.reader.activity(call, { action: "file.create" })).items).toHaveLength(0);
+    expect((await f.reader.activity(call, { q: "absent-name" })).items).toHaveLength(0);
+    expect(await sql`SELECT id FROM audit.events`).toHaveLength(0);
+    expect(await sql`SELECT id FROM filesv2.activity WHERE action='admin.read'`).toHaveLength(0);
+    expect((await f.reader.activity(call)).items).toHaveLength(2);
+    const [record] = await sql`SELECT detail,xmin::text FROM filesv2.activity WHERE action='admin.read'`;
+    const [event] = await sql`SELECT metadata,xmin::text FROM audit.events`;
+    expect(record!.detail.scope.bindingIds.toSorted()).toEqual([baseId, secondId].toSorted());
+    expect(event!.metadata.bindingIds.toSorted()).toEqual([baseId, secondId].toSorted());
+    expect(event!.xmin).toBe(record!.xmin);
+  });
+  test("a failed foreign-history audit rolls back activity and prevents snapshot disclosure", async () => {
+    await seed();
+    const f = fixture();
+    f.setAdmin(true);
+    f.setMember(false);
+    await sql`CREATE FUNCTION audit.reject_history_read() RETURNS trigger LANGUAGE plpgsql AS
+      $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END $$`.simple();
+    await sql`CREATE TRIGGER reject_history_read BEFORE INSERT ON audit.events FOR EACH ROW EXECUTE FUNCTION audit.reject_history_read()`.simple();
+    try {
+      await expect(f.reader.activityEntry(call, { activityId: candidate().id })).rejects.toThrow("audit unavailable");
+      expect(await sql`SELECT id FROM filesv2.activity WHERE action='admin.read'`).toHaveLength(0);
+      expect(await sql`SELECT id FROM audit.events`).toHaveLength(0);
+    } finally {
+      await sql`DROP TRIGGER reject_history_read ON audit.events`.simple();
+      await sql`DROP FUNCTION audit.reject_history_read()`.simple();
+    }
+  });
   test("pages history over visible entries only", async () => {
     for (let index = 1; index <= 5; index++) await seed(candidate(index, { path_before: null }));
     const f = fixture();
@@ -257,7 +324,7 @@ suite("history reader SQL and permission projection in a private database", () =
   });
 
   test("exact-time projection keeps inclusive SQL microseconds and paginates within the rounded hour", async () => {
-    for (let index = 1; index <= 4; index++) await seed(candidate(index));
+    for (let index = 1; index <= 4; index++) await seed(candidate(index, { action: "item.rename" }));
     await sql`UPDATE filesv2.activity SET finished_at='2030-05-15T12:00:00Z'::timestamptz
       + ((right(id::text,12)::int - 1) * interval '1 microsecond')`;
     const f = fixture();

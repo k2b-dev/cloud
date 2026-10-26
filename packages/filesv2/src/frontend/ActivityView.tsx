@@ -242,6 +242,16 @@ export default function ActivityView(props: ActivityViewProps) {
       </div>
       <div class="filesv2-history-body" aria-busy={pages.loading() || pages.refreshing()}>
         <Show
+          when={
+            !props.filters.baseId &&
+            !isHistoryUnavailable(pages.error()) &&
+            props.bases.some((base) => base.id.startsWith("cloud:")) &&
+            props.bases.some((base) => base.id.startsWith("freeipa:"))
+          }
+        >
+          <HistoryUnavailable overview />
+        </Show>
+        <Show
           when={!props.filters.q || props.filters.baseId?.startsWith("freeipa:") || isHistoryUnavailable(pages.error())}
           fallback={
             <MissingItemView

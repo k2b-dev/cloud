@@ -182,7 +182,7 @@ no claim about expired history or descendants inside a selected folder.
 `complete: false` makes `visibleCount` a lower bound, including when exactly
 500 candidates fill the bound. Clients must use an “at least” label. The read
 uses the existing history request deadline and cancellation, never creates
-storage or bindings, and records no new activity. This release adds a partial
+storage or bindings. Administrator reads of foreign history record one scoped read per request, as described below. This release adds a partial
 batch/effective-time index for this bounded lookup; no worker or configuration
 is required.
 
@@ -237,7 +237,7 @@ granularity. `knownNetworks` is null for daily rows and unclassified hourly
 accesses; otherwise it counts known networks, with `overflow` marking a lower
 bound. Daily rows retain no overflow evidence. Follow `timeline.next` with
 `timelineAfter` and the same dates to read older aggregates. Both cursors are
-independent. Reads create no activity or audit action.
+independent. Ordinary history reads create no activity or audit action. Administrator reads of bindings outside their current Cloud grants record one `admin.read` and one `filesv2.admin.read` security audit event in the same transaction before exposing a foreign snapshot. Each request or page records its endpoint, bounded input filters, and every distinct foreign binding represented in its returned results once. Existing page, scan, and chain limits bound that list. Rows rejected by filters do not create a read record. This includes item, batch, chain and link-count reads. Audit failure prevents the read; export keeps its separate export audit.
 
 The file inspector shows these aggregates to the link's creator or an
 administrator as rows in the item's history, ordered with recorded changes by
@@ -292,6 +292,8 @@ top-level item and a security event in the transaction that changes the link.
 Revoking a link still works when its creator has lost access to its original
 folder. The recorded paths describe the original selection; they do not grant
 access to the history reader. Repeating a revocation produces no second event.
+
+The overall activity overview persistently explains that POSIX areas have no history when the person has any POSIX bases, including while searching, loading or showing an error.
 
 ## Public-link and administrative reads
 

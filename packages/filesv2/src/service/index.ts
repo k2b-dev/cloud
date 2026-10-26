@@ -60,6 +60,7 @@ import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActiv
 import { createActivityActions } from "./activity-actions";
 import { type ActivityReadBudget, readStep, withActivityReadBudget } from "./activity-read-budget";
 import { type ActivityReadCall, createActivityReader } from "./activity-reader";
+import { recordAdminHistoryRead } from "./admin-history-read";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
@@ -979,6 +980,7 @@ export function createFilesService(
     return { activityChecked, activityPurged, shareAccessRolledUp: shareAccess.rolledUp, shareAccessPurged: shareAccess.purged };
   }
   const activityReader = createActivityReader({
+    recordAdminRead: recordAdminHistoryRead,
     requestContext: async (actor, budget) => {
       const state = await context(actor, budget);
       let admin = false;
@@ -1133,7 +1135,8 @@ export function createFilesService(
           await writableParent(call.actor, endpoint.baseId, endpoint.path, base);
           const destination = await writableParent(call.actor, endpoint.baseId, path, base);
           const target = joinPath(base.inspection.candidate.path, path);
-          if (target === source.target) return entryResult(source);
+          if (target === source.target)
+            return { base: source.inspection.summary, entry: fileEntry(source.inspection.summary, source.relative, source.node) };
           if (target.startsWith(`${source.target}/`)) throw new FilesError("move_into_self", 409);
           call.requestAbort?.throwIfAborted();
           const action =
