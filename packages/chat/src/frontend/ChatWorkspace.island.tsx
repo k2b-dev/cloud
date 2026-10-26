@@ -55,6 +55,7 @@ import ChatThreadColumn from "./ChatThreadColumn";
 import { ThreadMenu, ThreadPicker } from "./ChatThreads";
 import ChatThreadsPage from "./ChatThreadsPage";
 import { createChannelApi } from "./channel-api";
+import { createChatCommands } from "./chat-commands";
 import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { messageTime, sameDay } from "./chat-format";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
@@ -62,6 +63,7 @@ import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
 import DiscoverChannels from "./DiscoverChannels";
 import { createItemEventsApi } from "./item-events-api";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
+import type { ChosenMember } from "./MemberPicker";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
@@ -1479,12 +1481,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       },
     });
   };
-  const newChat = async () => {
+  const newChat = async (initialPerson?: ChosenMember, active = () => true) => {
     if (!store) return;
-    await openChosen(
-      await openNewChatDialog({ store, guest: props.guest, viewerId: props.viewerId, dateConfig: props.dateConfig, locale: locale() }),
-    );
+    const id = await openNewChatDialog({
+      store,
+      guest: props.guest,
+      viewerId: props.viewerId,
+      dateConfig: props.dateConfig,
+      locale: locale(),
+      initialPerson,
+    });
+    if (active()) await openChosen(id);
   };
+  createChatCommands(newChat, () => t().contactUnavailable);
   // The dialogs only offer what the viewer may do; the server decides every request again.
   const addPeople = async () => {
     const current = conversation();
