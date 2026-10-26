@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
@@ -19,9 +19,9 @@ const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } 
 const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
 
 const until = async (condition: () => boolean) => {
-  const deadline = Date.now() + 5_000; // real clock: bounds the wait for the in-memory server
+  const deadline = performance.now() + 5_000;
   while (!condition()) {
-    if (Date.now() > deadline) throw new Error("Condition not met in time"); // real clock: bounds the wait
+    if (performance.now() > deadline) throw new Error("Condition not met in time");
     await Bun.sleep(20);
   }
 };
@@ -54,6 +54,7 @@ const sidebar = (page: Page) => page.locator(".k2b-app-workspace__sidebar");
 const threadRow = (page: Page, view: string) => sidebar(page).locator(`[data-thread="${view}"]`);
 const longPress = async (page: Page, target: Locator) => {
   await target.scrollIntoViewIfNeeded();
+  await settled(page);
   const box = (await target.boundingBox())!;
   const point = { x: box.x + 8, y: box.y + box.height / 2 };
   await page.evaluate(async (point) => {
@@ -273,7 +274,7 @@ describe("Chat threads on a desktop", () => {
 
       await page.getByRole("button", { name: "More actions", exact: true }).click();
       await page.getByRole("menuitem", { name: /^Archive thread/ }).click();
-      await page.getByRole("dialog").getByRole("button", { name: "Archive", exact: true }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Archive thread", exact: true }).click();
       await page.waitForURL(`**/t/general`);
       const toast = page.locator(".k2b-toast", { hasText: "“News” archived" });
       await toast.waitFor();
@@ -451,3 +452,98 @@ describe("Chat threads on a phone", () => {
     }
   }, 30_000);
 });
+
+for (const system of [false, true])
+  for (const selected of ["all", "thread"] as const)
+    test(`unread-gap recovery retains ${system ? "system" : "ordinary"} ${selected} selection in the panel`, async () => {
+      const chat = harness.addChat({ members: [viewer, nora], name: "Gap recovery", count: 3, end: chatTestNow });
+      const thread = harness.addThread(chat, { name: "Selected", count: 5, end: chatTestNow });
+      const other = harness.addThread(chat, { name: "Other", count: 2, end: chatTestNow });
+      if (system) harness.setSystem(chat, { type: "spaces.space", id: "Space1" });
+      else harness.archive(chat, true);
+      const context = await browser.newContext({ ...desktop, reducedMotion: "reduce" });
+      const page = await context.newPage();
+      page.setDefaultTimeout(5_000);
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      const view = selected === "all" ? "all" : thread;
+      const path = `/app/chat/panel/c/${chat}${view === "all" ? "" : `/t/${view}`}`;
+      const suffix = system ? "?listFilter=unread&filter=done" : "?list=archive&filter=unread";
+      try {
+        await page.goto(new URL(path + suffix, harness.url).href);
+        await page.evaluate(() => document.fonts.ready);
+        await page.evaluate((props) => window.mountChat(props, "en"), {
+          ...harness.props({ chat, thread: view, archived: !system, filter: "unread" }),
+          embedded: true,
+        });
+        await until(() => harness.subscribed(chat));
+        // Establish a visible range before hidden-tab replay.
+        const feed = page.locator(".k2b-virtual-feed__viewport");
+        await feed.waitFor();
+        await settled(page);
+        const boundary = harness.thread(chat, thread)!.read!.lastReadSeq!;
+        await page.evaluate(() => {
+          Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+          document.hasFocus = () => false;
+          document.dispatchEvent(new Event("visibilitychange"));
+        });
+        await until(() => !harness.subscribed(chat));
+        let last = "";
+        for (let index = 0; index < 60; index++) {
+          harness.receiveIn(chat, nora, `Gap arrival ${index}`, { thread });
+          last = harness.messageId(chat, harness.props({ chat }).open!.page.seqHead);
+          if (index % 3 === 0) harness.receiveIn(chat, nora, `Other arrival ${index}`, { thread: other });
+        }
+        await page.evaluate(() => {
+          Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+          document.hasFocus = () => true;
+          document.dispatchEvent(new Event("visibilitychange"));
+          window.dispatchEvent(new Event("focus"));
+        });
+        await page.locator(`[data-key="${last}"] .k2b-message-row__text`).waitFor({ state: "attached" });
+        const jump = page.getByRole("button", { name: "New messages", exact: true });
+        await jump.waitFor();
+        expect(harness.thread(chat, thread)!.read!.lastReadSeq).toBe(boundary);
+        // Replace the loaded prefix with the newest page, so recovery must request this view's snapshot.
+        await page.route(
+          `**/api/chat/conversations/${chat}/changes?*`,
+          (route) => route.fulfill({ status: 409, json: { code: "RESYNC_REQUIRED", message: "Expired" } }),
+          { times: 1 },
+        );
+        await page.route(`**/api/chat/conversations/${chat}/messages?before=*`, (route) =>
+          route.fulfill({ status: 503, json: { message: "Unavailable" } }),
+        );
+        const previousHeight = await feed.evaluate((element) => element.scrollHeight);
+        const replacement = page.waitForResponse(
+          (response) => response.url().includes(`/conversations/${chat}/messages`) && response.request().method() === "GET",
+        );
+        harness.resync(chat);
+        await replacement;
+        await page.waitForFunction(
+          (height) => document.querySelector(".k2b-virtual-feed__viewport")!.scrollHeight < height,
+          previousHeight,
+        );
+        await settled(page);
+        await jump.waitFor();
+        const recovered = page.waitForResponse((response) => response.url().includes(`/conversations/${chat}/snapshot`) && response.ok());
+        await jump.click();
+        await recovered;
+        await page.locator(`[data-key="${harness.messageId(chat, 11)}"] .k2b-message-row__text`).waitFor();
+        await jump.waitFor({ state: "hidden" });
+        expect(new URL(page.url()).pathname).toBe(path);
+        if (system) {
+          expect(new URL(page.url()).searchParams.get("listFilter")).toBe("unread");
+          expect(new URL(page.url()).searchParams.get("filter")).toBe("done");
+        }
+        if (!system) {
+          expect(new URL(page.url()).searchParams.get("list")).toBe("archive");
+          expect(new URL(page.url()).searchParams.get("filter")).toBe("unread");
+        }
+        const full = page.getByRole("link", { name: "Open full view", exact: true });
+        expect(new URL((await full.getAttribute("href"))!, page.url()).pathname).toBe(path.replace("/panel", ""));
+        if (selected === "thread") expect(harness.thread(chat, other)!.read!.lastReadSeq).toBe(10);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 30_000);

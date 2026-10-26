@@ -2,6 +2,7 @@ import {
   type AuthContext,
   auth,
   getLocale,
+  getTimeZone,
   jsonResponse,
   rateLimit,
   requiresAdmin,
@@ -15,12 +16,14 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { ChatComposeInputSchema } from "../commands";
 import { chatMessages } from "../messages";
+import { chatRequestContext as context } from "../request-context";
 import { ChatHealthSchema, chatService } from "../service";
 import {
   AddMembersSchema,
   ChangeSchema,
   ChangesPageSchema,
   ChangesQuerySchema,
+  ChannelQuerySchema,
   ChatSnapshotSchema,
   ConversationPageSchema,
   ConversationParamSchema,
@@ -29,6 +32,15 @@ import {
   CreateConversationSchema,
   CreateOutcomeSchema,
   CreateThreadSchema,
+  DiscoveryEntriesSchema,
+  DiscoveryOptionsSchema,
+  DiscoveryPreviewSchema,
+  DiscoveryStateSchema,
+  DiscoveryUpdateSchema,
+  ForResourceSchema,
+  ItemEventsPageSchema,
+  ItemEventsQuerySchema,
+  LeaveResultSchema,
   LeaveSchema,
   MarkUnreadSchema,
   MemberPageSchema,
@@ -42,15 +54,26 @@ import {
   MessageViewSchema,
   PeoplePageSchema,
   PeopleQuerySchema,
+  PersonalConversationSchema,
+  ReactionParamSchema,
+  ReactionsSchema,
   ReadAllOutcomeSchema,
   ReadAllSchema,
   ReadSchema,
   ReadUpdateSchema,
   SendMessageSchema,
+  SharedPageSchema,
+  SharedQuerySchema,
+  SidebarPreferencesSchema,
   SnapshotQuerySchema,
   SuccessSchema,
+  SummaryQuerySchema,
+  SystemChatPageSchema,
+  SystemChatParamSchema,
+  SystemChatQuerySchema,
   ThreadListSchema,
   ThreadParamSchema,
+  ThreadQuerySchema,
   ThreadSchema,
   UpdateConversationSchema,
   UpdateMemberSchema,
@@ -59,8 +82,11 @@ import {
 import { chatLive } from "../service/live";
 import { chatLiveChannels } from "../service/live-channels";
 
-const context = (c: Context<AuthContext>) => ({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) });
 const invalidInput = (c: Context) => ({ code: "BAD_INPUT", message: chatMessages.resolve([getLocale(c)]).t.invalidInput });
+const audienceUnavailableResponse = jsonResponse(
+  z.object({ code: z.literal("AUDIENCE_UNAVAILABLE"), message: z.string() }),
+  "Audience counting timed out; retry the request",
+);
 const description = (summary: string, schema: z.ZodType) =>
   describeRoute({
     tags: ["Chat"],
@@ -102,6 +128,130 @@ const app = new Hono<AuthContext>()
       );
     },
   )
+  .get(
+    "/preferences",
+    auth.requireRole("authenticated"),
+    description("Read your sidebar preferences", SidebarPreferencesSchema),
+    async (c) => respond(c, chatService.personal.preferences(context(c))),
+  )
+  .put(
+    "/preferences",
+    auth.requireRole("authenticated"),
+    description("Save your sidebar preferences", SidebarPreferencesSchema),
+    validator("json", SidebarPreferencesSchema, invalidInput),
+    async (c) => respond(c, chatService.personal.savePreferences({ ...context(c), input: c.req.valid("json") })),
+  )
+  .put(
+    "/conversations/:conversation/personal",
+    auth.requireRole("authenticated"),
+    description("Archive or order your pinned chat", ConversationSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", PersonalConversationSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.personal.update({ ...context(c), conversationId: c.req.valid("param").conversation, input: c.req.valid("json") }),
+      ),
+  )
+  .get(
+    "/system-chats",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "List visible Spaces and Notebooks with their system chats",
+      ...requiresAuth,
+      description:
+        "Reads at most 100 containers from each owning application with the caller's credential. Pass spacesCursor and notebooksCursor independently. Includes containers without a conversation as conversation: null. Unavailable or unauthorized resources are omitted. Summaries share a 100-thread candidate budget across the entire response. Follow each non-null summaryCursor at GET /conversations/:conversation?summaryCursor=...; counts describe that page, with General included only on the initial page.",
+      responses: { 200: jsonResponse(SystemChatPageSchema, "Visible containers and independent source cursors") },
+    }),
+    validator("query", SystemChatQuerySchema, invalidInput),
+    async (c) => respond(c, chatService.systemChats.list({ ...context(c), query: c.req.valid("query") })),
+  )
+  .post(
+    "/system-chats/:resourceType/:resourceId/open",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Open or create a system chat idempotently",
+      ...requiresAuth,
+      description:
+        "Container reader permission read/write/manage (or admin) maps to Chat read/write/admin, capped by the caller's existing credential scopes. The first open creates a participant at the current message head. Chat does not create or edit container access grants. Access decisions expire in Valkey after 60 seconds.",
+      responses: {
+        200: jsonResponse(ConversationSchema, "Opened system conversation"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Container unavailable or not readable"),
+      },
+    }),
+    validator("param", SystemChatParamSchema, invalidInput),
+    async (c) => respond(c, chatService.systemChats.open({ ...context(c), ...c.req.valid("param") })),
+  )
+  .get(
+    "/channels/options",
+    auth.requireRole("authenticated"),
+    description("Read channel audience options", DiscoveryOptionsSchema),
+    async (c) => respond(c, chatService.channels.options()),
+  )
+  .get(
+    "/channels",
+    auth.requireRole("authenticated"),
+    description("Browse discoverable channels", ConversationPageSchema),
+    validator("query", ChannelQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.channels.browse({
+          ...context(c),
+          query: { ...c.req.valid("query"), cursor: c.req.valid("query").cursor ? JSON.stringify(c.req.valid("query").cursor) : undefined },
+        }),
+      ),
+  )
+  .post(
+    "/channels/preview",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Count the discovery audience",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(DiscoveryPreviewSchema, "Audience count"), 503: audienceUnavailableResponse },
+    }),
+    validator("query", ConversationParamSchema.partial(), invalidInput),
+    validator("json", DiscoveryEntriesSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.channels.preview({ ...context(c), conversationId: c.req.valid("query").conversation, input: c.req.valid("json") }),
+      ),
+  )
+  .get(
+    "/conversations/:conversation/discovery",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Read channel discovery settings",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(DiscoveryStateSchema, "Discovery settings"), 503: audienceUnavailableResponse },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    async (c) => respond(c, chatService.channels.get({ ...context(c), conversationId: c.req.valid("param").conversation })),
+  )
+  .put(
+    "/conversations/:conversation/discovery",
+    auth.requireRole("authenticated"),
+    description("Change channel discovery settings", ConversationSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", DiscoveryUpdateSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.channels.update({ ...context(c), conversationId: c.req.valid("param").conversation, input: c.req.valid("json") }),
+      ),
+  )
+  .post(
+    "/conversations/:conversation/join",
+    auth.requireRole("authenticated"),
+    description("Join a discoverable channel", ConversationSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    async (c) => respond(c, chatService.channels.join({ ...context(c), conversationId: c.req.valid("param").conversation })),
+  )
   .use("/conversations", auth.requireRole("authenticated"))
   .use("/conversations/*", auth.requireRole("authenticated"))
   .post(
@@ -135,15 +285,27 @@ const app = new Hono<AuthContext>()
     validator("query", ConversationQuerySchema, invalidInput),
     async (c) => {
       // The transport validator decodes the cursor; the service validates its own public input.
-      const cursor = c.req.valid("query").cursor;
-      return respond(c, chatService.conversations.list({ ...context(c), query: cursor ? { cursor: JSON.stringify(cursor) } : {} }));
+      const { cursor, archived, unread, ids } = c.req.valid("query");
+      return respond(
+        c,
+        chatService.conversations.list({
+          ...context(c),
+          query: { archived, unread, ...(ids ? { ids: ids.join(",") } : {}), ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) },
+        }),
+      );
     },
   )
   .post(
     "/conversations/read-all",
     description("Mark your unread chats read", ReadAllOutcomeSchema),
     validator("json", ReadAllSchema, invalidInput),
-    async (c) => respond(c, chatService.readState.readAll({ ...context(c), input: c.req.valid("json") })),
+    async (c) => {
+      const { confirmed, cursor } = c.req.valid("json");
+      return respond(
+        c,
+        chatService.readState.readAll({ ...context(c), input: { confirmed, ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) } }),
+      );
+    },
   )
   .post(
     "/conversations/:conversation/read",
@@ -169,9 +331,14 @@ const app = new Hono<AuthContext>()
   )
   .get(
     "/conversations/:conversation",
-    description("Read a chat", ConversationSchema),
+    description("Read a chat and one bounded summary page", ConversationSchema),
     validator("param", ConversationParamSchema, invalidInput),
-    async (c) => respond(c, chatService.conversations.get({ ...context(c), conversationId: c.req.valid("param").conversation })),
+    validator("query", SummaryQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.conversations.get({ ...context(c), ...c.req.valid("query"), conversationId: c.req.valid("param").conversation }),
+      ),
   )
   .get(
     "/conversations/:conversation/snapshot",
@@ -214,9 +381,24 @@ const app = new Hono<AuthContext>()
   )
   .get(
     "/conversations/:conversation/threads",
-    description("List all chat threads, including archived threads", ThreadListSchema),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "List chat threads, including archived threads",
+      ...requiresAuth,
+      description:
+        "System chats inspect at most 100 candidate threads per page, ordered by latest activity with thread-ID ties. Reader visibility, open/done/unread and q filters apply within that page. Follow nextCursor even when items is empty. Names and descriptions come from the item reader. resource.status is the Space column ID, or null for a note; done follows completedAt. Regular chats retain their activity/archive ordering.",
+      responses: {
+        200: jsonResponse(ThreadListSchema, "Authorized thread page"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Conversation not readable"),
+      },
+    }),
     validator("param", ConversationParamSchema, invalidInput),
-    async (c) => respond(c, chatService.threads.list({ ...context(c), conversationId: c.req.valid("param").conversation })),
+    validator("query", ThreadQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.threads.list({ ...context(c), conversationId: c.req.valid("param").conversation, query: c.req.valid("query") }),
+      ),
   )
   .post(
     "/conversations/:conversation/threads",
@@ -243,6 +425,34 @@ const app = new Hono<AuthContext>()
         input: c.req.valid("json"),
       });
       return result.ok ? respond(c, ok(result.data.thread), result.data.created ? 201 : 200) : respond(c, result);
+    },
+  )
+  .post(
+    "/conversations/:conversation/threads/for-resource",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Open an item thread idempotently using its reader",
+      ...requiresAuth,
+      description:
+        "Requires container write access and a successful item reader. The item's reader-provided parent must match this system chat. Repeated calls return the same thread without a thread_created message. Manual create, rename, archive and member edits are refused for system chats.",
+      responses: {
+        200: jsonResponse(ThreadSchema, "Created or existing item thread"),
+        403: jsonResponse(z.object({ code: z.literal("FORBIDDEN"), message: z.string() }), "Container write permission required"),
+        404: jsonResponse(
+          z.object({ code: z.literal("NOT_FOUND"), message: z.string() }),
+          "Container or item not readable, or item belongs elsewhere",
+        ),
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", ForResourceSchema, invalidInput),
+    async (c) => {
+      const result = await chatService.threads.forResource({
+        ...context(c),
+        conversationId: c.req.valid("param").conversation,
+        input: c.req.valid("json"),
+      });
+      return result.ok ? respond(c, ok(result.data.thread)) : respond(c, result);
     },
   )
   .patch(
@@ -279,6 +489,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Chat"],
       summary: "Post a Markdown message",
+      description:
+        "Accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored content with the caller's current reactions.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageViewSchema, "Idempotent retry"),
@@ -311,6 +523,59 @@ const app = new Hono<AuthContext>()
     },
   )
   .get(
+    "/conversations/:conversation/shared",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "List shared links and Cloud elements",
+      description:
+        "Newest messages first, up to 30 items per page. Within a message, refs precede links, each in stored order. Omit thread for the whole chat or use general. Pass nextCursor unchanged with the same filters. Images and documents currently return no items. Resource refs confer no access; resolve them with the reader's session.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SharedPageSchema, "Shared items and opaque continuation cursor"),
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Invalid filter or cursor"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Chat or thread not found"),
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("query", SharedQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.shared.list({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          query: c.req.valid("query"),
+        }),
+      ),
+  )
+  .get(
+    "/conversations/:conversation/events",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Read item events in a system conversation",
+      ...requiresAuth,
+      description:
+        "Reads the owning application's activity with the request's caller. Only system conversations are supported. Select an item thread or all (default). Newest first, at most 100 rows. Follow nextCursor with cursor; before and after are exclusive ISO datetime bounds. Events do not affect messages, unread state, previews, or notifications. An unavailable owner returns an empty page with unavailable: true; denied access returns 404.",
+      responses: {
+        200: jsonResponse(ItemEventsPageSchema, "Item events and continuation cursor"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Conversation or thread not readable"),
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("query", ItemEventsQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.itemEvents.list({
+          ...context(c),
+          timeZone: getTimeZone(c),
+          conversationId: c.req.valid("param").conversation,
+          query: c.req.valid("query"),
+        }),
+      ),
+  )
+  .get(
     "/conversations/:conversation/messages",
     description("Page through chat history", MessagePageSchema),
     validator("param", ConversationParamSchema, invalidInput),
@@ -320,6 +585,107 @@ const app = new Hono<AuthContext>()
         c,
         chatService.messages.list({ ...context(c), conversationId: c.req.valid("param").conversation, query: c.req.valid("query") }),
       ),
+  )
+  .get(
+    "/conversations/:conversation/messages/:message/reactions",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Read message reactions",
+      ...requiresAuth,
+      description: "First-reaction order, with up to 10 newest display names per emoji. Requires message read access.",
+      responses: {
+        200: jsonResponse(ReactionsSchema, "Reactions for this viewer"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Message unavailable"),
+      },
+    }),
+    validator("param", MessageParamSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.reactions.list({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          messageId: c.req.valid("param").message,
+        }),
+      ),
+  )
+  .put(
+    "/conversations/:conversation/messages/:message/reactions/:emoji",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Add a message reaction",
+      ...requiresAuth,
+      description: "Idempotent. Requires message read access and write/admin credential scope. One emoji grapheme, at most 32 UTF-8 bytes.",
+      responses: {
+        204: { description: "Reaction state saved" },
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Invalid emoji"),
+        403: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Credential lacks write scope"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Message unavailable"),
+        409: jsonResponse(
+          z.object({ code: z.enum(["REACTION_PERSON_LIMIT", "REACTION_MESSAGE_LIMIT"]), message: z.string() }),
+          "Reaction budget reached",
+        ),
+        429: {
+          ...jsonResponse(z.object({ code: z.string().optional(), message: z.string() }), "Chat write rate limit reached"),
+          headers: { "Retry-After": { description: "Seconds until retry", schema: { type: "integer", minimum: 1 } } },
+        },
+      },
+    }),
+    validator("param", ReactionParamSchema, invalidInput),
+    async (c) => {
+      const param = c.req.valid("param");
+      const result = await chatService.reactions.set({
+        ...context(c),
+        conversationId: param.conversation,
+        messageId: param.message,
+        emoji: param.emoji,
+        on: true,
+      });
+      if (!result.ok) {
+        if ("retryAfter" in result) c.header("Retry-After", String(result.retryAfter));
+        return respond(c, result);
+      }
+      return c.body(null, 204);
+    },
+  )
+  .delete(
+    "/conversations/:conversation/messages/:message/reactions/:emoji",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Remove a message reaction",
+      ...requiresAuth,
+      description: "Idempotent. Requires message read access and write/admin credential scope. One emoji grapheme, at most 32 UTF-8 bytes.",
+      responses: {
+        204: { description: "Reaction state saved" },
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Invalid emoji"),
+        403: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Credential lacks write scope"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Message unavailable"),
+        409: jsonResponse(
+          z.object({ code: z.enum(["REACTION_PERSON_LIMIT", "REACTION_MESSAGE_LIMIT"]), message: z.string() }),
+          "Reaction budget reached",
+        ),
+        429: {
+          ...jsonResponse(z.object({ code: z.string().optional(), message: z.string() }), "Chat write rate limit reached"),
+          headers: { "Retry-After": { description: "Seconds until retry", schema: { type: "integer", minimum: 1 } } },
+        },
+      },
+    }),
+    validator("param", ReactionParamSchema, invalidInput),
+    async (c) => {
+      const param = c.req.valid("param");
+      const result = await chatService.reactions.set({
+        ...context(c),
+        conversationId: param.conversation,
+        messageId: param.message,
+        emoji: param.emoji,
+        on: false,
+      });
+      if (!result.ok) {
+        if ("retryAfter" in result) c.header("Retry-After", String(result.retryAfter));
+        return respond(c, result);
+      }
+      return c.body(null, 204);
+    },
   )
   .get(
     "/conversations/:conversation/messages/:message",
@@ -437,7 +803,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/conversations/:conversation/leave",
-    description("Leave a chat, handing over management when needed", MemberRemovalSchema),
+    description("Leave a chat, handing over management when needed", LeaveResultSchema),
     validator("param", ConversationParamSchema, invalidInput),
     validator("json", LeaveSchema, invalidInput),
     async (c) =>
