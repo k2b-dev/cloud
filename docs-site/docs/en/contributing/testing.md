@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-20
+updated: 2026-10-25
 ---
 
 # Testing
@@ -684,6 +684,13 @@ the mocked part in a child process, as
 `packages/notebooks/src/ws-lifecycle.test.ts` does. Prefer the child process
 when `--isolate` would make the package suite much slower. `bun run check`
 fails on a top-level `mock.module` in a suite that shares one process.
+
+The same isolation rule applies when a test installs a top-level `spyOn`,
+imports a module, and restores the spy before running its tests. The imported
+module can retain the replacement after restoration. If another file imported
+that module first, the replacement never takes effect. Even a skipped
+integration suite evaluates its static imports, so it can trigger this failure.
+The `module-mocks` check also rejects these import-time spies in shared suites.
 
 ## Run integration tests
 

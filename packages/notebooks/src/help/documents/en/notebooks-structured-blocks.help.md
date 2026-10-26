@@ -82,7 +82,7 @@ Use the indentation of the example. Put two spaces before filter list items, col
 | `match` | `all` (default) requires every filter; `any` requires at least one. Without filters, all notes in the scope match. |
 | `sort` | `field`: `$title`, `$created`, or `$updated`; `direction`: `asc` or `desc`. Default: updated, descending. |
 | `columns` | Fields to show, one per indented list item. Without columns, the query shows a list of linked titles. |
-| `limit` | 1–100 results, default 25. A notice shows that more notes match. Narrow your filters to see them. |
+| `limit` | 1–100, default 25. In Book and the editor, `limit` sets the rows per page, at most 20. When more notes match, the page buttons below the list show all of them; the list keeps its height. Book keeps the page in the address. A PDF shows the first `limit` rows and how many notes match. |
 
 A query has at most 32 filters and 16 different columns. A page has at most 20 query blocks. Lists in filters use inline syntax such as `[active, draft]` with 1–100 values. A filter string has at most 2,000 characters. Quote list values that contain commas, for example `["Sales, Europe", Support]`.
 
