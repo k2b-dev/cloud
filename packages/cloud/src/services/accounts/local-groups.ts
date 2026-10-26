@@ -164,7 +164,7 @@ export const remove = async (params: { id: string }): Promise<MutationResult<voi
   const group = await getLocalGroupById(params.id);
   if (!group) return { ok: false, error: "Group not found", status: 404 };
 
-  const [primary] = await sql`SELECT 1 FROM auth.user_posix WHERE primary_group_id = ${params.id}::uuid LIMIT 1`;
+  const [primary] = await sql`SELECT 1 FROM auth.personal_groups WHERE group_id = ${params.id}::uuid LIMIT 1`;
   if (primary) return { ok: false, error: "This group is a user's primary Linux group and cannot be deleted.", status: 409 };
   try {
     await sql`DELETE FROM auth.groups WHERE id = ${params.id}::uuid AND provider = 'local'`;
