@@ -741,6 +741,7 @@ suite("Files service and durable bindings", () => {
     await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS display_name text, ADD COLUMN IF NOT EXISTS avatar_hash text`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,managed_by text,uid_number integer,primary_gid_number integer,primary_group_id uuid,home_directory text,login_shell text)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,provider text,gid_number integer)`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS auth.personal_groups(group_id uuid PRIMARY KEY,owner_id uuid NOT NULL,group_name text NOT NULL,gid_number integer NOT NULL CHECK(gid_number>0),retired_at timestamptz)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.user_groups_v2(user_id uuid REFERENCES auth.users(id),group_id uuid REFERENCES auth.groups(id))`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.group_groups_v2(parent_group_id uuid,child_group_id uuid)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.ipa_user_effective_groups(user_id uuid,group_name text)`.simple();
@@ -770,7 +771,7 @@ suite("Files service and durable bindings", () => {
     config.collabora = { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" };
     archives.length = 0;
     lostCommitResponse = false;
-    await sql`TRUNCATE filesv2.templates,auth.access,filesv2.recent,filesv2.favorites,filesv2.shares,filesv2.trash,filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
+    await sql`TRUNCATE filesv2.templates,auth.access,filesv2.recent,filesv2.favorites,filesv2.shares,filesv2.trash,filesv2.uploads,filesv2.operations,filesv2.maintenance,filesv2.bases,audit.events,auth.users,auth.user_posix,auth.groups,auth.personal_groups,auth.user_groups_v2,auth.group_groups_v2,auth.ipa_user_effective_groups,settings.entries CASCADE`.simple();
     await set(
       "linux.identity_config",
       JSON.stringify({ enabled: true, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" }),
@@ -2369,9 +2370,17 @@ suite("Files service and durable bindings", () => {
     await sql`INSERT INTO auth.user_groups_v2 VALUES(${id(actor)},${personal!.id}),(${id(actor)},${team!.id})`;
     await sql`INSERT INTO auth.user_posix(user_id,managed_by,uid_number,primary_gid_number,primary_group_id,home_directory,login_shell)
       VALUES(${id(actor)},'local',200001,200004,${personal!.id},'/home/quinn','/bin/bash')`;
+    await sql`INSERT INTO auth.personal_groups(group_id,owner_id,group_name,gid_number) VALUES(${personal!.id},${id(actor)},'quinn',200004)`;
     const bases = await service.bases(testCall(actor));
     expect(bases.issues).toEqual([]);
     expect(bases.items.map((item) => [item.area, item.kind, item.name])).toEqual([
+      ["cloud", "users", "quinn"],
+      ["cloud", "groups", "team"],
+    ]);
+    await sql`DELETE FROM auth.user_posix WHERE user_id=${id(actor)}`;
+    const removedPosix = await service.bases(testCall(actor));
+    expect(removedPosix.issues).toEqual([]);
+    expect(removedPosix.items.map((item) => [item.area, item.kind, item.name])).toEqual([
       ["cloud", "users", "quinn"],
       ["cloud", "groups", "team"],
     ]);

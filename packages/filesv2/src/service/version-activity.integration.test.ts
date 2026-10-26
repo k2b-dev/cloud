@@ -242,6 +242,7 @@ suite("version activity with real Filegate", () => {
     await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid())`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,managed_by text,uid_number integer,primary_gid_number integer,primary_group_id uuid,home_directory text,login_shell text)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,provider text,gid_number integer)`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS auth.personal_groups(group_id uuid PRIMARY KEY,owner_id uuid NOT NULL,group_name text NOT NULL,gid_number integer NOT NULL CHECK(gid_number>0),retired_at timestamptz)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS settings.entries(key text PRIMARY KEY,value text)`.simple();
     await migrate();
     await migrateAudit();
