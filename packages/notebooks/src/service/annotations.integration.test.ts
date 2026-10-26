@@ -293,9 +293,18 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
       const results = await withinRequestBudget(Promise.all(Array.from({ length: 32 }, () => annotations.list(note.shortId, {}, reader))));
       expect(results.every((result) => result.ok)).toBeTrue();
       expect(results.map((result) => (result.ok ? result.data.text : null))).toEqual(Array(32).fill("# Handbook\n\nBefore target after\n"));
-      expect(await annotations.read(note.shortId, root.id, reader)).toMatchObject({ ok: true, data: { id: root.id } });
-      expect(await annotations.readResource(root.id, reader)).toMatchObject({ ok: true, data: { id: root.id } });
-      expect(await annotations.replies(note.shortId, root.id, {}, reader)).toMatchObject({ ok: true, data: { items: [] } });
+      const reads = await withinRequestBudget(
+        Promise.all([
+          annotations.read(note.shortId, root.id, reader),
+          annotations.readResource(root.id, reader),
+          annotations.replies(note.shortId, root.id, {}, reader),
+        ]),
+      );
+      expect(reads).toMatchObject([
+        { ok: true, data: { id: root.id } },
+        { ok: true, data: { id: root.id } },
+        { ok: true, data: { items: [] } },
+      ]);
     } finally {
       release.resolve();
       try {

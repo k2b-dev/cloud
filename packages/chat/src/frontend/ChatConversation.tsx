@@ -402,7 +402,13 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               onToggle={item.group.toggle}
             />
           ) : item.kind === "event" ? (
-            <MessageEventRow icon={item.icon} origin={item.origin} time={messageTime(item.at, config())} dateTime={item.at}>
+            <MessageEventRow
+              icon={item.icon}
+              origin={item.origin}
+              href={item.href}
+              time={messageTime(item.at, config())}
+              dateTime={item.at}
+            >
               {item.body}
             </MessageEventRow>
           ) : item.kind === "system" ? (
