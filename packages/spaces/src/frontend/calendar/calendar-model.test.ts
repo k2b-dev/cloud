@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   CALENDAR_REQUEST_DAYS,
+  type CalendarReadState,
+  type CalendarSourceRead,
   type CalendarSourceView,
   calendarLookup,
   calendarStatus,
@@ -201,11 +203,11 @@ describe("items", () => {
 
 describe("status", () => {
   const selection = ["spaces:Space1", "meetings:board:a"];
-  const reads = (spaces: string, meetings: string) =>
-    new Map([
+  const reads = (spaces: CalendarReadState, meetings: CalendarReadState) =>
+    new Map<string, CalendarSourceRead>([
       ["spaces:Space1", { appId: "spaces", state: spaces, error: null }],
       ["meetings:board:a", { appId: "meetings", state: meetings, error: null }],
-    ] as never);
+    ]);
   test("loading comes first, then a failure, then busy-only calendars", () => {
     expect(calendarStatus(selection, sources, reads("ok", "pending"))).toEqual({ kind: "loading", count: 1, total: 2 });
     expect(calendarStatus(selection, sources, reads("failed", "ok"))).toEqual({ kind: "failed", apps: ["Spaces"], count: 1 });
