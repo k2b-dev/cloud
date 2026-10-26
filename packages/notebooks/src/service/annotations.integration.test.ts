@@ -3,8 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
-import { sql } from "bun";
-import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { SQL, sql } from "bun";
+import { connectTestNats, requireDatabaseUrl, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 
 if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
@@ -200,12 +200,119 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
       data: { text: "# Handbook\n\nBefore target after\n", items: [{ canEdit: false, canDelete: false }] },
     });
   });
-  test("parallel projections leave the shared SQL pool available to the document store", async () => {
+  // A held replay must be released in finally, even when a regression blocks
+  // the competing request. Bound the assertion by the platform request budget.
+  const withinRequestBudget = async <T>(pending: Promise<T>): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        pending,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("Request blocked behind another note operation")),
+            server.REQUEST_IDLE_TIMEOUT_SECONDS * 1000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  test("parallel reads succeed while a create on the same note is replaying", async () => {
     const note = await noteFixture();
-    await add(note.shortId);
-    const results = await Promise.all(Array.from({ length: 32 }, () => annotations.list(note.shortId, {}, reader)));
+    const root = await add(note.shortId);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const original = notes.noteDocuments.read;
+    const slow = spyOn(notes.noteDocuments, "read").mockImplementationOnce(async (...args) => {
+      entered.resolve();
+      await release.promise;
+      return original(...args);
+    });
+    const creating = add(note.shortId);
+    try {
+      await withinRequestBudget(entered.promise);
+      const results = await withinRequestBudget(Promise.all(Array.from({ length: 32 }, () => annotations.list(note.shortId, {}, reader))));
+      expect(results.every((result) => result.ok)).toBeTrue();
+      expect(results.map((result) => (result.ok ? result.data.text : null))).toEqual(Array(32).fill("# Handbook\n\nBefore target after\n"));
+      const reads = await withinRequestBudget(
+        Promise.all([
+          annotations.read(note.shortId, root.id, reader),
+          annotations.readResource(root.id, reader),
+          annotations.replies(note.shortId, root.id, {}, reader),
+        ]),
+      );
+      expect(reads).toMatchObject([
+        { ok: true, data: { id: root.id } },
+        { ok: true, data: { id: root.id } },
+        { ok: true, data: { items: [] } },
+      ]);
+    } finally {
+      release.resolve();
+      try {
+        await creating;
+      } finally {
+        slow.mockRestore();
+      }
+    }
+  }, 20_000);
+  test("a slow replay on note A does not block a create on note B", async () => {
+    const noteA = await noteFixture();
+    const noteB = await noteFixture();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const original = notes.noteDocuments.read;
+    const slow = spyOn(notes.noteDocuments, "read").mockImplementationOnce(async (...args) => {
+      entered.resolve();
+      await release.promise;
+      return original(...args);
+    });
+    const creatingA = add(noteA.shortId);
+    try {
+      await withinRequestBudget(entered.promise);
+      const createdB = await withinRequestBudget(add(noteB.shortId));
+      expect(createdB).toMatchObject({ orphan: false, quote: "target" });
+    } finally {
+      release.resolve();
+      try {
+        await creatingA;
+      } finally {
+        slow.mockRestore();
+      }
+    }
+  }, 20_000);
+  test("concurrent creates on one note wait and reuse the same idempotent result", async () => {
+    const note = await noteFixture();
+    const input = { quote: "target", body: "Concurrent review", idempotencyKey: "concurrent-create" };
+    const results = await Promise.all(Array.from({ length: 8 }, () => annotations.create(note.shortId, input, writer)));
     expect(results.every((result) => result.ok)).toBeTrue();
-    expect(results.map((result) => (result.ok ? result.data.text : null))).toEqual(Array(32).fill("# Handbook\n\nBefore target after\n"));
+    expect(new Set(results.map((result) => (result.ok ? result.data.id : null))).size).toBe(1);
+  }, 20_000);
+  test("a write lock timeout returns a retryable conflict without inserting a comment", async () => {
+    const note = await noteFixture();
+    const pool = new SQL(requireDatabaseUrl());
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const holding = pool.begin(async (tx) => {
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`notebooks.annotations:${note.id}`}, 0))`;
+      entered.resolve();
+      await release.promise;
+    });
+    try {
+      await withinRequestBudget(entered.promise);
+      const startedAt = performance.now();
+      expect(
+        await withinRequestBudget(annotations.create(note.shortId, { quote: "target", body: "Review", idempotencyKey: "locked" }, writer)),
+      ).toMatchObject({ ok: false, error: { status: 409, details: { retryable: true } } });
+      expect(performance.now() - startedAt).toBeGreaterThanOrEqual((server.REQUEST_IDLE_TIMEOUT_SECONDS * 1000) / 2);
+      const [row] = await sql<{ count: number }[]>`SELECT count(*)::int FROM notebooks.annotations WHERE note_id = ${note.id}::uuid`;
+      expect(row?.count).toBe(0);
+    } finally {
+      release.resolve();
+      await holding;
+      await pool.close();
+    }
+    expect((await add(note.shortId)).orphan).toBeFalse();
   }, 20_000);
   test("root activity is atomic and an unchanged retry never duplicates it", async () => {
     const note = await noteFixture();
@@ -286,10 +393,18 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     expect(outcomes.filter((result) => result.ok)).toHaveLength(1);
     const winner = attempts[outcomes.findIndex((result) => result.ok)]!;
     expect(await text(note.id)).toBe("# Handbook\n\nBefore replacement after\n");
+    const from = "# Handbook\n\nBefore ".length;
+    expect(await annotations.list(note.shortId, {}, writer)).toMatchObject({
+      ok: true,
+      data: { items: [{ state: "accepted", orphan: false, from, to: from + "replacement".length }] },
+    });
     expect((await annotations.operate(note.shortId, root.id, "accept", { operationId: winner.operationId }, winner.context)).ok).toBeTrue();
     expect((await annotations.operate(note.shortId, root.id, "undo", { operationId: crypto.randomUUID() }, other)).ok).toBeTrue();
     expect(await text(note.id)).toBe("# Handbook\n\nBefore target after\n");
-    expect(await annotations.read(note.shortId, root.id, writer)).toMatchObject({ ok: true, data: { state: "open", orphan: false } });
+    expect(await annotations.list(note.shortId, {}, writer)).toMatchObject({
+      ok: true,
+      data: { items: [{ state: "open", orphan: false, from, to: from + "target".length }] },
+    });
   });
   test("changed passages and changed accepted text create durable conflicts with current text", async () => {
     const note = await noteFixture();
