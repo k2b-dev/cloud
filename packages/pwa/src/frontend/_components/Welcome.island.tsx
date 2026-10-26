@@ -1,3 +1,4 @@
+import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
 import { PWA_LIMITS, PWA_SCOPE, PwaClaimResultSchema, PwaCompleteResultSchema, parsePairingLink } from "@k2b/cloud/contracts";
 import { clipboard } from "@k2b/stdlib/solid";
 import {
@@ -27,6 +28,8 @@ export type WelcomeProps = {
   url: string;
   /** The platform as the server read it from the user agent, so the installation steps render with the page. */
   platform: InstallationPlatform;
+  /** The launch found this device's pairing ended: the drafts of the app go with it. */
+  clearDrafts?: boolean;
 };
 
 type Waiting = { code: string; account: string };
@@ -199,6 +202,7 @@ export default function Welcome(props: WelcomeProps) {
   };
 
   onMount(() => {
+    if (props.clearDrafts) pwaDrafts.clearAll();
     const standalone = isStandalone();
     let linked = false;
     // Read the fragment first: the link must leave the address before anything else runs.

@@ -143,6 +143,7 @@ export class FilesRoot {
   }
   transfer(...args: Parameters<RootClient["transfer"]>) {
     return filegateMutation(this.serverUrl, this.name, "transfer", args[0], () => this.#client.transfer(...args), {
+      kind: "transfer",
       root: args[1],
       path: args[2],
       move: args[3]?.move ?? false,
@@ -150,19 +151,37 @@ export class FilesRoot {
     });
   }
   restore(...args: Parameters<RootClient["restore"]>) {
-    return this.#mutate("restore", args[0], () => this.#client.restore(...args));
+    return filegateMutation(this.serverUrl, this.name, "restore", args[0], () => this.#client.restore(...args), {
+      kind: "version",
+      id: args[1],
+    });
   }
   copyVersion(...args: Parameters<RootClient["copyVersion"]>) {
-    return this.#mutate("copyVersion", args[0], () => this.#client.copyVersion(...args));
+    return filegateMutation(this.serverUrl, this.name, "copyVersion", args[0], () => this.#client.copyVersion(...args), {
+      kind: "version",
+      id: args[1],
+      target: { root: args[2], path: args[3] },
+      options: args[4],
+    });
   }
   updateVersion(...args: Parameters<RootClient["updateVersion"]>) {
-    return this.#mutate("updateVersion", args[0], () => this.#client.updateVersion(...args));
+    return filegateMutation(this.serverUrl, this.name, "updateVersion", args[0], () => this.#client.updateVersion(...args), {
+      kind: "version",
+      id: args[1],
+      options: args[2],
+    });
   }
   deleteVersion(...args: Parameters<RootClient["deleteVersion"]>) {
-    return this.#mutate("deleteVersion", args[0], () => this.#client.deleteVersion(...args));
+    return filegateMutation(this.serverUrl, this.name, "deleteVersion", args[0], () => this.#client.deleteVersion(...args), {
+      kind: "version",
+      id: args[1],
+    });
   }
   remove(...args: Parameters<RootClient["remove"]>) {
-    return this.#mutate("remove", args[0], () => this.#client.remove(...args));
+    return filegateMutation(this.serverUrl, this.name, "remove", args[0], () => this.#client.remove(...args), {
+      kind: "remove",
+      recursive: args[1] ?? false,
+    });
   }
   // Maintenance only: these rebuild derived metadata, without changing user data.
   refreshStats(...args: Parameters<RootClient["refreshStats"]>) {

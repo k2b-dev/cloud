@@ -1,0 +1,1 @@
+| A predecessor lookup ignores retention boundaries | A lagging hour selects its own rollup, or shorter rollup retention hides a predecessor whose raw samples remain. | Tests: Pulse `service/metric-rollups.integration.test.ts` checks a late correction before the raw cutoff and a sparse counter after its old rollup is removed. |

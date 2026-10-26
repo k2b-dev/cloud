@@ -222,9 +222,12 @@ export const renderNotebookBook = (
       const href = resolveUrl(item.href);
       return href ? renderMarkdownLink({ href, html: escape(item.title), reference: { kind: "note" }, locale }) : escape(item.title);
     };
+    // A paged list keeps the height of a full page on its last page, so turning pages moves nothing below it.
+    const paged = result.offset !== undefined && result.total > result.limit;
+    const fillers = paged ? Math.max(0, result.limit - result.items.length) : 0;
     const body =
       query.columns.length === 0
-        ? `<ul>${result.items.map((item) => `<li>${link(item)}</li>`).join("")}</ul>`
+        ? `<ul>${result.items.map((item) => `<li>${link(item)}</li>`).join("")}${'<li class="notebook-query-filler" aria-hidden="true">&nbsp;</li>'.repeat(fillers)}</ul>`
         : `<div class="md-table-wrap"><table class="md-table"><thead><tr>${query.columns.map((field) => `<th scope="col">${escape(columnTitle(field))}</th>`).join("")}</tr></thead><tbody>${result.items
             .map(
               (item) =>
@@ -245,11 +248,27 @@ export const renderNotebookBook = (
                   })
                   .join("")}</tr>`,
             )
-            .join("")}</tbody></table></div>`;
+            .join(
+              "",
+            )}${`<tr class="notebook-query-filler" aria-hidden="true"><td colspan="${query.columns.length}">&nbsp;</td></tr>`.repeat(fillers)}</tbody></table></div>`;
+    if (paged) {
+      const offset = result.offset!;
+      const pages = Math.ceil(result.total / result.limit);
+      const page = Math.floor(offset / result.limit) + 1;
+      const number = new Intl.NumberFormat(locale);
+      const button = (target: number, label: string, icon: string) =>
+        `<button type="button" class="notebook-query-pager__button" data-query-line="${query.line}" data-query-page="${target}" aria-label="${escape(label)}" title="${escape(label)}"${target < 1 || target > pages ? " disabled" : ""}><i class="ti ${icon}" aria-hidden="true"></i></button>`;
+      const range = t.queryRange({
+        from: number.format(offset + 1),
+        to: number.format(offset + result.items.length),
+        total: number.format(result.total),
+      });
+      return `<div class="notebook-book-query" data-query-line="${query.line}">${body}<nav class="notebook-query-pager" aria-label="${escape(t.queryPages)}">${button(page - 1, t.previousPage, "ti-chevron-left")}<span class="notebook-query-pager__range" role="status">${escape(range)}</span>${button(page + 1, t.nextPage, "ti-chevron-right")}</nav></div>`;
+    }
     const count = result.truncated
       ? `<p class="notebook-book-empty">${escape(t.queryCount({ shown: result.items.length, total: result.total }))}</p>`
       : "";
-    return `<div class="notebook-book-query">${body}${count}</div>`;
+    return `<div class="notebook-book-query" data-query-line="${query.line}">${body}${count}</div>`;
   };
 
   // Links to notes, headings and attachments are references; any other relative URL is a page or file of Cloud.
@@ -662,7 +681,7 @@ export const sanitizeNotebookBookHtml = (value: string, resolveUrl: (href: strin
   const callouts = markdownCalloutSanitizeOptions();
   return sanitizeHtml(value, {
     ...callouts,
-    allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "input", "time", "mark", "del", ...callouts.allowedTags],
+    allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "input", "time", "mark", "del", "button", ...callouts.allowedTags],
     allowedAttributes: {
       "*": ["class", "id", "title", "role", "aria-hidden", "aria-label", "data-tone", "data-depth", "data-block-name"],
       a: [
@@ -673,6 +692,10 @@ export const sanitizeNotebookBookHtml = (value: string, resolveUrl: (href: strin
       ],
       img: ["src", "alt", "loading", "width", "height", "style"],
       input: ["type", "disabled", "checked"],
+      // A query's page buttons; the browser checks the numbers before it asks for a page.
+      button: ["type", "disabled", "data-query-line", "data-query-page"],
+      div: ["data-query-line"],
+      td: ["colspan"],
       span: ["style"],
       th: ["scope"],
       time: ["datetime"],

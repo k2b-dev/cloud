@@ -33,7 +33,7 @@ describe("query block previews", () => {
     return;
   }
   const mount = async (
-    load: (markdown: string | undefined, signal: AbortSignal) => Promise<BlockPreviewResult>,
+    load: (markdown: string | undefined, signal: AbortSignal, pages: ReadonlyMap<number, number>) => Promise<BlockPreviewResult>,
     markdown = DOCUMENT,
     readOnly = false,
   ) => {
@@ -51,7 +51,7 @@ describe("query block previews", () => {
         view,
         enabled: () => true,
         locale: () => "de",
-        load,
+        load: (markdown, pages, signal) => load(markdown, signal, pages),
       });
       onMount(() => {
         editor = new EditorView({
@@ -92,6 +92,71 @@ describe("query block previews", () => {
       button.click();
       expect(app.view().state.selection.main.anchor).toBe(DOCUMENT.indexOf(":::query"));
       expect(app.dom.root.querySelectorAll(".cm-query-block-widget").length).toBe(1);
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test("a paged query turns its page in place, asks for that page and keeps focus on the button", async () => {
+    const requested: number[] = [];
+    const pager = (page: number) =>
+      `<div class="notebook-book-query" data-query-line="3"><ul><li>Row ${page}</li></ul><nav class="notebook-query-pager">` +
+      `<button type="button" data-query-line="3" data-query-page="${page - 1}"${page === 1 ? " disabled" : ""}>‹</button>` +
+      `<span role="status">${page * 20 - 19}–${page * 20} von 362</span>` +
+      `<button type="button" data-query-line="3" data-query-page="${page + 1}">›</button></nav></div>`;
+    const app = await mount(async (_markdown, _signal, pages) => {
+      const page = pages.get(3) ?? 1;
+      requested.push(page);
+      return { ...response(), blocks: [{ line: 3, html: pager(page) }] };
+    });
+    try {
+      await Bun.sleep(40);
+      const next = () => app.dom.root.querySelectorAll<HTMLButtonElement>("button[data-query-page]")[1]!;
+      expect(app.dom.root.textContent).toContain("1–20 von 362");
+      const previous = app.view().state.selection.main.anchor;
+      next().click();
+      await Bun.sleep(40);
+      expect(requested).toEqual([1, 2]);
+      expect(app.dom.root.textContent).toContain("21–40 von 362");
+      expect(app.dom.document.activeElement).toBe(next());
+      // Turning a page is no edit and leaves the cursor where it was.
+      expect(app.view().state.selection.main.anchor).toBe(previous);
+      expect(app.view().state.doc.toString()).toBe(DOCUMENT);
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test("pages of lines that moved away are dropped, and a late page leaves focus where the reader moved it", async () => {
+    const sent: Array<[number, number][]> = [];
+    let release: (() => void) | undefined;
+    const pager = (line: number, page: number) =>
+      `<div class="notebook-book-query" data-query-line="${line}"><ul><li>Row ${page}</li></ul><nav class="notebook-query-pager">` +
+      `<button type="button" data-query-line="${line}" data-query-page="${page - 1}"${page === 1 ? " disabled" : ""}>‹</button>` +
+      `<span role="status">${page}</span><button type="button" data-query-line="${line}" data-query-page="${page + 1}">›</button></nav></div>`;
+    const app = await mount(async (markdown, _signal, pages) => {
+      sent.push([...pages]);
+      if (pages.size > 0 && !release) await new Promise<void>((resolve) => (release = resolve));
+      const document = markdown ?? DOCUMENT;
+      const line = extractNotebookDirectiveRanges(document).find((block) => block.type === "query")!.line;
+      return { ...response(document), blocks: [{ line, html: pager(line, pages.get(line) ?? 1) }] };
+    });
+    try {
+      await Bun.sleep(40);
+      app.dom.root.querySelectorAll<HTMLButtonElement>("button[data-query-page]")[1]!.click();
+      await Bun.sleep(10);
+      // The reader moves on while the page loads.
+      const elsewhere = app.dom.document.createElement("button");
+      app.dom.root.append(elsewhere);
+      elsewhere.focus();
+      release!();
+      await Bun.sleep(40);
+      expect(app.dom.document.activeElement).toBe(elsewhere);
+      expect(sent.at(-1)).toEqual([[3, 2]]);
+      // Lines added above the query move it; the page of its old line is not sent again.
+      app.view().dispatch({ changes: { from: 0, insert: "Intro\n\n" } });
+      await Bun.sleep(400);
+      expect(sent.at(-1)).toEqual([]);
     } finally {
       app.cleanup();
     }
