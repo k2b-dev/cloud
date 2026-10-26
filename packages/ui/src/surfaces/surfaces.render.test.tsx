@@ -372,11 +372,11 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(growing.match(/k2b-dot-strip__dot/g)).toHaveLength(5);
     expect(growing.match(/data-state="pending"/g)).toHaveLength(2);
     expect(growing).toContain('data-state="accent" data-selected=""');
-    expect(growing).toContain("--k2b-dot-strip-columns: 5");
+    expect(growing).toContain("--k2b-dot-strip-columns:5");
     const waiting = strip({ dots: ["accent"], length: 3, waiting: true, label: "Waiting", columns: 25, size: "lg" });
     expect(waiting.match(/data-state="waiting"/g)).toHaveLength(3);
     expect(waiting).toContain('data-size="lg"');
-    expect(waiting).toContain("--k2b-dot-strip-columns: 25");
+    expect(waiting).toContain("--k2b-dot-strip-columns:25");
     expect(strip({ dots: ["ai", "danger"], length: 1, label: "Two" }).match(/k2b-dot-strip__dot/g)).toHaveLength(2);
   });
 
