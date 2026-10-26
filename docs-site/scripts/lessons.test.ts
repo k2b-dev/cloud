@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFibelApp, defaultPlugins } from "@k2b/fibel";
@@ -144,15 +144,19 @@ test("independent Git additions merge cleanly and reach every Fibel content surf
   expect(await markdown.text()).toContain("First independent fix");
   const full = await app.fetch(new Request("http://fixture/en/docs/llms-full.txt"));
   expect(await full.text()).toContain("Second independent fix");
+  // The validator requires the complete convention catalog even for a partial check.
+  const conventions = join(docsRoot, "conventions");
+  await cp(join(import.meta.dir, "../docs/en/conventions"), conventions, { recursive: true });
+  const conventionCount = Array.from(new Bun.Glob("**/*.md").scanSync({ cwd: conventions })).length;
   const checked = await checkDocumentation({ docsRoot, requestedPaths: [join(entries, "2026-10-24-second.md")] });
   expect(checked.errors).toEqual([]);
   expect(checked.checked).toBe(1);
-  expect(checked.indexed).toBe(1);
+  expect(checked.indexed).toBe(1 + conventionCount);
 
   await writeFile(
     join(entries, "2026-10-24-second.md"),
     lesson("Second independent fix").replace("A failure.", "[Broken](/en/docs/missing)"),
   );
-  const broken = await checkDocumentation({ docsRoot });
+  const broken = await checkDocumentation({ docsRoot, requestedPaths: [join(entries, "2026-10-24-second.md")] });
   expect(broken.errors.some((error) => error.includes("broken documentation link"))).toBe(true);
 });
