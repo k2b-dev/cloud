@@ -45,6 +45,7 @@ import {
   syncMirror,
   writeManifest,
 } from "./cli-mirror";
+import type { Annotation, AnnotationProjection } from "./lib/annotation-contracts";
 import { findNamedBlocks, type NamedBlockType, namedBlockBody } from "./lib/named-blocks";
 import { NOTE_DELETE_PERMISSIONS } from "./lib/note-delete-permission";
 import {
@@ -700,6 +701,7 @@ function notebooksCommands(locale?: string) {
     }),
     groupSummaries: {
       access: t({ en: "Manage direct access to notebooks", de: "Direkten Zugriff auf Notizbücher verwalten" }),
+      annotations: t({ en: "Comment on passages and accept suggestions", de: "Textstellen kommentieren und Vorschläge übernehmen" }),
       comments: t({ en: "Discuss a note", de: "Eine Notiz diskutieren" }),
       versions: t({ en: "Inspect and restore note versions", de: "Notizversionen prüfen und wiederherstellen" }),
       attachments: t({ en: "List, download, and delete notebook files", de: "Notizbuch-Dateien auflisten, laden und löschen" }),
@@ -1832,6 +1834,348 @@ function notebooksCommands(locale?: string) {
             })
           )
             ctx.print(`${t({ en: "Exported to", de: "Exportiert nach" })} ${output}`);
+        },
+      }),
+
+      // ---------- Passage comments ----------
+      command("annotations list", {
+        summary: t({ en: "List passage comments with source positions", de: "Textstellenkommentare mit Quelltextpositionen auflisten" }),
+        args: noteArg,
+        flags: {
+          cursor: flag.string({ description: t({ en: "nextCursor from the previous page", de: "nextCursor der vorherigen Seite" }) }),
+          limit: flag.int({
+            min: 1,
+            max: 30,
+            description: t({ en: "Comments or replies per page (default 30)", de: "Kommentare oder Antworten pro Seite (Standard 30)" }),
+          }),
+          annotation: flag.string({
+            description: t({ en: "Read one comment by its annotation ID", de: "Einen Kommentar anhand seiner Annotation-ID lesen" }),
+          }),
+          replies: flag.boolean({
+            description: t({ en: "Page replies of --annotation", de: "Antworten von --annotation seitenweise lesen" }),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          if (flags.replies && !flags.annotation)
+            throw new Error(t({ en: "--replies requires --annotation", de: "--replies benötigt --annotation" }));
+          const target = await resolveNote(ctx, args.note);
+          const suffix = flags.annotation ? `/${encodeURIComponent(flags.annotation)}${flags.replies ? "/replies" : ""}` : "";
+          const payload = await ctx.readJson<
+            AnnotationProjection | Annotation | { items: Array<{ id: string; body: string }>; nextCursor: string | null }
+          >(await ctx.fetch(withQuery(noteApi(target, `/annotations${suffix}`), { cursor: flags.cursor, limit: flags.limit })));
+          if (printStructured(ctx, payload)) return;
+          if ("items" in payload) {
+            for (const item of payload.items) ctx.print(`${item.id} ${item.body.replace(/\s+/g, " ").slice(0, 120)}`);
+            if (payload.nextCursor) ctx.print(`--cursor ${payload.nextCursor}`);
+          } else ctx.print(`${payload.id} [${payload.state}] ${payload.quote}\n${payload.body}`);
+        },
+      }),
+      command("annotations add", {
+        summary: t({ en: "Comment on a selected passage", de: "Eine ausgewählte Textstelle kommentieren" }),
+        args: noteArg,
+        flags: {
+          ...inputFlags,
+          quote: flag.string({
+            required: true,
+            description: t({
+              en: "Exact selected Markdown (up to 2,000 characters)",
+              de: "Exakter ausgewählter Markdown-Text (höchstens 2.000 Zeichen)",
+            }),
+          }),
+          prefix: flag.string({
+            description: t({ en: "Up to 32 characters immediately before the quote", de: "Bis zu 32 Zeichen direkt vor dem Zitat" }),
+          }),
+          suffix: flag.string({
+            description: t({ en: "Up to 32 characters immediately after the quote", de: "Bis zu 32 Zeichen direkt nach dem Zitat" }),
+          }),
+          offsetHint: flag.int({
+            name: "offset-hint",
+            min: 0,
+            description: t({
+              en: "UTF-16 offset in the note Markdown, excluding mirror front matter",
+              de: "UTF-16-Offset im Markdown der Notiz, ohne Spiegel-Frontmatter",
+            }),
+          }),
+          suggestion: flag.string({
+            description: t({
+              en: "Replacement passage; an empty string suggests deletion",
+              de: "Ersatztext; eine leere Zeichenfolge schlägt Löschen vor",
+            }),
+          }),
+          idempotencyKey: flag.string({
+            name: "idempotency-key",
+            required: true,
+            description: t({
+              en: "Stable key reused for retries of this comment",
+              de: "Stabiler Schlüssel für Wiederholungen dieses Kommentars",
+            }),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          const target = await resolveNote(ctx, args.note);
+          const body = (await readContentSource(flags.from, flags.content)) ?? "";
+          const payload = await ctx.readJson<Annotation>(
+            await ctx.fetch(noteApi(target, "/annotations"), {
+              method: "POST",
+              headers: JSON_HEADERS,
+              body: JSON.stringify({
+                body,
+                quote: flags.quote,
+                prefix: flags.prefix ?? "",
+                suffix: flags.suffix ?? "",
+                offsetHint: flags.offsetHint,
+                suggestion: flags.suggestion,
+                idempotencyKey: flags.idempotencyKey,
+              }),
+            }),
+          );
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "notebooks.annotation", payload)))
+            ctx.print(`${payload.id} ${cloudResourceUrl(ctx, { type: "notebooks.annotation", id: payload.id })}`);
+        },
+      }),
+      command("annotations reply", {
+        summary: t({ en: "Reply to a passage comment", de: "Auf einen Textstellenkommentar antworten" }),
+        args: {
+          ...noteArg,
+          annotation: arg.required({
+            valueLabel: "annotation-id",
+            description: t({ en: "Comment ID from annotations list", de: "Kommentar-ID aus annotations list" }),
+          }),
+        },
+        flags: {
+          ...inputFlags,
+          idempotencyKey: flag.string({
+            name: "idempotency-key",
+            required: true,
+            description: t({ en: "Stable key for retrying this reply", de: "Stabiler Schlüssel zum Wiederholen dieser Antwort" }),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          const target = await resolveNote(ctx, args.note);
+          const body = await requireContent(flags.from, flags.content);
+          const payload = await ctx.readJson<{ id: string }>(
+            await ctx.fetch(noteApi(target, `/annotations/${encodeURIComponent(args.annotation)}/replies`), {
+              method: "POST",
+              headers: JSON_HEADERS,
+              body: JSON.stringify({ body, idempotencyKey: flags.idempotencyKey }),
+            }),
+          );
+          if (!printStructured(ctx, payload)) ctx.print(payload.id);
+        },
+      }),
+      command("annotations edit", {
+        summary: t({ en: "Edit your recent comment or reply", de: "Eigenen neuen Kommentar oder eigene Antwort bearbeiten" }),
+        args: {
+          ...noteArg,
+          annotation: arg.required({ valueLabel: "annotation-id", description: t({ en: "Comment ID", de: "Kommentar-ID" }) }),
+        },
+        flags: {
+          ...inputFlags,
+          reply: flag.string({
+            description: t({ en: "Reply ID; omit to edit the root", de: "Antwort-ID; ohne Angabe den Hauptkommentar bearbeiten" }),
+          }),
+          suggestion: flag.string({
+            description: t({ en: "Replacement suggestion; omit to keep it", de: "Änderungsvorschlag; ohne Angabe beibehalten" }),
+          }),
+          removeSuggestion: flag.boolean({
+            name: "remove-suggestion",
+            description: t({ en: "Remove the replacement suggestion", de: "Änderungsvorschlag entfernen" }),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          if (flags.suggestion !== undefined && flags.removeSuggestion)
+            throw new Error(t({ en: "Choose --suggestion or --remove-suggestion", de: "--suggestion oder --remove-suggestion wählen" }));
+          if (flags.reply && (flags.suggestion !== undefined || flags.removeSuggestion))
+            throw new Error(t({ en: "Replies cannot carry suggestions", de: "Antworten können keine Änderungsvorschläge enthalten" }));
+          const target = await resolveNote(ctx, args.note);
+          const body = await requireContent(flags.from, flags.content);
+          const payload = await ctx.readJson<{ id: string }>(
+            await ctx.fetch(
+              noteApi(
+                target,
+                `/annotations/${encodeURIComponent(args.annotation)}${flags.reply ? `/replies/${encodeURIComponent(flags.reply)}` : ""}`,
+              ),
+              {
+                method: "PATCH",
+                headers: JSON_HEADERS,
+                body: JSON.stringify({ body, ...(flags.reply ? {} : { suggestion: flags.removeSuggestion ? null : flags.suggestion }) }),
+              },
+            ),
+          );
+          if (!printStructured(ctx, payload)) ctx.print(payload.id);
+        },
+      }),
+      command("annotations delete", {
+        summary: t({ en: "Delete your recent comment or reply", de: "Eigenen neuen Kommentar oder eigene Antwort löschen" }),
+        args: {
+          ...noteArg,
+          annotation: arg.required({ valueLabel: "annotation-id", description: t({ en: "Comment ID", de: "Kommentar-ID" }) }),
+        },
+        flags: {
+          reply: flag.string({
+            description: t({ en: "Reply ID; omit for the root comment", de: "Antwort-ID; ohne Angabe der Hauptkommentar" }),
+          }),
+          yes: confirmFlag(t({ en: "Confirm this change", de: "Diese Änderung bestätigen" })),
+        },
+        async run({ ctx, args, flags }) {
+          requireConfirmable(flags.yes);
+          await confirm(
+            flags.yes,
+            t({ en: "Delete your recent comment or reply?", de: "Eigenen neuen Kommentar oder eigene Antwort löschen?" }),
+          );
+          const target = await resolveNote(ctx, args.note);
+          const payload = await ctx.readJson<{ id: string }>(
+            await ctx.fetch(
+              noteApi(
+                target,
+                `/annotations/${encodeURIComponent(args.annotation)}${flags.reply ? `/replies/${encodeURIComponent(flags.reply)}` : ""}`,
+              ),
+              { method: "DELETE" },
+            ),
+          );
+          if (!printStructured(ctx, payload)) ctx.print(payload.id);
+        },
+      }),
+      command("annotations restore", {
+        summary: t({
+          en: "Restore your recent deleted comment or reply",
+          de: "Eigenen gelöschten Kommentar oder eigene Antwort wiederherstellen",
+        }),
+        args: {
+          ...noteArg,
+          annotation: arg.required({ valueLabel: "annotation-id", description: t({ en: "Comment ID", de: "Kommentar-ID" }) }),
+        },
+        flags: {
+          reply: flag.string({
+            description: t({ en: "Reply ID; omit for the root comment", de: "Antwort-ID; ohne Angabe der Hauptkommentar" }),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          const target = await resolveNote(ctx, args.note);
+          const payload = await ctx.readJson<{ id: string }>(
+            await ctx.fetch(
+              noteApi(
+                target,
+                `/annotations/${encodeURIComponent(args.annotation)}${flags.reply ? `/replies/${encodeURIComponent(flags.reply)}` : ""}/restore`,
+              ),
+              { method: "POST" },
+            ),
+          );
+          if (!printStructured(ctx, payload)) ctx.print(payload.id);
+        },
+      }),
+      command("annotations resolve", {
+        summary: t({ en: "Resolve a passage comment", de: "Textstellenkommentar erledigen" }),
+        args: {
+          ...noteArg,
+          annotation: arg.required({ valueLabel: "annotation-id", description: t({ en: "Comment ID", de: "Kommentar-ID" }) }),
+        },
+        flags: {},
+        async run({ ctx, args, flags }) {
+          const target = await resolveNote(ctx, args.note);
+          const payload = await ctx.readJson<{ id: string }>(
+            await ctx.fetch(noteApi(target, `/annotations/${encodeURIComponent(args.annotation)}/resolve`), {
+              method: "POST",
+              headers: JSON_HEADERS,
+              body: JSON.stringify({ resolved: true }),
+            }),
+          );
+          if (!printStructured(ctx, payload)) ctx.print(payload.id);
+        },
+      }),
+      command("annotations reopen", {
+        summary: t({ en: "Reopen a passage comment", de: "Textstellenkommentar wieder öffnen" }),
+        args: {
+          ...noteArg,
+          annotation: arg.required({ valueLabel: "annotation-id", description: t({ en: "Comment ID", de: "Kommentar-ID" }) }),
+        },
+        flags: {},
+        async run({ ctx, args, flags }) {
+          const target = await resolveNote(ctx, args.note);
+          const payload = await ctx.readJson<{ id: string }>(
+            await ctx.fetch(noteApi(target, `/annotations/${encodeURIComponent(args.annotation)}/resolve`), {
+              method: "POST",
+              headers: JSON_HEADERS,
+              body: JSON.stringify({ resolved: false }),
+            }),
+          );
+          if (!printStructured(ctx, payload)) ctx.print(payload.id);
+        },
+      }),
+      command("annotations accept", {
+        summary: t({ en: "Accept a passage suggestion", de: "Änderungsvorschlag übernehmen" }),
+        args: {
+          ...noteArg,
+          annotation: arg.required({ valueLabel: "annotation-id", description: t({ en: "Comment ID", de: "Kommentar-ID" }) }),
+        },
+        flags: {
+          yes: confirmFlag(t({ en: "Confirm this change", de: "Diese Änderung bestätigen" })),
+          operationId: flag.string({
+            name: "operation-id",
+            required: true,
+            description: t({
+              en: "Stable operation UUID; reuse after an uncertain outcome",
+              de: "Stabile Vorgangs-UUID; bei unklarem Ergebnis erneut verwenden",
+            }),
+          }),
+          expectedText: flag.string({
+            name: "expected-text",
+            description: t({
+              en: "Expected current passage; defaults to quote on accept",
+              de: "Erwartete aktuelle Textstelle; beim Übernehmen standardmäßig das Zitat",
+            }),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          requireConfirmable(flags.yes);
+          await confirm(flags.yes, t({ en: "Accept a passage suggestion?", de: "Änderungsvorschlag übernehmen?" }));
+          const target = await resolveNote(ctx, args.note);
+          const payload = await ctx.readJson<{ id: string }>(
+            await ctx.fetch(noteApi(target, `/annotations/${encodeURIComponent(args.annotation)}/accept`), {
+              method: "POST",
+              headers: JSON_HEADERS,
+              body: JSON.stringify({ operationId: flags.operationId, expectedText: flags.expectedText }),
+            }),
+          );
+          if (!printStructured(ctx, payload)) ctx.print(payload.id);
+        },
+      }),
+      command("annotations undo", {
+        summary: t({ en: "Undo an accepted suggestion", de: "Übernommenen Vorschlag rückgängig machen" }),
+        args: {
+          ...noteArg,
+          annotation: arg.required({ valueLabel: "annotation-id", description: t({ en: "Comment ID", de: "Kommentar-ID" }) }),
+        },
+        flags: {
+          yes: confirmFlag(t({ en: "Confirm this change", de: "Diese Änderung bestätigen" })),
+          operationId: flag.string({
+            name: "operation-id",
+            required: true,
+            description: t({
+              en: "Stable operation UUID; reuse after an uncertain outcome",
+              de: "Stabile Vorgangs-UUID; bei unklarem Ergebnis erneut verwenden",
+            }),
+          }),
+          expectedText: flag.string({
+            name: "expected-text",
+            description: t({
+              en: "Expected current passage; defaults to quote on accept",
+              de: "Erwartete aktuelle Textstelle; beim Übernehmen standardmäßig das Zitat",
+            }),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          requireConfirmable(flags.yes);
+          await confirm(flags.yes, t({ en: "Undo an accepted suggestion?", de: "Übernommenen Vorschlag rückgängig machen?" }));
+          const target = await resolveNote(ctx, args.note);
+          const payload = await ctx.readJson<{ id: string }>(
+            await ctx.fetch(noteApi(target, `/annotations/${encodeURIComponent(args.annotation)}/undo-accept`), {
+              method: "POST",
+              headers: JSON_HEADERS,
+              body: JSON.stringify({ operationId: flags.operationId, expectedText: flags.expectedText }),
+            }),
+          );
+          if (!printStructured(ctx, payload)) ctx.print(payload.id);
         },
       }),
 
