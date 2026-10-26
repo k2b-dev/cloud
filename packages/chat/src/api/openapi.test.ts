@@ -17,7 +17,6 @@ test("publishes every conversation operation with typed request and response sch
   const spec = SpecSchema.parse(await generateSpecs(app));
   for (const [path, method] of [
     ["/people", "get"],
-    ["/people/{userId}", "get"],
     ["/conversations/read-all", "post"],
     ["/conversations/{conversation}/read", "post"],
     ["/conversations/{conversation}/unread", "post"],

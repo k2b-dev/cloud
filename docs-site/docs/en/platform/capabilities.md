@@ -2018,22 +2018,6 @@ import, RSVP draft preparation and linking a conversation to an existing
 Spaces item remain local context actions with their existing selectors and
 confirmation steps.
 
-### Chat Command entry point
-
-Chat exposes `chat.conversation.compose` with one required `userId`, the user
-UUID of the person to select in **New chat**. Use `openCommand()` and handle
-its rejection so a missing or unavailable Chat leaves a visible error and a
-way to retry. Pass only the UUID; names and source-application access are not
-authority to contact someone.
-
-Chat resolves the person under current permissions before showing the form.
-Guests can select only direct co-members of a chat they can read. Opening the
-Command creates no conversation and sends no message. **Start chat** uses the
-existing service, which checks permissions again and offers the existing
-chooser when several chats have the same people. Cancel stays in Chat, browser
-Back returns to the originating page, and reload does not reopen a consumed
-Command.
-
 ## Binary streams
 
 A Query or Action can optionally return one `stream` alongside its ordinary

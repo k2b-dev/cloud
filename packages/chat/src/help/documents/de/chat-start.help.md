@@ -23,12 +23,6 @@ Diese Personen müssen direkte Mitglieder eines gemeinsamen Chats sein.
 Wenn ein Chat mit genau diesen Personen besteht, wähle **Vorhandenen öffnen**, um ihn zu nutzen.
 Wähle **Trotzdem einen neuen Chat erstellen**, um einen weiteren Chat mit denselben Personen zu starten.
 
-**Nachricht an …** im Dateiverlauf öffnet **Neuer Chat** mit der ausgewählten Person.
-Chat prüft, ob die Person für dich noch verfügbar ist; für Gäste gelten dieselben Beschränkungen.
-Das Öffnen erstellt keinen Chat und sendet keine Nachricht. Wähle **Chat starten**, um fortzufahren;
-bei mehreren passenden Chats wählst du den gewünschten aus. **Abbrechen** lässt dich in Chat,
-mit der Zurück-Funktion des Browsers kommst du zu Files zurück. Nach dem Öffnen zeigt ein Neuladen das Formular nicht erneut.
-
 ## Wenn die Bestätigung fehlt {icon="refresh"}
 
 Wenn **Erneut versuchen** erscheint, wähle es, um dieselbe Anfrage abzuschließen. Personen und Name bleiben fest, damit eine verlorene Antwort keinen zweiten Chat erzeugt.

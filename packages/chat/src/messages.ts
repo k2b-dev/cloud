@@ -20,7 +20,6 @@ export const chatMessages = i18n.define({
       optionalName: "Optional. Without a name, the chat shows the names of its members.",
       selfChatHint: "Without other people, the chat is just for you, for example for notes across your devices.",
       cancel: "Cancel",
-      close: "Close",
       startChat: "Start chat",
       existingChat: "You already have a chat with these people.",
       existingChats: "You already have chats with these people.",
@@ -82,8 +81,6 @@ export const chatMessages = i18n.define({
 
       createIntentChanged: "This create request was already used with different chat details.",
       createRecovery: "Try again to open this chat. Your choices stay unchanged. Cancel to start over; the chat may already exist.",
-      createContactConflict:
-        "An earlier chat attempt is unresolved. Close this dialog and open “New chat” in Chat to retry or cancel it. Then contact this person again. The earlier chat may already exist.",
       requestFailed: "The chat request failed. Try again.",
       today: "Today",
       yesterday: "Yesterday",
@@ -135,7 +132,6 @@ export const chatMessages = i18n.define({
         `${name} now manages this chat because the account of its last manager was deleted.`,
       peopleOnly: "Only people and groups can be chat members.",
       memberUnavailable: "A selected account does not exist or is no longer active.",
-      contactUnavailable: "This person is not available for a new chat. Choose someone in New chat.",
       notFound: "Chat not found.",
       forbidden: "You do not have permission for this action.",
       invalidInput: "Check the chat details, member IDs, and request limits.",
@@ -276,7 +272,6 @@ export const chatMessages = i18n.define({
       optionalName: "Optional. Ohne Namen zeigt der Chat die Namen seiner Mitglieder.",
       selfChatHint: "Ohne andere Personen ist der Chat nur für dich, zum Beispiel für Notizen auf deinen Geräten.",
       cancel: "Abbrechen",
-      close: "Schließen",
       startChat: "Chat starten",
       existingChat: "Du hast schon einen Chat mit diesen Personen.",
       existingChats: "Du hast schon Chats mit diesen Personen.",
@@ -340,8 +335,6 @@ export const chatMessages = i18n.define({
       createIntentChanged: "Diese Erstellanfrage wurde bereits mit anderen Chatdetails verwendet.",
       createRecovery:
         "Erneut versuchen, um diesen Chat zu öffnen. Die Auswahl bleibt gleich. Zum Neustart abbrechen; der Chat kann bereits bestehen.",
-      createContactConflict:
-        "Ein früherer Chat-Versuch ist noch ungeklärt. Schließe diesen Dialog und öffne in Chat „Neuer Chat“, um ihn erneut zu versuchen oder abzubrechen. Kontaktiere danach diese Person erneut. Der frühere Chat kann bereits bestehen.",
       requestFailed: "Die Chat-Anfrage ist fehlgeschlagen. Versuche es erneut.",
       today: "Heute",
       yesterday: "Gestern",
@@ -396,7 +389,6 @@ export const chatMessages = i18n.define({
         `${name} verwaltet diesen Chat jetzt, weil das Konto der letzten verwaltenden Person gelöscht wurde.`,
       peopleOnly: "Nur Personen und Gruppen können Chat-Mitglieder sein.",
       memberUnavailable: "Ein ausgewähltes Konto existiert nicht oder ist nicht mehr aktiv.",
-      contactUnavailable: "Diese Person ist für einen neuen Chat nicht verfügbar. Wähle jemanden in Neuer Chat.",
       notFound: "Chat nicht gefunden.",
       forbidden: "Du hast keine Berechtigung für diese Aktion.",
       invalidInput: "Prüfe die Chat-Angaben, Mitglieds-IDs und Anfragegrenzen.",
