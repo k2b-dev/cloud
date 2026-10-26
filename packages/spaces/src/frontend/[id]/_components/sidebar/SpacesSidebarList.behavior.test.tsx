@@ -160,7 +160,7 @@ if (isServer) {
     const registered = window.__cloudWorkspaceNavigation;
     expect(registered?.label).toBe("Launch");
     const items = registered?.navigation.items();
-    expect(items?.map(({ id }) => id)).toEqual(["my-work", "Space2", "Space1", "new-space"]);
+    expect(items?.map(({ id }) => id)).toEqual(["my-work", "all-calendars", "Space2", "Space1", "new-space"]);
     expect(items?.filter(({ active }) => active).map(({ id }) => id)).toEqual(["Space1"]);
     expect(items?.[0]?.label).toBe("My work");
     expect(items?.at(-1)?.action).toBe("new-space");
