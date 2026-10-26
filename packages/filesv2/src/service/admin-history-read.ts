@@ -7,8 +7,9 @@ import type { ActivityReaderDependencies } from "./activity-reader";
 export const recordAdminHistoryRead: ActivityReaderDependencies["recordAdminRead"] = async (call, bases, config, readScope, budget) => {
   const base = bases[0];
   if (!base) return;
-  const bindingIds = bases.map((binding) => binding.id);
-  const scope = { ...readScope, bindingIds };
+  // Audit metadata bounds arrays at 50 entries; a keyed set retains the complete scan-bounded scope.
+  const bindings = Object.fromEntries(bases.map((binding) => [binding.id, true]));
+  const scope = { ...readScope, bindings };
   const actor = call.actor.kind === "user" ? call.actor.user : call.actor.delegatedUser;
   budget.check();
   await sql.begin(async (tx) => {
@@ -37,7 +38,7 @@ export const recordAdminHistoryRead: ActivityReaderDependencies["recordAdminRead
           actor: actor ? { userId: actor.id, uid: actor.uid } : undefined,
           target: { type: "filesv2.history", id: base.id, label: base.path },
           requestId: call.requestId,
-          metadata: { operation: "history", bindingIds, scope, historyId: id },
+          metadata: { operation: "history", bindings, scope, historyId: id },
         },
         tx,
       );

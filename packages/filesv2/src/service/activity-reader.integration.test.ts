@@ -122,9 +122,25 @@ suite("history reader SQL and permission projection in a private database", () =
     expect((await f.reader.activity(call)).items).toHaveLength(2);
     const [record] = await sql`SELECT detail,xmin::text FROM filesv2.activity WHERE action='admin.read'`;
     const [event] = await sql`SELECT metadata,xmin::text FROM audit.events`;
-    expect(record!.detail.scope.bindingIds.toSorted()).toEqual([baseId, secondId].toSorted());
-    expect(event!.metadata.bindingIds.toSorted()).toEqual([baseId, secondId].toSorted());
+    expect(Object.keys(record!.detail.scope.bindings).toSorted()).toEqual([baseId, secondId].toSorted());
+    expect(Object.keys(event!.metadata.bindings).toSorted()).toEqual([baseId, secondId].toSorted());
     expect(event!.xmin).toBe(record!.xmin);
+  });
+  test("audit scope retains more than fifty distinct bindings without metadata truncation", async () => {
+    const bases = Array.from({ length: 51 }, (_, index) => ({
+      ...historyBinding,
+      id: index === 0 ? baseId : `20000000-0000-4000-8000-${String(index + 100).padStart(12, "0")}`,
+    }));
+    const f = historyFixture();
+    await withActivityReadBudget(undefined, async (budget) => {
+      const { config } = await f.deps.requestContext(call.actor, budget);
+      await recordAdminHistoryRead(call, bases, config, { endpoint: "batch" }, budget);
+    });
+    const [record] = await sql`SELECT detail FROM filesv2.activity WHERE action='admin.read'`;
+    const [event] = await sql`SELECT metadata FROM audit.events`;
+    expect(Object.keys(record!.detail.scope.bindings).toSorted()).toEqual(bases.map((base) => base.id).toSorted());
+    expect(event!.metadata.scope.bindings).toEqual(record!.detail.scope.bindings);
+    expect(event!.metadata.bindings).toEqual(record!.detail.scope.bindings);
   });
   test("a failed foreign-history audit rolls back activity and prevents snapshot disclosure", async () => {
     await seed();
