@@ -6,7 +6,7 @@ import { ssr } from "../../config";
 import { spacesPageHelp } from "../../help";
 import { loadCalendarEvents, loadCalendarSources } from "../../service/calendar-view";
 import { loadSpacesSidebar } from "../../service/overview";
-import { overviewMessages } from "../overview-messages";
+import { spaceMessages } from "../[id]/messages";
 import CloudCalendar from "./CloudCalendar.island";
 import {
   type CalendarSourceRead,
@@ -28,7 +28,6 @@ export default ssr<AuthContext>(async (c) => {
   const started = Date.now();
   const locale = getLocale(c);
   const { t } = calendarViewMessages.resolve([locale]);
-  const { t: overview } = overviewMessages.resolve([locale]);
   const user = expectUserBackedActor(c);
   const dateConfig = getDateConfig(c);
   const route = parseCloudCalendarRoute(new URL(c.req.url), dateConfig);
@@ -69,7 +68,11 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       help={spacesPageHelp.calendar}
       fullWidth
-      title={[{ title: overview.start, href: "/" }, { title: "Spaces", href: "/app/spaces" }, { title: t.calendar }]}
+      title={[
+        { title: spaceMessages.resolve([locale]).t.start, href: "/" },
+        { title: "Spaces", href: "/app/spaces" },
+        { title: t.calendar },
+      ]}
     >
       <CloudCalendar
         sidebar={sidebar}

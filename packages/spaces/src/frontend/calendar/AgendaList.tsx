@@ -61,7 +61,7 @@ export default function AgendaList(props: Props) {
   const dayDate = (day: string) =>
     new Intl.DateTimeFormat(locale(), { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`));
   return (
-    <div class="spaces-calendar-agenda" data-print-region>
+    <div class="spaces-calendar-agenda">
       <For each={days()}>
         {(entry) => (
           <section class="spaces-calendar-agenda__day" data-today={entry.day === props.today ? "true" : undefined}>

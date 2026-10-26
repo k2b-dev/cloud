@@ -1,3 +1,4 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { navigate } from "@k2b/ssr/nav";
@@ -8,6 +9,7 @@ import {
   Button,
   bottomSheetOptions,
   Calendar,
+  type CalendarCommand,
   type CalendarEvent,
   createNavigation,
   dialogCore,
@@ -19,7 +21,7 @@ import {
   useLocale,
   ViewTabs,
 } from "@k2b/ui";
-import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { CalendarItemContent } from "../[id]/_components/calendar/ItemContent";
 import { CALENDAR_DAY_HOURS } from "../[id]/_components/calendar/range";
 import SpacesSidebarList from "../[id]/_components/sidebar/SpacesSidebarList";
@@ -216,31 +218,45 @@ export default function CloudCalendar(props: CloudCalendarProps) {
     replaceUrl();
     if (added.length > 0) void read(requestRanges(range(), props.dateConfig), added, { mark: true });
   };
-  const chooserOptions = (): FilterChipSection[] =>
-    sources().map((source) => {
-      const state = reads().get(source.appId)?.state;
-      return {
-        label: source.name,
-        multiple: true,
-        toggleAll: true,
-        options: source.calendars.map((calendar) => {
-          const key = calendarKey(source.appId, calendar.id);
-          const trailing =
-            state === "pending" && chosen().has(key) ? (
-              <span class="spaces-calendar-chooser__state" role="img" aria-label={t.loadingState}>
-                <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
-              </span>
-            ) : state === "failed" && chosen().has(key) ? (
-              <span class="spaces-calendar-chooser__state" data-tone="warning" role="img" aria-label={t.unreachable}>
-                <i class="ti ti-alert-triangle" aria-hidden="true" />
-              </span>
-            ) : calendar.visibility === "busy" ? (
-              <span class="spaces-calendar-chooser__note">{t.busyNote}</span>
-            ) : undefined;
-          return { value: key, label: calendar.name, color: calendar.color, trailing };
-        }),
-      };
-    });
+  /** The state at the end of a chooser row; it follows the reads itself, so the open menu keeps its rows. */
+  const ChooserState = (stateProps: { appId: string; calendarKey: string; busy: boolean }) => {
+    const state = () => (chosen().has(stateProps.calendarKey) ? reads().get(stateProps.appId)?.state : undefined);
+    return (
+      <Show
+        when={state() === "pending" || state() === "failed"}
+        fallback={
+          <Show when={stateProps.busy}>
+            <span class="spaces-calendar-chooser__note">{t.busyNote}</span>
+          </Show>
+        }
+      >
+        <span
+          class="spaces-calendar-chooser__state"
+          data-tone={state() === "failed" ? "warning" : undefined}
+          role="img"
+          aria-label={state() === "failed" ? t.unreachable : t.loadingState}
+        >
+          <i class={state() === "failed" ? "ti ti-alert-triangle" : "ti ti-loader-2 animate-spin"} aria-hidden="true" />
+        </span>
+      </Show>
+    );
+  };
+  const chooserOptions = createMemo((): FilterChipSection[] =>
+    sources().map((source) => ({
+      label: source.name,
+      multiple: true,
+      toggleAll: true,
+      options: source.calendars.map((calendar) => {
+        const key = calendarKey(source.appId, calendar.id);
+        return {
+          value: key,
+          label: calendar.name,
+          color: calendar.color,
+          trailing: <ChooserState appId={source.appId} calendarKey={key} busy={calendar.visibility === "busy"} />,
+        };
+      }),
+    })),
+  );
   const defaults = createMemo(() => defaultSelection(sources()));
   const changed = () => normalizeSelection(selection(), sources()) !== null;
 
@@ -335,7 +351,9 @@ export default function CloudCalendar(props: CloudCalendarProps) {
   };
   const loading = () => status()?.kind === "loading";
   const empty = (): "sources" | "selection" | "events" | null => {
-    if (sources().length === 0 && !sources().some((source) => source.state === "failed")) return "sources";
+    // Without any calendar the page says why: none exist yet, or the status line names the apps that failed.
+    if (!sources().some((source) => source.calendars.length > 0))
+      return sources().some((source) => source.state === "failed") ? null : "sources";
     if (selection().length === 0) return "selection";
     if (loading() || shownCount() > 0) return null;
     return "events";
@@ -380,6 +398,22 @@ export default function CloudCalendar(props: CloudCalendarProps) {
     onAction: async (action) => {
       if (action === "new-space") await createSpace();
     },
+  });
+
+  // The calendar's own shortcuts (Today, Next, Previous, the views, Go to) for the keys, the palette, and the help.
+  const [commands, setCommands] = createSignal<readonly CalendarCommand[]>([]);
+  createEffect(() => {
+    for (const command of commands())
+      onCleanup(
+        registerContextAwareCommand({
+          id: command.id,
+          title: command.label,
+          description: command.description ?? command.label,
+          icon: command.icon,
+          shortcut: command.shortcut,
+          action: () => command.run(),
+        }),
+      );
   });
 
   // ---------------------------------------------------------------- rendering
@@ -561,6 +595,7 @@ export default function CloudCalendar(props: CloudCalendarProps) {
                   replaceUrl();
                 }}
                 withWeekNumbers
+                onCommandsChange={setCommands}
                 dateConfig={props.dateConfig}
                 getViewHref={(next) => viewHref(asView(next))}
                 getDateHref={dateHref}
