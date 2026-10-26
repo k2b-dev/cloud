@@ -33,10 +33,16 @@ export const selectionToolbarPosition = (
   placement: "above" | "below" = "above",
 ): { left: number; top: number; side: "above" | "below" } => {
   const left = Math.max(EDGE, Math.min(anchor.left + anchor.width / 2 - toolbar.width / 2, viewport.width - toolbar.width - EDGE));
+  // A boundary scrolled above the window still leaves the window's top edge as the limit.
+  const upper = Math.max(0, viewport.top ?? 0) + EDGE;
   const above = anchor.top - toolbar.height - GAP;
-  const side = placement === "below" || above < (viewport.top ?? 0) + EDGE ? "below" : "above";
-  const top = side === "above" ? above : Math.min(anchor.bottom + GAP, viewport.height - toolbar.height - EDGE);
-  return { left, top, side };
+  const below = anchor.bottom + GAP;
+  const fitsAbove = above >= upper;
+  const fitsBelow = below + toolbar.height <= viewport.height - EDGE;
+  // The preferred side when it fits, the other side when only that fits; never on the selected text otherwise.
+  const side = placement === "below" ? (fitsBelow || !fitsAbove ? "below" : "above") : fitsAbove || !fitsBelow ? "above" : "below";
+  if (side === "above") return { left, top: fitsAbove ? above : upper, side };
+  return { left, top: fitsBelow ? below : Math.max(upper, viewport.height - EDGE - toolbar.height), side };
 };
 
 const keepsFocus = (target: EventTarget | null) =>
