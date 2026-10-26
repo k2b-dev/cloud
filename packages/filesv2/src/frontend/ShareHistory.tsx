@@ -3,11 +3,11 @@ import { Button, DetailPanel, prompts, Skeleton, toast, useLocale } from "@k2b/u
 import { type Accessor, createMemo, createSignal, For, Match, mapArray, Show, Switch } from "solid-js";
 import type { ShareAccessCounts, ShareAccessPeriod } from "../activity-contracts";
 import type { ShareView } from "../contracts";
-import { HistoryAvatar, MetaLine } from "./ActivityView";
 import { useBrowserMessages } from "./browser-messages";
 import HistoryUnavailable, { isHistoryUnavailable } from "./HistoryUnavailable";
 import { formatDate, formatTime, type HistoryEnvironment, type MetaPart } from "./history-actions";
 import { type HistoryMessages, useHistoryMessages } from "./history-messages";
+import { HistoryAvatar, MetaLine } from "./history-rows";
 
 export type ShareAccessRequest = { shareId: string; networkAfter?: string; timelineAfter?: string };
 

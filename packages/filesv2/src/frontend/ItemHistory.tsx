@@ -3,10 +3,10 @@ import { Button, ButtonLink, DetailPanel } from "@k2b/ui";
 import { createMemo, createSignal, createUniqueId, For, Match, Show, Switch } from "solid-js";
 import type { ActivityPage, ShareAccessPeriod } from "../activity-contracts";
 import type { ShareView } from "../contracts";
-import { HistoryRow, SkeletonRows } from "./ActivityView";
 import HistoryUnavailable, { isHistoryUnavailable } from "./HistoryUnavailable";
 import { type HistoryActions, type HistoryEnvironment, type HistoryRowModel, historyRows } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
+import { HistoryRow, SkeletonRows } from "./history-rows";
 import { AccessRow, periodHasAccess, type ShareAccess } from "./ShareHistory";
 
 const RECENT = 4;
