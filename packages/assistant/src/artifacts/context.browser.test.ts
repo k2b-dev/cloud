@@ -83,12 +83,26 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
   const browser = await launchBrowser({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
-    page.setDefaultTimeout(3000);
+    const actionTimeout = 3000;
+    page.setDefaultTimeout(actionTimeout);
     const errors = pageErrors(page);
     await page.goto(server.url.href);
+    // Observe main-world rendering before pointer actionability, sharing the original first-click budget.
+    const firstActionDeadline = performance.now() + actionTimeout;
+    const firstActionRemaining = () => {
+      const remaining = firstActionDeadline - performance.now();
+      if (remaining <= 0) throw new Error(`The sidebar's first render and click exceeded ${actionTimeout}ms`);
+      return remaining;
+    };
+    await page.waitForFunction(
+      () => new Promise<boolean>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))),
+      undefined,
+      { timeout: firstActionRemaining() },
+    );
     const context = page.locator("#assistant-chat-context");
+    expect((await context.boundingBox({ timeout: firstActionRemaining() }))?.width).toBe(320);
     // One-off runs stay one level deeper, as a row under working files.
-    await context.getByRole("button", { name: /Working files/ }).click();
+    await context.getByRole("button", { name: /Working files/ }).click({ timeout: firstActionRemaining() });
     expect(await context.getByRole("button", { name: /Script runs · 3/ }).count()).toBe(1);
     await context.getByRole("button", { name: `Open ${app.title}`, exact: true }).click();
     await page.getByRole("tab", { name: app.title, exact: true }).waitFor();
