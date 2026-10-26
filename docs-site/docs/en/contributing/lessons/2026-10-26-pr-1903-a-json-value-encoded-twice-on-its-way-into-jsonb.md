@@ -1,4 +1,4 @@
-### A JSON value encoded twice on its way into `jsonb`
+### A JSON value encoded twice on its way into jsonb
 
 - **What happened:** Serialized JSON reaches a `::jsonb` cast as a string parameter, and the column stores a JSON string instead of the object or array.
 - **Root cause:** A JSON value encoded twice on its way into `jsonb`.
