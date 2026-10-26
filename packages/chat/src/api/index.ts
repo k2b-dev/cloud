@@ -13,6 +13,7 @@ import { ok } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { ChatComposeInputSchema } from "../commands";
 import { chatMessages } from "../messages";
 import { ChatHealthSchema, chatService } from "../service";
 import {
@@ -81,6 +82,13 @@ const app = new Hono<AuthContext>()
     async (c) => respond(c, ok(await chatService.health())),
   )
   .route("/live", chatLive.routes(chatLiveChannels))
+  .get(
+    "/people/:userId",
+    auth.requireRole("user", "guest"),
+    description("Resolve a person selectable in New chat without creating a chat", PeoplePageSchema.shape.items.element),
+    validator("param", ChatComposeInputSchema, invalidInput),
+    async (c) => respond(c, chatService.conversations.resolvePerson({ ...context(c), input: c.req.valid("param") })),
+  )
   .get(
     "/people",
     auth.requireRole("authenticated"),
