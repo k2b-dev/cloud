@@ -5,6 +5,7 @@ import { oauthTokens, serviceAccounts } from "@k2b/cloud/services";
 import { session } from "@k2b/cloud/services/session";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import * as settings from "@k2b/cloud/services/settings";
+import { useTestSettings } from "@k2b/cloud/services/settings/settings.test-fixture";
 import { sql } from "bun";
 import { Hono } from "hono";
 import * as jose from "jose";
@@ -149,6 +150,7 @@ const consentActionRoutes = () =>
   );
 
 suite("OAuth resource access tokens", () => {
+  useTestSettings({ "app.url": "http://localhost:3000" });
   beforeAll(async () => {
     await migrate();
   });
@@ -2506,6 +2508,7 @@ const epochFixture = async (kind: "cli" | "managed" | "dynamic" = "managed") => 
 };
 
 suite("OAuth account epochs", () => {
+  useTestSettings({ "app.url": "http://localhost:3000" });
   beforeAll(async () => {
     await migrate();
   });
