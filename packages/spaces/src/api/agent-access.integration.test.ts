@@ -77,9 +77,15 @@ suite("Spaces REST access for standalone agents", () => {
       const progressed = await call(`${itemPath}/progress`, { method: "POST", body: { claimId, content: "Halfway there." } });
       expect(progressed.status).toBe(200);
 
-      const commented = await call(`${itemPath}/comments`, { method: "POST", body: { content: "Picked this up." } });
+      const commentRequest = { requestId: crypto.randomUUID(), content: "Picked this up." };
+      const commented = await call(`${itemPath}/comments`, { method: "POST", body: commentRequest });
       expect(commented.status).toBe(200);
       expect(await commented.json()).toMatchObject({ userId: null, userName: agent.name, content: "Picked this up." });
+      const replay = await call(`${itemPath}/comments`, { method: "POST", body: commentRequest });
+      expect(replay.status).toBe(200);
+      expect(
+        (await call(`${itemPath}/comments`, { method: "POST", body: { ...commentRequest, content: "A different comment" } })).status,
+      ).toBe(409);
       const page = (await (await call(`${itemPath}/comments/page`)).json()) as { items: { userName: string | null }[] };
       expect(page.items.map((comment) => comment.userName)).toEqual([agent.name]);
 

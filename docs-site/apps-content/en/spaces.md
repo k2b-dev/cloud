@@ -125,10 +125,18 @@ anyone else the address does not exist.
   checklist are off.
 - **Comment** sends a comment to the task. What you type stays on the device
   until it is sent, also when the app is closed in between. When it cannot be
-  sent, the text stays and **Retry** sends it again. Without write access to
+  sent, the text stays and **Retry** safely repeats the send, including after
+  restarting the app. A late answer cannot clear a newer draft. Without write access to
   the Space, there is no comment field.
 - **Open in Spaces** opens the task in Spaces on the web, to edit everything
   else.
+
+The comment API, `POST /api/spaces/:id/items/:itemId/comments`, accepts an
+optional `requestId` UUID alongside `content`. Reuse it for retries of the same
+comment. While that comment exists unchanged, a retry returns it without
+another comment or activity entry; a different author, item, occurrence, or
+content with the same request ID returns 409. The response keeps its usual
+short comment ID.
 
 ## Understand the Spaces model
 

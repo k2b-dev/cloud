@@ -3521,10 +3521,12 @@ function discussionRoutes() {
         describeRoute({
           tags: ["Spaces"],
           summary: "Add comment",
-          description: "Add a comment to an item.",
+          description:
+            "Add a comment to an item. Reuse requestId for a retry of the same comment; a different payload with that ID conflicts.",
           ...requiresAuth,
           responses: {
             200: jsonResponse(SpaceCommentSchema, "Created comment"),
+            409: jsonResponse(ErrorResponseSchema, "Request ID already used for a different comment"),
             400: jsonResponse(ErrorResponseSchema, "Invalid request"),
             403: jsonResponse(ErrorResponseSchema, "Access denied"),
             404: jsonResponse(ErrorResponseSchema, "Item not found"),
@@ -3537,7 +3539,7 @@ function discussionRoutes() {
           if (!author.ok) return respond(c, author);
           const spaceShortId = c.req.param("id") ?? "";
           const itemId = c.req.param("itemId") ?? "";
-          const { content } = c.req.valid("json");
+          const { requestId, content } = c.req.valid("json");
 
           const { internalId: spaceId, error } = await checkSpaceAccess(c, spaceShortId, "write");
           if (error) return error;
@@ -3547,6 +3549,7 @@ function discussionRoutes() {
             c,
             projectMutation(
               spacesService.comment.create({
+                requestId,
                 itemId: itemCheck.data.id,
                 recurrenceId: c.req.valid("query").recurrence_id,
                 dateConfig: getDateConfig(c),

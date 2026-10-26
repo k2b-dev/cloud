@@ -1,6 +1,6 @@
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
 import { Button, TextInput, toast, useLocale } from "@k2b/ui";
-import { createSignal, onMount } from "solid-js";
+import { createSignal, onCleanup, onMount } from "solid-js";
 import { apiClient } from "@/api/client";
 import { createRetryToasts } from "../frontend/lib/feedback";
 import { overviewMessages } from "../frontend/overview-messages";
@@ -25,16 +25,28 @@ export default function TaskComment(props: Props) {
   const o = () => overviewMessages.resolve([locale()]).t;
   const retryToast = createRetryToasts();
   const field = () => `spaces.comment:${props.task.spaceShortId}:${props.task.shortId}`;
+  const requestField = () => `${field()}:request`;
+  let requestId: string | undefined;
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
   const [text, setText] = createSignal("");
   const [sending, setSending] = createSignal(false);
   // The server renders an empty field; the draft arrives after mounting, so both renders agree.
   const [mounted, setMounted] = createSignal(false);
   onMount(() => {
     setText(pwaDrafts.read(props.userId, field()) ?? "");
+    requestId = text() ? pwaDrafts.read(props.userId, requestField()) : undefined;
+    if (!text()) pwaDrafts.remove(props.userId, requestField());
     setMounted(true);
   });
 
   const change = (value: string) => {
+    if (value !== text()) {
+      requestId = undefined;
+      pwaDrafts.remove(props.userId, requestField());
+    }
     setText(value);
     if (value) pwaDrafts.write(props.userId, field(), value);
     else pwaDrafts.remove(props.userId, field());
@@ -42,16 +54,25 @@ export default function TaskComment(props: Props) {
 
   const send = async () => {
     const content = text().trim();
-    if (!content || sending()) return;
+    if (!content || sending() || disposed) return;
+    requestId ??= crypto.randomUUID();
+    const id = requestId;
+    // A plain request token follows the device draft across a restart. An ambiguous send retries the same comment.
+    pwaDrafts.write(props.userId, requestField(), id);
     setSending(true);
     const response = await apiClient[":id"].items[":itemId"].comments
-      .$post({ param: { id: props.task.spaceShortId, itemId: props.task.shortId }, query: {}, json: { content } })
+      .$post({ param: { id: props.task.spaceShortId, itemId: props.task.shortId }, query: {}, json: { requestId: id, content } })
       .catch(() => null);
+    if (disposed) return;
     setSending(false);
     if (response?.ok) {
       // Text typed while the comment was on its way stays.
-      if (text().trim() === content) change("");
+      if (requestId === id && pwaDrafts.read(props.userId, requestField()) === id) change("");
       toast.success(t().commentSent);
+      return;
+    }
+    if (response?.status === 409) {
+      toast.error(t().commentChanged);
       return;
     }
     if (response && (response.status === 403 || response.status === 404)) {

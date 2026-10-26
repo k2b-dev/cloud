@@ -225,7 +225,7 @@ test("a typed comment is a draft on the device until it is sent, then the field 
   answers.push(Response.json({ id: "Cmt001" }));
   sendButton(root).click();
   await waitFor(() => dom!.document.body.textContent?.includes("Comment sent") ?? false, "sent");
-  expect(calls.at(-1)).toEqual({ method: "POST", path: COMMENTS, body: { content: "Tents are booked." } });
+  expect(calls.at(-1)).toEqual({ method: "POST", path: COMMENTS, body: { requestId: expect.any(String), content: "Tents are booked." } });
   expect(commentField(root)!.value).toBe("");
   expect(dom!.window.localStorage.getItem(DRAFT)).toBeNull();
 });
@@ -243,8 +243,50 @@ test("a comment that fails to send keeps its text and draft, and Retry sends it 
     .find((button) => button.textContent === "Retry")!
     .click();
   await waitFor(() => dom!.document.body.textContent?.includes("Comment sent") ?? false, "sent on retry");
-  expect(calls.filter((call) => call.path === COMMENTS)).toHaveLength(2);
+  const attempts = calls.filter((call) => call.path === COMMENTS);
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]!.body).toEqual(attempts[0]!.body);
   expect(dom!.window.localStorage.getItem(DRAFT)).toBeNull();
+});
+
+test("a late send cannot remove a draft edited after reopening the task", async () => {
+  let root = mount({ kind: "ready", task });
+  type(commentField(root)!, "First version");
+  sendButton(root).click();
+  const finishOldSend = pending!;
+  dispose();
+  root = show({ kind: "ready", task });
+  type(commentField(root)!, "A newer draft");
+  finishOldSend(Response.json({ id: "Cmt003" }));
+  await Bun.sleep(0);
+  expect(commentField(root)!.value).toBe("A newer draft");
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBe("A newer draft");
+});
+
+test("an ambiguous send retains its comment identity across an app restart", async () => {
+  let root = mount({ kind: "ready", task });
+  type(commentField(root)!, "Already committed, response lost");
+  answers.push("offline");
+  sendButton(root).click();
+  await waitFor(() => dom!.document.body.textContent?.includes("not sent") ?? false, "failure");
+  const first = calls.at(-1)!.body;
+  dispose();
+  root = show({ kind: "ready", task });
+  answers.push(Response.json({ id: "Cmt004" }));
+  sendButton(root).click();
+  await waitFor(() => dom!.document.body.textContent?.includes("Comment sent") ?? false, "reconciled send");
+  expect(calls.at(-1)!.body).toEqual(first);
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBeNull();
+});
+
+test("a changed committed comment keeps the draft and directs the reader to Spaces instead of retrying", async () => {
+  const root = mount({ kind: "ready", task });
+  type(commentField(root)!, "Keep this text");
+  answers.push(Response.json({ message: "Request ID belongs to a different comment" }, { status: 409 }));
+  sendButton(root).click();
+  await waitFor(() => dom!.document.body.textContent?.includes("already sent and has changed") ?? false, "conflict");
+  expect(dom!.window.localStorage.getItem(DRAFT)).toBe("Keep this text");
+  expect([...dom!.document.querySelectorAll("[data-k2b-toast] button")].some((button) => button.textContent === "Retry")).toBe(false);
 });
 
 process.once("exit", () => fetchSpy.mockRestore());

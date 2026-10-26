@@ -864,6 +864,7 @@ export const SetCompletedSchema = CompletionInputSchema;
 export type SetCompleted = z.infer<typeof SetCompletedSchema>;
 
 export const CreateCommentSchema = z.object({
+  requestId: z.uuid().optional().describe("Stable request UUID; reuse it when retrying the same comment"),
   content: z.string().min(1).max(5000).describe("Comment content"),
 });
 export type CreateComment = z.infer<typeof CreateCommentSchema>;
