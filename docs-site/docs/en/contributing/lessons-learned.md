@@ -236,6 +236,8 @@ convention still needs a check or a test.
 | A JSON value encoded twice on its way into `jsonb` | Serialized JSON reaches a `::jsonb` cast as a string parameter, and the column stores a JSON string instead of the object or array. | Test: Chat `api/shared.integration.test.ts` reads stored `refs` back as an array. Convention: serialized JSON goes to Postgres as `::text::jsonb`. |
 
 | Redundant reads after a confirmed insert | First sync repeats content updates and queries state that cannot exist for a newly inserted message, multiplying database latency. | Test: Mail `lifecycle.integration.test.ts` counts PostgreSQL commands for a 200-envelope import and replays it to check canonical IDs, conversations and read state. Only a confirmed insert skips these reads; existing and raced copies keep the full path ([#1487](https://github.com/k2b-dev/cloud/issues/1487)). |
+| A larger suite keeps its old shard weight | Chat gained browser scenarios while its committed unit-suite weight stayed at 333.5 seconds; the measured 631.2-second suite grouped with Spaces and exceeded the unchanged 20-minute shard budget. | Existing runner budget enforcement and weighted-shard tests detect the class. Update the affected suite weight from the completed CI timing when adding expensive scenarios; keep the job and shard deadlines unchanged. |
+
 
 ## Lessons
 
