@@ -971,6 +971,12 @@ suite counts as the median of its table. Integration keeps the Grids exclusion;
 Grids certification runs in its own path-filtered job. Every integration shard
 gets fresh service containers, and `gate` requires the whole matrix to succeed.
 
+The unit, WebKit, integration, and Grids jobs run on the runner that the
+repository variable `CI_HEAVY_RUNNER` names, and on `ubuntu-24.04` when it is
+unset. Maintainers set it to a larger GitHub-hosted runner when standard runner
+capacity is short; that runner is billed per minute. Deleting the variable
+returns the jobs to standard runners without a pull request.
+
 Each shard prints its predicted and actual time. Its runner stops an active
 suite and fails with an annotation at the 20-minute budget, before the
 30-minute job limit. The budget also includes NATS housekeeping and integration database bootstrap.
