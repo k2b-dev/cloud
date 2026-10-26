@@ -175,7 +175,7 @@ export const readSourceEvents = async (raw: CalendarEventsInput, context: Source
     );
   const stableId = (item: CalendarItem) =>
     item.recurringEventId && item.recurrenceId ? `${item.recurringEventId}:${item.recurrenceId}` : item.id;
-  const start = (item: CalendarItem) => point(item.startsAt ?? item.deadline!);
+  const start = (item: CalendarItem) => point(item.startsAt && item.endsAt ? eventTime(item, context.dateConfig).start : item.deadline!);
   const belongs = (item: CalendarItem) => {
     if (item.startsAt && item.endsAt) {
       const time = eventTime(item, context.dateConfig);
