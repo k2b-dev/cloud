@@ -2975,3 +2975,31 @@
 .notebook-comments__skeleton .k2b-skeleton {
   height: 0.625rem;
 }
+.notebook-comments-open {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  z-index: 4;
+  display: inline-flex;
+  height: 1.75rem;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.5rem;
+  border-radius: 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-elevated);
+  box-shadow: 0 0 0 1px var(--k2b-border);
+}
+.notebook-comments-sheet__state {
+  margin: 0.5rem 0;
+  font-size: 0.875rem;
+  color: var(--k2b-text-muted);
+}
+.notebook-comments-sheet__toggle {
+  align-self: flex-start;
+  margin-bottom: 0.25rem;
+  font-size: 0.8125rem;
+}

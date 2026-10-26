@@ -29,6 +29,8 @@ export const createCommentsUi = (options: {
   text: () => string;
   /** A link to this note with one comment open, for "Copy link". */
   linkTo: (id: string) => string;
+  /** Puts the caret back into the text, at a position of the passage a comment was written for. */
+  focusText: (pos: number) => void;
   /** Marks a passage's replacement green for a moment after its suggestion was accepted, before the reload moves it. */
   flash: (id: string, length: number) => void;
 }) => {
@@ -158,28 +160,51 @@ export const createCommentsUi = (options: {
       }
     });
 
+  /**
+   * Accept and undo are durable operations: an outcome the server could not confirm keeps its operation ID, so trying
+   * again finishes that same operation instead of starting a second one. A new ID starts only after a clear answer.
+   */
+  const operations = new Map<string, string>();
+  const operationId = (key: string) => {
+    const known = operations.get(key);
+    if (known) return known;
+    const id = crypto.randomUUID();
+    operations.set(key, id);
+    return id;
+  };
+  const uncertain = (error: unknown) => error instanceof CommentRequestError && error.status >= 500;
+  const retryToast = (retry: () => void) => toast.error(options.t().actionFailed, { action: { label: options.t().retry, onClick: retry } });
+
+  const undoAccept = (item: Annotation) =>
+    working(item.id, async () => {
+      const key = `undo:${item.id}`;
+      try {
+        await store.undoAccept(item.id, operationId(key));
+        operations.delete(key);
+        await store.reload();
+      } catch (error) {
+        if (uncertain(error)) return void retryToast(() => void undoAccept(item));
+        operations.delete(key);
+        if (error instanceof CommentRequestError && error.status === 409) toast.error(options.t().undoFailed);
+        else failed(error);
+      }
+    });
+
   const accept = (item: Annotation, expectedText?: string): Promise<void> =>
     working(item.id, async () => {
       setPreview(null);
+      const key = `accept:${item.id}:${expectedText ?? ""}`;
       try {
-        await store.accept(item.id, crypto.randomUUID(), expectedText);
+        await store.accept(item.id, operationId(key), expectedText);
+        operations.delete(key);
         options.flash(item.id, (item.suggestion ?? "").length);
         await store.reload();
         if (active() === item.id) setActive(null);
         announce(options.t().accepted);
-        toast(options.t().accepted, {
-          action: {
-            label: options.t().undo,
-            onClick: () =>
-              void store
-                .undoAccept(item.id, crypto.randomUUID())
-                .then(() => store.reload())
-                .catch((error) =>
-                  error instanceof CommentRequestError && error.status === 409 ? toast.error(options.t().undoFailed) : failed(error),
-                ),
-          },
-        });
+        toast(options.t().accepted, { action: { label: options.t().undo, onClick: () => void undoAccept(item) } });
       } catch (error) {
+        if (uncertain(error)) return void retryToast(() => void accept(item, expectedText));
+        operations.delete(key);
         const current = error instanceof CommentRequestError ? error.details?.currentText : undefined;
         if (error instanceof CommentRequestError && error.status === 409 && typeof current === "string" && expectedText === undefined) {
           const again = await prompts.confirm(`${options.t().acceptChanged}\n\n„${current}“`, {
@@ -243,6 +268,12 @@ export const createCommentsUi = (options: {
     byId,
     startDraft,
     saveDraft,
+    /** Drops the comment being written and returns to its passage. */
+    cancelDraft: () => {
+      const current = draft();
+      setDraft(null);
+      if (current) options.focusText(current.to);
+    },
     resolve,
     remove,
     accept,

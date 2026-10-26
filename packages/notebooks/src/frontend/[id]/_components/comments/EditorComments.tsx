@@ -1,4 +1,4 @@
-import { type ChangeSet, EditorSelection, Prec } from "@codemirror/state";
+import { type ChangeSet, EditorSelection, Prec, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { announce, Button, personColor, SelectionToolbar, Toolbar, useLocale } from "@k2b/ui";
 import { type Accessor, batch, createEffect, createMemo, createSignal, type JSX, on, onCleanup, untrack } from "solid-js";
@@ -44,6 +44,8 @@ export const createEditorComments = (options: {
   canWrite: boolean;
   /** Whether the editor itself may change the text: formatting needs it, commenting does not. */
   editable: Accessor<boolean>;
+  /** The read-only view: no live text, so it takes the text each comment reload brings, such as an accepted suggestion. */
+  readOnly: boolean;
   initial: AnnotationProjection | null | undefined;
   view: Accessor<EditorView | undefined>;
 }) => {
@@ -70,6 +72,12 @@ export const createEditorComments = (options: {
     me: options.me,
     t,
     text: () => options.view()?.state.doc.toString() ?? "",
+    focusText: (pos) => {
+      const view = options.view();
+      if (!view) return;
+      view.dispatch({ selection: EditorSelection.cursor(Math.min(pos, view.state.doc.length)) });
+      view.focus();
+    },
     linkTo: (id) => {
       const url = new URL(window.location.href);
       url.searchParams.set("annotation", id);
@@ -133,6 +141,13 @@ export const createEditorComments = (options: {
     on([() => store.projection(), ui.visible, options.view], () => {
       const view = options.view();
       if (!view) return;
+      const text = store.projection()?.text;
+      const shown = view.state.doc.toString();
+      if (options.readOnly && text !== undefined && text !== shown)
+        view.dispatch({
+          changes: changesBetween(shown, text) ?? { from: 0, to: shown.length, insert: text },
+          annotations: [Transaction.addToHistory.of(false), Transaction.remote.of(true)],
+        });
       view.dispatch({ effects: setAnnotations.of(placed()) });
       setMarks(annotations.marks(view.state));
     }),
@@ -287,6 +302,7 @@ export const createEditorComments = (options: {
     onExtent: (bottom: number) => void,
   ) => (
     <CommentMargin
+      listButton={options.readOnly}
       ui={ui}
       view={options.view}
       host={host}

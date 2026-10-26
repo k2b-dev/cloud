@@ -1,5 +1,5 @@
 import { CloudAvatar } from "@k2b/cloud/account/ui";
-import { Button, Dropdown, type DropdownItem, Format, IconButton, TextInput } from "@k2b/ui";
+import { Button, Dropdown, type DropdownItem, Format, IconButton, TextInput, toast } from "@k2b/ui";
 import { createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import type { Annotation } from "../../../../lib/annotation-contracts";
 import { type CommentsUi, isOpen, MUTATION_WINDOW_MS } from "./comments-ui";
@@ -159,6 +159,26 @@ export function CommentCard(props: { ui: CommentsUi; item: Annotation; ref?: (el
   const active = () => props.ui.active() === item().id;
   const resolved = () => !isOpen(item());
   const writer = () => props.ui.canWrite();
+  // Replies after the first page load on request and stay while the comment reloads.
+  const [more, setMore] = createSignal<{ items: Annotation["replies"]; cursor: string | null } | null>(null);
+  const [loadingMore, setLoadingMore] = createSignal(false);
+  const replies = () => {
+    const first = item().replies;
+    const seen = new Set(first.map((reply) => reply.id));
+    return [...first, ...(more()?.items.filter((reply) => !seen.has(reply.id)) ?? [])];
+  };
+  const moreCursor = () => (more() ? more()!.cursor : item().repliesNextCursor);
+  const loadMore = async (cursor: string) => {
+    setLoadingMore(true);
+    try {
+      const page = await props.ui.store.replies(item().id, cursor);
+      setMore((previous) => ({ items: [...(previous?.items ?? []), ...page.items], cursor: page.nextCursor }));
+    } catch {
+      toast.error(t().actionFailed);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
   const mine = () => item().author.kind === "user" && item().author.id === props.ui.me.id;
   const stateBy = () => {
     const by = item().stateBy;
@@ -284,9 +304,9 @@ export function CommentCard(props: { ui: CommentsUi; item: Annotation; ref?: (el
             <span class="notebook-comment__hint">{t().acceptHint}</span>
           </div>
         </Show>
-        <Show when={item().replies.length}>
+        <Show when={replies().length}>
           <ul class="notebook-comment__replies">
-            <For each={item().replies}>
+            <For each={replies()}>
               {(reply) => (
                 <li>
                   <Who ui={props.ui} person={reply.author} at={reply.createdAt} via={reply.via} />
@@ -301,6 +321,13 @@ export function CommentCard(props: { ui: CommentsUi; item: Annotation; ref?: (el
               )}
             </For>
           </ul>
+        </Show>
+        <Show when={moreCursor()}>
+          {(cursor) => (
+            <Button size="sm" variant="ghost" loading={loadingMore()} onClick={() => void loadMore(cursor())}>
+              {t().moreReplies}
+            </Button>
+          )}
         </Show>
         <Show when={writer()}>
           <ReplyBox ui={props.ui} item={item()} />

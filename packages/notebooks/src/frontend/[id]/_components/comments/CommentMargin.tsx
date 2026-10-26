@@ -33,6 +33,8 @@ type Props = {
   onExtent: (bottom: number) => void;
   /** Puts the caret back on a comment's passage. */
   onReturn: (id: string) => void;
+  /** Without the editor toolbar (Read), a quiet button lists the comments where no margin shows them. */
+  listButton?: boolean;
 };
 
 /** Ignore clicks on these when deciding whether a click went "elsewhere" and closes the open comment. */
@@ -131,16 +133,23 @@ export function CommentMargin(props: Props) {
     onCleanup(() => document.removeEventListener("click", onClick));
   });
 
-  // On a phone, comments open in a sheet: the one written, the one tapped, or the list from the toolbar.
+  // On a phone, comments open in a sheet: the one written, the one tapped, or the list from the toolbar. Where dots
+  // stand beside the lines, the list opens the same way and a comment chosen in it opens at its passage.
   const [list, setList] = createSignal(false);
   const [sheetOpen, setSheetOpen] = createSignal(false);
   createEffect(() => {
-    if (layout() !== "phone" || sheetOpen() || !(ui.draft() || ui.active() || list())) return;
+    if (sheetOpen() || !(layout() === "phone" ? ui.draft() || ui.active() || list() : layout() === "compact" && list())) return;
     setSheetOpen(true);
-    void openCommentSheet(ui, locale(), list, () => {
-      setSheetOpen(false);
-      setList(false);
-    });
+    void openCommentSheet(
+      ui,
+      locale(),
+      list,
+      () => layout() === "compact",
+      () => {
+        setSheetOpen(false);
+        setList(false);
+      },
+    );
   });
   // The toolbar's comments button: the list on a phone, the first comment in a popover, or the margin's first card.
   createEffect(
@@ -148,13 +157,15 @@ export function CommentMargin(props: Props) {
       ui.listRequest,
       () => {
         const first = ui.visible()[0];
-        if (layout() === "phone") setList(true);
-        else if (layout() === "compact") ui.setActive(first?.id ?? null);
+        if (layout() === "phone" || layout() === "compact") setList(true);
         else if (first) cards.get(first.id)?.focus();
       },
       { defer: true },
     ),
   );
+
+  /** Cards keep their identity across reloads, so a reply or edit being typed survives a live update. */
+  const visibleIds = createMemo(() => ui.visible().map((item) => item.id), [], { equals: (a, b) => a.join() === b.join() });
 
   const register = (id: string) => (element: HTMLElement) => {
     cards.set(id, element);
@@ -231,10 +242,29 @@ export function CommentMargin(props: Props) {
     );
   });
   const activeItem = createMemo<Annotation | undefined>(() => ui.byId(ui.active()));
+  /** Below the passage of the open comment, or of the comment being written; follows the editor's geometry. */
+  const popoverTop = (id: string | null) => {
+    props.tick();
+    const view = props.view();
+    const host = props.host();
+    const end = id ? markOf(id)?.to : ui.draft()?.to;
+    return view && host && end !== undefined ? bottomOf(view, host, end) + 8 : MIN_TOP;
+  };
   const color = (item: Annotation) => (item.state === "open" ? personColor(item.author.name) : "#8a8478");
 
   return (
     <>
+      <Show when={props.listButton && (layout() === "compact" || layout() === "phone") && (ui.counts().open || ui.counts().resolved)}>
+        <button
+          type="button"
+          class="notebook-comments-open"
+          onClick={() => ui.requestList()}
+          aria-label={t().commentsButton({ count: ui.counts().open })}
+        >
+          <i class="ti ti-message-circle" aria-hidden="true" />
+          {ui.counts().open}
+        </button>
+      </Show>
       <Show when={(layout() === "wide" || layout() === "shift") && column()}>
         {(col) => (
           <aside class="notebook-comments" aria-label={t().comments} style={{ left: `${col().right + GAP}px` }} onKeyDown={onKeyDown}>
@@ -251,14 +281,18 @@ export function CommentMargin(props: Props) {
               </For>
             </Show>
             <Show when={ui.store.projection()}>
-              <For each={ui.visible()}>
-                {(item) => (
-                  <CommentCard
-                    ui={ui}
-                    item={item}
-                    ref={register(item.id)}
-                    style={{ top: `${placed().get(item.id) ?? (tops().get(item.id) ?? MIN_TOP) - LIFT}px` }}
-                  />
+              <For each={visibleIds()}>
+                {(id) => (
+                  <Show when={ui.byId(id)}>
+                    {(item) => (
+                      <CommentCard
+                        ui={ui}
+                        item={item()}
+                        ref={register(id)}
+                        style={{ top: `${placed().get(id) ?? (tops().get(id) ?? MIN_TOP) - LIFT}px` }}
+                      />
+                    )}
+                  </Show>
                 )}
               </For>
               <Show when={ui.draft()}>
@@ -299,29 +333,22 @@ export function CommentMargin(props: Props) {
               </div>
             </Show>
             <Show when={!ui.draft() && activeItem()}>
-              {(item) => {
-                const view = props.view();
-                const host = props.host();
-                const mark = markOf(item().id);
-                const top = view && host && mark ? bottomOf(view, host, mark.to) + 8 : MIN_TOP;
-                return (
-                  <div class="notebook-comments-popover" style={{ top: `${top}px`, left: `${Math.max(0, col().right - POPOVER_WIDTH)}px` }}>
-                    <CommentCard ui={ui} item={item()} />
-                  </div>
-                );
-              }}
+              {(item) => (
+                <div
+                  class="notebook-comments-popover"
+                  style={{ top: `${popoverTop(item().id)}px`, left: `${Math.max(0, col().right - POPOVER_WIDTH)}px` }}
+                >
+                  <CommentCard ui={ui} item={item()} />
+                </div>
+              )}
             </Show>
             <Show when={ui.draft()}>
-              {(draft) => {
-                const view = props.view();
-                const host = props.host();
-                const top = view && host ? bottomOf(view, host, draft().to) + 8 : MIN_TOP;
-                return (
-                  <div class="notebook-comments-popover" style={{ top: `${top}px`, left: `${Math.max(0, col().right - POPOVER_WIDTH)}px` }}>
-                    <CommentComposer ui={ui} />
-                  </div>
-                );
-              }}
+              <div
+                class="notebook-comments-popover"
+                style={{ top: `${popoverTop(null)}px`, left: `${Math.max(0, col().right - POPOVER_WIDTH)}px` }}
+              >
+                <CommentComposer ui={ui} />
+              </div>
             </Show>
           </div>
         )}

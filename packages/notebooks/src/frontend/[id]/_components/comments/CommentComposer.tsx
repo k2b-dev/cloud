@@ -30,7 +30,7 @@ export function CommentComposer(props: { ui: CommentsUi; ref?: (element: HTMLEle
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      props.ui.setDraft(null);
+      props.ui.cancelDraft();
     }
   };
   return (
@@ -94,7 +94,7 @@ export function CommentComposer(props: { ui: CommentsUi; ref?: (element: HTMLEle
             </Show>
             <div class="notebook-comment__row">
               <span class="notebook-comment__hint">⌘↵</span>
-              <Button size="sm" variant="ghost" disabled={current().saving} onClick={() => props.ui.setDraft(null)}>
+              <Button size="sm" variant="ghost" disabled={current().saving} onClick={() => props.ui.cancelDraft()}>
                 {t().cancel}
               </Button>
               <Button size="sm" loading={current().saving} disabled={!ready()} onClick={() => void props.ui.saveDraft()}>

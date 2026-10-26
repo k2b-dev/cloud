@@ -293,7 +293,13 @@ export const startCommentsServer = async () => {
     if (action === "accept") {
       if (input.expectedText === undefined && text.slice(item.from, item.to) !== item.quote)
         return fail(409, "Der Text wurde inzwischen geändert", { currentText: text.slice(item.from, item.to) });
-      Object.assign(item, { state: "accepted", stateBy: ME, stateAt: new Date(NOW).toISOString() });
+      // As the server does: the passage becomes the suggestion for everyone, and later passages move with it.
+      const insert = item.suggestion ?? "";
+      const delta = insert.length - (item.to - item.from);
+      text = text.slice(0, item.from) + insert + text.slice(item.to);
+      for (const other of items)
+        if (other !== item && other.from >= item.to) Object.assign(other, { from: other.from + delta, to: other.to + delta });
+      Object.assign(item, { state: "accepted", stateBy: ME, stateAt: new Date(NOW).toISOString(), to: item.from + insert.length });
       return Response.json({ id: item.id, operationId: input.operationId, status: "applied", state: "accepted" });
     }
     if (action === "undo-accept") {

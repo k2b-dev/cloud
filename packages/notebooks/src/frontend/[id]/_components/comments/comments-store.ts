@@ -107,6 +107,9 @@ export const createCommentsStore = (options: {
       return next;
     });
 
+  // The server renders the first page; a note with more comments reads the rest at once.
+  if (options.initial?.nextCursor) queueMicrotask(() => void comments.refresh().catch(() => undefined));
+
   const items = createMemo<Annotation[]>(() => (comments.data()?.items ?? []).filter((item) => !hidden().has(item.id)));
   const reload = () => comments.invalidate();
 
@@ -141,6 +144,9 @@ export const createCommentsStore = (options: {
           },
         }),
       ),
+    /** Replies after the ones a comment arrives with. */
+    replies: (id: string, cursor: string) =>
+      call<{ items: Annotation["replies"]; nextCursor: string | null }>(one().replies.$get({ ...annotationParam(id), query: { cursor } })),
     reply: (id: string, body: string, idempotencyKey: string) =>
       call<unknown>(one().replies.$post({ ...annotationParam(id), json: { body, idempotencyKey } })),
     edit: (id: string, body: string, suggestion?: string | null) =>

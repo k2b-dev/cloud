@@ -323,4 +323,95 @@ describe("inline comments", () => {
       await close(page);
     }
   }, 60_000);
+  test("a reply being typed survives a live reload of the comments", async () => {
+    const page = await open("s=base");
+    try {
+      await page.locator(".cm-editor .cm-annotation").first().click();
+      await settle(page);
+      const reply = page.locator("[data-annotation-card][data-active]").getByRole("textbox", { name: "Antworten" });
+      await reply.click();
+      await page.keyboard.type("Halbfertige Antwort");
+      await page.evaluate(() =>
+        window.dispatchEvent(
+          new CustomEvent("notebooks.workspace.event", {
+            detail: {
+              cursor: null,
+              event: { v: 1, type: "note.comments.changed", notebookId: "book01", noteId: "note01" },
+              cover: () => {},
+            },
+          }),
+        ),
+      );
+      await settle(page);
+      await settle(page);
+      expect(await reply.inputValue()).toBe("Halbfertige Antwort");
+      expect(await reply.evaluate((element) => element === document.activeElement)).toBe(true);
+    } finally {
+      await close(page);
+    }
+  }, 60_000);
+
+  test("accepting a suggestion in Read shows the new text, and Escape from the composer returns to the passage", async () => {
+    const page = await open("s=base&readonly");
+    try {
+      await page.locator(".cm-editor .cm-annotation").first().click();
+      await settle(page);
+      await page.getByRole("button", { name: "Übernehmen" }).click();
+      await settle(page);
+      await settle(page);
+      expect(await page.locator(".cm-content").textContent()).toContain("das achte Lebensjahr vollendet hat");
+      expect(await page.locator(".cm-content").textContent()).not.toContain("das zehnte Lebensjahr");
+    } finally {
+      await close(page);
+    }
+    const editor = await open("s=base");
+    try {
+      await select(editor, "regelmäßiges Training");
+      await editor.locator(".k2b-selection-toolbar").getByRole("button", { name: "Kommentieren" }).click();
+      await settle(editor);
+      await editor.keyboard.press("Escape");
+      await settle(editor);
+      expect(await editor.locator("[data-composer]").count()).toBe(0);
+      expect(await editor.evaluate(() => !!document.activeElement?.closest(".cm-content"))).toBe(true);
+    } finally {
+      await close(editor);
+    }
+  }, 60_000);
+
+  test("with dots beside the lines, each comment's popover stands below its own passage", async () => {
+    const page = await open("s=base&panel", 1440);
+    try {
+      const dots = page.locator(".notebook-comments-dot");
+      for (const index of [0, (await dots.count()) - 1]) {
+        await dots.nth(index).click();
+        await settle(page);
+        const gap = await page.evaluate(() => {
+          const id = document.querySelector<HTMLElement>(".notebook-comments-popover [data-annotation-card]")!.dataset.annotationCard!;
+          const marks = [...document.querySelectorAll(`.cm-editor [data-annotation="${id}"]`)].flatMap((mark) => [
+            ...mark.getClientRects(),
+          ]);
+          const bottom = Math.max(...marks.map((rect) => rect.bottom));
+          return document.querySelector(".notebook-comments-popover")!.getBoundingClientRect().top - bottom;
+        });
+        expect(gap, `dot ${index}`).toBeGreaterThan(0);
+        expect(gap, `dot ${index}`).toBeLessThan(16);
+      }
+    } finally {
+      await close(page);
+    }
+  }, 60_000);
+
+  test("on a phone, a failed load says so in the list with a way to try again", async () => {
+    const page = await open("s=error", 390, 844);
+    try {
+      await page.locator(".notebook-comments-button").click();
+      await settle(page);
+      await settle(page);
+      const sheet = page.locator(".k2b-bottom-sheet-frame");
+      expect(await sheet.textContent()).toContain("Kommentare konnten nicht geladen werden.");
+      expect(await sheet.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(1);
+    } finally {
+      await close(page);
+    }
+  }, 60_000);
 });

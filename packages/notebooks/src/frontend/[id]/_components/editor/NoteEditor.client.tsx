@@ -467,6 +467,7 @@ function EditorInstance(
     me: { id: props.userId, name: props.displayName },
     canWrite: props.canWrite,
     editable: () => !props.readOnly && !syncEnded.ended(),
+    readOnly: !!props.readOnly,
     initial: props.initialAnnotations,
     view: editorView,
   });
