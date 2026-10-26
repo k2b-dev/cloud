@@ -1,0 +1,1 @@
+| Retention blocked by a dependent check | A row's `ON DELETE SET NULL` violates its own CHECK, so every delete of the referenced row fails and an oldest-first sweep stalls for good. | Test: `chat-tasks.integration.test.ts` expires a background turn that a workflow memory learning run points at. |

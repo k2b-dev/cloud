@@ -1,0 +1,1 @@
+| Retention deletes a dedupe guard | Expiring a one-off task's current occurrence lets its scheduled time run twice after reactivation. | Test: `chat-tasks.integration.test.ts` keeps the current slot row through completion and timezone reactivation while its turn and transcript expire, rejects a duplicate slot, and removes the row after the scheduled time changes. |
