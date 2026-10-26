@@ -452,3 +452,5 @@ Direct-write scopes also bind ownership, ACLs, publication conditions, and this
 metadata marker to the persisted intent.
 
 Contact observation never waits for a busy root publication lock. It leaves the read usable and defers due comparison work for one minute without spending a failed retry. Editor saves observe under their existing publish lock; upload start compares before reserving the target, and skips the comparison if the root is busy. Repeated healthy detail reads do not update comparison schedules before they are due. Storage and history-write failures retain their explicit error behavior.
+
+The upload-start comparison describes the content at that contact. On a root without managed revision preconditions, an external change after the reservation and before commit may be overwritten without separate difference evidence; the open upload journal suppresses contact comparisons during that interval.
