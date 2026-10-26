@@ -511,8 +511,6 @@ const EditableNoteRouteStateSchema = z.object({
   note: z.object({
     id: ResourceShortIdSchema,
     title: z.string(),
-    yjsSnapshot: z.string().nullable(),
-    yjsRestoreRevision: z.string().nullable(),
     historyIncomplete: z.boolean(),
     contentMd: z.string().nullable(),
     createdAt: z.string(),

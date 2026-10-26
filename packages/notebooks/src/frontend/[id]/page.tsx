@@ -127,7 +127,7 @@ export default ssr<AuthContext>(async (c) => {
     initialCommentsPage,
     dateConfig,
   } = data;
-  const editorOwnsWorkspaceSocket = !!selectedNote && !isVersionsMode && !isGraphMode && !readonlyMode;
+  const showsEditorToolbar = !!selectedNote && !isVersionsMode && !isGraphMode && !readonlyMode;
   return () => (
     <Layout
       context={{ scope: { type: "notebooks.notebook", id: data.notebook.id } }}
@@ -150,14 +150,13 @@ export default ssr<AuthContext>(async (c) => {
           canWrite={canWrite}
           ownsSearchNavigation={!selectedNote || isVersionsMode || isGraphMode}
         />
-        {!editorOwnsWorkspaceSocket && (
-          <WorkspaceEventBridge notebookId={notebook.id} appUrl={appUrl} initialCursor={ctx.workspaceCursor} />
-        )}
+        {/* Live changes reach the page through one workspace socket; a note connects its own only while it is edited. */}
+        <WorkspaceEventBridge notebookId={notebook.id} appUrl={appUrl} initialCursor={ctx.workspaceCursor} />
 
         {/* The writable editor is the one with the toolbar and its navigation toggle. */}
         <NotebookSidebar
           ctx={ctx}
-          editorToolbar={editorOwnsWorkspaceSocket}
+          editorToolbar={showsEditorToolbar}
           current={isGraphMode ? "graph" : undefined}
           // Version history loads as a whole page, so its address is where Links returns to.
           graphBack={isVersionsMode ? c.req.path + new URL(c.req.url).search : data.graphBack}
@@ -202,12 +201,9 @@ export default ssr<AuthContext>(async (c) => {
                   historyIncomplete={selectedNote.historyIncomplete}
                   notebookName={notebook.name}
                   appUrl={appUrl}
-                  workspaceCursor={ctx.workspaceCursor}
                   userId={user.id}
                   displayName={user.displayName}
-                  initialSnapshot={selectedNote.yjsSnapshot}
-                  initialRestoreRevision={selectedNote.yjsRestoreRevision}
-                  initialContent={readonlyMode && !selectedNote.yjsSnapshot ? selectedNote.contentMd : null}
+                  initialContent={selectedNote.contentMd}
                   initialPanelOpen={detailPanelOpen}
                   initialRichMode={ctx.settings.richMode}
                   readOnly={readonlyMode}
@@ -230,7 +226,7 @@ export default ssr<AuthContext>(async (c) => {
                   }}
                 />
                 <NotePreview
-                  text={selectedNote.yjsSnapshot || readonlyMode ? (selectedNote.contentMd ?? "") : ""}
+                  text={selectedNote.contentMd ?? ""}
                   mode={ctx.settings.richMode}
                   historyIncomplete={selectedNote.historyIncomplete}
                 />

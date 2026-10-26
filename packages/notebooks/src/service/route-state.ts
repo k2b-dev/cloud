@@ -7,7 +7,7 @@ import { hasOnlySidebarFilterQuery, parseSidebarFilter, withSidebarFilter } from
 import type { Attachment } from "./attachments";
 import { notebooksService } from "./index";
 import type { Backlink } from "./links";
-import type { NoteWithContent } from "./notes";
+import type { Note } from "./notes";
 
 type PublicAttachment = Omit<Attachment, "shortId">;
 
@@ -15,8 +15,6 @@ export type SelectedNoteRouteState = {
   note: {
     id: string;
     title: string;
-    yjsSnapshot: string | null;
-    yjsRestoreRevision: string | null;
     historyIncomplete: boolean;
     contentMd: string | null;
     lockedAt: string | null;
@@ -39,8 +37,6 @@ export type EditableNoteRouteData = {
   note: {
     id: string;
     title: string;
-    yjsSnapshot: string | null;
-    yjsRestoreRevision: string | null;
     historyIncomplete: boolean;
     contentMd: string | null;
     createdAt: string;
@@ -79,11 +75,9 @@ type LoadSelectedNoteParams = {
   bypassAccess: boolean;
 };
 
-const toSelectedNote = async (note: NoteWithContent): Promise<SelectedNoteRouteState["note"]> => ({
+const toSelectedNote = async (note: Note): Promise<SelectedNoteRouteState["note"]> => ({
   id: note.shortId,
   title: note.title,
-  yjsSnapshot: note.yjsSnapshot,
-  yjsRestoreRevision: note.yjsRestoreRevision,
   historyIncomplete: note.historyIncomplete,
   contentMd: note.contentMd,
   lockedAt: note.lockedAt,
@@ -96,7 +90,8 @@ const toSelectedNote = async (note: NoteWithContent): Promise<SelectedNoteRouteS
 });
 
 export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams): Promise<SelectedNoteRouteState | null> => {
-  const note = await notebooksService.note.getWithContentByShortId({ shortId: params.noteId });
+  // The saved Markdown is all a note needs to open; its Yjs state loads only when someone edits it.
+  const note = await notebooksService.note.getByShortId({ shortId: params.noteId });
   if (!note || note.notebookId !== params.notebookId) return null;
 
   const readonlyMode = !params.canWrite || !!note.lockedAt;
@@ -200,8 +195,6 @@ export const loadEditableNoteRouteData = async (params: ResolveEditableRoutePara
       note: {
         id: state.note.id,
         title: state.note.title,
-        yjsSnapshot: state.note.yjsSnapshot,
-        yjsRestoreRevision: state.note.yjsRestoreRevision,
         historyIncomplete: state.note.historyIncomplete,
         contentMd: state.note.contentMd,
         createdAt: state.note.createdAt,

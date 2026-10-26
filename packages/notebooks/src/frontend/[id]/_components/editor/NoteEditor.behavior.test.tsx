@@ -61,10 +61,6 @@ const mount = (markdown: string) => {
       throw new Error("Structure is unavailable in this fixture");
     },
   }));
-  const doc = new Y.Doc();
-  doc.getText("codemirror").insert(0, markdown);
-  const initialSnapshot = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
-  doc.destroy();
   const dispose = render(
     () => (
       <LocaleProvider locale="en">
@@ -76,11 +72,9 @@ const mount = (markdown: string) => {
           historyIncomplete={false}
           notebookName="Book"
           appUrl="http://localhost"
-          workspaceCursor={null}
           userId="User01"
           displayName="Reader"
-          initialSnapshot={initialSnapshot}
-          initialRestoreRevision="0"
+          initialContent={markdown}
           initialPanelOpen={false}
           initialRichMode="rich"
           initialHref={href}
