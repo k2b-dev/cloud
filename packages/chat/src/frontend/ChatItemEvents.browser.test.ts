@@ -188,6 +188,34 @@ describe("Item events in a Space chat", () => {
     }
   }, 30_000);
 
+  test("a new comment shows as a quiet row whose sentence links to its passage", async () => {
+    const { chat, invitation } = seed();
+    harness.addItemEvents(chat, [
+      {
+        id: "e6",
+        // Between the messages, beside one other change, so it stays a single row and is not folded into a group.
+        at: minutesAgo(34),
+        icon: "ti ti-message-plus",
+        sentence: "Mara hat einen Kommentar hinterlassen",
+        href: "/open/notebooks.annotation/~00000000-0000-4000-9000-000000000001",
+        count: 1,
+        thread: { id: invitation, name: "Einladung freigeben" },
+      },
+    ]);
+    const { page, errors } = await load(desktop, { chat });
+    try {
+      const link = feed(page).getByRole("link", { name: "Mara hat einen Kommentar hinterlassen" });
+      await link.waitFor();
+      expect(await link.getAttribute("href")).toBe("/open/notebooks.annotation/~00000000-0000-4000-9000-000000000001");
+      // The row stays a quiet event: no bubble, never counted as a message.
+      const row = feed(page).locator(".k2b-message-event-row", { has: link });
+      expect(await row.locator(".k2b-message-row__bubble").count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  });
+
   test("an item's thread shows only its own changes, without item labels", async () => {
     const { chat, light } = seed();
     const { page, errors } = await load(desktop, { chat, thread: light });
