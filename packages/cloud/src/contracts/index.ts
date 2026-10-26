@@ -4,6 +4,7 @@ export * from "./app";
 export * from "./app-approval";
 export * from "./avatar";
 export * from "./capabilities";
+export * from "./calendar-source";
 export * from "./capability-compatibility";
 export * from "./commands";
 export * from "./contact-directory";
