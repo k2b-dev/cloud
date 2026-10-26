@@ -89,7 +89,9 @@ describe("audio model boundaries", () => {
       expect(requestBody?.get("language")).toBe("de");
       const controller = new AbortController();
       controller.abort(new Error("Canceled"));
-      await expect(provider.transcribe({ file: new Blob(), signal: controller.signal })).rejects.toThrow("Canceled");
+      await expect(provider.transcribe({ file: new Blob(), signal: controller.signal })).rejects.toThrow(
+        "Audio transcription was canceled or timed out.",
+      );
     } finally {
       server.stop(true);
     }
@@ -174,3 +176,30 @@ for (const [name, defaultModelId, profile, expected] of [
     });
   });
 }
+
+test("the public transcription provider excludes HTTP error bodies before callers can log them", async () => {
+  const marker = "FICTIONAL_AUDIO_PROVIDER_CANARY";
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => Response.json({ detail: [{ input: marker }] }, { status: 422 }),
+  });
+  try {
+    const provider = createAiTranscriptionProvider({ ...audio, baseURL: `${server.url}v1` });
+    let caught: unknown;
+    try {
+      await provider.transcribe({ file: new Blob(["fictional audio"]), filename: "fixture.wav" });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ code: "transcription_http_422", httpStatus: 422, retryable: false });
+    expect(JSON.stringify(caught)).not.toContain(marker);
+    expect(caught).toBeInstanceOf(Error);
+    if (!(caught instanceof Error)) throw new Error("Expected classified transcription failure");
+    expect(caught.message).not.toContain(marker);
+    expect(caught.stack).not.toContain(marker);
+    expect(caught.cause).toBeUndefined();
+  } finally {
+    server.stop(true);
+  }
+});

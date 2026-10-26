@@ -504,3 +504,22 @@ shows a neutral document; API calls and writes still need a network. Updated
 workers wait until all windows of that installation close, so a deployment does
 not replace a running customer page. Installation, Safari storage separation,
 and Home Screen behavior still need verification on the target devices.
+
+## Mobile app runtime updates
+
+Rebuild Core, the `pwa` shell, and applications with mobile parts to receive
+restart recovery, account-scoped local drafts, and safe foreground updates.
+The existing keepalive reports registered build identities; each page compares
+its own build and Core's shared-asset build. Publish a distinct release label
+for each build, including independently deployed parts. Unnamed `local` and
+`development` builds do not trigger update reloads. A temporarily absent
+registry entry does not trigger a reload.
+
+The manifest keeps its `/pwa/` id and changes its start URL to `/pwa/?launch`.
+Browsers decide when installed apps adopt manifest changes; installations that
+retain the old start URL may need reinstalling to resume with a still-valid
+session. The last-page cookie is functional, scoped to `/pwa/`, and contains no
+credentials. Include it in an operator-maintained cookie notice. The service
+worker still stores no pages, code, or API responses. No database migration or
+new environment variable is required. See
+[Pages in the mobile app](/en/docs/frontend/mobile-app-pages).

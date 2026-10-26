@@ -36,6 +36,7 @@
     "./browser/live": "./src/browser/live.ts",
     "./browser/mermaid": "./src/browser/mermaid.ts",
     "./browser/hints": "./src/browser/hints.ts",
+    "./browser/pwa-drafts": "./src/browser/pwa-drafts.ts",
     "./browser/reload": "./src/browser/reload.ts",
     "./browser/notifications": "./src/browser/notifications.ts",
     "./browser/resource-clipboard": "./src/browser/resource-clipboard.ts",

@@ -101,7 +101,10 @@ export function TextInput(props: TextInputProps): JSX.Element {
     local.password || local.type === "email" || local.type === "url" || /\b(username|email|url)\b/.test(String(rest.autocomplete ?? ""));
   const input = (next: string) => local.onValueChange?.(next);
   const commit = (next: string) => local.onValueCommit?.(next);
-  const clear = () => {
+  const clear: JSX.EventHandler<HTMLButtonElement, MouseEvent> = (event) => {
+    // Clearing removes the button. Return to the field before notifying the caller, whose handler
+    // may deliberately navigate or move focus somewhere else.
+    event.currentTarget.ownerDocument.getElementById(meta.controlId)?.focus();
     if (local.onClear) {
       local.onClear();
       return;
