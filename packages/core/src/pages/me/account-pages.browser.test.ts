@@ -377,12 +377,12 @@ describe("account pages in a browser", () => {
     user = { ...localUser, memberofGroup: ["internal-fixture-group"] };
     const direct = await content("/me/access", "en");
     expect(direct).toContain('href="/me/access?groups=all"');
-    expect(direct).not.toContain("search=internal-fixture-group");
-    expect(direct).not.toContain("search=inherited-fixture-team");
+    expect(direct).not.toContain(">internal-fixture-group<");
+    expect(direct).not.toContain(">inherited-fixture-team<");
 
     const inherited = await content("/me/access", "en", "?groups=all");
-    expect(inherited).toContain("search=inherited-fixture-team");
-    expect(inherited).not.toContain("search=internal-fixture-group");
+    expect(inherited).toContain(">inherited-fixture-team<");
+    expect(inherited).not.toContain(">internal-fixture-group<");
     expect(inherited).toContain('href="/me/access"');
   });
 
