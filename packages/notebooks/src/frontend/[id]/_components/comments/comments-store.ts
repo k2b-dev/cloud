@@ -62,8 +62,8 @@ export const createCommentsStore = (options: {
   enabled: Accessor<boolean>;
   failedMessage: Accessor<string>;
 }) => {
-  const param = { id: options.notebookId, noteId: options.noteId };
-  const route = () => apiClient[":id"].notes[":noteId"].annotations;
+  const param = { noteId: options.noteId };
+  const route = () => apiClient.notes[":noteId"].annotations;
   const comments = query.create({
     source: () => `${options.notebookId}/${options.noteId}`,
     enabled: options.enabled,
