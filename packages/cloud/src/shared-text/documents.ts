@@ -67,7 +67,7 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
     async edit(
       docId: string,
       options: { actor: SharedTextActor | null; context?: Context; signal?: AbortSignal },
-      update: (current: { text: string; contributors: SharedTextContributor[]; state(): Uint8Array }) => string | Promise<string>,
+      update: (current: { text: string; contributors: SharedTextContributor[]; state(): Uint8Array }) => string | { update: Uint8Array } | Promise<string | { update: Uint8Array }>,
     ): Promise<SharedTextEditResult<Saved>> {
       const requestedAt = Date.now();
       const stored = await store.load(docId, { signal: options.signal });
@@ -91,12 +91,18 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
         if (next === text) return { status: "unchanged", text };
         // A request cancelled while the callback ran must not publish a write.
         options.signal?.throwIfAborted();
-        const diff = minimalTextDiff(text, next);
         const beforeEditState = Y.encodeStateVector(doc);
-        doc.transact(() => {
-          if (diff.deleteCount > 0) ytext.delete(diff.index, diff.deleteCount);
-          if (diff.insert.length > 0) ytext.insert(diff.index, diff.insert);
-        }, "cli-edit");
+        if (typeof next === "string") {
+          const diff = minimalTextDiff(text, next);
+          doc.transact(() => {
+            if (diff.deleteCount > 0) ytext.delete(diff.index, diff.deleteCount);
+            if (diff.insert.length > 0) ytext.insert(diff.index, diff.insert);
+          }, "cli-edit");
+        } else {
+          // Application-prepared transactions preserve exact item identities and
+          // may be replayed after a partial publication/persistence failure.
+          Y.applyUpdate(doc, next.update, "server-edit");
+        }
         const actor = options.actor;
         const published = await handle.publish({
           tenantId: docId,
