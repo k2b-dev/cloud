@@ -213,7 +213,10 @@ suiteFor("database", "nats")("history through real Filegate and the owning autho
     ).toBeGreaterThanOrEqual(3);
     member = false;
     requests.length = 0;
-    await expect(service.movementChain(call, { activityId: row.id })).rejects.toMatchObject({ status: 404 });
+    await expect(service.movementChain(call, { activityId: row.id })).rejects.toMatchObject({ code: "not_found", status: 404 });
+    await expect(service.activityEntry(call, { activityId: row.id })).rejects.toMatchObject({ code: "not_found", status: 404 });
+    await expect(service.activityBatchContext(call, { activityId: row.id })).rejects.toMatchObject({ code: "not_found", status: 404 });
+    await expect(service.activity(call)).rejects.toMatchObject({ code: "history_unavailable", status: 409 });
     expect(requests).toEqual([]);
   });
 });

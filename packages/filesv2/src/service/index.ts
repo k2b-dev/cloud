@@ -1104,8 +1104,6 @@ export function createFilesService(
       } catch (error) {
         if (!((error instanceof AccountIdentityError || error instanceof FilesError) && [403, 404].includes(error.status))) throw error;
       }
-      if (!admin && state.self.user.provider === "ipa" && !state.candidates.some((item) => item.area === "cloud"))
-        throw new FilesError("history_unavailable", 409);
       const allowedBindingIds: string[] = [];
       for (const item of state.candidates) {
         if (item.area !== "cloud") continue;
@@ -1121,6 +1119,7 @@ export function createFilesService(
         admin,
         config: state.config,
         allowedBindingIds,
+        historyAvailable: admin || state.self.user.provider !== "ipa" || state.candidates.some((item) => item.area === "cloud"),
         readOnlyAuthorized: (baseId, path) => {
           budget.check();
           let base = bases.get(baseId);

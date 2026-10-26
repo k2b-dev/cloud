@@ -147,6 +147,7 @@ export function historyFixture(rows: ActivityCandidate[] = [candidate()]) {
       admin,
       config: { ...config, url: serverUrl },
       allowedBindingIds: member ? [baseId] : [],
+      historyAvailable: true,
       readOnlyAuthorized: async (publicId, path) => authorize(publicId, path),
     }),
     bindings: { byId: async (id) => (id === baseId ? historyBinding : null) },
