@@ -402,7 +402,7 @@ const readAll = async (input: ChatContext & { input: unknown }): Promise<Result<
   if (result.ok && result.data.outcome === "done" && result.data.marked) chatLive.wake();
   return result;
 };
-/** The reader's readable chats with unread messages or an unread mark, newest activity first. */
+/** The reader's readable chats with unread messages, newest activity first. */
 const unreadChats = (
   db: typeof sql,
   input: ChatContext,
@@ -415,7 +415,7 @@ const unreadChats = (
     WHERE EXISTS (SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
       WHERE ca.conversation_id = c.id AND ${readableMemberCondition(input.accessSubject, bound, db)})
     AND EXISTS (SELECT 1 FROM (${threadStates(db, input.accessSubject, db`c.id`)}) states
-      WHERE states.unread > 0 OR states.unread_from_seq IS NOT NULL)
+      WHERE states.unread > 0)
     ORDER BY c.last_activity_at DESC, c.short_id DESC LIMIT ${limit}`;
 };
 
