@@ -228,6 +228,6 @@ export const buildGroupDetailUrl = (
 ): string => {
   const basePath = options.basePath ?? `/app/accounts/groups/${groupId}`;
   const params = new URLSearchParams();
-  writeGroupsListState(params, state, options);
+  writeGroupsListState(params, state, { ...options, keys: options.keys ?? GROUPS_CONTEXT_QUERY_KEYS });
   return toHref(basePath, params);
 };

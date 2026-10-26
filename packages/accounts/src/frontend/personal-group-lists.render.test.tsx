@@ -81,8 +81,8 @@ test("old personal-group list URLs use normal discovery and retain ordinary list
       scope: { userId: undefined, mode: "all", provider: undefined },
     });
     expect(html).toContain("Design team");
-    expect(html).not.toContain("personal=1");
-    expect(html).not.toContain("list_personal");
+    // Shell metadata retains the request URL; generated navigation drops the old filter.
+    expect(html).not.toMatch(/\b(?:href|action)="[^"]*(?:personal=1|list_personal)/);
     expect(html).toContain("list_search=Design");
   } finally {
     for (const spy of spies) spy.mockRestore();
