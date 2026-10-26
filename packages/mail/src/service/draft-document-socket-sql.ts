@@ -33,7 +33,15 @@ export const withDraftDocumentTransaction = async <T>(
   if (!signal) return sql.begin(operation);
   signal.throwIfAborted();
   const reserved = await sql.reserve({ signal });
+  // Query cancellation alone can leave a reserved transaction waiting on a row
+  // lock. Closing this reservation ends its backend without closing the pool.
+  let closing: Promise<void> | undefined;
+  const abort = () => {
+    closing ??= reserved.close({ timeout: 0 });
+  };
+  signal.addEventListener("abort", abort, { once: true });
   try {
+    if (signal.aborted) abort();
     signal.throwIfAborted();
     return await reserved.begin(async (db) => {
       await awaitDraftDocumentQuery(
@@ -55,6 +63,11 @@ export const withDraftDocumentTransaction = async <T>(
       return result;
     });
   } finally {
-    reserved.release();
+    signal.removeEventListener("abort", abort);
+    try {
+      await closing;
+    } finally {
+      reserved.release();
+    }
   }
 };
