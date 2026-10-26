@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
-import { actorId, candidate, historyFixture, home, otherId, publicBaseId } from "../../test/activity-reader-fixture";
+import { actorId, baseId, candidate, historyFixture, home, otherId, publicBaseId } from "../../test/activity-reader-fixture";
 import { testActor, testCall } from "../../test/files-call";
 import { withActivityReadBudget } from "./activity-read-budget";
 import { FilesError } from "./errors";
@@ -211,7 +211,7 @@ test("candidate windows round outward in UTC while inclusive exact filters follo
     limit: 500,
     from: "2030-05-15T12:00:00.000Z",
     to: "2030-05-15T13:00:00.000Z",
-    scope: { admin: false, userId: actorId, bindingIds: [], serverUrl: "http://filegate.test" },
+    scope: { admin: false, userId: actorId, bindingIds: [baseId], serverUrl: "http://filegate.test" },
     baseId: undefined,
   });
   expect(f.requests).toEqual([]);
@@ -457,8 +457,8 @@ test("disappearance retains historical file/folder type without claiming snapsho
     name: "old",
     path: `${home}/old`,
     directory: null,
-    publicBaseId: null,
-    relativePath: null,
+    publicBaseId,
+    relativePath: "old",
   });
   expect(side).not.toHaveProperty("size");
   expect(side).not.toHaveProperty("itemId");
