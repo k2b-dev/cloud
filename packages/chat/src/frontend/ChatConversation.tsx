@@ -42,6 +42,8 @@ export type ChatFeedItem = {
   kind: "text" | "system" | "event" | "eventGroup";
   /** An event's icon. */
   icon?: string;
+  /** Optional owning-app path to the passage or resource described by an event. */
+  href?: string;
   /** A group of three or more events in a row: its line, and whether its events show below it. */
   group?: { label: string; time: string; expanded: () => boolean; toggle: () => void };
   authorId: string;
