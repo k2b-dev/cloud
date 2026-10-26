@@ -1,4 +1,5 @@
-import type { ActivityEntry, ActivityInput, ActivityPage } from "../activity-contracts";
+import { startOfDay } from "@k2b/stdlib";
+import type { ActivityEntry, ActivityInput, ActivityPage, HistoryAction } from "../activity-contracts";
 import type { BaseSummary, FileEntry } from "../contracts";
 import { parseStableEntryRefId } from "../resource-ref";
 import { baseLabel } from "./base-label";
@@ -9,6 +10,39 @@ import type { HistoryEnvironment, HistoryPlace } from "./history-actions";
  * reader the same question. Nothing here authorizes anything; the reader and the action endpoints decide.
  */
 
+export type ActivityWhen = "today" | "7" | "30" | "365";
+/** URL state of the Activity view; the parent keeps it in the address so reload and back restore it. */
+export type ActivityFilters = {
+  baseId?: string;
+  /** A base-relative item or folder path; "All in Activity" preserves its scope. */
+  path?: string;
+  scope?: ActivityInput["scope"];
+  actor?: string;
+  action?: HistoryAction;
+  when?: ActivityWhen;
+  q?: string;
+};
+export type ActivityRequest = Omit<ActivityInput, "itemId" | "limit">;
+
+const DAYS: Record<ActivityWhen, number> = { today: 0, "7": 7, "30": 30, "365": 365 };
+
+/** Start of the range in the request's zone. "Today" starts at local midnight. */
+export function rangeStart(when: ActivityWhen, env: HistoryEnvironment): string {
+  const now = new Date(env.now);
+  if (when !== "today") return new Date(now.getTime() - DAYS[when] * 86_400_000).toISOString();
+  return startOfDay(now, { timeZone: env.timeZone }).toISOString();
+}
+
+export function activityRequest(filters: ActivityFilters, env: HistoryEnvironment): ActivityRequest {
+  return {
+    ...(filters.baseId ? { baseId: filters.baseId } : {}),
+    ...(filters.baseId && filters.path !== undefined ? { path: filters.path, scope: filters.scope ?? "item" } : {}),
+    ...(filters.actor ? { actor: filters.actor } : {}),
+    ...(filters.action ? { action: filters.action } : {}),
+    ...(filters.when ? { from: rangeStart(filters.when, env) } : {}),
+    ...(filters.q ? { q: filters.q } : {}),
+  };
+}
 /** Folders include descendants at their current path; files use a stable ID where available, otherwise the exact path. */
 export type ItemHistoryRequest = Pick<ActivityInput, "baseId" | "itemId" | "path" | "scope">;
 export function itemHistoryRequest(

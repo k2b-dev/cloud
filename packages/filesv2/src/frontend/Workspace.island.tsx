@@ -8,7 +8,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
 import { ErrorSchema, type FileEntry, type MarkedEntry } from "../contracts";
-import ActivityView, { type ActivityFilters } from "./ActivityView";
+import ActivityView from "./ActivityView";
 import { createActivityVersionLoader } from "./activity-versions";
 import Browser from "./Browser";
 import { baseLabel } from "./base-label";
@@ -31,7 +31,7 @@ import {
   restoreActivity,
 } from "./history-api";
 import { useHistoryMessages } from "./history-messages";
-import { movedEntry, placeDescriber } from "./history-requests";
+import { type ActivityFilters, movedEntry, placeDescriber } from "./history-requests";
 import MarkdownDocument from "./MarkdownDocument";
 import { MarksMenu, MarksSidebarItem, openMarksDialog } from "./MarksMenu";
 import { MovedNotice } from "./MissingItemView";

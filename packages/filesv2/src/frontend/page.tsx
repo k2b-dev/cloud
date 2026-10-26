@@ -8,10 +8,9 @@ import { BrowseQuerySchema, EntryQuerySchema, SearchQuerySchema } from "../contr
 import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
 import { readConfiguration } from "../service/configuration";
-import { activityRequest } from "./ActivityView";
 import { browserMessages } from "./browser-messages";
 import { browseOptions, parsePreferences, viewFor } from "./browser-preferences";
-import { itemHistoryRequest, itemHistorySource, movedEntry } from "./history-requests";
+import { activityRequest, itemHistoryRequest, itemHistorySource, movedEntry } from "./history-requests";
 import { filesMessages } from "./messages";
 import { snapshotTitle } from "./trail";
 import { activityUrl, filesUrl, parseActivityFilters, showsOverview } from "./urls";

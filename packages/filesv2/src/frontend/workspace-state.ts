@@ -2,7 +2,7 @@ import { query } from "@k2b/stdlib/solid";
 import { batch, createEffect, createSignal, onCleanup } from "solid-js";
 import type { ActivityChain, ActivityEntry, ActivityPage } from "../activity-contracts";
 import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, MarkedEntry, SharePage } from "../contracts";
-import type { ActivityFilters } from "./ActivityView";
+import type { ActivityFilters } from "./history-requests";
 
 /** An old folder address whose item the reader saw move away; shown instead of "not found". */
 export type MovedSnapshot = { baseId: string; path: string; entry: ActivityEntry; chain: ActivityChain };
