@@ -17,7 +17,7 @@ import {
   type SourcedCalendarItem,
   viewWindow,
 } from "./calendar-model";
-import { answerFor, NOW, SOURCES, TIME_ZONE, TODAY } from "./cloud-calendar.browser-data";
+import { answerFor, ITEMS, NOW, SOURCES, TIME_ZONE, TODAY } from "./cloud-calendar.browser-data";
 
 // The page renders on the server and then runs its real island bundle in a real browser, as Spaces serves it.
 const packageCache = resolve(import.meta.dir, "../../../node_modules/.cache");
@@ -165,6 +165,23 @@ afterAll(async () => {
   server?.stop(true);
 });
 
+/** Pins only `Date` to the fixture's instant; timers and animation frames keep running as in a real browser. */
+const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0)
+        super(RealDate.now() + offset); // real clock: flows from the pinned instant
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset; // real clock: flows from the pinned instant
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
+
 type View = { width: number; height: number; touch: boolean };
 const desktop: View = { width: 1440, height: 900, touch: false };
 const phone: View = { width: 390, height: 844, touch: true };
@@ -184,7 +201,7 @@ const open = async (view: View, path: string, data: Case) => {
   });
   const page = await context.newPage();
   page.setDefaultTimeout(10_000);
-  await page.clock.setFixedTime(NOW);
+  await page.addInitScript(pinPageClock, NOW.getTime());
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(new URL(path, server.url).href);
@@ -343,6 +360,34 @@ describe("calendar of all Spaces and apps", () => {
       expect({ y: after.y, height: after.height }).toEqual({ y: statusBox.y, height: statusBox.height });
     } finally {
       await close();
+    }
+  }, 60_000);
+
+  test("a late source with one all-day entry moves nothing: the all-day row always holds one line", async () => {
+    // Without the dated deadline of Spaces, only the late absences bring all-day entries; they fit one line.
+    const items = ITEMS.filter((item) => !(item.type === "deadline" && item.due.kind === "date"));
+    for (const view of ["day", "week"] as const) {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const { page, close } = await open(desktop, `/app/spaces/calendar?view=${view}&date=2026-10-27`, {
+        locale: "de",
+        pending: ["absence"],
+        gate,
+        items,
+      });
+      try {
+        await page.getByText("Lädt 2 von 9 Kalendern", { exact: false }).waitFor();
+        expect(await page.getByText("Malte Sommer · abwesend").count()).toBe(0);
+        const before = await box(page, '[data-calendar-event]:has-text("Gabelstapler-Wartung")');
+        release();
+        await page.getByText("Malte Sommer · abwesend").first().waitFor();
+        const after = await box(page, '[data-calendar-event]:has-text("Gabelstapler-Wartung")');
+        expect({ view, x: after.x, y: after.y, height: after.height }).toEqual({ view, x: before.x, y: before.y, height: before.height });
+      } finally {
+        await close();
+      }
     }
   }, 60_000);
 
