@@ -208,3 +208,31 @@ test("reader projection retains no extra or private busy fields, including neste
     transparency: "busy",
   });
 });
+
+test("reader projection accepts and discards newer fields in detailed item references", () => {
+  const raw = {
+    type: "deadline",
+    id: "i",
+    calendarId: "a",
+    title: "Task",
+    due: { kind: "date", date: "2026-03-01", extra: true },
+    done: false,
+    occurrence: { seriesId: "series", originalStart: "2026-03-01", rule: null, extra: true },
+    ref: { type: "x.y", id: "z", extra: true },
+    open: { rel: "open", href: "/app/example", extra: true },
+    version: "v",
+    extra: true,
+  };
+  expect(calendar.projectCalendarItem(calendar.CalendarItemSchema.parse(raw))).toEqual({
+    type: "deadline",
+    id: "i",
+    calendarId: "a",
+    title: "Task",
+    due: { kind: "date", date: "2026-03-01" },
+    done: false,
+    occurrence: { seriesId: "series", originalStart: "2026-03-01", rule: null },
+    ref: { type: "x.y", id: "z" },
+    open: { rel: "open", href: "/app/example" },
+    version: "v",
+  });
+});

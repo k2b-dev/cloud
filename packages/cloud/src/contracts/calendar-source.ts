@@ -105,7 +105,7 @@ const details = {
   ...identity,
   title: z.string().max(500),
   occurrence: CalendarOccurrenceSchema.nullable(),
-  ref: CloudResourceRefSchema.nullable(),
+  ref: CloudResourceRefSchema.loose().nullable(),
   open: OpenSchema.nullable(),
   version: IdSchema,
 };
