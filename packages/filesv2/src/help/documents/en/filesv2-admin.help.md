@@ -89,6 +89,6 @@ Directory and file commands address a directory as `<storage>/<users|groups>/<na
 
 The **Templates** tab stores reusable files independently of storage bases. Upload a file or choose an existing file you can read. Each template is a separate snapshot, up to 20 MiB. Name it, optionally describe it, and grant **Use** to users, groups or everyone signed in. Without a grant, only administration lists it. These are Cloud access grants; no POSIX group or access to the original folder is required.
 
-Users choose **Add → Template** in a writable folder. The template grant never bypasses the destination's write permissions. Replacing a template file or deleting the template does not affect files previously created from it. Imported originals can also be changed or removed independently. Template bytes and grants are stored in PostgreSQL and must be included in database backups.
+Users choose **Add → Template** in a writable folder. The template grant never bypasses the destination's write permissions. Replacing a template file or deleting the template does not affect files previously created from it. Imported originals can also be changed or removed independently. Template bytes and access records are stored in PostgreSQL and must be included in database backups.
 
 The CLI offers `admin templates list|upload|import|update|replace|delete` and `admin templates access list|grant|revoke`. Delete requires `--yes`. Use `--help` for arguments and `--input-file` or `--stdin` for a grant's JSON principal.
