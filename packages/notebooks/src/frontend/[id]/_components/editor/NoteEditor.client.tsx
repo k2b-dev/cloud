@@ -114,7 +114,7 @@ type EditorInstanceProps = {
   appUrl: string;
   userId: string;
   displayName: string;
-  /** The saved Markdown the note opens with; collaboration connects on the first edit. */
+  /** The saved Markdown the note opens with; editing text or focusing an editable table cell starts collaboration. */
   initialContent: string | null;
   initialPanelOpen: boolean;
   initialRichMode: "rich" | "source";
@@ -447,11 +447,11 @@ function EditorInstance(
   };
   const tabKeys = createTabKeyPreference(() => !!props.readOnly || !!syncEnded.ended());
 
-  // The document stays empty until the first edit connects; the live state then arrives from the server, so the
+  // The document stays empty until collaboration starts; the live state then arrives from the server, so the
   // saved text shown until then is never merged into it twice.
   const doc = new Y.Doc({ gc: true });
   const ytext = doc.getText("codemirror");
-  /** The saved text the editor shows until the first edit; a newer save by someone else replaces it. */
+  /** The saved text the editor shows until collaboration starts; a newer save by someone else replaces it. */
   let baseText = (props.initialContent ?? "").replace(/\r\n?/g, "\n");
   const awareness = new Awareness(doc);
 
@@ -465,7 +465,7 @@ function EditorInstance(
   const [tableControls, setTableControls] = createSignal<TextEditorControls>();
   let openTablePicker = () => {};
   const tablePresentation = createNotebookTablePresentation({ notebookId: props.notebookId, locale });
-  /** The visible saved text, then the live collaborative text after the first edit. */
+  /** The visible saved text, then the live collaborative text after replay. */
   const currentText = () => editorView()?.state.doc.toString() ?? baseText;
 
   // Book's rendering of the draft, or of the saved note in read-only mode: block previews and heading lines.
@@ -501,18 +501,23 @@ function EditorInstance(
   const collab = new Compartment();
   const [collabStarted, setCollabStarted] = createSignal(false);
   const [collabActive, setCollabActive] = createSignal(false);
+  const startCollaboration = () => {
+    if (props.readOnly || syncEnded.ended() || collabStarted()) return;
+    setCollabStarted(true);
+    syncState.start();
+    provider?.connect();
+  };
   if (!props.readOnly && undoManager) {
     addExtension(collab.of([]));
     addExtension(() => isolateYjsHistory(undoManager));
-    // Reading or switching notes needs no collaboration; the first edit starts it.
+    // Reading or switching notes needs no collaboration; text edits and editable table focus start it.
     addExtension(
       EditorView.updateListener.of((update) => {
-        if (collabStarted() || !update.docChanged || update.transactions.every((tr) => tr.annotation(firstEditsSettled))) return;
-        setCollabStarted(true);
-        syncState.start();
+        if (collabActive() || !update.docChanged || update.transactions.every((tr) => tr.annotation(firstEditsSettled))) return;
+        startCollaboration();
         // The typed words are unsent until the live note confirms them; leaving asks first.
         syncEnded.refresh();
-        provider?.connect();
+        notifySent();
       }),
     );
   }
@@ -533,7 +538,7 @@ function EditorInstance(
     );
   };
   /** Edits typed before the live document arrived, which exist only on screen. */
-  const pendingFirstEdits = () => collabStarted() && !collabActive();
+  const pendingFirstEdits = () => collabStarted() && !collabActive() && currentText() !== baseText;
   /** Edits not yet confirmed by the server, including those typed before the live document arrived. */
   const hasUnsentChanges = () => pendingFirstEdits() || (provider?.hasUnsentChanges() ?? false);
   /** Leaving waits only while this editor's own edits are on their way; an ended session has its own bar and prompt. */
@@ -548,7 +553,9 @@ function EditorInstance(
     if (!view || !undoManager || collabActive()) return;
     const edited = view.state.doc.toString();
     const live = ytext.toString();
-    const rebased = rebaseOnto(baseText, edited, live);
+    // Table focus alone has no edits to rebase, even if the live note changed completely.
+    const hasFirstEdits = edited !== baseText;
+    const rebased = hasFirstEdits ? rebaseOnto(baseText, edited, live) : null;
     if (rebased) applyToYText(ytext, rebased.changes, FIRST_EDITS);
     const text = rebased?.text ?? live;
     if (text !== edited)
@@ -557,7 +564,7 @@ function EditorInstance(
         annotations: [firstEditsSettled.of(true), Transaction.addToHistory.of(false), Transaction.remote.of(true)],
       });
     // Someone rewrote the note while these first edits were typed: the live note stays, and the edits stay copyable.
-    if (!rebased)
+    if (hasFirstEdits && !rebased)
       toast(t().firstEditsNotMerged, {
         duration: 0,
         action: { label: t().copyFirstEdits, onClick: () => void clipboard.copy(edited) },
@@ -610,7 +617,10 @@ function EditorInstance(
   };
 
   const publishCellSelection = (selection: { anchor: number; head: number } | null) => {
-    if (!selection || props.readOnly || !collabActive()) return;
+    if (!selection || props.readOnly || syncEnded.ended()) return;
+    // Table structure needs replayed identities before its first mutation, even when no text was typed.
+    startCollaboration();
+    if (!collabActive()) return;
     awareness.setLocalStateField("cursor", {
       anchor: Y.createRelativePositionFromTypeIndex(ytext, selection.anchor),
       head: Y.createRelativePositionFromTypeIndex(ytext, selection.head),
@@ -1155,7 +1165,7 @@ function EditorInstance(
       );
     }
 
-    // Before the first edit nothing is live: a save by someone else reaches this note as its new saved text.
+    // Before collaboration starts nothing is live: a save by someone else reaches this note as its new saved text.
     let savedTextRequest: AbortController | undefined;
     const readSavedText = async (request: AbortController, attempt = 0): Promise<void> => {
       try {
