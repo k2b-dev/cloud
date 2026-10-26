@@ -4,12 +4,13 @@ import { z } from "zod";
 import type { BaseSummary, EntryResult, TrashEntry } from "../contracts";
 import { rootLockWait, withRootLock } from "../data/operations";
 import { type TrashRow, trash } from "../data/trash";
-import { pendingMigration, type UserFilesCall } from "./activity";
+import { journalAction, type UserFilesCall } from "./activity";
 import { operationError, runFileBatch } from "./batches";
 import { FilesError } from "./errors";
 import { fileEntry } from "./file-entry";
 import type { FilesRoot } from "./filegate-facade";
 import { joinPath, relativePath, userPath } from "./paths";
+import { sameTrashNode } from "./trash-evidence";
 
 /** Request-authorized location. Rights checks remain in the owning service. */
 export type TrashLocation = {
@@ -55,18 +56,6 @@ async function stat(root: Pick<FilesRoot, "stat">, path: string): Promise<Node |
     throw error;
   }
 }
-/**
- * Same conservative fingerprint as directory lifecycle; no claim of atomic CAS.
- * Filegate 7 publishes node ids only on stable-id roots, so journal snapshots
- * from older daemons may carry an id the current node lacks.
- */
-export const sameTrashNode = (before: Node | null, after: Node) =>
-  before !== null &&
-  before.directory === after.directory &&
-  before.uid === after.uid &&
-  before.gid === after.gid &&
-  before.mode === after.mode &&
-  (before.id && after.id ? before.id === after.id : before.modified === after.modified && before.size === after.size);
 const recordEntry = (row: TrashRow): TrashEntry => ({
   id: row.id,
   original: row.original,
@@ -83,7 +72,7 @@ function filesystemPath(id: string): string {
   return path;
 }
 
-export function createTrashLifecycle(authorize: TrashAuthority, store = trash, lock = withRootLock) {
+export function createTrashLifecycle(authorize: TrashAuthority, store = trash, lock = withRootLock, run = journalAction) {
   const sameLocation = (before: TrashLocation, after: TrashLocation) => {
     if (
       before.bindingId !== after.bindingId ||
@@ -101,9 +90,10 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
       throw error;
     }
   }
-  async function reconcile(current: TrashLocation, row: TrashRow, execute: boolean): Promise<Node | null> {
+  async function reconcile(current: TrashLocation, row: TrashRow, execute: boolean, signal?: AbortSignal): Promise<Node | null> {
     if (row.root !== current.rootName || (row.server_url !== null && row.server_url !== current.serverUrl))
       throw new FilesError("binding_changed", 409);
+    const activity = await store.history(row.id);
     const restoring = row.state === "restoring";
     if (row.state !== "pending" && !restoring) return stat(current.root, joinPath(current.basePath, row.trashed));
     if (row.error_code === "transfer_pending") throw new FilesError("transfer_pending", 409);
@@ -115,6 +105,7 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
     try {
       let source = await stat(current.root, sourceAbsolute);
       let target = await stat(current.root, targetAbsolute);
+      let confirmed = false;
       if (source && target) throw new FilesError("path_conflict", 409);
       if (!source && !target) throw new FilesError("operation_unresolved", 409);
       if (source) {
@@ -122,13 +113,16 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
         if (!execute) return null;
         await current.check(sourceAbsolute, source.directory ? 5 : 4);
         await current.check(sourceAbsolute.split("/").slice(0, -1).join("/") || ".", 3);
-        await current.check(targetAbsolute.split("/").slice(0, -1).join("/") || ".", 3);
+        if (!activity) throw new FilesError("activity_scope_missing", 500);
         let receipt: TransferResult | undefined;
         let answered = false;
         try {
-          receipt = await pendingMigration("trash.transfer", () =>
-            current.root.transfer(sourceAbsolute, current.rootName, targetAbsolute, { move: true, onConflict: "error" }),
-          );
+          receipt = await run(activity.id, async () => {
+            if (!restoring) await current.ensureTrash();
+            await current.check(targetAbsolute.split("/").slice(0, -1).join("/") || ".", 3);
+            signal?.throwIfAborted();
+            return current.root.transfer(sourceAbsolute, current.rootName, targetAbsolute, { move: true, onConflict: "error" });
+          });
           answered = true;
         } catch (error) {
           source = await stat(current.root, sourceAbsolute);
@@ -139,12 +133,14 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
           if (receipt?.state !== "completed") throw new FilesError("transfer_pending", 409);
           if (!receipt.node || receipt.node.root !== current.rootName || receipt.node.path !== targetAbsolute)
             throw new FilesError("operation_unresolved", 409);
-          target = await stat(current.root, receipt.node.path);
+          target = receipt.node;
+          confirmed = true;
         } else target = await stat(current.root, targetAbsolute);
       }
-      if (!target || !sameTrashNode(row.snapshot, target)) throw new FilesError("operation_unresolved", 409);
+      if (!target || !sameTrashNode(row.snapshot, target) || (!confirmed && (restoring || row.trashed !== `trash/${row.id}`)))
+        throw new FilesError("operation_unresolved", 409);
       await current.check(targetAbsolute, target.directory ? 5 : 4);
-      await store.finish(row.id, restoring ? "restored" : "trashed");
+      await store.finish(row.id, restoring ? "restored" : "trashed", target);
       row.state = restoring ? "restored" : "trashed";
       row.error_code = null;
       if (!restoring) await current.forget(row.original!);
@@ -159,6 +155,7 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
     async remove(call: UserFilesCall, input: { baseId: string; paths: string[] }) {
       const actor = call.actor;
       const wait = rootLockWait();
+      const batchId = Bun.randomUUIDv7();
       return runFileBatch(
         input.paths,
         (path) => authorize(actor, input.baseId, path, "move"),
@@ -169,22 +166,24 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
             async () => {
               const source = await authorize(actor, input.baseId, path, "move");
               sameLocation(prepared, source);
-              await source.ensureTrash();
               let row = await store.pending(source.bindingId, source.relative);
               if (!row) {
                 const id = crypto.randomUUID();
-                row = await store.create({
-                  id,
-                  base_id: source.bindingId,
-                  user_id: source.userId,
-                  root: source.rootName,
-                  server_url: source.serverUrl,
-                  original: source.relative,
-                  trashed: `trash/${id}`,
-                  directory: source.node.directory,
-                  snapshot: source.node,
-                  state: "pending",
-                });
+                row = await store.create(
+                  {
+                    id,
+                    base_id: source.bindingId,
+                    user_id: source.userId,
+                    root: source.rootName,
+                    server_url: source.serverUrl,
+                    original: source.relative,
+                    trashed: `trash/${id}`,
+                    directory: source.node.directory,
+                    snapshot: source.node,
+                    state: "pending",
+                  },
+                  { call, basePath: source.basePath, batchId },
+                );
               }
               await reconcile(source, row, true);
               return recordEntry(row);
@@ -221,6 +220,7 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
               // its original parent instead of silently dropping the journal.
               await authorize(actor, input.baseId, original.split("/").slice(0, -1).join("/"), "read");
             } else continue;
+            if (row.state === "trashed") await store.history(row.id);
             if (row.state === "pending" || row.state === "restoring") {
               await locked(current.rootName, async () => {
                 const fresh = await authorize(actor, input.baseId, "", "read");
@@ -308,12 +308,18 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
         state: "trashed",
       };
     },
-    async restoreTrash(call: UserFilesCall, input: { baseId: string; id: string; path?: string }): Promise<EntryResult> {
+    async restoreTrash(
+      call: UserFilesCall & { requestAbort?: AbortSignal },
+      input: { baseId: string; id: string; path?: string },
+    ): Promise<EntryResult> {
+      call.requestAbort?.throwIfAborted();
       const actor = call.actor;
       const located = await authorize(actor, input.baseId, "", "read");
+      call.requestAbort?.throwIfAborted();
       return locked(
         located.rootName,
         async () => {
+          call.requestAbort?.throwIfAborted();
           const current = await authorize(actor, input.baseId, "", "read");
           sameLocation(located, current);
           let row = input.id.startsWith("fs:")
@@ -330,7 +336,11 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
               await current.check(joinPath(current.basePath, path), node.directory ? 5 : 4);
               if (!input.path) throw new FilesError("restore_destination_required");
               userPath(input.path);
-              await authorize(actor, input.baseId, input.path, "write-parent");
+              const destination = await authorize(actor, input.baseId, input.path, "write-parent");
+              sameLocation(current, destination);
+              // A refused target must not register a snapshot of an otherwise untracked trash item.
+              if (await stat(current.root, joinPath(current.basePath, input.path))) throw new FilesError("path_conflict", 409);
+              call.requestAbort?.throwIfAborted();
               row = await store.create({
                 id: crypto.randomUUID(),
                 base_id: current.bindingId,
@@ -366,16 +376,19 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
           sameLocation(current, destination);
           if (row.state !== "restoring") {
             const node = await current.root.stat(joinPath(current.basePath, row.trashed));
+            if (!sameTrashNode(row.snapshot, node)) throw new FilesError("source_changed", 409);
             await current.check(joinPath(current.basePath, row.trashed), node.directory ? 5 : 4);
             if (await stat(current.root, joinPath(current.basePath, path))) throw new FilesError("path_conflict", 409);
-            await store.restoring(row.id, path, node, current.serverUrl);
+            call.requestAbort?.throwIfAborted();
+            await store.restoring(row.id, path, node, current.serverUrl, { call, basePath: current.basePath });
             row = { ...row, state: "restoring", restore_path: path, snapshot: node, server_url: current.serverUrl };
           }
-          const restored = await reconcile(current, row, true);
+          call.requestAbort?.throwIfAborted();
+          const restored = await reconcile(current, row, true, call.requestAbort);
           if (!restored) throw new FilesError("operation_unresolved", 409);
           return { base: destination.base, entry: fileEntry(destination.base, path, restored) };
         },
-        rootLockWait(),
+        call.requestAbort ? AbortSignal.any([rootLockWait(), call.requestAbort]) : rootLockWait(),
       );
     },
   };
