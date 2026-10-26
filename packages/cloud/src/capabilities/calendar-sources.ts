@@ -16,7 +16,7 @@ import {
   CalendarViewRangeSchema,
 } from "../contracts/calendar-view";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
-import { type CapabilityCaller, invokeCapabilityWithDataSchema, listCapabilityCatalog } from "./server";
+import { type CapabilityCaller, invokeCapabilityWithDataSchema, listCapabilityCatalog } from "./server-invoke";
 import type { CapabilityCatalogApp, CapabilityClientError } from "./types";
 
 export * from "../contracts/calendar-view";

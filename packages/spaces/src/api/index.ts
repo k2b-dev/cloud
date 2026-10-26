@@ -3280,7 +3280,7 @@ const calendarApp = new Hono<AuthContext>()
       responses: {
         200: jsonResponse(CalendarSourcesResponseSchema, "Calendar sources"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        503: jsonResponse(ErrorResponseSchema, "Calendar discovery unavailable"),
+        500: jsonResponse(ErrorResponseSchema, "Calendar discovery unavailable"),
       },
     }),
     async (c) => {
@@ -3290,9 +3290,9 @@ const calendarApp = new Hono<AuthContext>()
       const user = requireUserBackedActor(c);
       if (!user.ok) return respond(c, user);
       try {
-        return c.json({ sources: await loadCalendarSources(c, { deadlineMs: 10_000 }) });
+        return respond(c, ok({ sources: await loadCalendarSources(c, { deadlineMs: 10_000 }) }));
       } catch {
-        return c.json({ code: "CALENDAR_DISCOVERY_FAILED", message: "Calendar discovery is unavailable" }, 503);
+        return respond(c, fail({ ...err.internal("Calendar discovery is unavailable"), code: "CALENDAR_DISCOVERY_FAILED" }));
       }
     },
   )
@@ -3323,17 +3323,23 @@ const calendarApp = new Hono<AuthContext>()
       const { from, to } = c.req.valid("query");
       const range = CalendarRangeSchema.safeParse({ from, to });
       if (!range.success)
-        return c.json(
-          { code: "CALENDAR_INVALID_RANGE", message: "Use an ordered range of at most 42 elapsed days with explicit offsets" },
-          400,
+        return respond(
+          c,
+          fail({
+            ...err.badInput("Use an ordered range of at most 42 elapsed days with explicit offsets"),
+            code: "CALENDAR_INVALID_RANGE",
+          }),
         );
       let calendars: ReturnType<typeof parseCalendarSelections>;
       try {
         calendars = parseCalendarSelections(c.req.queries("cal") ?? []);
       } catch {
-        return c.json({ code: "CALENDAR_INVALID_SELECTION", message: "Select at most 100 calendars as appId:calendarId" }, 400);
+        return respond(
+          c,
+          fail({ ...err.badInput("Select at most 100 calendars as appId:calendarId"), code: "CALENDAR_INVALID_SELECTION" }),
+        );
       }
-      return c.json(await loadCalendarEvents(c, { ...range.data, calendars, deadlineMs: 10_000 }));
+      return respond(c, ok(await loadCalendarEvents(c, { ...range.data, calendars, deadlineMs: 10_000 })));
     },
   )
 

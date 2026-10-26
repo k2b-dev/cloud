@@ -7,7 +7,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, launchBrowser } from "../../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../../ui/test/browser";
 import {
   type CalendarRange,
   type CalendarSourceRead,
@@ -195,6 +195,7 @@ const open = async (view: View, path: string, data: Case) => {
 const shoot = (page: Page, name: string) => page.screenshot({ path: join(shots, `${name}.png`) });
 /** The first match inside the window, so a click never scrolls the strip to another week. */
 const onScreen = async (page: Page, name: RegExp) => {
+  await settled(page);
   const matches = page.getByRole("button", { name });
   for (let index = 0; index < (await matches.count()); index++) {
     const rect = await matches.nth(index).boundingBox();
@@ -203,6 +204,7 @@ const onScreen = async (page: Page, name: RegExp) => {
   throw new Error(`No ${name} on screen`);
 };
 const box = async (page: Page, selector: string) => {
+  await settled(page);
   const rect = await page.locator(selector).first().boundingBox();
   if (!rect) throw new Error(`No box for ${selector}`);
   return rect;
@@ -216,7 +218,7 @@ describe("calendar of all Spaces and apps", () => {
       expect(await page.locator('.spaces-sidebar-list [aria-current="page"]').textContent()).toContain("Kalender");
       expect(await page.locator('.k2b-app-workspace__head-views [aria-current="page"]').textContent()).toContain("Woche");
       // Nine suggested calendars; the busy-only and the shift calendar wait for a choice.
-      await expect(page.getByRole("button", { name: /Kalender 9/ }).count()).resolves.toBe(1);
+      expect(await page.getByRole("button", { name: /Kalender 9/ }).count()).toBe(1);
       // The chip keeps its name in the calendar's toolbar, which shows no view switcher of its own.
       expect(await page.locator(".spaces-calendar-chooser .k2b-filter-chip__label").isVisible()).toBe(true);
       for (const title of ["Gabelstapler-Wartung", "All-Hands Q4", "Malte Sommer · abwesend", "Erste-Hilfe-Auffrischung"])
@@ -240,7 +242,7 @@ describe("calendar of all Spaces and apps", () => {
       const chipBefore = await chip.boundingBox();
       await chip.click();
       const menu = page.getByRole("menu");
-      await expect(menu.getByText("Abwesenheiten").count()).resolves.toBeGreaterThan(0);
+      expect(await menu.getByText("Abwesenheiten").count()).toBeGreaterThan(0);
       await shoot(page, "02-chooser-de");
       const before = requests.length;
       await menu.getByRole("menuitemcheckbox", { name: "Meine Schichten" }).click();
@@ -274,7 +276,7 @@ describe("calendar of all Spaces and apps", () => {
       await (await onScreen(page, /Team-Meeting Logistik/)).click();
       const dialog = page.getByRole("dialog", { name: "Termindetails" });
       await dialog.waitFor();
-      await expect(dialog.textContent()).resolves.toContain("Meetings");
+      expect(await dialog.textContent()).toContain("Meetings");
       expect(await dialog.textContent()).toContain("Raum Elbe");
       expect(await dialog.textContent()).toMatch(/Dienstag/);
       await shoot(page, "03-detail-de");
@@ -327,7 +329,7 @@ describe("calendar of all Spaces and apps", () => {
     });
     try {
       const status = page.locator(".spaces-calendar-status");
-      await expect(status.textContent()).resolves.toContain("Lädt 3 von 9 Kalendern");
+      expect(await status.textContent()).toContain("Lädt 3 von 9 Kalendern");
       const chip = await box(page, ".spaces-calendar-chooser button");
       const statusBox = await box(page, ".spaces-calendar-status");
       expect(await page.getByText("Gabelstapler-Wartung").count()).toBeGreaterThan(0);
@@ -349,7 +351,7 @@ describe("calendar of all Spaces and apps", () => {
     const { page, close } = await open(desktop, "/app/spaces/calendar?view=week&date=2026-10-27", { locale: "de", failing });
     try {
       const status = page.locator(".spaces-calendar-status");
-      await expect(status.textContent()).resolves.toContain("Abwesenheiten antwortet nicht.");
+      expect(await status.textContent()).toContain("Abwesenheiten antwortet nicht.");
       expect(await status.textContent()).toContain("Die anderen Kalender sind aktuell.");
       expect(await page.getByText("Gabelstapler-Wartung").count()).toBeGreaterThan(0);
       await shoot(page, "07-failed-de");
@@ -375,7 +377,7 @@ describe("calendar of all Spaces and apps", () => {
       { locale: "de" },
     );
     try {
-      await expect(page.locator(".spaces-calendar-status").textContent()).resolves.toContain(
+      expect(await page.locator(".spaces-calendar-status").textContent()).toContain(
         "Meetings · Geschäftsführung: nur frei/belegt sichtbar",
       );
       await (await onScreen(page, /^Belegt/)).click();

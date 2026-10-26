@@ -38,7 +38,6 @@ import {
   CALENDAR_LIST_DAYS,
   CALENDAR_REFRESH_MS,
   type CalendarRange,
-  type CalendarReadState,
   type CalendarSourceRead,
   type CalendarSourceView,
   type CloudCalendarRoute,
@@ -266,14 +265,13 @@ export default function CloudCalendar(props: CloudCalendarProps) {
         <Show when={stateProps.busy}>
           <span class="spaces-calendar-chooser__note">{t.busyNote}</span>
         </Show>
-        <span
-          class="spaces-calendar-chooser__state"
-          data-tone={state() === "failed" ? "warning" : undefined}
-          role={state() === "pending" || state() === "failed" ? "img" : undefined}
-          aria-label={state() === "failed" ? t.unreachable : state() === "pending" ? t.loadingState : undefined}
-        >
+        <span class="spaces-calendar-chooser__state" data-tone={state() === "failed" ? "warning" : undefined}>
           <Show when={state() === "pending" || state() === "failed"}>
-            <i class={state() === "failed" ? "ti ti-alert-triangle" : "ti ti-loader-2 animate-spin"} aria-hidden="true" />
+            <i
+              class={state() === "failed" ? "ti ti-alert-triangle" : "ti ti-loader-2 animate-spin"}
+              role="img"
+              aria-label={state() === "failed" ? t.unreachable : t.loadingState}
+            />
           </Show>
         </span>
       </>
