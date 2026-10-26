@@ -609,3 +609,9 @@ expires missing deliveries visibly. Drain old workers before removing the legacy
 `cloud.workflow-ai` resource through the installation's NATS administration;
 retain its diagnostics until every associated Postgres task is terminal. Do not
 delete pending domain tasks to clear a queue.
+
+`MAIL_WORKFLOW_AI_BODY_MAX_CHARS` defaults to 20,000, the long-input pilot budget.
+The complete request still has to fit the existing 100,000-byte JSONB limit.
+Increasing the body allowance does not bypass that storage constraint. Oversize
+messages require narrower workflow input or manual inspection, followed by retry;
+the stored mail remains intact.

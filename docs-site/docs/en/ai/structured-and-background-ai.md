@@ -482,3 +482,16 @@ the failed Mail messages. No automatic classification is inferred from a failure
 The `cloud.workflow-ai.v2` job rejects new work when full. Submission failures
 become `WORKFLOW_AI_QUEUE_FULL` or `WORKFLOW_AI_SUBMISSION_FAILED`, with a retry
 path after capacity or connectivity recovers. Postgres remains authoritative.
+
+The complete durable task request must fit 100,000 UTF-8 bytes, including prompt,
+choices or field schema, and JSONB formatting. Validation checks both the compact
+request and the exact Postgres representation before insertion. Oversize input
+fails permanently as `WORKFLOW_AI_INPUT_TOO_LARGE`: narrow the supplied content
+or inspect the original manually, then start a new run. The original is retained;
+no content is silently truncated.
+
+Mail additionally rejects bodies over `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` before
+loading them into an AI step (pilot default: 20,000 characters). Frozen bodies
+receive the same check. Attachments are metadata only, not extracted contents.
+Application value resolvers may throw `WorkflowValueError(message, code)` from
+`@k2b/cloud/workflows/runtime` to preserve a permanent diagnostic in run details.

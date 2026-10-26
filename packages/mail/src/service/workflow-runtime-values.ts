@@ -1,8 +1,9 @@
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { readWorkflowValuePath } from "@k2b/cloud/workflows/language";
-import type { WorkflowValueResolverPort } from "@k2b/cloud/workflows/runtime";
+import { WorkflowValueError, type WorkflowValueResolverPort } from "@k2b/cloud/workflows/runtime";
 import type { WorkflowRunClaim } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
+import { appEnv } from "../env";
 import { resolveMailboxPublicId } from "./public-resources";
 import { enqueueMessageHydration } from "./sync-runtime";
 import { mailWorkflowBodyFieldLoaded, markMailWorkflowBodyFieldsLoaded } from "./workflow-body-fields";
@@ -36,18 +37,26 @@ const hydratedMessageValue = async (
   mailboxId: string,
   publicMessageId: string,
   field: "body" | "bodyText" | "bodyHtml" | "attachments",
+  bodyLimit?: number,
 ): Promise<HydratedMessageValue> => {
   const messageId = await resolveMailboxPublicId("messages", mailboxId, publicMessageId);
   if (!messageId) return { state: "unavailable" };
   const [message] = await sql<
-    { hydration_status: string; hydration_attempt: number; plain_text: string | null; sanitized_html: string | null }[]
+    { hydration_status: string; hydration_attempt: number; plain_text: string | null; sanitized_html: string | null; body_too_large?: boolean }[]
   >`
-    SELECT hydration_status, hydration_attempt, plain_text, sanitized_html
+    SELECT hydration_status, hydration_attempt,
+      CASE WHEN ${field} <> 'bodyHtml' AND (${bodyLimit ?? null}::integer IS NULL OR char_length(plain_text) <= ${bodyLimit ?? null}) THEN plain_text END AS plain_text,
+      CASE WHEN ${field} = 'bodyHtml' AND (${bodyLimit ?? null}::integer IS NULL OR char_length(sanitized_html) <= ${bodyLimit ?? null}) THEN sanitized_html END AS sanitized_html,
+      CASE WHEN ${field} = 'bodyHtml' THEN char_length(sanitized_html) ELSE char_length(plain_text) END > ${bodyLimit ?? null}::integer AS body_too_large
     FROM mail.message_contents
     WHERE id = ${messageId}::uuid
       AND mailbox_id = ${mailboxId}::uuid
   `;
   if (!message) return { state: "unavailable" };
+  if (message.body_too_large) throw new WorkflowValueError(
+    `Mail body exceeds the ${bodyLimit}-character AI budget. Inspect the original message manually or supply narrower input; nothing was truncated.`,
+    "WORKFLOW_AI_INPUT_TOO_LARGE",
+  );
   // Attachment hydration can change the status after the body is stored.
   if (field !== "attachments" && (message.plain_text !== null || message.sanitized_html !== null)) {
     return { state: "resolved", value: (field === "bodyHtml" ? message.sanitized_html : message.plain_text) ?? "" };
@@ -177,7 +186,7 @@ export const createMailWorkflowValueResolver = (params: {
     params.frozenHydration[reference] = frozen;
     return frozen;
   };
-  const hydrateWholeMessage = async (name: string): Promise<void> => {
+  const hydrateWholeMessage = async (name: string, bodyLimit?: number): Promise<void> => {
     const message = params.claim.inputs[name];
     if (!isObject(message) || message.bodyAvailable === true) return;
     if (typeof message.id !== "string") return;
@@ -185,7 +194,7 @@ export const createMailWorkflowValueResolver = (params: {
     for (const field of ["bodyText", "bodyHtml"] as const) {
       const key = `inputs.${name}.${field}`;
       if (hasFrozen(key)) continue;
-      const hydrated = await hydratedMessageValue(params.mailboxId, message.id, field);
+      const hydrated = await hydratedMessageValue(params.mailboxId, message.id, field, bodyLimit);
       // Whole values keep receipt-time behavior: pending or unavailable bodies do not block the step.
       if (hydrated.state !== "resolved") return;
       entries.push({ key, value: hydrated.value });
@@ -195,6 +204,8 @@ export const createMailWorkflowValueResolver = (params: {
   };
   return {
     resolve: async ({ reference, path, plan, fallback }) => {
+      const bodyLimit = path.some((part) => typeof part === "string" && ["aiClassify", "aiClassifyMany", "aiExtractData", "aiGenerateText"].includes(part))
+        ? appEnv.MAIL_WORKFLOW_AI_BODY_MAX_CHARS : undefined;
       const candidate = messageForReference(reference, params.claim.inputs);
       if (!candidate) {
         const action = path.at(-2);
@@ -202,7 +213,7 @@ export const createMailWorkflowValueResolver = (params: {
         if (!referenceOnly) {
           for (const input of plan.inputs) {
             if (input.type === "mailMessage" && (reference === "inputs" || reference === `inputs.${input.name}`)) {
-              await hydrateWholeMessage(input.name);
+              await hydrateWholeMessage(input.name, bodyLimit);
             }
           }
         }
@@ -216,13 +227,16 @@ export const createMailWorkflowValueResolver = (params: {
           : mailWorkflowBodyFieldLoaded(candidate.message, candidate.field);
       if (available) {
         const value = fallback();
+        if (bodyLimit && typeof value === "string" && [...value].length > bodyLimit) throw new WorkflowValueError(
+          `Mail body exceeds the ${bodyLimit}-character AI budget. Inspect the original or narrow the input; nothing was truncated.`, "WORKFLOW_AI_INPUT_TOO_LARGE",
+        );
         return value === undefined ? { state: "missing" } : { state: "resolved", value };
       }
 
       if (!hasFrozen(candidate.frozenKey)) {
         const messageId = candidate.message.id;
         if (typeof messageId !== "string") return { state: "missing" };
-        const hydrated = await hydratedMessageValue(params.mailboxId, messageId, candidate.field);
+        const hydrated = await hydratedMessageValue(params.mailboxId, messageId, candidate.field, bodyLimit);
         if (hydrated.state === "unavailable") return { state: "missing" };
         if (hydrated.state === "pending") {
           await enqueueMessageHydration(hydrated.messageId);

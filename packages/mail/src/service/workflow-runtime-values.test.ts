@@ -244,3 +244,9 @@ describe("Mail lazy workflow values", () => {
     expect(await resolve("inputs.message.body")).toEqual({ state: "resolved", value: "Old plain text" });
   });
 });
+
+test("AI body limits reject frozen bodies with an explicit recoverable diagnostic", async () => {
+  const { resolve } = fixture({ "inputs.message.bodyText": "x".repeat(20_001) });
+  await expect(resolve("inputs.message.bodyText", ["steps", 0, "aiClassify", "input"]))
+    .rejects.toMatchObject({ code: "WORKFLOW_AI_INPUT_TOO_LARGE" });
+});

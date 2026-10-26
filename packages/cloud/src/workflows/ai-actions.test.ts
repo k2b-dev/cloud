@@ -91,3 +91,14 @@ describe("shared workflow AI actions", () => {
     expect(await workflowAiActionCost(context, { exists: async () => true })).toEqual({});
   });
 });
+
+test("oversized UTF-8 input fails permanently before model resolution or task insertion", async () => {
+  const result = await runWorkflowAiAction(context, { kind: "classify", prompt: "Choose", input: "😀".repeat(25_000), choices: ["a", "b"] }, {
+    getByEffectKey: async () => null,
+    create: async () => { throw new Error("must not insert"); },
+    exists: async () => false,
+    resolveModel: async () => { throw new Error("must not resolve"); },
+    submit: async () => { throw new Error("must not submit"); },
+  });
+  expect(result).toMatchObject({ state: "failed", code: "WORKFLOW_AI_INPUT_TOO_LARGE", retryable: false });
+});

@@ -320,3 +320,12 @@ test("a lost queued delivery fails visibly and wakes its workflow without restar
   expect(signal?.key).toBe(task.id);
   expect(await claimWorkflowAiTask(task.id)).toBeNull();
 });
+
+test("JSONB separator and numeric expansion exceed the budget with a stable input error, before INSERT", async () => {
+  if (!(await ready())) return;
+  const { runId } = await createRun();
+  const request = { kind: "classify" as const, prompt: "Choose", input: Array.from({ length: 400 }, () => 1e300), choices: ["a", "b"] };
+  expect(Buffer.byteLength(JSON.stringify(request))).toBeLessThan(100_000);
+  await expect(createWorkflowAiTask({ runId, stepKey: "oversized", effectKey: `workflow:${runId}:oversized`, request, modelProfileId: "model" }))
+    .rejects.toMatchObject({ code: "WORKFLOW_AI_INPUT_TOO_LARGE" });
+});

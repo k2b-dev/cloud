@@ -13,6 +13,7 @@ export {
   dryRunWorkflowPlan,
   executeWorkflowPlan,
   WorkflowLeaseLostError,
+  WorkflowValueError,
   WorkflowRetryableStepError,
 } from "./executor";
 export type {

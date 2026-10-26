@@ -1,4 +1,5 @@
 import { type SQL, sql } from "bun";
+import { AI_TASK_REQUEST_MAX_BYTES, AiTaskInputTooLargeError, assertAiTaskRequestSize } from "../../ai/task-contracts";
 import type { WorkflowJsonValue } from "../contracts";
 import { wakeWorkflowRunsWaitingOn } from "../store/runs";
 import { notifyWorkflowWorker } from "../store/worker-runtime";
@@ -167,7 +168,13 @@ export const createWorkflowAiTask = async (
   input: { runId: string; stepKey: string; effectKey: string; request: WorkflowAiRequestInput; modelProfileId: string },
   db: SQL = sql,
 ): Promise<{ task: WorkflowAiTask; created: boolean }> => {
+  assertAiTaskRequestSize(input.request);
   const request = workflowAiRequestSchema.parse(input.request) as WorkflowAiRequest;
+  assertAiTaskRequestSize(request);
+  // JSONB adds separator spaces and expands numeric exponents. Measure its exact
+  // representation before INSERT, keeping the DB constraint as a final guard.
+  const [size] = await db<{ bytes: number }[]>`SELECT octet_length(${request}::jsonb::text) AS bytes`;
+  if (!size || size.bytes > AI_TASK_REQUEST_MAX_BYTES) throw new AiTaskInputTooLargeError();
   const rows = await db<WorkflowAiTaskRow[]>`
     INSERT INTO ai.workflow_task (app_id, run_id, step_key, effect_key, kind, request, input_hash, model_profile_id)
     SELECT run.app_id, run.id, ${input.stepKey}, ${input.effectKey}, ${request.kind}, ${request}, ${requestHash(request)}, ${input.modelProfileId}

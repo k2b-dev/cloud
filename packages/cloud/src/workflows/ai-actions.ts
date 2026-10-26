@@ -1,3 +1,4 @@
+import { assertAiTaskRequestSize } from "../ai/task-contracts";
 import type { AiResolvedModel } from "../ai/types";
 import type { WorkflowAiRequestInput, WorkflowAiTask } from "./ai/types";
 import type { WorkflowFieldSchema, WorkflowJsonValue } from "./contracts";
@@ -113,6 +114,7 @@ export const runWorkflowAiAction = async (
     if (terminal) return terminal;
 
     if (!task) {
+      assertAiTaskRequestSize(request);
       const resolved = await deps.resolveModel(request.modelProfileId?.trim() || undefined);
       task = (
         await deps.create({
