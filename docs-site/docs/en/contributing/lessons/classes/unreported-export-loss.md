@@ -1,0 +1,1 @@
+| Unreported export loss | A PDF replaces content with a label, source, or error notice without telling the caller. | Tests: Notebooks `book-renderer.test.ts` checks typed omissions against rendered diagnostics and content order; `pdf-omissions.test.ts` checks the header budget; API and gateway tests check delivery. |

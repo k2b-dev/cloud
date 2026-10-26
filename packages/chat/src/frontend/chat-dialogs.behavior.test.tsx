@@ -90,8 +90,11 @@ describe("chat dialogs and info", () => {
   let dom: DomTestHarness;
   let dispose = () => {};
   const originalFetch = globalThis.fetch;
+  const originalRandomUUID = crypto.randomUUID;
   beforeEach(() => {
     setSystemTime(new Date(now));
+    let createKeySequence = 0;
+    crypto.randomUUID = () => `aaaaaaaa-aaaa-4aaa-8aaa-${String(++createKeySequence).padStart(12, "0")}`;
     dom = createDomTestHarness();
     window.sessionStorage.clear();
     delegateEvents(["click", "input", "keydown"], dom.document);
@@ -125,6 +128,7 @@ describe("chat dialogs and info", () => {
     dispose();
     await settle();
     globalThis.fetch = originalFetch;
+    crypto.randomUUID = originalRandomUUID;
     dom.cleanup();
     setSystemTime();
   });
@@ -185,6 +189,251 @@ describe("chat dialogs and info", () => {
 
   for (const locale of ["en", "de"]) {
     const t = chatMessages.resolve([locale]).t;
+    test(`preselected person waits for submission and preserves the multiple-chat chooser in ${locale}`, async () => {
+      const create = mock<ChatDialogStore["create"]>(async () => ({
+        outcome: "existing",
+        matches: [
+          { id: "Chat01", name: "Planning", title: "Planning", archived: false, lastActivityAt: now },
+          { id: "Chat02", name: "Another chat", title: "Another chat", archived: false, lastActivityAt: now },
+        ],
+      }));
+      const close = mock<(id?: string) => void>();
+      await mount(locale, () =>
+        createComponent(modules!.NewChatDialog, {
+          store: store({ create }),
+          guest: true,
+          viewerId,
+          locale,
+          dateConfig: { timeZone: "UTC" },
+          initialPerson: { principal: { type: "user", userId: personId }, displayName: "Nora" },
+          close,
+          setDismissHandler: () => {},
+        }),
+      );
+      expect(dom.root.textContent).toContain("Nora");
+      expect(create).not.toHaveBeenCalled();
+      dom.root.querySelector("form")!.requestSubmit();
+      await settle();
+      expect(create.mock.calls).toEqual([
+        [{ members: [{ type: "user", userId: personId }], allowDuplicate: false, createKey: expect.any(String) }],
+      ]);
+      expect(dom.root.textContent).toContain("Planning");
+      expect(dom.root.textContent).toContain("Another chat");
+      expect(close).not.toHaveBeenCalled();
+      button(t.back).click();
+      await settle();
+      expect(dom.root.textContent).toContain("Nora");
+      button(t.cancel).click();
+      expect(close.mock.calls).toEqual([[]]);
+      expect(create).toHaveBeenCalledTimes(1);
+    });
+
+    test(`a preselected viewer keeps the existing self-chat flow in ${locale}`, async () => {
+      const create = mock<ChatDialogStore["create"]>();
+      const close = mock<(id?: string) => void>();
+      await mount(locale, () =>
+        createComponent(modules!.NewChatDialog, {
+          store: store({ create }),
+          guest: true,
+          viewerId,
+          locale,
+          dateConfig: { timeZone: "UTC" },
+          initialPerson: { principal: { type: "user", userId: viewerId }, displayName: "Viewer" },
+          close,
+          setDismissHandler: () => {},
+        }),
+      );
+      expect(dom.root.textContent).toContain(t.selfChatHint);
+      expect(dom.root.querySelector(".chat-member-row")).toBeNull();
+      button(t.cancel).click();
+      expect(create).not.toHaveBeenCalled();
+    });
+    for (const recovery of ["retry", "cancel"] as const) {
+      test(`an unrelated contact preserves the pending panel intent until ordinary New chat can ${recovery} it in ${locale}`, async () => {
+        const create = mock<ChatDialogStore["create"]>(async () => {
+          throw new Error("Response lost");
+        });
+        const close = mock<(id?: string) => void>();
+        let dismiss = () => {};
+        const props = {
+          store: store({ create }),
+          guest: true,
+          viewerId,
+          locale,
+          dateConfig: { timeZone: "UTC" },
+          close,
+          setDismissHandler: (handler: () => void) => {
+            dismiss = handler;
+          },
+        };
+        // The panel and the full-page workspace use the same tab's sessionStorage.
+        await mount(locale, () => createComponent(modules!.NewChatDialog, props));
+        await chooseNora();
+        type(input('input:not([role="combobox"])'), "Original name");
+        dom.root.querySelector("form")!.requestSubmit();
+        await settle();
+        const storageKey = `chat.create:${viewerId}:new`;
+        const originalIntent = window.sessionStorage.getItem(storageKey);
+        expect(originalIntent).not.toBeNull();
+        dismiss();
+        dispose();
+        close.mockClear();
+
+        const initialPerson = {
+          principal: { type: "user" as const, userId: "44444444-4444-4444-8444-444444444444" },
+          displayName: "Ben",
+        };
+        const openContact = () => mount(locale, () => createComponent(modules!.NewChatDialog, { ...props, initialPerson }));
+        await openContact();
+        expect(dom.root.querySelector(`ul[aria-label="${t.chosenPeople}"]`)?.textContent).toContain("Ben");
+        expect(dom.root.textContent).not.toContain("Nora");
+        expect(input('input:not([role="combobox"])').value).toBe("");
+        expect(input('input:not([role="combobox"])').disabled).toBe(true);
+        expect(input('[role="combobox"]').disabled).toBe(true);
+        expect(button(t.removeName({ name: "Ben" })).disabled).toBe(true);
+        expect(button(t.startChat).disabled).toBe(true);
+        expect(dom.root.querySelector('[role="alert"]')?.textContent).toBe(t.createContactConflict);
+        expect(dom.root.textContent).not.toContain(t.createRecovery);
+        // Native disabled controls and the submit handler both refuse the conflicting write.
+        button(t.startChat).click();
+        dom.root.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        await settle();
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(window.sessionStorage.getItem(storageKey)).toBe(originalIntent);
+        dismiss();
+        expect(close.mock.calls).toEqual([[]]);
+        expect(window.sessionStorage.getItem(storageKey)).toBe(originalIntent);
+        dispose();
+        close.mockClear();
+        await openContact();
+        button(t.close).click();
+        expect(close.mock.calls).toEqual([[]]);
+        expect(window.sessionStorage.getItem(storageKey)).toBe(originalIntent);
+        dispose();
+        close.mockClear();
+
+        await mount(locale, () => createComponent(modules!.NewChatDialog, props));
+        expect(dom.root.textContent).toContain("Nora");
+        expect(input('input:not([role="combobox"])').value).toBe("Original name");
+        create.mockImplementation(async () => ({ outcome: "created", conversation }));
+        if (recovery === "retry") {
+          button(t.retry).click();
+          await settle();
+          expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
+          expect(close.mock.calls).toEqual([[conversation.id]]);
+        } else {
+          button(t.cancel).click();
+          expect(create).toHaveBeenCalledTimes(1);
+          expect(close.mock.calls).toEqual([[]]);
+        }
+        expect(window.sessionStorage.getItem(storageKey)).toBeNull();
+        dispose();
+        close.mockClear();
+        await openContact();
+        expect(button(t.startChat).disabled).toBe(false);
+        dom.root.querySelector("form")!.requestSubmit();
+        await settle();
+        const lastInput = create.mock.calls.at(-1)![0];
+        expect(lastInput).toEqual({ members: [initialPerson.principal], allowDuplicate: false, createKey: expect.any(String) });
+        expect(lastInput.createKey).not.toBe(create.mock.calls[0]![0].createKey);
+        expect(close.mock.calls).toEqual([[conversation.id]]);
+      });
+    }
+    for (const person of ["other", "viewer"] as const) {
+      test(`a matching ${person} contact resumes only the original request in ${locale}`, async () => {
+        const initialPerson =
+          person === "viewer"
+            ? { principal: { type: "user" as const, userId: viewerId }, displayName: "Viewer" }
+            : { principal: nora.principal, displayName: "Nora" };
+        const pendingInput = {
+          members: person === "viewer" ? [] : [initialPerson.principal],
+          allowDuplicate: false,
+          createKey: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        };
+        const storageKey = `chat.create:${viewerId}:new`;
+        window.sessionStorage.setItem(
+          storageKey,
+          JSON.stringify({ input: pendingInput, chosen: person === "viewer" ? [] : [initialPerson] }),
+        );
+        const pending = Promise.withResolvers<Awaited<ReturnType<ChatDialogStore["create"]>>>();
+        const create = mock<ChatDialogStore["create"]>(() => pending.promise);
+        const close = mock<(id?: string) => void>();
+        let dismiss = () => {};
+        await mount(locale, () =>
+          createComponent(modules!.NewChatDialog, {
+            store: store({ create }),
+            guest: true,
+            viewerId,
+            locale,
+            dateConfig: { timeZone: "UTC" },
+            initialPerson,
+            close,
+            setDismissHandler: (handler) => {
+              dismiss = handler;
+            },
+          }),
+        );
+        expect(create).not.toHaveBeenCalled();
+        expect(dom.root.textContent).toContain(t.createRecovery);
+        expect(button(t.retry).disabled).toBe(false);
+        button(t.retry).click();
+        await settle();
+        try {
+          expect(create.mock.calls).toEqual([[pendingInput]]);
+          expect(button(t.cancel).disabled).toBe(true);
+          dismiss();
+          expect(close).not.toHaveBeenCalled();
+        } finally {
+          pending.resolve({ outcome: "created", conversation });
+          await settle();
+        }
+        expect(close.mock.calls).toEqual([[conversation.id]]);
+        expect(window.sessionStorage.getItem(storageKey)).toBeNull();
+      });
+    }
+    for (const mismatch of ["other person", "extra person", "name", "duplicate"] as const) {
+      test(`a contact refuses recovery with a different ${mismatch} in ${locale}`, async () => {
+        const initialPerson = { principal: nora.principal, displayName: "Nora" };
+        const otherPerson = {
+          principal: { type: "user" as const, userId: "44444444-4444-4444-8444-444444444444" },
+          displayName: "Ben",
+        };
+        const chosen =
+          mismatch === "other person" ? [otherPerson] : mismatch === "extra person" ? [initialPerson, otherPerson] : [initialPerson];
+        const pending = JSON.stringify({
+          input: {
+            members: chosen.map((person) => person.principal),
+            ...(mismatch === "name" ? { name: "Original name" } : {}),
+            allowDuplicate: mismatch === "duplicate",
+            createKey: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          },
+          chosen,
+        });
+        const storageKey = `chat.create:${viewerId}:new`;
+        window.sessionStorage.setItem(storageKey, pending);
+        const create = mock<ChatDialogStore["create"]>();
+        await mount(locale, () =>
+          createComponent(modules!.NewChatDialog, {
+            store: store({ create }),
+            guest: true,
+            viewerId,
+            locale,
+            dateConfig: { timeZone: "UTC" },
+            initialPerson,
+            close: () => {},
+            setDismissHandler: () => {},
+          }),
+        );
+        expect(dom.root.querySelector('[role="alert"]')?.textContent).toBe(t.createContactConflict);
+        expect(input('input:not([role="combobox"])').value).toBe("");
+        expect(button(t.startChat).disabled).toBe(true);
+        dom.root.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        await settle();
+        button(t.close).click();
+        expect(create).not.toHaveBeenCalled();
+        expect(window.sessionStorage.getItem(storageKey)).toBe(pending);
+      });
+    }
     for (const kind of ["new", "add", "details", "leave"] as const) {
       test(`${kind} dialog ignores dismissal while writing and allows it when idle in ${locale}`, async () => {
         const pending = Promise.withResolvers<never>();
