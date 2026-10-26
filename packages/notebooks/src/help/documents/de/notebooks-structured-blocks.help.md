@@ -82,7 +82,7 @@ Rücke wie im Beispiel ein. Setze zwei Leerzeichen vor Einträge der Filterliste
 | `match` | `all` (Standard) verlangt jeden Filter; `any` mindestens einen. Ohne Filter passen alle Notizen im Bereich. |
 | `sort` | `field`: `$title`, `$created` oder `$updated`; `direction`: `asc` oder `desc`. Standard: zuletzt geändert, absteigend. |
 | `columns` | Anzuzeigende Felder, je eines als eingerückter Listeneintrag. Ohne Spalten zeigt die Abfrage eine Liste verlinkter Titel. |
-| `limit` | 1–100 Ergebnisse, Standard 25. Ein Hinweis zeigt, dass weitere Notizen passen. Grenze die Filter ein, um sie zu sehen. |
+| `limit` | 1–100, Standard 25. In Book und im Editor legt `limit` die Zeilen pro Seite fest, höchstens 20. Passen mehr Notizen, zeigen die Seitenknöpfe unter der Liste alle; die Liste behält ihre Höhe. Book merkt sich die Seite in der Adresse. Ein PDF zeigt die ersten `limit` Zeilen und wie viele Notizen passen. |
 
 Eine Abfrage hat höchstens 32 Filter und 16 verschiedene Spalten. Eine Seite hat höchstens 20 Abfrageblöcke. Listen in Filtern verwenden Inline-Syntax wie `[active, draft]` mit 1–100 Werten. Eine Filterzeichenfolge hat höchstens 2.000 Zeichen. Setze Listenwerte mit Kommas in Anführungszeichen, etwa `["Sales, Europe", Support]`.
 

@@ -62,6 +62,15 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Elementereignisse lesen",
           description:
             "Berechtigte Änderungen an Aufgaben und Terminen eines Space lesen, neueste zuerst. Optional auf ein Element begrenzen. Kommentare und gelöschte Elemente werden ausgelassen. Dem Cursor folgen.",
+          input: {
+            space: "Öffentliche ID des Space.",
+            item: "Optional auf ein Element in diesem Space begrenzen.",
+            timeZone: "IANA-Zeitzone für die Datumsanzeige; ohne Angabe gilt die Zeitzone der Installation.",
+            before: "Nur Ereignisse, deren letztes Auftreten vor diesem ISO-Zeitpunkt liegt.",
+            after: "Nur Ereignisse, deren letztes Auftreten nach diesem ISO-Zeitpunkt liegt.",
+            cursor: "Cursor der vorherigen Seite.",
+            limit: "Höchstzahl der Ergebnisse von 1 bis 100; Standard ist 50.",
+          },
         },
         "template.list": {
           title: "Vorlagen auflisten",

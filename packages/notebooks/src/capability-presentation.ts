@@ -24,6 +24,14 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Notizereignisse lesen",
           description:
             "Berechtigte Änderungen an Notizen eines Notizbuchs lesen, neueste zuerst. Optional auf eine Notiz begrenzen. Kommentare und gelöschte Notizen werden ausgelassen. Dem Cursor folgen.",
+          input: {
+            notebook: "Öffentliche ID des Notizbuchs.",
+            item: "Optional auf eine Notiz in diesem Notizbuch begrenzen.",
+            before: "Nur Ereignisse, deren letztes Auftreten vor diesem ISO-Zeitpunkt liegt.",
+            after: "Nur Ereignisse, deren letztes Auftreten nach diesem ISO-Zeitpunkt liegt.",
+            cursor: "Cursor der vorherigen Seite.",
+            limit: "Höchstzahl der Ergebnisse von 1 bis 100; Standard ist 50.",
+          },
         },
         "notebook.browse": {
           title: "Notizbuch auswählen",
