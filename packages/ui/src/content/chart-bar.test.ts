@@ -99,6 +99,39 @@ describe("bar chart labels", () => {
     expect(empty.svg).toContain("stdlib-chart-empty-text");
   });
 
+  test("values too wide for the rows give way to a value axis instead of reversing the bars", () => {
+    const usd = new Intl.NumberFormat("en", { style: "currency", currency: "USD" });
+    const { svg } = draw({
+      data: [
+        { label: "Northwestern coastal region", value: 1_234_567_890.12 },
+        { label: "Eastern uplands", value: -1_234_567_890.12 },
+      ],
+      valueFormat: (value) => `${usd.format(value)} gross`,
+    });
+    expect(texts(svg, "stdlib-chart-bar-value")).toEqual([]);
+    expect(svg.match(/class="stdlib-chart-tick-label"/g)?.length).toBeGreaterThan(1);
+    const bars = [...svg.matchAll(/class="stdlib-chart-bar[^"]*" x="([\d.]+)" y="[\d.]+" width="([\d.]+)"/g)].map((match) => [Number(match[1]), Number(match[2])]);
+    const zero = Number(/class="stdlib-chart-axis" x1="([\d.]+)"/.exec(svg)?.[1]);
+    expect(bars[0]![0]).toBeCloseTo(zero, 1);
+    expect(bars[1]![0] + bars[1]![1]).toBeCloseTo(zero, 1);
+    expect(bars.every(([, width]) => width! > 40)).toBe(true);
+  });
+
+  test("printed negative column values stay above the category labels", () => {
+    const { layout, svg } = draw({ data: [{ label: "A", value: -10 }, { label: "B", value: -5 }] });
+    expect(layout).toBe("columns");
+    const baseline = (name: string) => [...svg.matchAll(new RegExp(`class="[^"]*${name}[^"]*" x="[\\d.]+" y="([\\d.]+)"`, "g"))].map((match) => Number(match[1]));
+    const values = baseline("stdlib-chart-bar-value");
+    expect(values).toHaveLength(2);
+    // 11px text: a value's baseline sits a full line above the top of the category labels.
+    for (const value of values) expect(value).toBeLessThanOrEqual(Math.min(...baseline("stdlib-chart-category-label")) - 11);
+  });
+
+  test("an explicit linear domain must contain the zero line, like every value", () => {
+    expect(() => draw({ data: [{ label: "A", value: 10 }], yAxis: { domain: [5, 15] } })).toThrow(RangeError);
+    expect(() => draw({ data: [{ label: "A", value: 10 }], yAxis: { domain: [0, 15] } })).not.toThrow();
+  });
+
   test("a measured host lays labels out for its own width", () => {
     const data = Array.from({ length: 6 }, (_, index) => ({ label: `Region ${index}`, value: index }));
     expect(barChartLayout({ data }).layout).toBe("rows");

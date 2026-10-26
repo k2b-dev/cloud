@@ -95,7 +95,8 @@ function drawChart(options: StoredChart, locale: string, width: number, height: 
     let svg: string;
     switch (mapped.kind) {
       case "bar": {
-        const layout = barChartLayout(mapped, width);
+        // The title and subtitle take height too: lay out exactly what is drawn.
+        const layout = barChartLayout({ ...mapped, ...common }, width);
         svg = renderBarChartSvg({ ...mapped, ...common, height: layout.layout === "rows" ? layout.height : (options.height ?? height) });
         break;
       }

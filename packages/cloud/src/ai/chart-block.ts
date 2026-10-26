@@ -337,7 +337,8 @@ export function cloudAiChartRenderOptions(
           data: input.data,
           xAxis: input.xAxis,
           yAxis: axis(yAxis, options.formats?.y ?? format.tick),
-          valueFormat: format.value,
+          // A host's own function format writes printed values like its ticks and table cells.
+          valueFormat: options.formats?.value ?? options.formats?.y ?? format.value,
           colorByBar: input.colorByBar,
           showValues: input.showValues,
           legend: options.legend === "outside" ? false : input.legend,

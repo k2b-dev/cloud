@@ -61,7 +61,8 @@ const fixtures = {
 // SHA-256 of JSON.stringify(prepareChartSnapshot(...)), captured from origin/main
 // (6c7205814c51a932a1c0f5a1ac09318986699729), before changing Chart's default inspection. Fixed numeric inputs, no clock or random data.
 const baseline: Record<string, string> = {
-  bar: "e3fbc106521ebc300a6496689f45987fc684d88866dd382f9c9da869feb4607e",
+  // Bar charts draw with @k2b/ui's own renderer since every category keeps its label and printed value.
+  bar: "7ea94046d06595a7c9e61c27a4f75298b71f3b6cfce6e11f67754c4039b423cb",
   line: "e189323e0c3c48cc5a49be8fb797a6e50b8b3ab51f490c33d4d6b10f995a7047",
   lineWithGap: "613b883fc561e8dd0e80f5a77e864d0665abaf40eb1f9833372f7b0b0a447ce3",
   stateTimeline: "0f488aed673002ebaf4584d8ed3bdd1d86dc150578786e9a0f90ecf6b9d3627d",

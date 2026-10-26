@@ -667,6 +667,14 @@ describe("richer chart contracts", () => {
       expect(cloudAiChartMarks(parse(input))).toBe(input.kind === "gauge" ? 1 : 3);
   });
 
+  test("a host's y format also writes the values printed at bars", () => {
+    const input = parse({ kind: "bar", title: "B", data: [{ label: "A", value: 12 }] });
+    const options = cloudAiChartRenderOptions(input, "en", { width: 480, formats: { y: (value) => `${value} USD` } });
+    if (options.kind !== "bar") throw new Error("Expected bar");
+    const svg = renderBarChartSvg({ ...options, width: 480, height: barChartLayout(options).height });
+    expect(/class="stdlib-chart-bar-value"[^>]*>([^<]*)</.exec(svg)?.[1]).toBe("12 USD");
+  });
+
   test("pixel-exact width uses full label room instead of narrow-column scaling", () => {
     const input = parse({
       kind: "bar",

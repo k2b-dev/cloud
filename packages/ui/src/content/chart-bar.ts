@@ -64,15 +64,17 @@ const BAR_MAX = 20;
 const COLUMN_MAX = 40;
 const GAP_PX = 6;
 const LEGEND_ROW = 20;
+/** Rows keep at least this share of the narrowest chart for their bars; wider values go to the tooltip and table. */
+const MIN_PLOT_SHARE = 0.3;
 
 const narrow = (opts: BarChartOptions) => opts.displayWidth ?? NARROW_PX;
 const fmt = (value: number) => (Number.isFinite(value) ? `${Math.round(value * 100) / 100}` : "0");
 
-/** Estimated width of `text` at `size` pixels in the UI sans font; a little wide on purpose. */
+/** Estimated width of `text` at `size` pixels in the UI sans font with tabular figures; a little wide on purpose. */
 export const chartTextWidth = (text: string, size = FONT_PX): number => {
   let em = 0;
   for (const char of text) {
-    if (/[\s.,:;!|'’il1Ijft()[\]-]/.test(char)) em += 0.34;
+    if (/[\s.,:;!|'’ilIjft()[\]-]/.test(char)) em += 0.34;
     else if (/[MWmw@%]/.test(char)) em += 0.86;
     else if (/[A-Z0-9#$€&]/.test(char)) em += 0.66;
     else if (char.codePointAt(0)! > 0x2e80) em += 1;
@@ -122,7 +124,8 @@ const valueScale = (values: number[], axis: AxisOptions | undefined, nice: boole
     const [lo, hi] = axis.domain;
     if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo >= hi || (log && lo <= 0))
       throw new RangeError("Chart axis domain must have finite increasing bounds (positive for log scales)");
-    if (values.some((value) => (!log || value > 0) && (value < lo || value > hi)))
+    // Bars rest on zero, so a linear domain must contain it like every value.
+    if ((log ? values : [...values, 0]).some((value) => (!log || value > 0) && (value < lo || value > hi)))
       throw new RangeError("Chart axis domain must contain all plotted values and bounds");
     if (log) return { domain: [lo, hi], ticks: niceLogTicks(lo, hi).ticks.filter((tick) => tick >= lo && tick <= hi), log };
     const step = niceStep(hi - lo, axis.ticks ?? 5);
@@ -202,17 +205,27 @@ const columnGeometry = (opts: BarChartOptions, finite: Plan["finite"], width: nu
   const slotPx = (x1 - x0) / Math.max(1, finite.length) / units;
   const format = valueFormat(opts);
   const valuesFit = finite.every(({ item }) => chartTextWidth(format(item.value)) + 2 <= slotPx);
-  return { x0, x1, y0, y1, scale, valuesFit, legendRows };
+  const printValues = opts.showValues ?? valuesFit;
+  // A printed negative value hangs below its bar: the plot ends a line above the category labels.
+  const plotBottom = y1 - (printValues && values.some((value) => value < 0) ? 14 : 0);
+  return { x0, x1, y0, y1, plotBottom, scale, valuesFit, printValues, legendRows };
 };
 
 const rowGeometry = (opts: BarChartOptions, finite: Plan["finite"], width: number, header: number) => {
+  const printed = rowGeometryWith(opts, finite, width, header, opts.showValues !== false);
+  // Values too wide to leave the bars room stay in the tooltip and table; a value axis replaces them.
+  if (printed.showValues && (printed.x1 - printed.x0) / (width / narrow(opts)) < narrow(opts) * MIN_PLOT_SHARE)
+    return rowGeometryWith(opts, finite, width, header, false);
+  return printed;
+};
+
+const rowGeometryWith = (opts: BarChartOptions, finite: Plan["finite"], width: number, header: number, showValues: boolean) => {
   const units = width / narrow(opts);
   const maxLabelPx = narrow(opts) * LABEL_SHARE;
   const labels = finite.map(({ item }) => wrapLabel(item.label, maxLabelPx, 2));
   const twoLines = labels.some((label) => label.lines.length > 1);
   const labelPx = Math.min(maxLabelPx, Math.max(0, ...labels.flatMap((label) => label.lines.map((line) => chartTextWidth(line)))));
   const format = valueFormat(opts);
-  const showValues = opts.showValues !== false;
   const positivePx = showValues ? Math.max(0, ...finite.filter(({ item }) => item.value >= 0).map(({ item }) => chartTextWidth(format(item.value)))) : 0;
   const negativePx = showValues ? Math.max(0, ...finite.filter(({ item }) => item.value < 0).map(({ item }) => chartTextWidth(format(item.value)))) : 0;
   const refLabels = (opts.references ?? []).some((ref) => (ref.axis ?? "y") === "y" && ref.label);
@@ -276,9 +289,9 @@ const renderColumns = (opts: BarChartOptions, plan: Plan, width: number, height:
   const g = columnGeometry(opts, finite, width, height);
   const ticks = tickFormat(opts);
   const format = valueFormat(opts);
-  const showValues = opts.showValues ?? g.valuesFit;
+  const showValues = g.printValues;
   const parts: string[] = [renderHeader(opts, width)];
-  const y = (value: number) => project(g.scale, value, [g.y1, g.y0]);
+  const y = (value: number) => project(g.scale, value, [g.plotBottom, g.y0]);
   if (opts.yAxis?.label)
     parts.push(`<text class="stdlib-chart-axis-label" x="0" y="${fmt(g.y0 - 8)}" text-anchor="start">${escapeXml(opts.yAxis.label)}</text>`);
   for (const tick of g.scale.ticks) {
@@ -294,7 +307,7 @@ const renderColumns = (opts: BarChartOptions, plan: Plan, width: number, height:
         parts.push(`<line class="stdlib-chart-minor-tick" x1="${fmt(g.x0 - 3)}" y1="${fmt(ty)}" x2="${fmt(g.x0)}" y2="${fmt(ty)}"/>`);
       }
     });
-  const baseline = g.scale.log ? g.y1 : y(0);
+  const baseline = g.scale.log ? g.plotBottom : y(0);
   parts.push(`<line class="stdlib-chart-axis" x1="${fmt(g.x0)}" y1="${fmt(baseline)}" x2="${fmt(g.x1)}" y2="${fmt(baseline)}"/>`);
   const slot = (g.x1 - g.x0) / finite.length;
   const barWidth = Math.min(slot * 0.8, COLUMN_MAX);
