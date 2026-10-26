@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -97,6 +97,7 @@ let requestsEnabled = false;
 
 const spies: Array<{ mockRestore(): void }> = [];
 beforeEach(() => {
+  setSystemTime(new Date(now));
   user = localUser;
   freeIpaEnabled = false;
   requestsEnabled = false;
@@ -123,6 +124,11 @@ beforeEach(() => {
     ),
     spyOn(services.accountsAppService.accountRequest, "getPendingForUser").mockResolvedValue(null as never),
     spyOn(services.accountsAppService.accountRequest, "isEnabled").mockImplementation(async () => requestsEnabled),
+    spyOn(services.accountsAppService.user.group, "list").mockImplementation(async ({ recursive }) => {
+      const direct = user.memberofGroup.filter((name) => name !== "internal-fixture-group");
+      const items = recursive ? [...direct, "inherited-fixture-team"] : direct;
+      return { items, total: items.length, page: 1, perPage: items.length, hasNext: false };
+    }),
     spyOn(services.serviceAccountCredentials, "listForDelegatedUser").mockResolvedValue([
       {
         id: "00000000-0000-4000-8000-000000000101",
@@ -236,6 +242,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
+  setSystemTime();
 });
 
 let browser: Browser;
@@ -256,7 +263,7 @@ afterAll(async () => {
 });
 
 /** The server-rendered content of one account page. */
-const content = async (path: Path, locale: "en" | "de") => {
+const content = async (path: Path, locale: "en" | "de", query = "") => {
   const app = new Hono()
     .use("*", async (c, next) => {
       c.set("user" as never, user as never);
@@ -264,7 +271,7 @@ const content = async (path: Path, locale: "en" | "de") => {
       await next();
     })
     .get(path, ...pages[path]);
-  const response = await app.request(`${origin}${path}`, { headers: { Cookie: `cloud.locale=${locale}` } });
+  const response = await app.request(`${origin}${path}${query}`, { headers: { Cookie: `cloud.locale=${locale}` } });
   expect(response.status).toBe(200);
   return /<body[^>]*>([\s\S]*)<\/body>/.exec(await response.text())![1]!;
 };
@@ -354,6 +361,31 @@ const measure = async (view: View, path: Path, locale: "en" | "de", dark = false
 };
 
 describe("account pages in a browser", () => {
+  test("access memberships omit internal groups from the session projection", async () => {
+    user = { ...localUser, memberofGroup: [...localUser.memberofGroup, "internal-fixture-group"] };
+    const html = await content("/me/access", "en");
+    expect(html).not.toContain(">internal-fixture-group<");
+    expect(html).not.toContain("search=internal-fixture-group");
+    expect(html).toContain("team-design");
+    expect(services.accountsAppService.user.group.list).toHaveBeenCalledWith({
+      userId: user.id,
+      recursive: false,
+    });
+  });
+
+  test("inherited memberships remain reachable when all direct groups are internal", async () => {
+    user = { ...localUser, memberofGroup: ["internal-fixture-group"] };
+    const direct = await content("/me/access", "en");
+    expect(direct).toContain('href="/me/access?groups=all"');
+    expect(direct).not.toContain(">internal-fixture-group<");
+    expect(direct).not.toContain(">inherited-fixture-team<");
+
+    const inherited = await content("/me/access", "en", "?groups=all");
+    expect(inherited).toContain(">inherited-fixture-team<");
+    expect(inherited).not.toContain(">internal-fixture-group<");
+    expect(inherited).toContain('href="/me/access"');
+  });
+
   test("mark the current account section with Core's navigation fill and ink, in light and dark", async () => {
     for (const dark of [false, true])
       for (const path of tabs) {
