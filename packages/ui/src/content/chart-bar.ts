@@ -3,7 +3,6 @@ import {
   type BarItem,
   chartDatumSvg,
   computeDomain,
-  bar as emptyBarChart,
   escapeXml,
   extendDomainToNice,
   mapLog,
@@ -479,7 +478,12 @@ const renderRows = (opts: BarChartOptions, plan: Plan, width: number, inspect: b
  */
 export const renderBarChartSvg = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }): string => {
   const plan = barChartPlan(opts, opts.width);
-  if (!plan.finite.length) return emptyBarChart({ data: [], width: opts.width, height: opts.height, className: opts.className });
+  // The empty drawing of stdlib's bar chart, written here so bundles leave out stdlib's whole bar renderer.
+  if (!plan.finite.length)
+    return svgRoot(
+      { width: opts.width, height: opts.height, className: opts.className },
+      `<text class="stdlib-chart-empty-text" x="${fmt(opts.width / 2)}" y="${fmt(opts.height / 2)}" text-anchor="middle" dominant-baseline="middle">no data</text>`,
+    );
   const body =
     plan.layout === "rows"
       ? renderRows(opts, plan, opts.width, opts.inspect ?? false)

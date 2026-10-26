@@ -4,7 +4,7 @@
 // browser code that cannot work here into clear errors. Bundled to an IIFE.
 import "./no-eval";
 import "./no-hints";
-import { cloudAiChartMarkKey } from "@k2b/cloud/ai/browser";
+import { cloudAiChartMarkKey } from "@k2b/cloud/ai/app-frame";
 import { type ChartInspection, type ChartKind, type ChartTooltip, inspectChart, isChartDatum } from "@k2b/ui/chart-inspection";
 import { LIMITS } from "../contracts";
 import { createBridge } from "../runtime/bridge";
