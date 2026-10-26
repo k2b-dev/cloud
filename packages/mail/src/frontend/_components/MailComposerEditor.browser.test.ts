@@ -149,24 +149,24 @@ describe("Mail composer recovery", () => {
         await page.goto(server.url.href);
         if (label === "tablet dark") await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
         await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null, seed: true }));
-        const editor = page.locator("textarea").first();
+        const editor = page.getByRole("textbox", { name: "Message body", exact: true });
         await editor.fill("First autosave text");
-        await editor.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(6, 6));
+        await page.evaluate(() => window.setComposerCaret(6));
         await page.clock.fastForward(800);
         await page.waitForURL(/Draft1/);
         await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("button.mail-composer-signature")?.disabled);
         expect(
-          await editor.evaluate((element: HTMLTextAreaElement) => ({
-            focused: document.activeElement === element,
-            caret: element.selectionStart,
-          })),
+          await page.evaluate(() => {
+            const { focused, caret } = window.composerEditorState();
+            return { focused, caret };
+          }),
         ).toEqual({ focused: true, caret: 6 });
         await page.evaluate(() => window.expireComposerSession());
         await editor.fill("Preserved after sign-in expires");
         await page.clock.fastForward(800);
         const signIn = page.getByRole("button", { name: "Sign in again", exact: true });
         await signIn.waitFor();
-        expect(await editor.inputValue()).toBe("Preserved after sign-in expires");
+        expect(await page.evaluate(() => window.composerEditorState().source)).toBe("Preserved after sign-in expires");
         const returnUrl = page.url();
         await Promise.all([page.waitForEvent("load"), signIn.click()]);
         expect(page.url()).toBe(returnUrl);
@@ -174,7 +174,8 @@ describe("Mail composer recovery", () => {
         await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null }));
         await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("button.mail-composer-signature")?.disabled);
         await page.getByRole("tab", { name: "Write", exact: true }).click();
-        expect(await page.locator("textarea").first().inputValue()).toBe("Preserved after sign-in expires");
+        await page.getByRole("textbox", { name: "Message body", exact: true }).waitFor();
+        expect(await page.evaluate(() => window.composerEditorState().source)).toBe("Preserved after sign-in expires");
       } finally {
         await page.context().close();
       }
@@ -187,16 +188,18 @@ describe("Mail composer recovery", () => {
       await page.goto(server.url.href);
       await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null, seed: true }));
       await page.evaluate(() => window.expireComposerSession());
-      await page.locator("textarea").first().fill("Preserved before first save");
+      await page.getByRole("textbox", { name: "Message body", exact: true }).fill("Preserved before first save");
       await page.clock.fastForward(800);
       const signIn = page.getByRole("button", { name: "Sign in again", exact: true });
       await signIn.waitFor();
       await Promise.all([page.waitForEvent("load"), signIn.click()]);
       await page.evaluate(() => window.mountComposer({ locale: "en", intent: "new", signatureTemplateId: null, seed: true }));
-      expect(await page.locator("textarea").first().inputValue()).toBe("Preserved before first save");
+      await page.getByRole("textbox", { name: "Message body", exact: true }).waitFor();
+      expect(await page.evaluate(() => window.composerEditorState().source)).toBe("Preserved before first save");
       await page.clock.fastForward(800);
       await page.waitForURL(/Draft1/);
-      expect(await page.locator("textarea").first().inputValue()).toBe("Preserved before first save");
+      await page.getByRole("textbox", { name: "Message body", exact: true }).waitFor();
+      expect(await page.evaluate(() => window.composerEditorState().source)).toBe("Preserved before first save");
     } finally {
       await page.context().close();
     }

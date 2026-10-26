@@ -1,3 +1,4 @@
+import { EditorView } from "@codemirror/view";
 import { LocaleProvider, type PanesLayout } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
@@ -28,6 +29,8 @@ export type MailComposerHarnessOptions = { locale: "en" | "de"; intent: DraftInt
 declare global {
   interface Window {
     expireComposerSession: () => void;
+    composerEditorState: () => { source: string; focused: boolean; caret: number };
+    setComposerCaret: (position: number) => void;
     mountComposer: (options: MailComposerHarnessOptions) => void;
     mountComposerEditor: (options: MailComposerEditorHarnessOptions) => void;
     /** Replaces the preview, as a new compose preview response does. */
@@ -186,6 +189,21 @@ window.mountComposer = (options) => {
   const host = document.getElementById("root");
   if (!host) throw new Error("Missing harness root");
   document.documentElement.lang = options.locale;
+  const editor = () => {
+    const host = document.querySelector<HTMLElement>(".cm-editor");
+    const view = host ? EditorView.findFromDOM(host) : null;
+    if (!view) throw new Error("Composer editor is not ready");
+    return view;
+  };
+  window.composerEditorState = () => {
+    const view = editor();
+    return { source: view.state.doc.toString(), focused: view.hasFocus, caret: view.state.selection.main.head };
+  };
+  window.setComposerCaret = (position) => {
+    const view = editor();
+    view.dispatch({ selection: { anchor: position } });
+    view.focus();
+  };
   const draft = { ...initialDraft, intent: options.intent, signatureTemplateId: options.signatureTemplateId };
   Object.defineProperty(window, "WebSocket", { configurable: true, value: OfflineWebSocket });
   let expired = false;
