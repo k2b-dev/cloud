@@ -629,6 +629,29 @@ describe("shared Mail text editor", () => {
     ["desktop", desktop],
     ["phone", phone],
   ] as const) {
+    test(`loads one labeled standalone plain editor and reports its edits on ${label}`, async () => {
+      const page = await (await browser.newContext(context)).newPage();
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      try {
+        await page.goto(server.url.href);
+        await page.evaluate(() => window.mountComposerEditor({ locale: "en", body: "Plain body", format: "plain" }));
+        const editor = page.getByRole("textbox", { name: "Message body", exact: true });
+        await editor.waitFor();
+        expect(await editor.count()).toBe(1);
+        expect(await editor.getAttribute("contenteditable")).toBe("true");
+        expect(await page.evaluate(() => window.editorSource())).toBe("Plain body");
+        expect(await page.locator('.k2b-placeholder[data-state="loading"]').count()).toBe(0);
+        expect(await page.getByRole("tablist").count()).toBe(0);
+        await editor.fill("Edited plain body");
+        expect(await page.evaluate(() => window.editorSource())).toBe("Edited plain body");
+        expect(await page.evaluate(() => window.editorBody())).toBe("Edited plain body");
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    });
+
     test(`edits table cells and preserves the same text across source and plain views on ${label}`, async () => {
       const page = await (await browser.newContext(context)).newPage();
       const initial = "Before\n\n| Item | Cost |\n| --- | ---: |\n| Paper | 4 |\n\nAfter";
@@ -642,9 +665,13 @@ describe("shared Mail text editor", () => {
         const expected = initial.replace("Paper", "Ink");
         expect(await page.evaluate(() => window.editorBody())).toBe(expected);
         await page.getByRole("radio", { name: "Markdown", exact: true }).click();
+        expect(await page.evaluate(() => window.editorSource())).toBe(expected);
+        expect(await page.evaluate(() => window.editorBody())).toBe(expected);
         expect(await page.locator(".cm-content").innerText()).toBe(expected);
         await page.evaluate(() => window.setEditorFormat("plain"));
         await page.waitForSelector('.k2b-text-editor[data-mode="plain"]');
+        expect(await page.evaluate(() => window.editorSource())).toBe(expected);
+        expect(await page.evaluate(() => window.editorBody())).toBe(expected);
         expect(await page.locator(".cm-content").innerText()).toBe(expected);
         expect(await page.locator(".k2b-ste-table").count()).toBe(0);
         await page.evaluate(() => window.setEditorEditable(false));

@@ -193,7 +193,7 @@ suite("Mail document lifecycle boundaries", () => {
     value(await readDraftDocument(target));
     const original = await sql.begin((db) => queueDraftProjectionInTransaction({ db, draftId: target.draftId }));
     expect(original).not.toBeNull();
-    await sql`UPDATE mail.draft_provider_snapshots SET state='appending',provider_effect_started_at=now() WHERE id=${original}::uuid`;
+    await sql`UPDATE mail.draft_provider_snapshots SET state='appending',attempt=1,provider_effect_started_at=now() WHERE id=${original}::uuid`;
     for (let index = 0; index < 10; index++) {
       // Provider preflight failures must not accumulate old full bodies either.
       await sql`UPDATE mail.draft_provider_snapshots SET state='needs_attention'
@@ -204,11 +204,12 @@ suite("Mail document lifecycle boundaries", () => {
       });
     }
     const rows = await sql<
-      { id: string; state: string; content_snapshot: unknown }[]
-    >`SELECT id,state,content_snapshot FROM mail.draft_provider_snapshots
+      { id: string; state: string; attempt: number; provider_effect_started_at: Date | null; content_snapshot: unknown }[]
+    >`SELECT id,state,attempt,provider_effect_started_at,content_snapshot FROM mail.draft_provider_snapshots
       WHERE draft_id=${target.draftId}::uuid AND direction='export' ORDER BY cloud_revision`;
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ id: original, state: "appending" });
+    expect(rows[0]).toMatchObject({ id: original, state: "appending", attempt: 1 });
+    expect(rows[0]?.provider_effect_started_at).toBeInstanceOf(Date);
     expect(rows[1]?.state).toBe("prepared");
     expect(draftProviderContentSchema.parse(rows[1]?.content_snapshot).body).toBe("Input 9");
   });

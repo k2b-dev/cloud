@@ -36,11 +36,11 @@ export default function MailComposerEditor(props: {
   const t = () => mailComposerMessages.resolve([locale()]).t;
   const hasHistory = () => props.history !== undefined;
   const usesPanes = () => props.format() === "markdown" || hasHistory();
-  const [editorModule, setEditorModule] = createSignal<typeof import("./MailTextEditor.client")>();
+  const [editorModule, setEditorModule] = createSignal<typeof import("./MailTextEditor")>();
   const [editorFailed, setEditorFailed] = createSignal(false);
   const loadEditor = async () => {
     setEditorFailed(false);
-    const loaded = await importOnDemand(() => import("./MailTextEditor.client"));
+    const loaded = await importOnDemand(() => import("./MailTextEditor"));
     if (loaded) setEditorModule(loaded);
     else setEditorFailed(true);
   };

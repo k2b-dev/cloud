@@ -124,8 +124,7 @@ import {
   draftTableActionRequestSchema,
   draftTableActionResponseSchema,
   MAX_DRAFT_DOCUMENT_PAYLOAD,
-} from "../lib/draft-document-contract";
-import { requireDraftDocumentAccount } from "../lib/draft-document-identity";
+} from "../draft-document-contracts";
 import { MAX_MAIL_WORKSPACE_HREF_LENGTH } from "../search-url";
 import {
   createMailProtectedIdentityInputSchema,
@@ -194,6 +193,7 @@ import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
 import contactDirectoryRoutes from "./contact-directory";
+import { requireDraftDocumentAccount } from "./draft-document-identity";
 import { upgradeMailDraftDocumentSocket } from "./draft-document-socket";
 import {
   internalInput,

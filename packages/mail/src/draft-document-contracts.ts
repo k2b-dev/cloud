@@ -1,6 +1,6 @@
 import { TextTableActionReceiptSchema, TextTableActionRequestSchema, TextTableFocusSchema } from "@k2b/cloud/browser/shared-text";
 import { z } from "zod";
-import { draftEditableContentInputSchema } from "../contracts";
+import { draftEditableContentInputSchema } from "./contracts";
 
 // Query transport also binds browser WebSocket handshakes, which cannot set custom headers.
 export const DRAFT_DOCUMENT_EXPECTED_USER_QUERY = "expectedUserId";

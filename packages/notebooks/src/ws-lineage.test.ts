@@ -71,6 +71,7 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     contentMd: null,
   });
   mock.module("@k2b/cloud/server", () => ({
+    guardAppAccessSocket: async (_c: Context, _appId: string, events: WSEvents) => events,
     getLocale: () => "en",
     auth: {
       session: {

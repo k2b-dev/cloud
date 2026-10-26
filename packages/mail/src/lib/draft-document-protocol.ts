@@ -2,7 +2,7 @@ import type { SharedTextProviderMessage } from "@k2b/cloud/browser/shared-text";
 import { i18n } from "@k2b/stdlib";
 import { z } from "zod";
 import { ResourceShortIdSchema } from "../contracts";
-import { draftDocumentUpdateSchema, draftGenerationSchema, MAX_DRAFT_DOCUMENT_PAYLOAD } from "./draft-document-contract";
+import { draftDocumentUpdateSchema, draftGenerationSchema, MAX_DRAFT_DOCUMENT_PAYLOAD } from "../draft-document-contracts";
 
 /** Notebooks' existing transient cursor envelope, separate from the 8 MB document envelope. */
 export const MAX_DRAFT_AWARENESS_PAYLOAD = 256_000;

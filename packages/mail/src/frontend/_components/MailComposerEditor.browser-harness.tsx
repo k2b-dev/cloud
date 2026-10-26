@@ -17,7 +17,12 @@ import MailComposerEditor from "./MailComposerEditor";
 import { readMailDraftSeed, storeMailDraftSeed } from "./mail-draft-seed-store";
 import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 
-export type MailComposerEditorHarnessOptions = { locale: "en" | "de"; body?: string; editorActive?: boolean };
+export type MailComposerEditorHarnessOptions = {
+  locale: "en" | "de";
+  body?: string;
+  format?: "plain" | "markdown";
+  editorActive?: boolean;
+};
 export type MailComposerHarnessOptions = { locale: "en" | "de"; intent: DraftIntent; signatureTemplateId: string | null; seed?: boolean };
 
 declare global {
@@ -30,6 +35,7 @@ declare global {
     /** Replaces the previewed HTML, as a compose preview response with a signature logo does. */
     setPreviewHtml: (html: string) => void;
     editorBody: () => string;
+    editorSource: () => string | null;
     replaceEditorBody: (body: string) => void;
     setEditorFormat: (format: "plain" | "markdown") => void;
     setEditorEditable: (editable: boolean) => void;
@@ -53,9 +59,10 @@ window.mountComposerEditor = (options) => {
   const [panes, setPanes] = createSignal<PanesLayout>(
     options.editorActive ? { version: 2, root: { type: "group", items: ["editor", "preview"], active: "editor" } } : layout,
   );
-  const [format, setFormat] = createSignal<"plain" | "markdown">("markdown");
+  const [format, setFormat] = createSignal<"plain" | "markdown">(options.format ?? "markdown");
   const [editable, setEditable] = createSignal(true);
   window.editorBody = body;
+  window.editorSource = () => null;
   window.replaceEditorBody = setBody;
   window.setEditorFormat = setFormat;
   window.setEditorEditable = setEditable;
@@ -77,7 +84,9 @@ window.mountComposerEditor = (options) => {
             previewError={() => undefined}
             previewPending={() => false}
             onRetryPreview={() => undefined}
-            onEditorReady={() => undefined}
+            onEditorReady={(editor) => {
+              window.editorSource = () => editor.view.state.doc.toString();
+            }}
           />
         </div>
       </LocaleProvider>

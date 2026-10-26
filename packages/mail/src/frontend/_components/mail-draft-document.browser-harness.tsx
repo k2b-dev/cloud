@@ -2,7 +2,7 @@ import { Button, LocaleProvider, TextInput } from "@k2b/ui";
 import { createSignal, For, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 import type { DraftEditableContent, MailDraft } from "../../contracts";
-import MailTextEditor from "./MailTextEditor.client";
+import MailTextEditor from "./MailTextEditor";
 import { createMailDraftSession } from "./mail-draft-session";
 
 declare global {

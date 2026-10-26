@@ -122,6 +122,12 @@ and checked cards.
 | Selected tone or emoji group | `EmojiPicker` | `k2b-emoji-picker` |
 | Pressed toolbar button | `Toolbar` | `k2b-toolbar` |
 | Pressed formatting tool | `MarkdownEditor` | `k2b-markdown-editor` |
+| Selected table size | `TableSizePicker` | `k2b-ste-size-row` |
+| Enabled table header | `TextEditor` | `k2b-ste-header-choice` |
+
+`TextEditor` and `TableSizePicker` use the optional `@k2b/ui/text-editor`
+entry point. The header switch is a checked menu control; it is not a drop
+target.
 
 An application's main action may deliberately use its app accent through
 `--k2b-action-solid` and `--k2b-action-solid-hover`, scoped to that action.

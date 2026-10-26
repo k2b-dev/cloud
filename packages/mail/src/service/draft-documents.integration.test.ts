@@ -334,9 +334,19 @@ suite("Mail shared draft transaction store", () => {
       RETURNING id
     `;
     if (!conversation) throw new Error("Missing conversation");
-    await sql`UPDATE mail.drafts SET conversation_id = ${conversation.id}::uuid WHERE id = ${created.id}::uuid`;
+    const [source] = await sql<{ id: string }[]>`
+      INSERT INTO mail.message_contents (short_id, mailbox_id, subject, internal_date, content_hash)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Assigned draft', ${new Date("2026-01-01T12:00:00Z")}, ${"a".repeat(64)})
+      RETURNING id
+    `;
+    if (!source) throw new Error("Missing source message");
+    await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position)
+      VALUES (${conversation.id}::uuid, ${source.id}::uuid, 0)`;
+    await sql`UPDATE mail.drafts SET intent = 'reply', conversation_id = ${conversation.id}::uuid,
+      source_message_id = ${source.id}::uuid WHERE id = ${created.id}::uuid`;
     await sql`INSERT INTO mail.conversation_assignees (conversation_id, user_id) VALUES (${conversation.id}::uuid, ${users[3]}::uuid)`;
     const base = value(await read(created.id, assigned));
+    expect(base.durable.content).toEqual(created.content);
     await sql.begin(async (db) => {
       const locked = value(await lockDraftDocumentInTransaction({ db, context: assigned, mailboxId, draftId: created.id }));
       await db`DELETE FROM mail.conversation_assignees WHERE conversation_id = ${conversation.id}::uuid`;

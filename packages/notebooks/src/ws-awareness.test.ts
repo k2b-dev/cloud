@@ -30,6 +30,7 @@ if (process.env.NOTEBOOKS_WS_AWARENESS_CHILD !== "1") {
       await new Promise<void>((resolve) => config.signal?.addEventListener("abort", () => resolve(), { once: true }));
   };
   mock.module("@k2b/cloud/server", () => ({
+    guardAppAccessSocket: async (_c: Context, _appId: string, events: WSEvents) => events,
     getLocale: () => "en",
     auth: {
       session: {

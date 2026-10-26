@@ -18,15 +18,17 @@ const values = (rule: CssRule) => [...cssDeclarations(rule.body).values()].flat(
 const consumes = (hook: string) => rules.filter((rule) => values(rule).some((value) => value.includes(`var(${hook})`)));
 const nav = blocks(consumes("--k2b-app-workspace-selected"));
 const row = blocks(consumes("--k2b-row-selected"));
+// A dropdown menu control is not a drag-and-drop target.
+const isDropTarget = (rule: CssRule) => /drop(?!down)/.test(rule.selector);
 const control = blocks(
   rules.filter((rule) => {
-    if (rule.selector.includes("drop")) return false;
+    if (isDropTarget(rule)) return false;
     const background = ["background", "background-color"].flatMap((property) => cssDeclarations(rule.body).get(property) ?? []);
     const selected = /:checked|\[(?:aria-(?:pressed|selected|checked|current)|data-selected)=["']true["']\]|\.is-current\b/.test(
       rule.selector,
     );
     return (
-      background.some((value) => value === "var(--k2b-selected)" || value === "var(--k2b-action-solid)") &&
+      background.some((value) => ["var(--k2b-selected)", "var(--k2b-action-solid)", "var(--k2b-action)"].includes(value)) &&
       (selected || rule.selector === ".k2b-ui .k2b-button")
     );
   }),
@@ -35,14 +37,20 @@ const dropPaint = (rule: CssRule) =>
   ["background", "background-color", "box-shadow", "border-color"]
     .flatMap((property) => cssDeclarations(rule.body).get(property) ?? [])
     .some((value) => /var\(--k2b-(?:selected|action-solid|action)\s*[,)]/.test(value));
-const drop = blocks(rules.filter((rule) => rule.selector.includes("drop") && dropPaint(rule)));
+const drop = blocks(rules.filter((rule) => isDropTarget(rule) && dropPaint(rule)));
 const sorted = (names: Iterable<string>) => [...new Set(names)].sort();
 
-// Public @k2b/ui names and the folder whose index.ts exports them (actions, layout, content, ...).
+// Public @k2b/ui names from category indexes and declared optional entry points.
 const definedIn = new Map<string, string>();
+const publicEntries = Object.keys(JSON.parse(readFileSync(resolve(ui, "../package.json"), "utf8")).exports);
 for (const folder of readdirSync(ui, { withFileTypes: true })) {
-  const index = resolve(ui, folder.name, "index.ts");
-  if (!folder.isDirectory() || !existsSync(index)) continue;
+  if (!folder.isDirectory()) continue;
+  const index = existsSync(resolve(ui, folder.name, "index.ts"))
+    ? resolve(ui, folder.name, "index.ts")
+    : publicEntries.includes(`./${folder.name}`)
+      ? resolve(ui, `${folder.name}.ts`)
+      : undefined;
+  if (!index || !existsSync(index)) continue;
   for (const [, names] of readFileSync(index, "utf8").matchAll(/export\s*\{([^}]+)\}/g))
     for (const item of names!.split(",").map((part) => part.trim()))
       if (item && !item.startsWith("type ")) definedIn.set(item.split(/\s+as\s+/).at(-1)!, folder.name);
@@ -73,6 +81,16 @@ const table = (source: string, heading: string) => {
 };
 
 describe("color guide agrees with the shared CSS", () => {
+  test("editor size choices and the checked header switch are controls, not drop targets", () => {
+    expect(control.has("k2b-ste-size-row")).toBe(true);
+    expect(control.has("k2b-ste-header-choice")).toBe(true);
+    expect(drop.has("k2b-ste-size-row")).toBe(false);
+    expect(drop.has("k2b-ste-header-choice")).toBe(false);
+    expect(drop.has("k2b-drop-target")).toBe(true);
+    expect(definedIn.get("TextEditor")).toBe("text-editor");
+    expect(definedIn.get("TableSizePicker")).toBe("text-editor");
+  });
+
   test("navigation and selection-control tables split the navigation fill consumers", () => {
     const source = readPage();
     const navigation = table(source, "### Navigation fill");

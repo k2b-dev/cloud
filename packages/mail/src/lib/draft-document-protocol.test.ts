@@ -4,7 +4,7 @@ import { createTrustedTextAwareness, InvalidSharedTextAwarenessError } from "@k2
 import { encoding } from "@k2b/stdlib";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
-import { MAX_DRAFT_DOCUMENT_PAYLOAD } from "./draft-document-contract";
+import { MAX_DRAFT_DOCUMENT_PAYLOAD } from "../draft-document-contracts";
 import {
   decodeMailDraftDocumentMessage,
   MAIL_DRAFT_DOCUMENT_TERMINAL_CODES,

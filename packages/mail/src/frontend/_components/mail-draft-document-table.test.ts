@@ -6,7 +6,7 @@ import { findTables, gridLine } from "@k2b/ui/text-editor/model";
 import * as Y from "yjs";
 import type { z } from "zod";
 import { createStructuralFixture } from "../../../../../scripts/fixtures/shared-text-history";
-import { draftTableActionRequestSchema } from "../../lib/draft-document-contract";
+import { draftTableActionRequestSchema } from "../../draft-document-contracts";
 import {
   createMailDraftTableStructure,
   MAIL_EDITOR_MAX_LENGTH,

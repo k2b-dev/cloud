@@ -67,6 +67,7 @@ import { defaultSignatureTemplateId, type MailComposerSignatures } from "./mail-
 import { createMailComposerTransition } from "./mail-composer-transition";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
 import { confirmSharedDraftRecipients } from "./mail-draft-document-confirmation";
+import { mailDraftJournalKey } from "./mail-draft-journal";
 import { removeMailDraftSeed } from "./mail-draft-seed-store";
 import { createMailDraftSession } from "./mail-draft-session";
 import { formatMailRecipients, parseMailRecipients } from "./mail-recipient";
@@ -187,7 +188,7 @@ export default function MailComposer(props: {
     if (!props.initialSeed || !seedStorage) return;
     try {
       removeMailDraftSeed(seedStorage, props.mailboxId, props.initialSeed.id);
-      seedStorage.removeItem(draftSession.draftKey(props.initialSeed.id));
+      seedStorage.removeItem(mailDraftJournalKey(props.mailboxId, props.initialSeed.id));
     } catch {
       // Expired local seed cleanup must never block leaving the composer.
     }
@@ -1226,7 +1227,7 @@ export default function MailComposer(props: {
   const handleReadonlyAction = async () => {
     if (authenticationRequired()) {
       // The route policy takes this exact draft/seed URL through sign-in and back. The local
-      // journal survives the reload and is recovered after the new session acquires its lease.
+      // session checks that local edits can survive reloading before starting that navigation.
       try {
         setSigningIn(true);
         await prepareSignIn();

@@ -14,15 +14,15 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { z } from "zod";
 import { type DraftEditableContent, draftEditableContentInputSchema, draftSchema, type MailDraft } from "../contracts";
-import { DRAFT_BODY, draftRecipientConfirmation, readDraftDocument, writeLocalDraftHeaders } from "./draft-document";
-import { draftRecoveryRequestId } from "./draft-document-client-recovery";
 import {
   DRAFT_DOCUMENT_EXPECTED_USER_QUERY,
   draftDocumentSaveSchema,
   draftDocumentSessionSchema,
   draftGenerationSchema,
   MAX_DRAFT_DOCUMENT_PAYLOAD,
-} from "./draft-document-contract";
+} from "../draft-document-contracts";
+import { DRAFT_BODY, draftRecipientConfirmation, readDraftDocument, writeLocalDraftHeaders } from "./draft-document";
+import { draftRecoveryRequestId } from "./draft-document-client-recovery";
 import { decodeMailDraftDocumentMessage, MAIL_DRAFT_DOCUMENT_TERMINAL_CODES } from "./draft-document-protocol";
 
 export const mailSharedDraftMessages = i18n.define({
@@ -204,6 +204,7 @@ export async function openMailDraftDocumentClient(options: {
   onContent: (content: DraftEditableContent) => void;
   onDurable: (content: DraftEditableContent, revision: number) => void;
   onFrozen: () => void;
+  onAuthenticationRequired: () => void;
 }): Promise<MailDraftDocumentClient> {
   const t = () => mailSharedDraftMessages.resolve([options.locale()]).t;
   let deviceStorage: Storage | null;
@@ -247,6 +248,7 @@ export async function openMailDraftDocumentClient(options: {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!response.ok) {
+      if (response.status === 401) options.onAuthenticationRequired();
       const result: unknown = await response.json().catch(() => null);
       const message =
         result && typeof result === "object" && "message" in result && typeof result.message === "string" ? result.message : t().pending;
@@ -441,6 +443,7 @@ export async function openMailDraftDocumentClient(options: {
     const socketUrl = new URL(`${path}/socket?${accountQuery}`, window.location.href);
     socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
     const fatal = (error: SharedTextProviderError) => {
+      if (error.code === "SESSION_EXPIRED") options.onAuthenticationRequired();
       state.terminal = true;
       state.ready = false;
       state.connected = false;
@@ -693,6 +696,7 @@ export async function openMailDraftDocumentClient(options: {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
+        if (response.status === 401) options.onAuthenticationRequired();
         const result: unknown = await response
           .clone()
           .json()

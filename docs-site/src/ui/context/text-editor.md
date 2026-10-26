@@ -4,8 +4,25 @@
 cells. Switch to Markdown to see and edit the same source. Use it when a text
 field needs tables or a CodeMirror collaboration extension.
 
-Import this optional entry point only in the editor island. It keeps CodeMirror
-out of pages that use other UI components.
+## Use TextEditor
+
+Use the formatted view for editing prose and tables together. Choose
+`mode="plain"` for text without Markdown formatting, or `mode="source"` when
+the person needs the complete Markdown source. The application owns saving.
+`onChange` reports edits; it does not mean the server has saved them. Pass an
+honest `status` to show save or connection state.
+
+## Import
+
+Import this optional entry point in the editor's browser module. It keeps
+CodeMirror out of pages that use other UI components. Load that module when
+the editor is needed.
+
+```tsx
+import { TextEditor } from "@k2b/ui/text-editor";
+```
+
+## Example
 
 ```tsx
 import { TextEditor } from "@k2b/ui/text-editor";
@@ -17,9 +34,6 @@ import { TextEditor } from "@k2b/ui/text-editor";
   onChange={(markdown) => saveDraft(markdown)}
 />;
 ```
-
-The application owns saving. `onChange` reports edits; it does not mean the
-server has saved them. Pass an honest `status` to show save or connection state.
 
 ## Edit text and tables
 
@@ -187,8 +201,8 @@ transaction and reparse before another operation.
 ## Loading and access
 
 `loading` reserves the text area with a placeholder and blocks editing.
-`readOnly` blocks editing and formatting. The mode switch remains available.
-Neither replaces the application's server authorization.
+`readOnly` blocks editing and hides the built-in toolbar, including its mode
+switch. Neither replaces the application's server authorization.
 
 The length limit refuses only edits that make an over-limit text longer, so a
 text above the limit can still be shortened.
@@ -210,3 +224,29 @@ with a missing separator. Applications can use the same predicate before
 formatted output; it never rewrites the source. Mail additionally refuses those
 states at its shared preview/send renderer. The predicate alone does not replace
 server authorization, convergence checks or send ordering.
+
+## Accessibility
+
+Supply a descriptive `label`; the editor uses it as the accessible name of
+its text input. Formatting controls have labels, and the mode control exposes
+its selected state. Table cells support the keyboard navigation described
+above; the context-menu key or Shift+F10 opens the cell menu. Tab from prose
+leaves the editor.
+
+Loading and recovery messages use status regions. Rejected input remains in
+a read-only field so the person can copy it before continuing. Keep the
+editor's shared focus styles and provide the same actions when composing an
+application-owned toolbar.
+
+## Runtime
+
+The server renders a loading surface and, for editable Markdown modes, the
+toolbar. CodeMirror mounts in the browser, then `onReady` receives its
+controller and shared controls.
+`initialValue` seeds that mount once; later changes arrive through the
+binding or controller. Unmounting the component destroys its editor. Direct
+`createTextEditor` consumers must call `destroy` themselves.
+
+The component inherits the UI locale and light or dark theme. A browser
+module can load lazily without loading the editor on other pages. HTML paste
+loads its sanitizer on demand, as described above.

@@ -53,6 +53,8 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
   const document = createDraftDocument(base);
   const initial = Y.encodeStateAsUpdate(document);
   const requests: { url: string; body: unknown; cache: RequestCache | undefined }[] = [];
+  let expired = false;
+  let authenticationRequests = 0;
   const admitted: string[] = [];
   let currentUser = "Usr001";
   let switchAfterAuthorization = false;
@@ -131,6 +133,7 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
       requests.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null, cache: init?.cache });
+      if (expired) return Response.json({ message: "Session expired" }, { status: 401 });
       const parsed = new URL(url, "http://localhost");
       if (parsed.searchParams.get("expectedUserId") !== currentUser)
         return Response.json({ code: "DRAFT_ACCOUNT_MISMATCH", message: "Account changed" }, { status: 403 });
@@ -178,6 +181,10 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
     requests,
     admitted,
     sockets,
+    expireSession: () => {
+      expired = true;
+    },
+    authenticationRequests: () => authenticationRequests,
     switchAccount: () => {
       currentUser = "Usr002";
     },
@@ -217,6 +224,9 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
         onContent: () => {},
         onState: () => {},
         onFrozen: () => {},
+        onAuthenticationRequired: () => {
+          authenticationRequests++;
+        },
         onDurable: (_content, revision) => {
           lastRevision = revision;
         },
@@ -239,6 +249,51 @@ const fixture = (generation = "1", closed = false, unavailableStorage = false) =
     },
   };
 };
+
+test("shared initialization reports an expired session before opening a provider", async () => {
+  const f = fixture();
+  try {
+    f.expireSession();
+    await expect(f.open()).rejects.toThrow("Session expired");
+    expect(f.authenticationRequests()).toBe(1);
+    expect(f.sockets).toHaveLength(0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("shared snapshot, table action, refresh and recovery report 401 to the owning session", async () => {
+  const f = fixture();
+  try {
+    const client = await f.open();
+    client.edit({ ...client.content(), body: "Pending input" });
+    await Bun.sleep(0);
+    f.expireSession();
+    await expect(client.save()).rejects.toThrow("Session expired");
+    expect((await client.postAction({ generation: "1", actionId: "action" }, new AbortController().signal)).status).toBe(401);
+    await expect(client.refresh()).rejects.toThrow("Session expired");
+    await expect(client.recover()).rejects.toThrow("Session expired");
+    expect(f.authenticationRequests()).toBe(4);
+    expect(client.content().body).toBe("Pending input");
+    expect(client.state().dirty).toBe(true);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("an expired socket session also requests sign-in while retaining unsaved input", async () => {
+  const f = fixture();
+  try {
+    const client = await f.open();
+    client.edit({ ...client.content(), body: "Pending input" });
+    f.sockets[0]!.receive("error", { docId: "Draft1", code: "SESSION_EXPIRED", message: "Session expired" });
+    expect(f.authenticationRequests()).toBe(1);
+    expect(client.state()).toMatchObject({ terminal: true, dirty: true });
+    expect(client.content().body).toBe("Pending input");
+  } finally {
+    await f.cleanup();
+  }
+});
 
 test("real session: transport echo stays dirty; durable save fences generation and advances Mail revision", async () => {
   const f = fixture();

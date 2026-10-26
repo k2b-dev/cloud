@@ -1,8 +1,8 @@
 import { getLocale, type RequestActor } from "@k2b/cloud/server";
 import { i18n } from "@k2b/stdlib";
 import type { Context, MiddlewareHandler } from "hono";
-import type { MailApiContext } from "../api/public-resource-boundary";
-import { DRAFT_DOCUMENT_EXPECTED_USER_QUERY } from "./draft-document-contract";
+import { DRAFT_DOCUMENT_EXPECTED_USER_QUERY } from "../draft-document-contracts";
+import type { MailApiContext } from "./public-resource-boundary";
 
 const messages = i18n.define({
   baseLocale: "en",

@@ -15,8 +15,7 @@ import { CursorMismatchError, RetentionGapError, type TopicEvent } from "@k2b/sy
 import type { Context } from "hono";
 import { upgradeWebSocket } from "hono/bun";
 import type { WSContext, WSEvents } from "hono/ws";
-import { MAX_DRAFT_DOCUMENT_PAYLOAD } from "../lib/draft-document-contract";
-import { draftDocumentAccountRejection } from "../lib/draft-document-identity";
+import { MAX_DRAFT_DOCUMENT_PAYLOAD } from "../draft-document-contracts";
 import {
   MAX_DRAFT_AWARENESS_PAYLOAD,
   type MailDraftDocumentMessage,
@@ -32,6 +31,7 @@ import {
   withDraftDocumentTransaction,
 } from "../service/draft-document-socket-sql";
 import { acceptDraftDocumentUpdate, type DraftDocumentSnapshot, mailDraftDocumentLog, readDraftDocument } from "../service/draft-documents";
+import { draftDocumentAccountRejection } from "./draft-document-identity";
 import type { MailApiContext } from "./public-resource-boundary";
 
 const log = logger("mail:draft-document-socket");

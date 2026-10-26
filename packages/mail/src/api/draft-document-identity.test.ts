@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { RequestActor } from "@k2b/cloud/server";
 import { Hono } from "hono";
-import type { MailApiContext } from "../api/public-resource-boundary";
 import { draftDocumentAccountMatches, requireDraftDocumentAccount } from "./draft-document-identity";
+import type { MailApiContext } from "./public-resource-boundary";
 
 const actor = (id: string): RequestActor => ({
   kind: "user",
