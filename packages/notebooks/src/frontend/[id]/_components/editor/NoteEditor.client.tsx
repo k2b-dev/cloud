@@ -12,6 +12,7 @@ import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { apiClient } from "@/api/client";
 import type { NoteAuthors } from "../../../../lib/activity-actions";
+import type { AnnotationProjection } from "../../../../lib/annotation-contracts";
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "../../../../lib/named-blocks";
 import { extractHeadingLines, headingAtLine } from "../../../../lib/note-insights";
 import { deriveNoteTitle } from "../../../../lib/note-title";
@@ -30,6 +31,7 @@ import { yjs } from "../../../lib/yjs";
 import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { applyToYText, changesBetween, rebaseOnto } from "../../../lib/yjs/lazy-collab";
 import { notebookWorkspaceMessages } from "../../messages";
+import { createEditorComments } from "../comments/EditorComments";
 import {
   ACTIVE_HEADING_EVENT,
   type ActiveHeadingEventDetail,
@@ -79,8 +81,6 @@ import { createNotePrintCopy } from "./note-print-copy";
 import { participantCursors, presenceLocations } from "./presence-locations";
 import { keepReadingPosition, previewReadingPosition, type ReadingPosition, scrollToReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
-import type { AnnotationProjection } from "../../../../lib/annotation-contracts";
-import { createEditorComments } from "../comments/EditorComments";
 import { createSyncEnded, SyncEndedBar } from "./sync-ended";
 import { createSyncStateBridge } from "./sync-state";
 import { createTabKeyPreference } from "./tab-key-preference";
@@ -475,11 +475,9 @@ function EditorInstance(
   const [commentsExtent, setCommentsExtent] = createSignal(0);
   // With the detail panel open, comments show as dots beside the lines (the server renders the first state).
   createEffect(
-    on(
-      panelOpen,
-      (open) => commentsHost?.closest(".notebook-document-surface")?.toggleAttribute("data-detail-open", open),
-      { defer: true },
-    ),
+    on(panelOpen, (open) => commentsHost?.closest(".notebook-document-surface")?.toggleAttribute("data-detail-open", open), {
+      defer: true,
+    }),
   );
 
   /** The note as the editor shows it; while collaboration runs, the editor mirrors Yjs. */
@@ -1286,6 +1284,7 @@ function EditorInstance(
               format={format()}
               onUndo={() => undoManager?.undo()}
               onRedo={() => undoManager?.redo()}
+              comments={{ open: comments.openCount(), onOpen: comments.ui.requestList }}
             />
           }
         >

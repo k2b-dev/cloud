@@ -1,5 +1,5 @@
-import { Button, TextInput } from "@k2b/ui";
 import { CloudAvatar } from "@k2b/cloud/account/ui";
+import { Button, TextInput } from "@k2b/ui";
 import { type JSX, Show } from "solid-js";
 import { SuggestionDiff } from "./CommentCard";
 import type { CommentsUi } from "./comments-ui";
@@ -11,8 +11,12 @@ import type { CommentsUi } from "./comments-ui";
 export function CommentComposer(props: { ui: CommentsUi; ref?: (element: HTMLElement) => void; style?: JSX.CSSProperties }) {
   const t = () => props.ui.t();
   const draft = () => props.ui.draft();
+  // A retry of the same text keeps its key, so a save that did arrive is not made twice; changed text is a new save.
   const update = (patch: Partial<NonNullable<ReturnType<CommentsUi["draft"]>>>) =>
-    props.ui.setDraft((current) => current && { ...current, ...patch, failed: false });
+    props.ui.setDraft(
+      (current) =>
+        current && { ...current, ...patch, failed: false, idempotencyKey: current.failed ? crypto.randomUUID() : current.idempotencyKey },
+    );
   const changed = () => {
     const current = draft();
     return !!current && current.suggestion !== null && current.suggestion !== current.quote;
@@ -32,7 +36,6 @@ export function CommentComposer(props: { ui: CommentsUi; ref?: (element: HTMLEle
   return (
     <Show when={draft()}>
       {(current) => (
-        // biome-ignore lint/a11y/noStaticElementInteractions: the fields inside take the keys; the frame adds ⌘↵ and Escape.
         <section
           ref={(element) => {
             props.ref?.(element);
@@ -51,6 +54,7 @@ export function CommentComposer(props: { ui: CommentsUi; ref?: (element: HTMLEle
           </div>
           <div class="notebook-comment__compose">
             <TextInput
+              icon={false}
               multiline
               lines={3}
               aria-label={t().commentLabel}
@@ -69,6 +73,7 @@ export function CommentComposer(props: { ui: CommentsUi; ref?: (element: HTMLEle
               }
             >
               <TextInput
+                icon={false}
                 multiline
                 lines={2}
                 label={t().replaceWith}

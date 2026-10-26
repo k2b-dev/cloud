@@ -1,10 +1,11 @@
 import type { EditorView } from "@codemirror/view";
-import { personColor } from "@k2b/ui";
+import { personColor, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { Annotation } from "../../../../lib/annotation-contracts";
 import type { AnnotationMark } from "../../../lib/editor/annotations";
 import { CommentCard } from "./CommentCard";
 import { CommentComposer } from "./CommentComposer";
+import { openCommentSheet } from "./CommentSheet";
 import type { CommentsUi } from "./comments-ui";
 import { type CommentsLayout, commentsLayout, groupDots, stackCards } from "./margin-layout";
 
@@ -35,10 +36,12 @@ type Props = {
 };
 
 /** Ignore clicks on these when deciding whether a click went "elsewhere" and closes the open comment. */
-const INSIDE = ".notebook-comment, .notebook-comments-dot, .cm-annotation, .cm-annotation-orphan, .k2b-dropdown__menu, .k2b-toast, dialog, .k2b-selection-toolbar";
+const INSIDE =
+  ".notebook-comment, .notebook-comments-dot, .cm-annotation, .cm-annotation-orphan, .k2b-dropdown__menu, .k2b-toast, dialog, .k2b-selection-toolbar";
 
 export function CommentMargin(props: Props) {
   const ui = props.ui;
+  const locale = useLocale();
   const t = () => ui.t();
   const [layout, setLayout] = createSignal<CommentsLayout>("compact");
   const [column, setColumn] = createSignal<{ left: number; right: number } | null>(null);
@@ -106,9 +109,7 @@ export function CommentMargin(props: Props) {
     });
   };
   onCleanup(() => cancelAnimationFrame(frame));
-  createEffect(
-    on([props.tick, ui.visible, ui.active, ui.draft, ui.editing, layout, props.marks, () => ui.store.items()], () => measure()),
-  );
+  createEffect(on([props.tick, ui.visible, ui.active, ui.draft, ui.editing, layout, props.marks, () => ui.store.items()], () => measure()));
   onMount(() => {
     const observer = new ResizeObserver(() => measure());
     const watch = () => {
@@ -130,6 +131,31 @@ export function CommentMargin(props: Props) {
     onCleanup(() => document.removeEventListener("click", onClick));
   });
 
+  // On a phone, comments open in a sheet: the one written, the one tapped, or the list from the toolbar.
+  const [list, setList] = createSignal(false);
+  const [sheetOpen, setSheetOpen] = createSignal(false);
+  createEffect(() => {
+    if (layout() !== "phone" || sheetOpen() || !(ui.draft() || ui.active() || list())) return;
+    setSheetOpen(true);
+    void openCommentSheet(ui, locale(), list, () => {
+      setSheetOpen(false);
+      setList(false);
+    });
+  });
+  // The toolbar's comments button: the list on a phone, the first comment in a popover, or the margin's first card.
+  createEffect(
+    on(
+      ui.listRequest,
+      () => {
+        const first = ui.visible()[0];
+        if (layout() === "phone") setList(true);
+        else if (layout() === "compact") ui.setActive(first?.id ?? null);
+        else if (first) cards.get(first.id)?.focus();
+      },
+      { defer: true },
+    ),
+  );
+
   const register = (id: string) => (element: HTMLElement) => {
     cards.set(id, element);
     onCleanup(() => {
@@ -140,7 +166,11 @@ export function CommentMargin(props: Props) {
   const onKeyDown = (event: KeyboardEvent) => {
     const articles = [...(event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>("[data-annotation-card]")];
     const current = articles.findIndex((article) => article.contains(document.activeElement));
-    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && event.target instanceof HTMLElement && event.target.matches("[data-annotation-card]")) {
+    if (
+      (event.key === "ArrowDown" || event.key === "ArrowUp") &&
+      event.target instanceof HTMLElement &&
+      event.target.matches("[data-annotation-card]")
+    ) {
       event.preventDefault();
       const next = articles[current + (event.key === "ArrowDown" ? 1 : -1)];
       next?.focus();
@@ -207,12 +237,7 @@ export function CommentMargin(props: Props) {
     <>
       <Show when={(layout() === "wide" || layout() === "shift") && column()}>
         {(col) => (
-          <aside
-            class="notebook-comments"
-            aria-label={t().comments}
-            style={{ left: `${col().right + GAP}px` }}
-            onKeyDown={onKeyDown}
-          >
+          <aside class="notebook-comments" aria-label={t().comments} style={{ left: `${col().right + GAP}px` }} onKeyDown={onKeyDown}>
             {head()}
             <Show when={ui.store.projection()}>
               <For each={ui.visible()}>
@@ -238,6 +263,7 @@ export function CommentMargin(props: Props) {
       </Show>
       <Show when={layout() === "compact" && column()}>
         {(col) => (
+          // biome-ignore lint/a11y/noStaticElementInteractions: the dots and the popover inside take the keys; Escape returns to the passage.
           <div class="notebook-comments-gutter" onKeyDown={onKeyDown}>
             <For each={dots()}>
               {(group) => (

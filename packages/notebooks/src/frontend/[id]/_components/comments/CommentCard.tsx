@@ -73,7 +73,7 @@ const EditBox = (props: { ui: CommentsUi; item: Annotation }) => {
         }
       }}
     >
-      <TextInput multiline lines={2} aria-label={t().edit} value={text()} onValueChange={setText} />
+      <TextInput icon={false} multiline lines={2} aria-label={t().edit} value={text()} onValueChange={setText} />
       <Show when={failed()}>
         <p class="notebook-comment__error" role="alert">
           {t().notSaved}
@@ -115,6 +115,7 @@ const ReplyBox = (props: { ui: CommentsUi; item: Annotation }) => {
   return (
     <div class="notebook-comment__reply">
       <TextInput
+        icon={false}
         multiline
         lines={1}
         aria-label={t().replyLabel}
@@ -175,7 +176,6 @@ export function CommentCard(props: { ui: CommentsUi; item: Annotation; ref?: (el
     item().orphan ? t().deletedPassage({ name: item().author.name }) : t().commentBy({ name: mine() ? t().you : item().author.name });
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a card holds buttons and fields, so it is an article that the margin's arrow keys move between.
     <article
       ref={props.ref}
       class="notebook-comment"
@@ -203,7 +203,13 @@ export function CommentCard(props: { ui: CommentsUi; item: Annotation; ref?: (el
         actions={
           <Show when={writer() && !resolved()}>
             <span class="notebook-comment__actions">
-              <IconButton size="sm" variant="ghost" label={t().resolve} loading={props.ui.busy().has(item().id)} onClick={() => void props.ui.resolve(item(), true)}>
+              <IconButton
+                size="sm"
+                variant="ghost"
+                label={t().resolve}
+                loading={props.ui.busy().has(item().id)}
+                onClick={() => void props.ui.resolve(item(), true)}
+              >
                 <i class="ti ti-check" aria-hidden="true" />
               </IconButton>
               <Dropdown.Root items={menu()} align="end" label={t().moreActions} phone="sheet">

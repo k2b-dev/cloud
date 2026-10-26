@@ -40,6 +40,8 @@ export const createCommentsUi = (options: {
   const [showResolved, setShowResolved] = createSignal(false);
   const [editing, setEditing] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal<ReadonlySet<string>>(new Set());
+  /** Counts each request to show every comment, from the toolbar: a list on a phone, the first one elsewhere. */
+  const [listRequest, setListRequest] = createSignal(0);
   const myColor = personColor(options.me.name);
 
   const counts = createMemo(() => {
@@ -248,5 +250,7 @@ export const createCommentsUi = (options: {
     edit,
     copyLink,
     activateFrom,
+    listRequest,
+    requestList: () => setListRequest((value) => value + 1),
   };
 };

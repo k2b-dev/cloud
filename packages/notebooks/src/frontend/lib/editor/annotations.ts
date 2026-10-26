@@ -129,7 +129,11 @@ const decorationsFor = ({ marks, focus, preview, draft, flash }: AnnotationState
       }),
     });
     if (previewing && preview)
-      ranges.push({ from: mark.to, to: mark.to, decoration: Decoration.widget({ widget: new SuggestionPreview(preview.insert), side: 1 }) });
+      ranges.push({
+        from: mark.to,
+        to: mark.to,
+        decoration: Decoration.widget({ widget: new SuggestionPreview(preview.insert), side: 1 }),
+      });
   }
   if (draft && draft.to > draft.from)
     ranges.push({
@@ -159,39 +163,42 @@ const clampMarks = (marks: readonly AnnotationMark[], length: number) =>
  */
 const createAnnotationField = (initial: () => readonly AnnotationMark[]) =>
   StateField.define<AnnotationState>({
-  create: (state) => ({
-    marks: clampMarks(initial(), state.doc.length),
-    focus: { hover: null, active: null },
-    preview: null,
-    draft: null,
-    flash: null,
-  }),
-  update(value, tr) {
-    let next = value;
-    if (tr.docChanged) {
-      const draft = next.draft && { ...next.draft, from: tr.changes.mapPos(next.draft.from, 1), to: tr.changes.mapPos(next.draft.to, -1) };
-      // The replacement arrives after the flash is set; its start stays before the inserted text.
-      const flash = next.flash && { ...next.flash, from: tr.changes.mapPos(next.flash.from, -1) };
-      next = {
-        ...next,
-        marks: next.marks.map((mark) => mapMark(mark, tr.changes)),
-        draft: draft && draft.to > draft.from ? draft : null,
-        flash,
-      };
-    }
-    for (const effect of tr.effects) {
-      if (effect.is(setAnnotations)) {
-        next = { ...next, marks: clampMarks(effect.value, tr.state.doc.length) };
-      } else if (effect.is(setAnnotationFocus)) next = { ...next, focus: { ...next.focus, ...effect.value } };
-      else if (effect.is(setAnnotationPreview)) next = { ...next, preview: effect.value };
-      else if (effect.is(setAnnotationDraft)) next = { ...next, draft: effect.value };
-      else if (effect.is(setAnnotationFlash)) next = { ...next, flash: effect.value };
-    }
-    return next;
-  },
-  provide: (field) =>
-    EditorView.decorations.compute([field], (state) => decorationsFor(state.field(field), state.doc.length)),
-});
+    create: (state) => ({
+      marks: clampMarks(initial(), state.doc.length),
+      focus: { hover: null, active: null },
+      preview: null,
+      draft: null,
+      flash: null,
+    }),
+    update(value, tr) {
+      let next = value;
+      if (tr.docChanged) {
+        const draft = next.draft && {
+          ...next.draft,
+          from: tr.changes.mapPos(next.draft.from, 1),
+          to: tr.changes.mapPos(next.draft.to, -1),
+        };
+        // The replacement arrives after the flash is set; its start stays before the inserted text.
+        const flash = next.flash && { ...next.flash, from: tr.changes.mapPos(next.flash.from, -1) };
+        next = {
+          ...next,
+          marks: next.marks.map((mark) => mapMark(mark, tr.changes)),
+          draft: draft && draft.to > draft.from ? draft : null,
+          flash,
+        };
+      }
+      for (const effect of tr.effects) {
+        if (effect.is(setAnnotations)) {
+          next = { ...next, marks: clampMarks(effect.value, tr.state.doc.length) };
+        } else if (effect.is(setAnnotationFocus)) next = { ...next, focus: { ...next.focus, ...effect.value } };
+        else if (effect.is(setAnnotationPreview)) next = { ...next, preview: effect.value };
+        else if (effect.is(setAnnotationDraft)) next = { ...next, draft: effect.value };
+        else if (effect.is(setAnnotationFlash)) next = { ...next, flash: effect.value };
+      }
+      return next;
+    },
+    provide: (field) => EditorView.decorations.compute([field], (state) => decorationsFor(state.field(field), state.doc.length)),
+  });
 
 export type AnnotationHandlers = {
   /** The comments the editor starts with when it adds the extension. */

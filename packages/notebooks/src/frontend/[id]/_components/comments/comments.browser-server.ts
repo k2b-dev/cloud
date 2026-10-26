@@ -125,7 +125,12 @@ const base = (text = NOTE) => {
     comment("jb", "innerhalb von vier Wochen", "Schaffen wir das in den Sommerferien? Lieber sechs Wochen.", 120, {
       suggestion: "innerhalb von sechs Wochen",
     }),
-    comment("mk", "zum Ende eines Quartals mit einer Frist von sechs Wochen", "Die Mustersatzung des Landesverbands nennt drei Monate. Ich prüfe das bis Freitag.", 6),
+    comment(
+      "mk",
+      "zum Ende eines Quartals mit einer Frist von sechs Wochen",
+      "Die Mustersatzung des Landesverbands nennt drei Monate. Ich prüfe das bis Freitag.",
+      6,
+    ),
     comment("pw", "Jugendliche zahlen den halben Beitrag.", "Bis zu welchem Alter gilt „Jugendliche“? Ich schlage 18 Jahre vor.", 1440, {
       via: "assistant",
       suggestion: "Mitglieder unter 18 Jahren zahlen den halben Beitrag.",
@@ -220,11 +225,13 @@ export const startCommentsServer = async () => {
   if (!build.success) throw new AggregateError(build.logs, "Could not bundle the note editor with comments.");
   const bundle = await build.outputs[0]!.text();
   const outputs = await Promise.all(
-    [resolve(import.meta.dir, "../../../../styles/app.css"), resolve(import.meta.dir, "../../../../../../../styles.css")].map(async (entry) => {
-      const result = await Bun.build({ entrypoints: [entry], plugins: [tailwind] });
-      if (!result.success) throw new AggregateError(result.logs, `Could not compile ${entry}.`);
-      return result.outputs[0]!.text();
-    }),
+    [resolve(import.meta.dir, "../../../../styles/app.css"), resolve(import.meta.dir, "../../../../../../../styles.css")].map(
+      async (entry) => {
+        const result = await Bun.build({ entrypoints: [entry], plugins: [tailwind] });
+        if (!result.success) throw new AggregateError(result.logs, `Could not compile ${entry}.`);
+        return result.outputs[0]!.text();
+      },
+    ),
   );
   const css = ["@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
 
@@ -233,6 +240,8 @@ export const startCommentsServer = async () => {
   let text = NOTE;
   let items: Annotation[] = [];
   const calls: Call[] = [];
+  /** Keys whose first save failed on purpose ("fail once"). */
+  const failedOnce = new Set<string>();
   const projection = (): AnnotationProjection => ({
     text,
     contentHash: "hash",
@@ -256,9 +265,13 @@ export const startCommentsServer = async () => {
     const input = (body ?? {}) as Record<string, unknown>;
     if (request.method === "GET" && !id) return Response.json(projection());
     if (request.method === "POST" && !id) {
-      if (input.body === "fail") return fail(500, "Nicht gespeichert.");
+      if (input.body === "fail" || (input.body === "fail once" && !failedOnce.has(String(input.idempotencyKey)))) {
+        failedOnce.add(String(input.idempotencyKey));
+        return fail(500, "Nicht gespeichert.");
+      }
       const quote = String(input.quote);
-      const from = typeof input.offsetHint === "number" && text.startsWith(quote, input.offsetHint) ? input.offsetHint : text.indexOf(quote);
+      const from =
+        typeof input.offsetHint === "number" && text.startsWith(quote, input.offsetHint) ? input.offsetHint : text.indexOf(quote);
       const created: Annotation = {
         ...comment("mk", quote, String(input.body ?? ""), 0, { suggestion: (input.suggestion as string | null | undefined) ?? null }, text),
         from,
@@ -271,7 +284,10 @@ export const startCommentsServer = async () => {
     }
     if (!item) return fail(404, "Notiz oder Kommentar nicht gefunden");
     if (action === "resolve") {
-      Object.assign(item, input.resolved ? { state: "resolved", stateBy: ME, stateAt: new Date(NOW).toISOString() } : { state: "open", stateBy: null });
+      Object.assign(
+        item,
+        input.resolved ? { state: "resolved", stateBy: ME, stateAt: new Date(NOW).toISOString() } : { state: "open", stateBy: null },
+      );
       return Response.json({ id: item.id, annotationId: item.id, deleted: false });
     }
     if (action === "accept") {
@@ -387,7 +403,9 @@ export const startCommentsServer = async () => {
     websocket: {
       open(socket) {
         const updates = [{ cursor: null, payload: snapshot(text), originPeerId: null }];
-        socket.send(JSON.stringify({ type: notebooksYjs.wsType.syncPush, payload: { noteId: "note01", historyIncomplete: false, updates } }));
+        socket.send(
+          JSON.stringify({ type: notebooksYjs.wsType.syncPush, payload: { noteId: "note01", historyIncomplete: false, updates } }),
+        );
         socket.send(JSON.stringify({ type: notebooksYjs.wsType.replayReady, payload: { noteId: "note01" } }));
       },
       message() {},

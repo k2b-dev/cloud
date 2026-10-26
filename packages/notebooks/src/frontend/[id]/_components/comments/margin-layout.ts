@@ -5,7 +5,12 @@
  */
 export const CARD_GAP = 6;
 
-export const stackCards = (cards: readonly { want: number; height: number }[], active: number, minTop: number, gap = CARD_GAP): number[] => {
+export const stackCards = (
+  cards: readonly { want: number; height: number }[],
+  active: number,
+  minTop: number,
+  gap = CARD_GAP,
+): number[] => {
   const tops = cards.map((card) => Math.max(minTop, card.want));
   if (!cards.length) return tops;
   if (active < 0) {

@@ -76,7 +76,8 @@ export const createCommentsStore = (options: {
         if (!response.ok) throw await failure(response, options.failedMessage());
         const next = (await response.json()) as AnnotationProjection;
         // Every page answers for the same text; a page from a newer text starts over with it.
-        projection = projection && projection.contentHash === next.contentHash ? { ...next, items: [...projection.items, ...next.items] } : next;
+        projection =
+          projection && projection.contentHash === next.contentHash ? { ...next, items: [...projection.items, ...next.items] } : next;
         if (!next.nextCursor) break;
         cursor = next.nextCursor;
       }

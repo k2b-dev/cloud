@@ -9,9 +9,7 @@ import { MARK_REGEX, SPECIAL_CHAR_REGEX, SUB_REGEX, SUP_REGEX, TAG_REGEX } from 
 import { blockMathPattern, inlineMathPattern } from "../../../lib/editor/_lib/math-syntax";
 
 export const NOTE_PREVIEW_ID = "notebook-note-preview";
-export type NotePreviewPart =
-  | string
-  | { className: string; children: NotePreviewPart[]; attributes?: Record<string, string> };
+export type NotePreviewPart = string | { className: string; children: NotePreviewPart[]; attributes?: Record<string, string> };
 /** A comment's passage in the preview, drawn as the editor's annotations extension draws it. */
 export type NotePreviewMark = { id: string; from: number; to: number; color: string; label: string; orphan: boolean };
 export type NotePreviewLine = { parts: NotePreviewPart[] };

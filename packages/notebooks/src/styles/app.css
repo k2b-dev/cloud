@@ -2944,3 +2944,23 @@
     display: none !important;
   }
 }
+
+/* Comments in a phone sheet: cards in the flow, the open card without its float. */
+.notebook-comments-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.notebook-comments-sheet .notebook-comment {
+  position: relative;
+  left: auto;
+  width: auto;
+  padding-inline: 0;
+}
+.notebook-comments-sheet .notebook-comment[data-active] {
+  box-shadow: none;
+  background: transparent;
+}
+.notebook-comments-sheet .notebook-comment:not([data-active]) > .notebook-comment__text {
+  display: block;
+}

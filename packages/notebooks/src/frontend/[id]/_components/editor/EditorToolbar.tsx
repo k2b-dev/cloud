@@ -1,6 +1,6 @@
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
-import { Dropdown, IconButton, IconButtonLink, Toolbar, Tooltip, useLocale } from "@k2b/ui";
+import { Button, Dropdown, IconButton, IconButtonLink, Toolbar, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { indentListItems, outdentListItems, setListKind } from "../../../lib/editor/list-commands";
 import { ariaShortcut, isApple, shortcutLabel } from "../../../lib/shortcut-label";
@@ -8,6 +8,7 @@ import { asUndoStep } from "../../../lib/yjs/history";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { bookMessages } from "../book/messages";
+import { commentMessages } from "../comments/messages";
 import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT } from "../detail/events";
 import { readNavigationHidden } from "../settings/NotebookSettingsStore";
 import {
@@ -39,6 +40,8 @@ type Props = {
   format: CaretFormat;
   onUndo: () => void;
   onRedo: () => void;
+  /** The note's open comments: the button shows their number and opens them. */
+  comments?: { open: number; onOpen: () => void };
 };
 
 /** Formatting shortcuts; headings match the physical digit keys like the @k2b/ui MarkdownEditor and the list keys. */
@@ -410,6 +413,25 @@ export default function EditorToolbar(props: Props) {
         </span>
       </Show>
 
+      <Show when={props.comments}>
+        {(comments) => (
+          <Tooltip.Anchor content={commentMessages.resolve([locale()]).t.commentsShortcut}>
+            <Button
+              size="xs"
+              variant="ghost"
+              class="text-dimmed notebook-comments-button"
+              aria-label={commentMessages.resolve([locale()]).t.commentsButton({ count: comments().open })}
+              aria-keyshortcuts={ariaShortcut("Mod-Alt-m")}
+              onClick={() => comments().onOpen()}
+            >
+              <i class="ti ti-message-circle text-sm" aria-hidden="true" />
+              <Show when={comments().open}>
+                <span class="tabular-nums font-semibold">{comments().open}</span>
+              </Show>
+            </Button>
+          </Tooltip.Anchor>
+        )}
+      </Show>
       {/* Detail panel toggle */}
       <Tooltip.Anchor content={bookMessages.resolve([locale()]).t.openBook}>
         <IconButtonLink

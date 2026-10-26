@@ -9,8 +9,8 @@ import {
   setAnnotationDraft,
   setAnnotationFlash,
   setAnnotationFocus,
-  setAnnotations,
   setAnnotationPreview,
+  setAnnotations,
 } from "../../../lib/editor/annotations";
 import { asUndoStep } from "../../../lib/yjs/history";
 import { changesBetween } from "../../../lib/yjs/lazy-collab";
@@ -99,29 +99,34 @@ export const createEditorComments = (options: {
    * The server places comments in the text it read; the editor may be ahead of it by edits on their way. The places
    * move with those edits, as CodeMirror would have moved them.
    */
-  const placed = createMemo(() => {
-    const projection = store.projection();
-    const view = options.view();
-    if (!projection || !view) return [] as AnnotationMark[];
-    void tick();
-    const current = view.state.doc.toString();
-    const changes: ChangeSet | null = projection.text === current ? null : changesBetween(projection.text, current);
-    const map = (pos: number, assoc: 1 | -1) => (changes ? changes.mapPos(Math.min(pos, changes.length), assoc) : Math.min(pos, current.length));
-    return ui.visible().map((item): AnnotationMark => {
-      const from = map(item.from, 1);
-      const to = item.orphan ? from : Math.max(from, map(item.to, -1));
-      const name = item.author.kind === "user" && item.author.id === options.me.id ? t().you : item.author.name;
-      return {
-        id: item.id,
-        from,
-        to,
-        color: personColor(item.author.name),
-        resolved: !isOpen(item),
-        orphan: item.orphan || to <= from,
-        label: item.orphan || to <= from ? t().deletedPassage({ name }) : t().commentedBy({ names: name }),
-      };
-    });
-  }, [], { equals: false });
+  const placed = createMemo(
+    () => {
+      const projection = store.projection();
+      const view = options.view();
+      if (!projection || !view) return [] as AnnotationMark[];
+      void tick();
+      const current = view.state.doc.toString();
+      const changes: ChangeSet | null = projection.text === current ? null : changesBetween(projection.text, current);
+      const map = (pos: number, assoc: 1 | -1) =>
+        changes ? changes.mapPos(Math.min(pos, changes.length), assoc) : Math.min(pos, current.length);
+      return ui.visible().map((item): AnnotationMark => {
+        const from = map(item.from, 1);
+        const to = item.orphan ? from : Math.max(from, map(item.to, -1));
+        const name = item.author.kind === "user" && item.author.id === options.me.id ? t().you : item.author.name;
+        return {
+          id: item.id,
+          from,
+          to,
+          color: personColor(item.author.name),
+          resolved: !isOpen(item),
+          orphan: item.orphan || to <= from,
+          label: item.orphan || to <= from ? t().deletedPassage({ name }) : t().commentedBy({ names: name }),
+        };
+      });
+    },
+    [],
+    { equals: false },
+  );
 
   // A new projection replaces the places; edits in between move them inside the editor.
   createEffect(
@@ -138,7 +143,9 @@ export const createEditorComments = (options: {
   createEffect(() => {
     const id = ui.preview();
     const item = ui.byId(id);
-    options.view()?.dispatch({ effects: setAnnotationPreview.of(item && item.suggestion !== null ? { id: item.id, insert: item.suggestion } : null) });
+    options
+      .view()
+      ?.dispatch({ effects: setAnnotationPreview.of(item && item.suggestion !== null ? { id: item.id, insert: item.suggestion } : null) });
   });
   createEffect(() => {
     const draft = ui.draft();
@@ -234,7 +241,12 @@ export const createEditorComments = (options: {
       {options.editable() && (
         <>
           <Toolbar.Action label={t().bold} icon="ti ti-bold" keys="mod+b" onClick={() => run((view) => toggleInlineMark(view, "bold"))} />
-          <Toolbar.Action label={t().italic} icon="ti ti-italic" keys="mod+i" onClick={() => run((view) => toggleInlineMark(view, "italic"))} />
+          <Toolbar.Action
+            label={t().italic}
+            icon="ti ti-italic"
+            keys="mod+i"
+            onClick={() => run((view) => toggleInlineMark(view, "italic"))}
+          />
           <Toolbar.Action label={t().link} icon="ti ti-link" keys="mod+k" onClick={() => run((view) => insertLink(view, locale()))} />
           <Toolbar.Separator />
         </>
@@ -254,7 +266,11 @@ export const createEditorComments = (options: {
     </SelectionToolbar>
   );
 
-  const margin = (host: Accessor<HTMLElement | undefined>, surface: Accessor<HTMLElement | undefined>, onExtent: (bottom: number) => void) => (
+  const margin = (
+    host: Accessor<HTMLElement | undefined>,
+    surface: Accessor<HTMLElement | undefined>,
+    onExtent: (bottom: number) => void,
+  ) => (
     <CommentMargin
       ui={ui}
       view={options.view}

@@ -4,8 +4,8 @@ import type { AnnotationProjection } from "../../../../lib/annotation-contracts"
 import { notebookChartFrameHtml } from "../../../../lib/chart-blocks";
 import { fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
-import { notebookWorkspaceMessages } from "../../messages";
 import { changesBetween } from "../../../lib/yjs/lazy-collab";
+import { notebookWorkspaceMessages } from "../../messages";
 import { commentMessages } from "../comments/messages";
 import {
   NOTE_PREVIEW_BUDGET,
@@ -78,7 +78,12 @@ const PreviewLine = (props: { line: NotePreviewLine }) => (
 export default function NotePreview(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
-  const lines = notePreviewLines(props.text, props.mode, NOTE_PREVIEW_BUDGET, previewMarks(props.annotations, props.text, props.me, locale()));
+  const lines = notePreviewLines(
+    props.text,
+    props.mode,
+    NOTE_PREVIEW_BUDGET,
+    previewMarks(props.annotations, props.text, props.me, locale()),
+  );
   const chart = props.mode === "rich" ? notePreviewChart(props.text, lines) : null;
   const blocks = () => queryBlockMessages.resolve([locale()]).t;
   // CodeMirror sizes the gutter with a hidden spacer for the note's last line number, which can lie past the preview.
