@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Avatar } = await import("./Avatar");
 const { DescriptionList } = await import("./DescriptionList");
+const { DotStrip } = await import("./DotStrip");
 const { LinkCard } = await import("./LinkCard");
 const { NotFoundState } = await import("./NotFoundState");
 const { NoticeCard } = await import("./NoticeCard");
@@ -361,6 +362,22 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(value(row, "padding")).toBe(value(sidebarItem, "padding"));
     expect(value(row, "gap")).toBe(value(sidebarItem, "gap"));
     expect(value(icon, "width")).toBe(value(sidebarIcon, "width"));
+  });
+
+  test("dot strip keeps its slots, fills from the left and names its counts", () => {
+    const strip = (props: Parameters<typeof DotStrip>[0]) => renderToString(() => createComponent(DotStrip, props));
+    const growing = strip({ dots: ["accent", "warning", "muted"], length: 5, label: "2 of 5 checked", selected: 0 });
+    expect(growing).toContain('role="img"');
+    expect(growing).toContain('aria-label="2 of 5 checked"');
+    expect(growing.match(/k2b-dot-strip__dot/g)).toHaveLength(5);
+    expect(growing.match(/data-state="pending"/g)).toHaveLength(2);
+    expect(growing).toContain('data-state="accent" data-selected=""');
+    expect(growing).toContain("--k2b-dot-strip-columns: 5");
+    const waiting = strip({ dots: ["accent"], length: 3, waiting: true, label: "Waiting", columns: 25, size: "lg" });
+    expect(waiting.match(/data-state="waiting"/g)).toHaveLength(3);
+    expect(waiting).toContain('data-size="lg"');
+    expect(waiting).toContain("--k2b-dot-strip-columns: 25");
+    expect(strip({ dots: ["ai", "danger"], length: 1, label: "Two" }).match(/k2b-dot-strip__dot/g)).toHaveLength(2);
   });
 
   test("progress ring draws a rounded, clamped share and marks warning and danger beyond colour", () => {

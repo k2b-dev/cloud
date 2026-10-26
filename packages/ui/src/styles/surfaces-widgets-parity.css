@@ -539,6 +539,18 @@
 .k2b-ui .k2b-progress[data-tone="warning"] .k2b-progress__value { background: var(--k2b-warning-500); }
 .k2b-ui .k2b-progress[data-tone="danger"] .k2b-progress__value { background: var(--k2b-danger-500); }
 .k2b-ui .k2b-progress__percent { flex: 0 0 auto; color: var(--k2b-text-muted); font-size: 0.6875rem; font-variant-numeric: tabular-nums; }
+/* -------------------------------------------------------------- DotStrip -- */
+/* Fixed slots: a growing strip fills empty rings from the left and never changes its size. */
+.k2b-ui .k2b-dot-strip { display: grid; grid-template-columns: repeat(var(--k2b-dot-strip-columns), minmax(0, 0.75rem)); gap: 0.125rem; align-items: center; min-width: 0; }
+.k2b-ui .k2b-dot-strip[data-size="lg"] { grid-template-columns: repeat(var(--k2b-dot-strip-columns), minmax(0, 1rem)); gap: 0.25rem; }
+.k2b-ui .k2b-dot-strip__dot { display: block; width: 100%; aspect-ratio: 1; border-radius: 999px; background: var(--k2b-border-strong); }
+.k2b-ui .k2b-dot-strip__dot[data-state="accent"] { background: var(--app-accent, var(--k2b-action-solid)); }
+.k2b-ui .k2b-dot-strip__dot[data-state="warning"] { background: var(--k2b-warning-500); }
+.k2b-ui .k2b-dot-strip__dot[data-state="danger"] { background: var(--k2b-danger-500); }
+.k2b-ui .k2b-dot-strip__dot[data-state="ai"] { background: var(--k2b-ai-accent); }
+.k2b-ui .k2b-dot-strip__dot[data-state="pending"] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--k2b-border-strong); }
+.k2b-ui .k2b-dot-strip__dot[data-state="waiting"] { background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-dot-strip__dot[data-selected] { box-shadow: 0 0 0 2px var(--k2b-surface), 0 0 0 3.5px var(--k2b-text); }
 .k2b-ui .k2b-progress-ring { display: block; width: 1rem; height: 1rem; flex: 0 0 auto; color: var(--k2b-action-solid); }
 .k2b-ui .k2b-progress-ring[data-tone="warning"] { color: var(--k2b-warning-500); }
 .k2b-ui .k2b-progress-ring[data-tone="danger"] { color: var(--k2b-danger-500); }

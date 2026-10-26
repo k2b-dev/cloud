@@ -4,6 +4,8 @@ export type { AvatarStackPerson, AvatarStackProps } from "./AvatarStack";
 export { AvatarStack } from "./AvatarStack";
 export type { DescriptionListItem, DescriptionListProps } from "./DescriptionList";
 export { DescriptionList } from "./DescriptionList";
+export type { DotStripProps, DotStripTone } from "./DotStrip";
+export { DotStrip } from "./DotStrip";
 export type { LinkCardColor, LinkCardProps } from "./LinkCard";
 export { LinkCard } from "./LinkCard";
 export type { NotFoundStateAction, NotFoundStateProps } from "./NotFoundState";
