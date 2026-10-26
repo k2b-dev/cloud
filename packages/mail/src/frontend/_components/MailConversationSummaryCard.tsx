@@ -181,11 +181,13 @@ export default function MailConversationSummaryCard(props: {
               </Button>
             </div>
           </Show>
-          <p class="mt-auto flex items-center gap-1.5 pt-2.5 text-xs opacity-80">
+          <p class="mt-auto flex flex-wrap items-center gap-x-1.5 gap-y-0.5 pt-2.5 text-xs opacity-80">
             <span>{t().countsOnAllowance}</span>
             <Show when={props.state.allowance && !props.state.allowance.unlimited && props.state.allowance.usedPercent !== null}>
-              <ProgressRing value={props.state.allowance?.usedPercent ?? 0} label={t().countsOnAllowance} />
-              <span>· {t().allowanceUsed({ percent: Math.round(props.state.allowance?.usedPercent ?? 0) })}</span>
+              <span class="inline-flex items-center gap-1 whitespace-nowrap">
+                <ProgressRing value={props.state.allowance?.usedPercent ?? 0} label={t().countsOnAllowance} />
+                {t().allowanceUsed({ percent: Math.round(props.state.allowance?.usedPercent ?? 0) })}
+              </span>
             </Show>
           </p>
         </Match>
