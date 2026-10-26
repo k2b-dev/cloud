@@ -61,6 +61,23 @@ export function ReactionBar(props: ReactionBarProps): JSX.Element {
   const [touch, setTouch] = createSignal(false);
   let root: HTMLDivElement | undefined;
   let surface: HTMLSpanElement | undefined;
+  // The chip that holds focus. When it goes away, such as the reader's last reaction of its kind, focus moves to the
+  // chip now in its place, else the one before it, else "Add reaction", so a keyboard user keeps their place.
+  let focusedKey: string | undefined;
+  createEffect(
+    on(keys, (next, previous) => {
+      const gone = focusedKey;
+      if (!root || gone === undefined || next.includes(gone)) return;
+      focusedKey = undefined;
+      const active = document.activeElement;
+      if (active && active !== document.body && root.contains(active)) return;
+      const index = (previous ?? []).indexOf(gone);
+      const target = next[Math.min(Math.max(index, 0), next.length - 1)];
+      const chipElement =
+        target === undefined ? null : root.querySelector<HTMLElement>(`button[data-reaction-key="${CSS.escape(target)}"]`);
+      (chipElement ?? root.querySelector<HTMLElement>(".k2b-reaction-bar__add-button"))?.focus();
+    }),
+  );
 
   onMount(() => {
     if (!root || !surface) return;
@@ -159,9 +176,12 @@ export function ReactionBar(props: ReactionBarProps): JSX.Element {
     };
     const focusIn = (event: FocusEvent) => {
       const chip = chipOf(event.target);
+      focusedKey = chip instanceof HTMLButtonElement ? chip.dataset.reactionKey : undefined;
       if (chip?.matches(":focus-visible")) delayed(chip);
     };
     const focusOut = (event: FocusEvent) => {
+      // Focus leaving for somewhere else ends the tracking; a removed chip reports no next target and keeps it.
+      if (event.relatedTarget instanceof Node && !root?.contains(event.relatedTarget)) focusedKey = undefined;
       if (chipOf(event.target) && !chipOf(event.relatedTarget) && !(touch() && openChip)) close();
     };
     const resetSwallow = () => {

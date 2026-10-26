@@ -466,6 +466,7 @@ describe("@k2b/ui sidebar item status", () => {
         [{ unread: 2 }, { unread: 2, mention: true }, { mention: true }, { unread: true, mention: true }, { unread: 0, mention: true }],
       ];
       const places: Record<"unread" | "mention" | "muted", Set<number>> = { unread: new Set(), mention: new Set(), muted: new Set() };
+      const countStarts = new Set<number>();
       for (const [index, sequence] of sequences.entries()) {
         const mention = new Set<number>();
         for (const status of sequence) {
@@ -474,11 +475,13 @@ describe("@k2b/ui sidebar item status", () => {
           expect(live.unread).not.toBeNull();
           places.unread.add(Math.round(live.unread!.right * 10));
           if (live.muted) places.muted.add(Math.round(live.muted.right * 10));
+          if (live.count) countStarts.add(Math.round(live.count.left * 10));
           if (live.mention) mention.add(Math.round(live.mention.right * 10));
         }
         expect({ sequence: index, mention: mention.size }).toEqual({ sequence: index, mention: 1 });
       }
       expect({ unread: places.unread.size, muted: places.muted.size }).toEqual({ unread: 1, muted: 1 });
+      expect(countStarts.size).toBe(1);
     } finally {
       await page.close();
     }
