@@ -2964,3 +2964,14 @@
 .notebook-comments-sheet .notebook-comment:not([data-active]) > .notebook-comment__text {
   display: block;
 }
+.notebook-comments__skeleton {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.notebook-comments__skeleton .k2b-skeleton {
+  height: 0.625rem;
+}

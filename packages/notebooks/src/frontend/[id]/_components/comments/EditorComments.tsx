@@ -1,6 +1,6 @@
 import { type ChangeSet, EditorSelection, Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
-import { Button, personColor, SelectionToolbar, Toolbar, useLocale } from "@k2b/ui";
+import { announce, Button, personColor, SelectionToolbar, Toolbar, useLocale } from "@k2b/ui";
 import { type Accessor, batch, createEffect, createMemo, createSignal, type JSX, on, onCleanup, untrack } from "solid-js";
 import type { AnnotationProjection } from "../../../../lib/annotation-contracts";
 import {
@@ -163,6 +163,18 @@ export const createEditorComments = (options: {
     return true;
   };
 
+  // The caret entering a commented passage says whose comment it is and how to open it, once per passage.
+  let announced: string | null = null;
+  const announcePassage = (view: EditorView) => {
+    if (!view.hasFocus) return;
+    const head = view.state.selection.main.head;
+    const marks = annotations.marks(view.state).filter((mark) => !mark.orphan && mark.from <= head && head <= mark.to);
+    const key = marks.map((mark) => mark.id).join(" ") || null;
+    if (key === announced) return;
+    announced = key;
+    if (marks.length) announce(`${marks.map((mark) => mark.label).join(", ")}. ${t().openHint}`);
+  };
+
   /** The toolbar opens once the pointer is released over a selection, not while it is dragged. */
   let pointerDown = false;
   const syncSelection = (view: EditorView) => {
@@ -178,7 +190,10 @@ export const createEditorComments = (options: {
         setTick((value) => value + 1);
         setMarks(annotations.marks(update.state));
       }
-      if (update.selectionSet || update.focusChanged) syncSelection(update.view);
+      if (update.selectionSet || update.focusChanged) {
+        syncSelection(update.view);
+        announcePassage(update.view);
+      }
     }),
     EditorView.domEventHandlers({
       pointerdown: () => {

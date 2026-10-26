@@ -1,5 +1,5 @@
 import type { EditorView } from "@codemirror/view";
-import { personColor, useLocale } from "@k2b/ui";
+import { personColor, Skeleton, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { Annotation } from "../../../../lib/annotation-contracts";
 import type { AnnotationMark } from "../../../lib/editor/annotations";
@@ -239,6 +239,17 @@ export function CommentMargin(props: Props) {
         {(col) => (
           <aside class="notebook-comments" aria-label={t().comments} style={{ left: `${col().right + GAP}px` }} onKeyDown={onKeyDown}>
             {head()}
+            <Show when={!ui.store.projection() && !ui.store.error()}>
+              <For each={[0, 1]}>
+                {(index) => (
+                  <div class="notebook-comments__skeleton" style={{ top: `${MIN_TOP + index * 96}px` }}>
+                    <Skeleton class="w-1/2" />
+                    <Skeleton />
+                    <Skeleton class="w-2/3" />
+                  </div>
+                )}
+              </For>
+            </Show>
             <Show when={ui.store.projection()}>
               <For each={ui.visible()}>
                 {(item) => (
