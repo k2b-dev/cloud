@@ -2,7 +2,7 @@ import { query } from "@k2b/stdlib/solid";
 import { Avatar, Button, DataTable, FilterChip, InlineGuidance, Placeholder, Skeleton, StatusBadge, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import type { ActivityBasesPage, ActivityPage, HistoryAction } from "../activity-contracts";
-import { type ActivityRequest, type ActivityWhen, activityRequest, HistoryRow, MoreFooter, SkeletonRows } from "./ActivityView";
+import { type ActivityRequest, type ActivityWhen, activityRequest } from "./ActivityView";
 import {
   ADMIN_SEARCH_LIMIT,
   type AdminActivityBase,
@@ -24,6 +24,7 @@ import { openAdminBasePicker, openExportHistoryDialog } from "./ExportHistoryDia
 import HistoryUnavailable, { isHistoryUnavailable } from "./HistoryUnavailable";
 import { actorOf, dayGroups, type HistoryEnvironment, type HistoryRowModel, historyRows, statusOf } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
+import { HistoryRow, MoreFooter, SkeletonRows } from "./history-rows";
 
 export type AdminHistoryProps = {
   env: HistoryEnvironment;
