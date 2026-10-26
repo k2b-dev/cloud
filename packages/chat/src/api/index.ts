@@ -144,7 +144,7 @@ const app = new Hono<AuthContext>()
       if (!total.ok) return respond(c, total);
       const { t } = chatMessages.resolve([getLocale(c)]);
       const { count } = total.data;
-      return c.json({ count, text: count ? t.summaryUnread({ count }) : t.summaryAllRead });
+      return respond(c, ok({ count, text: count ? t.summaryUnread({ count }) : t.summaryAllRead }));
     },
   )
   .post(

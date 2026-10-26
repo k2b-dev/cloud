@@ -3758,6 +3758,8 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
    from a fixed layer at the top edge, and keeps the colour it had for one that
    covers the whole viewport, which after a dialog is the backdrop's dim. */
 .k2b-ui .k2b-mobile-shell {
+  /* MobileShell replaces this SSR default with the measured persistent-toast inset. */
+  --k2b-mobile-shell-toast-inset: 0px;
   position: absolute;
   inset: 0;
   display: flex;

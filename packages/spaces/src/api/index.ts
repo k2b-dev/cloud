@@ -754,7 +754,7 @@ const app = new Hono<AuthContext>()
       const counts = await loadOverviewCounts({ userId: user.data.id, dateConfig: getDateConfig(c) });
       c.header("Cache-Control", "private, no-store");
       const { t } = myTasksMessages.resolve([getLocale(c)]);
-      return c.json({ count: counts.mine, text: t.summary(counts) });
+      return respond(c, ok({ count: counts.mine, text: t.summary(counts) }));
     },
   )
 
