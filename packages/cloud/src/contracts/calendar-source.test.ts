@@ -1,9 +1,9 @@
-import { expect, test, spyOn } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { capabilityHash, compileCapabilities, resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { resolveLiveCapabilityRegistryEntry } from "../_internal/registry";
 import { compileCapabilityManifest } from "../capabilities/testing";
-import { type CapabilityDefinitions, CapabilityManifestSchema } from "./capabilities";
 import * as calendar from "./calendar-source";
+import { type CapabilityDefinitions, CapabilityManifestSchema } from "./capabilities";
 
 const run = async () => ({ ok: false as const, error: { code: "INTERNAL", message: "Unused", status: 500 as const } });
 const definitions = (): CapabilityDefinitions => ({

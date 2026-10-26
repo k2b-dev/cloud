@@ -2736,6 +2736,8 @@ export const listCalendar = async (
     /** Capability callers fail explicitly instead of returning an incomplete calendar. */
     sourceLimit?: number;
     sourceRootIds?: string[];
+    /** Cloud calendar source: intersect the caller selection inside the permission-aware query. */
+    sourceSpaceIds?: string[];
   },
 ): Promise<CalendarItem[]> => {
   const { from, to } = params;
@@ -2743,7 +2745,11 @@ export const listCalendar = async (
   const principalMatch = buildSpacePrincipalCondition(params.subject);
   const bindingMatch =
     params.subject.type === "service_account" && params.boundSpaceId ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
-  const requestedSpaceMatch = params.spaceId ? sql`s.id = ${params.spaceId}::uuid` : sql`true`;
+  const requestedSpaceMatch = params.spaceId
+    ? sql`s.id = ${params.spaceId}::uuid`
+    : params.sourceSpaceIds
+      ? sql`s.id = ANY(${toPgUuidArray(params.sourceSpaceIds)}::uuid[])`
+      : sql`true`;
   const typeMatch = calendarTypeMatch(params.type);
   const priorityMatch = calendarPriorityMatch(params.priorities);
   const columnMatch = calendarColumnMatch(params.columnIds);

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type CapabilityManifest, CloudResourceRefSchema, CapabilitySemanticLinkSchema } from "./capabilities";
+import { type CapabilityManifest, CapabilitySemanticLinkSchema, CloudResourceRefSchema } from "./capabilities";
 import { type CapabilityContract, type CapabilityContractIssue, capabilityContractIssues } from "./capability-compatibility";
 
 /** Elapsed time, matching Spaces agenda's public 31-day request budget. */

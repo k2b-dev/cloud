@@ -797,6 +797,25 @@ collection. A fresh or reset installation creates no Postgres extension.
 Measurements live in each base's ClickHouse database; Postgres keeps control
 data and write reservations. Later starts preserve the new data.
 
+### Discover calendar sources
+
+The additive `calendarSource` declaration lets applications offer calendars
+through their existing capability manifests. Upgrade Core and the consumer's
+`@k2b/cloud` package before expecting discovery. Older readers ignore the new
+declaration; applications without it retain their existing manifest hashes.
+An unreadable declaration is ignored as a whole while its other capabilities
+remain available. Incompatible live sources produce one registry log per
+manifest. See [Calendar sources](/en/docs/platform/calendar-sources).
+
+Spaces adds read-only `calendar.list` and `calendar.events` Queries and
+`GET /api/spaces/calendar/sources` and `GET /api/spaces/calendar/events` for
+unbound user-backed callers. The existing Space iCal link and `event.agenda`
+remain available. No new service, configuration, migration, or subscription is
+needed. Verify source discovery and one authorized event read after upgrading;
+a healthy container alone does not prove that the caller can read a calendar.
+The aggregate reader has a 42-day view range, 100-calendar selection,
+60-call/six-concurrent-call budget, 4 MiB page budget, and caller deadline.
+
 ### Upgrade Spaces task deadlines
 
 Spaces adds the nullable `spaces.items.deadline_date` DATE column and the `items_deadline_one_kind` check on startup. The check permits at most one of `deadline` and `deadline_date`. Existing timestamp deadlines remain timed; there is no backfill. API and capability consumers, such as scripts, agents and integrations, must accept `deadline` as either `YYYY-MM-DD` or an ISO instant and can use `deadlineAllDay` to distinguish them. Deploy the updated Spaces server and its matching browser and CLI assets together. Verify a date-only deadline, a timed deadline, and switching between them after the upgrade.
