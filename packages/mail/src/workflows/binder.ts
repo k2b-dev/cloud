@@ -28,6 +28,7 @@ import {
   snapshotMailWorkflowCatalog,
 } from "./catalog";
 import { mailWorkflows } from "./module";
+import { MAIL_WORKFLOW_SEND_REVIEW_MESSAGE, mailWorkflowNeedsSendReview } from "./send-policy";
 
 const manifest = mailWorkflows.manifest;
 
@@ -37,6 +38,7 @@ type ValueInfo = WorkflowValuePathDescriptor & { providerTarget?: string };
 
 type BindingContext = {
   ir: WorkflowIr;
+  sendReviewRequired: boolean;
   catalog: MailWorkflowCatalog;
   inputs: Map<string, ValueInfo>;
   bindings: Record<string, WorkflowJsonValue>;
@@ -444,6 +446,9 @@ const bindAction = (
     }
     return message;
   };
+  if (context.sendReviewRequired && (step.action === "automaticReply" || step.action === "scheduleDraftSend")) {
+    addDiagnostic(context, "send.reviewRequired", MAIL_WORKFLOW_SEND_REVIEW_MESSAGE, path);
+  }
   if (step.action === "addKeyword" || step.action === "removeKeyword") {
     bindProviderTarget();
     if (config.keyword !== undefined) bindValue(config.keyword, [...path, "keyword"], scope, context);
@@ -668,7 +673,14 @@ export const bindMailWorkflow = async (ir: WorkflowIr, catalog: MailWorkflowCata
       ],
     };
   }
-  const context: BindingContext = { ir, catalog, inputs: new Map(), bindings: {}, diagnostics: [] };
+  const context: BindingContext = {
+    ir,
+    sendReviewRequired: mailWorkflowNeedsSendReview(ir.steps, ir.inputs),
+    catalog,
+    inputs: new Map(),
+    bindings: {},
+    diagnostics: [],
+  };
   bindInputs(context);
   bindTriggers(context);
   bindSteps(ir.steps, new Map(), new Map(), context);

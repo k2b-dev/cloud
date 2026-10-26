@@ -1,8 +1,7 @@
-import { EditorState } from "@codemirror/state";
+import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
-import { encoding } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
 import { FileDropTarget, NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
@@ -29,6 +28,7 @@ import { pressMissedEditor } from "../../../lib/editor/surface-press";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
 import { getNotebookPresenceColor, yjs } from "../../../lib/yjs";
 import { isolateYjsHistory } from "../../../lib/yjs/history";
+import { applyToYText, changesBetween, rebaseOnto } from "../../../lib/yjs/lazy-collab";
 import { notebookWorkspaceMessages } from "../../messages";
 import {
   ACTIVE_HEADING_EVENT,
@@ -67,7 +67,7 @@ import {
   NAVIGATION_VISIBILITY_EVENT,
   NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT,
 } from "../sidebar/navigation-visibility";
-import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
+import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
@@ -84,6 +84,14 @@ import { createSyncStateBridge } from "./sync-state";
 import { createTabKeyPreference } from "./tab-key-preference";
 
 const TOC_DEBOUNCE_MS = 300;
+/** The origin of the edits made before the live document arrived, so they undo as one step. */
+const FIRST_EDITS = Symbol("first edits");
+/** Marks the editor's own catch-up with the live document, which is no edit of the person's. */
+const firstEditsSettled = Annotation.define<boolean>();
+/** How long leaving the note waits for the first edits to reach the live note before it asks. */
+const FIRST_EDITS_LEAVE_WAIT_MS = 5_000;
+/** How often a note that is only read tries again to load a newer saved text, waiting 1, 2, then 4 s. */
+const SAVED_TEXT_RETRIES = 3;
 type LeaveGuard = Pick<ReturnType<typeof createSyncEnded>, "confirmLeave" | "releaseLeave">;
 type EditorInstanceProps = {
   noteId: string;
@@ -93,12 +101,10 @@ type EditorInstanceProps = {
   historyIncomplete: boolean;
   notebookName: string;
   appUrl: string;
-  workspaceCursor: string | null;
-  onWorkspaceCursorChange?: (cursor: string) => void;
   userId: string;
   displayName: string;
-  initialSnapshot: string | null;
-  initialContent?: string | null;
+  /** The saved Markdown the note opens with; collaboration connects on the first edit. */
+  initialContent: string | null;
   initialPanelOpen: boolean;
   initialRichMode: "rich" | "source";
   readOnly?: boolean;
@@ -139,11 +145,7 @@ export default function NoteEditor(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const { initialHref, initialDetail, ...initialEditorProps } = props;
-  const [lastWorkspaceCursor, setLastWorkspaceCursor] = createSignal(initialEditorProps.workspaceCursor);
-  const [current, setCurrent] = createSignal<EditorInstanceProps>({
-    ...initialEditorProps,
-    onWorkspaceCursorChange: setLastWorkspaceCursor,
-  });
+  const [current, setCurrent] = createSignal<EditorInstanceProps>(initialEditorProps);
   // Read before anything mounts: the first editor opens where the reader scrolled the server preview.
   const preview = document.getElementById(NOTE_PREVIEW_ID);
   let previewPosition = preview ? previewReadingPosition(preview) : null;
@@ -194,7 +196,7 @@ export default function NoteEditor(props: Props) {
         noteTitle: note.title,
         noteLockedAt: note.lockedAt,
         historyIncomplete: note.historyIncomplete,
-        initialSnapshot: note.yjsSnapshot,
+        initialContent: note.contentMd,
       },
       eventDetail: detail,
     };
@@ -237,11 +239,7 @@ export default function NoteEditor(props: Props) {
     const loaded = routeState.data();
     if (loaded && routeSource() === loaded.source) {
       const applied = navigation.apply(loaded.source, loaded.href, () => {
-        setCurrent({
-          ...loaded.props,
-          workspaceCursor: lastWorkspaceCursor(),
-          onWorkspaceCursorChange: setLastWorkspaceCursor,
-        });
+        setCurrent(loaded.props);
         layout.update({
           breadcrumbs: [
             { title: t().start, href: "/" },
@@ -413,11 +411,23 @@ function EditorInstance(
   const [richMode, setRichMode] = createSignal(props.initialRichMode !== "source");
   const syncEnded = createSyncEnded({
     messages: t,
-    hasUnsentChanges: () => provider?.hasUnsentChanges() ?? false,
+    hasUnsentChanges: () => hasUnsentChanges(),
     resume: () => provider?.resume(),
     focusEditor: () => editorView()?.focus(),
   });
-  onCleanup(props.registerLeaveGuard(syncEnded));
+  // Edits the server has not confirmed yet, also those typed before the live note arrived, hold leaving until it does.
+  const sentWaiters = new Set<() => void>();
+  const notifySent = () => {
+    if (hasUnsentChanges()) return;
+    for (const resolve of sentWaiters) resolve();
+    sentWaiters.clear();
+  };
+  onCleanup(
+    props.registerLeaveGuard({
+      confirmLeave: () => (holdsLeave() ? leaveAfterSent() : syncEnded.confirmLeave()),
+      releaseLeave: syncEnded.releaseLeave,
+    }),
+  );
   // The sync-ended bar replaces the toolbar, so a toolbar mounted again starts from the panel's current state.
   const [panelOpen, setPanelOpen] = createSignal(props.initialPanelOpen);
   const onPanelState = (event: Event) => {
@@ -426,16 +436,12 @@ function EditorInstance(
   };
   const tabKeys = createTabKeyPreference(() => !!props.readOnly || !!syncEnded.ended());
 
+  // The document stays empty until the first edit connects; the live state then arrives from the server, so the
+  // saved text shown until then is never merged into it twice.
   const doc = new Y.Doc({ gc: true });
-  if (props.initialSnapshot) {
-    const bytes = encoding.fromBase64(props.initialSnapshot);
-    if (bytes.length) Y.applyUpdate(doc, bytes, "initial");
-  }
-
   const ytext = doc.getText("codemirror");
-  if (props.readOnly && !props.initialSnapshot && props.initialContent) {
-    ytext.insert(0, props.initialContent);
-  }
+  /** The saved text the editor shows until the first edit; a newer save by someone else replaces it. */
+  let baseText = (props.initialContent ?? "").replace(/\r\n?/g, "\n");
   const awareness = new Awareness(doc);
 
   const color = getNotebookPresenceColor(props.userId);
@@ -446,13 +452,19 @@ function EditorInstance(
     createExtension: addExtension,
     editorView,
   } = createCodeMirror({
-    value: ytext.toString(),
+    value: baseText,
   });
+  /** The note as the editor shows it; while collaboration runs, the editor mirrors Yjs. */
+  const currentText = () => editorView()?.state.doc.toString() ?? baseText;
 
   // Book's rendering of the draft, or of the saved note in read-only mode: block previews and heading lines.
-  const loadBlockPreview = async (markdown: string | undefined, abortSignal: AbortSignal) => {
+  const loadBlockPreview = async (markdown: string | undefined, abortSignal: AbortSignal, pages?: ReadonlyMap<number, number>) => {
+    const json = {
+      ...(markdown === undefined ? {} : { markdown }),
+      ...(pages?.size ? { pages: Object.fromEntries([...pages].map(([line, page]) => [String(line), page])) } : {}),
+    };
     const response = await apiClient[":id"].notes[":noteId"]["block-preview"].$post(
-      { param: { id: props.notebookId, noteId: props.noteId }, json: markdown === undefined ? {} : { markdown } },
+      { param: { id: props.notebookId, noteId: props.noteId }, json },
       { init: { signal: abortSignal } },
     );
     if (!response.ok) throw new Error(queryBlockMessages.resolve([locale()]).t.failed);
@@ -462,21 +474,90 @@ function EditorInstance(
     notebookId: props.notebookId,
     noteId: props.noteId,
     readOnly: !!props.readOnly,
-    initialMarkdown: ytext.toString(),
+    initialMarkdown: baseText,
     view: editorView,
     enabled: richMode,
     locale,
-    load: loadBlockPreview,
+    load: (markdown, pages, abortSignal) => loadBlockPreview(markdown, abortSignal, pages),
   });
   addExtension(blockPreviews.listener);
 
   const undoManager = props.readOnly ? null : new Y.UndoManager(ytext);
+  // The edits made before the live document arrived enter Yjs as one undo step.
+  undoManager?.addTrackedOrigin(FIRST_EDITS);
+  const collab = new Compartment();
+  const [collabStarted, setCollabStarted] = createSignal(false);
+  const [collabActive, setCollabActive] = createSignal(false);
   if (!props.readOnly && undoManager) {
-    addExtension(() => yCollab(ytext, null, { undoManager }));
+    addExtension(collab.of([]));
     addExtension(() => isolateYjsHistory(undoManager));
-    addExtension(() => remoteCursors(ytext, awareness));
-    addExtension(() => (syncEnded.ended() ? [] : keymap.of(yUndoManagerKeymap)));
+    // The Yjs undo keys need the binding; before it, edits have no history to undo.
+    addExtension(() => (syncEnded.ended() || !collabActive() ? [] : keymap.of(yUndoManagerKeymap)));
+    // Reading or switching notes needs no collaboration; the first edit starts it.
+    addExtension(
+      EditorView.updateListener.of((update) => {
+        if (collabStarted() || !update.docChanged || update.transactions.every((tr) => tr.annotation(firstEditsSettled))) return;
+        setCollabStarted(true);
+        syncState.start();
+        // The typed words are unsent until the live note confirms them; leaving asks first.
+        syncEnded.refresh();
+        provider?.connect();
+      }),
+    );
   }
+  const leaveAfterSent = async (): Promise<boolean> => {
+    await Promise.race([
+      new Promise<void>((resolve) => sentWaiters.add(resolve)),
+      new Promise((resolve) => setTimeout(resolve, FIRST_EDITS_LEAVE_WAIT_MS)),
+    ]);
+    if (!holdsLeave()) return syncEnded.confirmLeave();
+    const text = t();
+    return (
+      (await prompts.confirm(text.leaveUnsavedConfirm, {
+        title: text.leaveNote,
+        icon: "ti ti-logout",
+        variant: "danger",
+        confirmText: text.leaveNote,
+      })) === true
+    );
+  };
+  /** Edits typed before the live document arrived, which exist only on screen. */
+  const pendingFirstEdits = () => collabStarted() && !collabActive();
+  /** Edits not yet confirmed by the server, including those typed before the live document arrived. */
+  const hasUnsentChanges = () => pendingFirstEdits() || (provider?.hasUnsentChanges() ?? false);
+  /** Leaving waits only while this editor's own edits are on their way; an ended session has its own bar and prompt. */
+  const holdsLeave = () => collabStarted() && !syncEnded.ended() && hasUnsentChanges();
+
+  /**
+   * Carries the edits made before the live document arrived onto it, writes them to Yjs and binds the editor to Yjs,
+   * all in one task, so no remote update can reach Yjs in between.
+   */
+  const settleFirstEdits = () => {
+    const view = editorView();
+    if (!view || collabActive()) return;
+    const edited = view.state.doc.toString();
+    const live = ytext.toString();
+    const rebased = rebaseOnto(baseText, edited, live);
+    if (rebased) applyToYText(ytext, rebased.changes, FIRST_EDITS);
+    const text = rebased?.text ?? live;
+    if (text !== edited)
+      view.dispatch({
+        changes: changesBetween(edited, text) ?? { from: 0, to: edited.length, insert: text },
+        annotations: [firstEditsSettled.of(true), Transaction.addToHistory.of(false), Transaction.remote.of(true)],
+      });
+    // Someone rewrote the note while these first edits were typed: the live note stays, and the edits stay copyable.
+    if (!rebased)
+      toast(t().firstEditsNotMerged, {
+        duration: 0,
+        action: { label: t().copyFirstEdits, onClick: () => void clipboard.copy(edited) },
+      });
+    view.dispatch({ effects: collab.reconfigure([yCollab(ytext, null, { undoManager: undoManager! }), remoteCursors(ytext, awareness)]) });
+    undoManager?.stopCapturing();
+    setCollabActive(true);
+    syncState.unsentChanged();
+    syncEnded.refresh();
+    notifySent();
+  };
 
   let cursorIdleTimer: ReturnType<typeof setTimeout> | undefined;
   let cursorHiddenByIdle = false;
@@ -524,7 +605,7 @@ function EditorInstance(
     noteId: props.noteId,
     linkedHeading: props.linkedHeading,
     view: editorView,
-    loadHeadings: (abortSignal) => loadBlockPreview(props.readOnly ? undefined : ytext.toString(), abortSignal),
+    loadHeadings: (abortSignal) => loadBlockPreview(props.readOnly ? undefined : currentText(), abortSignal),
     focus: !props.readOnly,
   });
   addExtension(linkedHeadingJump.extension);
@@ -596,7 +677,7 @@ function EditorInstance(
   );
 
   const syncState = createSyncStateBridge({
-    hasUnsentChanges: () => provider?.hasUnsentChanges() ?? false,
+    hasUnsentChanges: () => hasUnsentChanges(),
     emit: (detail) => {
       if (!props.readOnly) window.dispatchEvent(new CustomEvent(SYNC_STATE_EVENT, { detail }));
     },
@@ -617,6 +698,7 @@ function EditorInstance(
           if (error.code === "STORAGE_EXHAUSTED") setStorageExhausted(true);
         },
         onReady: () => {
+          settleFirstEdits();
           if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
           syncState.ready();
           syncEnded.ready();
@@ -627,12 +709,6 @@ function EditorInstance(
         onPresenceChange: (next) => {
           window.dispatchEvent(new CustomEvent(PRESENCE_EVENT, { detail: next }));
         },
-        workspace: {
-          notebookId: props.notebookId,
-          initialCursor: props.workspaceCursor,
-          onEvent: dispatchWorkspaceEvent,
-          onCursorChange: props.onWorkspaceCursorChange,
-        },
         onFatal: (error) => {
           syncState.end();
           syncEnded.end(error);
@@ -641,11 +717,12 @@ function EditorInstance(
           if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
           syncState.unsentChanged();
           syncEnded.refresh();
+          notifySent();
         },
       });
 
   let disposed = false;
-  let headingLines = extractHeadingLines(ytext.toString());
+  let headingLines = extractHeadingLines(baseText);
   let panelFrame: number | undefined;
   let lastActiveHeading: string | null | undefined;
   let presencePending = false;
@@ -723,7 +800,7 @@ function EditorInstance(
   // events in one pass. (TOC + tasks each parse cheaply, but doing it
   // twice would scan a large note twice per debounce tick.)
   const emitDerivedDocState = () => {
-    const md = ytext.toString();
+    const md = currentText();
     headingLines = extractHeadingLines(md);
     schedulePresenceLocations();
     const title = deriveNoteTitle(md);
@@ -758,7 +835,12 @@ function EditorInstance(
     scheduleDerivedEmit();
     printCopy?.changed();
   };
-  ytext.observe(onTextUpdate);
+  // Local and remote edits both reach the editor's document, before and after collaboration starts.
+  addExtension(
+    EditorView.updateListener.of((update) => {
+      if (update.docChanged) onTextUpdate();
+    }),
+  );
 
   const onToggleRich = () =>
     setRichMode((value) => {
@@ -775,7 +857,7 @@ function EditorInstance(
   });
 
   const exportContent = () =>
-    historyIncomplete() ? `> **${t().historyIncompleteTitle}** ${t().historyIncompleteDetail}\n\n${ytext.toString()}` : ytext.toString();
+    historyIncomplete() ? `> **${t().historyIncompleteTitle}** ${t().historyIncompleteDetail}\n\n${currentText()}` : currentText();
 
   let printArticle!: HTMLElement;
   let printCopy: ReturnType<typeof createNotePrintCopy> | undefined;
@@ -793,7 +875,7 @@ function EditorInstance(
   };
 
   const onDownload = () => {
-    const filename = `${deriveNoteTitle(ytext.toString())}.md`;
+    const filename = `${deriveNoteTitle(currentText())}.md`;
     files.downloadFileFromContent(exportContent(), filename, "text/markdown");
   };
 
@@ -923,7 +1005,6 @@ function EditorInstance(
   onMount(() => {
     printCopy = createNotePrintCopy(printArticle, { notebookId: props.notebookId, noteId: props.noteId, markdown: exportContent, locale });
     writeSettings(props.notebookId, { lastNoteId: props.noteId });
-    provider?.connect();
     const opensHeading = linkedHeadingJump.open();
     const startPosition = props.startPosition;
     if (startPosition) {
@@ -987,6 +1068,69 @@ function EditorInstance(
       );
     }
 
+    // Before the first edit nothing is live: a save by someone else reaches this note as its new saved text.
+    let savedTextRequest: AbortController | undefined;
+    const readSavedText = async (request: AbortController, attempt = 0): Promise<void> => {
+      try {
+        const response = await apiClient[":id"]["route-state"].$get(
+          { param: { id: props.notebookId }, query: { href: window.location.pathname + window.location.search } },
+          { init: { signal: request.signal } },
+        );
+        if (!response.ok) throw new Error(`Failed to load the saved note (${response.status})`);
+        const payload = await response.json();
+        const view = editorView();
+        if (request.signal.aborted || collabStarted() || !view) return;
+        // A note locked, deleted or moved out of reach meanwhile reopens as the server now shows it.
+        if (payload.kind !== "ok" || payload.state.note.id !== props.noteId) {
+          window.location.reload();
+          return;
+        }
+        if (payload.state.note.historyIncomplete) setHistoryIncomplete(true);
+        const saved = (payload.state.note.contentMd ?? "").replace(/\r\n?/g, "\n");
+        const shown = view.state.doc.toString();
+        baseText = saved;
+        if (saved !== shown)
+          view.dispatch({
+            changes: changesBetween(shown, saved) ?? { from: 0, to: shown.length, insert: saved },
+            annotations: [firstEditsSettled.of(true), Transaction.addToHistory.of(false), Transaction.remote.of(true)],
+          });
+      } catch (error) {
+        if (request.signal.aborted) return;
+        // A later event may move the live cursor past this one, so the note tries again on its own.
+        if (attempt >= SAVED_TEXT_RETRIES) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
+        return readSavedText(request, attempt + 1);
+      }
+    };
+    const onWorkspaceEvent = (raw: Event) => {
+      const detail = (raw as CustomEvent<WorkspaceEventDetail>).detail;
+      const { event } = detail;
+      if (props.readOnly || collabStarted()) return;
+      // A note deleted elsewhere before anyone typed here reopens as the server now shows it.
+      if (event.type === "note.deleted" && event.noteId === props.noteId) {
+        window.location.reload();
+        return;
+      }
+      if (event.type !== "note.updated" || event.note.id !== props.noteId) return;
+      if (event.note.historyIncomplete) setHistoryIncomplete(true);
+      savedTextRequest?.abort();
+      const request = new AbortController();
+      savedTextRequest = request;
+      // The event counts as seen only once the saved text arrived, so a failed read is not skipped for good.
+      detail.cover(readSavedText(request));
+    };
+    window.addEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
+    onCleanup(() => {
+      window.removeEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
+      savedTextRequest?.abort();
+    });
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!holdsLeave()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    onCleanup(() => window.removeEventListener("beforeunload", onBeforeUnload));
     window.addEventListener(TOC_SCROLL_EVENT, onScrollToHeading);
     window.addEventListener(NAMED_BLOCK_SCROLL_EVENT, onScrollToNamedBlock);
     window.addEventListener(TOGGLE_RICH_MODE_EVENT, onToggleRich);
@@ -1024,7 +1168,6 @@ function EditorInstance(
     if (tocDebounceTimer) {
       clearTimeout(tocDebounceTimer);
     }
-    ytext.unobserve(onTextUpdate);
     window.removeEventListener(TOC_SCROLL_EVENT, onScrollToHeading);
     window.removeEventListener(NAMED_BLOCK_SCROLL_EVENT, onScrollToNamedBlock);
     window.removeEventListener(TOGGLE_RICH_MODE_EVENT, onToggleRich);
@@ -1099,7 +1242,7 @@ function EditorInstance(
           when={syncEnded.ended()}
           fallback={
             <EditorToolbar
-              connected={connected()}
+              connected={!collabStarted() || connected()}
               editorView={editorView()}
               notebookId={props.notebookId}
               noteId={props.noteId}
@@ -1115,7 +1258,7 @@ function EditorInstance(
               notebookId={props.notebookId}
               ended={ended()}
               sync={syncEnded}
-              markdown={() => ytext.toString()}
+              markdown={currentText}
               noteHref={() => window.location.pathname + window.location.search}
             />
           )}

@@ -36,7 +36,7 @@ export const swapOvertakes = (): (() => boolean) => {
 };
 
 type ViewTransitionDocument = Document & {
-  startViewTransition?: (callback: () => void | Promise<void>) => unknown;
+  startViewTransition?: (callback: () => void | Promise<void>) => { ready?: Promise<unknown> } | undefined;
 };
 
 /**
@@ -69,7 +69,9 @@ export const startViewTransition = (callback: () => void | Promise<void>): void 
     void callback();
     return;
   }
-  doc.startViewTransition(callback);
+  // A newer navigation skips this transition, and `ready` then rejects with an AbortError nobody waits for. The
+  // navigation itself still runs; its own errors reject `updateCallbackDone`, which stays unobserved here.
+  void doc.startViewTransition(callback)?.ready?.catch(() => {});
 };
 
 const restoreRegionScroll = (snapshot: ScrollSnapshot): void => {

@@ -40,6 +40,7 @@ import {
   queuedSenderVerificationTargetSchema,
   type SenderVerificationRequest,
 } from "./sender-verification";
+import { authorizeMailWorkflowSend } from "./workflow-send-policy";
 
 const log = logger("mail:commands");
 
@@ -465,6 +466,14 @@ const createSendOutbox = async (params: {
 }): Promise<OutboundMessageProjection | null> => {
   const { prepared } = params;
   if (prepared.kind !== "send" || !prepared.draftId || !prepared.senderIdentityId) return null;
+  if (params.actor.kind === "workflow") {
+    const allowed = await authorizeMailWorkflowSend({
+      db: params.db,
+      mailboxId: params.mailboxId,
+      workflowVersionId: params.actor.workflowVersionId,
+    });
+    if (!allowed.ok) throw Object.assign(new Error(allowed.error.message), allowed.error);
+  }
   const send = await loadSendContent({
     db: params.db,
     mailboxId: params.mailboxId,

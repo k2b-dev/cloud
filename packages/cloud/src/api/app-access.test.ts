@@ -179,17 +179,21 @@ test("strict mutation validation and the 4 KiB byte limit run before any mutatio
   expect(writes).toHaveLength(1);
 });
 
-test("OAuth credential kind and scope caps reach management unchanged", async () => {
+test("OAuth scopes reach management unchanged after the HTTP mutation ceiling", async () => {
   authenticated = false;
-  spies.push(spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", user, scopes: ["read"], payload: {} }));
+  const verify = spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", user, scopes: ["read"], payload: {} });
+  spies.push(verify);
   const routes = createOwnedAppAccessRoutes(app);
-  expect(
-    (await routes.request("/", { ...post(), headers: { "content-type": "application/json", authorization: "Bearer fixture-oauth" } }))
-      .status,
-  ).toBe(200);
+  const headers = { "content-type": "application/json", authorization: "Bearer fixture-oauth" };
+  expect((await routes.request("/", { headers })).status).toBe(200);
+  expect(reads[0]?.authority).toMatchObject({ credentialKind: "oauth", scopes: ["read"] });
+  expect((await routes.request("/", { ...post(), headers })).status).toBe(403);
+  expect(writes).toHaveLength(0);
+  verify.mockResolvedValue({ kind: "user", user, scopes: ["write"], payload: {} });
+  expect((await routes.request("/", { ...post(), headers })).status).toBe(200);
   expect(writes[0]?.authority).toMatchObject({
     credentialKind: "oauth",
-    scopes: ["read"],
+    scopes: ["write"],
     accessSubject: { type: "user", userId: user.id },
   });
 });

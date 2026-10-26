@@ -61,6 +61,7 @@ import { requestCacheRedis } from "./request-cache-redis";
 import { SessionAppDeviceInactiveError, session } from "./session";
 import { createTestSession } from "./session/session.test-fixture";
 import * as settings from "./settings";
+import { preserveTestSettings } from "./settings/settings.test-fixture";
 
 const deviceActions = createDeviceActions((id, _locale) => id);
 
@@ -129,6 +130,13 @@ const OldPendingLoginSchema = z
   .strict();
 
 suite("isolated app approval protocol", () => {
+  preserveTestSettings([
+    "app.url",
+    "security.rate_limit_per_second",
+    "user.app_approval.enabled",
+    "user.app_approval.origin",
+    ...["guest", "login", "freeipa"].map((category) => `user.category.${category}.enabled`),
+  ]);
   let server: Server<unknown>;
   let cfg: AppApprovalConfig;
   // In-process stand-in for the Sync broadcast between replicas.

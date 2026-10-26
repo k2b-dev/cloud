@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
-import { memoryStore, nessi, type Provider } from "@k2b/nessi";
+import { defineTool, memoryStore, nessi, type Provider } from "@k2b/nessi";
 import { openAICompatible } from "@k2b/nessi/ai";
+import { z } from "zod";
 import { aiTurnErrorCanContinue, aiTurnErrorText } from "./chat/turn-error";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
 import { completeThroughStream } from "./provider";
@@ -8,6 +9,7 @@ import { AiQuotaError } from "./quotas";
 import {
   AiTurnFailure,
   type AiTurnFailureReason,
+  aiIssueDiagnostic,
   aiTurnErrorFromProviderIssue,
   aiTurnReasonFromThrown,
   rememberProviderErrors,
@@ -272,3 +274,45 @@ test("an unanswered failed step explains the failure in EN and DE and offers Con
     "Ein Schritt ist fehlgeschlagen, und das Modell hat danach nicht geantwortet. Die bisherigen Ergebnisse bleiben erhalten. Mit einer neuen Nachricht geht es weiter.",
   );
 });
+
+for (const kind of ["invalid-arguments", "unknown-tool"] as const)
+  test(`loop diagnostics exclude ${kind} content`, async () => {
+    const marker = "FICTIONAL_LOOP_DIAGNOSTIC_CANARY";
+    const provider: Provider = {
+      name: "fixture",
+      family: "openai-compatible",
+      model: "fixture",
+      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
+      complete: async () => {
+        throw new Error("Unused complete");
+      },
+      async *stream() {
+        yield {
+          type: "block_end",
+          blockId: "call",
+          index: 0,
+          block: { type: "tool_call", id: "call", name: kind === "unknown-tool" ? marker : "count", args: { count: marker } },
+        };
+        yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" };
+      },
+    };
+    const tools = [
+      defineTool({ name: "count", description: "Count fictional entries", inputSchema: z.object({ count: z.number() }) }).server(
+        async ({ count }) => count,
+      ),
+    ];
+    const issues = [];
+    for await (const event of nessi({
+      provider,
+      tools,
+      systemPrompt: "Fictional test",
+      input: "Count",
+      store: memoryStore(),
+      maxTurns: 1,
+    })) {
+      if (event.type === "issue") issues.push(event.issue);
+    }
+    expect(issues.some((issue) => issue.message.includes(marker))).toBe(true);
+    expect(JSON.stringify(issues.map(aiIssueDiagnostic))).not.toContain(marker);
+    expect(issues.map(aiIssueDiagnostic)).toContainEqual({ code: "tool_execution_error", message: "AI tool execution failed." });
+  });

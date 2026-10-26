@@ -1,6 +1,7 @@
 import { defaultPlugins, defineFibel } from "@k2b/fibel";
 import { agentSkillsPlugin, assistantPlugin, imprintPlugin, mcpPlugin, providerFromEnv } from "@k2b/fibel/plugins";
 import { cloudSitePlugin } from "./plugins/cloud-site";
+import { lessonsPlugin } from "./plugins/lessons";
 import { docsPages } from "./src/docs/pages";
 import { siteFooterLinks, siteHeader, siteLocales, siteTheme, siteUrl } from "./src/site-config";
 import { uiPages } from "./src/ui/pages";
@@ -70,6 +71,7 @@ export default defineFibel({
   pages: [...docsPages, ...uiPages],
   plugins: [
     ...defaultPlugins(),
+    lessonsPlugin(),
     mcpPlugin(),
     agentSkillsPlugin({ directory: "agent-skills" }),
     ...assistantPlugins,

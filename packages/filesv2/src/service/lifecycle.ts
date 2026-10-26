@@ -16,7 +16,7 @@ import type {
 } from "../contracts";
 import type { bindings, NewBinding } from "../data/bases";
 import { type Operation, operations, withRootLock } from "../data/operations";
-import { filegateException, pendingMigration, type UserFilesCall } from "./activity";
+import { fileAction, filegateException, journalAction, pendingMigration, type UserFilesCall } from "./activity";
 import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import type { FilesFilegate, FilesRoot } from "./filegate-facade";
@@ -198,7 +198,15 @@ export function createDirectoryLifecycle(deps: Dependencies) {
     if (op.action === "delete" && !within(op.source, active) && !op.archive_id) throw new FilesError("configuration_changed", 409);
   }
   // Directory lifecycle writes join the history in a later step; until then they pass by their named key.
-  function perform(config: Config, root: FilesRoot, operation: Operation, allowCreate = true): Promise<OperationResult> {
+  async function perform(config: Config, root: FilesRoot, operation: Operation, allowCreate = true): Promise<OperationResult> {
+    if (operation.action === "delete") {
+      const activity = await operations.history(operation.id);
+      if (operation.state !== "pending") return result(operation);
+      if (!activity) throw new FilesError("activity_scope_missing", 500);
+      // Read-only maintenance must not look like an active writer to recovery.
+      if (!allowCreate) return performOperation(config, root, operation, false);
+      return journalAction(activity.id, () => performOperation(config, root, operation, allowCreate));
+    }
     return pendingMigration("lifecycle.operation", () => performOperation(config, root, operation, allowCreate));
   }
   async function performOperation(config: Config, root: FilesRoot, operation: Operation, allowCreate: boolean): Promise<OperationResult> {
@@ -280,24 +288,20 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         if (operation.action === "archive") await privateDirectory(root, operation.target!.split("/").slice(0, -1).join("/"));
       } else {
         const node = await stat(root, operation.source);
-        if (node) {
-          if (!allowCreate) return result(operation);
-          if (!unchanged(operation.snapshot, node)) throw new FilesError("source_changed", 409);
-          try {
-            await root.remove(operation.source, true);
-          } catch (error) {
-            if (await stat(root, operation.source)) throw error;
-          }
-        }
+        if (!node) throw new FilesError("operation_unresolved", 409);
+        if (!allowCreate) return result(operation);
+        if (!unchanged(operation.snapshot, node)) throw new FilesError("source_changed", 409);
+        await root.remove(operation.source, true);
       }
-      await operations.finish(operation);
-      await audit.recordResultAfterSideEffect({
-        action: `filesv2.${operation.action}`,
-        actor: { userId: operation.actor_id, uid: operation.actor_name },
-        target: { type: "filesv2.directory", id: operation.id, label: operation.source },
-        metadata: { area: operation.area, root: operation.root, target: operation.target },
-        result: { ok: true, data: { operationId: operation.id } },
-      });
+      await operations.finish(operation, root);
+      if (operation.action !== "delete")
+        await audit.recordResultAfterSideEffect({
+          action: `filesv2.${operation.action}`,
+          actor: { userId: operation.actor_id, uid: operation.actor_name },
+          target: { type: "filesv2.directory", id: operation.id, label: operation.source },
+          metadata: { area: operation.area, root: operation.root, target: operation.target },
+          result: { ok: true, data: { operationId: operation.id } },
+        });
       return result({ ...operation, state: "complete" });
     } catch (error) {
       await sql`UPDATE filesv2.operations SET error_code=${error instanceof FilesError ? error.code : "unavailable"},updated_at=now() WHERE id=${operation.id}::uuid`;
@@ -307,14 +311,15 @@ export function createDirectoryLifecycle(deps: Dependencies) {
   async function newOperation(
     config: Config,
     root: FilesRoot,
-    input: Omit<Operation, "id" | "state" | "error_code" | "created_at" | "updated_at">,
+    input: Omit<Operation, "id" | "state" | "error_code" | "created_at" | "updated_at" | "activity_recorded">,
+    call?: UserFilesCall,
   ): Promise<OperationResult> {
     const pending = await operations.pending(input.root, input.source);
     if (pending) {
       if (pending.action !== input.action || pending.target !== input.target) throw new FilesError("operation_pending", 409);
       return perform(config, root, pending);
     }
-    const operation = await operations.insert({ id: crypto.randomUUID(), ...input });
+    const operation = await operations.insert({ id: crypto.randomUUID(), ...input }, call);
     return perform(config, root, operation);
   }
   async function provisionCandidate(
@@ -703,9 +708,42 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       const actor = call.actor;
       const loc = await location(actor, input);
       if (input.confirmPath !== loc.target) throw new FilesError("confirmation_mismatch");
-      if ((await loc.root.stat(loc.target)).directory) throw new FilesError("not_file");
-      if (!(await loc.root.info()).versioning.enabled) throw new FilesError("versioning_disabled");
-      await pendingMigration("lifecycle.admin_delete_version", () => loc.root.deleteVersion(loc.target, input.id));
+      const node = await loc.root.stat(loc.target);
+      if (node.directory) throw new FilesError("not_file");
+      const info = await loc.root.info();
+      if (!info.versioning.enabled) throw new FilesError("versioning_disabled");
+      const binding = await deps.bindings.path(loc.root.name, loc.base);
+      await fileAction(
+        call,
+        {
+          action: "version.delete",
+          serverUrl: loc.config.url,
+          root: loc.root.name,
+          baseId: binding?.id ?? null,
+          itemId: info.stableIds ? node.id : null,
+          directory: false,
+          name: loc.target.split("/").at(-1)!,
+          pathBefore: loc.target,
+          pathAfter: loc.target,
+          size: node.size,
+          revisionBefore: node.revision,
+          versionId: input.id,
+        },
+        () => loc.root.deleteVersion(loc.target, input.id),
+        async (tx) => {
+          await audit.record(
+            {
+              action: "filesv2.version.delete",
+              outcome: "allowed",
+              actor: { userId: loc.actorId },
+              target: { type: "filesv2.version", id: input.id, label: loc.target },
+              requestId: call.requestId,
+              metadata: { root: loc.root.name },
+            },
+            tx,
+          );
+        },
+      );
       return { deleted: true };
     },
     async adminDelete(call: UserFilesCall, input: AdminLocator & { confirmPath: string }): Promise<OperationResult> {
@@ -728,21 +766,26 @@ export function createDirectoryLifecycle(deps: Dependencies) {
           const archived = await operations.get(loc.archiveId);
           baseId = archived?.base_id ?? null;
         }
-        return newOperation(loc.config, loc.root, {
-          area: input.area,
-          kind: loc.kind,
-          root: loc.root.name,
-          server_url: loc.config.url,
-          name: loc.name,
-          action: "delete",
-          source: loc.target,
-          target: null,
-          base_id: baseId,
-          archive_id: loc.archiveId,
-          actor_id: loc.actorId,
-          actor_name: loc.actorName,
-          snapshot: node,
-        });
+        return newOperation(
+          loc.config,
+          loc.root,
+          {
+            area: input.area,
+            kind: loc.kind,
+            root: loc.root.name,
+            server_url: loc.config.url,
+            name: loc.name,
+            action: "delete",
+            source: loc.target,
+            target: null,
+            base_id: baseId,
+            archive_id: loc.archiveId,
+            actor_id: loc.actorId,
+            actor_name: loc.actorName,
+            snapshot: node,
+          },
+          call,
+        );
       });
     },
     async deleteDirectory(call: UserFilesCall, input: DirectoryTarget & { confirmPath: string }) {
@@ -762,6 +805,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         const current = await operations.get(id);
         if (!current) throw new FilesError("not_found", 404);
         operationContained(state.config, current);
+        if (current.action === "delete") await operations.history(current.id);
         if (current.state !== "pending") return result(current);
         const binding = await deps.bindings.path(
           current.root,
