@@ -283,3 +283,17 @@ test("discovers ClickHouse and versioned Pulse migration files as isolated integ
     false,
   );
 });
+
+test("keeps the Mail workflow kernel in Cloud's isolated CI integration suites with Mail's fixture setup", async () => {
+  const suites = await discoverTestSuites(workspaceRoot, { integration: true, filter: "mail-workflow-kernel" });
+  expect(suites).toEqual([
+    {
+      name: "@k2b/cloud test/integration/mail-workflow-kernel.integration.test.ts",
+      cwd: join(workspaceRoot, "packages/cloud"),
+      command: ["bun", "test", "--preload", preload, "--timeout", "30000", "test/integration/mail-workflow-kernel.integration.test.ts"],
+    },
+  ]);
+  expect(await Bun.file(join(suites[0]!.cwd, suites[0]!.command.at(-1)!)).text()).toContain(
+    'import "../../../mail/test/integration-preload";',
+  );
+});
