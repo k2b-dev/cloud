@@ -2492,3 +2492,52 @@
     display: none;
   }
 }
+
+/* A paged query: blank rows keep its last page as tall as a full one, and the page buttons sit below it. */
+.notebook-book-content .notebook-query-filler {
+  visibility: hidden;
+}
+
+.notebook-book-content .notebook-query-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.75rem;
+  color: var(--k2b-text-muted);
+}
+
+.notebook-query-pager__range {
+  min-inline-size: 8rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.notebook-query-pager__button {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  color: var(--k2b-text-secondary);
+  cursor: pointer;
+}
+
+.notebook-query-pager__button:hover:not(:disabled) {
+  background: var(--k2b-hover);
+  color: var(--k2b-text);
+}
+
+.notebook-query-pager__button:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 0px);
+}
+
+.notebook-query-pager__button:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
