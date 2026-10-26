@@ -22,6 +22,7 @@ export const activityMessages = i18n.define({
       "note.created": label("created the note", "created the note", ({ target, notebook }) => `Created ${target} in ${notebook}`),
       "note.edited": label("edited", "edited", ({ target, notebook }) => `Edited ${target} in ${notebook}`),
       "note.restored": label("restored a version", "restored a version", ({ target, notebook }) => `Restored ${target} in ${notebook}`),
+      "annotation.create": label("commented on a passage", "commented on a passage", ({ target, notebook }) => `Commented on a passage in ${target} in ${notebook}`),
       "comment.created": label("commented", "commented", ({ target, notebook }) => `Commented on ${target} in ${notebook}`),
       "comment.updated": label(
         "changed a comment",
@@ -48,6 +49,7 @@ export const activityMessages = i18n.define({
         "hast eine Version wiederhergestellt",
         ({ target, notebook }) => `${target} in ${notebook} wiederhergestellt`,
       ),
+      "annotation.create": label("hat eine Textstelle kommentiert", "hast eine Textstelle kommentiert", ({ target, notebook }) => `Eine Textstelle in ${target} in ${notebook} kommentiert`),
       "comment.created": label("hat kommentiert", "hast kommentiert", ({ target, notebook }) => `${target} in ${notebook} kommentiert`),
       "comment.updated": label(
         "hat einen Kommentar geändert",

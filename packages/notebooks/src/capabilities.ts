@@ -13,6 +13,7 @@ import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
+import { annotationActions, annotationQueries } from "./annotation-capabilities";
 import {
   ActivityDataSchema,
   ActivityInputSchema,
@@ -1096,6 +1097,7 @@ export const notebooksCapabilities = defineCapabilities({
   },
   presentation: notebooksCapabilityPresentation,
   types: {
+    annotation: { title: "Inline comment", description: "A passage comment and its replies, owned by Notebooks.", icon: "ti ti-message", reader: "annotation.read" },
     notebook: {
       title: "Notebook",
       description: "A permission-scoped collection of Markdown notes.",
@@ -1111,6 +1113,7 @@ export const notebooksCapabilities = defineCapabilities({
     },
   },
   queries: {
+    ...annotationQueries,
     "notebook.activity": {
       title: "Read note activity",
       description:
@@ -1262,6 +1265,7 @@ export const notebooksCapabilities = defineCapabilities({
     },
   },
   actions: {
+    ...annotationActions,
     "comment.update": {
       title: "Edit note comment",
       description: "Replace the current user's own comment within ten minutes of creation. Requires write access to the notebook.",

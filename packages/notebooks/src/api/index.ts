@@ -61,6 +61,7 @@ import { notePdfPhaseMs, renderNotePdf } from "../service/note-pdf";
 import type { Notebook } from "../service/notebooks";
 import type { Note, NotePlacement } from "../service/notes";
 import { loadEditableNoteRouteData } from "../service/route-state";
+import { annotationRoutes } from "./annotations";
 import { notebookApiMessages } from "./messages";
 import {
   ResourceShortIdSchema,
@@ -1023,6 +1024,7 @@ const app = new Hono<AuthContext>()
   .use(rateLimit())
   .use(auth.requireRole("authenticated"))
   .route("/templates", templatesRoutes)
+  .route("/:id/notes/:noteId/annotations", annotationRoutes)
 
   // ==========================
   // NOTEBOOKS
