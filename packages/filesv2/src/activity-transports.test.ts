@@ -457,6 +457,21 @@ test.each(["stable", "persisted", "inline"])("CLI %s file references use the rea
   expect(f.requests).toHaveLength(1);
   expect(decodeURIComponent(new URL(f.requests[0]!).pathname)).toBe(`/api/filesv2/activity/entries/${entryId}`);
 });
+test.each([
+  ["en", "Unknown person"],
+  ["de", "Unbekannte Person"],
+])("CLI history uses a localized missing-name label in %s", async (locale, expected) => {
+  page = { ...page, items: [{ ...row, actor: { ...row.actor, userId: "90000000-0000-4000-8000-000000000001" } }] };
+  const f = cliFixture(["history"], {}, "text");
+  f.ctx.options.locale = locale;
+  const labels: unknown[] = [];
+  f.ctx.table = (rows, columns) => {
+    const who = columns.find((column) => column.key === "actor");
+    for (const item of rows) labels.push(who?.value?.(item));
+  };
+  await filesCli.run(f.ctx);
+  expect(labels).toEqual([expected]);
+});
 test("CLI text makes continuation and the search cap visible, including empty pages", async () => {
   page = { ...page, items: [], visibleCount: 0, scanLimitReached: true, searchLimitReached: true };
   const f = cliFixture(["history"], {}, "text");
