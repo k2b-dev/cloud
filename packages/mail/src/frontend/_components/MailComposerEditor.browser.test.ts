@@ -670,12 +670,14 @@ describe("shared Mail text editor", () => {
         await page.getByRole("radio", { name: "Markdown", exact: true }).click();
         expect(await page.evaluate(() => window.editorSource())).toBe(expected);
         expect(await page.evaluate(() => window.editorBody())).toBe(expected);
-        expect(await page.locator(".cm-content").innerText()).toBe(expected);
+        // innerText adds layout-dependent separators around empty CodeMirror lines.
+        expect(await page.locator(".cm-content > .cm-line").allTextContents()).toEqual(expected.split("\n"));
         await page.evaluate(() => window.setEditorFormat("plain"));
         await page.waitForSelector('.k2b-text-editor[data-mode="plain"]');
         expect(await page.evaluate(() => window.editorSource())).toBe(expected);
         expect(await page.evaluate(() => window.editorBody())).toBe(expected);
-        expect(await page.locator(".cm-content").innerText()).toBe(expected);
+        // innerText adds layout-dependent separators around empty CodeMirror lines.
+        expect(await page.locator(".cm-content > .cm-line").allTextContents()).toEqual(expected.split("\n"));
         expect(await page.locator(".k2b-ste-table").count()).toBe(0);
         await page.evaluate(() => window.setEditorEditable(false));
         await page.waitForSelector('.cm-content[contenteditable="false"]');
