@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AiResolvedModel } from "../ai/types";
+import { WorkflowAiAdmissionError } from "./ai/policy";
 import type { WorkflowAiTask } from "./ai/types";
 import { AI_WORKFLOW_ACTIONS, runWorkflowAiAction, workflowAiActionCost } from "./ai-actions";
 
@@ -93,12 +94,48 @@ describe("shared workflow AI actions", () => {
 });
 
 test("oversized UTF-8 input fails permanently before model resolution or task insertion", async () => {
-  const result = await runWorkflowAiAction(context, { kind: "classify", prompt: "Choose", input: "😀".repeat(25_000), choices: ["a", "b"] }, {
-    getByEffectKey: async () => null,
-    create: async () => { throw new Error("must not insert"); },
-    exists: async () => false,
-    resolveModel: async () => { throw new Error("must not resolve"); },
-    submit: async () => { throw new Error("must not submit"); },
-  });
+  const result = await runWorkflowAiAction(
+    context,
+    { kind: "classify", prompt: "Choose", input: "😀".repeat(25_000), choices: ["a", "b"] },
+    {
+      getByEffectKey: async () => null,
+      create: async () => {
+        throw new Error("must not insert");
+      },
+      exists: async () => false,
+      resolveModel: async () => {
+        throw new Error("must not resolve");
+      },
+      submit: async () => {
+        throw new Error("must not submit");
+      },
+    },
+  );
   expect(result).toMatchObject({ state: "failed", code: "WORKFLOW_AI_INPUT_TOO_LARGE", retryable: false });
 });
+
+for (const [code, retryable] of [
+  ["WORKFLOW_AI_CAPACITY", true],
+  ["WORKFLOW_AI_RATE_LIMIT", true],
+  ["WORKFLOW_AI_SOURCE_BUDGET", false],
+  ["WORKFLOW_AI_DAILY_BUDGET", false],
+] as const) {
+  test(`${code} preserves bounded step retry policy`, async () => {
+    const result = await runWorkflowAiAction(
+      context,
+      { kind: "classify", prompt: "Choose", input: "mail", choices: ["a", "b"] },
+      {
+        getByEffectKey: async () => null,
+        create: async () => {
+          throw new WorkflowAiAdmissionError(code);
+        },
+        exists: async () => false,
+        resolveModel: async () => resolved,
+        submit: async () => {
+          throw new Error("rejected work must not submit");
+        },
+      },
+    );
+    expect(result).toMatchObject({ state: "failed", code, retryable });
+  });
+}

@@ -1,4 +1,4 @@
-import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
+import type { WorkflowIrStep, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { readWorkflowValuePath } from "@k2b/cloud/workflows/language";
 import { WorkflowValueError, type WorkflowValueResolverPort } from "@k2b/cloud/workflows/runtime";
 import type { WorkflowRunClaim } from "@k2b/cloud/workflows/store";
@@ -33,6 +33,36 @@ const messageForReference = (
     : null;
 };
 
+const assertBodyBudget = (value: WorkflowJsonValue | undefined, limit?: number): void => {
+  if (!limit || typeof value !== "string") return;
+  let characters = 0;
+  for (const _character of value) {
+    if (++characters > limit)
+      throw new WorkflowValueError(
+        `Mail body exceeds the ${limit}-character AI budget. Inspect the original or narrow the input; nothing was truncated.`,
+        "WORKFLOW_AI_INPUT_TOO_LARGE",
+      );
+  }
+};
+
+const isAiValuePath = (steps: WorkflowIrStep[], path: Array<string | number>): boolean =>
+  steps.some((step) => {
+    if (step.kind === "action")
+      return (
+        ["aiClassify", "aiClassifyMany", "aiExtractData", "aiGenerateText"].includes(step.action) &&
+        [...step.sourcePath, step.action].every((part, index) => path[index] === part)
+      );
+    if (step.kind === "if") return isAiValuePath([...step.then, ...step.else], path);
+    if (step.kind === "switch") return isAiValuePath([...step.cases.flatMap((entry) => entry.steps), ...step.default], path);
+    return isAiValuePath(step.steps, path);
+  });
+
+const assertAiSourceBudget = (value: WorkflowJsonValue | undefined, limit?: number): void => {
+  assertBodyBudget(value, limit);
+  if (!limit || value === null || typeof value !== "object") return;
+  for (const child of Object.values(value)) assertAiSourceBudget(child, limit);
+};
+
 const hydratedMessageValue = async (
   mailboxId: string,
   publicMessageId: string,
@@ -42,23 +72,32 @@ const hydratedMessageValue = async (
   const messageId = await resolveMailboxPublicId("messages", mailboxId, publicMessageId);
   if (!messageId) return { state: "unavailable" };
   const [message] = await sql<
-    { hydration_status: string; hydration_attempt: number; plain_text: string | null; sanitized_html: string | null; body_too_large?: boolean }[]
+    {
+      hydration_status: string;
+      hydration_attempt: number;
+      plain_text: string | null;
+      sanitized_html: string | null;
+      body_too_large?: boolean;
+      body_present?: boolean;
+    }[]
   >`
     SELECT hydration_status, hydration_attempt,
-      CASE WHEN ${field} <> 'bodyHtml' AND (${bodyLimit ?? null}::integer IS NULL OR char_length(plain_text) <= ${bodyLimit ?? null}) THEN plain_text END AS plain_text,
+      CASE WHEN ${field} IN ('body', 'bodyText') AND (${bodyLimit ?? null}::integer IS NULL OR char_length(plain_text) <= ${bodyLimit ?? null}) THEN plain_text END AS plain_text,
       CASE WHEN ${field} = 'bodyHtml' AND (${bodyLimit ?? null}::integer IS NULL OR char_length(sanitized_html) <= ${bodyLimit ?? null}) THEN sanitized_html END AS sanitized_html,
-      CASE WHEN ${field} = 'bodyHtml' THEN char_length(sanitized_html) ELSE char_length(plain_text) END > ${bodyLimit ?? null}::integer AS body_too_large
+      (plain_text IS NOT NULL OR sanitized_html IS NOT NULL) AS body_present,
+      CASE WHEN ${field} = 'attachments' THEN NULL WHEN ${field} = 'bodyHtml' THEN char_length(sanitized_html) ELSE char_length(plain_text) END > ${bodyLimit ?? null}::integer AS body_too_large
     FROM mail.message_contents
     WHERE id = ${messageId}::uuid
       AND mailbox_id = ${mailboxId}::uuid
   `;
   if (!message) return { state: "unavailable" };
-  if (message.body_too_large) throw new WorkflowValueError(
-    `Mail body exceeds the ${bodyLimit}-character AI budget. Inspect the original message manually or supply narrower input; nothing was truncated.`,
-    "WORKFLOW_AI_INPUT_TOO_LARGE",
-  );
+  if (message.body_too_large)
+    throw new WorkflowValueError(
+      `Mail body exceeds the ${bodyLimit}-character AI budget. Inspect the original message manually or supply narrower input; nothing was truncated.`,
+      "WORKFLOW_AI_INPUT_TOO_LARGE",
+    );
   // Attachment hydration can change the status after the body is stored.
-  if (field !== "attachments" && (message.plain_text !== null || message.sanitized_html !== null)) {
+  if (field !== "attachments" && (message.body_present || message.plain_text !== null || message.sanitized_html !== null)) {
     return { state: "resolved", value: (field === "bodyHtml" ? message.sanitized_html : message.plain_text) ?? "" };
   }
   if (message.hydration_status === "failed" && message.hydration_attempt >= 5) return { state: "unavailable" };
@@ -188,7 +227,10 @@ export const createMailWorkflowValueResolver = (params: {
   };
   const hydrateWholeMessage = async (name: string, bodyLimit?: number): Promise<void> => {
     const message = params.claim.inputs[name];
-    if (!isObject(message) || message.bodyAvailable === true) return;
+    if (!isObject(message)) return;
+    assertBodyBudget(message.bodyText, bodyLimit);
+    assertBodyBudget(message.bodyHtml, bodyLimit);
+    if (message.bodyAvailable === true) return;
     if (typeof message.id !== "string") return;
     const entries: Array<{ key: string; value: WorkflowJsonValue }> = [];
     for (const field of ["bodyText", "bodyHtml"] as const) {
@@ -204,8 +246,7 @@ export const createMailWorkflowValueResolver = (params: {
   };
   return {
     resolve: async ({ reference, path, plan, fallback }) => {
-      const bodyLimit = path.some((part) => typeof part === "string" && ["aiClassify", "aiClassifyMany", "aiExtractData", "aiGenerateText"].includes(part))
-        ? appEnv.MAIL_WORKFLOW_AI_BODY_MAX_CHARS : undefined;
+      const bodyLimit = isAiValuePath(plan.steps, path) ? appEnv.MAIL_WORKFLOW_AI_BODY_MAX_CHARS : undefined;
       const candidate = messageForReference(reference, params.claim.inputs);
       if (!candidate) {
         const action = path.at(-2);
@@ -218,6 +259,7 @@ export const createMailWorkflowValueResolver = (params: {
           }
         }
         const value = fallback();
+        assertAiSourceBudget(value, bodyLimit);
         return value === undefined ? { state: "missing" } : { state: "resolved", value };
       }
 
@@ -227,9 +269,7 @@ export const createMailWorkflowValueResolver = (params: {
           : mailWorkflowBodyFieldLoaded(candidate.message, candidate.field);
       if (available) {
         const value = fallback();
-        if (bodyLimit && typeof value === "string" && [...value].length > bodyLimit) throw new WorkflowValueError(
-          `Mail body exceeds the ${bodyLimit}-character AI budget. Inspect the original or narrow the input; nothing was truncated.`, "WORKFLOW_AI_INPUT_TOO_LARGE",
-        );
+        if (candidate.field !== "attachments") assertBodyBudget(value, bodyLimit);
         return value === undefined ? { state: "missing" } : { state: "resolved", value };
       }
 

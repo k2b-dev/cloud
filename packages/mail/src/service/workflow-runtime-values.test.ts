@@ -20,7 +20,7 @@ const plan: WorkflowBoundPlan = {
   actionPolicies: {},
   inputs: [{ name: "message", type: "mailMessage", config: {} }],
   triggers: [],
-  steps: [],
+  steps: [{ kind: "action", action: "aiClassify", config: {}, sourcePath: ["steps", 0] }],
   bindings: {},
 };
 
@@ -247,6 +247,38 @@ describe("Mail lazy workflow values", () => {
 
 test("AI body limits reject frozen bodies with an explicit recoverable diagnostic", async () => {
   const { resolve } = fixture({ "inputs.message.bodyText": "x".repeat(20_001) });
-  await expect(resolve("inputs.message.bodyText", ["steps", 0, "aiClassify", "input"]))
-    .rejects.toMatchObject({ code: "WORKFLOW_AI_INPUT_TOO_LARGE" });
+  await expect(resolve("inputs.message.bodyText", ["steps", 0, "aiClassify", "input"])).rejects.toMatchObject({
+    code: "WORKFLOW_AI_INPUT_TOO_LARGE",
+  });
+});
+
+test("AI source aliases retain the text budget and unrelated config keys do not activate it", async () => {
+  const { resolve } = fixture({ "inputs.message.bodyText": "x".repeat(20_001) });
+  await expect(resolve("inputs.message.bodyText", ["steps", 1, "setVariable", "aiClassify", "input"])).resolves.toMatchObject({
+    state: "resolved",
+  });
+  const resolver = createMailWorkflowValueResolver({
+    claim: { runId: "run", executionGeneration: 1, inputs: {} },
+    mailboxId: "mailbox",
+    frozenHydration: {},
+    mailActionNames: new Set(),
+  });
+  await expect(
+    resolver.resolve({
+      reference: "savedBody",
+      path: ["steps", 0, "aiClassify", "input"],
+      plan,
+      invocation: {
+        workflowId: "workflow",
+        mode: "execute",
+        channel: "event",
+        actor: {},
+        inputs: {},
+        idempotencyKey: "fixture",
+        occurredAt: "2026-10-01T08:00:00.000Z",
+      },
+      variables: { get: () => undefined, has: () => false, set: () => {} },
+      fallback: () => ({ renamed: "x".repeat(20_001) }),
+    }),
+  ).rejects.toMatchObject({ code: "WORKFLOW_AI_INPUT_TOO_LARGE" });
 });

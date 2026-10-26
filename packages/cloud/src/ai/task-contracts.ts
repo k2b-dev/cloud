@@ -83,14 +83,15 @@ export const AiTaskRequestSchema = z.discriminatedUnion("kind", [
 export type AiTaskRequest = z.infer<typeof AiTaskRequestSchema>;
 export type AiTaskRequestInput = z.input<typeof AiTaskRequestSchema>;
 
-
 /** Existing durable task storage contract; measured in UTF-8 bytes, not characters. */
 export const AI_TASK_REQUEST_MAX_BYTES = 100_000;
 export class AiTaskInputTooLargeError extends Error {
   readonly code = "WORKFLOW_AI_INPUT_TOO_LARGE";
   readonly retryable = false;
   constructor() {
-    super("AI input exceeds the 100,000-byte task budget. Narrow the supplied content or inspect the original message manually; nothing was truncated.");
+    super(
+      "AI input exceeds the 100,000-byte task budget. Narrow the supplied content or inspect the original message manually; nothing was truncated.",
+    );
   }
 }
 

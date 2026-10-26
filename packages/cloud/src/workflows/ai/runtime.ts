@@ -1,18 +1,20 @@
 import { StructuredOutputError } from "@k2b/nessi";
-import { StoreFullError, type Job, type Worker } from "@k2b/sync";
-import { env } from "../../config/env";
+import { type Job, StoreFullError, type Worker } from "@k2b/sync";
 import { lazySync } from "../../_internal/process-sync";
 import { isAiSettingsError, runAiStructured } from "../../ai";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
+import { resolveAiWorkflowModel } from "../../ai/structured";
 import { executeAiTask } from "../../ai/task-execution";
+import { env } from "../../config/env";
+import { WorkflowAiAdmissionError, workflowAiModelHash } from "./policy";
 
 import {
   claimWorkflowAiTask,
-  expireWorkflowAiTasks,
-  heartbeatWorkflowAiTask,
   completeWorkflowAiTask,
+  expireWorkflowAiTasks,
   failWorkflowAiTask,
   getWorkflowAiTask,
+  heartbeatWorkflowAiTask,
   listRecoverableWorkflowAiTaskIds,
   markWorkflowAiTaskCanceledIfRequested,
   requeueWorkflowAiTask,
@@ -45,7 +47,12 @@ const workflowAiJob = lazySync((sync) =>
     id: WORKFLOW_AI_JOB_ID,
     whenFull: "reject",
     owner: "cloud",
-    delivery: { ackWaitMs: 30_000, maxAttempts: MAX_ATTEMPTS, backoffMs: [1_000, 2_000] },
+    delivery: {
+      maxInFlight: env.WORKFLOW_AI_BUDGET.globalConcurrent,
+      ackWaitMs: 30_000,
+      maxAttempts: MAX_ATTEMPTS,
+      backoffMs: [1_000, 2_000],
+    },
   }),
 );
 
@@ -86,6 +93,16 @@ export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructur
       appId: task.appId,
       attribution: { workflowRunId: task.runId, stepKey: task.stepKey, userId: task.usageUserId },
       requestedModelId: task.modelProfileId,
+      ...(task.modelConfigHash
+        ? {
+            resolveModel: async () => {
+              const resolved = await resolveAiWorkflowModel(task.modelProfileId);
+              if (workflowAiModelHash(resolved.profile) !== task.modelConfigHash)
+                throw new WorkflowAiAdmissionError("WORKFLOW_AI_MODEL_CHANGED");
+              return resolved;
+            },
+          }
+        : {}),
       signal,
       taskPrefix: "workflow",
     },
@@ -93,6 +110,7 @@ export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructur
   );
 
 const retryableError = (error: unknown): boolean => {
+  if (error instanceof WorkflowAiAdmissionError) return error.retryable;
   if (error instanceof AiBackgroundAdmissionError) return error.retryable;
   if (error instanceof AiBackgroundCostError) return false;
   if (isAiSettingsError(error)) return false;
@@ -101,6 +119,7 @@ const retryableError = (error: unknown): boolean => {
 };
 
 const errorCode = (error: unknown): string => {
+  if (error instanceof WorkflowAiAdmissionError) return error.code;
   if (error instanceof AiBackgroundCostError || error instanceof AiBackgroundAdmissionError) return error.code;
   if (isAiSettingsError(error)) return error.aiError.code.toUpperCase();
   if (error instanceof StructuredOutputError) return `WORKFLOW_AI_${error.code.toUpperCase()}`;
@@ -176,7 +195,11 @@ export const processWorkflowAiTask = async (
       return;
     }
     if (timedOut) {
-      throw new WorkflowAiAttemptError("WORKFLOW_AI_TIMEOUT", "Workflow AI attempt deadline exceeded. Retry the workflow or inspect the provider.", true);
+      throw new WorkflowAiAttemptError(
+        "WORKFLOW_AI_TIMEOUT",
+        "Workflow AI attempt deadline exceeded. Retry the workflow or inspect the provider.",
+        true,
+      );
     }
     if (ctx.signal.aborted || monitorError) {
       throw new WorkflowAiAttemptError("WORKFLOW_AI_INTERRUPTED", "Workflow AI task was interrupted.", true);
@@ -199,7 +222,9 @@ let recoveryTimer: ReturnType<typeof setInterval> | null = null;
 let recovery: Promise<void> | null = null;
 
 const recover = (): Promise<void> => {
-  recovery ??= expireWorkflowAiTasks(env.WORKFLOW_AI_QUEUE_TIMEOUT_MS).finally(() => { recovery = null; });
+  recovery ??= expireWorkflowAiTasks(env.WORKFLOW_AI_QUEUE_TIMEOUT_MS).finally(() => {
+    recovery = null;
+  });
   return recovery;
 };
 
@@ -214,7 +239,7 @@ export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {
   const next = workflowAiJob();
   activeJob = next;
   try {
-    activeWorker = await next.process({ concurrency: 1 }, async (context) => {
+    activeWorker = await next.process({ concurrency: env.WORKFLOW_AI_BUDGET.globalConcurrent }, async (context) => {
       try {
         await processWorkflowAiTask(context.input.taskId, context, options);
       } catch (caught) {
@@ -228,7 +253,14 @@ export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {
       }
     });
     await recover();
-    for (const taskId of await listRecoverableWorkflowAiTaskIds()) await submitWorkflowAiTask(taskId);
+    for (const taskId of await listRecoverableWorkflowAiTaskIds()) {
+      try {
+        await submitWorkflowAiTask(taskId);
+      } catch (error) {
+        // Submission already persists and wakes the failed task; recover the others.
+        console.error("Workflow AI task resubmission failed", { taskId, error });
+      }
+    }
     recoveryTimer = setInterval(() => {
       void recover().catch((error) => console.error("Workflow AI recovery failed", error));
     }, HEARTBEAT_INTERVAL_MS);

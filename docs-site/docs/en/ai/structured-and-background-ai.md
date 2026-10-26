@@ -466,6 +466,8 @@ Deleting the routine does not delete this receipt. Recovery can deliver the
 line once from a terminal deleted-routine turn completed within the last day.
 It does not deliver into an archived chat.
 
+## Workflow inference limits and reuse
+
 Workflow inference has an absolute attempt budget, including admission and
 structured-output repair. `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` defaults to 60,000 ms:
 the pilot p95 was about four seconds, so a minute leaves substantial headroom
@@ -491,7 +493,48 @@ or inspect the original manually, then start a new run. The original is retained
 no content is silently truncated.
 
 Mail additionally rejects bodies over `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` before
-loading them into an AI step (pilot default: 20,000 characters). Frozen bodies
-receive the same check. Attachments are metadata only, not extracted contents.
+loading them into an AI step (pilot default: 20,000 characters). Frozen bodies and text supplied through source aliases
+receive the same per-string check. Attachments are metadata only, not extracted contents.
 Application value resolvers may throw `WorkflowValueError(message, code)` from
 `@k2b/cloud/workflows/runtime` to preserve a permanent diagnostic in run details.
+
+Applications that bind inference to an owned source use
+`createWorkflowAiActions({ scope })` from `@k2b/cloud/workflows`. The async
+callback returns `{ sourceId, sourceRevision, budget, recompute? }`. The run's
+persisted application and scope isolate reuse; the application still authorizes
+every action before reading a cached result. Provide a revision for the source
+and use `recompute: true` only for a deliberate request for fresh inference.
+Unscoped `AI_WORKFLOW_ACTIONS` retain their existing per-run behavior.
+
+Mail reuses successful results across runs for the same mailbox, message
+identity/content revision, canonical complete request (input, prompt, choices or
+field schema), and resolved model configuration. Reuse lasts while the original
+task is retained. A new run stores its own successful task with no new usage;
+failures and canceled tasks are never cache hits. Inference configuration changes before
+dispatch fail as `WORKFLOW_AI_MODEL_CHANGED` rather than recording an answer
+under an obsolete cache key. A provider response followed by a process crash
+before persistence can still incur another call: this remains at least once.
+
+Mail reserves new inference against `WORKFLOW_AI_BUDGET`, independently of
+per-run effect caps and the installation's existing priced background budget.
+The pilot defaults are two new logical tasks per message in a rolling 24 hours,
+10 tasks per minute per mailbox with burst 20, 2,000 distinct messages per
+mailbox in rolling 24 hours, one outstanding task per mailbox and four globally.
+Retries and structured repairs belong to their existing logical task; provider
+usage accounting records their actual calls. Cache hits consume no new mailbox
+admission. Deliberate recomputation consumes the same budget as new inference.
+
+Capacity includes queued work: reservation happens before publishing, so there
+is no unbounded task waiting list. `WORKFLOW_AI_CAPACITY` and
+`WORKFLOW_AI_RATE_LIMIT` defer through the existing bounded workflow step retry
+policy (exponential backoff, at most eight consecutive failures). Exhaustion
+leaves a visible failed run. `WORKFLOW_AI_SOURCE_BUDGET` and
+`WORKFLOW_AI_DAILY_BUDGET` fail permanently. Inspect the original mail manually,
+or retry failed messages after the applicable budget or capacity recovers. Rejected work does not consume admission tokens or a message slot.
+These technical failures do not produce an automatic classification or route
+mail to a review folder; that product behavior is a separate workflow feature.
+
+The shared Workflow AI consumer also uses the registry budget’s `globalConcurrent`
+value as its global NATS in-flight bound, including unscoped callers. Changing
+that resource setting requires the same deliberate Sync migration as other
+durable consumer configuration changes.
