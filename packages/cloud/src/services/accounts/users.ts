@@ -346,15 +346,15 @@ export const list = async (params: {
   };
 };
 
-/** Technical membership reads stay complete; human-facing lists exclude personal groups explicitly. */
-export const getGroups = async (params: { id: string; recursive?: boolean; includePersonal?: boolean }): Promise<string[]> => {
+/** Exported group names exclude personal groups; authorization uses the complete group ID projection. */
+export const getGroups = async (params: { id: string; recursive?: boolean }): Promise<string[]> => {
   if (params.recursive) {
     const rows = await sql<DbRow[]>`${recursiveUserGroupsSubquery({
       userId: params.id,
       select: sql`
         SELECT DISTINCT g.name FROM user_all_groups ag
         JOIN auth.groups g ON g.id = ag.group_id
-        WHERE (${params.includePersonal !== false} OR NOT EXISTS (SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id))
+        WHERE NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
         ORDER BY g.name
       `,
     })}`;
@@ -363,7 +363,7 @@ export const getGroups = async (params: { id: string; recursive?: boolean; inclu
   const rows = await sql<DbRow[]>`
     SELECT g.name FROM auth.groups g
     WHERE g.id IN (SELECT group_id FROM auth.user_groups_v2 WHERE user_id = ${params.id}::uuid)
-      AND (${params.includePersonal !== false} OR NOT EXISTS (SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id))
+      AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
     ORDER BY g.name
   `;
   return rows.map((row) => row.name as string);

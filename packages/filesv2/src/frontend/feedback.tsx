@@ -12,6 +12,7 @@ export function DirectoryStatus(props: { status: InventoryState }) {
     unknown: "degraded",
     orphaned: "warning",
     retired: "neutral",
+    legacy: "warning",
   };
   return <StatusBadge tone={tones[props.status]} label={t()[props.status]} />;
 }

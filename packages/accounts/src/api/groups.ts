@@ -29,17 +29,6 @@ type MessageResponse = z.infer<typeof MessageResponseSchema>;
 const GroupPosixResponseSchema = MessageResponseSchema.extend({ gidNumber: z.number().nullable() });
 const GroupIdParamSchema = z.object({ id: z.uuid() });
 
-const requireGroupMutationContext = async (c: Context<AuthContext>, groupId: string) => {
-  const group = await accountsService.group.get({ id: groupId });
-  if (!group) {
-    return {
-      error: await respond(c, fail(err.notFound("Group not found"))),
-    };
-  }
-
-  return { group };
-};
-
 /**
  * Shared body for the four near-identical add/remove member|manager handlers.
  * Each route only differs in HTTP verb, OpenAPI metadata, the service method
@@ -49,7 +38,6 @@ const requireGroupMutationContext = async (c: Context<AuthContext>, groupId: str
 type GroupRelationMutation = (config: {
   actor: ReturnType<typeof toAccountsActor>;
   id: string;
-  provider: "local" | "ipa";
   userId?: string;
   groupId?: string;
 }) => Promise<Result<unknown>>;
@@ -62,14 +50,10 @@ const handleGroupRelation = async (
   verbPhrase: string,
 ) => {
   const { type, id: principalId } = input;
-  const { group, error } = await requireGroupMutationContext(c, groupId);
-  if (error || !group) return error!;
-
   return respond(c, async () => {
     const result = await mutation({
       actor: toAccountsActor(expectUserBackedActor(c)),
       id: groupId,
-      provider: group.provider,
       userId: type === "user" ? principalId : undefined,
       groupId: type === "group" ? principalId : undefined,
     });
@@ -91,7 +75,7 @@ const app = new Hono<AuthContext>()
       summary: "List groups",
       description:
         "List groups with pagination and optional search. Use scope=managed, scope=member, or scope=all to choose the current view. " +
-        "Personal Linux groups (a user's private primary group, flagged with `personalOwner`) are left out unless include_personal=true.",
+        "Personal Linux groups are excluded. Inspect the owning user's Linux identity for diagnostic attributes.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(GroupsListResponseSchema, "Paginated list of groups"),
@@ -106,7 +90,6 @@ const app = new Hono<AuthContext>()
         ...SearchQuerySchema.shape,
         scope: z.enum(["managed", "member", "all"]).optional(),
         provider: z.enum(["local", "ipa"]).optional(),
-        include_personal: z.enum(["true", "false"]).optional(),
       }),
     ),
     async (c) => {
@@ -116,7 +99,7 @@ const app = new Hono<AuthContext>()
 
       const groupsPage = await accountsService.group.list({
         pagination: { page: params.page, perPage: params.perPage },
-        filter: { search: query.search, includePersonal: query.include_personal === "true" },
+        filter: { search: query.search },
         scope: {
           userId: query.scope === "all" ? undefined : user.id,
           mode: query.scope ?? "member",
@@ -148,6 +131,7 @@ const app = new Hono<AuthContext>()
         400: jsonResponse(ErrorResponseSchema, "Failed to add member"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Group management access required"),
+        409: jsonResponse(ErrorResponseSchema, "Membership already exists or personal group relationship is unavailable"),
       },
     }),
     v("param", GroupIdParamSchema),
@@ -187,6 +171,7 @@ const app = new Hono<AuthContext>()
         400: jsonResponse(ErrorResponseSchema, "Failed to add manager"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
         403: jsonResponse(ErrorResponseSchema, "Admin access required"),
+        409: jsonResponse(ErrorResponseSchema, "Manager already exists or personal group relationship is unavailable"),
       },
     }),
     v("param", GroupIdParamSchema),

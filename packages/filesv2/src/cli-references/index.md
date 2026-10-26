@@ -475,7 +475,7 @@ when following a cursor; `--search` matches display names, names, and paths.
 Entries include `uid`, `gid`, `displayName` (the account or group display name,
 `null` when no identity exists for the directory name), and the currently
 allowed `actions`. Statuses are `existing`, `missing`, `unassigned`,
-`conflict`, `unknown`, `orphaned`, and `retired`. File and directory counts and
+`conflict`, `unknown`, `orphaned`, `retired`, and `legacy`. Recorded personal-group directories are `legacy` and are preserved until an administrator deliberately archives or migrates them. File and directory counts and
 byte totals are known only for complete observed scans; `observation` exposes
 `complete`, `freshness`, `source`, `started`, `completed`, and `indexBuilt`.
 Root statistics cover the whole root, including when a prefix is configured.

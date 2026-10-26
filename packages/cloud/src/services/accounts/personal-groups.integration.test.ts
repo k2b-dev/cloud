@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { createAccountsEntitiesRoutes } from "../../api/accounts-entities";
 import { accountsAppService } from "./app";
 import type { AccountsActor } from "./authz";
+import * as localGroups from "./local-groups";
 import * as users from "./users";
 
 const suite = databaseSuite();
@@ -11,7 +13,22 @@ const groupIds = (items: Awaited<ReturnType<typeof accountsAppService.entity.lis
   items.flatMap((item) => (item.kind === "group" ? [item.group.id] : []));
 
 suite("personal Linux groups in group lists and search (integration)", () => {
-  test("are flagged with their owner and left out of browsing and search unless requested", async () => {
+  test("ordinary local and FreeIPA groups sharing a username stay exported", async () => {
+    const [owner] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name,mail)
+      VALUES('ordinary-name','local','user','Ordinary name','ordinary-name@example.test') RETURNING id`;
+    const groups = await sql<{ id: string }[]>`INSERT INTO auth.groups(cn,provider,name)
+      VALUES('local:ordinary-name','local','ordinary-name'),('ipa:ordinary-name','ipa','ordinary-name') RETURNING id`;
+    try {
+      const result = await accountsAppService.group.list({ scope: { ids: groups.map((group) => group.id) } });
+      expect(result.items.map((group) => group.id).sort()).toEqual(groups.map((group) => group.id).sort());
+      const local = await localGroups.list({ search: "ordinary-name" });
+      expect(local.groups.map((group) => group.id)).toEqual([groups[0]!.id]);
+    } finally {
+      await sql`DELETE FROM auth.groups WHERE id IN (${groups[0]!.id}::uuid,${groups[1]!.id}::uuid)`;
+      await sql`DELETE FROM auth.users WHERE id=${owner!.id}::uuid`;
+    }
+  });
+  test("are excluded from all group exports, including exact IDs and relations", async () => {
     const baseline = await accountsAppService.dashboard.get();
     const suffix = "fixture";
     const number = 1_500_000;
@@ -37,9 +54,30 @@ suite("personal Linux groups in group lists and search (integration)", () => {
       VALUES (${owner!.id}::uuid, 'local', ${number}, ${number}, ${personal!.id}::uuid, ${`/home/pg${suffix}`}, '/bin/bash')
     `;
     const actor: AccountsActor = { userId: owner!.id, uid: `pg${suffix}`, roles: ["user", "local", "local/user"], provider: "local" };
-    const expectedOwner = { id: owner!.id, uid: `pg${suffix}`, displayName: "Quinn Personal" };
 
     try {
+      expect(await localGroups.addMember({ id: team!.id, group: personal!.id })).toMatchObject({
+        ok: false,
+        status: 409,
+        error: "Personal Linux groups cannot be used in group relationships",
+      });
+      expect(await localGroups.addManager({ id: team!.id, group: personal!.id })).toMatchObject({
+        ok: false,
+        status: 409,
+        error: "Personal Linux groups cannot be used in group relationships",
+      });
+      for (const principal of [{ user: owner!.id }, { group: team!.id }]) {
+        expect(await localGroups.addMember({ id: personal!.id, ...principal })).toMatchObject({
+          ok: false,
+          status: 409,
+          error: "Personal Linux groups cannot be used in group relationships",
+        });
+        expect(await localGroups.addManager({ id: personal!.id, ...principal })).toMatchObject({
+          ok: false,
+          status: 409,
+          error: "Personal Linux groups cannot be used in group relationships",
+        });
+      }
       const summary = await accountsAppService.dashboard.get();
       expect(summary.groupsTotal).toBe(baseline.groupsTotal + 1);
       expect(summary.localGroupsTotal).toBe(baseline.localGroupsTotal + 1);
@@ -49,13 +87,6 @@ suite("personal Linux groups in group lists and search (integration)", () => {
       expect(hidden.total).toBe(1);
       expect(hidden.items).toEqual([expect.objectContaining({ id: team!.id, personalOwner: null })]);
 
-      const shown = await accountsAppService.group.list({
-        filter: { search: `pg${suffix}`, includePersonal: true },
-        scope: { mode: "all" },
-      });
-      expect(shown.total).toBe(2);
-      expect(shown.items.find((group) => group.id === personal!.id)?.personalOwner).toEqual(expectedOwner);
-
       for (const recursive of [false, true]) {
         const names = await accountsAppService.user.group.list({ userId: owner!.id, recursive });
         expect(names.items).toEqual(recursive ? [`pg${suffix}-team`] : []);
@@ -63,35 +94,52 @@ suite("personal Linux groups in group lists and search (integration)", () => {
       const ids = await accountsAppService.user.groupId.list({ userId: owner!.id, recursive: false });
       expect(ids).toContain(personal!.id);
       expect(ids).not.toContain(team!.id);
-      expect(await users.getGroups({ id: owner!.id, recursive: true })).toEqual([`pg${suffix}`, `pg${suffix}-team`]);
+      expect(await users.getGroups({ id: owner!.id, recursive: true })).toEqual([`pg${suffix}-team`]);
+      await sql`DELETE FROM auth.user_posix WHERE user_id=${owner!.id}::uuid`;
+      expect((await accountsAppService.dashboard.get()).groupsTotal).toBe(baseline.groupsTotal + 1);
+      expect((await accountsAppService.group.list({ scope: { ids: [personal!.id] } })).items).toEqual([]);
 
       const member = await accountsAppService.group.list({ scope: { userId: owner!.id, mode: "member" } });
       expect(member.items.map((group) => group.id)).toEqual([team!.id]);
 
       const exact = await accountsAppService.group.list({ scope: { ids: [personal!.id] } });
-      expect(exact.items).toEqual([expect.objectContaining({ id: personal!.id, personalOwner: expectedOwner })]);
-      expect((await accountsAppService.group.get({ id: personal!.id }))?.personalOwner).toEqual(expectedOwner);
+      expect(exact.items).toEqual([]);
+      expect(await accountsAppService.group.get({ id: personal!.id })).toBeNull();
 
       const search = await accountsAppService.entity.list({ actor, search: `pg${suffix}`, kinds: ["user", "group"] });
       expect(search.total).toBe(2);
       expect(groupIds(search.items)).toEqual([team!.id]);
 
-      const searchWithPersonal = await accountsAppService.entity.list({
-        actor,
-        search: `pg${suffix}`,
-        kinds: ["group"],
-        includePersonal: true,
+      const routes = createAccountsEntitiesRoutes({
+        authenticate: async (c, next) => {
+          const user = await users.get({ id: owner!.id });
+          if (!user) throw new Error("Missing export fixture");
+          c.set("actor", { kind: "user", user });
+          c.set("accessSubject", { type: "user", userId: user.id });
+          c.set("user", user);
+          await next();
+        },
       });
-      expect(searchWithPersonal.total).toBe(2);
-      expect(searchWithPersonal.items).toContainEqual(
-        expect.objectContaining({ kind: "group", group: expect.objectContaining({ id: personal!.id, personalOwner: expectedOwner }) }),
-      );
+      for (const query of [
+        `group_ids=${personal!.id}`,
+        `search=pg${suffix}&include_personal=true`,
+        `member_of_group_id=${team!.id}&kinds=group`,
+      ]) {
+        const response = await routes.request(`/entities?${query}`);
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body.items.some((item: { group?: { id: string } }) => item.group?.id === personal!.id)).toBe(false);
+      }
 
       const lookup = await accountsAppService.entity.list({ actor, kinds: ["group"], groupIds: [personal!.id] });
-      expect(groupIds(lookup.items)).toEqual([personal!.id]);
+      expect(groupIds(lookup.items)).toEqual([]);
 
       const members = await accountsAppService.entity.list({ actor, kinds: ["group"], memberOfGroupId: team!.id });
-      expect(groupIds(members.items)).toEqual([personal!.id]);
+      expect(groupIds(members.items)).toEqual([]);
+      for (const recursive of [false, true]) {
+        const relation = await accountsAppService.group.member.list({ id: team!.id, recursive, filter: { type: "group" } });
+        expect(relation.items).toEqual([]);
+      }
     } finally {
       await sql`DELETE FROM auth.user_posix WHERE user_id = ${owner!.id}::uuid`;
       await sql`DELETE FROM auth.groups WHERE id IN (${personal!.id}::uuid, ${team!.id}::uuid)`;

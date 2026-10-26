@@ -19,6 +19,10 @@ export default function AdminIssue(props: { code: string | null }) {
       case "not_directory":
       case "conflict":
         return a().conflictHint;
+      case "legacy_personal_group_pending":
+        return a().legacyPersonalGroupPending;
+      case "legacy_personal_group":
+        return a().legacyPersonalGroup;
       case "identity_missing":
         return a().identityAbsent;
       case "operation_pending":

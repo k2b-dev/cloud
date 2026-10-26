@@ -539,6 +539,30 @@ const epochAuthorityFixture = async (notify?: (notice: OAuthNewAccessNotice) => 
 };
 
 withDatabase("Core OAuth issuance authority database resolution", () => {
+  test("signed access and ID claims exclude personal groups and retain ordinary ancestors", () =>
+    withFrozenTime(async () => {
+      const f = await epochAuthorityFixture();
+      const personal = crypto.randomUUID();
+      const team = crypto.randomUUID();
+      try {
+        await sql`UPDATE oauth.clients SET scopes=ARRAY['openid','groups'] WHERE client_id=${f.clientId}`;
+        await sql`INSERT INTO auth.groups(id,cn,name,provider) VALUES
+          (${personal}::uuid,'local:claim-private','claim-private','local'),(${team}::uuid,'local:claim-team','claim-team','local')`;
+        await sql`INSERT INTO auth.personal_groups(group_id,owner_id,group_name,gid_number)
+          VALUES(${personal}::uuid,${f.userId}::uuid,'claim-private',1500002)`;
+        await sql`INSERT INTO auth.user_groups_v2 VALUES(${f.userId}::uuid,${personal}::uuid)`;
+        await sql`INSERT INTO auth.group_groups_v2 VALUES(${team}::uuid,${personal}::uuid)`;
+        const response = await f.issue(await f.code(["openid", "groups"]), true);
+        expect(response.status).toBe(200);
+        const body = z.object({ tokens: z.array(z.string()).length(2) }).parse(await response.json());
+        for (const token of body.tokens) expect(decodeJwt(token).groups).toEqual(["claim-team"]);
+      } finally {
+        await sql`DELETE FROM auth.groups WHERE id IN (${personal}::uuid,${team}::uuid)`;
+        await sql`DELETE FROM auth.personal_groups WHERE group_id=${personal}::uuid`;
+        await f.cleanup();
+      }
+    }));
+
   test.each(["authorization_code", "device_code"] as const)("new offline access needs committed confirmation evidence: %s", (kind) =>
     withFrozenTime(async () => {
       const f = await epochAuthorityFixture();

@@ -189,18 +189,25 @@ export const createAccountIdentityService = (db: typeof sql = sql, upstreamIdent
         eligible: current.profile === "user",
       };
     }
+    const [ownership] = await db<{ personal: boolean }[]>`SELECT EXISTS (
+      SELECT 1 FROM auth.personal_groups p
+      WHERE (${input.identityId ?? null}::uuid IS NOT NULL AND p.group_id = ${input.identityId ?? null}::uuid)
+         OR (${input.identityId ?? null}::uuid IS NULL AND p.group_name = ${input.name})
+    ) AS personal`;
+    const personal = ownership?.personal === true;
     const rows = await groupRows(sql`(g.provider = 'local' AND g.name = ${input.name}) OR g.id = ${input.identityId ?? null}::uuid`);
     const expected = rows.find((row) => row.id === input.identityId);
     if (expected && (expected.provider !== "local" || expected.name !== input.name))
       return { state: "unknown", reason: "identity_conflict" };
     const matches = rows.filter((row) => row.provider === "local" && row.name === input.name);
-    if (!matches.length) return { state: "absent" };
+    if (!matches.length) return personal ? { state: "absent", personal: true } : { state: "absent" };
     if (matches.length !== 1) return { state: "unknown", reason: "invalid_response" };
     const current = matches[0]!;
     return {
       state: "present",
       identity: { id: current.id, name: current.name, uidNumber: null, gidNumber: current.gidNumber },
       eligible: current.gidNumber !== null,
+      ...(personal ? { personal: true } : {}),
     };
   };
   const validateLookup = (input: { kind: "users" | "groups"; name: string }) => {

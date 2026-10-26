@@ -324,7 +324,6 @@ const groupRows = (items: BaseGroup[]) =>
     name: group.name,
     provider: group.provider,
     posix: group.gidnumber === null ? "no" : "yes",
-    personal: group.personalOwner?.uid ?? "",
     description: truncate(group.description, 70),
     id: group.id,
   }));
@@ -439,7 +438,7 @@ const listUsers = (ctx: CloudCliContext, query?: { search?: string; provider?: U
 
 const listGroups = (
   ctx: CloudCliContext,
-  query?: { search?: string; provider?: UserProvider; scope?: "all" | "member" | "managed"; includePersonal?: boolean; page?: number },
+  query?: { search?: string; provider?: UserProvider; scope?: "all" | "member" | "managed"; page?: number },
 ) =>
   apiGet<GroupsResponse>(
     ctx,
@@ -449,7 +448,6 @@ const listGroups = (
       search: query?.search,
       provider: query?.provider,
       scope: query?.scope,
-      include_personal: query?.includePersonal,
     })}`,
   );
 
@@ -521,8 +519,8 @@ const resolveGroupRef = async (ctx: CloudCliContext, ref: string): Promise<BaseG
   const seen: BaseGroup[] = [];
   const exactMatches: BaseGroup[] = [];
   for (;;) {
-    // A reference names one group exactly, so personal Linux groups resolve too.
-    const response = await listGroups(ctx, { search: isUuid(ref) ? undefined : ref, scope: "all", includePersonal: true, page });
+    // Resolve references against the same exported group set as listings.
+    const response = await listGroups(ctx, { search: isUuid(ref) ? undefined : ref, scope: "all", page });
     seen.push(...response.groups);
     const matches = response.groups.filter((group) => group.id === ref || group.name === ref);
     exactMatches.push(...matches);
@@ -542,7 +540,7 @@ const resolveGroupRef = async (ctx: CloudCliContext, ref: string): Promise<BaseG
 const resolvePrincipal = async (
   ctx: CloudCliContext,
   flags: { user?: string; group?: string },
-  options: { userViaEntities?: boolean } = {},
+  options: { userViaEntities?: boolean; groupIdForRemoval?: boolean } = {},
 ): Promise<{ type: GroupMemberType; id: string }> => {
   if (flags.user && flags.group) throw new Error("Pass only one of --user or --group.");
   if (!flags.user && !flags.group) throw new Error("Pass one of --user or --group.");
@@ -551,7 +549,10 @@ const resolvePrincipal = async (
       type: "user",
       id: options.userViaEntities ? await resolveUserIdForGroupRelation(ctx, flags.user) : (await resolveUserRef(ctx, flags.user)).id,
     };
-  return { type: "group", id: (await resolveGroupRef(ctx, flags.group!)).id };
+  return {
+    type: "group",
+    id: options.groupIdForRemoval && isUuid(flags.group!) ? flags.group! : (await resolveGroupRef(ctx, flags.group!)).id,
+  };
 };
 
 const relationEntities = async (
@@ -1019,10 +1020,6 @@ export default defineCliCommands({
         search: flag.string({ aliases: ["q"], description: "Search group name or description" }),
         provider: flag.enum(PROVIDERS),
         scope: flag.enum(["all", "member", "managed"] as const, { default: "member" }),
-        includePersonal: flag.boolean({
-          name: "include-personal",
-          description: "Also list personal Linux groups (each user's private primary group)",
-        }),
       },
       async run({ ctx, flags }) {
         const response = await apiGet<GroupsResponse>(
@@ -1032,14 +1029,12 @@ export default defineCliCommands({
             search: flags.search,
             provider: flags.provider,
             scope: flags.scope,
-            include_personal: flags.includePersonal,
           })}`,
         );
         printJsonOrTable(ctx, response, groupRows(response.groups), [
           { key: "name" },
           { key: "provider" },
           { key: "posix" },
-          { key: "personal" },
           { key: "description" },
           { key: "id" },
         ]);
@@ -1054,7 +1049,6 @@ export default defineCliCommands({
           { key: "name" },
           { key: "provider" },
           { key: "posix" },
-          { key: "personal" },
           { key: "description" },
           { key: "id" },
         ]);
@@ -1164,9 +1158,9 @@ export default defineCliCommands({
       },
       async run({ ctx, args, flags }) {
         if (!flags.yes) throw new Error("Refusing to remove a group membership without --yes.");
-        const group = await resolveGroupRef(ctx, args.group);
-        const principal = await resolvePrincipal(ctx, flags, { userViaEntities: true });
-        const result = await apiJson<MessageResponse>(ctx, "DELETE", `/groups/${encode(group.id)}/members`, principal);
+        const groupId = isUuid(args.group) ? args.group : (await resolveGroupRef(ctx, args.group)).id;
+        const principal = await resolvePrincipal(ctx, flags, { userViaEntities: true, groupIdForRemoval: true });
+        const result = await apiJson<MessageResponse>(ctx, "DELETE", `/groups/${encode(groupId)}/members`, principal);
         printMessage(ctx, result, "Member removed.");
       },
     }),
@@ -1217,9 +1211,9 @@ export default defineCliCommands({
       },
       async run({ ctx, args, flags }) {
         if (!flags.yes) throw new Error("Refusing to remove a group manager without --yes.");
-        const group = await resolveGroupRef(ctx, args.group);
-        const principal = await resolvePrincipal(ctx, flags);
-        const result = await apiJson<MessageResponse>(ctx, "DELETE", `/groups/${encode(group.id)}/managers`, principal);
+        const groupId = isUuid(args.group) ? args.group : (await resolveGroupRef(ctx, args.group)).id;
+        const principal = await resolvePrincipal(ctx, flags, { groupIdForRemoval: true });
+        const result = await apiJson<MessageResponse>(ctx, "DELETE", `/groups/${encode(groupId)}/managers`, principal);
         printMessage(ctx, result, "Manager removed.");
       },
     }),

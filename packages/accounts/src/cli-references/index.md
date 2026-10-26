@@ -82,7 +82,7 @@ cld accounts requests list --scope open --json
 
 Group members and managers can be users or groups. Resolve a group and principal first, because these changes affect access recursively. Denying a request and deleting a group both require explicit confirmation.
 
-`groups list` leaves out personal Linux groups, the private primary group Cloud creates for each local account with a Linux identity. Add `--include-personal` to list them; the `personal` column (JSON: `personalOwner`) names the owning user. Grant access to that user, not to their personal group. Commands that take a group reference still resolve a personal group by exact name or ID.
+`groups list` excludes personal Linux groups, including JSON exports. The `--include-personal` switch is no longer supported, and exact group references do not resolve them. Inspect a user's primary GID with `users linux get <user> --json`. Use ordinary team groups for group-based integrations.
 
 ## Audit events and service-account credentials
 

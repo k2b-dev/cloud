@@ -31,8 +31,6 @@ const listCanonical = async (params: {
   scope?: GroupListScope;
   search?: string;
   provider?: UserProvider;
-  /** Personal Linux groups are left out of browsing and search unless requested; an explicit `ids` lookup always returns them. */
-  includePersonal?: boolean;
   page?: number;
   perPage?: number;
 }): Promise<{
@@ -48,7 +46,6 @@ const listCanonical = async (params: {
   const scope = params.scope ?? (params.userId ? "member" : "all");
   const scopeUserId = params.userId ?? "00000000-0000-0000-0000-000000000000";
   const idsCondition = ids.length === 0 ? sql`TRUE` : sql`g.id = ANY(${toPgUuidArray(ids)}::uuid[])`;
-  const includePersonal = params.includePersonal === true || params.ids !== undefined;
 
   if (params.ids && params.ids.length === 0) {
     return {
@@ -69,7 +66,7 @@ const listCanonical = async (params: {
     ${personalOwnerJoin()}
     WHERE (${params.provider ?? null}::text IS NULL OR g.provider = ${params.provider ?? null})
       AND ${idsCondition}
-      AND (${includePersonal} = true OR personal_owner.personal_owner_id IS NULL)
+      AND NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
       AND (
         ${scope === "all"} = true
         OR ${params.userId ?? null}::uuid IS NULL
@@ -105,8 +102,6 @@ export const list = async (params: {
   scope?: GroupListScope;
   search?: string;
   provider?: UserProvider;
-  /** Personal Linux groups are left out of browsing and search unless requested; an explicit `ids` lookup always returns them. */
-  includePersonal?: boolean;
   page?: number;
   perPage?: number;
 }) => {

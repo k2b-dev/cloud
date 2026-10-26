@@ -87,6 +87,12 @@ changes. The result is one of:
 - `{ state: "unknown", reason }` when lookup is disabled, unavailable, invalid,
   or a local stable identity has changed its name or provider.
 
+Local group results with retained personal ownership include `personal: true`
+in both `present` and `absent` states. Filesystem consumers must preserve those
+directories for deliberate archival or migration, even after the account is
+retired. This identity inventory is a diagnostic storage contract; use the
+Accounts group and entity APIs for ordinary group exports.
+
 Local lookups read the database directly. A local full user is eligible even
 when expired or its account category is disabled; those states are not deletion.
 A local group is eligible when it has a positive GID. A different identity

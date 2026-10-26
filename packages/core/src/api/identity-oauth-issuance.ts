@@ -301,7 +301,9 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
       ) AS specific_access,
       u.id AS user_id, u.uid, u.profile, u.provider, u.display_name, u.given_name, u.sn AS family_name,
       u.mail, u.account_expires,
-      COALESCE(ARRAY(SELECT DISTINCT g.name FROM user_all_groups ug JOIN auth.groups g ON g.id = ug.group_id ORDER BY g.name), ARRAY[]::text[]) AS groups,
+      COALESCE(ARRAY(SELECT DISTINCT g.name FROM user_all_groups ug JOIN auth.groups g ON g.id = ug.group_id
+        WHERE NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id)
+        ORDER BY g.name), ARRAY[]::text[]) AS groups,
       sa.id AS service_account_id, sa.kind AS service_account_kind, sa.status AS service_account_status,
       sa.delegated_user_id, sa.app_id, sa.resource_type, sa.resource_id
     FROM oauth.clients c

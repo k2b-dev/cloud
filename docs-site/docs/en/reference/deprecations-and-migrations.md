@@ -5,10 +5,19 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-22
+updated: 2026-10-26
 ---
 
 # Deprecations and migrations
+
+## Personal Linux groups in exports
+
+Accounts group and entity exports and OAuth/OIDC group claims exclude personal
+Linux groups. Remove `--include-personal` from CLI commands; `include_personal`
+no longer opts into the API export. Use ordinary team groups in integrations
+and inspect primary GIDs through user Linux identity diagnostics. See the
+[operator upgrade note](/en/docs/operations/linux-identities#upgrade-group-exports-and-integrations)
+for consumer checks and retained Files directories.
 
 ## Weather city search uses Core geo
 

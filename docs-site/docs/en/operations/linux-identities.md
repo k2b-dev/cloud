@@ -124,13 +124,75 @@ team. Group lists and pickers therefore leave personal groups out:
   person instead.
 - Files does not show a personal group as a group area; people use their own
   files area instead.
-- An exact group ID or name, such as an existing grant, still resolves.
+- Personal groups are available only as user identity diagnostics, such as the
+  primary GID in the person's Linux identity section.
 
-The group list and entity search APIs mark such a group with `personalOwner`
-(`{ id, uid, displayName }`) and include it only with `include_personal=true`.
-Exact `group_ids` lookups and relation filters, such as a group's members,
-return an active personal group. The CLI lists them with `cld accounts groups list
---include-personal`.
+### Upgrade group exports and integrations
+
+**Operator note:** Personal Linux groups are excluded from Accounts API and
+CLI group listings, entity search (including exact group IDs and relation
+filters), and OAuth/OIDC `groups` claims in access tokens, ID tokens and
+UserInfo. The API query option
+`include_personal` is ignored; the CLI rejects the removed `--include-personal`
+flag. The server-side `accounts.users.getGroups` projection also excludes
+personal groups.
+Ordinary groups and inherited memberships through personal groups remain in
+these outputs. Internal authorization and Linux primary GIDs retain their
+existing meaning. FreeIPA groups are not classified by matching usernames.
+
+Before upgrading, review directory exports and integrations that used the
+personal group name. Configure an ordinary team group or use the user's
+identity instead. Refresh exported inventories and verify group mapping at the
+consumer after upgrading. Stored group references in sharing settings or Grids
+may lose their display label or require replacement before editing. Review
+existing nested memberships and manager-group relationships before upgrading;
+new relationships cannot use personal groups. Inspect Linux attributes with `cld accounts users
+linux get <user> --json` when diagnosing an identity.
+
+Operators with database access can inventory existing group relationships before
+replacing them with ordinary groups or direct user memberships:
+
+```sql
+SELECT 'member' AS relationship, gg.child_group_id AS principal_id, p.group_name, gg.parent_group_id AS target_group_id
+FROM auth.personal_groups p
+JOIN auth.group_groups_v2 gg ON p.group_id IN (gg.child_group_id, gg.parent_group_id)
+UNION ALL
+SELECT 'manager', gm.manager_group_id, p.group_name, gm.group_id
+FROM auth.personal_groups p
+JOIN auth.group_manager_groups_v2 gm ON p.group_id IN (gm.manager_group_id, gm.group_id)
+UNION ALL
+SELECT 'user-member', ug.user_id, p.group_name, ug.group_id
+FROM auth.personal_groups p JOIN auth.user_groups_v2 ug ON ug.group_id = p.group_id
+WHERE ug.user_id <> p.owner_id
+UNION ALL
+SELECT 'user-manager', gmu.user_id, p.group_name, gmu.group_id
+FROM auth.personal_groups p JOIN auth.group_manager_users_v2 gmu ON gmu.group_id = p.group_id;
+```
+
+After recording the intended replacement, an administrator can remove an old
+relationship by its exact IDs without exporting the personal group:
+
+```bash
+cld --profile <profile> accounts groups members remove <target-group-id> --group <principal-id> --yes
+cld --profile <profile> accounts groups managers remove <target-group-id> --group <principal-id> --yes
+cld --profile <profile> accounts groups members remove <target-group-id> --user <principal-id> --yes
+cld --profile <profile> accounts groups managers remove <target-group-id> --user <principal-id> --yes
+```
+
+Use `--group` for group relationships and `--user` for user relationships. Keep
+the owner's own membership in their personal group; it supplies their primary
+Linux group and is excluded from the user-member query above.
+
+Files group directories associated with a recorded personal group appear as
+**Legacy** in **Files administration → Directories**, including after account
+retirement. These are Filegate directories under the configured group path,
+not the user's Linux home path. Files preserves their contents and excludes
+these bindings from automatic archival. An administrator can browse them and
+explicitly archive them or copy their contents to the intended destination.
+Bindings use the recorded group ID. For an unbound directory, Files also
+recognizes the former group name stored in the ownership record and preserves
+it as Legacy if a new team reuses that name. Matching a username alone never
+establishes personal ownership. Historical contents are never deleted automatically.
 
 Disabling local assignment stops automatic assignment and backfill, retains existing identities and allows their
 local home/shell values to be maintained in Accounts. The administration
@@ -145,9 +207,10 @@ and its reserved GID.
 An application foreign key that restricts deletion of the group makes the
 whole account deletion fail and roll back. Application authors should use
 `ON DELETE CASCADE` for references that must retire with a Cloud group.
-Account deletion does not delete filesystem content. Files continues to apply
-its configured archive policy to directories whose identity no longer exists;
-operators can review their contents through Files administration.
+Account deletion does not delete filesystem content. Files preserves recorded
+personal-group directories as Legacy; its configured
+archive policy still applies to other directories whose identity no longer
+exists. Operators can review their contents through Files administration.
 
 ### Review historical groups after upgrading
 

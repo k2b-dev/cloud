@@ -36,7 +36,7 @@ export type Configuration = z.infer<typeof ConfigurationSchema>;
 export type ConfigurationInput = z.infer<typeof ConfigurationInputSchema>;
 export type PublicConfiguration = Configuration & { tokenConfigured: boolean; unreadable: boolean };
 export type Availability = { localLinuxEnabled: boolean; freeipaEnabled: boolean };
-export const InventoryStateSchema = z.enum(["existing", "missing", "unassigned", "conflict", "unknown", "orphaned", "retired"]);
+export const InventoryStateSchema = z.enum(["existing", "missing", "unassigned", "conflict", "unknown", "orphaned", "retired", "legacy"]);
 export type InventoryState = z.infer<typeof InventoryStateSchema>;
 export type BaseSummary = {
   id: string;

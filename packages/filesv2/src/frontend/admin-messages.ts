@@ -94,6 +94,10 @@ export const adminMessages = i18n.define({
       unknownHint: "Refresh the identity source and Filegate connection. Unknown does not mean deleted.",
       disabledHint: "Enable this area in Settings to manage its files.",
       identityHint: "The required identity information could not be confirmed.",
+      legacyPersonalGroupPending:
+        "An archive operation is pending for this legacy directory. Retry explicitly archives it; leaving it pending preserves the files.",
+      legacyPersonalGroup:
+        "Historical personal-group directory. Keep its contents; archive it deliberately or copy its files to the intended destination.",
       identityAbsent: "The account or group no longer exists.",
       retiredHint: "This directory is excluded from active use and automatic creation.",
       pendingHint: "The recorded operation is awaiting completion. Refresh or retry it.",
@@ -242,6 +246,10 @@ export const adminMessages = i18n.define({
       unknownHint: "Identitätsquelle und Filegate-Verbindung aktualisieren. Unbekannt bedeutet nicht gelöscht.",
       disabledHint: "Diesen Bereich in den Einstellungen aktivieren, um seine Dateien zu verwalten.",
       identityHint: "Die erforderlichen Identitätsinformationen konnten nicht bestätigt werden.",
+      legacyPersonalGroupPending:
+        "Für dieses Legacy-Verzeichnis wartet eine Archivierung. Erneut versuchen archiviert es ausdrücklich; bis dahin bleiben die Dateien erhalten.",
+      legacyPersonalGroup:
+        "Historisches Verzeichnis einer persönlichen Gruppe. Inhalte erhalten und nur bewusst archivieren oder an das gewünschte Ziel kopieren.",
       identityAbsent: "Das Konto oder die Gruppe existiert nicht mehr.",
       retiredHint: "Dieses Verzeichnis ist von aktiver Nutzung und automatischer Erstellung ausgeschlossen.",
       pendingHint: "Der Abschluss der vorgemerkten Aktion steht noch aus. Aktualisieren oder erneut versuchen.",

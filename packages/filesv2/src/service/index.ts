@@ -2071,10 +2071,17 @@ export function createFilesService(
           status = "retired";
           reason = "retired";
         }
+        if (node?.directory && proof.state !== "unknown" && proof.personal && status !== "conflict") {
+          status = "legacy";
+          reason = "legacy_personal_group";
+        }
         const pending = await operations.pendingWithin(root.name, path);
         if (pending) {
-          status = "unknown";
-          reason = "operation_pending";
+          if (status === "legacy") reason = pending.action === "archive" ? "legacy_personal_group_pending" : "operation_pending";
+          else {
+            status = "unknown";
+            reason = "operation_pending";
+          }
         }
         const safe = !pending && proof.state !== "unknown" && status !== "conflict";
         const adopt = input.area === "cloud" && status === "unassigned" && identityId !== null;

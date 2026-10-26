@@ -73,17 +73,16 @@ suiteFor("database", "valkey")("personal group retirement", () => {
     const owner = await provision();
     const grant = await createAccess({ principal: { type: "group", groupId: owner.groupId }, permission: "write" });
     if (!grant.ok) throw new Error(grant.error.message);
-    expect((await accountsAppService.group.member.add({ actor: actor(), id: owner.groupId, userId: other })).ok).toBe(true);
+    // Seed relationships that predate the current group export policy.
+    await sql`INSERT INTO auth.user_groups_v2(user_id,group_id) VALUES(${other}::uuid,${owner.groupId}::uuid)`;
     const team = await localGroups.create({ name: "retirement_team" });
     if (!team.ok) throw new Error(team.error);
-    expect((await localGroups.addMember({ id: team.data.id, group: owner.groupId })).ok).toBe(true);
-    expect((await localGroups.addManager({ id: team.data.id, group: owner.groupId })).ok).toBe(true);
+    await sql`INSERT INTO auth.group_groups_v2(parent_group_id,child_group_id) VALUES(${team.data.id}::uuid,${owner.groupId}::uuid)`;
+    await sql`INSERT INTO auth.group_manager_groups_v2(group_id,manager_group_id) VALUES(${team.data.id}::uuid,${owner.groupId}::uuid)`;
     expect(await getEffectivePermission({ accessIds: [grant.data.id], subject: { type: "user", userId: other } })).toBe("write");
     expect((await accountsAppService.user.remove({ actor: actor(), id: owner.id })).ok).toBe(true);
     await assertRetired(owner);
-    expect(
-      (await accountsAppService.group.list({ filter: { search: owner.uid, includePersonal: true }, scope: { mode: "all" } })).items,
-    ).toEqual([]);
+    expect((await accountsAppService.group.list({ filter: { search: owner.uid }, scope: { mode: "all" } })).items).toEqual([]);
     expect(await localGroups.get({ id: owner.groupId })).toBeNull();
     expect(await getEffectivePermission({ accessIds: [grant.data.id], subject: { type: "user", userId: other } })).toBe("none");
     expect((await createAccess({ principal: { type: "group", groupId: owner.groupId }, permission: "read" })).ok).toBe(false);
@@ -201,7 +200,7 @@ suiteFor("database", "valkey")("personal group retirement", () => {
 
   test("a failed deletion rolls back the account, group, grants and tombstone together", async () => {
     const owner = await provision();
-    expect((await localGroups.addMember({ id: owner.groupId, user: other })).ok).toBe(true);
+    await sql`INSERT INTO auth.user_groups_v2(user_id,group_id) VALUES(${other}::uuid,${owner.groupId}::uuid)`;
     const grant = await createAccess({ principal: { type: "group", groupId: owner.groupId }, permission: "write" });
     if (!grant.ok) throw new Error(grant.error.message);
     await sql`CREATE TABLE auth.retirement_restrict(group_id UUID REFERENCES auth.groups(id))`.simple();

@@ -43,7 +43,6 @@ const QuerySchema = z
     parent_group_id: z.uuid().optional(),
     managed_by_user_id: z.uuid().optional(),
     recursive: z.enum(["true", "false"]).optional(),
-    include_personal: z.enum(["true", "false"]).optional(),
   })
   .refine(
     (value) => {
@@ -100,7 +99,7 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
       tags: ["Accounts"],
       summary: "List visible directory entries",
       description:
-        "List visible users and groups with SQL-backed filtering and pagination. Guest accounts see only themselves and their effective groups; relation filters require a full user account. Standalone and agent accounts with read scope see only explicitly shared directory entries and cannot query relationships. Personal Linux groups (a user's private primary group, flagged with `personalOwner`) are left out unless `include_personal=true`; exact `group_ids` lookups and relation filters always return them.",
+        "List visible users and groups with SQL-backed filtering and pagination. Guest accounts see only themselves and their effective groups; relation filters require a full user account. Standalone and agent accounts with read scope see only explicitly shared directory entries and cannot query relationships. Personal Linux groups are excluded, including exact group IDs and relation filters. Inspect the owning user's Linux identity for diagnostic attributes.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(EntitiesListResponseSchema, "Paginated mixed entity list"),
@@ -155,7 +154,6 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
         parentGroupId: query.parent_group_id,
         managedByUserId: query.managed_by_user_id,
         recursive: query.recursive === "true",
-        includePersonal: query.include_personal === "true",
       };
       if (!user) {
         const result = await (dependencies.searchShares ?? directoryShares.search)({

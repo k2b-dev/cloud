@@ -30,11 +30,6 @@ export type EntityListParams = {
   parentGroupId?: string;
   managedByUserId?: string;
   recursive?: boolean;
-  /**
-   * Personal Linux groups are left out of directory browsing and search by
-   * default. Exact `groupIds` lookups and relation filters always return them.
-   */
-  includePersonal?: boolean;
   page?: number;
   perPage?: number;
 };
@@ -427,11 +422,7 @@ export const list = async (
   const groupsAdmin = (await getFreeIpaConfig()).groupsAdmin;
   const groupsAdminLiteral = toPgTextArray(groupsAdmin);
   const spec = buildQuerySpec(params);
-  const includePersonal =
-    params.includePersonal === true ||
-    params.groupIds !== undefined ||
-    Boolean(params.memberOfGroupId || params.managerOfGroupId || params.parentGroupId || params.managedByUserId);
-  const personalCondition = includePersonal ? sql`TRUE` : sql`(kind <> 'group' OR personal_owner_id IS NULL)`;
+  const personalCondition = sql`(kind <> 'group' OR NOT EXISTS (SELECT 1 FROM auth.personal_groups p WHERE p.group_id = entity_rows.id))`;
   const visibilityCondition =
     params.visibility.type === "directory"
       ? sql`TRUE`

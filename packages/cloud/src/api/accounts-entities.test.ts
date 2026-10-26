@@ -46,20 +46,17 @@ describe("accounts entity routes", () => {
     });
   });
 
-  test("leaves personal Linux groups out unless include_personal=true", async () => {
+  test("does not forward the removed personal-group export switch", async () => {
     const seen: unknown[] = [];
     const routes = createAccountsEntitiesRoutes({
       authenticate: authenticateAs("user"),
       listEntities: async (input) => {
-        seen.push(input.includePersonal);
+        seen.push(input);
         return { items: [], page: 1, perPage: 10, total: 0, hasNext: false };
       },
     });
-
-    expect((await routes.request("/entities?kinds=group&search=qd")).status).toBe(200);
-    expect((await routes.request("/entities?kinds=group&search=qd&include_personal=true")).status).toBe(200);
-    expect((await routes.request("/entities?include_personal=yes")).status).toBe(400);
-    expect(seen).toEqual([false, true]);
+    expect((await routes.request("/entities?kinds=group&include_personal=true")).status).toBe(200);
+    expect(seen[0]).not.toHaveProperty("includePersonal");
   });
 
   test("rejects relation filters for guest actors before querying entities", async () => {
