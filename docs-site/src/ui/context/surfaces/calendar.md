@@ -474,6 +474,9 @@ the window's:
   with icon-only chips. Keep `toolbarActions` compact there, for example an
   icon with a visually hidden label.
 
+Chips give up their names only to make room for the view switcher: with
+`viewSwitcher={false}` they keep their names at every width.
+
 ## API reference
 
 ```ts

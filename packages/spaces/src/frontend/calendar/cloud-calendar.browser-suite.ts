@@ -193,6 +193,15 @@ const open = async (view: View, path: string, data: Case) => {
   return { page, errors, close: () => context.close() };
 };
 const shoot = (page: Page, name: string) => page.screenshot({ path: join(shots, `${name}.png`) });
+/** The first match inside the window, so a click never scrolls the strip to another week. */
+const onScreen = async (page: Page, name: RegExp) => {
+  const matches = page.getByRole("button", { name });
+  for (let index = 0; index < (await matches.count()); index++) {
+    const rect = await matches.nth(index).boundingBox();
+    if (rect && rect.x >= 280 && rect.x + rect.width <= desktop.width && rect.y >= 0 && rect.y < desktop.height) return matches.nth(index);
+  }
+  throw new Error(`No ${name} on screen`);
+};
 const box = async (page: Page, selector: string) => {
   const rect = await page.locator(selector).first().boundingBox();
   if (!rect) throw new Error(`No box for ${selector}`);
@@ -208,6 +217,8 @@ describe("calendar of all Spaces and apps", () => {
       expect(await page.locator('.k2b-app-workspace__head-views [aria-current="page"]').textContent()).toContain("Woche");
       // Nine suggested calendars; the busy-only and the shift calendar wait for a choice.
       await expect(page.getByRole("button", { name: /Kalender 9/ }).count()).resolves.toBe(1);
+      // The chip keeps its name in the calendar's toolbar, which shows no view switcher of its own.
+      expect(await page.locator(".spaces-calendar-chooser .k2b-filter-chip__label").isVisible()).toBe(true);
       for (const title of ["Gabelstapler-Wartung", "All-Hands Q4", "Malte Sommer · abwesend", "Erste-Hilfe-Auffrischung"])
         expect(await page.getByText(title, { exact: false }).count()).toBeGreaterThan(0);
       expect(await page.getByText("Frühschicht").count()).toBe(0);
@@ -240,7 +251,8 @@ describe("calendar of all Spaces and apps", () => {
       expect(new URL(page.url()).searchParams.getAll("cal")).toContain("shifts:meine");
       expect(await page.getByRole("button", { name: /Kalender 10/ }).count()).toBe(1);
       // "Only" chooses that calendar alone.
-      await menu.getByRole("menuitem", { name: "Nur Werkstatt" }).click({ force: true });
+      await menu.getByRole("menuitemcheckbox", { name: "Werkstatt" }).hover();
+      await menu.getByRole("menuitem", { name: "Nur Werkstatt" }).click();
       expect(new URL(page.url()).searchParams.getAll("cal")).toEqual(["spaces:Werks1"]);
       await page.keyboard.press("Escape");
       expect(await page.getByText("All-Hands Q4").count()).toBe(0);
@@ -259,10 +271,7 @@ describe("calendar of all Spaces and apps", () => {
   test("an event opens its details beside it, with its series, place, source, and a link into its app", async () => {
     const { page, close } = await open(desktop, "/app/spaces/calendar?view=week&date=2026-10-27", { locale: "de" });
     try {
-      await page
-        .getByRole("button", { name: /Team-Meeting Logistik/ })
-        .first()
-        .click();
+      await (await onScreen(page, /Team-Meeting Logistik/)).click();
       const dialog = page.getByRole("dialog", { name: "Termindetails" });
       await dialog.waitFor();
       await expect(dialog.textContent()).resolves.toContain("Meetings");
@@ -271,18 +280,12 @@ describe("calendar of all Spaces and apps", () => {
       await shoot(page, "03-detail-de");
       await page.keyboard.press("Escape");
       await dialog.waitFor({ state: "hidden" });
-      await page
-        .getByRole("button", { name: /Gabelstapler-Wartung/ })
-        .first()
-        .click();
+      await (await onScreen(page, /Gabelstapler-Wartung/)).click();
       const link = page.getByRole("link", { name: /In Werkstatt öffnen/ });
       expect(await link.getAttribute("href")).toMatch(/^\/app\/spaces\/Werks1\?item=/);
       // Another zone says both times.
       await page.keyboard.press("Escape");
-      await page
-        .getByRole("button", { name: /Call mit Partner Chicago/ })
-        .first()
-        .click();
+      await (await onScreen(page, /Call mit Partner Chicago/)).click();
       expect(await page.getByRole("dialog", { name: "Termindetails" }).textContent()).toContain("in Chicago");
     } finally {
       await close();
@@ -375,10 +378,7 @@ describe("calendar of all Spaces and apps", () => {
       await expect(page.locator(".spaces-calendar-status").textContent()).resolves.toContain(
         "Meetings · Geschäftsführung: nur frei/belegt sichtbar",
       );
-      await page
-        .getByRole("button", { name: /^Belegt/ })
-        .first()
-        .click();
+      await (await onScreen(page, /^Belegt/)).click();
       const dialog = page.getByRole("dialog", { name: "Termindetails" });
       expect(await dialog.textContent()).toContain("Du siehst bei diesem Kalender nur, wann Zeit belegt ist.");
       expect(await dialog.getByRole("link").count()).toBe(0);

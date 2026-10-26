@@ -109,14 +109,15 @@
   margin-inline-start: auto;
 }
 
+/* Chips give their names up to make room for the view switcher; without one the row has that room. */
 @container k2b-calendar-header (min-width: 64.001rem) and (max-width: 84rem) {
-  .k2b-ui .k2b-calendar-header__content .k2b-filter-chip {
+  .k2b-ui .k2b-calendar-header:not([data-view-switcher="false"]) .k2b-calendar-header__content .k2b-filter-chip {
     width: 2rem;
     justify-content: center;
     padding: 0;
   }
 
-  .k2b-ui .k2b-calendar-header__content .k2b-filter-chip > :not(:first-child) {
+  .k2b-ui .k2b-calendar-header:not([data-view-switcher="false"]) .k2b-calendar-header__content .k2b-filter-chip > :not(:first-child) {
     display: none;
   }
 }
@@ -170,12 +171,12 @@
     flex-basis: auto;
   }
 
-  .k2b-ui .k2b-calendar-header__content .k2b-filter-chip {
+  .k2b-ui .k2b-calendar-header:not([data-view-switcher="false"]) .k2b-calendar-header__content .k2b-filter-chip {
     width: 2.25rem;
     padding: 0;
   }
 
-  .k2b-ui .k2b-calendar-header__content .k2b-filter-chip > :not(:first-child) {
+  .k2b-ui .k2b-calendar-header:not([data-view-switcher="false"]) .k2b-calendar-header__content .k2b-filter-chip > :not(:first-child) {
     display: none;
   }
 }

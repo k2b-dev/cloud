@@ -959,7 +959,7 @@ const CalendarHeader = <V extends string>(props: {
   );
 
   return (
-    <header class="k2b-calendar-header">
+    <header class="k2b-calendar-header" data-view-switcher={props.owner.viewSwitcher === false ? "false" : undefined}>
       <div class="k2b-calendar-header__navigation">
         {navButton(previous, "ti-chevron-left", props.labels.previous, -1)}
         {navButton(next, "ti-chevron-right", props.labels.next, 1)}
