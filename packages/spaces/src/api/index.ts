@@ -3282,7 +3282,7 @@ const calendarApp = new Hono<AuthContext>()
       responses: {
         200: jsonResponse(CalendarSourcesResponseSchema, "Calendar sources"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
-        500: jsonResponse(ErrorResponseSchema, "Calendar discovery unavailable"),
+        503: jsonResponse(ErrorResponseSchema, "Calendar discovery is unavailable for now; try again later"),
       },
     }),
     async (c) => {
@@ -3294,7 +3294,8 @@ const calendarApp = new Hono<AuthContext>()
       try {
         return respond(c, ok({ sources: await loadCalendarSources(c, { deadlineMs: 10_000 }) }));
       } catch {
-        return respond(c, fail({ ...err.internal("Calendar discovery is unavailable"), code: "CALENDAR_DISCOVERY_FAILED" }));
+        // A temporary outage: callers, such as a later subscription feed, retry instead of treating it as a fault.
+        return respond(c, { ok: false, status: 503, code: "CALENDAR_DISCOVERY_FAILED", error: "Calendar discovery is unavailable" });
       }
     },
   )

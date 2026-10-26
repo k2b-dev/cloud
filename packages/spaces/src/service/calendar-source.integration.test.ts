@@ -1,4 +1,4 @@
-import { afterEach, expect, setSystemTime, test } from "bun:test";
+import { afterEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { CalendarEventsDataSchema, CalendarListDataSchema, type CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { accounts, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
@@ -10,6 +10,7 @@ import spacesApi from "../api";
 import { spacesCapabilities } from "../capabilities";
 import { newShortId } from "../lib/short-id";
 import { listSourceCalendars, readSourceEvents } from "./calendar-source";
+import * as calendarView from "./calendar-view";
 
 const suite = databaseSuite();
 afterEach(() => setSystemTime());
@@ -242,6 +243,15 @@ suite("Spaces Cloud calendar source", () => {
       const malformed = await request(new URLSearchParams({ ...range, cal: "missing-colon" }).toString());
       expect(malformed.status).toBe(400);
       expect(await malformed.json()).toMatchObject({ code: "CALENDAR_INVALID_SELECTION" });
+      // An unreachable catalog is a temporary outage: 503 says "try again later", never an empty or failed calendar.
+      const outage = spyOn(calendarView, "loadCalendarSources").mockRejectedValue(new Error("catalog unreachable"));
+      try {
+        const sources = await spacesApi.request("/calendar/sources", { headers: { authorization: `Bearer ${token.data.token}` } });
+        expect(sources.status).toBe(503);
+        expect(await sources.json()).toEqual({ code: "CALENDAR_DISCOVERY_FAILED", message: "Calendar discovery is unavailable" });
+      } finally {
+        outage.mockRestore();
+      }
       const manifest = compileCapabilityManifest("spaces", spacesCapabilities);
       expect(manifest.calendarSource).toEqual({ calendars: "calendar.list", events: "calendar.events" });
       const valid = await spacesCapabilities.queries["calendar.events"].run(input, userContext);
