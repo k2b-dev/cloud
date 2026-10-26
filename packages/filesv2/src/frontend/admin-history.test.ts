@@ -5,7 +5,6 @@ import {
   adminActivityHref,
   adminBaseLabel,
   adminBaseOptions,
-  loadAdminBaseLabels,
   adminChannel,
   adminItem,
   adminPlaceDescriber,
@@ -16,6 +15,7 @@ import {
   entryBase,
   exportFileName,
   exportRequest,
+  loadAdminBaseLabels,
   parseAdminActivityFilters,
 } from "./admin-history";
 import { adminHistoryCatalog } from "./admin-history-messages";
