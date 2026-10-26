@@ -1,3 +1,4 @@
+import { autocompletion } from "@codemirror/autocomplete";
 import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
@@ -657,9 +658,11 @@ function EditorInstance(
   addExtension(editor.basicExtensions());
   // Custom formatting commands dispatch changes even in a read-only state.
   addExtension(() => (syncEnded.ended() ? [] : formattingKeymap({ notebookId: props.notebookId })));
+  // Pending completion callbacks still read their state after sync ends.
+  // Keep that state installed while removing every source from the read-only note.
   addExtension(() =>
     syncEnded.ended()
-      ? []
+      ? autocompletion({ override: [] })
       : slashCommandsExtension({
           notebookId: props.notebookId,
           notebookName: props.notebookName,

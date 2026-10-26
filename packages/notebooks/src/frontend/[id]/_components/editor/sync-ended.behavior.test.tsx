@@ -1,4 +1,5 @@
-import { describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { describe, expect, jest, mock, setSystemTime, spyOn, test } from "bun:test";
+import { closeCompletion, completionStatus } from "@codemirror/autocomplete";
 import { EditorView } from "@codemirror/view";
 import { createCodeMirror } from "solid-codemirror";
 import { Show } from "solid-js";
@@ -322,6 +323,39 @@ describe("sync ended editor recovery", () => {
     test.skip("runs with browser export conditions", () => {});
     return;
   }
+
+  test("ending sync while completion waits for the typing pause preserves its state and closes suggestions", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    await flush();
+    const type = (text: string) => {
+      const end = editor.view().state.doc.length;
+      editor.view().dispatch({ changes: { from: end, insert: text }, selection: { anchor: end + text.length }, userEvent: "input.type" });
+    };
+    const settleCompletion = async () => {
+      for (let step = 0; step < 3; step++) {
+        jest.advanceTimersByTime(100);
+        await flush();
+      }
+    };
+    jest.useFakeTimers();
+    setSystemTime(new Date("2026-10-01T10:00:00.000Z"));
+    try {
+      type("\n/");
+      await settleCompletion();
+      expect(completionStatus(editor.view().state)).toBe("active");
+      closeCompletion(editor.view());
+      type("\n/");
+      expect(completionStatus(editor.view().state)).toBe("pending");
+      editor.end();
+      await settleCompletion();
+      expect(editor.view().state.readOnly).toBe(true);
+      expect(completionStatus(editor.view().state)).toBeNull();
+      expect(editor.view().state.doc.toString()).toBe(`${markdown}\n/\n/`);
+    } finally {
+      jest.useRealTimers();
+      setSystemTime();
+    }
+  });
 
   test("ended sync copies the preserved input from before a conflicting remote merge", async () => {
     const preserved = "| Item | New column |\n| --- | --- |\n| Paper | My offline input |";
