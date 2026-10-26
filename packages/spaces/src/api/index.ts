@@ -3327,7 +3327,7 @@ const calendarApp = new Hono<AuthContext>()
           { code: "CALENDAR_INVALID_RANGE", message: "Use an ordered range of at most 42 elapsed days with explicit offsets" },
           400,
         );
-      let calendars;
+      let calendars: ReturnType<typeof parseCalendarSelections>;
       try {
         calendars = parseCalendarSelections(c.req.queries("cal") ?? []);
       } catch {
