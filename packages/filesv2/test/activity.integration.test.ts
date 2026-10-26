@@ -1470,7 +1470,8 @@ suite("Files activity with real storage", () => {
     expect(restored.entry.path).toBe("history-trash-restored");
     expect((await client.root("cloud").stat(`${home}/history-trash-restored`)).id).toBe(original.id);
     expect((await client.root("cloud").stat(`${home}/history-trash-original`)).id).toBe(replacement.id);
-    expect(await sql`SELECT state FROM filesv2.activity WHERE action='item.restore'`).toMatchObject([{ state: "done" }]);
+    const activityStates = await sql<{ state: string }[]>`SELECT state FROM filesv2.activity WHERE action='item.restore'`;
+    expect(activityStates.map((row) => row.state)).toEqual(["done"]);
   });
   test("history recovery rechecks user eligibility before touching a recorded item", async () => {
     await service.mkdir(testCall(actor), { baseId: baseId(), path: "history-revoked-original" });
