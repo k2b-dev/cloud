@@ -1,8 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { ProviderEvent } from "@k2b/nessi";
 import { z } from "zod";
 import { createAiProvider } from "./provider";
+import * as connections from "./provider-connections";
 import type { AiModelProfile } from "./types";
+
+// Adapter unit tests own HTTP fakes; provider status persistence belongs to its integration seam.
+beforeEach(() => spyOn(connections, "recordAiProviderStatus").mockResolvedValue(undefined));
+afterEach(() => mock.restore());
 
 const profile = (overrides: Partial<AiModelProfile>): AiModelProfile => ({
   modelId: "model-1",
