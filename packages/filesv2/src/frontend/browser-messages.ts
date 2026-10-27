@@ -13,8 +13,10 @@ export const browserMessages = i18n.define({
       destinationGroup: ({ name }: { name: string }) => `Members of ${name} have access.`,
       destinationOwner: "The folder owner has access.",
       destinationOwningGroup: "The folder's group has access.",
-      destinationExtraUsers: ({ count }: { count: number }) => `${count} additional filesystem users have access.`,
-      destinationExtraGroups: ({ count }: { count: number }) => `${count} additional filesystem groups have access.`,
+      destinationExtraUsers: ({ count }: { count: number }) =>
+        `${count} additional filesystem ${count === 1 ? "user has" : "users have"} access.`,
+      destinationExtraGroups: ({ count }: { count: number }) =>
+        `${count} additional filesystem ${count === 1 ? "group has" : "groups have"} access.`,
       destinationOthers: "Other filesystem users may also have access.",
       destinationVersioned: "Version history is enabled here.",
       destinationUnversioned: "No version history here.",
@@ -356,8 +358,10 @@ export const browserMessages = i18n.define({
       destinationGroup: ({ name }: { name: string }) => `Mitglieder von ${name} haben Zugriff.`,
       destinationOwner: "Die Eigentümerin oder der Eigentümer des Ordners hat Zugriff.",
       destinationOwningGroup: "Die Gruppe des Ordners hat Zugriff.",
-      destinationExtraUsers: ({ count }: { count: number }) => `${count} weitere Dateisystem-Benutzer haben Zugriff.`,
-      destinationExtraGroups: ({ count }: { count: number }) => `${count} weitere Dateisystem-Gruppen haben Zugriff.`,
+      destinationExtraUsers: ({ count }: { count: number }) =>
+        `${count} ${count === 1 ? "weiterer Dateisystem-Benutzer hat" : "weitere Dateisystem-Benutzer haben"} Zugriff.`,
+      destinationExtraGroups: ({ count }: { count: number }) =>
+        `${count} ${count === 1 ? "weitere Dateisystem-Gruppe hat" : "weitere Dateisystem-Gruppen haben"} Zugriff.`,
       destinationOthers: "Weitere Dateisystem-Benutzer können ebenfalls Zugriff haben.",
       destinationVersioned: "Der Versionsverlauf ist hier aktiviert.",
       destinationUnversioned: "Hier gibt es keinen Versionsverlauf.",

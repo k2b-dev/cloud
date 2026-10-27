@@ -5,13 +5,14 @@ export const mailRemainingMessages = i18n.define({
   messages: {
     en: {
       calendarVisibleMembers: ({ count, guests }: { count: number; guests: number }) =>
-        `Visible to ${count} members${guests ? `, including ${guests} ${guests === 1 ? "guest" : "guests"}` : ""}`,
+        `Visible to ${count} ${count === 1 ? "member" : "members"}${guests ? `, including ${guests} ${guests === 1 ? "guest" : "guests"}` : ""}`,
       calendarAudienceUnknown: "Access details unavailable.",
       loadingCalendars: "Loading calendars…",
       calendarPublic: "Publicly visible",
       calendarAuthenticated: "Visible to all signed-in people",
       calendarNoPermission: "No write access",
-      calendarAccounts: ({ count }: { count: number }) => `${count} service accounts also have access`,
+      calendarAccounts: ({ count }: { count: number }) =>
+        `${count} ${count === 1 ? "service account also has" : "service accounts also have"} access`,
       overview: "Overview",
       headers: "Headers",
       source: "Source",
@@ -827,13 +828,14 @@ export const mailRemainingMessages = i18n.define({
     },
     de: {
       calendarVisibleMembers: ({ count, guests }: { count: number; guests: number }) =>
-        `Sichtbar für ${count} Mitglieder${guests ? `, darunter ${guests} ${guests === 1 ? "Gast" : "Gäste"}` : ""}`,
+        `Sichtbar für ${count} ${count === 1 ? "Mitglied" : "Mitglieder"}${guests ? `, darunter ${guests} ${guests === 1 ? "Gast" : "Gäste"}` : ""}`,
       calendarAudienceUnknown: "Zugriffsdetails nicht verfügbar.",
       loadingCalendars: "Kalender werden geladen…",
       calendarPublic: "Öffentlich sichtbar",
       calendarAuthenticated: "Sichtbar für alle angemeldeten Personen",
       calendarNoPermission: "Kein Schreibrecht",
-      calendarAccounts: ({ count }: { count: number }) => `${count} Dienstkonten haben ebenfalls Zugriff`,
+      calendarAccounts: ({ count }: { count: number }) =>
+        `${count} ${count === 1 ? "Dienstkonto hat" : "Dienstkonten haben"} ebenfalls Zugriff`,
       overview: "Übersicht",
       headers: "Header",
       source: "Quelldaten",

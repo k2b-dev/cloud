@@ -56,12 +56,19 @@ export default function WormholeSelect(props: {
         value: preview.id,
         label: preview.target ? `${preview.target.spaceName} · ${preview.target.columnName}` : t.unavailableWormhole,
         color: preview.target?.spaceColor,
-        description: removed(preview).length
-          ? t.wormholeDrops({
-              changes: join(removed(preview)),
-              count: preview.removedTags.length + preview.removedAssignees.length + preview.removedDependencies.length,
-            })
-          : t.wormholeNothingDrops,
+        // A guest who sees the card there matters as much as what the move drops.
+        description:
+          [
+            ...(preview.audience?.guestCount ? [t.wormholeGuestsSee({ count: preview.audience.guestCount })] : []),
+            ...(removed(preview).length
+              ? [
+                  t.wormholeDrops({
+                    changes: join(removed(preview)),
+                    count: preview.removedTags.length + preview.removedAssignees.length + preview.removedDependencies.length,
+                  }),
+                ]
+              : []),
+          ].join(", ") || t.wormholeNothingDrops,
         disabledReason: !preview.canWrite ? t.wormholeNoWrite : undefined,
       }))}
       renderPreview={(item) => {
