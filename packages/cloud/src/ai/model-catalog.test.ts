@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
-import { flattenAiModelVariant, validateAiSlot } from "./model-catalog";
+import { expect, spyOn, test } from "bun:test";
+import { sql } from "bun";
 import {
   AiModelInputSchema,
   AiModelPatchSchema,
@@ -8,7 +8,10 @@ import {
   AiVariantPatchSchema,
   AiVariantSchema,
 } from "../shared/ai-models";
+import * as credentials from "./credentials";
+import { aiModelCatalog, flattenAiModelVariant, readAiModelProfiles, validateAiSlot } from "./model-catalog";
 import { validateAiReplacement } from "./model-delete";
+import * as headers from "./request-headers";
 
 const metadata = { revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", createdAt: "2026-10-16T00:00:00.000Z", updatedBy: null };
 const provider = AiProviderSchema.parse({
@@ -73,4 +76,30 @@ test("patch schemas keep omitted defaults absent and reject old connection field
   expect(AiModelPatchSchema.parse({ label: "Renamed" })).toEqual({ label: "Renamed" });
   expect(AiVariantPatchSchema.parse({ label: "Renamed" })).toEqual({ label: "Renamed" });
   expect(AiModelInputSchema.safeParse({ id: "old", provider: "ollama", model: "old", label: "Old" }).success).toBe(false);
+});
+
+test("runtime catalog reads use key existence and never decrypt provider headers", async () => {
+  const query = spyOn(sql, "unsafe").mockResolvedValue([
+    { data: { ...provider, credentialSet: undefined, requestHeaderNames: undefined } },
+  ]);
+  const keys = spyOn(credentials, "listAiCredentialProviderIds").mockResolvedValue([provider.id]);
+  const decryptKey = spyOn(credentials, "getAiCredential").mockRejectedValue(new Error("Must not decrypt keys"));
+  const decryptHeaders = spyOn(headers, "getAiRequestHeaders").mockRejectedValue(new Error("Must not decrypt headers"));
+  const models = spyOn(aiModelCatalog, "models").mockResolvedValue([model]);
+  const variants = spyOn(aiModelCatalog, "variants").mockResolvedValue([
+    AiVariantSchema.parse({ slug: "standard", id: "chat", modelId: "chat", label: "Standard", ...metadata }),
+  ]);
+  try {
+    expect((await readAiModelProfiles()).map((profile) => profile.id)).toEqual(["chat"]);
+    expect(keys).toHaveBeenCalledTimes(1);
+    expect(decryptKey).not.toHaveBeenCalled();
+    expect(decryptHeaders).not.toHaveBeenCalled();
+  } finally {
+    variants.mockRestore();
+    models.mockRestore();
+    decryptHeaders.mockRestore();
+    decryptKey.mockRestore();
+    keys.mockRestore();
+    query.mockRestore();
+  }
 });

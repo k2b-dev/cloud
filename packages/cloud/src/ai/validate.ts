@@ -19,8 +19,9 @@ export type ValidateAiTurnInput = {
 
 export const validateAiTurnRequest = async (
   input: ValidateAiTurnInput,
+  providedState?: AiSettingsState,
 ): Promise<{ settings: Extract<AiSettingsState, { ok: true }>; resolved: Awaited<ReturnType<typeof resolveAiModelFromState>> }> => {
-  const settings = await readAiSettingsState();
+  const settings = providedState ?? (await readAiSettingsState());
   if (!settings.enabled) {
     throw Object.assign(new Error("AI is disabled."), {
       aiError: { code: "ai_disabled", message: "AI is disabled." } satisfies AiSettingsError,

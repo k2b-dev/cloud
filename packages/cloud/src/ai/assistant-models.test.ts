@@ -1,7 +1,11 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { isAssistantChatTurn, resolveAssistantAudioModel, selectAssistantAiModel } from "./assistant-models";
+import { isAssistantChatTurn, peopleAiModels, resolveAssistantAudioModel, selectAssistantAiModel } from "./assistant-models";
+import * as credentials from "./credentials";
 import { aiModelAccess } from "./model-access";
+import { aiModelCatalog } from "./model-catalog";
 import { aiModelFixture, aiSettingsFixture } from "./model-fixture";
+import { aiUserPrefs } from "./prefs";
+import { aiQuotas } from "./quotas";
 import * as settings from "./settings";
 import * as transcription from "./transcription";
 import type { AiModelProfile } from "./types";
@@ -77,4 +81,40 @@ test("Assistant audio resolution rethrows unrelated access errors unchanged", as
   const failure = new Error("Access database unavailable");
   spyOn(aiModelAccess, "assertAllowed").mockRejectedValue(failure);
   await expect(resolveAssistantAudioModel(subject)).rejects.toBe(failure);
+});
+
+test("people choices reuse one settings snapshot and one quota read per owning model", async () => {
+  const state = aiSettingsFixture({ profiles: [aiModelFixture(), aiModelFixture({ id: "chat:deep", variantLabel: "Deep" })] });
+  const read = spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
+  spyOn(aiModelCatalog, "providers").mockResolvedValue([]);
+  spyOn(credentials, "listAiCredentialProviderIds").mockResolvedValue([]);
+  spyOn(aiUserPrefs, "get").mockResolvedValue({
+    userId: subject.userId,
+    memoryEnabled: true,
+    memoryLearningEnabled: true,
+    selection: null,
+    updatedAt: "2026-10-27T00:00:00Z",
+  });
+  spyOn(aiModelAccess, "filterModels").mockResolvedValue(state.profiles);
+  const config = { enabled: false, revision: 1, rules: [] };
+  spyOn(aiQuotas, "config").mockResolvedValue(config);
+  const snapshot = spyOn(aiQuotas, "snapshot").mockResolvedValue({ enabled: false, balances: [], usage: [] });
+  const result = await peopleAiModels(subject);
+  expect(result.options.map((option) => option.id)).toEqual(["chat", "chat:deep"]);
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(snapshot).toHaveBeenCalledTimes(1);
+  expect(snapshot.mock.calls[0]?.[4]).toEqual({ state, config });
+});
+
+test("quota snapshots accept catalog state without rereading settings or config", async () => {
+  const state = aiSettingsFixture();
+  const read = spyOn(settings, "readAiSettingsState").mockRejectedValue(new Error("Must reuse state"));
+  const config = spyOn(aiQuotas, "config").mockRejectedValue(new Error("Must reuse config"));
+  const result = await aiQuotas.snapshot(subject, "chat", new Date("2026-10-27T00:00:00Z"), undefined, {
+    state,
+    config: { enabled: true, revision: 1, rules: [] },
+  });
+  expect(result).toMatchObject({ enabled: true, balances: [] });
+  expect(read).not.toHaveBeenCalled();
+  expect(config).not.toHaveBeenCalled();
 });

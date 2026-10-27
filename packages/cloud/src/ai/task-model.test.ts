@@ -9,7 +9,12 @@ import type { AiResolvedModel } from "./types";
 const resolved: AiResolvedModel = {
   model: { id: "personal" },
   profile: {
-    modelId: "personal", providerId: "test", variantLabel: "Standard", description: "", icon: { kind: "provider" }, showInPicker: true,
+    modelId: "personal",
+    providerId: "test",
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
     id: "personal",
     label: "Personal",
     provider: "openai",

@@ -80,6 +80,18 @@ suite("AI model catalog migration and revisions", () => {
       );
       await sql.begin(migrateAiModelClassesInTransaction);
       expect((await aiModelCatalog.provider(id)).label).toBe("Changed");
+      expect(await getAiCredential(id)).toBe("fixture-provider-key");
+      await sql`UPDATE ai.providers SET status='ok',status_code='200',status_message='Ready',status_checked_at='2026-10-27T00:00:00Z' WHERE id=${id}`;
+      const changed = await aiModelCatalog.updateProvider(id, { baseUrl: "http://localhost:1234" }, provider.revision + 1, user.id);
+      expect(changed).toMatchObject({
+        credentialSet: false,
+        status: "unknown",
+        statusCode: null,
+        statusMessage: null,
+        statusCheckedAt: null,
+      });
+      expect(await getAiCredential(id)).toBeNull();
+      expect(await getAiRequestHeaders(id)).toEqual({});
     } finally {
       await sql`DELETE FROM ai.providers WHERE id=${id}`;
       await sql`DELETE FROM ai.model_access_resources WHERE model_id=${id}`;

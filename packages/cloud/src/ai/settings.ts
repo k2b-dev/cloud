@@ -102,16 +102,25 @@ export const resolveAiVisionModel = async (allowedDataBoundaries?: AiDataBoundar
   if (!id) return aiSettingsFailure("model_policy_mismatch", "No image inspection model is assigned.");
   return resolveAiModelFromState(state, { kind: "locked", modelId: id, requiredCapabilities: ["vision"], allowedDataBoundaries });
 };
-export const isAiVisionModelConfigured = async (allowedDataBoundaries?: AiDataBoundary[]): Promise<boolean> => {
+export const isAiVisionModelConfigured = async (
+  allowedDataBoundaries?: AiDataBoundary[],
+  providedState?: AiSettingsState,
+): Promise<boolean> => {
   try {
-    await resolveAiVisionModel(allowedDataBoundaries);
-    return true;
+    const state = providedState ?? (await readAiSettingsState());
+    const id = state.assignments.find((assignment) => assignment.slot === "vision")?.variantId;
+    if (!id) return false;
+    const profile = selectAiModelProfile(state, { kind: "locked", modelId: id, requiredCapabilities: ["vision"], allowedDataBoundaries });
+    return !providerRequiresCredential(profile.provider) || (await listAiCredentialProviderIds()).includes(profile.providerId);
   } catch {
     return false;
   }
 };
-export const listAiModels = async (policy: AiModelPolicy = { kind: "selectable" }): Promise<AiModelProfile[]> => {
-  const [state, credentials] = await Promise.all([readAiSettingsState(), listAiCredentialProviderIds()]);
+export const listAiModels = async (
+  policy: AiModelPolicy = { kind: "selectable" },
+  providedState?: AiSettingsState,
+): Promise<AiModelProfile[]> => {
+  const [state, credentials] = await Promise.all([providedState ?? readAiSettingsState(), listAiCredentialProviderIds()]);
   if (!state.enabled) return [];
   return state.profiles.filter(
     (profile) =>

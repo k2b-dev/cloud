@@ -127,7 +127,7 @@ databaseSuite()("aiUserPrefs (integration)", () => {
     const legacyNoRow = await insertUser();
     const afterMigration = await insertUser();
     try {
-      await sql`INSERT INTO ai.user_prefs (user_id, last_model_id) VALUES (${legacyDefault}::uuid, 'model-a')`;
+      await sql`INSERT INTO ai.user_prefs (user_id, model_choice) VALUES (${legacyDefault}::uuid, '{"id":"model-a"}'::jsonb)`;
       await sql`INSERT INTO ai.user_prefs (user_id, memory_learning_enabled) VALUES (${legacyOn}::uuid, TRUE)`;
       const defaultTurn = await insertLegacyTurn(legacyDefault);
       const onTurn = await insertLegacyTurn(legacyOn);
@@ -157,7 +157,7 @@ databaseSuite()("aiUserPrefs (integration)", () => {
       await migrateCloudAi();
       expect(await considered(laterTurn)).toEqual({ learned: false, reviewed: false });
 
-      await sql`INSERT INTO ai.user_prefs (user_id, last_model_id) VALUES (${afterMigration}::uuid, 'model-a')`;
+      await sql`INSERT INTO ai.user_prefs (user_id, model_choice) VALUES (${afterMigration}::uuid, '{"id":"model-a"}'::jsonb)`;
       expect(await storedLearning(afterMigration)).toBeNull();
       expect((await aiUserPrefs.get(afterMigration)).memoryLearningEnabled).toBe(true);
     } finally {

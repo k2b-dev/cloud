@@ -9,7 +9,21 @@ import type { AiResolvedModel } from "./types";
 
 const resolved: AiResolvedModel = {
   model: { id: "pinned" },
-  profile: { modelId: "pinned", providerId: "test", variantLabel: "Standard", description: "", icon: { kind: "provider" }, showInPicker: true, id: "pinned", label: "Pinned", provider: "openai", model: "test", enabled: true, capabilities: [], dataBoundary: "hosted" },
+  profile: {
+    modelId: "pinned",
+    providerId: "test",
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
+    id: "pinned",
+    label: "Pinned",
+    provider: "openai",
+    model: "test",
+    enabled: true,
+    capabilities: [],
+    dataBoundary: "hosted",
+  },
   provider: {
     name: "test",
     family: "openai-compatible",

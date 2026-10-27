@@ -3,6 +3,7 @@ import { type AccessSubject, buildAccessPrincipalCondition } from "../server/ser
 import { hasBillableAiPricing } from "../shared/ai-costs";
 import { type AiQuotaConfig, AiQuotaConfigSchema, type AiQuotaIdentity, type AiQuotaSnapshot } from "../shared/ai-quotas";
 import { readAiSettingsState } from "./settings";
+import type { AiSettingsState } from "./types";
 
 export class AiQuotaError extends Error {
   constructor(
@@ -43,11 +44,17 @@ export const aiQuotas = {
       return { ...config, revision };
     });
   },
-  async snapshot(subject: AccessSubject, model?: string, now = new Date(), db: SQL = sql): Promise<AiQuotaSnapshot> {
-    const config = await aiQuotas.config(db);
+  async snapshot(
+    subject: AccessSubject,
+    model?: string,
+    now = new Date(),
+    db: SQL = sql,
+    context?: { state: AiSettingsState; config: AiQuotaConfig },
+  ): Promise<AiQuotaSnapshot> {
+    const config = context?.config ?? (await aiQuotas.config(db));
     const identity = ids(subject);
     const pricedModels = new Set(
-      (await readAiSettingsState()).profiles.filter((p) => hasBillableAiPricing(p.pricing)).map((p) => p.modelId),
+      (context?.state ?? (await readAiSettingsState())).profiles.filter((p) => hasBillableAiPricing(p.pricing)).map((p) => p.modelId),
     );
     const matches = buildAccessPrincipalCondition({
       subject,
@@ -112,14 +119,15 @@ export const aiQuotas = {
       GROUP BY model_profile_id ORDER BY model_profile_id`;
     return { enabled: config.enabled, unit: config.unit ?? "EUR", balances, usage };
   },
-  async assertAllowed(subject: AccessSubject, variantId: string) {
-    const profile = (await readAiSettingsState()).profiles.find((profile) => profile.id === variantId);
+  async assertAllowed(subject: AccessSubject, variantId: string, providedState?: AiSettingsState) {
+    const state = providedState ?? (await readAiSettingsState());
+    const profile = state.profiles.find((profile) => profile.id === variantId);
     if (!profile || !hasBillableAiPricing(profile.pricing)) return false;
     const model = profile.modelId;
     // Fast default path: no additional identity/usage queries on unrestricted installations.
     const config = await aiQuotas.config();
     if (!config.enabled || !config.rules.some((r) => r.scope === "*" || r.scope === model)) return false;
-    const snapshot = await aiQuotas.snapshot(subject, model);
+    const snapshot = await aiQuotas.snapshot(subject, model, undefined, undefined, { state, config });
     for (const b of snapshot.balances) {
       if (b.bypassed || b.limit === null) continue;
       if (b.unknown)

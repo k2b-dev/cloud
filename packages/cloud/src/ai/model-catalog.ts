@@ -2,8 +2,6 @@ import { sql } from "bun";
 import { z } from "zod";
 import { ConfigConflict } from "../services/config-conflict";
 import { stripImageDataUrlMetadata } from "../services/image-metadata";
-import { getAiCredential } from "./credentials";
-import { AiModelAccessConflict, type AiModelAccessDraft, aiModelAccess } from "./model-access";
 import {
   AI_MODEL_CLASSES,
   AiAssignmentSchema,
@@ -18,6 +16,8 @@ import {
   AiVariantSchema,
   aiModelClassFallbackChain,
 } from "../shared/ai-models";
+import { listAiCredentialProviderIds } from "./credentials";
+import { AiModelAccessConflict, type AiModelAccessDraft, aiModelAccess } from "./model-access";
 import { getAiRequestHeaders } from "./request-headers";
 import type { AiModelProfile } from "./types";
 
@@ -86,11 +86,11 @@ const requireRow = <T>(value: T | undefined): T => {
   if (!value) throw new AiConfigError("model_not_found", "Model or provider no longer exists.");
   return value;
 };
-const presentProvider = async (value: Record<string, unknown>, db = sql): Promise<AiProvider> => {
+const presentProvider = async (value: Record<string, unknown>, db = sql, credentialIds?: string[]): Promise<AiProvider> => {
   const id = z.string().parse(value.id);
   return AiProviderSchema.parse({
     ...value,
-    credentialSet: Boolean(await getAiCredential(id, db)),
+    credentialSet: (credentialIds ?? (await listAiCredentialProviderIds(db))).includes(id),
     requestHeaderNames: Object.keys(await getAiRequestHeaders(id, db)).sort(),
   });
 };
@@ -118,8 +118,15 @@ const validateModel = (model: z.infer<typeof AiModelInputSchema>, provider: AiPr
     throw new AiConfigError("invalid_configuration", "Chat models cannot transcribe audio.");
 };
 export const aiModelCatalog = {
-  async providers(db = sql) {
-    return Promise.all((await rows("providers", undefined, db)).map((row) => presentProvider(row, db)));
+  async providers(db = sql, admin = true) {
+    const [values, credentialIds] = await Promise.all([rows("providers", undefined, db), listAiCredentialProviderIds(db)]);
+    return Promise.all(
+      values.map((row) =>
+        admin
+          ? presentProvider(row, db, credentialIds)
+          : AiProviderSchema.parse({ ...row, credentialSet: credentialIds.includes(z.string().parse(row.id)), requestHeaderNames: [] }),
+      ),
+    );
   },
   async provider(id: string, db = sql, lock = false) {
     return presentProvider(requireRow((await rows("providers", id, db, lock))[0]), db);
@@ -186,7 +193,7 @@ export const aiModelCatalog = {
       validateProvider(data);
       if (data.logo) data.logo = stripImageDataUrlMetadata(data.logo);
       for (const model of (await this.models(db)).filter((model) => model.providerId === id)) validateModel(model, { ...current, ...data });
-      if (data.type !== current.type) {
+      if (data.type !== current.type || data.baseUrl !== current.baseUrl) {
         await db`DELETE FROM ai.provider_credentials WHERE provider_id=${id}`;
         await db`DELETE FROM ai.provider_request_headers WHERE provider_id=${id}`;
       }
@@ -342,7 +349,11 @@ export const flattenAiModelVariant = (provider: AiProvider, model: AiModel, vari
   pricing: variant.pricing ?? model.pricing ?? undefined,
 });
 export const readAiModelProfiles = async (): Promise<AiModelProfile[]> => {
-  const [providers, models, variants] = await Promise.all([aiModelCatalog.providers(), aiModelCatalog.models(), aiModelCatalog.variants()]);
+  const [providers, models, variants] = await Promise.all([
+    aiModelCatalog.providers(sql, false),
+    aiModelCatalog.models(),
+    aiModelCatalog.variants(),
+  ]);
   return variants.flatMap((variant) => {
     const model = models.find((model) => model.id === variant.modelId);
     const provider = providers.find((provider) => provider.id === model?.providerId);

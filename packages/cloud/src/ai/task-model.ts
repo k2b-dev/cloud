@@ -6,6 +6,4 @@ import { resolveAiWorkflowModel } from "./structured";
 
 /** Interactive application tasks retain Assistant grants and data-boundary policy. */
 export const resolveApplicationAiTaskModel = async (subject?: AccessSubject, model?: import("../shared/ai-models").AiModelRequest) =>
-  subject
-    ? resolveAiModel(personalAiModelPolicy, await selectAssistantAiModel(subject, model))
-    : resolveAiWorkflowModel(model);
+  subject ? resolveAiModel(personalAiModelPolicy, await selectAssistantAiModel(subject, model)) : resolveAiWorkflowModel(model);
