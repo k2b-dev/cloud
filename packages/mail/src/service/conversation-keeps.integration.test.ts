@@ -4,7 +4,6 @@ import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { MAX_CONVERSATION_ACTION_MESSAGES } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { checkCommandKeepProtection, keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
@@ -50,8 +49,6 @@ suite("Mail conversation keeps", () => {
   let nextUid = 1;
   const blobIds: string[] = [];
   beforeAll(async () => {
-    await migrate();
-    await migrate();
     for (const role of ["admin", "writer", "reader"]) {
       const [user] = await sql<{ id: string; uid: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name, admin)
         VALUES (${`keep-${role}-${suffix}`}, 'local', 'user', ${`Keep ${role}`}, false) RETURNING id, uid`;

@@ -9,7 +9,6 @@ import { websocket } from "hono/bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { getMailboxPermission } from "../service/access";
 import { mailLiveChannels } from "../service/live-channels";
 import api from ".";
@@ -30,7 +29,6 @@ const grants: string[] = [];
 
 beforeAll(async () => {
   if (!testInfra.database || !testInfra.nats || !testInfra.valkey) return;
-  await migrate();
   server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: new Hono().route("/api/mail", api).fetch, websocket });
 });
 
