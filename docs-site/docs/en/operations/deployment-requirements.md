@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-26
+updated: 2026-10-27
 ---
 
 # Deployment requirements
@@ -26,6 +26,19 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 `app-mail`; the routing service is named `gateway`. The shared library, UI
 package, CLI and desktop development tools are not additional server apps in
 this service set.
+
+## Upgrade pasted resource link recognition
+
+Core now serves authenticated, read-only `POST /api/resources/resolve`.
+Applications can publish optional top-level `resourcePages` in their capability
+manifest. Older Core versions ignore these pages and keep existing Types and
+readers; upgrade Core to recognize application URLs. Apps without page
+declarations still support their resource permalinks through a reader.
+
+Browser recognition compares absolute links with the canonical origin from
+`app.url`, supplied in `Layout` shell data. Configure that setting for absolute
+pasted links; root-relative links work without it. No additional service or
+secret is required. See [Resource copy and paste](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link).
 
 ## Upgrade personal Linux group retirement
 
@@ -183,6 +196,7 @@ not fail a request that admission accepts.
 
 | Requirement | Used for | Operator responsibility |
 | --- | --- | --- |
+| `linux/amd64` hosts | Published Cloud container images | Before upgrading an ARM host, build from source or stay on an earlier ARM64 release; see [Container architectures](/en/docs/operations/build-and-deploy#container-architectures). |
 | Bun application images | One independently running service per app | Pull the `vX.Y.Z` release images or pin the digests from the release's `release.json`; `sha-*` tags are main-branch builds for staging. Every image reports its `CLOUD_VERSION` through `/_cloud/ready` and the app registry; see [Build and deploy](/en/docs/operations/build-and-deploy#choose-an-image-tag). |
 | PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. Transaction pooling (PgBouncer `pool_mode=transaction`) is supported: Cloud holds no session-level advisory locks; migrations coordinate through transaction-scoped locks, setup runs on one replica of an application at a time through a NATS lease, and runtime work uses NATS leases. The pull request gate tests on 17 and the nightly run on 15. Once optional BM25 ranking is enabled, every server that runs the database, including replicas, restore targets and upgraded clusters, must keep `pg_textsearch` preloaded; see [Keep the library loaded](#keep-the-library-loaded-while-bm25-indexes-exist). |
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see [Reserve JetStream storage](#reserve-jetstream-storage) for the budget per application. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |

@@ -7,6 +7,8 @@ import { type ThreadView, threadHref } from "./threads";
  */
 export type Route = {
   channels?: boolean;
+  /** The page with mentions of and replies to the reader. */
+  forYou?: boolean;
   query?: string;
   chatId: string | null;
   view: ThreadView;
@@ -27,6 +29,8 @@ export const panelHref = (
 export const threadsPageHref = (chatId: string, basePath = "/app/chat") => `${basePath}/c/${encodeURIComponent(chatId)}/threads`;
 
 export const parseRoute = (url: URL): Route | null => {
+  if (/^\/app\/chat(?:\/panel)?\/for-you\/?$/.test(url.pathname))
+    return { chatId: null, view: "all", threads: false, messageId: null, panel: null, forYou: true };
   if (/^\/app\/chat(?:\/panel)?\/channels\/?$/.test(url.pathname))
     return {
       chatId: null,

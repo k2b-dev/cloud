@@ -1317,8 +1317,9 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (!target || target.closest(KEY_OWNER_SELECTOR)) return;
     if (ownerDocument.querySelector("dialog[open], [aria-modal='true']")) return;
     try {
-      // A passive hint does not own the keyboard.
-      if (ownerDocument.querySelector(":popover-open:not(.k2b-moved-hint)")) return;
+      // Passive hints and tooltips do not own J/K or F6. Keep Escape with an undismissed tooltip.
+      if (event.key === "Escape" && ownerDocument.querySelector("[role='tooltip']:popover-open")) return;
+      if (ownerDocument.querySelector(":popover-open:not(.k2b-moved-hint):not([role='tooltip'])")) return;
     } catch {
       // Older engines have no popover selector; the other popup guards still apply.
     }
