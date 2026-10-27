@@ -6,15 +6,7 @@ import { aiModelCatalog, readAiModelProfiles } from "./model-catalog";
 import { type AiModelRequest, type AiResolvedModelRef, aiModelClassFallbackChain } from "./model-contracts";
 import { createAiProvider } from "./provider";
 import { getAiRequestHeaders } from "./request-headers";
-import type {
-  AiDataBoundary,
-  AiModelPolicy,
-  AiModelProfile,
-  AiPublicModelProfile,
-  AiResolvedModel,
-  AiSettingsError,
-  AiSettingsState,
-} from "./types";
+import type { AiDataBoundary, AiModelPolicy, AiModelProfile, AiResolvedModel, AiSettingsError, AiSettingsState } from "./types";
 
 export const providerRequiresCredential = (provider: import("./types").AiProviderId): boolean =>
   ["openai", "openrouter", "anthropic", "mistral", "gemini"].includes(provider);
@@ -102,6 +94,7 @@ export const resolveAiModel = async (
 ): Promise<AiResolvedModel> => resolveAiModelFromState(await readAiSettingsState(), policy, request);
 export const resolveAiVisionModel = async (allowedDataBoundaries?: AiDataBoundary[]): Promise<AiResolvedModel> => {
   const state = await readAiSettingsState();
+  if (!state.enabled) return aiSettingsFailure("ai_disabled", "AI is disabled.");
   const id = state.assignments.find((assignment) => assignment.slot === "vision")?.variantId;
   if (!id) return aiSettingsFailure("model_policy_mismatch", "No image inspection model is assigned.");
   return resolveAiModelFromState(state, { kind: "locked", modelId: id, requiredCapabilities: ["vision"], allowedDataBoundaries });
@@ -114,7 +107,7 @@ export const isAiVisionModelConfigured = async (allowedDataBoundaries?: AiDataBo
     return false;
   }
 };
-export const listAiModels = async (policy: AiModelPolicy = { kind: "selectable" }): Promise<AiPublicModelProfile[]> => {
+export const listAiModels = async (policy: AiModelPolicy = { kind: "selectable" }): Promise<AiModelProfile[]> => {
   const [state, credentials] = await Promise.all([readAiSettingsState(), listAiCredentialProviderIds()]);
   if (!state.enabled) return [];
   return state.profiles.filter(

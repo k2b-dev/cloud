@@ -186,13 +186,13 @@ describe("models-only OpenAI-compatible API", () => {
           assertModelAccess: async () => {
             if (reserved && denial === "model-access")
               throw Object.assign(new Error("Model access revoked"), {
-                aiError: { code: "model_access_denied", message: "Model access revoked" },
+                aiError: { code: "model_policy_mismatch", message: "Model access revoked" },
               });
           },
         });
         const response = await f.call({ stream });
-        expect(response.status).toBe(denial === "credential" ? 401 : 403);
-        expect((await response.json()).error.code).toBe(denial === "credential" ? "invalid_api_key" : "model_access_denied");
+        expect(response.status).toBe(denial === "credential" ? 401 : 404);
+        expect((await response.json()).error.code).toBe(denial === "credential" ? "invalid_api_key" : "model_not_found");
         expect(f.requests).toHaveLength(0);
         expect(f.releases()).toBe(1);
         expect(a.bookings).toHaveLength(1);
@@ -739,10 +739,9 @@ describe("models-only OpenAI-compatible API", () => {
   });
   for (const [code, status, mapped] of [
     ["ai_disabled", 403, "ai_disabled"],
-    ["model_access_denied", 403, "model_access_denied"],
-    ["missing_provider_credential", 502, "missing_provider_credential"],
+    ["ai_no_model", 404, "model_not_found"],
     ["model_policy_mismatch", 404, "model_not_found"],
-    ["invalid_model_profiles", 500, "internal_error"],
+    ["unexpected_configuration_error", 500, "internal_error"],
   ] as const) {
     test(`maps safe model resolution error ${code}`, async () => {
       const f = fixture({ resolutionError: Object.assign(new Error("secret"), { aiError: { code, message: "secret" } }) });

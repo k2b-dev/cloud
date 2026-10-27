@@ -91,6 +91,18 @@ test("classifies provider failures without storing response bodies", () => {
 
 afterEach(() => mock.restore());
 
+test("an explicit class request is validated instead of silently using the audio slot", async () => {
+  spyOn(settings, "readAiSettingsState").mockResolvedValue(
+    aiSettingsFixture({
+      assignments: [aiAssignmentFixture("balanced", chat.id), aiAssignmentFixture("audio", audio.id)],
+      profiles: [chat, audio],
+    }),
+  );
+  await expect(resolveAiAudioModel({ model: { class: "balanced" } })).rejects.toMatchObject({
+    aiError: { code: "model_policy_mismatch" },
+  });
+});
+
 for (const [name, enabled, modelId, profile, boundaries, expected] of [
   ["missing selection", true, "", audio, undefined, "no audio model is assigned"],
   ["AI disabled", false, audio.id, audio, undefined, "AI is disabled"],

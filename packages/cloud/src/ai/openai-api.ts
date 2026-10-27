@@ -107,9 +107,8 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
       const parsed = z.object({ code: z.string() }).safeParse(error.aiError);
       if (parsed.success) {
         if (parsed.data.code === "ai_disabled") return errorResponse(c, 403, "ai_disabled", "permission_error");
-        if (parsed.data.code === "model_access_denied") return errorResponse(c, 403, "model_access_denied", "permission_error", "model");
-        if (parsed.data.code === "model_policy_mismatch") return errorResponse(c, 404, "model_not_found", "invalid_request_error", "model");
-        if (parsed.data.code === "missing_provider_credential") return errorResponse(c, 502, "missing_provider_credential", "api_error");
+        if (parsed.data.code === "model_policy_mismatch" || parsed.data.code === "ai_no_model")
+          return errorResponse(c, 404, "model_not_found", "invalid_request_error", "model");
       }
     }
     return errorResponse(c, 500, "internal_error", "api_error");

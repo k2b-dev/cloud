@@ -12,7 +12,7 @@ import {
   type RequestPermissionResponse,
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
-import type { AiConversation, AiPendingTurnAction, AiPublicModelProfile, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
+import type { AiConversation, AiPendingTurnAction, AiPeopleModels, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import module from "../cli";
 import { createAcpAgent, runAcpConnection } from "./acp";
@@ -43,22 +43,14 @@ const initialConversation = (): AiConversation => ({
   createdAt: "2026-10-11T00:00:00Z",
   updatedAt: "2026-10-11T00:00:00Z",
 });
-const profile: AiPublicModelProfile = {
-  modelId: "model",
-  providerId: "model",
-  variantLabel: "Standard",
-  description: "",
-  icon: { kind: "provider" },
-  showInPicker: true,
-  enabled: true,
+const profile: AiPeopleModels["options"][number] = {
   id: "model",
   label: "Model",
-  provider: "openai",
-  model: "example",
-  image: "",
-  capabilities: ["tools"],
-  dataBoundary: "hosted",
+  description: "For everyday work",
+  icon: { kind: "mark", text: "AI", color: "0" },
+  classes: ["balanced"],
 };
+
 const approval = (confirm = false): AiPendingTurnAction => ({
   type: "approval_request",
   conversationId: "chat",
@@ -139,7 +131,14 @@ const harness = async (
       const method = init?.method ?? "GET";
       const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
       requests.push({ path, method, body, headers: new Headers(init?.headers) });
-      if (path.endsWith("/models")) return Response.json([profile]);
+      if (path.endsWith("/models"))
+        return Response.json({
+          status: "ok",
+          selection: null,
+          effectiveDefault: { class: "balanced" },
+          classes: [{ class: "balanced", variantId: profile.id }],
+          options: [profile],
+        } satisfies AiPeopleModels);
       if (path.endsWith("/skills"))
         return Response.json({
           skills: options.manualSkill
@@ -323,7 +322,7 @@ describe("Assistant ACP", () => {
         currentValue: "default",
         options: [
           { value: "default", name: "Cloud default" },
-          { value: "model", name: "Model", description: "openai · example" },
+          { value: "model", name: "Model", description: "For everyday work" },
         ],
       },
     ]);
@@ -331,7 +330,7 @@ describe("Assistant ACP", () => {
     expect(await h.send("Hello")).toEqual({ stopReason: "end_turn" });
     const turn = h.requests.find((r) => r.path.endsWith("/turns"));
     expect(turn?.body).toMatchObject({
-      modelId: "model",
+      model: { id: "model" },
       client: { kind: "acp", name: "Test Editor", cwd: h.cwd, shell: "/bin/bash", localTools: "ask" },
     });
     expect(turn?.body).not.toMatchObject({ clientToolIds: expect.arrayContaining(["code_open"]) });

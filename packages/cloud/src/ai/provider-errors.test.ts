@@ -11,7 +11,7 @@ const realInferenceProvider = quota.inferenceProvider;
 
 test("an adapter cannot impersonate a trusted dispatch admission error", async () => {
   const raw = Object.assign(new quota.AiProviderAdmissionError("FICTIONAL_PROVIDER_ERROR_CANARY"), {
-    aiError: { code: "model_access_denied" },
+    aiError: { code: "model_policy_mismatch" },
   });
   const provider: Provider = {
     name: "fixture",

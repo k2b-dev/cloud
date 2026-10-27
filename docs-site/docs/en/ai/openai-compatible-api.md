@@ -203,19 +203,18 @@ stable. `param` names the offending field when applicable.
 | --- | --- | --- |
 | 400 | `invalid_request_error` | `invalid_request`, `unsupported_parameter`, `unsupported_content`, `context_length_exceeded` |
 | 401 | `authentication_error` | `invalid_api_key` |
-| 403 | `permission_error` | `openai_api_disabled`, `ai_disabled`, `model_access_denied` |
+| 403 | `permission_error` | `openai_api_disabled`, `ai_disabled` |
 | 404 | `invalid_request_error` | `model_not_found`, `not_found` |
 | 413 | `invalid_request_error` | `request_too_large` |
 | 429 | `insufficient_quota` | `insufficient_quota` |
 | 429 | `rate_limit_error` | `rate_limit_exceeded`, `too_many_concurrent_requests` |
-| 502 | `api_error` | `upstream_error`, `missing_provider_credential` |
+| 502 | `api_error` | `upstream_error` |
 | 500 | `api_error` | `internal_error` |
 
 A request for a model you cannot use returns `404 model_not_found`. This
 covers unknown models, models without your grant, models whose provider has no
-credential, and AI turned off. `ai_disabled`, `model_access_denied` and
-`missing_provider_credential` appear only when an administrator changes these
-settings during the request.
+credential, and AI turned off. `ai_disabled` appears only when an administrator
+turns AI off during the request.
 
 ## Key isolation and revocation
 

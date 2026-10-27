@@ -1,4 +1,4 @@
-import type { AiPublicModelProfile } from "@k2b/cloud/ai";
+import type { AiPeopleModels } from "@k2b/cloud/ai";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import { AiChatActionsProvider, aiChatModelOptions, aiComposerSendInput, createAiChatTimeline } from "@k2b/cloud/ai/ui";
 import { Chat } from "@k2b/ui";
@@ -6,7 +6,7 @@ import { createSignal } from "solid-js";
 
 export function ItemChat(props: {
   itemId: string;
-  models: AiPublicModelProfile[];
+  models: AiPeopleModels["options"];
   selectedModelId: () => string;
   selectModel: (id: string) => void;
 }) {
@@ -43,7 +43,7 @@ export function ItemChat(props: {
             const payload = aiComposerSendInput(input);
             return input.intent === "steer"
               ? chat.steer(payload.message ?? "")
-              : chat.send({ ...payload, modelProfileId: props.selectedModelId() });
+              : chat.send({ ...payload, model: { id: props.selectedModelId() } });
           }}
           onStop={async () => {
             await chat.abort();

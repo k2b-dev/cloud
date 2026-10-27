@@ -4,7 +4,7 @@ import { AI_AUDIO_MAX_BYTES, inspectAiAudio } from "./audio-format";
 import { getAiCredential } from "./credentials";
 import { beginAiCall, finishAiCall } from "./inference-calls";
 import { classifyProviderFailure, recordAiProviderStatus } from "./provider-connections";
-import { readAiSettingsState, selectAiModelProfile } from "./settings";
+import { readAiSettingsState, resolveAiModelRef, selectAiModelProfile } from "./settings";
 import { type AiUsageAttribution, safelyRecordStructuredRun } from "./structured-runs";
 import type { AiDataBoundary, AiModelProfile } from "./types";
 
@@ -65,8 +65,9 @@ export const resolveAiAudioModel = async (
       "transcription_configuration_failed",
       "Audio transcription is not available: AI is disabled. An administrator can enable AI in the AI settings.",
     );
-  const modelId =
-    input.model && "id" in input.model ? input.model.id : state.assignments.find((assignment) => assignment.slot === "audio")?.variantId;
+  const modelId = input.model
+    ? resolveAiModelRef(state, input.model).id
+    : state.assignments.find((assignment) => assignment.slot === "audio")?.variantId;
   if (!modelId)
     throw new AiTranscriptionError(
       "transcription_configuration_failed",

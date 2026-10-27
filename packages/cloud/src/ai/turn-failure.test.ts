@@ -25,9 +25,9 @@ test("a thrown error names the reason a person can act on, not its text", () => 
     error: { code: "quota_exhausted" },
   });
   // Settings that deny the model or offer no usable one point to another model or the administrator, never to Continue.
-  const denied = Object.assign(new Error("denied"), { aiError: { code: "model_access_denied", message: "denied" } });
+  const denied = Object.assign(new Error("denied"), { aiError: { code: "model_policy_mismatch", message: "denied" } });
   expect(aiTurnReasonFromThrown(denied)).toEqual({ error: { code: "not_allowed" } });
-  const missing = Object.assign(new Error("No API key."), { aiError: { code: "missing_provider_credential", message: "No API key." } });
+  const missing = Object.assign(new Error("No model."), { aiError: { code: "ai_no_model", message: "No model." } });
   expect(aiTurnReasonFromThrown(missing)).toEqual({ error: { code: "not_allowed" } });
   // A background budget stop keeps Cloud's own explanation for task runs, as a blocked mandate does.
   const stopped = new AiBackgroundCostError();

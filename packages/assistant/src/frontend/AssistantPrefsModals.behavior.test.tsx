@@ -139,21 +139,6 @@ test("API access appears only while the operator offers the OpenAI-compatible AP
     selection: null,
     updatedAt: new Date(0).toISOString(),
   };
-  const model = (id: string, capabilities: string[]) => ({
-    modelId: id,
-    providerId: id,
-    variantLabel: "Standard",
-    description: "",
-    icon: { kind: "provider" },
-    showInPicker: true,
-    enabled: true,
-    id,
-    label: `${id} label`,
-    provider: "openai",
-    model: id,
-    capabilities,
-    dataBoundary: "private",
-  });
   let enabled = true;
   const getPrefs = spyOn(assistantApi, "getPrefs").mockResolvedValue(prefs);
   const listMemories = spyOn(assistantApi, "listMemories").mockResolvedValue([]);
@@ -163,7 +148,19 @@ test("API access appears only while the operator offers the OpenAI-compatible AP
         String(input instanceof Request ? input.url : input).includes("/ai/status")
           ? Response.json({
               openaiApi: { enabled },
-              models: [model("flash", ["tools"]), model("whisper", ["transcription"])],
+              status: "ok",
+              selection: null,
+              effectiveDefault: { class: "balanced" },
+              classes: [{ class: "balanced", variantId: "flash" }],
+              options: [
+                {
+                  id: "flash",
+                  label: "Flash",
+                  description: "Everyday work",
+                  icon: { kind: "mark", text: "AI", color: "0" },
+                  classes: ["balanced"],
+                },
+              ],
             })
           : Response.json([]),
       { preconnect: globalThis.fetch.preconnect },

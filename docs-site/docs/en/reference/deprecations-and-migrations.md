@@ -2443,6 +2443,8 @@ The model-profile JSON setting and the five default/background/workflow/tool
 model settings are removed. Configure providers, models, variants and class
 assignments instead. See [Upgrading to model classes](/en/docs/operations/upgrading-to-model-classes).
 
+Model pickers consume `AiPeopleModels["options"]`; the old `AiPublicModelProfile` type is removed. Server-side model listings use `AiModelProfile`.
+
 Replace `requestedModelId` and `modelProfileId` request fields with
 `model: { class: "balanced" }` or `model: { id: "variant-id" }`.
 Structured results expose `model: AiResolvedModelRef`. Public history and

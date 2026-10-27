@@ -419,7 +419,6 @@ export type {
   AiPendingTurnAction,
   AiProjectPromptSnapshot,
   AiProviderId,
-  AiPublicModelProfile,
   AiRecentResource,
   AiResolvedModel,
   AiRuntimeTool,

@@ -7,8 +7,15 @@ describe("model permission drafts", () => {
       AiModelAccessDraftSchema.safeParse({ expectedRevision: 1, entries: [{ principal: { type: "authenticated" }, permission: "read" }] })
         .success,
     ).toBe(true);
-    for (const principal of [{ type: "public" }, { type: "authenticated", displayName: "spoof" }])
-      expect(AiModelAccessDraftSchema.safeParse({ expectedRevision: 1, entries: [{ principal, permission: "read" }] }).success).toBe(false);
+    expect(
+      AiModelAccessDraftSchema.safeParse({ expectedRevision: 1, entries: [{ principal: { type: "public" }, permission: "read" }] }).success,
+    ).toBe(false);
+    expect(
+      AiModelAccessDraftSchema.parse({
+        expectedRevision: 1,
+        entries: [{ principal: { type: "authenticated", displayName: "spoof" }, permission: "read" }],
+      }).entries[0]?.principal,
+    ).toEqual({ type: "authenticated" });
     expect(
       AiModelAccessDraftSchema.safeParse({ expectedRevision: 1, entries: [{ principal: { type: "authenticated" }, permission: "admin" }] })
         .success,

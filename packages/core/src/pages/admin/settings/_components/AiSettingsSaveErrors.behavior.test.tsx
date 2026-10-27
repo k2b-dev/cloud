@@ -55,7 +55,7 @@ describe("AI settings save errors", () => {
       const field = dom.document.querySelector<HTMLTextAreaElement>("textarea");
       if (!field) throw new Error("Missing instructions field");
       field.value = "Keep this draft";
-      field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "Keep this draft" }));
+      field.dispatchEvent(Object.assign(new Event("input", { bubbles: true }), { inputType: "insertText", data: "Keep this draft" }));
       await new Promise((resolve) => setTimeout(resolve, 20));
       const save = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
         (button) => button.textContent?.trim() === "Save changes",

@@ -93,7 +93,7 @@ suite("Assistant model grants using normal Cloud access", () => {
       },
     );
     await expect(aiModelAccess.assertAllowed("limited", { type: "user", userId: outsiderId })).rejects.toMatchObject({
-      aiError: { code: "model_access_denied" },
+      aiError: { code: "model_policy_mismatch" },
     });
     await expect(aiModelAccess.assertAllowed("missing", subject())).rejects.toThrow();
   });

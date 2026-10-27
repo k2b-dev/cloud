@@ -72,8 +72,6 @@ export type AiModelProfile = {
   provider: AiProviderId;
   model: string;
   enabled: boolean;
-  /** Small logo (data URL, hard-compressed) shown in the admin card and the composer model picker. */
-  image?: string;
   capabilities: AiModelCapability[];
   dataBoundary: AiDataBoundary;
   baseURL?: string;
@@ -89,12 +87,9 @@ export type AiModelProfile = {
   pricing?: import("../shared/ai-costs").AiModelPricing;
 };
 
-/** Server-side listing. People receive AiPeopleModels instead. */
-export type AiPublicModelProfile = AiModelProfile;
-
 export type AiUserContentPart = ContentPart;
 
-export type AiSettingsErrorCode = "ai_disabled" | "ai_no_model" | "missing_provider_credential" | "model_policy_mismatch";
+export type AiSettingsErrorCode = "ai_disabled" | "ai_no_model" | "model_policy_mismatch";
 export type AiSettingsError = { code: AiSettingsErrorCode; message: string; fields?: Record<string, string> };
 export type AiSettingsState = {
   ok: true;

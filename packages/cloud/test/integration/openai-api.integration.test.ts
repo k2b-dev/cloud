@@ -358,8 +358,8 @@ for (const kind of ["standalone", "agent"] as const) {
             model.id,
             stream,
           );
-          expect(response.status).toBe(403);
-          expect((await response.json()).error.code).toBe("model_access_denied");
+          expect(response.status).toBe(404);
+          expect((await response.json()).error.code).toBe("model_not_found");
           expect(dispatches).toBe(1);
           await grant(model.id, { type: "service_account", serviceAccountId: machineId });
         }
