@@ -44,7 +44,7 @@ const workflow: MailWorkflow = {
   id: "Wf001",
   mailboxId: "Box001",
   name: "Lange Mails markieren",
-  description: "Markiert lange Mails und lange Unterhaltungen, nie Verteiler.",
+  description: null,
   priority: 100,
   currentVersionId: "Ver004",
   activeVersionId: "Ver004",

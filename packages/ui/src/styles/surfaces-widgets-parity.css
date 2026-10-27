@@ -547,7 +547,7 @@
 .k2b-ui .k2b-dot-strip__dot[data-state="accent"] { background: var(--app-accent, var(--k2b-action-solid)); }
 .k2b-ui .k2b-dot-strip__dot[data-state="warning"] { background: var(--k2b-warning-500); }
 .k2b-ui .k2b-dot-strip__dot[data-state="danger"] { background: var(--k2b-danger-500); }
-.k2b-ui .k2b-dot-strip__dot[data-state="ai"] { background: var(--k2b-ai-accent); }
+.k2b-ui .k2b-dot-strip__dot-ai { background: var(--k2b-ai-accent); }
 .k2b-ui .k2b-dot-strip__dot[data-state="pending"] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--k2b-border-strong); }
 .k2b-ui .k2b-dot-strip__dot[data-state="waiting"] { background: color-mix(in srgb, var(--k2b-border-strong) 55%, transparent); }
 .k2b-ui .k2b-dot-strip__dot[data-selected] { box-shadow: 0 0 0 2px var(--k2b-surface), 0 0 0 3.5px var(--k2b-text); }

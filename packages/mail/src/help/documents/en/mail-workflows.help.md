@@ -66,7 +66,7 @@ possible calls across those branches. Targets are checked before the preview;
 missing targets and targets without mailbox access appear as problems.
 
 Anyone who can view a saved workflow can try its current version. Trying
-unsaved YAML requires the same mailbox administration permission as saving it.
+unsaved YAML requires the same mailbox administration access as saving it.
 
 ## Declare inputs {icon="point"}
 

@@ -37,7 +37,14 @@ export function DotStrip(props: DotStripProps): JSX.Element {
       style={{ "--k2b-dot-strip-columns": String(props.columns ?? length()) }}
     >
       <For each={slots()}>
-        {(index) => <i class="k2b-dot-strip__dot" data-state={state(index)} data-selected={props.selected === index ? "" : undefined} />}
+        {(index) => (
+          // The AI tone carries its own `-ai` class: the AI palette stays with AI surfaces (F3).
+          <i
+            class={state(index) === "ai" ? "k2b-dot-strip__dot k2b-dot-strip__dot-ai" : "k2b-dot-strip__dot"}
+            data-state={state(index)}
+            data-selected={props.selected === index ? "" : undefined}
+          />
+        )}
       </For>
     </div>
   );
