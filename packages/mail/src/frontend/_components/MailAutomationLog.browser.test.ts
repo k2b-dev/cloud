@@ -130,6 +130,9 @@ describe("Mail automation Protokoll", () => {
         await detail.getByText("2 KI-Aufrufe · heute 46 von 300 für diese Regel").waitFor();
         await keep(page, `protokoll-detail-light-${device}`);
         await detail.getByRole("button", { name: "Schließen" }).click();
+        // Closing returns focus to the row, which may scroll it into view; measure after that.
+        await page.waitForFunction(() => document.activeElement?.hasAttribute("data-log-open") === true);
+        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 
         const before = await row(page, "assigned").boundingBox();
         await row(page, "assigned").getByRole("button", { name: "Rückgängig" }).click();

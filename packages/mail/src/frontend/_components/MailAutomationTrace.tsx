@@ -1,6 +1,6 @@
 import { Button, ButtonLink, Kbd, useLocale } from "@k2b/ui";
 import { createMemo, For, type JSX, onCleanup, onMount, Show } from "solid-js";
-import { formatLogEffect, formatLogReasons, formatLogTime } from "./mail-automation-log-format";
+import { formatKeptEffects, formatLogEffect, formatLogReasons, formatLogTime } from "./mail-automation-log-format";
 import { mailAutomationLogMessages } from "./mail-automation-log-messages";
 import type { AutomationLogItem } from "./mail-automation-log-model";
 
@@ -169,6 +169,7 @@ export default function MailAutomationTrace(props: {
       </span>
       <Show when={item.undo.state === "done"}>
         <span>{item.undo.at ? t().undone({ time: formatLogTime(item.undo.at, locale(), props.timeZone) }) : t().undoneShort}</span>
+        <Show when={formatKeptEffects(item, t())}>{(kept) => <span>· {kept()}</span>}</Show>
       </Show>
       <Show when={props.canWrite && item.undo.state === "available"}>
         <button type="button" class="text-primary underline underline-offset-2" disabled={props.busy} onClick={() => props.onUndo(item)}>

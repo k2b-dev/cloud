@@ -66,7 +66,7 @@ import {
   spamActionForConversation,
 } from "./_components/mail-actions";
 import { chooseMailAssignee } from "./_components/mail-assign-picker";
-import { formatLogTime } from "./_components/mail-automation-log-format";
+import { formatLogTime, undoRevertedAssignment } from "./_components/mail-automation-log-format";
 import { mailAutomationLogMessages } from "./_components/mail-automation-log-messages";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
@@ -2463,7 +2463,8 @@ function MailboxWorkspace(
       await automationRequest(item, "undo");
       await requireWorkspaceReconcile();
       if (disposed) return;
-      const notice = toast(automationText().undoneToast({ subject: item.conversation.subject }), {
+      const message = undoRevertedAssignment(item) ? automationText().undoneToast : automationText().undoneEffectsToast;
+      const notice = toast(message({ subject: item.conversation.subject }), {
         action: {
           label: automationText().redo,
           onClick: () => {
@@ -2480,12 +2481,14 @@ function MailboxWorkspace(
         const by = error.item.undo.by;
         void requireWorkspaceReconcile();
         toast.error(
-          error.item.undo.reason === "conversation_gone" || !by
-            ? automationText().notPossibleGone
-            : automationText().notPossible({
-                name: by.name,
-                time: error.item.undo.at ? formatLogTime(error.item.undo.at, locale(), props.dateConfig.timeZone) : "",
-              }),
+          error.item.undo.reason === "provider_pending"
+            ? automationText().providerPending
+            : error.item.undo.reason === "conversation_gone" || !by
+              ? automationText().notPossibleGone
+              : automationText().notPossible({
+                  name: by.name,
+                  time: error.item.undo.at ? formatLogTime(error.item.undo.at, locale(), props.dateConfig.timeZone) : "",
+                }),
           { title: automationText().notPossibleTitle },
         );
         return;

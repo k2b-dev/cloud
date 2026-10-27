@@ -20,6 +20,15 @@ export const formatLogEffect = (effect: AutomationLogEffect, t: MailAutomationLo
       return t.effectUnassigned;
     case "tag":
       return t.effectTagged({ name: effect.name });
+    case "untag":
+      return t.effectUntagged({ name: effect.name });
+    case "unread":
+      return t.effectUnread;
+    case "flag":
+      if (effect.flag === "flagged") return effect.present ? t.effectFlagged : t.effectUnflagged;
+      return effect.present ? t.effectMarkSet({ name: effect.flag }) : t.effectMarkRemoved({ name: effect.flag });
+    case "keyword":
+      return effect.present ? t.effectKeywordSet({ name: effect.name }) : t.effectKeywordRemoved({ name: effect.name });
     case "move":
       return t.effectMoved({ name: effect.folder });
     case "archive":
@@ -91,6 +100,31 @@ export const formatLogReasons = (item: AutomationLogItem, t: MailAutomationLogTe
   if (item.outcome === "failed" && parts.length === 0) parts.push({ text: t.failedWhy, ai: false });
   return parts;
 };
+
+/** What stayed after a partial Undo, as plain nouns: "Ordner, Status". */
+export const formatKeptEffects = (item: Pick<AutomationLogItem, "undo">, t: MailAutomationLogText): string | null => {
+  const kept = item.undo.kept ?? [];
+  if (kept.length === 0) return null;
+  const noun = (kind: string) =>
+    kind === "assign" || kind === "unassign"
+      ? t.keptAssignment
+      : kind === "tag" || kind === "untag"
+        ? t.keptTag
+        : kind === "move" || kind === "archive"
+          ? t.keptFolder
+          : kind === "status"
+            ? t.keptStatus
+            : kind === "read" || kind === "unread"
+              ? t.keptRead
+              : kind === "flag"
+                ? t.keptFlag
+                : t.keptKeyword;
+  return t.kept({ what: [...new Set(kept.map((entry) => noun(entry.kind)))].join(", ") });
+};
+
+/** Whether an Undo took back an assignment, which decides the wording of its confirmation. */
+export const undoRevertedAssignment = (item: Pick<AutomationLogItem, "undo" | "effects">) =>
+  (item.undo.reverted ?? item.effects).some((effect) => effect.kind === "assign" || effect.kind === "unassign");
 
 export const formatLogTime = (iso: string, locale: string, timeZone?: string) =>
   new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(iso));

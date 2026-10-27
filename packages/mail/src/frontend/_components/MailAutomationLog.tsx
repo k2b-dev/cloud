@@ -13,7 +13,14 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
-import { formatLogReasons, formatLogTime, formatLogTitle, type LogReasonPart } from "./mail-automation-log-format";
+import {
+  formatKeptEffects,
+  formatLogReasons,
+  formatLogTime,
+  formatLogTitle,
+  type LogReasonPart,
+  undoRevertedAssignment,
+} from "./mail-automation-log-format";
 import { type MailAutomationLogText, mailAutomationLogMessages } from "./mail-automation-log-messages";
 import type {
   AuditStep,
@@ -212,7 +219,8 @@ export default function MailAutomationLog(props: {
       replaceItem(updated);
       if (!selected()) focusRow(item.id);
       if (disposed) return;
-      const notice = toast(t().undoneToast({ subject: item.conversation.subject }), {
+      const message = undoRevertedAssignment(updated) ? t().undoneToast : t().undoneEffectsToast;
+      const notice = toast(message({ subject: item.conversation.subject }), {
         action: {
           label: t().redo,
           onClick: () => {
@@ -294,7 +302,15 @@ export default function MailAutomationLog(props: {
   const actionCell = (item: AutomationLogItem): JSX.Element => (
     <Switch fallback={<span class="text-dimmed">—</span>}>
       <Match when={item.undo.state === "done"}>
-        <span class="text-xs text-dimmed">{t().undone({ time: item.undo.at ? time(item.undo.at) : "" })}</span>
+        <span class="flex flex-col text-xs text-dimmed">
+          <span>{t().undone({ time: item.undo.at ? time(item.undo.at) : "" })}</span>
+          <Show when={formatKeptEffects(item, t())}>{(kept) => <span>{kept()}</span>}</Show>
+        </span>
+      </Match>
+      <Match when={item.undo.state === "not_possible" && item.undo.reason === "provider_pending" && props.canUndo}>
+        <Button size="sm" variant="secondary" disabled={busy() === item.id} onClick={() => void undo(item)}>
+          <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
+        </Button>
       </Match>
       <Match when={item.undo.state === "not_possible" && item.undo.by}>
         <span class="text-xs text-dimmed">{t().staysWith({ name: item.undo.by!.name })}</span>
@@ -541,6 +557,7 @@ export default function MailAutomationLog(props: {
 
 /** What Undo met instead: who changed the assignment and when, or that the conversation is gone. */
 const notPossibleText = (item: AutomationLogItem, t: MailAutomationLogText, time: (iso: string) => string) => {
+  if (item.undo.reason === "provider_pending") return t.providerPending;
   const by = item.undo.by;
   if (item.undo.reason === "conversation_gone" || !by) return t.notPossibleGone;
   return t.notPossible({ name: by.name, time: item.undo.at ? time(item.undo.at) : "" });

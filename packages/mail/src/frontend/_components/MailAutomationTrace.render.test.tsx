@@ -95,4 +95,25 @@ describe("MailAutomationTrace", () => {
     for (const item of logFixtureItems) expect(automationLogItemSchema.safeParse(item).success).toBe(true);
     expect(automationLogDetailSchema.safeParse(logFixtureDetail()).success).toBe(true);
   });
+
+  test("a partial Undo names what stayed because someone changed it since", () => {
+    const html = render(
+      [
+        {
+          ...byId(7),
+          undo: {
+            state: "done",
+            reason: null,
+            by: null,
+            at: "2026-10-26T09:15:00.000Z",
+            kept: [{ kind: "move", reason: "changed_by_person" }],
+            reverted: [{ kind: "tag", name: "Rechnung" }],
+          },
+        },
+      ],
+      "bottom",
+    );
+    expect(html).toContain("Rückgängig gemacht · 09:15");
+    expect(html).toContain("Bleibt, weil inzwischen geändert: Ordner");
+  });
 });
