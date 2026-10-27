@@ -12,7 +12,6 @@ export const mailDetailsMessages = i18n.define({
       meta: ({ sender, count, latest }: { sender: string; count: number; latest: string }) =>
         `${sender} · ${count === 1 ? "1 message" : `${count} messages`} · latest ${latest}`,
       reopen: "Reopen",
-      moreActions: "More conversation actions",
       ai: "AI",
       properties: "Properties",
       assigned: "Assigned",
@@ -62,7 +61,6 @@ export const mailDetailsMessages = i18n.define({
       readOnlyMeta: "du kannst nur lesen",
       meta: ({ sender, count, latest }) => `${sender} · ${count === 1 ? "1 Nachricht" : `${count} Nachrichten`} · zuletzt ${latest}`,
       reopen: "Wieder öffnen",
-      moreActions: "Weitere Aktionen zur Unterhaltung",
       ai: "KI",
       properties: "Eigenschaften",
       assigned: "Zugewiesen",

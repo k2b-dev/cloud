@@ -50,6 +50,7 @@ import MailConversationContext, { type MailContextParts } from "./MailConversati
 import { canPreviewAttachment, openAttachmentPreview, saveSource } from "./MailMessageAttachments";
 import { createRelatedConversations, MailRelatedConversationsView } from "./MailRelatedConversations";
 import { presentMailActivity } from "./mail-activity-presentation";
+import { useMailCloudId } from "./mail-cloud-id";
 import { mailDraftHref } from "./mail-compose-route";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { attachmentsByMessage, isThumbnailImage, type MailDetailFile, mergeMailAttachments } from "./mail-detail-attachments";
@@ -167,6 +168,7 @@ export default function MailDetailsPanel(props: {
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const canAssign = () => props.canWrite && props.mailboxWide;
   const retryToast = createRetryToasts();
+  const cloudId = useMailCloudId();
   const [inspectorLoading, setInspectorLoading] = createSignal<InspectorTab | null>(null);
   /** The inspector loads its code on first use; until its modal opens, another activation must not open a second one. */
   const openMessageInspector = async (messageId: string, initialTab: InspectorTab) => {
@@ -782,6 +784,17 @@ export default function MailDetailsPanel(props: {
             >
               <i class={inspectorLoading() === "source" ? "ti ti-loader-2 animate-spin" : "ti ti-code"} aria-hidden="true" /> {t().source}
             </Button>
+            <Show when={cloudId.available()}>
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                data-mail-copy-cloud-id="message"
+                onClick={() => cloudId.copy("message", message().id)}
+              >
+                <i class="ti ti-id" aria-hidden="true" /> {cloudId.t().copyMessage}
+              </Button>
+            </Show>
             <Show when={message().sourceAvailable}>
               <ButtonLink
                 variant="secondary"
@@ -866,8 +879,12 @@ export default function MailDetailsPanel(props: {
     return props.canWrite ? line : `${line} · ${details().readOnlyMeta}`;
   };
   // Less frequent commands on the conversation; headers and source stay under "Technical details".
-  const headerMenu = (): DropdownItem[] =>
-    props.conversationHref ? [{ label: t().openConversation, icon: "ti ti-arrow-up-right", href: props.conversationHref }] : [];
+  const headerMenu = (): DropdownItem[] => [
+    ...(props.conversationHref ? [{ label: t().openConversation, icon: "ti ti-arrow-up-right", href: props.conversationHref }] : []),
+    ...(cloudId.available()
+      ? [{ label: cloudId.t().copyConversation, icon: "ti ti-id", action: () => cloudId.copy("conversation", props.conversationId) }]
+      : []),
+  ];
 
   const attachmentsSection = () => (
     <DetailPanel.Section title={t().attachments} count={merged().files.length > 0 ? merged().files.length : undefined}>
@@ -1293,28 +1310,20 @@ export default function MailDetailsPanel(props: {
             </Show>
           }
           primaryActions={
-            <Show when={props.canWrite || headerMenu().length > 0}>
-              <Show when={props.canWrite}>
-                <Button
-                  size="sm"
-                  variant="subtle"
-                  class="mail-details-done"
-                  aria-pressed={done()}
-                  onClick={() => updateCollaboration({ completion: done() ? "open" : "done" })}
-                >
-                  <i class={done() ? "ti ti-arrow-back-up" : "ti ti-circle-check"} aria-hidden="true" />
-                  {done() ? details().reopen : t().markDone}
-                </Button>
-              </Show>
-              <Show when={headerMenu().length > 0}>
-                <Dropdown.Root items={headerMenu()} align="end" label={details().moreActions}>
-                  <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={details().moreActions}>
-                    <i class="ti ti-dots" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
-              </Show>
-            </Show>
+            props.canWrite ? (
+              <Button
+                size="sm"
+                variant="subtle"
+                class="mail-details-done"
+                aria-pressed={done()}
+                onClick={() => updateCollaboration({ completion: done() ? "open" : "done" })}
+              >
+                <i class={done() ? "ti ti-arrow-back-up" : "ti ti-circle-check"} aria-hidden="true" />
+                {done() ? details().reopen : t().markDone}
+              </Button>
+            ) : undefined
           }
+          menu={headerMenu()}
           actions={
             <Tooltip.Anchor content={t().closeDetails}>
               <IconButton

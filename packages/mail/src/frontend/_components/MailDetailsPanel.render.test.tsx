@@ -251,7 +251,7 @@ describe("Mail conversation detail panel", () => {
     expect(header).toContain("<h2>Quarterly review</h2>");
     expect(header).toContain("Ada Lovelace · 1 message · latest");
     expect(header).toContain("Mark as done");
-    expect(header).toContain('aria-label="More conversation actions"');
+    expect(header).toContain('aria-label="More actions"');
     expect(header).toContain('aria-label="Close conversation details"');
     expect(header).toContain("@min-[64rem]/k2b-app-area:hidden");
     expect(header).toContain('class="k2b-avatar-stack__trigger" aria-label="Active collaborators: Mara Klein"');
@@ -351,12 +351,7 @@ describe("Mail conversation detail panel", () => {
   });
 
   test("omits deleted comments from the visible discussion", () => {
-    const html = renderPanel({
-      initialComments: [
-        comment,
-        { ...comment, id: "Deleted", deletedAt: "2026-08-18T12:00:00.000Z", author: { ...comment.author, displayName: "Deleted Author" } },
-      ],
-    });
+    const html = renderPanel({ initialComments: [comment, deletedComment] });
     expect(html).toContain("Valentin Kolb");
     expect(html).not.toContain("Deleted Author");
   });
