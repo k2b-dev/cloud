@@ -9,10 +9,13 @@ import { createMailNotificationService } from "./notifications";
 import { router } from "./router";
 import { commandRuntime, mailRuntime, workflowRuntime } from "./service";
 
+import { startConversationSummaryRuntime, stopConversationSummaryRuntime } from "./service/conversation-summary-jobs";
+
 const mailNotifications = createMailNotificationService(app.notifications);
 
 const stopMailRuntimes = (): Promise<void> =>
   stopRuntimeResources([
+    () => stopConversationSummaryRuntime(),
     () => mailRuntime.stop(),
     () => workflowRuntime.stop(),
     () => commandRuntime.stop(),
@@ -38,6 +41,7 @@ const result = await app.start({
         await mailRuntime.start();
         await commandRuntime.start();
         await workflowRuntime.start();
+        await startConversationSummaryRuntime();
       } catch (startError) {
         try {
           await stopMailRuntimes();

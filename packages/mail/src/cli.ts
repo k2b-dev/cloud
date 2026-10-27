@@ -2025,6 +2025,38 @@ const everydayCommands = (t: Translate) => {
         ctx.print(message.plainText ?? t({ en: "[Body not loaded yet]", de: "[Text noch nicht geladen]" }));
       },
     }),
+    command("conversation summary generate", {
+      summary: t({
+        en: "Request an AI summary using your Assistant allowance",
+        de: "Eine KI-Zusammenfassung mit dem eigenen Assistant-Kontingent anfordern",
+      }),
+      args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
+      flags: {
+        ...mailboxOption,
+        mode: flag.enum(["rolling", "replace"], {
+          default: "rolling",
+          description: t({ en: "Continue or rewrite the summary", de: "Die Zusammenfassung fortschreiben oder neu schreiben" }),
+        }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const conversationId = requireMailResourceId(args.conversation, "Conversation id");
+        const path = `/mailboxes/${mailbox.id}/conversations/${conversationId}/summary`;
+        const current = await readApi<ConversationContentSummary>(ctx, path);
+        const result = await readApi<ConversationContentSummary>(
+          ctx,
+          `${path}/generate`,
+          jsonRequest("POST", { mode: flags.mode ?? "rolling", expectedSummaryRevision: current.summaryRevision }),
+        );
+        if (!printStructured(ctx, result))
+          ctx.print(
+            t({
+              en: "Summary requested. Open the conversation to see its progress.",
+              de: "Zusammenfassung angefordert. Der Fortschritt steht in der Unterhaltung.",
+            }),
+          );
+      },
+    }),
     command("conversation update", {
       summary: "Update assignment, completion, or when the conversation reappears",
       args: {
@@ -7992,6 +8024,10 @@ const mailCommands = (locale?: string) => {
       }),
       comments: t({ en: "Discuss a conversation internally", de: "Eine Unterhaltung intern besprechen" }),
       tag: t({ en: "Tag conversations and manage mailbox tags", de: "Unterhaltungen taggen und Postfach-Tags verwalten" }),
+      "conversation summary": t({
+        en: "Request and inspect conversation summaries",
+        de: "Zusammenfassungen von Unterhaltungen anfordern und prüfen",
+      }),
       conversation: t({ en: "Inspect, merge, and split conversations", de: "Unterhaltungen prüfen, zusammenführen und teilen" }),
     },
     commands: [...everydayCommands(t), ...specialistCommands.commands, ...composeLogoCommands(t)],

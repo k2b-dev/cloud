@@ -29,6 +29,18 @@ Das Öffnen erstellt keinen Chat und sendet keine Nachricht. Wähle **Chat start
 bei mehreren passenden Chats wählst du den gewünschten aus. **Abbrechen** lässt dich in Chat,
 mit der Zurück-Funktion des Browsers kommst du zu Files zurück. Nach dem Öffnen zeigt ein Neuladen das Formular nicht erneut.
 
+## In der Liste suchen {icon="search"}
+
+:::steps
+1. Tippe oben in der Liste in **Suchen**.
+2. Wähle einen Treffer, um ihn zu öffnen.
+:::
+
+Die Suche findet deine Chats und Kanäle, die Chats von Spaces und Notebooks, die du öffnen kannst, und Threads nach Namen.
+Jeder Thread-Treffer sagt, wo er steht, zum Beispiel **Thread in IT** oder **Aufgabe in Frühlingsausstellung**. Du siehst höchstens acht Treffer.
+Antworten Spaces oder Notebooks nicht, siehst du die übrigen Treffer trotzdem, und **Erneut versuchen** fragt noch einmal.
+Drücke `Escape` oder leere das Feld, um wieder die Liste zu sehen.
+
 ## Kanäle entdecken {icon="compass"}
 
 :::steps

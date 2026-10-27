@@ -11,7 +11,13 @@ const structuredOutputSchema = (fields: Extract<AiTaskRequest, { kind: "extract_
   for (const field of fields) {
     let schema: z.ZodType =
       field.type === "text"
-        ? z.string().max(field.maxLength ?? 20_000)
+        ? field.minLength === undefined
+          ? z.string().max(field.maxLength ?? 20_000)
+          : z
+              .string()
+              .trim()
+              .min(field.minLength)
+              .max(field.maxLength ?? 20_000)
         : field.type === "number"
           ? z.number()
           : field.type === "boolean"
