@@ -29,8 +29,8 @@ describe("Mail app integration states", () => {
     expect(source).toContain("label: messages().linkSpaces");
     expect(source).toContain("label: messages().spacesEvent");
     expect(source).toContain('class="mail-details-add"');
-    expect(source.match(/target="_blank"/g)).toHaveLength(3);
-    expect(source.match(/rel="noopener noreferrer"/g)).toHaveLength(3);
+    expect(source.match(/target(?:=|: )"_blank"/g)).toHaveLength(3);
+    expect(source.match(/rel(?:=|: )"noopener noreferrer"/g)).toHaveLength(3);
     expect(source).toContain("label: messages().relatedMail");
     expect(source).not.toContain('title="Related Mail"');
     expect(source).toContain("label: messages().unlink");

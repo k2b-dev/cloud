@@ -260,7 +260,8 @@ export default function MailConversationContext(props: {
     return { returnTo: `${source.pathname}${source.search}${source.hash}` };
   };
   createEffect(() => {
-    if (!props.active || context()?.spaces.status !== "ready") return;
+    // Readers get no commands that link or create Spaces items, here or in the command palette.
+    if (!props.active || props.canWrite === false || context()?.spaces.status !== "ready") return;
     const id = props.conversationId;
     const t = mailCommandMessages.resolve([locale()]).t;
     onCleanup(
@@ -505,23 +506,23 @@ export default function MailConversationContext(props: {
         {(item) => {
           const openHref = item.links.find((link) => link.rel === "open")?.href;
           if (!openHref) return null;
+          const row = {
+            href: openHref,
+            target: "_blank",
+            rel: "noopener noreferrer",
+            leading: <i class={item.icon ?? "ti ti-checkbox"} aria-hidden="true" />,
+            title: item.title,
+            description: item.metadata?.find((entry) => entry.label === "Space")?.value,
+          };
+          // Readers see the linked item without the command that unlinks it.
           return (
-            <DetailPanel.Action
-              href={openHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              leading={<i class={item.icon ?? "ti ti-checkbox"} aria-hidden="true" />}
-              title={item.title}
-              description={item.metadata?.find((entry) => entry.label === "Space")?.value}
-              menuLabel={messages().moreActionsFor({ name: item.title })}
-              menuItems={[
-                {
-                  label: messages().unlink,
-                  icon: "ti ti-unlink",
-                  action: () => void unlinkSpaceItem(item.ref.id),
-                },
-              ]}
-            />
+            <Show when={props.canWrite !== false} fallback={<DetailPanel.Action {...row} />}>
+              <DetailPanel.Action
+                {...row}
+                menuLabel={messages().moreActionsFor({ name: item.title })}
+                menuItems={[{ label: messages().unlink, icon: "ti ti-unlink", action: () => void unlinkSpaceItem(item.ref.id) }]}
+              />
+            </Show>
           );
         }}
       </For>

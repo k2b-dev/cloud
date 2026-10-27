@@ -50,3 +50,12 @@ describe("conversation attachments in the details panel", () => {
     ]);
   });
 });
+
+describe("ZIP entry names", () => {
+  test("equal names get the next free counter, also next to an existing suffix and after cleaning", async () => {
+    const { uniqueArchiveNames } = await import("./mail-attachments-zip");
+    expect(
+      uniqueArchiveNames(["report.pdf", "report.pdf", "report (2).pdf", "Report.PDF", "a/b.txt", "a_b.txt", ".env", "README"]),
+    ).toEqual(["report.pdf", "report (2).pdf", "report (2) (2).pdf", "Report (3).PDF", "a_b.txt", "a_b (2).txt", "_env", "README"]);
+  });
+});

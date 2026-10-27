@@ -1,28 +1,40 @@
-import { downloadAsZip } from "@k2b/stdlib/browser";
+import { createZip, downloadFileFromContent } from "@k2b/stdlib/browser";
 import { MAX_DRAFT_ATTACHMENT_BYTES } from "../../contracts";
+
+/** A name for every entry that no other entry has: equal names get the next free counter ("report (2).pdf"). */
+export const uniqueArchiveNames = (names: readonly string[]): string[] => {
+  const used = new Set<string>();
+  return names.map((name) => {
+    const safe = name.replace(/[\\/]/g, "_").replace(/^\.+/, "_") || "attachment";
+    const dot = safe.lastIndexOf(".");
+    const [stem, extension] = dot > 0 ? [safe.slice(0, dot), safe.slice(dot)] : [safe, ""];
+    let candidate = safe;
+    for (let counter = 2; used.has(candidate.toLowerCase()); counter += 1) candidate = `${stem} (${counter})${extension}`;
+    used.add(candidate.toLowerCase());
+    return candidate;
+  });
+};
 
 /**
  * Packs a conversation's files into one ZIP in the browser. The archive holds at most what one draft may carry
  * (`MAX_DRAFT_ATTACHMENT_BYTES`), so a large conversation fails before it fetches anything instead of filling memory.
- * Equal names get a counter, so no file replaces another in the archive.
+ * An aborted `signal` stops the fetches and downloads nothing.
  */
 export const downloadMailAttachments = async (
   files: ReadonlyArray<{ name: string; href: string; size: number }>,
   archiveName: string,
+  signal: AbortSignal,
 ): Promise<void> => {
   const total = files.reduce((sum, file) => sum + file.size, 0);
   if (total > MAX_DRAFT_ATTACHMENT_BYTES) throw new Error("The files are too large to pack together.");
-  const used = new Map<string, number>();
+  const names = uniqueArchiveNames(files.map((file) => file.name));
   const entries = [];
-  for (const file of files) {
-    const response = await fetch(file.href, { credentials: "same-origin" });
+  for (const [index, file] of files.entries()) {
+    const response = await fetch(file.href, { credentials: "same-origin", signal });
     if (!response.ok) throw new Error(`Could not load ${file.name}.`);
-    const safe = file.name.replace(/[\\/]/g, "_").replace(/^\.+/, "_") || "attachment";
-    const seen = used.get(safe) ?? 0;
-    used.set(safe, seen + 1);
-    const dot = safe.lastIndexOf(".");
-    const filename = seen === 0 ? safe : dot > 0 ? `${safe.slice(0, dot)} (${seen + 1})${safe.slice(dot)}` : `${safe} (${seen + 1})`;
-    entries.push({ filename, source: await response.blob() });
+    entries.push({ filename: names[index]!, source: await response.blob() });
   }
-  await downloadAsZip(entries, archiveName.replace(/[\\/]/g, "_"));
+  const archive = await createZip(entries);
+  signal.throwIfAborted();
+  downloadFileFromContent(archive, archiveName.replace(/[\\/]/g, "_"), "application/zip");
 };

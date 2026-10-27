@@ -822,20 +822,33 @@ export default function MailDetailsPanel(props: {
     ]
       .filter(Boolean)
       .join(" · ");
+  // Packing belongs to the conversation it started in: leaving it or closing the panel stops the fetches.
+  let packingAbort: AbortController | undefined;
+  const stopPacking = () => {
+    packingAbort?.abort();
+    packingAbort = undefined;
+    setPacking(false);
+  };
+  createEffect(on(() => props.conversationId, stopPacking, { defer: true }));
+  onCleanup(stopPacking);
   const downloadAll = async () => {
     if (packing()) return;
+    const controller = new AbortController();
+    packingAbort = controller;
     setPacking(true);
+    const files = merged().files.map((file) => ({ name: fileName(file), href: attachmentHref(file), size: file.attachment.sizeBytes }));
+    const archiveName = `${props.subject.trim() || t().noSubject}.zip`;
     try {
       const zip = await importOnDemand(() => import("./mail-attachments-zip"));
-      if (!zip) return;
-      await zip.downloadMailAttachments(
-        merged().files.map((file) => ({ name: fileName(file), href: attachmentHref(file), size: file.attachment.sizeBytes })),
-        `${props.subject.trim() || t().noSubject}.zip`,
-      );
+      if (!zip || controller.signal.aborted) return;
+      await zip.downloadMailAttachments(files, archiveName, controller.signal);
     } catch {
-      toast.error(details().downloadAllFailed);
+      if (!controller.signal.aborted) toast.error(details().downloadAllFailed);
     } finally {
-      setPacking(false);
+      if (packingAbort === controller) {
+        packingAbort = undefined;
+        setPacking(false);
+      }
     }
   };
   const messageLabel = (message: MailWorkspaceMessage) =>

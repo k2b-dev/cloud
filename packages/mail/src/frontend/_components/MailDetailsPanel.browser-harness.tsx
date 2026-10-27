@@ -4,6 +4,7 @@ import type { ConversationCollaboration, ConversationComment, MailActivityEvent 
 import type { ConversationLocalTags, LocalTag } from "../../service/local-tags";
 import type { MessageDetail } from "../../service/messages";
 import type { MailDetailErrors } from "../../service/workspace";
+import { mailWorkspaceMessages } from "../mail-workspace-messages";
 import MailDetailsPanel, { MailDetailsSkeleton } from "./MailDetailsPanel";
 import { summaryState } from "./mail-summary-fixtures";
 
@@ -159,7 +160,7 @@ window.mountDetails = (state) => {
     () => (
       <LocaleProvider locale="de">
         {state === "loading" ? (
-          <MailDetailsSkeleton label="Details werden geladen" />
+          <MailDetailsSkeleton label={mailWorkspaceMessages.resolve(["de"]).t.loadingDetails} />
         ) : (
           <MailDetailsPanel
             mailboxId="Box001"
