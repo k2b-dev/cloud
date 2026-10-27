@@ -4,6 +4,7 @@ import { WorkflowValueError, type WorkflowValueResolverPort } from "@k2b/cloud/w
 import type { WorkflowRunClaim } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { appEnv } from "../env";
+import { mailMessageTextLength } from "./message-text";
 import { resolveMailboxPublicId } from "./public-resources";
 import { enqueueMessageHydration } from "./sync-runtime";
 import { mailWorkflowBodyFieldLoaded, markMailWorkflowBodyFieldsLoaded } from "./workflow-body-fields";
@@ -21,15 +22,22 @@ const isObject = (value: WorkflowJsonValue | undefined): value is JsonObject =>
 const messageForReference = (
   reference: string,
   inputs: Record<string, WorkflowJsonValue>,
-): { message: JsonObject; field: "body" | "bodyText" | "bodyHtml" | "attachments"; tail: string[]; frozenKey: string } | null => {
+): {
+  message: JsonObject;
+  field: "body" | "bodyText" | "bodyHtml" | "attachments";
+  derived: "textLength" | "attachmentCount" | undefined;
+  tail: string[];
+  frozenKey: string;
+} | null => {
   const parts = reference.split(".");
-  const field = parts[2];
+  const derived = parts[2] === "textLength" || parts[2] === "attachmentCount" ? parts[2] : undefined;
+  const field = derived === "textLength" ? "bodyText" : derived === "attachmentCount" ? "attachments" : parts[2];
   if (parts[0] !== "inputs" || !parts[1] || (field !== "body" && field !== "bodyText" && field !== "bodyHtml" && field !== "attachments")) {
     return null;
   }
   const input = inputs[parts[1]];
   return isObject(input)
-    ? { message: input, field, tail: parts.slice(3), frozenKey: `inputs.${parts[1]}.${field === "body" ? "bodyText" : field}` }
+    ? { message: input, field, derived, tail: parts.slice(3), frozenKey: `inputs.${parts[1]}.${field === "body" ? "bodyText" : field}` }
     : null;
 };
 
@@ -193,13 +201,24 @@ export const normalizeMailWorkflowFrozenHydration = (frozen: JsonObject): void =
   }
 };
 
-export const projectMailWorkflowFrozenBody = (name: string, message: WorkflowJsonValue | undefined, frozen: JsonObject): void => {
-  if (!isObject(message) || message.bodyAvailable === true) return;
+export const projectMailWorkflowFrozenMessage = (name: string, message: WorkflowJsonValue | undefined, frozen: JsonObject): void => {
+  if (!isObject(message)) return;
+  const attachments = frozen[`inputs.${name}.attachments`];
+  if (Array.isArray(attachments)) {
+    message.attachments = attachments;
+    message.attachmentCount = attachments.length;
+    message.attachmentsAvailable = true;
+  }
+  if (message.bodyAvailable === true) {
+    if (typeof message.bodyText === "string") message.textLength = mailMessageTextLength(message.bodyText);
+    return;
+  }
   const plainKey = `inputs.${name}.bodyText`;
   const htmlKey = `inputs.${name}.bodyHtml`;
   // Mutate the shared projection so action contexts and restored aliases see the same body.
   if (Object.hasOwn(frozen, plainKey)) {
     message.body = message.bodyText = frozen[plainKey]!;
+    if (typeof message.bodyText === "string") message.textLength = mailMessageTextLength(message.bodyText);
     markMailWorkflowBodyFieldsLoaded(message, ["body", "bodyText"]);
   }
   if (Object.hasOwn(frozen, htmlKey)) {
@@ -242,7 +261,7 @@ export const createMailWorkflowValueResolver = (params: {
       entries.push({ key, value: hydrated.value });
     }
     for (const entry of entries) await freeze(entry.key, entry.value);
-    projectMailWorkflowFrozenBody(name, message, params.frozenHydration);
+    projectMailWorkflowFrozenMessage(name, message, params.frozenHydration);
   };
   return {
     resolve: async ({ reference, path, plan, fallback }) => {
@@ -267,7 +286,17 @@ export const createMailWorkflowValueResolver = (params: {
         candidate.field === "attachments"
           ? candidate.message.attachmentsAvailable === true
           : mailWorkflowBodyFieldLoaded(candidate.message, candidate.field);
+      const derivedValue = (value: WorkflowJsonValue): WorkflowJsonValue => {
+        if (candidate.derived === "textLength") {
+          if (typeof value !== "string") return null;
+          if (typeof candidate.message.textLength !== "number") candidate.message.textLength = mailMessageTextLength(value);
+          return candidate.message.textLength;
+        }
+        if (candidate.derived === "attachmentCount") return Array.isArray(value) ? value.length : null;
+        return value;
+      };
       if (available) {
+        if (candidate.derived) return resolvedPath(derivedValue(candidate.message[candidate.field] ?? null), candidate.tail);
         const value = fallback();
         if (candidate.field !== "attachments") assertBodyBudget(value, bodyLimit);
         return value === undefined ? { state: "missing" } : { state: "resolved", value };
@@ -292,9 +321,8 @@ export const createMailWorkflowValueResolver = (params: {
         }
         await freeze(candidate.frozenKey, hydrated.value);
       }
-      if (candidate.field !== "attachments")
-        projectMailWorkflowFrozenBody(reference.split(".")[1]!, candidate.message, params.frozenHydration);
-      return resolvedPath(params.frozenHydration[candidate.frozenKey]!, candidate.tail);
+      projectMailWorkflowFrozenMessage(reference.split(".")[1]!, candidate.message, params.frozenHydration);
+      return resolvedPath(derivedValue(params.frozenHydration[candidate.frozenKey]!), candidate.tail);
     },
   };
 };

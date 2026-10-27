@@ -31,7 +31,7 @@ import {
 import {
   createMailWorkflowValueResolver,
   normalizeMailWorkflowFrozenHydration,
-  projectMailWorkflowFrozenBody,
+  projectMailWorkflowFrozenMessage,
 } from "./workflow-runtime-values";
 import { startMailWorkflowScheduleRuntime, stopMailWorkflowScheduleRuntime } from "./workflow-schedule-runtime";
 import { resolveMailWorkflowTemplateBodies } from "./workflow-template-values";
@@ -113,7 +113,7 @@ const values = (claim: WorkflowRunClaim) => {
     const hydration: Record<string, WorkflowJsonValue> = typeof value === "string" ? JSON.parse(value) : (value ?? {});
     normalizeMailWorkflowFrozenHydration(hydration);
     for (const input of claim.plan.inputs) {
-      if (input.type === "mailMessage") projectMailWorkflowFrozenBody(input.name, claim.inputs[input.name], hydration);
+      if (input.type === "mailMessage") projectMailWorkflowFrozenMessage(input.name, claim.inputs[input.name], hydration);
     }
     return hydration;
   });

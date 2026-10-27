@@ -4,11 +4,13 @@ import { createWorkflow, createWorkflowRun, deleteWorkflowScope, publishWorkflow
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailWorkflowAiScope } from "./workflow-ai";
 
-// An isolated workflow scope, removed through the public scope contract when the module finishes.
+// An isolated workflow scope, removed through the public scope contract when the suite finishes.
 const scopeId = `workflow-test-${crypto.randomUUID()}`;
-afterAll(() => deleteWorkflowScope({ appId: "mail", scopeId }));
 
 suiteFor("database", "nats")("Mail inference source scope", () => {
+  // Inside the suite: without test infrastructure it is skipped and must not reach a database.
+  afterAll(() => deleteWorkflowScope({ appId: "mail", scopeId }));
+
   test("scheduled and manual runs without a message retain mailbox admission with a run source", async () => {
     const workflow = await createWorkflow({
       appId: "mail",
