@@ -58,6 +58,41 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "calendar.list": {
+          title: "Kalender auflisten",
+          description:
+            "Lesbare Space-Kalender auflisten; Kalender mit Mitgliedschaft werden vorgeschlagen. Diese Version bietet nur Lesezugriff.",
+          input: {
+            cursor: "Cursor aus next der vorigen Seite; für die erste Seite weglassen.",
+            limit: "Maximale Anzahl von Kalendern pro Seite, höchstens 100.",
+          },
+        },
+        "calendar.events": {
+          title: "Kalendereinträge lesen",
+          description:
+            "Offene Termine und Fristen lesbarer Space-Kalender in höchstens 31 verstrichenen Tagen lesen. Spaces erweitert Wiederholungen; Seiten sind chronologisch.",
+          input: {
+            calendarIds: "IDs der Kalender aus calendar.list; unbekannte oder nicht mehr lesbare IDs werden ausgelassen.",
+            from: "Beginn des Zeitraums einschließlich, als Zeitstempel mit Offset.",
+            to: "Ende des Zeitraums ausschließlich, als Zeitstempel mit Offset; höchstens 31 verstrichene Tage nach from.",
+            cursor: "Cursor aus next der vorigen Seite bei unveränderten Eingaben; für die erste Seite weglassen.",
+            limit: "Maximale Anzahl von Einträgen pro Seite, höchstens 100.",
+          },
+        },
+        "space.activity": {
+          title: "Elementereignisse lesen",
+          description:
+            "Berechtigte Änderungen an Aufgaben und Terminen eines Space lesen, neueste zuerst. Optional auf ein Element begrenzen. Kommentare und gelöschte Elemente werden ausgelassen. Dem Cursor folgen.",
+          input: {
+            space: "Öffentliche ID des Space.",
+            item: "Optional auf ein Element in diesem Space begrenzen.",
+            timeZone: "IANA-Zeitzone für die Datumsanzeige; ohne Angabe gilt die Zeitzone der Installation.",
+            before: "Nur Ereignisse, deren letztes Auftreten vor diesem ISO-Zeitpunkt liegt.",
+            after: "Nur Ereignisse, deren letztes Auftreten nach diesem ISO-Zeitpunkt liegt.",
+            cursor: "Cursor der vorherigen Seite.",
+            limit: "Höchstzahl der Ergebnisse von 1 bis 100; Standard ist 50.",
+          },
+        },
         "template.list": {
           title: "Vorlagen auflisten",
           description:

@@ -149,6 +149,7 @@ const publicPaths: Record<string, string[]> = {
     "/_cloud/app-access/inventory",
     "/open/notebooks.notebook/~fixture",
     "/api/_internal/identity/v1/invoke",
+    "/api/_internal/identity/v1/invoke-child",
     "/api/_internal/ai/code/execute",
     "/api/_internal/identity/v1/mandates/mandate",
     ...["confirm", "policy", "pause", "revoke"].map((verb) => `/api/_internal/identity/v1/mandates/mandate/${verb}`),

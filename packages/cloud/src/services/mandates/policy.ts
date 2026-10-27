@@ -224,14 +224,14 @@ export const mandatePolicyAllows = (
       )
     );
   }
+  const [operation, capabilityId] = input.operation.split(":");
+  const kind =
+    operation === "capability.query"
+      ? "query"
+      : operation === "capability.action.run" || operation === "capability.action.review"
+        ? "action"
+        : null;
   if (policy.grants !== undefined) {
-    const [operation, capabilityId] = input.operation.split(":");
-    const kind =
-      operation === "capability.query"
-        ? "query"
-        : operation === "capability.action.run" || operation === "capability.action.review"
-          ? "action"
-          : null;
     if (
       !kind ||
       !capabilityId ||
@@ -240,11 +240,13 @@ export const mandatePolicyAllows = (
       )
     )
       return false;
-    if (kind === "action") {
-      if (input.capabilityPolicy) {
-        if (!("silent" in input.capabilityPolicy) || input.capabilityPolicy.routines === false) return false;
-      } else if (input.capabilityApproval !== "none" && input.capabilityApproval !== "rememberable") return false;
-    }
+  }
+  // Routine grants and unattended preapproval must both fit the live capability policy.
+  // A no-grants require_approval mandate keeps its separately approved execution path.
+  if (kind === "action" && (policy.grants !== undefined || policy.actions === "preapproved")) {
+    if (input.capabilityPolicy) {
+      if (!("silent" in input.capabilityPolicy) || input.capabilityPolicy.routines === false) return false;
+    } else if (input.capabilityApproval !== "none" && input.capabilityApproval !== "rememberable") return false;
   }
   if (!input.operation.startsWith("capability.action.run:")) return true;
   if (policy.actions === "deny") return false;

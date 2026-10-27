@@ -267,6 +267,7 @@ export const rule: Rule = {
       "--assistant-waiting-accent", // AssistantWaitingStrip.tsx: the accent of the app that asks
       "--k2b-chart-height", // @k2b/ui Chart.tsx and ChartSnapshotView.tsx: the rendered chart height
       "--notebook-chart-height", // notebooks chart-blocks.ts: the height of a drawing taller than its frame
+      "--spaces-calendar-color", // Spaces calendar EventDetail.tsx and AgendaList.tsx: the color of each item's calendar
     ]);
     // Cloud imports the UI package stylesheet. Its defaults are valid owners,
     // while Cloud and application styles may override those theme tokens.

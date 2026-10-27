@@ -572,8 +572,12 @@ test("Assistant protects editing while only PanelRuntime is delayed", async () =
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
+  let runtimeHeld = false;
   await page.route(`**${fixture.panelRuntimePath}`, async (route) => {
-    if (route.request().frame().url().includes("/app/assistant/panel")) await gate;
+    // WebKit can still report the frame’s initial URL while its scripts load.
+    // The fixture marks the requested script by provider before navigation.
+    runtimeHeld = true;
+    await gate;
     await route.continue();
   });
   const releaseCreate = fixture.assistant.holdCreate();
@@ -586,6 +590,7 @@ test("Assistant protects editing while only PanelRuntime is delayed", async () =
     await panel.locator('html[data-fixture-ready="true"]').waitFor();
     const composer = panel.locator('textarea:not([aria-hidden="true"])');
     await composer.fill("Input before the runtime is ready");
+    expect(runtimeHeld).toBe(true);
     expect(await panel.locator("[data-cloud-panel-ready]").count()).toBe(0);
     await page.locator('[data-cloud-panel-provider="second"]').click();
     expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("assistant");
@@ -1212,10 +1217,17 @@ for (const historyFailure of [false, true]) {
       await panel.getByRole("button", { name: "Send message", exact: true }).click();
       await reading;
       expect(fixture.backend.posted).toHaveLength(0);
+      // The same archive action is visible in a wide full view; a narrow panel keeps it in the list.
+      const archive = panel.locator('a[href="/app/chat/panel/archive"]').first();
+      await archive.evaluate((element: HTMLAnchorElement) => element.click());
+      expect(await archive.getAttribute("aria-current")).not.toBe("page");
+      expect(await panel.locator("html").evaluate(() => location.search)).toBe("");
       await panel.getByRole("link", { name: "Back to chats", exact: true }).click();
       await panel
         .getByRole("region", { name: "Notifications", exact: true })
         .getByText("Your message is being prepared. Wait before switching chats.", { exact: true })
+        // Archive and Back can each notify after the throttle elapses; expiration is not the subject of this guard.
+        .first()
         .waitFor();
       expect(await panel.locator("html").evaluate(() => location.pathname)).toBe(`/app/chat/panel/c/${id}`);
       await page.locator("[data-cloud-panel-close]").click();
@@ -1543,7 +1555,7 @@ for (const { embedded, width } of [
         await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, `resource-recovery-${embedded ? "panel" : "fullview"}.png`) });
       }
     } catch (error) {
-      console.error(await (embedded ? page.frameLocator("[data-cloud-panel-frame]") : page).locator("body").innerText());
+      console.error("Catalog recovery failed", { url: page.url(), frames: page.frames().map((frame) => frame.url()) });
       throw error;
     } finally {
       releaseInitial();

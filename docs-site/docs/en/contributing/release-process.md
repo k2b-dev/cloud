@@ -5,7 +5,7 @@ section: Contributing
 order: 1302
 description: How a change on a feature branch becomes a versioned Cloud release with images, CLI, website, PWA, and npm packages.
 tags: [contributing, release, versioning, ci]
-updated: 2026-10-22
+updated: 2026-10-26
 ---
 
 # Release process
@@ -198,6 +198,11 @@ block instead of that pull request's own commit message:
 - Change a file in every component the advisory commit changed, for example
   under `packages/cloud/` when it changed `@k2b/cloud`. release-please gives
   the override only to the components of the pull request's own files.
+- When several advisory commits changed different components, use one
+  override pull request per set of components. The override gives every
+  entry to all components of its pull request, so a Mail-only fix in the
+  same block as an `@k2b/cloud` fix would also appear in the `@k2b/cloud`
+  changelog.
 - Write the marker only once, where the block starts: release-please takes
   the text after the first `BEGIN_COMMIT_OVERRIDE` in the body, also when that
   first one stands in a sentence.

@@ -953,11 +953,13 @@ Put `SidebarItemStatus` in `meta`, `SidebarItemMeta`, or a `NavTree.Item`
   regular weight, and `0` stays as a muted count for a count that dropped to
   zero while the row is still shown.
 
-Each mark has a fixed width and fits the label line, so the row keeps its
+Each mark reserves a fixed-width slot and fits the label line, so the row keeps its
 height in every state. Whenever the status shows anything, it reserves the
 unread slot at the end of the row, which a count and a dot share; the bell and
 then "@" sit before it. New activity, a mention, or reading therefore never
 moves another mark, and counts, dots, and bells stay aligned across rows.
+Counts grow toward the end of their reserved slot, keeping their start and text
+in place when a count gains a digit.
 Unread rows differ in weight and count, never in color alone.
 
 The marks are hidden from assistive technology; the row's accessible name gets
@@ -996,6 +998,14 @@ Expansion can be uncontrolled with `defaultExpandedIds`, or controlled with
 `expandedIds` and `onExpandedIdsChange`. Persistence remains application-owned:
 if an application stores expansion in a cookie or another store, pass the same
 initial ids during SSR to avoid a layout shift when the component mounts.
+
+A tree too large to render whole loads a branch when it opens. Set
+`hasChildren` on a `NavTree.Item` whose children are not rendered yet: the row
+shows its disclosure and `aria-expanded`, and opening it reports the id
+through `onExpandedIdsChange`. Render a disabled item that says the rows load
+until they arrive. Show a long level a page at a time and end it with an item
+that loads the next page through `onSelect`, such as "4,900 more notes"; keep
+such items out of reordering.
 
 Branches normally keep their leading icon and receive a trailing disclosure
 chevron. For folder navigation, set both `icon` and `expandedIcon`; the leading
