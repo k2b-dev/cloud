@@ -35,7 +35,7 @@ export default function BookSurface(props: BookSurfaceProps) {
           notebookName={props.notebookName}
           notebookIcon={props.notebookIcon}
           selectedNoteId={props.selectedNoteId}
-          tree={props.tree}
+          navigation={props.navigation}
           tags={props.tags}
           activeTag={props.activeTag}
           currentHref={props.currentHref}
@@ -59,7 +59,7 @@ export default function BookSurface(props: BookSurfaceProps) {
                     title: props.noteTitle,
                     notebookName: props.notebookName,
                     selectedNoteId: props.selectedNoteId,
-                    tree: props.tree,
+                    hasNotes: props.navigation.total > 0,
                     tags: props.tags,
                     activeTag: props.activeTag,
                     canWrite: props.canWrite,
@@ -88,7 +88,7 @@ export default function BookSurface(props: BookSurfaceProps) {
                   />
                 ) : (
                   <article id="notebook-book-content" class="notebook-book-content" tabIndex={-1}>
-                    <Placeholder icon="ti ti-book" description={props.tree.length ? t().selectNote : t().empty} />
+                    <Placeholder icon="ti ti-book" description={props.navigation.total > 0 ? t().selectNote : t().empty} />
                   </article>
                 )}
                 <BookMermaid rootId="notebook-book-content" />

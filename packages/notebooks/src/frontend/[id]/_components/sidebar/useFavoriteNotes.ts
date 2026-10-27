@@ -1,8 +1,8 @@
 import { toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
+import type { SidebarNote } from "../../../../lib/sidebar-tree";
 import { notebookWorkspaceMessages } from "../../messages";
-import type { NoteTreeNode } from "./types";
 
 export function useFavoriteNotes(params: { notebookId: string; initialFavoriteNoteIds: () => string[] }) {
   const locale = useLocale();
@@ -12,7 +12,7 @@ export function useFavoriteNotes(params: { notebookId: string; initialFavoriteNo
 
   createEffect(() => setFavoriteNoteIds(new Set(params.initialFavoriteNoteIds())));
 
-  const toggleFavorite = async (note: NoteTreeNode, event?: MouseEvent) => {
+  const toggleFavorite = async (note: SidebarNote, event?: MouseEvent) => {
     event?.preventDefault();
     event?.stopPropagation();
     if (pendingNoteIds.has(note.id)) return;

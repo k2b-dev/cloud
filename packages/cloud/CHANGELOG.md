@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.43.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.42.0...npm-cloud-v0.43.0) (2026-10-27)
+
+
+### Features
+
+* **accounts:** share exact directory entries with machine accounts ([#1832](https://github.com/k2b-dev/cloud/issues/1832)) ([e733ec2](https://github.com/k2b-dev/cloud/commit/e733ec27eec85c4c67745e1fb8b2f4a50d501848))
+* **ai:** support models-only keys for machine accounts ([#1826](https://github.com/k2b-dev/cloud/issues/1826)) ([301b4c6](https://github.com/k2b-dev/cloud/commit/301b4c6534965e46b5ee47ae80601e69ea41f2df))
+* **app-pwa:** pair devices and authorize customer visits ([#1862](https://github.com/k2b-dev/cloud/issues/1862)) ([4b68a01](https://github.com/k2b-dev/cloud/commit/4b68a012a8c3155c99ba3e35e11f945b1ddd636d))
+* **apps:** declare access rules for every built-in application ([#1852](https://github.com/k2b-dev/cloud/issues/1852)) ([4cf7b8e](https://github.com/k2b-dev/cloud/commit/4cf7b8eca70615fccc6f10ccbd7e0f2782804ab0))
+* **capabilities:** preserve caller authority in nested Queries ([#1940](https://github.com/k2b-dev/cloud/issues/1940)) ([a228d05](https://github.com/k2b-dev/cloud/commit/a228d05d15c2157c5cce75f555415799091d0995))
+* **chat:** changes to Space items and notes show as quiet rows ([#1903](https://github.com/k2b-dev/cloud/issues/1903)) ([ee1c216](https://github.com/k2b-dev/cloud/commit/ee1c2164ad7aaaf36b3162215dbb7badc1dfbed5))
+* **cloud-login:** suggest pairing names and protect enrollment ([#1831](https://github.com/k2b-dev/cloud/issues/1831)) ([5322433](https://github.com/k2b-dev/cloud/commit/5322433f40bf3f5b7d3cb6acccb0daaaca3b494f))
+* **cloud:** let apps offer calendars and show them all in one Spaces calendar ([#1955](https://github.com/k2b-dev/cloud/issues/1955)) ([00c8503](https://github.com/k2b-dev/cloud/commit/00c85034c22cce71a7cc84dcbc0de6bf1b492093))
+* **cloud:** store and serve built avatars, robots for every agent ([#1853](https://github.com/k2b-dev/cloud/issues/1853)) ([190da4c](https://github.com/k2b-dev/cloud/commit/190da4c493743aaddedba2dd894c7c9867bd5aad))
+* **cloud:** support independently installable application surfaces ([#1850](https://github.com/k2b-dev/cloud/issues/1850)) ([ea77ecc](https://github.com/k2b-dev/cloud/commit/ea77ecc43c8ac62416fadc32956920de2ca52045))
+* **core:** reserve routing costs from distance estimates ([#1766](https://github.com/k2b-dev/cloud/issues/1766)) ([5087cdd](https://github.com/k2b-dev/cloud/commit/5087cdd8dcdee10ea06ac34a93a441591dda67f1))
+* **pwa:** the Cloud app restarts at its last place, keeps drafts and picks up new releases at a safe moment ([#1880](https://github.com/k2b-dev/cloud/issues/1880)) ([00e7630](https://github.com/k2b-dev/cloud/commit/00e7630b5c4791c7016bce7797c983a12f5ab6f7)), closes [#1104](https://github.com/k2b-dev/cloud/issues/1104)
+* **pwa:** the Cloud app uses iPad and monitor widths, and Spaces opens a task beside the list ([#1802](https://github.com/k2b-dev/cloud/issues/1802)) ([c1026c1](https://github.com/k2b-dev/cloud/commit/c1026c1452a9cfef0545657d24be447b59e1d3e9)), closes [#1104](https://github.com/k2b-dev/cloud/issues/1104)
+
+
+### Bug Fixes
+
+* **accounts:** keep personal Linux groups out of membership views ([#1932](https://github.com/k2b-dev/cloud/issues/1932)) ([e620388](https://github.com/k2b-dev/cloud/commit/e620388686e60977c365657318d699628309c311)), closes [#1934](https://github.com/k2b-dev/cloud/issues/1934) [#1846](https://github.com/k2b-dev/cloud/issues/1846)
+* **accounts:** retire personal groups when their account is deleted ([19a6d61](https://github.com/k2b-dev/cloud/commit/19a6d612ddcdca2e0e0393ba8aa36b98392f1108))
+* **ai:** record provider errors as fixed codes in runs and traces ([19a6d61](https://github.com/k2b-dev/cloud/commit/19a6d612ddcdca2e0e0393ba8aa36b98392f1108))
+* **auth:** check the OAuth scope of every administrative change ([19a6d61](https://github.com/k2b-dev/cloud/commit/19a6d612ddcdca2e0e0393ba8aa36b98392f1108))
+* **ci:** split integration tests into shards so each finishes within its budget ([#1938](https://github.com/k2b-dev/cloud/issues/1938)) ([9b5d96a](https://github.com/k2b-dev/cloud/commit/9b5d96adcb94d817931646bd2896c9834d37c20f))
+* **sync:** keep valid leases when a follower answers a stale read ([19a6d61](https://github.com/k2b-dev/cloud/commit/19a6d612ddcdca2e0e0393ba8aa36b98392f1108))
+* **test:** include the personal group table in test schemas ([#1951](https://github.com/k2b-dev/cloud/issues/1951)) ([e538e0e](https://github.com/k2b-dev/cloud/commit/e538e0e00acf111899b5b9d7ec26947f25efc936))
+* **test:** isolate route tests and correct integration fixtures ([#1924](https://github.com/k2b-dev/cloud/issues/1924)) ([9b688e7](https://github.com/k2b-dev/cloud/commit/9b688e75a40da547f09cc03d2fab474458aef692))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.20.0 to 0.20.1
+    * @k2b/ui bumped from 0.32.0 to 0.33.0
+
 ## [0.42.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.41.0...npm-cloud-v0.42.0) (2026-10-23)
 
 
