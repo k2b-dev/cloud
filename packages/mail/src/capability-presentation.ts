@@ -524,8 +524,12 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         "conversation.keep.release": {
           title: "Aufbewahrung aufheben",
           description:
-            "Erlaubt wieder das Löschen und blendet Cloud-Kopien bereits auf dem Mailserver gelöschter Nachrichten aus. Erfordert Verwaltungszugriff auf das Postfach.",
-          input: { mailboxId: "Exakte Postfach-ID.", conversationId: "Exakte Unterhaltungs-ID." },
+            "Erlaubt wieder das Löschen und blendet Cloud-Kopien bereits auf dem Mailserver gelöschter Nachrichten aus. Erfordert Cloud-Admin-Rechte.",
+          input: {
+            mailboxId: "Exakte Postfach-ID.",
+            conversationId: "Exakte Unterhaltungs-ID.",
+            reason: "Optionale Begründung für das Aufheben, die im Audit-Log gespeichert wird.",
+          },
         },
         "conversation.snooze": {
           title: "Unterhaltung später anzeigen",
