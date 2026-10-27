@@ -1,4 +1,4 @@
-import { PWA_SHELL_APP_ID } from "@k2b/cloud/contracts";
+import { PWA_SERVICE_WORKER_PATH, PWA_SHELL_APP_ID } from "@k2b/cloud/contracts";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import { publishRequestTelemetry, ROUTE_TEMPLATE_HEADER } from "@k2b/cloud/services";
 import type { ClientAddress } from "./client-address";
@@ -136,8 +136,22 @@ export const proxyRequest = async (
   // Only the mobile app shell serves a service worker below /pwa. Any other
   // worker there could take over the shell's scope: a script at a bare part
   // root such as /pwa/<id> may claim /pwa/ without Service-Worker-Allowed.
-  if (req.headers.get("Service-Worker") === "script" && isPwaPath(url.pathname) && match.appId !== PWA_SHELL_APP_ID) {
+  if (
+    req.headers.get("Service-Worker") === "script" &&
+    isPwaPath(url.pathname) &&
+    (match.appId !== PWA_SHELL_APP_ID || url.pathname !== PWA_SERVICE_WORKER_PATH || !!url.search)
+  ) {
     return new Response("Forbidden — only the mobile app serves a service worker below /pwa", { status: 403 });
+  }
+
+  if (req.headers.get("Service-Worker") === "script" && !isPwaPath(url.pathname)) {
+    // A script at an ancestor or at a bare surface root could control the installation without a widened header.
+    // Keep Core's existing push worker; every App-PWA permits only its generated worker at its exact path.
+    const generated = table.installables.some(
+      ({ appId, declaration }) => match.appId === appId && url.pathname === `${declaration.path}sw.js` && !url.search,
+    );
+    const pushWorker = match.appId === "core" && url.pathname === "/service-worker.js" && !url.search;
+    if (!generated && !pushWorker) return new Response("Forbidden — undeclared service worker", { status: 403 });
   }
 
   // Track per-app stats
@@ -219,7 +233,7 @@ export const proxyRequest = async (
     // Only Core may widen a service worker's scope (its root push worker). A
     // worker from any other app stays inside its script's directory, so no app
     // outside /pwa can register a worker for the mobile app's scope.
-    if (match.appId !== "core") headers.delete("Service-Worker-Allowed");
+    if (match.appId !== "core" || url.pathname !== "/service-worker.js" || url.search) headers.delete("Service-Worker-Allowed");
     headers.set("X-Gateway-App", match.appId);
     headers.set("X-Gateway-Ms", ms.toFixed(1));
 

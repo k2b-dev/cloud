@@ -195,6 +195,9 @@ describe("Approvals in a browser", () => {
   const live = async (width: number, items: PendingApproval[], decided: string[] = [], layout: "list" | "band" = "list") => {
     const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: 1, reducedMotion: "reduce" });
     const tab = await context.newPage();
+    const time = new Date("2026-10-11T09:00:00.000Z");
+    await tab.clock.install({ time });
+    await tab.clock.pauseAt(time);
     await tab.route(`${origin}/**`, (route) => {
       const { pathname } = new URL(route.request().url());
       if (pathname === "/view")
@@ -234,7 +237,7 @@ describe("Approvals in a browser", () => {
         // The answers arm after half a second; a click before that does nothing.
         await confirm.click({ force: true });
         expect(decided).toEqual([]);
-        await tab.waitForTimeout(600);
+        await tab.clock.runFor(600);
         await confirm.click();
         await tab.locator("article.cloud-approval[data-decided]").waitFor();
         expect(decided).toEqual([page.items[0]!.id]);
@@ -255,7 +258,7 @@ describe("Approvals in a browser", () => {
         const band = tab.locator("article.cloud-approval-band").nth(1);
         await band.waitFor();
         const before = (await band.boundingBox())!.height;
-        await tab.waitForTimeout(600);
+        await tab.clock.runFor(600);
         await band.getByRole("button", { name: "Details" }).click();
         const panel = tab.getByRole("dialog");
         await panel.waitFor();
@@ -265,8 +268,8 @@ describe("Approvals in a browser", () => {
         // The panel's answers arm late too, so a quick follow-up click cannot decide the request that just opened.
         await panel.getByRole("button", { name: "Don't run", exact: true }).click({ force: true });
         expect(decided).toEqual([]);
-        // fixed wait: the panel's answers arm half a second after it opens.
-        await tab.waitForTimeout(600);
+        // Advance the arming timer deliberately; host scheduling cannot consume the guarded interval.
+        await tab.clock.runFor(600);
         await panel.getByRole("button", { name: "Don't run", exact: true }).click();
         await tab.locator("article.cloud-approval-band[data-decided]").waitFor();
         expect(decided).toEqual([page.items[1]!.id]);

@@ -69,5 +69,5 @@ packages/venue/src/frontend/_components/VenueWorkspace.render.test.tsx | 5
 packages/venue/test/admin-setup.behavior.test.tsx | 1
 packages/venue/test/shift-detail.behavior.test.tsx | 1
 pwas/pwa-auth/src/App.behavior.test.tsx | 2
-pwas/pwa-auth/src/Clouds.behavior.test.tsx | 5
+pwas/pwa-auth/src/Clouds.behavior.test.tsx | 2
 pwas/pwa-auth/src/authenticator.behavior.test.ts | 3
