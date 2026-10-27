@@ -25,6 +25,66 @@ platform database and NATS credentials. Deploying an application is approval
 for its declared subscriptions. Core accepts an event only when its source
 application declared that event type and version.
 
+## Built-in resource events
+
+Spaces and Notebooks publish these version 1 events. Each `data` schema is a
+strict empty object (`{}`); the envelope's `subject` and `place` carry public
+resource IDs accepted by the corresponding Type readers.
+
+| Full event type | Subject Type | Place Type | When it is published |
+| --- | --- | --- | --- |
+| `spaces.item.created` | `spaces.item` | `spaces.space` | A task, calendar event, stored occurrence override, or split series is created. |
+| `spaces.item.completed` | `spaces.item` | `spaces.space` | An existing item changes from open to completed, including a drag, calendar cancellation, or transfer into a done column. |
+| `notebooks.notebook.created` | `notebooks.notebook` | `notebooks.notebook` | A notebook is created. |
+| `notebooks.notebook.updated` | `notebooks.notebook` | `notebooks.notebook` | Notebook metadata or settings change. |
+| `notebooks.note.created` | `notebooks.note` | `notebooks.notebook` | A note is created, including welcome notes, path creation, copies, and restored copies. |
+| `notebooks.note.updated` | `notebooks.note` | `notebooks.notebook` | Persisted Markdown, title, the moved note’s parent or order, lock state, or recovery status changes, coalesced as described below. |
+
+The place Types have permission-aware readers: `spaces.space.read` and
+`notebooks.notebook.read`. Subject readers are `spaces.item.read`,
+`notebooks.notebook.read`, and `notebooks.note.read`. Read content through those
+readers; events contain no titles, text, names, email addresses, content counts,
+parent IDs, or previous-place references. Repeating completion or reopening an
+item does not publish `spaces.item.completed`.
+
+A Spaces transfer that completes an item publishes under its **new place only**.
+Its source receives no resource event naming the destination. A note move
+carries only the note and its current notebook refs; it omits parent and position.
+Moving notes between notebooks remains unsupported; copying creates a new note
+and emits `note.created` in the destination notebook.
+
+`notebooks.note.updated` uses trailing coalescing. A changed note records its
+first pending change and latest change in the domain transaction. A minute
+sweep publishes at most four notes, oldest pending first, when the latest
+change is at least 30 seconds old **or** the first pending change is at least
+five minutes old. These are eligibility thresholds; scheduler alignment and
+backlog can add delay. Pending changes survive restarts, including a save
+followed by locking the note. The sweep uses the note's current notebook and
+clears its marker atomically with the outbox event. A durable tick claim and
+row locks prevent replicas or retries from multiplying the batch limit.
+See the [shared capacity budget](/en/docs/operations/app-events#plan-retention-and-outage-capacity).
+
+Only the moved note is announced. Sibling position renumbering, resetting a
+level to automatic order, and a parent's derived `hasChildren` change do not
+mark notes. Cursor advancement, binary snapshot maintenance, rebuildable
+indexes, and unchanged or rejected saves do not count as content changes.
+Collaborative edits mark the note when persisted to its snapshot, including
+shared-log snapshot workers and server-side edits, rather than on each Yjs
+update. Existing workspace and collaborative text streams retain their own behavior.
+
+Creates and completions remain transactional discrete facts. Notebook metadata
+updates also remain transactional: one update affects one notebook and does
+not fan out to its notes. These event rates equal the corresponding domain
+write rates; they have no aggregate event throttle. The domain helpers can
+participate in a caller-owned transaction, so they rely on the platform's
+one-second outbox reconciliation instead of waking before that transaction
+commits. The note sweep owns its transaction and calls `wake()` after commit.
+
+**App delivery remains blocked.** These are resource events; declaring or
+subscribing to them does not establish an app's right to read their place.
+Subscriptions remain `blocked` with `resource_events_unsupported` until Cloud
+has an approved receiver authorization contract.
+
 ## Declare events and subscriptions
 
 Add `events` and `subscribes` to the same `defineCapabilities()` declaration
@@ -177,6 +237,20 @@ export async function recordCreatedUser(userId: string, provider: "local" | "ipa
   events.wake();
 }
 ```
+
+When importing the capability handlers would create a service dependency cycle,
+use a type-only import and resolve the application's platform binding lazily:
+
+```ts
+import type { publisherCapabilities } from "./capabilities";
+const events = appEvents<typeof publisherCapabilities>("inventory");
+```
+
+The app ID must match `defineApp`; `app.start({ capabilities })` installs the
+binding before lifecycle startup. Publication uses that binding's real schemas,
+refs, and byte validation. It rejects an unknown or unstarted app before
+writing. Standalone service tests still require
+`createAppEventTestHarness(appId, capabilities)`; there is no app-owned setter.
 
 The committed outbox row survives a process crash. Call `wake()` only after
 the transaction commits; periodic reconciliation also picks up committed
