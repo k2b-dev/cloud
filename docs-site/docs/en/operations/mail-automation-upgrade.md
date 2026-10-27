@@ -55,7 +55,16 @@ Undo needs the same permission as manual assignment. It reverses the rule's
 assignment only while that assignment is still current; it does not reverse
 other effects, such as moves, tags, or comments. If someone changed the
 assignment or the conversation is gone, the request returns HTTP 409 with
-`mail.automation.undo_not_possible` and changes nothing.
+`mail.automation.undo_not_possible` and changes nothing. Both undo and redo
+conflicts return `{ code, reason, item }`, where `item` contains the current
+entry with `undo.state: "not_possible"`.
+
+Each entry's `undo.at` is an ISO timestamp: the undo time for `done`, or the
+latest known manual assignment-change time for `not_possible` with reason
+`changed_by_person`. In that conflict state, `undo.by` identifies the person
+who made the later change. Unknown people or times remain `null`; all other
+undo states have `at: null`. Clients can replace their displayed entry from
+the conflict response without another request.
 
 Undo creates a permanent exclusion for that workflow and conversation,
 including later incoming replies. The exclusion survives expiry of the log

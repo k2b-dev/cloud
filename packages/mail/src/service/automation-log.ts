@@ -40,34 +40,36 @@ type LogRow = {
   provenance_current: boolean;
   changed_by_id: string | null;
   changed_by_name: string | null;
+  changed_at: Date | null;
   cursor_at: string;
 };
 const rowColumns = sql.unsafe(`log.*, log.created_at::text AS cursor_at,
   (assignment.run_id = log.run_id AND assignment.user_id = log.assignment_user_id AND assignment.changed_at IS NULL
    AND (SELECT count(*) FROM mail.conversation_assignees current WHERE current.conversation_id = log.conversation_id) = 1
    AND EXISTS (SELECT 1 FROM mail.conversation_assignees current WHERE current.conversation_id = log.conversation_id AND current.user_id = log.assignment_user_id)) AS provenance_current,
-  assignment.changed_by_id, assignment.changed_by_name`);
+  assignment.changed_by_id, assignment.changed_by_name, assignment.changed_at`);
 const rowFrom = sql.unsafe(
   `FROM mail.automation_log log LEFT JOIN mail.automation_assignment assignment ON assignment.conversation_id = log.conversation_id`,
 );
+// Stored snapshots predate undo.at; all undo state is derived from the authoritative columns.
+const storedItemSchema = automationLogItemSchema.omit({ undo: true });
 const itemFromRow = (row: LogRow): AutomationLogItem => {
-  const item = automationLogItemSchema.parse(row.item);
-  const by = row.undone_by_id
-    ? { userId: row.undone_by_id, name: row.undone_by_name ?? "" }
-    : row.changed_by_id
-      ? { userId: row.changed_by_id, name: row.changed_by_name ?? "" }
-      : null;
+  const item = storedItemSchema.parse(row.item);
+  const changedBy = row.changed_by_id ? { userId: row.changed_by_id, name: row.changed_by_name ?? "" } : null;
+  const undoneBy = row.undone_by_id ? { userId: row.undone_by_id, name: row.undone_by_name ?? "" } : null;
   return {
     ...item,
     undo: !row.assignment_user_id
-      ? { state: "none", reason: null, by: null }
+      ? { state: "none", reason: null, by: null, at: null }
       : !row.conversation_id
-        ? { state: "not_possible", reason: "conversation_gone", by }
-        : row.undone_at
-          ? { state: "done", reason: null, by }
-          : row.provenance_current
-            ? { state: "available", reason: null, by: null }
-            : { state: "not_possible", reason: "changed_by_person", by },
+        ? { state: "not_possible", reason: "conversation_gone", by: null, at: null }
+        : row.changed_at
+          ? { state: "not_possible", reason: "changed_by_person", by: changedBy, at: row.changed_at.toISOString() }
+          : row.undone_at
+            ? { state: "done", reason: null, by: undoneBy, at: row.undone_at.toISOString() }
+            : row.provenance_current
+              ? { state: "available", reason: null, by: null, at: null }
+              : { state: "not_possible", reason: "changed_by_person", by: null, at: null },
   };
 };
 const filterCondition = (filter: string) =>
@@ -167,12 +169,19 @@ export const getConversationAutomationTrace = async (
 };
 
 type UndoReason = "changed_by_person" | "conversation_gone";
-const cannotUndo = (reason: UndoReason) =>
+const cannotUndo = (reason: UndoReason, item: AutomationLogItem) =>
   fail({
     code: "mail.automation.undo_not_possible",
     status: 409,
     message: "The rule assignment can no longer be restored or undone",
     reason,
+    item: {
+      ...item,
+      undo:
+        item.undo.state === "not_possible" && item.undo.reason === reason
+          ? item.undo
+          : { state: "not_possible", reason, by: null, at: null },
+    },
   });
 
 export const changeAutomationLogAssignment = async (
@@ -191,28 +200,29 @@ export const changeAutomationLogAssignment = async (
       { conversation_id: string | null }[]
     >`SELECT conversation_id FROM mail.automation_log WHERE id = ${itemId}::uuid AND mailbox_id = ${mailboxId}::uuid`;
     if (!target) return fail(err.notFound("Automation log entry"));
-    if (!target.conversation_id) return cannotUndo("conversation_gone");
-    const [conversation] = await tx<
-      { revision: string | number }[]
-    >`SELECT revision FROM mail.conversations WHERE id = ${target.conversation_id}::uuid AND mailbox_id = ${mailboxId}::uuid FOR UPDATE`;
-    if (!conversation) return cannotUndo("conversation_gone");
+    const [conversation] = target.conversation_id
+      ? await tx<
+          { revision: string | number }[]
+        >`SELECT revision FROM mail.conversations WHERE id = ${target.conversation_id}::uuid AND mailbox_id = ${mailboxId}::uuid FOR UPDATE`
+      : [];
     const [row] = await tx<
       LogRow[]
     >`SELECT ${rowColumns} ${rowFrom} WHERE log.id = ${itemId}::uuid AND log.mailbox_id = ${mailboxId}::uuid FOR UPDATE OF log`;
     if (!row) return fail(err.notFound("Automation log entry"));
     const item = itemFromRow(row);
-    if (!row.assignment_user_id || item.by.kind !== "rule") return cannotUndo("changed_by_person");
+    if (!target.conversation_id || !conversation) return cannotUndo("conversation_gone", item);
+    if (!row.assignment_user_id || item.by.kind !== "rule") return cannotUndo("changed_by_person", item);
     const person = userBackedActor(context);
     const userId = person?.id ?? (context.actor.kind === "service_account" ? context.actor.serviceAccount.id : "");
     const name = person?.displayName ?? (context.actor.kind === "service_account" ? context.actor.serviceAccount.name : "");
-    if (operation === "undo" && row.undone_at) return ok({ item });
-    if (operation === "undo" && !row.provenance_current) return cannotUndo("changed_by_person");
+    if (operation === "undo" && row.undone_at && item.undo.state === "done") return ok({ item });
+    if (operation === "undo" && !row.provenance_current) return cannotUndo("changed_by_person", item);
     if (operation === "redo") {
       const [state] = await tx<{ ready: boolean }[]>`SELECT EXISTS (SELECT 1 FROM mail.automation_assignment assignment
         WHERE assignment.conversation_id = ${target.conversation_id}::uuid AND assignment.run_id = ${row.run_id}::uuid
           AND assignment.changed_at IS NULL
           AND NOT EXISTS (SELECT 1 FROM mail.conversation_assignees assignee WHERE assignee.conversation_id = assignment.conversation_id)) AS ready`;
-      if (!row.undone_at || row.undone_by_id !== userId || !state?.ready) return cannotUndo("changed_by_person");
+      if (!row.undone_at || row.undone_by_id !== userId || !state?.ready) return cannotUndo("changed_by_person", item);
     }
     const mutation = await updateConversationCollaborationInTransaction({
       context,
@@ -250,7 +260,7 @@ export const changeAutomationLogAssignment = async (
           after: operation === "redo" ? { kind: "user", name: assignmentName } : null,
         },
       ],
-      undo: { state: "none", reason: null, by: null },
+      undo: { state: "none", reason: null, by: null, at: null },
     };
     await tx`INSERT INTO mail.automation_log (id, mailbox_id, conversation_id, item, created_at) VALUES (${operationId}::uuid, ${mailboxId}::uuid, ${target.conversation_id}::uuid, ${operationItem}, ${operationItem.at}::timestamptz)`;
     const [updated] = await tx<LogRow[]>`SELECT ${rowColumns} ${rowFrom} WHERE log.id = ${itemId}::uuid`;

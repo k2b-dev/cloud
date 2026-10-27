@@ -64,13 +64,13 @@ const automationLogRoutes = new Hono<MailApiContext>()
   .post("/mailboxes/:mailboxId/automation-log/:itemId/undo", mutationOperation("Undo"), v("param", itemParams), async (c) => {
     const result = await changeAutomationLogAssignment(context(c), internalMailboxId(c), c.req.valid("param").itemId, "undo");
     if (!result.ok && result.error.code === "mail.automation.undo_not_possible")
-      return c.json({ code: result.error.code, reason: "reason" in result.error ? result.error.reason : "changed_by_person" }, 409);
+      return c.json(automationLogUndoConflictSchema.parse(result.error), 409);
     return respondPublic(c, Promise.resolve(result));
   })
   .post("/mailboxes/:mailboxId/automation-log/:itemId/redo", mutationOperation("Redo"), v("param", itemParams), async (c) => {
     const result = await changeAutomationLogAssignment(context(c), internalMailboxId(c), c.req.valid("param").itemId, "redo");
     if (!result.ok && result.error.code === "mail.automation.undo_not_possible")
-      return c.json({ code: result.error.code, reason: "reason" in result.error ? result.error.reason : "changed_by_person" }, 409);
+      return c.json(automationLogUndoConflictSchema.parse(result.error), 409);
     return respondPublic(c, Promise.resolve(result));
   })
   .get(

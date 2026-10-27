@@ -25,7 +25,7 @@ const item: AutomationLogItem = {
   outcome: "assigned",
   effects: [{ kind: "assign", target: { kind: "user", id: "user-1", name: "Nora" } }],
   reasons: [{ kind: "ai_choice", value: "Invoice", choices: ["Invoice", "Other"] }],
-  undo: { state: "available", reason: null, by: null },
+  undo: { state: "available", reason: null, by: null, at: null },
 };
 const page: AutomationLogPage = {
   day: "2026-10-27",
@@ -153,7 +153,9 @@ describe("Mail automation log CLI", () => {
   });
 
   test("undo sends one bodyless POST and preserves the response envelope", async () => {
-    const result = { item: { ...item, undo: { state: "done", reason: null, by: { userId: "user-2", name: "Can" } } } };
+    const result = {
+      item: { ...item, undo: { state: "done", reason: null, by: { userId: "user-2", name: "Can" }, at: "2026-10-27T09:15:00.000Z" } },
+    };
     for (const mode of ["json", "jsonl", "text"] as const) {
       const run = fixture(["automation", "log", "undo", item.id], { mailbox: mailbox.id }, mode, async () => Response.json(result), "de");
       await mail.run(run.ctx);
@@ -165,7 +167,22 @@ describe("Mail automation log CLI", () => {
 
   test("undo conflict is visible and never emits success or another write", async () => {
     const run = fixture(["automation", "log", "undo", item.id], {}, "text", async () =>
-      Response.json({ code: "mail.automation.undo_not_possible", reason: "changed_by_person" }, { status: 409 }),
+      Response.json(
+        {
+          code: "mail.automation.undo_not_possible",
+          reason: "changed_by_person",
+          item: {
+            ...item,
+            undo: {
+              state: "not_possible",
+              reason: "changed_by_person",
+              by: { userId: "user-2", name: "Can" },
+              at: "2026-10-27T09:10:00.000Z",
+            },
+          },
+        },
+        { status: 409 },
+      ),
     );
     await expect(mail.run(run.ctx)).rejects.toThrow("mail.automation.undo_not_possible");
     expect(run.calls).toHaveLength(1);

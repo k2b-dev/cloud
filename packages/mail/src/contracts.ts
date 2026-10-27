@@ -3790,6 +3790,11 @@ export const automationLogItemSchema = z.object({
     state: z.enum(["available", "done", "not_possible", "none"]),
     reason: z.enum(["changed_by_person", "conversation_gone"]).nullable(),
     by: z.object({ userId: z.string(), name: z.string() }).nullable(),
+    at: z
+      .string()
+      .datetime()
+      .nullable()
+      .describe("Undo time when done; latest known manual assignment-change time when not_possible/changed_by_person; otherwise null."),
   }),
 });
 export const automationAuditStepSchema = z.discriminatedUnion("kind", [
@@ -3839,6 +3844,7 @@ export const automationLogDetailSchema = automationLogItemSchema.extend({
 export const automationLogUndoConflictSchema = z.object({
   code: z.literal("mail.automation.undo_not_possible"),
   reason: z.enum(["changed_by_person", "conversation_gone"]),
+  item: automationLogItemSchema,
 });
 export type AutomationLogItem = z.infer<typeof automationLogItemSchema>;
 export type AutomationLogPage = z.infer<typeof automationLogPageSchema>;

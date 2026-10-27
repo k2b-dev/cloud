@@ -12,7 +12,12 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { processWorkflowAiTask } from "../../../cloud/src/workflows/ai/runtime";
 import automationLogRoutes from "../api/automation-log";
 import type { MailApiContext } from "../api/public-resource-boundary";
-import { automationLogDetailSchema, automationLogPageSchema, workflowEffectBudgetSchema } from "../contracts";
+import {
+  automationLogDetailSchema,
+  automationLogPageSchema,
+  automationLogUndoConflictSchema,
+  workflowEffectBudgetSchema,
+} from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
@@ -217,17 +222,26 @@ suite("Mail conversation automation log and undo", () => {
     (await sql<{ user_id: string }[]>`SELECT user_id FROM mail.conversation_assignees WHERE conversation_id = ${conversationId}::uuid`).map(
       (row) => row.user_id,
     );
-  const manual = async (conversationId: string, ids: string[]) => {
+  const manual = async (conversationId: string, ids: string[], actorIndex = 0) => {
     const [row] = await sql<{ revision: number }[]>`SELECT revision FROM mail.conversations WHERE id = ${conversationId}::uuid`;
     return unwrap(
       await applyConversationCollaboration({
-        context: users[0]!,
+        context: users[actorIndex]!,
         mailboxId,
         conversationId,
         input: { expectedRevision: Number(row!.revision), assigneeUserIds: ids },
       }),
     );
   };
+
+  const apiFor = (actorIndex = 0) =>
+    new Hono<MailApiContext>()
+      .use("*", async (c, next) => {
+        c.set("actor", users[actorIndex]!.actor);
+        c.set("accessSubject", users[actorIndex]!.accessSubject);
+        await next();
+      })
+      .route("/", automationLogRoutes);
 
   test("assignment is auditable, undo suppresses the rule across messages, redo restores it", async () => {
     const definition = await rule(),
@@ -240,7 +254,7 @@ suite("Mail conversation automation log and undo", () => {
     const item = log.items.find((item) => item.conversation.id === first.snapshot.source.conversation!.id)!;
     expect(item).toMatchObject({
       outcome: "assigned",
-      undo: { state: "available" },
+      undo: { state: "available", at: null },
       effects: [{ kind: "assign", target: { name: "Can" } }],
     });
     expect(item.conversation.href).toContain(first.snapshot.source.conversation!.id);
@@ -248,7 +262,14 @@ suite("Mail conversation automation log and undo", () => {
     expect(automationLogDetailSchema.safeParse(detail).success).toBe(true);
     expect(detail.chain.map((step) => step.kind)).toEqual(["rule_start", "fixed_row", "result"]);
     const undone = unwrap(await changeAutomationLogAssignment(users[0]!, mailboxId, item.id, "undo"));
-    expect(undone.item.undo).toMatchObject({ state: "done", by: { userId: userId() } });
+    const [persistedUndo] = await sql<{ undone_at: Date }[]>`SELECT undone_at FROM mail.automation_log WHERE id = ${item.id}::uuid`;
+    expect(undone.item.undo).toEqual({
+      state: "done",
+      reason: null,
+      by: { userId: userId(), name: "Owner" },
+      at: persistedUndo!.undone_at.toISOString(),
+    });
+    expect(unwrap(await getAutomationLogItem(users[0]!, mailboxId, item.id)).undo).toEqual(undone.item.undo);
     expect(await assignment(first.conversationId)).toEqual([]);
     const [marker] = await sql<
       { present: boolean }[]
@@ -264,7 +285,12 @@ suite("Mail conversation automation log and undo", () => {
     expect(await assignment(first.conversationId)).toEqual([]);
     const trace = unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, first.conversationId));
     expect(trace.items.some((entry) => entry.reasons.some((reason) => reason.kind === "undone_before"))).toBe(true);
-    expect(unwrap(await changeAutomationLogAssignment(users[0]!, mailboxId, item.id, "redo")).item.undo.state).toBe("available");
+    expect(unwrap(await changeAutomationLogAssignment(users[0]!, mailboxId, item.id, "redo")).item.undo).toEqual({
+      state: "available",
+      reason: null,
+      by: null,
+      at: null,
+    });
     expect(await assignment(first.conversationId)).toEqual([userId(1)]);
   });
 
@@ -296,18 +322,22 @@ suite("Mail conversation automation log and undo", () => {
       (item) => item.by.kind === "rule",
     )!;
     await manual(input.conversationId, [userId(2)]);
-    await manual(input.conversationId, [userId(1)]);
+    await manual(input.conversationId, [userId(1)], 1);
+    const changedAt = new Date("2026-01-15T12:10:00Z");
+    await sql`UPDATE mail.automation_assignment SET changed_at = ${changedAt} WHERE conversation_id = ${input.conversationId}::uuid`;
     const before = await assignment(input.conversationId);
-    const api = new Hono<MailApiContext>()
-      .use("*", async (c, next) => {
-        c.set("actor", users[0]!.actor);
-        c.set("accessSubject", users[0]!.accessSubject);
-        await next();
-      })
-      .route("/", automationLogRoutes);
-    const response = await api.request(`/mailboxes/${mailboxShortId}/automation-log/${item.id}/undo`, { method: "POST" });
+    const response = await apiFor().request(`/mailboxes/${mailboxShortId}/automation-log/${item.id}/undo`, { method: "POST" });
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ code: "mail.automation.undo_not_possible", reason: "changed_by_person" });
+    const conflict = automationLogUndoConflictSchema.parse(await response.json());
+    expect(conflict).toMatchObject({
+      code: "mail.automation.undo_not_possible",
+      reason: "changed_by_person",
+      item: {
+        id: item.id,
+        undo: { state: "not_possible", reason: "changed_by_person", by: { userId: userId(1), name: "Can" }, at: changedAt.toISOString() },
+      },
+    });
+    expect(unwrap(await getAutomationLogItem(users[0]!, mailboxId, item.id)).undo).toEqual(conflict.item.undo);
     expect(await assignment(input.conversationId)).toEqual(before);
     expect(
       unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, input.conversationId)).items.some(
@@ -320,6 +350,56 @@ suite("Mail conversation automation log and undo", () => {
     const skipped = unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, second.conversationId)).items[0]!;
     expect(skipped).toMatchObject({ outcome: "skipped", reasons: [{ kind: "already_assigned" }] });
     expect(await assignment(second.conversationId)).toEqual([userId(2)]);
+  });
+
+  test("redo conflicts return the later person's refreshed item rather than the undo actor", async () => {
+    const definition = await rule(),
+      input = await message(),
+      runId = await run(definition, input);
+    expect(await runMailWorkflow(runId)).toMatchObject({ result: { state: "succeeded" } });
+    const item = unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, input.conversationId)).items[0]!;
+    unwrap(await changeAutomationLogAssignment(users[0]!, mailboxId, item.id, "undo"));
+    await manual(input.conversationId, [userId(2)], 2);
+    const changedAt = new Date("2026-01-15T12:15:00Z");
+    await sql`UPDATE mail.automation_assignment SET changed_at = ${changedAt} WHERE conversation_id = ${input.conversationId}::uuid`;
+    for (const operation of ["redo", "undo"]) {
+      const response = await apiFor().request(`/mailboxes/${mailboxShortId}/automation-log/${item.id}/${operation}`, { method: "POST" });
+      expect(response.status).toBe(409);
+      const conflict = automationLogUndoConflictSchema.parse(await response.json());
+      expect(conflict.item.undo).toEqual({
+        state: "not_possible",
+        reason: "changed_by_person",
+        by: { userId: userId(2), name: "Nora" },
+        at: changedAt.toISOString(),
+      });
+      expect(conflict.item.id).toBe(item.id);
+      expect(await assignment(input.conversationId)).toEqual([userId(2)]);
+    }
+  });
+
+  test("legacy snapshots and missing provenance or conversation return a complete conflict item with unknown attribution", async () => {
+    const definition = await rule(),
+      input = await message(),
+      runId = await run(definition, input);
+    expect(await runMailWorkflow(runId)).toMatchObject({ result: { state: "succeeded" } });
+    const item = unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, input.conversationId)).items[0]!;
+    await sql`UPDATE mail.automation_log SET item = item #- '{undo,at}' WHERE id = ${item.id}::uuid`;
+    await sql`DELETE FROM mail.automation_assignment WHERE conversation_id = ${input.conversationId}::uuid`;
+    const unknown = await apiFor().request(`/mailboxes/${mailboxShortId}/automation-log/${item.id}/undo`, { method: "POST" });
+    expect(unknown.status).toBe(409);
+    const unknownConflict = automationLogUndoConflictSchema.parse(await unknown.json());
+    expect(unknownConflict.item.undo).toEqual({ state: "not_possible", reason: "changed_by_person", by: null, at: null });
+    expect(await assignment(input.conversationId)).toEqual([userId(1)]);
+    await sql`DELETE FROM mail.conversations WHERE id = ${input.conversationId}::uuid`;
+    for (const operation of ["undo", "redo"]) {
+      const response = await apiFor().request(`/mailboxes/${mailboxShortId}/automation-log/${item.id}/${operation}`, { method: "POST" });
+      expect(response.status).toBe(409);
+      const conflict = automationLogUndoConflictSchema.parse(await response.json());
+      expect(conflict).toMatchObject({
+        reason: "conversation_gone",
+        item: { id: item.id, undo: { state: "not_possible", reason: "conversation_gone", by: null, at: null } },
+      });
+    }
   });
 
   test("a skipped assignment's live snapshot cannot authorize overwriting a person's later status", async () => {

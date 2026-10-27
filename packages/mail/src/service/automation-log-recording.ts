@@ -82,7 +82,7 @@ export const recordAutomationAssignmentChange = async (params: {
   const [provenance] = await params.db<{ workflow_id: string; name: string }[]>`
     SELECT assignment.workflow_id, workflow.name FROM mail.automation_assignment assignment
     LEFT JOIN workflows.workflow workflow ON workflow.id = assignment.workflow_id
-    WHERE assignment.conversation_id = ${params.conversationId}::uuid AND assignment.changed_at IS NULL FOR UPDATE OF assignment
+    WHERE assignment.conversation_id = ${params.conversationId}::uuid FOR UPDATE OF assignment
   `;
   if (!provenance || !actor || !params.context) return;
   const person = userBackedActor(params.context);
@@ -117,7 +117,7 @@ export const recordAutomationAssignmentChange = async (params: {
         after: after ? { kind: "user", name: after } : null,
       },
     ],
-    undo: { state: "none", reason: null, by: null },
+    undo: { state: "none", reason: null, by: null, at: null },
   };
   await params.db`INSERT INTO mail.automation_log (id, mailbox_id, conversation_id, item, created_at)
     VALUES (${id}::uuid, ${params.mailboxId}::uuid, ${params.conversationId}::uuid, ${item}, ${item.at}::timestamptz)`;
@@ -343,7 +343,7 @@ const projectMailWorkflowAudit = async (runId: string, db: SqlClient): Promise<v
       outcome,
       effects: audit.effects,
       reasons: audit.reasons,
-      undo: { state: "none", reason: null, by: null },
+      undo: { state: "none", reason: null, by: null, at: null },
     };
     const preconditions = audit.reasons.filter((reason) => reason.kind === "condition").map((reason) => reason.text);
     if (Array.isArray(conversation.assigneeUserIds) && !conversation.assigneeUserIds.length) preconditions.push("assignees = []");
