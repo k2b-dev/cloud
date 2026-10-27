@@ -47,6 +47,7 @@ import inputAutocomplete from "./input/autocomplete.md" with { type: "text" };
 import inputAutocompleteSelect from "./input/autocomplete-select.md" with { type: "text" };
 import inputBoolean from "./input/boolean.md" with { type: "text" };
 import inputChoiceChips from "./input/choice-chips.md" with { type: "text" };
+import inputChoiceSlider from "./input/choice-slider.md" with { type: "text" };
 import inputColor from "./input/color.md" with { type: "text" };
 import inputCombobox from "./input/combobox.md" with { type: "text" };
 import inputDatePicker from "./input/date-picker.md" with { type: "text" };
@@ -126,6 +127,7 @@ const catalogContextSources = {
   "input/file-dropzone": { file: "input/file-dropzone.md", content: inputFileDropzone },
   "input/file-drop-target": { file: "input/file-drop-target.md", content: inputFileDropTarget },
   "input/icon": { file: "input/icon.md", content: inputIcon },
+  "input/choice-slider": { file: "input/choice-slider.md", content: inputChoiceSlider },
   "input/slider": { file: "input/slider.md", content: inputSlider },
   "input/boolean": { file: "input/boolean.md", content: inputBoolean },
   "actions/buttons": { file: "actions/buttons.md", content: actionButtons },

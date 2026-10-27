@@ -61,7 +61,9 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
       setNotice(null);
     }),
   );
-  createEffect(on(preview, (index) => props.onActiveChange?.(index === null ? null : (props.options[index]?.value ?? null)), { defer: true }));
+  createEffect(
+    on(preview, (index) => props.onActiveChange?.(index === null ? null : (props.options[index]?.value ?? null)), { defer: true }),
+  );
 
   const valueText = () => {
     const current = option();
