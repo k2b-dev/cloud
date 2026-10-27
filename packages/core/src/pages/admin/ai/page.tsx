@@ -12,7 +12,7 @@ import {
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { type AiModel, type AiModelVariant, AiUsageQuerySchema, isAdminUser } from "@k2b/cloud/shared";
-import { AdminLayout, getLocalizedRuntimeContext, getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
+import { AdminLayout, getLocalizedRuntimeContext, getRuntimeContext, hasDedicatedRuntimeRoute, requestPath } from "@k2b/cloud/ssr";
 import { Placeholder } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { ssr } from "../../../config";
@@ -150,7 +150,7 @@ export default ssr<AuthContext>(async (c) => {
       title={t.loadFailTitle}
       description={t.loadFailSub}
       action={
-        <a class="k2b-button" data-variant="secondary" href={c.req.url}>
+        <a class="k2b-button" data-variant="secondary" href={requestPath(c)}>
           <i class="ti ti-refresh" aria-hidden="true" />
           {t.retry}
         </a>
@@ -221,7 +221,7 @@ export default ssr<AuthContext>(async (c) => {
         accountingUnit={quotaConfig?.unit ?? null}
         assignmentDetails={assignmentDetails}
         appNames={Object.fromEntries(runtime.apps.map((app) => [app.id, app.name]))}
-        retryHref={c.req.url}
+        retryHref={requestPath(c)}
         wide={isWideSection(section) ? wideContent() : undefined}
         budgets={budgets}
       />

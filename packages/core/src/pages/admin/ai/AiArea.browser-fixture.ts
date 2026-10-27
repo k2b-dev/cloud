@@ -60,7 +60,7 @@ const catalogFor = (state: AiAreaFixtureState): AiFixtureCatalog => {
   return catalog;
 };
 
-export async function aiAreaBrowserFixture() {
+export async function aiAreaBrowserFixture(options: { port?: number } = {}) {
   const root = mkdtempSync(join(tmpdir(), "core-ai-area-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
   Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
@@ -339,7 +339,7 @@ export async function aiAreaBrowserFixture() {
 
   const server = Bun.serve({
     hostname: "127.0.0.1",
-    port: Number(process.env.AI_AREA_FIXTURE_PORT ?? 0),
+    port: options.port ?? 0,
     async fetch(request) {
       const url = new URL(request.url);
       if (url.pathname === "/fixture.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
@@ -368,6 +368,6 @@ export async function aiAreaBrowserFixture() {
 }
 
 if (import.meta.main) {
-  const fixture = await aiAreaBrowserFixture();
+  const fixture = await aiAreaBrowserFixture({ port: Number(Bun.argv[2] ?? 0) });
   console.log(fixture.url);
 }

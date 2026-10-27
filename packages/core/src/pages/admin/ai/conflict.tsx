@@ -60,8 +60,8 @@ export function ConflictNotice<T extends Record<string, unknown>>(props: {
         <For each={overlapping()}>
           {(field) => (
             <fieldset class="grid gap-1">
-              <legend class="text-sm font-medium">{field.label}</legend>
-              <label class="flex items-center gap-2 text-sm">
+              <legend class="font-medium">{field.label}</legend>
+              <label class="flex items-center gap-2">
                 <input
                   type="radio"
                   class="accent-(--k2b-action-solid)"
@@ -71,7 +71,7 @@ export function ConflictNotice<T extends Record<string, unknown>>(props: {
                 />
                 {t().conflictMine({ value: show(field, props.mine[field.key]) })}
               </label>
-              <label class="flex items-center gap-2 text-sm">
+              <label class="flex items-center gap-2">
                 <input
                   type="radio"
                   class="accent-(--k2b-action-solid)"
