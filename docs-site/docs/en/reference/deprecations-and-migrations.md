@@ -10,7 +10,7 @@ updated: 2026-10-27
 
 # Deprecations and migrations
 
-## Notebooks page discussion moved to `discussion`
+## Notebooks page discussion moved to the discussion commands
 
 `cld notebooks comments` now means comments on a passage of the text, with
 replies and suggestions. The page discussion of a note moved to
