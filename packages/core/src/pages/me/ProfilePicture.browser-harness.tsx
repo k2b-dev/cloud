@@ -1,4 +1,4 @@
-import { robotAvatarFromSeed } from "@k2b/cloud/contracts/avatar";
+import { robotAvatarFromSeed, seededRandom } from "@k2b/cloud/contracts/avatar";
 import { renderAvatarSvg } from "@k2b/cloud/shared";
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
@@ -9,6 +9,8 @@ const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
 // The browser draws with the same code as the server; the test compares both outputs.
 Object.assign(window, { avatarArt: { renderAvatarSvg, robotAvatarFromSeed } });
+// This seed starts with red hair and an afro: choosing those again must not count as an edit.
+Math.random = seededRandom("profile-picture-2");
 render(
   () => (
     <LocaleProvider locale={document.documentElement.lang || "en"}>
