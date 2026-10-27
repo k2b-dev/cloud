@@ -20,7 +20,8 @@ const NOW = Date.parse("2026-10-26T08:50:00.000Z");
 const rule = { kind: "workflow" as const, id: "Wf001", name: "Lange Mails zusammenfassen" };
 const aiSummary = (overrides: Partial<ConversationContentSummary> = {}) =>
   summaryState({
-    summary: "- Neues Angebot: 500 Visitenkarten auf 350 g Naturpapier für 214 € netto.\n- Lieferung am 6.11. nur mit Freigabe bis Mi., 29.10.",
+    summary:
+      "- Neues Angebot: 500 Visitenkarten auf 350 g Naturpapier für 214 € netto.\n- Lieferung am 6.11. nur mit Freigabe bis Mi., 29.10.",
     source: "workflow",
     author: rule,
     ai: true,
@@ -129,7 +130,9 @@ describe("MailConversationSummaryCard", () => {
     expect(html).toContain("Diese eine jetzt zusammenfassen");
     expect(html).toContain("Zählt auf dein persönliches KI-Kontingent");
     expect(html).toContain("24 % genutzt");
-    const mailbox = render(aiSummary({ summary: null, status: "limited", limit: { scope: "mailbox", workflow: null, limit: 500, resetsAt: "x" } }));
+    const mailbox = render(
+      aiSummary({ summary: null, status: "limited", limit: { scope: "mailbox", workflow: null, limit: 500, resetsAt: "x" } }),
+    );
     expect(mailbox).toContain("für dieses Postfach");
   });
 
