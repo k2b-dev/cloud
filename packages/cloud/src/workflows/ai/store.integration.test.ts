@@ -633,9 +633,11 @@ describe("application AI task retention", () => {
       for (const task of [released, recentRelease, recentCompletion]) {
         expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: task.effectKey })).toBe(true);
       }
-      expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: active.task.effectKey })).toBe(false);
+      expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: active.task.effectKey })).toBe(true);
+      expect(await getWorkflowAiTask(active.task.id)).toMatchObject({ status: "queued", cancelRequestedAt: null });
       await claimWorkflowAiTask(active.task.id);
-      expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: active.task.effectKey })).toBe(false);
+      expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: active.task.effectKey })).toBe(true);
+      expect(await getWorkflowAiTask(active.task.id)).toMatchObject({ status: "running", cancelRequestedAt: null });
       expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: "absent" })).toBe(false);
       expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: workflow.task.effectKey })).toBe(false);
       await sql`
@@ -671,6 +673,13 @@ describe("application AI task retention", () => {
       for (const task of [dormant, recentRelease, recentCompletion, active.task, workflow.task]) {
         expect(await getWorkflowAiTask(task.id)).not.toBeNull();
       }
+      await completeWorkflowAiTask(active.task.id, "Completed after release", null);
+      expect(await getWorkflowAiTask(active.task.id)).toMatchObject({ status: "succeeded", output: "Completed after release" });
+      await expireWorkflowAiTasks(60_000);
+      expect(await getWorkflowAiTask(active.task.id)).not.toBeNull();
+      await sql`UPDATE ai.workflow_task SET completed_at = now() - interval '25 hours' WHERE id = ${active.task.id}::uuid`;
+      await expireWorkflowAiTasks(60_000);
+      expect(await getWorkflowAiTask(active.task.id)).toBeNull();
       const replay = await createWorkflowAiTask({ ...base, effectKey: dormant.effectKey });
       expect(replay).toMatchObject({ created: false, task: { id: dormant.id, output: "a" } });
     } finally {

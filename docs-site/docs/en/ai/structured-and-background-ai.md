@@ -593,12 +593,11 @@ across a crash before result persistence.
 After durably settling, discarding or failing the application request, call
 `releaseApplicationAiTask({ appId, scopeId, effectKey, usageSubject? }, db)`
 from `@k2b/cloud/ai` in the **same transaction**. Supply the identity fields used
-for generation. Release returns `true` for a terminal task and `false` for an
-absent or active task; repeated release preserves the first release time.
-An active task remains unreleased: retain its request identity and retry release
-after terminal completion, or delete it with its owner. Keep interrupted observers
-recoverable, including lease failures. Do not release a recoverable request when
-its worker shuts down.
+for generation. Release returns `true` when an application task exists in any
+status and `false` only when it is absent. Repeated release preserves the first
+release time. Release does not cancel active inference: bounded runtime recovery,
+deadlines and central accounting continue normally. Keep requests needed by a
+replacement observer unreleased, including recoverable lease failures or shutdown.
 Unreleased results remain available for dormant recovery. Released terminal
 results are pruned in bounded batches after both release and completion are at
 least 24 hours old; durable domain state must prevent replaying a settled key

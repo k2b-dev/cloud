@@ -17,8 +17,8 @@ import {
 } from "./conversation-summary";
 import { generateConversationSummaryAi, getConversationSummaryAiAvailability } from "./conversation-summary-ai";
 import {
+  deleteConversationSummaryTask,
   discardConversationSummaries,
-  discardConversationSummaryTask,
   reconcileConversationSummaryTasks,
   releaseConversationSummaryTask,
 } from "./conversation-summary-lifecycle";
@@ -362,7 +362,7 @@ export const executeConversationSummary = async (
       (row.request.expectedSummaryRevision !== undefined && Number(summary.summary_revision) !== row.request.expectedSummaryRevision)
     ) {
       await release(db, row);
-      await discardConversationSummaryTask(db, row);
+      await releaseConversationSummaryTask(db, row);
       await db`UPDATE mail.conversation_summary_requests SET status = 'idle', claim_id = NULL, claimed_at = NULL
         WHERE conversation_id = ${scope.conversationId}::uuid`;
       await enqueueMailInvalidation(db, scope);
@@ -427,6 +427,7 @@ export const executeConversationSummary = async (
       const active = await requestRow(db, scope);
       if (!current) {
         await discardConversationSummaries(db, scope);
+        await deleteConversationSummaryTask(db, { ...row, basis });
         return "idle";
       }
       if (active?.claim_id !== claimId) {
@@ -523,10 +524,14 @@ export const executeConversationSummary = async (
         const current = await lockScope(db, scope);
         if (!current) {
           await discardConversationSummaries(db, scope);
+          await deleteConversationSummaryTask(db, { ...row, basis });
           return;
         }
         const active = await requestRow(db, scope);
-        if (active?.claim_id !== claimId) return;
+        if (active?.claim_id !== claimId) {
+          if (active?.request_id !== row.request_id || active.status !== "writing") await releaseConversationSummaryTask(db, row);
+          return;
+        }
         await db`UPDATE mail.conversation_summary_requests SET status = 'writing', claim_id = NULL,
           claimed_at = NULL, due_at = now() + (${delayMs}::int * interval '1 millisecond'), updated_at = now()
           WHERE conversation_id = ${scope.conversationId}::uuid`;
@@ -540,11 +545,11 @@ export const executeConversationSummary = async (
       const active = await requestRow(db, scope);
       if (!current) {
         await discardConversationSummaries(db, scope);
+        await deleteConversationSummaryTask(db, { ...row, basis });
         return;
       }
       if (!active || active.claim_id !== claimId) {
-        if (active?.request_id !== row.request_id || active.status !== "writing")
-          await discardConversationSummaryTask(db, { ...row, basis });
+        if (active?.request_id !== row.request_id || active.status !== "writing") await releaseConversationSummaryTask(db, row);
         return;
       }
       if (inferenceCompleted && row.request.source)
@@ -558,7 +563,7 @@ export const executeConversationSummary = async (
           }),
         );
       else await release(db, active);
-      await discardConversationSummaryTask(db, { ...row, basis });
+      await releaseConversationSummaryTask(db, row);
       const failure: NonNullable<ConversationContentSummary["failure"]> = {
         code: summaryFailureCode(error),
         attempts: active.attempts,

@@ -208,7 +208,6 @@ export const releaseApplicationAiTaskByEffectKey = async (
   const rows = await db<{ id: string }[]>`
     UPDATE ai.workflow_task SET released_at = COALESCE(released_at, now())
     WHERE app_id = ${input.appId} AND scope_id = ${input.scopeId} AND effect_key = ${input.effectKey} AND run_id IS NULL
-      AND status IN ('succeeded', 'failed', 'canceled')
     RETURNING id::text
   `;
   return rows.length > 0;

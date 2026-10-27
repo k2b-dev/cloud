@@ -63,13 +63,14 @@ await sql.begin(async (tx) => {
 });
 ```
 
-Release returns `true` when a terminal task exists and `false` when the task
-is absent or still active. Repeated release preserves the first release time.
-Release does not cancel inference or reset admission accounting. Do not release
-from an observer's abort handler while another worker still needs the result.
-A `false` result for an active task leaves it unreleased: preserve the request's
-identity and retry release after it becomes terminal, or delete it when its owner
-is removed. An interrupted observer must not discard the only recovery key.
+Release returns `true` when the application task exists in any status and
+`false` only when it is absent. Repeated release preserves the first release
+time. An abandoned queued or running task can be released without canceling
+its inference: the normal bounded runtime still settles it and records usage.
+Release does not reset admission accounting. Keep a request unreleased while
+another observer still needs its recovery result. If release finds no task, an
+obsolete worker that creates one later must release it when it notices that
+its request is no longer current.
 
 The existing AI recovery sweep deletes at most 100 terminal application tasks
 per pass once **both release and completion are more than 24 hours old**.
@@ -116,8 +117,9 @@ in its minute recovery sweep.
 
 Mail removes a mailbox's full scope in its deletion transaction. Conversation
 sources include snapshot identities, so deleting one conversation releases its
-request. Active work with a known captured source is deleted by exact identity;
-other orphan cleanup uses the bounded exact-source reconciliation.
+request. Known active requests are released without cancellation. A late worker
+deletes its exact captured source if the owner disappeared; other orphan cleanup uses
+the bounded exact-source reconciliation.
 Released results retain the normal 24-hour grace period; unreleased orphaned
 sources are removed on the next sweep that reaches them.
 

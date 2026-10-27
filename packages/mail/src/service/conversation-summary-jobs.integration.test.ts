@@ -595,25 +595,24 @@ suite("durable conversation summaries", () => {
     }
   });
 
-  test("exact reconciliation removes a late task created after conversation deletion", async () => {
+  test("late owner-deletion cleanup uses the exact captured source", async () => {
     const scope = await conversation();
     unwrap(await scheduleConversationSummary({ ...scope, context, source }));
     await ready(scope);
     let lateTaskId = "";
-    await run(scope, async () => {
+    await run(scope, async ({ throughMessageSeq, messageCount }) => {
       await sql.begin(async (db) => {
         await db`SELECT id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR NO KEY UPDATE`;
         await discardConversationSummaries(db, scope);
         await db`DELETE FROM mail.conversations WHERE id = ${scope.conversationId}::uuid`;
       });
-      lateTaskId = await seedTask(scope, "late-snapshot");
+      lateTaskId = await seedTask(scope, `${throughMessageSeq}:${messageCount}`);
       return output;
     });
-    await reconcileConversationSummaryTasks();
     expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${lateTaskId}::uuid`).toHaveLength(0);
   });
 
-  test("exact reconciliation removes the task when shutdown follows owner deletion", async () => {
+  test("shutdown owner-deletion cleanup uses the exact captured source", async () => {
     const scope = await conversation();
     unwrap(await scheduleConversationSummary({ ...scope, context, source }));
     await ready(scope);
@@ -621,18 +620,17 @@ suite("durable conversation summaries", () => {
     let lateTaskId = "";
     await executeConversationSummary(scope, {
       signal: abort.signal,
-      generate: async () => {
+      generate: async ({ throughMessageSeq, messageCount }) => {
         await sql.begin(async (db) => {
           await db`SELECT id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR NO KEY UPDATE`;
           await discardConversationSummaries(db, scope);
           await db`DELETE FROM mail.conversations WHERE id = ${scope.conversationId}::uuid`;
         });
-        lateTaskId = await seedTask(scope, "shutdown-race");
+        lateTaskId = await seedTask(scope, `${throughMessageSeq}:${messageCount}`);
         abort.abort(new Error("Shutdown"));
         throw abort.signal.reason;
       },
     });
-    await reconcileConversationSummaryTasks();
     expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${lateTaskId}::uuid`).toHaveLength(0);
   });
 
@@ -707,7 +705,7 @@ suite("durable conversation summaries", () => {
     expect(unwrap(await getAiDailySourceStats({ mailboxId, sourceId: rule.id }))).toMatchObject({ reservedAiCalls: 0, aiCallsToday: 1 });
   });
 
-  test("a person edit during interrupted inference discards the exact active source", async () => {
+  test("a person edit during interrupted inference releases active work without cancellation", async () => {
     const scope = await conversation();
     const rule = { ...source, id: "discard-recovery" };
     unwrap(await scheduleConversationSummary({ ...scope, context, source: rule }));
@@ -724,6 +722,8 @@ suite("durable conversation summaries", () => {
       FROM mail.conversation_summary_requests WHERE conversation_id = ${scope.conversationId}::uuid`;
     if (!request) throw new Error("Missing frozen basis");
     const activeTask = await seedTask(scope, `${request.basis.throughMessageSeq}:${request.basis.messageCount}`);
+    const release = spyOn(applicationAi, "releaseApplicationAiTask").mockResolvedValue(true);
+    const cleanup = spyOn(applicationAi, "deleteApplicationAiTasks");
     const neighbor = await seedTask(scope, "different-snapshot");
     await sql`UPDATE ai.workflow_task SET status = 'running', completed_at = NULL WHERE id = ${activeTask}::uuid`;
     try {
@@ -731,13 +731,59 @@ suite("durable conversation summaries", () => {
       await ready(scope);
       expect(await run(scope)).toEqual({ status: "idle" });
       expect(await state(scope)).toMatchObject({ summary: "Person's version", source: "person", status: "idle" });
-      expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${activeTask}::uuid`).toHaveLength(0);
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(cleanup).not.toHaveBeenCalled();
+      const [task] = await sql`SELECT status, cancel_requested_at FROM ai.workflow_task WHERE id = ${activeTask}::uuid`;
+      expect(task).toMatchObject({ status: "running", cancel_requested_at: null });
       expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${neighbor}::uuid`).toHaveLength(1);
       expect(unwrap(await getAiDailySourceStats({ mailboxId, sourceId: rule.id }))).toMatchObject({ reservedAiCalls: 0 });
     } finally {
+      release.mockRestore();
+      cleanup.mockRestore();
       await sql`DELETE FROM ai.workflow_task WHERE id IN (${activeTask}::uuid,${neighbor}::uuid)`;
     }
   });
+
+  for (const shutdown of [false, true]) {
+    test(`a late obsolete worker releases after an absent task${shutdown ? " during shutdown" : ""}`, async () => {
+      const scope = await conversation();
+      unwrap(await scheduleConversationSummary({ ...scope, context, source }));
+      await ready(scope);
+      const release = spyOn(applicationAi, "releaseApplicationAiTask").mockResolvedValue(false);
+      const abort = new AbortController();
+      let oldKey = "";
+      try {
+        await executeConversationSummary(scope, {
+          signal: abort.signal,
+          generate: async ({ effectKey }) => {
+            oldKey = effectKey;
+            await sql.begin(async (db) => {
+              await db`SELECT id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR NO KEY UPDATE`;
+              await discardConversationSummaries(db, scope);
+            });
+            expect(release).toHaveBeenCalledTimes(1); // Discard ran before the platform task existed.
+            unwrap(await scheduleConversationSummary({ ...scope, context, source }));
+            release.mockResolvedValue(true); // The old observer's platform task is now present.
+            if (shutdown) {
+              abort.abort(new Error("Shutdown after late task creation"));
+              throw abort.signal.reason;
+            }
+            return output;
+          },
+        });
+        expect(release).toHaveBeenCalledTimes(2);
+        expect(release.mock.calls.map(([key]) => key.effectKey)).toEqual([oldKey, oldKey]);
+        expect(release.mock.calls.every(([, db]) => db !== undefined && db !== sql)).toBe(true);
+        const [request] = await sql`SELECT request_id, status FROM mail.conversation_summary_requests
+          WHERE conversation_id = ${scope.conversationId}::uuid`;
+        expect(request).toMatchObject({ status: "pending" });
+        expect(request?.request_id).not.toBe(oldKey);
+        expect(await state(scope)).toMatchObject({ summary: null, status: "pending" });
+      } finally {
+        release.mockRestore();
+      }
+    });
+  }
 
   test("a newly eligible older link is stale and schedules a follow-up even below the captured sequence", async () => {
     const scope = await conversation(2);

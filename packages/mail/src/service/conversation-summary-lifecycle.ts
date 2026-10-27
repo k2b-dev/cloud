@@ -28,9 +28,8 @@ export const releaseConversationSummaryTask = async (db: typeof sql, row: Summar
   );
 };
 
-/** A discarded request must not leave an active inference without a future release owner. */
-export const discardConversationSummaryTask = async (db: typeof sql, row: SummaryTask): Promise<void> => {
-  if (await releaseConversationSummaryTask(db, row)) return;
+/** Remove the exact captured snapshot when its owner has been deleted. */
+export const deleteConversationSummaryTask = async (db: typeof sql, row: SummaryTask): Promise<void> => {
   // No basis means this request has not begun inference.
   if (!row.basis) return;
   const person = row.request.source ? null : userBackedActor(row.request.context);
@@ -65,7 +64,7 @@ export const discardConversationSummaries = async (
       unwrap(
         await releaseAiDailyBudget({ db, mailboxId: row.mailbox_id, sourceId: row.request.source.id, reservationKey: row.request_id }),
       );
-    if (scope.conversationId) await discardConversationSummaryTask(db, row);
+    if (scope.conversationId) await releaseConversationSummaryTask(db, row);
   }
   await db`DELETE FROM mail.conversation_summary_requests WHERE mailbox_id = ${scope.mailboxId}::uuid
     AND (${scope.conversationId ?? null}::uuid IS NULL OR conversation_id = ${scope.conversationId ?? null}::uuid)`;
