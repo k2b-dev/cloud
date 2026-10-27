@@ -29,6 +29,18 @@ Opening the form creates no chat and sends no message. Choose **Start chat** to 
 if several chats match, choose the one you want. **Cancel** leaves you in Chat, and browser Back returns to Files.
 Reloading after the form opens does not reopen it.
 
+## Search the list {icon="search"}
+
+:::steps
+1. Type in **Search** at the top of the list.
+2. Choose a hit to open it.
+:::
+
+The search finds your chats and channels, the chats of Spaces and notebooks you can open, and threads by name.
+Each thread hit says where it is, for example **Thread in IT** or **Task in Spring fair**. You see at most eight hits.
+If Spaces or Notebooks do not answer, you still see the other hits, and **Try again** asks again.
+Press `Escape` or empty the field to see the list again.
+
 ## Discover channels {icon="compass"}
 
 :::steps

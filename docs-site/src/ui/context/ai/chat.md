@@ -580,6 +580,7 @@ type ChatComposerProps = {
   commandSections?: readonly ChatCommandSection[]; commandScopes?: readonly ChatCommandScope[];
   searchCommands?: (query: string, signal: AbortSignal, search: ChatCommandSearch) => Promise<readonly ChatCommand[]>;
   mentions?: readonly ChatMention[]; onMentionsChange?: (mentions: readonly ChatMention[]) => void;
+  people?: { search: (query: string, signal: AbortSignal) => Promise<readonly ChatPersonSuggestion[]> };
   accessory?: JSX.Element; draftKey?: unknown;
   contextActions?: readonly ChatAction[]; contextPopupAction?: ChatAction; footerTools?: JSX.Element; modelDetails?: JSX.Element;
   submitTools?: JSX.Element; footerContent?: JSX.Element; placeholder?: string; label?: string;
@@ -775,6 +776,15 @@ suggestion list instead of ending in an ellipsis. A reference choice supplies `m
 control its ranges with `mentions` and `onMentionsChange`. The submitted text is
 untrimmed so UTF-16 range offsets remain valid. A modified reference becomes
 plain text; undo/redo restores both text and reference identity.
+
+Pass `people` to suggest people after `@`. `people.search(query, signal)` returns
+`ChatPersonSuggestion`s (`id`, `name`, optional `agent`); the composer shows at most
+eight, picks with the arrow keys and Enter or Tab, and inserts "@Name" plus a space
+as a mention whose attachment `id` is the person's `id`. The query stops at a space,
+starts after the beginning of the text, a space or "(", and never inside code or an
+existing mention, so a mail address does not open the list. Each change of the query
+aborts the previous search; a failed search shows no list. `people` needs `mentions`
+and `onMentionsChange`, and the application validates mentions again on the server.
 
 Set `addOpensCommands` to let **+** open the same list as `/`, with a search
 field on top. This works in both composer variants when `commands` or

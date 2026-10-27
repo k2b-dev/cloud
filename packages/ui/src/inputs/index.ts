@@ -18,6 +18,10 @@ export type {
   SliderProps,
 } from "./ChoiceInputs";
 export { ColorInput, PinInput, Slider } from "./ChoiceInputs";
+export type { ChoiceTileOption, ChoiceTilesProps } from "./ChoiceTiles";
+export { ChoiceTiles } from "./ChoiceTiles";
+export type { ColorChoiceOption, ColorChoicesProps } from "./ColorChoices";
+export { ColorChoices } from "./ColorChoices";
 export type { ComboboxOption, ComboboxProps } from "./Combobox";
 export { Combobox } from "./Combobox";
 export type { ChoiceOption, ChoiceOptionsLoader } from "./choice";

@@ -67,6 +67,7 @@ import {
 import { chooseMailAssignee } from "./_components/mail-assign-picker";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
+import { MailCloudIdProvider } from "./_components/mail-cloud-id";
 import { mailDraftSeedHref } from "./_components/mail-compose-route";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
@@ -168,6 +169,8 @@ type MailWorkspaceProps = {
   data: MailboxPageData;
   /** Route as `pathname + search`; resolved against the browser origin, never an upstream URL. */
   requestPath: string;
+  /** Canonical Cloud origin from `app.url`, for copied resource references. */
+  cloudUrl: string;
   currentUserId: string;
   currentUserEmail: string | null;
   contactDirectory: MailContactDirectory;
@@ -3128,43 +3131,45 @@ export default function MailWorkspace(props: MailWorkspaceProps) {
 
   return (
     <MailContactDirectoryProvider value={props.contactDirectory}>
-      <AppWorkspace mobileSurface="flush" class="mail-workspace">
-        {(() => {
-          // Resolve the session before the sidebar, so its first server and browser render already has the open mailbox.
-          const workspace = (
-            <Show when={session()} keyed>
-              {(s) => (
-                <MailboxWorkspace
-                  {...props}
-                  {...s}
-                  switching={switching}
-                  onReady={setControls}
-                  onNavigationStart={cancelSwitch}
-                  onOpenMailboxHistory={(url, completeScrollRestore) => {
-                    void switchMailbox(url, undefined, completeScrollRestore);
-                  }}
+      <MailCloudIdProvider cloudUrl={props.cloudUrl}>
+        <AppWorkspace mobileSurface="flush" class="mail-workspace">
+          {(() => {
+            // Resolve the session before the sidebar, so its first server and browser render already has the open mailbox.
+            const workspace = (
+              <Show when={session()} keyed>
+                {(s) => (
+                  <MailboxWorkspace
+                    {...props}
+                    {...s}
+                    switching={switching}
+                    onReady={setControls}
+                    onNavigationStart={cancelSwitch}
+                    onOpenMailboxHistory={(url, completeScrollRestore) => {
+                      void switchMailbox(url, undefined, completeScrollRestore);
+                    }}
+                  />
+                )}
+              </Show>
+            );
+            return (
+              <>
+                <MailSidebar
+                  canCreate={Boolean(props.currentUserId)}
+                  currentUserEmail={props.currentUserEmail}
+                  contactDirectory={props.contactDirectory}
+                  mailboxes={props.sidebar.mailboxes}
+                  preferences={mailboxPreferences}
+                  counts={[]}
+                  open={controls()?.open() ?? null}
+                  onOpenPlaceRowHiddenChange={(hidden) => controls()?.onOpenPlaceRowHiddenChange(hidden)}
+                  onOpenMailbox={(nav) => switchMailbox(new URL(nav.href, window.location.origin), nav)}
                 />
-              )}
-            </Show>
-          );
-          return (
-            <>
-              <MailSidebar
-                canCreate={Boolean(props.currentUserId)}
-                currentUserEmail={props.currentUserEmail}
-                contactDirectory={props.contactDirectory}
-                mailboxes={props.sidebar.mailboxes}
-                preferences={mailboxPreferences}
-                counts={[]}
-                open={controls()?.open() ?? null}
-                onOpenPlaceRowHiddenChange={(hidden) => controls()?.onOpenPlaceRowHiddenChange(hidden)}
-                onOpenMailbox={(nav) => switchMailbox(new URL(nav.href, window.location.origin), nav)}
-              />
-              {workspace}
-            </>
-          );
-        })()}
-      </AppWorkspace>
+                {workspace}
+              </>
+            );
+          })()}
+        </AppWorkspace>
+      </MailCloudIdProvider>
     </MailContactDirectoryProvider>
   );
 }

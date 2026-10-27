@@ -2997,8 +2997,8 @@ html {
 }
 
 /* Every level keeps its own width while the flexible one keeps 320 px, and
-   starts below the same top inset as a raised level, so the titles of side by
-   side levels share one line. */
+   starts below the same top inset, so the titles of side by side levels share
+   one line. */
 .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level] {
   --k2b-workspace-pane-fit: clamp(var(--k2b-workspace-panel-min, 0px), 100% - 320px, var(--k2b-workspace-panel-size, 100%));
   display: flex;
@@ -3158,19 +3158,6 @@ html {
       > [data-workspace-level-shown~="2"][data-workspace-resizable="false"]:not([data-workspace-level-last~="2"]) {
       flex-shrink: 0;
     }
-
-    /* The last level is raised when another level shows before it. Its
-       margin box keeps the 320 px the flexible level keeps. */
-    .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown~="2"] ~ [data-workspace-level-last~="2"] {
-      min-width: min(320px - 2 * var(--k2b-workspace-detail-inset), 100%);
-      margin: var(--k2b-workspace-detail-inset);
-      margin-bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
-      padding-top: 0;
-      border-bottom: 0;
-      border-radius: var(--k2b-radius-surface);
-      background: var(--k2b-surface-elevated);
-      box-shadow: var(--k2b-shadow-frame);
-    }
   }
 }
 
@@ -3199,24 +3186,10 @@ html {
     > [data-workspace-level-shown~="3"][data-workspace-resizable="false"]:not([data-workspace-level-last~="3"]) {
     flex-shrink: 0;
   }
-
-  /* The last level is raised when another level shows before it. Its
-     margin box keeps the 320 px the flexible level keeps. */
-  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown~="3"] ~ [data-workspace-level-last~="3"] {
-    min-width: min(320px - 2 * var(--k2b-workspace-detail-inset), 100%);
-    margin: var(--k2b-workspace-detail-inset);
-    margin-bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
-    padding-top: 0;
-    border-bottom: 0;
-    border-radius: var(--k2b-radius-surface);
-    background: var(--k2b-surface-elevated);
-    box-shadow: var(--k2b-shadow-frame);
-  }
 }
 
 /* On a touch screen a separator between levels is a 44 px target with a
-   width of its own, so a tap on a row's edge never lands on it. Before a
-   raised level it takes the place of that level's leading inset. */
+   width of its own, so a tap on a row's edge never lands on it. */
 @media (any-pointer: coarse) {
   .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > .k2b-app-workspace__resize[data-app-workspace-resize="pane"],
   .k2b-ui
@@ -3232,30 +3205,6 @@ html {
     .k2b-app-workspace__main[data-workspace-levels]
     > .k2b-app-workspace__main-pane:has(+ .k2b-app-workspace__resize[data-app-workspace-resize="pane"]) {
     border-right-width: 0;
-  }
-}
-
-@media (any-pointer: coarse) and (min-width: 48rem) {
-  @container k2b-app-area (max-width: 79.999rem) {
-    .k2b-ui
-      .k2b-app-workspace__main[data-workspace-levels]
-      > [data-workspace-level-shown~="2"]
-      ~ .k2b-app-workspace__resize
-      + [data-workspace-level-last~="2"] {
-      margin-inline-start: 0;
-    }
-  }
-}
-
-@media (any-pointer: coarse) {
-  @container k2b-app-area (min-width: 80rem) {
-    .k2b-ui
-      .k2b-app-workspace__main[data-workspace-levels]
-      > [data-workspace-level-shown~="3"]
-      ~ .k2b-app-workspace__resize
-      + [data-workspace-level-last~="3"] {
-      margin-inline-start: 0;
-    }
   }
 }
 

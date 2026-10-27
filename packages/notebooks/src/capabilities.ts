@@ -1108,8 +1108,15 @@ export const notebooksCapabilities = defineCapabilities({
       description: "A permission-scoped collection of Markdown notes.",
       icon: "ti ti-notebook",
       reader: "notebook.read",
+      pages: ["/app/notebooks/:id"],
     },
-    note: { title: "Note", description: "A Markdown note in an accessible notebook.", icon: "ti ti-file-text", reader: "note.read" },
+    note: {
+      title: "Note",
+      description: "A Markdown note in an accessible notebook.",
+      icon: "ti ti-file-text",
+      reader: "note.read",
+      pages: ["/app/notebooks/:notebook/notes/:id"],
+    },
     comment: {
       title: "Page discussion post",
       description: "A post in the page discussion of one accessible note, not tied to a passage.",
