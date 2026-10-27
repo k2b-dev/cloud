@@ -5,6 +5,7 @@ import { Button, Dropdown, Placeholder, prompts, toast } from "@k2b/ui";
 import { Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { AccessEntry } from "@/contracts";
+import { spaceAccessLevels } from "../[id]/_components/edit/AccessSection";
 import { useSpaceMessages } from "../[id]/messages";
 
 type AdminSpaceActionsProps = {
@@ -60,6 +61,7 @@ const PermissionDialogContent = (props: AdminSpaceActionsProps) => {
         <PermissionEditor
           initialEntries={entries()}
           canEdit
+          allowedLevels={spaceAccessLevels(m)}
           grantAccess={async (principal, permission) => {
             const response = await apiClient.admin[":id"].access.$post({
               param: { id: props.spaceId },
