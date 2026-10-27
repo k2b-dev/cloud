@@ -101,7 +101,9 @@
     "./workflows/testing": "./src/workflows/testing/index.ts",
     "./api": "./src/api/index.ts",
     "./clients/core": "./src/clients/core.ts",
-    "./styles/global.css": "./src/styles/global.css"
+    "./styles/global.css": "./src/styles/global.css",
+    "./app-pwa": "./src/app-pwa/index.ts",
+    "./app-pwa/browser": "./src/app-pwa/protocol.ts"
   },
   "scripts": {
     "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
