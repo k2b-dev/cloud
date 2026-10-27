@@ -1,5 +1,6 @@
 import { defineCapabilities } from "@k2b/cloud";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
+import { cloudOrigin, resolveCloudUrl } from "@k2b/cloud/browser/resource-links";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { invokeCapabilityWithDataSchema as invokeCapabilityInBrowser } from "@k2b/cloud/capabilities";
 import { type CapabilityCaller, invokeCapabilityWithDataSchema as invokeCapabilityOnServer } from "@k2b/cloud/capabilities/server";
@@ -9,6 +10,7 @@ import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 
 export const inventoryResourceClipboard = cloudResourceClipboard;
+export const recognizePastedInventoryLink = (text: string) => (cloudOrigin() ? resolveCloudUrl(text) : Promise.resolve(null));
 
 type Item = {
   id: string;
