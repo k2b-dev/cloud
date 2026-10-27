@@ -6,13 +6,16 @@ if (process.env.MAIL_SHELL_BROWSER_CHILD === "1") {
   const { defineMailShellTests } = await import("./mail-shell.browser-suite");
   defineMailShellTests(process.env.MAIL_SHELL_SCREENSHOTS);
 } else {
-  // Three children, so each stays well inside its time budget in WebKit: the geometry matrix, wide windows, and the rest.
+  // Four children, so each stays well inside its time budget in WebKit: the geometry matrix, wide windows, the
+  // automation surfaces in the reader, and the rest.
   const GEOMETRY = "server = hydrated = settled";
   const WIDE = "Mail wide windows";
+  const AUTOMATION = "automation: ";
   for (const [name, pattern] of [
     ["geometry", `^(?!.*${WIDE}).*${GEOMETRY}`],
     ["wide windows", WIDE],
-    ["behavior", `^(?!.*(${GEOMETRY}|${WIDE}))`],
+    ["automation", `^(?!.*(${GEOMETRY}|${WIDE})).*${AUTOMATION}`],
+    ["behavior", `^(?!.*(${GEOMETRY}|${WIDE}|${AUTOMATION}))`],
   ] as const) {
     test(`Mail SSR shell ${name} in ${browserName}`, async () => {
       const child = Bun.spawn([process.execPath, "test", import.meta.path, "-t", pattern], {
