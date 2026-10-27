@@ -725,6 +725,10 @@ describe("capability v1 compilation", () => {
       'Capability declaration contains unsupported field "events"',
     );
     rejects(
+      defineCapabilities({ ...base, calendarSource: { calendars: "get", events: "get", subscribe: "rename" } }),
+      'calendarSource contains unsupported field "subscribe"',
+    );
+    rejects(
       defineCapabilities({ ...base, fileProvider: { list: "get", read: "get", trash: "rename" } }),
       'fileProvider contains unsupported field "trash"',
     );

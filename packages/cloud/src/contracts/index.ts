@@ -3,6 +3,8 @@ export * from "./announcements";
 export * from "./app";
 export * from "./app-approval";
 export * from "./avatar";
+export * from "./calendar-source";
+export * from "./calendar-view";
 export * from "./capabilities";
 export * from "./capability-compatibility";
 export * from "./commands";

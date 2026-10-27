@@ -45,7 +45,10 @@ test("generated capability routes hand resolved invocation authority to execute,
     scheduler: unused,
   };
   const contexts: { handler: string; context: CapabilityExecutionContext }[] = [];
-  const capture = (handler: string, context: CapabilityExecutionContext) => contexts.push({ handler, context });
+  const capture = (handler: string, context: CapabilityExecutionContext) => {
+    expect(typeof context.query).toBe(handler.startsWith("stream.") ? "undefined" : "function");
+    contexts.push({ handler, context });
+  };
   const capabilities = defineCapabilities({
     protocolVersion: 2,
     queries: {

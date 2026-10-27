@@ -160,14 +160,14 @@
     },
     "packages/cloud": {
       "name": "@k2b/cloud",
-      "version": "0.41.0",
+      "version": "0.42.0",
       "dependencies": {
         "@firecrawl/anydoc": "0.2.4",
         "@k2b/nessi": "0.18.0",
-        "@k2b/ssr": "0.19.0",
+        "@k2b/ssr": "0.20.0",
         "@k2b/stdlib": "0.30.0",
-        "@k2b/sync": "7.0.0",
-        "@k2b/ui": "0.31.0",
+        "@k2b/sync": "7.0.1",
+        "@k2b/ui": "0.32.0",
         "@modelcontextprotocol/sdk": "1.32.1",
         "@napi-rs/canvas": "1.0.9",
         "@nats-io/jetstream": "3.4.0",
@@ -221,7 +221,7 @@
     },
     "packages/cloud-cli": {
       "name": "@k2b/cloud-cli",
-      "version": "0.48.0",
+      "version": "0.49.0",
       "bin": {
         "cld": "src/index.ts",
       },
@@ -639,7 +639,7 @@
     },
     "packages/ssr": {
       "name": "@k2b/ssr",
-      "version": "0.19.0",
+      "version": "0.20.0",
       "dependencies": {
         "@babel/core": "7.29.7",
         "@babel/preset-typescript": "7.29.7",
@@ -689,7 +689,7 @@
     },
     "packages/ui": {
       "name": "@k2b/ui",
-      "version": "0.31.0",
+      "version": "0.32.0",
       "dependencies": {
         "@fontsource/ibm-plex-mono": "5.3.0",
         "@fontsource/ibm-plex-sans": "5.3.0",
@@ -702,7 +702,7 @@
       "devDependencies": {
         "@babel/core": "8.0.6",
         "@babel/preset-typescript": "8.0.1",
-        "@k2b/ssr": "0.19.0",
+        "@k2b/ssr": "0.20.0",
         "@maplibre/maplibre-gl-style-spec": "26.4.4",
         "@types/babel__core": "7.20.5",
         "@types/bun": "1.4.2",
@@ -797,7 +797,7 @@
     "bun-plugin-tailwind@0.1.2": "patches/bun-plugin-tailwind@0.1.2.patch",
   },
   "overrides": {
-    "@k2b/sync": "7.0.0",
+    "@k2b/sync": "7.0.1",
     "@xmldom/xmldom": "0.9.12",
     "fast-uri": "3.1.8",
     "lodash-es": "4.18.1",
@@ -816,7 +816,7 @@
     "@firecrawl/anydoc": "0.2.4",
     "@k2b/nessi": "0.18.0",
     "@k2b/stdlib": "0.30.0",
-    "@k2b/sync": "7.0.0",
+    "@k2b/sync": "7.0.1",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",
     "@types/bun": "1.4.2",
@@ -1166,7 +1166,7 @@
 
     "@k2b/stdlib": ["@k2b/stdlib@0.30.0", "", { "dependencies": { "@types/big.js": "^7.0.0", "big.js": "^7.0.1", "dayjs": "^1.11.0" }, "peerDependencies": { "ibantools": "^4.5.4", "lean-qr": "", "libxml2-wasm": "0.6.0", "pdf-lib": "1.17.1", "saxes": "^6.0.0", "solid-js": "", "zod": "^4.4.3" }, "optionalPeers": ["ibantools", "lean-qr", "libxml2-wasm", "pdf-lib", "saxes", "solid-js", "zod"] }, "sha512-iiGs6CWGlletLjcVkyr602niKAFq99dVu/L3cZ+kzQG0Qs/gSfbU8oqxYpZ6dtzy5/RF2NkjznAsXS0uLWi+Wg=="],
 
-    "@k2b/sync": ["@k2b/sync@7.0.0", "", { "dependencies": { "@nats-io/jetstream": "3.4.0", "@nats-io/kv": "3.4.0", "@nats-io/nats-core": "3.4.0", "@nats-io/obj": "3.4.0" } }, "sha512-1RmV32TY/4MUip/UdqPrVB9GpBDqg9AwFI4IyQiUSmI3Z1MTERO+uwYzcEdWXHwz904caY+FAqfk/+ncEKSsRA=="],
+    "@k2b/sync": ["@k2b/sync@7.0.1", "", { "dependencies": { "@nats-io/jetstream": "3.4.0", "@nats-io/kv": "3.4.0", "@nats-io/nats-core": "3.4.0", "@nats-io/obj": "3.4.0" } }, "sha512-TPrOrF04B6Esm6dAEPfzcmzBtr14uGcXfYFORAAgDei+SY92MZuL1asreDTT29BeOrHmbiHGn+FtfZGRfJS7qg=="],
 
     "@k2b/ui": ["@k2b/ui@workspace:packages/ui"],
 

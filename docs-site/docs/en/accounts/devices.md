@@ -42,8 +42,8 @@ On Android, install Cloud Login from Chrome; see
 2. Scan the QR with the authenticator or copy the pairing link into it.
    Each method transfers the Cloud address and
    pairing link; no camera is required.
-3. In Cloud Login, set up or unlock the app's PIN or passkey protection.
-   Check the Cloud address before connecting.
+3. In Cloud Login, check the Cloud address and the suggested account label
+   and device name. You can edit both names before connecting.
 4. Compare the six-digit codes in Cloud and the authenticator.
    Confirm only if they match.
 5. If this account already has an active paired device on this Cloud, open

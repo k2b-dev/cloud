@@ -999,6 +999,14 @@ Expansion can be uncontrolled with `defaultExpandedIds`, or controlled with
 if an application stores expansion in a cookie or another store, pass the same
 initial ids during SSR to avoid a layout shift when the component mounts.
 
+A tree too large to render whole loads a branch when it opens. Set
+`hasChildren` on a `NavTree.Item` whose children are not rendered yet: the row
+shows its disclosure and `aria-expanded`, and opening it reports the id
+through `onExpandedIdsChange`. Render a disabled item that says the rows load
+until they arrive. Show a long level a page at a time and end it with an item
+that loads the next page through `onSelect`, such as "4,900 more notes"; keep
+such items out of reordering.
+
 Branches normally keep their leading icon and receive a trailing disclosure
 chevron. For folder navigation, set both `icon` and `expandedIcon`; the leading
 icon then reflects the branch state and acts as the disclosure target, so no
