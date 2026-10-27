@@ -147,6 +147,9 @@ const Suggestion = (props: {
   replyId?: string;
   text: string;
   state: "open" | "accepted" | "rejected" | null;
+  /** Who accepted or rejected it, and whether through the Assistant. */
+  by: Annotation["suggestionStateBy"];
+  via: Annotation["suggestionStateVia"];
   active: boolean;
 }) => {
   const t = () => props.ui.t();
@@ -159,6 +162,10 @@ const Suggestion = (props: {
         <Show when={props.state === "rejected" || props.state === "accepted"}>
           {" · "}
           {props.state === "rejected" ? t().suggestionRejected : t().suggestionAccepted}
+          <Show when={props.by}>
+            {(by) => <> {t().byName({ name: by().kind === "user" && by().id === props.ui.me.id ? t().byYou : by().name })}</>}
+          </Show>
+          <Show when={props.via}>{(via) => <> · {via() === "assistant" ? t().viaAssistant : t().viaMcp}</>}</Show>
         </Show>
       </span>
       <SuggestionDiff from={props.item.quote} to={props.text} />
@@ -317,7 +324,15 @@ export function CommentCard(props: { ui: CommentsUi; item: Annotation; ref?: (el
         <EditBox ui={props.ui} item={item()} />
       </Show>
       <Show when={item().suggestion !== null && item().suggestionState !== "accepted"}>
-        <Suggestion ui={props.ui} item={item()} text={item().suggestion ?? ""} state={item().suggestionState} active={active()} />
+        <Suggestion
+          ui={props.ui}
+          item={item()}
+          text={item().suggestion ?? ""}
+          state={item().suggestionState}
+          by={item().suggestionStateBy}
+          via={item().suggestionStateVia}
+          active={active()}
+        />
       </Show>
       <Show when={resolved()}>
         <p class="notebook-comment__state">
@@ -365,6 +380,8 @@ export function CommentCard(props: { ui: CommentsUi; item: Annotation; ref?: (el
                       replyId={reply.id}
                       text={reply.suggestion ?? ""}
                       state={reply.suggestionState}
+                      by={reply.suggestionStateBy}
+                      via={reply.suggestionStateVia}
                       active={active()}
                     />
                   </Show>
