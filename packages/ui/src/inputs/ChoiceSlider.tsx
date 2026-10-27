@@ -39,7 +39,8 @@ const position = (index: number, count: number) => (count < 2 ? 0 : (index / (co
  * never changes. Unavailable stops stay visible and are skipped.
  */
 export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
-  const [preview, setPreview] = createSignal<number | null>(null);
+  // The previewed stop by value, so a change of the options can never leave it pointing at another stop.
+  const [previewValue, setPreviewValue] = createSignal<string | null>(null);
   const [notice, setNotice] = createSignal<string | null>(null);
   let track: HTMLDivElement | undefined;
   let drag: { pointerId: number; blocked: number | null; startX: number } | null = null;
@@ -49,6 +50,12 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
     const value = resolveMaybeAccessor(props.value);
     return value === null ? -1 : props.options.findIndex((option) => option.value === value);
   });
+  const preview = createMemo(() => {
+    const value = previewValue();
+    const index = value === null ? -1 : props.options.findIndex((option) => option.value === value);
+    return index < 0 ? null : index;
+  });
+  const setPreview = (index: number | null) => setPreviewValue(index === null ? null : (props.options[index]?.value ?? null));
   const shown = () => preview() ?? chosen();
   const option = () => props.options[shown()];
   const available = (index: number) => props.options[index] !== undefined && !props.options[index]?.disabledReason;
@@ -61,6 +68,14 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
       setNotice(null);
     }),
   );
+  // A drag ends without a choice when its stop disappears, becomes unavailable, or the slider is disabled.
+  createEffect(() => {
+    const index = preview();
+    if (previewValue() !== null && (index === null || !available(index) || props.disabled)) {
+      drag = null;
+      setPreviewValue(null);
+    }
+  });
   createEffect(
     on(preview, (index) => props.onActiveChange?.(index === null ? null : (props.options[index]?.value ?? null)), { defer: true }),
   );
@@ -82,7 +97,7 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
   const commit = (index: number) => {
     const next = props.options[index];
     setPreview(null);
-    if (next && index !== chosen()) props.onValueChange?.(next.value);
+    if (next && !props.disabled && available(index) && index !== chosen()) props.onValueChange?.(next.value);
   };
 
   const step = (direction: 1 | -1) => {
@@ -132,7 +147,8 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
   };
 
   const onPointerDown = (event: PointerEvent) => {
-    if (props.disabled || count() < 2 || event.button !== 0) return;
+    // One pointer owns a drag; a second finger waits until it ends.
+    if (props.disabled || count() < 2 || event.button !== 0 || drag) return;
     event.preventDefault();
     track?.focus({ preventScroll: true });
     track?.setPointerCapture?.(event.pointerId);
@@ -159,11 +175,12 @@ export function ChoiceSlider(props: ChoiceSliderProps): JSX.Element {
     }
   };
 
+  /** Only a release chooses; a cancel or a lost capture puts the slider back on its value. */
   const onPointerEnd = (event: PointerEvent) => {
     if (!drag || drag.pointerId !== event.pointerId) return;
     drag = null;
     const index = preview();
-    if (event.type === "pointercancel" || index === null) {
+    if (event.type !== "pointerup" || index === null) {
       setPreview(null);
       return;
     }

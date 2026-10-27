@@ -24,17 +24,19 @@ describe("ChoiceSlider behavior", () => {
     cleanup?.();
     cleanup = undefined;
   });
-  const mount = async (initial: string | null, list: ChoiceSliderOption[] = options) => {
+  const mount = async (initial: string | null, list: ChoiceSliderOption[] = options, extra: { disabled?: () => boolean } = {}) => {
     const dom = createDomTestHarness();
     delegateEvents(["keydown", "pointerdown", "pointermove", "pointerup"], dom.document);
     const { ChoiceSlider } = await import("../src/inputs/ChoiceSlider");
     const [value, setValue] = createSignal<string | null>(initial);
+    const [currentOptions, setOptions] = createSignal(list);
     const changes: string[] = [];
     const dispose = render(
       () => (
         <ChoiceSlider
           aria-label="Model class"
-          options={list}
+          options={currentOptions()}
+          disabled={extra.disabled?.()}
           value={value}
           description="Own choice"
           onValueChange={(next) => {
@@ -51,7 +53,11 @@ describe("ChoiceSlider behavior", () => {
     };
     const slider = () => dom.root.querySelector<HTMLElement>('[role="slider"]');
     const line = () => dom.root.querySelector(".k2b-choice-slider__line")?.textContent;
-    return { slider, line, changes, value };
+    const pointer = (type: string, pointerId = 1) =>
+      slider()!.dispatchEvent(
+        new dom.window.PointerEvent(type, { bubbles: true, cancelable: true, pointerId, button: 0, clientX: 0 }) as unknown as Event,
+      );
+    return { slider, line, changes, value, setOptions, pointer };
   };
 
   test("names the stop and keeps its description in the line", async () => {
@@ -92,6 +98,51 @@ describe("ChoiceSlider behavior", () => {
     expect(view.line()).toBe("Own choice");
     key(view.slider()!, "ArrowRight");
     expect(view.value()).toBe("fast");
+  });
+
+  test("a release chooses the pressed stop; a lost capture or a cancel does not", async () => {
+    const view = await mount("balanced");
+    view.pointer("pointerdown");
+    view.pointer("lostpointercapture");
+    expect(view.changes).toEqual([]);
+    view.pointer("pointerdown");
+    view.pointer("pointercancel");
+    expect(view.changes).toEqual([]);
+    view.pointer("pointerdown");
+    view.pointer("pointerup");
+    expect(view.changes).toEqual(["fast"]);
+  });
+
+  test("a second pointer neither takes over nor ends the drag", async () => {
+    const view = await mount("balanced");
+    view.pointer("pointerdown", 1);
+    view.pointer("pointerdown", 2);
+    view.pointer("pointerup", 2);
+    expect(view.changes).toEqual([]);
+    view.pointer("pointerup", 1);
+    expect(view.changes).toEqual(["fast"]);
+  });
+
+  test("a drag whose stop disappears or becomes unavailable ends without a choice", async () => {
+    const view = await mount("balanced");
+    view.pointer("pointerdown");
+    view.setOptions(options.slice(1));
+    expect(view.slider()?.getAttribute("aria-valuenow")).toBe("1");
+    view.pointer("pointerup");
+    view.setOptions(options);
+    view.pointer("pointerdown");
+    view.setOptions(options.map((option) => (option.value === "fast" ? { ...option, disabledReason: "Gone" } : option)));
+    view.pointer("pointerup");
+    expect(view.changes).toEqual([]);
+  });
+
+  test("a drag on a slider that becomes disabled chooses nothing", async () => {
+    const [disabled, setDisabled] = createSignal(false);
+    const view = await mount("balanced", options, { disabled });
+    view.pointer("pointerdown");
+    setDisabled(true);
+    view.pointer("pointerup");
+    expect(view.changes).toEqual([]);
   });
 
   test("one stop renders the line without a track", async () => {
