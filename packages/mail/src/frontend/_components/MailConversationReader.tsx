@@ -965,6 +965,8 @@ export default function MailConversationReader(props: {
       };
     }
     if (id === "keep") {
+      // A chosen toolbar slot keeps its place: for everyone but Cloud administrators it shows the lock as a status.
+      if (props.keep && !props.keep.canLift) return { id, label: t().kept, icon: "ti ti-lock", disabled: true, action: () => undefined };
       const keep = keepAction();
       return keep ? { id, label: keep.label, icon: keep.icon, disabled: keep.disabled, action: keep.action } : null;
     }

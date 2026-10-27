@@ -64,7 +64,17 @@ suite("mail sync of changes made in other clients", () => {
     });
     mailbox.remote.remove("inbox", newUid);
     await mailbox.sync("inbox");
-    expect((await releaseConversationKeep(scope)).ok).toBeTrue();
+    // Only a Cloud administrator lifts a keep; the mailbox owner is refused.
+    expect(await releaseConversationKeep(scope)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    const adminUid = `keep-vanish-admin-${crypto.randomUUID().slice(0, 8)}`;
+    const [cloudAdmin] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name, admin)
+      VALUES (${adminUid}, 'local', 'user', ${adminUid}, true) RETURNING id`;
+    if (!cloudAdmin) throw new Error("Cloud admin fixture missing");
+    const adminContext = structuredClone(fixture.ownerContext);
+    if (adminContext.actor.kind === "user")
+      Object.assign(adminContext.actor.user, { id: cloudAdmin.id, uid: adminUid, roles: ["user", "admin"] });
+    adminContext.accessSubject = { type: "user", userId: cloudAdmin.id };
+    expect((await releaseConversationKeep({ ...scope, context: adminContext })).ok).toBeTrue();
     expect((await mailbox.placements(id("kept-copy"))).every((placement) => placement.deleted)).toBeTrue();
     expect(await sql<{ plain_text: string }[]>`SELECT plain_text FROM mail.message_contents WHERE id = ${content.id}::uuid`).toEqual([
       { plain_text: "Stored evidence" },

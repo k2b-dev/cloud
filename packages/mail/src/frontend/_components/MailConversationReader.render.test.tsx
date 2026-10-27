@@ -366,7 +366,8 @@ describe("Mail conversation reader keep state", () => {
     expect(html).toContain(`aria-label="Kept conversations can't be deleted."`);
     expect(html).toContain(`aria-label="Kept conversations can't be moved to Junk."`);
     expect(html).not.toContain("Stop keeping");
-    expect(html).not.toContain('data-mail-toolbar-action="keep"');
+    // The chosen toolbar slot stays as a locked status, so nothing moves.
+    expect(html).toMatch(/data-mail-toolbar-action="keep"[^>]*disabled|disabled[^>]*data-mail-toolbar-action="keep"/);
   });
 
   test("lets Cloud administrators stop keeping", () => {
