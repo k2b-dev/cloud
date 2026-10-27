@@ -217,7 +217,8 @@ for (const width of [1440, 390]) {
           closeTo(after.height, before.height, 0.5);
         } else sameBox(after, before);
       }
-      const above = [".k2b-detail-panel__header", header, ".notebook-tasks"];
+      // Contents now precedes the comments (K1 order), so only what stands above it must hold still.
+      const above = [".k2b-detail-panel__header", ".notebook-tasks"];
       const beforeCollapse = await Promise.all(above.map((selector) => box(page, selector)));
       // DOM click avoids Playwright scrolling the body to the disclosure.
       await page

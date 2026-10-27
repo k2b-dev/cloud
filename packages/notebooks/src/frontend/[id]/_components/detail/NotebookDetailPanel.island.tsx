@@ -849,16 +849,6 @@ export default function NotebookDetailPanel(props: Props) {
         />
 
         <DetailPanel.Body scrollPreserveKey="notebook-detail">
-          <NoteCommentsSection
-            notebookId={props.notebookId}
-            noteId={noteId()}
-            currentUserId={props.currentUserId}
-            canWrite={props.canWrite}
-            initialCommentsPage={props.initialCommentsPage}
-            dateConfig={props.dateConfig}
-            offline={offline()}
-          />
-
           <Show when={tasks().total > 0}>
             <DetailPanel.Section
               title={t().tasks}
@@ -899,6 +889,23 @@ export default function NotebookDetailPanel(props: Props) {
                       leading={<i class={`ti ${REFERENCE_ICONS[block.type] ?? "ti-at"}`} aria-hidden="true" />}
                       title={<code class="notebook-reference-name">@{block.name}</code>}
                       trailing={t().referenceType({ type: block.type })}
+                    />
+                  )}
+                </For>
+              </div>
+            </DetailPanel.Section>
+          </Show>
+
+          <Show when={backlinks().length > 0}>
+            <DetailPanel.Section title={t().linkedBy} count={backlinks().length} collapsible defaultOpen>
+              <div class="notebook-panel-rows">
+                <For each={backlinks()}>
+                  {(bl) => (
+                    <DetailPanel.Action
+                      href={`/app/notebooks/${bl.notebookId}/notes/${bl.noteId}`}
+                      leading={<i class="ti ti-file-text" aria-hidden="true" />}
+                      title={bl.title || t().untitled}
+                      trailing={bl.notebookId !== props.currentNotebookId ? bl.notebookName : undefined}
                     />
                   )}
                 </For>
@@ -968,22 +975,15 @@ export default function NotebookDetailPanel(props: Props) {
             </DetailPanel.Section>
           </Show>
 
-          <Show when={backlinks().length > 0}>
-            <DetailPanel.Section title={t().linkedBy} count={backlinks().length} collapsible defaultOpen>
-              <div class="notebook-panel-rows">
-                <For each={backlinks()}>
-                  {(bl) => (
-                    <DetailPanel.Action
-                      href={`/app/notebooks/${bl.notebookId}/notes/${bl.noteId}`}
-                      leading={<i class="ti ti-file-text" aria-hidden="true" />}
-                      title={bl.title || t().untitled}
-                      trailing={bl.notebookId !== props.currentNotebookId ? bl.notebookName : undefined}
-                    />
-                  )}
-                </For>
-              </div>
-            </DetailPanel.Section>
-          </Show>
+          <NoteCommentsSection
+            notebookId={props.notebookId}
+            noteId={noteId()}
+            currentUserId={props.currentUserId}
+            canWrite={props.canWrite}
+            initialCommentsPage={props.initialCommentsPage}
+            dateConfig={props.dateConfig}
+            offline={offline()}
+          />
 
           {/* The log has no count: it is a stream, not a finite set. It loads after the first paint and is the last
               section, so nothing above it moves when it arrives. Closed, its one line names the newest entry; the

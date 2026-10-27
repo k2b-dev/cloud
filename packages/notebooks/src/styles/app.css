@@ -881,10 +881,11 @@
    Built from the shared DetailPanel rhythm; these rules only arrange the
    panel's own pieces: the action row, the meta line states, the offline band,
    the outline depth, and the activity rows. */
+/* The actions take the row; "…" from the shared header ends it beside them. */
 .k2b-ui .notebook-detail-primary {
   display: flex;
-  width: 100%;
   min-width: 0;
+  flex: 1 1 0;
   flex-direction: column;
   gap: 0.75rem;
 }

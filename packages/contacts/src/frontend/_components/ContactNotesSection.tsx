@@ -254,12 +254,14 @@ export default function ContactNotesSection(props: Props) {
                 }
                 author={note.authorDisplayName}
                 timestamp={
-                  <time dateTime={note.createdAt} title={dates.formatDateTime(note.createdAt)}>
-                    {dates.formatDateTimeRelative(note.createdAt)}
+                  <time dateTime={note.createdAt} title={dates.formatDateTime(note.createdAt, { locale: locale() })}>
+                    {dates.formatDateTimeRelative(note.createdAt, { locale: locale() })}
                   </time>
                 }
                 meta={
-                  note.updatedAt !== note.createdAt ? <span title={dates.formatDateTime(note.updatedAt)}>{t().edited}</span> : undefined
+                  note.updatedAt !== note.createdAt ? (
+                    <span title={dates.formatDateTime(note.updatedAt, { locale: locale() })}>{t().edited}</span>
+                  ) : undefined
                 }
                 actions={
                   props.canWrite && !isEditing() && (note.canEdit || note.canDelete) ? (
