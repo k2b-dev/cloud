@@ -31,6 +31,7 @@ import CoreSettingsForm, { type SettingFieldDef } from "./_components/CoreSettin
 import DocumentationLink from "./_components/DocumentationLink";
 import LegalSettingsForm, { type LegalInitial } from "./_components/LegalSettingsForm.island";
 import LinuxIdentityPanel from "./_components/LinuxIdentityPanel.island";
+import { buildEntries } from "./entries";
 
 // Flat tab list. Each tab maps either to a core-settings group (`group` prop)
 // or a dedicated immediate-action view such as Projects or Legal.
@@ -149,35 +150,6 @@ type TabId = ReturnType<typeof tabs>[number]["id"];
 
 const isTabId = (value: string | undefined, availableTabs: ReturnType<typeof tabs>): value is TabId =>
   !!value && availableTabs.some((tab) => tab.id === value);
-
-/**
- * Pull the SettingFieldDef list for a given group from the global settings
- * registry. Returns entries with current values resolved (DB → env → default).
- */
-const buildEntries = async (group: string, locale: string): Promise<SettingFieldDef[]> => {
-  const result = await settingsService.entry.list({ filter: { group }, locale });
-  return result.items.map((item) => ({
-    updatedAt: item.updatedAt,
-    updatedBy: item.updatedBy,
-    key: item.key,
-    label: item.label,
-    description: item.description,
-    kind: item.kind as SettingFieldDef["kind"],
-    value: item.value,
-    default: item.default,
-    resetValue: item.resetValue,
-    valueSource: item.valueSource,
-    resetValueSource: item.resetValueSource,
-    isCustom: item.isCustom,
-    unreadable: item.unreadable,
-    group: item.group,
-    options: item.options,
-    min: item.min,
-    max: item.max,
-    placeholder: item.placeholder,
-    templateVars: item.templateVars,
-  }));
-};
 
 /** Read all 9 legal.* entries into the LegalSettingsForm initial shape. */
 const buildLegalInitial = (entries: SettingFieldDef[]): LegalInitial => {

@@ -1,3 +1,5 @@
+export { AiModelCard, type AiModelCardStop, aiModelClassLabel, aiModelClassSubtitle } from "./model-card";
+export { aiModelChooserMessages } from "./model-chooser-messages";
 export { AiModelIcon, aiModelDisplayIcon } from "./model-icon";
 export { AiTurnBlockView } from "./chat/blocks";
 

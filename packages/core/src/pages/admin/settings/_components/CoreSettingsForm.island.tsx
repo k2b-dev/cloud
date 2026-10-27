@@ -129,8 +129,10 @@ type Props = {
   backgroundTaskPrompts?: Record<string, string[]>;
   /** Profile ids with a stored provider key. The keys themselves stay server-side. */
   /** Which slice of the AI settings this page shows (the AI sidebar group splits them). */
-  aiSection?: "general" | "jobs";
+  aiSection?: AiSection;
   showAiJobsLink?: boolean;
+  /** Rendered inside a titled workspace level, which already shows the title. */
+  embedded?: boolean;
 };
 
 const AI_ENABLED_SETTING_KEY = "ai.enabled";
@@ -145,7 +147,7 @@ const AI_ENRICH_CRON_SETTING_KEY = "ai.enrich_cron";
 const AI_MEMORY_LEARNING_CRON_SETTING_KEY = "ai.memory_learning_cron";
 const AI_MEMORY_LEARNING_MONTHLY_TOKEN_BUDGET_SETTING_KEY = "ai.memory_learning_monthly_token_budget";
 
-type AiSection = "general" | "jobs";
+type AiSection = "general" | "jobs" | "tools";
 
 /** Where the AI panel renders each setting a save can reject, so the error summary can point there. */
 const AI_SETTING_SECTIONS: Readonly<Record<string, AiSection>> = {};
@@ -280,7 +282,7 @@ export default function CoreSettingsForm(props: Props) {
   const problemLabel = (key: string): string | undefined => entryMap()[key]?.label;
   const sectionTitle = (section: AiSection) => {
     const admin = adminMessages.resolve([locale()]).t;
-    return { general: admin.aiGeneral, jobs: admin.aiBackgroundJobs }[section];
+    return { general: admin.aiGeneral, jobs: admin.aiBackgroundJobs, tools: admin.aiToolsApi }[section];
   };
   const focusSetting = (key: string): boolean => {
     const control = document.getElementById(settingControlId(key));
@@ -465,6 +467,7 @@ export default function CoreSettingsForm(props: Props) {
   return (
     <SettingsPage
       title={props.title}
+      header={!props.embedded}
       subtitle={props.subtitle}
       icon={props.icon}
       actions={
@@ -503,7 +506,7 @@ export default function CoreSettingsForm(props: Props) {
                             </Button>
                           }
                         >
-                          <ButtonLink variant="text" size="sm" class="self-start" href={`/admin/settings?tab=ai-${owner()}`}>
+                          <ButtonLink variant="text" size="sm" class="self-start" href={`/admin/ai?sec=${owner()}`}>
                             {t().openSettingsPage({ page: sectionTitle(owner()) })}
                           </ButtonLink>
                         </Show>
@@ -581,7 +584,9 @@ export default function CoreSettingsForm(props: Props) {
           section={props.aiSection ?? "general"}
           showJobsLink={props.showAiJobsLink}
         />
-        <Show when={(props.aiSection ?? "general") === "general"}>{renderFieldSections(genericEntries())}</Show>
+        <Show when={aiSection() !== "jobs"}>
+          {renderFieldSections(genericEntries().filter((entry) => (aiSection() === "tools") === entry.key.startsWith("ai.openai_api_")))}
+        </Show>
       </Show>
     </SettingsPage>
   );
@@ -1083,7 +1088,7 @@ function AiSettingsPanel(props: {
         </SettingsSection>
       </Show>
 
-      <Show when={props.section === "general"}>
+      <Show when={props.section === "tools"}>
         <SettingsSection title={t().webTools} subtitle={t().webToolsDescription} icon="ti ti-world-search">
           <TextInput
             variant="ai"

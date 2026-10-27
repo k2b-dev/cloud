@@ -8,6 +8,8 @@ const read = <T,>(value: MaybeAccessor<T>): T => (typeof value === "function" ? 
 
 export type SettingsPageProps = {
   title: JSX.Element;
+  /** False when a surrounding head already shows the title, such as a workspace level; the actions move to the footer. */
+  header?: boolean;
   subtitle?: JSX.Element;
   icon?: string;
   actions?: JSX.Element;
@@ -20,19 +22,25 @@ export type SettingsPageProps = {
 
 export function SettingsPage(props: SettingsPageProps): JSX.Element {
   return (
-    <section class={`k2b-settings-page${props.class ? ` ${props.class}` : ""}`} style={props.style}>
-      <header class="k2b-settings-page__header">
-        <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-        <div class="k2b-settings-page__heading">
-          <h1>{props.title}</h1>
-          <Show when={props.subtitle}>
-            <p>{props.subtitle}</p>
+    <section
+      class={`k2b-settings-page${props.class ? ` ${props.class}` : ""}`}
+      style={props.style}
+      aria-label={props.header === false && typeof props.title === "string" ? props.title : undefined}
+    >
+      <Show when={props.header !== false}>
+        <header class="k2b-settings-page__header">
+          <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+          <div class="k2b-settings-page__heading">
+            <h1>{props.title}</h1>
+            <Show when={props.subtitle}>
+              <p>{props.subtitle}</p>
+            </Show>
+          </div>
+          <Show when={props.actions}>
+            <div class="k2b-settings-page__actions">{props.actions}</div>
           </Show>
-        </div>
-        <Show when={props.actions}>
-          <div class="k2b-settings-page__actions">{props.actions}</div>
-        </Show>
-      </header>
+        </header>
+      </Show>
       <div class="k2b-settings-page__body" data-scroll-preserve={props.scrollPreserveKey}>
         {props.children}
       </div>
