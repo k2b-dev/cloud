@@ -268,8 +268,8 @@ const germanText: Record<string, string> = {
   "Project file is no longer available.": "Die Projektdatei ist nicht mehr verfügbar.",
   "Project saved": "Projekt gespeichert",
   "Default model": "Standardmodell",
-  "Scheduled tasks in this Project use it. Without a default, they use the person's choice, otherwise Balanced.":
-    "Geplante Aufgaben in diesem Projekt nutzen es. Ohne Standard gilt die Wahl der Person, sonst „Ausgewogen“.",
+  "Routines in this Project use it. Without a default, they use the person's choice, otherwise Balanced.":
+    "Routinen in diesem Projekt nutzen es. Ohne Standard gilt die Wahl der Person, sonst „Ausgewogen“.",
   "No Project default": "Kein Projekt-Standard",
   "Models could not be loaded.": "Modelle konnten nicht geladen werden.",
   "Reference name": "Name der Referenz",
