@@ -428,7 +428,7 @@ export const aiProjects = {
         INSERT INTO ai.projects (short_id, name, description, icon, instructions, default_model)
         VALUES (
           ${shortId}, ${input.name.trim()}, ${input.description?.trim() ?? ""}, ${input.icon?.trim() || "ti ti-folders"},
-          ${input.instructions?.trim() ?? ""}, ${input.defaultModel ? JSON.stringify(AiModelRequestSchema.parse(input.defaultModel)) : null}::jsonb
+          ${input.instructions?.trim() ?? ""}, ${input.defaultModel ? JSON.stringify(AiModelRequestSchema.parse(input.defaultModel)) : null}::text::jsonb
         )
         RETURNING *
       `,
@@ -500,7 +500,7 @@ export const aiProjects = {
           icon = COALESCE(${input.icon?.trim() ?? null}, icon),
           instructions = COALESCE(${input.instructions?.trim() ?? null}, instructions),
           default_model = CASE
-            WHEN ${Object.hasOwn(input, "defaultModel")} THEN ${input.defaultModel ? JSON.stringify(AiModelRequestSchema.parse(input.defaultModel)) : null}::jsonb
+            WHEN ${Object.hasOwn(input, "defaultModel")} THEN ${input.defaultModel ? JSON.stringify(AiModelRequestSchema.parse(input.defaultModel)) : null}::text::jsonb
             ELSE default_model
           END,
           revision = revision + 1,

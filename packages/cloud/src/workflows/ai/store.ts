@@ -312,7 +312,7 @@ export const createWorkflowAiTask = async (
     if (input.scope && !cached) await reserveWorkflowAiBudget(db, run, input.scope);
     const rows = await db<WorkflowAiTaskRow[]>`
     INSERT INTO ai.workflow_task (app_id, run_id, usage_subject, step_key, effect_key, kind, request, input_hash, model_profile_id, model_ref, scope_id, source_id, cache_key, model_config_hash, status, output, completed_at)
-    VALUES (${run.app_id}, ${input.runId ?? null}::uuid, ${input.owner?.usageSubject ?? null}, ${input.stepKey}, ${input.effectKey}, ${request.kind}, ${request}, ${requestHash(request)}, ${input.modelId}, ${input.modelRef ? JSON.stringify(AiResolvedModelRefSchema.parse(input.modelRef)) : null}::jsonb,
+    VALUES (${run.app_id}, ${input.runId ?? null}::uuid, ${input.owner?.usageSubject ?? null}, ${input.stepKey}, ${input.effectKey}, ${request.kind}, ${request}, ${requestHash(request)}, ${input.modelId}, ${input.modelRef ? JSON.stringify(AiResolvedModelRefSchema.parse(input.modelRef)) : null}::text::jsonb,
       ${run.scope_id}, ${input.scope?.sourceId ?? null}, ${cacheKey}, ${input.modelConfigHash ?? null},
       ${cached ? "succeeded" : "queued"}, ${cached?.output ?? null}, ${cached ? new Date() : null})
     ON CONFLICT (effect_key) DO NOTHING
