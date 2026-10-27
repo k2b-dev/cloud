@@ -28,7 +28,7 @@ const NoteIdSchema = z
   .regex(/^[A-Za-z0-9]{6}$/)
   .describe("Public notebooks.note ID from note.read, note.search or the notebook tree.");
 const TargetSchema = z
-  .object({ noteId: NoteIdSchema, annotationId: z.uuid().describe("Inline comment ID returned by annotation.list or annotation.create.") })
+  .object({ noteId: NoteIdSchema, annotationId: z.uuid().describe("Comment ID returned by annotation.list or annotation.create.") })
   .strict();
 const ReplyTargetSchema = TargetSchema.extend({
   replyId: z.uuid().optional().describe("Reply ID returned by annotation.reply or annotation.replies; omit to change the root comment."),
@@ -85,7 +85,7 @@ const ListSchema = AnnotationProjectionSchema.omit({ text: true }).extend({
 });
 export const annotationQueries = {
   "annotation.list": {
-    title: "List passage comments",
+    title: "List comments on the text",
     description:
       "Read comments on one note, including resolved and accepted comments, source offsets, orphan state and headingPath. Filter by exact thread state (all by default) and root author UUID or me before pagination. The contentHash and cursor identify one Markdown state; read the text with note.read and check its hash. Follow nextCursor; each thread has independently paged replies.",
     input: AnnotationListSchema.extend({ noteId: NoteIdSchema }),
@@ -107,7 +107,7 @@ export const annotationQueries = {
     },
   },
   "annotation.read": {
-    title: "Read passage comment",
+    title: "Read comment on the text",
     description:
       "Read a notebooks.annotation resource with its current passage, replies and permissions. Follow repliesNextCursor with annotation.replies.",
     input: z.object({ id: z.uuid().describe("notebooks.annotation ref.id from annotation.list or annotation.create.") }).strict(),
@@ -130,7 +130,7 @@ export const annotationQueries = {
     },
   },
   "annotation.replies": {
-    title: "List passage comment replies",
+    title: "List comment replies",
     description:
       "Continue replies from annotation.read or annotation.list using repliesNextCursor. Returns complete reply text and current edit/delete permissions.",
     input: AnnotationPageSchema.extend(TargetSchema.shape),
@@ -173,7 +173,7 @@ export const annotationActions = {
     },
   },
   "annotation.reply": {
-    title: "Reply to a passage comment",
+    title: "Reply to a comment",
     description:
       "Reply to any writer's thread as the authenticated user, agent or service account, with body and/or replacement suggestion. Requires write access and an Idempotency-Key. Agents: never accept your own suggestion unless the person explicitly asked you to; propose it as a reply suggestion and let the person accept or reject it.",
     input: ReplyInputSchema,
@@ -195,7 +195,7 @@ export const annotationActions = {
     },
   },
   "annotation.edit": {
-    title: "Edit your recent passage comment",
+    title: "Edit your recent comment",
     description:
       "Edit the root comment or a reply by replyId. Only its author within ten minutes, with current write access. Omit suggestion to preserve it; null removes it.",
     input: EditInputSchema,
@@ -211,7 +211,7 @@ export const annotationActions = {
     },
   },
   "annotation.delete": {
-    title: "Delete your recent passage comment",
+    title: "Delete your recent comment",
     description:
       "Soft-delete an author-owned comment or reply within ten minutes. A root with live replies cannot be deleted. Requires write access.",
     input: ReplyTargetSchema,
@@ -226,7 +226,7 @@ export const annotationActions = {
     },
   },
   "annotation.restore": {
-    title: "Restore your recent deleted passage comment",
+    title: "Restore your recent deleted comment",
     description:
       "Undo a soft deletion before the author's original ten-minute window expires. Use replyId for a reply. Requires write access.",
     input: ReplyTargetSchema,
@@ -241,7 +241,7 @@ export const annotationActions = {
     },
   },
   "annotation.resolve": {
-    title: "Resolve or reopen a passage comment",
+    title: "Resolve or reopen a comment",
     description: "Any writer can resolve or reopen a comment, including on a locked note. Accepted suggestions must be undone instead.",
     input: ResolveInputSchema,
     data: MutationSchema,

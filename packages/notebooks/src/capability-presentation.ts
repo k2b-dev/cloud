@@ -4,37 +4,37 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   sentences: {
     "annotation.create": {
-      approval: "Add a passage comment",
-      done: "Added a passage comment",
+      approval: "Add a comment",
+      done: "Added a comment",
       rejected: "Comment not added",
       notRun: "Comment not added",
     },
     "annotation.reply": {
-      approval: "Reply to a passage comment",
+      approval: "Reply to a comment",
       done: "Added the reply",
       rejected: "Reply not added",
       notRun: "Reply not added",
     },
     "annotation.edit": {
-      approval: "Edit a passage comment",
+      approval: "Edit a comment",
       done: "Edited the comment",
       rejected: "Comment not edited",
       notRun: "Comment not edited",
     },
     "annotation.delete": {
-      approval: "Delete a passage comment",
+      approval: "Delete a comment",
       done: "Deleted the comment",
       rejected: "Comment not deleted",
       notRun: "Comment not deleted",
     },
     "annotation.restore": {
-      approval: "Restore a passage comment",
+      approval: "Restore a comment",
       done: "Restored the comment",
       rejected: "Comment not restored",
       notRun: "Comment not restored",
     },
     "annotation.resolve": {
-      approval: "Change passage comment status",
+      approval: "Change comment status",
       done: "Changed the comment status",
       rejected: "Status not changed",
       notRun: "Status not changed",
@@ -63,8 +63,8 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
       commands: { "note.compose": { title: "Neue Notiz", description: "Notizbuch auswählen und eine Notiz schreiben." } },
       types: {
         annotation: {
-          title: "Textstellenkommentar",
-          description: "Ein Kommentar zu einer Textstelle mit Antworten und optionalem Änderungsvorschlag.",
+          title: "Kommentar",
+          description: "Ein Kommentar zu einer Textstelle einer Notiz, mit Antworten und optionalem Änderungsvorschlag.",
         },
         note: {
           title: "Notiz",
@@ -75,13 +75,13 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           description: "Eine berechtigungsbezogene Sammlung von Markdown-Notizen.",
         },
         comment: {
-          title: "Notizkommentar",
-          description: "Dauerhafter Diskussionskontext zu einer zugänglichen Notiz.",
+          title: "Beitrag zur Seitendiskussion",
+          description: "Ein Beitrag in der Seitendiskussion einer zugänglichen Notiz, nicht an eine Textstelle gebunden.",
         },
       },
       queries: {
         "annotation.list": {
-          title: "Textstellenkommentare auflisten",
+          title: "Kommentare zum Text auflisten",
           description:
             "Kommentare einer Notiz mit Positionen, Status, Überschriftenpfad und verwaisten Stellen lesen. Vor der Seitenauswahl nach state und Hauptautor (author UUID oder me) filtern. Dem nextCursor folgen; Antworten sind separat paginiert. contentHash und cursor bezeichnen den zugehörigen Markdown-Stand.",
           input: {
@@ -93,7 +93,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "annotation.read": {
-          title: "Textstellenkommentar lesen",
+          title: "Kommentar zum Text lesen",
           description:
             "Einen notebooks.annotation-Verweis mit Antworten und aktuellen Rechten lesen. repliesNextCursor mit annotation.replies fortsetzen.",
           input: {
@@ -102,7 +102,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "annotation.replies": {
           title: "Kommentarantworten auflisten",
-          description: "Weitere Antworten eines Textstellenkommentars mit vollständigem Text und aktuellen Bearbeitungsrechten lesen.",
+          description: "Weitere Antworten eines Kommentars mit vollständigem Text und aktuellen Bearbeitungsrechten lesen.",
           input: {
             noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
             annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
@@ -146,7 +146,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "comment.browse": {
-          title: "Kommentarvorschauen lesen",
+          title: "Vorschauen der Seitendiskussion lesen",
           description:
             "Kommentare anhand kurzer Vorschauen auswählen, neueste zuerst. Dem Cursor folgen. Bei previewTruncated den vollständigen Kommentar mit comment.read und ref.id lesen. canEdit und canDelete zeigen die aktuellen Bearbeitungsrechte.",
           input: { noteId: "Notiz-ID.", cursor: "Cursor der vorherigen Seite.", limit: "Höchstzahl der Kommentare." },
@@ -162,7 +162,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "comment.list": {
-          title: "Notizkommentare auflisten",
+          title: "Seitendiskussion auflisten",
           description:
             "Vollständige Markdown-Kommentare zu einer Notiz lesen, neueste zuerst. Seiten können wegen der Antwortgröße kürzer ausfallen; immer page.nextCursor folgen. Für die Auswahl zunächst comment.browse verwenden.",
           input: {
@@ -172,7 +172,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "comment.read": {
-          title: "Notizkommentar lesen",
+          title: "Beitrag zur Seitendiskussion lesen",
           description:
             "Einen von comment.list zurückgegebenen notebooks.comment-Verweis lesen und den Zugriff auf die zugehörige Notiz prüfen.",
           input: {
@@ -314,7 +314,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "annotation.reply": {
-          title: "Auf einen Textstellenkommentar antworten",
+          title: "Auf einen Kommentar antworten",
           description:
             "Mit Schreibzugriff als Benutzer, Agent oder Dienstkonto auf fremde Kommentare antworten, mit Text und/oder Änderungsvorschlag. Agents dürfen eigene Vorschläge nur auf ausdrücklichen Wunsch übernehmen. Idempotency-Key ist erforderlich.",
           input: {
@@ -451,7 +451,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "comment.update": {
-          title: "Notizkommentar bearbeiten",
+          title: "Beitrag zur Seitendiskussion bearbeiten",
           description:
             "Eigenen Kommentar innerhalb von zehn Minuten nach dem Erstellen ersetzen. Benötigt Schreibzugriff auf das Notizbuch.",
           input: {
@@ -460,13 +460,13 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "comment.delete": {
-          title: "Notizkommentar löschen",
+          title: "Beitrag zur Seitendiskussion löschen",
           description:
             "Eigenen Kommentar innerhalb von zehn Minuten nach dem Erstellen löschen. Benötigt Schreibzugriff auf das Notizbuch.",
           input: { commentId: "Eigene Kommentar-ID aus comment.list oder comment.read; zehn Minuten nach dem Erstellen löschbar." },
         },
         "comment.create": {
-          title: "Notiz kommentieren",
+          title: "Beitrag zur Seitendiskussion hinzufügen",
           description: "Als aktueller Benutzer Markdown-Diskussionskontext zu einer beschreibbaren Notiz hinzufügen.",
           input: {
             noteId: "Beschreibbare Notiz-ID aus Notizsuche, Notizbaum, Lesevorgang oder einem notebooks.note-Verweis.",

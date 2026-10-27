@@ -624,8 +624,8 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
         ok: false,
         error: { status: 403 },
       });
-      expect((await cld(["annotations", "edit", note.shortId, root.id, "--content", "Denied"], token)).code).not.toBe(0);
-      expect((await cld(["annotations", "delete", note.shortId, root.id, "--yes"], token)).code).not.toBe(0);
+      expect((await cld(["comments", "edit", note.shortId, root.id, "--content", "Denied"], token)).code).not.toBe(0);
+      expect((await cld(["comments", "delete", note.shortId, root.id, "--yes"], token)).code).not.toBe(0);
     };
     await denied(other, "other");
     expect((await annotations.reply(note.shortId, root.id, { body: "Keep the thread", idempotencyKey: "keep" }, other)).ok).toBeTrue();
@@ -634,7 +634,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
       ok: false,
       error: { status: 409 },
     });
-    expect((await cld(["annotations", "delete", note.shortId, root.id, "--yes"])).code).not.toBe(0);
+    expect((await cld(["comments", "delete", note.shortId, root.id, "--yes"])).code).not.toBe(0);
     await sql`UPDATE notebooks.annotations SET created_at = ${new Date(Date.now() - 601_000)} WHERE id = ${root.id}::uuid`;
     await denied(writer, "writer");
   }, 60_000);
@@ -674,7 +674,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     const cap = notebooksCapabilities;
     const listed = await cap.queries["annotation.list"].run({ noteId: note.shortId, author: user.id, state: "open", limit: 1 }, writer);
     expect(listed).toMatchObject({ ok: true, data: { data: { items: [{ id: root.id }] } } });
-    const cliList = await cld(["annotations", "list", note.shortId, "--state", "open", "--author", user.id]);
+    const cliList = await cld(["comments", "list", note.shortId, "--state", "open", "--author", user.id]);
     expect(cliList.code).toBe(0);
     expect(JSON.parse(cliList.stdout).items.map((item: { id: string }) => item.id)).toEqual([root.id]);
     const proposed = await cap.actions["annotation.reply"].run(
@@ -748,7 +748,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
       ok: true,
       data: { state: "open", replies: [{ id: replyId, suggestionState: "open" }, { suggestionState: "open" }] },
     });
-    const shown = await cld(["annotations", "show", root.id], "reader");
+    const shown = await cld(["comments", "show", root.id], "reader");
     expect(shown.code).toBe(0);
     expect(JSON.parse(shown.stdout)).toMatchObject({ id: root.id, quote: "target", replies: [{ id: replyId }, {}] });
   }, 60_000);
@@ -775,7 +775,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
       (await request(note.shortId, `/${root.id}/accept`, "POST", { operationId: crypto.randomUUID(), replyId }, "person")).status,
     ).toBe(409);
     expect(await text(note.id)).toBe("# Handbook\n\nBefore target after\n");
-    expect((await cld(["annotations", "reject", note.shortId, root.id, "--reply", replyId, "--undo"], "person")).code).toBe(0);
+    expect((await cld(["comments", "reject", note.shortId, root.id, "--reply", replyId, "--undo"], "person")).code).toBe(0);
     expect(await annotations.readResource(root.id, reader)).toMatchObject({ ok: true, data: { replies: [{ suggestionState: "open" }] } });
     expect(
       await notebooksCapabilities.actions["annotation.reject"].run({ noteId: note.shortId, annotationId: root.id, rejected: true }, writer),
@@ -832,7 +832,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     );
     expect(created).toMatchObject({ ok: true, data: { data: { from: "# Repeated\n\ntarget, then ".length } } });
     const added = await cld([
-      "annotations",
+      "comments",
       "add",
       note.shortId,
       "--quote",
@@ -847,7 +847,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     expect(added.code).toBe(0);
     expect(JSON.parse(added.stdout)).toMatchObject({ from: "# Repeated\n\ntarget, then ".length, suggestionState: "open" });
     const ambiguous = await cld([
-      "annotations",
+      "comments",
       "add",
       note.shortId,
       "--quote",
@@ -990,7 +990,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     expect((await request(note.shortId, "", "GET", undefined, "reader")).status).toBe(200);
     expect((await api.request(`/annotations/${root.id}`, { headers: { authorization: "Bearer reader" } })).status).toBe(200);
     expect((await notebooksCapabilities.queries["annotation.read"].run({ id: root.id }, reader)).ok).toBeTrue();
-    expect((await cld(["annotations", "show", root.id], "reader")).code).toBe(0);
+    expect((await cld(["comments", "show", root.id], "reader")).code).toBe(0);
     expect(
       (await notebooksCapabilities.queries["annotation.list"].run({ noteId: note.shortId, state: "all", limit: 30 }, reader)).ok,
     ).toBeTrue();
@@ -1034,7 +1034,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
       await cap["annotation.accept"].run({ noteId: note.shortId, annotationId: root.id, operationId: crypto.randomUUID() }, reader),
     ).toMatchObject({ ok: false, error: { status: 403 } });
     const added = await cld([
-      "annotations",
+      "comments",
       "add",
       note.shortId,
       "--quote",
@@ -1054,8 +1054,8 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
       ["resolve", note.shortId, root.id],
       ["accept", note.shortId, root.id, "--operation-id", crypto.randomUUID(), "--yes"],
     ])
-      expect((await cld(["annotations", ...args], "reader")).code).not.toBe(0);
-    const listed = await cld(["annotations", "list", note.shortId], "reader");
+      expect((await cld(["comments", ...args], "reader")).code).not.toBe(0);
+    const listed = await cld(["comments", "list", note.shortId], "reader");
     expect(listed.code).toBe(0);
     expect(JSON.parse(listed.stdout).items.length).toBe(2);
     if (reader.actor.kind !== "service_account") throw new Error("Expected service account");
@@ -1064,7 +1064,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     expect((await annotations.list(note.shortId, {}, reader)).ok).toBeFalse();
     expect((await api.request(`/annotations/${root.id}`, { headers: { authorization: "Bearer reader" } })).status).toBe(404);
     expect((await notebooksCapabilities.queries["annotation.read"].run({ id: root.id }, reader)).ok).toBeFalse();
-    expect((await cld(["annotations", "show", root.id], "reader")).code).not.toBe(0);
-    expect((await cld(["annotations", "list", note.shortId], "reader")).code).not.toBe(0);
+    expect((await cld(["comments", "show", root.id], "reader")).code).not.toBe(0);
+    expect((await cld(["comments", "list", note.shortId], "reader")).code).not.toBe(0);
   }, 60_000);
 }

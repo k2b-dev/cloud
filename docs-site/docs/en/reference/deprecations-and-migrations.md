@@ -5,10 +5,28 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-22
+updated: 2026-10-27
 ---
 
 # Deprecations and migrations
+
+## Notebooks page discussion moved to `discussion`
+
+`cld notebooks comments` now means comments on a passage of the text, with
+replies and suggestions. The page discussion of a note moved to
+`cld notebooks discussion` with unchanged flags and JSON output:
+
+| Before | Now |
+| --- | --- |
+| `comments list <note>` | `discussion list <note>` |
+| `comments add <note> --content …` | `discussion add <note> --content …` |
+| `comments update <note> <id>` | `discussion update <note> <id>` |
+| `comments delete <note> <id>` | `discussion delete <note> <id>` |
+
+`comments add` without `--quote` fails and names `discussion add`. Scripts
+that post page discussion entries must switch to `discussion`. Capability IDs
+are unchanged: `notebooks.annotation.*` are the comments on the text, and
+`notebooks.comment.*` is the page discussion.
 
 ## Weather city search uses Core geo
 

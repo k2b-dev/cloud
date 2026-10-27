@@ -19,6 +19,7 @@ Use **Comments** in the note details for questions, feedback, and decisions. Com
 - **Add:** With **Edit** access, you can post Markdown comments. Other people who have the detail panel open see new comments immediately.
 - **Correct:** You can edit or delete your own comment for ten minutes after you post it.
 - **Locked notes:** A lock freezes the note text, not its discussion. With **Edit** access, you can still comment on a locked note.
+- **Terminal:** `cld notebooks discussion` reads and writes this page discussion. `cld notebooks comments` works with comments on the text.
 :::
 
 Keep lasting handbook content in the note itself. Use comments to discuss that content before or after it changes.

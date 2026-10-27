@@ -366,7 +366,7 @@ indexes and `:::toc` for heading lists.
 Assistants can choose a writable notebook with `notebook.browse`, then browse
 its roots or a selected page's children with `note.children`. Use `note.search`
 to find a known page directly. Neither path needs the whole notebook tree.
-`comment.browse` selects discussion previews; `comment.read` supplies full text.
+`comment.browse` selects page discussion previews; `comment.read` supplies full text.
 The detailed lists and readers remain available.
 
 Capability pages may be shorter than requested to fit the transport budget.
@@ -387,7 +387,7 @@ read access; drafts need write access and an unlocked note. A user-backed
 identity is required. The check does not validate every Markdown feature or
 table formula, and queries still use saved data.
 
-Assistant can also read, create, edit, and delete page comments. Editing and
+Assistant can also read, create, edit, and delete page discussion posts. Editing and
 deleting require the original author, write access, and the same ten-minute
 window as the app. Both changes have explicit reviews and recheck those rules
 when applied. The built-in `cloud-notebooks` Skill describes these workflows
@@ -398,9 +398,10 @@ exports, and snapshots. Cloud supplies identity, resource access,
 resource-bound API keys, settings, background schedules, dashboard widgets,
 application discovery, and the shared Help surface.
 
-### Automate passage comments
+### Automate comments on the text
 
-`notebooks.annotation` identifies an inline comment thread owned by Notebooks.
+`notebooks.annotation` identifies a comment thread on a passage of the text,
+owned by Notebooks. The page discussion (`notebooks.comment`) is separate.
 `annotation.list` and `annotation.read` return anchored source offsets, quoted
 text, status, replies, current author permissions, and `headingPath`.
 `annotation.replies` continues a thread's `repliesNextCursor`. Lists default
@@ -463,13 +464,15 @@ Create accepts 1-based `occurrence` among exact quotes, alongside context and
 `ANNOTATION_PASSAGE_NOT_FOUND`; ambiguous quotes return
 `ANNOTATION_PASSAGE_AMBIGUOUS`, both with `details.matches`.
 
-The CLI offers `cld notebooks annotations list|show|add|reply|edit|delete|restore|resolve|reopen|accept|reject|undo`.
+The CLI offers `cld notebooks comments list|show|add|reply|edit|delete|restore|resolve|reopen|accept|reject|undo`;
+the page discussion is `cld notebooks discussion list|add|update|delete`.
+`comments add` without `--quote` fails and names `discussion add`.
 `list` accepts `--state` and `--author`; `show <thread-id>` follows replies within
 the response budget and retains a continuation for larger threads. `reply` can
 use `--suggestion` or `--suggestion-from <file|->`; `accept` and `reject` select
 reply suggestions with `--reply`.
-Run `cld notebooks annotations --help` for flags and use the bundled
-`annotations.md` CLI reference for retry IDs and reply pagination. Creating a comment records an
+Run `cld notebooks comments --help` for flags and use the bundled
+`comments.md` CLI reference for retry IDs and reply pagination. Creating a comment records an
 `annotation.create` activity row; replies do not create activity rows.
 
 ## Find detailed product help

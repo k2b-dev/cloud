@@ -2,7 +2,7 @@ import { type CloudCliContext, cliText } from "@k2b/cloud/cli";
 import { ANNOTATION_RESULT_MAX_BYTES, type Annotation } from "./lib/annotation-contracts";
 
 // Command paths and help references share this name so the group can be renamed once.
-export const ANNOTATION_COMMAND_GROUP = "annotations";
+export const ANNOTATION_COMMAND_GROUP = "comments";
 export const annotationCommand = (verb: string) => `${ANNOTATION_COMMAND_GROUP} ${verb}`;
 export const ANNOTATION_AGENT_HELP = {
   en: "Agents: never accept your own suggestion unless the person explicitly asked you to; propose it as a reply suggestion and let the person accept or reject it.",

@@ -1073,7 +1073,7 @@ describe("notebooks capabilities", () => {
 
     expect(result.ok).toBeTrue();
     if (result.ok) {
-      expect(result.data.summary).toBe(`Added a comment to “${note.title}”.`);
+      expect(result.data.summary).toBe(`Added a post to the page discussion of “${note.title}”.`);
       expect(capabilityResultSchema(notebooksCapabilities.actions["comment.create"].data).safeParse(result.data).success).toBeTrue();
       expect(result.data.data).toMatchObject({ id: createdComment.shortId, notebookId: notebook.shortId, noteId: note.shortId });
     }

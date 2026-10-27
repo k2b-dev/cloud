@@ -1098,8 +1098,8 @@ export const notebooksCapabilities = defineCapabilities({
   presentation: notebooksCapabilityPresentation,
   types: {
     annotation: {
-      title: "Inline comment",
-      description: "A passage comment and its replies, owned by Notebooks.",
+      title: "Comment",
+      description: "A comment on a passage of a note's text, with replies and an optional suggestion.",
       icon: "ti ti-message",
       reader: "annotation.read",
     },
@@ -1111,8 +1111,8 @@ export const notebooksCapabilities = defineCapabilities({
     },
     note: { title: "Note", description: "A Markdown note in an accessible notebook.", icon: "ti ti-file-text", reader: "note.read" },
     comment: {
-      title: "Note comment",
-      description: "Durable discussion context attached to one accessible note.",
+      title: "Page discussion post",
+      description: "A post in the page discussion of one accessible note, not tied to a passage.",
       icon: "ti ti-message",
       reader: "comment.read",
     },
@@ -1225,7 +1225,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runNoteLinks,
     },
     "comment.list": {
-      title: "List note comments",
+      title: "List page discussion",
       description:
         "List complete Markdown comments for one known note, newest first. A response may contain fewer than limit to fit the transport budget; always follow page.nextCursor. Prefer comment.browse to select comments before reading full bodies.",
       input: CommentListInputSchema,
@@ -1234,7 +1234,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentList,
     },
     "comment.browse": {
-      title: "Browse comment previews",
+      title: "Browse page discussion previews",
       description:
         "Select discussion context using short previews, newest first. Follow page.nextCursor; read the full text of any previewTruncated item with comment.read using ref.id.",
       input: CommentListInputSchema,
@@ -1243,7 +1243,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentBrowse,
     },
     "comment.read": {
-      title: "Read note comment",
+      title: "Read page discussion post",
       description: "Read one notebooks.comment ref returned by comment.list after checking access to its parent note.",
       input: CommentReadInputSchema,
       data: CommentDataSchema,
@@ -1272,7 +1272,7 @@ export const notebooksCapabilities = defineCapabilities({
   actions: {
     ...annotationActions,
     "comment.update": {
-      title: "Edit note comment",
+      title: "Edit page discussion post",
       description: "Replace the current user's own comment within ten minutes of creation. Requires write access to the notebook.",
       input: CommentUpdateInputSchema,
       data: CommentDataSchema,
@@ -1292,7 +1292,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentUpdate,
     },
     "comment.delete": {
-      title: "Delete note comment",
+      title: "Delete page discussion post",
       description: "Delete the current user's own comment within ten minutes of creation. Requires write access to the notebook.",
       input: CommentDeleteInputSchema,
       data: CommentDeleteDataSchema,
@@ -1312,7 +1312,7 @@ export const notebooksCapabilities = defineCapabilities({
       run: runCommentDelete,
     },
     "comment.create": {
-      title: "Add note comment",
+      title: "Add page discussion post",
       description: "Add Markdown discussion context to one writable note as the current user.",
       input: CommentCreateInputSchema,
       data: CommentDataSchema,

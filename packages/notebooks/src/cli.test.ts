@@ -569,7 +569,7 @@ test("destructive commands require confirmation before any request", async () =>
     ["delete", "wiki01"],
     ["rm", "note01"],
     ["lock", "note01"],
-    ["comments", "delete", "note01", "cmt001"],
+    ["discussion", "delete", "note01", "cmt001"],
     ["attachments", "delete", "wiki01", "att001"],
     ["api-keys", "revoke", "wiki01", "key001"],
   ]) {
@@ -755,7 +755,7 @@ test("adds a comment through resolved public notebook and note ids", async () =>
   const result = await runCli(`http://127.0.0.1:${server.port}`, [
     "--json",
     "notebooks",
-    "comments",
+    "discussion",
     "add",
     "note01",
     "--content",
@@ -845,7 +845,7 @@ test("a hash conflict explains that the note changed elsewhere", async () => {
 
 test("help lists the new command set in English and German", async () => {
   const english = await runCli("http://127.0.0.1:9", ["notebooks", "help"]);
-  for (const name of ["ls", "tree", "cat", "write", "edit", "mv", "rm", "pull", "attach", "versions", "comments"])
+  for (const name of ["ls", "tree", "cat", "write", "edit", "mv", "rm", "pull", "attach", "versions", "comments", "discussion"])
     expect(english.stdout).toContain(name);
   expect(english.stdout).not.toContain("create-note");
   const german = await runCli("http://127.0.0.1:9", ["--locale", "de", "notebooks", "help"]);
@@ -1064,14 +1064,14 @@ test("every annotation command uses the canonical note routes, including reply m
     },
   ];
   for (const entry of cases) {
-    const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "notebooks", "annotations", ...entry.args]);
+    const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "notebooks", "comments", ...entry.args]);
     expect({ command: entry.args[0], code: result.exitCode, error: result.stderr }).toEqual({ command: entry.args[0], code: 0, error: "" });
   }
   expect(requests).toEqual(cases.map(({ method, suffix, body }) => ({ method, path: base + suffix, body: body ?? null })));
 }, 60_000);
 
 test("annotation list forwards root filters and reply can read a replacement file", async () => {
-  const list = commandContext(["annotations", "list", "note01"], { state: "open", author: "me" });
+  const list = commandContext(["comments", "list", "note01"], { state: "open", author: "me" });
   const paths: string[] = [];
   list.ctx.fetch = async (path) => {
     paths.push(path);
@@ -1081,7 +1081,7 @@ test("annotation list forwards root filters and reply can read a replacement fil
   expect(paths).toContain("/api/notebooks/notes/note01/annotations?state=open&author=me");
   const file = join(cliHome, "replacement.md");
   await Bun.write(file, "Replacement\nwith context");
-  const reply = commandContext(["annotations", "reply", "note01", "11111111-1111-4111-8111-111111111111"], {
+  const reply = commandContext(["comments", "reply", "note01", "11111111-1111-4111-8111-111111111111"], {
     "suggestion-from": file,
     "idempotency-key": "from-file",
   });
@@ -1090,14 +1090,30 @@ test("annotation list forwards root filters and reply can read a replacement fil
 });
 
 test("annotation help tells agents to propose a reply suggestion and await the person's decision", async () => {
-  const help = await runCli("http://127.0.0.1:9", ["notebooks", "annotations", "accept", "--help"]);
+  const help = await runCli("http://127.0.0.1:9", ["notebooks", "comments", "accept", "--help"]);
   expect(help.exitCode).toBe(0);
   expect(help.stdout).toContain("never accept your own suggestion");
   expect(help.stdout).toContain("--reply");
 });
 
+test("comments add without a quote points to the page discussion and sends nothing", async () => {
+  const result = await runCli("http://127.0.0.1:9", [
+    "notebooks",
+    "comments",
+    "add",
+    "note01",
+    "--content",
+    "Looks good",
+    "--idempotency-key",
+    "k1",
+  ]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("needs --quote");
+  expect(result.stderr).toContain("cld notebooks discussion add note01");
+});
+
 test("human annotation lists print thread blocks in passage order", async () => {
-  const listing = commandContext(["annotations", "list", "note01"]);
+  const listing = commandContext(["comments", "list", "note01"]);
   listing.ctx.options.output = "text";
   const item = {
     state: "open",

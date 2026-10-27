@@ -713,10 +713,10 @@ function notebooksCommands(locale?: string) {
     groupSummaries: {
       access: t({ en: "Manage direct access to notebooks", de: "Direkten Zugriff auf Notizbücher verwalten" }),
       [ANNOTATION_COMMAND_GROUP]: t({
-        en: "Comment on passages and accept suggestions",
+        en: "Comment on passages of the text and accept suggestions",
         de: "Textstellen kommentieren und Vorschläge übernehmen",
       }),
-      comments: t({ en: "Discuss a note", de: "Eine Notiz diskutieren" }),
+      discussion: t({ en: "Discuss a note on its page", de: "Eine Notiz in ihrer Seitendiskussion besprechen" }),
       versions: t({ en: "Inspect and restore note versions", de: "Notizversionen prüfen und wiederherstellen" }),
       attachments: t({ en: "List, download, and delete notebook files", de: "Notizbuch-Dateien auflisten, laden und löschen" }),
       favorites: t({ en: "Keep your favorite notes", de: "Eigene Lieblingsnotizen pflegen" }),
@@ -1853,7 +1853,7 @@ function notebooksCommands(locale?: string) {
 
       // ---------- Passage comments ----------
       command(annotationCommand("list"), {
-        summary: t({ en: "List passage comments with source positions", de: "Textstellenkommentare mit Quelltextpositionen auflisten" }),
+        summary: t({ en: "List comments on the text with source positions", de: "Kommentare zum Text mit Quelltextpositionen auflisten" }),
         args: noteArg,
         flags: {
           state: flag.string({
@@ -1917,11 +1917,11 @@ function notebooksCommands(locale?: string) {
         args: noteArg,
         flags: {
           ...inputFlags,
+          // Checked in run, so that a page discussion post sent here gets a pointer to `discussion add`.
           quote: flag.string({
-            required: true,
             description: t({
-              en: "Exact selected Markdown (up to 2,000 characters)",
-              de: "Exakter ausgewählter Markdown-Text (höchstens 2.000 Zeichen)",
+              en: "Required. Exact selected Markdown (up to 2,000 characters)",
+              de: "Erforderlich. Exakter ausgewählter Markdown-Text (höchstens 2.000 Zeichen)",
             }),
           }),
           prefix: flag.string({
@@ -1962,6 +1962,13 @@ function notebooksCommands(locale?: string) {
           }),
         },
         async run({ ctx, args, flags }) {
+          if (flags.quote === undefined)
+            throw new Error(
+              t({
+                en: `${annotationCommand("add")} comments on a passage of the text and needs --quote. To post to the page discussion, use \`cld notebooks discussion add ${args.note} --content …\`.`,
+                de: `${annotationCommand("add")} kommentiert eine Textstelle und braucht --quote. Für einen Beitrag zur Seitendiskussion: \`cld notebooks discussion add ${args.note} --content …\`.`,
+              }),
+            );
           if (flags.from === "-" && flags.suggestionFrom === "-")
             throw new Error(
               t({ en: "Read stdin for either body or suggestion", de: "Standardeingabe für Kommentar oder Vorschlag wählen" }),
@@ -1990,7 +1997,7 @@ function notebooksCommands(locale?: string) {
         },
       }),
       command(annotationCommand("reply"), {
-        summary: t({ en: "Reply to a passage comment", de: "Auf einen Textstellenkommentar antworten" }),
+        summary: t({ en: "Reply to a comment", de: "Auf einen Kommentar antworten" }),
         description: t(ANNOTATION_AGENT_HELP),
         args: {
           ...noteArg,
@@ -2162,7 +2169,7 @@ function notebooksCommands(locale?: string) {
         },
       }),
       command(annotationCommand("resolve"), {
-        summary: t({ en: "Resolve a passage comment", de: "Textstellenkommentar erledigen" }),
+        summary: t({ en: "Resolve a comment", de: "Kommentar erledigen" }),
         args: {
           ...noteArg,
           annotation: arg.required({ valueLabel: "annotation-id", description: t({ en: "Comment ID", de: "Kommentar-ID" }) }),
@@ -2181,7 +2188,7 @@ function notebooksCommands(locale?: string) {
         },
       }),
       command(annotationCommand("reopen"), {
-        summary: t({ en: "Reopen a passage comment", de: "Textstellenkommentar wieder öffnen" }),
+        summary: t({ en: "Reopen a comment", de: "Kommentar wieder öffnen" }),
         args: {
           ...noteArg,
           annotation: arg.required({ valueLabel: "annotation-id", description: t({ en: "Comment ID", de: "Kommentar-ID" }) }),
@@ -2279,8 +2286,8 @@ function notebooksCommands(locale?: string) {
       }),
 
       // ---------- Sub-resources ----------
-      command("comments list", {
-        summary: t({ en: "List comments on a note", de: "Kommentare einer Notiz auflisten" }),
+      command("discussion list", {
+        summary: t({ en: "List the page discussion of a note", de: "Die Seitendiskussion einer Notiz auflisten" }),
         args: noteArg,
         flags: pageFlags,
         async run({ ctx, args, flags }) {
@@ -2301,8 +2308,8 @@ function notebooksCommands(locale?: string) {
           );
         },
       }),
-      command("comments add", {
-        summary: t({ en: "Add a Markdown comment", de: "Einen Markdown-Kommentar hinzufügen" }),
+      command("discussion add", {
+        summary: t({ en: "Add a Markdown post to the page discussion", de: "Einen Markdown-Beitrag zur Seitendiskussion hinzufügen" }),
         args: noteArg,
         flags: inputFlags,
         async run({ ctx, args, flags }) {
@@ -2313,13 +2320,13 @@ function notebooksCommands(locale?: string) {
           );
           if (!printStructured(ctx, withCloudResourcePermalink(ctx, "notebooks.comment", comment)))
             ctx.print(
-              `${t({ en: "Added comment", de: "Kommentar hinzugefügt" })} ${comment.id} ${cloudResourceUrl(ctx, { type: "notebooks.comment", id: comment.id })}`,
+              `${t({ en: "Added post", de: "Beitrag hinzugefügt" })} ${comment.id} ${cloudResourceUrl(ctx, { type: "notebooks.comment", id: comment.id })}`,
             );
         },
       }),
-      command("comments update", {
-        summary: t({ en: "Change your recent comment", de: "Eigenen neuen Kommentar ändern" }),
-        args: { ...noteArg, comment: arg.required({ valueLabel: "comment-id", description: t({ en: "Comment ID", de: "Kommentar-ID" }) }) },
+      command("discussion update", {
+        summary: t({ en: "Change your recent discussion post", de: "Eigenen neuen Diskussionsbeitrag ändern" }),
+        args: { ...noteArg, comment: arg.required({ valueLabel: "post-id", description: t({ en: "Post ID", de: "Beitrags-ID" }) }) },
         flags: inputFlags,
         async run({ ctx, args, flags }) {
           const target = await resolveNote(ctx, args.note);
@@ -2332,17 +2339,17 @@ function notebooksCommands(locale?: string) {
             }),
           );
           if (!printStructured(ctx, withCloudResourcePermalink(ctx, "notebooks.comment", comment)))
-            ctx.print(`${t({ en: "Updated comment", de: "Kommentar geändert" })} ${comment.id}`);
+            ctx.print(`${t({ en: "Updated post", de: "Beitrag geändert" })} ${comment.id}`);
         },
       }),
-      command("comments delete", {
-        summary: t({ en: "Delete your recent comment", de: "Eigenen neuen Kommentar löschen" }),
-        args: { ...noteArg, comment: arg.required({ valueLabel: "comment-id", description: t({ en: "Comment ID", de: "Kommentar-ID" }) }) },
+      command("discussion delete", {
+        summary: t({ en: "Delete your recent discussion post", de: "Eigenen neuen Diskussionsbeitrag löschen" }),
+        args: { ...noteArg, comment: arg.required({ valueLabel: "post-id", description: t({ en: "Post ID", de: "Beitrags-ID" }) }) },
         flags: { yes: confirmFlag(t({ en: "Delete without asking", de: "Ohne Nachfrage löschen" })) },
         async run({ ctx, args, flags }) {
           requireConfirmable(flags.yes);
           const target = await resolveNote(ctx, args.note);
-          await confirm(flags.yes, t({ en: `Delete comment ${args.comment}?`, de: `Kommentar ${args.comment} löschen?` }));
+          await confirm(flags.yes, t({ en: `Delete post ${args.comment}?`, de: `Beitrag ${args.comment} löschen?` }));
           const payload = await ctx.readJson<MessageResponse>(
             await ctx.fetch(noteApi(target, `/comments/${encodeURIComponent(args.comment)}`), { method: "DELETE" }),
           );
