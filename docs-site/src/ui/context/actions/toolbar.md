@@ -26,6 +26,42 @@ Place it last in a flex column: a heading, a scroll area with `flex: 1` and `min
 
 Render it in an island. The browser measures it before its first paint, so it never rearranges after it appears; until then it is invisible but keeps its space. A toolbar under a hidden ancestor waits until it is shown. Without scripting, the server layout stays visible.
 
+## Selection toolbar
+
+Use `SelectionToolbar` for actions on selected text, such as formatting and
+commenting in an editor. It holds a normal `Toolbar` (actions, separators, a
+text button) and floats at the selection in the top layer, so no scroll
+container clips it.
+
+- Give `anchor` a function that returns the selection's box, or nothing while
+  the toolbar should be closed. Open it after the pointer is released, not while
+  someone drags the selection. The toolbar reads the box again while the page
+  scrolls or resizes, so it stays attached.
+- It sits centered above the selection with an 8 px gap. Near the top of
+  `boundary`, such as the editor's scroll area under its own toolbar, it goes
+  below the selection. On touch use `placement="below"`: the system's selection
+  menu sits above.
+- It is compact so it stays small over the text: a 4 px frame, 30 px buttons
+  with 16 px icons, tight gaps and a slim separator. Use `Toolbar.Action` for
+  icon commands and a `size="sm"` ghost `Button` for a text command such as
+  Comment. On touch screens every button keeps a 44 px hit area through the
+  buttons' own touch rule; the bar does not grow. Shortcuts from `keys` show in
+  the tooltips only: the hints under the icons that the floating variant has do
+  not fit.
+- Pressing its buttons keeps the selection, so actions apply to it.
+- Escape inside the toolbar calls `onEscape`; close the toolbar there and
+  return focus to the text. Keyboard navigation is the `Toolbar` roving group.
+- Show only actions the person may use. Someone who can only read gets no
+  selection toolbar.
+
+```tsx
+<SelectionToolbar label="Selection" anchor={selectionBox} boundary={() => scroller} onEscape={close}>
+  <Toolbar.Action label="Bold" icon="ti ti-bold" keys="mod+b" onClick={bold} />
+  <Toolbar.Separator />
+  <Button size="sm" variant="ghost" onClick={comment}><i class="ti ti-message-plus" /> Comment</Button>
+</SelectionToolbar>
+```
+
 ## Toolbar.Action
 
 Use `Toolbar.Action` for ghost icon buttons. `label` names the button, its tooltip, and its row in the More menu; `icon` takes a class such as `"ti ti-archive"`. `disabled` applies to both the button and its menu row. `onClick` runs from either place.

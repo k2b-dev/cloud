@@ -7,7 +7,7 @@ import * as publicResources from "./public-resources";
 import {
   createMailWorkflowValueResolver,
   normalizeMailWorkflowFrozenHydration,
-  projectMailWorkflowFrozenBody,
+  projectMailWorkflowFrozenMessage,
 } from "./workflow-runtime-values";
 
 const plan: WorkflowBoundPlan = {
@@ -20,15 +20,27 @@ const plan: WorkflowBoundPlan = {
   actionPolicies: {},
   inputs: [{ name: "message", type: "mailMessage", config: {} }],
   triggers: [],
-  steps: [],
+  steps: [{ kind: "action", action: "aiClassify", config: {}, sourcePath: ["steps", 0] }],
   bindings: {},
 };
 
 const fixture = (frozenHydration: Record<string, WorkflowJsonValue> = {}) => {
-  const message = { id: "msg001", body: "", bodyText: "", bodyHtml: "", bodyAvailable: false, flags: ["seen"] };
+  const message = {
+    id: "msg001",
+    body: "",
+    bodyText: "",
+    bodyHtml: "",
+    bodyAvailable: false,
+    textLength: null,
+    attachmentCount: 0,
+    hasAttachments: false,
+    attachments: [],
+    attachmentsAvailable: false,
+    flags: ["seen"],
+  };
   const inputs = { message };
   normalizeMailWorkflowFrozenHydration(frozenHydration);
-  projectMailWorkflowFrozenBody("message", message, frozenHydration);
+  projectMailWorkflowFrozenMessage("message", message, frozenHydration);
   const resolver = createMailWorkflowValueResolver({
     claim: { runId: "run", executionGeneration: 1, inputs },
     mailboxId: "mailbox",
@@ -66,7 +78,7 @@ describe("Mail frozen body projection", () => {
     if (scenario === "both" || scenario === "plain") frozen["inputs.message.bodyText"] = "Frozen text";
     if (scenario === "both" || scenario === "html") frozen["inputs.message.bodyHtml"] = "<p>Frozen HTML</p>";
 
-    projectMailWorkflowFrozenBody("message", inputs.message, frozen);
+    projectMailWorkflowFrozenMessage("message", inputs.message, frozen);
 
     expect(inputs.message).toBe(message);
     expect(inputs.alias).toBe(message);
@@ -76,6 +88,7 @@ describe("Mail frozen body projection", () => {
       bodyHtml: scenario === "both" || scenario === "html" ? "<p>Frozen HTML</p>" : "",
       bodyAvailable: scenario === "both",
       flags: ["seen"],
+      ...(scenario === "both" || scenario === "plain" ? { textLength: 11 } : {}),
     });
   });
 
@@ -89,27 +102,33 @@ describe("Mail frozen body projection", () => {
     };
     normalizeMailWorkflowFrozenHydration(frozen);
     for (const name of ["legacy", "current"]) {
-      const message = { body: "", bodyText: "", bodyHtml: "", bodyAvailable: false };
-      projectMailWorkflowFrozenBody(name, message, frozen);
+      const message: Record<string, WorkflowJsonValue> = { body: "", bodyText: "", bodyHtml: "", bodyAvailable: false };
+      projectMailWorkflowFrozenMessage(name, message, frozen);
       expect(message).toEqual({
         body: name === "legacy" ? "Legacy text" : "",
         bodyText: name === "legacy" ? "Legacy text" : "",
         bodyHtml: "",
         bodyAvailable: true,
+        textLength: name === "legacy" ? 11 : 0,
       });
     }
   });
 
   test("leaves available old-event bodies untouched", () => {
-    const message = { body: "Old text", bodyText: "Old text", bodyHtml: "<p>Old HTML</p>", bodyAvailable: true };
+    const message: Record<string, WorkflowJsonValue> = {
+      body: "Old text",
+      bodyText: "Old text",
+      bodyHtml: "<p>Old HTML</p>",
+      bodyAvailable: true,
+    };
     const before = { ...message };
-    projectMailWorkflowFrozenBody("message", message, { "inputs.message.bodyText": "New text", "inputs.message.bodyHtml": "New HTML" });
-    expect(message).toEqual(before);
+    projectMailWorkflowFrozenMessage("message", message, { "inputs.message.bodyText": "New text", "inputs.message.bodyHtml": "New HTML" });
+    expect(message).toEqual({ ...before, textLength: 8 });
   });
 
   test("ignores non-object message inputs", () => {
     for (const message of [undefined, null, "message", []]) {
-      expect(() => projectMailWorkflowFrozenBody("message", message, { "inputs.message.bodyText": "Frozen text" })).not.toThrow();
+      expect(() => projectMailWorkflowFrozenMessage("message", message, { "inputs.message.bodyText": "Frozen text" })).not.toThrow();
     }
   });
 });
@@ -243,4 +262,58 @@ describe("Mail lazy workflow values", () => {
     Object.assign(message, { body: "Old plain text", bodyText: "Old plain text", bodyHtml: "<p>Old HTML</p>", bodyAvailable: true });
     expect(await resolve("inputs.message.body")).toEqual({ state: "resolved", value: "Old plain text" });
   });
+});
+
+test("AI body limits reject frozen bodies with an explicit recoverable diagnostic", async () => {
+  const { resolve } = fixture({ "inputs.message.bodyText": "x".repeat(20_001) });
+  await expect(resolve("inputs.message.bodyText", ["steps", 0, "aiClassify", "input"])).rejects.toMatchObject({
+    code: "WORKFLOW_AI_INPUT_TOO_LARGE",
+  });
+});
+
+test("AI source aliases retain the text budget and unrelated config keys do not activate it", async () => {
+  const { resolve } = fixture({ "inputs.message.bodyText": "x".repeat(20_001) });
+  await expect(resolve("inputs.message.bodyText", ["steps", 1, "setVariable", "aiClassify", "input"])).resolves.toMatchObject({
+    state: "resolved",
+  });
+  const resolver = createMailWorkflowValueResolver({
+    claim: { runId: "run", executionGeneration: 1, inputs: {} },
+    mailboxId: "mailbox",
+    frozenHydration: {},
+    mailActionNames: new Set(),
+  });
+  await expect(
+    resolver.resolve({
+      reference: "savedBody",
+      path: ["steps", 0, "aiClassify", "input"],
+      plan,
+      invocation: {
+        workflowId: "workflow",
+        mode: "execute",
+        channel: "event",
+        actor: {},
+        inputs: {},
+        idempotencyKey: "fixture",
+        occurredAt: "2026-10-01T08:00:00.000Z",
+      },
+      variables: { get: () => undefined, has: () => false, set: () => {} },
+      fallback: () => ({ renamed: "x".repeat(20_001) }),
+    }),
+  ).rejects.toMatchObject({ code: "WORKFLOW_AI_INPUT_TOO_LARGE" });
+});
+
+test("metric reads reuse and project frozen bodies and attachment metadata", async () => {
+  const body = "Reply\n\n-- \nSignature\n\nOn Monday, Sender wrote:\n> History";
+  const attachments = [
+    { id: "att001", disposition: "attachment" },
+    { id: "att002", disposition: "inline" },
+  ];
+  const frozen = { "inputs.message.bodyText": body, "inputs.message.attachments": attachments };
+  const { message, resolve } = fixture(frozen);
+  expect(await resolve("inputs.message.textLength")).toEqual({ state: "resolved", value: 5 });
+  expect(await resolve("inputs.message.attachmentCount")).toEqual({ state: "resolved", value: 2 });
+  expect(message).toMatchObject({ textLength: 5, attachmentCount: 2, attachments, attachmentsAvailable: true, hasAttachments: false });
+  // Receipt-time booleans stay stable even after a later step freezes metadata.
+  expect(await resolve("inputs.message.hasAttachments")).toEqual({ state: "resolved", value: false });
+  expect(Object.keys(frozen)).toEqual(["inputs.message.bodyText", "inputs.message.attachments"]);
 });

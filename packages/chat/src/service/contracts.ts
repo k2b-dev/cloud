@@ -1,4 +1,4 @@
-import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
+import { CapabilitySemanticLinkSchema, CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 export const MEMBER_PAGE_SIZE = 100;
@@ -673,6 +673,7 @@ export const ItemEventSchema = z.object({
     .regex(/^ti ti-[a-z0-9-]+$/)
     .max(80),
   sentence: z.string().max(4000),
+  href: CapabilitySemanticLinkSchema.shape.href.optional(),
   count: z.number().int().min(1),
   thread: z.union([
     z.object({ id: ShortIdSchema, name: z.string() }),

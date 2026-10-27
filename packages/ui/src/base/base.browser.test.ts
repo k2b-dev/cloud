@@ -437,7 +437,8 @@ describe("@k2b/ui base stylesheet in a browser", () => {
       expect(await style(tab, ".stdlib-chart", "color")).toBe("rgb(250, 250, 250)");
       expect(await style(tab, ".stdlib-chart-line.stdlib-chart-series-3", "stroke")).toBe("rgb(139, 92, 246)");
       expect(await style(tab, ".stdlib-chart-legend-label", "fill")).toBe("rgb(250, 250, 250)");
-      expect(await style(tab, ".stdlib-chart-tick-label", "font-family")).toContain("IBM Plex Mono");
+      expect(await style(tab, ".stdlib-chart-tick-label", "font-family")).toContain("IBM Plex Sans");
+      expect(await style(tab, ".stdlib-chart-tick-label", "font-variant-numeric")).toBe("tabular-nums");
     } finally {
       await tab.context().close();
     }

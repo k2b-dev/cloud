@@ -93,7 +93,14 @@ export class WorkflowRetryableStepError extends Error {
   }
 }
 
-class WorkflowValueError extends Error {}
+export class WorkflowValueError extends Error {
+  constructor(
+    message: string,
+    readonly code = "WORKFLOW_VALUE_UNAVAILABLE",
+  ) {
+    super(message);
+  }
+}
 
 class WorkflowValueWaiting extends Error {
   constructor(
@@ -302,6 +309,33 @@ const evaluateCondition = async (
     const resolved = await resolveReference(state, scope, condition.reference, [...path, "exists"]);
     if (resolved.state === "waiting") throw new WorkflowValueWaiting(condition.reference, resolved.dependency);
     return resolved.state === "resolved" && resolved.value !== null && resolved.value !== "";
+  }
+  if (
+    condition.operator === "greaterThan" ||
+    condition.operator === "lessThan" ||
+    condition.operator === "atLeast" ||
+    condition.operator === "atMost"
+  ) {
+    const numbers: number[] = [];
+    for (const [index, operand] of condition.operands.entries()) {
+      const expression = typeof operand === "string" ? EXACT_EXPRESSION.exec(operand)?.[1]?.trim() : undefined;
+      let value: WorkflowJsonValue;
+      if (expression && expression !== "now()") {
+        const resolved = await resolveReference(state, scope, expression, [...path, condition.operator, index]);
+        if (resolved.state === "waiting") throw new WorkflowValueWaiting(expression, resolved.dependency);
+        if (resolved.state === "missing") return false;
+        value = resolved.value;
+      } else {
+        value = await evaluateValue(state, scope, operand, [...path, condition.operator, index]);
+      }
+      if (typeof value !== "number" || !Number.isFinite(value)) return false;
+      numbers.push(value);
+    }
+    const [left, right] = numbers;
+    if (condition.operator === "greaterThan") return left! > right!;
+    if (condition.operator === "lessThan") return left! < right!;
+    if (condition.operator === "atLeast") return left! >= right!;
+    return left! <= right!;
   }
   const left = await evaluateValue(state, scope, condition.operands[0], [...path, condition.operator, 0]);
   const right = await evaluateValue(state, scope, condition.operands[1], [...path, condition.operator, 1]);
@@ -855,11 +889,7 @@ const evaluateStep = async (
     }
     const outcome: WorkflowStepOutcome = {
       state: "failed",
-      error: executionError(
-        error instanceof WorkflowValueError ? "WORKFLOW_VALUE_UNAVAILABLE" : "WORKFLOW_ACTION_ERROR",
-        errorMessage(error),
-        false,
-      ),
+      error: executionError(error instanceof WorkflowValueError ? error.code : "WORKFLOW_ACTION_ERROR", errorMessage(error), false),
     };
     return { flow: { state: "failed", error: outcome.error, step }, result: { mode: "execute", outcome } };
   }

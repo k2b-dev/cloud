@@ -44,6 +44,8 @@ export type ChatFeedItem = {
   kind: "text" | "system" | "event" | "eventGroup";
   /** An event's icon. */
   icon?: string;
+  /** Optional owning-app path to the passage or resource described by an event. */
+  href?: string;
   /** A group of three or more events in a row: its line, and whether its events show below it. */
   group?: { label: string; time: string; expanded: () => boolean; toggle: () => void };
   authorId: string;
@@ -426,7 +428,13 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               onToggle={item.group.toggle}
             />
           ) : item.kind === "event" ? (
-            <MessageEventRow icon={item.icon} origin={item.origin} time={messageTime(item.at, config())} dateTime={item.at}>
+            <MessageEventRow
+              icon={item.icon}
+              origin={item.origin}
+              href={item.href}
+              time={messageTime(item.at, config())}
+              dateTime={item.at}
+            >
               {item.body}
             </MessageEventRow>
           ) : item.kind === "system" ? (

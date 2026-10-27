@@ -32,3 +32,19 @@ test("formats one row per bucket, actor first, with English and German self form
 test.each(["created", "renamed", "moved", "deleted"])("formats recorded note.%s actions", (action) => {
   expect(notebookActivityRow({ ...event, action: `note.${action}` }, options).sentence).toBe(`Lena ${action} the note`);
 });
+
+const annotationId = "11111111-1111-4111-8111-111111111111";
+test("formats standalone comment rows with the annotation reader link and caller locale", () => {
+  const comment = { ...event, action: "annotation.create", metadata: { annotationId }, occurrenceCount: 1 };
+  expect(notebookActivityRow(comment, options)).toMatchObject({
+    sentence: "Lena left a comment",
+    icon: "ti ti-message-plus",
+    href: `/open/notebooks.annotation/~${annotationId}`,
+    count: 1,
+  });
+  expect(notebookActivityRow(comment, { ...options, locale: "de-CH" }).sentence).toBe("Lena hat einen Kommentar hinterlassen");
+  const self = { ...comment, actor: { ...comment.actor, id: "me" } };
+  expect(notebookActivityRow(self, options).sentence).toBe("You left a comment");
+  expect(notebookActivityRow(self, { ...options, locale: "de" }).sentence).toBe("Du hast einen Kommentar hinterlassen");
+  expect(notebookActivityRow(event, options)).not.toHaveProperty("href");
+});

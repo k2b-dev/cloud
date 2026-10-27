@@ -6,6 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { cssDeclarations, readShippedCssRules } from "../styles/css-contract-test-helpers";
+import { PERSON_COLORS } from "../surfaces/person-color";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-message-row-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -677,10 +678,11 @@ describe("MessageRow styles", () => {
       if (rule.selector.includes("k2b-message-row")) expect(rule.context, rule.selector).toBe(coarse);
   });
 
-  test("gives every avatar tint a rule", () => {
-    for (let tint = 0; tint < 10; tint++) {
-      expect(declarations(`.k2b-ui .k2b-avatar[data-tint="${tint}"]`).get("--k2b-avatar-hue")?.[0]).toMatch(/^#[0-9a-f]{6}$/);
-    }
+  test("gives every person color an avatar tint rule in the same order", () => {
+    PERSON_COLORS.forEach((color, tint) => {
+      expect(declarations(`.k2b-ui .k2b-avatar[data-tint="${tint}"]`).get("--k2b-avatar-hue")?.[0]).toBe(color);
+    });
+    expect(rules.some((rule) => rule.selector === `.k2b-ui .k2b-avatar[data-tint="${PERSON_COLORS.length}"]`)).toBe(false);
   });
 });
 
@@ -717,5 +719,19 @@ describe("MessageEventRow", () => {
     const open = renderToString(() => createComponent(MessageEventGroup, { label: "4 changes", expanded: true, onToggle: () => {} }));
     expect(open).toContain('aria-expanded="true"');
     expect(open).toContain("ti ti-chevron-up");
+  });
+});
+
+describe("MessageEventRow link", () => {
+  test("makes the sentence a link to what the event is about, and stays plain text without one", () => {
+    const linked = renderToString(() =>
+      createComponent(MessageEventRow, { href: "/app/notebooks/book01/notes/note01?annotation=a1", children: "Mara left a comment" }),
+    );
+    expect(linked).toContain(
+      '<a class="k2b-message-event-row__text k2b-message-event-row__link" href="/app/notebooks/book01/notes/note01?annotation=a1">',
+    );
+    expect(linked).toContain("Mara left a comment</a>");
+    const plain = renderToString(() => createComponent(MessageEventRow, { children: "Mara set the status" }));
+    expect(plain).not.toContain("<a ");
   });
 });

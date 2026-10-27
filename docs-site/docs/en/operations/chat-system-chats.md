@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to Spaces and Notebooks.
-updated: 2026-10-24
+updated: 2026-10-26
 ---
 
 # Chat system conversations
@@ -126,7 +126,10 @@ changes with the current caller. Ordinary conversations return 404. Pass
 `thread=all` (the default) for the container or a thread ID for that item.
 The response is `{ items, nextCursor, unavailable? }`. Each row has `id`, `at`
 (the bucket's last occurrence), `icon`, a final localized `sentence`, `count`,
-and `thread`. An existing thread is `{ id, name }` with its current title;
+and `thread`, plus an optional `href` supplied by the owning app. `href` is a
+same-origin path beginning with a single `/`, at most 2,048 characters, with
+no backslashes or control characters. Absolute and protocol-relative URLs are
+rejected. An existing thread is `{ id, name }` with its current title;
 otherwise `{ ref }` can be passed to `threads/for-resource`.
 
 Rows are newest first. A page can be shorter to fit the capability response
@@ -140,9 +143,12 @@ Clients should replace an existing row with the same ID when refreshing it.
 
 Events are read from Spaces or Notebooks rather than stored as Chat messages.
 They never advance unread state, become a conversation preview, trigger a
-notification, or enter Chat's live payloads. Comments and events for deleted
-or unreadable items are omitted. The owning app formats sentences in the
-caller's locale; Spaces receives the request's time zone for dates. An owner
+notification, or enter Chat's live payloads. Each new Notebooks passage
+comment contributes one separate row linking to the comment's passage, such as
+“Maria left a comment”. Replies, edits, resolution and acceptance add no
+comment rows. Deleted comments and events for deleted or unreadable items are
+omitted. Notebooks owns the comments; a Chat outage does not prevent commenting.
+The owning app formats sentences in the caller's locale; Spaces receives the request's time zone for dates. An owner
 outage or malformed activity response returns HTTP 200 with
 `{ items: [], nextCursor: null, unavailable: true }`; retry this read to recover.
 Denied conversation, thread, or activity access returns 404.
@@ -152,7 +158,7 @@ The owning queries are `spaces:space.activity` and
 ID), optional `item` (item short ID), `after`, `before`, `cursor`, and `limit`
 (default 50, maximum 100). Spaces also accepts an optional IANA `timeZone`,
 falling back to the installation zone. Each query returns a data array of
-`{ id, at, ref, actor: { type, id, name }, icon, sentence, count }` and its
+`{ id, at, ref, actor: { type, id, name }, icon, sentence, count, href? }` and its
 continuation in `page.nextCursor`. Item reads and activity queries use the
 same owning application's grants and credential scope checks. A notebook edit
 bucket remains one row; the query does not create additional edit records.
