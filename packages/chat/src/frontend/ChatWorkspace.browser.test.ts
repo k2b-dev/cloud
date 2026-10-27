@@ -1636,12 +1636,19 @@ describe("Chat info reopening", () => {
         expect(await toggle.getAttribute("aria-expanded")).toBe("true");
         await page.getByRole("button", { name: "Close chat info", exact: true }).click();
         await page.waitForURL(`**/c/${chat}`);
+        // Keep hover changes out of the closing layout, then wait for the real hit target to settle.
+        await page.mouse.move(0, 0);
+        await page.locator("#k2b-workspace-detail-chat-info").waitFor({ state: "hidden" });
+        await settled(page);
         expect(await toggle.isVisible()).toBe(true);
         expect(await toggle.getAttribute("aria-expanded")).toBe("false");
         await toggle.click();
         await page.waitForURL("**?panel=info");
         await page.goBack();
         await page.waitForURL(`**/c/${chat}`);
+        await page.mouse.move(0, 0);
+        await page.locator("#k2b-workspace-detail-chat-info").waitFor({ state: "hidden" });
+        await settled(page);
         expect(await toggle.getAttribute("aria-expanded")).toBe("false");
         await page.reload();
         // This harness mounts explicitly rather than hydrating an island.
