@@ -573,6 +573,11 @@ export type AppWorkspaceNavTreeItemProps = {
   class?: string;
   /** With the tree's `onMove`, the item can change its place among its siblings. Other items keep theirs, and no item moves past them. */
   movable?: boolean;
+  /**
+   * Shows the item as a branch before its children are rendered, for a tree that loads a branch when it opens. The
+   * application renders the children, or a row that says they load, once the item is expanded.
+   */
+  hasChildren?: boolean;
   onDragEnter?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
   onDragOver?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
   onDragLeave?: JSX.EventHandlerUnion<HTMLDivElement, DragEvent>;
@@ -1870,7 +1875,7 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
     <For each={siblings()}>
       {(item, place) => {
         const nested = createMemo(() => navTreeItems(item.children));
-        const hasChildren = () => nested().length > 0;
+        const hasChildren = () => item.hasChildren ?? nested().length > 0;
         const selected = () => props.selectedId === item.id;
         const siblingIndex = (id: string) => siblings().findIndex((sibling) => sibling.id === id);
         const movable = () => Boolean(props.onMove && item.movable && !item.disabled);

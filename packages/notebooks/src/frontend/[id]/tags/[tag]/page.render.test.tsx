@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../../../../tests/fixtures/rail-snapshot";
 import { selectHtml } from "../../../../../../../tests/fixtures/select-html";
 import { notebooksService } from "../../../../service";
+import { mockNoteTree } from "../../page-tree.test-fixture";
 import "../../_components/detail/ssr-test-plugin";
 
 const { default: handler } = await import("./page");
@@ -46,6 +47,8 @@ const notebook = {
   updatedAt: timestamp,
 };
 const activeSpies: Array<{ mockRestore(): void }> = [];
+/** The notes the next render's sidebar and Book read. */
+let treeNodes: Exclude<Parameters<typeof mockNoteTree>[0], () => unknown> = [];
 const track = <T extends { mockRestore(): void }>(spy: T): T => {
   activeSpies.push(spy);
   return spy;
@@ -60,7 +63,10 @@ function fixtures(permission: PermissionLevel = "read") {
   track(spyOn(notebooksService.notebook, "get")).mockResolvedValue(notebook);
   track(spyOn(notebooksService.notebook.permission, "get")).mockResolvedValue(permission);
   const cursor = track(spyOn(notebooksService.workspaceEvents, "latestCursor")).mockResolvedValue("1-0");
-  const tree = track(spyOn(notebooksService.note, "getTree")).mockResolvedValue([]);
+  treeNodes = [];
+  const [tree, ...treeSpies] = mockNoteTree(() => treeNodes);
+  track(tree);
+  for (const spy of treeSpies) track(spy);
   track(spyOn(notebooksService.attachment, "count")).mockResolvedValue(0);
   track(spyOn(notebooksService.note.favorites, "listIds")).mockResolvedValue([]);
   const tags = track(spyOn(notebooksService.tag, "listForNotebook")).mockResolvedValue([{ tag: "team", count: 101 }]);
@@ -151,7 +157,7 @@ describe("Book tag page SSR", () => {
   });
 
   test("the Book sidebar lists the start page first and the other pages by title", async () => {
-    const calls = fixtures();
+    fixtures();
     const page = (shortId: string, title: string, parentId: string | null = null) => ({
       id: `uuid-${shortId}`,
       shortId,
@@ -175,11 +181,11 @@ describe("Book tag page SSR", () => {
       homepageNoteId: home.id,
       homepageNoteShortId: home.shortId,
     });
-    calls.tree.mockResolvedValue([
+    treeNodes = [
       { ...page("note02", "Kapitel 10"), children: [] },
       { ...page("note03", "Kapitel 2"), hasChildren: true, children: [{ ...home, children: [] }] },
       { ...page("note05", "Anhang"), children: [] },
-    ]);
+    ];
     const rows = await selectHtml(await render("mode=book", "de"), '[role="tree"] [data-k2b-nav-tree-id]');
 
     // The start page lives below "Kapitel 2" and is still the first row, listed once.

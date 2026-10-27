@@ -63,7 +63,7 @@ packages/notebooks/src/frontend/[id]/_components/editor/note-preview.browser.tes
 packages/notebooks/src/frontend/[id]/_components/full-width.browser.test.ts | 2
 packages/notebooks/src/frontend/[id]/_components/graph/notebook-graph.browser.test.ts | 9
 packages/notebooks/src/frontend/[id]/_components/note-print-copy.browser.test.ts | 5
-packages/notebooks/src/frontend/[id]/_components/sidebar/notebook-sidebar.browser.test.ts | 16
+packages/notebooks/src/frontend/[id]/_components/sidebar/notebook-sidebar.browser.test.ts | 13
 packages/notebooks/src/frontend/[id]/_components/versions/version-history.browser.test.ts | 1
 packages/notebooks/src/frontend/lib/attachment-preview.browser.test.ts | 1
 packages/notebooks/src/frontend/lib/editor/lists.browser.test.ts | 1
