@@ -2,6 +2,7 @@ import type { AccessEntry } from "@k2b/cloud/contracts";
 import { type PageParams, type Paginated, paginate } from "@k2b/stdlib";
 import * as access from "./access";
 import * as activity from "./activity";
+import * as annotations from "./annotations";
 import * as apiKeys from "./api-keys";
 import * as attachments from "./attachments";
 import * as backup from "./backup";
@@ -147,6 +148,7 @@ export const notebooksService = {
     instantiate: templates.instantiate,
   },
   note: {
+    annotations,
     list: async (config: {
       notebookId: string;
       pagination?: PageParams;

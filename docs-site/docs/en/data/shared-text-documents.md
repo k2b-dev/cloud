@@ -5,7 +5,7 @@ section: Data
 order: 430
 description: Let people and agents edit the same text through a retained log and application-owned snapshots.
 tags: [data, text, collaboration, sync, yjs]
-updated: 2026-10-19
+updated: 2026-10-26
 ---
 
 # Shared text documents
@@ -110,7 +110,10 @@ Yjs documents are destroyed. When `signal` aborts before publication,
 `edit` throws its reason and publishes nothing; an aborted signal also skips
 the callback. An abort after publication ends as `persistFailed`.
 
-For changed text, `edit` applies a minimal diff against the replayed text,
+For changed text, `edit` compares lines and then characters within changed blocks
+against the replayed text, preserving unchanged Yjs items and their relative
+positions. Diff work is bounded by the log’s payload budget; an expensive region
+falls back to one replacement. It
 publishes the update with its actor, then replays from the original snapshot
 to the published cursor in a second document. It saves this second document,
 including other accepted updates up to that cursor. It never saves the local
@@ -301,3 +304,17 @@ before applying it with origin `replay:<cursor>`. Malformed updates raise
 and transport. `parseStreamCursor`, `compareStreamCursor`, and
 `maxStreamCursor` validate and compare resource-bound cursors; cursors from
 different logs cannot be compared.
+
+### Apply a prepared transaction
+
+The `edit()` callback may return `{ update: Uint8Array }` instead of a new
+string. Build that Yjs update from `current.state()` and apply exact range
+changes to the `SHARED_TEXT_NAME` text. This preserves inserted item IDs when
+an application must persist relative positions before publishing. The normal
+actor attribution, log publication, replay, and store save still apply.
+
+Only trusted application code supplies this update. Keep a stable operation
+ID and evidence in the same Yjs transaction when retrying a prepared edit.
+Returning an unchanged string skips publication and persistence; an application
+recovering a previous `persistFailed` must still materialize its snapshot
+before acknowledging completion.
