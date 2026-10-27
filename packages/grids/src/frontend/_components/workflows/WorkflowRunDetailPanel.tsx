@@ -352,6 +352,8 @@ export function WorkflowRunDetailPanel(props: {
   });
 
   const downloadDocument = async (document: PublicDocument) => {
+    // One download at a time, whether it started from the row or its download button.
+    if (downloadingDocumentId() !== null) return;
     setDownloadingDocumentId(document.id);
     try {
       const res = await requestDocumentDownload(document.id);
@@ -419,7 +421,8 @@ export function WorkflowRunDetailPanel(props: {
   const runAgain = async () => {
     const workflow = activeWorkflow();
     const current = run();
-    if (!workflow || !current) return;
+    // A run that is still being started cannot be started a second time from the menu or the main action.
+    if (!workflow || !current || rerunMut.loading()) return;
     const inputs = await requestWorkflowRunInput({
       workflow,
       tables: props.tables,
@@ -465,7 +468,9 @@ export function WorkflowRunDetailPanel(props: {
   };
   /** Rarer commands on the run; the main action stands beside them. */
   const runMenu = (): DropdownItem[] => [
-    ...(run() && canWrite() && running() ? [{ label: t().rerunWithInputs, icon: "ti ti-repeat", action: () => void runAgain() }] : []),
+    ...(run() && canWrite() && running()
+      ? [{ label: t().rerunWithInputs, icon: "ti ti-repeat", action: () => void runAgain(), disabled: rerunMut.loading() }]
+      : []),
     { label: t().refreshRunDetails, icon: "ti ti-refresh", action: () => refresh() },
   ];
 

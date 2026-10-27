@@ -234,6 +234,7 @@ export default function ContactNotesSection(props: Props) {
       </Show>
 
       <Discussion.List
+        fold={3}
         loading={(notesQuery.loading() || notesQuery.refreshing()) && notesPage().items.length === 0}
         loadingLabel={t().loadingComments}
         error={notesQuery.error()?.message}
