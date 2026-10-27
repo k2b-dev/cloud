@@ -3,7 +3,9 @@ import {
   CLOUD_RESOURCE_CLIPBOARD_MAX_BYTES,
   CLOUD_RESOURCE_CLIPBOARD_MIME_TYPE,
   CLOUD_RESOURCE_CLIPBOARD_WEB_FORMAT,
+  formatCloudResourceUrl,
   parseCloudResourceClipboard,
+  parseCloudResourceUrl,
   serializeCloudResourceClipboard,
 } from "../contracts/resource-clipboard";
 
@@ -65,6 +67,8 @@ export const cloudResourceClipboard = {
   webFormat: CLOUD_RESOURCE_CLIPBOARD_WEB_FORMAT,
   parse: parseCloudResourceClipboard,
   serialize: serializeCloudResourceClipboard,
+  url: formatCloudResourceUrl,
+  parseUrl: parseCloudResourceUrl,
   write: writeCloudResourceClipboard,
   read: readCloudResourceClipboard,
 } as const;

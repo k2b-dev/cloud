@@ -2,7 +2,6 @@ import { isManagerEntry } from "@k2b/cloud/access/ui";
 import {
   Button,
   DetailPanel,
-  Dropdown,
   type DropdownItem,
   IconButton,
   InlineGuidance,
@@ -212,6 +211,8 @@ export default function ChatInfoPanel(props: {
         kind={<span>{props.conversation.channel ? t().channelChoice : t().chatChoice}</span>}
         title={props.conversation.title}
         subtitle={system() ? systemMembers(props.conversation.resource?.type, t()) : t().members({ count: props.conversation.memberCount })}
+        menu={commands()}
+        menuLabel={t().chatActions({ title: props.conversation.title })}
         actions={
           <IconButton label={t().closeChatInfo} size="sm" variant="ghost" onClick={props.onClose}>
             <i class="ti ti-x" aria-hidden="true" />

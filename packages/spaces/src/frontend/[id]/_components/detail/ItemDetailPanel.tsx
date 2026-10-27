@@ -1,3 +1,4 @@
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
@@ -9,7 +10,6 @@ import {
   DescriptionList,
   type DescriptionListItem,
   DetailPanel,
-  Dropdown,
   type DropdownItem,
   IconButton,
   IconButtonLink,
@@ -705,6 +705,7 @@ export default function ItemDetailPanel(props: Props) {
       allDay: props.recurringContext?.allDay ?? props.item.allDay,
       dateConfig: props.dateConfig,
     });
+  const cloudId = useCloudIdCopy();
   const itemActions = (): DropdownItem[] => {
     const actions: DropdownItem[] = [
       {
@@ -1010,6 +1011,8 @@ export default function ItemDetailPanel(props: Props) {
           }
           title={props.item.title}
           subtitle={metaLine()}
+          menu={[...(canEditItem() ? itemActions() : []), ...cloudId.section({ type: "spaces.item", id: props.item.id })]}
+          menuLabel={t.moreItemActions}
           actions={
             <IconButtonLink
               href={props.baseUrl}
@@ -1069,13 +1072,6 @@ export default function ItemDetailPanel(props: Props) {
                   >
                     <i class="ti ti-repeat" aria-hidden="true" /> {t.viewSeries}
                   </ButtonLink>
-                </Show>
-                <Show when={canEditItem()}>
-                  <Dropdown.Root items={itemActions()} align="end" label={t.moreItemActions}>
-                    <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={t.moreItemActions} tooltip={t.moreItemActions}>
-                      <i class="ti ti-dots" aria-hidden="true" />
-                    </Dropdown.Trigger>
-                  </Dropdown.Root>
                 </Show>
               </>
             ) : undefined

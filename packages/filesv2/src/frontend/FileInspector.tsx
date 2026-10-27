@@ -1,10 +1,9 @@
-import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
-import { clipboard, query } from "@k2b/stdlib/solid";
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
+import { query } from "@k2b/stdlib/solid";
 import {
   Button,
   DescriptionList,
   DetailPanel,
-  Dropdown,
   type DropdownItem,
   FileGrid,
   FileTypeIcon,
@@ -29,12 +28,10 @@ import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
 import { apiFailure, contentLease, inlinePdfHref, previewKind } from "./file-preview";
 import { useFilesMessages } from "./messages";
-import { referenceHref } from "./urls";
 
 /** One entry in the shared details outline: header, preview, properties, versions or contents, then technical details; a summary for several. */
 export default function FileInspector(props: {
   base: BaseSummary;
-  cloudUrl: string;
   selected: readonly FileEntry[];
   paths: readonly string[];
   initial?: EntryResult | null;
@@ -116,15 +113,11 @@ export default function FileInspector(props: {
   const revision = (file: FileEntry) => JSON.stringify([props.base.id, props.base.locationKey, file.path, file.modified]);
   // The preview reads a `.pdf` anyway; once its bytes show it is no PDF, the viewer tab would only open an error page.
   const [notPdf, setNotPdf] = createSignal<string | null>(null);
-  const refClipboard = clipboard.createWriter({ write: cloudResourceClipboard.write, copiedFor: 1800 });
-  const copyReference = (item: FileEntry) => {
+  const cloudId = useCloudIdCopy();
+  const entryRef = (item: FileEntry) => {
     const id = item.resourceId ?? details.data()?.result.resourceId ?? entryRefId(props.base.id, item.path);
-    if (!id) return;
-    const href = referenceHref(props.base.id, item, id);
-    void refClipboard.copy({ cloudUrl: props.cloudUrl, ref: { type: ENTRY_TYPE, id }, fallbackText: new URL(href, props.cloudUrl).href });
+    return id ? { type: ENTRY_TYPE, id } : null;
   };
-  const copyLabel = () =>
-    refClipboard.error() ? t().copyReferenceFailed : refClipboard.wasCopied() ? t().copiedReference : t().copyReference;
   const openInTab = async (item: FileEntry) => {
     // A PDF opens at the preview's page address, so its tab reloads and signs an expired session in again.
     if (previewKind(item) === "pdf") return void window.open(inlinePdfHref(props.base.id, item.path), "_blank", "noopener");
@@ -225,6 +218,8 @@ export default function FileInspector(props: {
                       <Format.DateTime value={item().modified} />
                     </span>
                   }
+                  menu={[...headerMenu(item()), ...cloudId.section(entryRef(item()))]}
+                  menuLabel={t().moreActions}
                   actions={close}
                   primaryActions={
                     <>
@@ -274,11 +269,6 @@ export default function FileInspector(props: {
                           </Show>
                         </IconButton>
                       </Tooltip.Anchor>
-                      <Dropdown.Root items={headerMenu(item())} align="end" label={t().moreActions}>
-                        <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={t().moreActions}>
-                          <i class="ti ti-dots" aria-hidden="true" />
-                        </Dropdown.Trigger>
-                      </Dropdown.Root>
                     </>
                   }
                 />
@@ -366,23 +356,6 @@ export default function FileInspector(props: {
                           ...(!item().directory ? [{ term: f().size, description: <Format.Bytes value={item().size} /> }] : []),
                           { term: f().modified, description: <Format.DateTime value={item().modified} /> },
                         ]}
-                      />
-                      <DetailPanel.Action
-                        type="button"
-                        title={copyLabel()}
-                        leading={
-                          <i
-                            class={
-                              refClipboard.error()
-                                ? "ti ti-alert-circle text-danger"
-                                : refClipboard.wasCopied()
-                                  ? "ti ti-check"
-                                  : "ti ti-copy"
-                            }
-                            aria-hidden="true"
-                          />
-                        }
-                        onClick={() => copyReference(item())}
                       />
                     </DetailPanel.Section>
                   </DetailPanel.Group>

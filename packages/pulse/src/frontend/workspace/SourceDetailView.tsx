@@ -1,11 +1,11 @@
 import { type ResourceApiKey, ResourceApiKeys, type ResourceApiKeysProps } from "@k2b/cloud/access/ui";
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import {
   Button,
   DataTable,
   type DataTableColumn,
   DescriptionList,
   DetailPanel,
-  Dropdown,
   type DropdownItem,
   IconButton,
   StatusBadge,
@@ -83,6 +83,7 @@ export default function SourceDetailView(props: Props) {
     </DetailPanel.Section>
   );
 
+  const cloudId = useCloudIdCopy();
   const httpExample = () => httpIngestExample(props.source, props.origin);
   const status = () => props.source.status;
   /** The target leads the properties: where Pulse reads from, or where the source sends to. */
@@ -211,6 +212,8 @@ export default function SourceDetailView(props: Props) {
             {props.source.bearerTokenConfigured ? ` · ${t().bearerAuth}` : ""}
           </>
         }
+        menu={[...moreActions(), ...cloudId.section({ type: "pulse.source", id: props.source.id })]}
+        menuLabel={t().moreSourceActions}
         actions={
           <Tooltip.Anchor content={t().closeDetails}>
             <IconButton label={t().closeSourceDetails} variant="ghost" size="sm" onClick={props.close}>
@@ -223,11 +226,6 @@ export default function SourceDetailView(props: Props) {
             <Button type="button" variant="subtle" size="sm" class="pulse-details-main" onClick={() => void props.editSource(props.source)}>
               <i class="ti ti-pencil" aria-hidden="true" /> {t().edit}
             </Button>
-            <Dropdown.Root items={moreActions()} align="end" label={t().moreSourceActions}>
-              <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={t().moreSourceActions} tooltip={t().moreSourceActions}>
-                <i class="ti ti-dots" aria-hidden="true" />
-              </Dropdown.Trigger>
-            </Dropdown.Root>
           </div>
         }
       />

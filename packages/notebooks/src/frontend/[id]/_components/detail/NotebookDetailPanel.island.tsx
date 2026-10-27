@@ -1,4 +1,5 @@
 import { CloudAvatar, cloudAvatarSource } from "@k2b/cloud/account/ui";
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { SaveFilesButton } from "@k2b/cloud/browser/files";
 import type { NotebookPresenceParticipant } from "@k2b/cloud/contracts";
@@ -12,7 +13,6 @@ import {
   type AvatarStackPerson,
   Button,
   DetailPanel,
-  Dropdown,
   type DropdownItem,
   FileGrid,
   FileTypeIcon,
@@ -605,6 +605,7 @@ export default function NotebookDetailPanel(props: Props) {
     return t().hereNowLabel({ names: names.slice(0, 3).join(", "), more: Math.max(0, names.length - 3) });
   };
 
+  const cloudId = useCloudIdCopy();
   const moreItems = (): DropdownItem[] => [
     {
       items: [
@@ -633,6 +634,7 @@ export default function NotebookDetailPanel(props: Props) {
           },
         ]
       : []),
+    ...cloudId.section({ type: "notebooks.note", id: noteId() }),
   ];
 
   const activityHref = (item: NoteActivityItem): string | undefined =>
@@ -784,6 +786,8 @@ export default function NotebookDetailPanel(props: Props) {
               <AvatarStack people={people()} title={t().hereNow} label={presenceLabel()} hint={t().hereNowHint} />
             </Show>
           }
+          menu={moreItems()}
+          menuLabel={t().moreActions}
           actions={
             <IconButton label={t().closeNoteDetails} tooltip={t().closeDetails} size="sm" variant="ghost" onClick={closePanel}>
               <i class="ti ti-x" aria-hidden="true" />

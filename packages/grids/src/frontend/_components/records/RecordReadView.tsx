@@ -1,7 +1,6 @@
-import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import type { DateContext } from "@k2b/stdlib";
-import { clipboard } from "@k2b/stdlib/solid";
-import { DescriptionList, DetailPanel, Dropdown, type DropdownItem, StatusBadge, toast, useLocale } from "@k2b/ui";
+import { DescriptionList, DetailPanel, type DropdownItem, StatusBadge, useLocale } from "@k2b/ui";
 import { children, For, type JSX, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { ColumnSpec, FormatSpec } from "../../../contracts";
@@ -16,7 +15,6 @@ import { fieldDisplayFormatForView, recordDisplayTitle, recordTitleField } from 
 type RecordReadViewMode = "live" | "trash" | "snapshot";
 
 type RecordReadViewProps = {
-  cloudUrl: string;
   baseId: string;
   tableId: string;
   tableName: string;
@@ -28,10 +26,8 @@ type RecordReadViewProps = {
   showFinalizationStatus?: boolean;
   /** The one main action on the record, before "…". */
   primaryAction?: JSX.Element;
-  /** Rarer commands in "…"; live and deleted records always add "Copy record reference". */
+  /** Rarer commands in "…"; a live record adds "Copy Cloud ID". */
   menuItems?: readonly DropdownItem[];
-  /** Spins the "…" trigger while one of its commands runs. */
-  menuBusy?: boolean;
   /** The close button beside the kind line. */
   closeAction?: JSX.Element;
   relationLabels?: Record<string, string>;
@@ -63,7 +59,7 @@ export const hasRecordDetailValue = (value: unknown): boolean => value !== null 
 export default function RecordReadView(props: RecordReadViewProps) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
-  const recordClipboard = clipboard.createWriter({ write: cloudResourceClipboard.write, copiedFor: 1800 });
+  const cloudId = useCloudIdCopy();
   const mode = () => props.mode ?? "live";
   const primaryAction = children(() => props.primaryAction);
   const visibleFields = () => visibleFieldsFor(props.fields);
@@ -130,24 +126,9 @@ export default function RecordReadView(props: RecordReadViewProps) {
 
   const relationTargetTableId = (field: Field): string | undefined => (field.config as { targetTableId?: string }).targetTableId;
 
-  const recordHref = () =>
-    `/app/grids/${encodeURIComponent(props.baseId)}/table/${encodeURIComponent(props.tableId)}?record=${encodeURIComponent(props.record.id)}`;
-  const copyRecord = () =>
-    recordClipboard.copy({
-      cloudUrl: props.cloudUrl,
-      ref: { type: "grids.record" as const, id: props.record.id },
-      fallbackText: new URL(recordHref(), props.cloudUrl).href,
-    });
-  const copyRecordLabel = () => {
-    if (recordClipboard.error()) return t().copyReferenceFailed;
-    return recordClipboard.wasCopied() ? t().copiedReference : t().copyReference;
-  };
-  // From the closed "…" menu, the result is a toast: the menu that started it is gone.
-  const copyFromMenu = () =>
-    void copyRecord().then((copied) => (copied ? toast.success(t().copiedReference) : toast.error(t().copyReferenceFailed)));
   const menu = (): DropdownItem[] => [
     ...(props.menuItems ?? []),
-    ...(mode() === "snapshot" ? [] : [{ label: t().copyReference, icon: "ti ti-copy", action: copyFromMenu }]),
+    ...(mode() === "live" ? cloudId.section({ type: "grids.record", id: props.record.id }) : []),
   ];
 
   const formatDate = (value: string) =>
@@ -199,19 +180,10 @@ export default function RecordReadView(props: RecordReadViewProps) {
         }
         title={recordTitle()}
         subtitle={props.subtitle ?? t().recordMeta({ version: props.record.version, updated: formatDate(props.record.updatedAt) })}
+        menu={menu()}
+        menuLabel={t().moreActions}
         actions={props.closeAction}
-        primaryActions={
-          <Show when={primaryAction.toArray().some(Boolean) || menu().length > 0}>
-            {primaryAction()}
-            <Show when={menu().length > 0}>
-              <Dropdown.Root items={menu()} align="end" label={t().moreActions}>
-                <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={t().moreActions} aria-busy={props.menuBusy || undefined}>
-                  <i class={props.menuBusy ? "ti ti-loader-2 animate-spin" : "ti ti-dots"} aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-            </Show>
-          </Show>
-        }
+        primaryActions={primaryAction.toArray().some(Boolean) || menu().length > 0 ? <>{primaryAction()}</> : undefined}
       />
       <DetailPanel.Body scrollPreserveKey={props.scrollPreserveKey}>
         {props.notices}
@@ -323,26 +295,6 @@ export default function RecordReadView(props: RecordReadViewProps) {
           {props.more}
           <DetailPanel.Section title={t().technicalDetails} collapsible summary={t().technicalSummary}>
             <DescriptionList layout="rows" size="sm" items={technicalItems()} />
-            <Show when={mode() !== "snapshot"}>
-              <DetailPanel.Action
-                type="button"
-                class="grids-details-add"
-                leading={
-                  <i
-                    class={
-                      recordClipboard.error()
-                        ? "ti ti-alert-circle text-danger"
-                        : recordClipboard.wasCopied()
-                          ? "ti ti-check"
-                          : "ti ti-copy"
-                    }
-                    aria-hidden="true"
-                  />
-                }
-                title={copyRecordLabel()}
-                onClick={() => void copyRecord()}
-              />
-            </Show>
           </DetailPanel.Section>
         </DetailPanel.Group>
       </DetailPanel.Body>

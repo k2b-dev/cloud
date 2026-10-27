@@ -43,7 +43,6 @@ import { CorrectionDraftInvocationError, createCorrectionDraft } from "./record-
 import { recordDisplayTitle } from "./record-display";
 
 type Props = {
-  cloudUrl: string;
   baseId: string;
   tableId: string;
   tableName: string;
@@ -543,6 +542,7 @@ export default function RecordDetailPanel(props: Props) {
   const reviewPending = () => finalization()?.request?.status === "pending";
   const canResolveReview = () => reviewPending() && Boolean(finalization()?.canResolveRequest);
   const fourEyes = () => finalization()?.mode === "fourEyes";
+  // While one of the menu's commands runs, its entries stay disabled.
   const menuBusy = () =>
     deleteMut.loading() || finalizeMut.loading() || requestFinalizationMut.loading() || rejectFinalizationMut.loading();
   /** The rarer commands on the record; the one main action stands beside them. */
@@ -552,8 +552,8 @@ export default function RecordDetailPanel(props: Props) {
     return [
       ...(canResolveReview()
         ? [
-            { label: t().edit, icon: "ti ti-pencil", action: () => void handleEdit(rec) },
-            { label: t().reject, icon: "ti ti-x", action: () => void resolveFinalizationRequest(rec, "reject") },
+            { label: t().edit, icon: "ti ti-pencil", disabled: menuBusy(), action: () => void handleEdit(rec) },
+            { label: t().reject, icon: "ti ti-x", disabled: menuBusy(), action: () => void resolveFinalizationRequest(rec, "reject") },
           ]
         : []),
       ...(finalizationEnabled && !reviewPending()
@@ -561,6 +561,7 @@ export default function RecordDetailPanel(props: Props) {
             {
               label: fourEyes() ? t().requestFinalization : t().finalize,
               icon: fourEyes() ? "ti ti-user-check" : "ti ti-lock",
+              disabled: menuBusy(),
               action: () => void handleFinalize(rec),
             },
           ]
@@ -570,7 +571,15 @@ export default function RecordDetailPanel(props: Props) {
         : []),
       {
         sectionLabel: t().dangerZone,
-        items: [{ label: t().moveToTrash, icon: "ti ti-trash", variant: "danger" as const, action: () => void handleDelete(rec) }],
+        items: [
+          {
+            label: t().moveToTrash,
+            icon: "ti ti-trash",
+            variant: "danger" as const,
+            disabled: menuBusy(),
+            action: () => void handleDelete(rec),
+          },
+        ],
       },
     ];
   };
@@ -579,7 +588,6 @@ export default function RecordDetailPanel(props: Props) {
     <Show when={record()} fallback={null} keyed>
       {(rec) => (
         <RecordDocumentsSection
-          cloudUrl={props.cloudUrl}
           tableId={props.tableId}
           tableName={props.tableName}
           recordId={rec.id}
@@ -591,7 +599,6 @@ export default function RecordDetailPanel(props: Props) {
         >
           {(documents) => (
             <RecordReadView
-              cloudUrl={props.cloudUrl}
               baseId={props.baseId}
               tableId={props.tableId}
               tableName={props.tableName}
@@ -622,7 +629,6 @@ export default function RecordDetailPanel(props: Props) {
                 </Tooltip.Anchor>
               }
               menuItems={recordMenu(rec)}
-              menuBusy={menuBusy()}
               primaryAction={
                 <>
                   <Show when={props.canRunWorkflows && mode() === "live" && rec.finalizedAt && props.recordActionLaunchers.length > 0}>
