@@ -950,9 +950,10 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     if (!snapshot) throw new Error("Received message workflow snapshot could not be loaded");
     const occurredAt = params.message.internalDate.toISOString();
     const workflowIds = await params.db<{ workflow_id: string; name: string }[]>`
-      SELECT workflow.id::text AS workflow_id, workflow.name
+      SELECT workflow.id::text AS workflow_id, COALESCE(automation.name, workflow.name) AS name
       FROM mail.workflow_profile profile
       JOIN workflows.workflow workflow ON workflow.id = profile.id
+      LEFT JOIN mail.incoming_automations automation ON automation.workflow_id = workflow.id
       WHERE profile.mailbox_id = ${params.mailboxId}::uuid
         AND profile.enabled
         AND workflow.active_version_id IS NOT NULL

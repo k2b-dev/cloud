@@ -38,9 +38,13 @@ guard; recreating a rule is not necessary to receive the new behavior.
 
 Waiting uses durable workflow dependencies and rechecks unresolved state every
 30 seconds. Restarts preserve the wait. A failed or canceled upper run releases
-classes it did not claim. After 24 hours from ingress, a lower rule may retire
-an unresolved upper participant and take over. That upper rule can no longer
-apply exclusive effects after takeover. A claim already made still wins.
+classes it did not claim. A rule without that effect class does not delay
+lower rules. The same applies when the sender or subject conditions rule out
+every branch that could make that change. Unresolved body, attachment, or AI
+conditions still wait for the upper rule's decision.
+After 24 hours from ingress, a lower rule may retire an unresolved upper
+participant and take over. That upper rule can no longer apply exclusive
+effects after takeover. A claim already made still wins.
 Thirty seconds is the recheck interval; it is not the takeover deadline.
 
 ## Explain undo and retention

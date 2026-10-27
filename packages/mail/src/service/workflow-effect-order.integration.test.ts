@@ -1,16 +1,19 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { Readable } from "node:stream";
 import { encryptSecret } from "@k2b/cloud/services";
 import { deleteWorkflowScope, dispatchPendingWorkflowEvents, getWorkflowRun, wakeExpiredWorkflowRuns } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { workflowEffectBudgetSchema } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { applyConversationCollaboration } from "./collaboration";
 import { createMailbox } from "./mailboxes";
+import { hydrateMessageFromSource } from "./message-hydration";
 import { ingestEnvelope } from "./sync-runtime";
 import { getWorkflowSnapshot } from "./workflow-data";
-import { activateWorkflow, createWorkflow, deactivateWorkflow } from "./workflow-definition-service";
+import { activateWorkflow, createWorkflow, createWorkflowVersion, deactivateWorkflow, getWorkflow } from "./workflow-definition-service";
 import { claimMailWorkflowEffect, resolveMailWorkflowEffectTurn } from "./workflow-effect-order";
 import { ensureMailWorkflowEffectOrderSchema } from "./workflow-effect-order-schema";
 import { runMailWorkflow } from "./workflow-runtime";
@@ -136,7 +139,7 @@ suite("Durable Mail workflow effect order", () => {
     if (userId) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
 
-  const ingest = async (uid: number) => {
+  const ingest = async (uid: number, inReplyTo: string | null = null, captureWorkflowTriggers = true) => {
     const messageId = `<placement-${uid}-${suffix}@example.test>`;
     await sql.begin(async (tx) =>
       ingestEnvelope({
@@ -144,14 +147,14 @@ suite("Durable Mail workflow effect order", () => {
         mailboxId,
         remoteResourceId,
         folderId: inboxFolderId,
-        captureWorkflowTriggers: true,
+        captureWorkflowTriggers,
         message: {
           remoteRef: { folderStableKey: inboxStableKey, uidValidity: "1", uid: String(uid), modseq: "1" },
           providerMessageId: `placement-${uid}-${suffix}`,
           providerThreadId: null,
           messageId,
-          inReplyTo: null,
-          references: [],
+          inReplyTo,
+          references: inReplyTo ? [inReplyTo] : [],
           subject: `Placement message ${uid}`,
           sentAt: new Date("2026-01-15T12:00:00Z"),
           internalDate: new Date("2026-01-15T12:00:00Z"),
@@ -236,8 +239,8 @@ ${steps}
       if (!disabled.ok) throw new Error(disabled.error.message);
     }
   };
-  const receive = async () => {
-    const message = await ingest(nextUid++);
+  const receive = async (inReplyTo: string | null = null) => {
+    const message = await ingest(nextUid++, inReplyTo);
     const events = await sql<{ id: string; target_workflow_id: string }[]>`
       SELECT id::text, target_workflow_id::text FROM workflows.event
       WHERE app_id='mail' AND scope_id=${mailboxId}
@@ -343,6 +346,114 @@ ${steps}
     }
   }, 30000);
 
+  for (const scenario of [
+    { name: "a different effect class", condition: null, ready: true },
+    {
+      name: "a nonmatching frozen sender",
+      condition: 'equals: ["${{ inputs.message.fromAddress }}", unrelated@external.test]',
+      ready: true,
+    },
+    {
+      name: "a nonmatching sender and an unresolved body",
+      condition:
+        'all: [{ equals: ["${{ inputs.message.fromAddress }}", unrelated@external.test] }, { contains: ["${{ inputs.message.bodyText }}", urgent] }]',
+      ready: true,
+    },
+    { name: "an unresolved body", condition: 'contains: ["${{ inputs.message.bodyText }}", urgent]', ready: false },
+    { name: "unresolved attachments", condition: "exists: inputs.message.attachments.0", ready: false },
+    {
+      name: "a nonmatching sender or an unresolved body",
+      condition:
+        'any: [{ equals: ["${{ inputs.message.fromAddress }}", unrelated@external.test] }, { contains: ["${{ inputs.message.bodyText }}", urgent] }]',
+      ready: false,
+    },
+    {
+      name: "a negated nonmatching sender",
+      condition: 'not: { equals: ["${{ inputs.message.fromAddress }}", unrelated@external.test] }',
+      ready: false,
+    },
+    { name: "a matching normalized subject", condition: 'contains: ["${{ inputs.message.subject }}", PLACEMENT]', ready: false },
+  ]) {
+    test(`an undispatched upper with ${scenario.name} ${scenario.ready ? "does not block" : "still blocks"} assignment`, async () => {
+      const steps =
+        scenario.condition === null
+          ? "  - setConversationStatus: { conversation: inputs.conversation, status: done }"
+          : `  - if:\n      ${scenario.condition}\n    then:\n${assign().replace("  -", "      -")}`;
+      const upper = await rule(1, steps),
+        lower = await rule(2, assign());
+      try {
+        const received = await receive();
+        const event = received.events.find((event) => event.target_workflow_id === upper.id)!;
+        await sql`UPDATE workflows.event SET dispatch_after='2099-01-01' WHERE id=${event.id}::uuid`;
+        if (scenario.name === "a nonmatching frozen sender") {
+          // The Mail runtime projects typed inputs from source, even if event data differs.
+          await sql`UPDATE workflows.event SET data=jsonb_set(data, '{message,fromAddress}', '"unrelated@external.test"'::jsonb)
+            WHERE id=${event.id}::uuid`;
+        }
+        const run = await dispatch(received.events);
+        expect(await runMailWorkflow(run(lower.id))).toMatchObject({ result: { state: scenario.ready ? "succeeded" : "waiting" } });
+        if (scenario.ready)
+          expect(
+            (await outputs(run(lower.id))).some(({ output }) => output.action === "assignConversation" && output.applied === true),
+          ).toBe(true);
+      } finally {
+        await disable();
+      }
+    });
+  }
+
+  test("a nonmatching header cannot rule out an exclusive effect in the else branch", async () => {
+    const upper = await rule(
+      1,
+      `  - if:\n      equals: ["\${{ inputs.message.fromAddress }}", unrelated@external.test]\n    then:\n      - setConversationStatus: { conversation: inputs.conversation, status: done }\n    else:\n${assign().replace("  -", "      -")}`,
+    );
+    const lower = await rule(2, assign());
+    try {
+      const received = await receive();
+      await sql`UPDATE workflows.event SET dispatch_after='2099-01-01' WHERE id=${received.events.find((event) => event.target_workflow_id === upper.id)!.id}::uuid`;
+      const run = await dispatch(received.events);
+      expect(await runMailWorkflow(run(lower.id))).toMatchObject({ result: { state: "waiting" } });
+    } finally {
+      await disable();
+    }
+  });
+
+  test("a post-ingress edit cannot remove the pinned upper's competing effect", async () => {
+    const upper = await rule(1, assign()),
+      lower = await rule(2, assign());
+    try {
+      const received = await receive();
+      const current = await getWorkflow(context, mailboxId, upper.id);
+      if (!current.ok) throw new Error(current.error.message);
+      const edited = await createWorkflowVersion({
+        context,
+        mailboxId,
+        workflowId: upper.id,
+        input: {
+          source: current.data.currentVersion.source.replace(
+            assign(),
+            "  - setConversationStatus: { conversation: inputs.conversation, status: done }",
+          ),
+          effectBudget: workflowEffectBudgetSchema.parse(current.data.currentVersion.effectBudget),
+        },
+      });
+      if (!edited.ok) throw new Error(edited.error.message);
+      const activated = await activateWorkflow({
+        context,
+        mailboxId,
+        workflowId: upper.id,
+        input: { expectedVersionId: edited.data.currentVersion.id },
+      });
+      if (!activated.ok) throw new Error(activated.error.message);
+      active.find((item) => item.id === upper.id)!.versionId = edited.data.currentVersion.id;
+      await sql`UPDATE workflows.event SET dispatch_after='2099-01-01' WHERE id=${received.events.find((event) => event.target_workflow_id === upper.id)!.id}::uuid`;
+      const run = await dispatch(received.events);
+      expect(await runMailWorkflow(run(lower.id))).toMatchObject({ result: { state: "waiting" } });
+    } finally {
+      await disable();
+    }
+  });
+
   test("equal priorities use frozen UUID order; terminal upper with no claim permits lower", async () => {
     const first = await rule(5, assign());
     const second = await rule(5, assign());
@@ -351,10 +462,10 @@ ${steps}
       const run = await dispatch(received.events);
       const [upper, lower] = [first, second].sort((a, b) => a.id.localeCompare(b.id));
       if (!upper || !lower) throw new Error("Missing rules");
-      const turn = await sql.begin((tx) => resolveMailWorkflowEffectTurn(tx, { runId: run(lower.id), effectClass: "status" }));
+      const turn = await sql.begin((tx) => resolveMailWorkflowEffectTurn(tx, { runId: run(lower.id), effectClass: "assignment" }));
       expect(turn.state).toBe("waiting");
       await sql`UPDATE workflows.run SET state='failed' WHERE id=${run(upper.id)}::uuid`;
-      expect(await sql.begin((tx) => resolveMailWorkflowEffectTurn(tx, { runId: run(lower.id), effectClass: "status" }))).toEqual({
+      expect(await sql.begin((tx) => resolveMailWorkflowEffectTurn(tx, { runId: run(lower.id), effectClass: "assignment" }))).toEqual({
         state: "ready",
         ordered: true,
       });
@@ -503,6 +614,132 @@ ${steps}
       await disable();
     }
   }, 30000);
+
+  test("ordered status accepts a committed effect prefix followed by trigger hydration", async () => {
+    const workflow = await rule(1, `${assign()}\n  - setConversationStatus: { conversation: inputs.conversation, status: done }`);
+    const hydrate = async (message: Awaited<ReturnType<typeof ingest>>, inReplyTo: string | null = null) => {
+      const source = Buffer.from(
+        [
+          `Message-ID: ${message.messageId}`,
+          "From: customer@external.test",
+          "To: support@example.test",
+          "Subject: Placement conversation",
+          ...(inReplyTo ? [`In-Reply-To: ${inReplyTo}`] : []),
+          "Content-Type: text/plain; charset=utf-8",
+          "",
+          "Hydrated body",
+        ].join("\r\n"),
+      );
+      await hydrateMessageFromSource({
+        messageId: message.snapshot.preconditions.message!.id,
+        source: Readable.from([source]),
+        expectedSize: source.byteLength,
+      });
+    };
+    try {
+      const first = await ingest(nextUid++, null, false);
+      await hydrate(first);
+      const received = await receive(first.messageId),
+        run = await dispatch(received.events);
+      expect(received.snapshot.preconditions.conversation!.id).toBe(first.snapshot.preconditions.conversation!.id);
+      let hydrated = false;
+      expect(
+        await runMailWorkflow(run(workflow.id), {
+          emit: async (event) => {
+            if (event.type !== "step.finished" || event.step.action !== "assignConversation") return;
+            hydrated = true;
+            await hydrate(received, first.messageId);
+            const [current] = await sql<{ revision: number }[]>`
+            SELECT revision::int FROM mail.conversations WHERE id = ${received.snapshot.preconditions.conversation!.id}::uuid
+          `;
+            expect(current!.revision).toBe(received.snapshot.preconditions.conversation!.revision + 2);
+          },
+        }),
+      ).toMatchObject({ result: { state: "succeeded" } });
+      expect(hydrated).toBe(true);
+      expect(
+        (await outputs(run(workflow.id))).some(({ output }) => output.action === "setConversationStatus" && output.applied === true),
+      ).toBe(true);
+    } finally {
+      await disable();
+    }
+  }, 30000);
+
+  test("ordered status includes a reference allocation in its committed revision prefix", async () => {
+    await sql`
+      INSERT INTO mail.reference_number_configurations (mailbox_id,pattern,enabled,include_in_reply_subjects,created_by_actor_kind,created_by_actor_id)
+      VALUES (${mailboxId}::uuid,'REF-{{ sequence }}',true,false,'user',${userId}::uuid)
+    `;
+    const workflow = await rule(
+      1,
+      "  - ensureConversationReference: { conversation: inputs.conversation }\n  - setConversationStatus: { conversation: inputs.conversation, status: done }",
+    );
+    try {
+      const received = await receive(),
+        run = await dispatch(received.events);
+      expect(await runMailWorkflow(run(workflow.id))).toMatchObject({ result: { state: "succeeded" } });
+      expect(
+        (await outputs(run(workflow.id))).some(({ output }) => output.created === true && typeof output.conversationRevision === "number"),
+      ).toBe(true);
+      expect(
+        (await outputs(run(workflow.id))).some(({ output }) => output.action === "setConversationStatus" && output.applied === true),
+      ).toBe(true);
+    } finally {
+      await disable();
+      await sql`DELETE FROM mail.reference_number_configurations WHERE mailbox_id=${mailboxId}::uuid`;
+    }
+  }, 30000);
+
+  for (const ordered of [false, true]) {
+    test(`${ordered ? "ordered" : "pre-upgrade unordered"} summary no-op preserves a later person's status decision`, async () => {
+      const workflow = await rule(
+        1,
+        "  - setConversationSummary: { conversation: inputs.conversation, summary: 'Existing summary' }\n  - setConversationSummary: { conversation: inputs.conversation, summary: 'Existing summary' }\n  - setConversationStatus: { conversation: inputs.conversation, status: waiting }",
+      );
+      try {
+        const received = await receive(),
+          run = await dispatch(received.events);
+        if (!ordered) {
+          // A queued pre-upgrade event has a frozen view, but no ordering participant/metadata.
+          await sql`DELETE FROM mail.workflow_effect_order WHERE event_id=${received.events[0]!.id}::uuid`;
+          await sql`UPDATE workflows.run SET context=context - 'automationOrder' WHERE id=${run(workflow.id)}::uuid`;
+        }
+        let changed = false;
+        expect(
+          await runMailWorkflow(run(workflow.id), {
+            emit: async (event) => {
+              if (changed || event.type !== "step.finished" || event.step.action !== "setConversationSummary") return;
+              changed = true;
+              const conversationId = received.snapshot.preconditions.conversation!.id;
+              const [current] = await sql<
+                { revision: number }[]
+              >`SELECT revision::int FROM mail.conversations WHERE id=${conversationId}::uuid`;
+              expect(
+                await applyConversationCollaboration({
+                  context,
+                  mailboxId,
+                  conversationId,
+                  input: { expectedRevision: current!.revision, completion: "done" },
+                }),
+              ).toMatchObject({ ok: true });
+            },
+          }),
+        ).toMatchObject({ result: { state: "failed" } });
+        expect(changed).toBe(true);
+        const journal = await outputs(run(workflow.id));
+        expect(journal.filter(({ output }) => output.action === "setConversationSummary").map(({ output }) => output.applied)).toEqual([
+          true,
+          false,
+        ]);
+        const [after] = await sql<
+          { work_status: string }[]
+        >`SELECT work_status FROM mail.conversations WHERE id=${received.snapshot.preconditions.conversation!.id}::uuid`;
+        expect(after!.work_status).toBe("done");
+      } finally {
+        await disable();
+      }
+    }, 30000);
+  }
 
   test("concurrent rule workers cannot claim the same exclusive class", async () => {
     const upper = await rule(1, assign());

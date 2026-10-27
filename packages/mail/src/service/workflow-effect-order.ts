@@ -1,8 +1,11 @@
-import type { WorkflowActionResult, WorkflowJsonValue } from "@k2b/cloud/workflows";
+import type { WorkflowActionResult, WorkflowBoundPlan, WorkflowCondition, WorkflowIrStep, WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { sql } from "bun";
 import { mailWorkflowDependencyDeadline } from "./workflow-dependencies";
 
 type SqlClient = typeof sql;
+/** Actions whose command intents compete for the message placement claim. */
+export const MAIL_WORKFLOW_PLACEMENT_ACTIONS = new Set(["moveMessage", "archiveMessage", "trashMessage", "junkMessage"]);
+
 export type MailWorkflowExclusiveEffect = "assignment" | "placement" | "status";
 export type MailWorkflowEffectTurn =
   | { state: "ready"; ordered: boolean }
@@ -51,6 +54,72 @@ const loadParticipant = async (db: SqlClient, runId: string): Promise<Participan
   `;
   return self;
 };
+
+// Only immutable envelope headers can rule out an unstarted branch. Body/attachment
+// hydration, AI values and projected conversation/message state remain unknown.
+const frozenHeaderCondition = (
+  condition: WorkflowCondition,
+  plan: WorkflowBoundPlan,
+  inputs: Record<string, WorkflowJsonValue>,
+): boolean | null => {
+  if (condition.operator === "all" || condition.operator === "any") {
+    const values = condition.conditions.map((child) => frozenHeaderCondition(child, plan, inputs));
+    if (condition.operator === "all") return values.includes(false) ? false : values.includes(null) ? null : true;
+    return values.includes(true) ? true : values.includes(null) ? null : false;
+  }
+  if (condition.operator === "not") {
+    const value = frozenHeaderCondition(condition.condition, plan, inputs);
+    return value === null ? null : !value;
+  }
+  if (condition.operator === "exists" || condition.operator === "includes") return null;
+  const header = (operand: WorkflowJsonValue): string | null => {
+    if (typeof operand !== "string") return null;
+    if (!operand.includes("${{")) return operand;
+    const match = /^\$\{\{\s*inputs\.([\w]+)\.(fromAddress|fromDomain|subject)\s*\}\}$/.exec(operand);
+    if (!match || !plan.inputs.some((input) => input.name === match[1] && input.type === "mailMessage")) return null;
+    const message = inputs[match[1]!];
+    const value = message && typeof message === "object" && !Array.isArray(message) ? message[match[2]!] : null;
+    return typeof value === "string" ? value : null;
+  };
+  const left = header(condition.operands[0]),
+    right = header(condition.operands[1]);
+  if (left === null || right === null) return null;
+  if (condition.operator === "equals") return left === right;
+  if (condition.operator === "notEquals") return left !== right;
+  const a = left.normalize("NFKC").toLowerCase(),
+    b = right.normalize("NFKC").toLowerCase();
+  if (condition.operator === "textEquals") return a === b;
+  if (condition.operator === "contains") return a.includes(b);
+  if (condition.operator === "startsWith") return a.startsWith(b);
+  return a.endsWith(b);
+};
+
+const mayProduceEffect = (
+  steps: WorkflowIrStep[],
+  effectClass: MailWorkflowExclusiveEffect,
+  plan: WorkflowBoundPlan,
+  inputs: Record<string, WorkflowJsonValue>,
+): boolean =>
+  steps.some((step) => {
+    if (step.kind === "action") {
+      return effectClass === "assignment"
+        ? step.action === "assignConversation"
+        : effectClass === "status"
+          ? step.action === "setConversationStatus"
+          : MAIL_WORKFLOW_PLACEMENT_ACTIONS.has(step.action);
+    }
+    if (step.kind === "if") {
+      const matched = frozenHeaderCondition(step.condition, plan, inputs);
+      return (
+        (matched !== false && mayProduceEffect(step.then, effectClass, plan, inputs)) ||
+        (matched !== true && mayProduceEffect(step.else, effectClass, plan, inputs))
+      );
+    }
+    if (step.kind === "forEach") return mayProduceEffect(step.steps, effectClass, plan, inputs);
+    return [...step.cases.map((branch) => branch.steps), step.default].some((branch) =>
+      mayProduceEffect(branch, effectClass, plan, inputs),
+    );
+  });
 
 /**
  * Call only in an effect transaction. The lock must cover both the turn check and effect/claim.
@@ -108,12 +177,29 @@ export const resolveMailWorkflowEffectTurn = async (
   }
   if (claim) return { state: "ready", ordered: true };
 
-  const [upper] = await db<{ event_id: string }[]>`
-    SELECT event_id::text FROM mail.workflow_effect_order
-    WHERE remote_message_ref_id = ${self.remote_message_ref_id}::uuid
-      AND position < ${self.position} AND closed_at IS NULL
-    ORDER BY position LIMIT 1
+  const predecessors = await db<
+    { event_id: string; plan: WorkflowBoundPlan | null; inputs: Record<string, WorkflowJsonValue>; message: WorkflowJsonValue }[]
+  >`
+    SELECT ordering.event_id::text, version.plan, event.data AS inputs, event.context #> '{source,message}' AS message
+    FROM mail.workflow_effect_order ordering
+    JOIN workflows.event event ON event.id = ordering.event_id
+    LEFT JOIN workflows.event_delivery delivery ON delivery.event_id = event.id
+    LEFT JOIN workflows.version version ON version.id = delivery.workflow_version_id
+    WHERE ordering.remote_message_ref_id = ${self.remote_message_ref_id}::uuid
+      AND ordering.position < ${self.position} AND ordering.closed_at IS NULL
+    ORDER BY ordering.position
   `;
+  // A nonmatching header scope or a plan without this class cannot compete.
+  // Inspect pinned versions and event inputs, never an edited current rule.
+  const upper = predecessors.find((candidate) => {
+    if (!candidate.plan) return true;
+    const inputs = { ...candidate.inputs };
+    // Mail projects every typed message input from the frozen source before execution.
+    if (candidate.message && typeof candidate.message === "object" && !Array.isArray(candidate.message)) {
+      for (const field of candidate.plan.inputs) if (field.type === "mailMessage") inputs[field.name] = candidate.message;
+    }
+    return mayProduceEffect(candidate.plan.steps, input.effectClass, candidate.plan, inputs);
+  });
   return upper
     ? {
         state: "waiting",
