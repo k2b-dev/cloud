@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { formatFileViewSize } from "./FileView";
 import { fileKindLabel } from "./FileTypeIcon";
+import { formatFileViewSize } from "./FileView";
 
 describe("file kind and size labels", () => {
   test("name the kind in the reader's language, the extension for unknown kinds, and File without one", () => {
