@@ -44,7 +44,7 @@ export default ssr<AuthContext>(async (c) => {
           notebookName={data.notebook.name}
           notebookIcon={data.notebook.icon}
           selectedNoteId={data.selectedNote?.id ?? null}
-          tree={data.bookTree}
+          navigation={data.bookNavigation}
           tags={data.ctx.tags}
           currentHref={
             data.selectedNote
@@ -85,7 +85,7 @@ export default ssr<AuthContext>(async (c) => {
           notebookName={data.notebook.name}
           notebookIcon={data.notebook.icon}
           selectedNoteId={data.selectedNote?.id ?? null}
-          tree={data.bookTree}
+          navigation={data.bookNavigation}
           tags={data.ctx.tags}
           html={data.bookHtml}
           noteTitle={data.selectedNote?.title ?? null}
@@ -105,7 +105,6 @@ export default ssr<AuthContext>(async (c) => {
   const {
     user,
     notebook,
-    tree,
     isVersionsMode,
     isGraphMode,
     canWrite,
@@ -236,7 +235,7 @@ export default ssr<AuthContext>(async (c) => {
                 class="flex-1"
                 variant="panel"
                 icon="ti ti-file-text"
-                description={tree.length === 0 ? t.noNotes : t.selectNote}
+                description={ctx.sidebarTree.total === 0 ? t.noNotes : t.selectNote}
               />
             )}
           </AppWorkspace.Main>

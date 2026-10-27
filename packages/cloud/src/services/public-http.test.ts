@@ -176,18 +176,22 @@ test("public HTTPS closes both sides of a discarded endless redirect", async () 
 });
 
 test("public HTTPS keeps the caller deadline active during a slow body", async () => {
+  const deadline = new AbortController();
   const fixture = await networkTransportFixture((_req, res) => {
     res.write("x");
-    const timer = setInterval(() => res.write("x"), 5);
-    res.once("close", () => clearInterval(timer));
   });
   try {
     await expect(
       requestPublicHttps(
-        { ...base, signal: AbortSignal.timeout(80), url: "https://api.example/slow" },
+        { ...base, signal: deadline.signal, url: "https://api.example/slow" },
         {
           resolve: async () => [{ address: "1.1.1.1", family: 4 }],
-          request: fixture.request,
+          request: (options, callback) =>
+            fixture.request(options, (response) => {
+              callback(response);
+              // Expire only after transport has reached the body we intend to test.
+              response.once("data", () => deadline.abort(new DOMException("Caller deadline", "TimeoutError")));
+            }),
         },
       ),
     ).rejects.toThrow("HTTP_FAILED");

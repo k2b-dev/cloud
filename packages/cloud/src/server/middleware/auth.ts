@@ -31,6 +31,7 @@ export type InvocationProvenance = {
   callingAppId: string;
   credentialKind: "session" | "oauth" | "api_key" | "mandate";
   invocationId: string;
+  parentInvocationId?: string;
   requestId?: string | null;
   mandateId?: string;
   mandateRevision?: number;
@@ -74,7 +75,14 @@ export type RequestActor = UserRequestActor | ServiceAccountRequestActor;
 
 export type RequestCredentialKind = "session" | "oauth" | "api_key" | "invocation";
 
+/** Core keeps only revocation coordinates, never the original bearer credential. */
+export type RequestCredentialProof =
+  | { kind: "session"; userId: string; sid: string; authEpoch: number; expiresAt: string }
+  | { kind: "oauth"; payload: import("jose").JWTPayload }
+  | { kind: "api_key"; credentialId: string };
+
 export type RequestAuthority = {
+  credentialProof?: RequestCredentialProof;
   actor: RequestActor;
   accessSubject: AccessSubject;
   credentialKind: RequestCredentialKind;
@@ -94,6 +102,7 @@ export type AuthContext = {
     sessionKind?: SessionKind;
     /** Constraints carried by OAuth/API credentials; absent sessions are unrestricted by transport scope. */
     credentialScopes?: string[];
+    credentialProof?: RequestCredentialProof;
     /** OAuth scopes for bearer-token requests. Absent for sessions and API credentials. */
     oauthScopes?: string[];
   };
@@ -161,6 +170,13 @@ const loadAuthenticatedActorUncached = async (
     c.set("sessionToken", token);
     c.set("credentialKind", "session");
     c.set("sessionKind", authenticatedSession.data.kind);
+    c.set("credentialProof", {
+      kind: "session",
+      userId: user.id,
+      sid: authenticatedSession.data.sid,
+      authEpoch: authenticatedSession.data.authEpoch,
+      expiresAt: authenticatedSession.data.expiresAt,
+    });
     return { token, user, actor };
   }
 
@@ -187,6 +203,7 @@ const loadAuthenticatedActorUncached = async (
     };
     c.set("actor", actor);
     c.set("credentialKind", "api_key");
+    c.set("credentialProof", { kind: "api_key", credentialId: authResult.credential.id });
     c.set("credentialScopes", authResult.credential.scopes);
     if (authResult.delegatedUser) {
       c.set("accessSubject", { type: "user", userId: authResult.delegatedUser.id });
@@ -202,6 +219,14 @@ const loadAuthenticatedActorUncached = async (
     const authResult = await oauthTokens.verifyAccessToken(bearer, expectedAudience);
     if (!authResult) return { token: null, user: null, actor: null };
 
+    c.set("credentialProof", {
+      kind: "oauth",
+      payload: Object.fromEntries(
+        ["sub", "id", "uid", "client_id", "auth_epoch", "service_account_id", "scope", "exp"].flatMap((key) =>
+          authResult.payload[key] === undefined ? [] : [[key, authResult.payload[key]]],
+        ),
+      ),
+    });
     if (authResult.kind === "user") {
       if (isAccountExpired(authResult.user.accountExpires)) return { token: null, user: null, actor: null };
       const actor: RequestActor = { kind: "user", user: authResult.user };
@@ -462,6 +487,7 @@ const getAuthority = <E extends AuthContext>(c: Context<E>): RequestAuthority =>
     accessSubject,
     credentialKind,
     scopes: [...(c.get("credentialScopes") ?? [])],
+    ...(c.get("credentialProof") ? { credentialProof: c.get("credentialProof") } : {}),
   };
 };
 

@@ -542,6 +542,88 @@ cookie list in your privacy notice if you keep one.
 No data migration or configuration change is required. See
 [Follow the person's theme](/en/docs/frontend/styling-and-accessibility#follow-the-persons-theme).
 
+## Deploy App-PWA support
+
+Applications can declare one independent [App-PWA](/en/docs/frontend/app-pwa)
+under `/app/<id>/<surface>/`. Deploy the gateway with App-PWA support before
+applications that declare `installable`; older gateways do not enforce its
+worker and path boundaries. Registry readers on the new runtime validate the
+complete declaration. A malformed declaration makes that application
+unavailable through the gateway until its configuration is corrected.
+
+The gateway now reserves `/app/<id>` and every descendant for app `<id>`,
+including prefixes published by older applications. A root or ancestor fallback
+cannot answer for a missing or rejected owner. Check custom deployments for
+foreign claims in that namespace before upgrading and move those routes to
+the owning application. Existing `/pwa` parts keep their own routing contract.
+
+Only a declared App-PWA's exact `sw.js`, the Cloud mobile app's `/pwa/sw.js`,
+and Core's existing `/service-worker.js` can load as service-worker scripts.
+Custom workers at other paths are refused. Only Core's exact root push worker
+keeps `Service-Worker-Allowed`; generated App-PWA workers cannot broaden their
+scope. Path scopes do not isolate scripts from other trusted code on the
+same origin, and these guards do not remove workers already installed by an
+older deployment.
+
+Build each declaring application with the standard `scripts/build.ts`, or use
+`preload.ts` during development, from its pinned Cloud package. Ship the
+complete `dist/public` directory: it includes both themes of its generated
+PNG icons. Rendering runs in the existing bounded Linux native-worker process
+during the build, not in the application server. An unknown Tabler icon or a
+failed renderer fails the build. No new runtime service or environment variable
+is required.
+
+Verify the public manifest, icon, and `sw.js` below the declared scope without
+a session cookie. The manifest's `id`, `start_url`, and `scope` must all equal
+the neutral trailing-slash path. Verify that a different worker URL is refused,
+and that `Service-Worker-Allowed` is absent from the generated worker response.
+
+Use HTTPS and preserve service-worker request headers through any external
+proxy. The generated worker keeps no private offline cache. A failed navigation
+shows a neutral document; API calls and writes still need a network. Updated
+workers wait until all windows of that installation close, so a deployment does
+not replace a running customer page. Installation, Safari storage separation,
+and Home Screen behavior still need verification on the target devices.
+
+### Paired App-PWA devices and visits
+
+Applications that opt into [App-PWA sessions](/en/docs/identity/app-pwa-sessions)
+run their service's `setup()` in the normal application startup lifecycle. The
+reserved `_cloud_pwa_*` tables live in that application's Postgres schema and
+need the same backup coverage as its domain data. Pairing secrets are stored
+as hashes. This contract supports the platform's PostgreSQL 15–17 range.
+
+Configure the existing canonical public Cloud URL as HTTPS. The service uses
+that origin for QR validation and same-origin requests, even when the upstream
+request arrives over internal HTTP. Forward the `Origin`, `Cookie`, and
+`X-App-Pwa-CSRF` headers unchanged through the trusted gateway. The application
+must expose its explicit guest routes while keeping staff operations subject
+to current web-session and application authorization.
+
+The device can live at most 12 hours. Its initiating web session and owner
+validity can shorten that lifetime. Customer visits last at most 60 minutes,
+with a 15-minute idle deadline; status traffic does not renew them. Logout,
+authority invalidation and device revocation close access to its visits.
+Revocation and domain completion serialize in Postgres. Audit records include
+app, owner, device and visit identifiers, without QR or signature content.
+
+Guest operations hold authority locks only for their bounded request
+transaction. Category-policy reads also hold a shared settings-table lock, and
+local device resource operations hold shared permission-table locks, so policy
+or grant writes can briefly wait for the command. Handlers must finish within
+the existing request budget and keep external work outside this transaction.
+A timeout or database failure returns a recoverable error rather than a
+successful completion.
+
+Cancelling an active transaction can open one short-lived control connection
+with the same configured database identity. Include these connections in the
+Postgres connection budget. The database role must retain permission to cancel
+its own backends; no superuser permission is required.
+
+Use a separate browser profile without an employee sign-in on shared devices.
+Installing under another path does not create a separate origin. The example
+and this release do not migrate existing application share links or change
+Cloud mobile-app pairing.
 ## Chat reactions after the upgrade
 
 Chat's additive startup migration creates the message reaction table and indexes.

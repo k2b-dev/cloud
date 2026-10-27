@@ -700,7 +700,10 @@ describe("upstream origin", () => {
         return new Response("app");
       },
     });
-    const table = buildRouteTable([{ prefix: "/", appId: "core", baseUrl: `http://127.0.0.1:${app.port}` }]);
+    const table = buildRouteTable([
+      { prefix: "/", appId: "core", baseUrl: `http://127.0.0.1:${app.port}` },
+      { prefix: "/app/files", appId: "files", baseUrl: `http://127.0.0.1:${app.port}` },
+    ]);
     const gateway = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
@@ -895,7 +898,8 @@ describe("dynamic response compression on the wire", () => {
   });
 
   test("precompressed HTML passes byte-identically", async () => {
-    const encoded = brotliCompressSync(Buffer.from(mailboxHtml));
+    // The passthrough contract does not depend on Brotli quality; use the production-quality fixture.
+    const encoded = brotliCompressSync(Buffer.from(mailboxHtml), { params: { [constants.BROTLI_PARAM_QUALITY]: 4 } });
     await withCompressionGateway(
       () => new Response(encoded, { headers: { "Content-Type": "text/html", "Content-Encoding": "br", ETag: '"encoded"' } }),
       async (url) => {

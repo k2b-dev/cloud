@@ -35,17 +35,18 @@ ${source[1].trim()}
 </svg>\n`;
 }
 
-export async function writeAppFavicon(options: { publicDir: string; appId: string; icon: string }): Promise<string> {
-  const iconName = tablerIconName(options.icon);
-  let sourcePath: string;
+export async function readTablerIcon(icon: string): Promise<string> {
+  const iconName = tablerIconName(icon);
   try {
-    sourcePath = Bun.resolveSync(`@tabler/icons/outline/${iconName}.svg`, resolve(import.meta.dir, ".."));
+    return await readFile(Bun.resolveSync(`@tabler/icons/outline/${iconName}.svg`, resolve(import.meta.dir, "..")), "utf8");
   } catch {
-    throw new Error(`Unknown Tabler app icon ${JSON.stringify(options.icon)}`);
+    throw new Error(`Unknown Tabler app icon ${JSON.stringify(icon)}`);
   }
+}
 
+export async function writeAppFavicon(options: { publicDir: string; appId: string; icon: string }): Promise<string> {
   const target = resolve(options.publicDir, options.appId, "favicon.svg");
   await mkdir(dirname(target), { recursive: true });
-  await writeFile(target, renderAppFavicon(await readFile(sourcePath, "utf8")));
+  await writeFile(target, renderAppFavicon(await readTablerIcon(options.icon)));
   return target;
 }
