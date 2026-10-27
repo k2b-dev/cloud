@@ -127,6 +127,7 @@ describe("model chooser in the composer", () => {
     for (let press = 0; press < 9; press++) await page.keyboard.press("ArrowDown");
     const id = await search.getAttribute("aria-activedescendant");
     expect(id).toBeTruthy();
+    await settled(page);
     const visible = await page.evaluate((target) => {
       const option = document.getElementById(target!)!.getBoundingClientRect();
       const list = document.querySelector(".k2b-anchored-popover [role=listbox]")!.getBoundingClientRect();
