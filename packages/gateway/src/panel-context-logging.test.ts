@@ -14,7 +14,7 @@ for (const outcome of ["success", "failure"])
     try {
       const response = await proxyRequest(
         new Request(url),
-        buildRouteTable([{ prefix: "/app/fixture", appId: `panel-${outcome}`, baseUrl: "http://upstream.test" }]),
+        buildRouteTable([{ prefix: "/app/fixture", appId: "fixture", baseUrl: "http://upstream.test" }]),
         createProxyStats(),
         (message, metadata) => {
           entries.push({ message, metadata });
@@ -22,6 +22,7 @@ for (const outcome of ["success", "failure"])
         null,
         () => {},
       );
+      expect(upstream).toHaveBeenCalledTimes(1);
       expect(response.status).toBe(outcome === "success" ? 200 : 502);
       expect(telemetry).toHaveBeenCalledTimes(1);
       expect(telemetry.mock.calls[0]?.[0].pathTemplate).toBe("/app/fixture/panel");

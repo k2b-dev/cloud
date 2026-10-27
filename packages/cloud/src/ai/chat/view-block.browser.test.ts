@@ -1149,20 +1149,25 @@ test("an explorer table caps the combined current and reference rows at 100", as
     const frame = await boxes(page);
     await pickExplorerView(page, "Table");
     await page.waitForSelector("tbody .k2b-data-table__row");
-    expect((await explorerRows(page)).map((cells) => cells.slice(0, 3))).toEqual(
+    const [initialRows, initialNotes] = await Promise.all([explorerRows(page), page.locator(".k2b-chart-explorer__note").count()]);
+    expect(initialRows.map((cells) => cells.slice(0, 3))).toEqual(
       largeExplorer.rows.filter((row) => row.year === "2026").map((row) => [row.year, String(row.month), row.region]),
     );
-    expect(await page.locator(".k2b-chart-explorer__note").count()).toBe(0);
+    expect(initialNotes).toBe(0);
     await page.getByRole("button", { name: "Pin as reference" }).click();
-    await page.getByRole("slider", { name: "Year", exact: true }).focus();
-    await page.keyboard.press("ArrowLeft");
+    await page.getByRole("slider", { name: "Year", exact: true }).press("ArrowLeft");
     await page.waitForSelector(".k2b-chart-explorer__note");
-    expect(await page.locator("tbody .k2b-data-table__row").count()).toBe(100);
-    expect(await page.locator(".k2b-chart-explorer__note").textContent()).toContain("Showing 100 of 144 rows");
-    expect((await explorerRows(page)).map((cells) => cells.slice(0, 3))).toEqual(
+    const [rows, note, finalFrame] = await Promise.all([
+      explorerRows(page),
+      page.locator(".k2b-chart-explorer__note").textContent(),
+      boxes(page),
+    ]);
+    expect(rows).toHaveLength(100);
+    expect(note).toContain("Showing 100 of 144 rows");
+    expect(rows.map((cells) => cells.slice(0, 3))).toEqual(
       largeExplorer.rows.slice(0, 100).map((row) => [row.year, String(row.month), row.region]),
     );
-    expect(await boxes(page)).toEqual(frame);
+    expect(finalFrame).toEqual(frame);
   } finally {
     await context.close();
   }
