@@ -1562,8 +1562,9 @@ html {
    96 px. No line, fill, or frame separates the columns. Each shade is an
    absolute pseudo-element whose containing block lies outside its column, so
    a column that clips or scrolls neither cuts nor moves it. A waiting Detail
-   keeps the drawer's own shadow, and a phone shows one column at a time. */
-@media (min-width: 48rem) {
+   keeps the drawer's own shadow, a phone shows one column at a time, and
+   print has no columns. */
+@media screen and (min-width: 48rem) {
   .k2b-ui .k2b-app-workspace__content::before,
   .k2b-ui .k2b-app-workspace__content::after,
   .k2b-ui .k2b-app-workspace__main.has-panes > [data-workspace-main-region]::before {
@@ -1601,7 +1602,14 @@ html {
         > .k2b-app-workspace__sidebar:not([hidden]),
         > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
       )
-      > :is(.k2b-app-workspace__content, :is(solid-island, solid-client) > .k2b-app-workspace__content)::before {
+      > .k2b-app-workspace__content::before,
+    .k2b-ui
+      .k2b-app-workspace:has(
+        > .k2b-app-workspace__sidebar:not([hidden]),
+        > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
+      )
+      > :is(solid-island, solid-client)
+      > .k2b-app-workspace__content::before {
       top: 0;
       right: 0;
       bottom: 0;
