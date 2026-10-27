@@ -226,6 +226,7 @@ describe("Mail workspace live updates", () => {
           currentUserId: "user-1",
           currentUserEmail: "reader@example.test",
           contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+          cloudUrl: "https://cloud.example",
           dateConfig: { timeZone: "Europe/Berlin", locale: "en" },
           initialPreferences: readMailWorkspacePreferences(""),
           initialUserPreferences: readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),

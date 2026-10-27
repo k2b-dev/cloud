@@ -46,6 +46,7 @@ window.mountMailOverview = (options) => {
           initialHiddenMailboxIds={[]}
           currentUserEmail={null}
           contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
+          cloudUrl="https://cloud.example"
           dateConfig={{ locale: "en", timeZone: "UTC" }}
           initialFocusError={options.initialFocusError}
           initialFocus={options.initialFocus}

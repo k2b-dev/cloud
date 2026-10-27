@@ -187,6 +187,19 @@ Open **Message actions** on an individual message. Its **Sender** section has to
 - **Create automation from sender**, **Block sender**, and **Block sender domain** open the guided rule editor with the sender filled in.
 - **Manage unsubscribe** appears only when the message contains standard mailing-list unsubscribe information.
 
+## Refer to a mail from another app {icon="id"}
+
+Another Cloud app can keep a reference to a conversation or a message. To give it one, copy the Cloud ID:
+
+- In a conversation, open **More conversation actions** or right-click the conversation. Choose **Copy conversation Cloud ID**.
+- On a message, open **Message actions** or right-click the message. Choose **Copy message Cloud ID**. The same menu also has **Copy conversation Cloud ID**.
+- In the list, the actions of a row have **Copy conversation Cloud ID**.
+- In **Conversation details**, use the ID button in the header for the conversation, or **Copy message Cloud ID** under **Mail details** for the newest message.
+
+Mail confirms the copy. Paste the Cloud ID into the other app. It is a link such as `https://cloud.example.com/open/mail.message/~Ab12Cd`, and it opens the mail. The Cloud ID gives no access: the other app shows the mail only to people who can open it in Mail.
+
+A right-click in the conversation opens the same menu as its **…** button. A right-click on a message opens the menu of that message. Links, text fields, the body of an HTML message, and selected text keep the menu of the browser, so you can copy text as usual. With the keyboard, press Shift+F10 or the context menu key.
+
 ## Keep conversations that must not be deleted {icon="lock"}
 
 Some mail is evidence, for example that a customer was informed. Choose **More conversation actions > Keep** to protect the whole conversation. Everyone who can write in the mailbox can keep a conversation. A lock in the conversation list and next to the subject shows that it is kept; point at the lock next to the subject to see who kept it and since when. To keep conversations in one step, add **Keep** under **More conversation actions > Customize toolbar**.

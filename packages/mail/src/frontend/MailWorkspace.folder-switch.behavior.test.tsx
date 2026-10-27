@@ -354,6 +354,7 @@ describe("Mail workspace folder switches", () => {
           currentUserId: "user-1",
           currentUserEmail: "reader@example.test",
           contactDirectory: m.DEFAULT_MAIL_CONTACT_DIRECTORY,
+          cloudUrl: "https://cloud.example",
           dateConfig: { timeZone: "Europe/Berlin", locale: "en" },
           initialPreferences: m.readMailWorkspacePreferences(""),
           initialUserPreferences: m.readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),

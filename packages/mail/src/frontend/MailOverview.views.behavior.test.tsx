@@ -82,6 +82,7 @@ const mountOverview = async (props: {
         initialHiddenMailboxIds: [],
         currentUserEmail: null,
         contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+        cloudUrl: "https://cloud.example",
         dateConfig: { locale: "en", timeZone: "UTC" },
         initialFocusError: props.initialFocusError,
         initialFocus: props.initialFocus,

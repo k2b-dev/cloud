@@ -187,6 +187,19 @@ Tippe in der Cloud-Suche `>`, um die Aktionen der Schaltflächen und Menüs als 
 - **Automatisierung für diesen Absender erstellen**, **Absender blockieren** und **Absender-Domain blockieren** öffnen den geführten Regeleditor mit eingetragenem Absender.
 - **Abmeldung verwalten** erscheint nur, wenn die Nachricht standardisierte Angaben zum Abmelden von einer Mailingliste enthält.
 
+## Von einer anderen App auf eine Mail verweisen {icon="id"}
+
+Eine andere Cloud-App kann einen Verweis auf eine Unterhaltung oder eine Nachricht speichern. Dafür kopierst du die Cloud-ID:
+
+- In einer Unterhaltung öffnest du **Weitere Unterhaltungsaktionen** oder mit einem Rechtsklick das Menü der Unterhaltung. Wähle **Cloud-ID der Unterhaltung kopieren**.
+- Bei einer Nachricht öffnest du **Nachrichtenaktionen** oder mit einem Rechtsklick das Menü der Nachricht. Wähle **Cloud-ID der Nachricht kopieren**. Dasselbe Menü hat auch **Cloud-ID der Unterhaltung kopieren**.
+- In der Liste haben die Aktionen einer Zeile **Cloud-ID der Unterhaltung kopieren**.
+- In den **Unterhaltungsdetails** nutzt du den ID-Knopf im Kopf für die Unterhaltung oder **Cloud-ID der Nachricht kopieren** unter **E-Mail-Details** für die neueste Nachricht.
+
+Mail bestätigt das Kopieren. Füge die Cloud-ID in der anderen App ein. Sie ist ein Link wie `https://cloud.example.com/open/mail.message/~Ab12Cd` und öffnet die Mail. Die Cloud-ID gibt keinen Zugriff: Die andere App zeigt die Mail nur Personen, die sie auch in Mail öffnen dürfen.
+
+Ein Rechtsklick in die Unterhaltung öffnet dasselbe Menü wie ihr Knopf **…**. Ein Rechtsklick auf eine Nachricht öffnet das Menü dieser Nachricht. Links, Textfelder, der Inhalt einer HTML-Nachricht und markierter Text behalten das Menü des Browsers, damit du Text wie gewohnt kopieren kannst. Mit der Tastatur drückst du Umschalt+F10 oder die Kontextmenütaste.
+
 ## Unterhaltungen aufbewahren, die nicht gelöscht werden dürfen {icon="lock"}
 
 Manche E-Mails sind ein Nachweis, etwa dafür, dass eine Kundin informiert wurde. Wähle **Weitere Unterhaltungsaktionen > Aufbewahren**, um die ganze Unterhaltung zu schützen. Alle, die im Postfach schreiben dürfen, können eine Unterhaltung aufbewahren. Ein Schloss in der Unterhaltungsliste und neben dem Betreff zeigt, dass sie aufbewahrt wird. Zeigst du auf das Schloss neben dem Betreff, siehst du, wer sie seit wann aufbewahrt. Um in einem Schritt aufzubewahren, füge **Aufbewahren** unter **Weitere Unterhaltungsaktionen > Werkzeugleiste anpassen** hinzu.

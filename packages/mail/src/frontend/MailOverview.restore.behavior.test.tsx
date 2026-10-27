@@ -48,6 +48,7 @@ test.skipIf(isServer)("a restored mailbox still opens when its health dialog can
         initialHiddenMailboxIds: [],
         currentUserEmail: null,
         contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+        cloudUrl: "https://cloud.example",
         dateConfig: { locale: "en", timeZone: "UTC" },
         initialFocusError: null,
         initialFocus: emptyFocus,
