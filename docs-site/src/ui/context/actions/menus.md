@@ -7,6 +7,12 @@
 Use `Dropdown` for secondary actions that need an explicit, keyboard-accessible trigger.
 
 Use `ContextMenu` as a pointer shortcut on a record or canvas. Do not make it the only way to reach an action.
+Give it the same items as the element's visible "…" `Dropdown`, so right-click and the button never disagree.
+
+Set `keepNativeMenu` when the host wraps readable content, such as a message or a document. Links, form fields,
+editable text, and a text selection inside it then keep the browser's own menu with Copy, Paste, and Open link, and
+an enclosing `ContextMenu` does not take it over. Shift+F10 and the context menu key still open the app menu, except
+in a field. A `ContextMenu` nested in another opens its own menu, by pointer and by keyboard.
 
 Do not use either menu as a select input. Choose the control from the state the
 user is editing:

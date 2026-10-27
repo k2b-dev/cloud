@@ -5,7 +5,7 @@ section: Platform services
 order: 562
 description: Preserve stable Cloud resource identity across application clipboard interactions.
 tags: [capabilities, resources, clipboard, browser]
-updated: 2026-10-18
+updated: 2026-10-27
 ---
 
 # Copy and paste Cloud resources
@@ -87,6 +87,38 @@ await resourceCopy.copy({
 resourceCopy.wasCopied(); // true only after a successful write
 resourceCopy.error(); // the latest Clipboard API failure, if any
 ```
+
+## Copy a reference as text
+
+Where a person copies a resource to paste it elsewhere, name the action
+**Copy Cloud ID** (or *Copy message Cloud ID* when one menu offers several) and
+use the resource's permalink as `fallbackText`. The permalink is the plain-text
+form of a Cloud resource reference. `/open/<type>/~<id>` resolves to the
+resource's current reader link for everyone who may read it:
+
+```ts
+import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
+
+const ref = { type: "mail.message", id: message.id };
+await cloudResourceClipboard.write({ cloudUrl, ref, fallbackText: cloudResourceClipboard.url(ref, cloudUrl) });
+// fallbackText: "https://cloud.example/open/mail.message/~Ab12Cd"
+```
+
+An application that lets people paste a reference into a text field, or reads
+one from an agent, parses that text with `parseUrl()`. It accepts the absolute
+permalink of this Cloud or its root-relative path and returns `null` for
+anything else, such as another installation's link, an application page, or a
+query or fragment:
+
+```ts
+const ref = cloudResourceClipboard.parseUrl(input.value, cloudUrl);
+// { type: "mail.message", id: "Ab12Cd" } or null
+```
+
+The same helpers are `formatCloudResourceUrl()` and `parseCloudResourceUrl()`
+in `@k2b/cloud/contracts` for server code. `cld` prints the same text as
+`permalink`. As with the structured format, the parsed reference establishes
+identity only and grants no access.
 
 ## Read a reference
 

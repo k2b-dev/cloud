@@ -10,6 +10,7 @@ import type { MailConversationDetailData } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
 import MailSidebar from "./_components/MailSidebar";
+import { MailCloudIdProvider } from "./_components/mail-cloud-id";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { createMailboxPreferences } from "./_components/mail-mailbox-preferences";
 import { openViewTabsInPlace } from "./_components/mail-view-tabs";
@@ -44,6 +45,8 @@ function MailOverviewView(props: {
   initialHiddenMailboxIds: string[];
   currentUserEmail: string | null;
   contactDirectory: MailContactDirectory;
+  /** Canonical Cloud origin from `app.url`, for copied resource references. */
+  cloudUrl: string;
   dateConfig: DateContext;
 }) {
   const locale = useLocale();
@@ -515,7 +518,9 @@ function MailOverviewView(props: {
 export default function MailOverview(props: Parameters<typeof MailOverviewView>[0]) {
   return (
     <MailContactDirectoryProvider value={props.contactDirectory}>
-      <MailOverviewView {...props} />
+      <MailCloudIdProvider cloudUrl={props.cloudUrl}>
+        <MailOverviewView {...props} />
+      </MailCloudIdProvider>
     </MailContactDirectoryProvider>
   );
 }

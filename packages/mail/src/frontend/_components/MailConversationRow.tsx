@@ -1,7 +1,8 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Dropdown, type HoverPreviewController, Tooltip, useLocale } from "@k2b/ui";
+import { Dropdown, type DropdownItem, type HoverPreviewController, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, For, Show } from "solid-js";
 import { getMailAction, type MailActionId } from "./mail-actions";
+import { useMailCloudId } from "./mail-cloud-id";
 import { MAX_MAIL_CONVERSATION_SELECTION } from "./mail-conversation-selection";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { buildMailAttachmentDownloadHref, buildMailSelectionHref, isMailListItemActive, type MailListItem } from "./mail-navigation";
@@ -83,6 +84,50 @@ export default function MailConversationRow(props: {
     if (props.leaving && entry) entry.style.setProperty("--mail-row-height", `${entry.offsetHeight}px`);
   });
 
+  const cloudId = useMailCloudId();
+  const writeActions = (): DropdownItem[] => [
+    {
+      label: actionLabel(props.item.unread ? "mark_read" : "mark_unread"),
+      icon: getMailAction(props.item.unread ? "mark_read" : "mark_unread").icon,
+      action: () => props.actions.itemAction(props.item, props.item.unread ? "mark_read" : "mark_unread"),
+    },
+    {
+      label: actionLabel(props.item.flagged ? "unflag" : "flag"),
+      icon: getMailAction(props.item.flagged ? "unflag" : "flag").icon,
+      action: () => props.actions.itemAction(props.item, props.item.flagged ? "unflag" : "flag"),
+    },
+    {
+      label: t().manageTags,
+      icon: "ti ti-tags",
+      action: () => props.actions.manageTags(props.item),
+    },
+    ...(["archive", "move", props.state.spamAction, "trash"] as const).map((actionId) => {
+      // Cloud refuses to delete a kept conversation or move it to Junk; the menu says why.
+      const blocked = props.item.kept
+        ? actionId === "trash"
+          ? t().keptCannotDelete
+          : actionId === "junk"
+            ? t().keptCannotJunk
+            : null
+        : null;
+      return blocked
+        ? { label: actionLabel(actionId), icon: getMailAction(actionId).icon, description: blocked, disabled: true as const }
+        : {
+            label: actionLabel(actionId),
+            icon: getMailAction(actionId).icon,
+            action: () => props.actions.itemAction(props.item, actionId),
+          };
+    }),
+    ...(props.actions.merge
+      ? [
+          {
+            label: t().mergeWithConversation,
+            icon: "ti ti-git-merge",
+            action: () => props.actions.merge?.(props.item),
+          },
+        ]
+      : []),
+  ];
   return (
     <div
       ref={(element) => {
@@ -313,54 +358,12 @@ export default function MailConversationRow(props: {
           </a>
         )}
       </Show>
-      <Show when={props.state.canWrite && !props.state.selectionMode && props.item.conversationId}>
+      <Show when={!props.state.selectionMode && props.item.conversationId}>
         <div class="k2b-progressive-action absolute right-3 top-2 z-10">
           <Dropdown.Root
             position="bottom-left"
-            width="13rem"
-            items={[
-              {
-                label: actionLabel(props.item.unread ? "mark_read" : "mark_unread"),
-                icon: getMailAction(props.item.unread ? "mark_read" : "mark_unread").icon,
-                action: () => props.actions.itemAction(props.item, props.item.unread ? "mark_read" : "mark_unread"),
-              },
-              {
-                label: actionLabel(props.item.flagged ? "unflag" : "flag"),
-                icon: getMailAction(props.item.flagged ? "unflag" : "flag").icon,
-                action: () => props.actions.itemAction(props.item, props.item.flagged ? "unflag" : "flag"),
-              },
-              {
-                label: t().manageTags,
-                icon: "ti ti-tags",
-                action: () => props.actions.manageTags(props.item),
-              },
-              ...(["archive", "move", props.state.spamAction, "trash"] as const).map((actionId) => {
-                // Cloud refuses to delete a kept conversation or move it to Junk; the menu says why.
-                const blocked = props.item.kept
-                  ? actionId === "trash"
-                    ? t().keptCannotDelete
-                    : actionId === "junk"
-                      ? t().keptCannotJunk
-                      : null
-                  : null;
-                return blocked
-                  ? { label: actionLabel(actionId), icon: getMailAction(actionId).icon, description: blocked, disabled: true as const }
-                  : {
-                      label: actionLabel(actionId),
-                      icon: getMailAction(actionId).icon,
-                      action: () => props.actions.itemAction(props.item, actionId),
-                    };
-              }),
-              ...(props.actions.merge
-                ? [
-                    {
-                      label: t().mergeWithConversation,
-                      icon: "ti ti-git-merge",
-                      action: () => props.actions.merge?.(props.item),
-                    },
-                  ]
-                : []),
-            ]}
+            width="15rem"
+            items={[...(props.state.canWrite ? writeActions() : []), ...cloudId.section({ conversationId: props.item.conversationId })]}
           >
             <Dropdown.Trigger
               iconOnly

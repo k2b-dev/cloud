@@ -42,6 +42,7 @@ import { readApiError } from "./api-response";
 import MailConversationContext from "./MailConversationContext";
 import MailRelatedConversations from "./MailRelatedConversations";
 import { presentMailActivity } from "./mail-activity-presentation";
+import { useMailCloudId } from "./mail-cloud-id";
 import { mailDraftHref } from "./mail-compose-route";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { describeUnavailableMailDetails } from "./mail-detail-availability";
@@ -108,6 +109,7 @@ export default function MailDetailsPanel(props: {
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const canAssign = () => props.canWrite && props.mailboxWide;
   const retryToast = createRetryToasts();
+  const cloudId = useMailCloudId();
   const [inspectorLoading, setInspectorLoading] = createSignal<InspectorTab | null>(null);
   /** The inspector loads its code on first use; until its modal opens, another activation must not open a second one. */
   const openMessageInspector = async (messageId: string, initialTab: InspectorTab) => {
@@ -649,16 +651,30 @@ export default function MailDetailsPanel(props: {
             ) : undefined
           }
           actions={
-            <Tooltip.Anchor content={t().closeDetails}>
-              <IconButton
-                type="button"
-                class="@min-[64rem]/k2b-app-area:hidden"
-                label={t().closeConversationDetails}
-                onClick={props.onClose}
-              >
-                <i class="ti ti-x" aria-hidden="true" />
-              </IconButton>
-            </Tooltip.Anchor>
+            <>
+              <Show when={cloudId.available()}>
+                <Tooltip.Anchor content={cloudId.t().copyConversation}>
+                  <IconButton
+                    type="button"
+                    label={cloudId.t().copyConversation}
+                    data-mail-copy-cloud-id="conversation"
+                    onClick={() => cloudId.copy("conversation", props.conversationId)}
+                  >
+                    <i class="ti ti-id" aria-hidden="true" />
+                  </IconButton>
+                </Tooltip.Anchor>
+              </Show>
+              <Tooltip.Anchor content={t().closeDetails}>
+                <IconButton
+                  type="button"
+                  class="@min-[64rem]/k2b-app-area:hidden"
+                  label={t().closeConversationDetails}
+                  onClick={props.onClose}
+                >
+                  <i class="ti ti-x" aria-hidden="true" />
+                </IconButton>
+              </Tooltip.Anchor>
+            </>
           }
         />
 
@@ -1060,6 +1076,17 @@ export default function MailDetailsPanel(props: {
                       <i class={inspectorLoading() === "source" ? "ti ti-loader-2 animate-spin" : "ti ti-code"} aria-hidden="true" />{" "}
                       {t().source}
                     </Button>
+                    <Show when={cloudId.available()}>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        type="button"
+                        data-mail-copy-cloud-id="message"
+                        onClick={() => cloudId.copy("message", message().id)}
+                      >
+                        <i class="ti ti-id" aria-hidden="true" /> {cloudId.t().copyMessage}
+                      </Button>
+                    </Show>
                     <Show when={message().sourceAvailable}>
                       <ButtonLink
                         variant="secondary"

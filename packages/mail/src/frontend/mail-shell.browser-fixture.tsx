@@ -433,6 +433,7 @@ export default function MailShellFixture(props: {
           initialHiddenMailboxIds={sidebar.hiddenMailboxIds}
           currentUserEmail="reader@example.test"
           contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
+          cloudUrl="https://cloud.example"
           dateConfig={{ locale, timeZone: "UTC" }}
         />
       ) : (
@@ -442,6 +443,7 @@ export default function MailShellFixture(props: {
           currentUserId="user-1"
           currentUserEmail="reader@example.test"
           contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
+          cloudUrl="https://cloud.example"
           dateConfig={{ locale, timeZone: "UTC" }}
           initialPreferences={{
             ...readMailWorkspacePreferences(""),
