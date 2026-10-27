@@ -113,6 +113,7 @@ describe("resolveLiveCapabilityRegistryEntry", () => {
     expect(entry).not.toBeNull();
     expect(entry!.manifest.manifestHash).toBe(manifest.manifestHash);
     expect(entry!.manifest).not.toHaveProperty("fileProvider");
+    expect(entry!.manifest).not.toHaveProperty("calendarSource");
     expect(entry!.manifest).not.toHaveProperty("events");
     expect(entry!.manifest.queries.map((query) => query.localId)).toEqual(["book.read"]);
     expect(entry!.manifest.actions.map((action) => action.localId)).toEqual(["book.rename"]);
@@ -174,9 +175,9 @@ describe("resolveLiveCapabilityRegistryEntry", () => {
         source: "capability-registry",
         appId: "archive",
         manifestHash: manifest.manifestHash,
-        leftOutCount: 5,
+        leftOutCount: 6,
         // The file provider names a function this release does not know, so the app no longer offers files.
-        leftOut: ["types/shelf", "queries/author.read", "queries/book.search", "actions/book.archive", "fileProvider"],
+        leftOut: ["types/shelf", "queries/author.read", "queries/book.search", "actions/book.archive", "calendarSource", "fileProvider"],
       });
 
       // An app whose manifest this release reads completely logs nothing.

@@ -9,7 +9,7 @@ import * as processSync from "./process-sync";
 import * as watcher from "./runtime-watcher";
 
 describe("application startup readiness", () => {
-  for (const mode of ["setup", "start", "ready", "advertise", null, "skip"] as const) {
+  for (const mode of ["setup", "start", "ready", "advertise", "calendar", null, "skip"] as const) {
     const skipSetup = mode === "skip";
     const failure = skipSetup ? null : mode;
     test(`advertises only ready resources and cleans up ${failure ?? (skipSetup ? "skipped setup" : "successful startup")}`, async () => {
@@ -76,6 +76,9 @@ describe("application startup readiness", () => {
         const started = app.start({
           fetch: () => new Response("application"),
           skipSetup,
+          ...(mode === "calendar"
+            ? { capabilities: { protocolVersion: 2 as const, calendarSource: { calendars: "missing", events: "missing" } } }
+            : {}),
           lifecycle: {
             setup: async () => {
               expect(events).toContain("setup-lock-acquire");
@@ -89,7 +92,11 @@ describe("application startup readiness", () => {
             },
           },
         });
-        if (failure) {
+        if (failure === "calendar") {
+          await expect(started).rejects.toThrow("calendarSource does not match");
+          expect(events).toEqual(["connect", "disconnect"]);
+          expect(() => processSync.getProcessSync()).toThrow("not available");
+        } else if (failure) {
           await expect(started).rejects.toThrow(`failed:${failure}`);
           expect(events).toContain("setup-lock-release");
           expect(events.at(-1)).toBe("disconnect");

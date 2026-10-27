@@ -53,6 +53,7 @@ export { withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 export { createAiOpenAiRoutes } from "../ai/openai-api";
 export { type CapabilityDispatchDependencies, dispatchCapability } from "./capabilities";
 export { cliPluginListRoutes } from "./cli-plugins";
+export { createIdentityChildInvocationRoutes } from "./identity-child-invocation";
 export { createPwaPhoneRoutes } from "./pwa-phone";
 
 /**
