@@ -1287,3 +1287,91 @@ describe("workflow runtime executor", () => {
     expect(await run(2)).toMatchObject({ state: "failed", error: { message: expect.stringContaining("limit is 2") } });
   });
 });
+
+for (const operator of ["greaterThan", "lessThan", "atLeast", "atMost"] as const) {
+  test(`evaluates ${operator} without coercion, including recursive groups and missing values`, async () => {
+    const compare = (left: number, right: number) =>
+      operator === "greaterThan"
+        ? left > right
+        : operator === "lessThan"
+          ? left < right
+          : operator === "atLeast"
+            ? left >= right
+            : left <= right;
+    const pairs: Array<[WorkflowJsonValue | undefined, WorkflowJsonValue | undefined]> = [
+      [2, 1],
+      [1, 2],
+      [1, 1],
+      [-1.5, 0],
+      [0, 0],
+      ["2", 1],
+      [2, "1"],
+      [null, 0],
+      [true, 0],
+      [[], 0],
+      [{}, 0],
+      [NaN, 0],
+      [0, Infinity],
+      [-Infinity, 0],
+      [undefined, 0],
+      [0, undefined],
+    ];
+    for (const [left, right] of pairs) {
+      const expected =
+        typeof left === "number" && typeof right === "number" && Number.isFinite(left) && Number.isFinite(right) && compare(left, right);
+      const result = await executeWorkflowPlan({
+        ...runtime,
+        plan: plan([
+          {
+            kind: "if",
+            sourcePath: ["steps", 0],
+            condition: {
+              operator: "all",
+              conditions: [
+                {
+                  operator: "any",
+                  conditions: [
+                    { operator: "not", condition: { operator: "equals", operands: [1, 1] } },
+                    { operator, operands: ["${{ inputs.left }}", "${{ inputs.right }}"] },
+                  ],
+                },
+              ],
+            },
+            then: [{ kind: "action", action: "matched", config: {}, sourcePath: ["steps", 0, "then", 0] }],
+            else: [{ kind: "action", action: "missed", config: {}, sourcePath: ["steps", 0, "else", 0] }],
+          },
+        ]),
+        invocation: invocation("execute", { ...(left === undefined ? {} : { left }), ...(right === undefined ? {} : { right }) }),
+        repository: new FakeRepository(),
+        actions: executeActions({
+          matched: { execute: async () => ({ state: "completed", output: true }) },
+          missed: { execute: async () => ({ state: "completed", output: false }) },
+        }),
+      });
+      expect(result).toEqual({ state: "succeeded", output: expected });
+    }
+  });
+}
+
+test("number comparisons wait for unresolved application dependencies", async () => {
+  const dependency = { kind: "mail.hydration", key: "message-1" };
+  for (const operator of ["greaterThan", "lessThan", "atLeast", "atMost"] as const) {
+    const result = await executeWorkflowPlan({
+      ...runtime,
+      plan: plan([
+        {
+          kind: "if",
+          sourcePath: ["steps", 0],
+          condition: { operator, operands: ["${{ inputs.message.textLength }}", 150] },
+          then: [],
+          else: [],
+        },
+      ]),
+      invocation: invocation("execute"),
+      repository: new FakeRepository(),
+      actions: executeActions({}),
+      values: { resolve: async () => ({ state: "waiting", dependency }) },
+    });
+    expect(result).toMatchObject({ state: "waiting", dependency, step: { key: "steps.0" } });
+  }
+});
