@@ -17,7 +17,7 @@ import { z } from "zod";
 import { filegateErrorCode } from "./api/filegate-error";
 import { errorMessage } from "./api/messages";
 import { filesCapabilityMessages } from "./capability-messages";
-import { BrowseQuerySchema, CONTENT_STREAM_LIMIT, type FileEntry, hasSearchFilters, SearchQuerySchema } from "./contracts";
+import { BrowseQuerySchema, CONTENT_STREAM_LIMIT, checkSearch, type FileEntry, SearchQuerySchema } from "./contracts";
 import { entryRef } from "./data/references";
 import { markdownRevision } from "./document-assets";
 import { capabilityCall } from "./files-call";
@@ -52,8 +52,7 @@ const SearchInput = Browse.extend({
   modifiedBefore: searchShape.modifiedBefore.describe("RFC 3339 time; modified before it."),
 })
   .strict()
-  .refine((value) => value.q || hasSearchFilters(value), { message: "Search needs q or a filter", path: ["q"] })
-  .refine((value) => value.q || value.sort !== "relevance", { message: "Relevance needs q", path: ["sort"] });
+  .superRefine(checkSearch);
 const Target = Location.extend({ path: Path.min(1) }).strict();
 const Entry = z.object({
   name: z.string(),
@@ -271,6 +270,7 @@ export const fileQueries = {
       items: z.array(Item),
       next: z.string().nullable(),
       total: z.number().int().nullable().describe("All hits of this search, or null when unknown."),
+      truncated: z.boolean().describe("Relevance kept only the best hits; the pages end before total. Narrow the search for the rest."),
     }),
     openWorld: false,
     run: async (input: z.infer<typeof SearchInput>, c: CapabilityExecutionContext) =>
@@ -283,6 +283,7 @@ export const fileQueries = {
             items: await Promise.all(page.items.map(({ highlight: _highlight, ...e }) => item(input.baseId, e))),
             next: page.next,
             total: page.total,
+            truncated: page.truncated,
           },
         });
       }),

@@ -114,11 +114,16 @@ characters marked by `MatchText`; the API returns them as `highlight`, Unicode
 code point ranges into the hit's path below the searched folder. The result
 count shows `total` when it is exact: Filegate collected the whole selection,
 the area is Cloud storage, the search covers all levels, and hits in the base's
-trash are subtracted. Otherwise the count says how many hits the page holds.
+trash are subtracted. A query word that could match the trash folder's own
+name leaves the total unknown, so a count never reveals a hidden trashed entry.
+Otherwise the count says how many hits the page holds. Relevance keeps
+Filegate's best hits (1,000 by default); `truncated: true` then says that the
+pages end before `total`.
 
 **Type**, **Size**, and **Modified** chips filter by extension groups,
 byte ranges, and rolling time windows (24 hours to 12 months, counted from the
-current full hour); with a filter, a search needs no query. **Sort and filter**
+current full hour); with a filter or the **Folders** type, a search needs no
+query. **Sort and filter**
 switches between best match, name, date, and size, and to exact names only
 (`match=exact&in=name`). Query, scope, filters, match mode, and order stay in
 the URL, so reload, back, and shared links show the same search; folder sort

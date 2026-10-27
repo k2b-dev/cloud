@@ -72,7 +72,7 @@ export function searchEntries(state: SearchState): [string, string][] {
   if (state.size) entries.push(["size", state.size]);
   if (state.modified) entries.push(["modified", state.modified]);
   if (state.sort && state.sort !== defaultSort(state)) entries.push(["sort", state.sort]);
-  if (state.sort && state.sort !== "relevance" && state.order === "desc") entries.push(["order", "desc"]);
+  if (effectiveSort(state) !== "relevance" && state.order === "desc") entries.push(["order", "desc"]);
   return entries;
 }
 

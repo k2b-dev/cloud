@@ -1111,7 +1111,7 @@ export function createFilesService(
         path: current.target,
         maxEntries: SEARCH_SCAN_LIMIT,
       };
-      if (!q && !hasSearchFilters(options)) throw new FilesError("invalid_input");
+      if (!q && !hasSearchFilters(options) && (input.type ?? "all") === "all") throw new FilesError("invalid_input");
       const basePath = current.inspection.candidate.path;
       // Files hides the base's trash, unreadable FreeIPA entries and, for one folder, deeper hits: only a plain subtree total stays exact.
       const countable = scope === "tree" && current.inspection.candidate.area === "cloud";
@@ -1131,7 +1131,8 @@ export function createFilesService(
             });
             total = hidden === null ? null : Math.max(0, total - hidden);
           }
-          return { items: found.items.map((node, index) => ({ node, ranges: found.matches?.[index] })), next: found.next, total };
+          const items = found.items.map((node, index) => ({ node, ranges: found.matches?.[index] }));
+          return { items, next: found.next, total, truncated: !!found.truncated };
         },
       );
       const items: SearchHit[] = [];
@@ -1153,6 +1154,7 @@ export function createFilesService(
         items,
         next: page.next ?? null,
         total: page.total,
+        truncated: page.truncated,
         readme: await folderReadme(current),
       };
     },

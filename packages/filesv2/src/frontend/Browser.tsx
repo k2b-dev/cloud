@@ -1147,7 +1147,11 @@ export default function Browser(props: {
       year: b().searchModifiedYear,
     })[modified];
   const searchCount = () =>
-    typeof props.directory.total === "number" ? b().searchTotal(props.directory.total) : b().searchResults(props.directory.items.length);
+    typeof props.directory.total !== "number"
+      ? b().searchResults(props.directory.items.length)
+      : props.directory.truncated
+        ? b().searchTruncated(props.directory.total)
+        : b().searchTotal(props.directory.total);
   const parentOf = (path: string) => parentPath(path) || baseLabel(props.directory.base, b(), locale());
   const detailOpen = () => selectedPaths().length > 0;
   const addItems = () =>

@@ -169,7 +169,7 @@ export const filesCapabilities = defineCapabilities({
           omittedBases > 0 ||
           unavailableBases > 0 ||
           entries.length > limit ||
-          pages.some((page) => page.next);
+          pages.some((page) => page.next || ("truncated" in page && page.truncated));
         const summary = limited
           ? filesCapabilityMessages(context.locale).partialSearch({
               searched: bases.length,

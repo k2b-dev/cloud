@@ -94,6 +94,8 @@ export type SearchResult = Omit<DirectoryResult, "items"> & {
   query: string;
   scope: "folder" | "tree";
   total: number | null;
+  /** Relevance keeps only Filegate's best hits (1,000 by default); `total` counts more than the pages hold. */
+  truncated: boolean;
 };
 export const DirectoryInputSchema = z.object({ path: z.string().min(1).max(4096) });
 export const UploadInputSchema = z.object({
@@ -330,6 +332,18 @@ export type SearchFilters = z.infer<typeof SearchFiltersSchema>;
 export const SEARCH_FILTER_KEYS = ["ext", "minSize", "maxSize", "modifiedAfter", "modifiedBefore"] as const;
 export const hasSearchFilters = (filters: { [key in keyof SearchFilters]?: unknown }) =>
   SEARCH_FILTER_KEYS.some((key) => filters[key] !== undefined && filters[key] !== "");
+type SearchRuleInput = SearchFilters & { q: string; sort?: SearchSort; type?: BrowseOptions["type"] };
+/** What a search needs before Filegate sees it; the API and the capability share these rules. */
+export function checkSearch(value: SearchRuleInput, ctx: z.RefinementCtx) {
+  // A query, a filter or one entry type; an unnarrowed search would list the whole subtree.
+  if (!value.q && !hasSearchFilters(value) && (value.type ?? "all") === "all")
+    ctx.addIssue({ code: "custom", message: "Search needs a query, a filter or a type", path: ["q"] });
+  if (!value.q && value.sort === "relevance") ctx.addIssue({ code: "custom", message: "Relevance needs a query", path: ["sort"] });
+  if (value.minSize !== undefined && value.maxSize !== undefined && value.minSize > value.maxSize)
+    ctx.addIssue({ code: "custom", message: "minSize must not exceed maxSize", path: ["minSize"] });
+  if (value.modifiedAfter && value.modifiedBefore && Date.parse(value.modifiedAfter) >= Date.parse(value.modifiedBefore))
+    ctx.addIssue({ code: "custom", message: "modifiedAfter must be before modifiedBefore", path: ["modifiedAfter"] });
+}
 export const SearchQuerySchema = BrowseQuerySchema.extend({
   q: z
     .string()
@@ -347,16 +361,7 @@ export const SearchQuerySchema = BrowseQuerySchema.extend({
   sort: z.enum(SEARCH_SORTS).optional(),
 })
   .extend(SearchFiltersSchema.shape)
-  .refine((value) => value.q || hasSearchFilters(value), { message: "Search needs a query or a filter", path: ["q"] })
-  .refine((value) => value.q || value.sort !== "relevance", { message: "Relevance needs a query", path: ["sort"] })
-  .refine((value) => value.minSize === undefined || value.maxSize === undefined || value.minSize <= value.maxSize, {
-    message: "minSize must not exceed maxSize",
-    path: ["minSize"],
-  })
-  .refine((value) => !value.modifiedAfter || !value.modifiedBefore || Date.parse(value.modifiedAfter) < Date.parse(value.modifiedBefore), {
-    message: "modifiedAfter must be before modifiedBefore",
-    path: ["modifiedAfter"],
-  });
+  .superRefine(checkSearch);
 export type SearchQuery = z.infer<typeof SearchQuerySchema>;
 export const searchSort = (input: { q?: string; sort?: SearchSort }): SearchSort => input.sort ?? (input.q ? "relevance" : "name");
 export const AdminQuerySchema = z.object({

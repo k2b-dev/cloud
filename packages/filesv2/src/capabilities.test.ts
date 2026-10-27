@@ -167,6 +167,7 @@ mock.module("./service", () => ({
         query: input.q,
         scope: "tree",
         total: result.items.length,
+        truncated: false,
         items: result.items.map((e) => ({ ...e, highlight: [[0, 1]] })),
       };
     },

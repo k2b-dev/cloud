@@ -435,6 +435,14 @@ suite("real Filegate directory lifecycle", () => {
     expect(sheets.items.map((item) => item.path)).toEqual(["Buchhaltung/Rechnungseingang.xlsx"]);
     expect(sheets.items[0]?.highlight).toEqual([]);
     await expect(search({ q: "" })).rejects.toMatchObject({ code: "invalid_input" });
+    // A word that could match the trash folder's own name gets no total, so a count never reveals a hidden entry.
+    const trashWord = await search({ q: "trash", ext: "pdf" });
+    expect(trashWord.items).toEqual([]);
+    expect(trashWord.total).toBeNull();
+    // One entry type alone is a search too: every folder below, without the trash.
+    const folders = (await search({ q: "", type: "directories" })).items.map((item) => item.path);
+    expect(folders).toContain("Kunden/Bäckerei");
+    expect(folders.some((path) => path.startsWith("trash"))).toBe(false);
   }, 60_000);
 
   test("automatic Cloud creation and archival preserve daemon ownership and suppress reprovisioning", async () => {

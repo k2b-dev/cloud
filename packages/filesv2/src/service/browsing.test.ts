@@ -33,7 +33,7 @@ describe("globally ordered browsing", () => {
     expect(first.items).toHaveLength(52);
     expect(first.items.slice(0, 3)).toEqual(["folder A", "folder B", "file 0"]);
     const second = await browsePage({ after: first.next! }, "small", fetch);
-    expect(second).toEqual({ items: ["remaining file"], next: null, total: null });
+    expect(second).toEqual({ items: ["remaining file"], next: null, total: null, truncated: false });
     expect(requests).toEqual([
       { sort: "name", order: "asc", type: "directories", after: undefined, limit: 50 },
       { sort: "name", order: "asc", type: "files", limit: 50 },
@@ -57,14 +57,16 @@ describe("globally ordered browsing", () => {
     const requests: { sort?: string; type?: string; after?: string }[] = [];
     const fetch = async (options: Parameters<Parameters<typeof browsePage>[2]>[0]) => {
       requests.push(options);
-      return options.after ? { items: ["third"], total: 99 } : { items: ["best", "second"], next: "more", total: 3 };
+      return options.after ? { items: ["third"], total: 99 } : { items: ["best", "second"], next: "more", total: 3, truncated: true };
     };
     const first = await browsePage({ sort: "relevance" }, "search", fetch);
-    expect(first).toMatchObject({ items: ["best", "second"], total: 3 });
+    // The first page's total and truncation hold for every continuation of the same observation.
+    expect(first).toMatchObject({ items: ["best", "second"], total: 3, truncated: true });
     expect(await browsePage({ sort: "relevance", after: first.next! }, "search", fetch)).toEqual({
       items: ["third"],
       next: null,
       total: 3,
+      truncated: true,
     });
     expect(requests.map(({ sort, type, after }) => ({ sort, type, after }))).toEqual([
       { sort: "relevance", type: "all", after: undefined },
@@ -83,7 +85,7 @@ describe("globally ordered browsing", () => {
     expect(result.next).not.toBeNull();
     expect(calls).toBe(1);
     const files = await browsePage({}, "path", async (options) => (options.type === "directories" ? { items: [] } : { items: ["file"] }));
-    expect(files).toEqual({ items: ["file"], next: null, total: null });
+    expect(files).toEqual({ items: ["file"], next: null, total: null, truncated: false });
   });
   test("query, location, and malformed cursor changes reject before reading", async () => {
     const first = await browsePage({}, "root/path", async () => ({ items: ["one"], next: "next" }));

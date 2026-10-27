@@ -11,6 +11,7 @@ export type DirectoryView = Omit<DirectoryResult, "items"> & {
   query?: string;
   scope?: "folder" | "tree";
   total?: number | null;
+  truncated?: boolean;
   failure?: string;
 };
 export type WorkspaceSnapshot = {

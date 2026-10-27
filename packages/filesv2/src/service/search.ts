@@ -21,16 +21,19 @@ export async function searchPage(
   options: ListingOptions & { path: string; signal?: AbortSignal },
 ): Promise<Page> {
   let restarted = false;
-  for (let attempt = 0; ; attempt++) {
+  let busy = 0;
+  for (;;) {
     const timeout = AbortSignal.timeout(SEARCH_CALL_MS);
     try {
       return await root.search(q, { ...options, signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout });
     } catch (error) {
+      // Filegate did not answer within its own budget and the margin; the caller's own cancellation stays as it is.
+      if (timeout.aborted && !options.signal?.aborted) throw new FilesError("unavailable", 503, { cause: error });
       if (!(error instanceof FilegateError)) throw error;
       if (error.status === 400) throw new FilesError("invalid_input");
       if (error.status === 413) throw new FilesError("search_limited");
       if (error.status === 429) {
-        if (attempt >= BUSY_RETRIES) throw new FilesError("search_busy", 503);
+        if (busy++ >= BUSY_RETRIES) throw new FilesError("search_busy", 503);
         options.signal?.throwIfAborted();
         await Bun.sleep(BUSY_DELAY_MS);
         continue;
@@ -49,7 +52,8 @@ export async function searchPage(
  * Hits inside the base's trash, which Files never shows, or null when unknown. The same query below the trash
  * folder selects the same entries only when every match tier counts (relevance), only one does (exact), or no name
  * is searched; other sorts drop loose hits depending on the rest of the selection. With `in: "path"`, a word that
- * only matches the trash folder's own name still counts above it but not here.
+ * matches through the folder's own name "trash" would count above it but not here, so such a search has no total:
+ * a count must never reveal a trashed entry that the results hide.
  */
 export async function trashHits(
   root: FilesRoot,
@@ -57,11 +61,12 @@ export async function trashHits(
   options: ListingOptions & { path: string; signal?: AbortSignal },
 ): Promise<number | null> {
   if (q && options.sort !== "relevance" && options.match !== "exact") return null;
+  if (options.in === "path" && q.split(/\s+/).some(mayMatchTrashFolder)) return null;
   try {
     return (await searchPage(root, q, { ...options, after: undefined, limit: 1 })).total ?? null;
   } catch (error) {
     if (error instanceof FilegateError && error.status === 404) return 0;
-    if (error instanceof FilesError && ["search_limited", "search_busy", "cursor_invalid"].includes(error.code)) return null;
+    if (error instanceof FilesError && ["search_limited", "search_busy", "cursor_invalid", "unavailable"].includes(error.code)) return null;
     throw error;
   }
 }
@@ -71,4 +76,18 @@ export function highlight(relative: string, ranges: readonly (readonly [number, 
   if (!ranges?.length) return [];
   const offset = within === "name" ? Array.from(relative).length - Array.from(relative.split("/").at(-1) ?? "").length : 0;
   return ranges.map(([start, end]): [number, number] => [start + offset, end + offset]);
+}
+
+const TRASH = "trash";
+/**
+ * Whether a word could match the trash folder's name in a path search, in any of Filegate's tiers. It errs towards
+ * yes: an exact match may run across "trash/" into the name (a word starting with an ending of "trash"), a loose
+ * match uses only its letters, and a typo match of a 4–6 letter word allows one other letter.
+ */
+export function mayMatchTrashFolder(word: string): boolean {
+  const token = word.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  if (!token) return false;
+  if (Array.from(TRASH, (_, index) => TRASH.slice(index)).some((ending) => token.startsWith(ending))) return true;
+  const foreign = Array.from(token).filter((letter) => !TRASH.includes(letter)).length;
+  return foreign === 0 || (token.length >= 4 && token.length <= 6 && foreign <= 1);
 }

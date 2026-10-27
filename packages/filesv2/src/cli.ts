@@ -725,8 +725,8 @@ function filesCommands(locale?: string) {
       command("search", {
         summary: t({ en: "Search names and folder names below a folder", de: "Namen und Ordnernamen unterhalb eines Ordners suchen" }),
         description: t({
-          en: "Finds typos and folder names by default, best matches first. Filters alone, without a query, search too.",
-          de: "Findet standardmäßig auch Tippfehler und Ordnernamen, beste Treffer zuerst. Filter allein, ohne Suchbegriff, suchen ebenfalls.",
+          en: "Finds typos and folder names by default, best matches first. Filters or --type alone, without a query, search too.",
+          de: "Findet standardmäßig auch Tippfehler und Ordnernamen, beste Treffer zuerst. Filter oder --type allein, ohne Suchbegriff, suchen ebenfalls.",
         }),
         args: {
           folder: arg.required({
@@ -810,7 +810,13 @@ function filesCommands(locale?: string) {
             }),
           );
           entryRows(ctx, result, result.items, "path");
-          if (ctx.options.output === "text" && result.total !== null) ctx.error(`${t({ en: "Results", de: "Treffer" })}: ${result.total}`);
+          if (ctx.options.output === "text" && result.total !== null) {
+            const best = t({
+              en: " (only the best are listed; narrow the search)",
+              de: " (nur die besten sind aufgelistet; grenze die Suche ein)",
+            });
+            ctx.error(`${t({ en: "Results", de: "Treffer" })}: ${result.total}${result.truncated ? best : ""}`);
+          }
           next(ctx, result.next);
         },
       }),

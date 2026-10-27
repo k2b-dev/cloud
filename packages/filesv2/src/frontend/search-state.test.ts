@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { SearchQuerySchema } from "../contracts";
-import { SEARCH_KINDS, searchRequest } from "./search-state";
+import { SEARCH_KINDS, searchEntries, searchRequest, searchState } from "./search-state";
 
 const now = Date.parse("2026-10-27T11:47:12Z");
 
@@ -59,7 +59,18 @@ test("the API rejects searches Filegate would reject, before asking it", () => {
     { modifiedAfter: "2026-10-27T00:00:00Z", modifiedBefore: "2026-10-26T00:00:00Z" },
     { modifiedAfter: "yesterday" },
     { sort: "relevance", ext: "pdf" },
+    { q: "", type: "all" },
   ])
     expect(SearchQuerySchema.safeParse(query).success).toBe(false);
   expect(SearchQuerySchema.parse({ q: "report", ext: " PDF, docx ,pdf" }).ext).toBe("pdf,docx");
+});
+
+test("a filter-only search keeps a descending name order and a folders-only search is a valid search", () => {
+  const descending = { q: "", scope: "tree" as const, exact: false, order: "desc" as const, kind: "pdf" as const };
+  const params = new URLSearchParams(searchEntries(descending));
+  expect(params.get("order")).toBe("desc");
+  // Reading the address back and writing it again keeps the order, so paging and selection keep the cursor.
+  expect(searchEntries(searchState(params)!)).toEqual(searchEntries(descending));
+  const folders = searchRequest({ q: "", scope: "tree", exact: false, order: "asc", kind: "folder" }, now);
+  expect(SearchQuerySchema.safeParse(folders).success).toBe(true);
 });
