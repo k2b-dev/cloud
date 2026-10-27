@@ -41,6 +41,7 @@
     "./browser/notifications": "./src/browser/notifications.ts",
     "./browser/resource-links": "./src/browser/resource-links.ts",
     "./browser/resource-clipboard": "./src/browser/resource-clipboard.ts",
+    "./browser/cloud-id": "./src/browser/cloud-id.ts",
     "./browser/commands": "./src/browser/commands.ts",
     "./browser/panel": "./src/browser/panel.ts",
     "./browser/search": "./src/browser/search.ts",

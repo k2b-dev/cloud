@@ -1,4 +1,5 @@
 import { type ResourceApiKey, ResourceApiKeys, type ResourceApiKeysProps } from "@k2b/cloud/access/ui";
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { Button, DataTable, type DataTableColumn, DescriptionList, DetailPanel, IconButton, StatusBadge, Tooltip } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import type { PulseSource, PulseSourceScrape } from "../../contracts";
@@ -71,6 +72,7 @@ export default function SourceDetailView(props: Props) {
     </DetailPanel.Section>
   );
 
+  const cloudId = useCloudIdCopy();
   const httpExample = () => httpIngestExample(props.source, props.origin);
   const status = () => props.source.status;
   const statusItems = () => [
@@ -151,6 +153,7 @@ export default function SourceDetailView(props: Props) {
             {props.source.bearerTokenConfigured ? ` · ${t().bearerAuth}` : ""}
           </>
         }
+        menu={cloudId.section({ type: "pulse.source", id: props.source.id })}
         actions={
           <Tooltip.Anchor content={t().closeDetails}>
             <IconButton label={t().closeSourceDetails} variant="ghost" size="sm" onClick={props.close}>

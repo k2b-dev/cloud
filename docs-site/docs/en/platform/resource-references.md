@@ -90,6 +90,38 @@ resourceCopy.wasCopied(); // true only after a successful write
 resourceCopy.error(); // the latest Clipboard API failure, if any
 ```
 
+## Copy a reference as text
+
+Where a person copies a resource to paste it elsewhere, name the action
+**Copy Cloud ID** (or *Copy message Cloud ID* when one menu offers several) and
+use the resource's permalink as `fallbackText`. The permalink is the plain-text
+form of a Cloud resource reference. `/open/<type>/~<id>` resolves to the
+resource's current reader link for everyone who may read it:
+
+```ts
+import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
+
+const ref = { type: "mail.message", id: message.id };
+await cloudResourceClipboard.write({ cloudUrl, ref, fallbackText: cloudResourceClipboard.url(ref, cloudUrl) });
+// fallbackText: "https://cloud.example/open/mail.message/~Ab12Cd"
+```
+
+An application that lets people paste a reference into a text field, or reads
+one from an agent, parses that text with `parseUrl()`. It accepts the absolute
+permalink of this Cloud or its root-relative path and returns `null` for
+anything else, such as another installation's link, an application page, or a
+query or fragment:
+
+```ts
+const ref = cloudResourceClipboard.parseUrl(input.value, cloudUrl);
+// { type: "mail.message", id: "Ab12Cd" } or null
+```
+
+The same helpers are `formatCloudResourceUrl()` and `parseCloudResourceUrl()`
+in `@k2b/cloud/contracts` for server code. `cld` prints the same text as
+`permalink`. As with the structured format, the parsed reference establishes
+identity only and grants no access.
+
 ## Read a reference
 
 ```ts
@@ -145,6 +177,35 @@ Recognizing the payload establishes identity only. Treat it as untrusted input,
 resolve the current canonical reader from the live manifest, and let the owning
 application authorize the read. Never execute an Action merely because its
 target appeared on the clipboard.
+
+## Copy a Cloud ID
+
+Give every resource with a reader a **Copy Cloud ID** entry as the last
+section of its "…" menu: in its detail panel and in its row or context menu.
+Agents and people copy the same identity there, and it pastes into every Cloud
+surface that recognizes resources. Islands use the shared entry, which needs
+no `cloudUrl` prop because the page shell carries the canonical Cloud origin:
+
+```tsx
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
+import { DetailPanel } from "@k2b/ui";
+
+const cloudId = useCloudIdCopy();
+
+<DetailPanel.Header
+  title={item.name}
+  menu={[...itemActions(), ...cloudId.section({ type: "inventory.item", id: item.id })]}
+  actions={closeButton}
+/>;
+```
+
+The entry writes the structured reference and the resource's permalink
+`/open/<type>/~<id>` as text, shows a toast, and on phones runs inside the tap
+as the clipboard requires. The structured format needs code that loads once
+the page is idle; a click before that copies the permalink text alone, which
+every Cloud paste surface still recognizes. `section()` accepts several targets with their own
+labels, such as a message and its conversation, and returns no section when
+the Cloud URL is not configured. Use the ID the Type's reader accepts.
 
 ## Select a place for a panel
 
