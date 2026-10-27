@@ -572,15 +572,18 @@ test("Assistant protects editing while only PanelRuntime is delayed", async () =
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await page.route(`**${fixture.panelRuntimePath}`, async (route) => {
-    if (route.request().frame().url().includes("/app/assistant/panel")) await gate;
-    await route.continue();
-  });
   const releaseCreate = fixture.assistant.holdCreate();
   try {
     await page.goto(fixture.url + "app/fixture");
     await page.locator('html[data-fixture-ready="true"]').waitFor();
     await page.locator("#open-chat").click();
+    await page.locator('#cloud-panel[data-provider="chat"][data-state="ready"]').waitFor();
+    // Arm the gate after Chat's runtime loaded: only Assistant's next runtime request can reach it.
+    // WebKit may request the module before the new frame reports its destination URL.
+    await page.route(`**${fixture.panelRuntimePath}`, async (route) => {
+      await gate;
+      await route.continue();
+    });
     await page.locator('[data-cloud-panel-provider="assistant"]').click();
     const panel = page.frameLocator("[data-cloud-panel-frame]");
     await panel.locator('html[data-fixture-ready="true"]').waitFor();
