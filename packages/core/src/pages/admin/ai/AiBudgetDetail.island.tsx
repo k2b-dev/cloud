@@ -1,21 +1,28 @@
 import { PrincipalPicker, principalLabel } from "@k2b/cloud/access/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
 import type { Principal } from "@k2b/cloud/contracts";
-import { type AiQuotaConfig, AiQuotaConfigSchema, type AiQuotaRule } from "@k2b/cloud/shared";
+import { type AiQuotaConfig, AiQuotaConfigSchema, type AiQuotaRule, AiQuotaRuleSchema } from "@k2b/cloud/shared";
 import { Button, IconButton, NoticeCard, NumberInput, Select, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import AiBackgroundBudget from "../settings/_components/AiBackgroundBudget";
 import { aiAreaHref } from "./area";
-import { asAiConflict, assertAiAdmin, reloadAiArea } from "./client";
+import { type AiAdminConflict, asAiConflict, assertAiAdmin, reloadAiArea } from "./client";
+import { ConflictNotice } from "./conflict";
 import { setAiDetailControls } from "./detail-controls";
 import { aiAreaMessages } from "./messages";
-import { formatAiTime } from "./presentation";
+import { AiQuotaAdminConfigSchema } from "./read-shapes";
 
 type Rule = AiQuotaRule & { peopleAtLimit?: number };
 type Config = Omit<AiQuotaConfig, "rules"> & { rules: Rule[] };
 type Model = { id: string; label: string; priced: boolean };
 
 const api = coreClient.admin.core["ai-quotas"];
+const brakeDraft = (config: Config) => ({
+  unit: config.unit,
+  enabled: config.background?.enabled ?? false,
+  warnAt: config.background?.warnAt ?? null,
+  stopAt: config.background?.stopAt ?? 10,
+});
 const PERIODS = [24, 168, 720] as const;
 const plain = (config: Config): AiQuotaConfig =>
   AiQuotaConfigSchema.parse({ ...config, rules: config.rules.map(({ peopleAtLimit: _, ...rule }) => rule) });
@@ -37,13 +44,15 @@ export default function AiBudgetDetail(props: { config: Config; scope: string | 
   const [base, setBase] = createSignal(props.config);
   const original = () => base().rules.find((rule) => rule.scope === props.scope);
   const fresh = (): Rule => ({ scope: "*", hours: 168, anchor: new Date().toISOString().slice(0, 10) + "T00:00:00.000Z", grants: [] });
-  const [rule, setRule] = createSignal<Rule>(structuredClone(original() ?? fresh()));
+  const initialRule = structuredClone(original() ?? fresh());
+  const [rule, setRule] = createSignal<Rule>(initialRule);
   const [config, setConfig] = createSignal(structuredClone(props.config));
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
-  const [conflict, setConflict] = createSignal<{ name: string | null; at: string; current: Config } | null>(null);
+  const [conflict, setConflict] = createSignal<AiAdminConflict<Config> | null>(null);
   const unit = () => base().unit ?? "EUR";
   const isNew = () => !props.brake && !original();
+  const scopeAvailable = () => !isNew() || !base().rules.some((entry) => entry.scope === rule().scope);
   const dirty = () =>
     props.brake ? JSON.stringify(config()) !== JSON.stringify(base()) : isNew() || JSON.stringify(rule()) !== JSON.stringify(original());
 
@@ -52,10 +61,9 @@ export default function AiBudgetDetail(props: { config: Config; scope: string | 
       ? { ...current, background: config().background, unit: config().unit }
       : {
           ...current,
-          rules:
-            original() || current.rules.some((entry) => entry.scope === props.scope)
-              ? current.rules.map((entry) => (entry.scope === props.scope ? rule() : entry))
-              : [...current.rules, rule()],
+          rules: current.rules.some((entry) => entry.scope === rule().scope)
+            ? current.rules.map((entry) => (entry.scope === rule().scope ? rule() : entry))
+            : [...current.rules, rule()],
         };
 
   const save = async (current = base()) => {
@@ -66,9 +74,10 @@ export default function AiBudgetDetail(props: { config: Config; scope: string | 
       toast.success(t().saved);
       reloadAiArea(isNew() ? aiAreaHref({ sec: "budgets" }, { rule: rule().scope }) : undefined);
     } catch (failure) {
-      const found = asAiConflict(failure, AiQuotaConfigSchema);
-      if (found) setConflict({ name: found.changedBy?.name ?? null, at: found.changedAt, current: found.current });
+      const found = asAiConflict(failure, AiQuotaAdminConfigSchema);
+      if (found) setConflict(found);
       else setError(failure instanceof Error ? failure.message : t().saveFailed);
+    } finally {
       setSaving(false);
     }
   };
@@ -83,11 +92,16 @@ export default function AiBudgetDetail(props: { config: Config; scope: string | 
       reloadAiArea(aiAreaHref({ sec: "budgets" }));
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : t().saveFailed);
+    } finally {
       setSaving(false);
     }
   };
 
-  createEffect(() => setAiDetailControls({ save: { dirty: dirty() && !conflict(), saving: saving(), run: () => void save() } }));
+  createEffect(() =>
+    setAiDetailControls({
+      save: { dirty: dirty() && !conflict(), disabled: !props.brake && !scopeAvailable(), saving: saving(), run: () => void save() },
+    }),
+  );
   onCleanup(() => setAiDetailControls(null));
 
   const usedScopes = () =>
@@ -112,36 +126,69 @@ export default function AiBudgetDetail(props: { config: Config; scope: string | 
     <div class="grid gap-5 px-4 pb-10">
       <Show when={conflict()}>
         {(current) => (
-          <NoticeCard
-            tone="warning"
-            icon="ti ti-git-merge"
-            role="alert"
-            title={
-              current().name
-                ? t().conflictTitle({ name: current().name!, time: formatAiTime(locale(), current().at) })
-                : t().conflictTitleUnknown
-            }
-            detail={t().conflictSub}
-          >
-            <div class="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                loading={saving()}
-                onClick={() => {
+          <Show
+            when={!props.brake}
+            fallback={
+              <ConflictNotice
+                conflict={current()}
+                fields={[
+                  { key: "unit", label: t().accountingUnit },
+                  { key: "enabled", label: t().enable },
+                  { key: "warnAt", label: t().budgetWarning },
+                  { key: "stopAt", label: t().budgetStop },
+                ]}
+                base={brakeDraft(base())}
+                mine={brakeDraft(config())}
+                theirs={brakeDraft(current().current)}
+                busy={saving()}
+                onMerge={(merged) => {
                   const theirs = current().current;
                   setConflict(null);
+                  setConfig({
+                    ...theirs,
+                    unit: merged.unit,
+                    background: { enabled: merged.enabled, warnAt: merged.warnAt, stopAt: merged.stopAt },
+                  });
                   setBase(theirs);
                   void save(theirs);
                 }}
-              >
-                {t().keepMine}
-              </Button>
-              <Button type="button" size="sm" variant="secondary" onClick={() => reloadAiArea()}>
-                {t().conflictDiscard}
-              </Button>
-            </div>
-          </NoticeCard>
+                onDiscard={() => reloadAiArea()}
+              />
+            }
+          >
+            <ConflictNotice<AiQuotaRule>
+              conflict={current()}
+              fields={[
+                { key: "scope", label: t().ruleScope },
+                { key: "hours", label: t().rulePeriod },
+                { key: "anchor", label: t().ruleAnchor },
+                {
+                  key: "grants",
+                  label: t().ruleGrants,
+                  format: (value) =>
+                    AiQuotaRuleSchema.shape.grants
+                      .parse(value)
+                      .map(
+                        (grant) =>
+                          `${principalLabel(grant, locale())}: ${grant.limit === null ? t().unlimited : `${grant.limit} ${unit()}`}`,
+                      )
+                      .join(", "),
+                },
+              ]}
+              base={original() ?? initialRule}
+              mine={rule()}
+              theirs={current().current.rules.find((entry) => entry.scope === rule().scope) ?? initialRule}
+              busy={saving()}
+              onMerge={(merged) => {
+                const theirs = current().current;
+                setConflict(null);
+                setRule(merged);
+                setBase(theirs);
+                void save(theirs);
+              }}
+              onDiscard={() => reloadAiArea()}
+            />
+          </Show>
         )}
       </Show>
       <Show
@@ -161,6 +208,7 @@ export default function AiBudgetDetail(props: { config: Config; scope: string | 
             value={() => rule().scope}
             options={scopeOptions()}
             disabled={!isNew()}
+            error={!scopeAvailable() ? t().scopeUsed : undefined}
             onValueChange={(scope) => scope && setRule((current) => ({ ...current, scope }))}
           />
           <Select

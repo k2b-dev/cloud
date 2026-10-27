@@ -3,6 +3,7 @@ import { type AiProvider, type AiProviderType, aiProviderMark } from "@k2b/cloud
 import {
   Button,
   Checkbox,
+  ChoiceTiles,
   Disclosure,
   dialogCore,
   IconButton,
@@ -19,6 +20,7 @@ import { createResource, createSignal, For, Show } from "solid-js";
 import { aiAreaHref } from "./area";
 import { AiAdminError, aiAdminApi, aiSlug, readAiAdmin, reloadAiArea } from "./client";
 import { aiAreaMessages } from "./messages";
+import { proposeAiModelIds } from "./model-ids";
 import { AI_PROVIDER_TYPES, type AiAreaMessages, aiProviderTypeDescription, aiProviderTypeInfo, aiProviderTypeLabel } from "./presentation";
 
 type TestResult = { status: "ok" | "unreachable" | "key_rejected" | "error"; httpStatus?: number; message: string; latencyMs?: number };
@@ -60,8 +62,10 @@ const TestStatus = (props: { t: AiAreaMessages; result: TestResult | null; busy:
 };
 
 /** B1: one dialog for a new provider: type, connection, a test, then the model list. */
-function AddProviderDialog(props: { close: () => void }) {
+function AddProviderDialog(props: { close: () => void; setDismissHandler: (handler: () => void) => void }) {
   const t = useT();
+  let connectionForm: HTMLFieldSetElement | undefined;
+  const [created, setCreated] = createSignal<AiProvider | null>(null);
   const [type, setType] = createSignal<AiProviderType | null>(null);
   const [name, setName] = createSignal("");
   const [url, setUrl] = createSignal("");
@@ -73,6 +77,10 @@ function AddProviderDialog(props: { close: () => void }) {
   const [testing, setTesting] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
+  const requestClose = () => {
+    if (!saving()) props.close();
+  };
+  props.setDismissHandler(requestClose);
   const info = () => (type() ? aiProviderTypeInfo(type()!) : null);
   const providerId = () => id() || aiSlug(name() || (type() ? aiProviderTypeLabel(t(), type()!) : ""));
   const headerRecord = () =>
@@ -87,6 +95,7 @@ function AddProviderDialog(props: { close: () => void }) {
     setType(next);
     setBoundary(aiProviderTypeInfo(next).boundary);
     setTest(null);
+    queueMicrotask(() => connectionForm?.querySelector("input")?.focus());
   };
 
   const runTest = async () => {
@@ -117,21 +126,24 @@ function AddProviderDialog(props: { close: () => void }) {
     setSaving(true);
     setError("");
     try {
-      let provider = await readAiAdmin<AiProvider>(
-        await aiAdminApi.providers.$post({
-          json: {
-            id: providerId(),
-            type: current,
-            label: name().trim(),
-            baseUrl: url().trim() || null,
-            dataBoundary: boundary(),
-            enabled: true,
-            logo: null,
-          },
-        }),
-        t().saveFailed,
-      );
-      if (key().trim())
+      let provider =
+        created() ??
+        (await readAiAdmin<AiProvider>(
+          await aiAdminApi.providers.$post({
+            json: {
+              id: providerId(),
+              type: current,
+              label: name().trim(),
+              baseUrl: url().trim() || null,
+              dataBoundary: boundary(),
+              enabled: true,
+              logo: null,
+            },
+          }),
+          t().saveFailed,
+        ));
+      setCreated(provider);
+      if (key().trim()) {
         provider = await readAiAdmin<AiProvider>(
           await aiAdminApi.providers[":id"].credential.$put({
             param: { id: provider.id },
@@ -139,14 +151,20 @@ function AddProviderDialog(props: { close: () => void }) {
           }),
           t().saveFailed,
         );
-      if (info()?.headers && headers().some((header) => header.name.trim()))
-        await readAiAdmin<AiProvider>(
+        setCreated(provider);
+        setKey("");
+      }
+      if (info()?.headers && headers().some((header) => header.name.trim())) {
+        provider = await readAiAdmin<AiProvider>(
           await aiAdminApi.providers[":id"].headers.$put({
             param: { id: provider.id },
             json: { revision: provider.revision, headers: headerRecord() },
           }),
           t().saveFailed,
         );
+        setCreated(provider);
+        setHeaders([]);
+      }
       props.close();
       reloadAiArea(aiAreaHref({ sec: "providers", p: provider.id }, { o: "models" }));
     } catch (failure) {
@@ -168,7 +186,7 @@ function AddProviderDialog(props: { close: () => void }) {
           title={t().provDlgNew}
           subtitle={t().provDlgSub}
           icon="ti ti-plug"
-          close={props.close}
+          close={requestClose}
           closeDisabled={saving()}
         />
         <PanelDialog.Body scrollPreserveKey="ai-add-provider">
@@ -176,25 +194,19 @@ function AddProviderDialog(props: { close: () => void }) {
             <Show
               when={type()}
               fallback={
-                <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t().type}>
-                  <For each={AI_PROVIDER_TYPES}>
-                    {(entry) => (
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked="false"
-                        class="grid grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-(--k2b-surface-muted) focus-visible:outline-2 focus-visible:outline-(--k2b-focus-ring)"
-                        onClick={() => choose(entry.id)}
-                      >
-                        <TypeMark type={entry.id} t={t()} />
-                        <span class="grid gap-0.5">
-                          <span class="text-sm font-medium">{aiProviderTypeLabel(t(), entry.id)}</span>
-                          <span class="text-xs text-(--k2b-text-muted)">{aiProviderTypeDescription(t(), entry.id)}</span>
-                        </span>
-                      </button>
-                    )}
-                  </For>
-                </div>
+                <ChoiceTiles
+                  aria-label={t().type}
+                  layout="row"
+                  class="[&_.k2b-choice-tiles__group]:grid [&_.k2b-choice-tiles__group]:grid-flow-row [&_.k2b-choice-tiles__group]:grid-cols-1 sm:[&_.k2b-choice-tiles__group]:grid-cols-2 [&_.k2b-choice-tiles__tile]:flex-row [&_.k2b-choice-tiles__text]:items-start [&_.k2b-choice-tiles__label]:text-left [&_.k2b-choice-tiles__status]:text-(--k2b-text-muted)"
+                  value={type}
+                  onValueChange={choose}
+                  options={AI_PROVIDER_TYPES.map((entry) => ({
+                    value: entry.id,
+                    label: aiProviderTypeLabel(t(), entry.id),
+                    status: aiProviderTypeDescription(t(), entry.id),
+                    visual: <TypeMark type={entry.id} t={t()} />,
+                  }))}
+                />
               }
             >
               {(chosen) => (
@@ -204,7 +216,7 @@ function AddProviderDialog(props: { close: () => void }) {
                     <span class="text-sm font-medium">{aiProviderTypeLabel(t(), chosen())}</span>
                     <span class="text-xs text-(--k2b-text-muted)">{aiProviderTypeDescription(t(), chosen())}</span>
                   </span>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setType(null)} disabled={saving()}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setType(null)} disabled={saving() || Boolean(created())}>
                     {t().change}
                   </Button>
                 </div>
@@ -214,9 +226,10 @@ function AddProviderDialog(props: { close: () => void }) {
           <Show when={info()}>
             {(current) => (
               <PanelDialog.Section title={t().connection}>
-                <fieldset class="grid gap-4" disabled={saving()}>
+                <fieldset ref={connectionForm} class="grid gap-4" disabled={saving()}>
                   <TextInput
                     label={t().name}
+                    readOnly={Boolean(created())}
                     value={name}
                     onValueChange={setName}
                     placeholder={current().id === "openai-compatible" ? t().namePh : aiProviderTypeLabel(t(), current().id)}
@@ -226,6 +239,7 @@ function AddProviderDialog(props: { close: () => void }) {
                     label={t().baseUrl}
                     type="url"
                     monospace
+                    readOnly={Boolean(created())}
                     value={url}
                     onValueChange={(value) => {
                       setUrl(value);
@@ -258,6 +272,7 @@ function AddProviderDialog(props: { close: () => void }) {
                     <span class="inline-flex">
                       <SegmentedControl
                         ariaLabel={t().dataBoundary}
+                        disabled={Boolean(created()) || saving()}
                         value={boundary}
                         onValueChange={setBoundary}
                         options={[
@@ -293,6 +308,7 @@ function AddProviderDialog(props: { close: () => void }) {
                     <TextInput
                       label={t().providerId}
                       monospace
+                      readOnly={Boolean(created())}
                       value={providerId}
                       onValueChange={(value) => setId(aiSlug(value))}
                       description={t().modelIdHelp}
@@ -303,11 +319,11 @@ function AddProviderDialog(props: { close: () => void }) {
             )}
           </Show>
           <Show when={error()}>
-            <NoticeCard tone="danger" title={t().saveFailed} detail={error()} />
+            <NoticeCard tone="danger" title={created() ? t().providerCreatedRetry : t().saveFailed} detail={error()} />
           </Show>
         </PanelDialog.Body>
         <PanelDialog.Footer>
-          <Button type="button" variant="secondary" size="sm" onClick={props.close} disabled={saving()}>
+          <Button type="button" variant="secondary" size="sm" onClick={requestClose} disabled={saving()}>
             {t().cancel}
           </Button>
           <Button type="submit" variant="ai" size="sm" disabled={!canSave()} loading={saving()} loadingLabel={t().saving}>
@@ -383,23 +399,36 @@ export function HeaderRows(props: {
 }
 
 /** B2: models from the provider's list, or a provider model id by hand. */
-function AddModelsDialog(props: { providerId: string; providerLabel: string; existing: string[]; close: () => void }) {
+function AddModelsDialog(props: {
+  providerId: string;
+  providerLabel: string;
+  existing: string[];
+  close: () => void;
+  setDismissHandler: (handler: () => void) => void;
+}) {
   const t = useT();
   const [list, { refetch }] = createResource(async () => {
     const response = await aiAdminApi.providers[":id"]["available-models"].$get({ param: { id: props.providerId } });
     return (await readAiAdmin<{ models: AvailableModel[] }>(response, t().amFail)).models;
   });
+  const [modelIds, { refetch: refetchIds }] = createResource(async () =>
+    (await readAiAdmin<{ models: { id: string }[] }>(await aiAdminApi.models.$get(), t().loadFailed)).models.map((model) => model.id),
+  );
+  const [ids, setIds] = createSignal<Record<string, string>>({});
   const [query, setQuery] = createSignal("");
   const [selected, setSelected] = createSignal<string[]>([]);
   const [manual, setManual] = createSignal(false);
   const [manualId, setManualId] = createSignal("");
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
+  const requestClose = () => {
+    if (!saving()) props.close();
+  };
+  props.setDismissHandler(requestClose);
   const visible = () => {
     const q = query().trim().toLowerCase();
     return (list() ?? []).filter((model) => !q || `${model.providerModel} ${model.label ?? ""}`.toLowerCase().includes(q));
   };
-  const count = () => selected().length + (manual() && manualId().trim() ? 1 : 0);
   const showManual = () => manual() || (list.state === "ready" && (list() ?? []).length === 0);
   const facts = (model: AvailableModel) =>
     model.kind === "transcription"
@@ -408,18 +437,36 @@ function AddModelsDialog(props: { providerId: string; providerLabel: string; exi
         ? `${Math.round(model.contextWindow / 1000)}k ${t().ctxShort}`
         : "";
 
-  const add = async () => {
+  const picks = () => {
     const available = list() ?? [];
-    const picks = [
-      ...selected().map((providerModel) => available.find((model) => model.providerModel === providerModel) ?? { providerModel }),
-      ...(manual() && manualId().trim() ? [{ providerModel: manualId().trim() }] : []),
+    return [
+      ...new Map(
+        [
+          ...selected().map((providerModel) => available.find((model) => model.providerModel === providerModel) ?? { providerModel }),
+          ...(showManual() && manualId().trim() ? [{ providerModel: manualId().trim() }] : []),
+        ].map((model) => [model.providerModel, model]),
+      ).values(),
     ];
-    if (picks.length === 0) return;
+  };
+  const count = () => picks().length;
+  const proposed = () =>
+    proposeAiModelIds(
+      props.providerId,
+      picks().map((model) => model.providerModel),
+      modelIds() ?? [],
+      ids(),
+    );
+  const idsValid = () => {
+    const values = Object.values(proposed());
+    return values.every((id) => id && !(modelIds() ?? []).includes(id)) && new Set(values).size === values.length;
+  };
+  const add = async () => {
+    if (saving() || !count() || modelIds.state !== "ready" || !idsValid()) return;
     setSaving(true);
     setError("");
     try {
-      const body = picks.map((model) => ({
-        id: aiSlug(model.providerModel.split("/").at(-1) ?? model.providerModel),
+      const body = picks().map((model) => ({
+        id: proposed()[model.providerModel]!,
         providerModel: model.providerModel,
         label: model.label ?? model.providerModel.split("/").at(-1) ?? model.providerModel,
         kind: model.kind === "transcription" ? ("transcription" as const) : ("chat" as const),
@@ -445,7 +492,7 @@ function AddModelsDialog(props: { providerId: string; providerLabel: string; exi
         title={t().amTitle({ p: props.providerLabel })}
         subtitle={list.state === "ready" ? t().amSub({ p: (list() ?? []).length }) : undefined}
         icon="ti ti-list-search"
-        close={props.close}
+        close={requestClose}
         closeDisabled={saving()}
       />
       <PanelDialog.Body scrollPreserveKey="ai-add-models">
@@ -526,6 +573,32 @@ function AddModelsDialog(props: { providerId: string; providerLabel: string; exi
         <Show when={error()}>
           <NoticeCard tone="danger" title={t().saveFailed} detail={error()} />
         </Show>
+        <Show when={count() > 0}>
+          <Disclosure summary={t().advanced} surface="plain">
+            <div class="grid gap-3">
+              <For each={picks()}>
+                {(model) => (
+                  <TextInput
+                    label={`${t().modelId} · ${model.providerModel}`}
+                    monospace
+                    value={() => proposed()[model.providerModel] ?? ""}
+                    onValueChange={(value) => setIds((current) => ({ ...current, [model.providerModel]: aiSlug(value) }))}
+                    description={t().modelIdHelp}
+                    disabled={saving()}
+                    error={() => (!idsValid() ? t().modelIdUnique : undefined)}
+                  />
+                )}
+              </For>
+            </div>
+          </Disclosure>
+        </Show>
+        <Show when={modelIds.error}>
+          <NoticeCard tone="danger" title={t().loadFailed}>
+            <Button type="button" size="sm" variant="secondary" onClick={() => void refetchIds()}>
+              {t().retry}
+            </Button>
+          </NoticeCard>
+        </Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <Show when={!showManual()}>
@@ -534,10 +607,17 @@ function AddModelsDialog(props: { providerId: string; providerLabel: string; exi
             {t().amManual}
           </Button>
         </Show>
-        <Button type="button" variant="secondary" size="sm" onClick={props.close} disabled={saving()}>
+        <Button type="button" variant="secondary" size="sm" onClick={requestClose} disabled={saving()}>
           {t().cancel}
         </Button>
-        <Button type="button" size="sm" onClick={() => void add()} disabled={count() === 0} loading={saving()} loadingLabel={t().saving}>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => void add()}
+          disabled={count() === 0 || modelIds.state !== "ready" || !idsValid()}
+          loading={saving()}
+          loadingLabel={t().saving}
+        >
           <i class="ti ti-plus" aria-hidden="true" />
           {t().amAddN({ p: count() })}
         </Button>
@@ -546,7 +626,14 @@ function AddModelsDialog(props: { providerId: string; providerLabel: string; exi
   );
 }
 
-export const openAddProvider = () => void dialogCore.open<void>((close) => <AddProviderDialog close={() => close()} />, panelDialogOptions);
+export const openAddProvider = () =>
+  void dialogCore.open<void>(
+    (close, context) => <AddProviderDialog close={() => close()} setDismissHandler={context.setDismissHandler} />,
+    panelDialogOptions,
+  );
 
 export const openAddModels = (provider: { providerId: string; providerLabel: string; existing: string[] }) =>
-  void dialogCore.open<void>((close) => <AddModelsDialog {...provider} close={() => close()} />, panelDialogOptions);
+  void dialogCore.open<void>(
+    (close, context) => <AddModelsDialog {...provider} close={() => close()} setDismissHandler={context.setDismissHandler} />,
+    panelDialogOptions,
+  );

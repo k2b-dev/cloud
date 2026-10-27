@@ -4,6 +4,7 @@ import type { AccessEntry, Principal } from "@k2b/cloud/contracts";
 import { AccessEntrySchema } from "@k2b/cloud/contracts";
 import {
   type AiModel,
+  AiModelIconSchema,
   type AiModelIcon as AiModelIconSetting,
   AiModelSchema,
   type AiModelSlot,
@@ -49,6 +50,7 @@ const DetailSchema = AiModelSchema.extend({
 type Grant = { principal: Principal; displayName?: string; avatarHash?: string | null };
 
 type Draft = {
+  enabled: boolean;
   label: string;
   description: string;
   icon: AiModelIconSetting;
@@ -72,6 +74,7 @@ type Draft = {
 const toDraft = (model: Detail): Draft => {
   const entries = model.access?.entries ?? [];
   return {
+    enabled: model.enabled,
     label: model.label,
     description: model.description,
     icon: model.icon,
@@ -96,6 +99,10 @@ const toDraft = (model: Detail): Draft => {
 };
 
 const CONFLICT_FIELDS = [
+  "enabled",
+  "icon",
+  "restricted",
+  "grants",
   "label",
   "description",
   "providerModel",
@@ -176,7 +183,6 @@ export default function AiModelDetail(props: {
   const t = () => aiAreaMessages.resolve([locale()]).t;
   const [base, setBase] = createSignal(props.model);
   const [draft, setDraft] = createSignal(toDraft(props.model));
-  const [enabled, setEnabled] = createSignal(props.model.enabled);
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
   const [jsonError, setJsonError] = createSignal("");
@@ -190,7 +196,7 @@ export default function AiModelDetail(props: {
   const audio = () => draft().kind === "transcription";
   const unit = () => props.accountingUnit ?? "EUR";
   const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
-  const dirty = () => JSON.stringify(draft()) !== JSON.stringify(toDraft(base())) || enabled() !== base().enabled;
+  const dirty = () => JSON.stringify(draft()) !== JSON.stringify(toDraft(base()));
   const providerMark = () => ({ id: props.provider.id, label: props.provider.label });
 
   const patchFrom = (value: Draft) => {
@@ -220,7 +226,7 @@ export default function AiModelDetail(props: {
         value.kind === "chat" && value.priced && value.inputPerMillion !== null && value.outputPerMillion !== null
           ? { inputPerMillion: value.inputPerMillion, outputPerMillion: value.outputPerMillion }
           : null,
-      enabled: enabled(),
+      enabled: value.enabled,
     };
   };
 
@@ -261,13 +267,14 @@ export default function AiModelDetail(props: {
       const conflict = asAiConflict(failure, DetailSchema);
       if (conflict) setConflict(conflict);
       else setError(failure instanceof Error ? failure.message : t().saveFailed);
+    } finally {
       setSaving(false);
     }
   };
 
   createEffect(() =>
     setAiDetailControls({
-      enabled: { value: enabled(), onChange: setEnabled },
+      enabled: { value: draft().enabled, onChange: (enabled) => update({ enabled }) },
       test: {
         label: t().testModel,
         busy: false,
@@ -296,6 +303,8 @@ export default function AiModelDetail(props: {
         providerId={props.provider.id}
         providerLabel={props.provider.label}
         state={providerState()}
+        status={props.provider.status}
+        statusCode={props.provider.statusCode}
         statusMessage={props.provider.statusMessage}
         checkedAt={props.provider.statusCheckedAt}
       />
@@ -305,7 +314,29 @@ export default function AiModelDetail(props: {
             conflict={current()}
             fields={CONFLICT_FIELDS.map((key) => ({
               key,
+              format:
+                key === "icon"
+                  ? (value: unknown) => {
+                      const icon = AiModelIconSchema.parse(value);
+                      return icon.kind === "emoji" ? icon.emoji : icon.kind === "image" ? t().iconUpload : t().iconProvider;
+                    }
+                  : key === "grants"
+                    ? (value: unknown) =>
+                        z
+                          .array(AccessEntrySchema.pick({ principal: true, displayName: true, avatarHash: true }))
+                          .parse(value)
+                          .map((grant) => principalLabel(grant, locale()))
+                          .join(", ")
+                    : key === "restricted"
+                      ? (value: unknown) => (value ? t().accessRestricted : t().accessAll)
+                      : key === "enabled"
+                        ? (value: unknown) => (value ? t().active : t().disabled)
+                        : undefined,
               label: {
+                enabled: t().enable,
+                icon: t().iconLabel,
+                restricted: t().accessRestricted,
+                grants: t().access,
                 label: t().displayName,
                 description: t().description,
                 providerModel: t().providerModelId,
@@ -335,10 +366,10 @@ export default function AiModelDetail(props: {
               void save(merged, theirs);
             }}
             onDiscard={() => {
+              const theirs = current().current;
               setConflict(null);
-              setBase(current().current);
-              setDraft(toDraft(current().current));
-              setEnabled(current().current.enabled);
+              setBase(theirs);
+              setDraft(toDraft(theirs));
             }}
           />
         )}

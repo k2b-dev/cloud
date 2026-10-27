@@ -250,3 +250,25 @@ export const AiModelAccessDraftSchema = z
   })
   .strict();
 export type AiModelAccessDraft = z.infer<typeof AiModelAccessDraftSchema>;
+
+/** Whether a model supports a catalog assignment; safe to use in browser pickers. */
+export const aiModelSupportsSlot = (slot: AiModelSlot, model: Pick<AiModel, "kind" | "capabilities">): boolean =>
+  slot === "audio" ? model.kind === "transcription" : model.kind === "chat" && (slot !== "vision" || model.capabilities.includes("vision"));
+
+/** The same replacement requirements apply to deletion previews and committed retargeting. */
+export const aiReplacementProblem = (
+  source: Pick<AiProvider, "dataBoundary">,
+  target: Pick<AiProvider, "dataBoundary" | "enabled">,
+  original: Pick<AiModel, "kind" | "capabilities">,
+  replacement: Pick<AiModel, "kind" | "capabilities" | "enabled">,
+): "private_boundary" | "incompatible_model" | null => {
+  if (source.dataBoundary === "private" && target.dataBoundary !== "private") return "private_boundary";
+  if (
+    !target.enabled ||
+    !replacement.enabled ||
+    original.kind !== replacement.kind ||
+    original.capabilities.some((capability) => !replacement.capabilities.includes(capability))
+  )
+    return "incompatible_model";
+  return null;
+};

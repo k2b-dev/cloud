@@ -163,6 +163,8 @@ function ProviderColumn(props: {
         providerId={props.provider.id}
         providerLabel={props.provider.label}
         state={state}
+        status={props.provider.status}
+        statusCode={props.provider.statusCode}
         statusMessage={props.provider.statusMessage}
         checkedAt={props.provider.statusCheckedAt ?? null}
       />
@@ -377,6 +379,7 @@ export type AiAreaViewProps = {
   overview: Overview | null;
   index: AiCatalogIndex | null;
   loadFailed: boolean;
+  detailLoadFailed?: boolean;
   studioLinks: { href: string; label: string; icon: string; app: string }[];
   provider: ProviderRow | undefined;
   providerDetail: (AiProvider & { models: AiModel[] }) | null;
@@ -450,7 +453,10 @@ export function AiAreaView(props: AiAreaViewProps) {
   );
 
   const detail = (): JSX.Element => {
-    if (!overview || !index) return failure;
+    if (!overview || !index || props.detailLoadFailed) return failure;
+    if (query.sec === "providers" && query.p && (!provider || !providerDetail))
+      return <Placeholder state="error" icon="ti ti-plug-off" title={t.providerMissing} />;
+    if (query.sec === "providers" && query.m && !model) return <Placeholder state="error" icon="ti ti-cube-off" title={t.modelMissing} />;
     if (query.sec === "providers" && provider && query.pane === "conn" && providerDetail)
       return <AiConnectionDetail provider={providerDetail} />;
     if (query.sec === "providers" && provider && model && providerDetail)

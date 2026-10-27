@@ -1,9 +1,9 @@
-import { Button, ButtonLink, NoticeCard, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, Disclosure, NoticeCard, useLocale } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { aiAreaHref } from "./area";
 import { aiAdminApi, readAiAdmin, reloadAiArea } from "./client";
 import { aiAreaMessages } from "./messages";
-import { type AiProviderState, formatAiTime } from "./presentation";
+import { type AiProviderState, aiProviderFailureText, formatAiTime } from "./presentation";
 
 /**
  * The provider's failure where the administration works: what is wrong, since when, and the way out. A retry tests
@@ -14,6 +14,8 @@ export function AiProviderNotice(props: {
   providerLabel: string;
   state: AiProviderState;
   statusMessage: string | null;
+  statusCode?: string | null;
+  status?: string;
   checkedAt: string | null;
   /** Leave out the connection link inside the connection itself. */
   inConnection?: boolean;
@@ -49,8 +51,15 @@ export function AiProviderNotice(props: {
             icon="ti ti-plug-x"
             role="alert"
             title={t().unreachTitle({ p: props.providerLabel })}
-            detail={[props.statusMessage, time() ? t().unreachSince({ time: time() }) : ""].filter(Boolean).join(" ")}
+            detail={[aiProviderFailureText(t(), props.status, props.statusCode), time() ? t().unreachSince({ time: time() }) : ""]
+              .filter(Boolean)
+              .join(" ")}
           >
+            <Show when={props.statusMessage || props.statusCode}>
+              <Disclosure summary={t().technicalDetails} surface="plain">
+                <p class="break-words text-dimmed">{[props.statusCode, props.statusMessage].filter(Boolean).join(" · ")}</p>
+              </Disclosure>
+            </Show>
             <div class="flex flex-wrap gap-2">
               {retryButton()}
               <Show when={!props.inConnection}>
@@ -73,8 +82,13 @@ export function AiProviderNotice(props: {
             icon="ti ti-key"
             role="alert"
             title={t().badKeyTitle({ p: props.providerLabel })}
-            detail={time() ? t().badKeySince({ time: time() }) : undefined}
+            detail={[t().testFailKey, time() ? t().badKeySince({ time: time() }) : ""].filter(Boolean).join(" ")}
           >
+            <Show when={props.statusMessage || props.statusCode}>
+              <Disclosure summary={t().technicalDetails} surface="plain">
+                <p class="break-words text-dimmed">{[props.statusCode, props.statusMessage].filter(Boolean).join(" · ")}</p>
+              </Disclosure>
+            </Show>
             <div class="flex flex-wrap gap-2">
               <Show when={!props.inConnection}>
                 <ButtonLink

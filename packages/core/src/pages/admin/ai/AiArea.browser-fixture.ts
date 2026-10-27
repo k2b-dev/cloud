@@ -17,6 +17,10 @@ export type AiAreaFixtureState =
   | "empty"
   | "unreachable"
   | "badkey"
+  | "modeldraft"
+  | "detailfail"
+  | "detailempty"
+  | "listempty"
   | "loadfail"
   | "unassigned"
   | "noperm"
@@ -156,12 +160,17 @@ export async function aiAreaBrowserFixture(options: { port?: number } = {}) {
     const model = modelRow
       ? {
           ...modelRow,
+          icon: state === "modeldraft" ? { kind: "emoji" as const, emoji: "🌿" } : modelRow.icon,
           variants: catalog.variants.filter((entry) => entry.modelId === modelRow.id),
           access: {
             entries: [
               {
-                id: "a1",
-                principal: { type: "authenticated" as const },
+                id: "44444444-4444-4444-8444-444444444444",
+                principal:
+                  state === "modeldraft"
+                    ? { type: "user" as const, userId: "33333333-3333-4333-8333-333333333333" }
+                    : { type: "authenticated" as const },
+                displayName: state === "modeldraft" ? "Jona Beispiel" : undefined,
                 permission: "read" as const,
                 createdAt: "2026-10-02T09:00:00.000Z",
               },
@@ -203,8 +212,9 @@ export async function aiAreaBrowserFixture(options: { port?: number } = {}) {
             loadFailed: state === "loadfail",
             studioLinks: [{ href: "/admin/assistant/apps", label: "Studio-Apps", icon: "ti-apps", app: t.fromApp({ p: "Assistent" }) }],
             provider,
-            providerDetail,
-            model,
+            providerDetail: state === "detailfail" ? null : providerDetail,
+            model: state === "detailfail" || state === "detailempty" ? null : model,
+            detailLoadFailed: state === "detailfail",
             usage: model ? aiFixtureUsage(model.id) : null,
             accountingUnit: "EUR",
             assignmentDetails,
@@ -296,6 +306,7 @@ export async function aiAreaBrowserFixture(options: { port?: number } = {}) {
     const available = path.match(/^\/providers\/([^/]+)\/available-models$/);
     if (available) {
       if (state === "listfail") return Response.json({ code: "list_failed", message: "Der Anbieter antwortete mit 502." }, { status: 502 });
+      if (state === "listempty") return Response.json({ models: [] });
       return Response.json({
         models: [
           { providerModel: "gpt-oss-120b", label: "GPT-OSS 120B", contextWindow: 131_072 },
