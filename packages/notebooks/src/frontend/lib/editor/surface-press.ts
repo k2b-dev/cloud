@@ -3,7 +3,12 @@
  *
  * A press the editor already handled did not miss it, even when handling it replaced the pressed element: ticking a
  * checklist box redraws the box, so by the time the press reaches the surface its target is no longer inside the
- * editor. Treating that press as a miss would move the caret to the end and scroll the note there.
+ * editor. Treating that press as a miss would move the caret to the end and scroll the note there. A press on the
+ * comments beside the text belongs to them, not to the text.
  */
 export const pressMissedEditor = (event: MouseEvent): boolean =>
-  !event.defaultPrevented && !(event.target instanceof Element && event.target.closest(".cm-editor"));
+  !event.defaultPrevented &&
+  !(
+    event.target instanceof Element &&
+    event.target.closest(".cm-editor, .notebook-comments, .notebook-comments-gutter, .notebook-comments-open")
+  );
