@@ -941,6 +941,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     );
     if (!proposed.ok) throw new Error(proposed.error.message);
     const replyId = proposed.data.id;
+    await sql`UPDATE notebooks.annotation_replies SET created_at = ${new Date(Date.now())} WHERE id = ${replyId}::uuid`;
     expect((await annotations.reject(note.shortId, root.id, { replyId }, other)).ok).toBeTrue();
     expect((await annotations.mutate(note.shortId, root.id, { kind: "edit", replyId, body: "Body only" }, writer)).ok).toBeTrue();
     expect(await annotations.readResource(root.id, writer)).toMatchObject({
