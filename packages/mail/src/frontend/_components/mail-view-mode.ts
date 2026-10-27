@@ -30,7 +30,8 @@ const dayKey = (date: Date, timeZone: string): string =>
   new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 
 /** Whole days between two calendar dates in one time zone, independent of daylight-saving hours. */
-const daysBetween = (from: string, to: string): number => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+const daysBetween = (from: string, to: string): number =>
+  Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 
 /** Days since the week started: 0 on its first day. `weekStartsOn` is 1 for Monday, 0 for Sunday. */
 const daysIntoWeek = (key: string, weekStartsOn: 0 | 1): number => (new Date(`${key}T00:00:00Z`).getUTCDay() - weekStartsOn + 7) % 7;

@@ -38,9 +38,13 @@ test("with Sunday as the first day, Sunday already belongs to this week", () => 
 });
 
 test("a heading goes before the first item of every group", () => {
-  const items = ["2026-10-28T07:00:00Z", "2026-10-28T06:00:00Z", "2026-10-27T10:00:00Z", "2026-10-26T10:00:00Z", "2026-10-20T10:00:00Z"].map(
-    (latestMessageAt) => ({ latestMessageAt }),
-  );
+  const items = [
+    "2026-10-28T07:00:00Z",
+    "2026-10-28T06:00:00Z",
+    "2026-10-27T10:00:00Z",
+    "2026-10-26T10:00:00Z",
+    "2026-10-20T10:00:00Z",
+  ].map((latestMessageAt) => ({ latestMessageAt }));
   expect([...mailDayGroupStarts(items, now, zone)]).toEqual([
     [0, "today"],
     [2, "yesterday"],
