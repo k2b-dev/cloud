@@ -379,6 +379,64 @@ suite("real Filegate directory lifecycle", () => {
     expect((await whole.arrayBuffer()).byteLength).toBe(total);
   }, 30_000);
 
+  test("search finds typos and folder names, ranks, highlights, filters and counts without the trash on Filegate 7.1", async () => {
+    const root = client.root("cloud");
+    const user = await createUser("files-search-local", "local");
+    configuration.cloud.autoCreate = true;
+    const base = (await service.bases(testCall(user))).items.find((item) => item.area === "cloud" && item.kind === "users")!;
+    expect(base.status).toBe("existing");
+    const home = `${prefix}/home/${name(user)}`;
+    const files: [string, number][] = [
+      ["Rechnungen/2026/Rechnung-2026-031.pdf", 300],
+      ["Kunden/Bäckerei/Rechnung Oktober.pdf", 50],
+      ["Buchhaltung/Rechnungseingang.xlsx", 20],
+      ["Notizen/einkauf.txt", 10],
+      ["trash/Alte Rechnung.pdf", 40],
+    ];
+    for (const [path, size] of files) {
+      const parent = path.split("/").slice(0, -1).join("/");
+      for (const folder of parent.split("/").map((_, index, parts) => parts.slice(0, index + 1).join("/")))
+        await root.mkdir(`${home}/${folder}`).catch((error) => {
+          if (!(error instanceof FilegateError && error.status === 409)) throw error;
+        });
+      await root.put(`${home}/${path}`, new Blob(["x".repeat(size)]));
+    }
+    const search = (input: Parameters<typeof service.search>[1] extends infer T ? Omit<T, "baseId"> : never) =>
+      service.search(testCall(user), { baseId: base.id, ...input });
+
+    // Defaults: typos, folder names and relevance; the shortest exact name comes first and the trash never shows.
+    const found = await search({ q: "rechnung" });
+    const paths = found.items.map((item) => item.path);
+    expect(paths).toContain("Rechnungen");
+    expect(paths).toContain("Kunden/Bäckerei/Rechnung Oktober.pdf");
+    expect(paths.some((path) => path.startsWith("trash/"))).toBe(false);
+    expect(found.items[0]?.name).toBe("Rechnungen");
+    // The total counts the hits Files shows, without the one in the trash.
+    expect(found.total).toBe(found.items.length);
+    const hit = found.items.find((item) => item.path === "Kunden/Bäckerei/Rechnung Oktober.pdf")!;
+    const marked = hit.highlight.map(([start, end]) => Array.from(hit.path).slice(start, end).join(""));
+    expect(marked.map((part) => part.toLowerCase())).toContain("rechnung");
+
+    // A missing letter still finds the invoices; exact matching does not.
+    expect((await search({ q: "rechnug" })).items.map((item) => item.path)).toContain("Kunden/Bäckerei/Rechnung Oktober.pdf");
+    expect((await search({ q: "rechnug", match: "exact" })).items).toEqual([]);
+    // Folder words find the file below them; name matching alone does not.
+    expect((await search({ q: "kunden oktober" })).items.map((item) => item.path)).toEqual(["Kunden/Bäckerei/Rechnung Oktober.pdf"]);
+    expect((await search({ q: "kunden oktober", in: "name" })).items).toEqual([]);
+
+    // Filters narrow before ranking, also without a query.
+    expect((await search({ q: "rechnung", ext: "pdf" })).items.map((item) => item.name).sort()).toEqual([
+      "Rechnung Oktober.pdf",
+      "Rechnung-2026-031.pdf",
+    ]);
+    expect((await search({ q: "rechnung", minSize: 100 })).items.map((item) => item.name)).toEqual(["Rechnung-2026-031.pdf"]);
+    expect((await search({ q: "rechnung", modifiedAfter: "2999-01-01T00:00:00Z" })).items).toEqual([]);
+    const sheets = await search({ q: "", ext: "xlsx" });
+    expect(sheets.items.map((item) => item.path)).toEqual(["Buchhaltung/Rechnungseingang.xlsx"]);
+    expect(sheets.items[0]?.highlight).toEqual([]);
+    await expect(search({ q: "" })).rejects.toMatchObject({ code: "invalid_input" });
+  }, 60_000);
+
   test("automatic Cloud creation and archival preserve daemon ownership and suppress reprovisioning", async () => {
     const root = client.root("cloud");
     const user = await createUser("files-lifecycle-local", "local");

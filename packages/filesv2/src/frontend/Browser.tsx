@@ -21,6 +21,7 @@ import {
   prompts,
   ScrollArea,
   SegmentedControl,
+  Skeleton,
   TextInput,
   toast,
   useLocale,
@@ -31,7 +32,6 @@ import {
   type BaseSummary,
   type BasesResult,
   type BrowseOptions,
-  type DirectoryResult,
   type EditorInfo,
   type EntryResult,
   ErrorSchema,
@@ -66,12 +66,28 @@ import { askReplace, type FilesUploads, type ReplacePolicy } from "./files-uploa
 import { openDestinationDialog } from "./MoveDialog";
 import { useFilesMessages } from "./messages";
 import { openNewFolderDialog } from "./NewFolderDialog";
+import {
+  defaultSort,
+  effectiveSort,
+  SEARCH_KINDS,
+  SEARCH_MODIFIED,
+  SEARCH_SIZES,
+  type SearchKind,
+  type SearchModified,
+  type SearchSize,
+  type SearchState,
+  searchFiltered,
+  searchState,
+} from "./search-state";
 import { systemEntry, systemEntryLabel } from "./system-files";
 import { openTemplatePicker } from "./Templates";
 import { UploadConflict, uploadFile } from "./uploads";
 import { filesUrl } from "./urls";
+import type { DirectoryView } from "./workspace-state";
 
-type Directory = DirectoryResult & { query?: string; scope?: "folder" | "tree" };
+type Directory = DirectoryView;
+/** Placeholder rows while a search runs; as many as fit a phone screen. */
+const SEARCH_SKELETON_ROWS = 8;
 type Branch = { items: FileEntry[]; next: string | null; loading: boolean; error: boolean; pages?: number };
 const nameValid = (value: string | undefined) =>
   !!value && !value.includes("/") && value.trim() === value && value !== "." && value !== "..";
@@ -102,7 +118,10 @@ export default function Browser(props: {
   onOpenDirectory?: (path: string) => void;
   onOpenTrash?: () => void;
   onOpenOverview?: () => void;
-  onSearch?: (query: string | null) => void;
+  /** The complete next search, or null to show the folder again. */
+  onSearch?: (search: SearchState | null) => void;
+  /** A search is loading: the results area waits for it instead of showing the previous page. */
+  pendingSearch?: boolean;
   onBrowseChange?: (options: BrowseOptions) => void;
   onChanged?: (selectPath?: string | null) => void | Promise<void>;
   onShare?: (paths: readonly string[]) => void;
@@ -121,7 +140,26 @@ export default function Browser(props: {
   const baseId = () => props.directory.base.id;
   const baseIdentity = () => JSON.stringify([baseId(), props.directory.base.locationKey]);
   const folder = () => props.directory.path;
-  const searching = () => !!props.directory.query;
+  const searching = () => props.directory.query !== undefined;
+  /** The search the address asks for; the directory's own query is the fallback for a host without a source. */
+  const search = createMemo<SearchState | null>(() => {
+    if (!searching()) return null;
+    return (
+      searchState(new URL(props.source ?? "", "https://files.invalid").searchParams) ?? {
+        q: props.directory.query ?? "",
+        scope: props.directory.scope ?? "tree",
+        exact: false,
+        order: "asc",
+      }
+    );
+  });
+  const changeSearch = (next: Partial<SearchState>) => {
+    const current = search();
+    if (!current) return;
+    const merged: SearchState = { ...current, ...next };
+    if (!merged.q && merged.sort === "relevance") merged.sort = undefined;
+    props.onSearch?.(merged.q || searchFiltered(merged) ? merged : null);
+  };
   // View settings belong to one storage base; a cookie remembers the latest bases.
   const [preferences, setPreferences] = createSignal(props.preferences ?? {});
   const activeBrowse = createMemo(() =>
@@ -167,7 +205,7 @@ export default function Browser(props: {
   const [opening, setOpening] = createSignal<string | null>(null);
   let mounted = false;
   let syncing = false;
-  const locationKey = () => JSON.stringify([baseIdentity(), folder(), props.after ?? "", props.directory.query ?? "", activeBrowse()]);
+  const locationKey = () => JSON.stringify([baseIdentity(), folder(), props.after ?? "", search(), activeBrowse()]);
   let location = locationKey();
   let lastSource = props.source;
 
@@ -366,15 +404,7 @@ export default function Browser(props: {
     onChange: (paths) => {
       if (!mounted || syncing || location !== locationKey()) return;
       if (externalPath() && !paths.includes(externalPath()!)) setExternalPath(null);
-      const source = filesUrl(
-        baseId(),
-        folder(),
-        props.after,
-        paths.length === 1 ? paths[0] : null,
-        props.directory.query,
-        props.directory.scope,
-        activeBrowse(),
-      );
+      const source = filesUrl(baseId(), folder(), props.after, paths.length === 1 ? paths[0] : null, search(), activeBrowse());
       commitHistory(source, { replace: true, scroll: "manual", viewTransition: false });
       props.onSelectionSource?.(source);
     },
@@ -1076,10 +1106,48 @@ export default function Browser(props: {
 
   const [searchText, setSearchText] = createSignal(props.directory.query ?? "");
   createEffect(() => setSearchText(props.directory.query ?? ""));
+  // Enter searches below this folder; an emptied field keeps a search that still has filters.
   const submitSearch = () => {
     const value = searchText().trim();
-    if (value !== (props.directory.query ?? "")) props.onSearch?.(value || null);
+    if (value === (props.directory.query ?? "") && searching()) return;
+    if (search()) changeSearch({ q: value });
+    else if (value) props.onSearch?.({ q: value, scope: "tree", exact: false, order: "asc" });
   };
+  const kindLabel = (kind: SearchKind) =>
+    ({
+      folder: b().searchKindFolder,
+      document: b().searchKindDocument,
+      pdf: b().searchKindPdf,
+      sheet: b().searchKindSheet,
+      slides: b().searchKindSlides,
+      image: b().searchKindImage,
+      video: b().searchKindVideo,
+      audio: b().searchKindAudio,
+      archive: b().searchKindArchive,
+    })[kind];
+  const kindIcon = (kind: SearchKind) =>
+    ({
+      folder: "ti ti-folder",
+      document: "ti ti-file-text",
+      pdf: "ti ti-file-type-pdf",
+      sheet: "ti ti-table",
+      slides: "ti ti-presentation",
+      image: "ti ti-photo",
+      video: "ti ti-movie",
+      audio: "ti ti-music",
+      archive: "ti ti-file-zip",
+    })[kind];
+  const sizeLabel = (size: SearchSize) =>
+    ({ small: b().searchSizeSmall, medium: b().searchSizeMedium, large: b().searchSizeLarge, huge: b().searchSizeHuge })[size];
+  const modifiedLabel = (modified: SearchModified) =>
+    ({
+      day: b().searchModifiedDay,
+      week: b().searchModifiedWeek,
+      month: b().searchModifiedMonth,
+      year: b().searchModifiedYear,
+    })[modified];
+  const searchCount = () =>
+    typeof props.directory.total === "number" ? b().searchTotal(props.directory.total) : b().searchResults(props.directory.items.length);
   const parentOf = (path: string) => parentPath(path) || baseLabel(props.directory.base, b(), locale());
   const detailOpen = () => selectedPaths().length > 0;
   const addItems = () =>
@@ -1226,6 +1294,77 @@ export default function Browser(props: {
     select: b().selectEntry,
     more: b().more,
   });
+  /** A running search keeps the rows' geometry; a failed one says why and offers a way on. */
+  const searchStatus = () => (
+    <Show
+      when={!props.pendingSearch && props.directory.failure}
+      fallback={
+        <div class="filesv2-search-loading" role="status">
+          <span class="sr-only">{b().searching}</span>
+          <For each={Array.from({ length: SEARCH_SKELETON_ROWS })}>
+            {() => (
+              <div class="filesv2-search-loading__row">
+                <Skeleton class="filesv2-search-loading__icon" />
+                <Skeleton class="filesv2-search-loading__text" />
+              </div>
+            )}
+          </For>
+        </div>
+      }
+    >
+      {(code) => (
+        <Show
+          when={code() === "search_limited"}
+          fallback={
+            <Placeholder
+              class="flex-1"
+              variant="panel"
+              state="error"
+              title={b().searchFailedTitle}
+              description={code() === "search_busy" ? b().searchBusy : <IssueMessage code={code()} />}
+              action={
+                <div class="flex flex-wrap justify-center gap-2">
+                  <Button size="sm" variant="secondary" onClick={props.onRetry}>
+                    {b().retry}
+                  </Button>
+                  <Button size="sm" variant="text" onClick={() => props.onSearch?.(null)}>
+                    {b().showFolder}
+                  </Button>
+                </div>
+              }
+            />
+          }
+        >
+          <Placeholder
+            class="flex-1"
+            variant="panel"
+            icon="ti ti-hourglass-high"
+            title={b().searchLimitedTitle}
+            description={props.directory.base.indexEnabled ? b().searchLimitedIndexed : b().searchLimitedScan}
+            action={
+              <div class="flex flex-wrap justify-center gap-2">
+                <Show when={props.directory.base.indexEnabled && !search()?.exact}>
+                  <Button size="sm" variant="secondary" onClick={() => changeSearch({ exact: true })}>
+                    {b().searchExactNames}
+                  </Button>
+                </Show>
+                <Button size="sm" variant="text" onClick={() => props.onSearch?.(null)}>
+                  {b().showFolder}
+                </Button>
+              </div>
+            }
+          />
+        </Show>
+      )}
+    </Show>
+  );
+  /** The list header marks the search's own order; relevance has no column. */
+  const listSort = () => {
+    const current = search();
+    if (!current) return { key: view().sort, direction: view().direction };
+    const sort = effectiveSort(current);
+    return sort === "relevance" ? undefined : { key: sort, direction: current.order };
+  };
   const closeInspector = () => {
     const focused = selection.focused();
     selection.clear();
@@ -1291,47 +1430,170 @@ export default function Browser(props: {
                 }}
                 class="filesv2-search"
               />
-              <FilterChip
-                label={b().sortAndFilter}
-                icon="ti ti-adjustments-horizontal"
-                iconOnly
-                variant="input"
-                position="bottom-right"
-                value={[view().sort, view().direction, typeFilter(), ...(view().groupFolders ? ["groupFolders"] : [])]}
-                defaultValue={["name", "asc", "all", "groupFolders"]}
-                isActive={view().sort !== "name" || view().direction !== "asc" || typeFilter() !== "all" || !view().groupFolders}
-                onValueChange={(values) => {
-                  updateView({
-                    sort: SORT_KEYS.find((key) => values.includes(key)) ?? "name",
-                    direction: values.includes("desc") ? "desc" : "asc",
-                    groupFolders: values.includes("groupFolders"),
-                    type: TYPE_FILTERS.find((key) => values.includes(key)) ?? "all",
-                  });
-                }}
-                options={[
-                  { label: b().sort, options: SORT_KEYS.map((key) => ({ value: key, label: sortLabel(key) })) },
-                  {
-                    label: b().sortDirection,
-                    options: [
-                      { value: "asc", label: b().sortAscending },
-                      { value: "desc", label: b().sortDescending },
-                    ],
-                  },
-                  { label: b().filter, options: TYPE_FILTERS.map((key) => ({ value: key, label: filterLabel(key) })) },
-                  { multiple: true, options: [{ value: "groupFolders", label: b().groupFolders }] },
-                ]}
-              />
+              <Show
+                when={search()}
+                fallback={
+                  <FilterChip
+                    label={b().sortAndFilter}
+                    icon="ti ti-adjustments-horizontal"
+                    iconOnly
+                    variant="input"
+                    position="bottom-right"
+                    value={[view().sort, view().direction, typeFilter(), ...(view().groupFolders ? ["groupFolders"] : [])]}
+                    defaultValue={["name", "asc", "all", "groupFolders"]}
+                    isActive={view().sort !== "name" || view().direction !== "asc" || typeFilter() !== "all" || !view().groupFolders}
+                    onValueChange={(values) => {
+                      updateView({
+                        sort: SORT_KEYS.find((key) => values.includes(key)) ?? "name",
+                        direction: values.includes("desc") ? "desc" : "asc",
+                        groupFolders: values.includes("groupFolders"),
+                        type: TYPE_FILTERS.find((key) => values.includes(key)) ?? "all",
+                      });
+                    }}
+                    options={[
+                      { label: b().sort, options: SORT_KEYS.map((key) => ({ value: key, label: sortLabel(key) })) },
+                      {
+                        label: b().sortDirection,
+                        options: [
+                          { value: "asc", label: b().sortAscending },
+                          { value: "desc", label: b().sortDescending },
+                        ],
+                      },
+                      { label: b().filter, options: TYPE_FILTERS.map((key) => ({ value: key, label: filterLabel(key) })) },
+                      { multiple: true, options: [{ value: "groupFolders", label: b().groupFolders }] },
+                    ]}
+                  />
+                }
+              >
+                {(current) => (
+                  <FilterChip
+                    label={b().sortAndFilter}
+                    icon="ti ti-adjustments-horizontal"
+                    iconOnly
+                    variant="input"
+                    position="bottom-right"
+                    value={[effectiveSort(current()), current().order, current().exact ? "exact" : "similar"]}
+                    defaultValue={[defaultSort(current()), "asc", "similar"]}
+                    isActive={effectiveSort(current()) !== defaultSort(current()) || current().order !== "asc" || current().exact}
+                    onValueChange={(values) =>
+                      changeSearch({
+                        sort: (["relevance", "name", "modified", "size"] as const).find((key) => values.includes(key)),
+                        order: values.includes("desc") ? "desc" : "asc",
+                        exact: values.includes("exact"),
+                      })
+                    }
+                    options={[
+                      {
+                        label: b().sort,
+                        options: [
+                          ...(current().q ? [{ value: "relevance", label: b().sortRelevance }] : []),
+                          ...SORT_KEYS.map((key) => ({ value: key, label: sortLabel(key) })),
+                        ],
+                      },
+                      ...(effectiveSort(current()) === "relevance"
+                        ? []
+                        : [
+                            {
+                              label: b().sortDirection,
+                              options: [
+                                { value: "asc", label: b().sortAscending },
+                                { value: "desc", label: b().sortDescending },
+                              ],
+                            },
+                          ]),
+                      {
+                        label: b().match,
+                        options: [
+                          { value: "similar", label: b().matchSimilar },
+                          { value: "exact", label: b().matchExact },
+                        ],
+                      },
+                    ]}
+                  />
+                )}
+              </Show>
             </div>
             <Show when={props.notice}>
               <InlineGuidance tone="info">{props.notice}</InlineGuidance>
             </Show>
             <div class="filesv2-toolbar">
+              <Show when={search()}>
+                {(current) => (
+                  <>
+                    <div class="filesv2-search-filters" role="group" aria-label={b().searchFilters}>
+                      <FilterChip
+                        label={b().filterType}
+                        icon="ti ti-file-search"
+                        showValue
+                        value={current().kind ? [current().kind!] : []}
+                        onValueChange={(values) =>
+                          changeSearch({ kind: (Object.keys(SEARCH_KINDS) as SearchKind[]).find((kind) => values.includes(kind)) })
+                        }
+                        options={[
+                          {
+                            options: (Object.keys(SEARCH_KINDS) as SearchKind[]).map((kind) => ({
+                              value: kind,
+                              label: kindLabel(kind),
+                              icon: kindIcon(kind),
+                            })),
+                          },
+                        ]}
+                      />
+                      <FilterChip
+                        label={b().filterSize}
+                        icon="ti ti-ruler-2"
+                        showValue
+                        value={current().size ? [current().size!] : []}
+                        onValueChange={(values) =>
+                          changeSearch({ size: (Object.keys(SEARCH_SIZES) as SearchSize[]).find((size) => values.includes(size)) })
+                        }
+                        options={[
+                          { options: (Object.keys(SEARCH_SIZES) as SearchSize[]).map((size) => ({ value: size, label: sizeLabel(size) })) },
+                        ]}
+                      />
+                      <FilterChip
+                        label={b().filterModified}
+                        icon="ti ti-calendar"
+                        showValue
+                        value={current().modified ? [current().modified!] : []}
+                        onValueChange={(values) =>
+                          changeSearch({
+                            modified: (Object.keys(SEARCH_MODIFIED) as SearchModified[]).find((modified) => values.includes(modified)),
+                          })
+                        }
+                        options={[
+                          {
+                            options: (Object.keys(SEARCH_MODIFIED) as SearchModified[]).map((modified) => ({
+                              value: modified,
+                              label: modifiedLabel(modified),
+                            })),
+                          },
+                        ]}
+                      />
+                      <Show when={searchFiltered(current())}>
+                        <Button
+                          size="xs"
+                          variant="text"
+                          onClick={() => changeSearch({ kind: undefined, size: undefined, modified: undefined })}
+                        >
+                          {b().resetFilters}
+                        </Button>
+                      </Show>
+                    </div>
+                    <span class="flex-1" />
+                  </>
+                )}
+              </Show>
               <Show
                 when={selecting()}
                 fallback={
-                  <span class="flex items-center gap-2 text-xs text-dimmed">
-                    {searching() ? b().searchResults(props.directory.items.length) : b().pageItems(props.directory.items.length)}
-                    <Show when={props.directory.items.length}>
+                  <span class="flex min-h-6 items-center gap-2 text-xs text-dimmed" role={searching() ? "status" : undefined}>
+                    {props.pendingSearch
+                      ? b().searching
+                      : searching()
+                        ? !props.directory.failure && searchCount()
+                        : b().pageItems(props.directory.items.length)}
+                    <Show when={props.directory.items.length && !props.pendingSearch}>
                       <span aria-hidden="true">·</span>
                       <Button size="xs" variant="text" onClick={() => toggleSelecting(true)}>
                         {b().select}
@@ -1353,8 +1615,10 @@ export default function Browser(props: {
                   {b().endSelect}
                 </Button>
               </Show>
-              <span class="flex-1" />
-              <span class="flex shrink-0 items-center gap-1">
+              <Show when={!searching()}>
+                <span class="flex-1" />
+              </Show>
+              <span class="flex shrink-0 items-center gap-1" hidden={searching()}>
                 <Show when={view().view === "grid"}>
                   <SegmentedControl
                     label={b().viewSize}
@@ -1447,128 +1711,163 @@ export default function Browser(props: {
               </Show>
             </InlineGuidance>
           </Show>
-          <Show
-            when={props.directory.items.length || (!searching() && (folder() || props.onOpenTrash || props.onOpenOverview))}
-            fallback={
-              <Placeholder
-                class="flex-1"
-                variant="panel"
-                icon={searching() ? "ti ti-search-off" : "ti ti-folder"}
-                title={searching() ? b().noResultsTitle : b().emptyTitle}
-                description={searching() ? b().noResultsDescription : b().emptyDescription}
-              />
-            }
-          >
-            <ContextMenu class="filesv2-browser__collection" tabIndex={-1} items={contextItems()} label={t().actions} disabled={busy()}>
-              <ScrollArea
-                class="h-full"
-                scrollPreserveKey={`filesv2:${folderKey(baseIdentity(), folder())}:${props.after ?? ""}:${view().view}`}
-              >
+          <Show when={!props.pendingSearch && !(searching() && props.directory.failure)} fallback={searchStatus()}>
+            <Show
+              when={props.directory.items.length || (!searching() && (folder() || props.onOpenTrash || props.onOpenOverview))}
+              fallback={
                 <Show
-                  when={view().view === "grid"}
+                  when={search()}
                   fallback={
-                    <>
-                      <FileList
-                        baseId={baseId()}
-                        rows={rows()}
+                    <Placeholder
+                      class="flex-1"
+                      variant="panel"
+                      icon="ti ti-folder"
+                      title={b().emptyTitle}
+                      description={b().emptyDescription}
+                    />
+                  }
+                >
+                  {(current) => (
+                    <Placeholder
+                      class="flex-1"
+                      variant="panel"
+                      state="no-results"
+                      title={b().noResultsTitle}
+                      description={searchFiltered(current()) ? b().noResultsFiltered : b().noResultsDescription}
+                      action={
+                        <Show when={searchFiltered(current())}>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => changeSearch({ kind: undefined, size: undefined, modified: undefined })}
+                          >
+                            {b().resetFilters}
+                          </Button>
+                        </Show>
+                      }
+                    />
+                  )}
+                </Show>
+              }
+            >
+              <ContextMenu class="filesv2-browser__collection" tabIndex={-1} items={contextItems()} label={t().actions} disabled={busy()}>
+                <ScrollArea
+                  class="h-full"
+                  scrollPreserveKey={`filesv2:${folderKey(baseIdentity(), folder())}:${props.after ?? ""}:${view().view}`}
+                >
+                  <Show
+                    when={view().view === "grid"}
+                    fallback={
+                      <>
+                        <FileList
+                          baseId={baseId()}
+                          rows={rows()}
+                          selection={interactiveSelection}
+                          label={t().files}
+                          tree={view().view === "tree"}
+                          pathBase={searching() ? folder() : null}
+                          hereLabel={folderLabel(folder())}
+                          showModified
+                          opening={opening()}
+                          currentPath={view().view === "tree" ? folder() : null}
+                          selecting={selecting()}
+                          before={virtualBefore()}
+                          after={virtualAfter()}
+                          rowProps={(row) => ({ ...dragProps(row), ...folderDrop(row) })}
+                          virtualProps={(row) => (row.key === "up" ? upDrop() : {})}
+                          messages={listMessages()}
+                          sort={listSort()}
+                          onSort={(key) => {
+                            const current = search();
+                            if (!current) {
+                              updateView(
+                                view().sort === key
+                                  ? { direction: view().direction === "asc" ? "desc" : "asc" }
+                                  : { sort: key, direction: "asc" },
+                              );
+                              return;
+                            }
+                            const sorted = effectiveSort(current) === key;
+                            changeSearch({ sort: key, order: sorted && current.order === "asc" ? "desc" : "asc" });
+                          }}
+                          onOpen={open}
+                          onToggle={toggleBranch}
+                          onLoadMore={(row) => {
+                            const path = row.path.replace(/ more$/, "");
+                            void loadBranch(path, branch(path)?.next);
+                          }}
+                          onDetails={(row) => selection.select(row.path)}
+                          onContextMenu={focusContext}
+                          onRowClick={rowClick}
+                        />
+                        <Show when={!props.directory.items.length && !rows().length}>
+                          <Placeholder class="mx-2" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
+                        </Show>
+                        <Show when={filtered()}>
+                          <Placeholder class="mx-2" icon="ti ti-filter-off" title={b().noMatches} />
+                        </Show>
+                      </>
+                    }
+                  >
+                    <div class="filesv2-grid-wrap">
+                      <FileGrid
+                        rows={gridRows()}
+                        getRowId={(row) => row.path}
                         selection={interactiveSelection}
                         label={t().files}
-                        tree={view().view === "tree"}
-                        pathBase={searching() ? folder() : null}
-                        showModified={!searching()}
-                        opening={opening()}
-                        currentPath={view().view === "tree" ? folder() : null}
-                        selecting={selecting()}
-                        before={virtualBefore()}
-                        after={virtualAfter()}
-                        rowProps={(row) => ({ ...dragProps(row), ...folderDrop(row) })}
-                        virtualProps={(row) => (row.key === "up" ? upDrop() : {})}
-                        messages={listMessages()}
-                        sort={{ key: view().sort, direction: view().direction }}
-                        onSort={(key) =>
-                          updateView(
-                            view().sort === key
-                              ? { direction: view().direction === "asc" ? "desc" : "asc" }
-                              : { sort: key, direction: "asc" },
-                          )
+                        size={view().size}
+                        onOpen={(row) => (virtualOf(row) ? virtualOf(row)!.onClick() : open(row))}
+                        itemProps={(row) =>
+                          virtualOf(row) ? (virtualOf(row)!.key === "up" ? upDrop() : {}) : { ...dragProps(row), ...folderDrop(row) }
                         }
-                        onOpen={open}
-                        onToggle={toggleBranch}
-                        onLoadMore={(row) => {
-                          const path = row.path.replace(/ more$/, "");
-                          void loadBranch(path, branch(path)?.next);
+                        onContextMenu={(row) => !virtualOf(row) && focusContext(row)}
+                        onRowClick={(row) => {
+                          const virtual = virtualOf(row);
+                          if (virtual) virtual.onClick();
+                          else if (!selecting() && row.directory) open(row);
                         }}
-                        onDetails={(row) => selection.select(row.path)}
-                        onContextMenu={focusContext}
-                        onRowClick={rowClick}
+                        renderPreview={(row) => {
+                          const virtual = virtualOf(row);
+                          if (virtual)
+                            return (
+                              <span class="filesv2-thumbnail filesv2-thumbnail--large filesv2-thumbnail--virtual">
+                                <i class={opening() === virtual.key ? "ti ti-loader-2 animate-spin" : virtual.icon} aria-hidden="true" />
+                              </span>
+                            );
+                          return (
+                            <>
+                              {gridCheck(row)}
+                              {opening() === row.path ? (
+                                <i class="ti ti-loader-2 animate-spin text-3xl text-dimmed" aria-hidden="true" />
+                              ) : (
+                                <FileThumbnail baseId={baseId()} locationKey={props.directory.base.locationKey} entry={row} large />
+                              )}
+                            </>
+                          );
+                        }}
+                        renderLabel={(row) => <span title={virtualOf(row) ? undefined : row.name}>{row.name}</span>}
+                        renderMeta={(row) => {
+                          const virtual = virtualOf(row);
+                          if (virtual) return virtual.detail ?? null;
+                          return searching() ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : null;
+                        }}
                       />
-                      <Show when={!props.directory.items.length && !rows().length}>
+                      <Show when={!props.directory.items.length}>
                         <Placeholder class="mx-2" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
                       </Show>
                       <Show when={filtered()}>
                         <Placeholder class="mx-2" icon="ti ti-filter-off" title={b().noMatches} />
                       </Show>
-                    </>
-                  }
-                >
-                  <div class="filesv2-grid-wrap">
-                    <FileGrid
-                      rows={gridRows()}
-                      getRowId={(row) => row.path}
-                      selection={interactiveSelection}
-                      label={t().files}
-                      size={view().size}
-                      onOpen={(row) => (virtualOf(row) ? virtualOf(row)!.onClick() : open(row))}
-                      itemProps={(row) =>
-                        virtualOf(row) ? (virtualOf(row)!.key === "up" ? upDrop() : {}) : { ...dragProps(row), ...folderDrop(row) }
-                      }
-                      onContextMenu={(row) => !virtualOf(row) && focusContext(row)}
-                      onRowClick={(row) => {
-                        const virtual = virtualOf(row);
-                        if (virtual) virtual.onClick();
-                        else if (!selecting() && row.directory) open(row);
-                      }}
-                      renderPreview={(row) => {
-                        const virtual = virtualOf(row);
-                        if (virtual)
-                          return (
-                            <span class="filesv2-thumbnail filesv2-thumbnail--large filesv2-thumbnail--virtual">
-                              <i class={opening() === virtual.key ? "ti ti-loader-2 animate-spin" : virtual.icon} aria-hidden="true" />
-                            </span>
-                          );
-                        return (
-                          <>
-                            {gridCheck(row)}
-                            {opening() === row.path ? (
-                              <i class="ti ti-loader-2 animate-spin text-3xl text-dimmed" aria-hidden="true" />
-                            ) : (
-                              <FileThumbnail baseId={baseId()} locationKey={props.directory.base.locationKey} entry={row} large />
-                            )}
-                          </>
-                        );
-                      }}
-                      renderLabel={(row) => <span title={virtualOf(row) ? undefined : row.name}>{row.name}</span>}
-                      renderMeta={(row) => {
-                        const virtual = virtualOf(row);
-                        if (virtual) return virtual.detail ?? null;
-                        return searching() ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : null;
-                      }}
-                    />
-                    <Show when={!props.directory.items.length}>
-                      <Placeholder class="mx-2" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
-                    </Show>
-                    <Show when={filtered()}>
-                      <Placeholder class="mx-2" icon="ti ti-filter-off" title={b().noMatches} />
-                    </Show>
-                  </div>
-                </Show>
-              </ScrollArea>
-            </ContextMenu>
+                    </div>
+                  </Show>
+                </ScrollArea>
+              </ContextMenu>
+            </Show>
           </Show>
           <nav class="filesv2-browser__pagination" aria-label={t().files}>
             <Show when={props.after}>
               <ButtonLink
-                href={filesUrl(baseId(), folder(), null, null, props.directory.query, props.directory.scope, activeBrowse())}
+                href={filesUrl(baseId(), folder(), null, null, search(), activeBrowse())}
                 navigation="enhanced"
                 onNavigate={props.onNavigate}
                 size="sm"
@@ -1580,7 +1879,7 @@ export default function Browser(props: {
             <Show when={props.directory.next}>
               {(next) => (
                 <ButtonLink
-                  href={filesUrl(baseId(), folder(), next(), null, props.directory.query, props.directory.scope, activeBrowse())}
+                  href={filesUrl(baseId(), folder(), next(), null, search(), activeBrowse())}
                   navigation="enhanced"
                   onNavigate={props.onNavigate}
                   size="sm"

@@ -96,6 +96,7 @@ export { MapAttribution } from "./MapAttribution";
 export { MapView } from "./MapView";
 export { MapViewFrame } from "./MapViewFrame";
 export { default as MarkdownView, type MarkdownRenderOptions, type MarkdownViewProps, renderSafeMarkdown } from "./MarkdownView";
+export { type MatchRange, MatchText, type MatchTextProps, matchParts } from "./MatchText";
 export type {
   MessageEventGroupProps,
   MessageEventRowProps,

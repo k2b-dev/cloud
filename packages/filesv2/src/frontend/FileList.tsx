@@ -1,4 +1,4 @@
-import { Checkbox, type CollectionSelection, FileTypeIcon, Format, IconButton } from "@k2b/ui";
+import { Checkbox, type CollectionSelection, FileTypeIcon, Format, IconButton, MatchText } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 
 export type RowAttributes = JSX.HTMLAttributes<HTMLDivElement> & { [key: `data-${string}`]: string | undefined };
@@ -6,8 +6,31 @@ export type RowAttributes = JSX.HTMLAttributes<HTMLDivElement> & { [key: `data-$
 import type { FileEntry } from "../contracts";
 import FileThumbnail from "./FileThumbnail";
 
-/** One flat row list; tree mode adds depth and disclosure, search mode shows the path below the folder. */
-export type FileRow = FileEntry & { depth?: number; expanded?: boolean; loading?: boolean; more?: boolean };
+/** One flat row list; tree mode adds depth and disclosure, search mode shows the folder below the searched one. */
+export type FileRow = FileEntry & {
+  depth?: number;
+  expanded?: boolean;
+  loading?: boolean;
+  more?: boolean;
+  /** Search matches: code point ranges into the path below the searched folder. */
+  highlight?: readonly (readonly [number, number])[];
+};
+
+/** A search hit's name and folder below the searched folder, each with the matches inside it. */
+export function hitParts(path: string, base: string, ranges: FileRow["highlight"] = []) {
+  const relative = Array.from(base ? path.slice(base.length + 1) : path);
+  const slash = relative.lastIndexOf("/");
+  const within = (start: number, end: number) =>
+    ranges
+      .map(([from, to]): [number, number] => [Math.max(from, start) - start, Math.min(to, end) - start])
+      .filter(([from, to]) => to > from);
+  return {
+    name: relative.slice(slash + 1).join(""),
+    nameRanges: within(slash + 1, relative.length),
+    folder: slash < 0 ? "" : relative.slice(0, slash).join(""),
+    folderRanges: slash < 0 ? [] : within(0, slash),
+  };
+}
 export type VirtualRow = {
   key: "up" | "trash";
   label: string;
@@ -25,8 +48,10 @@ export default function FileList(props: {
   selection: CollectionSelection;
   label: string;
   tree?: boolean;
-  /** Search hits below a folder show their path relative to that folder. */
+  /** Search hits show their matches and their folder below this searched folder. */
   pathBase?: string | null;
+  /** The quiet text beside a hit directly in the searched folder, such as that folder's name. */
+  hereLabel?: string;
   showModified: boolean;
   /** Folder currently being opened; its icon becomes a spinner instead of a separate loader. */
   opening?: string | null;
@@ -60,10 +85,7 @@ export default function FileList(props: {
   onRowClick?: (row: FileRow, event: MouseEvent) => void;
 }) {
   const nested = (event: Event) => event.target instanceof Element && !!event.target.closest("button,a,input,label,[role=button]");
-  const label = (row: FileRow): JSX.Element =>
-    props.pathBase !== undefined && props.pathBase !== null
-      ? `/${props.pathBase ? row.path.slice(props.pathBase.length + 1) : row.path}`
-      : row.name;
+
   /**
    * The row the browser is on: the tree's current folder, or outside select mode the entry whose details are open.
    * It is marked by its name, not a fill, so hover and checked rows keep their backgrounds to themselves.
@@ -144,6 +166,7 @@ export default function FileList(props: {
       aria-multiselectable="true"
       data-tree={props.tree ? "true" : undefined}
       data-selecting={props.selecting ? "true" : undefined}
+      data-search={props.pathBase !== undefined && props.pathBase !== null ? "true" : undefined}
     >
       <div role="row" class="filesv2-list__head">
         <Show when={props.selecting}>
@@ -236,9 +259,27 @@ export default function FileList(props: {
                 </Show>
               </span>
               <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--name">
-                <span class="filesv2-list__name" title={row.path}>
-                  {label(row)}
-                </span>
+                <Show
+                  when={props.pathBase !== undefined && props.pathBase !== null && hitParts(row.path, props.pathBase, row.highlight)}
+                  fallback={
+                    <span class="filesv2-list__name" title={row.path}>
+                      {row.name}
+                    </span>
+                  }
+                >
+                  {(hit) => (
+                    <>
+                      <span class="filesv2-list__name" title={row.name}>
+                        <MatchText text={hit().name} ranges={hit().nameRanges} />
+                      </span>
+                      <span class="filesv2-list__detail" title={hit().folder || props.hereLabel}>
+                        <Show when={hit().folder} fallback={props.hereLabel}>
+                          <MatchText text={hit().folder} ranges={hit().folderRanges} />
+                        </Show>
+                      </span>
+                    </>
+                  )}
+                </Show>
               </span>
               <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--size">
                 <Show when={!row.directory}>

@@ -1,12 +1,23 @@
 import { query } from "@k2b/stdlib/solid";
 import { batch, createEffect, createSignal, onCleanup } from "solid-js";
-import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, MarkedEntry, SharePage } from "../contracts";
+import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, FileEntry, MarkedEntry, SharePage } from "../contracts";
 
+/**
+ * A folder page or a search page. A search that failed keeps its place with `failure`, the stable error code,
+ * so the search field and filters stay usable to narrow it.
+ */
+export type DirectoryView = Omit<DirectoryResult, "items"> & {
+  items: (FileEntry & { highlight?: [number, number][] })[];
+  query?: string;
+  scope?: "folder" | "tree";
+  total?: number | null;
+  failure?: string;
+};
 export type WorkspaceSnapshot = {
   source: string;
   bases: BasesResult;
   selectedId: string | null;
-  directory: (DirectoryResult & { query?: string; scope?: "folder" | "tree" }) | null;
+  directory: DirectoryView | null;
   errorCode: string | null;
   detail?: EntryResult | null;
   shares?: SharePage;
@@ -89,6 +100,8 @@ export function createWorkspaceState<T extends { source: string }>(options: {
   return {
     snapshot: () => state.data() ?? options.initial,
     pending: () => pending() !== null,
+    /** The address a navigation is loading, or null. */
+    pendingSource: () => pending()?.source ?? null,
     failure,
     navigate,
     committedSource: () => committedSource,

@@ -82,8 +82,8 @@ visible; a failed tree request offers a retry. Sorting, filtering, or changing
 the storage location rebuilds the tree with the new context. **Select** next to the entry count switches on
 checkboxes in every view. Thumbnails are requested with bounded concurrency and
 retried, because Filegate rejects parallel renders beyond its capacity.
-Storage, folder, page, single selection, search query, and scope stay in the
-URL. The **Sort and filter** icon button beside search groups **Sort by**,
+Storage, folder, page, single selection, and the search with its filters stay
+in the URL. The **Sort and filter** icon button beside search groups **Sort by**,
 **Order**, and **Type** in one menu. Sort by name, modification date, or size;
 filter all entries, files, or folders. The default is name ascending, with folders
 before files. **Group folders** is on by default; turn it off to sort files
@@ -104,13 +104,36 @@ shows an X for removal. Tapping the selected star removes the favorite too. The 
 others appear without a reload. PDF and office files use file-type icons in lists and grids. Images retain
 direct Filegate thumbnails; PDF contents remain viewable in the details panel.
 
-Search always covers the subtree below the current folder; hits show their
-path relative to it. Filename matching ignores accents and separators and
-accepts query words in any order. Files also answers the universal
-search under the `file` tag through the `filesv2.entry` resource type, and
-each entry's Cloud reference can be copied from the details panel. A bounded or
-failed search is reported explicitly rather than presented as a complete empty
-result; narrow the folder or query when its search budget is exceeded.
+Search always covers the subtree below the current folder and uses Filegate
+7.1 search. By default it matches names and folder names below the folder
+(`in=path`), tolerates typos and loose abbreviations (`match=fuzzy`), and
+ranks the best matches first (`sort=relevance`). Matching ignores case,
+accents and separators and accepts up to eight query words in any order. Each
+hit shows its name and its folder below the searched one, with the matched
+characters marked by `MatchText`; the API returns them as `highlight`, Unicode
+code point ranges into the hit's path below the searched folder. The result
+count shows `total` when it is exact: Filegate collected the whole selection,
+the area is Cloud storage, the search covers all levels, and hits in the base's
+trash are subtracted. Otherwise the count says how many hits the page holds.
+
+**Type**, **Size**, and **Modified** chips filter by extension groups,
+byte ranges, and rolling time windows (24 hours to 12 months, counted from the
+current full hour); with a filter, a search needs no query. **Sort and filter**
+switches between best match, name, date, and size, and to exact names only
+(`match=exact&in=name`). Query, scope, filters, match mode, and order stay in
+the URL, so reload, back, and shared links show the same search; folder sort
+preferences do not apply to searches. While a search runs, the results area
+shows placeholder rows of the list's geometry. Filegate gives every search a
+10-second budget: an exceeded budget shows **This search takes too long** with
+exact-name search (indexed storage) and the way back to the folder, never a
+partial result. Other failures keep the search field and filters and offer a
+retry. Cloud retries a busy root (`429 search_busy`) twice after one second,
+restarts a first page whose observation changed once, and answers a stale
+continuation with `cursor_invalid`, which returns the browser to the first
+page with a notice. Files also answers the universal search under the `file`
+tag through the `filesv2.entry` resource type with the same defaults, searching
+at most two storage bases at a time and taking each base's best hits in turn.
+Each entry's Cloud reference can be copied from the details panel.
 
 Selections act through one **Actions** menu: direct download for one file, a
 signed Filegate ZIP for several entries or folders, move into a new folder,
@@ -745,6 +768,11 @@ ID.
 cursor; pass that cursor unchanged as `--after` with the same folder and sort
 options. `ls` and `search` accept `--sort name|modified|size`,
 `--order asc|desc`, `--type all|files|directories`, and `--no-group-folders`.
+`search <folder> [query]` also accepts `--sort relevance` (the default with a
+query), `--match fuzzy|exact`, `--in path|name`, `--ext pdf,docx`,
+`--min-size` and `--max-size` in bytes, and `--modified-after` and
+`--modified-before` as RFC 3339 times; a filter makes the query optional.
+JSON output carries `total` and each item's `highlight`.
 `--jsonl` emits one complete item per line for lists. `tree` follows every page
 down to `--depth` levels and stops with an error above 10,000 entries.
 
@@ -934,7 +962,9 @@ are the same `filesv2.entry` refs as everywhere else; see
 Studio Apps can combine Files entries and stored Grids documents without
 copying their bytes or creating public shares. Discover the installed
 capabilities, list accessible bases with `filesv2.bases.list`, and browse with
-`filesv2.entry.list` or search a known base with `filesv2.entry.search-in-base`.
+`filesv2.entry.list` or search a known base with `filesv2.entry.search-in-base`,
+which accepts the same `match`, `in`, `sort`, `ext`, size, and time options as
+the API and reports `total` when it is known.
 Keep the path and filters unchanged while passing `data.next` as `after` until
 null, including empty filtered pages.
 

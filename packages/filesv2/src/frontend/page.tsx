@@ -1,28 +1,50 @@
-import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getLocale, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "@k2b/cloud/server";
 import { AccountIdentityError, coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { FilegateError } from "@k2b/filegate";
+import type { Context } from "hono";
+import { filegateErrorCode } from "../api/filegate-error";
 import { ssr } from "../config";
-import { BrowseQuerySchema, EntryQuerySchema, SearchQuerySchema } from "../contracts";
+import { type BaseSummary, BrowseQuerySchema, EntryQuerySchema, type SearchQuery, SearchQuerySchema } from "../contracts";
 import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
+import { SEARCH_REQUEST_SECONDS } from "../service/search";
 import { browserMessages } from "./browser-messages";
 import { browseOptions, parsePreferences, viewFor } from "./browser-preferences";
 import { filesMessages } from "./messages";
+import { searchRequest, searchState } from "./search-state";
 import { snapshotTitle } from "./trail";
 import { filesUrl, showsOverview } from "./urls";
 import Workspace from "./Workspace.island";
-import type { WorkspaceSnapshot } from "./workspace-state";
+import type { DirectoryView, WorkspaceSnapshot } from "./workspace-state";
+
+/**
+ * The first search page. A failed search keeps the search view with its error code, so the field and filters
+ * stay usable to narrow it; a stale cursor still restarts the page.
+ */
+async function searchPage(c: Context, call: ReturnType<typeof requestCall>, base: BaseSummary, query: SearchQuery): Promise<DirectoryView> {
+  setRequestTimeout(c, SEARCH_REQUEST_SECONDS);
+  try {
+    return await filesService.search(call, { baseId: base.id, ...query, signal: c.req.raw.signal });
+  } catch (error) {
+    if (!(error instanceof FilesError || error instanceof FilegateError) || error.code === "cursor_invalid") throw error;
+    const code = error instanceof FilesError ? error.code : filegateErrorCode(error);
+    return { base, path: query.path, items: [], next: null, query: query.q, scope: query.scope, total: null, failure: code };
+  } finally {
+    setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+  }
+}
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = filesMessages.resolve([getLocale(c)]);
-  const query = BrowseQuerySchema.safeParse(c.req.query());
+  const search = searchState(new URL(c.req.url).searchParams);
+  // A search orders and filters itself; only a folder reads the browse options.
+  const query = (search ? BrowseQuerySchema.pick({ path: true, after: true }) : BrowseQuerySchema).safeParse(c.req.query());
   if (!query.success) return ssr.error(c, 400);
   const requestedFile = c.req.query("file");
-  const search = c.req.query("q")?.trim() || undefined;
-  const scope = c.req.query("scope") === "folder" ? ("folder" as const) : ("tree" as const);
-  if (search && !SearchQuerySchema.safeParse({ ...query.data, q: search }).success) return ssr.error(c, 400);
+  const searchQuery = search ? SearchQuerySchema.safeParse({ ...searchRequest(search), ...query.data }) : null;
+  if (searchQuery && !searchQuery.success) return ssr.error(c, 400);
   if (requestedFile && !EntryQuerySchema.safeParse({ path: requestedFile }).success) return ssr.error(c, 400);
   const requestedBase = c.req.query("base");
   const preferences = parsePreferences(c.req.header("cookie"));
@@ -31,7 +53,7 @@ export default ssr<AuthContext>(async (c) => {
   const trashView = view === "trash";
   const editView = view === "edit" && !!requestedFile;
   const source = new URL(
-    filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search, scope, browse),
+    filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search, browse),
     "https://files.invalid",
   );
   if (view === "trash" || view === "shares" || view === "recent" || view === "favorites" || editView) source.searchParams.set("view", view);
@@ -54,7 +76,7 @@ export default ssr<AuthContext>(async (c) => {
     if (requestedBase && !selected && view !== "shares") throw new FilesError("not_found", 404);
     initial.selectedId = selected?.id ?? null;
     browse = browseOptions(new URL(c.req.url).searchParams, viewFor(preferences, selected?.id ?? ""));
-    for (const [key, value] of Object.entries(browse)) source.searchParams.set(key, String(value));
+    if (!search) for (const [key, value] of Object.entries(browse)) source.searchParams.set(key, String(value));
     initial.source = `${source.pathname}${source.search}`;
     if (view === "shares") initial.shares = await filesService.listShares(requestCall(c));
     else if (view === "recent") initial.marks = await filesService.recent(requestCall(c));
@@ -62,8 +84,8 @@ export default ssr<AuthContext>(async (c) => {
     else if (editView && selected?.status === "existing")
       initial.editor = await filesService.editor(requestCall(c), { baseId: selected.id, path: requestedFile! });
     else if (selected?.status === "existing" && !trashView) {
-      initial.directory = search
-        ? await filesService.search(requestCall(c), { baseId: selected.id, ...query.data, ...browse, q: search, scope })
+      initial.directory = searchQuery?.success
+        ? await searchPage(c, requestCall(c), selected, searchQuery.data)
         : await filesService.list(requestCall(c), { baseId: selected.id, ...query.data, ...browse });
       if (requestedFile) {
         // Detail failures belong to the inspector, not the surrounding directory.

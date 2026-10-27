@@ -42,6 +42,7 @@ import {
   type FolderBatchResult,
   type FolderResult,
   type MarkedEntry,
+  SEARCH_SORTS,
   type SearchResult,
   type SharePage,
   type ShareView,
@@ -722,13 +723,19 @@ function filesCommands(locale?: string) {
         },
       }),
       command("search", {
-        summary: t({ en: "Search names below a folder", de: "Namen unterhalb eines Ordners suchen" }),
+        summary: t({ en: "Search names and folder names below a folder", de: "Namen und Ordnernamen unterhalb eines Ordners suchen" }),
+        description: t({
+          en: "Finds typos and folder names by default, best matches first. Filters alone, without a query, search too.",
+          de: "Findet standardmäßig auch Tippfehler und Ordnernamen, beste Treffer zuerst. Filter allein, ohne Suchbegriff, suchen ebenfalls.",
+        }),
         args: {
           folder: arg.required({
             valueLabel: "folder",
             description: t({ en: "<area>:/path to search below", de: "<bereich>:/pfad, unterhalb dessen gesucht wird" }),
           }),
-          query: arg.required({ description: t({ en: "Name fragment", de: "Namensbestandteil" }) }),
+          query: arg.optional({
+            description: t({ en: "Up to eight words; optional with a filter", de: "Bis zu acht Wörter; mit einem Filter optional" }),
+          }),
         },
         flags: {
           scope: flag.enum(["tree", "folder"], {
@@ -738,19 +745,72 @@ function filesCommands(locale?: string) {
               de: "tree durchsucht alle Ebenen unter dem Ordner, folder nur seine direkten Einträge",
             }),
           }),
+          match: flag.enum(["fuzzy", "exact"], {
+            default: "fuzzy",
+            description: t({ en: "fuzzy also finds typos and abbreviations", de: "fuzzy findet auch Tippfehler und Abkürzungen" }),
+          }),
+          in: flag.enum(["path", "name"], {
+            default: "path",
+            description: t({
+              en: "path also matches folder names below the folder",
+              de: "path findet auch Ordnernamen unterhalb des Ordners",
+            }),
+          }),
+          ext: flag.string({
+            valueLabel: "pdf,docx",
+            description: t({ en: "Only these extensions; excludes folders", de: "Nur diese Endungen; schließt Ordner aus" }),
+          }),
+          minSize: flag.int({ name: "min-size", min: 0, description: t({ en: "Minimum size in bytes", de: "Mindestgröße in Bytes" }) }),
+          maxSize: flag.int({ name: "max-size", min: 0, description: t({ en: "Maximum size in bytes", de: "Höchstgröße in Bytes" }) }),
+          modifiedAfter: flag.string({
+            name: "modified-after",
+            valueLabel: "time",
+            description: t({ en: "Changed at or after this RFC 3339 time", de: "Geändert ab diesem RFC-3339-Zeitpunkt" }),
+          }),
+          modifiedBefore: flag.string({
+            name: "modified-before",
+            valueLabel: "time",
+            description: t({ en: "Changed before this RFC 3339 time", de: "Geändert vor diesem RFC-3339-Zeitpunkt" }),
+          }),
           after,
           ...browseFlags,
+          sort: flag.enum(SEARCH_SORTS, {
+            description: t({
+              en: "relevance (default with a query) ignores --order and folder grouping; name is the default without one",
+              de: "relevance (Standard mit Suchbegriff) ignoriert --order und Ordnergruppierung; ohne Suchbegriff gilt name",
+            }),
+          }),
         },
-        examples: ["cld filesv2 search me:/Documents report"],
+        examples: [
+          "cld filesv2 search me:/Documents report",
+          "cld filesv2 search me:/ --ext pdf --modified-after 2026-10-01T00:00:00Z --sort modified --order desc",
+        ],
         async run({ ctx, args, flags }) {
           const target = await fileResolver(ctx).file(args.folder);
           const result = await ctx.readJson<SearchResult>(
             await api(ctx).bases[":baseId"].search.$get({
               param: param(target),
-              query: { q: args.query, path: target.path, scope: flags.scope ?? "tree", after: flags.after, ...browseQuery(flags) },
+              query: {
+                q: args.query ?? "",
+                path: target.path,
+                scope: flags.scope ?? "tree",
+                match: flags.match ?? "fuzzy",
+                in: flags.in ?? "path",
+                ...(flags.ext ? { ext: flags.ext } : {}),
+                ...(flags.minSize === undefined ? {} : { minSize: String(flags.minSize) }),
+                ...(flags.maxSize === undefined ? {} : { maxSize: String(flags.maxSize) }),
+                ...(flags.modifiedAfter ? { modifiedAfter: flags.modifiedAfter } : {}),
+                ...(flags.modifiedBefore ? { modifiedBefore: flags.modifiedBefore } : {}),
+                ...(flags.sort ? { sort: flags.sort } : {}),
+                order: flags.order,
+                type: flags.type,
+                groupFolders: flags.noGroupFolders ? "false" : "true",
+                after: flags.after,
+              },
             }),
           );
           entryRows(ctx, result, result.items, "path");
+          if (ctx.options.output === "text" && result.total !== null) ctx.error(`${t({ en: "Results", de: "Treffer" })}: ${result.total}`);
           next(ctx, result.next);
         },
       }),

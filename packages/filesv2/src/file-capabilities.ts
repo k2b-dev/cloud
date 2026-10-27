@@ -17,7 +17,7 @@ import { z } from "zod";
 import { filegateErrorCode } from "./api/filegate-error";
 import { errorMessage } from "./api/messages";
 import { filesCapabilityMessages } from "./capability-messages";
-import { BrowseQuerySchema, CONTENT_STREAM_LIMIT, type FileEntry } from "./contracts";
+import { BrowseQuerySchema, CONTENT_STREAM_LIMIT, type FileEntry, hasSearchFilters, SearchQuerySchema } from "./contracts";
 import { entryRef } from "./data/references";
 import { markdownRevision } from "./document-assets";
 import { capabilityCall } from "./files-call";
@@ -39,6 +39,21 @@ const Browse = BrowseQuerySchema.extend({
   type: BrowseQuerySchema.shape.type.describe("Include all entries, files or directories."),
   groupFolders: BrowseQuerySchema.shape.groupFolders.describe("Group directories before files."),
 }).strict();
+const searchShape = SearchQuerySchema.shape;
+const SearchInput = Browse.extend({
+  q: searchShape.q.describe("Up to eight words; may be empty when a filter is set."),
+  match: searchShape.match.describe("fuzzy also finds typos and abbreviations; exact only exact name parts."),
+  in: searchShape.in.describe("path also matches folder names below the folder; name only the entry's own name."),
+  sort: searchShape.sort.describe("relevance (the default with q) ignores order and groupFolders; name is the default without q."),
+  ext: searchShape.ext.describe("Comma-separated extensions without dots, such as pdf,docx; excludes folders."),
+  minSize: searchShape.minSize.describe("Inclusive minimum size in bytes; excludes folders."),
+  maxSize: searchShape.maxSize.describe("Inclusive maximum size in bytes; excludes folders."),
+  modifiedAfter: searchShape.modifiedAfter.describe("RFC 3339 time; modified at or after it."),
+  modifiedBefore: searchShape.modifiedBefore.describe("RFC 3339 time; modified before it."),
+})
+  .strict()
+  .refine((value) => value.q || hasSearchFilters(value), { message: "Search needs q or a filter", path: ["q"] })
+  .refine((value) => value.q || value.sort !== "relevance", { message: "Relevance needs q", path: ["sort"] });
 const Target = Location.extend({ path: Path.min(1) }).strict();
 const Entry = z.object({
   name: z.string(),
@@ -247,19 +262,27 @@ export const fileQueries = {
   },
   "entry.search-in-base": {
     title: "Search within storage",
-    description: "Find names in one known storage base or folder, with complete cursor traversal. Does not search file contents.",
-    input: Browse.extend({ q: z.string().min(1).max(500).describe("File or folder name to find.") }).strict(),
-    data: z.object({ baseId: Base, path: Path, items: z.array(Item), next: z.string().nullable() }),
+    description:
+      "Find files and folders below one known storage folder by name, with typos and folder names by default and the best matches first; filter by extension, size and modification time. Continue with next until null; on cursor_invalid restart without after. search_limited means narrow the folder, query or filters. Does not search file contents.",
+    input: SearchInput,
+    data: z.object({
+      baseId: Base,
+      path: Path,
+      items: z.array(Item),
+      next: z.string().nullable(),
+      total: z.number().int().nullable().describe("All hits of this search, or null when unknown."),
+    }),
     openWorld: false,
-    run: async (input: z.infer<typeof BrowseQuerySchema> & { baseId: string; q: string }, c: CapabilityExecutionContext) =>
+    run: async (input: z.infer<typeof SearchInput>, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        const page = await filesService.search(capabilityCall(c), { ...input, scope: "tree" });
+        const page = await filesService.search(capabilityCall(c), { ...input, scope: "tree", signal: c.signal });
         return ok({
           data: {
             baseId: input.baseId,
             path: page.path,
-            items: await Promise.all(page.items.map((e) => item(input.baseId, e))),
+            items: await Promise.all(page.items.map(({ highlight: _highlight, ...e }) => item(input.baseId, e))),
             next: page.next,
+            total: page.total,
           },
         });
       }),

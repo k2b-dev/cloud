@@ -211,8 +211,12 @@ const messages: Record<string, [string, string]> = {
   ],
   versioning_disabled: ["Versions are not enabled for this storage.", "Für diese Ablage sind Versionen nicht aktiviert."],
   search_limited: [
-    "This folder holds too many entries to search without an index. Search within a smaller folder.",
-    "Dieser Ordner enthält zu viele Einträge für eine Suche ohne Index. Suche in einem kleineren Ordner.",
+    "This search takes too long. Search in a smaller folder, add a filter, or search exact names.",
+    "Diese Suche dauert zu lange. Suche in einem kleineren Ordner, setze einen Filter oder suche nach genauen Namen.",
+  ],
+  search_busy: [
+    "Storage is busy with other searches. Try again in a moment.",
+    "Die Ablage ist mit anderen Suchen beschäftigt. Versuche es gleich noch einmal.",
   ],
 };
 export function errorMessage(code: string, locale: string): string {

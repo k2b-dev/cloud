@@ -37,11 +37,13 @@ import type {
   InventoryState,
   MaintenanceResult,
   MarkedEntry,
+  SearchHit,
+  SearchQuery,
   SearchResult,
   UploadLease,
   UploadSession,
 } from "../contracts";
-import { BATCH_LIMIT } from "../contracts";
+import { BATCH_LIMIT, hasSearchFilters, searchSort } from "../contracts";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { favorites, recent } from "../data/marks";
 import { operations, rootLockWait, withRootLock, withUploadLock } from "../data/operations";
@@ -65,6 +67,7 @@ import { createDirectoryLifecycle } from "./lifecycle";
 import { joinPath, relativePath, userPath, validateConfiguration } from "./paths";
 import { permits, type UnixIdentity } from "./posix";
 import { rootSummary } from "./root-summary";
+import { highlight, searchPage, trashHits } from "./search";
 import { createSharingService } from "./sharing";
 import { uploadStreamChunks } from "./stream-chunks";
 import { createTrashLifecycle } from "./trash-lifecycle";
@@ -1089,43 +1092,67 @@ export function createFilesService(
     },
     async search(
       call: UserFilesCall,
-      input: { baseId: string; path?: string; q: string; scope?: "folder" | "tree" } & BrowseInput,
+      input: { baseId: string; path?: string; after?: string; signal?: AbortSignal } & Partial<SearchQuery>,
     ): Promise<SearchResult> {
       const actor = call.actor;
       const current = await authorized(actor, input.baseId, input.path ?? "", true);
-      let page: { items: Node[]; next: string | null };
-      try {
-        page = await browsePage(
-          input,
-          JSON.stringify([current.inspection.summary.locationKey, current.target, input.q, input.scope ?? "tree"]),
-          (options) =>
-            current.root.search(input.q, {
+      const q = input.q?.trim() ?? "";
+      const scope = input.scope ?? "tree";
+      const within = input.in ?? "path";
+      const sort = searchSort({ q, sort: input.sort });
+      const options = {
+        match: input.match ?? "fuzzy",
+        in: within,
+        ext: input.ext,
+        minSize: input.minSize,
+        maxSize: input.maxSize,
+        modifiedAfter: input.modifiedAfter,
+        modifiedBefore: input.modifiedBefore,
+        path: current.target,
+        maxEntries: SEARCH_SCAN_LIMIT,
+      };
+      if (!q && !hasSearchFilters(options)) throw new FilesError("invalid_input");
+      const basePath = current.inspection.candidate.path;
+      // Files hides the base's trash, unreadable FreeIPA entries and, for one folder, deeper hits: only a plain subtree total stays exact.
+      const countable = scope === "tree" && current.inspection.candidate.area === "cloud";
+      const trashInside = current.target === basePath;
+      const page = await browsePage(
+        { ...input, sort },
+        JSON.stringify([current.inspection.summary.locationKey, current.target, q, scope, options]),
+        async (paging) => {
+          const found = await searchPage(current.root, q, { ...options, ...paging, signal: input.signal });
+          let total = countable ? (found.total ?? null) : null;
+          if (total !== null && trashInside && !paging.after) {
+            const hidden = await trashHits(current.root, q, {
               ...options,
-              path: current.target,
-              maxEntries: SEARCH_SCAN_LIMIT,
-            }),
-        );
-      } catch (error) {
-        if (error instanceof FilegateError && error.status === 413) throw new FilesError("search_limited");
-        throw error;
-      }
-      const items: FileEntry[] = [];
-      for (const node of page.items) {
+              ...paging,
+              path: joinPath(basePath, "trash"),
+              signal: input.signal,
+            });
+            total = hidden === null ? null : Math.max(0, total - hidden);
+          }
+          return { items: found.items.map((node, index) => ({ node, ranges: found.matches?.[index] })), next: found.next, total };
+        },
+      );
+      const items: SearchHit[] = [];
+      for (const { node, ranges } of page.items) {
         if (!node.path.startsWith(`${current.target}/`)) continue;
-        const relative = node.path.slice(current.inspection.candidate.path.length + 1);
+        const relative = node.path.slice(basePath.length + 1);
         if (relative.split("/")[0] === "trash") continue;
-        if (input.scope === "folder" && node.path.slice(current.target.length + 1).includes("/")) continue;
+        const below = node.path.slice(current.target.length + 1);
+        if (scope === "folder" && below.includes("/")) continue;
         const actions = await entryActions(current, node, node.path);
         if (current.inspection.candidate.area === "freeipa" && !actions.share) continue;
-        items.push({ ...fileEntry(current.inspection.summary, relative, node), actions });
+        items.push({ ...fileEntry(current.inspection.summary, relative, node), actions, highlight: highlight(below, ranges, within) });
       }
       return {
         base: current.inspection.summary,
         path: current.relative,
-        query: input.q,
-        scope: input.scope ?? "tree",
+        query: q,
+        scope,
         items,
         next: page.next ?? null,
+        total: page.total,
         readme: await folderReadme(current),
       };
     },

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { adminHref, parseAdminLocation } from "./admin-location";
+import { searchState } from "./search-state";
 import { filesUrl, pathCrumbs, referenceHref, showsOverview } from "./urls";
 
 test("navigation retains opaque identities and filenames as query values", () => {
@@ -30,7 +31,32 @@ test("inventory pagination preserves selected area and identity kind", () => {
 
 test("paging and reload URLs preserve the whole global browse query", () => {
   const options = { sort: "modified" as const, order: "desc" as const, type: "files" as const, groupFolders: false };
-  const url = new URL(filesUrl("home", "Docs", "opaque-cursor", "Docs/a.txt", "report", "folder", options), "https://cloud.test");
+  const url = new URL(filesUrl("home", "Docs", "opaque-cursor", "Docs/a.txt", null, options), "https://cloud.test");
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    base: "home",
+    path: "Docs",
+    after: "opaque-cursor",
+    file: "Docs/a.txt",
+    sort: "modified",
+    order: "desc",
+    type: "files",
+    groupFolders: "false",
+  });
+});
+
+test("a search keeps its query, filters and order instead of the folder's options, and reads back unchanged", () => {
+  const options = { sort: "modified" as const, order: "desc" as const, type: "files" as const, groupFolders: false };
+  const search = {
+    q: "report",
+    scope: "folder" as const,
+    exact: true,
+    sort: "size" as const,
+    order: "desc" as const,
+    kind: "pdf" as const,
+    size: "large" as const,
+    modified: "week" as const,
+  };
+  const url = new URL(filesUrl("home", "Docs", "opaque-cursor", "Docs/a.txt", search, options), "https://cloud.test");
   expect(Object.fromEntries(url.searchParams)).toEqual({
     base: "home",
     path: "Docs",
@@ -38,11 +64,24 @@ test("paging and reload URLs preserve the whole global browse query", () => {
     file: "Docs/a.txt",
     q: "report",
     scope: "folder",
-    sort: "modified",
+    match: "exact",
+    in: "name",
+    kind: "pdf",
+    size: "large",
+    modified: "week",
+    sort: "size",
     order: "desc",
-    type: "files",
-    groupFolders: "false",
   });
+  expect(searchState(url.searchParams)).toEqual(search);
+  // Relevance is the default with a query and keeps no order; a filter alone is a search too.
+  const relevance = new URL(
+    filesUrl("home", "", null, null, { ...search, sort: "relevance", scope: "tree", exact: false }),
+    "https://cloud.test",
+  );
+  expect(relevance.search).toBe("?base=home&q=report&kind=pdf&size=large&modified=week");
+  expect(searchState(new URLSearchParams("kind=image"))).toMatchObject({ q: "", kind: "image" });
+  expect(searchState(new URLSearchParams("q=%20%20&kind=unknown&sort=relevance"))).toBeNull();
+  expect(showsOverview(new URLSearchParams("modified=day"), 2)).toBe(false);
 });
 
 test("a copied stable reference links through the deep link; path refs link to their folder and file", () => {

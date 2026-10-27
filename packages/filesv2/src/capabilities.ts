@@ -12,6 +12,7 @@ import { apiError } from "./api/api-error";
 import { errorMessage } from "./api/messages";
 import { filesCapabilityMessages } from "./capability-messages";
 import { filesCapabilityPresentation } from "./capability-presentation";
+import { type DirectoryResult, SEARCH_WORD_LIMIT, type SearchResult } from "./contracts";
 import { entryRef } from "./data/references";
 import { markdownRevision } from "./document-assets";
 import { fileActions, fileQueries } from "./file-capabilities";
@@ -36,6 +37,8 @@ const EntryDataSchema = z.object({
 });
 /** Global search fans out over every accessible base; the count of bases is the user's own membership, not user input. */
 const SEARCH_BASE_LIMIT = 10;
+/** Filegate admits two searches per root at once. */
+const SEARCH_CONCURRENCY = 2;
 const userActor = (context: CapabilityExecutionContext) => (context.actor.kind === "user" ? context.actor : null);
 const parent = (path: string) => path.split("/").slice(0, -1).join("/");
 const entryHref = (baseId: string, path: string, directory: boolean) =>
@@ -101,21 +104,31 @@ export const filesCapabilities = defineCapabilities({
       run: async ({ query, limit }, context) => {
         const actor = userActor(context);
         if (!actor) return fail(err.forbidden("File search runs on behalf of a signed-in user."));
-        const q = query.trim();
+        // Filegate takes at most eight words; the first eight still find what the rest would narrow.
+        const q = query.trim().split(/\s+/).filter(Boolean).slice(0, SEARCH_WORD_LIMIT).join(" ");
         const available = (await filesService.bases(capabilityCall(context))).items;
         const readable = available.filter((base) => base.status === "existing");
         const bases = readable.slice(0, SEARCH_BASE_LIMIT);
-        // Query failures are failures, never empty search results. Promise.all bounds fan-out to ten.
-        const pages = await Promise.all(
-          bases.map((base) =>
-            q
-              ? filesService.search(capabilityCall(context), { baseId: base.id, q })
-              : filesService.list(capabilityCall(context), { baseId: base.id }),
-          ),
-        );
-        const entries = pages.flatMap((page) =>
-          (q ? page.items : [...page.items].sort((a, b) => b.modified.localeCompare(a.modified))).map((entry) => ({ page, entry })),
-        );
+        // Query failures are failures, never empty search results. Bases usually share one Filegate root, which runs
+        // two searches at once, so two workers walk the bases instead of ten parallel requests waiting for a slot.
+        const pages: (SearchResult | DirectoryResult)[] = [];
+        let started = 0;
+        const worker = async () => {
+          while (started < bases.length) {
+            const index = started++;
+            const base = bases[index]!;
+            pages[index] = q
+              ? await filesService.search(capabilityCall(context), { baseId: base.id, q, signal: context.signal })
+              : await filesService.list(capabilityCall(context), { baseId: base.id });
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(SEARCH_CONCURRENCY, bases.length) }, worker));
+        // Each base ranks its own hits best first; taking them in turns keeps every base's best hits near the top.
+        const entries = q
+          ? Array.from({ length: Math.max(0, ...pages.map((page) => page.items.length)) }, (_, rank) =>
+              pages.flatMap((page) => (page.items[rank] ? [{ page, entry: page.items[rank] }] : [])),
+            ).flat()
+          : pages.flatMap((page) => [...page.items].sort((a, b) => b.modified.localeCompare(a.modified)).map((entry) => ({ page, entry })));
         const data = await Promise.all(
           entries.slice(0, limit).map(async ({ page, entry }) => {
             const id = await entryRef(page.base.id, entry);

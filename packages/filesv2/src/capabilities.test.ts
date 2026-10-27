@@ -66,6 +66,7 @@ mock.module("./data/references", () => ({
   },
   resolveEntryRefId: async (id: string) => ids.get(id) ?? null,
 }));
+const searches: Record<string, unknown>[] = [];
 const page = async (): Promise<DirectoryResult> => {
   calls++;
   if (serviceFailure) throw serviceFailure;
@@ -158,7 +159,17 @@ mock.module("./service", () => ({
     move: async () => ({ results: [{ ok: true, entry: (await changed()).entry }] }),
     copy: async () => ({ results: [{ ok: true, entry: (await changed()).entry }] }),
     list: page,
-    search: page,
+    search: async (_call: unknown, input: Record<string, unknown>) => {
+      searches.push(input);
+      const result = await page();
+      return {
+        ...result,
+        query: input.q,
+        scope: "tree",
+        total: result.items.length,
+        items: result.items.map((e) => ({ ...e, highlight: [[0, 1]] })),
+      };
+    },
     remove: async (_actor: unknown, input: { paths: string[] }) => ({
       results: input.paths.map((path) => {
         if (removeError) return { ok: false, error: removeError };
@@ -458,6 +469,37 @@ test("canonical entry reader exposes an authorized stable open link", async () =
   expect(result.data.links).toEqual([{ rel: "open", href: "/app/filesv2/ref/entry-id" }]);
 });
 
+test("entry.search-in-base reaches every search option of the API and rejects a search without q or filter", async () => {
+  const search = filesCapabilities.queries["entry.search-in-base"];
+  const input = {
+    baseId: base.id,
+    q: "",
+    ext: "PDF, docx",
+    minSize: 1,
+    maxSize: 10,
+    modifiedAfter: "2026-10-01T00:00:00Z",
+    modifiedBefore: "2026-11-01T00:00:00+02:00",
+    match: "exact",
+    in: "name",
+    sort: "modified",
+  };
+  searches.length = 0;
+  const found = await search.run(search.input.parse(input), context);
+  expect(found.ok).toBe(true);
+  expect(searches[0]).toMatchObject({ ...input, ext: "pdf,docx", scope: "tree" });
+  expect(search.input.safeParse({ baseId: base.id, q: "" }).success).toBe(false);
+  expect(search.input.safeParse({ baseId: base.id, ext: "pdf", sort: "relevance" }).success).toBe(false);
+  expect(search.input.safeParse({ baseId: base.id, q: "report", sort: "relevance" }).success).toBe(true);
+});
+
+test("universal search ranks each base's best hits first and keeps Filegate's word limit", async () => {
+  items = [entry("report.pdf")];
+  searches.length = 0;
+  const found = await filesCapabilities.queries["entry.search"].run({ query: "a b c d e f g h i j", tags: [], limit: 10 }, context);
+  expect(found.ok).toBe(true);
+  expect(searches.map((item) => item.q)).toEqual(searches.map(() => "a b c d e f g h"));
+});
+
 test("stable refs pass through listing, universal search and the reader unchanged", async () => {
   const stable = `n:cloud:users:${"1".repeat(8)}-1111-4111-8111-${"1".repeat(12)}:019b72cf-5200-7000-8000-000000000001`;
   items = [{ ...entry("Docs/report.pdf"), resourceId: stable }];
@@ -495,6 +537,10 @@ for (const query of ["entry.list", "entry.search-in-base"] as const) {
     expect(first.data.data.next).toBe(next);
     expect(downloads).toEqual([]);
     expect(capabilityResultSchema(capability.data).safeParse(first.data).success).toBe(true);
+    if (query === "entry.search-in-base") {
+      expect(first.data.data).toMatchObject({ total: 2 });
+      expect(first.data.data.items[0]).not.toHaveProperty("highlight");
+    }
     for (const row of first.data.data.items) {
       expect(row.ref.type).toBe("filesv2.entry");
       expect(row.ref.id.length).toBeLessThanOrEqual(512);

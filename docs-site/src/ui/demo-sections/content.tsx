@@ -34,6 +34,7 @@ import {
   type MapViewStyle,
   MarkdownEditor,
   MarkdownView,
+  MatchText,
   MessageEventGroup,
   MessageEventRow,
   MessageRow,
@@ -1942,6 +1943,24 @@ const demos: DemoSection = {
         </p>
         <p>
           Open <LabelChip>Settings</LabelChip> › <LabelChip>Profile</LabelChip>.
+        </p>
+      </DemoCard>
+    </DemoGrid>
+  ),
+  "match-text": () => (
+    <DemoGrid>
+      <DemoCard
+        id="match-text"
+        chip={{ kind: "component", name: "MatchText", from: "@k2b/ui" }}
+        description="A search result's name and folder path with their matches."
+        code={`<MatchText text="Rechnung Oktober.pdf" ranges={[[0, 8]]} />
+<MatchText text="Kunden/Bäckerei Sonnenschein" ranges={[[0, 6]]} class="text-dimmed" />`}
+      >
+        <p>
+          <MatchText text="Rechnung Oktober.pdf" ranges={[[0, 8]]} />
+        </p>
+        <p class="text-sm text-dimmed">
+          <MatchText text="Kunden/Bäckerei Sonnenschein" ranges={[[0, 6]]} />
         </p>
       </DemoCard>
     </DemoGrid>

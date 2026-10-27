@@ -86,7 +86,15 @@ export const FavoriteInputSchema = z.object({ path: z.string().min(1).max(4096),
 export const EntryIdSchema = z.object({ id: z.string().min(1).max(512) });
 export const EntryQuerySchema = z.object({ path: z.string().min(1).max(4096) });
 export const ThumbnailInputSchema = EntryQuerySchema.extend({ size: z.enum(["small", "large"]).default("small") });
-export type SearchResult = DirectoryResult & { query: string; scope: "folder" | "tree" };
+/** `highlight` holds `[start, end)` Unicode code point ranges into the hit's path relative to the searched folder. */
+export type SearchHit = FileEntry & { highlight: [number, number][] };
+/** `total` counts every hit of the search; null when Files cannot know it exactly. */
+export type SearchResult = Omit<DirectoryResult, "items"> & {
+  items: SearchHit[];
+  query: string;
+  scope: "folder" | "tree";
+  total: number | null;
+};
 export const DirectoryInputSchema = z.object({ path: z.string().min(1).max(4096) });
 export const UploadInputSchema = z.object({
   idempotencyKey: z.string().uuid(),
@@ -284,11 +292,73 @@ export const BrowseQuerySchema = BrowseOptionsSchema.extend({
   after: z.string().max(16384).optional(),
 });
 export const DownloadInputSchema = z.object({ path: z.string().min(1).max(4096) });
+export const SEARCH_SORTS = ["relevance", "name", "modified", "size"] as const;
+export type SearchSort = (typeof SEARCH_SORTS)[number];
+/** Filegate rejects queries with more than eight words. */
+export const SEARCH_WORD_LIMIT = 8;
+const SEARCH_EXTENSION_LIMIT = 32;
+const Bytes = z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+const Timestamp = z.iso.datetime({ offset: true });
+/** Name and metadata filters of a search; they apply before ranking and paging. */
+export const SearchFiltersSchema = z.object({
+  /** Comma-separated extensions without dots, such as `pdf,docx`; any extension excludes folders. */
+  ext: z
+    .string()
+    .max(1024)
+    .transform((value) => [...new Set(value.split(",").map((item) => item.trim().toLowerCase()))].filter(Boolean))
+    .pipe(
+      z
+        .array(
+          z
+            .string()
+            .max(32)
+            .regex(/^[^./\\\s]+$/, "Extensions have no dots, slashes or spaces"),
+        )
+        .min(1)
+        .max(SEARCH_EXTENSION_LIMIT),
+    )
+    .transform((items) => items.join(","))
+    .optional(),
+  /** Inclusive byte bounds; any size bound excludes folders. */
+  minSize: Bytes.optional(),
+  maxSize: Bytes.optional(),
+  /** RFC 3339 times: modifiedAfter is inclusive, modifiedBefore exclusive. */
+  modifiedAfter: Timestamp.optional(),
+  modifiedBefore: Timestamp.optional(),
+});
+export type SearchFilters = z.infer<typeof SearchFiltersSchema>;
+export const SEARCH_FILTER_KEYS = ["ext", "minSize", "maxSize", "modifiedAfter", "modifiedBefore"] as const;
+export const hasSearchFilters = (filters: { [key in keyof SearchFilters]?: unknown }) =>
+  SEARCH_FILTER_KEYS.some((key) => filters[key] !== undefined && filters[key] !== "");
 export const SearchQuerySchema = BrowseQuerySchema.extend({
-  q: z.string().trim().min(1).max(256),
+  q: z
+    .string()
+    .trim()
+    .max(256)
+    .refine((value) => value.split(/\s+/).filter(Boolean).length <= SEARCH_WORD_LIMIT, `At most ${SEARCH_WORD_LIMIT} words`)
+    .default(""),
   /** Filegate always searches the subtree; "folder" keeps only direct children of the searched folder. */
   scope: z.enum(["folder", "tree"]).default("tree"),
-});
+  /** `fuzzy` also finds typos and abbreviations, after every exact hit when sorted by relevance. */
+  match: z.enum(["fuzzy", "exact"]).default("fuzzy"),
+  /** `path` also matches folder names below the searched folder; `name` only the entry's own name. */
+  in: z.enum(["path", "name"]).default("path"),
+  /** Defaults to relevance with a query and to name without one; relevance ignores order and folder grouping. */
+  sort: z.enum(SEARCH_SORTS).optional(),
+})
+  .extend(SearchFiltersSchema.shape)
+  .refine((value) => value.q || hasSearchFilters(value), { message: "Search needs a query or a filter", path: ["q"] })
+  .refine((value) => value.q || value.sort !== "relevance", { message: "Relevance needs a query", path: ["sort"] })
+  .refine((value) => value.minSize === undefined || value.maxSize === undefined || value.minSize <= value.maxSize, {
+    message: "minSize must not exceed maxSize",
+    path: ["minSize"],
+  })
+  .refine((value) => !value.modifiedAfter || !value.modifiedBefore || Date.parse(value.modifiedAfter) < Date.parse(value.modifiedBefore), {
+    message: "modifiedAfter must be before modifiedBefore",
+    path: ["modifiedAfter"],
+  });
+export type SearchQuery = z.infer<typeof SearchQuerySchema>;
+export const searchSort = (input: { q?: string; sort?: SearchSort }): SearchSort => input.sort ?? (input.q ? "relevance" : "name");
 export const AdminQuerySchema = z.object({
   area: AreaSchema.default("cloud"),
   kind: KindSchema.default("users"),

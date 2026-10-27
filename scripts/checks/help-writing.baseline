@@ -100,7 +100,6 @@ packages/filesv2/src/help/documents/de/filesv2-admin.help.md | term | Berechtigu
 packages/filesv2/src/help/documents/de/filesv2-admin.help.md | term | Rechte
 packages/filesv2/src/help/documents/de/filesv2-admin.help.md | term | Schreibrecht*
 packages/filesv2/src/help/documents/de/filesv2-admin.help.md | term | Servicekonto*
-packages/filesv2/src/help/documents/de/filesv2-start.help.md | term | Rechte
 packages/filesv2/src/help/documents/de/filesv2-start.help.md | term | Schreibzugriff
 packages/filesv2/src/help/documents/de/filesv2-start.help.md | term | Zugriffsrecht*
 packages/filesv2/src/help/documents/de/filesv2-start.help.md | term | Zugriffsrecht*

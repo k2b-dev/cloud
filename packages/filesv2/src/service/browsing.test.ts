@@ -33,7 +33,7 @@ describe("globally ordered browsing", () => {
     expect(first.items).toHaveLength(52);
     expect(first.items.slice(0, 3)).toEqual(["folder A", "folder B", "file 0"]);
     const second = await browsePage({ after: first.next! }, "small", fetch);
-    expect(second).toEqual({ items: ["remaining file"], next: null });
+    expect(second).toEqual({ items: ["remaining file"], next: null, total: null });
     expect(requests).toEqual([
       { sort: "name", order: "asc", type: "directories", after: undefined, limit: 50 },
       { sort: "name", order: "asc", type: "files", limit: 50 },
@@ -53,6 +53,27 @@ describe("globally ordered browsing", () => {
       { sort: "name", order: "asc", type: "files", after: undefined, limit: 50 },
     ]);
   });
+  test("relevance reads one ungrouped query and keeps the first page's total on every continuation", async () => {
+    const requests: { sort?: string; type?: string; after?: string }[] = [];
+    const fetch = async (options: Parameters<Parameters<typeof browsePage>[2]>[0]) => {
+      requests.push(options);
+      return options.after ? { items: ["third"], total: 99 } : { items: ["best", "second"], next: "more", total: 3 };
+    };
+    const first = await browsePage({ sort: "relevance" }, "search", fetch);
+    expect(first).toMatchObject({ items: ["best", "second"], total: 3 });
+    expect(await browsePage({ sort: "relevance", after: first.next! }, "search", fetch)).toEqual({
+      items: ["third"],
+      next: null,
+      total: 3,
+    });
+    expect(requests.map(({ sort, type, after }) => ({ sort, type, after }))).toEqual([
+      { sort: "relevance", type: "all", after: undefined },
+      { sort: "relevance", type: "all", after: "more" },
+    ]);
+    // Grouped folders and files are two queries, so neither total is the whole result.
+    expect((await browsePage({}, "search", async () => ({ items: ["only"], total: 1 }))).total).toBeNull();
+    await expect(browsePage({ sort: "name", after: first.next! }, "search", fetch)).rejects.toMatchObject({ code: "cursor_invalid" });
+  });
   test("empty indexed page keeps its cursor; an exhausted empty directory phase advances once", async () => {
     let calls = 0;
     const result = await browsePage({}, "path", async () => {
@@ -62,7 +83,7 @@ describe("globally ordered browsing", () => {
     expect(result.next).not.toBeNull();
     expect(calls).toBe(1);
     const files = await browsePage({}, "path", async (options) => (options.type === "directories" ? { items: [] } : { items: ["file"] }));
-    expect(files).toEqual({ items: ["file"], next: null });
+    expect(files).toEqual({ items: ["file"], next: null, total: null });
   });
   test("query, location, and malformed cursor changes reject before reading", async () => {
     const first = await browsePage({}, "root/path", async () => ({ items: ["one"], next: "next" }));
