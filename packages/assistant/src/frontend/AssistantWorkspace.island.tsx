@@ -30,6 +30,7 @@ import {
   aiComposerSendInput,
   aiLatestUsageSnapshot,
   aiModelBlocksSending,
+  aiModelRequestFor,
   createAiChatTimeline,
   createAiPastedTextFile,
   readAiComposerFiles,
@@ -409,11 +410,12 @@ export default function AssistantWorkspace(props: Props) {
     const key = modelSessionKey();
     setModelChoices((current) => ({ ...current, [key]: request }));
   };
-  const setSelectedModelId = (modelId: string) => setSelectedModelRequest({ id: modelId });
+  /** `/model` picks a model; like the card, a model inside a class keeps the class. */
+  const setSelectedModelId = (modelId: string) =>
+    setSelectedModelRequest(props.status.ok ? aiModelRequestFor(props.status, modelId) : { id: modelId });
   const modelState = (): AiModelChooserState => (props.status.ok ? { status: "ready", models: props.status } : { status: "error" });
   const modelNote = () =>
-    aiModelBlocksSending(modelState(), selectedModelRequest()) ||
-    resolveAiModelChoice(props.status, selectedModelRequest()).option?.unavailable ? (
+    aiModelBlocksSending(modelState(), selectedModelRequest()) || resolveAiModelChoice(props.status, selectedModelRequest()).unavailable ? (
       <AiModelNote state={modelState()} value={selectedModelRequest()} onChange={setSelectedModelRequest} />
     ) : undefined;
 
@@ -2704,7 +2706,12 @@ export default function AssistantWorkspace(props: Props) {
                           project={project()}
                           initialPage={view.page}
                           initialContext={view.context}
-                          composer={<AssistantComposer projectId={project().id} projectName={project().name} />}
+                          composer={
+                            <div class="flex flex-col gap-2">
+                              {modelNote()}
+                              <AssistantComposer projectId={project().id} projectName={project().name} />
+                            </div>
+                          }
                           onOpenConversation={openAndFocusConversation}
                         />
                       )}

@@ -69,11 +69,11 @@ export function AnchoredPopover(props: AnchoredPopoverProps): JSX.Element {
     const size = surface.getBoundingClientRect();
     const roomAbove = box.top - GAP - view.top;
     const roomBelow = view.bottom - box.bottom - GAP;
-    if (openedAbove === undefined)
+    if (openedAbove === undefined) {
+      const planned = Math.max(size.height, props.plannedHeight ?? 0);
       openedAbove =
-        (props.side ?? "below") === "above"
-          ? size.height <= roomAbove || roomAbove > roomBelow
-          : size.height > roomBelow && roomAbove > roomBelow;
+        (props.side ?? "below") === "above" ? planned <= roomAbove || roomAbove > roomBelow : planned > roomBelow && roomAbove > roomBelow;
+    }
     surface.style.setProperty("--k2b-anchored-popover-room", `${Math.round(Math.max(120, openedAbove ? roomAbove : roomBelow))}px`);
     const top = openedAbove ? box.top - GAP - size.height : box.bottom + GAP;
     const left = (props.align ?? "end") === "end" ? box.right - size.width : box.left;

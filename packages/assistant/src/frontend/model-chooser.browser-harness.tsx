@@ -37,7 +37,7 @@ const options: AiPeopleModels["options"] = [
     description: "Lange Texte und Code",
     icon: mark("OR", "#6d28d9"),
     classes: ["maximum"],
-    ...(state === "budget" ? { unavailable: budget } : state === "revoked" ? { unavailable: { code: "access_revoked" as const } } : {}),
+    ...(state === "budget" ? { unavailable: budget } : {}),
   },
   { id: "gemini-flash", label: "Gemini Flash", description: "Schnell bei Bildern", icon: mark("OR", "#6d28d9"), classes: [] },
   {
@@ -67,9 +67,27 @@ const models: AiPeopleModels = {
     { class: "thorough", variantId: "gpt-oss-120b:gruendlich" },
     ...(state === "unassigned"
       ? []
-      : [{ class: "maximum" as const, variantId: "claude:maximal", ...(state === "budget" ? { unavailable: budget } : {}) }]),
+      : [
+          {
+            class: "maximum" as const,
+            variantId: "claude:maximal",
+            // Like the people API: a model the person may no longer use leaves the options; only its class says why.
+            ...(state === "budget"
+              ? { unavailable: budget }
+              : state === "revoked"
+                ? { unavailable: { code: "access_revoked" as const } }
+                : {}),
+          },
+        ]),
   ],
-  options: state === "single" ? options.slice(1, 2) : options,
+  options:
+    state === "single"
+      ? options.slice(1, 2)
+      : state === "revoked"
+        ? options.filter((option) => option.id !== "claude:maximal")
+        : state === "few"
+          ? options.slice(0, 4)
+          : options,
 };
 const chooserState: AiModelChooserState =
   state === "loading"
@@ -79,6 +97,7 @@ const chooserState: AiModelChooserState =
       : state === "empty"
         ? { status: "ready", models: { ...models, classes: [], options: [] } }
         : { status: "ready", models };
+const layout = params.get("layout") ?? "empty";
 const initial = (): AiModelRequest | null => {
   const choice = params.get("choice");
   if (!choice) return state === "budget" || state === "revoked" || state === "unassigned" ? { class: "maximum" } : null;
@@ -90,45 +109,59 @@ render(() => {
   const [value, setValue] = createSignal(initial());
   const [draft, setDraft] = createSignal(params.get("draft") ?? "");
   const running = state === "running";
+  const note = () =>
+    aiModelBlocksSending(chooserState, value()) || state === "budget" || state === "revoked" ? (
+      <AiModelNote state={chooserState} value={value()} onChange={setValue} />
+    ) : undefined;
+  const composer = (
+    <Chat.Composer
+      value={draft()}
+      onValueChange={setDraft}
+      placeholder="Assistent etwas fragen"
+      state={running ? "running" : "idle"}
+      submitDisabled={aiModelBlocksSending(chooserState, value())}
+      fileSelection={{ onSelect: () => {}, choose: async () => [], disabled: running }}
+      submitTools={
+        <>
+          <AiModelChooser
+            state={chooserState}
+            value={value()}
+            onChange={setValue}
+            locked={running}
+            lockedReason="Während eine Antwort läuft, bleibt das Modell gleich."
+          />
+          <IconButton type="button" variant="ghost" size="sm" label="Diktieren" data-test="mic">
+            <i class="ti ti-microphone" aria-hidden="true" />
+          </IconButton>
+        </>
+      }
+      onSubmit={() => {}}
+    />
+  );
   return (
     <LocaleProvider locale={locale}>
       <main style={{ height: "100dvh", overflow: "auto" }}>
-        <AssistantEmptyChat
-          composer={
-            <Chat.Composer
-              value={draft()}
-              onValueChange={setDraft}
-              placeholder="Assistent etwas fragen"
-              state={running ? "running" : "idle"}
-              submitDisabled={aiModelBlocksSending(chooserState, value())}
-              fileSelection={{ onSelect: () => {}, choose: async () => [], disabled: running }}
-              submitTools={
-                <>
-                  <AiModelChooser
-                    state={chooserState}
-                    value={value()}
-                    onChange={setValue}
-                    locked={running}
-                    lockedReason="Während eine Antwort läuft, bleibt das Modell gleich."
-                  />
-                  <IconButton type="button" variant="ghost" size="sm" label="Diktieren" data-test="mic">
-                    <i class="ti ti-microphone" aria-hidden="true" />
-                  </IconButton>
-                </>
-              }
-              onSubmit={() => {}}
-            />
-          }
-          modelNote={
-            aiModelBlocksSending(chooserState, value()) || state === "budget" || state === "revoked" ? (
-              <AiModelNote state={chooserState} value={value()} onChange={setValue} />
-            ) : undefined
-          }
-          projects={[]}
-          selectedProjectId={null}
-          onChooseProject={() => {}}
-          onStarter={() => {}}
-        />
+        {layout === "conversation" ? (
+          // The conversation's composer bar, as the Assistant lays it out: anchored to the bottom, notes above it.
+          <div style={{ display: "flex", "flex-direction": "column", height: "100%" }}>
+            <section style={{ flex: "1 1 auto" }} />
+            <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
+              <div class="mx-auto flex max-w-3xl flex-col gap-2">
+                {note()}
+                {composer}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <AssistantEmptyChat
+            composer={composer}
+            modelNote={note()}
+            projects={[]}
+            selectedProjectId={null}
+            onChooseProject={() => {}}
+            onStarter={() => {}}
+          />
+        )}
       </main>
     </LocaleProvider>
   );

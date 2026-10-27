@@ -266,9 +266,6 @@ const storedItems = (
               kind: "message",
               id: `${item.id}:model-replaced`,
               role: "system",
-              label: aiModelChooserMessages
-                .resolve([locale])
-                .t.noteRemoved({ removed: replacement.previousLabel, next: replacement.nextLabel }),
               createdAt: item.entry.createdAt,
               content: (
                 <p class="text-xs text-dimmed">

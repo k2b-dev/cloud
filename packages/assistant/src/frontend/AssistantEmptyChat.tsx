@@ -44,15 +44,18 @@ export default function AssistantEmptyChat(props: {
   return (
     <section class="flex min-h-full items-center justify-center px-[var(--ui-space-section)] py-10" aria-labelledby="assistant-empty-title">
       <div class="w-full max-w-3xl -translate-y-[3vh] sm:-translate-y-[9vh]">
-        <div class="mb-8 flex min-h-28 flex-col justify-end sm:mb-12 sm:min-h-20">
-          <h1
-            id="assistant-empty-title"
-            class="text-center text-2xl font-semibold tracking-tight text-[var(--k2b-text)]"
-            classList={{ "sr-only": Boolean(props.modelNote) }}
-          >
-            {t().workOn}
-          </h1>
-          {props.modelNote}
+        {/* A fixed height: a long note grows upward into the free space and never moves the composer. */}
+        <div class="relative mb-8 h-28 sm:mb-12 sm:h-20">
+          <div class="absolute inset-x-0 bottom-0 flex flex-col justify-end">
+            <h1
+              id="assistant-empty-title"
+              class="text-center text-2xl font-semibold tracking-tight text-[var(--k2b-text)]"
+              classList={{ "sr-only": Boolean(props.modelNote) }}
+            >
+              {t().workOn}
+            </h1>
+            {props.modelNote}
+          </div>
         </div>
 
         {props.notices ? <div class="mb-2">{props.notices}</div> : null}

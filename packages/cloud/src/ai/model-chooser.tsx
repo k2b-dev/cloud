@@ -1,5 +1,5 @@
 import { AnchoredPopover, Button, IconButton, NoticeCard, RichSelect, TextInput, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, Show, untrack } from "solid-js";
 import {
   AI_MODEL_CLASSES,
   type AiModelClass,
@@ -29,24 +29,51 @@ export const aiModelUnavailableText = (locale: string, reason: AiModelUnavailabl
 
 const optionName = (option: Option) => (option.variantLabel ? `${option.label} · ${option.variantLabel}` : option.label);
 
-/** What a request shows: the class that answers, the option behind it, and the class it fell back from. */
-export const resolveAiModelChoice = (models: AiPeopleModels, request: AiModelRequest | null) => {
+/**
+ * What a request shows: the class that answers, the option behind it, the class it fell back from, and why it cannot
+ * answer. A model the person may no longer use is not among the options; only its class carries the reason.
+ */
+export const resolveAiModelChoice = (
+  models: AiPeopleModels,
+  request: AiModelRequest | null,
+): {
+  option: Option | undefined;
+  class: AiModelClass | null;
+  requested: AiModelClass | null;
+  fellBack: boolean;
+  unavailable?: AiModelUnavailableReason;
+} => {
   const chosen = request ?? models.effectiveDefault;
   if ("id" in chosen) {
     const option = models.options.find((entry) => entry.id === chosen.id);
     const modelClass = AI_MODEL_CLASSES.find(
       (entry) => option?.classes.includes(entry) && models.classes.some((stop) => stop.class === entry),
     );
-    return { option, class: modelClass ?? null, requested: modelClass ?? null, fellBack: false };
+    return { option, class: modelClass ?? null, requested: modelClass ?? null, fellBack: false, unavailable: option?.unavailable };
   }
   for (const modelClass of [chosen.class, ...aiModelClassFallbackChain(chosen.class)]) {
     const stop = models.classes.find((entry) => entry.class === modelClass);
     if (stop) {
       const option = models.options.find((entry) => entry.id === stop.variantId);
-      return { option, class: modelClass, requested: chosen.class, fellBack: modelClass !== chosen.class };
+      return {
+        option,
+        class: modelClass,
+        requested: chosen.class,
+        fellBack: modelClass !== chosen.class,
+        unavailable: stop.unavailable ?? option?.unavailable,
+      };
     }
   }
   return { option: undefined, class: null, requested: chosen.class, fellBack: false };
+};
+
+/** A person's pick of one model: its class whenever it holds one, so the choice follows the administration. */
+export const aiModelRequestFor = (models: AiPeopleModels, optionId: string): AiModelRequest => {
+  const option = models.options.find((entry) => entry.id === optionId);
+  const modelClass = AI_MODEL_CLASSES.find(
+    (entry) => option?.classes.includes(entry) && models.classes.some((stop) => stop.class === entry),
+  );
+  return modelClass ? { class: modelClass } : { id: optionId };
 };
 
 /**
@@ -58,7 +85,6 @@ export function AiModelChooser(props: {
   state: AiModelChooserState;
   value: AiModelRequest | null;
   onChange: (request: AiModelRequest) => void;
-  onRetry?: () => void;
   /** An answer runs: the model stays as it is. */
   locked?: boolean;
   lockedReason?: string;
@@ -75,7 +101,7 @@ export function AiModelChooser(props: {
   const models = () => (props.state.status === "ready" ? props.state.models : null);
   const choice = createMemo(() => (models() ? resolveAiModelChoice(models()!, props.value) : null));
   const current = () => choice()?.option;
-  const issue = () => (current()?.unavailable ? aiModelUnavailableText(locale(), current()!.unavailable!) : undefined);
+  const issue = () => (choice()?.unavailable ? aiModelUnavailableText(locale(), choice()!.unavailable!) : undefined);
   const stops = (): AiModelCardStop[] =>
     (models()?.classes ?? []).flatMap((stop) => {
       const option = models()!.options.find((entry) => entry.id === stop.variantId);
@@ -121,20 +147,34 @@ export function AiModelChooser(props: {
     setStep("card");
     setQuery("");
   };
+  // A run that starts while the card is open closes it: the model stays as it is until the answer is done.
+  createEffect(() => {
+    if (props.locked) untrack(close);
+  });
+  const change = (request: AiModelRequest) => {
+    if (!props.locked) props.onChange(request);
+  };
   const choose = (option: Option) => {
-    if (option.unavailable) return;
-    const modelClass = AI_MODEL_CLASSES.find(
-      (entry) => option.classes.includes(entry) && models()?.classes.some((stop) => stop.class === entry),
-    );
-    props.onChange(modelClass ? { class: modelClass } : { id: option.id });
+    const current = models();
+    if (option.unavailable || !current) return;
+    change(aiModelRequestFor(current, option.id));
     setStep("card");
     setQuery("");
     queueMicrotask(() => document.getElementById(sliderId)?.focus());
   };
+  const listId = `${sliderId}-list`;
+  const searchId = `${sliderId}-search`;
+  const focusList = () => (document.getElementById(searchId) ?? document.getElementById(listId))?.focus();
+  const moveTo = (index: number) => {
+    setActive(index);
+    document.getElementById(`${sliderId}-o${index}`)?.scrollIntoView({ block: "nearest" });
+  };
   const openList = () => {
     const index = ordered().findIndex((option) => option.id === current()?.id);
-    setActive(Math.max(0, index));
     setStep("list");
+    moveTo(Math.max(0, index));
+    // The name button that opened the list is gone; the search, or the list itself, takes the focus.
+    queueMicrotask(focusList);
   };
   const onListKey = (event: KeyboardEvent) => {
     const list = visible();
@@ -145,13 +185,15 @@ export function AiModelChooser(props: {
       queueMicrotask(() => document.getElementById(sliderId)?.focus());
       return;
     }
+    // The back button keeps its own keys.
+    if (event.target instanceof HTMLButtonElement) return;
     const moves: Record<string, number> = { ArrowDown: 1, ArrowUp: -1 };
     if (event.key in moves) {
       event.preventDefault();
-      setActive((index) => Math.max(0, Math.min(list.length - 1, index + moves[event.key]!)));
-    } else if (event.key === "Home" || event.key === "End") {
+      moveTo(Math.max(0, Math.min(list.length - 1, active() + moves[event.key]!)));
+    } else if ((event.key === "Home" || event.key === "End") && !(event.target instanceof HTMLInputElement)) {
       event.preventDefault();
-      setActive(event.key === "Home" ? 0 : list.length - 1);
+      moveTo(event.key === "Home" ? 0 : list.length - 1);
     } else if (event.key === "Enter") {
       const option = list[active()];
       if (option) {
@@ -164,8 +206,8 @@ export function AiModelChooser(props: {
   const label = () => {
     if (props.state.status === "loading") return "";
     if (props.state.status === "error") return t().chipNotLoaded;
-    if (!current()) return t().chipNone;
-    return !single() && choice()?.class ? aiModelClassLabel(locale(), choice()!.class!) : current()!.label;
+    if (!single() && choice()?.class) return aiModelClassLabel(locale(), choice()!.class!);
+    return current()?.label ?? t().chipNone;
   };
   const ariaLabel = () =>
     [
@@ -176,7 +218,8 @@ export function AiModelChooser(props: {
     ]
       .filter(Boolean)
       .join(", ");
-  const disabled = () => props.state.status !== "ready" || !current() || props.locked;
+  /** A class whose model is gone still opens the card, so the person can pick another. */
+  const disabled = () => props.state.status !== "ready" || (!current() && !choice()?.class) || props.locked;
   /** The stop the card shows: the class that answers, or none for a model outside the classes ("Own choice"). */
   const cardClass = (): AiModelClass | null => {
     const modelClass = choice()?.class ?? null;
@@ -267,7 +310,10 @@ export function AiModelChooser(props: {
               <Show when={ordered().length >= 8 || query()}>
                 <div class="px-2.5 pt-2">
                   <TextInput
+                    id={searchId}
                     aria-label={t().search}
+                    aria-controls={listId}
+                    aria-activedescendant={visible()[active()] ? `${sliderId}-o${active()}` : undefined}
                     type="search"
                     icon="ti ti-search"
                     value={query}
@@ -276,15 +322,15 @@ export function AiModelChooser(props: {
                       setActive(0);
                     }}
                     placeholder={t().search}
-                    autofocus
                   />
                 </div>
               </Show>
               <div
                 class="max-h-[356px] overflow-auto overscroll-contain px-1.5 pt-1 pb-2"
+                id={listId}
                 role="listbox"
                 aria-label={t().chooseModel}
-                tabIndex={0}
+                tabIndex={ordered().length >= 8 || query() ? -1 : 0}
                 aria-activedescendant={visible()[active()] ? `${sliderId}-o${active()}` : undefined}
               >
                 <Show
@@ -358,7 +404,7 @@ export function AiModelChooser(props: {
               own={current() ? { name: optionName(current()!), icon: current()!.icon, description: current()!.description } : undefined}
               issue={issue()}
               note={note()}
-              onChoose={(modelClass) => props.onChange({ class: modelClass })}
+              onChoose={(modelClass) => change({ class: modelClass })}
               onOpenList={(models()?.options.length ?? 0) > 1 ? openList : undefined}
               sliderId={sliderId}
               size={typeof matchMedia === "function" && matchMedia("(max-width: 47.999rem)").matches ? "lg" : "md"}
@@ -388,10 +434,10 @@ export function AiModelNote(props: {
     const current = models();
     if (!current) return null;
     if (current.options.length === 0) return { tone: "info", icon: "ti ti-info-circle", text: t().noteNoModel, switchable: false };
-    const option = choice()?.option;
-    const reason = option?.unavailable;
-    if (!option || !reason) return null;
-    const name = optionName(option);
+    const resolved = choice();
+    const reason = resolved?.unavailable;
+    if (!resolved || !reason) return null;
+    const name = resolved.option ? optionName(resolved.option) : resolved.class ? aiModelClassLabel(locale(), resolved.class) : "";
     const switchable = Boolean(balanced()) && choice()?.class !== "balanced";
     if (reason.code === "budget_exhausted")
       return {
@@ -429,7 +475,7 @@ export function AiModelNote(props: {
 export const aiModelBlocksSending = (state: AiModelChooserState, value: AiModelRequest | null): boolean => {
   if (state.status !== "ready") return false;
   if (state.models.options.length === 0) return true;
-  const reason = resolveAiModelChoice(state.models, value).option?.unavailable;
+  const reason = resolveAiModelChoice(state.models, value).unavailable;
   return reason?.code === "budget_exhausted" || reason?.code === "access_revoked";
 };
 
@@ -473,7 +519,38 @@ export function AiModelField(props: {
         description: option.unavailable ? aiModelUnavailableText(locale(), option.unavailable) : option.description,
         section: "models",
       }));
-    return [{ value: NONE, label: props.noneLabel, section: "none" }, ...classes, ...others];
+    const listed = [{ value: NONE, label: props.noneLabel, section: "none" }, ...classes, ...others];
+    // A saved default stays visible as it is, also a model inside a class or a class that is not set up right now.
+    const saved = props.value;
+    if (!saved || listed.some((item) => item.value === value())) return listed;
+    if ("class" in saved) {
+      const answers = resolveAiModelChoice(current, saved).class;
+      return [
+        ...listed,
+        {
+          value: value(),
+          label: aiModelClassLabel(locale(), saved.class),
+          description: answers
+            ? t().classMissing({ chosen: aiModelClassLabel(locale(), saved.class), answers: aiModelClassLabel(locale(), answers) })
+            : t().unavailable,
+          section: "classes",
+        },
+      ];
+    }
+    const option = current.options.find((entry) => entry.id === saved.id);
+    return [
+      ...listed,
+      {
+        value: value(),
+        label: option ? optionName(option) : saved.id,
+        description: option
+          ? option.unavailable
+            ? aiModelUnavailableText(locale(), option.unavailable)
+            : option.description
+          : t().unavailable,
+        section: "models",
+      },
+    ];
   };
   const value = () => (props.value ? ("class" in props.value ? `class:${props.value.class}` : `id:${props.value.id}`) : NONE);
   return (

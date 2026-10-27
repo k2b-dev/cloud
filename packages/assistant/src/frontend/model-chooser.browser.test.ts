@@ -43,19 +43,20 @@ const open = async (width: number, query: string) => {
   return page;
 };
 
+/** Every control of the composer, unrounded: the chip, the attachment and dictation buttons, the field, and Send. */
 const boxes = (page: Page) =>
   page.evaluate(() => {
-    const box = (selector: string) => {
-      const element = document.querySelector(selector);
-      if (!element) return null;
-      const rect = element.getBoundingClientRect();
-      return [rect.x, rect.y, rect.width, rect.height].map((value) => Math.round(value * 10) / 10);
+    const rect = (element: Element) => {
+      const box = element.getBoundingClientRect();
+      return [box.x, box.y, box.width, box.height];
     };
+    const composer = document.querySelector(".k2b-chat-composer");
     return {
-      chip: box(".ai-model-chip"),
-      mic: box('[data-test="mic"]'),
-      composer: box(".k2b-chat-composer"),
-      send: box(".k2b-chat-composer__send"),
+      composer: composer ? rect(composer) : null,
+      chip: rect(document.querySelector(".ai-model-chip")!),
+      controls: [...(composer?.querySelectorAll("button, textarea") ?? [])]
+        .filter((element) => !element.closest(".ai-model-chip"))
+        .map(rect),
     };
   });
 
@@ -65,7 +66,7 @@ describe("model chooser in the composer", () => {
       const reference = await open(width, "");
       const expected = await boxes(reference);
       await reference.close();
-      expect(expected.chip?.[2]).toBe(148);
+      expect(expected.chip[2]).toBe(148);
       for (const query of cases.slice(1)) {
         const page = await open(width, query);
         expect({ query, ...(await boxes(page)) }).toEqual({ query, ...expected });
@@ -73,18 +74,80 @@ describe("model chooser in the composer", () => {
       }
     });
 
+  for (const layout of ["empty", "conversation"])
+    test(`a used-up budget, the switch and a new class keep every control in place (${layout})`, async () => {
+      const page = await open(1440, `?layout=${layout}`);
+      const reference = await boxes(page);
+      await page.close();
+      const budget = await open(1440, `?layout=${layout}&state=budget&draft=Hallo`);
+      expect(await boxes(budget)).toEqual(reference);
+      await budget.click('.k2b-notice-card button:has-text("Ausgewogen")');
+      await settled(budget);
+      expect(await boxes(budget)).toEqual(reference);
+      await budget.click(".ai-model-chip");
+      await budget.keyboard.press("ArrowRight");
+      await budget.keyboard.press("Escape");
+      await settled(budget);
+      expect(await boxes(budget)).toEqual(reference);
+      await budget.close();
+    });
+
+  test("a class whose model is no longer allowed says so, holds the draft back and offers Balanced", async () => {
+    const page = await open(1440, "?state=revoked&draft=Hallo");
+    expect(await page.locator(".ai-model-chip").isDisabled()).toBe(false);
+    expect(await page.locator(".ai-model-chip").getAttribute("data-tone")).toBe("warning");
+    expect(await page.locator(".k2b-notice-card").textContent()).toContain("Maximal");
+    expect(await page.locator(".k2b-chat-composer__send").isDisabled()).toBe(true);
+    await page.click('.k2b-notice-card button:has-text("Ausgewogen")');
+    expect(await page.locator(".k2b-chat-composer__send").isDisabled()).toBe(false);
+    await page.close();
+  });
+
+  test("a short list takes the focus, follows the arrows and Escape returns to the card", async () => {
+    const page = await open(1440, "?state=few");
+    await page.click(".ai-model-chip");
+    await page.click('.k2b-anchored-popover button[aria-label^="Alle Modelle"]');
+    expect(await page.locator(".k2b-anchored-popover input[type=search]").count()).toBe(0);
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("listbox");
+    const active = () => page.evaluate(() => document.activeElement?.getAttribute("aria-activedescendant"));
+    const first = await active();
+    await page.keyboard.press("ArrowDown");
+    expect(await active()).not.toBe(first);
+    await page.keyboard.press("Escape");
+    expect(await page.locator(".k2b-anchored-popover [role=slider]").evaluate((element) => element === document.activeElement)).toBe(true);
+    await page.close();
+  });
+
+  test("the search carries the active option for screen readers", async () => {
+    const page = await open(1440, "");
+    await page.click(".ai-model-chip");
+    await page.click('.k2b-anchored-popover button[aria-label^="Alle Modelle"]');
+    const search = page.locator(".k2b-anchored-popover input[type=search]");
+    expect(await search.evaluate((element) => element === document.activeElement)).toBe(true);
+    for (let press = 0; press < 9; press++) await page.keyboard.press("ArrowDown");
+    const id = await search.getAttribute("aria-activedescendant");
+    expect(id).toBeTruthy();
+    const visible = await page.evaluate((target) => {
+      const option = document.getElementById(target!)!.getBoundingClientRect();
+      const list = document.querySelector(".k2b-anchored-popover [role=listbox]")!.getBoundingClientRect();
+      return option.top >= list.top && option.bottom <= list.bottom;
+    }, id);
+    expect(visible).toBe(true);
+    await page.close();
+  });
+
   test("opens the card on the slider, follows the keys and returns the focus to the chip", async () => {
     const page = await open(1440, "");
     await page.click(".ai-model-chip");
     const slider = page.locator(".k2b-anchored-popover [role=slider]");
-    await expect(slider.evaluate((element) => element === document.activeElement)).resolves.toBe(true);
-    await expect(slider.getAttribute("aria-valuetext")).resolves.toContain("Ausgewogen");
+    expect(await slider.evaluate((element) => element === document.activeElement)).toBe(true);
+    expect(await slider.getAttribute("aria-valuetext")).toContain("Ausgewogen");
     await page.keyboard.press("ArrowRight");
-    await expect(page.locator(".ai-model-chip").textContent()).resolves.toContain("Gründlich");
-    await expect(page.locator(".k2b-choice-slider__line").textContent()).resolves.toBe("Für komplexe Aufgaben");
+    expect(await page.locator(".ai-model-chip").textContent()).toContain("Gründlich");
+    expect(await page.locator(".k2b-choice-slider__line").textContent()).toBe("Für komplexe Aufgaben");
     await page.keyboard.press("Escape");
-    await expect(page.locator(".k2b-anchored-popover").evaluate((element) => element.matches(":popover-open"))).resolves.toBe(false);
-    await expect(page.locator(".ai-model-chip").evaluate((element) => element === document.activeElement)).resolves.toBe(true);
+    expect(await page.locator(".k2b-anchored-popover").evaluate((element) => element.matches(":popover-open"))).toBe(false);
+    expect(await page.locator(".ai-model-chip").evaluate((element) => element === document.activeElement)).toBe(true);
     await page.close();
   });
 
@@ -93,22 +156,22 @@ describe("model chooser in the composer", () => {
     await page.click(".ai-model-chip");
     await page.click('.k2b-anchored-popover button[aria-label^="Alle Modelle"]');
     const rows = page.locator(".k2b-anchored-popover [role=option]");
-    await expect(rows.first().textContent()).resolves.toContain("Mistral Small");
-    await expect(page.locator(".k2b-anchored-popover input[type=search]").count()).resolves.toBe(1);
+    expect(await rows.first().textContent()).toContain("Mistral Small");
+    expect(await page.locator(".k2b-anchored-popover input[type=search]").count()).toBe(1);
     await page.keyboard.press("Escape");
-    await expect(page.locator(".k2b-anchored-popover [role=slider]").count()).resolves.toBe(1);
-    await expect(page.locator(".k2b-anchored-popover").evaluate((element) => element.matches(":popover-open"))).resolves.toBe(true);
+    expect(await page.locator(".k2b-anchored-popover [role=slider]").count()).toBe(1);
+    expect(await page.locator(".k2b-anchored-popover").evaluate((element) => element.matches(":popover-open"))).toBe(true);
     await page.close();
   });
 
   test("a used-up budget explains itself and holds the draft back until Balanced answers", async () => {
     const page = await open(1440, "?state=budget&draft=Hallo");
-    await expect(page.locator(".ai-model-chip").getAttribute("data-tone")).resolves.toBe("warning");
-    await expect(page.locator(".k2b-notice-card").textContent()).resolves.toContain("Budget");
-    await expect(page.locator(".k2b-chat-composer__send").isDisabled()).resolves.toBe(true);
+    expect(await page.locator(".ai-model-chip").getAttribute("data-tone")).toBe("warning");
+    expect(await page.locator(".k2b-notice-card").textContent()).toContain("Budget");
+    expect(await page.locator(".k2b-chat-composer__send").isDisabled()).toBe(true);
     await page.click('.k2b-notice-card button:has-text("Ausgewogen")');
-    await expect(page.locator(".ai-model-chip").textContent()).resolves.toContain("Ausgewogen");
-    await expect(page.locator(".k2b-chat-composer__send").isDisabled()).resolves.toBe(false);
+    expect(await page.locator(".ai-model-chip").textContent()).toContain("Ausgewogen");
+    expect(await page.locator(".k2b-chat-composer__send").isDisabled()).toBe(false);
     await page.close();
   });
 });

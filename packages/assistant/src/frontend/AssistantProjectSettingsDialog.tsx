@@ -75,6 +75,7 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
     setName(props.project.name);
     setDescription(props.project.description);
     setInstructions(props.project.instructions);
+    setDefaultModel(props.project.defaultModel ?? null);
     setSaveError(null);
   };
   const requestClose = async () => {

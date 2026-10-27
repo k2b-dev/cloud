@@ -6,6 +6,7 @@ export {
   AiModelField,
   AiModelNote,
   aiModelBlocksSending,
+  aiModelRequestFor,
   aiModelUnavailableText,
   resolveAiModelChoice,
 } from "./model-chooser";
