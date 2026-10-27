@@ -54,7 +54,12 @@ import { renderMailWorkflowTemplate } from "../service/template-rendering";
 import { mailWorkflowActionFailure } from "../service/workflow-action-errors";
 import { withMailWorkflowCollaborationEvent } from "../service/workflow-collaboration-events";
 import { mailWorkflowDependencyDeadline } from "../service/workflow-dependencies";
-import { claimMailWorkflowEffect, mailWorkflowEffectTurnOutcome, resolveMailWorkflowEffectTurn } from "../service/workflow-effect-order";
+import {
+  claimMailWorkflowEffect,
+  mailWorkflowEffectTurnOutcome,
+  MAIL_WORKFLOW_PLACEMENT_ACTIONS as PLACEMENT_ACTIONS,
+  resolveMailWorkflowEffectTurn,
+} from "../service/workflow-effect-order";
 import {
   mailWorkflowConversationLinkView,
   mailWorkflowMessagePrecondition,
@@ -396,9 +401,6 @@ const createCommand = async (
 };
 
 const MESSAGE_STATE_ACTIONS = new Set(["addFlag", "removeFlag", "addKeyword", "removeKeyword"]);
-/** Actions that change where a message sits, and therefore run one at a time. */
-const PLACEMENT_ACTIONS = new Set(["moveMessage", "archiveMessage", "trashMessage", "junkMessage"]);
-
 type MessageAction =
   | "addKeyword"
   | "removeKeyword"
@@ -476,7 +478,7 @@ const messageAction = (
         const turnParams = { db: tx, runId: ctx.runId, mailboxId: scope.mailboxId, messageId, folderId };
         const skipped = (reason: "message_moved" | "earlier_automation", commandId?: string): ActionResult => ({
           state: "succeeded",
-          output: { ...effectOutput, applied: false, skipped: reason, ...(commandId ? { commandId } : {}) },
+          output: { action: kind, applied: false, skipped: reason, ...(commandId ? { commandId } : {}) },
         });
         if (issued) {
           // The command found the message gone: another automation moved it after this step checked.
@@ -501,11 +503,14 @@ const messageAction = (
           ? await sql.begin((orderTx) => resolveMailWorkflowEffectTurn(orderTx, { runId: ctx.runId, effectClass: "placement" }))
           : null;
         if (ordering && ordering.state !== "ready") {
+          // A guided step cannot change a source copy that has already gone, even
+          // while an upper rule is still deciding. There is no effect to wait for.
+          if (ordering.state === "waiting" && (await incomingAutomationMessageLeft(turnParams))) return skipped("message_moved");
           return mailWorkflowEffectTurnOutcome(ordering, effectOutput);
         }
-        if ((PLACEMENT_ACTIONS.has(kind) && !ordering?.ordered) || MESSAGE_STATE_ACTIONS.has(kind)) {
+        if (PLACEMENT_ACTIONS.has(kind) || MESSAGE_STATE_ACTIONS.has(kind)) {
           const turn = PLACEMENT_ACTIONS.has(kind)
-            ? await resolveIncomingAutomationPlacementTurn(turnParams)
+            ? await resolveIncomingAutomationPlacementTurn({ ...turnParams, ordered: ordering?.ordered })
             : await resolveIncomingAutomationMessageStateTurn(turnParams);
           // Only incoming automations yield when the message has left, another
           // run is moving it, or an older automation decides its placement.
@@ -532,7 +537,7 @@ const messageAction = (
           mailWorkflowMessageStateTransitions(message),
         );
         if (!mailMessageTransitionChanges(message, kind, value)) {
-          return { state: "succeeded", output: { ...effectOutput, applied: false } };
+          return { state: "succeeded", output: { action: kind, applied: false } };
         }
         const input: ActorCommandInput =
           kind === "moveMessage" || kind === "copyMessage" || kind === "archiveMessage" || kind === "trashMessage" || kind === "junkMessage"
@@ -684,22 +689,35 @@ const conversationMutation = (
             WHERE id = ${conversationId}::uuid AND mailbox_id = ${scope.mailboxId}::uuid FOR UPDATE
           `;
           if (current && Number(current.revision) > statusExpectedRevision) {
-            const [siblings] = await tx<{ revisions: number }[]>`
-              SELECT count(DISTINCT (step.effect_output->>'revision')::bigint)::int AS revisions
+            const revisions = await tx<{ revision: string | number }[]>`
+              SELECT DISTINCT (
+                CASE WHEN step.action = 'ensureConversationReference' THEN step.effect_output->>'conversationRevision'
+                     ELSE step.effect_output->>'revision' END
+              )::bigint AS revision
               FROM workflows.run self
               JOIN mail.workflow_effect_order participant ON participant.event_id = self.event_id
               JOIN mail.workflow_effect_order sibling ON sibling.remote_message_ref_id = participant.remote_message_ref_id
               JOIN workflows.run sibling_run ON sibling_run.event_id = sibling.event_id AND sibling_run.mode = 'execute'
               JOIN workflows.step_outcome step ON step.run_id = sibling_run.id AND step.effect_state = 'succeeded'
               WHERE self.id = ${ctx.runId}::uuid AND step.effect_output->>'conversationId' = ${publicConversationId}
-                AND step.effect_output->'applied' = 'true'::jsonb
-                AND step.action IN ('assignConversation', 'setConversationStatus', 'addLocalTag', 'removeLocalTag', 'setConversationSummary')
-                AND jsonb_typeof(step.effect_output->'revision') = 'number'
-                AND (step.effect_output->>'revision')::bigint > ${statusExpectedRevision}
-                AND (step.effect_output->>'revision')::bigint <= ${Number(current.revision)}
+                AND (
+                  (step.effect_output->'applied' = 'true'::jsonb
+                   AND step.action IN ('assignConversation', 'setConversationStatus', 'addLocalTag', 'removeLocalTag', 'setConversationSummary')
+                   AND jsonb_typeof(step.effect_output->'revision') = 'number')
+                  OR (step.action = 'ensureConversationReference' AND step.effect_output->'created' = 'true'::jsonb
+                      AND jsonb_typeof(step.effect_output->'conversationRevision') = 'number')
+                )
+              ORDER BY revision
             `;
-            if (siblings?.revisions === Number(current.revision) - statusExpectedRevision)
-              statusExpectedRevision = Number(current.revision);
+            // Advance only the contiguous prefix we can attribute to this ingress.
+            // A following trigger hydration is adjudicated by the existing link fence;
+            // a person's revision leaves a gap and therefore remains a conflict.
+            for (const row of revisions) {
+              const revision = Number(row.revision);
+              if (revision <= statusExpectedRevision) continue;
+              if (revision !== statusExpectedRevision + 1) break;
+              statusExpectedRevision = revision;
+            }
           }
         }
         const triggerMessageId = mailWorkflowTriggerMessageId(ctx.invocation.context);
@@ -737,7 +755,7 @@ const conversationMutation = (
           if (kind === "setConversationStatus") await claimMailWorkflowEffect(tx, { runId: ctx.runId, effectClass });
           return {
             state: "succeeded",
-            output: { action: kind, applied: false, value, conversationId: publicConversationId } as JsonObject,
+            output: { action: kind, applied: false } as JsonObject,
           };
         }
         const [beforeStatus] =
@@ -989,7 +1007,7 @@ export const MAIL_WORKFLOW_ACTIONS = {
         const applied = Boolean(mutation.data.event);
         conversation.summary = mutation.data.value.summary;
         conversation.summaryRevision = mutation.data.value.summaryRevision;
-        conversation.revision = mutation.data.value.conversationRevision;
+        if (applied || isObject(ctx.invocation.context?.automationOrder)) conversation.revision = mutation.data.value.conversationRevision;
         return {
           state: "succeeded",
           output: withMailWorkflowCollaborationEvent(
