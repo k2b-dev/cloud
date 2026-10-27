@@ -119,7 +119,7 @@ import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
-import { pastedLinkInPlace, pastedLinkPrefix, withoutPastedLink } from "./composer-cloud-link";
+import { pastedLinkInPlace, pastedLinkPlace, withoutPastedLink } from "./composer-cloud-link";
 import {
   assistantBuiltInCommands,
   assistantCommandScopes,
@@ -1738,15 +1738,15 @@ export default function AssistantWorkspace(props: Props) {
     if (link && event.target instanceof HTMLTextAreaElement) {
       // The link lands as text at once. Once its resource is recognized, a reference with its title takes its place;
       // an unreadable or unknown link stays text. Ctrl+Shift+V keeps the link as text.
-      // The text before this paste's link: the link is recognized only while it is still in its place.
-      const prefix = pastedLinkPrefix(
+      // The draft right after this paste: the link is recognized only while it is still this paste's link.
+      const place = pastedLinkPlace(
         composerDraft(sessionKey),
-        event.target.selectionStart,
+        { start: event.target.selectionStart, end: event.target.selectionEnd },
         event.clipboardData?.getData("text/plain") ?? "",
         link,
       );
       const target = followComposerSession(sessionKey);
-      const inPlace = (key: string) => pastedLinkInPlace(composerDraft(key), prefix, link);
+      const inPlace = (key: string) => pastedLinkInPlace(composerDraft(key), place, link);
       void resolveCloudUrl(link).then(async (resolved) => {
         if (!resolved) return;
         const key = target();
@@ -1760,7 +1760,7 @@ export default function AssistantWorkspace(props: Props) {
         await addResolvedComposerResource(key, resolved.ref, () => inPlace(target()), resolved).catch(() => undefined);
         const current = target();
         if (composerAttachmentsFor(current).length === count || !inPlace(current)) return;
-        setComposerDraft(current, withoutPastedLink(composerDraft(current), prefix, link));
+        setComposerDraft(current, withoutPastedLink(composerDraft(current), place, link));
       });
       return;
     }

@@ -63,11 +63,19 @@ const pendingLinks = StateField.define<readonly Pending[]>({
 
 let nextId = 0;
 
+const writable = (state: EditorState) => !state.readOnly && state.facet(EditorView.editable);
+
 const recognize = (view: EditorView, link: string, pasted: string) => {
-  // CodeMirror has pasted the text at every cursor; each one now ends behind its copy.
-  const offset = pasted.indexOf(link);
-  const ranges = view.state.selection.ranges.flatMap((selection) => {
-    const from = selection.head - pasted.length + offset;
+  if (!writable(view.state)) return;
+  // CodeMirror has pasted the text at every cursor, each one now behind its copy. With as many lines as cursors, each
+  // cursor got one line of it.
+  const selections = view.state.selection.ranges;
+  const lines = pasted.split("\n");
+  const ranges = selections.flatMap((selection, index) => {
+    const inserted = selections.length > 1 && lines.length === selections.length ? lines[index]! : pasted;
+    const offset = inserted.indexOf(link);
+    if (offset < 0) return [];
+    const from = selection.head - inserted.length + offset;
     return from >= 0 && view.state.sliceDoc(from, from + link.length) === link && !keepsText(view.state, from)
       ? [{ from, to: from + link.length }]
       : [];
@@ -79,11 +87,13 @@ const recognize = (view: EditorView, link: string, pasted: string) => {
     if (!view.dom.isConnected) return;
     const pending = view.state.field(pendingLinks).find((entry) => entry.id === id);
     if (!pending) return;
-    const changes = resource
-      ? pending.ranges
-          .filter((range) => view.state.sliceDoc(range.from, range.to) === link && !keepsText(view.state, range.from))
-          .map((range) => ({ ...range, insert: cloudResourceMarkdownLink(resource) }))
-      : [];
+    // A note that became read-only meanwhile keeps the pasted text.
+    const changes =
+      resource && writable(view.state)
+        ? pending.ranges
+            .filter((range) => view.state.sliceDoc(range.from, range.to) === link && !keepsText(view.state, range.from))
+            .map((range) => ({ ...range, insert: cloudResourceMarkdownLink(resource) }))
+        : [];
     // One undo step of its own: undo brings back the plain link, not an empty line.
     view.dispatch({
       changes,

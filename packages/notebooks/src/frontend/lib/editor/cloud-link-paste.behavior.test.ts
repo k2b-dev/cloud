@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { history, undo } from "@codemirror/commands";
 import { forceParsing } from "@codemirror/language";
-import { EditorSelection, EditorState } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
@@ -45,12 +45,13 @@ describe("pasted Cloud links", () => {
       ),
     );
     const { cloudLinkPasteExtension } = await import("./cloud-link-paste");
+    const readOnly = new Compartment();
     const view = new EditorView({
       parent: dom.root,
       state: EditorState.create({
         doc,
         selection,
-        extensions: [markdownExtension(), history(), EditorState.allowMultipleSelections.of(true), cloudLinkPasteExtension()],
+        extensions: [markdownExtension(), history(), EditorState.allowMultipleSelections.of(true), readOnly.of([]), cloudLinkPasteExtension()],
       }),
     });
     const paste = async (text: string) => {
@@ -67,6 +68,7 @@ describe("pasted Cloud links", () => {
     };
     return {
       view,
+      lock: () => view.dispatch({ effects: readOnly.reconfigure(EditorState.readOnly.of(true)) }),
       paste,
       settle,
       text: () => view.state.doc.toString(),
@@ -118,6 +120,29 @@ describe("pasted Cloud links", () => {
       await editor.settle();
       const link = "[Pallets \\[north\\] dock](/open/spaces.item/~Itm001)";
       expect(editor.text()).toBe(`A ${link}\nB ${link}`);
+    } finally {
+      editor.cleanup();
+    }
+  });
+
+  test("one line per cursor: CodeMirror gives the link line to the first cursor, which is recognized", async () => {
+    const editor = await mount("A \nB ", EditorSelection.create([EditorSelection.cursor(2), EditorSelection.cursor(5)]));
+    try {
+      await editor.paste(`${LINK}\r\n`);
+      await editor.settle();
+      expect(editor.text()).toBe("A [Pallets \\[north\\] dock](/open/spaces.item/~Itm001)\nB ");
+    } finally {
+      editor.cleanup();
+    }
+  });
+
+  test("a note that turns read-only before Cloud answers keeps the pasted link", async () => {
+    const editor = await mount("", { anchor: 0 });
+    try {
+      await editor.paste(LINK);
+      editor.lock();
+      await editor.settle();
+      expect(editor.text()).toBe(LINK);
     } finally {
       editor.cleanup();
     }
