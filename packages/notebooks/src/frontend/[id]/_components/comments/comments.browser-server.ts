@@ -57,6 +57,8 @@ const people = {
   ag: { kind: "service_account" as const, id: "00000000-0000-4000-8000-0000000000b1", name: "Review Agent", avatarHash: null },
 };
 export const ME = people.mk;
+/** An agent name longer than the narrowest margin. */
+export const LONG_AGENT_NAME = "Prüfagent der Finanzabteilung für Quartalsberichte";
 /** Every scenario's clock; pages install it (`page.clock`), so relative times read the same in every run. */
 export const NOW = Date.parse("2026-10-26T15:00:00.000Z");
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
@@ -214,6 +216,15 @@ export const SCENARIOS: Record<string, { text?: string; items: () => Annotation[
   review: {
     items: () =>
       base().map((item) => (item.quote.startsWith("zum Ende eines Quartals") ? { ...item, replies: [agentReply(item.quote)] } : item)),
+  },
+  /** The review with names far longer than any margin: headers must truncate the name and wrap time and origin. */
+  longnames: {
+    items: () =>
+      JSON.parse(
+        JSON.stringify(SCENARIOS.review!.items())
+          .replaceAll(`"${people.ag.name}"`, `"${LONG_AGENT_NAME}"`)
+          .replaceAll(`"${people.jb.name}"`, '"Jana-Sophie Berger-Lindqvist von Hohenstein"'),
+      ),
   },
   error: { items: base, error: true },
   loading: { items: base, delay: 60_000 },

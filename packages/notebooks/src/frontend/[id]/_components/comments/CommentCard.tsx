@@ -18,11 +18,14 @@ const Who = (props: { ui: CommentsUi; person: Person; at: string; via: Annotatio
         kind={props.person.kind}
         size="xs"
       />
-      <b>{mine() ? t().you : props.person.name}</b>
-      <Format.RelativeTime class="notebook-comment__time" value={props.at} />
-      <Show when={props.via}>
-        {(via) => <span class="notebook-comment__time">· {via() === "assistant" ? t().viaAssistant : t().viaMcp}</span>}
-      </Show>
+      {/* The name truncates; time and origin move to a second line when they no longer fit beside it. */}
+      <span class="notebook-comment__byline">
+        <b>{mine() ? t().you : props.person.name}</b>
+        <Format.RelativeTime class="notebook-comment__time" value={props.at} />
+        <Show when={props.via}>
+          {(via) => <span class="notebook-comment__time">· {via() === "assistant" ? t().viaAssistant : t().viaMcp}</span>}
+        </Show>
+      </span>
       {props.actions}
     </div>
   );

@@ -2754,9 +2754,25 @@
 .notebook-comment__who {
   display: flex;
   min-height: 1.75rem;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
   font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+.notebook-comment__who > :first-child {
+  flex: none;
+  margin-block: 0.25rem;
+}
+/* One line when everything fits. Otherwise time and origin wrap below the name, and a name longer than the
+   line truncates; nothing ever reaches past the card. */
+.notebook-comment__byline {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: baseline;
+  min-width: 0;
+  padding-block: 0.25rem;
+  column-gap: 0.5rem;
 }
 .notebook-comment__who b {
   min-width: 0;
@@ -2770,14 +2786,12 @@
   color: var(--k2b-text-muted);
 }
 .notebook-comment__time {
-  min-width: 0;
-  overflow: hidden;
   color: var(--k2b-text-muted);
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .notebook-comment__actions {
   display: flex;
+  flex: none;
   margin-inline-start: auto;
   gap: 0.125rem;
   opacity: 0;
@@ -2817,6 +2831,7 @@
 .notebook-comment__label {
   display: block;
   margin-bottom: 0.125rem;
+  overflow-wrap: anywhere;
   font-size: 0.75rem;
   color: var(--k2b-text-muted);
 }

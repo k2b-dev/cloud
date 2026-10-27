@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../../../../../ui/test/browser";
-import { NOW, startCommentsServer } from "./comments.browser-server";
+import { LONG_AGENT_NAME, NOW, startCommentsServer } from "./comments.browser-server";
 
 // Where comments stand is layout: the margin's width rule, the column that never moves, the marks the server
 // preview draws before the editor exists. Only a real engine computes them.
@@ -443,6 +443,54 @@ describe("inline comments", () => {
       await close(page);
     }
   }, 60_000);
+
+  test("a long name never pushes a comment header past its card: the name truncates, time and origin wrap", async () => {
+    /** Every header of the open card; the agent's reply carries the long name and "über Assistant". */
+    const headers = (page: Page, scope: string) =>
+      page.evaluate((scope) => {
+        const card = document.querySelector<HTMLElement>(`${scope} [data-annotation-card][data-active]`)!;
+        const right = card.getBoundingClientRect().right;
+        return [...card.querySelectorAll<HTMLElement>(".notebook-comment__who")].map((who) => {
+          const name = who.querySelector("b")!;
+          const times = [...who.querySelectorAll<HTMLElement>(".notebook-comment__time")];
+          return {
+            name: name.textContent!,
+            overflows: who.scrollWidth > who.clientWidth || who.getBoundingClientRect().right > right + 0.5,
+            truncated: name.scrollWidth > name.clientWidth,
+            nameWidth: Math.round(name.getBoundingClientRect().width),
+            metaBelow: times.every((time) => time.getBoundingClientRect().top >= name.getBoundingClientRect().bottom - 1),
+            meta: times.map((time) => time.textContent!.trim()).join(" "),
+          };
+        });
+      }, scope);
+    // The narrowest margin (288px beside the column), the popover beside the dots, and the smallest phone.
+    for (const [query, width, scope] of [
+      ["s=longnames", 1440, ".notebook-comments"],
+      ["s=longnames&panel", 1440, ".notebook-comments-popover"],
+      ["s=longnames", 320, ".k2b-bottom-sheet-frame"],
+    ] as const) {
+      const page = await open(query, width, 844);
+      try {
+        if (scope === ".notebook-comments") await page.locator("[data-annotation-card]", { hasText: "Mustersatzung" }).click();
+        else await page.locator(".cm-editor [data-annotation]", { hasText: "zum Ende eines" }).first().click();
+        await settle(page);
+        await settle(page);
+        const rows = await headers(page, scope);
+        const agent = rows.find((row) => row.name === LONG_AGENT_NAME);
+        expect(agent, `${query} ${width}`).toBeDefined();
+        expect(
+          rows.filter((row) => row.overflows),
+          `${query} ${width}`,
+        ).toEqual([]);
+        expect(agent, `${query} ${width}`).toMatchObject({ truncated: true, metaBelow: true, meta: "vor 3 Minuten · über Assistant" });
+        expect(agent!.nameWidth, `${query} ${width}`).toBeGreaterThan(120);
+        // A short name keeps time and origin beside it on one line.
+        expect(rows.find((row) => row.name === "Du")?.metaBelow, `${query} ${width}`).toBe(false);
+      } finally {
+        await close(page);
+      }
+    }
+  }, 120_000);
 
   test("rejecting an agent's suggestion keeps the text, marks it rejected and can be undone", async () => {
     const page = await open("s=review");
