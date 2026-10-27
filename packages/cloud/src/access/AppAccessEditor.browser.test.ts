@@ -109,9 +109,14 @@ const open = async (
 };
 const row = (page: Page, name: string) => page.locator(".group\\/access-row").filter({ hasText: name });
 const level = (page: Page, name = "Buchhaltung") => page.getByRole("combobox", { name: `Berechtigung für ${name}`, exact: true });
+// RichSelect uses named buttons in its phone sheet and listbox options on desktop.
+const levelOption = (page: Page, label: string) =>
+  page.viewportSize()!.width < 768
+    ? page.getByRole("dialog").getByRole("button", { name: label, exact: true })
+    : page.getByRole("option", { name: label, exact: true });
 const changeLevel = async (page: Page, name = "Buchhaltung", label = "Zugriff verwalten") => {
   await level(page, name).click();
-  await page.getByRole("option", { name: label, exact: true }).click();
+  await levelOption(page, label).click();
 };
 const posts = (transport: Transport) => transport.requests.filter((request) => request.method === "POST");
 
@@ -142,8 +147,10 @@ describe("App access through real browser controls and same-origin transport", (
         await page.getByRole("option", { name: /Lea Fiktiv/ }).click();
         expect(posts(transport)).toHaveLength(0);
         await page.getByRole("combobox", { name: "Recht für neuen Eintrag", exact: true }).click();
-        expect(await page.getByRole("option").allTextContents()).toEqual(["Nutzen", "Zugriff verwalten"]);
-        await page.getByRole("option", { name: "Zugriff verwalten", exact: true }).click();
+        await levelOption(page, "Nutzen").waitFor();
+        // The same two choices are offered in the phone sheet and desktop popover.
+        expect(await page.locator(".k2b-rich-select__label:visible").allTextContents()).toEqual(["Nutzen", "Zugriff verwalten"]);
+        await levelOption(page, "Zugriff verwalten").click();
         await page.getByRole("button", { name: "Hinzufügen", exact: true }).click();
         await row(page, "Lea Fiktiv").getByText("Gespeichert", { exact: true }).waitFor();
         expect(posts(transport).map((request) => request.change)).toEqual([
@@ -196,6 +203,8 @@ describe("App access through real browser controls and same-origin transport", (
             avatarWidth: avatar.width,
             avatarHeight: avatar.height,
             permissionWidth: select.width,
+            permissionColumnWidth: element.querySelector("[role=combobox]")!.closest(".k2b-field")!.parentElement!.getBoundingClientRect()
+              .width,
             permissionFontSize: getComputedStyle(element.querySelector("[role=combobox]")!).fontSize,
             borderVisible: getComputedStyle(element.querySelector("[role=combobox]")!).borderTopColor !== "rgba(0, 0, 0, 0)",
             twoRows: select.top >= name.bottom,
@@ -207,9 +216,12 @@ describe("App access through real browser controls and same-origin transport", (
           permissionFontSize: "15px",
           borderVisible: true,
           twoRows: width === 390,
-          ...(width >= 768 ? { permissionWidth: 176 } : {}),
+          // The column keeps its approved width; RichSelect fits its selected label within it.
+          ...(width >= 768 ? { permissionColumnWidth: 176 } : {}),
         });
         expect(geometry.rowHeight).toBeGreaterThanOrEqual(52);
+        expect(geometry.permissionWidth).toBeGreaterThan(0);
+        expect(geometry.permissionWidth).toBeLessThanOrEqual(geometry.permissionColumnWidth);
       } finally {
         await page.close();
       }
@@ -363,7 +375,13 @@ describe("App access through real browser controls and same-origin transport", (
         expect(await remove.isDisabled()).toBe(true);
         expect(await remove.getAttribute("aria-description")).toContain("Zugriff verwalten");
         await level(page, "Anna Muster").click();
-        expect(await page.getByRole("option", { name: "Nutzen", exact: true }).isDisabled()).toBe(true);
+        const lowerLevel = levelOption(page, "Nutzen");
+        expect(await lowerLevel.isDisabled()).toBe(true);
+        expect(await lowerLevel.getAttribute("aria-describedby")).toBeTruthy();
+        await page
+          .getByRole("dialog")
+          .getByText("Möglich, sobald eine weitere Person oder Gruppe Zugriff „Zugriff verwalten“ hat", { exact: true })
+          .waitFor();
         await page.keyboard.press("Escape");
         expect(posts(transport)).toHaveLength(0);
         expect(errors).toEqual([]);

@@ -47,6 +47,7 @@ const files: Record<string, Classification> = {
   restoreTrash: mutation("lifecycle.operation"),
   bases: base(),
   baseNames: read,
+  destinationPreviews: read,
   list: base(),
   search: base(),
   folder: base(),

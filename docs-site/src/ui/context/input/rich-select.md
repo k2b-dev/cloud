@@ -98,6 +98,9 @@ removing the item returns to the list.
 Choosing an enabled item closes the sheet before reporting its value. The
 sheet participates in dialog history, so browser Back also dismisses it.
 The opening focus stays on the sheet to avoid opening the phone keyboard.
+After a choice, focus returns to the trigger before its value or footer callback
+runs, unless focus already moved elsewhere. A confirmation opened by that
+callback can return to the field on cancel.
 
 ## API reference
 

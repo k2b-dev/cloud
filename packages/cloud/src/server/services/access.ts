@@ -670,7 +670,7 @@ export const summarizeAccessAudiences = async (params: {
   const db = params.db ?? sql;
   const rows = await db<(AccessAudience & { resource: string })[]>`
     WITH RECURSIVE resources AS (
-      SELECT key AS resource, value AS access_ids FROM jsonb_each(${JSON.stringify(params.accessIdsByResource)}::jsonb)
+      SELECT key AS resource, value AS access_ids FROM jsonb_each(${JSON.stringify(params.accessIdsByResource)}::text::jsonb)
     ), grants AS (
       SELECT r.resource, a.* FROM resources r
       CROSS JOIN LATERAL jsonb_array_elements_text(r.access_ids) ids(id)
