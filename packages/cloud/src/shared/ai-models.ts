@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PrincipalSchema } from "../contracts/shared";
 import { AiModelPricingSchema } from "./ai-costs";
 import { AiExtraBodySchema, AiReasoningEffortSchema } from "./ai-request-options";
 
@@ -235,3 +236,17 @@ export type AiModelUsage = {
   peopleAtLimit: number;
   stats: { answers14d: number; avgCostPerAnswer: number | null; avgSecondsPerAnswer: number | null };
 };
+
+const AiModelGrantSchema = z
+  .object({
+    principal: PrincipalSchema.refine((principal) => principal.type !== "public", "Assistant models cannot be public."),
+    permission: z.literal("read"),
+  })
+  .strict();
+export const AiModelAccessDraftSchema = z
+  .object({
+    expectedRevision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable(),
+    entries: z.array(AiModelGrantSchema),
+  })
+  .strict();
+export type AiModelAccessDraft = z.infer<typeof AiModelAccessDraftSchema>;

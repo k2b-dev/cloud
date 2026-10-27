@@ -1,5 +1,6 @@
 ---
 title: Upgrading to model classes
+navTitle: Model classes
 section: Operations
 order: 1225
 description: Recreate AI configuration after the breaking move from profiles to model classes.

@@ -23,7 +23,6 @@ import type {
   AiProject,
   AiSkillSummary,
 } from "@k2b/cloud/ai";
-import { parseAiModelChoice } from "@k2b/cloud/ai";
 import {
   AI_IMAGE_INPUT_MAX_BYTES,
   AI_LOCAL_SELECTED_SKILLS_MAX_ITEMS,
@@ -41,6 +40,7 @@ import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import { type CloudCliContext, command } from "@k2b/cloud/cli";
 import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "@k2b/cloud/contracts/approvals";
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
+import { parseAiModelChoice } from "@k2b/cloud/shared";
 import { version } from "../../package.json";
 import {
   approvalOptions,

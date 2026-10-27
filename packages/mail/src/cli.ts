@@ -1979,6 +1979,7 @@ const everydayCommands = (t: Translate) => {
           return;
         const none = t({ en: "none", de: "keine" });
         ctx.print(`${t({ en: "Conversation", de: "Unterhaltung" })}: ${conversationId}`);
+        ctx.print(`${t({ en: "Cloud ID", de: "Cloud-ID" })}: ${cloudResourceUrl(ctx, { type: "mail.conversation", id: conversationId })}`);
         ctx.print(
           `${t({ en: "Summary", de: "Zusammenfassung" })}: ${value.summary ?? t({ en: "No shared summary", de: "Keine gemeinsame Zusammenfassung" })}`,
         );

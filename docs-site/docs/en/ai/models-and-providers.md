@@ -16,6 +16,10 @@ without changing application code. This release removes the old profile
 configuration. Follow [Upgrading to model classes](/en/docs/operations/upgrading-to-model-classes)
 before upgrading an existing installation.
 
+Browser and CLI clients import model request schemas, picker types and
+`aiModelClassFallbackChain` from `@k2b/cloud/shared`. The `@k2b/cloud/ai`
+entry point executes server work and must not be bundled into a client.
+
 ## Create a provider connection
 
 Use `cld admin ai providers add --input-file provider.json --yes`. For example:

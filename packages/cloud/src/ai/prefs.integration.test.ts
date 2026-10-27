@@ -109,6 +109,20 @@ databaseSuite()("aiUserPrefs (integration)", () => {
     }
   });
 
+  test("model choices round-trip as objects, survive other edits, and clear explicitly", async () => {
+    const userId = await insertUser();
+    try {
+      expect((await aiUserPrefs.update(userId, { selection: { class: "thorough" } })).selection).toEqual({ class: "thorough" });
+      expect((await aiUserPrefs.update(userId, { memoryEnabled: false })).selection).toEqual({ class: "thorough" });
+      expect((await aiUserPrefs.get(userId)).selection).toEqual({ class: "thorough" });
+      expect((await aiUserPrefs.update(userId, { selection: { id: "model-a:deep" } })).selection).toEqual({ id: "model-a:deep" });
+      expect((await aiUserPrefs.update(userId, { selection: null })).selection).toBeNull();
+      expect((await aiUserPrefs.get(userId)).selection).toBeNull();
+    } finally {
+      await cleanupUser(userId);
+    }
+  });
+
   test("migration keeps earlier stored values and does not reach back to earlier chats", async () => {
     // Recreate the earlier shape: NOT NULL with DEFAULT FALSE and no record of
     // explicit choices. NOT NULL can only be restored while no row has made use

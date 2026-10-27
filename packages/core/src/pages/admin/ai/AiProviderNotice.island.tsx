@@ -61,7 +61,7 @@ export default function AiProviderNotice(props: {
               </Show>
             </div>
             <Show when={error()}>
-              <p class="text-sm text-(--k2b-danger-text)">{error()}</p>
+              <p class="text-(--k2b-danger-text)">{error()}</p>
             </Show>
           </NoticeCard>
         </div>
@@ -89,7 +89,7 @@ export default function AiProviderNotice(props: {
               {retryButton()}
             </div>
             <Show when={error()}>
-              <p class="text-sm text-(--k2b-danger-text)">{error()}</p>
+              <p class="text-(--k2b-danger-text)">{error()}</p>
             </Show>
           </NoticeCard>
         </div>

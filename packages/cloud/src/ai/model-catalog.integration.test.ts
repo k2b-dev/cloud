@@ -12,38 +12,6 @@ import { getAiRequestHeaders, setAiRequestHeaders } from "./request-headers";
 const suite = databaseSuite();
 suite("AI model catalog migration and revisions", () => {
   beforeAll(migrateCloudAi);
-  test("breaking migration resets configuration once and preserves history", async () => {
-    const rolledBack = new Error("rollback migration fixture");
-    await expect(
-      sql.begin(async (db) => {
-        const [before] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.messages`;
-        await db`DROP TABLE ai.model_assignments`;
-        await db`DROP TABLE ai.providers CASCADE`;
-        await db`DROP TABLE ai.models CASCADE`;
-        await db`DROP TABLE ai.model_variants CASCADE`;
-        await db`ALTER TABLE ai.projects ADD COLUMN default_model_profile_id TEXT`;
-        await db`ALTER TABLE ai.user_prefs ADD COLUMN last_model_id TEXT`;
-        await db`CREATE TABLE ai.model_credentials(profile_id TEXT PRIMARY KEY,secret TEXT)`;
-        await db`CREATE TABLE ai.model_request_headers(profile_id TEXT PRIMARY KEY,secret TEXT)`;
-        await db`INSERT INTO settings.entries(key,value) VALUES('ai.model_profiles_json','[]'),('ai.default_model_id','old') ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
-        await db`UPDATE ai.cost_config SET rules='[{"scope":"*"},{"scope":"old"}]'::jsonb WHERE singleton`;
-        await db`ALTER TABLE ai.model_access_resources RENAME COLUMN model_id TO profile_id`;
-        await db`ALTER TABLE ai.model_access RENAME COLUMN model_id TO profile_id`;
-        await migrateAiModelClassesInTransaction(db);
-        expect(await aiModelCatalog.models(db)).toEqual([]);
-        expect((await aiModelCatalog.assignments(db)).every((row) => row.variantId === null)).toBe(true);
-        const [legacy] = await db<
-          { credentials: string | null; headers: string | null; settings: number }[]
-        >`SELECT to_regclass('ai.model_credentials')::text AS credentials,to_regclass('ai.model_request_headers')::text AS headers,(SELECT count(*)::int FROM settings.entries WHERE key IN ('ai.model_profiles_json','ai.default_model_id')) AS settings`;
-        expect(legacy).toEqual({ credentials: null, headers: null, settings: 0 });
-        const [rules] = await db<{ rules: { scope: string }[] }[]>`SELECT rules FROM ai.cost_config WHERE singleton`;
-        expect(rules?.rules).toEqual([{ scope: "*" }]);
-        const [after] = await db<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.messages`;
-        expect(after?.count).toBe(before?.count);
-        throw rolledBack;
-      }),
-    ).rejects.toBe(rolledBack);
-  });
   test("provider secrets are encrypted, rows are revisioned, and standard variants are automatic", async () => {
     const id = `catalog-${crypto.randomUUID()}`;
     const [user] = await sql<

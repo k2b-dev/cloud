@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { AiModelAccessDraftSchema } from "../../ai/model-access";
 import {
   AI_MODEL_SLOTS,
   AiDeleteModelSchema,
+  AiModelAccessDraftSchema,
   AiModelInputSchema,
   AiModelPatchSchema,
   AiProviderInputSchema,

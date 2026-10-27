@@ -73,13 +73,13 @@ export const aiUserPrefs = {
       INSERT INTO ai.user_prefs (user_id, memory_enabled, memory_learning_enabled, memory_learning_chosen_at, model_choice, updated_at)
       VALUES (
         ${userId}, ${memoryEnabled ?? true}, ${memoryLearningEnabled},
-        CASE WHEN ${learningChosen}::boolean THEN now() END, ${modelChoice}::jsonb, now()
+        CASE WHEN ${learningChosen}::boolean THEN now() END, ${modelChoice}::text::jsonb, now()
       )
       ON CONFLICT (user_id) DO UPDATE SET
         memory_enabled = COALESCE(${memoryEnabled}, ai.user_prefs.memory_enabled),
         memory_learning_enabled = COALESCE(${memoryLearningEnabled}, ai.user_prefs.memory_learning_enabled),
         memory_learning_chosen_at = CASE WHEN ${learningChosen}::boolean THEN now() ELSE ai.user_prefs.memory_learning_chosen_at END,
-        model_choice = CASE WHEN ${choiceChanged} THEN ${modelChoice}::jsonb ELSE ai.user_prefs.model_choice END,
+        model_choice = CASE WHEN ${choiceChanged} THEN ${modelChoice}::text::jsonb ELSE ai.user_prefs.model_choice END,
         updated_at = now()
       RETURNING *
     `) as PrefsRow[];

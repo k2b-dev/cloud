@@ -68,7 +68,8 @@ const rows = async (table: Table, id?: string, db = sql, lock = false) => {
 const write = async (table: Table, value: Record<string, unknown>, actorId: string, db = sql, id?: string) => {
   const entries = Object.entries(value).filter(([, value]) => value !== undefined);
   const columns = entries.map(([key]) => snake(key));
-  const values = entries.map(([key], index) => `$${index + 1}${jsonColumns.has(key) ? "::jsonb" : ""}`);
+  // Bind serialized JSON as text; Bun otherwise encodes the string as a JSON scalar.
+  const values = entries.map(([key], index) => `$${index + 1}${jsonColumns.has(key) ? "::text::jsonb" : ""}`);
   const params = entries.map(([, value]) => parameter(value));
   if (id === undefined) {
     await db.unsafe(`INSERT INTO ai.${table} (${columns.join(",")},updated_by) VALUES (${values.join(",")},$${params.length + 1}::uuid)`, [
