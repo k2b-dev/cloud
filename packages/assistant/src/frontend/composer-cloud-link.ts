@@ -1,4 +1,4 @@
-/** A link pasted into the composer: the draft right after the paste and where the link starts in it. */
+/** A link pasted into the composer: the draft right after the paste, and where the link starts in it. */
 export type PastedLinkPlace = { draft: string; at: number };
 
 export const pastedLinkPlace = (
@@ -12,13 +12,21 @@ export const pastedLinkPlace = (
 };
 
 /**
- * Whether the link is still this paste's link, unchanged: the draft is the one right after the paste, at most with
- * text typed at its end, and a link that ended the draft is followed by nothing or a space. Any other edit, undo, or
- * removal ends the recognition, so it never touches another copy of the same link.
+ * Watches the composer's text field from a paste on: any input after the paste's own, such as typing, deleting, or
+ * undo, means the pasted link may no longer be this paste's link. A text equal to an earlier one cannot tell.
  */
-export const pastedLinkInPlace = (draft: string, place: PastedLinkPlace, link: string): boolean => {
-  const end = place.at + link.length;
-  return draft.startsWith(place.draft) && (draft.length === place.draft.length || place.draft.length > end || /\s/.test(draft[end] ?? ""));
+export const watchPastedLink = (field: HTMLTextAreaElement) => {
+  let ownPaste = true;
+  let edited = false;
+  const onInput = (event: Event) => {
+    if (ownPaste && "inputType" in event && event.inputType === "insertFromPaste") ownPaste = false;
+    else edited = true;
+  };
+  field.addEventListener("input", onInput);
+  return {
+    edited: () => edited,
+    stop: () => field.removeEventListener("input", onInput),
+  };
 };
 
 /** The draft without the pasted link, keeping a single space where the link stood between words. */

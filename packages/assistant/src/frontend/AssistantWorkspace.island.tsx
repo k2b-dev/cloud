@@ -119,7 +119,7 @@ import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
-import { pastedLinkInPlace, pastedLinkPlace, withoutPastedLink } from "./composer-cloud-link";
+import { pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
   assistantBuiltInCommands,
   assistantCommandScopes,
@@ -1746,22 +1746,27 @@ export default function AssistantWorkspace(props: Props) {
         link,
       );
       const target = followComposerSession(sessionKey);
-      const inPlace = (key: string) => pastedLinkInPlace(composerDraft(key), place, link);
-      void resolveCloudUrl(link).then(async (resolved) => {
-        if (!resolved) return;
-        const key = target();
-        const attached = composerAttachmentsFor(key).some(
-          (item) => item.kind === "resource" && item.ref.type === resolved.ref.type && item.ref.id === resolved.ref.id,
-        );
-        // An edited or removed link, a reference already attached, a full draft, or attachments waiting for a
-        // response all leave the text as it is.
-        if (!inPlace(key) || attached || composerAttachmentsBlocked(key) || composerPartCount(key) >= AI_TURN_ATTACHMENT_MAX_ITEMS) return;
-        const count = composerAttachmentsFor(key).length;
-        await addResolvedComposerResource(key, resolved.ref, () => inPlace(target()), resolved).catch(() => undefined);
-        const current = target();
-        if (composerAttachmentsFor(current).length === count || !inPlace(current)) return;
-        setComposerDraft(current, withoutPastedLink(composerDraft(current), place, link));
-      });
+      const watch = watchPastedLink(event.target);
+      // Unchanged since the paste: no input but the paste itself, and the draft exactly as the paste left it.
+      const inPlace = (key: string) => !watch.edited() && composerDraft(key) === place.draft;
+      void resolveCloudUrl(link)
+        .then(async (resolved) => {
+          if (!resolved) return;
+          const key = target();
+          const attached = composerAttachmentsFor(key).some(
+            (item) => item.kind === "resource" && item.ref.type === resolved.ref.type && item.ref.id === resolved.ref.id,
+          );
+          // An edited or removed link, a reference already attached, a full draft, or attachments waiting for a
+          // response all leave the text as it is.
+          if (!inPlace(key) || attached || composerAttachmentsBlocked(key) || composerPartCount(key) >= AI_TURN_ATTACHMENT_MAX_ITEMS)
+            return;
+          const count = composerAttachmentsFor(key).length;
+          await addResolvedComposerResource(key, resolved.ref, () => inPlace(target()), resolved).catch(() => undefined);
+          const current = target();
+          if (composerAttachmentsFor(current).length === count || !inPlace(current)) return;
+          setComposerDraft(current, withoutPastedLink(composerDraft(current), place, link));
+        })
+        .finally(watch.stop);
       return;
     }
     const text = event.clipboardData?.getData("text/plain") ?? "";
