@@ -199,6 +199,19 @@ describe("root test orchestration", () => {
     expect(suiteWeight("unknown", { invalid: -1 })).toBe(1);
   });
 
+  test("spreads new unmeasured files across the least-loaded shards deterministically", () => {
+    const suites = makeSuites(["slow", "fast", ...Array.from({ length: 9 }, (_, index) => `new-${index}`)]);
+    const table = { slow: 90, fast: 10 };
+    const plan = planShards(suites, 3, table);
+    expect(planShards([...suites].reverse(), 3, table).map((shard) => names(shard.suites).toSorted())).toEqual(
+      plan.map((shard) => names(shard.suites).toSorted()),
+    );
+    expect(plan.flatMap((shard) => names(shard.suites)).toSorted()).toEqual(names(suites).toSorted());
+    expect(new Set(plan.flatMap((shard) => names(shard.suites))).size).toBe(suites.length);
+    expect(Math.max(...plan.map((shard) => shard.seconds)) - Math.min(...plan.map((shard) => shard.seconds))).toBeLessThanOrEqual(50);
+    expect(plan.every((shard) => shard.suites.some((suite) => suite.name.startsWith("new-")))).toBeTrue();
+  });
+
   test("selects weights for the requested mode", () => {
     const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
     const tables: TestWeights = {
@@ -317,50 +330,48 @@ test("keeps the Mail workflow kernel in Cloud's isolated CI integration suites w
   );
 });
 
-test("CI integration shards cover the unsharded selection exactly once and fit the measured budget", async () => {
-  const workflow = z
-    .object({
-      jobs: z.object({
-        integration: z.object({
-          "timeout-minutes": z.number(),
-          strategy: z.object({ "fail-fast": z.boolean(), matrix: z.object({ shard: z.array(z.number().int().positive()) }) }),
-          steps: z.array(z.object({ run: z.string().optional() })),
-        }),
-        gate: z.object({ needs: z.array(z.string()) }),
-      }),
-    })
-    .parse(Bun.YAML.parse(await Bun.file(join(workspaceRoot, ".github/workflows/ci.yml")).text()));
-  const job = workflow.jobs.integration;
-  const shards: number[] = job.strategy.matrix.shard;
-  const command = job.steps.find((step) => step.run?.startsWith("bun run test --integration"))?.run;
-  if (!command) throw new Error("integration job needs its test runner command");
-  const options = parseArgs(command.replace("${{ matrix.shard }}", "1").split(" ").slice(3));
-  expect(options.integration).toBeTrue();
-  expect(options.exclude).toBe("grids");
-  expect(options.shard?.total).toBe(shards.length);
-  expect(shards).toEqual(Array.from({ length: shards.length }, (_, index) => index + 1));
-  expect(job.strategy["fail-fast"]).toBeFalse();
-  expect(options.maxMinutes).toBeGreaterThan(15);
-  expect(options.maxMinutes).toBeLessThan(job["timeout-minutes"]);
-  const all = await discoverTestSuites(workspaceRoot, { ...options, shard: undefined });
-  const selected = await Promise.all(
-    shards.map((index) =>
-      discoverTestSuites(workspaceRoot, {
-        ...options,
-        shard: { index, total: shards.length },
-      }),
-    ),
-  );
-  const names = selected.flat().map((suite) => suite.name);
-  expect(names.toSorted()).toEqual(all.map((suite) => suite.name).toSorted());
-  expect(new Set(names).size).toBe(all.length);
-  const weights = (await import("./test-weights.json")).default.integration;
-  for (const shard of selected) {
-    expect(shard.length).toBeGreaterThan(0);
-    expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, weights), 0)).toBeLessThanOrEqual(15 * 60);
-  }
-  expect(workflow.jobs.gate.needs).toContain("integration");
-});
+for (const mode of ["unit", "webkit", "integration"] as const) {
+  test(`CI ${mode} shards cover the selection exactly once and fit the measured budget`, async () => {
+    const matrixJob = z.object({
+      "timeout-minutes": z.number(),
+      strategy: z.object({ "fail-fast": z.boolean(), matrix: z.object({ shard: z.array(z.number().int().positive()) }) }),
+      steps: z.array(z.object({ run: z.string().optional() })),
+    });
+    const workflow = z
+      .object({
+        jobs: z.object({ unit: matrixJob, webkit: matrixJob, integration: matrixJob, gate: z.object({ needs: z.array(z.string()) }) }),
+      })
+      .parse(Bun.YAML.parse(await Bun.file(join(workspaceRoot, ".github/workflows/ci.yml")).text()));
+    const job = workflow.jobs[mode];
+    const shards = job.strategy.matrix.shard;
+    const command = job.steps.find((step) => step.run?.startsWith("bun run test "))?.run;
+    if (!command) throw new Error(`${mode} job needs its test runner command`);
+    const options = parseArgs(
+      command.replace("${{ matrix.shard }}", "1").replace("${{ strategy.job-total }}", String(shards.length)).split(" ").slice(3),
+    );
+    expect(options.integration).toBe(mode === "integration");
+    expect(Boolean(options.browser)).toBe(mode === "webkit");
+    if (options.integration) expect(options.exclude).toBe("grids");
+    expect(options.shard?.total).toBe(shards.length);
+    expect(shards).toEqual(Array.from({ length: shards.length }, (_, index) => index + 1));
+    expect(job.strategy["fail-fast"]).toBeFalse();
+    expect(options.maxMinutes).toBe(20);
+    expect(options.maxMinutes).toBeLessThan(job["timeout-minutes"]);
+    const all = await discoverTestSuites(workspaceRoot, { ...options, shard: undefined });
+    const selected = await Promise.all(
+      shards.map((index) => discoverTestSuites(workspaceRoot, { ...options, shard: { index, total: shards.length } })),
+    );
+    const names = selected.flat().map((suite) => suite.name);
+    expect(names.toSorted()).toEqual(all.map((suite) => suite.name).toSorted());
+    expect(new Set(names).size).toBe(all.length);
+    const weights = (await import("./test-weights.json")).default[mode === "webkit" ? "browser" : mode];
+    for (const shard of selected) {
+      expect(shard.length).toBeGreaterThan(0);
+      expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, weights), 0)).toBeLessThanOrEqual(15 * 60);
+    }
+    expect(workflow.jobs.gate.needs).toContain(mode);
+  });
+}
 
 test("integration --list prints the exact selection without a target, heavy slot or bootstrap", async () => {
   const args = ["--integration", "--exclude", "grids", "--shard", "2/3", "--list"];

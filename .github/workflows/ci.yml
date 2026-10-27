@@ -179,16 +179,17 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      # Both modes balance measured suite times from scripts/test-weights.json:
+      # All three modes balance measured suite times from scripts/test-weights.json:
       # longest first; unknown suites use the median. Choose the smallest count
       # with a predicted slowest shard <= 15 min (half the 30-minute job limit).
-      # Current measured maxima predict 14.6 min for the slowest of 5 unit shards.
+      # Measured maxima from runs 40503698446, 40500643888 and 40500643622
+      # predict 14.3 min for the slowest of 7 unit shards (6 need 15.2 min).
       # --max-minutes 20 fails above 2/3 of the job limit. The last third covers
       # setup and GitHub finalization, which counts against timeout-minutes and
       # took up to about 5 min during the Actions incident of 19 October 2026.
       # strategy.job-total keeps the --shard divisor in sync with the matrix.
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard: [1, 2, 3, 4, 5, 6, 7]
     # API-level unit tests go through the rate limiter, whose Bun redis client
     # waits for a server; a throwaway Valkey keeps them honest and fast.
     services:
@@ -226,11 +227,11 @@ jobs:
   # The browser tests again in WebKit, the engine of Safari and of every
   # browser on iOS. The Playwright image of the catalog's version serves it
   # through `playwright run-server`; contributing/testing.md runs the same
-  # locally. Measured maxima from green runs 39674709624, 39674708604 and
-  # 39674705547 predict 13.6 min for the slowest of 7 shards (6 need 15.9 min).
-  # Two additional WebKit runners keep the expanded suite below the 15-min target.
-  # The 20-min guard reserves
-  # the last third for setup and finalization; strategy.job-total is the divisor.
+  # locally. Measured maxima from green runs 40503698446, 40500643888 and
+  # 40500643622 predict 13.4 min for the slowest of 9 shards (8 need 15.1 min).
+  # The runner tests enforce the 15-minute prediction for every heavy matrix.
+  # The 20-min guard reserves the last third for setup and finalization;
+  # strategy.job-total is the divisor.
   webkit:
     needs: [changes, setup]
     if: needs.changes.outputs.webkit == 'true'
@@ -239,7 +240,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]
     env:
       TEST_BROWSER: webkit
       TEST_BROWSER_ENDPOINT: ws://127.0.0.1:3333/

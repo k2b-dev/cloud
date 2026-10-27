@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-25
+updated: 2026-10-27
 ---
 
 # Testing
@@ -964,10 +964,13 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in five shards, WebKit tests in seven, and integration tests in
+Unit tests run in seven shards, WebKit tests in nine, and integration tests in
 three. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
-suite counts as the median of its table. Integration keeps the Grids exclusion;
+suite counts as the median of its table. The browser table contains WebKit
+measurements; Chromium runs inside the unit suites. Equal weights use the suite
+name to order suites; the least-loaded shard wins, with suite count and shard
+index breaking load ties. Integration keeps the Grids exclusion;
 Grids certification runs in its own path-filtered job. Every integration shard
 gets fresh service containers, and `gate` requires the whole matrix to succeed.
 
@@ -982,10 +985,21 @@ suite and fails with an annotation at the 20-minute budget, before the
 30-minute job limit. The budget also includes NATS housekeeping and integration database bootstrap.
 To refresh the weights, run
 `bun scripts/test-weights.ts --run <id> <id> <id>` with the three newest green
-merge-queue runs; add `--mode integration` to refresh only integration timings.
-Add a shard when the printed slowest shard exceeds 15 minutes. The runner tests
-check that the integration shards cover the unsharded selection exactly once
-and that each predicted shard fits 15 minutes. Inspect a selection without
+merge-queue runs, using `gh-agent` authentication; add `--mode integration` to
+refresh only integration timings. The script keeps the slowest measurement of
+each suite and plans the current checkout, excluding Grids from integration.
+It reports the smallest shard count whose predicted slowest shard fits 15
+minutes. If one suite alone exceeds that target, split the suite. Commit the
+refreshed weights and adjust the matrix together; keep the 20-minute execution
+budget unchanged. Refresh after browser suites grow or timings drift, even
+when the jobs still pass. An outdated table can balance predicted times while
+leaving actual times far apart.
+
+The runner tests check that every unit, WebKit, and integration suite is
+assigned exactly once and each predicted shard fits 15 minutes. They also
+cover deterministic assignment and distributing unmeasured new files. These
+checks validate the plan; actual times still depend on the runner and need
+measurement. Inspect a selection without
 starting services with `bun run test --integration --exclude grids --shard 1/3 --list`.
 
 One third of the job limit stays in reserve because setup and GitHub's job
@@ -1241,7 +1255,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in seven shards with `bun run test --browser`, against
+them again in WebKit in nine shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the

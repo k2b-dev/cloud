@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { jobMode, parseSuiteTimes } from "./test-weights";
+import { jobMode, parseSuiteTimes, recommendShardCount } from "./test-weights";
 
 test("parses bare and timestamped suite times, ignoring headers and keeping the maximum", () => {
   const log = [
@@ -32,4 +32,12 @@ test("refreshes integration weights from both historical and sharded CI jobs", (
   expect(jobMode("webkit (7)")).toBe("browser");
   expect(jobMode("grids (1)")).toBeUndefined();
   expect(jobMode("integration extra")).toBeUndefined();
+});
+
+test("recommends matrices beyond eight shards and refuses an indivisible oversized suite", () => {
+  const suites = Array.from({ length: 18 }, (_, index) => ({ name: `file-${index}`, cwd: "", command: [] }));
+  const weights = Object.fromEntries(suites.map((suite) => [suite.name, 450]));
+  expect(recommendShardCount(suites, weights)).toBe(9);
+  expect(recommendShardCount(suites, { ...weights, "file-0": 901 })).toBeUndefined();
+  expect(recommendShardCount([], {})).toBeUndefined();
 });
