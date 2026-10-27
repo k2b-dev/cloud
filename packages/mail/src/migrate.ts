@@ -13,6 +13,7 @@ import { logger } from "@k2b/cloud/services";
 import { migrateWorkflowAi } from "@k2b/cloud/workflows/ai";
 import { sql } from "bun";
 import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
+import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
 import baselineSchema from "./schema.sql" with { type: "text" };
 
 type SqlClient = typeof sql;
@@ -435,6 +436,7 @@ export const migrate = async (): Promise<void> => {
         await applyBaseline(tx);
         await applyAdditions(tx);
         await migrateAiDailyBudget(tx);
+        await migrateConversationSummaries(tx);
         await migrateWorkflowAi(tx);
       });
       return;

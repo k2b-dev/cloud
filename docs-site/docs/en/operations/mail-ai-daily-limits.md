@@ -1,5 +1,6 @@
 ---
 title: Mail AI daily limits
+navTitle: Mail AI daily limits
 section: Operations
 order: 947
 description: Understand Mail's calendar-day AI reservations, mailbox cap, and upgrade behavior.

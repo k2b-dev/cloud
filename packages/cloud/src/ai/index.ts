@@ -1,4 +1,5 @@
 export { type AiAppSkillIssue, aiAppSkills, appSkillsRegistryState, reconcileAppSkills } from "./app-skill-store";
+export { type ApplicationAiTaskInput, runApplicationAiTask } from "./application-tasks";
 export { type AiApprovalPreferenceRoutes, type AiApprovalPreferenceView, createAiApprovalPreferenceRoutes } from "./approval-routes";
 export {
   AI_WEBSITE_APPROVAL_TOOL,

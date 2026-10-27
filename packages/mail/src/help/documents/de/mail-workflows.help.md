@@ -588,3 +588,35 @@ cld admin workflows events --app mail
 `cld admin workflows cancel <run-id> --yes` verhindert spätere Effekte, macht abgeschlossene Arbeit aber nicht rückgängig. Kläre ein ungewisses externes Ergebnis erst, nachdem du es beim Anbieter geprüft hast. Halte diese Entscheidung anschließend mit `cld admin workflows resolve` fest.
 
 Einrichtungsaufgaben und betriebliche Auswirkungen beschreibt [Antworten und Postfacharbeit automatisieren](/app/mail/help/mail-automation).
+
+## Eine KI-Zusammenfassung im Leser anfordern
+
+Im Leser kannst du eine Zusammenfassung fortschreiben oder neu schreiben
+lassen. Dafür gilt dein eigenes Assistant-Kontingent. Das Tageslimit einer
+Regel gilt dabei nicht. Du brauchst Schreibrecht für die Zusammenfassung.
+Ist dein Kontingent aufgebraucht, bleibt die Unterhaltung unverändert.
+
+Die Zusammenfassung zeigt ihren Autor. KI-Text ist gekennzeichnet. Er kann
+einen nächsten Schritt und ein in der Mail genanntes Datum enthalten.
+Wenn du den Text bearbeitest, verschwindet dieser Vorschlag. Regeln dürfen
+deinen Text danach nicht mehr überschreiben. Sie überspringen ihn mit dem
+Code `edited_by_person`. Du kannst die KI ausdrücklich wieder um eine
+Fortschreibung oder eine neue Fassung bitten.
+
+Der Dienst bündelt automatische Anfragen derselben Unterhaltung. Er wartet
+60 Sekunden nach der letzten Anfrage. Der Auftrag bleibt bei einem Neustart
+erhalten. Während die KI schreibt, nutzt eine weitere Anfrage denselben
+Auftrag. Neue Antworten können eine weitere gebündelte Fassung auslösen.
+Der Leser zeigt Warten, Schreiben, Fehler und Tageslimits. Nach einem Fehler
+kannst du es erneut versuchen.
+
+Die KI erhält höchstens 20.000 Zeichen aus den Nachrichten. Eine niedrigere
+Grenze des Betreibers gilt weiter. Zitate und Signaturen werden entfernt.
+Bei langen Unterhaltungen nutzt die KI die neuesten passenden Nachrichten.
+Der Leser zeigt ihre Anzahl und weist auf neuere Nachrichten hin.
+
+Automatische Anfragen reservieren ihren KI-Aufruf vor dem Schreiben.
+Ein Tageslimit der Quelle oder des Postfachs pausiert neue Arbeit bis
+Mitternacht in der Zeitzone der Installation. Text und Revision bleiben
+erhalten. Die Kosten zählt Cloud zentral. Dieser Dienst führt keinen neuen
+YAML-Schritt und kein neues YAML-Budget ein.

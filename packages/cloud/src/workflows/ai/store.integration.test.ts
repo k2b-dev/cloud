@@ -555,3 +555,53 @@ testFor("database", "nats")("shutdown drains an interrupted attempt into queued 
     await fixture.close();
   }
 });
+
+describe("application-owned durable AI tasks", () => {
+  test("shares admission/cache without a workflow and settles cancellation and expiry", async () => {
+    await ready();
+    const appId = `application-ai-${crypto.randomUUID()}`;
+    const scopeId = "mailbox";
+    const scope = {
+      sourceId: "conversation",
+      sourceRevision: "42",
+      budget: { maxStepsPerSource: 2, tasksPerMinute: 10, burst: 20, sourcesPer24Hours: 2000, scopeConcurrent: 1, globalConcurrent: 4 },
+    };
+    const base = {
+      owner: { appId, scopeId },
+      stepKey: "summary",
+      effectKey: `${appId}:first`,
+      request: { kind: "generate_text" as const, prompt: "Summarize", input: "Conversation", maxOutputChars: 100 },
+      modelProfileId: "pinned",
+      modelConfigHash: "a".repeat(64),
+      scope,
+    };
+    try {
+      const first = await createWorkflowAiTask(base);
+      expect(first.task.runId).toBeNull();
+      expect(await claimWorkflowAiTask(first.task.id)).toMatchObject({ status: "running", attempts: 1 });
+      await completeWorkflowAiTask(first.task.id, "Summary", null);
+      const reused = await createWorkflowAiTask({ ...base, effectKey: `${appId}:reuse` });
+      expect(reused.task).toMatchObject({ status: "succeeded", output: "Summary", attempts: 0 });
+      const [wake] = await sql<
+        { present: boolean }[]
+      >`SELECT EXISTS(SELECT 1 FROM workflows.dependency_signal WHERE app_id = ${appId}) AS present`;
+      expect(wake?.present).toBe(false);
+      const [admissions] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM ai.workflow_scope_admission WHERE app_id = ${appId}`;
+      expect(admissions?.count).toBe(1);
+      const queued = await createWorkflowAiTask({ ...base, effectKey: `${appId}:cancel`, scope: { ...scope, sourceRevision: "43" } });
+      await aiStore.cancelApplicationAiTask(queued.task.id);
+      expect(await getWorkflowAiTask(queued.task.id)).toMatchObject({ status: "canceled", errorCode: "WORKFLOW_AI_CANCELED" });
+      const expiring = await createWorkflowAiTask({ ...base, effectKey: `${appId}:expire`, scope: { ...scope, sourceRevision: "44" } });
+      await sql`UPDATE ai.workflow_task SET updated_at = now() - interval '2 minutes' WHERE id = ${expiring.task.id}::uuid`;
+      await expireWorkflowAiTasks(60_000);
+      expect(await getWorkflowAiTask(expiring.task.id)).toMatchObject({ status: "failed", errorCode: "WORKFLOW_AI_QUEUE_TIMEOUT" });
+    } finally {
+      await sql`DELETE FROM ai.workflow_scope_admission WHERE app_id = ${appId}`;
+      await sql`DELETE FROM ai.workflow_scope_budget WHERE app_id = ${appId}`;
+      await sql`DELETE FROM ai.workflow_task WHERE app_id = ${appId}`;
+      await sql`DELETE FROM workflows.dependency_signal WHERE app_id = ${appId}`;
+    }
+  });
+});
