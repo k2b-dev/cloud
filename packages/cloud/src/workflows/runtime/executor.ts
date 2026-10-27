@@ -303,6 +303,33 @@ const evaluateCondition = async (
     if (resolved.state === "waiting") throw new WorkflowValueWaiting(condition.reference, resolved.dependency);
     return resolved.state === "resolved" && resolved.value !== null && resolved.value !== "";
   }
+  if (
+    condition.operator === "greaterThan" ||
+    condition.operator === "lessThan" ||
+    condition.operator === "atLeast" ||
+    condition.operator === "atMost"
+  ) {
+    const numbers: number[] = [];
+    for (const [index, operand] of condition.operands.entries()) {
+      const expression = typeof operand === "string" ? EXACT_EXPRESSION.exec(operand)?.[1]?.trim() : undefined;
+      let value: WorkflowJsonValue;
+      if (expression && expression !== "now()") {
+        const resolved = await resolveReference(state, scope, expression, [...path, condition.operator, index]);
+        if (resolved.state === "waiting") throw new WorkflowValueWaiting(expression, resolved.dependency);
+        if (resolved.state === "missing") return false;
+        value = resolved.value;
+      } else {
+        value = await evaluateValue(state, scope, operand, [...path, condition.operator, index]);
+      }
+      if (typeof value !== "number" || !Number.isFinite(value)) return false;
+      numbers.push(value);
+    }
+    const [left, right] = numbers;
+    if (condition.operator === "greaterThan") return left! > right!;
+    if (condition.operator === "lessThan") return left! < right!;
+    if (condition.operator === "atLeast") return left! >= right!;
+    return left! <= right!;
+  }
   const left = await evaluateValue(state, scope, condition.operands[0], [...path, condition.operator, 0]);
   const right = await evaluateValue(state, scope, condition.operands[1], [...path, condition.operator, 1]);
   if (condition.operator === "equals") return jsonEqual(left, right);

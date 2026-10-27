@@ -119,17 +119,26 @@ Nachrichtenpfade:
 
 - `inputs.message.id`, `conversationId`, `subject`, `body`, `bodyText`, `bodyHtml`
 - `inputs.message.fromAddress`, `fromDomain`
+- `inputs.message.textLength`, `attachmentCount`, `isBulk`
 - `inputs.message.sender.0.role`, `name` oder `email`
 - `inputs.message.recipients.0.role`, `name` oder `email`
 - `inputs.message.attachments.0.id`, `filename`, `contentType`, `disposition`, `contentId` oder `sizeBytes`
 - `inputs.message.hasAttachments`, `folderId`, `flags`, `keywords`, `direction`, `internalDate`, `receivedAt`
+
+`textLength` zählt Unicode-Zeichen im Klartext der Nachricht. Zitierte Zeilen mit `>` und ihre Einleitung zählen nicht. Der Verlauf ab einem Originalnachricht-Trenner oder Outlook-Kopfblock zählt auch nicht. Signaturen ab einer Zeile, die genau aus `-- ` besteht, werden entfernt. Das sind zwei Bindestriche und ein Leerzeichen. Unmarkierte Signaturen bleiben erhalten. Zeilenenden werden zu `\n`. Leerraum am Anfang und Ende fällt weg. Zeilenumbrüche innerhalb der Antwort zählen mit. Bei reinen HTML-Nachrichten zählt der beim Import erzeugte Klartext.
+
+Mail lädt `textLength` bei Bedarf wie `bodyText`. Der geladene Text bleibt für Wiederholungen gleich. `attachmentCount` wartet auf die Anhangsdaten. Es zählt dieselben gespeicherten Anhänge wie `hasAttachments`. Als Anhang gespeicherte Inline-Bilder zählen mit. `hasAttachments` behält den Wert vom Empfang. Es wartet nicht auf die Anhangsdaten. Existiert die Nachricht nicht mehr, ergibt ein Zahlvergleich mit `textLength` oder `attachmentCount` den Wert `false`.
+
+`isBulk` erkennt einen gefüllten Header `List-Id`, `Precedence` mit `bulk`, `list` oder `junk` oder `Auto-Submitted` mit einem anderen Wert als `no`. Großschreibung und äußerer Leerraum spielen keine Rolle. Fehlende Header ergeben `false`.
+
+`conversation.messageCount` zählt alle verknüpften Nachrichten im eingefrorenen Ausgangsstand. Die Gesprächsliste zählt genauso. Kopien beim Anbieter zählen nicht zusätzlich. Binde `trigger.message` und `trigger.conversation` an Eingaben. So stehen die Felder in Schritten bereit. Zeitgesteuerte Workflows liefern kein Gespräch.
 
 Mail liest `body`, `bodyText` und `bodyHtml`, wenn ein Schritt sie benötigt. Der Schritt wartet, bis Mail die Nachricht geladen hat, und schlägt fehl, wenn die Nachricht nicht mehr existiert. Ein vollständiger Nachrichtenwert wie `inputs.message` enthält den Text nur, wenn Mail ihn bereits geladen hat; lies den Text über `body`, `bodyText` oder `bodyHtml`, wenn ein Schritt ihn benötigt. Die Ausführungsdetails zeigen keine Nachrichtentexte mehr in den Ereignisdaten.
 
 Unterhaltungspfade:
 
 - `inputs.conversation.id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`
-- `inputs.conversation.workStatus`, `latestMessageAt`
+- `inputs.conversation.workStatus`, `latestMessageAt`, `messageCount`
 
 Ressourcen-IDs von Mail in einem Workflow sind dieselben stabilen sechsstelligen IDs wie in Mail-URLs und Capabilities. Anbieterreferenzen und Datenbank-UUIDs sind intern und keine Workflow-Felder.
 
@@ -478,11 +487,36 @@ Ein `if`-Schritt nimmt eine Bedingung und eine nicht leere `then`-Liste an. `els
 
 Unterstützte Vergleiche:
 
+- `greaterThan` (`>`), `lessThan` (`<`), `atLeast` (`>=`) und `atMost` (`<=`) vergleichen zwei Zahlen.
 - `equals` und `notEquals`
 - `textEquals`, `contains`, `startsWith` und `endsWith` für normalisierten Text ohne Beachtung der Groß-/Kleinschreibung
 - `includes` für die exakte Zugehörigkeit zu einem Array wie der Ausgabe von `aiClassifyMany`
 - `exists` für eine rohe Referenz
 - rekursive `all`, `any` und `not`
+
+Zahlvergleiche brauchen genau zwei endliche JSON-Zahlen. Zahlen als Text werden nicht umgewandelt. Fehlende Werte und andere Typen ergeben `false`. Auf noch nicht geladene Nachrichtendaten wartet der Schritt. Bekannte falsche Typen werden beim Prüfen an ihrer Quellposition gemeldet.
+
+Dieses Beispiel setzt das vorhandene lokale Tag `Lang`. Die Nachricht darf keine Serienmail sein. Dazu muss ihre Antwort länger als 150 Zeichen sein oder das Gespräch mehr als drei Nachrichten enthalten:
+
+```yaml
+inputs:
+  message: { type: mailMessage, required: true }
+  conversation: { type: mailConversation, required: true }
+triggers:
+  messageReceived:
+    with:
+      message: "${{ trigger.message }}"
+      conversation: "${{ trigger.conversation }}"
+steps:
+  - if:
+      all:
+        - not: { equals: ["${{ inputs.message.isBulk }}", true] }
+        - any:
+            - greaterThan: ["${{ inputs.message.textLength }}", 150]
+            - greaterThan: ["${{ inputs.conversation.messageCount }}", 3]
+    then:
+      - addLocalTag: { conversation: inputs.conversation, tag: Lang }
+```
 
 `equals`, `notEquals` und `includes` vergleichen exakte Werte. `textEquals`, `contains`, `startsWith` und `endsWith` normalisieren Unicode-Text und ignorieren die Groß-/Kleinschreibung.
 
