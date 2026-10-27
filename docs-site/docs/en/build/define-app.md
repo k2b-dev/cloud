@@ -172,6 +172,14 @@ Core's `/pwa/_auth`. It also throws when an application declares `pwa` with the
 id `pwa`, `settings`, or `offline`, or with an id that is not lowercase letters,
 digits, and hyphens starting with a letter.
 
+## Add a standalone App-PWA
+
+Declare `installable` to give this application one independent installation at
+its own `/app/<id>/<surface>/` path. Cloud generates the manifest, themed icons,
+worker, offline document, and automatic SSR installation hint. It adds no mobile
+app session or device permissions. See [App-PWA](/en/docs/frontend/app-pwa) for
+the complete declaration and route requirements.
+
 ## Translate registered presentation
 
 Keep the complete base presentation in the normal application declaration.
@@ -261,6 +269,7 @@ The remaining options declare application-owned contributions:
 | `legalLinks` | Application-owned legal and information links | — |
 | `presentation` | Localized overlays for registered human-facing app metadata | [Internationalization](/en/docs/build/internationalization) |
 | `openapi` | Public OpenAPI document path | [Typed HTTP APIs](/en/docs/server/http#publish-openapi) |
+| `installable` | One standalone installation per application | [App-PWA](/en/docs/frontend/app-pwa) |
 | `pwa` | Pages in the mobile app (preview) | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages) |
 
 Definitions establish ownership and types. They do not run an operation.

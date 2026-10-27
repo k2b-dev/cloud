@@ -13,6 +13,7 @@ export * from "./geo-admin";
 export * from "./geo-map";
 export * from "./geo-route";
 export * from "./geoip";
+export * from "./installable";
 export * from "./notification-types";
 export * from "./outgoing-mail";
 export * from "./panel-context";
