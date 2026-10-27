@@ -382,6 +382,17 @@ const clickTab = async (page: Page, href: string) => {
   await settled(page);
 };
 
+/**
+ * Presses Escape for the workspace. A hint that the resting pointer opened takes the first Escape, as it should: after
+ * a resize, the pointer that clicked the Details toggle can rest on the column's "Close details" button. So the pointer
+ * first moves to the empty shell rail at the window's corner, and no hint stays open.
+ */
+const pressEscapeForWorkspace = async (page: Page) => {
+  await page.mouse.move(0, 0);
+  await page.waitForFunction(() => !document.querySelector("[role='tooltip']:popover-open"));
+  await page.keyboard.press("Escape");
+};
+
 /** One test file per part, so the runner spreads the cases over shards and each file stays inside its budget (#1966). */
 export type MailShellPart = "head" | "mailboxes" | "layout" | "wide" | "reader";
 
@@ -2168,7 +2179,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
                 expect(await page.evaluate(() => document.activeElement?.matches("[data-app-workspace-detail-toggle]"))).toBe(true);
               }
               // Escape closes the wide column; the shared head control remains the way back.
-              if (width >= 1024) await page.keyboard.press("Escape");
+              if (width >= 1024) await pressEscapeForWorkspace(page);
               else await aside.getByRole("button", { name: "Close conversation details", exact: true }).click();
               await settled(page);
               expect(await button.isVisible()).toBe(true);
@@ -2190,7 +2201,7 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               expect(await page.evaluate(() => document.activeElement?.matches("[data-app-workspace-detail-toggle]"))).toBe(true);
               // Persist application visibility closed, then reload the same conversation.
               if (width === 1920) await aside.getByRole("button", { name: "Close conversation details", exact: true }).click();
-              else await page.keyboard.press("Escape");
+              else await pressEscapeForWorkspace(page);
               await page.waitForFunction(() => {
                 const cookie = document.cookie.split("; ").find((part) => part.startsWith("cloud_mail_workspace="));
                 return cookie && JSON.parse(decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1))).detailsOpen === false;
