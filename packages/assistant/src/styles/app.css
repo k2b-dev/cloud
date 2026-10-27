@@ -14,6 +14,7 @@
 .k2b-ui .assistant-empty-project-trigger > .k2b-button__label { min-width: 0; gap: .375rem; }
 /* The side panel's quiet row under the composer, in the same text style as the Project choice. */
 .assistant-panel-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding-inline: .5rem; }
+.assistant-panel-row-end { display: flex; flex-shrink: 0; align-items: center; gap: .25rem; }
 .k2b-ui .assistant-panel-link { flex-shrink: 0; color: var(--k2b-text-secondary); }
 .k2b-ui .assistant-panel-link > .k2b-button__label { gap: .375rem; }
 

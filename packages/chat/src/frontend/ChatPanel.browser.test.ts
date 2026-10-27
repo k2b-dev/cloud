@@ -142,6 +142,7 @@ for (const width of [1440, 390]) {
       const idleBox = await composer.boundingBox();
       await project.focus();
       await page.keyboard.press("Tab");
+      await settled(page);
       expect(await allChats.evaluate((element) => element === document.activeElement && element.matches(":focus-visible"))).toBe(true);
       expect(await allChats.boundingBox()).toEqual(allChatsBox);
       expect(await composer.boundingBox()).toEqual(idleBox);
@@ -164,6 +165,9 @@ for (const width of [1440, 390]) {
             .querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")
             ?.contentDocument?.querySelector<HTMLTextAreaElement>("textarea")?.value === "Assistant draft from this panel",
       );
+      // The panel now holds a saved chat without messages: the row also offers a new chat, without moving "All chats".
+      await panel.getByRole("button", { name: "New chat", exact: true }).waitFor();
+      expect(await allChats.boundingBox()).toEqual(allChatsBox);
       if (width === 1440) fixture.assistant.loseSend();
       else fixture.assistant.rejectSend();
       await panel.getByRole("button", { name: "Send message", exact: true }).click();

@@ -2506,19 +2506,32 @@ export default function AssistantWorkspace(props: Props) {
       {t().allChats}
     </ButtonLink>
   );
-  // Outside the empty chat, the row also starts a new chat: the panel reopens the chat it remembers.
+  // The panel reopens the chat it remembers, so the row also starts a new one whenever the panel holds a chat, even one
+  // without messages (a saved draft, or a chat that failed to load).
+  const PanelNewChat = () => (
+    <Button
+      size="xs"
+      variant="ghost"
+      class="assistant-panel-link"
+      disabled={newConversation.loading() || composerPicking() > 0}
+      onClick={() => void createAndFocusConversation()}
+    >
+      <i class="ti ti-plus" aria-hidden="true" />
+      {t().newChat}
+    </Button>
+  );
   const PanelRow = () => (
     <div class="assistant-panel-row">
-      <Button
-        size="xs"
-        variant="ghost"
-        class="assistant-panel-link"
-        disabled={newConversation.loading() || composerPicking() > 0}
-        onClick={() => void createAndFocusConversation()}
-      >
-        <i class="ti ti-plus" aria-hidden="true" />
-        {t().newChat}
-      </Button>
+      <PanelNewChat />
+      <PanelAllChats />
+    </div>
+  );
+  // In the empty chat the Project choice keeps the start of the row; these links share its end.
+  const PanelRowEnd = () => (
+    <div class="assistant-panel-row-end">
+      <Show when={chat.activeConversationId()}>
+        <PanelNewChat />
+      </Show>
       <PanelAllChats />
     </div>
   );
@@ -2683,7 +2696,7 @@ export default function AssistantWorkspace(props: Props) {
                                 choosingProject={choosingProject()}
                                 onChooseProject={() => void chooseEmptyChatProject()}
                                 onStarter={props.embedded ? undefined : useStarter}
-                                rowEnd={props.embedded ? <PanelAllChats /> : undefined}
+                                rowEnd={props.embedded ? <PanelRowEnd /> : undefined}
                               />
                             </Show>
                             <codeApprovals.View
