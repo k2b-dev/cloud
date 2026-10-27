@@ -7003,9 +7003,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   max-width: 100%;
 }
 
+/* In a form the trigger has every field's height; only the plain trigger beside text is compact. */
 .k2b-ui .k2b-rich-select__trigger {
+  padding: 0.4375rem 0.5rem 0.4375rem 0.625rem;
+}
+
+.k2b-ui [data-appearance="plain"] > .k2b-rich-select__trigger {
   min-height: 2rem;
-  padding: 0.375rem 0.5rem 0.375rem 0.625rem;
+  padding-block: 0.375rem;
 }
 
 .k2b-ui .k2b-rich-select__trigger > .k2b-choice-trigger__value[data-placeholder="true"] {
