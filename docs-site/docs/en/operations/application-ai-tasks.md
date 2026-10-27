@@ -104,3 +104,10 @@ Call cleanup last in a short deletion transaction: its global admission lock
 is held until that transaction commits, including when passed an existing transaction.
 Likewise, a worker that creates a task after an earlier release found no task
 must release it when it discovers that its domain request was discarded.
+
+Applications periodically page `listUnreleasedApplicationAiTaskSources({ appId,
+after? })` (up to 100 distinct scope/source identities). Under the domain owner
+lock, delete sources whose owner no longer exists. This reconciles a worker
+crash between late task creation and noticing owner deletion, while retaining
+unreleased results for live dormant requests. Mail performs this at startup and
+in its minute recovery sweep.

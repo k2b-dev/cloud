@@ -150,6 +150,8 @@ export const migrateWorkflowAi = async (db: SQL = sql): Promise<void> => {
     ALTER TABLE ai.workflow_task ADD COLUMN IF NOT EXISTS cache_key TEXT;
     ALTER TABLE ai.workflow_task ADD COLUMN IF NOT EXISTS model_config_hash TEXT;
     ALTER TABLE ai.workflow_task ADD COLUMN IF NOT EXISTS released_at TIMESTAMPTZ;
+    CREATE INDEX IF NOT EXISTS idx_ai_application_task_sources ON ai.workflow_task(app_id, scope_id, source_id)
+      WHERE run_id IS NULL AND released_at IS NULL;
     CREATE INDEX IF NOT EXISTS idx_ai_application_task_retention ON ai.workflow_task(released_at, id)
       WHERE run_id IS NULL AND released_at IS NOT NULL AND status IN ('succeeded', 'failed', 'canceled');
     CREATE INDEX IF NOT EXISTS idx_ai_workflow_task_cache ON ai.workflow_task(app_id, scope_id, cache_key, completed_at DESC) WHERE status = 'succeeded';
@@ -210,6 +212,19 @@ export const releaseApplicationAiTaskByEffectKey = async (
   `;
   return rows.length > 0;
 };
+
+/** Bounded owner identities for application reconciliation after a crash during deletion. */
+export const listUnreleasedApplicationAiTaskSources = async (
+  input: { appId: string; task?: string; after?: { scopeId: string; sourceId: string } },
+  db: SQL = sql,
+): Promise<Array<{ scopeId: string; sourceId: string }>> =>
+  db`SELECT DISTINCT scope_id AS "scopeId", source_id AS "sourceId" FROM ai.workflow_task
+    WHERE app_id = ${input.appId} AND run_id IS NULL AND released_at IS NULL
+      AND (${input.task ?? null}::text IS NULL OR step_key = ${input.task ?? null})
+      AND scope_id IS NOT NULL AND source_id IS NOT NULL
+      AND (${input.after?.scopeId ?? null}::text IS NULL
+        OR (scope_id, source_id) > (${input.after?.scopeId ?? null}, ${input.after?.sourceId ?? null}))
+    ORDER BY scope_id, source_id LIMIT 100`;
 
 /** Remove an application's task payloads when their owning scope or source is deleted. */
 export const deleteApplicationAiTasks = async (

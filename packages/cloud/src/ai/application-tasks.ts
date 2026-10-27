@@ -32,7 +32,7 @@ const applicationEffectKey = (input: ApplicationAiTaskKey): string =>
 export const releaseApplicationAiTask = (input: ApplicationAiTaskKey, db?: SQL): Promise<boolean> =>
   releaseApplicationAiTaskByEffectKey({ appId: input.appId, scopeId: input.scopeId, effectKey: applicationEffectKey(input) }, db);
 
-export { deleteApplicationAiTasks } from "../workflows/ai/store";
+export { deleteApplicationAiTasks, listUnreleasedApplicationAiTaskSources } from "../workflows/ai/store";
 
 const waitForTask = (signal: AbortSignal, delayMs = 250) =>
   new Promise<void>((resolve, reject) => {

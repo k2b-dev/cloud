@@ -800,3 +800,33 @@ describe("application AI source history deletion", () => {
     }
   });
 });
+
+describe("application AI crash reconciliation", () => {
+  test("pages distinct unreleased application source identities without exposing released or workflow tasks", async () => {
+    await ready();
+    const run = await createRun();
+    try {
+      await sql`INSERT INTO ai.workflow_task(app_id,scope_id,source_id,step_key,effect_key,kind,request,input_hash,model_profile_id)
+        SELECT ${run.appId}, 'scope', 'source-' || lpad(n::text,3,'0'), 'summary',
+          ${run.appId} || ':source:' || n, 'generate_text', '{}'::jsonb, ${"0".repeat(64)}, 'fixture'
+        FROM generate_series(0,104) n`;
+      await sql`INSERT INTO ai.workflow_task(app_id,scope_id,source_id,step_key,effect_key,kind,request,input_hash,model_profile_id,released_at,run_id)
+        VALUES (${run.appId},'scope','released','summary',${`${run.appId}:released`},'generate_text','{}'::jsonb,${"0".repeat(64)},'fixture',now(),NULL),
+          (${run.appId},'scope','workflow','summary',${`${run.appId}:workflow`},'generate_text','{}'::jsonb,${"0".repeat(64)},'fixture',NULL,${run.runId}::uuid),
+          (${run.appId},'scope','another-task','other',${`${run.appId}:other`},'generate_text','{}'::jsonb,${"0".repeat(64)},'fixture',NULL,NULL),
+          (${run.appId},'scope','source-000','summary',${`${run.appId}:duplicate`},'generate_text','{}'::jsonb,${"0".repeat(64)},'fixture',NULL,NULL)`;
+      const first = await aiStore.listUnreleasedApplicationAiTaskSources({ appId: run.appId, task: "summary" });
+      expect(first).toHaveLength(100);
+      expect(first[0]).toEqual({ scopeId: "scope", sourceId: "source-000" });
+      const second = await aiStore.listUnreleasedApplicationAiTaskSources({ appId: run.appId, task: "summary", after: first.at(-1) });
+      expect(second).toHaveLength(5);
+      expect(second.at(-1)).toEqual({ scopeId: "scope", sourceId: "source-104" });
+      expect(
+        await aiStore.listUnreleasedApplicationAiTaskSources({ appId: run.appId, task: "summary", after: second.at(-1) }),
+      ).toHaveLength(0);
+      expect(await aiStore.listUnreleasedApplicationAiTaskSources({ appId: run.appId, task: "unknown" })).toHaveLength(0);
+    } finally {
+      await sql`DELETE FROM ai.workflow_task WHERE app_id = ${run.appId}`;
+    }
+  });
+});

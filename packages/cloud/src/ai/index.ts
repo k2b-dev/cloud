@@ -3,6 +3,7 @@ export {
   type ApplicationAiTaskInput,
   type ApplicationAiTaskKey,
   deleteApplicationAiTasks,
+  listUnreleasedApplicationAiTaskSources,
   releaseApplicationAiTask,
   runApplicationAiTask,
 } from "./application-tasks";

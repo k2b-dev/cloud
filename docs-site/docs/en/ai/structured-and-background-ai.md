@@ -606,7 +606,13 @@ including cached results, without resetting admission accounting. Optional exact
 and literal-prefix source filters intersect; workflow tasks remain separate.
 Keep the transaction short and call cleanup last, because it holds the shared
 admission lock until commit. A worker that notices an obsolete request after
-creating its task must also release or delete that late task.
+creating its task must also release or delete that late task. For crash recovery,
+`listUnreleasedApplicationAiTaskSources({ appId, after? }, db?)` returns at most
+100 distinct `{ scopeId, sourceId }` identities, sorted by that pair. Page with
+the last pair as `after`, restart from the beginning after an empty page, and
+reconcile missing owners through the deletion API. Serialize owner checks and
+cleanup with the application's owner locks; retain every live owner's dormant
+result. This catches creation after deletion followed by a worker crash.
 
 Before using this API, run `migrateWorkflowAi()` and start
 `startWorkflowAiRuntime()` from `@k2b/cloud/workflows/ai`, then drain it during

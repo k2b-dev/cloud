@@ -1,4 +1,10 @@
-import { deleteApplicationAiTasks, releaseApplicationAiTask, runAiStructured, runApplicationAiTask } from "@k2b/cloud/ai";
+import {
+  deleteApplicationAiTasks,
+  listUnreleasedApplicationAiTaskSources,
+  releaseApplicationAiTask,
+  runAiStructured,
+  runApplicationAiTask,
+} from "@k2b/cloud/ai";
 import { launchAssistant } from "@k2b/cloud/ai/browser";
 import { env } from "@k2b/cloud/config";
 import { defineCapabilities } from "@k2b/cloud/contracts";
@@ -96,3 +102,6 @@ export const releaseItemClassification = (db: typeof import("bun").sql, warehous
 
 export const deleteWarehouseAiTasks = (db: typeof import("bun").sql, warehouseId: string) =>
   deleteApplicationAiTasks({ appId: "inventory", scopeId: warehouseId }, db);
+
+export const pendingInventoryAiSources = (after?: { scopeId: string; sourceId: string }) =>
+  listUnreleasedApplicationAiTaskSources({ appId: "inventory", after });
