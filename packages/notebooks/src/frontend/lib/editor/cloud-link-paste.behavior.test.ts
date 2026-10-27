@@ -51,7 +51,13 @@ describe("pasted Cloud links", () => {
       state: EditorState.create({
         doc,
         selection,
-        extensions: [markdownExtension(), history(), EditorState.allowMultipleSelections.of(true), readOnly.of([]), cloudLinkPasteExtension()],
+        extensions: [
+          markdownExtension(),
+          history(),
+          EditorState.allowMultipleSelections.of(true),
+          readOnly.of([]),
+          cloudLinkPasteExtension(),
+        ],
       }),
     });
     const paste = async (text: string) => {
