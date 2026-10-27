@@ -6,6 +6,7 @@ import {
   type CapabilitySubscriptionManifest,
   CapabilitySubscriptionManifestSchema,
 } from "../contracts/capabilities";
+import { RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "../contracts/resource-pages";
 import { hasOAuthScope } from "../server/oauth-scope";
 import { capabilityMessages } from "../shared/capability-messages";
 import { assertAppEventDeclarationSize, assertBoundedAppEventSchema, compileAppEventSchema } from "./app-event-schemas";
@@ -103,7 +104,13 @@ const CALENDAR_SOURCE_FIELDS = {
   delete: true,
 } satisfies DefinedFields<CapabilityCalendarSourceDeclaration>;
 const FILE_PROVIDER_FIELDS = { list: true, read: true, save: true } satisfies DefinedFields<CapabilityFileProviderDeclaration>;
-const TYPE_FIELDS = { title: true, description: true, icon: true, reader: true } satisfies DefinedFields<CapabilityResourceTypeDefinition>;
+const TYPE_FIELDS = {
+  title: true,
+  description: true,
+  icon: true,
+  reader: true,
+  pages: true,
+} satisfies DefinedFields<CapabilityResourceTypeDefinition>;
 const QUERY_FIELDS = {
   title: true,
   description: true,
@@ -661,7 +668,11 @@ const compileOperationSchemas = (definition: CapabilityQueryDefinition | Capabil
   };
 };
 
-export const compileCapabilities = (appId: string, definitions: CapabilityDefinitions): CompiledCapabilities => {
+export const compileCapabilities = (
+  appId: string,
+  definitions: CapabilityDefinitions,
+  routes?: readonly string[],
+): CompiledCapabilities => {
   if (definitions.protocolVersion !== CAPABILITY_PROTOCOL_VERSION) {
     throw new Error(`Unsupported capability protocol version ${String(definitions.protocolVersion)}`);
   }
@@ -685,6 +696,15 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     .map(([localId, definition]) => {
       registerLocalId(localId, "Resource type");
       assertDefinedFields(definition, TYPE_FIELDS, `Resource type ${localId}`);
+      if (definition.pages !== undefined) {
+        if (!definition.reader) throw new Error(`Resource type ${localId}: pages require a reader`);
+        if (!Array.isArray(definition.pages) || definition.pages.length > RESOURCE_PAGES_PER_TYPE)
+          throw new Error(`Resource type ${localId}: at most ${RESOURCE_PAGES_PER_TYPE} pages are allowed`);
+        for (const path of definition.pages) {
+          const issue = typeof path === "string" ? resourcePageIssue(path, routes, appId) : "Expected a page pattern string";
+          if (issue) throw new Error(`Resource type ${localId} pages: ${issue}`);
+        }
+      }
       assertText(definition.title, `Resource type ${localId} title`, 120);
       assertText(definition.description, `Resource type ${localId} description`, 500);
       return {
@@ -903,7 +923,11 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
   );
   const fileProvider = definitions.fileProvider;
   const calendarSource = definitions.calendarSource;
+  const resourcePages = Object.entries(definitions.types ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .flatMap(([type, definition]) => (definition.pages ?? []).map((path) => ({ type, path })));
   const manifestBase = {
+    ...(resourcePages.length ? { resourcePages } : {}),
     protocolVersion: CAPABILITY_PROTOCOL_VERSION,
     appId,
     types,
@@ -1095,6 +1119,7 @@ export const resolveCapabilityManifestPresentation = (
           }
         : {}),
       ...(current.subscribes ? { subscribes: current.subscribes } : {}),
+      ...(current.resourcePages ? { resourcePages: current.resourcePages } : {}),
       ...(current.calendarSource ? { calendarSource: current.calendarSource } : {}),
       ...(current.fileProvider ? { fileProvider: current.fileProvider } : {}),
       ...(current.policies ? { policies: current.policies } : {}),

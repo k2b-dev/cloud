@@ -73,7 +73,6 @@ describe("Filesv2 office editing", () => {
     const props = {
       directory,
       bases: [directory.base],
-      cloudUrl: "https://cloud.test",
       onNavigate: async () => {},
       onEdit: (entry: { path: string }) => edited.push(entry.path),
     };

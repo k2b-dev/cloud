@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-26
+updated: 2026-10-27
 ---
 
 # Deployment requirements
@@ -26,6 +26,19 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 `app-mail`; the routing service is named `gateway`. The shared library, UI
 package, CLI and desktop development tools are not additional server apps in
 this service set.
+
+## Upgrade pasted resource link recognition
+
+Core now serves authenticated, read-only `POST /api/resources/resolve`.
+Applications can publish optional top-level `resourcePages` in their capability
+manifest. Older Core versions ignore these pages and keep existing Types and
+readers; upgrade Core to recognize application URLs. Apps without page
+declarations still support their resource permalinks through a reader.
+
+Browser recognition compares absolute links with the canonical origin from
+`app.url`, supplied in `Layout` shell data. Configure that setting for absolute
+pasted links; root-relative links work without it. No additional service or
+secret is required. See [Resource copy and paste](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link).
 
 ## Upgrade personal Linux group retirement
 

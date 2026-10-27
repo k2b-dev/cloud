@@ -4,6 +4,7 @@ import {
   CapabilityStreamPolicySchema,
   CapabilityStreamSchema,
 } from "./capability-streams";
+import { RESOURCE_PAGE_MAX_LENGTH, RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "./resource-pages";
 
 export * from "./capability-streams";
 
@@ -803,6 +804,8 @@ export type CapabilityResourceTypeDefinition = {
   description: string;
   icon?: string;
   reader?: string;
+  /** Root-relative pages recognized when a person pastes a Cloud link. Requires a reader. */
+  pages?: readonly string[];
 };
 
 export type CapabilitySearchTagDefinition = {
@@ -1073,6 +1076,16 @@ export const CapabilitySubscriptionManifestSchema = z
   })
   .strict();
 export type CapabilitySubscriptionManifest = z.infer<typeof CapabilitySubscriptionManifestSchema>;
+export const CapabilityResourcePageManifestSchema = z
+  .object({
+    type: CapabilityLocalIdSchema,
+    path: z
+      .string()
+      .min(1)
+      .max(RESOURCE_PAGE_MAX_LENGTH)
+      .refine((path) => !resourcePageIssue(path), "Invalid resource page pattern"),
+  })
+  .strict();
 
 /** Keeps the sent entries this release reads completely. */
 const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T>[] | null => {
@@ -1100,6 +1113,8 @@ const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T
  * - An unreadable policy or one inconsistent with derived approval, review, or effect flags leaves
  *   out its Action. Policies for unknown Actions are dropped.
  *
+ * Resource pages live at the top level so older releases keep the Type and reader. Unreadable
+ * pages and pages without a readable Type/reader are omitted; live prefix ownership is checked separately.
  * Every other entry stays available.
  */
 const readableManifest = (value: unknown): unknown => {
@@ -1136,11 +1151,25 @@ const readableManifest = (value: unknown): unknown => {
     policies[action.localId] = policy;
     return true;
   });
-  const { calendarSource: sentCalendarSource, fileProvider: sentProvider, policies: _policies, ...rest } = sent;
+  const { calendarSource: sentCalendarSource, fileProvider: sentProvider, policies: _policies, resourcePages: sentPages, ...rest } = sent;
   const provider = CapabilityFileProviderManifestSchema.safeParse(sentProvider);
   const calendar = CapabilityCalendarSourceManifestSchema.safeParse(sentCalendarSource);
+  const pageCounts = new Map<string, number>();
+  const resourcePages =
+    Array.isArray(sentPages) && sentPages.length <= MAX_MANIFEST_ENTRIES * RESOURCE_PAGES_PER_TYPE
+      ? sentPages.flatMap((value) => {
+          const page = CapabilityResourcePageManifestSchema.safeParse(value);
+          if (!page.success) return [];
+          const type = types.find((type) => type.localId === page.data.type);
+          const count = pageCounts.get(page.data.type) ?? 0;
+          if (!type?.reader || !queryIds.has(type.reader) || count >= RESOURCE_PAGES_PER_TYPE) return [];
+          pageCounts.set(page.data.type, count + 1);
+          return [page.data];
+        })
+      : [];
   return {
     ...rest,
+    ...(sentPages !== undefined ? { resourcePages } : {}),
     ...(provider.success ? { fileProvider: provider.data } : {}),
     ...(calendar.success ? { calendarSource: calendar.data } : {}),
     types: types.map((type) => {
@@ -1185,6 +1214,10 @@ export const CapabilityManifestSchema = z.preprocess(
     policies: z.record(CapabilityLocalIdSchema, CapabilityActionPolicySchema).optional(),
     events: z.array(CapabilityEventManifestSchema).max(MAX_MANIFEST_ENTRIES).optional(),
     subscribes: z.array(CapabilitySubscriptionManifestSchema).max(MAX_MANIFEST_ENTRIES).optional(),
+    resourcePages: z
+      .array(CapabilityResourcePageManifestSchema)
+      .max(MAX_MANIFEST_ENTRIES * RESOURCE_PAGES_PER_TYPE)
+      .optional(),
   }),
 );
 
