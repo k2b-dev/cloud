@@ -35,6 +35,7 @@ const [value, setValue] = createSignal(null);
 const [targets, setTargets] = createSignal(items);
 const [status, setStatus] = createSignal("ready");
 const [disabled, setDisabled] = createSignal(false);
+const [search, setSearch] = createSignal(undefined);
 let resumeHistory;
 document.addEventListener("fixture:state", (event) => {
   const next = event.detail;
@@ -44,6 +45,7 @@ document.addEventListener("fixture:state", (event) => {
   if (next === "error" || next === "loading") setStatus(next);
   if (next === "disable") setDisabled(true);
   if (next === "unmount") dispose();
+  if (next === "no-search") setSearch(false);
   if (next === "many") setTargets([...items, ...Array.from({ length: 5 }, (_, index) => ({ value: "extra-" + index, label: "Extra " + index }))]);
   if (next === "hold-history") {
     const go = history.go.bind(history);
@@ -61,6 +63,8 @@ const dispose = render(() => createComponent(RichSelect, {
   label: "Move card", title: "Move card", placeholder: "Move to …", value,
   onValueChange: (next) => { form.dataset.committed = next; setValue(next); }, get items() { return targets(); }, get status() { return status(); }, get disabled() { return disabled(); },
   onRetry: () => setStatus("ready"),
+  get search() { return search(); },
+  onOpenChange: (open) => { form.dataset.open = String(open); },
   footer: { label: "New target", create: { placeholder: "Target name", onCreate: (name) => { form.dataset.created = name; } } },
   renderPreview: (item) => createComponent(RichSelectFacts, { facts: (facts[item.value] ?? []).map(text => ({ icon: "ti ti-info-circle", text })) }),
 }), form);
@@ -187,6 +191,27 @@ describe("RichSelect shipped browser contract", () => {
       await close();
     }
   }, 10_000);
+
+  for (const width of [1440, 390]) {
+    test(`consequence pickers can suppress search and report opening (${width}px)`, async () => {
+      const { page, close } = await open({ viewport: { width, height: 900 }, isMobile: width === 390, hasTouch: width === 390 });
+      try {
+        await page.evaluate(() => {
+          document.dispatchEvent(new CustomEvent("fixture:state", { detail: "many" }));
+          document.dispatchEvent(new CustomEvent("fixture:state", { detail: "no-search" }));
+        });
+        await page.getByRole("combobox", { name: "Move card" }).click();
+        await settled(page);
+        expect(await page.locator('input[type="search"]:visible').count()).toBe(0);
+        expect(await page.locator("form").first().getAttribute("data-open")).toBe("true");
+        await page.keyboard.press("Escape");
+        await settled(page);
+        expect(await page.locator("form").first().getAttribute("data-open")).toBe("false");
+      } finally {
+        await close();
+      }
+    });
+  }
 
   test("desktop preview, list, popover and trigger never move while keys and hover change the active row", async () => {
     const { page, close } = await open({ viewport: { width: 1440, height: 900 } });

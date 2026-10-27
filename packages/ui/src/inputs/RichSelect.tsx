@@ -77,9 +77,13 @@ export type RichSelectProps = ValueFieldProps<string | null> & {
    * Without it the picker shows only the list. Keep it to at most three facts.
    */
   renderPreview?: (item: RichSelectItem) => JSX.Element;
+  /** Suppress search even for eight or more options. */
+  search?: false;
   searchPlaceholder?: string;
   status?: RichSelectStatus;
   onRetry?: () => void;
+  /** Called when the desktop picker or phone sheet opens or closes, for refreshing live consequences. */
+  onOpenChange?: (open: boolean) => void;
   /** Shown when the list is ready and has no items. */
   empty?: JSX.Element;
   footer?: RichSelectFooter;
@@ -332,7 +336,7 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
   const withPreview = () => Boolean(props.renderPreview);
   const title = () =>
     props.title ?? (typeof props.label === "string" ? props.label : (props["aria-label"] ?? props.placeholder ?? messages().chooseOption));
-  const searchable = () => status() === "ready" && props.items.length >= RICH_SELECT_SEARCH_FROM;
+  const searchable = () => props.search !== false && status() === "ready" && props.items.length >= RICH_SELECT_SEARCH_FROM;
   const visible = createMemo(() => (searchable() ? filterChoiceOptions(props.items, query()) : props.items));
   const anyVisual = createMemo(() => props.items.some(hasVisual));
   const rows = createMemo<Row[]>(() => {
@@ -360,6 +364,13 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
     () => ({ width: "own", side: props.placement === "top-start" ? "above" : "below" }),
   );
   const expanded = () => popover.open() || sheetOpen();
+  let wasExpanded = false;
+  createEffect(() => {
+    const next = expanded();
+    if (next === wasExpanded) return;
+    wasExpanded = next;
+    untrack(() => props.onOpenChange?.(next));
+  });
   const restorePopoverFocus = () => {
     if (popover.open()) (searchable() ? searchRef : popover.trigger())?.focus();
   };
@@ -785,7 +796,7 @@ function RichSelectSheet(sheet: {
   let back: HTMLButtonElement | undefined;
   let returnValue: string | undefined;
   const status = () => props.status ?? "ready";
-  const searchable = () => status() === "ready" && props.items.length >= RICH_SELECT_SEARCH_FROM;
+  const searchable = () => props.search !== false && status() === "ready" && props.items.length >= RICH_SELECT_SEARCH_FROM;
   const visible = createMemo(() => (searchable() ? filterChoiceOptions(props.items, query()) : props.items));
   const anyVisual = createMemo(() => props.items.some(hasVisual));
   const headings = () => (props.items.length >= RICH_SELECT_SEARCH_FROM && props.sections ? props.sections : undefined);
