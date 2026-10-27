@@ -1,6 +1,24 @@
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { clipboard, query } from "@k2b/stdlib/solid";
-import { Button, DescriptionList, DetailPanel, Format, IconButton, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
+import {
+  Button,
+  DescriptionList,
+  DetailPanel,
+  Dropdown,
+  type DropdownItem,
+  FileGrid,
+  FileTypeIcon,
+  Format,
+  fileKindLabel,
+  formatFileViewSize,
+  IconButton,
+  Placeholder,
+  prompts,
+  StatusBadge,
+  Tooltip,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, EntryResult, FileEntry, FileVersion } from "../contracts";
@@ -9,11 +27,11 @@ import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
-import { apiFailure, contentLease, fileIcon, inlinePdfHref, previewKind } from "./file-preview";
+import { apiFailure, contentLease, inlinePdfHref, previewKind } from "./file-preview";
 import { useFilesMessages } from "./messages";
 import { referenceHref } from "./urls";
 
-/** Identity, quick preview, facts, actions and versions of one entry; a summary for several. */
+/** One entry in the shared details outline: header, preview, properties, versions or contents, then technical details; a summary for several. */
 export default function FileInspector(props: {
   base: BaseSummary;
   cloudUrl: string;
@@ -121,41 +139,53 @@ export default function FileInspector(props: {
       toast.error(error instanceof Error ? error.message : f().downloadFailed);
     }
   };
-  const kindLabel = (item: FileEntry) => {
-    if (item.directory) return t().kindFolder;
-    const kind = previewKind(item);
-    return kind === "image"
-      ? t().kindImage
-      : kind === "pdf"
-        ? "PDF"
-        : kind === "video"
-          ? "Video"
-          : kind === "audio"
-            ? "Audio"
-            : t().kindFile;
-  };
   const close = (
     <IconButton size="sm" variant="ghost" label={t().close} onClick={props.onClose}>
       <i class="ti ti-x" aria-hidden="true" />
     </IconButton>
   );
   const expand = (item: FileEntry) => props.onPreview(item, () => setNotPdf(revision(item)));
-  const actionRow = (
-    title: string,
-    icon: string,
-    onClick: () => void,
-    options: { danger?: boolean; description?: string; disabled?: boolean } = {},
-  ) => (
-    <DetailPanel.Action
-      type="button"
-      title={title}
-      description={options.description}
-      leading={<i class={`${icon} ${options.danger ? "text-danger" : ""}`} aria-hidden="true" />}
-      class={options.danger ? "text-danger" : undefined}
-      disabled={props.busy || options.disabled}
-      onClick={onClick}
-    />
-  );
+  const readOnly = (item: FileEntry) => item.actions?.write === false;
+  const metaLine = (item: FileEntry) =>
+    item.directory ? t().kindFolder : `${fileKindLabel({ name: item.name }, locale())} · ${formatFileViewSize(item.size, locale())}`;
+  // Rarer commands on the entry; Share and Download stay beside the main action.
+  const headerMenu = (item: FileEntry): DropdownItem[] => [
+    {
+      items: [
+        ...(!item.directory && notPdf() !== revision(item)
+          ? [{ label: t().openInTab, icon: "ti ti-external-link", disabled: props.busy, action: () => void openInTab(item) }]
+          : []),
+        {
+          label: t().rename,
+          icon: "ti ti-pencil",
+          disabled: props.busy || item.actions?.move === false,
+          action: () => props.onRename(item),
+        },
+        { label: t().duplicate, icon: "ti ti-copy", disabled: props.busy, action: () => props.onDuplicate(item) },
+        {
+          label: t().moveTo,
+          icon: "ti ti-arrow-move-right",
+          disabled: props.busy || item.actions?.move === false,
+          action: () => props.onMove(item),
+        },
+        { label: t().copyTo, icon: "ti ti-folder-symlink", disabled: props.busy, action: () => props.onCopy(item) },
+        ...(props.onShareInbox && item.directory && !readOnly(item)
+          ? [{ label: t().shareInbox, icon: "ti ti-inbox", disabled: props.busy, action: () => props.onShareInbox?.(item) }]
+          : []),
+      ],
+    },
+    {
+      items: [
+        {
+          label: t().trashSelection,
+          icon: "ti ti-trash",
+          variant: "danger",
+          disabled: props.busy || item.actions?.move === false,
+          action: () => props.onTrash(item),
+        },
+      ],
+    },
+  ];
   return (
     <DetailPanel>
       <Show
@@ -179,39 +209,32 @@ export default function FileInspector(props: {
             {(item) => (
               <>
                 <DetailPanel.Header
-                  icon={fileIcon(item())}
+                  kind={
+                    <>
+                      <span>{item().directory ? t().kindFolder : t().kindFile}</span>
+                      <Show when={readOnly(item())}>
+                        <StatusBadge tone="neutral" icon="ti ti-lock" label={t().readOnly} />
+                      </Show>
+                    </>
+                  }
                   title={<span class="break-all">{item().name}</span>}
                   subtitle={
                     <span>
-                      {kindLabel(item())}
-                      <Show when={!item().directory}>
-                        {" · "}
-                        <Format.Bytes value={item().size} />
-                      </Show>
+                      {metaLine(item())}
                       {" · "}
                       <Format.DateTime value={item().modified} />
                     </span>
                   }
-                  meta={
-                    <Tooltip.Anchor content={copyLabel()}>
-                      <IconButton size="xs" variant="ghost" label={copyLabel()} onClick={() => copyReference(item())}>
-                        <i
-                          class={
-                            refClipboard.error()
-                              ? "ti ti-alert-circle text-danger"
-                              : refClipboard.wasCopied()
-                                ? "ti ti-check"
-                                : "ti ti-copy"
-                          }
-                          aria-hidden="true"
-                        />
-                      </IconButton>
-                    </Tooltip.Anchor>
-                  }
                   actions={close}
                   primaryActions={
                     <>
-                      <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onOpen(item())}>
+                      <Button
+                        size="sm"
+                        variant="subtle"
+                        class="filesv2-details-main"
+                        disabled={props.busy}
+                        onClick={() => props.onOpen(item())}
+                      >
                         <i
                           class={item().directory ? "ti ti-folder-open" : props.editable?.(item()) ? "ti ti-pencil" : "ti ti-eye"}
                           aria-hidden="true"
@@ -219,7 +242,7 @@ export default function FileInspector(props: {
                         {item().directory
                           ? t().open
                           : props.editable?.(item())
-                            ? props.canEdit === false || item().actions?.write === false
+                            ? props.canEdit === false || readOnly(item())
                               ? t().openReadOnly
                               : t().edit
                             : t().preview}
@@ -228,10 +251,16 @@ export default function FileInspector(props: {
                         <i class="ti ti-download" aria-hidden="true" />
                         {f().download}
                       </Button>
+                      <Show when={props.onShare && item().actions?.share !== false}>
+                        <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onShare?.(item())}>
+                          <i class="ti ti-share" aria-hidden="true" />
+                          {t().share}
+                        </Button>
+                      </Show>
                       <Tooltip.Anchor content={favorite(item()) ? t().removeFavorite : t().addFavorite}>
                         <IconButton
                           size="sm"
-                          variant="secondary"
+                          variant="ghost"
                           class="filesv2-favorite"
                           data-favorite={favorite(item()) ? "true" : undefined}
                           label={favorite(item()) ? t().removeFavorite : t().addFavorite}
@@ -245,54 +274,55 @@ export default function FileInspector(props: {
                           </Show>
                         </IconButton>
                       </Tooltip.Anchor>
+                      <Dropdown.Root items={headerMenu(item())} align="end" label={t().moreActions}>
+                        <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={t().moreActions}>
+                          <i class="ti ti-dots" aria-hidden="true" />
+                        </Dropdown.Trigger>
+                      </Dropdown.Root>
                     </>
                   }
                 />
                 <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
                   <Show when={!item().directory && previewKind(item())}>
-                    <DetailPanel.Group label={t().preview}>
-                      <DetailPanel.Section
-                        title={t().preview}
-                        icon="ti ti-eye"
-                        tone="neutral"
-                        actions={
-                          <IconButton size="sm" variant="ghost" label={t().expand} onClick={() => expand(item())}>
-                            <i class="ti ti-arrows-maximize" aria-hidden="true" />
-                          </IconButton>
+                    <DetailPanel.Section
+                      title={t().preview}
+                      actions={
+                        <IconButton size="sm" variant="ghost" label={t().expand} onClick={() => expand(item())}>
+                          <i class="ti ti-arrows-maximize" aria-hidden="true" />
+                        </IconButton>
+                      }
+                    >
+                      <Show
+                        keyed
+                        when={
+                          previewKind(item()) === "image"
+                            ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])
+                            : null
+                        }
+                        fallback={
+                          <Show keyed when={revision(item())}>
+                            {(key) => (
+                              <FilePreview
+                                variant="plain"
+                                previewLines={5}
+                                onExpandPreview={() => void expand(item())}
+                                baseId={props.base.id}
+                                locationKey={props.base.locationKey}
+                                entry={item()}
+                                onDownload={() => props.onDownload([item()])}
+                                onNotPdf={() => setNotPdf(key)}
+                              />
+                            )}
+                          </Show>
                         }
                       >
-                        <Show
-                          keyed
-                          when={
-                            previewKind(item()) === "image"
-                              ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])
-                              : null
-                          }
-                          fallback={
-                            <Show keyed when={revision(item())}>
-                              {(key) => (
-                                <FilePreview
-                                  variant="plain"
-                                  previewLines={5}
-                                  onExpandPreview={() => void expand(item())}
-                                  baseId={props.base.id}
-                                  locationKey={props.base.locationKey}
-                                  entry={item()}
-                                  onDownload={() => props.onDownload([item()])}
-                                  onNotPdf={() => setNotPdf(key)}
-                                />
-                              )}
-                            </Show>
-                          }
-                        >
-                          <button type="button" class="filesv2-hero" onClick={() => expand(item())} aria-label={t().expand}>
-                            <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
-                          </button>
-                        </Show>
-                      </DetailPanel.Section>
-                    </DetailPanel.Group>
+                        <button type="button" class="filesv2-hero" onClick={() => expand(item())} aria-label={t().expand}>
+                          <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
+                        </button>
+                      </Show>
+                    </DetailPanel.Section>
                   </Show>
-                  <DetailPanel.Summary title={t().info}>
+                  <DetailPanel.Section title={t().properties}>
                     <DescriptionList
                       layout="rows"
                       size="sm"
@@ -305,50 +335,82 @@ export default function FileInspector(props: {
                             </span>
                           ),
                         },
-                        { term: t().kind, description: kindLabel(item()) },
-                        { term: f().modified, description: <Format.DateTime value={item().modified} /> },
-                        ...(!item().directory ? [{ term: f().size, description: <Format.Bytes value={item().size} /> }] : []),
                         { term: t().storageArea, description: props.base.area === "cloud" ? t().cloudArea : t().freeipaArea },
                       ]}
                     />
-                  </DetailPanel.Summary>
-                  <DetailPanel.Group label={t().actions}>
-                    <DetailPanel.Section title={t().actions} icon="ti ti-bolt" tone="neutral">
-                      <div class="flex flex-col gap-1">
-                        <Show when={!item().directory && notPdf() !== revision(item())}>
-                          {actionRow(t().openInTab, "ti ti-external-link", () => void openInTab(item()))}
-                        </Show>
-                        {actionRow(t().rename, "ti ti-pencil", () => props.onRename(item()), { disabled: item().actions?.move === false })}
-                        {actionRow(t().duplicate, "ti ti-copy", () => props.onDuplicate(item()))}
-                        {actionRow(t().moveTo, "ti ti-arrow-move-right", () => props.onMove(item()), {
-                          disabled: item().actions?.move === false,
-                        })}
-                        {actionRow(t().copyTo, "ti ti-folder-symlink", () => props.onCopy(item()))}
-                        <Show when={props.onShare && item().actions?.share !== false}>
-                          {actionRow(t().shareSelection, "ti ti-world-share", () => props.onShare?.(item()))}
-                        </Show>
-                        <Show when={props.onShareInbox && item().directory && item().actions?.write !== false}>
-                          {actionRow(t().shareInbox, "ti ti-inbox", () => props.onShareInbox?.(item()))}
-                        </Show>
-                        {actionRow(t().trashSelection, "ti ti-trash", () => props.onTrash(item()), {
-                          danger: true,
-                          disabled: item().actions?.move === false,
-                        })}
-                      </div>
+                  </DetailPanel.Section>
+                  <Show
+                    when={item().directory}
+                    fallback={
+                      <VersionsSection base={props.base} entry={item()} busy={props.busy} onChanged={props.onChanged} locale={locale()} />
+                    }
+                  >
+                    <FolderContents
+                      base={props.base}
+                      folder={item()}
+                      busy={props.busy}
+                      onOpen={props.onOpen}
+                      onDownload={(file) => props.onDownload([file])}
+                    />
+                  </Show>
+                  <DetailPanel.Group title={item().directory ? t().moreAboutFolder : t().moreAboutFile}>
+                    <DetailPanel.Section title={t().technicalDetails} collapsible summary={t().technicalSummary}>
+                      <DescriptionList
+                        layout="rows"
+                        size="sm"
+                        items={[
+                          {
+                            term: t().kind,
+                            description: item().directory ? t().kindFolder : fileKindLabel({ name: item().name }, locale()),
+                          },
+                          ...(!item().directory ? [{ term: f().size, description: <Format.Bytes value={item().size} /> }] : []),
+                          { term: f().modified, description: <Format.DateTime value={item().modified} /> },
+                        ]}
+                      />
+                      <DetailPanel.Action
+                        type="button"
+                        title={copyLabel()}
+                        leading={
+                          <i
+                            class={
+                              refClipboard.error()
+                                ? "ti ti-alert-circle text-danger"
+                                : refClipboard.wasCopied()
+                                  ? "ti ti-check"
+                                  : "ti ti-copy"
+                            }
+                            aria-hidden="true"
+                          />
+                        }
+                        onClick={() => copyReference(item())}
+                      />
                     </DetailPanel.Section>
                   </DetailPanel.Group>
-                  <Show when={!item().directory}>
-                    <VersionsSection base={props.base} entry={item()} busy={props.busy} onChanged={props.onChanged} locale={locale()} />
-                  </Show>
                 </DetailPanel.Body>
               </>
             )}
           </Show>
         }
       >
-        <DetailPanel.Header icon="ti ti-stack" title={t().selected(props.paths.length)} actions={close} />
+        <DetailPanel.Header
+          kind={<span>{t().selection}</span>}
+          title={t().selected(props.paths.length)}
+          actions={close}
+          primaryActions={
+            <Button
+              size="sm"
+              variant="subtle"
+              class="filesv2-details-main"
+              disabled={props.busy}
+              onClick={() => props.onDownload(props.selected)}
+            >
+              <i class="ti ti-download" aria-hidden="true" />
+              {t().downloadZip}
+            </Button>
+          }
+        />
         <DetailPanel.Body>
-          <DetailPanel.Summary title={t().selection}>
+          <DetailPanel.Section title={t().properties}>
             <DescriptionList
               layout="rows"
               size="sm"
@@ -364,15 +426,100 @@ export default function FileInspector(props: {
               ]}
             />
             <Show when={props.selected.some((entry) => entry.directory)}>
-              <p class="text-sm text-dimmed">{t().unknownFolders}</p>
+              <p class="filesv2-details-none">{t().unknownFolders}</p>
             </Show>
-          </DetailPanel.Summary>
-          <DetailPanel.Section title={t().actions} icon="ti ti-bolt" tone="neutral">
-            <div class="flex flex-col gap-1">{actionRow(t().downloadZip, "ti ti-download", () => props.onDownload(props.selected))}</div>
           </DetailPanel.Section>
         </DetailPanel.Body>
       </Show>
     </DetailPanel>
+  );
+}
+
+const isImage = (entry: FileEntry) => previewKind(entry) === "image";
+
+/** The first page of a folder: files and subfolders as rows, then images as tiles; the folder itself shows the rest. */
+function FolderContents(props: {
+  base: BaseSummary;
+  folder: FileEntry;
+  busy?: boolean;
+  onOpen: (entry: FileEntry) => void;
+  onDownload: (entry: FileEntry) => void;
+}) {
+  const t = useBrowserMessages();
+  const locale = useLocale();
+  const key = () => JSON.stringify([props.base.id, props.base.locationKey, props.folder.path, props.folder.modified]);
+  const contents = query.create({
+    source: key,
+    load: async (source, { abortSignal }) => {
+      const response = await apiClient.bases[":baseId"].entries.$get(
+        { param: { baseId: props.base.id }, query: { path: props.folder.path } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) return apiFailure(response, t().contentsFailed);
+      const page = await response.json();
+      return { key: source, items: page.items, next: page.next };
+    },
+  });
+  const page = () => (contents.data()?.key === key() ? contents.data() : undefined);
+  // Short and full list keep one order: files and folders first, then images.
+  const rows = createMemo(() => {
+    const items = page()?.items ?? [];
+    return [...items.filter((entry) => !isImage(entry)), ...items.filter(isImage)];
+  });
+  const meta = (entry: FileEntry) =>
+    entry.directory ? t().kindFolder : `${fileKindLabel({ name: entry.name }, locale())} · ${formatFileViewSize(entry.size, locale())}`;
+  return (
+    <DetailPanel.Section title={t().contents} count={page() && !page()?.next && rows().length > 0 ? rows().length : undefined}>
+      <Show
+        when={!contents.error()}
+        fallback={
+          <Placeholder state="error" variant="compact" align="left" title={t().contentsFailed} onRetry={() => void contents.refresh()} />
+        }
+      >
+        <Show when={page()} fallback={<Placeholder state="loading" align="left" class="px-0 py-1" description={t().loadingDetails} />}>
+          <Show when={rows().length > 0} fallback={<p class="filesv2-details-none">{t().emptyTitle}</p>}>
+            <FileGrid
+              rows={rows()}
+              getRowId={(entry) => entry.path}
+              label={t().contents}
+              layout="list"
+              limit={5}
+              actionVisibility="progressive"
+              moreMeta={page()?.next ? t().moreInFolder : undefined}
+              groups={(all) => [
+                { id: "files", label: t().files, rows: all.filter((entry) => !isImage(entry)) },
+                { id: "images", label: t().filterImages, rows: all.filter(isImage), layout: "tiles" },
+              ]}
+              renderPreview={(entry) =>
+                isImage(entry) ? (
+                  <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={entry} large />
+                ) : (
+                  <FileTypeIcon name={entry.name} folder={entry.directory} />
+                )
+              }
+              renderLabel={(entry) => entry.name}
+              renderMeta={meta}
+              renderActions={(entry) => (
+                <Show when={!entry.directory}>
+                  <Tooltip.Anchor content={t().downloadNamed(entry.name)}>
+                    <IconButton
+                      size="sm"
+                      variant="ghost"
+                      label={t().downloadNamed(entry.name)}
+                      disabled={props.busy}
+                      onClick={() => props.onDownload(entry)}
+                    >
+                      <i class="ti ti-download" aria-hidden="true" />
+                    </IconButton>
+                  </Tooltip.Anchor>
+                </Show>
+              )}
+              onOpen={props.onOpen}
+            />
+          </Show>
+        </Show>
+      </Show>
+    </DetailPanel.Section>
   );
 }
 
@@ -477,28 +624,29 @@ function VersionsSection(props: {
     });
   const when = (iso: string) => new Date(iso).toLocaleString(props.locale, { dateStyle: "medium", timeStyle: "short" });
   return (
-    <DetailPanel.Group label={t().versions}>
-      <DetailPanel.Section
-        title={t().versions}
-        icon="ti ti-history"
-        tone="neutral"
-        count={props.base.versioningEnabled ? items().length : undefined}
-      >
-        <Show when={props.base.versioningEnabled} fallback={<p class="text-xs text-dimmed">{t().versionsUnavailable}</p>}>
+    <DetailPanel.Section title={t().versions} count={props.base.versioningEnabled && items().length > 0 ? items().length : undefined}>
+      <Show when={props.base.versioningEnabled} fallback={<p class="filesv2-details-none">{t().versionsUnavailable}</p>}>
+        <Show
+          when={!versions.error()}
+          fallback={
+            <Placeholder state="error" variant="compact" align="left" title={t().versionsFailed} onRetry={() => void versions.refresh()} />
+          }
+        >
           <Show
             when={!versions.loading() || items().length}
             fallback={<Placeholder state="loading" align="left" class="px-0 py-1" description={t().loadingDetails} />}
           >
-            <Show when={items().length} fallback={<p class="text-xs text-dimmed">{t().noVersions}</p>}>
-              <div class="flex flex-col gap-1">
+            <Show when={items().length} fallback={<p class="filesv2-details-none">{t().noVersions}</p>}>
+              <div class="flex flex-col">
                 <For each={items()}>
                   {(version) => (
                     <DetailPanel.Action
                       type="button"
                       title={t().versionLabel(when(version.created))}
-                      description={version.comment ? `${version.comment}${version.author ? ` · ${version.author}` : ""}` : undefined}
+                      description={[version.comment, version.author, formatFileViewSize(version.size, props.locale)]
+                        .filter(Boolean)
+                        .join(" · ")}
                       leading={<i class="ti ti-history" aria-hidden="true" />}
-                      trailing={<Format.Bytes value={version.size} />}
                       disabled={busy() || props.busy}
                       onClick={() => (props.entry.actions?.write === false ? void downloadVersion(version) : void comment(version))}
                       menuLabel={`${t().actions}: ${when(version.created)}`}
@@ -525,7 +673,7 @@ function VersionsSection(props: {
             </Show>
           </Show>
         </Show>
-      </DetailPanel.Section>
-    </DetailPanel.Group>
+      </Show>
+    </DetailPanel.Section>
   );
 }

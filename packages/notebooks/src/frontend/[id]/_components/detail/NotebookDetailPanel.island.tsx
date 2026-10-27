@@ -1,8 +1,9 @@
 import { CloudAvatar, cloudAvatarSource } from "@k2b/cloud/account/ui";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { SaveFilesButton } from "@k2b/cloud/browser/files";
 import type { NotebookPresenceParticipant } from "@k2b/cloud/contracts";
 import { navigateTo } from "@k2b/ssr/nav";
-import { type DateContext, dates, fileIcons, type Paginated } from "@k2b/stdlib";
+import { type DateContext, dates, type Paginated } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
@@ -10,11 +11,16 @@ import {
   AvatarStack,
   type AvatarStackPerson,
   Button,
-  ButtonLink,
   DetailPanel,
   Dropdown,
   type DropdownItem,
+  FileGrid,
+  FileTypeIcon,
+  fileKindLabel,
+  formatFileViewSize,
   IconButton,
+  IconButtonLink,
+  Placeholder,
   ProgressBar,
   prompts,
   Tooltip,
@@ -30,11 +36,11 @@ import type { NamedBlockSummary } from "../../../../lib/named-blocks";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { Backlink } from "../../../../service/links";
 import { describeNoteActivity } from "../../../activity-messages";
-import { openAttachment } from "../../../lib/attachment-preview";
+import { attachmentPreviewKind, openAttachment } from "../../../lib/attachment-preview";
+import { buildAttachmentContentUrl } from "../../../lib/editor/attachment-url";
 import { buildGraphUrl, buildVersionsUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import type { Attachment } from "../editor/attachments-client";
-import { formatBytes } from "../editor/attachments-client";
 import { CONNECT_SETTLE_MS } from "../editor/sync-state";
 import { setDetailPanelOpen } from "../settings/NotebookSettingsStore";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
@@ -139,6 +145,7 @@ const EDIT_ACTIONS = new Set(["note.edited", "note.restored", "note.created"]);
 const NEWEST_ACTIVITY = 4;
 const ACTIVITY_PAGE_SIZE = 10;
 const NO_AUTHORS: NoteAuthors = { createdBy: null, lastEditedBy: null };
+const isImage = (attachment: Attachment) => attachmentPreviewKind(attachment) === "image";
 const REFERENCE_ICONS: Partial<Record<NamedBlockSummary["type"], string>> = {
   table: "ti-table",
   list: "ti-list",
@@ -147,9 +154,9 @@ const REFERENCE_ICONS: Partial<Record<NamedBlockSummary["type"], string>> = {
 };
 
 /**
- * The note's side panel: one header with who changed the note and who is here, one action row, then the sections
- * in the order people need them (comments, tasks, contents, references, attachments, links, activity). Every
- * section uses the shared `DetailPanel` rhythm; `DetailPanel.Body` remains the only scroll owner.
+ * The note's side panel in the shared details outline: one header with who changed the note and who is here, one
+ * action row, then the sections in the order people need them (comments, tasks, contents, references, attachments,
+ * links), and the activity under "More about this note". `DetailPanel.Body` remains the only scroll owner.
  *
  * Event flow (all through window CustomEvents, see `events.ts`):
  *  - editor toolbar / readonly footer → DETAIL_PANEL_TOGGLE_EVENT → toggles open
@@ -283,9 +290,11 @@ export default function NotebookDetailPanel(props: Props) {
       return { source, attachments: ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])) };
     },
   });
+  // The short and the full list keep one order: files first, then images.
   const visibleAttachments = createMemo(() => {
     const loaded = attachmentMetadata.data();
-    return loaded?.source === attachmentSource() ? loaded.attachments : [];
+    const attachments = loaded?.source === attachmentSource() ? loaded.attachments : [];
+    return [...attachments.filter((attachment) => !isImage(attachment)), ...attachments.filter(isImage)];
   });
   const [participants, setParticipants] = createSignal<NotebookPresenceParticipant[]>([]);
   const [locations, setLocations] = createSignal<PresenceLocationsEventDetail>({});
@@ -635,6 +644,21 @@ export default function NotebookDetailPanel(props: Props) {
     );
   };
 
+  const attachmentHref = (attachment: Attachment) => buildAttachmentContentUrl(props.notebookId, attachment.id);
+
+  /** The closed activity's one line: its newest entry, the note's creation, or why new entries are missing. */
+  const activitySummary = () => {
+    if (noteActivity.error() && activityItems().length === 0) return t().activityLoadShort;
+    const newest = activityItems()[0];
+    if (newest)
+      return `${actorName(newest.actor)} ${describeNoteActivity(newest.action, { self: isSelf(newest.actor), locale: locale() })}`;
+    if (noteActivity.loading()) return undefined;
+    const creator = authors().createdBy;
+    return creator
+      ? `${actorName(creator)} ${describeNoteActivity("note.created", { self: isSelf(creator), locale: locale() })}`
+      : t().createdNote;
+  };
+
   // ── Pieces ────────────────────────────────────────────────────────────
 
   /** A relative time with its exact date on hover and keyboard focus. */
@@ -751,7 +775,7 @@ export default function NotebookDetailPanel(props: Props) {
       <DetailPanel class="notebook-detail-panel">
         <DetailPanel.Header
           class="notebook-detail-panel-header"
-          icon={`ti ${lockedAt() ? "ti-lock" : "ti-file-text"}`}
+          kind={<span>{t().noteKind}</span>}
           title={noteTitle() || t().untitled}
           subtitle={metaLine()}
           meta={
@@ -761,16 +785,9 @@ export default function NotebookDetailPanel(props: Props) {
             </Show>
           }
           actions={
-            <>
-              <Dropdown.Root items={moreItems()} align="end" label={t().moreActions} phone="sheet">
-                <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={t().moreActions}>
-                  <i class="ti ti-dots" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-              <IconButton label={t().closeNoteDetails} tooltip={t().closeDetails} size="sm" variant="ghost" onClick={closePanel}>
-                <i class="ti ti-x" aria-hidden="true" />
-              </IconButton>
-            </>
+            <IconButton label={t().closeNoteDetails} tooltip={t().closeDetails} size="sm" variant="ghost" onClick={closePanel}>
+              <i class="ti ti-x" aria-hidden="true" />
+            </IconButton>
           }
           primaryActions={
             <div class="notebook-detail-primary">
@@ -808,6 +825,11 @@ export default function NotebookDetailPanel(props: Props) {
                   onToggleRich={toggleRichMode}
                   fullWidth={props.fullWidth}
                 />
+                <Dropdown.Root items={moreItems()} align="end" label={t().moreActions} phone="sheet">
+                  <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={t().moreActions}>
+                    <i class="ti ti-dots" aria-hidden="true" />
+                  </Dropdown.Trigger>
+                </Dropdown.Root>
               </nav>
               {/* Only a connection that will come back promises to resend; an ended session shows the editor's
                   own recovery bar instead, which this band must not contradict. */}
@@ -841,7 +863,6 @@ export default function NotebookDetailPanel(props: Props) {
           <Show when={tasks().total > 0}>
             <DetailPanel.Section
               title={t().tasks}
-              icon="ti ti-list-check"
               class="notebook-tasks"
               meta={t().tasksDone({ done: tasks().done, total: tasks().total })}
             >
@@ -850,7 +871,7 @@ export default function NotebookDetailPanel(props: Props) {
           </Show>
 
           <Show when={outline().length >= 2}>
-            <DetailPanel.Section title={t().contents} icon="ti ti-list" count={outline().length} collapsible defaultOpen>
+            <DetailPanel.Section title={t().contents} count={outline().length} collapsible defaultOpen>
               <div class="notebook-panel-rows">
                 <For each={outline()}>
                   {(item) => (
@@ -869,7 +890,7 @@ export default function NotebookDetailPanel(props: Props) {
           </Show>
 
           <Show when={namedBlocks().length > 0}>
-            <DetailPanel.Section title={t().references} icon="ti ti-at" count={namedBlocks().length} collapsible defaultOpen>
+            <DetailPanel.Section title={t().references} count={namedBlocks().length} collapsible defaultOpen>
               <div class="notebook-panel-rows">
                 <For each={namedBlocks()}>
                   {(block) => (
@@ -887,39 +908,69 @@ export default function NotebookDetailPanel(props: Props) {
           </Show>
 
           <Show when={visibleAttachments().length > 0 || attachmentMetadata.error()}>
-            <DetailPanel.Section title={t().attachments} icon="ti ti-paperclip" count={visibleAttachments().length} collapsible defaultOpen>
-              <div class="notebook-panel-rows">
-                <Show when={attachmentMetadata.error()}>
-                  <DetailPanel.Action
-                    type="button"
-                    onClick={() => void attachmentMetadata.refresh()}
-                    leading={<i class="ti ti-refresh" aria-hidden="true" />}
-                    title={t().retryAttachments}
-                    description={t().attachmentsLoadDescription}
+            <DetailPanel.Section title={t().attachments} count={visibleAttachments().length > 0 ? visibleAttachments().length : undefined}>
+              <Show
+                when={!attachmentMetadata.error()}
+                fallback={
+                  <Placeholder
+                    state="error"
+                    variant="compact"
+                    align="left"
+                    title={t().attachmentsLoadDescription}
+                    onRetry={() => void attachmentMetadata.refresh()}
                   />
-                </Show>
-                <For each={visibleAttachments()}>
-                  {(att) => (
-                    <DetailPanel.Action
-                      type="button"
-                      onClick={() => openAttachment(props.notebookId, att)}
-                      leading={
-                        <i
-                          class={`ti ${fileIcons.getFileIcon({ name: att.filename, type: "file", mimeType: att.mimeType })}`}
-                          aria-hidden="true"
-                        />
-                      }
-                      title={att.filename}
-                      trailing={formatBytes(att.sizeBytes)}
-                    />
+                }
+              >
+                <FileGrid
+                  rows={visibleAttachments()}
+                  getRowId={(attachment) => attachment.id}
+                  label={t().attachments}
+                  layout="list"
+                  limit={5}
+                  actionVisibility="progressive"
+                  groups={(rows) => [
+                    { id: "files", label: t().attachmentFiles, rows: rows.filter((attachment) => !isImage(attachment)) },
+                    { id: "images", label: t().attachmentImages, rows: rows.filter(isImage), layout: "tiles" },
+                  ]}
+                  renderPreview={(attachment) =>
+                    isImage(attachment) ? (
+                      <img src={attachmentHref(attachment)} alt="" loading="lazy" decoding="async" />
+                    ) : (
+                      <FileTypeIcon name={attachment.filename} mediaType={attachment.mimeType} />
+                    )
+                  }
+                  renderLabel={(attachment) => attachment.filename}
+                  renderMeta={(attachment) =>
+                    `${fileKindLabel({ name: attachment.filename, mediaType: attachment.mimeType }, locale())} · ${formatFileViewSize(attachment.sizeBytes, locale())}`
+                  }
+                  renderActions={(attachment) => (
+                    <>
+                      <Tooltip.Anchor content={t().downloadNamedAttachment({ filename: attachment.filename })}>
+                        <IconButtonLink
+                          size="sm"
+                          variant="ghost"
+                          href={attachmentHref(attachment)}
+                          download={attachment.filename}
+                          label={t().downloadNamedAttachment({ filename: attachment.filename })}
+                        >
+                          <i class="ti ti-download" aria-hidden="true" />
+                        </IconButtonLink>
+                      </Tooltip.Anchor>
+                      <SaveFilesButton
+                        size="sm"
+                        variant="ghost"
+                        files={() => [{ name: attachment.filename, content: attachmentHref(attachment) }]}
+                      />
+                    </>
                   )}
-                </For>
-              </div>
+                  onOpen={(attachment) => openAttachment(props.notebookId, attachment)}
+                />
+              </Show>
             </DetailPanel.Section>
           </Show>
 
           <Show when={backlinks().length > 0}>
-            <DetailPanel.Section title={t().linkedBy} icon="ti ti-link" count={backlinks().length} collapsible defaultOpen>
+            <DetailPanel.Section title={t().linkedBy} count={backlinks().length} collapsible defaultOpen>
               <div class="notebook-panel-rows">
                 <For each={backlinks()}>
                   {(bl) => (
@@ -936,105 +987,99 @@ export default function NotebookDetailPanel(props: Props) {
           </Show>
 
           {/* The log has no count: it is a stream, not a finite set. It loads after the first paint and is the last
-              section, so nothing above it moves when it arrives. */}
-          <DetailPanel.Section
-            title={t().activity}
-            icon="ti ti-activity"
-            class="notebook-activity"
-            actions={
-              <ButtonLink variant="ghost" size="xs" href={buildVersionsUrl(props.notebookId, noteId())}>
-                <i class="ti ti-history" aria-hidden="true" /> {t().versions}
-              </ButtonLink>
-            }
-          >
-            <div class="notebook-panel-rows" aria-busy={noteActivity.loading() ? "true" : undefined}>
-              <Show when={noteActivity.loading() && activityItems().length === 0 && !noteActivity.error()}>
-                <For each={[0, 1, 2, 3]}>
-                  {(index) => (
-                    <div class="notebook-activity-skeleton" aria-hidden="true" data-index={index}>
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                  )}
-                </For>
-                <span class="sr-only" role="status">
-                  {t().loadingActivity}
-                </span>
-              </Show>
-              <Show when={noteActivity.error() && activityItems().length === 0}>
-                <div class="notebook-activity-error" role="alert">
-                  <i class="ti ti-alert-circle" aria-hidden="true" />
-                  <span>{t().activityLoadShort}</span>
-                  <Button variant="text" size="xs" onClick={() => void noteActivity.refresh()}>
-                    {t().retry}
-                  </Button>
-                </div>
-              </Show>
-              <For each={visibleActivity()}>{(item) => <ActivityRow item={item} />}</For>
-              {/* An older page that failed keeps the loaded rows and says so where "Load older" was. */}
-              <Show when={noteActivity.error() && activityItems().length > 0}>
-                <div class="notebook-activity-error" role="alert">
-                  <i class="ti ti-alert-circle" aria-hidden="true" />
-                  <span>{t().activityLoadShort}</span>
-                  <Button
-                    variant="text"
-                    size="xs"
-                    onClick={() => void (activityRead === "older" ? noteActivity.loadMore() : noteActivity.refresh())}
-                  >
-                    {t().retry}
-                  </Button>
-                </div>
-              </Show>
-              {/* Older pages stay reachable even when the loaded rows all fit, for example after a sparse page. */}
-              <Show when={!noteActivity.error() && noteActivity.hasMore() && (activityExpanded() || hiddenActivity() === 0)}>
-                <DetailPanel.Action
-                  type="button"
-                  leading={<i class={`ti ${noteActivity.loadingMore() ? "ti-loader-2 k2b-spin" : "ti-dots"}`} aria-hidden="true" />}
-                  title={t().loadOlder}
-                  disabled={noteActivity.loadingMore()}
-                  onClick={() => {
-                    // Loaded older rows should show, so a collapsed list opens first.
-                    setActivityExpanded(true);
-                    activityRead = "older";
-                    void noteActivity.loadMore();
-                  }}
-                />
-              </Show>
-              <Show when={activityExpanded() || hiddenActivity() > 0}>
-                <DetailPanel.Action
-                  type="button"
-                  aria-expanded={activityExpanded()}
-                  leading={<i class={`ti ${activityExpanded() ? "ti-chevron-up" : "ti-chevron-down"}`} aria-hidden="true" />}
-                  title={activityExpanded() ? t().showLess : t().showMore({ count: hiddenActivity() })}
-                  onClick={() => setActivityExpanded(!activityExpanded())}
-                />
-              </Show>
-              {/* Always last, from the note itself, so a note from before the log still shows when it began. */}
-              <Tooltip.Anchor content={exact(createdAt())} class="notebook-activity-row">
-                <DetailPanel.Action
-                  href={buildVersionsUrl(props.notebookId, noteId())}
-                  leading={
-                    <Show when={authors().createdBy} fallback={<i class="ti ti-file-plus" aria-hidden="true" />}>
-                      {(creator) => <ActorAvatar actor={creator()} />}
-                    </Show>
-                  }
-                  wrap
-                  title={
-                    <Show when={authors().createdBy} fallback={t().createdNote}>
-                      {(creator) => (
-                        <>
-                          <strong class="notebook-activity-name">{actorName(creator())}</strong>{" "}
-                          {describeNoteActivity("note.created", { self: isSelf(creator()), locale: locale() })}
-                        </>
-                      )}
-                    </Show>
-                  }
-                  trailing={<Time value={createdAt()} />}
-                />
-              </Tooltip.Anchor>
-            </div>
-          </DetailPanel.Section>
+              section, so nothing above it moves when it arrives. Closed, its one line names the newest entry; the
+              version history stays in "More actions". */}
+          <DetailPanel.Group title={t().moreAboutNote}>
+            <DetailPanel.Section title={t().activity} class="notebook-activity" collapsible summary={activitySummary()}>
+              <div class="notebook-panel-rows" aria-busy={noteActivity.loading() ? "true" : undefined}>
+                <Show when={noteActivity.loading() && activityItems().length === 0 && !noteActivity.error()}>
+                  <For each={[0, 1, 2, 3]}>
+                    {(index) => (
+                      <div class="notebook-activity-skeleton" aria-hidden="true" data-index={index}>
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                    )}
+                  </For>
+                  <span class="sr-only" role="status">
+                    {t().loadingActivity}
+                  </span>
+                </Show>
+                <Show when={noteActivity.error() && activityItems().length === 0}>
+                  <div class="notebook-activity-error" role="alert">
+                    <i class="ti ti-alert-circle" aria-hidden="true" />
+                    <span>{t().activityLoadShort}</span>
+                    <Button variant="text" size="xs" onClick={() => void noteActivity.refresh()}>
+                      {t().retry}
+                    </Button>
+                  </div>
+                </Show>
+                <For each={visibleActivity()}>{(item) => <ActivityRow item={item} />}</For>
+                {/* An older page that failed keeps the loaded rows and says so where "Load older" was. */}
+                <Show when={noteActivity.error() && activityItems().length > 0}>
+                  <div class="notebook-activity-error" role="alert">
+                    <i class="ti ti-alert-circle" aria-hidden="true" />
+                    <span>{t().activityLoadShort}</span>
+                    <Button
+                      variant="text"
+                      size="xs"
+                      onClick={() => void (activityRead === "older" ? noteActivity.loadMore() : noteActivity.refresh())}
+                    >
+                      {t().retry}
+                    </Button>
+                  </div>
+                </Show>
+                {/* Older pages stay reachable even when the loaded rows all fit, for example after a sparse page. */}
+                <Show when={!noteActivity.error() && noteActivity.hasMore() && (activityExpanded() || hiddenActivity() === 0)}>
+                  <DetailPanel.Action
+                    type="button"
+                    leading={<i class={`ti ${noteActivity.loadingMore() ? "ti-loader-2 k2b-spin" : "ti-dots"}`} aria-hidden="true" />}
+                    title={t().loadOlder}
+                    disabled={noteActivity.loadingMore()}
+                    onClick={() => {
+                      // Loaded older rows should show, so a collapsed list opens first.
+                      setActivityExpanded(true);
+                      activityRead = "older";
+                      void noteActivity.loadMore();
+                    }}
+                  />
+                </Show>
+                <Show when={activityExpanded() || hiddenActivity() > 0}>
+                  <DetailPanel.Action
+                    type="button"
+                    aria-expanded={activityExpanded()}
+                    leading={<i class={`ti ${activityExpanded() ? "ti-chevron-up" : "ti-chevron-down"}`} aria-hidden="true" />}
+                    title={activityExpanded() ? t().showLess : t().showMore({ count: hiddenActivity() })}
+                    onClick={() => setActivityExpanded(!activityExpanded())}
+                  />
+                </Show>
+                {/* Always last, from the note itself, so a note from before the log still shows when it began. */}
+                <Tooltip.Anchor content={exact(createdAt())} class="notebook-activity-row">
+                  <DetailPanel.Action
+                    href={buildVersionsUrl(props.notebookId, noteId())}
+                    leading={
+                      <Show when={authors().createdBy} fallback={<i class="ti ti-file-plus" aria-hidden="true" />}>
+                        {(creator) => <ActorAvatar actor={creator()} />}
+                      </Show>
+                    }
+                    wrap
+                    title={
+                      <Show when={authors().createdBy} fallback={t().createdNote}>
+                        {(creator) => (
+                          <>
+                            <strong class="notebook-activity-name">{actorName(creator())}</strong>{" "}
+                            {describeNoteActivity("note.created", { self: isSelf(creator()), locale: locale() })}
+                          </>
+                        )}
+                      </Show>
+                    }
+                    trailing={<Time value={createdAt()} />}
+                  />
+                </Tooltip.Anchor>
+              </div>
+            </DetailPanel.Section>
+          </DetailPanel.Group>
         </DetailPanel.Body>
       </DetailPanel>
     </AppWorkspace.Detail>

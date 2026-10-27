@@ -207,7 +207,6 @@ export default function ContactNotesSection(props: Props) {
     <Discussion
       ref={sectionRoot}
       label={t().comments}
-      icon="ti ti-message"
       count={notesPage().total}
       actions={
         props.canWrite && !composerOpen() ? (

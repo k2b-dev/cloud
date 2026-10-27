@@ -330,8 +330,9 @@ describe("Filesv2 interactions", () => {
         await Bun.sleep(0);
       }
     };
+    // The panel keeps rarer commands in its "More actions" menu.
     const openInTab = () =>
-      [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__action")].find((action) =>
+      [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((action) =>
         action.textContent?.includes("Open in new tab"),
       )!;
 
@@ -415,7 +416,7 @@ describe("Filesv2 interactions", () => {
       globalThis.fetch = originalFetch;
       dom.cleanup();
     };
-    const actions = () => [...dom.root.querySelectorAll(".k2b-detail-panel__action")].map((action) => action.textContent?.trim());
+    const actions = () => [...dom.root.querySelectorAll('[role="menuitem"]')].map((action) => action.textContent?.trim());
 
     [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find((row) => row.textContent?.includes(notPdf.name))!.click();
     await flush();

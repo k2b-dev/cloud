@@ -2,7 +2,6 @@ import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import type { Paginated } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import {
-  Avatar,
   Button,
   ButtonLink,
   DescriptionList,
@@ -19,7 +18,7 @@ import {
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactNote, ContactRef } from "../../service";
-import { resolveContactInitials, resolveContactName, safeWebsiteHref } from "../../shared";
+import { resolveContactName, safeWebsiteHref } from "../../shared";
 import { readErrorMessage } from "./api";
 import { createContactDetailActions } from "./ContactDetailPanel.actions";
 import ContactFavoriteButton from "./ContactFavoriteButton";
@@ -352,13 +351,47 @@ export default function ContactDetailPanel(props: Props) {
       {(selectedContact) => {
         const c = selectedContact;
         const hasReach = () => c().emails.length > 0 || c().phones.length > 0 || c().websites.length > 0;
-        const hasPrimaryActions = () => !!(c().emails[0] || c().phones[0] || actions.canEdit());
         const hasWork = () => !!(c().companyName || c().department || c().jobTitle || c().vatId);
         const hasFormalName = () => !!(c().label && (c().firstName || c().lastName));
         const hasPersonal = () => hasFormalName() || !!(c().birthday || c().salutation || c().pronouns || c().preferredLanguage);
         const hasOrgTree = () => c().parentContactId !== null || c().members.length > 0;
-        const hasContactInformation = () => hasReach() || c().addresses.length > 0;
-        const hasAdditionalDetails = () => c().bankAccounts.length > 0 || hasPersonal() || hasWork();
+        const hasMoreAbout = () => c().addresses.length > 0 || c().bankAccounts.length > 0 || hasPersonal() || hasWork();
+        // The one main action is the first way to reach the contact; the rest stay quiet beside it.
+        const mainAction = () => (c().emails[0] ? "email" : c().phones[0] ? "call" : "comment");
+        const actionVariant = (action: "email" | "call" | "comment") => (mainAction() === action ? "subtle" : "secondary");
+        const actionClass = (action: "email" | "call" | "comment") => (mainAction() === action ? "contacts-details-main" : undefined);
+        // Closed sections under "More about this contact" say in one line what they hold.
+        const terms = (entries: Array<[unknown, string]>) =>
+          entries
+            .filter(([value]) => Boolean(value))
+            .map(([, term]) => term)
+            .join(", ");
+        const addressSummary = () =>
+          c()
+            .addresses.map((address) => address.label || address.city || address.line1)
+            .filter(Boolean)
+            .join(" · ");
+        const bankSummary = () =>
+          c()
+            .bankAccounts.map((account) => account.label || account.bankName || account.accountHolderName)
+            .filter(Boolean)
+            .join(" · ");
+        const personalSummary = () =>
+          terms([
+            [hasFormalName() && c().firstName, t().firstName],
+            [hasFormalName() && c().lastName, t().lastName],
+            [c().birthday, t().birthday],
+            [c().salutation, t().salutation],
+            [c().pronouns, t().pronouns],
+            [c().preferredLanguage, t().language],
+          ]);
+        const workSummary = () =>
+          terms([
+            [c().companyName, t().company],
+            [c().department, t().department],
+            [c().jobTitle, t().jobTitle],
+            [c().vatId, t().vatId],
+          ]);
         const hasOrganization = () => !!(c().parent || hasOrgTree() || actions.canEdit());
         const keyDetailItems = () => [
           {
@@ -409,39 +442,43 @@ export default function ContactDetailPanel(props: Props) {
             fallback={
               <DetailPanel>
                 <DetailPanel.Header
-                  leading={<Avatar name={resolveContactName(c(), t().unnamedContact)} fallback={resolveContactInitials(c())} size="sm" />}
+                  kind={<span>{t().kindContact}</span>}
                   title={resolveContactName(c(), t().unnamedContact)}
                   subtitle={[c().jobTitle, c().companyName, props.bookNames[c().bookId]].filter(Boolean).join(" · ")}
                   primaryActions={
-                    hasPrimaryActions() ? (
-                      <nav aria-label={t().contactActions} class="flex flex-wrap gap-2">
-                        <Show when={c().emails[0]}>
-                          {(email) => (
-                            <ButtonLink href={`mailto:${email().email}`} variant="secondary" size="sm">
-                              <i class="ti ti-mail" aria-hidden="true" /> {t().email}
-                            </ButtonLink>
-                          )}
-                        </Show>
-                        <Show when={c().phones[0]}>
-                          {(phone) => (
-                            <ButtonLink href={`tel:${phone().phone}`} variant="secondary" size="sm">
-                              <i class="ti ti-phone" aria-hidden="true" /> {t().call}
-                            </ButtonLink>
-                          )}
-                        </Show>
-                        <Show when={actions.canEdit()}>
-                          <Button variant="secondary" size="sm" onClick={() => requestContactNoteComposer(c().id)}>
-                            <i class="ti ti-message" aria-hidden="true" /> {t().comment}
-                          </Button>
-                        </Show>
-                      </nav>
-                    ) : undefined
-                  }
-                  actions={
-                    <>
-                      <ContactFavoriteButton bookId={c().bookId} contactId={c().id} initialFavorite={selectedFavorite()} />
+                    <nav aria-label={t().contactActions} class="flex flex-wrap gap-2">
+                      <Show when={c().emails[0]}>
+                        {(email) => (
+                          <ButtonLink
+                            href={`mailto:${email().email}`}
+                            variant={actionVariant("email")}
+                            class={actionClass("email")}
+                            size="sm"
+                          >
+                            <i class="ti ti-mail" aria-hidden="true" /> {t().email}
+                          </ButtonLink>
+                        )}
+                      </Show>
+                      <Show when={c().phones[0]}>
+                        {(phone) => (
+                          <ButtonLink href={`tel:${phone().phone}`} variant={actionVariant("call")} class={actionClass("call")} size="sm">
+                            <i class="ti ti-phone" aria-hidden="true" /> {t().call}
+                          </ButtonLink>
+                        )}
+                      </Show>
+                      <Show when={actions.canEdit()}>
+                        <Button
+                          variant={actionVariant("comment")}
+                          class={actionClass("comment")}
+                          size="sm"
+                          onClick={() => requestContactNoteComposer(c().id)}
+                        >
+                          <i class="ti ti-message" aria-hidden="true" /> {t().comment}
+                        </Button>
+                      </Show>
                       <Dropdown.Root
-                        position="bottom-left"
+                        align="end"
+                        label={t().moreContactActions}
                         items={[
                           {
                             label: t().downloadVCard,
@@ -468,10 +505,21 @@ export default function ContactDetailPanel(props: Props) {
                             : []),
                         ]}
                       >
-                        <Dropdown.Trigger iconOnly label={t().moreContactActions} tooltip={t().moreContactActions}>
+                        <Dropdown.Trigger
+                          iconOnly
+                          size="sm"
+                          variant="ghost"
+                          label={t().moreContactActions}
+                          tooltip={t().moreContactActions}
+                        >
                           <i class="ti ti-dots" aria-hidden="true" />
                         </Dropdown.Trigger>
                       </Dropdown.Root>
+                    </nav>
+                  }
+                  actions={
+                    <>
+                      <ContactFavoriteButton bookId={c().bookId} contactId={c().id} initialFavorite={selectedFavorite()} />
                       {/* The workspace renders its detail on the server, so Escape and swipes reach this button. */}
                       <IconButton label={t().closeDetailPanel} data-workspace-detail-close onClick={() => clearSelectedContactInUrl()}>
                         <i class="ti ti-x" aria-hidden="true" />
@@ -481,8 +529,8 @@ export default function ContactDetailPanel(props: Props) {
                 />
 
                 <DetailPanel.Body scrollPreserveKey="contacts-detail">
-                  <DetailPanel.Summary
-                    title={t().overview}
+                  <DetailPanel.Section
+                    title={t().properties}
                     actions={
                       actions.canEdit() && !quickEditing() ? (
                         <Button variant="ghost" size="xs" onClick={() => setQuickEditing(true)}>
@@ -509,67 +557,173 @@ export default function ContactDetailPanel(props: Props) {
                         }}
                       />
                     </Show>
-                  </DetailPanel.Summary>
+                  </DetailPanel.Section>
 
-                  <Show when={hasContactInformation()}>
-                    <DetailPanel.Group label={t().contactInformation}>
-                      <Show when={hasReach()}>
-                        <DetailPanel.Section title={t().reach} icon="ti ti-at" tone="accent">
-                          <div class="flex flex-col gap-1">
-                            <For each={c().emails}>
-                              {(email) => (
+                  <Show when={hasReach()}>
+                    <DetailPanel.Section title={t().reach}>
+                      <div class="flex flex-col gap-1">
+                        <For each={c().emails}>
+                          {(email) => (
+                            <DetailPanel.Action
+                              href={`mailto:${email.email}`}
+                              leading={<i class="ti ti-mail" aria-hidden="true" />}
+                              title={<span class="break-all">{email.email}</span>}
+                              description={email.label ?? t().email}
+                            />
+                          )}
+                        </For>
+                        <For each={c().phones}>
+                          {(phone) => (
+                            <DetailPanel.Action
+                              href={`tel:${phone.phone}`}
+                              leading={<i class="ti ti-phone" aria-hidden="true" />}
+                              title={phone.phone}
+                              description={phone.label ?? t().phone}
+                            />
+                          )}
+                        </For>
+                        <For each={c().websites}>
+                          {(website) => (
+                            <Show
+                              when={safeWebsiteHref(website.url)}
+                              fallback={
+                                <div class="flex min-w-0 items-start gap-3 py-2 text-sm">
+                                  <i class="ti ti-world mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
+                                  <span class="min-w-0">
+                                    <span class="block break-all text-secondary">{website.url}</span>
+                                    <span class="block text-xs text-dimmed">{website.label ?? t().website}</span>
+                                  </span>
+                                </div>
+                              }
+                            >
+                              {(href) => (
                                 <DetailPanel.Action
-                                  href={`mailto:${email.email}`}
-                                  leading={<i class="ti ti-mail" aria-hidden="true" />}
-                                  title={<span class="break-all">{email.email}</span>}
-                                  description={email.label ?? t().email}
+                                  href={href()}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  leading={<i class="ti ti-world" aria-hidden="true" />}
+                                  title={<span class="break-all">{website.url}</span>}
+                                  description={website.label ?? t().website}
+                                  trailing={<i class="ti ti-external-link" aria-hidden="true" />}
                                 />
                               )}
-                            </For>
-                            <For each={c().phones}>
-                              {(phone) => (
-                                <DetailPanel.Action
-                                  href={`tel:${phone.phone}`}
-                                  leading={<i class="ti ti-phone" aria-hidden="true" />}
-                                  title={phone.phone}
-                                  description={phone.label ?? t().phone}
-                                />
-                              )}
-                            </For>
-                            <For each={c().websites}>
-                              {(website) => (
-                                <Show
-                                  when={safeWebsiteHref(website.url)}
-                                  fallback={
-                                    <div class="flex min-w-0 items-start gap-3 py-2 text-sm">
-                                      <i class="ti ti-world mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
-                                      <span class="min-w-0">
-                                        <span class="block break-all text-secondary">{website.url}</span>
-                                        <span class="block text-xs text-dimmed">{website.label ?? t().website}</span>
+                            </Show>
+                          )}
+                        </For>
+                      </div>
+                    </DetailPanel.Section>
+                  </Show>
+
+                  <Show when={hasOrganization()}>
+                    <DetailPanel.Section
+                      title={t().organization}
+                      actions={
+                        <>
+                          <Show when={hasOrgTree()}>
+                            <Button variant="ghost" size="xs" loading={actions.orgTreeLoading()} onClick={() => actions.openOrgTree(c())}>
+                              <i class="ti ti-hierarchy" aria-hidden="true" /> {t().tree}
+                            </Button>
+                          </Show>
+                          <Show when={actions.canEdit()}>
+                            <Button variant="ghost" size="xs" onClick={() => actions.openAddMemberDialog(c())}>
+                              <i class="ti ti-plus" aria-hidden="true" /> {t().addMember}
+                            </Button>
+                          </Show>
+                        </>
+                      }
+                    >
+                      {orgTreeFeedback}
+                      <div class="flex flex-col gap-1">
+                        <Show when={c().parent}>
+                          {(parent) => (
+                            <DetailPanel.Action
+                              type="button"
+                              onClick={() =>
+                                setSelectedContactInUrl({
+                                  contactId: parent().id,
+                                  bookId: c().bookId,
+                                  contact: null,
+                                })
+                              }
+                              leading={<i class="ti ti-arrow-up" aria-hidden="true" />}
+                              title={resolveContactName(parent(), t().unnamedContact)}
+                              description={t().parentContact}
+                              trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+                            />
+                          )}
+                        </Show>
+                        <Show when={c().members.length > 0}>
+                          <ul class="flex flex-col gap-1">
+                            <For each={c().members}>
+                              {(member) => (
+                                <li class="k2b-progressive-row flex items-center gap-1">
+                                  <DetailPanel.Action
+                                    type="button"
+                                    class="min-w-0 flex-1"
+                                    onClick={() =>
+                                      setSelectedContactInUrl({
+                                        contactId: member.id,
+                                        bookId: c().bookId,
+                                        contact: null,
+                                      })
+                                    }
+                                    leading={
+                                      <span
+                                        class="contact-avatar flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium"
+                                        aria-hidden="true"
+                                      >
+                                        {(resolveContactName(member as ContactRef, t().unnamedContact) || "?").charAt(0).toUpperCase()}
                                       </span>
-                                    </div>
-                                  }
-                                >
-                                  {(href) => (
-                                    <DetailPanel.Action
-                                      href={href()}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      leading={<i class="ti ti-world" aria-hidden="true" />}
-                                      title={<span class="break-all">{website.url}</span>}
-                                      description={website.label ?? t().website}
-                                      trailing={<i class="ti ti-external-link" aria-hidden="true" />}
-                                    />
-                                  )}
-                                </Show>
+                                    }
+                                    title={resolveContactName(member as ContactRef, t().unnamedContact)}
+                                    description={[member.companyName, member.jobTitle].filter(Boolean).join(" · ") || undefined}
+                                    trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+                                  />
+                                  <Show when={actions.canEdit()}>
+                                    <Tooltip.Anchor content={t().removeFromMembers}>
+                                      <IconButton
+                                        variant="ghost"
+                                        size="xs"
+                                        onClick={() => actions.unlinkMember(member, c())}
+                                        class="k2b-progressive-action shrink-0 text-dimmed hover:text-red-500"
+                                        label={t().removeMemberLabel({
+                                          name: resolveContactName(member as ContactRef, t().unnamedContact),
+                                        })}
+                                      >
+                                        <i class="ti ti-unlink" aria-hidden="true" />
+                                      </IconButton>
+                                    </Tooltip.Anchor>
+                                  </Show>
+                                </li>
                               )}
                             </For>
-                          </div>
-                        </DetailPanel.Section>
-                      </Show>
+                          </ul>
+                        </Show>
+                        <Show when={!c().parent && c().members.length === 0}>
+                          <p class="py-1 text-sm text-dimmed">{t().noHierarchyYet}</p>
+                        </Show>
+                      </div>
+                    </DetailPanel.Section>
+                  </Show>
 
+                  <Show when={`${c().bookId}:${c().id}`} keyed>
+                    {(_contactKey) => (
+                      <ContactNotesSection
+                        bookId={c().bookId}
+                        contactId={c().id}
+                        currentUserId={props.currentUserId}
+                        initialNotesPage={
+                          c().id === props.initialContactId && c().bookId === props.initialBookId ? props.initialNotesPage : undefined
+                        }
+                        canWrite={actions.canEdit()}
+                      />
+                    )}
+                  </Show>
+
+                  <Show when={hasMoreAbout()}>
+                    <DetailPanel.Group title={t().moreAboutContact}>
                       <Show when={c().addresses.length > 0}>
-                        <DetailPanel.Section title={t().addresses} icon="ti ti-map-pin" tone="neutral" collapsible>
+                        <DetailPanel.Section title={t().addresses} collapsible summary={addressSummary()}>
                           <div class="flex flex-col gap-3">
                             <For each={c().addresses}>
                               {(address) => (
@@ -587,13 +741,8 @@ export default function ContactDetailPanel(props: Props) {
                           </div>
                         </DetailPanel.Section>
                       </Show>
-                    </DetailPanel.Group>
-                  </Show>
-
-                  <Show when={hasAdditionalDetails()}>
-                    <DetailPanel.Group label={t().additionalDetails}>
                       <Show when={c().bankAccounts.length > 0}>
-                        <DetailPanel.Section title={t().bankDetails} icon="ti ti-building-bank" tone="neutral" collapsible>
+                        <DetailPanel.Section title={t().bankDetails} collapsible summary={bankSummary()}>
                           <div class="flex flex-col gap-3">
                             <For each={c().bankAccounts}>
                               {(account) => (
@@ -622,7 +771,7 @@ export default function ContactDetailPanel(props: Props) {
                       </Show>
 
                       <Show when={hasPersonal()}>
-                        <DetailPanel.Section title={t().personal} icon="ti ti-user" tone="neutral" collapsible defaultOpen>
+                        <DetailPanel.Section title={t().personal} collapsible summary={personalSummary()}>
                           <DescriptionList
                             layout="rows"
                             size="sm"
@@ -646,7 +795,7 @@ export default function ContactDetailPanel(props: Props) {
                       </Show>
 
                       <Show when={hasWork()}>
-                        <DetailPanel.Section title={t().work} icon="ti ti-briefcase" tone="accent" collapsible defaultOpen>
+                        <DetailPanel.Section title={t().work} collapsible summary={workSummary()}>
                           <DescriptionList
                             layout="rows"
                             size="sm"
@@ -667,116 +816,6 @@ export default function ContactDetailPanel(props: Props) {
                         </DetailPanel.Section>
                       </Show>
                     </DetailPanel.Group>
-                  </Show>
-
-                  <Show when={hasOrganization()}>
-                    <DetailPanel.Group label={t().organizationContext}>
-                      <DetailPanel.Section
-                        title={t().organization}
-                        icon="ti ti-hierarchy"
-                        tone="accent"
-                        actions={
-                          <>
-                            <Show when={hasOrgTree()}>
-                              <Button variant="ghost" size="xs" loading={actions.orgTreeLoading()} onClick={() => actions.openOrgTree(c())}>
-                                <i class="ti ti-hierarchy" aria-hidden="true" /> {t().tree}
-                              </Button>
-                            </Show>
-                            <Show when={actions.canEdit()}>
-                              <Button variant="ghost" size="xs" onClick={() => actions.openAddMemberDialog(c())}>
-                                <i class="ti ti-plus" aria-hidden="true" /> {t().addMember}
-                              </Button>
-                            </Show>
-                          </>
-                        }
-                      >
-                        {orgTreeFeedback}
-                        <div class="flex flex-col gap-1">
-                          <Show when={c().parent}>
-                            {(parent) => (
-                              <DetailPanel.Action
-                                type="button"
-                                onClick={() =>
-                                  setSelectedContactInUrl({
-                                    contactId: parent().id,
-                                    bookId: c().bookId,
-                                    contact: null,
-                                  })
-                                }
-                                leading={<i class="ti ti-arrow-up" aria-hidden="true" />}
-                                title={resolveContactName(parent(), t().unnamedContact)}
-                                description={t().parentContact}
-                                trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-                              />
-                            )}
-                          </Show>
-                          <Show when={c().members.length > 0}>
-                            <ul class="flex flex-col gap-1">
-                              <For each={c().members}>
-                                {(member) => (
-                                  <li class="k2b-progressive-row flex items-center gap-1">
-                                    <DetailPanel.Action
-                                      type="button"
-                                      class="min-w-0 flex-1"
-                                      onClick={() =>
-                                        setSelectedContactInUrl({
-                                          contactId: member.id,
-                                          bookId: c().bookId,
-                                          contact: null,
-                                        })
-                                      }
-                                      leading={
-                                        <span
-                                          class="contact-avatar flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium"
-                                          aria-hidden="true"
-                                        >
-                                          {(resolveContactName(member as ContactRef, t().unnamedContact) || "?").charAt(0).toUpperCase()}
-                                        </span>
-                                      }
-                                      title={resolveContactName(member as ContactRef, t().unnamedContact)}
-                                      description={[member.companyName, member.jobTitle].filter(Boolean).join(" · ") || undefined}
-                                      trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-                                    />
-                                    <Show when={actions.canEdit()}>
-                                      <Tooltip.Anchor content={t().removeFromMembers}>
-                                        <IconButton
-                                          variant="ghost"
-                                          size="xs"
-                                          onClick={() => actions.unlinkMember(member, c())}
-                                          class="k2b-progressive-action shrink-0 text-dimmed hover:text-red-500"
-                                          label={t().removeMemberLabel({
-                                            name: resolveContactName(member as ContactRef, t().unnamedContact),
-                                          })}
-                                        >
-                                          <i class="ti ti-unlink" aria-hidden="true" />
-                                        </IconButton>
-                                      </Tooltip.Anchor>
-                                    </Show>
-                                  </li>
-                                )}
-                              </For>
-                            </ul>
-                          </Show>
-                          <Show when={!c().parent && c().members.length === 0}>
-                            <p class="py-1 text-sm text-dimmed">{t().noHierarchyYet}</p>
-                          </Show>
-                        </div>
-                      </DetailPanel.Section>
-                    </DetailPanel.Group>
-                  </Show>
-
-                  <Show when={`${c().bookId}:${c().id}`} keyed>
-                    {(_contactKey) => (
-                      <ContactNotesSection
-                        bookId={c().bookId}
-                        contactId={c().id}
-                        currentUserId={props.currentUserId}
-                        initialNotesPage={
-                          c().id === props.initialContactId && c().bookId === props.initialBookId ? props.initialNotesPage : undefined
-                        }
-                        canWrite={actions.canEdit()}
-                      />
-                    )}
                   </Show>
                 </DetailPanel.Body>
               </DetailPanel>
