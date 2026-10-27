@@ -288,6 +288,7 @@ const SidebarLevelsQuerySchema = z.object({
   sort: z.enum(["title", "updated", "created"]).default("title"),
   levels: z.string().max(2000).optional().describe("Comma-separated `<parent>:<offset>:<limit>` windows; an empty parent is the top level"),
   reveal: ResourceShortIdSchema.optional().describe("A note whose way down from the top level is returned as well"),
+  book: z.literal("1").optional().describe("Book's reading order: the start page leads the top level wherever it lives"),
 });
 
 const SidebarListQuerySchema = z.object({
@@ -567,16 +568,13 @@ const RouteStateQuerySchema = z.object({
   href: z.string().min(1).max(500),
 });
 
-const BookTreeSchema: z.ZodType<{ id: string; title: string; children: z.infer<typeof BookTreeSchema>[] }> = z
-  .lazy(() => z.object({ id: ResourceShortIdSchema, title: z.string(), children: z.array(BookTreeSchema) }))
-  .meta({ id: "BookTreeNode" });
 const BookSnapshotSchema = z.object({
   href: z.string(),
   html: z.string().nullable(),
   title: z.string().nullable(),
   notebookName: z.string(),
   selectedNoteId: ResourceShortIdSchema.nullable(),
-  tree: z.array(BookTreeSchema),
+  hasNotes: z.boolean().describe("Whether the notebook has any page; the navigation reads its levels from /tree/levels"),
   tags: z.array(TagSummarySchema),
   activeTag: z.string().optional(),
   canWrite: z.boolean(),
@@ -1482,6 +1480,7 @@ const app = new Hono<AuthContext>()
         sort: query.sort,
         locale: getLocale(c),
         homepageId: notebook!.homepageNoteId,
+        book: query.book === "1",
       };
       const known = requested.filter((match) => !match![1] || parents.has(match![1]));
       const [levels, revealed] = await Promise.all([

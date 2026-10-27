@@ -992,7 +992,18 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         label: action.label,
         variant: action.variant,
         disabled: action.disabled,
-        action: () => reportChatFailure(() => executeChatAction(action), props.onError),
+        action: () =>
+          reportChatFailure(async () => {
+            await executeChatAction(action);
+            // Like attaching files, an add action returns to the field when the focus is still on this composer's add
+            // button or nowhere; focus the action moved somewhere on purpose stays there.
+            queueMicrotask(() => {
+              const active = textareaRef?.ownerDocument.activeElement;
+              const root = textareaRef?.closest(".k2b-chat-composer");
+              if (!active || active === active.ownerDocument.body || (root?.contains(active) && active.matches("[data-chat-composer-add]")))
+                focus();
+            });
+          }, props.onError),
       });
     }
     return items;
@@ -1678,6 +1689,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       <Dropdown.Trigger
         appearance="plain"
         class={`k2b-chat-composer__icon-action${extraClass}`}
+        data-chat-composer-add=""
         label={chatMessages().addToChat}
         tooltip={chatMessages().addToChat}
       >

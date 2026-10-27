@@ -78,10 +78,40 @@ export const mockNoteTree = (source: FixtureNode[] | (() => FixtureNode[])) => {
     }),
     spyOn(notebooksService.note.sidebar, "firstNote").mockImplementation(async (scope) => level(null, scope)[0]?.shortId ?? null),
     spyOn(notebooksService.note.sidebar, "list").mockResolvedValue({ total: 0, offset: 0, items: [] }),
-    spyOn(treeLevels, "readTitleTree").mockImplementation(async () => {
-      const titles = (level: FixtureNode[]): treeLevels.TitleTreeNode[] =>
-        level.map((node) => ({ shortId: node.shortId, title: node.title, position: node.position, children: titles(node.children ?? []) }));
-      return titles(read().nodes);
+    // Book's reading order: the start page leads the top level wherever it lives.
+    spyOn(notebooksService.note.sidebar, "book").mockImplementation(async (scope) => {
+      const { all, shortIdOf } = read();
+      const order = { sort: "title" as const, locale: scope.locale, homepageId: scope.homepageId };
+      const home = all.find((node) => node.id === scope.homepageId);
+      const bookLevel = (parentId: string | null) => {
+        const entries = level(parentId, order).filter((entry) => entry.id !== scope.homepageId);
+        return parentId === null && home ? [{ ...entry(home), parentId: null }, ...entries] : entries;
+      };
+      const parents = [null, ...all.filter((node) => (node.children ?? []).length > 0).map((node) => node.id)];
+      const levels: SidebarLevel[] = parents.map((parentId) => {
+        const items = bookLevel(parentId);
+        return {
+          parentId: parentId ? (shortIdOf.get(parentId) ?? null) : null,
+          total: items.length,
+          offset: 0,
+          items: items.map((item) => ({
+            id: item.shortId,
+            parentId: item.parentId ? (shortIdOf.get(item.parentId) ?? null) : null,
+            title: item.title,
+            position: item.position,
+            hasChildren: item.hasChildren,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+            lockedAt: item.lockedAt,
+          })),
+        };
+      });
+      const selected = all.find((node) => node.id === scope.selectedNoteId);
+      const way: string[] = [];
+      for (let node = selected; node && node.id !== scope.homepageId; node = all.find((other) => other.id === node!.parentId))
+        if (node.parentId && node.parentId !== null) way.unshift(node.parentId);
+      const expanded = [...way, ...(selected && (selected.children ?? []).length > 0 ? [selected.id] : [])];
+      return { total: all.length, levels, expandedIds: expanded.map((id) => shortIdOf.get(id)!).filter(Boolean) };
     }),
     spyOn(treeLevels, "resolveNotebookNoteIds").mockImplementation(async (_notebookId, shortIds) => {
       const ids = new Map(read().all.map((node) => [node.shortId, node.id]));

@@ -1,5 +1,5 @@
 import type { RequestAuthority } from "../../server/middleware/auth";
-import type { InvocationAuthority } from "./invocation-token";
+import type { CloudInvocationClaims, InvocationAuthority } from "./invocation-token";
 
 export const invocationAuthorityFromRequest = (authority: RequestAuthority): InvocationAuthority => {
   if (authority.credentialKind === "invocation") {
@@ -52,3 +52,36 @@ export const invocationAuthorityFromRequest = (authority: RequestAuthority): Inv
     scopes: [...new Set(authority.scopes)].sort(),
   };
 };
+
+/** A principal or delegation change cannot turn an existing invocation into new authority. */
+export const matchesInvocationSubject = (parent: CloudInvocationClaims, current: RequestAuthority): boolean => {
+  const actor = current.actor;
+  const subject = current.accessSubject;
+  return (
+    (actor.kind === "user" ? actor.user.id : actor.serviceAccount.id) === parent.sub &&
+    actor.kind === parent.principal_type &&
+    subject.type === parent.access_subject_type &&
+    (subject.type === "user" ? subject.userId : subject.serviceAccountId) === parent.access_subject_id
+  );
+};
+
+/** Copy only authority fields, preserving every ceiling. Never relabel an invocation as a session. */
+export const authorityFromParentInvocation = (parent: CloudInvocationClaims): InvocationAuthority => ({
+  sub: parent.sub,
+  principal_type: parent.principal_type,
+  access_subject_type: parent.access_subject_type,
+  access_subject_id: parent.access_subject_id,
+  ...(parent.delegated_user_id ? { delegated_user_id: parent.delegated_user_id } : {}),
+  credential_kind: parent.credential_kind,
+  ...(parent.session_kind ? { session_kind: parent.session_kind } : {}),
+  ...(parent.credential_id ? { credential_id: parent.credential_id } : {}),
+  scopes: [...parent.scopes],
+  ...(parent.mandate_id
+    ? {
+        mandate_id: parent.mandate_id,
+        mandate_revision: parent.mandate_revision,
+        workload_type: parent.workload_type,
+        workload_id: parent.workload_id,
+      }
+    : {}),
+});

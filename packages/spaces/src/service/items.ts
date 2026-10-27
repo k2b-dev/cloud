@@ -29,6 +29,7 @@ import { CompletionInputSchema, type TaskWork } from "../work-contracts";
 import { buildSpacePrincipalCondition, mayReadAcrossSpaces, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
+import { assigneeChangeMetadata, itemChangeMetadata } from "./activity-metadata";
 import { publishDependentsChange } from "./item-dependencies";
 import { insertMany as insertItemResourceReferences } from "./item-resource-references";
 import { publishSpaceChange, spacesLive } from "./live";
@@ -1882,14 +1883,16 @@ export const update = async (params: {
       return { ok: false, error: "Estimated duration is only available for tasks", status: 400 };
     }
 
+    let columnName: string | undefined;
     let targetRank: bigint | null = null;
     if (changingColumn) {
-      const [newColumn] = await tx<{ space_id: string }[]>`
-        SELECT space_id FROM spaces.columns WHERE id = ${columnId}
+      const [newColumn] = await tx<{ space_id: string; name: string }[]>`
+        SELECT space_id, name FROM spaces.columns WHERE id = ${columnId}
       `;
       if (!newColumn || newColumn.space_id !== current.spaceId) {
         return { ok: false, error: "Column not found in space", status: 400 };
       }
+      columnName = newColumn.name;
       const [minRow] = await tx<{ min: string | null }[]>`
         SELECT MIN(rank)::text AS min FROM spaces.items WHERE column_id = ${columnId} AND id <> ${id}
       `;
@@ -1998,7 +2001,27 @@ export const update = async (params: {
         itemId: id,
         actor: params.actor ?? systemActor,
         action: startsAt && endsAt ? "event.updated" : "task.updated",
-        metadata: { itemTitle: title },
+        metadata: {
+          itemTitle: title,
+          ...itemChangeMetadata(current, {
+            columnId,
+            title,
+            description,
+            location,
+            url,
+            startsAt,
+            endsAt,
+            allDay,
+            deadline,
+            estimatedDurationMinutes,
+            priority,
+            recurrence,
+            recurringEventId,
+            recurrenceId,
+          }),
+          ...(changingColumn ? { columnId, columnName } : {}),
+          ...(nextAssignees ? { assignees: assigneeChangeMetadata(currentAssignees, nextAssignees) } : {}),
+        },
         bucketStartedAt: hourBucket(),
       },
       tx,
@@ -2357,8 +2380,8 @@ export const move = async (params: {
     `;
     if (!existing) return { ok: false, error: "Item not found", status: 404 };
     const [column] = await tx<
-      { space_id: string; is_done: boolean }[]
-    >`SELECT space_id, is_done FROM spaces.columns WHERE id = ${columnId}`;
+      { space_id: string; is_done: boolean; name: string }[]
+    >`SELECT space_id, is_done, name FROM spaces.columns WHERE id = ${columnId}`;
     if (!column || column.space_id !== existing.space_id) {
       return { ok: false, error: "Column not found in space", status: 400 };
     }
@@ -2422,7 +2445,7 @@ export const move = async (params: {
         spaceId: existing.space_id,
         itemId: id,
         actor: params.actor ?? systemActor,
-        metadata: { itemTitle: existing.title },
+        metadata: { itemTitle: existing.title, columnId, columnName: column.name },
         ...(completes
           ? { action: `${activityKind}.${completed ? "completed" : "reopened"}` }
           : { action: "item.moved", bucketStartedAt: hourBucket() }),
@@ -2625,7 +2648,7 @@ export const setAssignees = async (params: {
         itemId: id,
         actor: params.actor ?? systemActor,
         action: "item.assignees.updated",
-        metadata: { itemTitle: current.title },
+        metadata: { itemTitle: current.title, ...assigneeChangeMetadata(currentAssignees, nextAssignees) },
       },
       tx,
     );
@@ -2736,6 +2759,8 @@ export const listCalendar = async (
     /** Capability callers fail explicitly instead of returning an incomplete calendar. */
     sourceLimit?: number;
     sourceRootIds?: string[];
+    /** Cloud calendar source: intersect the caller selection inside the permission-aware query. */
+    sourceSpaceIds?: string[];
   },
 ): Promise<CalendarItem[]> => {
   const { from, to } = params;
@@ -2743,7 +2768,11 @@ export const listCalendar = async (
   const principalMatch = buildSpacePrincipalCondition(params.subject);
   const bindingMatch =
     params.subject.type === "service_account" && params.boundSpaceId ? sql`s.id = ${params.boundSpaceId}::uuid` : sql`true`;
-  const requestedSpaceMatch = params.spaceId ? sql`s.id = ${params.spaceId}::uuid` : sql`true`;
+  const requestedSpaceMatch = params.spaceId
+    ? sql`s.id = ${params.spaceId}::uuid`
+    : params.sourceSpaceIds
+      ? sql`s.id = ANY(${toPgUuidArray(params.sourceSpaceIds)}::uuid[])`
+      : sql`true`;
   const typeMatch = calendarTypeMatch(params.type);
   const priorityMatch = calendarPriorityMatch(params.priorities);
   const columnMatch = calendarColumnMatch(params.columnIds);

@@ -21,6 +21,8 @@ menu.
 
 ```tsx
 import {
+  MessageEventGroup,
+  MessageEventRow,
   MessageRow,
   MessageSystemRow,
   startsMessageGroup,
@@ -37,6 +39,8 @@ import {
   type MessageRowStatus,
   type MessageRowThread,
   type MessageSystemRowProps,
+  type MessageEventGroupProps,
+  type MessageEventRowProps,
 } from "@k2b/ui";
 ```
 
@@ -218,6 +222,8 @@ chip shows the names too. Build the label with `reactionPeople`, for example
 Each chip keeps its element for its `key`. A toggled chip keeps focus when the
 application passes a new list of new objects, as long as the message itself
 is updated in place (see [Update messages in place](#update-messages-in-place)).
+A removed chip that had focus hands it to the chip in its place or to "Add
+reaction".
 
 The bar has one fixed height. Chips never wrap; when there are more than fit,
 the chips scroll sideways, a fade at the edge shows that more follow, and
@@ -358,6 +364,22 @@ reader is there.
 `MessageSystemRow` takes the text as children, an optional `icon`, and an
 optional `time` with `dateTime`. It never belongs to a group; pass
 `system: true` to `startsMessageGroup` for it.
+
+### Event rows
+
+`MessageEventRow` is a quiet line for a change to something the conversation
+is about, such as "Mara set the status to “In review”". It takes the sentence
+as children, an `icon` for the kind of change, an optional `origin` chip where
+several threads mix, and `time` with `dateTime`. It has no bubble and no rule,
+starts where the messages' text starts, and keeps its time at the end; a long
+sentence ends in an ellipsis. An event is no message: do not count it as
+unread or use it as a preview, and pass `system: true` to `startsMessageGroup`
+for it.
+
+`MessageEventGroup` stands for several events in a row as one button with a
+`label` such as "4 changes to Invitation and Light test", an optional `time`
+range, and `expanded` with `onToggle`. Render the group's `MessageEventRow`s
+after it while it is open. Only its ink responds to hover.
 
 ## Accessibility
 

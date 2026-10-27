@@ -98,6 +98,14 @@ only, so icons and check marks are left out. Keep it to labels that fit the
 menu's width; longer choices belong in an ordinary section. Up and Down move
 through the row like through any items, and Left and Right cycle within it.
 
+A choice can carry a `secondary` action, `{ label, ariaLabel?, action }`, such
+as **Only** beside a calendar's checkbox. It sits at the end of the row, shows
+while the row is hovered or focused and always on a touch screen, and keeps
+its place while hidden, so the row never changes width. Right moves from the
+row to it and Left back; Up and Down skip it and move from row to row. A
+labelled section can carry a `labelAction` of the same shape, such as **All**,
+at the end of its label. Both keep the menu open.
+
 Set `variant: "danger"` only on destructive items.
 
 Menus deliberately do not accept arbitrary interactive content. Use a dialog
@@ -180,11 +188,14 @@ type DropdownAction =
 
 type DropdownChoice = DropdownActionBase & {
   action: () => void; checked: boolean | (() => boolean); choice: "checkbox" | "radio";
-  href?: string; closeOnSelect?: boolean; color?: string;
+  href?: string; closeOnSelect?: boolean; color?: string; secondary?: DropdownSecondaryAction;
 };
 
+type DropdownSecondaryAction = { label: string; ariaLabel?: string; action: () => void };
+
 type DropdownSection = {
-  sectionLabel?: string; layout?: "row"; items: readonly (DropdownAction | DropdownChoice)[];
+  sectionLabel?: string; layout?: "row"; labelAction?: DropdownSecondaryAction;
+  items: readonly (DropdownAction | DropdownChoice)[];
 };
 
 type DropdownItem = DropdownAction | DropdownChoice | DropdownSection;

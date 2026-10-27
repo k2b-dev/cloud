@@ -29,7 +29,7 @@ import NotebookSidebar from "../../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../../_components/sidebar/types";
 import WorkspaceEventBridge from "../../_components/sidebar/WorkspaceEventBridge.island";
 import { notebookWorkspaceMessages } from "../../messages";
-import { loadBookTree, loadSidebarWithoutNote, projectNotebook } from "../../page-data";
+import { EMPTY_NAVIGATION, loadBookNavigation, loadSidebarWithoutNote, projectNotebook } from "../../page-data";
 
 const PER_PAGE = 50;
 
@@ -96,8 +96,8 @@ export default ssr<AuthContext>(async (c) => {
   const publicNotebook = projectNotebook(notebook);
   const sidebarFilter = parseSidebarFilter(new URL(c.req.url).searchParams);
   // Book shows its reading order; the other modes show the bounded sidebar.
-  const [bookTree, sidebar] = await Promise.all([
-    isBookMode ? loadBookTree(notebook, locale) : Promise.resolve([]),
+  const [bookNavigation, sidebar] = await Promise.all([
+    isBookMode ? loadBookNavigation(notebook, null, locale) : Promise.resolve(EMPTY_NAVIGATION),
     loadSidebarWithoutNote({ notebook, userId: user.id, sort: settings.treeSort, locale, filter: sidebarFilter }),
   ]);
   const totalPages = Math.max(1, Math.ceil(paginatedResult.total / PER_PAGE));
@@ -147,7 +147,7 @@ export default ssr<AuthContext>(async (c) => {
           notebookName={notebook.name}
           notebookIcon={notebook.icon}
           selectedNoteId={null}
-          tree={bookTree}
+          navigation={bookNavigation}
           tags={tags}
           activeTag={tagParam}
           html={html}

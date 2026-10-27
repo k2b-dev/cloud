@@ -301,7 +301,7 @@ for (const [permission, query, shell, from] of [
     expect(data.isBookMode).toBe(false);
     expect(data.graphShell).toBe(shell);
     expect(data.graphFrom).toBe(from);
-    expect(data.bookTree).toHaveLength(shell === "book" ? 1 : 0);
+    expect(data.bookNavigation.total).toBe(shell === "book" ? 1 : 0);
     expect(data.ctx.presentationMode).toBe(from);
     expect(data.selectedNote).toMatchObject({ id: "note01", title: "Welcome", contentMd: null });
     expect(data.selectedNote).not.toHaveProperty("yjsSnapshot");

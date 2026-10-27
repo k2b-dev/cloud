@@ -37,3 +37,38 @@ export const sidebarNote = (node: FixtureTreeNode): SidebarNote => ({
   updatedAt: node.updatedAt ?? at,
   lockedAt: node.lockedAt ?? null,
 });
+
+/**
+ * Book's navigation on arrival for a whole fixture tree: every level loaded, and, as a page load unfolds them, the
+ * pages above the open page and the open page itself.
+ */
+export const bookNavigationState = (nodes: FixtureTreeNode[], selectedId: string | null = null): SidebarTreeState => {
+  const state = sidebarTreeState(nodes, { expanded: false });
+  const way = (level: FixtureTreeNode[], path: string[]): string[] | null => {
+    for (const node of level) {
+      if (node.id === selectedId) return [...path, node.id];
+      const found = way(node.children ?? [], [...path, node.id]);
+      if (found) return found;
+    }
+    return null;
+  };
+  return { ...state, expandedIds: selectedId ? (way(nodes, []) ?? []) : [] };
+};
+
+/** The server's answer to `GET /:id/tree/levels` for a whole fixture tree, for tests that fake `fetch`. */
+export const answerTreeLevels = (nodes: FixtureTreeNode[], url: URL) => {
+  const state = sidebarTreeState(nodes);
+  const byParent = new Map(state.levels.map((level) => [level.parentId ?? "", level]));
+  const windows = (url.searchParams.get("levels") ?? "")
+    .split(",")
+    .filter(Boolean)
+    .map((entry) => {
+      const [parent = "", offset = "0", limit = "100"] = entry.split(":");
+      const level = byParent.get(parent) ?? { parentId: parent || null, total: 0, offset: 0, items: [] };
+      return { ...level, offset: Number(offset), items: level.items.slice(Number(offset), Number(offset) + Number(limit)) };
+    });
+  const reveal = url.searchParams.get("reveal");
+  const way = reveal ? (bookNavigationState(nodes, reveal).expandedIds.filter((id) => id !== reveal) ?? []) : [];
+  const revealed = reveal ? [null, ...way].map((parent) => byParent.get(parent ?? "")!).filter(Boolean) : [];
+  return { levels: [...windows, ...revealed], expandedIds: way };
+};

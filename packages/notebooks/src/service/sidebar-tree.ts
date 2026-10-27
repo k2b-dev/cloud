@@ -19,7 +19,7 @@ import {
  * call is bounded by the levels it names and their siblings.
  */
 
-type Scope = { notebookId: string; sort: TreeSort; locale: string; homepageId: string | null };
+type Scope = { notebookId: string; sort: TreeSort; locale: string; homepageId: string | null; book?: boolean };
 
 const toPublic = (entry: TreeEntry, shortIds: Map<string, string>): SidebarNote => ({
   id: entry.shortId,
@@ -92,3 +92,26 @@ export const loadSidebarList = async (params: {
 /** The first note of the top level in this order, where a notebook opens without a remembered or home note. */
 export const firstSidebarNote = async (params: Scope): Promise<string | null> =>
   (await readLevel({ ...params, parentId: null }))[0]?.shortId ?? null;
+
+/**
+ * What Book's navigation shows on arrival: the way to the open page in the reading order, and the open page's own
+ * sub-pages, so they stay reachable before or without JavaScript.
+ */
+export const loadBookNavigation = async (
+  params: Omit<Scope, "sort" | "book"> & { selectedNoteId: string | null },
+): Promise<SidebarTreeState> => {
+  const scope = { ...params, sort: "title" as const, book: true };
+  const [total, revealed] = await Promise.all([
+    countNotes(params.notebookId),
+    params.selectedNoteId
+      ? revealNote({ ...scope, noteId: params.selectedNoteId })
+      : Promise.resolve({ levels: [levelWindow(null, [], {})], expandedIds: [] as string[] }),
+  ]);
+  const windows = params.selectedNoteId ? revealed.levels : [levelWindow(null, await readLevel({ ...scope, parentId: null }), {})];
+  const own = params.selectedNoteId
+    ? levelWindow(params.selectedNoteId, await readLevel({ ...scope, parentId: params.selectedNoteId }), {})
+    : null;
+  const { levels, shortIds } = await projectLevels(own && own.total > 0 ? [...windows, own] : windows);
+  const expanded = [...revealed.expandedIds, ...(own && own.total > 0 ? [params.selectedNoteId!] : [])];
+  return { total, levels, expandedIds: expanded.map((id) => shortIds.get(id)).filter((id): id is string => !!id) };
+};

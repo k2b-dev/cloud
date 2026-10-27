@@ -39,6 +39,11 @@ origin of `app.url`, never the incoming Host header.
 
 ## Pair a device
 
+The optional `label` in new pairing payloads is a suggested local display name
+(1–80 characters), never account identity. Operators configure it through
+[Name in Cloud Login](./cloud-login.md#suggest-a-cloud-label). Existing device
+records are unaffected. Update strict authenticator parsers before Cloud.
+
 In Cloud, open **My account → Security → Pair a device**. Scan the QR code,
 copy its pairing link into the authenticator, or choose **Open app on this
 device**. All three paths transfer the Cloud URL and the same short-lived
@@ -163,7 +168,7 @@ extra fields and private JWK material are rejected.
 
 1. In the Cloud, call `POST /manage/pairings/start` with `{}` for yourself or
    `{userId}` for administrator-assisted pairing. The response is
-   `{protocol, issuer, pairingId, secret, expiresAt}`. Only a current interactive
+   `{protocol, issuer, pairingId, secret, expiresAt, label?}`. Only a current interactive
    session issued within the last ten minutes can start or confirm pairing;
    API/OAuth tokens cannot.
 2. Transfer this pairing payload by QR, copy/paste or opening the link on the

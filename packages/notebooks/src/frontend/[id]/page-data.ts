@@ -3,17 +3,16 @@ import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } fro
 import { get } from "@k2b/cloud/services";
 import type { Context } from "hono";
 import { toPublicNotebook, toPublicNoteComment } from "@/api/public-resources";
-import { orderBookTree } from "@/lib/book-tree";
 import { extractNamedBlockSummaries } from "@/lib/named-blocks";
 import { isPresentationMode, type PresentationMode, resolvePresentationMode } from "@/lib/presentation-mode";
 import { requestedPresentationMode } from "@/lib/presentation-url";
 import { parseQueryPages, QUERY_PAGES_PARAM } from "@/lib/query-blocks";
 import { parseSidebarFilter, type SidebarFilter } from "@/lib/sidebar-filter";
-import { SIDEBAR_PAGE_SIZE } from "@/lib/sidebar-tree";
+import { SIDEBAR_PAGE_SIZE, type SidebarTreeState } from "@/lib/sidebar-tree";
 import { notebooksService } from "@/service";
 import { loadBookNote } from "@/service/book";
 import { loadSelectedNoteRouteState, type SelectedNoteRouteState } from "@/service/route-state";
-import { readTitleTree, resolveNotebookNoteIds } from "@/service/tree-levels";
+import { resolveNotebookNoteIds } from "@/service/tree-levels";
 import { buildNoteUrl } from "../params";
 import { extractTocFromMarkdown } from "./_components/detail/toc";
 import { parseGraphViewState } from "./_components/graph/view-state";
@@ -67,7 +66,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     resolvePresentationMode({ permission, requestedMode: mode, defaultPresentationMode: notebook.defaultPresentationMode }) === "book" &&
     !isVersionsMode &&
     !isGraphMode;
-  const bookTree = isBookMode || graphShell === "book" ? await loadBookTree(notebook, locale) : [];
+  const readsBook = isBookMode || graphShell === "book";
 
   const cookieHeader = c.req.header("Cookie");
   const settings = parseSettings(cookieHeader, notebook.shortId);
@@ -82,8 +81,8 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     homepageNoteId: notebook.homepageNoteShortId,
     // Book opens where its sidebar starts; elsewhere the first note of the top level in the notebook order.
     firstNoteId: () =>
-      isBookMode || graphShell === "book"
-        ? (bookTree[0]?.id ?? null)
+      readsBook
+        ? notebooksService.note.sidebar.firstNote({ ...sidebarScope, sort: "title", book: true })
         : notebooksService.note.sidebar.firstNote({ ...sidebarScope, sort: "title", homepageId: null }),
   });
   if (noteParam && !selectedNoteId) return { kind: "not_found" as const };
@@ -158,6 +157,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
 
   const sidebarFilter = parseSidebarFilter(new URL(c.req.url).searchParams);
   const [selectedInternalId] = selectedNoteId ? [...(await resolveNotebookNoteIds(notebookId, [selectedNoteId])).values()] : [];
+  const bookNavigation = readsBook ? await loadBookNavigation(notebook, selectedInternalId ?? null, locale) : EMPTY_NAVIGATION;
   const [sidebarTree, sidebarList] = await Promise.all([
     notebooksService.note.sidebar.tree({ ...sidebarScope, selectedNoteId: selectedInternalId ?? null }),
     loadFirstListPage(notebookId, user.id, sidebarFilter),
@@ -207,7 +207,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     readonlyMode,
     presentationMode,
     isBookMode,
-    bookTree,
+    bookNavigation,
     bookHtml: selected.bookHtml,
     graph,
     versionHistory: publicVersionHistory,
@@ -398,9 +398,15 @@ async function loadSelectedNote(params: {
 
 export const projectNotebook = toPublicNotebook;
 
-/** The Book's reading order: titles only, never Markdown. */
-export const loadBookTree = async (notebook: { id: string; homepageNoteShortId: string | null }, locale: string) =>
-  orderBookTree(await readTitleTree(notebook.id), { id: (node) => node.shortId, homeId: notebook.homepageNoteShortId, locale });
+/** Book's navigation on arrival: the way to the open page in the reading order, never the whole tree. */
+export const loadBookNavigation = (notebook: { id: string; homepageNoteId: string | null }, selectedNoteId: string | null, locale = "en") =>
+  notebooksService.note.sidebar.book({ notebookId: notebook.id, homepageId: notebook.homepageNoteId, locale, selectedNoteId });
+
+export const EMPTY_NAVIGATION: SidebarTreeState = {
+  total: 0,
+  levels: [{ parentId: null, total: 0, offset: 0, items: [] }],
+  expandedIds: [],
+};
 
 /** The sidebar of a notebook page that shows no note, such as the attachments or a tag. */
 export const loadSidebarWithoutNote = async (params: {

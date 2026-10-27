@@ -16,10 +16,21 @@ type LevelsResponse = { levels: SidebarLevel[]; expandedIds: string[] };
 
 const encodeLevels = (levels: LevelRequest[]) => levels.map((level) => `${level.parentId ?? ""}:${level.offset}:${level.limit}`).join(",");
 
-const fetchLevels = async (notebookId: string, sort: SidebarTreeSort, levels: LevelRequest[], reveal?: string): Promise<LevelsResponse> => {
+const fetchLevels = async (
+  notebookId: string,
+  sort: SidebarTreeSort,
+  levels: LevelRequest[],
+  reveal?: string,
+  book?: boolean,
+): Promise<LevelsResponse> => {
   const response = await apiClient[":id"].tree.levels.$get({
     param: { id: notebookId },
-    query: { sort, ...(levels.length > 0 ? { levels: encodeLevels(levels) } : {}), ...(reveal ? { reveal } : {}) },
+    query: {
+      sort,
+      ...(levels.length > 0 ? { levels: encodeLevels(levels) } : {}),
+      ...(reveal ? { reveal } : {}),
+      ...(book ? { book: "1" } : {}),
+    },
   });
   if (!response.ok) throw new Error(`Failed to load notes (${response.status})`);
   return (await response.json()) as LevelsResponse;
@@ -30,7 +41,13 @@ const fetchLevels = async (notebookId: string, sort: SidebarTreeSort, levels: Le
  * window of rows that grows with "Show more". Changes read the open windows
  * again; nothing ever loads the whole notebook.
  */
-export function createSidebarTree(options: { notebookId: Accessor<string>; initial: SidebarTreeState; sort: Accessor<SidebarTreeSort> }) {
+export function createSidebarTree(options: {
+  notebookId: Accessor<string>;
+  initial: SidebarTreeState;
+  sort: Accessor<SidebarTreeSort>;
+  /** Book's reading order, with the start page leading the top level. */
+  book?: boolean;
+}) {
   const [levels, setLevels] = createSignal<ReadonlyMap<string, SidebarLevel>>(
     new Map(options.initial.levels.map((level) => [levelKey(level.parentId), level])),
   );
@@ -80,7 +97,7 @@ export function createSidebarTree(options: { notebookId: Accessor<string>; initi
     commit(issued);
     markPending(keys, true);
     try {
-      const answer = await fetchLevels(options.notebookId(), options.sort(), requests);
+      const answer = await fetchLevels(options.notebookId(), options.sort(), requests, undefined, options.book);
       apply(answer.levels, issued, merge);
       setError(null);
     } catch (cause) {
@@ -141,7 +158,9 @@ export function createSidebarTree(options: { notebookId: Accessor<string>; initi
     const batches: LevelRequest[][] = [];
     for (let start = 0; start < requests.length; start += SIDEBAR_MAX_LEVELS)
       batches.push(requests.slice(start, start + SIDEBAR_MAX_LEVELS));
-    const answers = await Promise.all(batches.map((part) => fetchLevels(options.notebookId(), options.sort(), part)));
+    const answers = await Promise.all(
+      batches.map((part) => fetchLevels(options.notebookId(), options.sort(), part, undefined, options.book)),
+    );
     if (refresh !== refreshes) return;
     batch(() => {
       // Closed branches are dropped, so they load fresh when they open again; open ones keep what they show.
@@ -159,7 +178,7 @@ export function createSidebarTree(options: { notebookId: Accessor<string>; initi
     const request = ++reveals;
     const note = findNote(noteId);
     if (note && (!note.parentId || ancestorsOpen(note))) return;
-    const answer = await fetchLevels(options.notebookId(), options.sort(), [], noteId);
+    const answer = await fetchLevels(options.notebookId(), options.sort(), [], noteId, options.book);
     // Only the note opened last opens its way; an earlier answer that arrives late changes nothing.
     if (request !== reveals) return;
     batch(() => {

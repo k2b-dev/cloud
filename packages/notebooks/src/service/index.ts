@@ -184,6 +184,7 @@ export const notebooksService = {
       reveal: sidebarTree.revealSidebarNote,
       list: sidebarTree.loadSidebarList,
       firstNote: sidebarTree.firstSidebarNote,
+      book: sidebarTree.loadBookNavigation,
     },
     /** `<notebook>:<path>` addresses and the content-free outline used by the CLI mirror. */
     paths: {
