@@ -1,5 +1,6 @@
 import { fileIcons } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
+import { resolveFileListMessages } from "./file-list-messages";
 
 /** The colour family a file's icon tile uses. `other` covers code, text, and unknown files. */
 export type FileType = "folder" | "pdf" | "image" | "sheet" | "document" | "slides" | "video" | "audio" | "archive" | "other";
@@ -40,6 +41,20 @@ export const fileTypeOf = (file: { name: string; mediaType?: string; folder?: bo
   return category === "pdf" || category === "image" || category === "video" || category === "audio" || category === "archive"
     ? category
     : "other";
+};
+
+/**
+ * The readable kind of a file in `locale`, such as "PDF", "Image", or "Spreadsheet", for a meta line like
+ * "PDF · 4.2 MB" instead of a media type. An unknown kind names the file's extension ("ICC"), and a file without
+ * one reads "File".
+ */
+export const fileKindLabel = (file: { name: string; mediaType?: string; folder?: boolean }, locale: string): string => {
+  const t = resolveFileListMessages(locale);
+  const type = fileTypeOf(file);
+  if (type !== "other") return t[type];
+  const dot = file.name.lastIndexOf(".");
+  const extension = dot > 0 ? file.name.slice(dot + 1) : "";
+  return /^[a-z0-9]{1,8}$/i.test(extension) ? extension.toUpperCase() : t.file;
 };
 
 /** `fileIcons` adds Tailwind colour utilities that @k2b/ui does not ship; only the `ti-*` glyph is kept. */

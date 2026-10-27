@@ -16,6 +16,28 @@ import { DescriptionList, DetailPanel, NumberInput } from "@k2b/ui";
 
 ## Use DetailPanel
 
+### One outline for every app
+
+A details panel follows one fixed order, so it reads the same in every app:
+
+1. **Header** with the title, a short meta line, and the actions on the
+   item.
+2. **Properties** as quiet rows: name, then value. A click on an editable
+   row opens its picker ([property rows](/en/ui/surfaces/details#property-rows)).
+   No form fields.
+3. **Linked** items, such as a task or related mail.
+4. **Attachments** or files: a [`FileGrid`](/en/ui/content/files#file-lists-in-a-details-panel)
+   list with `limit={5}`.
+5. **Notes** or comments as a [`Discussion`](/en/ui/layout/discussion).
+6. **More about …**: a `DetailPanel.Group` with a `title`, whose collapsible
+   sections each say in their `summary` what they hold, such as people,
+   activity, or technical details.
+
+What people work with stands open without a click; context waits below. Each
+app decides which sections it has and which belong under "More about …"; the
+building blocks decide how they look. Sections in this outline have no icon:
+their titles start on the text edge.
+
 Place it inside `AppWorkspace.Detail` for persistent selection context, or in
 another host when the same inspector content is reused. The host owns opening,
 closing, sizing, and persistence. An `AppWorkspace.Detail` column shares the
@@ -106,12 +128,22 @@ the relevant section after validation fails. `disabled` disables both toggle
 buttons; it does not disable the child controls. Use a fieldset for that.
 The content owns its layout: wrap form controls in a column with a gap.
 
+Pass `summary` to a collapsible section for one line that says what it
+holds while it is closed, such as its newest entry or "Sender, headers,
+original". The line takes the room the title, count, and meta leave and
+fades at its end; it is gone while the section is open. A section with a
+summary is 2.75rem tall in both states, so opening it moves nothing above
+its body.
+
 Use `DetailPanel.Group` when one or more sections form one stable context, such
 as a company and its contacts or a document and its derived metadata. Merge
 adjacent sections when they belong to that same context. Outside
 `AppWorkspace.Detail`, the group owns the same quiet surface as the summary. Inside it, or with `surface="plain"`, the group is transparent. Spacing and section headings
 separate its sections without borders or lines. Pass `label` when the
-shared context benefits from an accessible group name.
+shared context benefits from an accessible group name. Pass `title` for a
+visible quiet title, such as "More about this conversation": it names the
+group, and its sections stand flush below it as rows. Use it for collapsed
+secondary sections with a `summary`.
 
 A section placed directly in `DetailPanel.Body` is a group of one. It follows
 the group’s surface and inset in its host, so
@@ -122,8 +154,8 @@ add an application frame, border, or padding around a section. Only a notice,
 a progress bar, a short row of commands, or a feed whose items are each one
 frame stands in the body without a section frame. Loose text belongs in the
 header subtitle or a section, and a block with its own heading becomes a
-section. Give every section of a panel an `icon` so the
-titles share one column, and use `size="xs"` for text buttons in its
+section. Give the sections of one panel either all an `icon` or, as in the
+outline above, none, so the titles share one column. Use `size="xs"` for text buttons in its
 `actions`, so their label text ends at the same trailing edge as row metadata.
 
 Sections accept arbitrary content. Use `DescriptionList layout="rows"` for
@@ -175,7 +207,11 @@ as deleting an attachment, pass `secondaryAction` with an `icon`, an accessible
 `Delete budget.xlsx`, so repeated buttons stay distinguishable. It renders as a
 sibling icon button at the end of the row, before an optional Dots trigger, and
 appears on row hover or keyboard focus with any pointer that can hover.
-Touch-only screens always show it. Set `variant: "danger"` for a destructive
+Touch-only screens always show it. A row with a secondary action or a menu is
+one surface: hover and `current` fill the whole row, its trailing buttons
+included, so the buttons appear inside the surface they belong to and nothing
+moves. Keep `trailing` for quiet facts such as a time or a size, not for a
+command. Set `variant: "danger"` for a destructive
 command; hover and focus then use the danger text color. The button only reports the
 click. The application confirms destructive work, performs it, and refreshes
 the list. When that removes the focused row, the application moves focus to
@@ -214,7 +250,7 @@ type DetailPanelSummaryProps = {
 };
 
 type DetailPanelGroupProps = {
-  children: JSX.Element; label?: string; class?: string;
+  children: JSX.Element; label?: string; title?: JSX.Element; class?: string;
 };
 
 type DetailPanelTone = "accent" | "neutral" | "success" | "warning" | "danger";
@@ -230,6 +266,7 @@ type DetailPanelSectionProps = DetailPanelSectionBaseProps &
         children?: JSX.Element;
         actions?: JSX.Element;
         collapsible?: false;
+        summary?: never;
         defaultOpen?: never;
         open?: never;
         onOpenChange?: never;
@@ -239,6 +276,7 @@ type DetailPanelSectionProps = DetailPanelSectionBaseProps &
         children: JSX.Element;
         actions?: never;
         collapsible: true;
+        summary?: JSX.Element;
         defaultOpen?: boolean;
         open?: boolean;
         onOpenChange?: (open: boolean) => void;

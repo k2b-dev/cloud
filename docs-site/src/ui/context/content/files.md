@@ -19,8 +19,11 @@ Use `FileBrowserPanel` for the ready tree-and-preview composition over a
 import {
   FileBrowserPanel,
   FileTree,
+  FileGrid,
   FileTypeIcon,
+  fileKindLabel,
   fileTypeOf,
+  type FileGridGroup,
   type FileType,
   type FileTypeIconProps,
   FileView,
@@ -70,6 +73,12 @@ preview content to its host. Folders take the app accent hook
 unknown files use the neutral `other` family. The glyph and chip keep their
 size and fill on hover, focus, and selection, in light and dark themes.
 `fileTypeOf({ name, mediaType?, folder? })` returns this family without rendering.
+
+`fileKindLabel({ name, mediaType?, folder? }, locale)` names the family in the
+reader's language for a meta line such as "PDF · 4.2 MB" or "Image · 1.8 MB",
+instead of a media type. A file of the neutral family names its extension in
+capitals ("ICC"); a name without a usable extension reads "File". Pass the
+request locale, for example from `useLocale()`.
 
 The component renders on the server and needs no browser code. Its wrapper
 is decorative (`aria-hidden="true"`); keep a visible file name beside it.
@@ -349,6 +358,54 @@ trailing edge. Rows have no lines between them; hover and selection use the same
 fills as tiles. Use it for choosing among files that have no thumbnail, for
 example in a picker dialog. Keep `DataTable` for lists that need columns,
 sorting, or row structure.
+
+### File lists in a details panel
+
+Without `selection`, `FileGrid` is a plain list for a details panel or a
+short overview: one click or Enter on an item calls `onOpen`, which opens the
+preview or, for a format without one, downloads the file. The whole item is
+one native button named by the item's label and described by its meta;
+preview, name, and meta lie on it, and `renderActions` sits above it in its
+own slot inside the item's surface. With `layout="list"`, rows are 3rem tall
+(3.5rem on touch screens) with a 2.25rem preview: pass an image thumbnail
+for images and a `FileTypeIcon` for everything else. The row's surface
+reaches 0.5rem past the text edge into the panel gutter.
+
+`actionVisibility="progressive"` shows the actions with a mouse or trackpad
+only on hover, keyboard focus, or an open menu, and always on touch. Only
+their opacity changes, so the slot is reserved and nothing moves. Put the
+frequent commands there, such as "Download" and the Cloud "Save to Files"
+button, also on image tiles.
+
+`limit` shows that many items, then "Show all N", which opens the full list in
+place; "Show less" closes it, and focus moves to the other button. Use 5 in a
+panel and 3 in a very short overview. `moreMeta` adds a quiet note to the end
+of "Show all N", such as how many duplicates were merged. `toolbar` stands
+above the full list, for a count, an arrangement switch, or "Download all".
+`groups` arranges the full list, for example files as rows first and images
+as `layout: "tiles"` after them; give the short and the full list the same
+order. Control the state with `expanded` and `onExpandedChange` when the host
+must keep it, for example in the URL.
+
+```tsx
+<FileGrid
+  rows={attachments()}
+  getRowId={(file) => file.id}
+  label={t().attachments}
+  layout="list"
+  limit={5}
+  actionVisibility="progressive"
+  renderPreview={(file) => (isImage(file) ? <img src={file.thumbnail} alt="" /> : <FileTypeIcon name={file.name} />)}
+  renderLabel={(file) => file.name}
+  renderMeta={(file) => `${fileKindLabel(file, locale())} · ${formatFileViewSize(file.size)}`}
+  renderActions={(file) => <DownloadButton file={file} />}
+  groups={(rows) => [
+    { id: "files", label: t().files, rows: rows.filter((file) => !isImage(file)) },
+    { id: "images", label: t().images, rows: rows.filter(isImage), layout: "tiles" },
+  ]}
+  onOpen={openPreview}
+/>
+```
 
 A click that replaces the rows, for example by opening a folder, does not
 turn a double-click into a second action: the rest of the gesture is ignored by

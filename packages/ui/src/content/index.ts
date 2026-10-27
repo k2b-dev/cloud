@@ -69,9 +69,9 @@ export { default as DataTable } from "./DataTable";
 export type { DocCodeHighlighter, DocCodeProps, DocConcept, DocNoteVariant, DocRow } from "./Docs";
 export { DocCode, DocConceptGrid, DocInlineCode, DocLead, DocNote, DocPage, DocRows, DocSection } from "./Docs";
 export { FileBrowserPanel, type FileBrowserPanelProps, type FileSource, openFileBrowser } from "./FileBrowser";
-export { FileGrid, type FileGridProps } from "./FileGrid";
+export { FileGrid, type FileGridGroup, type FileGridOpenProps, type FileGridProps, type FileGridSelectableProps } from "./FileGrid";
 export { default as FileTree, type FileTreeActions, type FileTreeEntry, type FileTreeProps } from "./FileTree";
-export { type FileType, FileTypeIcon, type FileTypeIconProps, fileTypeOf } from "./FileTypeIcon";
+export { type FileType, FileTypeIcon, type FileTypeIconProps, fileKindLabel, fileTypeOf } from "./FileTypeIcon";
 export {
   canPreviewFile,
   default as FileView,

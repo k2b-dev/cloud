@@ -49,6 +49,11 @@ export type DetailPanelSummaryProps = {
 export type DetailPanelGroupProps = {
   children: JSX.Element;
   label?: string;
+  /**
+   * A visible quiet title, such as "More about this conversation". Its sections then stand flush as rows below
+   * it, which suits collapsed secondary sections with a `summary`.
+   */
+  title?: JSX.Element;
   class?: string;
 };
 
@@ -119,6 +124,7 @@ export type DetailPanelSectionProps = DetailPanelSectionBaseProps &
         children?: JSX.Element;
         actions?: JSX.Element;
         collapsible?: false;
+        summary?: never;
         defaultOpen?: never;
         open?: never;
         onOpenChange?: never;
@@ -128,6 +134,8 @@ export type DetailPanelSectionProps = DetailPanelSectionBaseProps &
         children: JSX.Element;
         actions?: never;
         collapsible: true;
+        /** One line that says what the closed section holds, such as its newest entry; hidden while open. */
+        summary?: JSX.Element;
         defaultOpen?: boolean;
         open?: boolean;
         onOpenChange?: (open: boolean) => void;
@@ -223,11 +231,25 @@ const DetailPanelSummary = (props: DetailPanelSummaryProps): JSX.Element => {
   );
 };
 
-const DetailPanelGroup = (props: DetailPanelGroupProps): JSX.Element => (
-  <div class={classNames("k2b-detail-panel__group", props.class)} role="group" aria-label={props.label}>
-    {props.children}
-  </div>
-);
+const DetailPanelGroup = (props: DetailPanelGroupProps): JSX.Element => {
+  const titleId = `k2b-detail-panel-group-${createUniqueId()}`;
+  return (
+    <div
+      class={classNames("k2b-detail-panel__group", props.class)}
+      role="group"
+      aria-label={props.title ? undefined : props.label}
+      aria-labelledby={props.title ? titleId : undefined}
+      data-titled={props.title ? "true" : undefined}
+    >
+      <Show when={props.title}>
+        <div class="k2b-detail-panel__group-title" id={titleId}>
+          {props.title}
+        </div>
+      </Show>
+      {props.children}
+    </div>
+  );
+};
 
 const DetailPanelSectionIcon = (props: Pick<DetailPanelSectionBaseProps, "icon" | "tone">): JSX.Element => (
   <Show when={props.icon}>
@@ -417,6 +439,7 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
         aria-labelledby={open() ? headingId : `${headingId}-closed`}
         data-open={open()}
         data-icon={props.icon ? "true" : undefined}
+        data-summary={props.summary ? "true" : undefined}
       >
         <div hidden={open()}>
           <Button
@@ -435,6 +458,9 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
                   {props.title}
                 </span>
                 <SectionTitleMeta count={props.count} meta={props.meta} />
+                <Show when={props.summary}>
+                  <span class="k2b-detail-panel__section-preview k2b-truncate-fade">{props.summary}</span>
+                </Show>
               </span>
               <Show when={props.description}>
                 <span class="k2b-detail-panel__section-description">{props.description}</span>

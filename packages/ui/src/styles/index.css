@@ -3752,6 +3752,52 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
 }
 
+/* A closed secondary section can say in one line what it holds. The line
+   takes the room the title leaves and fades at its end; it is gone while the
+   section is open. Such rows are 2.75rem tall in both states, so opening
+   moves nothing. */
+.k2b-ui .k2b-detail-panel__section-preview {
+  min-width: 0;
+  flex: 1 1 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-detail-panel__section-summary .k2b-detail-panel__section-heading > .k2b-detail-panel__section-title {
+  flex: 0 1 auto;
+}
+
+.k2b-ui
+  .k2b-detail-panel__section[data-summary="true"]
+  :is(.k2b-detail-panel__section-header, .k2b-button.k2b-detail-panel__section-summary) {
+  min-height: 2.75rem;
+}
+
+/* A titled group: a quiet title over secondary sections that stand flush as
+   rows, such as "More about this conversation". */
+.k2b-ui .k2b-detail-panel__group-title {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-detail-panel__group[data-titled="true"],
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group[data-titled="true"] {
+  gap: 0;
+}
+
+.k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-detail-panel__group-title {
+  margin-bottom: 0.25rem;
+}
+
+.k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-detail-panel__section[data-open="true"] {
+  padding-bottom: 0.5rem;
+}
+
 /* One text edge: in a panel section with an icon, content starts where the
    title does. Rows with their own leading column (actions and discussion
    entries with an avatar) step back, so their icon or avatar sits in the
@@ -3850,9 +3896,39 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-detail-panel__action-row {
+  position: relative;
+  isolation: isolate;
   display: flex;
   min-width: 0;
   align-items: center;
+}
+
+/* A row with a secondary action or a menu is one surface: hover and the
+   current mark fill the whole row, its trailing buttons included, and reach
+   0.5rem into the panel gutter like a single action's fill. The buttons
+   appear inside that surface, so nothing moves. */
+.k2b-ui .k2b-detail-panel__action-row::before {
+  position: absolute;
+  z-index: -1;
+  inset-block: 0;
+  inset-inline: -0.5rem;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  content: "";
+  pointer-events: none;
+  transition: background-color 120ms ease-out;
+}
+
+.k2b-ui .k2b-detail-panel__action-row:hover::before {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-detail-panel__action-row:has(> .k2b-detail-panel__action[data-current="true"])::before {
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-accent-600)) 13%, transparent);
+}
+
+.k2b-ui .k2b-detail-panel__action-row > .k2b-detail-panel__action > .k2b-button__label::before {
+  display: none;
 }
 
 .k2b-ui .k2b-detail-panel__action-row > .k2b-detail-panel__action {
@@ -3911,6 +3987,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 100%;
   gap: 0.625rem;
   justify-content: flex-start;
+}
+
+/* Without a section icon there is no icon column: a row without `leading`
+   starts its title on the section's text edge. */
+.k2b-ui .k2b-detail-panel__section:not([data-icon="true"]) .k2b-detail-panel__action-leading:empty {
+  display: none;
 }
 
 /* The section icon's column: icons and 20 px avatars center in it, and the
