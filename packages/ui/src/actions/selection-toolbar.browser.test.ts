@@ -73,8 +73,8 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const load = async (width = 1200) => {
-  const page = await (await browser.newContext({ viewport: { width, height: 800 } })).newPage();
+const load = async (width = 1200, touch = false) => {
+  const page = await (await browser.newContext({ viewport: { width, height: 800 }, hasTouch: touch, isMobile: touch })).newPage();
   await page.setContent(html);
   await page.addScriptTag({ content: script });
   return page;
@@ -161,6 +161,38 @@ describe("SelectionToolbar", () => {
       expect(placed.toolbar.top).toBeGreaterThanOrEqual(placed.range!.bottom);
     } finally {
       await page.context().close();
+    }
+  }, 30_000);
+
+  test("stays compact: a 4 px frame and 30 px buttons, with 44 px hit areas only on touch screens", async () => {
+    for (const touch of [false, true]) {
+      const page = await load(touch ? 390 : 1200, touch);
+      try {
+        await page.evaluate(() => (window as unknown as { select: (a: number, b: number) => void }).select(300, 320));
+        await settle(page);
+        const sizes = await page.evaluate(() => {
+          const toolbar = document.querySelector<HTMLElement>(".k2b-selection-toolbar")!;
+          const box = toolbar.getBoundingClientRect();
+          const buttons = [...toolbar.querySelectorAll<HTMLElement>(".k2b-button")].map((button) => {
+            const own = button.getBoundingClientRect();
+            const hit = getComputedStyle(button, "::after");
+            const grow = (inset: string) => Math.max(0, -Number.parseFloat(inset) || 0);
+            return {
+              height: Math.round(own.height),
+              hitHeight: Math.round(own.height + grow(hit.top) + grow(hit.bottom)),
+            };
+          });
+          return { height: Math.round(box.height), padding: getComputedStyle(toolbar).paddingTop, buttons };
+        });
+        expect(sizes.padding, `touch ${touch}`).toBe("4px");
+        expect(sizes.height, `touch ${touch}`).toBe(38);
+        for (const button of sizes.buttons) {
+          expect(button.height, `touch ${touch}`).toBe(30);
+          if (touch) expect(button.hitHeight).toBeGreaterThanOrEqual(44);
+        }
+      } finally {
+        await page.context().close();
+      }
     }
   }, 30_000);
 });

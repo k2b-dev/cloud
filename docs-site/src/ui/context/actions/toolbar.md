@@ -41,6 +41,13 @@ container clips it.
   `boundary`, such as the editor's scroll area under its own toolbar, it goes
   below the selection. On touch use `placement="below"`: the system's selection
   menu sits above.
+- It is compact so it stays small over the text: a 4 px frame, 30 px buttons
+  with 16 px icons, tight gaps and a slim separator. Use `Toolbar.Action` for
+  icon commands and a `size="sm"` ghost `Button` for a text command such as
+  Comment. On touch screens every button keeps a 44 px hit area through the
+  buttons' own touch rule; the bar does not grow. Shortcuts from `keys` show in
+  the tooltips only: the hints under the icons that the floating variant has do
+  not fit.
 - Pressing its buttons keeps the selection, so actions apply to it.
 - Escape inside the toolbar calls `onEscape`; close the toolbar there and
   return focus to the text. Keyboard navigation is the `Toolbar` roving group.
