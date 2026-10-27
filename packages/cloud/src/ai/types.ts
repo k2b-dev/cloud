@@ -20,9 +20,9 @@ import type {
   CloudResourceRef,
 } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
+import type { AiModelRequest, AiResolvedModelRef } from "../shared/ai-models";
 import type { AiActionCheck, AiStoredActionReview } from "./action-review";
 import type { AiLocalClient, AiLocalContext, AiLocalToolName } from "./local-tool-contracts";
-import type { AiModelRequest, AiResolvedModelRef } from "../shared/ai-models";
 import type { AiTurnBlock } from "./protocol";
 
 /** Current reader-confirmed metadata for a recently sent resource. */

@@ -1,11 +1,14 @@
 import { coreSettings } from "../services";
-import { aiModelCatalog } from "./model-catalog";
 import { AI_MODEL_CLASSES, type AiModelClass, type AiModelSlot, type AiProvider } from "../shared/ai-models";
+import { aiModelCatalog } from "./model-catalog";
 import { resolveAiModelRef } from "./settings";
 
 export type AiAdminOverview = {
   enabled: boolean;
-  providers: (Pick<AiProvider, "id" | "type" | "label" | "enabled" | "status" | "statusCode" | "statusMessage" | "statusCheckedAt" | "logo" | "credentialSet"> & {
+  providers: (Pick<
+    AiProvider,
+    "id" | "type" | "label" | "enabled" | "status" | "statusCode" | "statusMessage" | "statusCheckedAt" | "logo" | "credentialSet"
+  > & {
     modelCount: number;
   })[];
   assignments: Record<AiModelSlot, { variantId: string | null; revision: number; updatedAt: string; updatedBy: string | null }>;

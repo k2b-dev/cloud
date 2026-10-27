@@ -1,3 +1,4 @@
+export * from "../shared/ai-models";
 export { type AiAppSkillIssue, aiAppSkills, appSkillsRegistryState, reconcileAppSkills } from "./app-skill-store";
 export {
   type ApplicationAiTaskInput,
@@ -270,7 +271,6 @@ export {
   createCloudAiMemoryTool,
 } from "./memory-tool";
 export { migrateCloudAi } from "./migrate";
-export * from "../shared/ai-models";
 export { type AiOpenQuestion, type AiOpenQuestions, listAiOpenQuestions } from "./open-questions";
 export { personalAiModelPolicy } from "./personal-agent";
 export { type AiUserPrefs, aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";

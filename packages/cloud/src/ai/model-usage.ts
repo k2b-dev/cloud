@@ -1,7 +1,7 @@
 import { sql } from "bun";
 import { toPgTextArray } from "../services/postgres";
-import { aiModelCatalog } from "./model-catalog";
 import type { AiModelUsage } from "../shared/ai-models";
+import { aiModelCatalog } from "./model-catalog";
 import { aiPeopleAtLimit } from "./quota-limits";
 import { aiQuotas } from "./quotas";
 

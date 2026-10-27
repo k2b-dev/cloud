@@ -3,7 +3,11 @@ import { type AiModelIcon as AiModelIconSetting, type AiPeopleModelIcon, aiProvi
 
 /** The icon a person sees for a model: its emoji or image, else its provider's neutral mark. */
 export const aiModelDisplayIcon = (icon: AiModelIconSetting, provider: { id: string; label: string }): AiPeopleModelIcon =>
-  icon.kind === "image" ? { kind: "image", src: icon.dataUrl } : icon.kind === "emoji" ? icon : { kind: "mark", ...aiProviderMark(provider) };
+  icon.kind === "image"
+    ? { kind: "image", src: icon.dataUrl }
+    : icon.kind === "emoji"
+      ? icon
+      : { kind: "mark", ...aiProviderMark(provider) };
 
 const sizes = { xs: "size-5 rounded-[5px] text-[9px]", sm: "size-7 rounded-md text-[10px]", md: "size-10 rounded-lg text-xs" } as const;
 
@@ -12,7 +16,8 @@ const sizes = { xs: "size-5 rounded-[5px] text-[9px]", sm: "size-7 rounded-md te
  * next to it, so it stays hidden from assistive technology.
  */
 export function AiModelIcon(props: { icon: AiPeopleModelIcon; size?: keyof typeof sizes; class?: string }): JSX.Element {
-  const box = () => `inline-grid shrink-0 place-items-center overflow-hidden leading-none ${sizes[props.size ?? "xs"]} ${props.class ?? ""}`;
+  const box = () =>
+    `inline-grid shrink-0 place-items-center overflow-hidden leading-none ${sizes[props.size ?? "xs"]} ${props.class ?? ""}`;
   const icon = () => props.icon;
   return (
     <span class={box()} aria-hidden="true" data-ai-model-icon={icon().kind}>
