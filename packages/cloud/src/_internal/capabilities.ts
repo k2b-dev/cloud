@@ -6,6 +6,7 @@ export { capabilityHash } from "./capability-schemas";
 
 import { isServiceError, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
+import { calendarSourceIssues } from "../contracts/calendar-source";
 import {
   CAPABILITY_ERROR_STATUSES,
   CAPABILITY_FRAMEWORK_ERROR_CODES,
@@ -17,6 +18,8 @@ import {
   CapabilityActionPolicySchema,
   type CapabilityActionReviewResult,
   type CapabilityActionSentences,
+  type CapabilityCalendarSourceDeclaration,
+  CapabilityCalendarSourceManifestSchema,
   type CapabilityCommandDefinition,
   type CapabilityCommandManifest,
   CapabilityCommandManifestSchema,
@@ -79,7 +82,15 @@ const DECLARATION_FIELDS = {
   actions: true,
   commands: true,
   fileProvider: true,
+  calendarSource: true,
 } satisfies DefinedFields<CapabilityDefinitions>;
+const CALENDAR_SOURCE_FIELDS = {
+  calendars: true,
+  events: true,
+  update: true,
+  move: true,
+  delete: true,
+} satisfies DefinedFields<CapabilityCalendarSourceDeclaration>;
 const FILE_PROVIDER_FIELDS = { list: true, read: true, save: true } satisfies DefinedFields<CapabilityFileProviderDeclaration>;
 const TYPE_FIELDS = { title: true, description: true, icon: true, reader: true } satisfies DefinedFields<CapabilityResourceTypeDefinition>;
 const QUERY_FIELDS = {
@@ -628,6 +639,11 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     throw new Error(`Unsupported capability protocol version ${String(definitions.protocolVersion)}`);
   }
   assertDefinedFields(definitions, DECLARATION_FIELDS, "Capability declaration");
+  if (definitions.calendarSource !== undefined) {
+    assertDefinedFields(definitions.calendarSource, CALENDAR_SOURCE_FIELDS, "calendarSource");
+    // Author declarations must fail here; the manifest reader deliberately drops unreadable declarations.
+    CapabilityCalendarSourceManifestSchema.parse(definitions.calendarSource);
+  }
   if (definitions.fileProvider) assertDefinedFields(definitions.fileProvider, FILE_PROVIDER_FIELDS, "fileProvider");
 
   const localIds = new Set<string>();
@@ -809,6 +825,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     [...actions].flatMap(([localId, action]) => (action.definition.policy ? [[localId, action.definition.policy]] : [])),
   );
   const fileProvider = definitions.fileProvider;
+  const calendarSource = definitions.calendarSource;
   const manifestBase = {
     protocolVersion: CAPABILITY_PROTOCOL_VERSION,
     appId,
@@ -818,6 +835,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     commands,
     ...(Object.keys(policies).length ? { policies } : {}),
     // Omitted when unused so manifests without a provider keep their earlier hash.
+    ...(calendarSource ? { calendarSource: { ...calendarSource } } : {}),
     ...(fileProvider
       ? { fileProvider: { list: fileProvider.list, read: fileProvider.read, ...(fileProvider.save ? { save: fileProvider.save } : {}) } }
       : {}),
@@ -826,6 +844,11 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     ...manifestBase,
     manifestHash: capabilityHash(manifestBase),
   });
+  const calendarIssues = calendarSourceIssues(manifest);
+  if (calendarIssues.length)
+    throw new Error(
+      `calendarSource does not match the calendar-source contract:\n- ${calendarIssues.map((issue) => `${issue.function} (${issue.localId}) ${issue.path}: ${issue.message}`).join("\n- ")}`,
+    );
   const providerIssues = fileProviderIssues(manifest);
   if (providerIssues.length > 0) {
     throw new Error(
@@ -984,6 +1007,7 @@ export const resolveCapabilityManifestPresentation = (
             }
           : operation;
       }),
+      ...(current.calendarSource ? { calendarSource: current.calendarSource } : {}),
       ...(current.fileProvider ? { fileProvider: current.fileProvider } : {}),
       ...(current.policies ? { policies: current.policies } : {}),
     };

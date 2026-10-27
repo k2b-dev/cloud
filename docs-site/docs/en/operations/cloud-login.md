@@ -204,8 +204,11 @@ also open the link. All paths carry the same temporary link.
 Invalid pasted links remain editable. The app distinguishes expired links from
 links intended for another app origin. After you trust the Cloud, progress is
 shown while connecting and pairing. Network requests time out after 30 seconds.
-If a claim may already have reached Cloud, the app checks its status without
-resending it. You can use another link after an error.
+If a claim may already have reached Cloud, the app checks its status first.
+It retries the claim with the saved key only when Cloud still reports it as
+pending. **Retry pairing** checks a saved enrollment after an interruption;
+before enrollment starts, choose **Trust Cloud and pair** again. **Use another
+link** starts over after an error.
 The PWA removes its fragment from browser history before contacting the Cloud.
 
 The in-app scanner requests camera access only after a click. Its images stay
@@ -214,15 +217,60 @@ cannot start, the app says why: access is off, no camera was found, or the
 camera is busy, most often because another app uses it. Paste the link instead.
 Scanning never skips issuer consent or confirmation.
 
-Check the Cloud address before trusting it. Choose an account label for this
-device and a device name, compare the code in both windows, and confirm in the
-original Cloud session. Once Cloud confirms, choose **Both codes match** in
-Cloud Login to finish pairing. The local label is user-chosen, not verified account metadata.
+Check the Cloud address before trusting it. Cloud suggests an account label,
+and your browser suggests a device name. Both fields are editable. Compare
+the code in both windows and confirm in the original Cloud session. Once
+Cloud confirms, choose **Both codes match** in Cloud Login to finish pairing.
+The local label is not verified account metadata.
 
-If the pairing dialog closes while you switch to the Cloud window, paste the
-same unexpired link again to reuse the stored key. Pairing links expire after
-five minutes. If the link expires, start again in Cloud and revoke any
-previously confirmed device you can no longer use.
+Only **Close** or the X closes the pairing dialog. Tapping outside, dragging
+down or pressing Escape does not close it. Escape is disabled throughout the
+flow so its meaning does not change between steps. Switching apps pauses
+requests; returning resumes status checks. Connection failures stay visible
+and offer **Retry pairing**. If the page reloads or closes, open **Add Cloud**:
+it reports an unfinished saved pairing. Paste the same link to reuse its key
+and names; the link itself is never stored. Links expire after five minutes;
+a claimed pairing can wait longer for approval on another device. If Cloud
+reports expiry, start again there and revoke any previously confirmed device
+you can no longer use.
+
+### Suggest a Cloud label
+
+In Cloud's administration settings, set **Name in Cloud Login**
+(`user.app_approval.label`). Empty uses the application display name (`app.name`),
+whose default is **My App**. New pairing links carry the suggestion, shortened
+to the label field's 80 characters. People can change it before pairing.
+Changing either setting leaves existing connections and saved enrollments
+unchanged.
+
+**Upgrade:** update the separately hosted Cloud Login app before updating
+Cloud. Close all its tabs and windows so the service worker can activate,
+then reopen it. Older authenticator clients with a strict payload parser must
+accept the optional `label` field before they read new pairing links. The
+updated app also accepts links from earlier Clouds without a label.
+
+### What a browser can suggest about this device
+
+- Android Chromium browsers can return `model` and `platformVersion` through
+  `navigator.userAgentData.getHighEntropyValues()`. A model may be a name such
+  as **Pixel 8**, a manufacturer code such as **SM-S911B**, or empty. Cloud
+  Login uses the reported value without guessing a marketing name. If hints
+  are unavailable or refused, it uses **Android**, with the reported version
+  when available.
+- Safari on iPhone and iPad does not implement User-Agent Client Hints and
+  does not expose the exact hardware model or the personal name from Settings.
+  Cloud Login suggests **iPhone** or **iPad** and adds the iOS/iPadOS version
+  only when the user-agent explicitly reports it. That version may be frozen
+  or reduced by the browser; it is not a verified OS version. A desktop-mode
+  iPad reports a Mac user-agent: the app uses its Mac platform plus multitouch
+  capability as an iPad suggestion and never labels the reported Mac version
+  as iPadOS. This is a heuristic, not proof of the device type.
+- Desktop browsers get a suggestion such as **Firefox on macOS**. All names
+  remain editable. No canvas, WebGL, screen-size model lookup, hardware
+  fingerprinting or external device database is used.
+
+Sources: [MDN: getHighEntropyValues](https://developer.mozilla.org/en-US/docs/Web/API/NavigatorUAData/getHighEntropyValues)
+and [WebKit: desktop-class browsing on iPad](https://webkit.org/blog/9674/new-webkit-features-in-safari-13/#desktop-class-browsing-on-ipad).
 
 ## Manage connected accounts
 

@@ -232,6 +232,11 @@ describe("@k2b/ui overlays return focus with the ring they were opened with", ()
         const page = await load(options);
         try {
           await tabTo(page, overlay);
+          // A sidebar preview opens after resting keyboard focus. Cancel that
+          // timer (or its open card) before recording the closed layout.
+          await page.keyboard.press("Escape");
+          await settle(page);
+          expect(await overlayOpen(page)).toBe(false);
           const closed = await boxes(page);
           for (const key of overlay.keys) {
             await page.keyboard.press(key);

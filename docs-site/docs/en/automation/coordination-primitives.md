@@ -33,8 +33,10 @@ const result = await stockLock().withLock({ resource: `item:${itemId}` }, async 
 `withLock()` returns null when acquisition fails. `maxAttempts: 1` means one
 immediate attempt; the default retries acquisition up to ten times, 200 ms apart.
 A lock expires after its TTL. Extend it before expiry with
-`extend(lock, { ttlMs })`; false means ownership was lost. `release(lock)` checks
-the owner token too.
+`extend(lock, { ttlMs })`; false means the lease could not be renewed. Sync
+checks ownership with authoritative reads and retries a revision conflict at
+most twice, only while the same owner holds an unexpired lease. `release(lock)`
+checks the owner token too.
 
 The monotonic `fence` is a bigint. Persist and compare it at the external write
 boundary when an expired owner could still write. A lease alone cannot stop

@@ -54,6 +54,12 @@ the fades as `scroll-padding-block` on the scroll area and passes the computed
 padding to CodeMirror's `EditorView.scrollMargins`. Do not add spacer lines or
 scroll manually.
 
+Scrolling updates the fades at once; changes of the content update them once
+per frame, so a list that changes many rows does not lay the page out for each
+one. A reader that needs the current fades in the same frame as a content
+change, such as those scroll margins, calls `measureScrollFade(element)` from
+`@k2b/ui` first.
+
 `DetailPanel` also integrates its gutter with the surrounding workspace inset;
 that panel-specific geometry is not part of `ScrollArea`.
 
