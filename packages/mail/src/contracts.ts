@@ -3252,20 +3252,23 @@ export type SenderIdentity = z.infer<typeof senderIdentitySchema>;
 export const senderChoiceSchema = z.object({
   id: ResourceShortIdSchema,
   label: z.string(),
+  displayName: z.string(),
   fromAddress: z.string().email(),
   status: senderIdentitySchema.shape.status,
   replyTo: z.string().email(),
   defaultCc: z.array(mailAddressSchema),
   defaultBcc: z.array(mailAddressSchema),
   signatureName: z.string().nullable(),
-  audience: z.object({
-    memberCount: z.number().int().nonnegative(),
-    guestCount: z.number().int().nonnegative(),
-    serviceAccountCount: z.number().int().nonnegative(),
-    public: z.boolean(),
-    authenticated: z.boolean(),
-  }),
-  assignedReaders: z.boolean(),
+  audience: z
+    .object({
+      memberCount: z.number().int().nonnegative(),
+      guestCount: z.number().int().nonnegative(),
+      serviceAccountCount: z.number().int().nonnegative(),
+      public: z.boolean(),
+      authenticated: z.boolean(),
+    })
+    .nullable(),
+  assignedReaders: z.boolean().nullable(),
 });
 export type SenderChoice = z.infer<typeof senderChoiceSchema>;
 

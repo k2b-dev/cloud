@@ -7,7 +7,8 @@ import type { SenderChoice } from "../../contracts";
 const audience = { memberCount: 8, guestCount: 1, serviceAccountCount: 0, public: false, authenticated: false };
 const choice: SenderChoice = {
   id: "sender",
-  label: "Support",
+  label: "Internal label",
+  displayName: "Support",
   fromAddress: "support@example.test",
   status: "verified",
   replyTo: "replies@example.test",
@@ -31,7 +32,11 @@ if (!isServer)
           ? Response.json({ message: "Unavailable" }, { status: 503 })
           : mode === "denied"
             ? Response.json({ message: "Denied" }, { status: 403 })
-            : Response.json(mode === "empty" ? [] : [choice, { ...choice, id: "pending", label: "Pending", status: "unverified" }]);
+            : Response.json(
+                mode === "empty"
+                  ? []
+                  : [choice, { ...choice, id: "pending", label: "Pending", displayName: "Pending", status: "unverified" }],
+              );
       },
       { preconnect: originalFetch.preconnect },
     );
@@ -101,7 +106,7 @@ if (!isServer)
       mode = "denied";
       setMailbox("Box003");
       await flush();
-      expect(dom.root.textContent).toContain("No write access");
+      expect(dom.root.textContent).toContain("Sender details could not be checked.");
     } finally {
       dispose();
       globalThis.fetch = originalFetch;
@@ -111,4 +116,70 @@ if (!isServer)
       else Reflect.deleteProperty(prototype, "hidePopover");
       dom.cleanup();
     }
-  });
+  }, 30_000);
+
+if (!isServer)
+  test("local sender names and choices survive 404 and unavailable consequences, and absent audience is omitted", async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    let mode: number | "assigned" = 404;
+    globalThis.fetch = Object.assign(
+      async () =>
+        mode === "assigned"
+          ? Response.json([{ ...choice, audience: null, assignedReaders: null }])
+          : Response.json({ message: "Unavailable" }, { status: mode }),
+      { preconnect: originalFetch.preconnect },
+    );
+    const prototype = dom.window.HTMLElement.prototype;
+    const show = Object.getOwnPropertyDescriptor(prototype, "showPopover");
+    const hide = Object.getOwnPropertyDescriptor(prototype, "hidePopover");
+    Object.defineProperty(prototype, "showPopover", { configurable: true, value() {} });
+    Object.defineProperty(prototype, "hidePopover", { configurable: true, value() {} });
+    const { default: SenderSelect } = await import("./MailSenderSelect");
+    delegateEvents(["click", "pointermove", "focusin"]);
+    const [mailbox, setMailbox] = createSignal("Box001");
+    const selections: string[] = [];
+    const dispose = render(
+      () => <SenderSelect mailboxId={mailbox()} identities={[choice]} value="sender" onChange={(id) => selections.push(id)} />,
+      dom.root,
+    );
+    const flush = async () => {
+      for (let i = 0; i < 20; i++) await Bun.sleep(5);
+    };
+    try {
+      const trigger = dom.root.querySelector<HTMLButtonElement>('[role="combobox"]')!;
+      expect(trigger.textContent).toContain("Support · support@example.test");
+      expect(trigger.textContent).not.toContain("Internal label");
+      for (const status of [403, 404, 503]) {
+        mode = status;
+        setMailbox(`Box${status}`);
+        await flush();
+        trigger.click();
+        await flush();
+        expect(dom.root.textContent).toContain("Sender details could not be checked.");
+        expect([...dom.root.querySelectorAll("button")].some((button) => button.textContent?.includes("Retry"))).toBe(true);
+        const row = dom.root.querySelector<HTMLElement>('[role="option"]')!;
+        expect(row.getAttribute("aria-disabled")).not.toBe("true");
+        row.click();
+      }
+      expect(selections).toEqual(["sender", "sender", "sender"]);
+      mode = "assigned";
+      setMailbox("Assigned");
+      await flush();
+      trigger.click();
+      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+      await flush();
+      expect(dom.root.textContent).toContain("replies@example.test");
+      expect(dom.root.textContent).not.toContain("members can read");
+      expect(dom.root.textContent).not.toContain("0 members");
+      expect(dom.root.textContent).not.toContain("Assigned readers");
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      if (show) Object.defineProperty(prototype, "showPopover", show);
+      else Reflect.deleteProperty(prototype, "showPopover");
+      if (hide) Object.defineProperty(prototype, "hidePopover", hide);
+      else Reflect.deleteProperty(prototype, "hidePopover");
+      dom.cleanup();
+    }
+  }, 30_000);

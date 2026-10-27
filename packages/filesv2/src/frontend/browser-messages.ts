@@ -7,6 +7,8 @@ export const browserMessages = i18n.define({
   messages: {
     en: {
       destinationNoWrite: "No write access",
+      destinationPreviewLoading: "Checking destination details…",
+      destinationPreviewUnknown: "Destination details could not be checked. The action will check access again.",
       destinationNone: "No destinations available.",
       destinationBrowse: "Browse folders",
       destinationPersonal: "Your personal storage.",
@@ -352,6 +354,8 @@ export const browserMessages = i18n.define({
     },
     de: {
       destinationNoWrite: "Kein Schreibrecht",
+      destinationPreviewLoading: "Die Zieldetails werden geprüft…",
+      destinationPreviewUnknown: "Die Zieldetails konnten nicht geprüft werden. Die Aktion prüft den Zugriff erneut.",
       destinationNone: "Keine Ziele verfügbar.",
       destinationBrowse: "Ordner durchsuchen",
       destinationPersonal: "Dein persönlicher Speicher.",

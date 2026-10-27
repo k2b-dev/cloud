@@ -53,6 +53,13 @@ and the **…** menu for **Space settings**, **Copy iCal URL** when enabled, and
 **+** button. If you can edit the Space, the header previews people with access
 beside the menu or inside it when space is limited.
 
+When a card has wormhole destinations, **Move to…** loads their consequences
+when opened and refreshes them on reopening. Dependency losses show the total
+count and up to three example titles; each preview covers at most 100 targets.
+Other available destinations remain selectable with unknown consequences.
+If the preview fails, the existing destinations remain selectable with unknown
+consequences and a retry action. The move checks access again.
+
 The selected work view and its counters arrive with the page. Switching work
 views loads the selected list on demand; Back and Forward restore the view
 from the URL. A failed load shows a retry action instead of an empty list.

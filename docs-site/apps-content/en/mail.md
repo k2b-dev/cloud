@@ -461,6 +461,13 @@ stays in place. If your Cloud sign-in expires, the composer keeps your text and
 shows **Sign in again**. That action returns to the same draft after sign-in
 and restores unsaved changes kept in this browser.
 
+## Choose a sender
+
+The sender picker shows the display name recipients see and its address.
+It previews replies, default signatures, and, for a new draft, default Cc and
+Bcc recipients. If these details cannot load, the available sender addresses
+remain selectable with a retry action. Sending still checks access.
+
 ## Write signatures and snippets
 
 The composer shows **Signature** below your text when a signature is available.

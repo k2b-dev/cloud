@@ -1091,10 +1091,10 @@ export default function ItemDetailPanel(props: Props) {
                     {isCompleted() ? t.reopen : completionBlocked() ? t.blockedByCount({ count: activeBlockerCount() }) : t.markComplete}
                   </Button>
                   <Show when={!isEvent() && !isCompleted()}>{claimButton()}</Show>
-                  <Show when={canTransferThroughWormhole(props.item)}>
+                  <Show when={props.wormholes.length > 0 && canTransferThroughWormhole(props.item)}>
                     <WormholeSelect
                       spaceId={props.spaceId}
-                      revision={JSON.stringify([props.item, props.blockedBy, props.blocks, props.wormholes])}
+                      wormholes={props.wormholes}
                       itemId={props.item.id}
                       disabled={isLoading() || transferMutation.loading()}
                       onChoose={(id) => void transferTo(id)}

@@ -851,6 +851,10 @@ export const ReorderWormholesSchema = z.object({
 });
 export type ReorderWormholes = z.infer<typeof ReorderWormholesSchema>;
 
+/** Match reorder's target budget; dependency names fit the picker's three-fact budget. */
+export const MAX_WORMHOLE_PREVIEW_TARGETS = 100;
+export const MAX_WORMHOLE_PREVIEW_DEPENDENCY_TITLES = 3;
+
 export const WormholeTransferPreviewSchema = SpaceWormholeSchema.extend({
   canWrite: z.boolean(),
   audience: z
@@ -864,7 +868,8 @@ export const WormholeTransferPreviewSchema = SpaceWormholeSchema.extend({
     .nullable(),
   removedTags: z.array(z.string()),
   removedAssignees: z.array(z.string()),
-  removedDependencies: z.array(z.string()),
+  removedDependencies: z.array(z.string()).max(MAX_WORMHOLE_PREVIEW_DEPENDENCY_TITLES),
+  removedDependencyCount: z.number().int().nonnegative(),
   commentsMove: z.literal(true),
   attachmentsMove: z.literal(true),
 });

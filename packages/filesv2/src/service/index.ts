@@ -1086,8 +1086,12 @@ export function createFilesService(
       let sourceMovableCount = 0;
       const paths = normalizeSelection(input.paths);
       for (const path of paths) {
-        const source = await authorizedPath(sourceBase, path);
-        if ((await entryActions(source)).move) sourceMovableCount++;
+        try {
+          const source = await authorizedPath(sourceBase, path);
+          if ((await entryActions(source)).move) sourceMovableCount++;
+        } catch (error) {
+          if (!(error instanceof FilesError || error instanceof FilegateError) || ![403, 404].includes(error.status)) throw error;
+        }
       }
       const result: DestinationPreview[] = [];
       const targetBases = new Map<string, ReturnType<typeof authorizedBase>>([[input.baseId, Promise.resolve(sourceBase)]]);
@@ -1113,22 +1117,22 @@ export function createFilesService(
             state.candidates.find(
               (candidate) => candidate.kind === "groups" && candidate.area === item.area && candidate.gid_number === current.node.gid,
             )?.name ?? null;
-          const access =
-            item.area === "freeipa"
-              ? destinationAccess(await current.root.getACL(current.target, "access"), groupName)
-              : {
-                  kind: item.kind === "users" ? ("personal" as const) : ("group" as const),
-                  name: item.name,
-                  owner: true,
-                  group: item.kind === "groups",
-                  additionalUsers: 0,
-                  additionalGroups: 0,
-                  others: false,
-                };
+          const acl = item.area === "freeipa" ? await current.root.getACL(current.target, "access") : null;
+          const access = acl
+            ? destinationAccess(acl, groupName)
+            : {
+                kind: item.kind === "users" ? ("personal" as const) : ("group" as const),
+                name: item.name,
+                owner: true,
+                group: item.kind === "groups",
+                additionalUsers: 0,
+                additionalGroups: 0,
+                others: false,
+              };
           result.push({
             baseId: target.baseId,
             folder,
-            canWrite: await canWriteDirectory(current),
+            canWrite: acl ? permits(current.node, acl, current.state.unix!, 3) : true,
             sourceCount: paths.length,
             sourceMovableCount,
             copy: copyReason !== null,
@@ -1142,10 +1146,16 @@ export function createFilesService(
             !(error instanceof FilegateError && [403, 404].includes(error.status))
           )
             throw error;
+          const candidate = state.candidates.find((item) => `${item.area}:${item.kind}:${item.identity_id}` === target.baseId);
+          const firstUse =
+            error instanceof FilesError &&
+            error.status === 403 &&
+            ((candidate?.area === "freeipa" && error.code === "unassigned") ||
+              (candidate?.area === "cloud" && error.code === "not_found" && state.config.cloud.autoCreate));
           result.push({
             baseId: target.baseId,
             folder,
-            canWrite: false,
+            canWrite: firstUse ? null : false,
             sourceCount: paths.length,
             sourceMovableCount,
             copy: copyReason !== null,
