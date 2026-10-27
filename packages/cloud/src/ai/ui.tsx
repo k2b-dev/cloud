@@ -1,3 +1,4 @@
+export { AiModelIcon, aiModelDisplayIcon } from "./model-icon";
 export { AiTurnBlockView } from "./chat/blocks";
 
 import { latestLoopUsage, latestUsage, latestUsageSnapshot, textFromMessage } from "./chat/message-utils";

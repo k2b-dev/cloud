@@ -1,5 +1,5 @@
 import { type SQL, sql } from "bun";
-import { type AiResolvedModelRef, AiResolvedModelRefSchema } from "../../ai/model-contracts";
+import { type AiResolvedModelRef, AiResolvedModelRefSchema } from "../../shared/ai-models";
 import { AI_TASK_REQUEST_MAX_BYTES, AiTaskInputTooLargeError, assertAiTaskRequestSize } from "../../ai/task-contracts";
 import type { WorkflowJsonValue } from "../contracts";
 import { wakeWorkflowRunsWaitingOn } from "../store/runs";

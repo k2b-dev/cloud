@@ -8,7 +8,7 @@ import { noTransform } from "../server/middleware/no-transform";
 import { ImageMetadataError } from "../services/image-metadata";
 import { aiChatMessages } from "./chat/messages";
 import { decodeAiFileContent } from "./files-store";
-import { AiModelRequestSchema } from "./model-contracts";
+import { AiModelRequestSchema } from "../shared/ai-models";
 import {
   AI_PROJECT_DESCRIPTION_MAX_CHARS,
   AI_PROJECT_FILE_MAX_BYTES,

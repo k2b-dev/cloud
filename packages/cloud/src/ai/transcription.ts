@@ -57,7 +57,7 @@ export const createAiTranscriptionProvider = (profile: AiModelProfile, apiKey?: 
 };
 
 export const resolveAiAudioModel = async (
-  input: { model?: import("./model-contracts").AiModelRequest; allowedDataBoundaries?: AiDataBoundary[] } = {},
+  input: { model?: import("../shared/ai-models").AiModelRequest; allowedDataBoundaries?: AiDataBoundary[] } = {},
 ): Promise<AiResolvedAudioModel> => {
   const state = await readAiSettingsState();
   if (!state.enabled)
@@ -113,7 +113,7 @@ export type RunAiTranscriptionInput = {
   filename: string;
   language?: string;
   prompt?: string;
-  model?: import("./model-contracts").AiModelRequest;
+  model?: import("../shared/ai-models").AiModelRequest;
   allowedDataBoundaries?: AiDataBoundary[];
   signal?: AbortSignal;
   appId?: string;

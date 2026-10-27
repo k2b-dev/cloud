@@ -17,7 +17,7 @@ import {
   AiVariantInputSchema,
   AiVariantSchema,
   aiModelClassFallbackChain,
-} from "./model-contracts";
+} from "../shared/ai-models";
 import { getAiRequestHeaders } from "./request-headers";
 import type { AiModelProfile } from "./types";
 
@@ -294,7 +294,7 @@ export const aiModelCatalog = {
       return this.variant(id, db);
     });
   },
-  async assign(slot: import("./model-contracts").AiModelSlot, variantId: string | null, revision: number, actorId: string) {
+  async assign(slot: import("../shared/ai-models").AiModelSlot, variantId: string | null, revision: number, actorId: string) {
     return sql.begin(async (db) => {
       await lockAiModelCatalog(db);
       const current = AiAssignmentSchema.parse(requireRow((await rows("model_assignments", slot, db, true))[0]));
@@ -309,7 +309,7 @@ export const aiModelCatalog = {
     });
   },
 };
-export const validateAiSlot = (slot: import("./model-contracts").AiModelSlot, model: Pick<AiModel, "kind" | "capabilities">) => {
+export const validateAiSlot = (slot: import("../shared/ai-models").AiModelSlot, model: Pick<AiModel, "kind" | "capabilities">) => {
   if (
     slot === "audio"
       ? model.kind !== "transcription"

@@ -52,7 +52,7 @@ import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { aiModelAccess } from "./model-access";
-import type { AiModelRequest } from "./model-contracts";
+import type { AiModelRequest } from "../shared/ai-models";
 import { answerOpenToolCalls } from "./open-tool-calls";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";

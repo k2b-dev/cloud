@@ -5,7 +5,6 @@ import { setAiCredential } from "../ai/credentials";
 import { AiModelAccessDraftSchema } from "../ai/model-access";
 import { AiConfigError, aiModelCatalog, assertAiRevision, lockAiModelCatalog } from "../ai/model-catalog";
 import {
-  AI_MODEL_CLASSES,
   AI_MODEL_SLOTS,
   AiDeleteModelSchema,
   AiModelInputSchema,
@@ -14,8 +13,9 @@ import {
   AiProviderPatchSchema,
   AiVariantInputSchema,
   AiVariantPatchSchema,
-} from "../ai/model-contracts";
+} from "../shared/ai-models";
 import { deleteAiCatalogEntry } from "../ai/model-delete";
+import { readAiAdminOverview } from "../ai/model-overview";
 import { aiModelUsage } from "../ai/model-usage";
 import {
   AiProviderListError,
@@ -25,9 +25,7 @@ import {
   testAiProvider,
 } from "../ai/provider-connections";
 import { getAiRequestHeaders, setAiRequestHeaders } from "../ai/request-headers";
-import { resolveAiModelRef } from "../ai/settings";
 import { type AuthContext, auth, v } from "../server";
-import { coreSettings } from "../services";
 import { ConfigConflict } from "../services/config-conflict";
 import { AiRequestHeadersSchema, patchAiRequestHeaders, providerSupportsRequestHeaders } from "../shared/ai-request-options";
 
@@ -50,39 +48,7 @@ export const createAdminAiRoutes = (authenticate: MiddlewareHandler<AuthContext>
       if (error instanceof z.ZodError) return c.json({ code: "invalid_configuration", message: z.prettifyError(error) }, 400);
       throw error;
     })
-    .get("/overview", async (c) => {
-      const [enabled, providers, models, assignments] = await Promise.all([
-        coreSettings.get<boolean>("ai.enabled"),
-        aiModelCatalog.providers(),
-        aiModelCatalog.models(),
-        aiModelCatalog.assignments(),
-      ]);
-      return c.json({
-        enabled,
-        providers: providers.map((p) => ({
-          id: p.id,
-          type: p.type,
-          label: p.label,
-          enabled: p.enabled,
-          status: p.status,
-          statusCode: p.statusCode,
-          statusMessage: p.statusMessage,
-          modelCount: models.filter((m) => m.providerId === p.id).length,
-          logo: p.logo,
-        })),
-        assignments: Object.fromEntries(assignments.map(({ slot, ...assignment }) => [slot, assignment])),
-        effective: Object.fromEntries(
-          AI_MODEL_CLASSES.map((modelClass) => {
-            try {
-              const ref = resolveAiModelRef({ enabled: true, assignments }, { class: modelClass });
-              return [modelClass, { class: ref.class ?? null, variantId: ref.id }];
-            } catch {
-              return [modelClass, { class: null, variantId: null }];
-            }
-          }),
-        ),
-      });
-    })
+    .get("/overview", async (c) => c.json(await readAiAdminOverview()))
     .get("/providers", async (c) => c.json({ providers: await aiModelCatalog.providers() }))
     .post("/providers", v("json", AiProviderInputSchema), async (c) =>
       c.json(await aiModelCatalog.createProvider(c.req.valid("json"), c.get("user").id), 201),

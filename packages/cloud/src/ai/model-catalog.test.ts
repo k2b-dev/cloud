@@ -7,7 +7,7 @@ import {
   AiProviderSchema,
   AiVariantPatchSchema,
   AiVariantSchema,
-} from "./model-contracts";
+} from "../shared/ai-models";
 import { validateAiReplacement } from "./model-delete";
 
 const metadata = { revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", createdAt: "2026-10-16T00:00:00.000Z", updatedBy: null };

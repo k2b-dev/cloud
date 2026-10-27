@@ -27,7 +27,7 @@ export class AiBackgroundAdmissionError extends Error {
 export type AiCallContext = {
   kind: "chat" | "background";
   task: string;
-  modelRef?: import("./model-contracts").AiResolvedModelRef;
+  modelRef?: import("../shared/ai-models").AiResolvedModelRef;
   subject?: AccessSubject | null;
   userId?: string;
   credentialId?: string;

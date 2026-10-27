@@ -46,7 +46,7 @@ export const aiComposerFileAccept = FILE_INPUT_ACCEPT;
 export const aiComposerChooseMaxBytes = (attached: number): number => Math.max(0, MAX_ATTACHMENTS - attached) * VFS_FILE_MAX_BYTES;
 
 export const aiChatModelOptions = (
-  profiles: readonly import("../model-contracts").AiPeopleModels["options"][number][],
+  profiles: readonly import("../../shared/ai-models").AiPeopleModels["options"][number][],
 ): ChatModelOption[] =>
   profiles.map((profile) => ({
     id: profile.id,

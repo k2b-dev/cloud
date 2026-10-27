@@ -1,4 +1,4 @@
-import type { AiModelAssignment, AiModelSlot } from "./model-contracts";
+import type { AiModelAssignment, AiModelSlot } from "../shared/ai-models";
 import type { AiModelProfile, AiSettingsState } from "./types";
 
 /** Fixed snapshots for tests; production reads the catalog. */

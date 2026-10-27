@@ -16,7 +16,7 @@ import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from ".
 import { isAiImage } from "./file-media-type";
 import { mountAiProjectFilePath } from "./file-mount";
 import { pickStoredAiFilePath } from "./files-store";
-import { type AiModelRequest, AiModelRequestSchema } from "./model-contracts";
+import { type AiModelRequest, AiModelRequestSchema } from "../shared/ai-models";
 import { withAiShortIdForDb } from "./short-id";
 import type { AiProjectPromptSnapshot } from "./types";
 

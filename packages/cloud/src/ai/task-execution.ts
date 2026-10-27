@@ -36,7 +36,7 @@ export const executeAiTask = async (
   const { taskPrefix, ...provided } = options;
   const common = {
     ...provided,
-    model: provided.model ?? request.model ?? ({ class: "balanced" } satisfies import("./model-contracts").AiModelRequest),
+    model: provided.model ?? request.model ?? ({ class: "balanced" } satisfies import("../shared/ai-models").AiModelRequest),
   };
   if (request.kind === "generate_text") {
     const result = await runStructured({

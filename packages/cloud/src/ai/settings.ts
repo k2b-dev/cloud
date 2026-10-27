@@ -1,17 +1,20 @@
 import { coreSettings } from "../services";
+import {
+  type AiModelRequest,
+  type AiResolvedModelRef,
+  aiModelClassFallbackChain,
+  providerRequiresCredential,
+  providerSupportsCredential,
+} from "../shared/ai-models";
 import { providerSupportsRequestHeaders } from "../shared/ai-request-options";
 import { getAiCredential, listAiCredentialProviderIds } from "./credentials";
 import { AI_FIRECRAWL_API_KEY_SETTING_KEY } from "./firecrawl-tools";
 import { aiModelCatalog, readAiModelProfiles } from "./model-catalog";
-import { type AiModelRequest, type AiResolvedModelRef, aiModelClassFallbackChain } from "./model-contracts";
 import { createAiProvider } from "./provider";
 import { getAiRequestHeaders } from "./request-headers";
 import type { AiDataBoundary, AiModelPolicy, AiModelProfile, AiResolvedModel, AiSettingsError, AiSettingsState } from "./types";
 
-export const providerRequiresCredential = (provider: import("./types").AiProviderId): boolean =>
-  ["openai", "openrouter", "anthropic", "mistral", "gemini"].includes(provider);
-export const providerSupportsCredential = (provider: import("./types").AiProviderId): boolean =>
-  providerRequiresCredential(provider) || provider === "vllm" || provider === "openai-compatible";
+export { providerRequiresCredential, providerSupportsCredential };
 export const aiSettingsFailure = (code: AiSettingsError["code"], message: string): never => {
   throw Object.assign(new Error(message), { aiError: { code, message } satisfies AiSettingsError });
 };

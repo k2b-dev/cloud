@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AiModelRequestSchema } from "./model-contracts";
+import { AiModelRequestSchema } from "../shared/ai-models";
 
 const prompt = z.string().trim().min(1).max(20_000);
 const model = AiModelRequestSchema.optional();

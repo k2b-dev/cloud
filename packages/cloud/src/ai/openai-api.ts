@@ -12,7 +12,7 @@ import { coreSettings } from "../services/settings/api";
 import { listAssistantAiModels } from "./assistant-models";
 import { aiModelAccess } from "./model-access";
 import { aiModelCatalog } from "./model-catalog";
-import { AI_MODEL_CLASSES, AiModelRequestSchema } from "./model-contracts";
+import { AI_MODEL_CLASSES, AiModelRequestSchema } from "../shared/ai-models";
 import { type OpenAiErrorCode, openAiApiMessages } from "./openai-api-messages";
 import { acquire } from "./openai-api-slots";
 import { personalAiModelPolicy } from "./personal-agent";
