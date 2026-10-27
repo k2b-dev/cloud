@@ -49,7 +49,6 @@ function TooltipSurface(props: TooltipProps): JSX.Element {
 
   function dismissOnEscape(event: KeyboardEvent) {
     if (event.key !== "Escape" || !surface?.matches(":popover-open")) return;
-    event.preventDefault();
     dismissedUntilLeave = true;
     close();
   }

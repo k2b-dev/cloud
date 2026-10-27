@@ -111,9 +111,7 @@ export function ReactionBar(props: ReactionBarProps): JSX.Element {
     };
     const dismiss = () => close();
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || !tooltip.matches(":popover-open")) return;
-      event.preventDefault();
-      close();
+      if (event.key === "Escape") close();
     };
     /** Opens the names hint over a chip; false when the chip has no names to show. */
     const open = (chip: HTMLElement, fromTouch: boolean): boolean => {
