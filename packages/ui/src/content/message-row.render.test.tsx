@@ -6,6 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { cssDeclarations, readShippedCssRules } from "../styles/css-contract-test-helpers";
+import { PERSON_COLORS } from "../surfaces/person-color";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-message-row-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -677,10 +678,11 @@ describe("MessageRow styles", () => {
       if (rule.selector.includes("k2b-message-row")) expect(rule.context, rule.selector).toBe(coarse);
   });
 
-  test("gives every avatar tint a rule", () => {
-    for (let tint = 0; tint < 10; tint++) {
-      expect(declarations(`.k2b-ui .k2b-avatar[data-tint="${tint}"]`).get("--k2b-avatar-hue")?.[0]).toMatch(/^#[0-9a-f]{6}$/);
-    }
+  test("gives every person color an avatar tint rule in the same order", () => {
+    PERSON_COLORS.forEach((color, tint) => {
+      expect(declarations(`.k2b-ui .k2b-avatar[data-tint="${tint}"]`).get("--k2b-avatar-hue")?.[0]).toBe(color);
+    });
+    expect(rules.some((rule) => rule.selector === `.k2b-ui .k2b-avatar[data-tint="${PERSON_COLORS.length}"]`)).toBe(false);
   });
 });
 
