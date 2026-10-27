@@ -35,7 +35,7 @@ cld --json mail automation log show <entry-id> --mailbox Support
 cld mail automation log undo <entry-id> --mailbox Support
 ```
 
-- `--day` is a calendar date as `YYYY-MM-DD`; omit it for today in the mailbox timezone.
+- `--day` is a UTC calendar date as `YYYY-MM-DD`; omit it for today in UTC. Mailboxes do not have a separate timezone setting.
 - `--filter` is `all`, `assignments`, `uncertain`, `skipped`, or `manual`.
 - `--q` accepts at most 200 characters and searches subject, sender, rule, and target without case sensitivity.
 - `--limit` accepts 1–50 entries and defaults to 50. Copy `nextCursor` to `--before` and keep the same day, search, and filter. The text output prints a next-page command pinned to the returned day.

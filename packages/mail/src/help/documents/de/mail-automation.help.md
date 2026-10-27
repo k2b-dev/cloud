@@ -47,7 +47,7 @@ cld mail automation log show <entry-id> --mailbox Support --json
 cld mail automation log undo <entry-id> --mailbox Support
 ```
 
-Mit `--q` suchst du ohne Beachtung der Groß- und Kleinschreibung mit höchstens 200 Zeichen. Der Standardtag ist heute in der Postfach-Zeitzone. Nutze `--before` mit `nextCursor` für eine weitere Seite; `--limit` erlaubt 1–50 Einträge und hat den Standardwert 50. Behalte beim Blättern Tag, Suche und Filter bei.
+Mit `--q` suchst du ohne Beachtung der Groß- und Kleinschreibung mit höchstens 200 Zeichen. Kalendertage und der Standardtag heute richten sich nach UTC; ein Postfach hat keine eigene Zeitzoneneinstellung. Nutze `--before` mit `nextCursor` für eine weitere Seite; `--limit` erlaubt 1–50 Einträge und hat den Standardwert 50. Behalte beim Blättern Tag, Suche und Filter bei.
 
 ## Eine Automatisierung für eingehende E-Mails erstellen {icon="mailbox"}
 

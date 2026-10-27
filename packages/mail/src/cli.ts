@@ -2902,8 +2902,8 @@ const automationLogCommands = (t: Translate) => {
         ...mailbox,
         day: flag.string({
           description: t({
-            en: "Day as YYYY-MM-DD; defaults to today in the mailbox timezone",
-            de: "Tag als YYYY-MM-DD; Standard ist heute in der Postfach-Zeitzone",
+            en: "UTC day as YYYY-MM-DD; defaults to today's UTC date",
+            de: "UTC-Tag als YYYY-MM-DD; Standard ist das heutige UTC-Datum",
           }),
         }),
         filter: flag.enum(["all", "assignments", "uncertain", "skipped", "manual"] as const, {

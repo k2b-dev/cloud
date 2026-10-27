@@ -48,7 +48,7 @@ cld mail automation log show <entry-id> --mailbox Support --json
 cld mail automation log undo <entry-id> --mailbox Support
 ```
 
-Use `--q` to search (at most 200 characters, without case sensitivity). The default day is today in the mailbox timezone. Use `--before` with `nextCursor` for another page; `--limit` accepts 1–50 entries and defaults to 50. Keep the same day, search, and filter when paging.
+Use `--q` to search (at most 200 characters, without case sensitivity). Calendar days and the default of today use UTC; a mailbox has no separate timezone setting. Use `--before` with `nextCursor` for another page; `--limit` accepts 1–50 entries and defaults to 50. Keep the same day, search, and filter when paging.
 
 ## Build an incoming automation {icon="mailbox"}
 
