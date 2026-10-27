@@ -47,8 +47,8 @@ import { readApiError } from "./api-response";
 import MailConversationSummaryCard, { type MailSummaryGenerateMode, showsConversationSummary } from "./MailConversationSummaryCard";
 import { openMailConversationToolbarDialog } from "./MailConversationToolbarDialog";
 import MailMessageCard from "./MailMessageCard";
-import { useMailCloudId } from "./mail-cloud-id";
 import { getMailAction, type MailActionId } from "./mail-actions";
+import { useMailCloudId } from "./mail-cloud-id";
 import {
   deriveReplyIdentityId,
   deriveReplyRecipients,
