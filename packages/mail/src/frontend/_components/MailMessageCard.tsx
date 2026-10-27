@@ -267,8 +267,8 @@ export default function MailMessageCard(props: {
       data-mail-direction={outgoing() ? "outgoing" : "incoming"}
       style={`view-transition-name: mail-message-${props.message.id}`}
     >
-      {/* A right-click on the message opens its "…" menu. */}
-      <ContextMenu class="contents" tabIndex={-1} items={messageMenu.items()} label={messageMenu.label()} keepNativeMenu>
+      {/* A right-click on the message opens its "…" menu. A block host takes focus back when Escape closes it. */}
+      <ContextMenu class="block" tabIndex={-1} items={messageMenu.items()} label={messageMenu.label()} keepNativeMenu>
         <div
           class={`flex items-start gap-1 rounded-[var(--ui-radius-surface)] p-1 transition-colors ${
             props.isLatest ? "" : "bg-[var(--ui-surface-subtle)] hover:bg-[var(--ui-hover)] focus-within:bg-[var(--ui-hover)]"

@@ -27,7 +27,8 @@ export const mailCloudIdMessages = i18n.define({
 
 type ClipboardModule = typeof import("@k2b/cloud/browser/resource-clipboard");
 // The clipboard contract validates with Zod, which stays out of the mailbox's first load (mailbox-first-load.test.ts).
-// It loads once the page is idle, so a copy still runs inside the click that asked for it.
+// It loads once the page is idle, so a copy usually runs inside the click that asked for it. A copy before that hands
+// the browser a pending permalink: WebKit allows a clipboard write only while the click is being handled.
 let clipboardModule: ClipboardModule | undefined;
 const loadClipboard = () => import("@k2b/cloud/browser/resource-clipboard").then((module) => (clipboardModule = module));
 
@@ -56,9 +57,9 @@ export const useMailCloudId = () => {
     if (!cloudUrl) return;
     const copied = kind === "message" ? t().messageCopied : t().conversationCopied;
     const failed = () => void toast.error(t().copyFailed);
+    const ref = { type: `mail.${kind}`, id };
     const write = (module: ClipboardModule) => {
       try {
-        const ref = { type: `mail.${kind}`, id };
         return module.cloudResourceClipboard
           .write({ cloudUrl, ref, fallbackText: module.cloudResourceClipboard.url(ref, cloudUrl) })
           .then(() => void toast.success(copied), failed);
@@ -66,8 +67,16 @@ export const useMailCloudId = () => {
         failed();
       }
     };
-    if (clipboardModule) void write(clipboardModule);
-    else void importOnDemand(loadClipboard).then((module) => module && write(module));
+    if (clipboardModule) return void write(clipboardModule);
+    const text = importOnDemand(loadClipboard).then((module) => {
+      if (!module) throw new Error("Clipboard code unavailable");
+      return module.cloudResourceClipboard.url(ref, cloudUrl);
+    });
+    const written =
+      typeof ClipboardItem === "function" && typeof navigator.clipboard?.write === "function"
+        ? navigator.clipboard.write([new ClipboardItem({ "text/plain": text.then((value) => new Blob([value], { type: "text/plain" })) })])
+        : text.then((value) => navigator.clipboard.writeText(value));
+    void written.then(() => void toast.success(copied), failed);
   };
 
   const actions = (target: MailCloudIdTarget): DropdownAction[] => {

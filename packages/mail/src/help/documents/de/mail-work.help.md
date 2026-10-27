@@ -191,8 +191,8 @@ Tippe in der Cloud-Suche `>`, um die Aktionen der Schaltflächen und Menüs als 
 
 Eine andere Cloud-App kann einen Verweis auf eine Unterhaltung oder eine Nachricht speichern. Dafür kopierst du die Cloud-ID:
 
-- In einer Unterhaltung öffnest du **Weitere Unterhaltungsaktionen** oder klickst mit der rechten Maustaste in die Unterhaltung. Wähle **Cloud-ID der Unterhaltung kopieren**.
-- Bei einer Nachricht öffnest du **Nachrichtenaktionen** oder klickst mit der rechten Maustaste auf die Nachricht. Wähle **Cloud-ID der Nachricht kopieren**. Dasselbe Menü hat auch **Cloud-ID der Unterhaltung kopieren**.
+- In einer Unterhaltung öffnest du **Weitere Unterhaltungsaktionen** oder mit einem Rechtsklick das Menü der Unterhaltung. Wähle **Cloud-ID der Unterhaltung kopieren**.
+- Bei einer Nachricht öffnest du **Nachrichtenaktionen** oder mit einem Rechtsklick das Menü der Nachricht. Wähle **Cloud-ID der Nachricht kopieren**. Dasselbe Menü hat auch **Cloud-ID der Unterhaltung kopieren**.
 - In der Liste haben die Aktionen einer Zeile **Cloud-ID der Unterhaltung kopieren**.
 - In den **Unterhaltungsdetails** nutzt du den ID-Knopf im Kopf für die Unterhaltung oder **Cloud-ID der Nachricht kopieren** unter **E-Mail-Details** für die neueste Nachricht.
 

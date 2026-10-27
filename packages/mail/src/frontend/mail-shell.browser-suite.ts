@@ -2601,8 +2601,15 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           await dismiss(page, contextMenu);
           expect(await message.locator("[data-mail-message-header]").evaluate((element) => element === document.activeElement)).toBe(true);
 
-          // Selected text in the body keeps the browser's own menu.
+          // A right-click on the body without a selection opens the message menu, and Escape leaves focus in the message.
           const body = message.locator(".mail-message-body pre").first();
+          await page.locator("[data-mail-reader-heading]").focus();
+          await body.click({ button: "right" });
+          expect(await menuEntries(page, contextMenu)).toEqual(messageItems);
+          await dismiss(page, contextMenu);
+          expect(await message.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+
+          // Selected text in the body keeps the browser's own menu.
           await body.selectText();
           await body.click({ button: "right" });
           await page.waitForTimeout(100);
@@ -2653,6 +2660,53 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       });
     });
+
+    if (screenshots)
+      test("optional Cloud ID review screenshots", async () => {
+        const directory = join(resolve(screenshots), "cloud-id");
+        mkdirSync(directory, { recursive: true });
+        const shot = async (page: Page, name: string) => {
+          await page.waitForTimeout(150);
+          await page.screenshot({ path: join(directory, `${name}.png`) });
+        };
+        const escape = async (page: Page) => {
+          await page.keyboard.press("Escape");
+          await page.waitForTimeout(100);
+        };
+        for (const width of [1920, 390] as const) {
+          const page = await open(`${boxPath}?conversation=Conv01&theme=light${width === 1920 ? "&details=1" : ""}`, width);
+          try {
+            if (width === 1920) {
+              const detailsCopy = page.locator("[data-mail-copy-cloud-id], .mail-details-meta").first();
+              if (!(await page.locator(".mail-details-meta").isVisible()))
+                await page.locator("[data-app-workspace-detail-toggle]").first().click();
+              await detailsCopy.waitFor({ state: "visible" });
+              await shot(page, `${width}-details`);
+              await page.getByRole("button", { name: "More conversation actions" }).click();
+              await shot(page, `${width}-conversation-menu`);
+              await escape(page);
+              await page.locator("[data-mail-reader-heading]").click({ button: "right" });
+              await shot(page, `${width}-conversation-right-click`);
+              await escape(page);
+              const row = page.locator(".mail-list-entry").first();
+              await row.hover();
+              await row.getByRole("button", { name: /^Actions for/ }).click();
+              await shot(page, `${width}-row-menu`);
+              await escape(page);
+            }
+            const message = page.locator('[data-mail-message-id="Msg001"]');
+            await message.getByRole("button", { name: "Message actions" }).click();
+            await shot(page, `${width}-message-menu`);
+            await escape(page);
+            if (width === 1920) {
+              await message.locator("[data-mail-message-header]").click({ button: "right", position: { x: 200, y: 20 } });
+              await shot(page, `${width}-message-right-click`);
+            }
+          } finally {
+            await page.context().close();
+          }
+        }
+      }, 120_000);
 
     if (screenshots)
       test("optional synthetic review screenshots", async () => {
