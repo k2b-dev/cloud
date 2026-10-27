@@ -5,7 +5,7 @@ section: Platform services
 order: 562
 description: Preserve stable Cloud resource identity across application clipboard interactions.
 tags: [capabilities, resources, clipboard, browser]
-updated: 2026-10-18
+updated: 2026-10-27
 ---
 
 # Copy and paste Cloud resources
@@ -34,11 +34,13 @@ await cloudResourceClipboard.write({
 });
 ```
 
-`cloudUrl` is the canonical public origin derived on the server from the Core
-setting `app.url`, for example with `publicCloudOrigin(await
-coreSettings.get<string>("app.url"))`, and passed into the island. Never derive
-it from `window.location`: gateway aliases and another Cloud installation may
-serve the same application route.
+Read `cloudUrl` with `cloudOrigin()` from
+`@k2b/cloud/browser/resource-links`. `Layout` and `AdminLayout` supply the
+canonical public origin from Core's `app.url` through shell data; it is omitted
+when unset. `MinimalLayout` does not install shell data, so its accessor
+returns `null`. Check for `null` before copying a structured reference. Never
+derive it from `window.location`: gateway aliases and another Cloud
+installation may serve the same application route.
 
 Cloud writes the versioned JSON representation as
 `web application/vnd.k2b.cloud-resource-ref+json` and writes `fallbackText` as
@@ -87,6 +89,38 @@ await resourceCopy.copy({
 resourceCopy.wasCopied(); // true only after a successful write
 resourceCopy.error(); // the latest Clipboard API failure, if any
 ```
+
+## Copy a reference as text
+
+Where a person copies a resource to paste it elsewhere, name the action
+**Copy Cloud ID** (or *Copy message Cloud ID* when one menu offers several) and
+use the resource's permalink as `fallbackText`. The permalink is the plain-text
+form of a Cloud resource reference. `/open/<type>/~<id>` resolves to the
+resource's current reader link for everyone who may read it:
+
+```ts
+import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
+
+const ref = { type: "mail.message", id: message.id };
+await cloudResourceClipboard.write({ cloudUrl, ref, fallbackText: cloudResourceClipboard.url(ref, cloudUrl) });
+// fallbackText: "https://cloud.example/open/mail.message/~Ab12Cd"
+```
+
+An application that lets people paste a reference into a text field, or reads
+one from an agent, parses that text with `parseUrl()`. It accepts the absolute
+permalink of this Cloud or its root-relative path and returns `null` for
+anything else, such as another installation's link, an application page, or a
+query or fragment:
+
+```ts
+const ref = cloudResourceClipboard.parseUrl(input.value, cloudUrl);
+// { type: "mail.message", id: "Ab12Cd" } or null
+```
+
+The same helpers are `formatCloudResourceUrl()` and `parseCloudResourceUrl()`
+in `@k2b/cloud/contracts` for server code. `cld` prints the same text as
+`permalink`. As with the structured format, the parsed reference establishes
+identity only and grants no access.
 
 ## Read a reference
 
@@ -151,3 +185,42 @@ A page can report its current resource ref to the visible panel through
 consent. A panel ref selects a resource and grants no access; the provider
 reads through its own authorized server. See
 [Panel page context](/en/docs/platform/panels#page-context).
+
+## Recognize a pasted Cloud link
+
+Use the browser helper when pasted text may be an ordinary application URL
+or a resource permalink:
+
+```ts
+import { cloudOrigin, resolveCloudUrl } from "@k2b/cloud/browser/resource-links";
+
+const origin = cloudOrigin(); // canonical public origin, or null
+const resource = await resolveCloudUrl(pastedText, { signal });
+if (resource) await attachResource(resource.ref);
+```
+
+`resolveCloudUrl(text, { signal? })` trims the text and accepts one URL token:
+a root-relative path, or an absolute HTTP(S) URL on the canonical Cloud
+origin. It rejects other text before sending a request. Application pages
+must be [declared by their Type](/en/docs/platform/capabilities#declare-pages-for-pasted-links).
+Permalinks use the existing `/open/<type>/~<encoded-id>` format.
+
+The result is `{ ref, title, icon?, href }`: the current reader's matching ref
+supplies its title and icon, with the Type's localized presentation as
+fallback. `href` is the authorized reader's `open` link, falling back to
+`edit`. Unsupported, ambiguous, missing, denied, unavailable, and invalid
+results all return `null`. Cancellation also returns `null`.
+
+Core exposes authenticated `POST /api/resources/resolve` with JSON `{ url }`
+(a string of at most 8192 characters). Success returns the result above with
+status 200; every resolution failure returns 404 with
+`{ "error": "Resource not found" }`. This read-only POST accepts OAuth read
+scope. Authentication failures retain the normal Core authentication response.
+Foreign origins never invoke an application; the reader authorizes every
+candidate under the caller's authority.
+
+Server code can call `resolveCloudResourceUrl({ url, request, authority,
+locale? })` from `@k2b/cloud/api` for the same result or `null`. Agents and
+scripts can run `cld capabilities resolve <url>`; its text, JSON, and JSONL
+output include the ref, title, and an absolute `permalink` on the selected
+profile's server.

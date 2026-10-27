@@ -116,6 +116,7 @@ export const readResource = async (
   context: ChatContext,
   ref: ResourceRef,
   dependencies = resourceReaderDependencies,
+  onUnavailable?: () => void,
 ): Promise<ResourceDecision | null> => {
   const key = accessKey(contextPrincipal(context), ref);
   try {
@@ -159,7 +160,7 @@ export const readResource = async (
               ? { type: "notebooks.notebook" as const, id: data.notebookId }
               : null;
         if (parent) {
-          const containerDecision = ref.type === "spaces.item" ? await readResource(context, parent, dependencies) : null;
+          const containerDecision = ref.type === "spaces.item" ? await readResource(context, parent, dependencies, onUnavailable) : null;
           decision = {
             permission: "read",
             name: data.title,
@@ -176,9 +177,14 @@ export const readResource = async (
         }
       }
     }
+    if (result !== null && decision === null) {
+      onUnavailable?.();
+      return null;
+    }
     await redis.set(key, JSON.stringify(decision), "EX", ACCESS_TTL_SECONDS);
     return decision;
   } catch {
+    onUnavailable?.();
     // A failed reader or cache never falls back to Chat grants or stale permissions.
     return null;
   }
@@ -188,6 +194,7 @@ export const readContainers = async (
   type: z.infer<typeof ContainerRefSchema>["type"],
   cursor?: string,
   dependencies = resourceReaderDependencies,
+  query?: string,
 ) => {
   if (!context.caller || cursor === "") return { items: [], nextCursor: null };
   context.caller.signal?.throwIfAborted();
@@ -195,7 +202,7 @@ export const readContainers = async (
   const result = await dependencies.invoke(
     appId!,
     `${localType}.list`,
-    { limit: RESOURCE_PAGE_SIZE, ...(cursor ? { cursor } : {}) },
+    { limit: RESOURCE_PAGE_SIZE, ...(cursor ? { cursor } : {}), ...(query ? { query } : {}) },
     context.caller,
   );
   // Null means an explicit provider denial; outages and malformed envelopes remain failures.

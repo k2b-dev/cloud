@@ -20,6 +20,7 @@ import {
   Placeholder,
   prompts,
   ScrollArea,
+  TextInput,
   toast,
   useLocale,
   type VirtualFeedController,
@@ -30,9 +31,11 @@ import { chatMessages } from "../messages";
 import {
   type ConversationPageSchema,
   type ConversationSchema,
+  type ForYouPageSchema,
   type ItemEventSchema,
   MAX_MESSAGE_REFS,
   MESSAGE_MAX_CODE_POINTS,
+  type Mention,
   MessageBodySchema,
   type MessagePageSchema,
   type MessageSchema,
@@ -49,6 +52,7 @@ import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
+import ChatSearch, { createChatSearch } from "./ChatSearch";
 import ChatSharedSection from "./ChatSharedSection";
 import ChatSystemChats, { createSystemChatList } from "./ChatSystemChats";
 import ChatThreadColumn from "./ChatThreadColumn";
@@ -61,6 +65,8 @@ import { messageTime, sameDay } from "./chat-format";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
 import DiscoverChannels from "./DiscoverChannels";
+import ForYou from "./ForYou";
+import { createForYouApi } from "./for-you-api";
 import { createItemEventsApi } from "./item-events-api";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import type { ChosenMember } from "./MemberPicker";
@@ -99,6 +105,9 @@ export type ChatWorkspaceProps = {
   channelsPage?: boolean;
   channelQuery?: string;
   channelPage?: z.infer<typeof ConversationPageSchema> | null;
+  /** The address is the "For you" page; the server read its first page, or `null` when that failed. */
+  forYouPage?: boolean;
+  forYouInitial?: z.infer<typeof ForYouPageSchema> | null;
   /** The live cursor the server read before every part of this snapshot. */
   cursor: string;
   sidebar: z.infer<typeof ConversationPageSchema>;
@@ -163,6 +172,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const t = () => chatMessages.resolve([locale()]).t;
   const [route, setRoute] = createSignal<Route>({
     channels: props.channelsPage,
+    forYou: props.forYouPage,
     query: props.channelQuery,
     chatId: props.chatId,
     view: props.view,
@@ -173,6 +183,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [archived, setArchived] = createSignal(props.archived ?? false);
   const [filter, setFilter] = createSignal(props.filter ?? "all");
   const [collapsed, setCollapsed] = createSignal(props.collapsed ?? []);
+  // "For you": the unread count from the server's sidebar read, and a revision the page reads again on.
+  const [forYouUnread, setForYouUnread] = createSignal(props.sidebar.forYouUnread ?? 0);
+  const [forYouRevision, setForYouRevision] = createSignal(0);
   const [listRetry, setListRetry] = createSignal<(() => void) | null>(null);
   const [listError, setListError] = createSignal<string | null>(null);
   const [listPending, setListPending] = createSignal(false);
@@ -351,6 +364,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               setRetryingRead(true);
               try {
                 await changeRead(failure().run);
+                refreshSearch();
               } finally {
                 setRetryingRead(false);
               }
@@ -428,6 +442,21 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }),
   );
   const [systemExpanded, setSystemExpanded] = createSignal(props.open?.conversation.kind === "system");
+  /** The list's search; it lasts while the reader moves between chats and ends with "Escape" or an empty field. */
+  const [searchQuery, setSearchQuery] = createSignal("");
+  const chatSearch = createChatSearch(() => searchQuery().trim());
+  /** A hit may be a chat the list does not hold, so the search asks again after an action changed one. */
+  const refreshSearch = () => {
+    if (searchQuery().trim()) chatSearch.retry();
+  };
+  // A Space's or notebook's chat opened from "For you", the search, or another app shows where it lives in the list.
+  createEffect(
+    on(
+      () => (system() ? conversation()!.id : null),
+      (id) => id && setSystemExpanded(true),
+      { defer: true },
+    ),
+  );
   const [creatingThread, setCreatingThread] = createSignal(false);
   const canCreateThread = () => {
     const current = conversation();
@@ -446,6 +475,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const trailTitle = createMemo<string | undefined>((previous) => {
     const id = route().chatId;
     if (route().channels) return t().browseChannels;
+    if (route().forYou) return t().forYou;
     if (!id) return undefined;
     if (chat()?.id !== id) return previous;
     return conversation()?.title ?? t().threadUnavailable;
@@ -902,7 +932,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   // The server stops at the newest message, so the largest position marks the whole chat read.
   let unreadAction = 0;
-  const markRead = (id: string) => void changeRead(() => store?.markRead(id, Number.MAX_SAFE_INTEGER, "all"));
+  const markRead = (id: string) => void changeRead(() => store?.markRead(id, Number.MAX_SAFE_INTEGER, "all")).then(refreshSearch);
   const markUnread = async (id: string, from?: ChatFeedItem) => {
     const selection = openKey();
     const target = reporter;
@@ -913,6 +943,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       if (open) paused = true;
       if (open && reporter?.chatId === id) await reporter.reporter.settled();
       const changed = await changeRead(() => store?.markUnread(id));
+      refreshSearch();
       if (open && reporter === target) {
         if (changed) setUnreadGap(null);
         else {
@@ -1154,6 +1185,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     try {
       await store.personal(id, patch);
       sortRows();
+      refreshSearch();
     } catch (error) {
       if (error instanceof ChatRequestError && error.status === 400) {
         setListError(t().pinPositionChanged);
@@ -1246,6 +1278,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       route().view === next.view &&
       route().threads === next.threads &&
       route().channels === next.channels &&
+      route().forYou === next.forYou &&
       route().messageId === next.messageId &&
       route().panel !== next.panel
     ) {
@@ -1337,14 +1370,20 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const row = systemList.page()?.items.find((item) => item.conversation?.id === id);
     const ref = row?.ref ?? rows().find((row) => row.id === id)?.resource ?? (conversation()?.id === id ? conversation()?.resource : null);
     if (!ref || (ref.type !== "spaces.space" && ref.type !== "notebooks.notebook")) return;
+    await openSystem({ type: ref.type, id: ref.id }, (href) => navigation.push(href, { scroll: "preserve" }));
+  };
+  /** Opens a Space's or notebook's chat, starting it when nobody has written there yet. */
+  const openSystem = async (
+    ref: { type: "spaces.space" | "notebooks.notebook"; id: string },
+    go: (href: string) => void = (href) => navigate(href, { scroll: "preserve" }),
+  ) => {
     const token = ++systemOpen;
     setBusy(true);
     try {
       const current = await openSystemChat({ resourceType: ref.type, resourceId: ref.id });
       if (token !== systemOpen) return;
       store?.includeSystemChats([current]);
-      if ((await open(chatRoute(current.id))) === "applied")
-        navigation.push(viewHref(threadHref(current.id, "all")), { scroll: "preserve" });
+      if ((await open(chatRoute(current.id))) === "applied") go(viewHref(threadHref(current.id, "all")));
     } catch {
       if (token === systemOpen) toast.error(t().openFailed);
     } finally {
@@ -1458,6 +1497,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const initial = initialChannelPage;
     initialChannelPage = undefined;
     return initial;
+  };
+  // The server's first "For you" page seeds only the first mount; later visits read it again.
+  let initialForYou = props.forYouPage ? props.forYouInitial : undefined;
+  const takeInitialForYou = () => {
+    const initial = initialForYou;
+    initialForYou = undefined;
+    return initial;
+  };
+  const showForYou = async (navigation: LinkNavigateEvent) => {
+    if ((await open(chatRoute(null, "all", { forYou: true }))) === "applied") navigation.push(listHref(`${basePath}/for-you`));
   };
   const discover = async (navigation: LinkNavigateEvent) => {
     if ((await open(chatRoute(null, "all", { channels: true }))) === "applied") navigation.push(listHref(`${basePath}/channels`));
@@ -1686,7 +1735,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [reply, setReply] = createSignal<ChatFeedItem | null>(null);
   const replies = new Map<string, ChatFeedItem | null>();
   // A message that only shares Cloud elements has no text.
-  const send = async (text: string, refs: readonly CloudResourceRef[] = []): Promise<boolean> => {
+  const forYouApi = createForYouApi();
+  const send = async (text: string, refs: readonly CloudResourceRef[] = [], mentions: readonly Mention[] = []): Promise<boolean> => {
     const current = openChat();
     const id = draftId(route());
     const body = refs.length > 0 && !text.trim() ? "" : text;
@@ -1709,6 +1759,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       outbox.send(current.id, body, {
         thread,
         refs,
+        mentions,
         replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
       });
       setReply(null);
@@ -1771,6 +1822,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       const firstUnpinned = order().find((id) => live.sidebar.some((row) => row.id === id && row.pinnedRank === null));
       const ownTop = top?.lastMessage?.author.id === props.viewerId && top.id === live.openConversation?.id && firstUnpinned !== top.id;
       if (!collapsePending) setCollapsed(live.collapsed);
+      setForYouUnread(live.forYouUnread);
+      setForYouRevision(live.forYouRevision);
       setRows(live.sidebar);
       if (ownTop) sortRows();
       setHasMore(live.hasMoreSidebar);
@@ -1847,7 +1900,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     // The way up from a chat goes back to the list in place; a list opened before the chat is the previous entry.
     onCleanup(
       layout.handleUp((href) => {
-        if (![basePath, `${basePath}/archive`].includes(new URL(href, location.href).pathname) || (!route().chatId && !route().channels))
+        if (
+          ![basePath, `${basePath}/archive`].includes(new URL(href, location.href).pathname) ||
+          (!route().chatId && !route().channels && !route().forYou)
+        )
           return false;
         const depth = listDepth();
         if (depth > 0) history.go(-depth);
@@ -2056,111 +2112,191 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       {t().archive}
     </AppWorkspace.SidebarItem>
   );
+  const searchField = () => (
+    <div class="chat-list-search">
+      <TextInput
+        type="search"
+        icon="ti ti-search"
+        value={searchQuery}
+        onValueChange={setSearchQuery}
+        aria-label={t().searchChats}
+        placeholder={t().searchChats}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || !searchQuery()) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setSearchQuery("");
+        }}
+      />
+    </div>
+  );
+  const listErrorLine = () => (
+    <>
+      {/* A read state changed from the list with no chat open has no other place to say that it failed. */}
+      <Show when={!openChat()}>{readNotice()}</Show>
+      <Show when={listError()}>
+        {(error) => (
+          <InlineGuidance role="alert" tone="danger" class="chat-list-error">
+            {error()}
+            <Show when={listRetry()}>
+              <Button size="sm" variant="ghost" disabled={listPending() || listLoading()} onClick={() => listRetry()?.()}>
+                {t().retry}
+              </Button>
+            </Show>
+          </InlineGuidance>
+        )}
+      </Show>
+    </>
+  );
   const listContent = (includeArchive = true) => (
     <>
-      <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
-        {t().newChat}
-      </AppWorkspace.SidebarItem>
-      <div class="chat-list-filters" role="group" aria-label={t().chats}>
-        <FilterToggle
-          label={t().allChats}
-          icon="ti ti-messages"
-          active={!archived() && filter() === "all"}
-          disabled={listLoading() || listPending()}
-          onClick={() => void changeList("all")}
-        />
-        <FilterToggle
-          label={t().unreadChats}
-          icon="ti ti-mail"
-          active={filter() === "unread"}
-          disabled={listLoading() || listPending()}
-          onClick={() => void changeList("unread")}
-        />
-      </div>
-      <div class="chat-list-feedback">
-        <p role="status" aria-live="polite" class="chat-list-status">
-          {!listError() && (listLoading() ? t().loadingChats : listPending() ? t().savingList : "")}
-        </p>
-        <Show when={listError()}>
-          {(error) => (
-            <InlineGuidance role="alert" tone="danger" class="chat-list-error">
-              {error()}
-              <Show when={listRetry()}>
-                <Button size="sm" variant="ghost" disabled={listPending() || listLoading()} onClick={() => listRetry()?.()}>
-                  {t().retry}
-                </Button>
-              </Show>
-            </InlineGuidance>
-          )}
-        </Show>
-      </div>
+      {searchField()}
       <Show
-        when={archived()}
+        when={!searchQuery().trim()}
         fallback={
           <>
-            <Show when={pinnedRows().length > 0}>
-              <AppWorkspace.SidebarSection
-                title={t().pinnedChats}
-                collapsible
-                open={!collapsed().includes("pinned")}
-                onOpenChange={(open) => void collapse("pinned", open)}
-              >
-                <ScrollArea class="chat-list-pins" scrollPreserveKey="chat-pins">
-                  {list(pinnedRows, true)}
-                </ScrollArea>
-              </AppWorkspace.SidebarSection>
-            </Show>
-            <AppWorkspace.SidebarSection
-              title={t().chats}
-              actions={chatsActions()}
-              collapsible
-              open={!collapsed().includes("chats")}
-              onOpenChange={(open) => void collapse("chats", open)}
-            >
-              <Show
-                when={listRows().some((row) => row.pinnedRank === null && !row.channel && row.kind !== "system")}
-                fallback={
-                  <Show when={!hasMore() && !listLoading() && listRows().length === 0}>
-                    <Placeholder variant="inline" align="left" description={filter() === "unread" ? t().noUnreadChats : t().noneYet} />
-                  </Show>
-                }
-              >
-                {list(() => listRows().filter((row) => row.pinnedRank === null && !row.channel && row.kind !== "system"))}
-              </Show>
-            </AppWorkspace.SidebarSection>
-            <AppWorkspace.SidebarSection
-              title={t().channels}
-              collapsible
-              open={!collapsed().includes("channels")}
-              onOpenChange={(open) => void collapse("channels", open)}
-            >
-              {list(() => listRows().filter((row) => row.channel && row.pinnedRank === null && row.kind !== "system"))}
-              <AppWorkspace.SidebarItem
-                href={listHref(`${basePath}/channels`)}
-                navigation="enhanced"
-                onNavigate={discover}
-                active={route().channels}
-                icon="ti ti-compass"
-              >
-                {t().browseChannels}
-              </AppWorkspace.SidebarItem>
-            </AppWorkspace.SidebarSection>
+            {/* An action on a hit that fails says so here, as it does above the list. */}
+            {listErrorLine()}
+            <ChatSearch
+              search={chatSearch}
+              basePath={basePath}
+              active={{ chatId: openChat()?.id ?? null, view: openChat()?.view ?? "all" }}
+              chatRow={(hit) => {
+                // The list's own row once the store holds it, so pinning, archiving and reading show at once.
+                const row = () => rows().find((candidate) => candidate.id === hit.id) ?? hit;
+                return (
+                  <ChatList
+                    rows={[row()]}
+                    {...listProps()}
+                    threads={undefined}
+                    activeId={openChat()?.id ?? null}
+                    viewerId={props.viewerId}
+                    dateConfig={props.dateConfig}
+                    now={now}
+                    hasMore={false}
+                    onOpen={(id, navigation) => {
+                      const ref = row().resource;
+                      if (row().kind !== "system") return openFromList(id, navigation);
+                      if (ref?.type === "spaces.space" || ref?.type === "notebooks.notebook")
+                        return openSystem({ type: ref.type, id: ref.id }, (href) => navigation.push(href, { scroll: "preserve" }));
+                    }}
+                    onMore={() => {}}
+                    pending={listPending() || listLoading()}
+                    onPersonal={(id, patch) => void personal(id, patch)}
+                    onMarkRead={markRead}
+                    onMarkUnread={(id) => void markUnread(id)}
+                  />
+                );
+              }}
+              onThread={(chatId, thread, navigation) => openView(chatId, thread, navigation)}
+              onSystem={(ref) => openSystem(ref)}
+            />
           </>
         }
       >
-        <AppWorkspace.SidebarSection title={t().archive}>
-          <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().archiveEmpty} />}>
-            {list(listRows)}
-          </Show>
-        </AppWorkspace.SidebarSection>
-      </Show>
-      <Show when={hasMore()}>
-        <AppWorkspace.SidebarItem disabled={listLoading() || listPending()} icon="ti ti-dots" onClick={() => void more()}>
-          {t().showMoreChats}
+        <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+          {t().newChat}
         </AppWorkspace.SidebarItem>
+        <AppWorkspace.SidebarItem
+          href={listHref(`${basePath}/for-you`)}
+          navigation="enhanced"
+          onNavigate={showForYou}
+          active={route().forYou}
+          icon="ti ti-at"
+          meta={<AppWorkspace.SidebarItemStatus unread={forYouUnread() || undefined} />}
+        >
+          {t().forYou}
+        </AppWorkspace.SidebarItem>
+        <div class="chat-list-filters" role="group" aria-label={t().chats}>
+          <FilterToggle
+            label={t().allChats}
+            icon="ti ti-messages"
+            active={!archived() && filter() === "all"}
+            disabled={listLoading() || listPending()}
+            onClick={() => void changeList("all")}
+          />
+          <FilterToggle
+            label={t().unreadChats}
+            icon="ti ti-mail"
+            active={filter() === "unread"}
+            disabled={listLoading() || listPending()}
+            onClick={() => void changeList("unread")}
+          />
+        </div>
+        <div class="chat-list-feedback">
+          <p role="status" aria-live="polite" class="chat-list-status">
+            {!listError() && (listLoading() ? t().loadingChats : listPending() ? t().savingList : "")}
+          </p>
+          {listErrorLine()}
+        </div>
+        <Show
+          when={archived()}
+          fallback={
+            <>
+              <Show when={pinnedRows().length > 0}>
+                <AppWorkspace.SidebarSection
+                  title={t().pinnedChats}
+                  collapsible
+                  open={!collapsed().includes("pinned")}
+                  onOpenChange={(open) => void collapse("pinned", open)}
+                >
+                  <ScrollArea class="chat-list-pins" scrollPreserveKey="chat-pins">
+                    {list(pinnedRows, true)}
+                  </ScrollArea>
+                </AppWorkspace.SidebarSection>
+              </Show>
+              <AppWorkspace.SidebarSection
+                title={t().chats}
+                actions={chatsActions()}
+                collapsible
+                open={!collapsed().includes("chats")}
+                onOpenChange={(open) => void collapse("chats", open)}
+              >
+                <Show
+                  when={listRows().some((row) => row.pinnedRank === null && !row.channel && row.kind !== "system")}
+                  fallback={
+                    <Show when={!hasMore() && !listLoading() && listRows().length === 0}>
+                      <Placeholder variant="inline" align="left" description={filter() === "unread" ? t().noUnreadChats : t().noneYet} />
+                    </Show>
+                  }
+                >
+                  {list(() => listRows().filter((row) => row.pinnedRank === null && !row.channel && row.kind !== "system"))}
+                </Show>
+              </AppWorkspace.SidebarSection>
+              <AppWorkspace.SidebarSection
+                title={t().channels}
+                collapsible
+                open={!collapsed().includes("channels")}
+                onOpenChange={(open) => void collapse("channels", open)}
+              >
+                {list(() => listRows().filter((row) => row.channel && row.pinnedRank === null && row.kind !== "system"))}
+                <AppWorkspace.SidebarItem
+                  href={listHref(`${basePath}/channels`)}
+                  navigation="enhanced"
+                  onNavigate={discover}
+                  active={route().channels}
+                  icon="ti ti-compass"
+                >
+                  {t().browseChannels}
+                </AppWorkspace.SidebarItem>
+              </AppWorkspace.SidebarSection>
+            </>
+          }
+        >
+          <AppWorkspace.SidebarSection title={t().archive}>
+            <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().archiveEmpty} />}>
+              {list(listRows)}
+            </Show>
+          </AppWorkspace.SidebarSection>
+        </Show>
+        <Show when={hasMore()}>
+          <AppWorkspace.SidebarItem disabled={listLoading() || listPending()} icon="ti ti-dots" onClick={() => void more()}>
+            {t().showMoreChats}
+          </AppWorkspace.SidebarItem>
+        </Show>
+        {systemSection()}
+        <Show when={includeArchive}>{archiveLink()}</Show>
       </Show>
-      {systemSection()}
-      <Show when={includeArchive}>{archiveLink()}</Show>
     </>
   );
   return (
@@ -2230,6 +2366,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               </Show>
             </AppWorkspace.MainPane>
             <Switch>
+              <Match when={route().forYou}>
+                <ForYou
+                  initial={takeInitialForYou()}
+                  revision={forYouRevision()}
+                  basePath={basePath}
+                  dateConfig={props.dateConfig}
+                  now={now}
+                  onOpen={(item) => openView(item.conversation.id, item.thread.id, undefined, item.message.id)}
+                  onBack={backToList}
+                />
+              </Match>
               <Match when={route().channels}>
                 <DiscoverChannels
                   initial={takeInitialChannelPage()}
@@ -2425,6 +2572,21 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         draft={draft()}
                         onDraftChange={changeDraft}
                         onSend={send}
+                        people={{
+                          search: async (query, signal) =>
+                            (
+                              await forYouApi.candidates(
+                                current().id,
+                                query,
+                                openChat()?.view && openChat()!.view !== "all" ? openChat()!.view : "general",
+                                signal,
+                              )
+                            ).items.map((candidate) => ({
+                              id: `${candidate.principal.type}:${candidate.principal.id}`,
+                              name: candidate.name,
+                              agent: candidate.agent,
+                            })),
+                        }}
                         cards={cards()}
                         onPickResource={pickResource}
                         onBack={threaded() ? backToThreads : backToList}
