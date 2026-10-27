@@ -24,9 +24,10 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       data_schema JSONB NOT NULL,
       schema_hash TEXT NOT NULL,
       first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      retired_at TIMESTAMPTZ,
       PRIMARY KEY(app_id, type, version)
     )`.simple();
+    await tx`ALTER TABLE events.app_declarations ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ`.simple();
     await tx`CREATE TABLE IF NOT EXISTS events.app_manifests (
       app_id TEXT PRIMARY KEY,
       hash TEXT NOT NULL,
@@ -48,6 +49,10 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE(subscription_id,event_id)
     )`.simple();
     await tx`ALTER TABLE events.app_deliveries ADD COLUMN IF NOT EXISTS unreachable_count INTEGER NOT NULL DEFAULT 0`.simple();
+    await tx`ALTER TABLE events.app_deliveries ADD COLUMN IF NOT EXISTS retained_from TIMESTAMPTZ`.simple();
+    await tx`UPDATE events.app_deliveries SET retained_from = created_at WHERE retained_from IS NULL`;
+    await tx`ALTER TABLE events.app_deliveries ALTER COLUMN retained_from SET DEFAULT now(), ALTER COLUMN retained_from SET NOT NULL`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS app_deliveries_event ON events.app_deliveries(event_id)`.simple();
     await tx`CREATE INDEX IF NOT EXISTS app_deliveries_pending ON events.app_deliveries(next_attempt_at,seq) WHERE state IN ('pending','retrying')`.simple();
     await tx`CREATE INDEX IF NOT EXISTS app_deliveries_order ON events.app_deliveries(subscription_id,subject_key,seq) WHERE state IN ('pending','retrying','failed')`.simple();
     await tx`CREATE INDEX IF NOT EXISTS app_deliveries_retention ON events.app_deliveries(updated_at)`.simple();
@@ -55,6 +60,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       id BOOLEAN PRIMARY KEY DEFAULT true CHECK(id), last_sequence BIGINT NOT NULL DEFAULT 0,
       state TEXT NOT NULL DEFAULT 'ready', code TEXT, gap_from BIGINT, gap_to BIGINT, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )`.simple();
+    await tx`ALTER TABLE events.app_broker_status ADD COLUMN IF NOT EXISTS unseen_sequences INT8MULTIRANGE NOT NULL DEFAULT '{}'::int8multirange`.simple();
     await tx`INSERT INTO events.app_broker_status(id) VALUES(true) ON CONFLICT DO NOTHING`;
   });
 };

@@ -5,6 +5,7 @@ import type { AppEventEnvelope } from "../../contracts/app-events";
 import type { CapabilityEventCatalogEntry } from "../../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../../contracts/registry";
 import { type AuditActor, audit } from "../audit";
+import { toPgTextArray } from "../postgres";
 import type { StoredDeclaration } from "./declarations";
 
 type Dependencies = {
@@ -16,7 +17,7 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
   const catalog = async (locale = "en"): Promise<{ events: CapabilityEventCatalogEntry[] }> => {
     const [entries, declarations, storedSubscriptions] = await Promise.all([
       dependencies.registry(),
-      db<StoredDeclaration[]>`SELECT * FROM events.app_declarations ORDER BY type, version`,
+      db<StoredDeclaration[]>`SELECT * FROM events.app_declarations WHERE retired_at IS NULL ORDER BY type, version`,
       db<
         {
           appId: string;
@@ -106,7 +107,7 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
     db.begin(async (tx) => {
       const changed = await tx`
         UPDATE events.app_deliveries delivery SET state = 'pending', code = NULL, last_error = NULL,
-          attempts = 0, unreachable_count = 0, next_attempt_at = now(), claimed_until = NULL, claim_token = NULL, updated_at = now()
+          attempts = 0, unreachable_count = 0, retained_from = now(), next_attempt_at = now(), claimed_until = NULL, claim_token = NULL, updated_at = now()
         WHERE delivery.id = ${id}::uuid AND delivery.state IN ('failed', 'cancelled', 'done')
           AND EXISTS(SELECT FROM events.app_subscriptions subscription
             WHERE subscription.id = delivery.subscription_id AND subscription.state = 'active')
@@ -132,9 +133,17 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
       SELECT state, code, last_sequence AS "lastSequence", gap_from AS "gapFrom", gap_to AS "gapTo", updated_at AS "updatedAt"
       FROM events.app_broker_status WHERE id = true
     `;
+    const [rejected] = await db`SELECT count(*)::int AS count FROM events.app_events WHERE state = 'rejected'`;
+    const rejections = await db`
+      SELECT type, source, code, received_at AS time FROM events.app_events
+      WHERE state = 'rejected' ORDER BY seq DESC LIMIT 10
+    `;
     const deadLetters = await dependencies.deadLetters();
     return {
       ...stored,
+      rejectedCount: Number(rejected?.count ?? 0),
+      rejections,
+      rejectionLimit: 10,
       deadLetters: deadLetters.map(({ messageId, eventId, consumer, attempts, failedAt, reason }) => ({
         messageId,
         eventId,
@@ -165,6 +174,14 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
       if (!next || next === after) return;
       after = next;
     }
+    if (seen.size) {
+      await db`
+        UPDATE events.app_broker_status SET unseen_sequences = unseen_sequences - (
+          SELECT range_agg(int8range(sequence, sequence + 1, '[)'))
+          FROM unnest(${toPgTextArray([...seen].map(String))}::bigint[]) AS sequence
+        ) WHERE id = true AND NOT isempty(unseen_sequences)
+      `;
+    }
     while (seen.has(position + 1)) position++;
     await db`
       UPDATE events.app_broker_status SET last_sequence = ${position}, updated_at = now()
@@ -174,8 +191,8 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
       if (stream.id !== "cloud:app-events") continue;
       await db`
         UPDATE events.app_broker_status SET state = 'gap_detected', code = 'reconcile_required',
-          gap_from = COALESCE(gap_from, last_sequence + 1), gap_to = ${stream.firstSequence - 1}, updated_at = now()
-        WHERE id = true AND last_sequence + 1 < ${stream.firstSequence}
+          gap_from = COALESCE(gap_from, LEAST(lower(unseen_sequences), last_sequence + 1)), gap_to = ${stream.firstSequence - 1}, updated_at = now()
+        WHERE id = true AND LEAST(lower(unseen_sequences), last_sequence + 1) < ${stream.firstSequence}
           AND (state <> 'gap_detected' OR gap_to IS DISTINCT FROM ${stream.firstSequence - 1}::bigint)
       `;
       break;
@@ -189,7 +206,8 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
       if (previous?.state !== "gap_detected") return null;
       const [result] = await tx`
         UPDATE events.app_broker_status SET state = 'ready', code = NULL,
-          last_sequence = GREATEST(last_sequence, gap_to), gap_from = NULL, gap_to = NULL, updated_at = now()
+          last_sequence = GREATEST(last_sequence, gap_to),
+          unseen_sequences = unseen_sequences - int8multirange(int8range(NULL, gap_to + 1, '[)')), gap_from = NULL, gap_to = NULL, updated_at = now()
         WHERE id = true RETURNING state, last_sequence AS "lastSequence"
       `;
       await audit.record(
@@ -211,7 +229,7 @@ export function createEventAdministration(db: SQL, dependencies: Dependencies) {
           claimed_until = NULL, claim_token = NULL, updated_at = now()
         WHERE id IN (
           SELECT id FROM events.app_deliveries
-          WHERE state IN ('pending', 'retrying', 'failed') AND created_at < now() - interval '30 days' LIMIT 1000
+          WHERE state IN ('pending', 'retrying', 'failed') AND retained_from < now() - interval '30 days' LIMIT 1000
         )
       `;
       await tx`

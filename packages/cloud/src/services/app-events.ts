@@ -36,7 +36,7 @@ export const createAppEventBroker = (dependencies: BrokerDependencies = {}) => {
     deadLetters: dependencies.deadLetters ?? ((after) => appEventTopic().deadLetters.list({ limit: 100, after })),
     streams: dependencies.streams ?? (() => topicInventory()()),
   });
-  const acceptance = createEventAcceptance(db, declarations.reconcileSubscriptions, admin.checkGap);
+  const acceptance = createEventAcceptance(db, declarations.reconcileSubscriptions);
   const delivery = createEventDelivery(db, dependencies.getApp ?? getCapability, declarations.reconcileSubscriptions, dependencies);
   return { ...declarations, ...acceptance, ...delivery, ...admin };
 };
@@ -56,7 +56,6 @@ export const startAppEventBroker = async (): Promise<() => Promise<void>> => {
         await appEventBroker.accept(event.data, event.sequence, event.attempt);
       } catch (error) {
         if (event.attempt >= 8) {
-          await appEventBroker.checkGap();
           await appEventBroker.markSeen(event.sequence);
         }
         throw error;

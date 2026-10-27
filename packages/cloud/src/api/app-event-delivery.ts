@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { CompiledCapabilities } from "../_internal/capabilities";
 import { AppEventEnvelopeSchema, appEventSubscriptionId } from "../contracts/app-events";
 import { deliverAppEvent } from "../events/app-events";
+import { REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "../server/request-timeout";
 import { verifyAppEventInvocation } from "../services/identity/invocation-token";
 
 const DeliveryInput = z
@@ -28,10 +29,23 @@ export const createAppEventDeliveryRoutes = (compiled: CompiledCapabilities, ver
     if (envelope.place) return c.json({ code: "resource_events_unsupported" }, 410);
     if (!sub.definition.schema.safeParse(envelope.data).success) return c.json({ code: "schema_mismatch" }, 422);
     const signal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(30000)]);
+    let onAbort: () => void = () => {};
+    const aborted = new Promise<never>((_, reject) => {
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
+      if (signal.aborted) onAbort();
+    });
+    setRequestTimeout(c, 40);
     try {
-      await deliverAppEvent({ compiled, subscriptionId, envelope, context: { subscriptionId, eventId: envelope.id, attempt, signal } });
+      await Promise.race([
+        deliverAppEvent({ compiled, subscriptionId, envelope, context: { subscriptionId, eventId: envelope.id, attempt, signal } }),
+        aborted,
+      ]);
       return c.json({ done: true });
     } catch {
-      return c.json({ code: "handler_failed" }, 503);
+      return c.json({ code: signal.aborted && signal.reason?.name === "TimeoutError" ? "handler_timeout" : "handler_failed" }, 503);
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
     }
   });

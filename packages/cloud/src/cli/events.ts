@@ -118,7 +118,7 @@ const build = (locale?: string) => {
           print(ctx, await read(ctx, `/subscriptions${flags.app ? `?${new URLSearchParams({ app: flags.app })}` : ""}`)),
       }),
       command("status", {
-        summary: t("Show event broker status", "Status des Event-Brokers anzeigen"),
+        summary: t("Show event broker status and rejected events", "Status des Event-Brokers und abgelehnte Events anzeigen"),
         run: async ({ ctx }) => print(ctx, await read(ctx, "/status")),
       }),
       command("deliveries", {

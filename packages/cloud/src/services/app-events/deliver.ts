@@ -9,7 +9,8 @@ export const APP_EVENT_DELIVERY_BACKOFF_MS = [1_000, 5_000, 30_000, 120_000, 600
 export const APP_EVENT_DELIVERY_ATTEMPTS = APP_EVENT_DELIVERY_BACKOFF_MS.length + 1;
 const BATCH_SIZE = 32;
 const CONCURRENCY = 4;
-const DELIVERY_TIMEOUT_MS = 30_000;
+// The subscriber has 30 seconds to answer before Core ends the request.
+const DELIVERY_TIMEOUT_MS = 45_000;
 type Delivery = {
   id: string;
   event_id: string;
@@ -107,6 +108,15 @@ export function createEventDelivery(
         WHERE id = ${row.id}::uuid AND claim_token = ${row.claim_token}::uuid AND state IN ('pending', 'retrying')
         RETURNING id
       `;
+      if (state === "done" && changed.length) {
+        await tx`
+          UPDATE events.app_deliveries delivery SET next_attempt_at = now(), unreachable_count = 0, updated_at = now()
+          FROM events.app_subscriptions subscription
+          WHERE subscription.id = delivery.subscription_id AND subscription.app_id = ${row.app_id}
+            AND delivery.state = 'retrying' AND delivery.code = 'subscriber_unreachable'
+            AND delivery.claim_token IS NULL AND delivery.next_attempt_at > now()
+        `;
+      }
       if (state === "failed" && changed.length) await auditFailure(tx, row, code);
     });
 
@@ -119,8 +129,17 @@ export function createEventDelivery(
         await finish(row, "cancelled", "subscription_removed");
         return;
       }
+      if (subscription?.state !== "active") {
+        // A declaration transition can block a subscription after this delivery was claimed.
+        await db`
+          UPDATE events.app_deliveries SET state = 'retrying', code = ${subscription?.reason ?? "subscription_blocked"},
+            attempts = attempts - 1, claimed_until = NULL, claim_token = NULL, next_attempt_at = now(), updated_at = now()
+          WHERE id = ${row.id}::uuid AND claim_token = ${row.claim_token}::uuid AND state IN ('pending', 'retrying')
+        `;
+        return;
+      }
       const app = await findApp(row.app_id);
-      if (!app || subscription?.state !== "active") {
+      if (!app) {
         await postpone(row);
         return;
       }
@@ -145,8 +164,19 @@ export function createEventDelivery(
           redirect: "error",
           signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
         });
-      } catch {
-        await postpone(row);
+      } catch (error) {
+        const code = error instanceof Error && "code" in error ? error.code : undefined;
+        // Only errors that prove no request reached the subscriber refund an attempt.
+        if (["ConnectionRefused", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH"].includes(String(code))) {
+          await postpone(row);
+        } else {
+          await finish(
+            row,
+            row.attempts >= APP_EVENT_DELIVERY_ATTEMPTS ? "failed" : "retrying",
+            error instanceof Error && error.name === "TimeoutError" ? "handler_timeout" : "connection_lost",
+            message(error),
+          );
+        }
         return;
       }
       if (response.ok) {
@@ -158,7 +188,7 @@ export function createEventDelivery(
         return;
       }
       if (response.status === 410) {
-        await postpone(row);
+        await finish(row, row.attempts >= APP_EVENT_DELIVERY_ATTEMPTS ? "failed" : "retrying", "subscription_unavailable");
         return;
       }
       throw new Error(`Subscriber returned HTTP ${response.status}`);

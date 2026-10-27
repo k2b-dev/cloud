@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
@@ -79,4 +79,28 @@ test("subscription handlers receive schema-inferred parsed data", async () => {
   });
   expect(response.status).toBe(200);
   expect(received).toBe(`${id}:absent:1`);
+});
+
+test("the subscriber answers handler_timeout after its own deadline even if the handler ignores cancellation", async () => {
+  const deadline = new AbortController();
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+    expect(milliseconds).toBe(30_000);
+    return deadline.signal;
+  });
+  let complete: () => void = () => {};
+  const { make, send } = setup(
+    () =>
+      new Promise<void>((resolve) => {
+        complete = resolve;
+        deadline.abort(new DOMException("Handler deadline expired", "TimeoutError"));
+      }),
+  );
+  try {
+    const response = await send(make(true));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ code: "handler_timeout" });
+  } finally {
+    complete();
+    timeout.mockRestore();
+  }
 });

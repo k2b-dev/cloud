@@ -247,3 +247,15 @@ test("acknowledge-gap calls the audited administrator endpoint only after confir
   expect(acknowledged.requests).toEqual([{ path: "/api/app-events/status/acknowledge", init: { method: "POST" } }]);
   expect(acknowledged.printed).toEqual([{ state: "ready" }]);
 });
+
+test.each(["text", "json", "jsonl"] as const)("status preserves rejected count and metadata in %s output", async (output) => {
+  const status = {
+    state: "ready",
+    rejectedCount: 2,
+    rejectionLimit: 10,
+    rejections: [{ type: "core.user.created", source: "core", code: "event_not_declared", time: "2000-01-01T00:00:00Z" }],
+  };
+  const result = context(["status"], {}, output, () => Response.json(status));
+  await events.run(result.ctx);
+  expect(result.printed).toEqual([output === "text" ? JSON.stringify(status, null, 2) : status]);
+});

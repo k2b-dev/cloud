@@ -86,7 +86,10 @@ cld events redeliver <delivery-id> --yes
 `--yes` is required because the handler can repeat effects. Redelivery is
 bounded by retained state and the current subscription contract; it does not
 repair an unsupported subscription. After the request, inspect the delivery
-again to see whether it completed or failed.
+again to see whether it completed or failed. A successful redelivery request
+starts a fresh 30-day retention window for unresolved work. Its event remains
+available while the delivery still references it; completion uses the normal
+seven-day cleanup window.
 
 The worker makes at most **8 attempts**, with delays of **1 second, 5 seconds,
 30 seconds, 120 seconds, 600 seconds, 1800 seconds, and 3600 seconds** between
@@ -97,17 +100,40 @@ subscriber's domain effect are not one transaction.
 An offline subscriber keeps its active subscription and pending deliveries.
 Core also creates deliveries for it while it is offline. Unreachable checks
 wait 30 seconds, then double up to one hour without spending one of the eight
-handler attempts. Only a live manifest that removes or replaces a subscription
+handler attempts. Only absence from the registry or a failure before connecting
+counts as unreachable. A request timeout or a lost connection spends an attempt
+and ends in `failed` after eight attempts (`handler_timeout` or `connection_lost`).
+A stale subscriber answering HTTP 410 retries within the same eight-attempt
+budget as `subscription_unavailable`. The subscriber answers after a 30-second
+handler deadline; Core waits up to 45 seconds. A successful delivery wakes that
+application's other unreachable deliveries immediately.
+
+Only a live manifest that removes or replaces a subscription
 cancels its backlog with `subscription_removed`.
 
 Core persists event declarations after observing a live publisher. Publisher
 restarts therefore do not block ingestion or subscribers. A declaration never
 seen by Core gets two registration retries (1 and 5 seconds), then the event
-is stored as `rejected` with `event_not_declared`. Inspect rejected events in
-Core's `events.app_events` table when diagnosing rollout order.
+is stored as `rejected` with `event_not_declared`. A live publisher removing an
+event declaration retires it: existing subscriptions become blocked with
+`event_not_declared`, and new events of that type are rejected. Offline
+publishers keep their declarations. Reintroducing the declaration makes eligible
+subscriptions active again.
 
-Status reports `gap_detected` only when the stream's first retained sequence
-passes Core's consumer position. Dead-lettered sequences count as seen.
+`status` includes `rejectedCount` for retained rejected events and `rejections`
+with the latest ten rejections (`rejectionLimit: 10`). Each entry contains only
+`type`, `source`, `code`, and receipt `time`; no payload is returned. Use the code
+to diagnose `invalid_envelope`, `event_too_large`, `invalid_declaration_schema`,
+`schema_mismatch`, `reference_mismatch`, or `event_not_declared`. Malformed input
+without a usable event ID is logged and acknowledged. Unknown fields at the top
+level of an otherwise valid envelope are stripped for publisher compatibility.
+Deterministic rejection does not hold up later ingestion; registry refresh
+failures use persisted declarations. Gap checks run periodically, outside event
+acceptance.
+
+Status reports `gap_detected` when stream retention passes an unseen ingestion
+sequence. `lastSequence` is the highest observed sequence; persisted holes can
+predate it. Replayed and dead-lettered sequences count as seen.
 After reconciling affected subscribers, clear the signal with:
 
 ```sh
@@ -130,7 +156,8 @@ age; JetStream reserves the byte limit on every replica. Both limits apply:
 byte pressure can shorten the available history. This is a capacity budget,
 not an unlimited replay guarantee.
 
-Core retains unresolved deliveries for **30 days**, then marks them
+Core retains unresolved deliveries for **30 days** from creation or the latest
+administrator redelivery, then marks them
 `cancelled` with `retention_expired`. That cancellation remains visible for
 **7 days**. Completed and cancelled deliveries are retained for **7 days**;
 failures are not silently discarded. Events are retained for at least

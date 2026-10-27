@@ -198,11 +198,23 @@ Subscriptions and event declarations persist while their applications are
 offline. Only a live subscriber's changed manifest can remove its subscription.
 An unreachable subscriber waits from 30 seconds up to one hour between checks
 without spending a handler attempt; the 30-day delivery retention bound still
-applies.
+applies. Connection loss after sending and request timeouts spend an attempt;
+eight failed attempts end the delivery. The framework answers after a 30-second
+handler deadline and Core waits 45 seconds. Honor the signal even when a timeout
+has already returned: work that ignores cancellation can still finish effects.
+
+When a live publisher removes a declaration, Core retains its history but removes
+it from the current catalog, blocks its subscriptions with `event_not_declared`,
+and rejects new events of that type. Offline publishers retain their declarations.
 
 Core normally ingests the shared stream serially. A never-seen declaration
 gets two short registration retries (after 1 and 5 seconds), then becomes a
 visible rejected event with `event_not_declared`; later events can continue.
+Deterministically invalid envelopes and unusable stored schemas are also rejected
+without retrying ingestion. Core strips unknown top-level envelope fields, so
+additive metadata from a newer publisher does not block older Core instances.
+Administrators inspect rejection counts and metadata with `cld events status`;
+that response never includes payloads.
 Delivery order is Core acceptance order within a subscription and subject.
 A failed earlier delivery holds later deliveries for that pair. Recovered
 ingestion dead letters are accepted when replayed, so they can arrive after

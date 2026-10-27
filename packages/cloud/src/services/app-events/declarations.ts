@@ -16,6 +16,7 @@ export type StoredDeclaration = {
   description: string;
   data_schema: Record<string, unknown>;
   schema_hash: string;
+  retired_at: Date | null;
 };
 
 type Transition = { id: string; previous_state: string; state: string; reason: string | null };
@@ -43,17 +44,17 @@ export function createDeclarationSync(db: SQL, registry: () => Promise<Capabilit
       for (const entry of entries.toSorted((left, right) => left.appId.localeCompare(right.appId))) {
         const hash = capabilityHash({ events: entry.manifest.events ?? [], subscribes: entry.manifest.subscribes ?? [] });
         const [known] = await tx`SELECT hash FROM events.app_manifests WHERE app_id = ${entry.appId}`;
-        if (known?.hash === hash) {
-          await tx`
-            UPDATE events.app_declarations SET last_seen_at = now()
-            WHERE app_id = ${entry.appId} AND last_seen_at < now() - interval '30 seconds'
-          `;
-          continue;
-        }
+        if (known?.hash === hash) continue;
         // Serialize only replicas observing a changed manifest for this application.
         await tx`SELECT pg_advisory_xact_lock(hashtext(${`cloud.app-events:${entry.appId}`}))`;
         const [stored] = await tx`SELECT hash FROM events.app_manifests WHERE app_id = ${entry.appId}`;
         if (stored?.hash === hash) continue;
+        const declared = (entry.manifest.events ?? []).map((event) => `${entry.appId}.${event.localId}@${event.version}`);
+        await tx`
+          UPDATE events.app_declarations SET retired_at = now()
+          WHERE app_id = ${entry.appId} AND retired_at IS NULL
+            AND NOT(type || '@' || version::text = ANY(${toPgTextArray(declared)}::text[]))
+        `;
         for (const event of entry.manifest.events ?? []) {
           const type = `${entry.appId}.${event.localId}`;
           const schemaHash = event.schemaHash;
@@ -67,11 +68,12 @@ export function createDeclarationSync(db: SQL, registry: () => Promise<Capabilit
             ) ON CONFLICT(app_id, type, version) DO UPDATE SET
               subject = EXCLUDED.subject, place = EXCLUDED.place, automation = EXCLUDED.automation,
               title = EXCLUDED.title, description = EXCLUDED.description, data_schema = EXCLUDED.data_schema,
-              schema_hash = EXCLUDED.schema_hash, last_seen_at = now()
+              schema_hash = EXCLUDED.schema_hash, retired_at = NULL
             WHERE (app_declarations.subject, app_declarations.place, app_declarations.automation,
               app_declarations.title, app_declarations.description, app_declarations.schema_hash)
               IS DISTINCT FROM (EXCLUDED.subject, EXCLUDED.place, EXCLUDED.automation,
                 EXCLUDED.title, EXCLUDED.description, EXCLUDED.schema_hash)
+              OR app_declarations.retired_at IS NOT NULL
           `;
         }
         const ids: string[] = [];
@@ -110,7 +112,7 @@ export function createDeclarationSync(db: SQL, registry: () => Promise<Capabilit
           WITH previous AS MATERIALIZED (
             SELECT id, state AS previous_state FROM events.app_subscriptions
             WHERE app_id = ${entry.appId} AND NOT(id = ANY(${toPgTextArray(ids)}::text[])) AND state <> 'cancelled'
-            FOR UPDATE
+            ORDER BY id FOR UPDATE
           ) UPDATE events.app_subscriptions subscription SET
             state = 'cancelled', reason = 'subscription_removed', updated_at = now()
           FROM previous WHERE subscription.id = previous.id
@@ -142,9 +144,14 @@ export function createDeclarationSync(db: SQL, registry: () => Promise<Capabilit
           FROM events.app_subscriptions subscription
           LEFT JOIN events.app_declarations declaration ON declaration.type = subscription.event_type
             AND declaration.version = subscription.version
-            AND declaration.app_id = split_part(subscription.event_type, '.', 1)
+            AND declaration.app_id = split_part(subscription.event_type, '.', 1) AND declaration.retired_at IS NULL
           WHERE subscription.state <> 'cancelled'
-          FOR UPDATE OF subscription
+            AND (subscription.state, subscription.reason) IS DISTINCT FROM (
+              CASE WHEN declaration.type IS NULL OR declaration.place IS NOT NULL THEN 'blocked' ELSE 'active' END,
+              CASE WHEN declaration.type IS NULL THEN 'event_not_declared'
+                WHEN declaration.place IS NOT NULL THEN 'resource_events_unsupported' ELSE NULL END
+            )
+          ORDER BY subscription.id FOR UPDATE OF subscription
         ) UPDATE events.app_subscriptions subscription SET state = desired.state, reason = desired.reason, updated_at = now()
         FROM desired WHERE subscription.id = desired.id
           AND (subscription.state, subscription.reason) IS DISTINCT FROM (desired.state, desired.reason)

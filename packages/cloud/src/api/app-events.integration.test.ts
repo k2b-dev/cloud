@@ -77,7 +77,7 @@ afterAll(async () => {
 suiteFor("database")("app events administration API", () => {
   beforeEach(async () => {
     await sql`TRUNCATE events.app_deliveries, events.app_subscriptions, events.app_events RESTART IDENTITY CASCADE`.simple();
-    await sql`UPDATE events.app_broker_status SET last_sequence=0, state='ready', gap_from=NULL, gap_to=NULL`;
+    await sql`UPDATE events.app_broker_status SET last_sequence=0, state='ready', gap_from=NULL, gap_to=NULL,unseen_sequences='{}'::int8multirange`;
     await sql`DELETE FROM audit.events WHERE action LIKE 'app_events.%'`;
   });
   test("record samples recent events once per distinct value-free shape with stable, distinct fixture IDs", async () => {
@@ -112,6 +112,31 @@ suiteFor("database")("app events administration API", () => {
     expect(await (await routes.request("/record/producer.changed?shapeOnly=true&limit=4")).text()).toBe(text);
     const limited = await (await routes.request("/record/producer.changed?shapeOnly=true&limit=2")).text();
     expect(limited.trim().split("\n")).toHaveLength(1);
+  });
+  test("status exposes rejected-event metadata and no payload through the admin API", async () => {
+    await broker.reconcileSubscriptions();
+    await broker.accept(
+      {
+        id: id(90),
+        type: "producer.changed",
+        source: "producer",
+        version: 1,
+        time: "2000-01-01T00:00:00.000Z",
+        subject: { type: "producer.item", id: id(101) },
+        data: { id: "private-invalid-payload" },
+      },
+      90,
+    );
+    const response = await routes.request("/status");
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result).toMatchObject({
+      rejectedCount: 1,
+      rejectionLimit: 10,
+      rejections: [{ type: "producer.changed", source: "producer", code: "schema_mismatch", time: expect.any(String) }],
+    });
+    expect(JSON.stringify(result)).not.toContain("private-invalid-payload");
+    expect(Object.keys(result.rejections[0]).sort()).toEqual(["code", "source", "time", "type"]);
   });
   test("administrator acknowledgement resets a persisted gap and audits the administrator", async () => {
     await sql`UPDATE events.app_broker_status SET state='gap_detected',code='reconcile_required',gap_from=1,gap_to=3`;

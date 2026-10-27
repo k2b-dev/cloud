@@ -52,8 +52,10 @@ export const createAppEventRoutes = (authenticate: MiddlewareHandler<AuthContext
       const result = await service.acknowledgeGap({ userId: user.id, uid: user.uid, provider: user.provider, roles: user.roles });
       return result ? c.json(result) : c.json({ code: "no_gap_detected" }, 409);
     })
-    .get("/status", describeRoute({ tags: ["App events"], summary: "Read broker progress and retention-gap status" }), async (c) =>
-      c.json(await service.status()),
+    .get(
+      "/status",
+      describeRoute({ tags: ["App events"], summary: "Read broker progress, retention gaps and rejected-event metadata" }),
+      async (c) => c.json(await service.status()),
     )
     .get(
       "/record/:eventType",
