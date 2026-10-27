@@ -264,6 +264,7 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
           size="sm"
           class="text-(--k2b-danger-text)"
           disabled={saving()}
+          data-ai-action="delete-provider"
           onClick={() => openAiDelete({ kind: "provider", provider: base() })}
         >
           <i class="ti ti-trash" aria-hidden="true" />

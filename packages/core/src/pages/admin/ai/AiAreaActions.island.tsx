@@ -575,7 +575,7 @@ export default function AiAreaActions(props: {
   const label = () => (props.kind === "add-provider" ? t().addProvider : t().addModels);
   if (props.variant === "icon")
     return (
-      <IconButton type="button" variant="ghost" size="sm" label={label()} onClick={open}>
+      <IconButton type="button" variant="ghost" size="sm" label={label()} onClick={open} data-ai-action={props.kind}>
         <i class="ti ti-plus" aria-hidden="true" />
       </IconButton>
     );
@@ -587,7 +587,7 @@ export default function AiAreaActions(props: {
       </Button>
     );
   return (
-    <Button type="button" variant={props.variant === "button" ? "secondary" : "primary"} size="sm" onClick={open}>
+    <Button type="button" variant={props.variant === "button" ? "secondary" : "primary"} size="sm" onClick={open} data-ai-action={props.kind}>
       <i class="ti ti-plus" aria-hidden="true" />
       {label()}
     </Button>
