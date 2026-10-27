@@ -31,15 +31,17 @@ Keine Regel ersetzt bestehende Zuständigkeiten. Sobald jemand zuständig ist, w
 
 Bei einer KI-Klassifizierung legst du das Ziel in der Regel fest. Die KI wählt eine Kategorie, niemals eine Person anhand eines Namens in der Nachricht. Hat die Kategorie kein Ziel, weist diese Regel niemanden zu; eine untere Regel darf weiterhin jemanden zuweisen.
 
-## Im Protokoll nachsehen und eine Zuweisung rückgängig machen {icon="history"}
+## Im Protokoll nachsehen und Regeländerungen rückgängig machen {icon="history"}
 
 Unter **Automatisierungen → Protokoll** siehst du, was Regeln geändert, nicht zugewiesen oder übersprungen haben, sowie von Hand geänderte Zuweisungen. Wähle einen Tag, filtere das Ergebnis oder suche nach Betreff, Absender, Regel oder Ziel. Die Zähler folgen Tag und Suche über alle Filter. Das Protokoll umfasst die letzten 30 Tage und zeigt nur Unterhaltungen, die du lesen darfst.
 
 Öffne einen Eintrag für die Entscheidungskette: Bedingungen, KI-Auswahlen und vorhandene ausgelesene Werte, die feste Regelzeile, Ziel, Änderungen und KI-Aufrufe. Das sind gespeicherte Ergebnisse; beim Öffnen wird die KI nicht erneut gefragt. Ein Quellenzitat erscheint nur, wenn eines gespeichert wurde.
 
-**Rückgängig** hebt die Zuweisung der Regel auf, solange sie noch aktuell ist. Dafür brauchst du dieselbe Berechtigung wie zum Zuweisen von Hand. Tags, Kommentare und Verschiebungen werden nicht rückgängig gemacht. Hat jemand die Zuweisung geändert oder gibt es die Unterhaltung nicht mehr, ist Rückgängig nicht möglich und ändert nichts.
+**Rückgängig** hebt die noch aktuellen Änderungen des Eintrags mit einem Klick ohne Rückfrage auf: Zuweisungen, hinzugefügte oder entfernte lokale Tags, Verschiebungen und Archivierung, Status, Gelesen-Zustand, weitere Markierungen und Schlüsselwörter. Dafür brauchst du Schreibzugriff auf das ganze Postfach. Was jemand danach geändert hat, bleibt erhalten und wird als beibehalten gemeldet. Kann nichts sicher zurückgenommen werden, ist Rückgängig nicht möglich und ändert nichts. Kommentare bleiben als Aufzeichnung erhalten; Zusammenfassungen haben eine eigene Versionsgeschichte und werden hier nicht zurückgenommen.
 
-Nach Rückgängig weist diese Regel dieselbe Unterhaltung nie wieder zu, auch nicht bei einer späteren Antwort des Kunden. Dieser Schutz bleibt nach Ablauf des Protokolleintrags bestehen. Nur **Wiederholen**, unmittelbar nach Rückgängig durch dieselbe Person, stellt die Zuweisung wieder her und entfernt den Schutz. Für andere Regeln gelten weiterhin ihre normalen Bedingungen.
+Verschiebungen, Markierungen und Schlüsselwörter werden beim Anbieter geändert. Rückgängig gilt als erledigt, sobald Mail die Aufträge angenommen hat. Fehler erscheinen bei den anderen fehlgeschlagenen Aufträgen. **Wiederholen** durch dieselbe Person stellt nur die zurückgenommenen Änderungen wieder her und erhält spätere persönliche Änderungen. Solange Anbieteraufträge laufen, warte vor Rückgängig oder Wiederholen, bis sie abgeschlossen sind. Lade den Eintrag neu und versuche es erneut.
+
+Nach Rückgängig überspringt diese Regel die zurückgenommenen Änderungsarten für dieselbe Unterhaltung, auch bei späteren Antworten. Wer etwa Tag und Archivierung zurücknimmt, verhindert damit erneutes Taggen und Verschieben durch diese Regel. Dieser Schutz bleibt nach Ablauf des Protokolleintrags bestehen. Wiederholen entfernt den Schutz für die wiederhergestellten Arten. Für andere Regeln gelten weiterhin ihre normalen Bedingungen.
 
 Im Terminal:
 

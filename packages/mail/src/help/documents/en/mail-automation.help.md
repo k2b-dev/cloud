@@ -32,15 +32,17 @@ No rule replaces existing assignees. If anyone is already responsible, the assig
 
 For AI classification, configure the target in the rule. AI chooses a category, never a person from a name in the message. If that category has no target, this rule assigns nobody; a lower rule may still assign someone.
 
-## Check the automation log and undo an assignment {icon="history"}
+## Check the automation log and undo rule changes {icon="history"}
 
 Open **Automations → Log** to see what rules changed, left unassigned, or skipped, and assignments changed by hand. Choose a day, filter the result, or search by subject, sender, rule, or target. Counts follow the day and search across all filters. The log covers the last 30 days and shows only conversations you may read.
 
 Open an entry for the decision chain: conditions, AI choices and available extracted values, the fixed rule row, target, effects, and AI call counts. These are recorded results; opening the entry does not ask AI again. A source quote is shown only when one was recorded.
 
-**Undo** reverses the rule's assignment while it is still current. It needs the same permission as assigning by hand. It does not reverse tags, comments, or moves. If someone changed the assignment or the conversation is gone, undo is unavailable and changes nothing.
+**Undo** reverses the entry's current assignments, added or removed local tags, folder moves and archives, status, read state, other flags, and keywords in one click, without confirmation. You need write access to the whole mailbox. Changes someone made afterwards stay as they are and are reported as kept. If nothing can safely be reversed, Undo is unavailable and changes nothing. Comments remain as records; summaries keep their own version history and are not undone here.
 
-After undo, that rule never assigns the same conversation again, including when the customer replies later. This protection stays after the log entry expires. Only **Redo**, immediately after undo by the same person, restores the assignment and removes that protection. Other rules remain subject to their normal conditions.
+Folder, flag, and keyword changes go through the provider. Undo is done when Mail accepts those commands; provider failures appear with the other failed commands. **Redo**, by the same person, reapplies only what Undo reversed and preserves later personal changes. While provider commands are still running, wait for them to finish before undoing or redoing the group. Refresh the entry and try again.
+
+After Undo, that rule skips the reverted kinds of change for the same conversation, including on later replies. For example, undoing a tag and archive prevents that rule tagging or moving the conversation again. This protection stays after the log entry expires. Redo removes protection for the kinds it restores. Other rules follow their normal conditions.
 
 In the terminal:
 

@@ -2,6 +2,7 @@ import type { WorkflowBoundPlan, WorkflowIrStep } from "@k2b/cloud/workflows";
 import { sql } from "bun";
 import type { ActorRef, AuditStep, AutomationLogItem } from "../contracts";
 import { actorRefFromRequest, type MailRequestContext, userBackedActor } from "./auth";
+import { loadAutomationEffects } from "./automation-effect-state";
 import { enqueueMailInvalidation, mailLive } from "./live";
 
 type SqlClient = typeof sql;
@@ -303,6 +304,13 @@ const projectMailWorkflowAudit = async (runId: string, db: SqlClient): Promise<v
       conversationId: id,
       evidenceConversationId: typeof conversation.id === "string" ? conversation.id : null,
     });
+    const snapshots = await loadAutomationEffects(db, runId, conv.id);
+    // Provider snapshots are loaded only after their original command was confirmed.
+    const recorded = snapshots.map((effect) => effect.effect);
+    const [snapshotState] = await db<{ present: boolean }[]>`SELECT EXISTS (SELECT 1 FROM mail.automation_effect
+      WHERE run_id = ${runId}::uuid AND conversation_id = ${conv.id}::uuid) AS present`;
+    if (snapshotState?.present)
+      audit.effects = [...audit.effects.filter((effect) => ["assign", "comment", "summary"].includes(effect.kind)), ...recorded];
     const terminal = ["succeeded", "failed", "canceled", "needs_attention"].includes(run.state);
     if (
       !audit.effects.length &&

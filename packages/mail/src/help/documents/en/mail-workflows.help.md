@@ -25,7 +25,7 @@ After 24 hours, a lower rule may take over an unresolved upper decision. Once it
 
 `assignConversation` skips if the conversation has any assignee (`already_assigned`), including a manual assignment. It also skips if this workflow's assignment for the conversation was undone (`undone_before`), even on a later reply and after the 30-day log window. Only immediate redo by the same person removes that marker. A manual assignment change never edits the workflow. `user: null` leaves existing assignees in place; remove the assignment by hand or undo its rule entry.
 
-Use [the automation log](/app/mail/help/mail-automation) to inspect the decision chain and undo a current rule assignment. Undo needs the same permission as assigning by hand and cannot overwrite a later manual change.
+Use [the automation log](/app/mail/help/mail-automation) to inspect the decision chain and undo current rule effects. Undo needs write access to the whole mailbox and preserves later personal changes. The rule then skips the reverted effect classes with `undone_before`, including tags, placement, status, flags, and keywords on later replies. Comments and summaries are not undone.
 
 ## Start with a received-message workflow {icon="route"}
 

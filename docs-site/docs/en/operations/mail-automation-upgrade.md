@@ -54,26 +54,13 @@ The daily AI count covers that rule across all its versions, restricted to
 conversations the reader may see. New audit entries refresh the open reader
 through the same live updates as conversation changes.
 
-Undo needs the same permission as manual assignment. It reverses the rule's
-assignment only while that assignment is still current; it does not reverse
-other effects, such as moves, tags, or comments. If someone changed the
-assignment or the conversation is gone, the request returns HTTP 409 with
-`mail.automation.undo_not_possible` and changes nothing. Both undo and redo
-conflicts return `{ code, reason, item }`, where `item` contains the current
-entry with `undo.state: "not_possible"`.
+Undo needs write access to the whole mailbox. One click reverses the entry's still-current assignments, local tag additions/removals, folder moves/archive, status, read state, other flags, and keywords. Later personal changes remain untouched. Comments stay as records; summaries have separate version history and are not undone.
 
-Each entry's `undo.at` is an ISO timestamp: the undo time for `done`, or the
-latest known manual assignment-change time for `not_possible` with reason
-`changed_by_person`. In that conflict state, `undo.by` identifies the person
-who made the later change. Unknown people or times remain `null`; all other
-undo states have `at: null`. Clients can replace their displayed entry from
-the conflict response without another request.
+Entries expose `undo.kept: [{ kind, reason: "changed_by_person" | "gone" }]` and `undo.reverted`, the original effects actually reverted. A partial undo is `done`; `available` means at least one effect can still be reversed, and `none` means there are no reversible effects. Older snapshots may omit the arrays. If nothing can safely change, both Undo and Redo return HTTP 409 `mail.automation.undo_not_possible` with `{ code, reason, item }`, without applying changes. `undo.at` and `undo.by` retain known undo/manual assignment-change attribution; unknown values are `null`.
 
-Undo creates a permanent exclusion for that workflow and conversation,
-including later incoming replies. The exclusion survives expiry of the log
-entry. Only redo immediately after undo by the same person restores the
-assignment and removes that exclusion. Do not treat audit retention as a way
-to reset the assignment guard.
+Provider changes use the existing durable command path. Undo is done when commands are accepted; provider failures appear in normal command outcomes. Redo by the same actor restores only the subset Undo reverted and preserves later personal changes. Provider effects can be redone after their Undo commands finish. While any original or latest provider command in the group is queued, executing, or ambiguous, Undo/Redo returns HTTP 409 with reason `provider_pending` and changes nothing. Before Undo or after Redo, the entry shows `not_possible` with that reason until commands finish; an accepted Undo stays `done` while its commands run. Clients should show a temporary waiting message and allow retry after refreshing.
+
+Migration adds per-effect snapshots and class exclusions without rewriting existing audit rows. Historical effects without provenance cannot be safely undone. Exclusions are keyed by workflow, conversation, and effect class: assignment, tags, placement, status, flags, or keywords. They survive the log's 30-day retention. A later reply skips each excluded class with `undone_before`; redo removes only the markers for classes it restores. Audit expiry never resets this protection.
 
 ## Verify the upgraded behavior
 

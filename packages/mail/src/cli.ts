@@ -2876,7 +2876,7 @@ const composeLogoCommands = (t: Translate) => [
   }),
 ];
 
-/** Read and reverse mailbox-scoped rule assignments through the public log API. */
+/** Read and reverse mailbox-scoped rule effects through the public log API. */
 const automationLogCommands = (t: Translate) => {
   const mailbox = {
     mailbox: flag.string({
@@ -2985,8 +2985,8 @@ const automationLogCommands = (t: Translate) => {
     }),
     command("automation log undo", {
       summary: t({
-        en: "Undo a current rule assignment and prevent this rule assigning the conversation again",
-        de: "Eine aktuelle Regelzuweisung rückgängig machen und weitere Zuweisungen dieser Regel für die Unterhaltung verhindern",
+        en: "Undo current rule effects and prevent this rule repeating those effects on the conversation",
+        de: "Aktuelle Regeländerungen rückgängig machen und deren Wiederholung für diese Unterhaltung verhindern",
       }),
       args: itemArgs,
       flags: mailbox,
@@ -2999,10 +2999,12 @@ const automationLogCommands = (t: Translate) => {
         );
         if (printStructured(ctx, result)) return;
         printItem(ctx, result.item);
+        ctx.print(`${t({ en: "Reverted", de: "Rückgängig gemacht" })}: ${JSON.stringify(result.item.undo.reverted ?? [])}`);
+        ctx.print(`${t({ en: "Kept", de: "Beibehalten" })}: ${JSON.stringify(result.item.undo.kept ?? [])}`);
         ctx.print(
           t({
-            en: "This rule will not assign this conversation again, including on later replies, unless you redo the undo.",
-            de: "Diese Regel weist diese Unterhaltung auch bei späteren Antworten nicht erneut zu. Nur unmittelbares „Wiederholen“ stellt die Zuweisung wieder her.",
+            en: "This rule will not repeat the reverted effect classes on this conversation, including on later replies, unless you redo the undo.",
+            de: "Diese Regel führt die rückgängig gemachten Änderungsarten auch bei späteren Antworten nicht erneut aus. „Wiederholen“ stellt nur die rückgängig gemachten Änderungen wieder her.",
           }),
         );
       },

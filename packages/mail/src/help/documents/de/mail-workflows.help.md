@@ -26,6 +26,8 @@ Nach 24 Stunden darf eine untere Regel eine offene Entscheidung übernehmen. Dan
 
 Im [Automatisierungsprotokoll](/app/mail/help/mail-automation) prüfst du die Entscheidungskette und machst eine aktuelle Regelzuweisung rückgängig. Dafür brauchst du dieselbe Berechtigung wie zum Zuweisen von Hand; spätere manuelle Änderungen werden nicht überschrieben.
 
+Im [Automatisierungsprotokoll](/app/mail/help/mail-automation) kannst du aktuelle Regeländerungen mit Schreibzugriff auf das ganze Postfach rückgängig machen. Spätere persönliche Änderungen bleiben erhalten. Die Regel überspringt danach die zurückgenommenen Änderungsarten mit `undone_before`, auch Tags, Ablage, Status, Markierungen und Schlüsselwörter bei späteren Antworten. Kommentare und Zusammenfassungen werden hier nicht zurückgenommen.
+
 ## Mit einem Workflow für empfangene Nachrichten beginnen {icon="route"}
 
 Dieser Workflow ergänzt ein übertragbares Anbieter-Schlüsselwort, wenn der Betreff einer empfangenen Nachricht den Text `invoice` enthält:

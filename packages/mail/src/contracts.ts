@@ -3733,10 +3733,14 @@ export const automationLogEffectSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("assign"), target: automationTargetSchema }),
   z.object({ kind: z.literal("unassign") }),
   z.object({ kind: z.literal("tag"), name: z.string() }),
+  z.object({ kind: z.literal("untag"), name: z.string() }),
   z.object({ kind: z.literal("move"), folder: z.string() }),
   z.object({ kind: z.literal("archive") }),
   z.object({ kind: z.literal("status"), status: conversationWorkStatusSchema }),
   z.object({ kind: z.literal("read") }),
+  z.object({ kind: z.literal("unread") }),
+  z.object({ kind: z.literal("flag"), flag: z.enum(["answered", "flagged", "draft"]), present: z.boolean() }),
+  z.object({ kind: z.literal("keyword"), name: z.string(), present: z.boolean() }),
   z.object({ kind: z.literal("comment") }),
   z.object({ kind: z.literal("summary") }),
 ]);
@@ -3788,7 +3792,19 @@ export const automationLogItemSchema = z.object({
   reasons: z.array(automationLogReasonSchema),
   undo: z.object({
     state: z.enum(["available", "done", "not_possible", "none"]),
-    reason: z.enum(["changed_by_person", "conversation_gone"]).nullable(),
+    kept: z
+      .array(
+        z.object({
+          kind: z.enum(["assign", "unassign", "tag", "untag", "move", "archive", "status", "read", "unread", "flag", "keyword"]),
+          reason: z.enum(["changed_by_person", "gone"]),
+        }),
+      )
+      .optional()
+      .describe(
+        "Effects preserved by a partial undo; empty when every reversible effect was reverted. Legacy snapshots may omit this field.",
+      ),
+    reverted: z.array(automationLogEffectSchema).optional().describe("Effects actually reverted, or reapplied by redo."),
+    reason: z.enum(["changed_by_person", "conversation_gone", "provider_pending"]).nullable(),
     by: z.object({ userId: z.string(), name: z.string() }).nullable(),
     at: z
       .string()
@@ -3843,7 +3859,7 @@ export const automationLogDetailSchema = automationLogItemSchema.extend({
 });
 export const automationLogUndoConflictSchema = z.object({
   code: z.literal("mail.automation.undo_not_possible"),
-  reason: z.enum(["changed_by_person", "conversation_gone"]),
+  reason: z.enum(["changed_by_person", "conversation_gone", "provider_pending"]),
   item: automationLogItemSchema,
 });
 export type AutomationLogItem = z.infer<typeof automationLogItemSchema>;

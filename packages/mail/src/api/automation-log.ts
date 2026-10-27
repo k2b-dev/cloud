@@ -12,7 +12,7 @@ import {
 } from "../contracts";
 import type { MailRequestContext } from "../service/auth";
 import {
-  changeAutomationLogAssignment,
+  changeAutomationLogEffects,
   getAutomationLogItem,
   getConversationAutomationTrace,
   listAutomationLog,
@@ -38,11 +38,11 @@ const context = (c: Context<MailApiContext>): MailRequestContext => ({
 const mutationOperation = (operation: string) =>
   describeRoute({
     tags: ["Mail:Workflows"],
-    summary: `${operation} a rule assignment`,
+    summary: `${operation} the current reversible effects of a rule entry`,
     ...requiresAuth,
     responses: {
-      200: jsonResponse(z.object({ item: automationLogItemSchema }), "Updated rule assignment"),
-      409: jsonResponse(automationLogUndoConflictSchema, "Assignment changed since the rule ran"),
+      200: jsonResponse(z.object({ item: automationLogItemSchema }), "Updated rule effects, with reverted and kept effects"),
+      409: jsonResponse(automationLogUndoConflictSchema, "No effects can safely be changed; includes the refreshed entry"),
     },
   });
 
@@ -62,13 +62,13 @@ const automationLogRoutes = new Hono<MailApiContext>()
     (c) => respondPublic(c, getAutomationLogItem(context(c), internalMailboxId(c), c.req.valid("param").itemId)),
   )
   .post("/mailboxes/:mailboxId/automation-log/:itemId/undo", mutationOperation("Undo"), v("param", itemParams), async (c) => {
-    const result = await changeAutomationLogAssignment(context(c), internalMailboxId(c), c.req.valid("param").itemId, "undo");
+    const result = await changeAutomationLogEffects(context(c), internalMailboxId(c), c.req.valid("param").itemId, "undo");
     if (!result.ok && result.error.code === "mail.automation.undo_not_possible")
       return c.json(automationLogUndoConflictSchema.parse(result.error), 409);
     return respondPublic(c, Promise.resolve(result));
   })
   .post("/mailboxes/:mailboxId/automation-log/:itemId/redo", mutationOperation("Redo"), v("param", itemParams), async (c) => {
-    const result = await changeAutomationLogAssignment(context(c), internalMailboxId(c), c.req.valid("param").itemId, "redo");
+    const result = await changeAutomationLogEffects(context(c), internalMailboxId(c), c.req.valid("param").itemId, "redo");
     if (!result.ok && result.error.code === "mail.automation.undo_not_possible")
       return c.json(automationLogUndoConflictSchema.parse(result.error), 409);
     return respondPublic(c, Promise.resolve(result));

@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "@k2b/cloud/ai";
+import { encryptSecret, toPgTextArray } from "@k2b/cloud/services";
 import { workflowPathKey } from "@k2b/cloud/workflows";
 import { createWorkflowAiTask } from "@k2b/cloud/workflows/ai";
-import { deleteWorkflowScope, emitWorkflowEvent } from "@k2b/cloud/workflows/store";
+import { deleteWorkflowScope, emitWorkflowEvent, wakeExpiredWorkflowRuns } from "@k2b/cloud/workflows/store";
 import type { Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
@@ -22,10 +23,12 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
-import { changeAutomationLogAssignment, getAutomationLogItem, getConversationAutomationTrace, listAutomationLog } from "./automation-log";
+import { changeAutomationLogEffects, getAutomationLogItem, getConversationAutomationTrace, listAutomationLog } from "./automation-log";
 import { recordMailWorkflowAudit } from "./automation-log-recording";
 import { loadMailAutomationLog } from "./automation-workspace";
 import { applyConversationCollaboration } from "./collaboration";
+import { createActorCommand } from "./commands";
+import { createLocalTag, setConversationLocalTags } from "./local-tags";
 import { createMailbox } from "./mailboxes";
 import { ingestEnvelope } from "./sync-runtime";
 import { getWorkflowSnapshot, mailWorkflowEventContext } from "./workflow-data";
@@ -47,6 +50,7 @@ suite("Mail conversation automation log and undo", () => {
     mailboxShortId = "",
     resourceId = "",
     folderId = "",
+    archiveFolderId = "",
     uid = 30000;
   const users: MailRequestContext[] = [];
   const userId = (index = 0) => {
@@ -122,6 +126,26 @@ suite("Mail conversation automation log and undo", () => {
     >`INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
       VALUES (${newShortId()}, ${resourceId}::uuid, 'audit-inbox', 'Inbox', 'inbox', 'current') RETURNING id`;
     folderId = folder!.id;
+    const [archive] = await sql<
+      { id: string }[]
+    >`INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role, sync_status)
+      VALUES (${newShortId()}, ${resourceId}::uuid, 'audit-archive', 'Archive', 'archive', 'current') RETURNING id`;
+    archiveFolderId = archive!.id;
+    const fixtureSecret = await encryptSecret({ kind: "password", password: "fixture-secret" });
+    const [connection] = await sql<{ id: string }[]>`INSERT INTO mail.provider_connections
+      (owner_mailbox_id, name, email, username, imap_host, imap_port, imap_tls_mode, smtp_host, smtp_port, smtp_tls_mode, secret_kind, encrypted_secret, status)
+      VALUES (${mailboxId}::uuid, 'Undo fixture', 'support@example.test', 'support@example.test', 'imap.example.test', 993, 'implicit',
+        'smtp.example.test', 465, 'implicit', 'password', ${fixtureSecret}, 'active') RETURNING id`;
+    const [binding] = await sql<{ id: string }[]>`INSERT INTO mail.provider_bindings
+      (remote_resource_id, connection_id, state, remote_locator, verified_scope_fingerprint, verified_secret_revision, capabilities)
+      VALUES (${resourceId}::uuid, ${connection!.id}::uuid, 'active', '{}'::jsonb, ${"b".repeat(64)}, 1, '{"move":true}'::jsonb) RETURNING id`;
+    for (const [id, name] of [
+      [folderId, "Inbox"],
+      [archiveFolderId, "Archive"],
+    ])
+      await sql`INSERT INTO mail.binding_folder_refs
+      (binding_id, folder_id, remote_path, uid_validity, uid_next, effective_rights, last_verified_at)
+      VALUES (${binding!.id}::uuid, ${id}::uuid, ${name}, 1, 1, ARRAY['read','insert','move','write_flags']::text[], now())`;
   });
   afterAll(async () => {
     setSystemTime();
@@ -177,8 +201,15 @@ suite("Mail conversation automation log and undo", () => {
         input: {
           name: `Assign ${target} ${suffix}`,
           priority: 0,
-          source: `inputs:\n  conversation: { type: mailConversation, required: true }\ntriggers:\n  messageReceived:\n    with: { conversation: "\${{ trigger.conversation }}" }\nsteps:\n  - assignConversation: { conversation: inputs.conversation, user: ${target} }\n${extra}`,
-          effectBudget: workflowEffectBudgetSchema.parse({ maxCollaborationChanges: 10, maxAiCalls: 2, maxTargets: 1 }),
+          source: `inputs:\n  message: { type: mailMessage, required: true }\n  conversation: { type: mailConversation, required: true }\ntriggers:\n  messageReceived:\n    with: { message: "\${{ trigger.message }}", conversation: "\${{ trigger.conversation }}" }\nsteps:\n  - assignConversation: { conversation: inputs.conversation, user: ${target} }\n${extra}`,
+          effectBudget: workflowEffectBudgetSchema.parse({
+            maxCollaborationChanges: 10,
+            maxAiCalls: 2,
+            maxTargets: 1,
+            maxMoves: 1,
+            maxFlagChanges: 4,
+            maxKeywordChanges: 4,
+          }),
         },
       }),
     );
@@ -200,7 +231,7 @@ suite("Mail conversation automation log and undo", () => {
           scopeId: mailboxId,
           type: "mail.messageReceived",
           targetWorkflowId: definition.id,
-          data: { conversation: input.snapshot.source.conversation },
+          data: { conversation: input.snapshot.source.conversation, message: input.snapshot.source.message },
           context: { ...mailWorkflowEventContext(input.snapshot), automationOrder: { position, name: definition.name } },
           occurredAt: fixed,
           dedupeKey: `${input.refId}:${definition.id}`,
@@ -266,9 +297,9 @@ suite("Mail conversation automation log and undo", () => {
     expect(
       (await loadMailboxConversationDetail({ context: users[0]!, mailboxId, conversationId: first.conversationId }))?.automationTrace,
     ).toContainEqual(item);
-    const undone = unwrap(await changeAutomationLogAssignment(users[0]!, mailboxId, item.id, "undo"));
+    const undone = unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo"));
     const [persistedUndo] = await sql<{ undone_at: Date }[]>`SELECT undone_at FROM mail.automation_log WHERE id = ${item.id}::uuid`;
-    expect(undone.item.undo).toEqual({
+    expect(undone.item.undo).toMatchObject({
       state: "done",
       reason: null,
       by: { userId: userId(), name: "Owner" },
@@ -293,13 +324,402 @@ suite("Mail conversation automation log and undo", () => {
     expect(await assignment(first.conversationId)).toEqual([]);
     const trace = unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, first.conversationId));
     expect(trace.items.some((entry) => entry.reasons.some((reason) => reason.kind === "undone_before"))).toBe(true);
-    expect(unwrap(await changeAutomationLogAssignment(users[0]!, mailboxId, item.id, "redo")).item.undo).toEqual({
+    expect(unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "redo")).item.undo).toMatchObject({
       state: "available",
       reason: null,
       by: null,
       at: null,
     });
     expect(await assignment(first.conversationId)).toEqual([userId(1)]);
+  });
+
+  const tagState = async (conversationId: string) => {
+    const [row] = await sql<{ revision: string | number }[]>`SELECT revision FROM mail.conversations WHERE id = ${conversationId}::uuid`;
+    return Number(row!.revision);
+  };
+  const logFor = async (conversationId: string) =>
+    unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, conversationId)).items.find((item) => item.by.kind === "rule")!;
+  const providerSettled = async (commandId: string, destination: string, previousRefId: string) => {
+    const [source] = await sql<
+      { message_id: string; flags: string[]; keywords: string[] }[]
+    >`SELECT message_id, flags, keywords FROM mail.message_placements WHERE remote_message_ref_id = ${previousRefId}::uuid`;
+    await sql`UPDATE mail.remote_message_refs SET stale_at = now() WHERE id = ${previousRefId}::uuid`;
+    await sql`UPDATE mail.message_placements SET deleted_at = now() WHERE remote_message_ref_id = ${previousRefId}::uuid`;
+    const [ref] = await sql<{ id: string }[]>`INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid, connector_ref)
+      VALUES (${destination}::uuid, ${source!.message_id}::uuid, 1, ${++uid}, ${{ source: "command", commandId }}::jsonb) RETURNING id`;
+    await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags, keywords)
+      VALUES (${ref!.id}::uuid, ${destination}::uuid, ${source!.message_id}::uuid, ${toPgTextArray(source!.flags)}::text[], ${toPgTextArray(source!.keywords)}::text[])`;
+    await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE id = ${commandId}::uuid`;
+    return ref!.id;
+  };
+
+  const replyRun = async (definition: Awaited<ReturnType<typeof rule>>, conversationId: string) => {
+    const next = await message();
+    await sql`UPDATE mail.conversation_messages SET conversation_id = ${conversationId}::uuid WHERE message_id = ${next.snapshot.preconditions.message.id}::uuid`;
+    const snapshot = (await getWorkflowSnapshot({ mailboxId, remoteMessageRefId: next.refId }))!;
+    const id = await run(definition, { ...next, conversationId, snapshot });
+    expect(await runMailWorkflow(id)).toMatchObject({ result: { state: "succeeded" } });
+    return id;
+  };
+  test("Undo reverts tags, assignment and archive together, records provider intent, and suppresses every class on a later reply", async () => {
+    const tag = unwrap(await createLocalTag({ context: users[0]!, mailboxId, input: { name: `Invoice ${suffix}`, color: "#2563eb" } }));
+    const definition = await rule(
+      "Can",
+      `  - addLocalTag: { conversation: inputs.conversation, tag: "${tag.name}" }\n  - archiveMessage: { message: inputs.message }\n`,
+    );
+    const input = await message(),
+      runId = await run(definition, input);
+    await runMailWorkflow(runId);
+    const [original] = await sql<{ id: string }[]>`SELECT id FROM mail.commands WHERE correlation_id = ${runId} AND kind = 'move'`;
+    expect(original).toBeDefined();
+    const pendingItem = await logFor(input.conversationId);
+    expect(pendingItem.undo).toMatchObject({ state: "not_possible", reason: "provider_pending" });
+    const pendingUndo = await changeAutomationLogEffects(users[0]!, mailboxId, pendingItem.id, "undo");
+    expect(pendingUndo).toMatchObject({ ok: false, error: { code: "mail.automation.undo_not_possible", reason: "provider_pending" } });
+    expect(await assignment(input.conversationId)).toEqual([userId(1)]);
+    expect(await sql`SELECT 1 FROM mail.conversation_local_tags WHERE conversation_id = ${input.conversationId}::uuid`).toHaveLength(1);
+    // The fixture does not start Sync; model only the provider's confirmed move, then assert the inverse intent.
+    const archivedRef = await providerSettled(original!.id, archiveFolderId, input.refId);
+    await sql`UPDATE mail.remote_message_refs SET connector_ref = '{"providerMessageId":"after-sync"}'::jsonb WHERE id = ${archivedRef}::uuid`;
+    await recordMailWorkflowAudit(runId);
+    const item = await logFor(input.conversationId);
+    expect(item.effects.map((effect) => effect.kind).sort()).toEqual(["archive", "assign", "tag"]);
+    expect(item.undo.state).toBe("available");
+    const undone = unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo"));
+    expect(undone.item.undo).toMatchObject({ state: "done", kept: [] });
+    expect(undone.item.undo.reverted?.map((effect) => effect.kind).sort()).toEqual(["archive", "assign", "tag"]);
+    expect(await assignment(input.conversationId)).toEqual([]);
+    expect(await sql`SELECT 1 FROM mail.conversation_local_tags WHERE conversation_id = ${input.conversationId}::uuid`).toHaveLength(0);
+    const [inverse] = await sql<
+      { id: string; target: { sourceFolderId: string; destinationFolderId: string; remoteMessageRefId: string } }[]
+    >`
+      SELECT id, target FROM mail.commands WHERE idempotency_key LIKE ${`automation:${item.id}:undo:%`}`;
+    expect(inverse!.target).toMatchObject({
+      sourceFolderId: archiveFolderId,
+      destinationFolderId: folderId,
+      remoteMessageRefId: archivedRef,
+    });
+    expect(
+      unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, input.conversationId)).items.some(
+        (entry) =>
+          entry.by.kind === "person" &&
+          entry.effects.some((effect) => effect.kind === "unassign") &&
+          entry.effects.some((effect) => effect.kind === "untag") &&
+          entry.effects.some((effect) => effect.kind === "move" && effect.folder === "Inbox"),
+      ),
+    ).toBe(true);
+    // A lost response/retry must not queue another inverse.
+    expect(unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo")).item.undo.state).toBe("done");
+    expect(await sql`SELECT 1 FROM mail.commands WHERE idempotency_key LIKE ${`automation:${item.id}:undo:%`}`).toHaveLength(1);
+    const pendingRedo = await apiFor().request(`/mailboxes/${mailboxShortId}/automation-log/${item.id}/redo`, { method: "POST" });
+    expect(pendingRedo.status).toBe(409);
+    expect(automationLogUndoConflictSchema.parse(await pendingRedo.json()).reason).toBe("provider_pending");
+    expect(await assignment(input.conversationId)).toEqual([]);
+    expect(await sql`SELECT 1 FROM mail.conversation_local_tags WHERE conversation_id = ${input.conversationId}::uuid`).toHaveLength(0);
+    expect((await logFor(input.conversationId)).undo.state).toBe("done");
+    await recordMailWorkflowAudit(runId);
+    expect((await logFor(input.conversationId)).effects).toEqual(item.effects);
+    const next = await message();
+    await sql`UPDATE mail.conversation_messages SET conversation_id = ${input.conversationId}::uuid WHERE message_id = ${next.snapshot.preconditions.message.id}::uuid`;
+    const snapshot = await getWorkflowSnapshot({ mailboxId, remoteMessageRefId: next.refId });
+    const nextRun = await run(definition, { ...next, conversationId: input.conversationId, snapshot: snapshot! });
+    expect(await runMailWorkflow(nextRun)).toMatchObject({ result: { state: "succeeded" } });
+    const outputs = await sql<
+      { skipped: string }[]
+    >`SELECT COALESCE(effect_output->>'skipped', outcome #>> '{outcome,output,skipped}') AS skipped FROM workflows.step_outcome WHERE run_id = ${nextRun}::uuid AND action IS NOT NULL`;
+    expect(outputs.map((row) => row.skipped)).toEqual(["undone_before", "undone_before", "undone_before"]);
+    // Redo restores only the reverted subset, through another provider command.
+    await providerSettled(inverse!.id, folderId, archivedRef);
+    const redone = unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "redo"));
+    expect(redone.item.undo.kept).toEqual([]);
+    expect(await assignment(input.conversationId)).toEqual([userId(1)]);
+    expect(
+      await sql`SELECT 1 FROM mail.conversation_local_tags WHERE conversation_id = ${input.conversationId}::uuid AND tag_id = ${tag.id}::uuid`,
+    ).toHaveLength(1);
+    const [redo] = await sql<
+      { target: { sourceFolderId: string; destinationFolderId: string } }[]
+    >`SELECT target FROM mail.commands WHERE idempotency_key LIKE ${`automation:${item.id}:redo:%`}`;
+    expect(redo!.target).toMatchObject({ sourceFolderId: folderId, destinationFolderId: archiveFolderId });
+    expect(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo")).toMatchObject({
+      ok: false,
+      error: { code: "mail.automation.undo_not_possible", reason: "provider_pending" },
+    });
+    expect(await assignment(input.conversationId)).toEqual([userId(1)]);
+    expect(await sql`SELECT 1 FROM mail.conversation_local_tags WHERE conversation_id = ${input.conversationId}::uuid`).toHaveLength(1);
+    expect(await sql`SELECT 1 FROM mail.automation_effect_undone WHERE conversation_id = ${input.conversationId}::uuid`).toHaveLength(0);
+  });
+
+  test("a later personal tag removal is kept; redo does not reapply it", async () => {
+    const tag = unwrap(await createLocalTag({ context: users[0]!, mailboxId, input: { name: `Keep ${suffix}`, color: "#2563eb" } }));
+    const definition = await rule("Can", `  - addLocalTag: { conversation: inputs.conversation, tag: "${tag.name}" }\n`);
+    const input = await message(),
+      runId = await run(definition, input);
+    expect(await runMailWorkflow(runId)).toMatchObject({ result: { state: "succeeded" } });
+    const item = await logFor(input.conversationId);
+    unwrap(
+      await setConversationLocalTags({
+        context: users[0]!,
+        mailboxId,
+        conversationId: input.conversationId,
+        input: { expectedRevision: await tagState(input.conversationId), tagIds: [] },
+      }),
+    );
+    const undone = unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo"));
+    expect(undone.item.undo).toMatchObject({
+      state: "done",
+      kept: [{ kind: "tag", reason: "changed_by_person" }],
+      reverted: [{ kind: "assign" }],
+    });
+    unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "redo"));
+    expect(await sql`SELECT 1 FROM mail.conversation_local_tags WHERE conversation_id = ${input.conversationId}::uuid`).toHaveLength(0);
+    expect(await assignment(input.conversationId)).toEqual([userId(1)]);
+  });
+
+  test("tag-only and status effects are reversible; later away-and-back changes refuse Undo with 409", async () => {
+    const tag = unwrap(await createLocalTag({ context: users[0]!, mailboxId, input: { name: `Only ${suffix}`, color: "#2563eb" } }));
+    const definition = await rule(
+      "Can",
+      `  - addLocalTag: { conversation: inputs.conversation, tag: "${tag.name}" }\n  - setConversationStatus: { conversation: inputs.conversation, status: waiting }\n`,
+    );
+    const input = await message();
+    await manual(input.conversationId, [userId(2)]); // Assignment is skipped; the other classes are still undoable.
+    const runId = await run(definition, {
+      ...input,
+      snapshot: (await getWorkflowSnapshot({ mailboxId, remoteMessageRefId: input.refId }))!,
+    });
+    expect(await runMailWorkflow(runId)).toMatchObject({ result: { state: "succeeded" } });
+    const item = await logFor(input.conversationId);
+    expect(item.effects.map((effect) => effect.kind).sort()).toEqual(["status", "tag"]);
+    expect(item.undo.state).toBe("available");
+    const undone = unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo"));
+    expect(undone.item.undo).toMatchObject({ state: "done", kept: [] });
+    expect(
+      (await sql<{ work_status: string }[]>`SELECT work_status FROM mail.conversations WHERE id = ${input.conversationId}::uuid`)[0]!
+        .work_status,
+    ).toBe("needs_action");
+    const nextRun = await replyRun(definition, input.conversationId);
+    const skipped = await sql<{ action: string }[]>`SELECT action FROM workflows.step_outcome
+      WHERE run_id = ${nextRun}::uuid AND COALESCE(effect_output->>'skipped', outcome #>> '{outcome,output,skipped}') = 'undone_before'`;
+    expect(skipped.map((step) => step.action).sort()).toEqual(["addLocalTag", "setConversationStatus"]);
+    unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "redo"));
+    for (const tagIds of [[], [tag.id]])
+      unwrap(
+        await setConversationLocalTags({
+          context: users[0]!,
+          mailboxId,
+          conversationId: input.conversationId,
+          input: { expectedRevision: await tagState(input.conversationId), tagIds },
+        }),
+      );
+    for (const completion of ["done", "open"] as const)
+      unwrap(
+        await applyConversationCollaboration({
+          context: users[0]!,
+          mailboxId,
+          conversationId: input.conversationId,
+          input: { expectedRevision: await tagState(input.conversationId), completion },
+        }),
+      );
+    const response = await apiFor().request(`/mailboxes/${mailboxShortId}/automation-log/${item.id}/undo`, { method: "POST" });
+    expect(response.status).toBe(409);
+    const conflict = automationLogUndoConflictSchema.parse(await response.json());
+    expect(conflict.item.undo.kept).toEqual(
+      expect.arrayContaining([
+        { kind: "tag", reason: "changed_by_person" },
+        { kind: "status", reason: "changed_by_person" },
+      ]),
+    );
+  });
+
+  test("a person's later move is kept and not redone", async () => {
+    const definition = await rule("Can", "  - archiveMessage: { message: inputs.message }\n");
+    const input = await message(),
+      runId = await run(definition, input);
+    await runMailWorkflow(runId);
+    const [original] = await sql<{ id: string }[]>`SELECT id FROM mail.commands WHERE correlation_id = ${runId} AND kind = 'move'`;
+    const archivedRef = await providerSettled(original!.id, archiveFolderId, input.refId);
+    await recordMailWorkflowAudit(runId);
+    const item = await logFor(input.conversationId);
+    const personal = unwrap(
+      await createActorCommand({
+        context: users[0]!,
+        mailboxId,
+        enqueue: false,
+        input: {
+          kind: "move",
+          messageId: input.snapshot.preconditions.message.id,
+          sourceFolderId: archiveFolderId,
+          destinationFolderId: folderId,
+          idempotencyKey: `personal-move-${suffix}-${uid}`,
+        },
+      }),
+    );
+    await providerSettled(personal.id, folderId, archivedRef);
+    const undone = unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo"));
+    expect(undone.item.undo).toMatchObject({
+      state: "done",
+      kept: [{ kind: "archive", reason: "changed_by_person" }],
+      reverted: [{ kind: "assign" }],
+    });
+    expect(await sql`SELECT 1 FROM mail.commands WHERE idempotency_key LIKE ${`automation:${item.id}:undo:%`}`).toHaveLength(0);
+    unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "redo"));
+    expect(await sql`SELECT 1 FROM mail.commands WHERE idempotency_key LIKE ${`automation:${item.id}:redo:%`}`).toHaveLength(0);
+  });
+
+  test("flags and keywords undo through inverse provider commands, redo, and retain per-class suppression", async () => {
+    for (const [action, property, value, initial] of [
+      ["addFlag", "flag", "seen", false],
+      ["removeFlag", "flag", "seen", true],
+      ["addKeyword", "keyword", "Invoice", false],
+      ["removeKeyword", "keyword", "Invoice", true],
+      ["addFlag", "flag", "flagged", false],
+    ] as const) {
+      const definition = await rule("Can", `  - ${action}: { message: inputs.message, ${property}: ${value} }\n`);
+      const input = await message();
+      const providerFlag = value === "seen" ? "\\Seen" : "\\Flagged";
+      if (initial)
+        await sql`UPDATE mail.message_placements SET flags = ${toPgTextArray(property === "flag" ? [providerFlag] : [])}::text[],
+        keywords = ${toPgTextArray(property === "keyword" ? [value] : [])}::text[] WHERE remote_message_ref_id = ${input.refId}::uuid`;
+      const snapshot = (await getWorkflowSnapshot({ mailboxId, remoteMessageRefId: input.refId }))!;
+      const runId = await run(definition, { ...input, snapshot });
+      await runMailWorkflow(runId);
+      const [command] = await sql<
+        { id: string }[]
+      >`SELECT id FROM mail.commands WHERE correlation_id = ${runId} AND kind = 'change_message_state'`;
+      expect(command).toBeDefined();
+      const present = !initial;
+      await sql`UPDATE mail.message_placements SET flags = ${toPgTextArray(property === "flag" && present ? [providerFlag] : [])}::text[],
+        keywords = ${toPgTextArray(property === "keyword" && present ? [value] : [])}::text[] WHERE remote_message_ref_id = ${input.refId}::uuid`;
+      await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE id = ${command!.id}::uuid`;
+      await recordMailWorkflowAudit(runId);
+      const item = await logFor(input.conversationId);
+      const undone = unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo"));
+      expect(undone.item.undo).toMatchObject({ state: "done", kept: [] });
+      const [inverse] = await sql<
+        { id: string; payload: Record<string, string[]> }[]
+      >`SELECT id, payload FROM mail.commands WHERE idempotency_key LIKE ${`automation:${item.id}:undo:%`}`;
+      expect(
+        inverse!.payload[property === "flag" ? (initial ? "addFlags" : "removeFlags") : initial ? "addKeywords" : "removeKeywords"],
+      ).toEqual([value]);
+      expect(
+        await sql`SELECT 1 FROM mail.automation_effect_undone WHERE conversation_id = ${input.conversationId}::uuid AND effect_class = ${property}`,
+      ).toHaveLength(1);
+      const nextRun = await replyRun(definition, input.conversationId);
+      expect(
+        unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, input.conversationId)).items.some(
+          (entry) => entry.reasons.some((reason) => reason.kind === "undone_before") && entry.by.kind === "rule",
+        ),
+      ).toBe(true);
+      expect(await sql`SELECT 1 FROM mail.commands WHERE correlation_id = ${nextRun}`).toHaveLength(0);
+      await sql`UPDATE mail.message_placements SET flags = ${toPgTextArray(property === "flag" && initial ? [providerFlag] : [])}::text[],
+        keywords = ${toPgTextArray(property === "keyword" && initial ? [value] : [])}::text[] WHERE remote_message_ref_id = ${input.refId}::uuid`;
+      await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE id = ${inverse!.id}::uuid`;
+      expect(unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "redo")).item.undo.kept).toEqual([]);
+      const [redo] = await sql<
+        { payload: Record<string, string[]> }[]
+      >`SELECT payload FROM mail.commands WHERE idempotency_key LIKE ${`automation:${item.id}:redo:%`}`;
+      expect(
+        redo!.payload[property === "flag" ? (initial ? "removeFlags" : "addFlags") : initial ? "removeKeywords" : "addKeywords"],
+      ).toEqual([value]);
+    }
+  });
+
+  test("grouped provider Undo pins one copy and projects each preceding flag and keyword change", async () => {
+    const definition = await rule(
+      "Can",
+      "  - addFlag: { message: inputs.message, flag: seen }\n  - addKeyword: { message: inputs.message, keyword: Invoice }\n  - archiveMessage: { message: inputs.message }\n",
+    );
+    const input = await message(),
+      runId = await run(definition, input);
+    for (const [flags, keywords] of [
+      [[], []],
+      [["\\Seen"], []],
+      [["\\Seen"], ["Invoice"]],
+    ] as [string[], string[]][]) {
+      await sql`UPDATE mail.message_placements SET flags = ${toPgTextArray(flags)}::text[], keywords = ${toPgTextArray(keywords)}::text[]
+        WHERE remote_message_ref_id = ${input.refId}::uuid`;
+      await sql`UPDATE mail.commands SET state = 'confirmed' WHERE correlation_id = ${runId} AND kind = 'change_message_state'`;
+      await sql`UPDATE workflows.run SET wake_at = '2000-01-01'::timestamptz WHERE id = ${runId}::uuid`;
+      await wakeExpiredWorkflowRuns(100, { appId: "mail" });
+      await runMailWorkflow(runId);
+    }
+    const [move] = await sql<{ id: string }[]>`SELECT id FROM mail.commands WHERE correlation_id = ${runId} AND kind = 'move'`;
+    expect(move).toBeDefined();
+    const archivedRef = await providerSettled(move!.id, archiveFolderId, input.refId);
+    await recordMailWorkflowAudit(runId);
+    const item = await logFor(input.conversationId);
+    const undone = unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo"));
+    expect(undone.item.undo.kept).toEqual([]);
+    const commands = await sql<
+      {
+        kind: string;
+        target: { remoteMessageRefId: string; expectedRemoteState: { flags: string[]; keywords: string[] } };
+        payload: { removeFlags?: string[]; removeKeywords?: string[] };
+      }[]
+    >`SELECT kind, target, payload FROM mail.commands WHERE idempotency_key LIKE ${`automation:${item.id}:undo:%`} ORDER BY queue_position`;
+    expect(commands).toHaveLength(3);
+    let flags = ["seen"],
+      keywords = ["Invoice"];
+    for (const command of commands) {
+      expect(command.target.remoteMessageRefId).toBe(archivedRef);
+      expect(command.target.expectedRemoteState).toEqual({ flags, keywords });
+      flags = flags.filter((flag) => !command.payload.removeFlags?.includes(flag));
+      keywords = keywords.filter((keyword) => !command.payload.removeKeywords?.includes(keyword));
+    }
+    expect(commands.at(-1)!.kind).toBe("move");
+    expect(flags).toEqual([]);
+    expect(keywords).toEqual([]);
+  });
+
+  test("observed provider flag changes away and back are preserved, and never invalidate an unrelated flag", async () => {
+    const definition = await rule("Can", "  - addFlag: { message: inputs.message, flag: seen }\n");
+    const input = await message(),
+      runId = await run(definition, input);
+    await runMailWorkflow(runId);
+    const [command] = await sql<
+      { id: string }[]
+    >`SELECT id FROM mail.commands WHERE correlation_id = ${runId} AND kind = 'change_message_state'`;
+    await sql`UPDATE mail.message_placements SET flags = ARRAY['\\Seen']::text[] WHERE remote_message_ref_id = ${input.refId}::uuid`;
+    await sql`UPDATE mail.commands SET state = 'confirmed' WHERE id = ${command!.id}::uuid`;
+    await recordMailWorkflowAudit(runId);
+    const item = await logFor(input.conversationId);
+    await sql`UPDATE mail.message_placements SET flags = ARRAY['\\Seen', '\\Flagged']::text[] WHERE remote_message_ref_id = ${input.refId}::uuid`;
+    expect(unwrap(await getAutomationLogItem(users[0]!, mailboxId, item.id)).undo.kept).toEqual([]);
+    await sql`UPDATE mail.message_placements SET flags = ARRAY['\\Flagged']::text[] WHERE remote_message_ref_id = ${input.refId}::uuid`;
+    await sql`UPDATE mail.message_placements SET flags = ARRAY['\\Seen', '\\Flagged']::text[] WHERE remote_message_ref_id = ${input.refId}::uuid`;
+    const undone = unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo"));
+    expect(undone.item.undo.kept).toEqual([{ kind: "read", reason: "changed_by_person" }]);
+    expect(undone.item.undo.reverted?.map((effect) => effect.kind)).toEqual(["assign"]);
+    expect(await sql`SELECT 1 FROM mail.commands WHERE idempotency_key LIKE ${`automation:${item.id}:undo:%`}`).toHaveLength(0);
+  });
+
+  test("removed local tags can be restored and deleted tags are reported as gone", async () => {
+    const tag = unwrap(await createLocalTag({ context: users[0]!, mailboxId, input: { name: `Remove ${suffix}`, color: "#2563eb" } }));
+    const definition = await rule("Can", `  - removeLocalTag: { conversation: inputs.conversation, tag: "${tag.name}" }\n`);
+    const input = await message();
+    unwrap(
+      await setConversationLocalTags({
+        context: users[0]!,
+        mailboxId,
+        conversationId: input.conversationId,
+        input: { expectedRevision: await tagState(input.conversationId), tagIds: [tag.id] },
+      }),
+    );
+    const runId = await run(definition, {
+      ...input,
+      snapshot: (await getWorkflowSnapshot({ mailboxId, remoteMessageRefId: input.refId }))!,
+    });
+    expect(await runMailWorkflow(runId)).toMatchObject({ result: { state: "succeeded" } });
+    const item = await logFor(input.conversationId);
+    expect(item.effects).toContainEqual({ kind: "untag", name: tag.name });
+    unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo"));
+    expect(
+      await sql`SELECT 1 FROM mail.conversation_local_tags WHERE conversation_id = ${input.conversationId}::uuid AND tag_id = ${tag.id}::uuid`,
+    ).toHaveLength(1);
+    unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "redo"));
+    await sql`DELETE FROM mail.local_tags WHERE id = ${tag.id}::uuid`;
+    const undone = unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo"));
+    expect(undone.item.undo.kept).toEqual([{ kind: "untag", reason: "gone" }]);
   });
 
   test("recovery keeps the original run day when the initial log projection was lost", async () => {
@@ -366,7 +786,7 @@ suite("Mail conversation automation log and undo", () => {
       runId = await run(definition, input);
     expect(await runMailWorkflow(runId)).toMatchObject({ result: { state: "succeeded" } });
     const item = unwrap(await getConversationAutomationTrace(users[0]!, mailboxId, input.conversationId)).items[0]!;
-    unwrap(await changeAutomationLogAssignment(users[0]!, mailboxId, item.id, "undo"));
+    unwrap(await changeAutomationLogEffects(users[0]!, mailboxId, item.id, "undo"));
     await manual(input.conversationId, [userId(2)], 2);
     const changedAt = new Date("2026-01-15T12:15:00Z");
     await sql`UPDATE mail.automation_assignment SET changed_at = ${changedAt} WHERE conversation_id = ${input.conversationId}::uuid`;
@@ -374,7 +794,7 @@ suite("Mail conversation automation log and undo", () => {
       const response = await apiFor().request(`/mailboxes/${mailboxShortId}/automation-log/${item.id}/${operation}`, { method: "POST" });
       expect(response.status).toBe(409);
       const conflict = automationLogUndoConflictSchema.parse(await response.json());
-      expect(conflict.item.undo).toEqual({
+      expect(conflict.item.undo).toMatchObject({
         state: "not_possible",
         reason: "changed_by_person",
         by: { userId: userId(2), name: "Nora" },
@@ -396,7 +816,7 @@ suite("Mail conversation automation log and undo", () => {
     const unknown = await apiFor().request(`/mailboxes/${mailboxShortId}/automation-log/${item.id}/undo`, { method: "POST" });
     expect(unknown.status).toBe(409);
     const unknownConflict = automationLogUndoConflictSchema.parse(await unknown.json());
-    expect(unknownConflict.item.undo).toEqual({ state: "not_possible", reason: "changed_by_person", by: null, at: null });
+    expect(unknownConflict.item.undo).toMatchObject({ state: "not_possible", reason: "changed_by_person", by: null, at: null });
     expect(await assignment(input.conversationId)).toEqual([userId(1)]);
     await sql`DELETE FROM mail.conversations WHERE id = ${input.conversationId}::uuid`;
     for (const operation of ["undo", "redo"]) {
@@ -609,6 +1029,6 @@ steps:
     expect(scoped.counts.all).toBe(scoped.items.length);
     expect(scoped.items.length).toBeGreaterThan(0);
     expect((await getAutomationLogItem(users[3]!, mailboxId, all.items[0]!.id)).ok).toBe(false);
-    expect((await changeAutomationLogAssignment(users[3]!, mailboxId, scoped.items[0]!.id, "undo")).ok).toBe(false);
+    expect((await changeAutomationLogEffects(users[3]!, mailboxId, scoped.items[0]!.id, "undo")).ok).toBe(false);
   });
 });

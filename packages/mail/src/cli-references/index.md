@@ -38,7 +38,7 @@ Domain rules include subdomains. Trust rules support sender addresses and sender
 Start here for everyday mail, mailbox setup, search, and collaboration. Continue with:
 
 - [Mail compose and drafts](compose.md) for templates, signatures, shared drafts, attachments, immediate or scheduled delivery, and durable send commands.
-- [Mail automation](automation.md) for managed automatic replies, conversation references, workflow YAML, immutable versions, the automation log and assignment undo, and central run operations.
+- [Mail automation](automation.md) for managed automatic replies, conversation references, workflow YAML, immutable versions, the automation log and rule-effect undo, and central run operations.
 - [Mail operations](operations.md) for provider credential lifecycle, folder discovery, repairs, operator actions, storage observability, the contact directory, and provider-backed message changes.
 
 ## Safety

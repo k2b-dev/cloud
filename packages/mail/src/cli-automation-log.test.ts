@@ -154,14 +154,27 @@ describe("Mail automation log CLI", () => {
 
   test("undo sends one bodyless POST and preserves the response envelope", async () => {
     const result = {
-      item: { ...item, undo: { state: "done", reason: null, by: { userId: "user-2", name: "Can" }, at: "2026-10-27T09:15:00.000Z" } },
+      item: {
+        ...item,
+        undo: {
+          state: "done",
+          reason: null,
+          by: { userId: "user-2", name: "Can" },
+          at: "2026-10-27T09:15:00.000Z",
+          reverted: [{ kind: "assign", target: { kind: "user", id: "user-1", name: "Nora" } }],
+          kept: [{ kind: "tag", reason: "changed_by_person" }],
+        },
+      },
     };
     for (const mode of ["json", "jsonl", "text"] as const) {
       const run = fixture(["automation", "log", "undo", item.id], { mailbox: mailbox.id }, mode, async () => Response.json(result), "de");
       await mail.run(run.ctx);
       expect(run.calls).toEqual([{ path: `/api/mail/mailboxes/Mail01/automation-log/${item.id}/undo`, init: { method: "POST" } }]);
-      if (mode === "text") expect(run.values.join("\n")).toContain("auch bei späteren Antworten nicht erneut");
-      else expect(run.values).toEqual([{ mode, value: result }]);
+      if (mode === "text") {
+        expect(run.values.join("\n")).toContain("auch bei späteren Antworten nicht erneut");
+        expect(run.values.join("\n")).toContain('Rückgängig gemacht: [{"kind":"assign"');
+        expect(run.values.join("\n")).toContain('Beibehalten: [{"kind":"tag","reason":"changed_by_person"}]');
+      } else expect(run.values).toEqual([{ mode, value: result }]);
     }
   });
 
