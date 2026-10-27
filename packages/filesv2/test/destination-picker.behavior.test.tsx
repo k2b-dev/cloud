@@ -87,7 +87,7 @@ if (!isServer)
           bases={available()}
           sourceBaseId={base.id}
           sourcePaths={["item.txt"]}
-          initialFolder=""
+          initialFolder="start"
           close={(result) => results.push(result)}
         />
       ),
@@ -103,11 +103,17 @@ if (!isServer)
       const trigger = dom.root.querySelector<HTMLButtonElement>('[role="combobox"]')!;
       trigger.click();
       await flush();
-      expect(button("Retry")).toBeDefined();
-      expect(button("Move here")?.disabled ?? button("Copy here")?.disabled).toBe(true);
+      expect(dom.root.textContent).toContain("Destination details could not be checked.");
+      expect(button("Try again")).toBeDefined();
+      expect(button("Move here")!.disabled).toBe(false);
+      const unavailableRows = [...dom.root.querySelectorAll<HTMLElement>('[role="option"]')];
+      expect(unavailableRows).toHaveLength(3);
+      expect(unavailableRows.every((row) => row.getAttribute("aria-disabled") !== "true")).toBe(true);
       fail = false;
-      button("Retry")!.click();
+      button("Try again")!.click();
       await flush();
+      expect(button("Try again")).toBeUndefined();
+      expect(dom.root.textContent).not.toContain("Destination details could not be checked.");
       const rows = [...dom.root.querySelectorAll<HTMLElement>('[role="option"]')];
       expect(rows.find((row) => row.textContent?.includes("Readonly"))!.getAttribute("aria-disabled")).toBe("true");
       trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
@@ -147,7 +153,10 @@ if (!isServer)
       denied = true;
       setAvailable([base]);
       await flush();
-      expect(dom.root.querySelector('[role="option"]')?.textContent).toContain("No write access");
+      const unavailable = dom.root.querySelector<HTMLElement>('[role="option"]')!;
+      expect(unavailable.textContent).toContain("Destination details could not be checked.");
+      expect(unavailable.getAttribute("aria-disabled")).not.toBe("true");
+      expect(button("Try again")).toBeDefined();
     } finally {
       dispose();
       globalThis.fetch = originalFetch;
