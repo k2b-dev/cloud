@@ -5,12 +5,15 @@ import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import {
+  AnnotationAcceptSchema,
   AnnotationCreateSchema,
   AnnotationDataSchema,
   AnnotationEditSchema,
+  AnnotationListSchema,
   AnnotationOperationSchema,
   AnnotationPageSchema,
   AnnotationProjectionSchema,
+  AnnotationRejectSchema,
   AnnotationReplyDataSchema,
   AnnotationReplySchema,
 } from "../lib/annotation-contracts";
@@ -67,7 +70,7 @@ export const annotationRoutes = new Hono<AuthContext>()
   .get(
     "/",
     route("List passage comments with one consistent Markdown snapshot", AnnotationProjectionSchema),
-    v("query", AnnotationPageSchema),
+    v("query", AnnotationListSchema),
     (c) => respond(c, annotations.list(c.req.param("noteId")!, c.req.valid("query"), context(c))),
   )
   .post("/", route("Comment on a passage", AnnotationDataSchema), v("json", AnnotationCreateSchema), (c) =>
@@ -104,9 +107,15 @@ export const annotationRoutes = new Hono<AuthContext>()
       ),
   )
   .post(
+    "/:annotationId/reject",
+    route("Reject or reopen a root or reply suggestion without changing text", MutationSchema),
+    v("json", AnnotationRejectSchema),
+    (c) => respond(c, annotations.reject(c.req.param("noteId")!, c.req.param("annotationId")!, c.req.valid("json"), context(c))),
+  )
+  .post(
     "/:annotationId/accept",
     route("Accept a suggestion with a retryable operation ID", OperationDataSchema),
-    v("json", AnnotationOperationSchema),
+    v("json", AnnotationAcceptSchema),
     (c) => respond(c, annotations.operate(c.req.param("noteId")!, c.req.param("annotationId")!, "accept", c.req.valid("json"), context(c))),
   )
   .post(
@@ -124,20 +133,16 @@ export const annotationRoutes = new Hono<AuthContext>()
   .post("/:annotationId/replies", route("Reply to a passage comment", AnnotationReplyDataSchema), v("json", AnnotationReplySchema), (c) =>
     respond(c, annotations.reply(c.req.param("noteId")!, c.req.param("annotationId")!, c.req.valid("json"), context(c))),
   )
-  .patch(
-    "/:annotationId/replies/:replyId",
-    route("Edit your recent reply", MutationSchema),
-    v("json", z.object({ body: z.string().trim().min(1).max(5_000) }).strict()),
-    (c) =>
-      respond(
-        c,
-        annotations.mutate(
-          c.req.param("noteId")!,
-          c.req.param("annotationId")!,
-          { kind: "edit", replyId: c.req.param("replyId"), ...c.req.valid("json") },
-          context(c),
-        ),
+  .patch("/:annotationId/replies/:replyId", route("Edit your recent reply", MutationSchema), v("json", AnnotationEditSchema), (c) =>
+    respond(
+      c,
+      annotations.mutate(
+        c.req.param("noteId")!,
+        c.req.param("annotationId")!,
+        { kind: "edit", replyId: c.req.param("replyId"), ...c.req.valid("json") },
+        context(c),
       ),
+    ),
   )
   .delete("/:annotationId/replies/:replyId", route("Delete your recent reply", MutationSchema), (c) =>
     respond(
@@ -160,4 +165,11 @@ export const annotationRoutes = new Hono<AuthContext>()
         context(c),
       ),
     ),
+  );
+
+/** Resource lookup does not require the caller to discover the containing note first. */
+export const annotationResourceRoutes = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
+  .get("/:annotationId", route("Read a passage comment by its ID", AnnotationDataSchema), (c) =>
+    respond(c, annotations.readResource(c.req.param("annotationId"), context(c))),
   );

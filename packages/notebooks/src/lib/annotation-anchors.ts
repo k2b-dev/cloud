@@ -83,3 +83,22 @@ export const annotationHeadingPath = (text: string, offset: number): string[] =>
   }
   return headings.map((heading) => heading.text);
 };
+
+/** Exact occurrence selection is for creation only; orphan recovery stays context-only. */
+export const locateAnnotationPassage = (text: string, selector: Selector, offsetHint?: number, occurrence?: number) => {
+  let count = 0;
+  let selected: number | null = null;
+  let contextual: number | null = null;
+  let contextualCount = 0;
+  for (let from = text.indexOf(selector.quote); from >= 0; from = text.indexOf(selector.quote, from + 1)) {
+    count++;
+    if (count === occurrence) selected = from;
+    if (matches(text, from, selector)) {
+      contextual = from;
+      contextualCount++;
+    }
+  }
+  if (occurrence !== undefined) return { from: selected, matches: count, ambiguous: false };
+  if (offsetHint !== undefined && matches(text, offsetHint, selector)) return { from: offsetHint, matches: count, ambiguous: false };
+  return { from: contextualCount === 1 ? contextual : null, matches: count, ambiguous: contextualCount > 1 };
+};

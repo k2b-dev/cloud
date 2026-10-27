@@ -134,11 +134,12 @@ test("inline comment routes expose every action and one Markdown snapshot projec
   const base = "/notes/{noteId}/annotations";
   const actions = [
     [base, "get"],
+    ["/annotations/{annotationId}", "get"],
     [base, "post"],
     [`${base}/{annotationId}`, "get"],
     [`${base}/{annotationId}`, "patch"],
     [`${base}/{annotationId}`, "delete"],
-    ...["restore", "resolve", "accept", "undo-accept"].map((action) => [`${base}/{annotationId}/${action}`, "post"]),
+    ...["restore", "resolve", "reject", "accept", "undo-accept"].map((action) => [`${base}/{annotationId}/${action}`, "post"]),
     [`${base}/{annotationId}/replies`, "get"],
     [`${base}/{annotationId}/replies`, "post"],
     [`${base}/{annotationId}/replies/{replyId}`, "patch"],
@@ -155,7 +156,10 @@ test("inline comment routes expose every action and one Markdown snapshot projec
     "restoreRevision",
     "text",
   ]);
-  expect(projection?.properties?.items?.items?.properties).toHaveProperty("startRel");
+  for (const key of ["startRel", "suggestionState", "suggestionStateBy", "suggestionStateAt", "suggestionStateVia", "stateVia"])
+    expect(projection?.properties?.items?.items?.properties).toHaveProperty(key);
+  for (const key of ["suggestion", "suggestionState", "suggestionStateBy", "suggestionStateAt", "suggestionStateVia"])
+    expect(projection?.properties?.items?.items?.properties?.replies?.items?.properties).toHaveProperty(key);
   expect(projection?.properties?.items?.items?.properties).toHaveProperty("repliesNextCursor");
   const requests: string[] = [];
   const client = hc<typeof app>("http://example.test", {

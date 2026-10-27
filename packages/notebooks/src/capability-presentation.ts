@@ -39,6 +39,12 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
       rejected: "Status not changed",
       notRun: "Status not changed",
     },
+    "annotation.reject": {
+      approval: "Change suggestion rejection status",
+      done: "Changed the suggestion status",
+      rejected: "Suggestion status not changed",
+      notRun: "Suggestion status not changed",
+    },
     "annotation.accept": {
       approval: "Accept a passage suggestion",
       done: "Accepted the suggestion",
@@ -77,7 +83,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         "annotation.list": {
           title: "Textstellenkommentare auflisten",
           description:
-            "Kommentare einer Notiz mit Positionen, Status, Überschriftenpfad und verwaisten Stellen lesen. Dem nextCursor folgen; Antworten sind separat paginiert. contentHash und cursor bezeichnen den zugehörigen Markdown-Stand.",
+            "Kommentare einer Notiz mit Positionen, Status, Überschriftenpfad und verwaisten Stellen lesen. Vor der Seitenauswahl nach state und Hauptautor (author UUID oder me) filtern. Dem nextCursor folgen; Antworten sind separat paginiert. contentHash und cursor bezeichnen den zugehörigen Markdown-Stand.",
         },
         "annotation.read": {
           title: "Textstellenkommentar lesen",
@@ -272,7 +278,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         "annotation.create": {
           title: "Textstelle kommentieren",
           description:
-            "Einen Kommentar oder Änderungsvorschlag zu einer beschreibbaren Notiz hinzufügen. Idempotency-Key ist erforderlich.",
+            "Einen Kommentar oder Änderungsvorschlag zu einer beschreibbaren Notiz hinzufügen. Wiederholte Zitate mit occurrence (ab 1), Kontext oder offsetHint unterscheiden. Idempotency-Key ist erforderlich.",
           sentences: {
             approval: "Kommentar hinzufügen",
             done: "Kommentar hinzugefügt",
@@ -282,7 +288,8 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "annotation.reply": {
           title: "Auf einen Textstellenkommentar antworten",
-          description: "Mit Schreibzugriff als Benutzer, Agent oder Dienstkonto antworten. Idempotency-Key ist erforderlich.",
+          description:
+            "Mit Schreibzugriff als Benutzer, Agent oder Dienstkonto auf fremde Kommentare antworten, mit Text und/oder Änderungsvorschlag. Agents dürfen eigene Vorschläge nur auf ausdrücklichen Wunsch übernehmen. Idempotency-Key ist erforderlich.",
           sentences: {
             approval: "Auf einen Kommentar antworten",
             done: "Antwort hinzugefügt",
@@ -331,10 +338,21 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
             notRun: "Status nicht geändert",
           },
         },
+        "annotation.reject": {
+          title: "Vorschlag ablehnen oder wieder öffnen",
+          description:
+            "Mit Schreibzugriff den Hauptvorschlag oder eine Antwort über replyId ablehnen oder mit rejected false wieder öffnen. Text und Kommentarstatus bleiben gleich.",
+          sentences: {
+            approval: "Ablehnungsstatus des Vorschlags ändern",
+            done: "Vorschlagsstatus geändert",
+            rejected: "Vorschlagsstatus nicht geändert",
+            notRun: "Vorschlagsstatus nicht geändert",
+          },
+        },
         "annotation.accept": {
           title: "Änderungsvorschlag übernehmen",
           description:
-            "Nur die verankerte Textstelle einer entsperrten Notiz ersetzen. Bei unklarem Ergebnis dieselbe operationId erneut verwenden.",
+            "Den Hauptvorschlag oder mit replyId einen Antwortvorschlag übernehmen. Kommentar und Vorschlag müssen offen sein. Nur die verankerte Textstelle einer entsperrten Notiz ersetzen. Bei unklarem Ergebnis dieselbe operationId erneut verwenden.",
           sentences: {
             approval: "Änderungsvorschlag übernehmen",
             done: "Änderungsvorschlag übernommen",

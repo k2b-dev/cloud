@@ -8,12 +8,15 @@ import {
 import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import {
+  AnnotationAcceptSchema,
   AnnotationCreateSchema,
   AnnotationDataSchema,
   AnnotationEditSchema,
+  AnnotationListSchema,
   AnnotationOperationSchema,
   AnnotationPageSchema,
   AnnotationProjectionSchema,
+  AnnotationRejectSchema,
   AnnotationReplyDataSchema,
   AnnotationReplySchema,
 } from "./lib/annotation-contracts";
@@ -62,10 +65,10 @@ const review = async (
 };
 const reviewOperation =
   (kind: "accept" | "undo") =>
-  async (input: { noteId: string; annotationId: string; expectedText?: string }, context: CapabilityExecutionContext) => {
+  async (input: { noteId: string; annotationId: string; expectedText?: string; replyId?: string }, context: CapabilityExecutionContext) => {
     const base = await review(input, context);
     if (!base.ok) return base;
-    const preview = await annotations.previewOperation(input.noteId, input.annotationId, kind, input.expectedText, context);
+    const preview = await annotations.previewOperation(input.noteId, input.annotationId, kind, input.expectedText, context, input.replyId);
     if (!preview.ok) return preview;
     const de = context.locale.startsWith("de");
     return ok({
@@ -84,12 +87,17 @@ export const annotationQueries = {
   "annotation.list": {
     title: "List passage comments",
     description:
-      "Read comments on one note, including resolved and accepted comments, source offsets, orphan state and headingPath. The contentHash and cursor identify one Markdown state; read the text with note.read and check its hash. Follow nextCursor; each thread has independently paged replies.",
-    input: AnnotationPageSchema.extend({ noteId: NoteIdSchema }),
+      "Read comments on one note, including resolved and accepted comments, source offsets, orphan state and headingPath. Filter by exact thread state (all by default) and root author UUID or me before pagination. The contentHash and cursor identify one Markdown state; read the text with note.read and check its hash. Follow nextCursor; each thread has independently paged replies.",
+    input: AnnotationListSchema.extend({ noteId: NoteIdSchema }),
     data: ListSchema,
     openWorld: false,
-    run: async (input: z.output<typeof AnnotationPageSchema> & { noteId: string }, context: CapabilityExecutionContext) => {
-      const result = await annotations.list(input.noteId, { cursor: input.cursor, limit: input.limit }, context, { compact: true });
+    run: async (input: z.output<typeof AnnotationListSchema> & { noteId: string }, context: CapabilityExecutionContext) => {
+      const result = await annotations.list(
+        input.noteId,
+        { cursor: input.cursor, limit: input.limit, state: input.state, author: input.author },
+        context,
+        { compact: true },
+      );
       if (!result.ok) return result;
       const { text: _text, ...projection } = result.data;
       return ok({
@@ -142,11 +150,13 @@ const ResolveInputSchema = TargetSchema.extend({
   resolved: z.boolean().describe("True resolves the comment; false reopens it. Accepted suggestions require annotation.undo-accept."),
 });
 const OperationInputSchema = AnnotationOperationSchema.extend(TargetSchema.shape);
+const AcceptInputSchema = AnnotationAcceptSchema.extend(TargetSchema.shape);
+const RejectInputSchema = AnnotationRejectSchema.extend(TargetSchema.shape);
 export const annotationActions = {
   "annotation.create": {
     title: "Comment on a passage",
     description:
-      "Add a comment or replacement suggestion to a known writable note. Quote up to 2,000 UTF-16 characters and provide surrounding context or an offsetHint. Requires an Idempotency-Key; retry the same payload with the same key.",
+      "Add a comment or replacement suggestion to a known writable note. Quote up to 2,000 UTF-16 characters and provide occurrence (1-based), surrounding context or an offsetHint. Missing quotes return ANNOTATION_PASSAGE_NOT_FOUND; ambiguous quotes return ANNOTATION_PASSAGE_AMBIGUOUS with details.matches. Requires an Idempotency-Key; retry the same payload with the same key.",
     input: CreateInputSchema,
     data: AnnotationDataSchema,
     destructive: false,
@@ -164,7 +174,8 @@ export const annotationActions = {
   },
   "annotation.reply": {
     title: "Reply to a passage comment",
-    description: "Reply as the current user, agent or service account. Requires write access to the note and an Idempotency-Key.",
+    description:
+      "Reply to any writer's thread as the authenticated user, agent or service account, with body and/or replacement suggestion. Requires write access and an Idempotency-Key. Agents: never accept your own suggestion unless the person explicitly asked you to; propose it as a reply suggestion and let the person accept or reject it.",
     input: ReplyInputSchema,
     data: AnnotationReplyDataSchema,
     destructive: false,
@@ -174,7 +185,12 @@ export const annotationActions = {
     run: async (input: z.output<typeof ReplyInputSchema>, context: CapabilityExecutionContext) => {
       const idempotencyKey = inputKey(context);
       if (!idempotencyKey) return noKey();
-      const result = await annotations.reply(input.noteId, input.annotationId, { body: input.body, idempotencyKey }, context);
+      const result = await annotations.reply(
+        input.noteId,
+        input.annotationId,
+        { body: input.body, suggestion: input.suggestion, idempotencyKey },
+        context,
+      );
       return result.ok ? ok({ data: result.data, refs: [ref(input.annotationId)], links: [link(input.annotationId)] }) : result;
     },
   },
@@ -238,17 +254,33 @@ export const annotationActions = {
       return result.ok ? ok({ data: result.data }) : result;
     },
   },
+  "annotation.reject": {
+    title: "Reject or reopen a passage suggestion",
+    description:
+      "Any writer may reject a root or reply suggestion, or clear its rejection with rejected false. Idempotent; changes neither thread state nor note text. Accepted suggestions require undo-accept.",
+    input: RejectInputSchema,
+    data: MutationSchema,
+    destructive: false,
+    openWorld: false,
+    idempotency: "none",
+    review,
+    run: async (input: z.output<typeof RejectInputSchema>, context: CapabilityExecutionContext) => {
+      const { noteId, annotationId, ...value } = input;
+      const result = await annotations.reject(noteId, annotationId, value, context);
+      return result.ok ? ok({ data: result.data }) : result;
+    },
+  },
   "annotation.accept": {
     title: "Accept a passage suggestion",
     description:
-      "Replace only the anchored passage on an unlocked note. operationId is a caller-stable UUID: retry it after an uncertain result. expectedText defaults to the quoted text. Conflicts include details.currentText and operationId.",
-    input: OperationInputSchema,
+      "Choose the root suggestion or replyId; both thread and suggestion must be open. Replace only the anchored passage on an unlocked note. operationId is a caller-stable UUID: retry it after an uncertain result. expectedText defaults to the quoted text. Conflicts include details.currentText and operationId.",
+    input: AcceptInputSchema,
     data: OperationDataSchema,
     destructive: true,
     openWorld: false,
     idempotency: "required",
     review: reviewOperation("accept"),
-    run: async (input: z.output<typeof OperationInputSchema>, context: CapabilityExecutionContext) => {
+    run: async (input: z.output<typeof AcceptInputSchema>, context: CapabilityExecutionContext) => {
       const { noteId, annotationId, ...value } = input;
       const result = await annotations.operate(noteId, annotationId, "accept", value, context);
       return result.ok ? ok({ data: result.data }) : result;

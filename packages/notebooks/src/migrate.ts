@@ -241,6 +241,47 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS annotation_operations_pending
     ON notebooks.annotation_operations(annotation_id) WHERE status = 'pending'`.simple();
+  await sql.begin(async (tx) => {
+    const inserted = await tx`INSERT INTO notebooks.data_migrations (name)
+      VALUES ('annotation-reply-suggestions') ON CONFLICT DO NOTHING RETURNING name`;
+    if (!inserted.length) return;
+    await tx`ALTER TABLE notebooks.annotations
+      ADD COLUMN state_via TEXT CHECK (state_via IN ('assistant', 'mcp')),
+      ADD COLUMN suggestion_state TEXT CHECK (suggestion_state IN ('open', 'accepted', 'rejected')),
+      ADD COLUMN suggestion_state_by_kind TEXT CHECK (suggestion_state_by_kind IN ('user', 'service_account')),
+      ADD COLUMN suggestion_state_by_id UUID, ADD COLUMN suggestion_state_by_name TEXT,
+      ADD COLUMN suggestion_state_at TIMESTAMPTZ,
+      ADD COLUMN suggestion_state_via TEXT CHECK (suggestion_state_via IN ('assistant', 'mcp'))`;
+    // Older authors could change/remove a root suggestion after accepting it.
+    // The durable operation, rather than that later edit, owns the accepted text.
+    await tx`UPDATE notebooks.annotations root SET suggestion = accepted.after_text
+      FROM (SELECT DISTINCT ON (annotation_id) annotation_id, after_text
+        FROM notebooks.annotation_operations WHERE kind = 'accept' AND status = 'applied'
+        ORDER BY annotation_id, created_at DESC, id DESC) accepted
+      WHERE root.id = accepted.annotation_id AND root.state = 'accepted'`;
+    await tx`UPDATE notebooks.annotations SET suggestion_state = CASE WHEN state = 'accepted' THEN 'accepted' ELSE 'open' END,
+      suggestion_state_by_kind = CASE WHEN state = 'accepted' THEN state_by_kind END,
+      suggestion_state_by_id = CASE WHEN state = 'accepted' THEN state_by_id END,
+      suggestion_state_by_name = CASE WHEN state = 'accepted' THEN state_by_name END,
+      suggestion_state_at = CASE WHEN state = 'accepted' THEN state_at END
+      WHERE suggestion IS NOT NULL`;
+    await tx`ALTER TABLE notebooks.annotations ADD CONSTRAINT annotations_suggestion_state_check
+      CHECK ((suggestion IS NULL) = (suggestion_state IS NULL))`;
+    await tx`ALTER TABLE notebooks.annotation_replies
+      DROP CONSTRAINT annotation_replies_body_check,
+      ADD CONSTRAINT annotation_replies_body_check CHECK (char_length(body) <= 5000),
+      ADD COLUMN suggestion TEXT CHECK (char_length(suggestion) <= 2000),
+      ADD COLUMN suggestion_state TEXT CHECK (suggestion_state IN ('open', 'accepted', 'rejected')),
+      ADD COLUMN suggestion_state_by_kind TEXT CHECK (suggestion_state_by_kind IN ('user', 'service_account')),
+      ADD COLUMN suggestion_state_by_id UUID, ADD COLUMN suggestion_state_by_name TEXT,
+      ADD COLUMN suggestion_state_at TIMESTAMPTZ,
+      ADD COLUMN suggestion_state_via TEXT CHECK (suggestion_state_via IN ('assistant', 'mcp')),
+      ADD CONSTRAINT annotation_replies_content_check CHECK (length(trim(body)) > 0 OR suggestion IS NOT NULL),
+      ADD CONSTRAINT annotation_replies_suggestion_state_check CHECK ((suggestion IS NULL) = (suggestion_state IS NULL))`;
+    // Keep the target UUID in durable history even if a reply is later removed.
+    await tx`ALTER TABLE notebooks.annotation_operations ADD COLUMN reply_id UUID,
+      ADD COLUMN via TEXT CHECK (via IN ('assistant', 'mcp'))`;
+  });
   console.log("  ✓ notebooks annotations, replies and operations tables");
 
   await sql`
