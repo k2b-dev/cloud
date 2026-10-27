@@ -32,6 +32,7 @@ import {
   CreateDocumentInputSchema,
   CreateShareInputSchema,
   DeleteDirectorySchema,
+  DestinationPreviewsInputSchema,
   DirectoryIdentitySchema,
   DirectoryInputSchema,
   DirectoryTargetSchema,
@@ -100,6 +101,22 @@ const api = new Hono<AuthContext>()
   )
   .get("/bases", middleware.openapi({ summary: "List accessible file bases", ...requiresAuth }), async (c) =>
     respond(c, ok(await filesService.bases(requestCall(c)))),
+  )
+  .post(
+    "/bases/:baseId/destination-previews",
+    auth.readOnly,
+    middleware.openapi({ summary: "Preview access, versioning and copy consequences for destinations", ...requiresAuth }),
+    v("json", DestinationPreviewsInputSchema),
+    async (c) =>
+      respond(
+        c,
+        ok(
+          await filesService.destinationPreviews(requestCall(c), {
+            baseId: c.req.param("baseId") ?? "",
+            ...c.req.valid("json"),
+          }),
+        ),
+      ),
   )
   .get(
     "/bases/:baseId/entries",
