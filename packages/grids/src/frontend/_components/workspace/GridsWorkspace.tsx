@@ -69,7 +69,7 @@ export const routeClientState = (state: PublicOkWorkspaceState): PublicOkWorkspa
   return { ...state, catalog };
 };
 
-export default function GridsWorkspace(props: { userId?: string; state: PublicOkWorkspaceState; cloudUrl: string }) {
+export default function GridsWorkspace(props: { userId?: string; state: PublicOkWorkspaceState }) {
   const route = props.state.route;
   const activeKeys = (() => {
     switch (route.kind) {
@@ -106,7 +106,7 @@ export default function GridsWorkspace(props: { userId?: string; state: PublicOk
         <AppWorkspace mobileSurface="flush" class={workspaceRootClass(props.state.adminModeRequested)}>
           <GridsSidebar userId={props.userId} state={props.state} />
           <AppWorkspace.Content>
-            <GridsRoute state={routeClientState(props.state)} cloudUrl={props.cloudUrl} />
+            <GridsRoute state={routeClientState(props.state)} />
           </AppWorkspace.Content>
         </AppWorkspace>
       </div>

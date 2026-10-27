@@ -1,3 +1,4 @@
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { markHintSeen } from "@k2b/cloud/browser/hints";
 import type { DateContext } from "@k2b/stdlib";
 import { Dropdown, type DropdownItem, MovedHint, toast, watchAppHostWidth } from "@k2b/ui";
@@ -47,6 +48,7 @@ export default function SpaceHeadActions(props: Props) {
   };
   onCleanup(() => stopWidthWatch?.());
 
+  const cloudId = useCloudIdCopy();
   const items = (): DropdownItem[] => [
     { label: t.spaceSettings, icon: "ti ti-settings", action: () => void settings.openDialog() },
     ...(props.icalToken
@@ -60,6 +62,7 @@ export default function SpaceHeadActions(props: Props) {
         ]
       : []),
     ...(props.currentView === "kanban" ? [{ label: t.keyboardShortcuts, icon: "ti ti-keyboard", action: () => void shortcuts() }] : []),
+    ...cloudId.section({ type: "spaces.space", id: props.spaceId }),
     ...(includePeople() && props.people.length > 0
       ? [
           {

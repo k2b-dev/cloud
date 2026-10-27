@@ -22,7 +22,7 @@ type PublicWorkspaceDocumentTemplateRoute = Extract<PublicOkWorkspaceState["rout
 type PublicWorkspaceQueryRoute = Extract<PublicOkWorkspaceState["route"], { kind: "query" }>;
 type PublicWorkspaceWorkflowsRoute = Extract<PublicOkWorkspaceState["route"], { kind: "workflows" }>;
 
-export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloudUrl: string }) {
+export default function GridsRoute(props: { state: PublicOkWorkspaceState }) {
   const { t } = workspaceMessages.resolve([useLocale()()]);
   const state = props.state;
   const route = state.route;
@@ -69,7 +69,6 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
     const records = route as PublicWorkspaceRecordsRoute;
     return (
       <RecordsView
-        cloudUrl={props.cloudUrl}
         baseId={state.base.id}
         baseName={state.base.name}
         tableId={records.activeTable.id}

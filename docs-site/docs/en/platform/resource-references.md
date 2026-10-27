@@ -146,6 +146,35 @@ resolve the current canonical reader from the live manifest, and let the owning
 application authorize the read. Never execute an Action merely because its
 target appeared on the clipboard.
 
+## Copy a Cloud ID
+
+Give every resource with a reader a **Copy Cloud ID** entry as the last
+section of its "…" menu: in its detail panel and in its row or context menu.
+Agents and people copy the same identity there, and it pastes into every Cloud
+surface that recognizes resources. Islands use the shared entry, which needs
+no `cloudUrl` prop because the page shell carries the canonical Cloud origin:
+
+```tsx
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
+import { DetailPanel } from "@k2b/ui";
+
+const cloudId = useCloudIdCopy();
+
+<DetailPanel.Header
+  title={item.name}
+  menu={[...itemActions(), ...cloudId.section({ type: "inventory.item", id: item.id })]}
+  actions={closeButton}
+/>;
+```
+
+The entry writes the structured reference and the resource's permalink
+`/open/<type>/~<id>` as text, shows a toast, and on phones runs inside the tap
+as the clipboard requires. The structured format needs code that loads once
+the page is idle; a click before that copies the permalink text alone, which
+every Cloud paste surface still recognizes. `section()` accepts several targets with their own
+labels, such as a message and its conversation, and returns no section when
+the Cloud URL is not configured. Use the ID the Type's reader accepts.
+
 ## Select a place for a panel
 
 A page can report its current resource ref to the visible panel through

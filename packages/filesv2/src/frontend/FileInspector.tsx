@@ -1,5 +1,5 @@
-import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
-import { clipboard, query } from "@k2b/stdlib/solid";
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
+import { query } from "@k2b/stdlib/solid";
 import { Button, DescriptionList, DetailPanel, Format, IconButton, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
@@ -11,12 +11,10 @@ import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
 import { apiFailure, contentLease, fileIcon, inlinePdfHref, previewKind } from "./file-preview";
 import { useFilesMessages } from "./messages";
-import { referenceHref } from "./urls";
 
 /** Identity, quick preview, facts, actions and versions of one entry; a summary for several. */
 export default function FileInspector(props: {
   base: BaseSummary;
-  cloudUrl: string;
   selected: readonly FileEntry[];
   paths: readonly string[];
   initial?: EntryResult | null;
@@ -98,15 +96,11 @@ export default function FileInspector(props: {
   const revision = (file: FileEntry) => JSON.stringify([props.base.id, props.base.locationKey, file.path, file.modified]);
   // The preview reads a `.pdf` anyway; once its bytes show it is no PDF, the viewer tab would only open an error page.
   const [notPdf, setNotPdf] = createSignal<string | null>(null);
-  const refClipboard = clipboard.createWriter({ write: cloudResourceClipboard.write, copiedFor: 1800 });
-  const copyReference = (item: FileEntry) => {
+  const cloudId = useCloudIdCopy();
+  const entryRef = (item: FileEntry) => {
     const id = item.resourceId ?? details.data()?.result.resourceId ?? entryRefId(props.base.id, item.path);
-    if (!id) return;
-    const href = referenceHref(props.base.id, item, id);
-    void refClipboard.copy({ cloudUrl: props.cloudUrl, ref: { type: ENTRY_TYPE, id }, fallbackText: new URL(href, props.cloudUrl).href });
+    return id ? { type: ENTRY_TYPE, id } : null;
   };
-  const copyLabel = () =>
-    refClipboard.error() ? t().copyReferenceFailed : refClipboard.wasCopied() ? t().copiedReference : t().copyReference;
   const openInTab = async (item: FileEntry) => {
     // A PDF opens at the preview's page address, so its tab reloads and signs an expired session in again.
     if (previewKind(item) === "pdf") return void window.open(inlinePdfHref(props.base.id, item.path), "_blank", "noopener");
@@ -192,22 +186,7 @@ export default function FileInspector(props: {
                       <Format.DateTime value={item().modified} />
                     </span>
                   }
-                  meta={
-                    <Tooltip.Anchor content={copyLabel()}>
-                      <IconButton size="xs" variant="ghost" label={copyLabel()} onClick={() => copyReference(item())}>
-                        <i
-                          class={
-                            refClipboard.error()
-                              ? "ti ti-alert-circle text-danger"
-                              : refClipboard.wasCopied()
-                                ? "ti ti-check"
-                                : "ti ti-copy"
-                          }
-                          aria-hidden="true"
-                        />
-                      </IconButton>
-                    </Tooltip.Anchor>
-                  }
+                  menu={cloudId.section(entryRef(item()))}
                   actions={close}
                   primaryActions={
                     <>

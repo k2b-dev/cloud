@@ -85,7 +85,6 @@ describe("Filesv2 ordering and drag-and-drop", () => {
             setSource(`/app/filesv2?${query}`);
           },
           bases: [directory.base],
-          cloudUrl: "https://cloud.test",
           onNavigate: async () => {},
           onChanged: () => changed.push("changed"),
         }),

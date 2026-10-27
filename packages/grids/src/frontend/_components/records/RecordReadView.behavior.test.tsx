@@ -44,7 +44,6 @@ domTest(
     const dispose = render(
       () =>
         createComponent(RecordReadView, {
-          cloudUrl: "https://cloud.example",
           baseId: "BASE01",
           tableId: "TABLE1",
           tableName: "Invoices",

@@ -30,7 +30,6 @@ import { CorrectionDraftInvocationError, createCorrectionDraft } from "./record-
 import { recordDisplayTitle } from "./record-display";
 
 type Props = {
-  cloudUrl: string;
   baseId: string;
   tableId: string;
   tableName: string;
@@ -530,7 +529,6 @@ export default function RecordDetailPanel(props: Props) {
     <Show when={record()} fallback={null} keyed>
       {(rec) => (
         <RecordReadView
-          cloudUrl={props.cloudUrl}
           baseId={props.baseId}
           tableId={props.tableId}
           tableName={props.tableName}
@@ -553,38 +551,27 @@ export default function RecordDetailPanel(props: Props) {
               onChanged={refreshAfterFinalizationMutation}
             />
           )}
+          headerMenu={
+            props.canWrite && mode() === "live" && !rec.finalizedAt
+              ? [
+                  {
+                    sectionLabel: t().dangerZone,
+                    items: [
+                      {
+                        label: t().moveToTrash,
+                        icon: "ti ti-trash",
+                        variant: "danger",
+                        disabled: deleteMut.loading(),
+                        action: () => handleDelete(rec),
+                      },
+                    ],
+                  },
+                ]
+              : []
+          }
+          headerMenuLabel={t().moreActions}
           headerActions={
             <>
-              <Show when={props.canWrite && mode() === "live" && !rec.finalizedAt}>
-                <Dropdown.Root
-                  position="bottom-left"
-                  items={[
-                    {
-                      sectionLabel: t().dangerZone,
-                      items: [
-                        {
-                          label: t().moveToTrash,
-                          icon: "ti ti-trash",
-                          variant: "danger",
-                          action: () => handleDelete(rec),
-                        },
-                      ],
-                    },
-                  ]}
-                >
-                  <Dropdown.Trigger
-                    iconOnly
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    label={t().moreActions}
-                    disabled={deleteMut.loading()}
-                    tooltip={t().moreActions}
-                  >
-                    <i class={deleteMut.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-dots"} />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
-              </Show>
               <Tooltip.Anchor content={t().closeDetails}>
                 <IconButton variant="ghost" size="sm" type="button" label={t().closePanel} onClick={() => props.onClose()}>
                   <i class="ti ti-x" />
@@ -790,7 +777,6 @@ export default function RecordDetailPanel(props: Props) {
             )}
           </Show>
           <RecordDocumentsSection
-            cloudUrl={props.cloudUrl}
             tableId={props.tableId}
             tableName={props.tableName}
             recordId={rec.id}

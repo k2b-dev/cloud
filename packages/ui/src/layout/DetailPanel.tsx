@@ -15,6 +15,13 @@ type DetailPanelHeaderBaseProps = {
   title: JSX.Element;
   subtitle?: JSX.Element;
   meta?: JSX.Element;
+  /**
+   * The resource's "…" menu, shown before `actions`. Pass every less frequent command on the shown resource here,
+   * so each panel opens its menu from the same place; an empty list shows no button.
+   */
+  menu?: readonly DropdownItem[];
+  /** Accessible name of the "…" button. Defaults to "More actions". */
+  menuLabel?: string;
   actions?: JSX.Element;
   primaryActions?: JSX.Element;
   class?: string;
@@ -152,42 +159,55 @@ const showTruncatedTitle = (event: PointerEvent & { currentTarget: HTMLHeadingEl
   else heading.removeAttribute("title");
 };
 
-const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => (
-  <header class={classNames("k2b-detail-panel__header", props.class)}>
-    <div class="k2b-detail-panel__header-main" data-identity={props.icon || props.leading ? "true" : undefined}>
-      <Show when={props.icon}>
-        {(icon) => (
-          <span class="k2b-detail-panel__header-icon" aria-hidden="true">
-            <i class={icon()} />
-          </span>
-        )}
-      </Show>
-      <Show when={props.leading}>
-        <div class="k2b-detail-panel__header-leading">{props.leading}</div>
-      </Show>
-      <div class="k2b-detail-panel__heading">
-        {/* A long title wraps to two lines and ends with an ellipsis; then the native hint shows all of it. */}
-        <h2 onPointerEnter={showTruncatedTitle}>{props.title}</h2>
-        <Show when={props.subtitle || props.meta}>
-          <div class="k2b-detail-panel__supporting">
-            <Show when={props.subtitle}>
-              <p>{props.subtitle}</p>
+const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
+  const t = useDetailPanelMessages();
+  const menuLabel = () => props.menuLabel ?? t().moreActions;
+  return (
+    <header class={classNames("k2b-detail-panel__header", props.class)}>
+      <div class="k2b-detail-panel__header-main" data-identity={props.icon || props.leading ? "true" : undefined}>
+        <Show when={props.icon}>
+          {(icon) => (
+            <span class="k2b-detail-panel__header-icon" aria-hidden="true">
+              <i class={icon()} />
+            </span>
+          )}
+        </Show>
+        <Show when={props.leading}>
+          <div class="k2b-detail-panel__header-leading">{props.leading}</div>
+        </Show>
+        <div class="k2b-detail-panel__heading">
+          {/* A long title wraps to two lines and ends with an ellipsis; then the native hint shows all of it. */}
+          <h2 onPointerEnter={showTruncatedTitle}>{props.title}</h2>
+          <Show when={props.subtitle || props.meta}>
+            <div class="k2b-detail-panel__supporting">
+              <Show when={props.subtitle}>
+                <p>{props.subtitle}</p>
+              </Show>
+              <Show when={props.meta}>
+                <div class="k2b-detail-panel__meta">{props.meta}</div>
+              </Show>
+            </div>
+          </Show>
+        </div>
+        <Show when={props.menu?.length || props.actions}>
+          <div class="k2b-detail-panel__actions">
+            <Show when={props.menu?.length}>
+              <Dropdown.Root items={props.menu ?? []} align="end" label={menuLabel()} phone="sheet">
+                <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={menuLabel()} tooltip={menuLabel()}>
+                  <i class="ti ti-dots" aria-hidden="true" />
+                </Dropdown.Trigger>
+              </Dropdown.Root>
             </Show>
-            <Show when={props.meta}>
-              <div class="k2b-detail-panel__meta">{props.meta}</div>
-            </Show>
+            {props.actions}
           </div>
         </Show>
       </div>
-      <Show when={props.actions}>
-        <div class="k2b-detail-panel__actions">{props.actions}</div>
+      <Show when={props.primaryActions}>
+        <div class="k2b-detail-panel__primary-actions">{props.primaryActions}</div>
       </Show>
-    </div>
-    <Show when={props.primaryActions}>
-      <div class="k2b-detail-panel__primary-actions">{props.primaryActions}</div>
-    </Show>
-  </header>
-);
+    </header>
+  );
+};
 
 const DetailPanelBody = (props: DetailPanelBodyProps): JSX.Element => {
   let body!: HTMLDivElement;

@@ -1,3 +1,4 @@
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
@@ -9,7 +10,6 @@ import {
   DescriptionList,
   type DescriptionListItem,
   DetailPanel,
-  Dropdown,
   type DropdownItem,
   IconButton,
   IconButtonLink,
@@ -717,6 +717,7 @@ export default function ItemDetailPanel(props: Props) {
       allDay: props.recurringContext?.allDay ?? props.item.allDay,
       dateConfig: props.dateConfig,
     });
+  const cloudId = useCloudIdCopy();
   const itemActions = (): DropdownItem[] => {
     const actions: DropdownItem[] = [
       {
@@ -1060,15 +1061,10 @@ export default function ItemDetailPanel(props: Props) {
               </Show>
             </>
           }
+          menu={[...(canEditItem() ? itemActions() : []), ...cloudId.section({ type: "spaces.item", id: props.item.id })]}
+          menuLabel={t.moreItemActions}
           actions={
             <>
-              <Show when={canEditItem()}>
-                <Dropdown.Root position="bottom-left" items={itemActions()}>
-                  <Dropdown.Trigger iconOnly label={t.moreItemActions} tooltip={t.moreItemActions}>
-                    <i class="ti ti-dots" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
-              </Show>
               <IconButtonLink
                 href={props.baseUrl}
                 onClick={(event) => {

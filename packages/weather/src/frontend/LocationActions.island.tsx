@@ -1,3 +1,4 @@
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, Dropdown, prompts, SegmentedControl, toast, useLocale } from "@k2b/ui";
@@ -130,6 +131,7 @@ export default function LocationActions(props: { id: string; lat: number; lon: n
     );
   };
 
+  const cloudId = useCloudIdCopy();
   return (
     <div class="flex items-center gap-2" role="group" aria-label={t().locationActions}>
       <Button type="button" variant="secondary" size="sm" onClick={openDisplay}>
@@ -150,6 +152,7 @@ export default function LocationActions(props: { id: string; lat: number; lon: n
               },
             ],
           },
+          ...cloudId.section({ type: "weather.location", id: props.id }),
         ]}
       >
         <Dropdown.Trigger

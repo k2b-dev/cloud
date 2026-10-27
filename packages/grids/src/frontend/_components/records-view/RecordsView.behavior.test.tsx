@@ -84,7 +84,6 @@ type RecordsViewProps = Parameters<typeof import("./RecordsView").default>[0];
 
 /** A table page as the server renders it; `overrides` narrow it to the case under test. */
 const recordsViewProps = (overrides: Partial<RecordsViewProps>): RecordsViewProps => ({
-  cloudUrl: "http://localhost",
   baseId: "BASE01",
   tableId: "TABLE1",
   tableKind: "stored",

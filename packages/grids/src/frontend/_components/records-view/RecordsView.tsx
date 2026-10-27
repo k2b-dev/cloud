@@ -78,7 +78,6 @@ type RuntimeView = View & {
 };
 
 type Props = {
-  cloudUrl: string;
   /** UUID of the base — for API calls. */
   baseId: string;
   baseName?: string;
@@ -953,7 +952,6 @@ export default function RecordsView(props: Props) {
       >
         <Show when={selectedRecordId() || selectedGroup()}>
           <RecordsDetailSurface
-            cloudUrl={props.cloudUrl}
             baseId={props.baseId}
             tableId={props.tableId}
             tableName={tableName()}
