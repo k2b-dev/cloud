@@ -850,6 +850,8 @@ describe("spaces capabilities", () => {
       "calendar-destination.list",
       "calendar-invitation.preview",
       "calendar-invitation.response.prepare",
+      "calendar.events",
+      "calendar.list",
       "comment.list",
       "comment.read",
       "event.agenda",

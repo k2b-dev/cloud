@@ -60,6 +60,7 @@ if (isServer) {
                 current: { kind: "space", id: "Space1" },
                 canCreate: false,
                 myWorkLabel: "My work",
+                calendarLabel: "Calendar",
                 newSpaceLabel: "New space",
               }).map((item) => `${item.label}${item.icon === "ti ti-flag" ? " (pinned)" : ""}`);
             return createComponent(SpacesSidebarList, {
@@ -73,11 +74,11 @@ if (isServer) {
         }),
       dom.root,
     );
-    expect(menu()).toEqual(["My work", "Launch", "Ideas"]);
+    expect(menu()).toEqual(["My work", "Calendar", "Launch", "Ideas"]);
     const pin = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Pin Ideas"]');
     expect(pin).not.toBeNull();
     pin!.click();
-    expect(menu()).toEqual(["My work", "Ideas (pinned)", "Launch"]);
+    expect(menu()).toEqual(["My work", "Calendar", "Ideas (pinned)", "Launch"]);
   });
 
   describe("sidebar moved hints", () => {
@@ -159,7 +160,7 @@ if (isServer) {
     const registered = window.__cloudWorkspaceNavigation;
     expect(registered?.label).toBe("Launch");
     const items = registered?.navigation.items();
-    expect(items?.map(({ id }) => id)).toEqual(["my-work", "Space2", "Space1", "new-space"]);
+    expect(items?.map(({ id }) => id)).toEqual(["my-work", "all-calendars", "Space2", "Space1", "new-space"]);
     expect(items?.filter(({ active }) => active).map(({ id }) => id)).toEqual(["Space1"]);
     expect(items?.[0]?.label).toBe("My work");
     expect(items?.at(-1)?.action).toBe("new-space");

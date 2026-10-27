@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
+  CalendarEventsDataSchema,
+  CalendarEventsInputSchema,
+  CalendarListDataSchema,
+  CalendarListInputSchema,
   type CapabilityActionReview,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
@@ -138,6 +142,7 @@ import { spacesService } from "./service";
 import { isSpaceResourceId, resolveSpaceApiKeyPermission, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./service/access";
 import * as activity from "./service/activity";
 import { spaceActivityRow } from "./service/activity-timeline";
+import { CalendarSourceError, listSourceCalendars, readSourceEvents } from "./service/calendar-source";
 import type { CommentAuthor } from "./service/comments";
 import { localizeSpacesError, type SpacesMessages, spacesMessages } from "./service/messages";
 import { spacesPublicResources } from "./service/public-resources";
@@ -2213,6 +2218,7 @@ const runEventInvitationCommit = async (input: z.infer<typeof EventInvitationCom
 
 export const spacesCapabilities = defineCapabilities({
   protocolVersion: 2,
+  calendarSource: { calendars: "calendar.list", events: "calendar.events" },
   presentation: spacesCapabilityPresentation,
   commands: {
     "event.invite": {
@@ -2325,6 +2331,43 @@ export const spacesCapabilities = defineCapabilities({
       run: async (input, context) => {
         const access = await workQueryContext(input, context);
         return access.ok ? ok(await runTaskFocus(input, access.data)) : access;
+      },
+    },
+    "calendar.list": {
+      title: "List calendars",
+      description: "List readable Space calendars; member calendars are suggested. Read only in this version.",
+      input: CalendarListInputSchema,
+      data: CalendarListDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const access = await workQueryContext({ assignedTo: "all" }, context, true);
+        if (!access.ok) return access;
+        try {
+          return ok({ data: await listSourceCalendars(input, access.data) });
+        } catch (error) {
+          if (error instanceof CalendarSourceError) return fail({ ...err.badInput("Invalid calendar cursor"), code: error.code });
+          throw error;
+        }
+      },
+    },
+    "calendar.events": {
+      title: "Read calendar items",
+      description:
+        "Read open events and deadlines in readable Space calendars. Recurrences are expanded by Spaces; pages are chronological. Range is half-open and at most 31 elapsed days.",
+      input: CalendarEventsInputSchema,
+      data: CalendarEventsDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const access = await workQueryContext({ assignedTo: "all" }, context, true);
+        if (!access.ok) return access;
+        try {
+          return ok({ data: await readSourceEvents(input, access.data) });
+        } catch (error) {
+          if (error instanceof CalendarSourceError) return fail({ ...err.badInput("Calendar data could not be read"), code: error.code });
+          if (error instanceof CalendarReadLimitError)
+            return fail({ ...err.badInput("Calendar expansion exceeded its complete-read budget"), code: "CALENDAR_READ_LIMIT" });
+          throw error;
+        }
       },
     },
     "event.agenda": {

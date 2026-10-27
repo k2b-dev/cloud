@@ -231,6 +231,7 @@ describe("capabilities CLI", () => {
     const listed = JSON.parse(catalog.lines[0]!);
     expect(listed).not.toHaveProperty("generatedAt");
     expect(listed.apps[0].manifest).not.toHaveProperty("fileProvider");
+    expect(listed.apps[0].manifest).not.toHaveProperty("calendarSource");
     expect(listed.apps[0].manifest.queries.map((query: { localId: string }) => query.localId)).toEqual(["book.read"]);
 
     const requests: string[] = [];

@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import { writeAppFavicon } from "./app-favicon";
 import { buildBrowserPerformance } from "./browser-performance";
+import { writeInstallableIcons } from "./installable-assets";
 
 const appId = process.env.APP_ID ?? "core";
 
@@ -138,6 +139,8 @@ const appPublicSource = resolve(appDir, "public");
 if (existsSync(appPublicSource) && appPublicSource !== publicDir && !appPublicDir.startsWith(`${appPublicSource}/`)) {
   await cp(appPublicSource, appPublicDir, { recursive: true });
 }
+
+if (app?.meta.installable) await writeInstallableIcons(publicDir, appId, app.meta.installable);
 
 if (appId !== "core" && app) {
   await writeAppFavicon({
