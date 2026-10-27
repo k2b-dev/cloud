@@ -359,21 +359,80 @@ describe(`Spaces workspace detail stepping in ${browserName}`, () => {
     }
   }, 30_000);
 
-  test("kanban: a step to an item that is gone returns the highlight to the open card", async () => {
+  for (const tooltipOpen of [false, true]) {
+    test(`kanban: a step to an item that is gone restores the open card${tooltipOpen ? " with a tooltip open" : ""}`, async () => {
+      const page = await open("kanban");
+      const response = Promise.withResolvers<void>();
+      try {
+        await card(page, "Item02").click();
+        await selected(page, "Item02", "Task 2");
+        const highlighted = () =>
+          Array.from(document.querySelectorAll<HTMLElement>("[data-spaces-kanban-card]"))
+            .filter((link) => link.closest("article")?.getAttribute("data-spaces-kanban-card-state") === "selected")
+            .map((link) => link.dataset.itemId);
+        await page.route("**/items/Item03/detail", async (route) => {
+          await response.promise;
+          await route.fulfill({ status: 404, json: { message: "Not found" } });
+        });
+        await card(page, "Item02").focus();
+        if (tooltipOpen) {
+          // A passive hover hint must not swallow J while the card owns keyboard focus.
+          await page.locator('[data-spaces-kanban-grip="Item02"]').hover();
+          await page.locator('[role="tooltip"]:popover-open').waitFor();
+        } else {
+          await page.mouse.move(0, 0);
+          await page.waitForFunction(() => !document.querySelector('[role="tooltip"]:popover-open'));
+        }
+        // Prove the step reached the detail read before releasing the missing-item response.
+        const requested = page.waitForRequest("**/items/Item03/detail");
+        await page.keyboard.press("j");
+        await requested.catch(async (error: unknown) => {
+          const state = await page.evaluate(() => ({
+            focus: document.activeElement?.outerHTML.slice(0, 500),
+            popovers: Array.from(document.querySelectorAll(":popover-open"), (element) => element.outerHTML.slice(0, 500)),
+            dialogs: Array.from(document.querySelectorAll("dialog[open]"), (element) => element.outerHTML.slice(0, 500)),
+          }));
+          throw new Error(`Detail step did not request Item03: ${JSON.stringify(state)}`, { cause: error });
+        });
+        await page.waitForFunction(`(${highlighted})().join() === "Item03"`);
+        expect(new URL(page.url()).searchParams.get("item")).toBe("Item02");
+        response.resolve();
+        await page.getByRole("dialog").getByText("Item not found").waitFor();
+        await page.waitForFunction(`(${highlighted})().join() === "Item02"`);
+        await selected(page, "Item02", "Task 2");
+      } finally {
+        response.resolve();
+        try {
+          await page.unrouteAll({ behavior: "wait" });
+        } finally {
+          await page.context().close();
+        }
+      }
+    }, 30_000);
+  }
+
+  test("kanban: menus keep J/K and Escape dismisses a tooltip without closing the detail", async () => {
     const page = await open("kanban");
     try {
       await card(page, "Item02").click();
       await selected(page, "Item02", "Task 2");
-      await page.route("**/items/Item03/detail", (route) => route.fulfill({ status: 404, json: { message: "Not found" } }));
-      await page.keyboard.press("j");
-      await page.getByText("Item not found").waitFor();
-      const highlighted = () =>
-        Array.from(document.querySelectorAll<HTMLElement>("[data-spaces-kanban-card]"))
-          .filter((link) => link.closest("article")?.getAttribute("data-spaces-kanban-card-state") === "selected")
-          .map((link) => link.dataset.itemId);
-      await page.waitForFunction(`(${highlighted})().join() === "Item02"`);
-      expect(new URL(page.url()).searchParams.get("item")).toBe("Item02");
-      await page.locator("#k2b-workspace-detail-space-detail-panel").getByRole("heading", { name: "Task 2", exact: true }).waitFor();
+      await page.getByRole("button", { name: "More item actions", exact: true }).click();
+      const menu = page.locator('[role="menu"]:popover-open');
+      await menu.waitFor();
+      // Keep the menu open with focus outside it so the workspace's popover guard owns this check.
+      await card(page, "Item02").focus();
+      await menu.waitFor();
+      await noStep(page, "j");
+      await noStep(page, "k");
+      await page.keyboard.press("Escape");
+      await menu.waitFor({ state: "hidden" });
+      await card(page, "Item02").focus();
+      await page.locator('[data-spaces-kanban-grip="Item02"]').hover();
+      const tooltip = page.locator('[role="tooltip"]:popover-open');
+      await tooltip.waitFor();
+      await page.keyboard.press("Escape");
+      await tooltip.waitFor({ state: "hidden" });
+      await selected(page, "Item02", "Task 2");
     } finally {
       await page.context().close();
     }
