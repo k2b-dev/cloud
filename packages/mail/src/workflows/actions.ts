@@ -15,6 +15,7 @@ import type { ActorCommandInput, MailAddress, MailCommand, ResponseScheduleDefin
 import { conversationWorkStatusSchema, mailAddressSchema, responseScheduleDefinitionSchema } from "../contracts";
 import { createSpaceEventOnce, linkSpaceItemResource } from "../service/app-integrations";
 import { linkAutomaticReplyCommandInTransaction, prepareAutomaticReplyInTransaction } from "../service/automatic-reply";
+import { checkMailWorkflowAssignment } from "../service/automation-assignment-state";
 import {
   createWorkflowConversationCommentInTransaction,
   insertActivity,
@@ -47,6 +48,7 @@ import { renderMailWorkflowTemplate } from "../service/template-rendering";
 import { mailWorkflowActionFailure } from "../service/workflow-action-errors";
 import { withMailWorkflowCollaborationEvent } from "../service/workflow-collaboration-events";
 import { mailWorkflowDependencyDeadline } from "../service/workflow-dependencies";
+import { claimMailWorkflowEffect, mailWorkflowEffectTurnOutcome, resolveMailWorkflowEffectTurn } from "../service/workflow-effect-order";
 import {
   mailWorkflowConversationLinkView,
   mailWorkflowMessagePrecondition,
@@ -315,21 +317,42 @@ const workflowSendContentHash = async (
   return content.data.contentHash;
 };
 
-const createCommand = async (ctx: WorkflowActionContext, scope: MailRunScope, input: ActorCommandInput): Promise<ActionResult> => {
-  const command = await createWorkflowCommand({
-    context: null,
-    mailboxId: scope.mailboxId,
-    workflowVersionId: scope.workflowVersionId,
-    input,
-    beforeCreate: async (tx) => {
-      const fence = await lockProviderFence(tx, ctx);
-      if (!(await mailWorkflowExecutionAuthorityActive(scope.authority, scope.mailboxId, scope.workflowVersionId, tx))) {
-        throw Object.assign(new Error("Workflow execution authority is no longer active"), { code: "FORBIDDEN" });
-      }
-      return fence;
-    },
-  });
-  return command.ok ? commandOutcome(command.data) : resultFailure(command.error);
+class WorkflowEffectOrderBlocked extends Error {
+  constructor(readonly outcome: ActionResult) {
+    super("Waiting for an upper Mail workflow decision");
+  }
+}
+
+const createCommand = async (
+  ctx: WorkflowActionContext,
+  scope: MailRunScope,
+  input: ActorCommandInput,
+  placementOutput?: JsonObject,
+): Promise<ActionResult> => {
+  try {
+    const command = await createWorkflowCommand({
+      context: null,
+      mailboxId: scope.mailboxId,
+      workflowVersionId: scope.workflowVersionId,
+      input,
+      beforeCreate: async (tx) => {
+        const fence = await lockProviderFence(tx, ctx);
+        if (!(await mailWorkflowExecutionAuthorityActive(scope.authority, scope.mailboxId, scope.workflowVersionId, tx))) {
+          throw Object.assign(new Error("Workflow execution authority is no longer active"), { code: "FORBIDDEN" });
+        }
+        if (placementOutput) {
+          const turn = await resolveMailWorkflowEffectTurn(tx, { runId: ctx.runId, effectClass: "placement" });
+          if (turn.state !== "ready") throw new WorkflowEffectOrderBlocked(mailWorkflowEffectTurnOutcome(turn, placementOutput));
+        }
+        return fence;
+      },
+      afterCreate: placementOutput ? async (tx) => claimMailWorkflowEffect(tx, { runId: ctx.runId, effectClass: "placement" }) : undefined,
+    });
+    return command.ok ? commandOutcome(command.data) : resultFailure(command.error);
+  } catch (error) {
+    if (error instanceof WorkflowEffectOrderBlocked) return error.outcome;
+    throw error;
+  }
 };
 
 const MESSAGE_STATE_ACTIONS = new Set(["addFlag", "removeFlag", "addKeyword", "removeKeyword"]);
@@ -378,10 +401,14 @@ const messageAction = (
             : kind === "addFlag" || kind === "removeFlag"
               ? asText(values.flag, "flag")
               : asText(ctx.binding("folder") ?? values.folder ?? publicFolderId, "folder");
+        const source = ctx.invocation.context?.source;
+        const conversationId =
+          isObject(source) && isObject(source.conversation) && typeof source.conversation.id === "string" ? source.conversation.id : null;
+        const effectOutput: JsonObject = { action: kind, value, ...(conversationId ? { conversationId } : {}) };
         const applied = (outcome: ActionResult): ActionResult => {
-          if (outcome.state !== "succeeded") return outcome;
+          if (outcome.state !== "succeeded" || (isObject(outcome.output) && outcome.output.applied === false)) return outcome;
           applyMailMessageTransition(message, kind, value);
-          return { ...outcome, output: { ...(isObject(outcome.output) ? outcome.output : {}), action: kind, applied: true, value } };
+          return { ...outcome, output: { ...(isObject(outcome.output) ? outcome.output : {}), ...effectOutput, applied: true } };
         };
         // A step that runs again, on a recheck or once its command finished,
         // takes the outcome of the command it already issued. That command may
@@ -397,7 +424,7 @@ const messageAction = (
         const turnParams = { db: tx, runId: ctx.runId, mailboxId: scope.mailboxId, messageId, folderId };
         const skipped = (reason: "message_moved" | "earlier_automation", commandId?: string): ActionResult => ({
           state: "succeeded",
-          output: { action: kind, applied: false, skipped: reason, ...(commandId ? { commandId } : {}) },
+          output: { ...effectOutput, applied: false, skipped: reason, ...(commandId ? { commandId } : {}) },
         });
         if (issued) {
           // The command found the message gone: another automation moved it after this step checked.
@@ -411,7 +438,14 @@ const messageAction = (
           }
           return applied(commandOutcome({ id: issued.id, state: issued.state, lastError: issued.last_error_message }));
         }
-        if (PLACEMENT_ACTIONS.has(kind) || MESSAGE_STATE_ACTIONS.has(kind)) {
+        // Check before looking up the frozen provider target: an upper rule may have moved it.
+        const ordering = PLACEMENT_ACTIONS.has(kind)
+          ? await sql.begin((orderTx) => resolveMailWorkflowEffectTurn(orderTx, { runId: ctx.runId, effectClass: "placement" }))
+          : null;
+        if (ordering && ordering.state !== "ready") {
+          return mailWorkflowEffectTurnOutcome(ordering, effectOutput);
+        }
+        if ((PLACEMENT_ACTIONS.has(kind) && !ordering?.ordered) || MESSAGE_STATE_ACTIONS.has(kind)) {
           const turn = PLACEMENT_ACTIONS.has(kind)
             ? await resolveIncomingAutomationPlacementTurn(turnParams)
             : await resolveIncomingAutomationMessageStateTurn(turnParams);
@@ -440,7 +474,7 @@ const messageAction = (
           mailWorkflowMessageStateTransitions(message),
         );
         if (!mailMessageTransitionChanges(message, kind, value)) {
-          return { state: "succeeded", output: { action: kind, applied: false } };
+          return { state: "succeeded", output: { ...effectOutput, applied: false } };
         }
         const input: ActorCommandInput =
           kind === "moveMessage" || kind === "copyMessage" || kind === "archiveMessage" || kind === "trashMessage" || kind === "junkMessage"
@@ -467,7 +501,7 @@ const messageAction = (
                 idempotencyKey: ctx.effectKey,
                 correlationId: ctx.runId,
               };
-        const outcome = await createCommand(ctx, scope, input);
+        const outcome = await createCommand(ctx, scope, input, PLACEMENT_ACTIONS.has(kind) ? effectOutput : undefined);
         // The message may also have left between the lookup above and the command.
         if (
           outcome.state === "failed" &&
@@ -512,13 +546,55 @@ const conversationMutation = (
               (() => {
                 throw new Error("status must resolve to a value");
               })());
+        // Match provider command lock order before taking the per-message ordering lock.
+        await tx`SELECT id FROM mail.mailboxes WHERE id = ${scope.mailboxId}::uuid FOR SHARE`;
+        const effectClass = kind === "assignConversation" ? "assignment" : "status";
+        const ordering = await resolveMailWorkflowEffectTurn(tx, { runId: ctx.runId, effectClass });
+        if (ordering.state !== "ready") {
+          return mailWorkflowEffectTurnOutcome(ordering, { action: kind, value, conversationId: publicConversationId });
+        }
+        const assignment =
+          kind === "assignConversation"
+            ? await checkMailWorkflowAssignment(tx, {
+                mailboxId: scope.mailboxId,
+                workflowVersionId: scope.workflowVersionId,
+                conversationId,
+              })
+            : null;
+        if (assignment) {
+          conversation.assigneeUserIds = assignment.assigneeUserIds;
+          conversation.revision = assignment.revision;
+          if (assignment.skipped || value === null) {
+            return {
+              state: "succeeded",
+              output: {
+                action: kind,
+                applied: false,
+                value,
+                conversationId: publicConversationId,
+                revision: assignment.revision,
+                assigneeUserIds: assignment.assigneeUserIds,
+                ...(assignment.skipped ? { skipped: assignment.skipped } : {}),
+              },
+            };
+          }
+        }
+        // Exclusive classes are independent: an upper assignment/tag may have advanced the
+        // revision without deciding status. The ordering lock makes this a fresh decision.
+        if (kind === "setConversationStatus" && ordering.ordered) {
+          const [current] = await tx<{ revision: string | number }[]>`
+            SELECT revision FROM mail.conversations
+            WHERE id = ${conversationId}::uuid AND mailbox_id = ${scope.mailboxId}::uuid FOR UPDATE
+          `;
+          if (current) conversation.revision = Number(current.revision);
+        }
         const triggerMessageId = mailWorkflowTriggerMessageId(ctx.invocation.context);
         const live =
           kind === "setConversationStatus"
             ? await lockWorkflowConversationStatus(tx, {
                 mailboxId: scope.mailboxId,
                 conversationId,
-                expectedRevision,
+                expectedRevision: kind === "setConversationStatus" && ordering.ordered ? Number(conversation.revision) : expectedRevision,
                 triggerMessageId,
                 viewLinks: mailWorkflowConversationLinkView(ctx.invocation.context, conversationId),
               })
@@ -529,6 +605,7 @@ const conversationMutation = (
           if (triggerMessageId !== null && (value === "done" || value === "waiting")) {
             await recordConversationStatusDecision(tx, { conversationId, covers: true, messageId: triggerMessageId });
           }
+          await claimMailWorkflowEffect(tx, { runId: ctx.runId, effectClass });
           applyMailConversationTransition(conversation, kind, value);
           conversation.revision = live.revision;
           return {
@@ -543,7 +620,11 @@ const conversationMutation = (
           if (kind === "setConversationStatus" && live !== null && triggerMessageId !== null && (value === "done" || value === "waiting")) {
             await recordConversationStatusDecision(tx, { conversationId, covers: true, messageId: triggerMessageId, onlyUndecided: true });
           }
-          return { state: "succeeded", output: { action: kind, applied: false } as JsonObject };
+          if (kind === "setConversationStatus") await claimMailWorkflowEffect(tx, { runId: ctx.runId, effectClass });
+          return {
+            state: "succeeded",
+            output: { action: kind, applied: false, value, conversationId: publicConversationId } as JsonObject,
+          };
         }
         const mutation = await updateWorkflowConversationCollaborationInTransaction({
           mailboxId: scope.mailboxId,
@@ -552,12 +633,13 @@ const conversationMutation = (
           triggerMessageId,
           input:
             kind === "assignConversation"
-              ? { expectedRevision, assigneeUserIds: typeof value === "string" ? [value] : [] }
+              ? { expectedRevision: assignment?.revision ?? expectedRevision, assigneeUserIds: typeof value === "string" ? [value] : [] }
               : { expectedRevision: live?.revision ?? expectedRevision, workStatus: conversationWorkStatusSchema.parse(value) },
           db: tx,
           activityMetadata: { workflowRunId: ctx.runId, workflowStepKey: ctx.stepKey },
         });
         if (!mutation.ok) return resultFailure(mutation.error);
+        await claimMailWorkflowEffect(tx, { runId: ctx.runId, effectClass });
         applyMailConversationTransition(conversation, kind, value);
         conversation.revision = mutation.data.value.revision;
         return {
@@ -718,10 +800,10 @@ export const MAIL_WORKFLOW_ACTIONS = {
   assignConversation: conversationMutation(
     "assignConversation",
     "Assign conversation",
-    "Assigns or unassigns a conversation.",
+    "Assigns an unassigned conversation unless this rule’s earlier assignment was undone.",
     object({
       conversation: conversationReference,
-      user: { kind: "value", description: "Assignable user name, ID, expression, or null." },
+      user: { kind: "value", description: "Assignable user name, ID, expression, or null to leave the conversation unassigned." },
     }),
   ),
   setConversationStatus: conversationMutation(
@@ -750,6 +832,15 @@ export const MAIL_WORKFLOW_ACTIONS = {
         const conversation = await resolveObject(ctx, values.conversation, "conversation");
         const publicConversationId = asText(conversation.id, "conversation.id");
         const conversationId = await internalResourceId(tx, "conversations", scope.mailboxId, publicConversationId, "Conversation");
+        // Summary steps are non-exclusive too: every sibling rule can publish its result.
+        if (isObject(ctx.invocation.context?.automationOrder)) {
+          await tx`SELECT id FROM mail.mailboxes WHERE id = ${scope.mailboxId}::uuid FOR SHARE`;
+          const [live] = await tx<{ summary_revision: string | number }[]>`
+            SELECT summary_revision FROM mail.conversations
+            WHERE id = ${conversationId}::uuid AND mailbox_id = ${scope.mailboxId}::uuid FOR UPDATE
+          `;
+          if (live) conversation.summaryRevision = Number(live.summary_revision);
+        }
         const expectedSummaryRevision = Number(conversation.summaryRevision);
         if (!Number.isSafeInteger(expectedSummaryRevision) || expectedSummaryRevision < 1) {
           throw new Error("Conversation summary revision is unavailable");
@@ -766,11 +857,9 @@ export const MAIL_WORKFLOW_ACTIONS = {
         });
         if (!mutation.ok) return resultFailure(mutation.error);
         const applied = Boolean(mutation.data.event);
-        if (applied) {
-          conversation.summary = mutation.data.value.summary;
-          conversation.summaryRevision = mutation.data.value.summaryRevision;
-          conversation.revision = mutation.data.value.conversationRevision;
-        }
+        conversation.summary = mutation.data.value.summary;
+        conversation.summaryRevision = mutation.data.value.summaryRevision;
+        conversation.revision = mutation.data.value.conversationRevision;
         return {
           state: "succeeded",
           output: withMailWorkflowCollaborationEvent(
@@ -854,6 +943,16 @@ export const MAIL_WORKFLOW_ACTIONS = {
         const publicConversationId = asText(conversation.id, "conversation.id");
         const conversationId = await internalResourceId(tx, "conversations", scope.mailboxId, publicConversationId, "Conversation");
         const tagId = await internalResourceId(tx, "tags", scope.mailboxId, asText(ctx.binding("tag"), "local tag"), "Local tag");
+        // Tags compose across frozen sibling rules; their independent writes must not conflict
+        // just because an upper rule advanced the conversation revision while this run waited.
+        if (isObject(ctx.invocation.context?.automationOrder)) {
+          await tx`SELECT id FROM mail.mailboxes WHERE id = ${scope.mailboxId}::uuid FOR SHARE`;
+          const [live] = await tx<{ revision: string | number }[]>`
+            SELECT revision FROM mail.conversations
+            WHERE id = ${conversationId}::uuid AND mailbox_id = ${scope.mailboxId}::uuid FOR UPDATE
+          `;
+          if (live) conversation.revision = Number(live.revision);
+        }
         const mutation = await updateWorkflowConversationLocalTagInTransaction({
           db: tx,
           mailboxId: scope.mailboxId,
@@ -868,7 +967,12 @@ export const MAIL_WORKFLOW_ACTIONS = {
         return {
           state: "succeeded",
           output: withMailWorkflowCollaborationEvent(
-            { applied: mutation.data.applied, conversationId: publicConversationId, revision: mutation.data.conversationRevision },
+            {
+              applied: mutation.data.applied,
+              conversationId: publicConversationId,
+              revision: mutation.data.conversationRevision,
+              tagId: await publicResourceId(tx, "tags", tagId),
+            },
             mutation.data.activityId
               ? {
                   mailboxId: scope.mailboxId,
@@ -897,6 +1001,16 @@ export const MAIL_WORKFLOW_ACTIONS = {
         const publicConversationId = asText(conversation.id, "conversation.id");
         const conversationId = await internalResourceId(tx, "conversations", scope.mailboxId, publicConversationId, "Conversation");
         const tagId = await internalResourceId(tx, "tags", scope.mailboxId, asText(ctx.binding("tag"), "local tag"), "Local tag");
+        // Tags compose across frozen sibling rules; their independent writes must not conflict
+        // just because an upper rule advanced the conversation revision while this run waited.
+        if (isObject(ctx.invocation.context?.automationOrder)) {
+          await tx`SELECT id FROM mail.mailboxes WHERE id = ${scope.mailboxId}::uuid FOR SHARE`;
+          const [live] = await tx<{ revision: string | number }[]>`
+            SELECT revision FROM mail.conversations
+            WHERE id = ${conversationId}::uuid AND mailbox_id = ${scope.mailboxId}::uuid FOR UPDATE
+          `;
+          if (live) conversation.revision = Number(live.revision);
+        }
         const mutation = await updateWorkflowConversationLocalTagInTransaction({
           db: tx,
           mailboxId: scope.mailboxId,
@@ -911,7 +1025,12 @@ export const MAIL_WORKFLOW_ACTIONS = {
         return {
           state: "succeeded",
           output: withMailWorkflowCollaborationEvent(
-            { applied: mutation.data.applied, conversationId: publicConversationId, revision: mutation.data.conversationRevision },
+            {
+              applied: mutation.data.applied,
+              conversationId: publicConversationId,
+              revision: mutation.data.conversationRevision,
+              tagId: await publicResourceId(tx, "tags", tagId),
+            },
             mutation.data.activityId
               ? {
                   mailboxId: scope.mailboxId,

@@ -58,6 +58,7 @@ import { waitForMailProviderSlot } from "./provider-pacer";
 import { cleanupMailRuntimeHistory } from "./runtime-history-retention";
 import { reconcileMailStorageUsage } from "./storage-observability";
 import { getWorkflowSnapshot, mailWorkflowEventContext } from "./workflow-data";
+import { captureMailWorkflowEffectOrder } from "./workflow-effect-order";
 
 const log = logger("mail:sync");
 const ENVELOPE_BATCH_SIZE = 200;
@@ -948,8 +949,8 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
     });
     if (!snapshot) throw new Error("Received message workflow snapshot could not be loaded");
     const occurredAt = params.message.internalDate.toISOString();
-    const workflowIds = await params.db<{ workflow_id: string }[]>`
-      SELECT workflow.id::text AS workflow_id
+    const workflowIds = await params.db<{ workflow_id: string; name: string }[]>`
+      SELECT workflow.id::text AS workflow_id, workflow.name
       FROM mail.workflow_profile profile
       JOIN workflows.workflow workflow ON workflow.id = profile.id
       WHERE profile.mailbox_id = ${params.mailboxId}::uuid
@@ -979,7 +980,12 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
         array_position(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[], activation.workflow_id),
         activation.id
     `;
+    const automationOrder = workflowIds
+      .filter((workflow) => activations.some((activation) => activation.workflow_id === workflow.workflow_id))
+      .map((workflow, position) => ({ workflowId: workflow.workflow_id, name: workflow.name, position }));
     for (const activation of activations) {
+      const ordering = automationOrder.find((entry) => entry.workflowId === activation.workflow_id);
+      if (!ordering) continue;
       const config = typeof activation.trigger_config === "string" ? JSON.parse(activation.trigger_config) : activation.trigger_config;
       const withValues =
         config.with !== null && typeof config.with === "object" && !Array.isArray(config.with)
@@ -987,19 +993,30 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
           : {};
       const triggerValues = { message: snapshot.source.message, conversation: snapshot.source.conversation, occurredAt };
       try {
-        await emitWorkflowEvent(
+        const emission = await emitWorkflowEvent(
           {
             appId: MAIL_WORKFLOW_APP_ID,
             scopeId: params.mailboxId,
             type: MAIL_WORKFLOW_EVENT.messageReceived,
             targetWorkflowId: activation.workflow_id,
             data: evaluateWorkflowTriggerInputs(triggerValues, withValues, occurredAt),
-            context: mailWorkflowEventContext(snapshot),
+            context: {
+              ...mailWorkflowEventContext(snapshot),
+              automationOrder: { workflowId: ordering.workflowId, name: ordering.name, position: ordering.position + 1 },
+            },
             dedupeKey: `${deliveryKey}:${activation.workflow_id}`,
             occurredAt: new Date(occurredAt),
           },
           { db: params.db },
         );
+        await captureMailWorkflowEffectOrder(params.db, {
+          eventId: emission.eventId,
+          mailboxId: params.mailboxId,
+          remoteMessageRefId: remoteRef.id,
+          workflowId: ordering.workflowId,
+          position: ordering.position,
+          name: ordering.name,
+        });
       } catch (error) {
         if (!(error instanceof WorkflowEventTooLargeError)) throw error;
         // A pathological message must never stall mailbox sync.
