@@ -34,7 +34,9 @@ import {
   requireConversation,
   subjectPrincipal,
 } from "./access";
+import { titles } from "./conversation-titles";
 import { validateDiscovery, writeDiscovery } from "./discovery";
+import { forYouUnread } from "./for-you";
 import { TransactionFailure, value } from "./transaction-failure";
 
 export { value };
@@ -42,6 +44,7 @@ export { value };
 import {
   AddMembersSchema,
   CONVERSATION_PAGE_SIZE,
+  type ConversationPageSchema,
   ConversationQuerySchema,
   type ConversationSchema,
   CREATE_LIMIT,
@@ -69,7 +72,6 @@ import { readerBatch, readResource } from "./resource-access";
 import { messageCondition, type ThreadBudget, visibleThreadIdPage } from "./thread-access";
 
 import { threadStates } from "./thread-state";
-import { deriveTitle, TITLE_NAME_LIMIT } from "./titles";
 
 const creationLimit = ratelimit({ id: "chat.conversation.create", limit: CREATE_LIMIT, windowSecs: CREATE_WINDOW_SECONDS });
 // Throw after any write failure so returning a failed Result cannot commit partial work.
@@ -257,50 +259,6 @@ const appendAdded = async (
     );
 };
 
-/** One bounded query for titles across the page, including the creation transaction's own grants. */
-const titles = async (rows: ConversationRow[], context: ChatContext, db: typeof sql) => {
-  const self = subjectPrincipal(context.accessSubject);
-  const others = rows.length
-    ? await db<{ conversation_id: string; display_name: string; given_name: string; former: boolean; group: boolean }[]>`
-    SELECT c.id AS conversation_id, names.* FROM chat.conversations c
-    CROSS JOIN LATERAL (
-      SELECT display_name, given_name, former, "group" FROM (
-        SELECT COALESCE(NULLIF(u.display_name, ''), u.uid) AS display_name, COALESCE(u.given_name, '') AS given_name,
-          false AS former, false AS "group", 0 AS section, ca.added_at AS added_at, 0::bigint AS joined_seq, ca.access_id AS order_id
-        FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id JOIN auth.users u ON u.id = a.user_id
-        WHERE ca.conversation_id = c.id AND ca.role = 'member' AND a.permission IN ('read', 'write', 'admin')
-          AND NOT (${self.type} = 'user' AND a.user_id = ${self.id}::uuid)
-        UNION ALL
-        SELECT sa.name, '', false, false, 0, ca.added_at, 0::bigint, ca.access_id
-        FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id JOIN auth.service_accounts sa ON sa.id = a.service_account_id
-        WHERE ca.conversation_id = c.id AND ca.role = 'member' AND a.permission IN ('read', 'write', 'admin')
-          AND NOT (${self.type} = 'service_account' AND sa.id = ${self.id}::uuid)
-        UNION ALL
-        SELECT '', '', true, false, 1, NULL::timestamptz, p.joined_seq, p.principal_id FROM chat.participants p
-        WHERE p.conversation_id = c.id AND p.origin = 'direct'
-          AND ((p.principal_type = 'user' AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = p.principal_id))
-            OR (p.principal_type = 'service_account' AND NOT EXISTS (SELECT 1 FROM auth.service_accounts sa WHERE sa.id = p.principal_id)))
-        UNION ALL
-        SELECT COALESCE(NULLIF(g.name, ''), g.cn), '', false, true, 2, ca.added_at, 0::bigint, ca.access_id
-        FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id JOIN auth.groups g ON g.id = a.group_id
-        WHERE ca.conversation_id = c.id AND ca.role = 'member' AND a.group_id IS NOT NULL AND a.permission IN ('read', 'write', 'admin')
-      ) entries ORDER BY section, added_at, joined_seq, order_id LIMIT ${TITLE_NAME_LIMIT + 1}
-    ) names WHERE c.id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])
-  `
-    : [];
-  return new Map(
-    rows.map((row) => [
-      row.id,
-      deriveTitle(
-        row.name,
-        others
-          .filter((other) => other.conversation_id === row.id)
-          .map((other) => ({ displayName: other.display_name, givenName: other.given_name, former: other.former, group: other.group })),
-        context.locale,
-      ),
-    ]),
-  );
-};
 const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: typeof sql, ids?: string[]) => {
   const visibility = messageCondition(db, ids);
   const found = rows.length
@@ -643,13 +601,13 @@ const get = (
   input: ChatContext & { conversationId: string; summaryCursor?: string; threadBudget?: ThreadBudget; selectedThread?: string | null },
   db?: typeof sql,
 ) => (db ? getInSnapshot(input, db) : sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", (tx) => getInSnapshot(input, tx)));
-const list = (input: ChatContext & { query?: unknown }) =>
+const list = (input: ChatContext & { query?: unknown }): Promise<Result<z.infer<typeof ConversationPageSchema>>> =>
   sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const parsed = parse(ConversationQuerySchema, input.query ?? {}, input);
     if (!parsed.ok) return parsed;
     const bound = boundConversation(input.actor, input.locale);
     if (!bound.ok) return fail(err.forbidden(messages(input).forbidden));
-    if (capPermission("read", input.actor) === "none") return ok({ items: [], nextCursor: null });
+    if (capPermission("read", input.actor) === "none") return ok({ items: [], nextCursor: null, forYouUnread: 0 });
     const cursor = parsed.data.cursor;
     const ids = parsed.data.ids;
     const self = subjectPrincipal(input.accessSubject);
@@ -677,6 +635,7 @@ const list = (input: ChatContext & { query?: unknown }) =>
     const last = page.at(-1);
     return ok({
       items,
+      forYouUnread: await forYouUnread(input, db),
       nextCursor:
         rows.length > CONVERSATION_PAGE_SIZE && last
           ? JSON.stringify({

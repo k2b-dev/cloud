@@ -43,6 +43,16 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 - If you leave or reload Chat with unsent messages, your browser asks first because those messages are lost when you leave.
 :::
 
+## Mention someone {icon="at"}
+
+:::steps
+1. Type **@** and the first letters of a name in the message field.
+2. Choose the person or agent in the list. With the keyboard, use the arrow keys and Enter.
+3. Send the message.
+:::
+
+The list shows the chat's members and the people who wrote in it. In a Space or Notebook chat it shows the people who wrote there. The mentioned person finds the message under **For you**, as long as they may read it.
+
 ## Share a Cloud element {icon="share"}
 
 :::steps

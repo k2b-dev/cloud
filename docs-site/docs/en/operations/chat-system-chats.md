@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to Spaces and Notebooks.
-updated: 2026-10-26
+updated: 2026-10-27
 ---
 
 # Chat system conversations
@@ -52,8 +52,72 @@ System chats reject manual thread creation, renaming, archiving, chat metadata
 edits, and membership changes. Change container permissions in its owning app.
 Chat does not enumerate that app's members or copy their grants.
 
-Unread messages begin at each participant's first open. Reopening preserves
-that position. Messages before the first open cannot be marked unread.
+Unread messages begin at each participant's first open, or immediately before
+their first incoming mention or reply. Reopening preserves that position. Earlier
+messages cannot be marked unread. Mentions and replies appear in the same
+**For you** feed
+as ordinary chats, subject to current container and item access.
+
+Mention targets use principal UUIDs and need only be active eligible people or
+service accounts. They need no Chat grant or previous resource read. Candidates
+are previous conversation authors, excluding the caller. Mentioning someone
+does not grant access: the feed, count, message reads, and content-bearing live
+events still use that reader's own container and item authority. The personal
+`for-you` live hint carries no content or resource identity.
+
+## Search the chat list
+
+`GET /api/chat/search?q=IT` returns `{ items, systemUnavailable?: true }`.
+The required `q` is trimmed and must contain 1–100 characters; invalid input
+returns HTTP 400. Matching is literal and case-insensitive, including `%`,
+`_`, and punctuation. The response contains at most eight hits, ordered by
+exact name, name prefix, word prefix, then other substring matches. Recent
+activity breaks ties. Archived conversations follow all active results;
+archived threads are excluded.
+
+| Hit | Fields |
+| --- | --- |
+| Chat or subscribed channel | `{ kind: "chat", conversation }`, using the existing conversation-list summary. Generated titles use the caller's sidebar names and locale. |
+| Named thread or item thread | `{ kind: "thread", conversation: { id, title, kind }, thread: { id, name, resource? } }`. The optional item resource contains `{ kind: "task" \| "event" \| "note", done }`. |
+| Space or notebook | `{ kind: "system", ref, name, conversation }`. The container ref uses `spaces.space` or `notebooks.notebook`; `conversation` is `null` until its chat exists. |
+
+Ordinary results include only chats where the caller is a member, including
+subscribed channels. Discovery access alone does not add a result. Search
+covers ordinary titles and named threads before applying the result limit.
+It uses PostgreSQL and the existing membership indexes, with at most four
+member names used to derive each unnamed chat's title.
+
+Container discovery sends `query: q` and `limit: 100` to each owning app's
+existing list query. A second page of up to 100 containers per owner, without
+the text filter, scopes item discovery. Item discovery inspects the 100 most
+recently active non-archived item threads in those caller-listed containers
+and the matching container page. Their stored names are snapshots: matching uses each reader's current name and completion
+state. Container and item readers must both allow the caller, and the item's
+current parent must still match the conversation. The existing 60-second,
+credential-specific decision cache applies. Reader batches have at most eight
+concurrent calls. Search shares the existing 302-invocation reader budget,
+reserving two container reads for each possible system-chat summary. Budget
+exhaustion keeps available results and sets `systemUnavailable: true`.
+These candidate bounds mean an older item thread or a container beyond its owner's first matching page can be absent from search.
+
+When item threads remain, system-chat summaries include `summaryCursor: ""`:
+search spends its item-reader budget on matching and leaves summary continuation
+to the existing conversation route. Empty thread directories are complete and
+return `summaryCursor: null`. Container activity uses General messages and
+readable item candidates. Open a container with no conversation through the
+existing `POST /system-chats/:resourceType/:resourceId/open` route.
+
+If either owner fails, search retains ordinary hits and successful results
+from the other owner, and sets `systemUnavailable: true`. Show the partial
+failure separately and retry the same query. An explicit denial omits the
+resource. An empty successful response is `{ "items": [] }`.
+The standard Chat list request limiter applies (HTTP 429); disconnects cancel
+search queries and further reader work.
+
+The browser client in `frontend/search-api.ts` exports `createSearchApi()`
+with `search(q, signal?)` and the `SearchHit`, `SearchResult`, and `SearchApi`
+types. It validates both the query and response and preserves server error
+messages and codes.
 
 ## Read item events
 

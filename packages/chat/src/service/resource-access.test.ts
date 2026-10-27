@@ -238,3 +238,41 @@ test("item readers project status names, due dates, assignee names and event tim
   };
   expect((await readResource(context, item, noLabel))?.status).toBeNull();
 });
+
+test("search can distinguish reader outages and malformed replies from explicit denials", async () => {
+  let unavailable = 0;
+  const mark = () => {
+    unavailable++;
+  };
+  expect(
+    await readResource(
+      context,
+      ref,
+      {
+        invoke: async () => {
+          throw new Error("Unavailable");
+        },
+      },
+      mark,
+    ),
+  ).toBeNull();
+  expect(unavailable).toBe(1);
+  cache.clear();
+  expect(await readResource(context, ref, { invoke: async () => null }, mark)).toBeNull();
+  expect(unavailable).toBe(1);
+  cache.clear();
+  expect(await readResource(context, ref, { invoke: async () => ({ data: { broken: true } }) }, mark)).toBeNull();
+  expect(unavailable).toBe(2);
+  expect(await readResource(context, ref, { invoke: async () => ({ data: { broken: true } }) }, mark)).toBeNull();
+  expect(unavailable).toBe(3);
+});
+
+test("container search forwards the existing owner's text filter without changing directory pagination", async () => {
+  const dependencies: ResourceReaderDependencies = {
+    invoke: async (app, capability, input, caller) => {
+      expect([app, capability, input, caller]).toEqual(["spaces", "space.list", { limit: 100, query: "Spring" }, context.caller!]);
+      return { data: [] };
+    },
+  };
+  expect(await readContainers(context, "spaces.space", undefined, dependencies, "Spring")).toEqual({ items: [], nextCursor: null });
+});

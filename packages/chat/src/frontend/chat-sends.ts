@@ -3,14 +3,15 @@ import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import type { z } from "zod";
 import type { ApiType } from "../api";
-import { MessageViewSchema } from "../service/contracts";
+import { type Mention, MessageViewSchema, type SendMessageSchema } from "../service/contracts";
 
 export type ChatSendReply = { id: string; author: string; text: string };
-export type ChatSendInput = { clientId: string; body: string; thread?: string; replyTo?: string; refs?: CloudResourceRef[] };
+export type ChatSendInput = z.input<typeof SendMessageSchema>;
 export type ChatSend = {
   clientId: string;
   conversationId: string;
   body: string;
+  mentions: readonly Mention[];
   /** The thread the message goes to: a thread's ID, or "general". */
   thread: string;
   /** The answered message, shown as its quote until the stored message replaces the send. */
@@ -48,6 +49,9 @@ export const createChatSends = (dependencies: {
       const message = await dependencies.post(entry.conversationId, {
         clientId: entry.clientId,
         body: entry.body,
+        ...(entry.mentions.length
+          ? { mentions: entry.mentions.map((mention) => ({ ...mention, principal: { ...mention.principal } })) }
+          : {}),
         ...(entry.refs.length ? { refs: [...entry.refs] } : {}),
         // A reply goes into its original's thread on the server; General needs no thread.
         ...(entry.replyTo ? { replyTo: entry.replyTo.id } : entry.thread !== "general" ? { thread: entry.thread } : {}),
@@ -72,12 +76,13 @@ export const createChatSends = (dependencies: {
     send: (
       conversationId: string,
       body: string,
-      target: { thread?: string; replyTo?: ChatSendReply | null; refs?: readonly CloudResourceRef[] } = {},
+      target: { thread?: string; replyTo?: ChatSendReply | null; refs?: readonly CloudResourceRef[]; mentions?: readonly Mention[] } = {},
     ): ChatSend => {
       const entry: ChatSend = {
         clientId: dependencies.newClientId?.() ?? crypto.randomUUID(),
         conversationId,
         body,
+        mentions: (target.mentions ?? []).map((mention) => ({ ...mention, principal: { ...mention.principal } })),
         thread: target.thread ?? "general",
         replyTo: target.replyTo ?? null,
         refs: target.refs ?? [],

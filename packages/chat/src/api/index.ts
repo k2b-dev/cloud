@@ -38,6 +38,8 @@ import {
   DiscoveryStateSchema,
   DiscoveryUpdateSchema,
   ForResourceSchema,
+  ForYouPageSchema,
+  ForYouQuerySchema,
   ItemEventsPageSchema,
   ItemEventsQuerySchema,
   LeaveResultSchema,
@@ -48,6 +50,8 @@ import {
   MemberPreviewSchema,
   MemberQuerySchema,
   MemberRemovalSchema,
+  MentionCandidateQuerySchema,
+  MentionCandidatesSchema,
   MessagePageSchema,
   MessageParamSchema,
   MessageQuerySchema,
@@ -81,6 +85,7 @@ import {
 } from "../service/contracts";
 import { chatLive } from "../service/live";
 import { chatLiveChannels } from "../service/live-channels";
+import { SearchQuerySchema, SearchResultSchema } from "../service/search-contracts";
 
 const invalidInput = (c: Context) => ({ code: "BAD_INPUT", message: chatMessages.resolve([getLocale(c)]).t.invalidInput });
 const audienceUnavailableResponse = jsonResponse(
@@ -129,6 +134,24 @@ const app = new Hono<AuthContext>()
     },
   )
   .get(
+    "/for-you",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Read mentions and replies addressed to you across Chat",
+      ...requiresAuth,
+      description:
+        "Newest first, up to 30 candidate messages per page. Mention wins over reply for a message satisfying both. Current conversation and item access apply; follow nextCursor even on empty pages. Opaque cursors accept at most 256 characters.",
+      responses: {
+        200: jsonResponse(ForYouPageSchema, "Authorized mentions and replies"),
+        400: jsonResponse(z.object({ code: z.literal("BAD_INPUT"), message: z.string() }), "Invalid cursor"),
+        403: jsonResponse(z.object({ code: z.literal("FORBIDDEN"), message: z.string() }), "Personal feed unavailable for this credential"),
+      },
+    }),
+    validator("query", ForYouQuerySchema, invalidInput),
+    async (c) => respond(c, chatService.forYou.list({ ...context(c), query: c.req.valid("query") })),
+  )
+  .get(
     "/preferences",
     auth.requireRole("authenticated"),
     description("Read your sidebar preferences", SidebarPreferencesSchema),
@@ -152,6 +175,24 @@ const app = new Hono<AuthContext>()
         c,
         chatService.personal.update({ ...context(c), conversationId: c.req.valid("param").conversation, input: c.req.valid("json") }),
       ),
+  )
+  .get(
+    "/search",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Search your chats, subscribed channels, containers and named threads",
+      ...requiresAuth,
+      description:
+        "Trim q to 1–100 characters. Returns at most eight literal, case-insensitive name matches: exact, prefix, word, then substring; recent activity breaks ties. Archived chats sort last. Owner lists receive the text filter and a 100-container limit each. An unfiltered 100-container page per owner scopes item discovery. Item names come from authorized readers on the 100 most recently active threads in caller-listed containers. Search shares the 302-call reader budget, including summary reads. System summaries with remaining item candidates have summaryCursor: empty string; empty directories have null. Owner failures retain other results and set systemUnavailable: true. Uses the standard list request limiter and cancels further work on disconnect.",
+      responses: {
+        200: jsonResponse(SearchResultSchema, "Ranked hits with optional system-search failure"),
+        400: jsonResponse(z.object({ code: z.literal("BAD_INPUT"), message: z.string() }), "Invalid search query"),
+        429: jsonResponse(z.object({ message: z.string() }), "Request rate limit reached"),
+      },
+    }),
+    validator("query", SearchQuerySchema, invalidInput),
+    async (c) => respond(c, chatService.search({ ...context(c), query: c.req.valid("query") })),
   )
   .get(
     "/system-chats",
@@ -490,7 +531,7 @@ const app = new Hono<AuthContext>()
       tags: ["Chat"],
       summary: "Post a Markdown message",
       description:
-        "Accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored content with the caller's current reactions.",
+        "Accepts up to 20 non-overlapping mentions with UTF-16 start/end offsets and a typed principal { type: user | service_account, id: UUID } from mention-candidates. Ranges select the typed display name inside the unchanged body. Invalid ranges return BAD_INPUT. Ordinary chat/channel targets must be current readers through direct or group membership; system targets only need to be active eligible principals. Mentions of principals who cannot read the thread are dropped; the message is still posted. Message views and live events include current mention names. Also accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored content with the caller's current reactions.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageViewSchema, "Idempotent retry"),
@@ -721,6 +762,32 @@ const app = new Hono<AuthContext>()
       respond(
         c,
         chatService.messages.changes({ ...context(c), conversationId: c.req.valid("param").conversation, query: c.req.valid("query") }),
+      ),
+  )
+  .get(
+    "/conversations/:conversation/mention-candidates",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Find mention candidates in a conversation",
+      ...requiresAuth,
+      description:
+        "Up to 20 active principals as { principal: { type, id }, name, agent }, excluding the caller. Direct members plus conversation authors; system chats list authors only. q matches name or word prefixes case-insensitively and accepts at most 100 characters. thread defaults to general. Uses the same request limiter as member searches.",
+      responses: {
+        200: jsonResponse(MentionCandidatesSchema, "Mention candidates"),
+        400: jsonResponse(z.object({ code: z.literal("BAD_INPUT"), message: z.string() }), "Invalid search or thread selector"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Chat or thread unavailable"),
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("query", MentionCandidateQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.mentions.candidates({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          query: c.req.valid("query"),
+        }),
       ),
   )
   .get(
