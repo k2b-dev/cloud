@@ -21,6 +21,7 @@ const canonicalSharedStylesheetImports: readonly string[] = [
   "input.css",
   "resource-search.css",
   "file-chooser.css",
+  "profile-picture.css",
   "panel.css",
 ];
 
