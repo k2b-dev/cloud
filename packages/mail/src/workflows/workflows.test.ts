@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { createWorkflowBuiltinActionPorts } from "@k2b/cloud/workflows";
 import { compileWorkflow, hashWorkflowJson } from "@k2b/cloud/workflows/language";
-import { executeWorkflowPlan } from "@k2b/cloud/workflows/runtime";
+import { evaluateWorkflowTriggerInputs, executeWorkflowPlan } from "@k2b/cloud/workflows/runtime";
+import { automatedMailReasons, autoReplyFactsFromProtocol } from "../service/auto-reply-policy";
+import { extractMessageProtocolFacts } from "../service/message-protocol";
 import { projectMailWorkflowMessagePrecondition } from "../service/workflow-message-preconditions";
 import {
   applyMailMessageTransition,
@@ -10,6 +12,7 @@ import {
   rebindMailWorkflowRestoredOutput,
   restoreMailWorkflowProjectedState,
 } from "../service/workflow-projected-state";
+import { createMailWorkflowValueResolver } from "../service/workflow-runtime-values";
 import { bindMailWorkflow, validateMailWorkflowTemplateReferences } from "./binder";
 import { buildMailWorkflowCatalog, type MailWorkflowCatalog, snapshotMailWorkflowCatalog } from "./catalog";
 import { mailWorkflows } from "./module";
@@ -1192,5 +1195,122 @@ ${aliases}
       ).toEqual({ modseq: undefined, flags: ["seen"], keywords: [] });
     }
     expect(counts[0]).toBe(counts[1]);
+  });
+}
+
+test("binds numeric Mail fields and diagnoses known non-number references at their source", async () => {
+  for (const operator of ["greaterThan", "lessThan", "atLeast", "atMost"]) {
+    for (const field of ["subject", "isBulk", "attachments", "sender.0"]) {
+      const source = `inputs:\n  message: { type: mailMessage }\nsteps:\n  - if: { ${operator}: ["\${{ inputs.message.${field} }}", 1] }\n    then:\n      - succeed: { message: matched }\n`;
+      const result = await bindMailWorkflow(await compile(source), catalog());
+      expect(result.ok).toBe(false);
+      if (!result.ok)
+        expect(result.diagnostics).toContainEqual(
+          expect.objectContaining({
+            code: "condition.type",
+            path: ["steps", 0, "if", operator, 0],
+            location: expect.objectContaining({ line: 4 }),
+          }),
+        );
+    }
+  }
+});
+
+for (const scenario of [
+  { name: "long reply", own: "x".repeat(151), count: 1, bulk: false, expected: true },
+  { name: "history and signature only", own: "Short reply", count: 1, bulk: false, expected: false },
+  { name: "long conversation", own: "Short reply", count: 4, bulk: false, expected: true },
+  { name: "exact thresholds", own: "x".repeat(150), count: 3, bulk: false, expected: false },
+  { name: "mailing list", own: "x".repeat(151), count: 4, bulk: true, expected: false },
+]) {
+  test(`messageReceived metric branch: ${scenario.name}`, async () => {
+    const ir = await compile(`inputs:
+  message: { type: mailMessage, required: true }
+  conversation: { type: mailConversation, required: true }
+triggers:
+  messageReceived:
+    with:
+      message: "\${{ trigger.message }}"
+      conversation: "\${{ trigger.conversation }}"
+steps:
+  - if:
+      all:
+        - not: { equals: ["\${{ inputs.message.isBulk }}", true] }
+        - any:
+            - greaterThan: ["\${{ inputs.message.textLength }}", 150]
+            - greaterThan: ["\${{ inputs.conversation.messageCount }}", 3]
+    then:
+      - addLocalTag: { conversation: inputs.conversation, tag: Lang }
+  - if: { equals: ["\${{ inputs.message.attachmentCount }}", 2] }
+    then:
+      - succeed: { message: attachments counted }
+`);
+    const bound = await bindMailWorkflow(
+      ir,
+      buildMailWorkflowCatalog({
+        folders: [],
+        assignableUsers: [],
+        localTags: [{ id: ids.financeTag, name: "Lang" }],
+      }),
+    );
+    if (!bound.ok) throw new Error(bound.diagnostics.map((item) => item.message).join("\n"));
+    const protocol = extractMessageProtocolFacts((name) => (scenario.bulk && name === "list-id" ? "List <list.example.test>" : null));
+    const message = {
+      id: "msg001",
+      body: "",
+      bodyText: "",
+      bodyHtml: "",
+      bodyAvailable: false,
+      attachmentsAvailable: true,
+      attachments: [
+        { disposition: "attachment", contentId: null },
+        { disposition: "inline", contentId: "image" },
+      ],
+      isBulk: automatedMailReasons(autoReplyFactsFromProtocol(protocol)).length > 0,
+    };
+    const occurredAt = "2026-10-12T12:00:00.000Z";
+    const inputs = evaluateWorkflowTriggerInputs(
+      { message, conversation: { id: "conv01", messageCount: scenario.count } },
+      ir.triggers[0]!.with,
+      occurredAt,
+    );
+    const values = createMailWorkflowValueResolver({
+      claim: { runId: "metrics-run", executionGeneration: 1, inputs },
+      mailboxId: "mailbox",
+      frozenHydration: {
+        "inputs.message.bodyText": `${scenario.own}\n\n-- \n${"Signature".repeat(50)}\n\nOn Monday, Customer wrote:\n> ${"History".repeat(50)}`,
+      },
+      mailActionNames: new Set(["addLocalTag"]),
+    });
+    let tagged = false;
+    const builtins = createWorkflowBuiltinActionPorts({ authorize: async () => undefined });
+    const result = await executeWorkflowPlan({
+      plan: bound.plan,
+      runId: "metrics-run",
+      executionGeneration: 1,
+      clock: { now: () => occurredAt },
+      values,
+      invocation: { workflowId: "metrics", mode: "execute", channel: "event", actor: {}, inputs, occurredAt, idempotencyKey: "metrics" },
+      repository: {
+        heartbeat: async () => ({ state: "active" }),
+        restoreStepOutcome: async () => null,
+        startStep: async () => {},
+        finishStep: async () => {},
+        parkStep: async () => {},
+      },
+      actions: {
+        get: (action) =>
+          action === "addLocalTag"
+            ? {
+                execute: async () => {
+                  tagged = true;
+                  return { state: "completed", output: null };
+                },
+              }
+            : builtins.execute.get(action),
+      },
+    });
+    expect(result).toEqual({ state: "succeeded", message: "attachments counted" });
+    expect(tagged).toBe(scenario.expected);
   });
 }

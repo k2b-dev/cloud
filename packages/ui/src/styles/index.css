@@ -13804,6 +13804,81 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__separator {
   height: 1.5rem;
 }
+/* A toolbar at a text selection (SelectionToolbar): in the top layer, so no scroll container clips it. */
+.k2b-ui .k2b-selection-toolbar {
+  position: fixed;
+  inset: unset;
+  margin: 0;
+  border: 0;
+  padding: 0.25rem;
+  overflow: visible;
+  border-radius: 0.6875rem;
+  color: var(--k2b-text);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--k2b-motion-fast) var(--k2b-ease-out),
+    transform var(--k2b-motion-fast) var(--k2b-ease-out),
+    display var(--k2b-motion-fast) allow-discrete,
+    overlay var(--k2b-motion-fast) allow-discrete;
+}
+.k2b-ui .k2b-selection-toolbar:not(:popover-open) {
+  display: none;
+  opacity: 0;
+  transform: translateY(2px);
+}
+@starting-style {
+  .k2b-ui .k2b-selection-toolbar:popover-open {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+/* Compact: 30 px buttons with 16 px icons, a 4 px frame and tight gaps, so the bar stays small over the text it
+   acts on. Touch screens keep their 44 px hit areas through the buttons' own coarse-pointer rule, without growing
+   the bar. Shortcuts show in the tooltips; the hints under the icons that a floating toolbar has would not fit. */
+.k2b-ui .k2b-selection-toolbar > .k2b-toolbar {
+  gap: 0.125rem;
+}
+.k2b-ui .k2b-selection-toolbar .k2b-button {
+  block-size: 1.875rem;
+  min-block-size: 1.875rem;
+  border-radius: var(--k2b-radius-control);
+}
+.k2b-ui .k2b-selection-toolbar .k2b-toolbar__action {
+  inline-size: 1.875rem;
+  min-inline-size: 1.875rem;
+  padding: 0;
+}
+.k2b-ui .k2b-selection-toolbar .k2b-button:not(.k2b-toolbar__action) {
+  padding-inline: 0.5rem;
+}
+.k2b-ui .k2b-selection-toolbar .k2b-button i {
+  font-size: 1rem;
+  line-height: 1;
+}
+.k2b-ui .k2b-selection-toolbar .k2b-button:not(.k2b-toolbar__action) i {
+  font-size: 0.875rem;
+}
+.k2b-ui .k2b-selection-toolbar .k2b-toolbar__hint {
+  display: none;
+}
+.k2b-ui .k2b-selection-toolbar .k2b-toolbar__separator {
+  height: 1rem;
+  margin: 0 0.1875rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-selection-toolbar {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .k2b-ui .k2b-selection-toolbar {
+    border: 1px solid CanvasText;
+  }
+}
+
 .k2b-ui .k2b-toolbar__label {
   min-inline-size: 0;
   max-inline-size: 10rem;

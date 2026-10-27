@@ -219,6 +219,35 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
     }
   }, 20_000);
 
+  test("settled() waits for a view transition that starts after a navigation committed", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.setContent(`<!doctype html><style>::view-transition-group(root) { animation-duration: 150ms; }</style>
+        <p id="state">before</p>
+        <script>
+          // A short finite animation ends first; the view transition starts while settled() waits on it.
+          document.querySelector("#state").animate([{ opacity: 0.5 }, { opacity: 1 }], { duration: 40 });
+          setTimeout(() => {
+            if (!document.startViewTransition) return void (document.querySelector("#state").textContent = "after");
+            document.startViewTransition(() => { document.querySelector("#state").textContent = "after"; });
+          }, 30);
+        </script>`);
+      await settled(page);
+      const state = await page.evaluate(() => ({
+        text: document.querySelector("#state")?.textContent,
+        viewTransitionAnimations: document
+          .getAnimations()
+          .filter((animation) => animation.timeline === document.timeline)
+          .filter((animation) => animation instanceof CSSAnimation && animation.animationName.startsWith("-ua-"))
+          .filter((animation) => animation.playState === "running").length,
+      }));
+      expect(state).toEqual({ text: "after", viewTransitionAnimations: 0 });
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
   test("a navigation whose document never answers says it did not commit", async () => {
     const context = await browser.newContext();
     try {
