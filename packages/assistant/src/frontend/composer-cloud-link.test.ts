@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { pastedLinkPlace, withoutPastedLink } from "./composer-cloud-link";
+import { pastedLinkCurrent, pastedLinkPlace, withoutPastedLink } from "./composer-cloud-link";
 
 const LINK = "https://cloud.example/app/spaces/Spc001?item=Itm001";
 const at = (start: number, end = start) => ({ start, end });
@@ -22,4 +22,14 @@ test("removing the link takes exactly the pasted copy and keeps one space betwee
   expect(withoutPastedLink(end.draft, end, LINK)).toBe("See");
   const only = pastedLinkPlace("", at(0), LINK, LINK);
   expect(withoutPastedLink(only.draft, only, LINK)).toBe("");
+});
+
+test("a draft restored to the same text, an input, or other text is no longer this paste's draft", () => {
+  const place = pastedLinkPlace("Old text", at(0, 8), LINK, LINK);
+  const paste = { generation: 3, place };
+  expect(pastedLinkCurrent({ edited: false, generation: 3, draft: LINK }, paste)).toBe(true);
+  // "Use saved draft" restoring a saved draft that happens to read the same.
+  expect(pastedLinkCurrent({ edited: false, generation: 4, draft: LINK }, paste)).toBe(false);
+  expect(pastedLinkCurrent({ edited: true, generation: 3, draft: LINK }, paste)).toBe(false);
+  expect(pastedLinkCurrent({ edited: false, generation: 3, draft: `${LINK} ` }, paste)).toBe(false);
 });

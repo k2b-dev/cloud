@@ -119,7 +119,7 @@ import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
-import { pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
+import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
   assistantBuiltInCommands,
   assistantCommandScopes,
@@ -1747,8 +1747,13 @@ export default function AssistantWorkspace(props: Props) {
       );
       const target = followComposerSession(sessionKey);
       const watch = watchPastedLink(event.target);
-      // Unchanged since the paste: no input but the paste itself, and the draft exactly as the paste left it.
-      const inPlace = (key: string) => !watch.edited() && composerDraft(key) === place.draft;
+      // A restored draft, such as "Use saved draft", replaces the text without any input in the field.
+      const generation = session(sessionKey).editGeneration;
+      const inPlace = (key: string) =>
+        pastedLinkCurrent(
+          { edited: watch.edited(), generation: session(key).editGeneration, draft: composerDraft(key) },
+          { generation, place },
+        );
       void resolveCloudUrl(link)
         .then(async (resolved) => {
           if (!resolved) return;
