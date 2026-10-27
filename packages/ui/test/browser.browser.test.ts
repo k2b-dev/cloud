@@ -238,6 +238,7 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
         text: document.querySelector("#state")?.textContent,
         viewTransitionAnimations: document
           .getAnimations()
+          .filter((animation) => animation.timeline === document.timeline)
           .filter((animation) => animation instanceof CSSAnimation && animation.animationName.startsWith("-ua-"))
           .filter((animation) => animation.playState === "running").length,
       }));
