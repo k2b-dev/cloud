@@ -208,13 +208,53 @@ describe("Item events in a Space chat", () => {
       await link.waitFor();
       expect(await link.getAttribute("href")).toBe("/open/notebooks.annotation/~00000000-0000-4000-9000-000000000001");
       // The row stays a quiet event: no bubble, never counted as a message.
-      const row = feed(page).locator(".k2b-message-event-row", { has: link });
+      // `has` matches inside the row, so the inner locator must not start at the feed again.
+      const row = feed(page).locator(".k2b-message-event-row", {
+        has: page.getByRole("link", { name: "Mara hat einen Kommentar hinterlassen" }),
+      });
+      expect(await row.count()).toBe(1);
       expect(await row.locator(".k2b-message-row__bubble").count()).toBe(0);
       expect(errors).toEqual([]);
     } finally {
       await page.context().close();
     }
   });
+
+  test("on a phone, a long agent name in a comment row truncates inside the row instead of running past it", async () => {
+    const { chat, invitation } = seed();
+    const sentence = "Prüfagent der Finanzabteilung für Quartalsberichte hat über Assistant einen Kommentar hinterlassen";
+    harness.addItemEvents(chat, [
+      {
+        id: "e7",
+        at: minutesAgo(34),
+        icon: "ti ti-message-plus",
+        sentence,
+        href: "/open/notebooks.annotation/~00000000-0000-4000-9000-000000000002",
+        count: 1,
+        thread: { id: invitation, name: "Einladung freigeben" },
+      },
+    ]);
+    const { page, errors } = await load(phone, { chat });
+    try {
+      const link = feed(page).getByRole("link", { name: sentence });
+      await link.waitFor();
+      const row = feed(page).locator(".k2b-message-event-row", { has: page.getByRole("link", { name: sentence }) });
+      const box = await row.evaluate((element) => {
+        const text = element.querySelector<HTMLElement>(".k2b-message-event-row__link")!;
+        const time = element.querySelector("time");
+        return {
+          inside:
+            element.scrollWidth <= element.clientWidth && element.getBoundingClientRect().right <= document.documentElement.clientWidth,
+          truncated: text.scrollWidth > text.clientWidth,
+          timeVisible: !time || time.getBoundingClientRect().right <= element.getBoundingClientRect().right,
+        };
+      });
+      expect(box).toEqual({ inside: true, truncated: true, timeVisible: true });
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
 
   test("an item's thread shows only its own changes, without item labels", async () => {
     const { chat, light } = seed();
