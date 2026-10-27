@@ -7,6 +7,7 @@ import {
   annotationHeadingPath,
   annotationPositions,
   locateAnnotation,
+  locateAnnotationPassage,
   resolveAnnotation,
 } from "./annotation-anchors";
 
@@ -195,4 +196,23 @@ test("relative positions resolve before a replayed document text has been opened
     value.doc.destroy();
     replay.destroy();
   }
+});
+
+test("creation distinguishes repeated exact quotes and selects their 1-based occurrence", () => {
+  const text = "Before target after; second target done";
+  const selector = { quote: "target", prefix: "", suffix: "" };
+  expect(locateAnnotationPassage(text, selector)).toEqual({ from: null, matches: 2, ambiguous: true });
+  expect(locateAnnotationPassage(text, selector, undefined, 2)).toEqual({ from: text.lastIndexOf("target"), matches: 2, ambiguous: false });
+  expect(locateAnnotationPassage(text, selector, undefined, 3)).toEqual({ from: null, matches: 2, ambiguous: false });
+  expect(locateAnnotationPassage(text, { ...selector, prefix: "second " })).toEqual({
+    from: text.lastIndexOf("target"),
+    matches: 2,
+    ambiguous: false,
+  });
+  expect(locateAnnotationPassage(text, selector, text.lastIndexOf("target"))).toEqual({
+    from: text.lastIndexOf("target"),
+    matches: 2,
+    ambiguous: false,
+  });
+  expect(locateAnnotationPassage(text, { ...selector, quote: "absent" })).toEqual({ from: null, matches: 0, ambiguous: false });
 });

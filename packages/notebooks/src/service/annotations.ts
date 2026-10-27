@@ -11,19 +11,22 @@ import {
   annotationContext,
   annotationHeadingPath,
   annotationPositions,
-  locateAnnotation,
+  locateAnnotationPassage,
   resolveAnnotation,
 } from "../lib/annotation-anchors";
 import {
   ANNOTATION_PAGE_SIZE,
   ANNOTATION_QUOTE_MAX_LENGTH,
+  ANNOTATION_RESULT_MAX_BYTES,
   type Annotation,
+  AnnotationAcceptSchema,
   AnnotationCreateSchema,
   AnnotationEditSchema,
   AnnotationIdSchema,
-  AnnotationOperationSchema,
+  AnnotationListSchema,
   AnnotationPageSchema,
   type AnnotationProjection,
+  AnnotationRejectSchema,
   AnnotationReplySchema,
 } from "../lib/annotation-contracts";
 import { noteContentHash } from "../lib/note-edit";
@@ -43,13 +46,17 @@ const messages = i18n.define({
       unavailable: "Note or comment not found",
       write: "Write access is required",
       invalid: "Check the comment input",
-      passage: "The passage is missing or ambiguous. Select it again.",
+      passageMissing: "The quote does not occur in the note",
+      passageAmbiguous: ({ matches }: { matches: number }) =>
+        `The quote occurs ${matches} times; pass --occurrence, --prefix/--suffix or --offset-hint`,
+      suggestion: "Only an open or rejected suggestion can change rejection status",
       key: "This idempotency key was used with different content",
       own: "Only the author may change this comment within ten minutes",
       replies: "A comment with replies cannot be deleted",
       locked: "Unlock the note before accepting or undoing a suggestion",
       open: "Only an open comment with a suggestion can be accepted",
       accepted: "This comment has no accepted suggestion to undo",
+      undoFirst: "Undo the accepted suggestion before changing it or the thread status",
       changed: "The text has changed since this suggestion was made",
       operation: "This operation ID belongs to another request",
       pending: "Another suggestion operation is pending. Retry its operation ID.",
@@ -61,13 +68,17 @@ const messages = i18n.define({
       unavailable: "Notiz oder Kommentar nicht gefunden",
       write: "Schreibzugriff ist erforderlich",
       invalid: "Bitte die Kommentareingabe prüfen",
-      passage: "Die Textstelle fehlt oder ist nicht eindeutig. Bitte erneut auswählen.",
+      passageMissing: "Das Zitat kommt in der Notiz nicht vor",
+      passageAmbiguous: ({ matches }) =>
+        `Das Zitat kommt ${matches}-mal vor; bitte --occurrence, --prefix/--suffix oder --offset-hint angeben`,
+      suggestion: "Nur ein offener oder abgelehnter Vorschlag kann abgelehnt oder wieder geöffnet werden",
       key: "Dieser Idempotenzschlüssel wurde mit anderem Inhalt verwendet",
       own: "Nur der Autor kann diesen Kommentar innerhalb von zehn Minuten ändern",
       replies: "Ein Kommentar mit Antworten kann nicht gelöscht werden",
       locked: "Bitte die Notiz entsperren, bevor ein Vorschlag übernommen oder rückgängig gemacht wird",
       open: "Nur ein offener Kommentar mit Vorschlag kann übernommen werden",
       accepted: "Dieser Kommentar hat keinen übernommenen Vorschlag zum Rückgängigmachen",
+      undoFirst: "Bitte den übernommenen Vorschlag rückgängig machen, bevor er oder der Kommentarstatus geändert wird",
       changed: "Der Text wurde inzwischen geändert",
       operation: "Diese Vorgangs-ID gehört zu einer anderen Anfrage",
       pending: "Ein anderer Vorschlagsvorgang ist offen. Bitte dessen Vorgangs-ID erneut verwenden.",
@@ -134,7 +145,16 @@ export const authorize = async (noteId: string, context: AnnotationContext, writ
   return ok({ note, canWrite: hasPermission(permission, "write") });
 };
 
-type RootRow = {
+type SuggestionRow = {
+  suggestion: string | null;
+  suggestion_state: "open" | "accepted" | "rejected" | null;
+  suggestion_state_by_kind: "user" | "service_account" | null;
+  suggestion_state_by_id: string | null;
+  suggestion_state_by_name: string | null;
+  suggestion_state_at: Date | null;
+  suggestion_state_via: "assistant" | "mcp" | null;
+};
+type RootRow = SuggestionRow & {
   id: string;
   note_id: string;
   start_rel: Uint8Array;
@@ -144,12 +164,12 @@ type RootRow = {
   prefix: string;
   suffix: string;
   body: string;
-  suggestion: string | null;
   state: "open" | "resolved" | "accepted";
   state_by_kind: "user" | "service_account" | null;
   state_by_id: string | null;
   state_by_name: string | null;
   state_at: Date | null;
+  state_via: "assistant" | "mcp" | null;
   author_kind: "user" | "service_account";
   author_id: string;
   author_name: string;
@@ -162,24 +182,27 @@ type RootRow = {
   deleted_at: Date | null;
   payload_hash: string;
 };
-type ReplyRow = Pick<
-  RootRow,
-  | "id"
-  | "body"
-  | "author_kind"
-  | "author_id"
-  | "author_name"
-  | "author_avatar_hash"
-  | "via"
-  | "created_at"
-  | "cursor_at"
-  | "edited_at"
-  | "deleted_at"
-  | "payload_hash"
->;
+type ReplyRow = SuggestionRow &
+  Pick<
+    RootRow,
+    | "id"
+    | "body"
+    | "author_kind"
+    | "author_id"
+    | "author_name"
+    | "author_avatar_hash"
+    | "via"
+    | "created_at"
+    | "cursor_at"
+    | "edited_at"
+    | "deleted_at"
+    | "payload_hash"
+  >;
 type OperationRow = {
   id: string;
   annotation_id: string;
+  reply_id: string | null;
+  via: "assistant" | "mcp" | null;
   kind: "accept" | "undo";
   expected_text: string;
   before_text: string;
@@ -205,15 +228,26 @@ const mutable = (row: ReplyRow, context: AnnotationContext, canWrite: boolean) =
   );
 };
 const person = (row: ReplyRow) => ({ kind: row.author_kind, id: row.author_id, name: row.author_name, avatarHash: row.author_avatar_hash });
+const suggestionProjection = (row: SuggestionRow) => ({
+  suggestion: row.suggestion,
+  suggestionState: row.suggestion_state,
+  suggestionStateBy:
+    row.suggestion_state_by_kind && row.suggestion_state_by_id
+      ? { kind: row.suggestion_state_by_kind, id: row.suggestion_state_by_id, name: row.suggestion_state_by_name ?? "" }
+      : null,
+  suggestionStateAt: row.suggestion_state_at?.toISOString() ?? null,
+  suggestionStateVia: row.suggestion_state_via,
+});
 const mapReply = (row: ReplyRow, context: AnnotationContext, canWrite: boolean) => ({
   id: row.id,
   body: row.body,
+  ...suggestionProjection(row),
   author: person(row),
   via: row.via,
   createdAt: row.created_at.toISOString(),
   editedAt: row.edited_at?.toISOString() ?? null,
   canEdit: !row.deleted_at && mutable(row, context, canWrite),
-  canDelete: !row.deleted_at && mutable(row, context, canWrite),
+  canDelete: !row.deleted_at && row.suggestion_state !== "accepted" && mutable(row, context, canWrite),
 });
 // Match Bun SQL's default pool size (10), separately from the text store's
 // pool: independent notes can progress while a write replays a large document,
@@ -304,16 +338,17 @@ const projectRoot = async (
     prefix: row.prefix,
     suffix: row.suffix,
     body: row.body,
-    suggestion: row.suggestion,
+    ...suggestionProjection(row),
     state: row.state,
     stateBy: row.state_by_kind && row.state_by_id ? { kind: row.state_by_kind, id: row.state_by_id, name: row.state_by_name ?? "" } : null,
     stateAt: row.state_at?.toISOString() ?? null,
+    stateVia: row.state_via,
     author: person(row),
     via: row.via,
     createdAt: row.created_at.toISOString(),
     editedAt: row.edited_at?.toISOString() ?? null,
     canEdit: !row.deleted_at && mutable(row, context, canWrite),
-    canDelete: !row.deleted_at && mutable(row, context, canWrite) && replies.length === 0,
+    canDelete: !row.deleted_at && row.state !== "accepted" && mutable(row, context, canWrite) && replies.length === 0,
     replies: visible.map((reply) => mapReply(reply, context, canWrite)),
     repliesNextCursor: replies.length > visible.length ? encodeCursor(visible[visible.length - 1]!) : null,
     headingPath: annotationHeadingPath(head.text, range.from),
@@ -345,16 +380,16 @@ const decodeCursor = (value: string | undefined): Cursor | null => {
 };
 // Reserve six KiB of the 256 KiB capability envelope for page metadata
 // and the resource refs added to at most 30 list items.
-const DATA_BUDGET = 250 * 1024;
+const DATA_BUDGET = ANNOTATION_RESULT_MAX_BYTES;
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
 
 export const list = async (
   noteId: string,
-  input: z.input<typeof AnnotationPageSchema>,
+  input: z.input<typeof AnnotationListSchema>,
   context: AnnotationContext,
   options: { compact?: boolean } = {},
 ): Promise<Result<AnnotationProjection>> => {
-  const parsed = AnnotationPageSchema.safeParse(input);
+  const parsed = AnnotationListSchema.safeParse(input);
   if (!parsed.success) return fail(err.badInput(words(context).invalid));
   const access = await authorize(noteId, context);
   if (!access.ok) return access;
@@ -364,10 +399,13 @@ export const list = async (
   } catch {
     return fail(err.badInput(words(context).cursor));
   }
+  const author = parsed.data.author === "me" ? actor(context).id : parsed.data.author;
   const head = await loadHead(access.data.note.id, context);
   try {
     const rows = await sql<RootRow[]>`SELECT *, created_at::text AS cursor_at, restore_revision::text FROM notebooks.annotations
       WHERE note_id = ${access.data.note.id}::uuid AND deleted_at IS NULL
+        AND (${parsed.data.state} = 'all' OR state = ${parsed.data.state})
+        AND (${author ?? null}::uuid IS NULL OR author_id = ${author ?? null}::uuid)
         AND (${cursor?.at ?? null}::timestamptz IS NULL OR (created_at, id) > (${cursor?.at ?? null}::timestamptz, ${cursor?.id ?? null}::uuid))
       ORDER BY created_at, id LIMIT ${parsed.data.limit + 1}`;
     const projection: AnnotationProjection = {
@@ -445,17 +483,24 @@ export const create = async (noteId: string, input: z.input<typeof AnnotationCre
     }
     const head = await loadHead(access.data.note.id, context);
     try {
-      const from = locateAnnotation(head.text, value, value.offsetHint);
-      if (from === null) return conflict(words(context).passage);
+      const passage = locateAnnotationPassage(head.text, value, value.offsetHint, value.occurrence);
+      if (passage.from === null)
+        return fail({
+          code: passage.ambiguous ? "ANNOTATION_PASSAGE_AMBIGUOUS" : "ANNOTATION_PASSAGE_NOT_FOUND",
+          message: passage.ambiguous ? words(context).passageAmbiguous({ matches: passage.matches }) : words(context).passageMissing,
+          status: 409,
+          details: { matches: passage.matches },
+        });
+      const from = passage.from;
       const to = from + value.quote.length;
       const positions = annotationPositions(head.doc, from, to);
       const contextText = annotationContext(head.text, from, to);
       const [row] = await tx<RootRow[]>`INSERT INTO notebooks.annotations (
-        note_id, start_rel, end_rel, restore_revision, quote, prefix, suffix, body, suggestion,
+        note_id, start_rel, end_rel, restore_revision, quote, prefix, suffix, body, suggestion, suggestion_state,
         author_kind, author_id, author_name, author_avatar_hash, via, idempotency_key, payload_hash, request_id
       ) VALUES (${access.data.note.id}::uuid, ${Buffer.from(positions.start)}, ${Buffer.from(positions.end)}, ${head.restoreRevision}::bigint,
         ${value.quote}, ${contextText.prefix}, ${contextText.suffix},
-        ${value.body}, ${value.suggestion ?? null}, ${identity.kind}, ${identity.id}::uuid, ${identity.name}, ${identity.avatarHash}, ${via(context)}, ${value.idempotencyKey}, ${hash}, ${context.requestId}) RETURNING *, created_at::text AS cursor_at, restore_revision::text`;
+        ${value.body}, ${value.suggestion ?? null}, ${value.suggestion == null ? null : "open"}, ${identity.kind}, ${identity.id}::uuid, ${identity.name}, ${identity.avatarHash}, ${via(context)}, ${value.idempotencyKey}, ${hash}, ${context.requestId}) RETURNING *, created_at::text AS cursor_at, restore_revision::text`;
       await activity.record(
         {
           notebookId: access.data.note.notebookId,
@@ -476,6 +521,23 @@ export const create = async (noteId: string, input: z.input<typeof AnnotationCre
   await changed(access.data.note);
   return read(noteId, result.data, context);
 };
+const replyHasContent = async (root: RootRow, body: string, suggestion: string | null, context: AnnotationContext) => {
+  if (body) return true;
+  if (suggestion === null) return false;
+  const head = await loadHead(root.note_id, context);
+  try {
+    const range = resolveAnnotation({
+      doc: head.doc,
+      start: root.start_rel,
+      end: root.end_rel,
+      selector: root,
+      sameRevision: root.restore_revision === head.restoreRevision,
+    });
+    return suggestion !== (range.orphan ? root.quote : head.text.slice(range.from, range.to));
+  } finally {
+    head.doc.destroy();
+  }
+};
 export const reply = async (noteId: string, id: string, input: z.input<typeof AnnotationReplySchema>, context: AnnotationContext) => {
   const parsed = AnnotationReplySchema.safeParse(input);
   if (!parsed.success) return fail(err.badInput(words(context).invalid));
@@ -486,7 +548,12 @@ export const reply = async (noteId: string, id: string, input: z.input<typeof An
   return withNoteLock(access.data.note.id, context, async () => {
     const root = await loadRoot(access.data.note.id, id);
     if (!root || root.deleted_at) return notFound(context);
-    const hash = noteContentHash(parsed.data.body);
+    const suggestion = parsed.data.suggestion ?? null;
+    // Preserve retry hashes for existing replies without a suggestion.
+    const hash =
+      suggestion === null
+        ? noteContentHash(parsed.data.body)
+        : `suggestion:${noteContentHash(JSON.stringify({ body: parsed.data.body, suggestion }))}`;
     const [existing] = await sql<
       ReplyRow[]
     >`SELECT *, created_at::text AS cursor_at FROM notebooks.annotation_replies WHERE annotation_id = ${id}::uuid AND author_kind = ${identity.kind} AND author_id = ${identity.id}::uuid AND idempotency_key = ${parsed.data.idempotencyKey}`;
@@ -495,10 +562,11 @@ export const reply = async (noteId: string, id: string, input: z.input<typeof An
       await changed(access.data.note);
       return ok(mapReply(existing, context, true));
     }
+    if (!(await replyHasContent(root, parsed.data.body, suggestion, context))) return fail(err.badInput(words(context).invalid));
     const [row] = await sql<
       ReplyRow[]
-    >`INSERT INTO notebooks.annotation_replies (annotation_id, author_kind, author_id, author_name, author_avatar_hash, via, body, idempotency_key, payload_hash, request_id)
-      VALUES (${id}::uuid, ${identity.kind}, ${identity.id}::uuid, ${identity.name}, ${identity.avatarHash}, ${via(context)}, ${parsed.data.body}, ${parsed.data.idempotencyKey}, ${hash}, ${context.requestId}) RETURNING *, created_at::text AS cursor_at`;
+    >`INSERT INTO notebooks.annotation_replies (annotation_id, author_kind, author_id, author_name, author_avatar_hash, via, body, suggestion, suggestion_state, idempotency_key, payload_hash, request_id)
+      VALUES (${id}::uuid, ${identity.kind}, ${identity.id}::uuid, ${identity.name}, ${identity.avatarHash}, ${via(context)}, ${parsed.data.body}, ${suggestion}, ${suggestion === null ? null : "open"}, ${parsed.data.idempotencyKey}, ${hash}, ${context.requestId}) RETURNING *, created_at::text AS cursor_at`;
     await changed(access.data.note);
     return ok(mapReply(row!, context, true));
   });
@@ -556,12 +624,12 @@ export const mutate = async (
     if (input.replyId && (!replyRow || (replyRow.deleted_at && input.kind !== "restore"))) return notFound(context);
     const row = replyRow ?? root;
     if (input.kind === "resolve" || input.kind === "reopen") {
-      if (input.replyId || root.state === "accepted") return conflict(words(context).accepted);
+      if (input.replyId || root.state === "accepted") return conflict(words(context).undoFirst);
       const [pending] =
         await sql`SELECT id FROM notebooks.annotation_operations WHERE annotation_id = ${id}::uuid AND status = 'pending' LIMIT 1`;
       if (pending) return conflict(words(context).pending, { operationId: pending.id, status: "pending" });
       const identity = actor(context);
-      await sql`UPDATE notebooks.annotations SET state = ${input.kind === "resolve" ? "resolved" : "open"}, state_by_kind = ${identity.kind}, state_by_id = ${identity.id}::uuid, state_by_name = ${identity.name}, state_at = now(), updated_at = now() WHERE id = ${id}::uuid`;
+      await sql`UPDATE notebooks.annotations SET state = ${input.kind === "resolve" ? "resolved" : "open"}, state_by_kind = ${identity.kind}, state_by_id = ${identity.id}::uuid, state_by_name = ${identity.name}, state_at = now(), state_via = ${via(context)}, updated_at = now() WHERE id = ${id}::uuid`;
     } else {
       if (!mutable(row, context, true)) return fail(err.forbidden(words(context).own));
       if (input.kind === "edit") {
@@ -570,19 +638,35 @@ export const mutate = async (
           ...(input.suggestion !== undefined ? { suggestion: input.suggestion } : {}),
         });
         if (!parsed.success) return fail(err.badInput(words(context).invalid));
-        const suggestion = input.suggestion === undefined ? root.suggestion : input.suggestion;
-        if (!parsed.data.body && (replyRow || suggestion === null || suggestion === root.quote))
-          return fail(err.badInput(words(context).invalid));
-        if (replyRow)
-          await sql`UPDATE notebooks.annotation_replies SET body = ${parsed.data.body}, edited_at = now(), updated_at = now() WHERE id = ${row.id}::uuid`;
-        else {
-          const [pending] =
-            await sql`SELECT id FROM notebooks.annotation_operations WHERE annotation_id = ${id}::uuid AND status = 'pending' LIMIT 1`;
-          if (pending && suggestion !== root.suggestion)
-            return conflict(words(context).pending, { operationId: pending.id, status: "pending" });
-          await sql`UPDATE notebooks.annotations SET body = ${parsed.data.body}, suggestion = ${suggestion}, edited_at = now(), updated_at = now() WHERE id = ${id}::uuid`;
-        }
+        const suggestion = input.suggestion === undefined ? row.suggestion : input.suggestion;
+        const hasContent = replyRow
+          ? await replyHasContent(root, parsed.data.body, suggestion, context)
+          : parsed.data.body.length > 0 || (suggestion !== null && suggestion !== root.quote);
+        if (!hasContent) return fail(err.badInput(words(context).invalid));
+        const [pending] =
+          await sql`SELECT id FROM notebooks.annotation_operations WHERE annotation_id = ${id}::uuid AND status = 'pending' LIMIT 1`;
+        if (pending && suggestion !== row.suggestion)
+          return conflict(words(context).pending, { operationId: pending.id, status: "pending" });
+        if (row.suggestion_state === "accepted" && suggestion !== row.suggestion) return conflict(words(context).undoFirst);
+        const identity = actor(context);
+        const newSuggestion = suggestion !== row.suggestion && suggestion !== null;
+        const state = suggestion === row.suggestion ? row.suggestion_state : suggestion === null ? null : "open";
+        const table = replyRow ? "notebooks.annotation_replies" : "notebooks.annotations";
+        await sql`UPDATE ${sql(table)} SET body = ${parsed.data.body}, suggestion = ${suggestion}, suggestion_state = ${state},
+          suggestion_state_by_kind = ${suggestion === row.suggestion ? row.suggestion_state_by_kind : newSuggestion ? identity.kind : null},
+          suggestion_state_by_id = ${suggestion === row.suggestion ? row.suggestion_state_by_id : newSuggestion ? identity.id : null}::uuid,
+          suggestion_state_by_name = ${suggestion === row.suggestion ? row.suggestion_state_by_name : newSuggestion ? identity.name : null},
+          suggestion_state_at = ${suggestion === row.suggestion ? row.suggestion_state_at : newSuggestion ? new Date(Date.now()) : null},
+          suggestion_state_via = ${suggestion === row.suggestion ? row.suggestion_state_via : newSuggestion ? via(context) : null},
+          edited_at = now(), updated_at = now() WHERE id = ${row.id}::uuid`;
       } else {
+        if (input.kind === "delete" && (row.suggestion_state === "accepted" || (!replyRow && root.state === "accepted")))
+          return conflict(words(context).undoFirst);
+        if (input.kind === "delete" && replyRow) {
+          const [pending] =
+            await sql`SELECT id FROM notebooks.annotation_operations WHERE annotation_id = ${id}::uuid AND reply_id = ${row.id}::uuid AND status = 'pending' LIMIT 1`;
+          if (pending) return conflict(words(context).pending, { operationId: pending.id, status: "pending" });
+        }
         if (input.kind === "delete" && !replyRow) {
           const [replyExists] =
             await sql`SELECT id FROM notebooks.annotation_replies WHERE annotation_id = ${id}::uuid AND deleted_at IS NULL LIMIT 1`;
@@ -603,6 +687,40 @@ export const mutate = async (
   return result;
 };
 
+const loadSuggestion = async (root: RootRow, replyId: string | undefined) => {
+  if (!replyId) return root;
+  const [row] = await sql<ReplyRow[]>`SELECT *, created_at::text AS cursor_at FROM notebooks.annotation_replies
+    WHERE id = ${replyId}::uuid AND annotation_id = ${root.id}::uuid AND deleted_at IS NULL`;
+  return row ?? null;
+};
+export const reject = async (noteId: string, id: string, input: z.input<typeof AnnotationRejectSchema>, context: AnnotationContext) => {
+  const parsed = AnnotationRejectSchema.safeParse(input);
+  if (!parsed.success) return fail(err.badInput(words(context).invalid));
+  if (!AnnotationIdSchema.safeParse(id).success) return notFound(context);
+  const access = await authorize(noteId, context, true);
+  if (!access.ok) return access;
+  return withNoteLock(access.data.note.id, context, async () => {
+    const root = await loadRoot(access.data.note.id, id);
+    if (!root || root.deleted_at) return notFound(context);
+    const selected = await loadSuggestion(root, parsed.data.replyId);
+    if (!selected) return notFound(context);
+    if (selected.suggestion === null || selected.suggestion_state === "accepted") return conflict(words(context).suggestion);
+    const [pending] =
+      await sql`SELECT id FROM notebooks.annotation_operations WHERE annotation_id = ${id}::uuid AND status = 'pending' LIMIT 1`;
+    if (pending) return conflict(words(context).pending, { operationId: pending.id, status: "pending" });
+    const state = parsed.data.rejected ? "rejected" : "open";
+    if (selected.suggestion_state !== state) {
+      const identity = actor(context);
+      const table = parsed.data.replyId ? "notebooks.annotation_replies" : "notebooks.annotations";
+      await sql`UPDATE ${sql(table)} SET suggestion_state = ${state}, suggestion_state_by_kind = ${identity.kind},
+        suggestion_state_by_id = ${identity.id}::uuid, suggestion_state_by_name = ${identity.name},
+        suggestion_state_at = now(), suggestion_state_via = ${via(context)}, updated_at = now() WHERE id = ${selected.id}::uuid`;
+    }
+    await changed(access.data.note);
+    return ok({ id: selected.id, annotationId: id, deleted: false });
+  });
+};
+
 /** Approval snapshots show the exact proposed replacement, including a custom accepted source. */
 export const previewOperation = async (
   noteId: string,
@@ -610,15 +728,18 @@ export const previewOperation = async (
   kind: "accept" | "undo",
   expectedText: string | undefined,
   context: AnnotationContext,
+  replyId?: string,
 ) => {
-  if (!AnnotationIdSchema.safeParse(id).success) return notFound(context);
+  if (!AnnotationIdSchema.safeParse(id).success || (replyId && !AnnotationIdSchema.safeParse(replyId).success)) return notFound(context);
   const access = await authorize(noteId, context, true);
   if (!access.ok) return access;
   const root = await loadRoot(access.data.note.id, id);
   if (!root || root.deleted_at) return notFound(context);
   if (kind === "accept") {
-    if (root.state !== "open" || root.suggestion === null || root.suggestion === root.quote) return conflict(words(context).open);
-    return ok({ before: expectedText ?? root.quote, after: root.suggestion });
+    const selected = await loadSuggestion(root, replyId);
+    if (!selected) return notFound(context);
+    if (root.state !== "open" || selected.suggestion === null || selected.suggestion_state !== "open") return conflict(words(context).open);
+    return ok({ before: expectedText ?? root.quote, after: selected.suggestion });
   }
   if (root.state !== "accepted") return conflict(words(context).accepted);
   const [accepted] = await sql<OperationRow[]>`SELECT * FROM notebooks.annotation_operations
@@ -636,10 +757,10 @@ export const operate = async (
   noteId: string,
   id: string,
   kind: "accept" | "undo",
-  input: z.input<typeof AnnotationOperationSchema>,
+  input: z.input<typeof AnnotationAcceptSchema>,
   context: AnnotationContext,
 ) => {
-  const parsed = AnnotationOperationSchema.safeParse(input);
+  const parsed = AnnotationAcceptSchema.safeParse(input);
   if (!parsed.success) return fail(err.badInput(words(context).invalid));
   if (!AnnotationIdSchema.safeParse(id).success) return notFound(context);
   const access = await authorize(noteId, context, true);
@@ -659,6 +780,7 @@ export const operate = async (
       if (
         operation.annotation_id !== id ||
         operation.kind !== kind ||
+        (kind === "accept" && operation.reply_id !== (parsed.data.replyId ?? null)) ||
         operation.actor_kind !== identity.kind ||
         operation.actor_id !== identity.id ||
         (input.expectedText !== undefined && input.expectedText !== operation.expected_text)
@@ -678,8 +800,12 @@ export const operate = async (
       let start: Uint8Array;
       let end: Uint8Array;
       let revision: string;
+      let replyId = parsed.data.replyId ?? null;
       if (kind === "accept") {
-        if (root.state !== "open" || root.suggestion === null || root.suggestion === root.quote) return conflict(words(context).open);
+        const selected = await loadSuggestion(root, parsed.data.replyId);
+        if (!selected) return notFound(context);
+        if (root.state !== "open" || selected.suggestion === null || selected.suggestion_state !== "open")
+          return conflict(words(context).open);
         const head = await loadHead(access.data.note.id, context);
         try {
           const range = resolveAnnotation({
@@ -697,13 +823,14 @@ export const operate = async (
           head.doc.destroy();
         }
         before = parsed.data.expectedText ?? root.quote;
-        after = root.suggestion;
+        after = selected.suggestion;
       } else {
         if (root.state !== "accepted") return conflict(words(context).accepted);
         const [accepted] = await sql<
           OperationRow[]
         >`SELECT *, restore_revision::text FROM notebooks.annotation_operations WHERE annotation_id = ${id}::uuid AND kind = 'accept' AND status = 'applied' ORDER BY created_at DESC, id DESC LIMIT 1`;
         if (!accepted?.start_rel || !accepted.end_rel) return conflict(words(context).accepted);
+        replyId = accepted.reply_id;
         before = accepted.after_text;
         after = accepted.before_text;
         start = accepted.start_rel;
@@ -712,8 +839,8 @@ export const operate = async (
       }
       [operation] = await sql<
         OperationRow[]
-      >`INSERT INTO notebooks.annotation_operations (id, annotation_id, kind, expected_text, before_text, after_text, source_start_rel, source_end_rel, restore_revision, actor_kind, actor_id, actor_name, request_id)
-        VALUES (${parsed.data.operationId}::uuid, ${id}::uuid, ${kind}, ${parsed.data.expectedText ?? before}, ${before}, ${after}, ${Buffer.from(start)}, ${Buffer.from(end)}, ${revision}::bigint, ${identity.kind}, ${identity.id}::uuid, ${identity.name}, ${context.requestId}) ON CONFLICT (id) DO NOTHING RETURNING *, restore_revision::text`;
+      >`INSERT INTO notebooks.annotation_operations (id, annotation_id, reply_id, via, kind, expected_text, before_text, after_text, source_start_rel, source_end_rel, restore_revision, actor_kind, actor_id, actor_name, request_id)
+        VALUES (${parsed.data.operationId}::uuid, ${id}::uuid, ${replyId}::uuid, ${via(context)}, ${kind}, ${parsed.data.expectedText ?? before}, ${before}, ${after}, ${Buffer.from(start)}, ${Buffer.from(end)}, ${revision}::bigint, ${identity.kind}, ${identity.id}::uuid, ${identity.name}, ${context.requestId}) ON CONFLICT (id) DO NOTHING RETURNING *, restore_revision::text`;
     }
     if (!operation) return conflict(words(context).operation);
     const op = operation;
@@ -810,7 +937,12 @@ export const operate = async (
         // Accept follows the inserted items; undo follows the restored items.
         if (op.start_rel && op.end_rel)
           await tx`UPDATE notebooks.annotations SET start_rel = ${Buffer.from(op.start_rel)}, end_rel = ${Buffer.from(op.end_rel)}, restore_revision = ${op.restore_revision}::bigint WHERE id = ${id}::uuid`;
-        await tx`UPDATE notebooks.annotations SET state = ${kind === "accept" ? "accepted" : "open"}, state_by_kind = ${identity.kind}, state_by_id = ${identity.id}::uuid, state_by_name = ${identity.name}, state_at = now(), updated_at = now() WHERE id = ${id}::uuid`;
+        await tx`UPDATE notebooks.annotations SET state = ${kind === "accept" ? "accepted" : "open"}, state_by_kind = ${identity.kind}, state_by_id = ${identity.id}::uuid, state_by_name = ${identity.name}, state_at = now(), state_via = ${op.via}, updated_at = now() WHERE id = ${id}::uuid`;
+        const table = op.reply_id ? "notebooks.annotation_replies" : "notebooks.annotations";
+        await tx`UPDATE ${tx(table)} SET suggestion_state = ${kind === "accept" ? "accepted" : "open"},
+          suggestion_state_by_kind = ${identity.kind}, suggestion_state_by_id = ${identity.id}::uuid,
+          suggestion_state_by_name = ${identity.name}, suggestion_state_at = now(), suggestion_state_via = ${op.via},
+          updated_at = now() WHERE id = ${op.reply_id ?? id}::uuid`;
       });
       await changed(access.data.note);
       return ok({ id, operationId: op.id, status: "applied" as const, state: kind === "accept" ? "accepted" : "open" });
