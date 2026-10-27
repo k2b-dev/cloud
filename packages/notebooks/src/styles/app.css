@@ -2754,15 +2754,21 @@
   font-size: 0.8125rem;
 }
 .notebook-comment__who b {
+  min-width: 0;
+  overflow: hidden;
   color: var(--k2b-text);
   font-weight: 600;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .notebook-comment[data-resolved] .notebook-comment__who b {
   color: var(--k2b-text-muted);
 }
 .notebook-comment__time {
+  min-width: 0;
+  overflow: hidden;
   color: var(--k2b-text-muted);
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .notebook-comment__actions {
