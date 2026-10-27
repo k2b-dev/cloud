@@ -9,7 +9,6 @@ import type {
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
-import { type AiModelRequest, type AiPeopleModels, aiModelClassFallbackChain } from "@k2b/cloud/ai";
 import { CODE_RUNTIME_TOOL_NAMES, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
@@ -19,6 +18,9 @@ import {
   AiChatTurnNavigator,
   type AiComposerAttachment,
   type AiComposerSendInput,
+  AiModelChooser,
+  type AiModelChooserState,
+  AiModelNote,
   aiChatAttachments,
   aiChatModelOptions,
   aiComposerAttachmentRecords,
@@ -27,9 +29,11 @@ import {
   aiComposerFileAccept,
   aiComposerSendInput,
   aiLatestUsageSnapshot,
+  aiModelBlocksSending,
   createAiChatTimeline,
   createAiPastedTextFile,
   readAiComposerFiles,
+  resolveAiModelChoice,
   shouldAttachAiPastedText,
 } from "@k2b/cloud/ai/ui";
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
@@ -40,6 +44,7 @@ import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
 import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
+import { type AiModelRequest, type AiPeopleModels, aiModelClassFallbackChain } from "@k2b/cloud/shared";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
@@ -375,7 +380,7 @@ export default function AssistantWorkspace(props: Props) {
   // was made in. Without a pick, a chat shows the model of its own last
   // assistant turn; new chats start on the user's last-used model.
   const projectComposerKey = (projectId: string) => `project:${projectId}`;
-  const [modelChoices, setModelChoices] = createSignal<Record<string, string>>({});
+  const [modelChoices, setModelChoices] = createSignal<Record<string, AiModelRequest>>({});
   const modelSessionKey = () => chat.activeConversationId() ?? (activeProject() ? projectComposerKey(activeProject()!.id) : "__new__");
   const modelOfActiveChat = createMemo(() => {
     if (!chat.activeConversationId()) return null;
@@ -386,7 +391,7 @@ export default function AssistantWorkspace(props: Props) {
   });
   const selectedModelRequest = createMemo<AiModelRequest>(() => {
     const explicit = modelChoices()[modelSessionKey()];
-    if (explicit) return { id: explicit };
+    if (explicit) return explicit;
     const previous = modelOfActiveChat();
     return previous ?? props.status.selection ?? props.status.effectiveDefault;
   });
@@ -399,10 +404,18 @@ export default function AssistantWorkspace(props: Props) {
     }
     return "";
   });
-  const setSelectedModelId = (modelId: string) => {
+  /** A class when the person chose one, so the chat follows the administration's assignment. */
+  const setSelectedModelRequest = (request: AiModelRequest) => {
     const key = modelSessionKey();
-    setModelChoices((current) => ({ ...current, [key]: modelId }));
+    setModelChoices((current) => ({ ...current, [key]: request }));
   };
+  const setSelectedModelId = (modelId: string) => setSelectedModelRequest({ id: modelId });
+  const modelState = (): AiModelChooserState => (props.status.ok ? { status: "ready", models: props.status } : { status: "error" });
+  const modelNote = () =>
+    aiModelBlocksSending(modelState(), selectedModelRequest()) ||
+    resolveAiModelChoice(props.status, selectedModelRequest()).option?.unavailable ? (
+      <AiModelNote state={modelState()} value={selectedModelRequest()} onChange={setSelectedModelRequest} />
+    ) : undefined;
 
   const [composerFocusToken, setComposerFocusToken] = createSignal(0);
   const [composerDrafts, setComposerDrafts] = createSignal<Record<string, string>>({});
@@ -2216,7 +2229,18 @@ export default function AssistantWorkspace(props: Props) {
             ]);
             return rows;
           }}
-          submitTools={<dictation.Control />}
+          submitTools={
+            <>
+              <AiModelChooser
+                state={modelState()}
+                value={selectedModelRequest()}
+                onChange={setSelectedModelRequest}
+                locked={!projectComposer() && chat.running()}
+                lockedReason={t().modelLockedWhileRunning}
+              />
+              <dictation.Control />
+            </>
+          }
           footerContent={dictation.recording() ? <dictation.RecordingFooter /> : undefined}
           value={composerDraft(sessionKey())}
           onValueChange={(value) => setComposerDraft(sessionKey(), value)}
@@ -2233,9 +2257,6 @@ export default function AssistantWorkspace(props: Props) {
             disabled: !projectComposer() && chat.running(),
             label: t().attachFiles,
           }}
-          models={aiChatModelOptions(props.models)}
-          selectedModelId={selectedModelId()}
-          onModelChange={setSelectedModelId}
           modelDetails={
             <AssistantQuota
               snapshot={quotas.data()}
@@ -2266,6 +2287,7 @@ export default function AssistantWorkspace(props: Props) {
                   : "idle"
           }
           focusToken={projectComposer() ? undefined : composerFocusToken()}
+          submitDisabled={aiModelBlocksSending(modelState(), selectedModelRequest())}
           runningSubmitIntent={!projectComposer() ? "queue" : undefined}
           placeholder={
             props.status.enabled && props.models.length === 0
@@ -2625,6 +2647,7 @@ export default function AssistantWorkspace(props: Props) {
                               <AssistantEmptyChat
                                 composer={<AssistantComposer />}
                                 notices={<ComposerNotices />}
+                                modelNote={modelNote()}
                                 projects={projects()}
                                 selectedProjectId={emptyProjectId()}
                                 choosingProject={choosingProject()}
@@ -2641,6 +2664,7 @@ export default function AssistantWorkspace(props: Props) {
                             <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
                               <div class="mx-auto flex max-w-3xl flex-col gap-2">
                                 <ComposerNotices />
+                                {modelNote()}
                                 <AssistantComposer />
                               </div>
                             </div>

@@ -71,6 +71,7 @@ export {
   serializeAppWorkspaceLayoutState,
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
+export { AnchoredPopover, type AnchoredPopoverProps } from "./AnchoredPopover";
 export { type BottomSheetProps, bottomSheetAdaptiveOptions, bottomSheetOptions, default as BottomSheet } from "./BottomSheet";
 export type { DataPanelProps } from "./DataPanel";
 export { DataPanel } from "./DataPanel";

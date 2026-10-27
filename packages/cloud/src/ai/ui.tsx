@@ -1,5 +1,13 @@
 export { AiTurnBlockView } from "./chat/blocks";
 export { AiModelCard, type AiModelCardStop, aiModelClassLabel, aiModelClassSubtitle } from "./model-card";
+export {
+  AiModelChooser,
+  type AiModelChooserState,
+  AiModelNote,
+  aiModelBlocksSending,
+  aiModelUnavailableText,
+  resolveAiModelChoice,
+} from "./model-chooser";
 export { aiModelChooserMessages } from "./model-chooser-messages";
 export { AiModelIcon, aiModelDisplayIcon } from "./model-icon";
 
