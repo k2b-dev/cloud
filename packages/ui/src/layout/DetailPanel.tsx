@@ -12,6 +12,8 @@ export type DetailPanelProps = {
 };
 
 type DetailPanelHeaderBaseProps = {
+  /** A short line above the title that names what is shown, such as "Conversation", followed by its state. */
+  kind?: JSX.Element;
   title: JSX.Element;
   subtitle?: JSX.Element;
   meta?: JSX.Element;
@@ -56,6 +58,11 @@ export type DetailPanelSummaryProps = {
 export type DetailPanelGroupProps = {
   children: JSX.Element;
   label?: string;
+  /**
+   * A visible quiet title, such as "More about this conversation". Its sections then stand flush as rows below
+   * it, which suits collapsed secondary sections with a `summary`.
+   */
+  title?: JSX.Element;
   class?: string;
 };
 
@@ -126,6 +133,7 @@ export type DetailPanelSectionProps = DetailPanelSectionBaseProps &
         children?: JSX.Element;
         actions?: JSX.Element;
         collapsible?: false;
+        summary?: never;
         defaultOpen?: never;
         open?: never;
         onOpenChange?: never;
@@ -135,6 +143,8 @@ export type DetailPanelSectionProps = DetailPanelSectionBaseProps &
         children: JSX.Element;
         actions?: never;
         collapsible: true;
+        /** One line that says what the closed section holds, such as its newest entry; hidden while open. */
+        summary?: JSX.Element;
         defaultOpen?: boolean;
         open?: boolean;
         onOpenChange?: (open: boolean) => void;
@@ -162,6 +172,15 @@ const showTruncatedTitle = (event: PointerEvent & { currentTarget: HTMLHeadingEl
 const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
   const t = useDetailPanelMessages();
   const menuLabel = () => props.menuLabel ?? t().moreActions;
+  const menuTrigger = () => (
+    <Dropdown.Root items={props.menu ?? []} align="end" label={menuLabel()} phone="sheet">
+      <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={menuLabel()} tooltip={menuLabel()}>
+        <i class="ti ti-dots" aria-hidden="true" />
+      </Dropdown.Trigger>
+    </Dropdown.Root>
+  );
+  // With primary actions, "…" ends their row, next to the commands it extends; otherwise it sits beside close.
+  const menuInActions = () => Boolean(props.menu?.length) && !props.primaryActions;
   return (
     <header class={classNames("k2b-detail-panel__header", props.class)}>
       <div class="k2b-detail-panel__header-main" data-identity={props.icon || props.leading ? "true" : undefined}>
@@ -176,6 +195,9 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
           <div class="k2b-detail-panel__header-leading">{props.leading}</div>
         </Show>
         <div class="k2b-detail-panel__heading">
+          <Show when={props.kind}>
+            <div class="k2b-detail-panel__kind">{props.kind}</div>
+          </Show>
           {/* A long title wraps to two lines and ends with an ellipsis; then the native hint shows all of it. */}
           <h2 onPointerEnter={showTruncatedTitle}>{props.title}</h2>
           <Show when={props.subtitle || props.meta}>
@@ -189,21 +211,18 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => {
             </div>
           </Show>
         </div>
-        <Show when={props.menu?.length || props.actions}>
+        <Show when={menuInActions() || props.actions}>
           <div class="k2b-detail-panel__actions">
-            <Show when={props.menu?.length}>
-              <Dropdown.Root items={props.menu ?? []} align="end" label={menuLabel()} phone="sheet">
-                <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={menuLabel()} tooltip={menuLabel()}>
-                  <i class="ti ti-dots" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-            </Show>
+            <Show when={menuInActions()}>{menuTrigger()}</Show>
             {props.actions}
           </div>
         </Show>
       </div>
       <Show when={props.primaryActions}>
-        <div class="k2b-detail-panel__primary-actions">{props.primaryActions}</div>
+        <div class="k2b-detail-panel__primary-actions">
+          {props.primaryActions}
+          <Show when={props.menu?.length}>{menuTrigger()}</Show>
+        </div>
       </Show>
     </header>
   );
@@ -243,11 +262,25 @@ const DetailPanelSummary = (props: DetailPanelSummaryProps): JSX.Element => {
   );
 };
 
-const DetailPanelGroup = (props: DetailPanelGroupProps): JSX.Element => (
-  <div class={classNames("k2b-detail-panel__group", props.class)} role="group" aria-label={props.label}>
-    {props.children}
-  </div>
-);
+const DetailPanelGroup = (props: DetailPanelGroupProps): JSX.Element => {
+  const titleId = `k2b-detail-panel-group-${createUniqueId()}`;
+  return (
+    <div
+      class={classNames("k2b-detail-panel__group", props.class)}
+      role="group"
+      aria-label={props.title ? undefined : props.label}
+      aria-labelledby={props.title ? titleId : undefined}
+      data-titled={props.title ? "true" : undefined}
+    >
+      <Show when={props.title}>
+        <div class="k2b-detail-panel__group-title" id={titleId}>
+          {props.title}
+        </div>
+      </Show>
+      {props.children}
+    </div>
+  );
+};
 
 const DetailPanelSectionIcon = (props: Pick<DetailPanelSectionBaseProps, "icon" | "tone">): JSX.Element => (
   <Show when={props.icon}>
@@ -437,6 +470,7 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
         aria-labelledby={open() ? headingId : `${headingId}-closed`}
         data-open={open()}
         data-icon={props.icon ? "true" : undefined}
+        data-summary={props.summary ? "true" : undefined}
       >
         <div hidden={open()}>
           <Button
@@ -455,6 +489,9 @@ const DetailPanelSection = (props: DetailPanelSectionProps): JSX.Element => {
                   {props.title}
                 </span>
                 <SectionTitleMeta count={props.count} meta={props.meta} />
+                <Show when={props.summary}>
+                  <span class="k2b-detail-panel__section-preview k2b-truncate-fade">{props.summary}</span>
+                </Show>
               </span>
               <Show when={props.description}>
                 <span class="k2b-detail-panel__section-description">{props.description}</span>

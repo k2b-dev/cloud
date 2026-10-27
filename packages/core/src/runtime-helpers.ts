@@ -2,8 +2,10 @@ import { APP_REGISTRY_TTL_MS, listApps, watchAppRegistry } from "@k2b/cloud";
 import { getGeoIp } from "@k2b/cloud/server/request-context";
 import { deviceOffersApproval, logger, superviseRuntimeTask } from "@k2b/cloud/services";
 import { refreshBuiltAvatarHashes } from "@k2b/cloud/services/accounts/avatar";
+import { startAppEventBroker } from "@k2b/cloud/services/app-events";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
 import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
+import { migrate as migrateAppEvents } from "./migrate/core/app-events";
 /**
  * Core-specific lifecycle helpers.
  * Migrations, background jobs — nothing generic here.
@@ -51,6 +53,7 @@ import { migrate as migrateWorkflows } from "./migrate/core/workflows";
 import type { CoreNotificationSender } from "./notifications";
 import { outgoingMailBounceRuntime } from "./outgoing-mail-bounces/runtime";
 
+let stopAppEventBroker: (() => Promise<void>) | undefined;
 let stopPersonalGroupHistory: (() => Promise<void>) | undefined;
 let stopCloudAiRuntime: (() => void) | null = null;
 let stopHelpMaintenance: (() => Promise<void>) | undefined;
@@ -128,6 +131,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "logging", run: migrateLogging },
     { name: "workflows", run: migrateWorkflows },
     { name: "events", run: migrateEvents },
+    { name: "app-events", run: migrateAppEvents },
     { name: "weather", run: migrateWeather },
     { name: "geo", run: migrateGeo },
     { name: "capabilities", run: migrateCloudCapabilities },
@@ -148,6 +152,7 @@ export const startCoreServices = async (
   outgoingMailAllowlist();
   try {
     await initializeIdentityAuthority();
+    stopAppEventBroker = await startAppEventBroker();
     stopHelpMaintenance = startHelpMaintenance();
     await startAppSkillsWatcher();
     stopIdentityMaintenance = startIdentityKeyMaintenance();
@@ -190,6 +195,8 @@ export const startCoreServices = async (
     await lifecycleJobs.start({ notificationSender });
     stopPersonalGroupHistory = startPersonalGroupHistory();
   } catch (error) {
+    await stopAppEventBroker?.();
+    stopAppEventBroker = undefined;
     await stopPersonalGroupHistory?.();
     stopPersonalGroupHistory = undefined;
     await stopAppSkillsWatcher();
@@ -225,6 +232,8 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
   try {
     // Sign-in and reset requests already answered must reach the notification store before it stops.
     await drainDeferredAuthRequests();
+    await stopAppEventBroker?.();
+    stopAppEventBroker = undefined;
     await stopPersonalGroupHistory?.();
     stopPersonalGroupHistory = undefined;
     await stopAppSkillsWatcher();

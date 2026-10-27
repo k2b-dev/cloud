@@ -10,6 +10,8 @@ import {
   DataTable,
   DateTimePicker,
   DescriptionList,
+  DotStrip,
+  type DotStripTone,
   FileTypeIcon,
   FilterChip,
   FilterToggle,
@@ -771,17 +773,26 @@ const DetailsDemo = () => {
   );
 };
 
+const dotStripOutcomes: DotStripTone[] = Array.from({ length: 50 }, (_, index) =>
+  index % 3 === 0 ? "accent" : index % 8 === 5 ? "warning" : "muted",
+);
+
 const ProgressDemo = () => (
   <DemoCard
     id="progress"
-    chip={{ kind: "component", name: "ProgressBar", from: "@k2b/ui" }}
-    description="Determinate progress in semantic tones and three compact sizes."
+    chip={[
+      { kind: "component", name: "ProgressBar", from: "@k2b/ui" },
+      { kind: "component", name: "DotStrip", from: "@k2b/ui" },
+    ]}
+    description="Determinate progress in semantic tones and three compact sizes, and a strip of outcome dots that fills from the left."
     code={`<ProgressBar value={72.4} label="Upload progress" tone="success" showValue />
 <ProgressBar value={38} label="Indexing" size="sm" showValue />
 <ProgressBar value={16} label="Storage limit" tone="danger" size="xs" showValue />
 <ProgressRing value={35} label="Usage" />
 <ProgressRing value={92} tone="warning" label="Usage, almost used up" />
-<ProgressRing value={100} tone="danger" label="Usage, used up" />`}
+<ProgressRing value={100} tone="danger" label="Usage, used up" />
+<DotStrip dots={dotStripOutcomes} length={50} label="Last 50 mails: 17 matched, 6 skipped, 27 not" />
+<DotStrip dots={dotStripOutcomes.slice(0, 23)} length={50} size="lg" label="23 of 50 checked" />`}
   >
     <div class="ui-demo-form-grid">
       <ProgressBar value={72.4} label="Upload progress" tone="success" showValue />
@@ -792,6 +803,8 @@ const ProgressDemo = () => (
         <ProgressRing value={92} tone="warning" label="Usage, almost used up" />
         <ProgressRing value={100} tone="danger" label="Usage, used up" />
       </div>
+      <DotStrip dots={dotStripOutcomes} length={50} label="Last 50 mails: 17 matched, 6 skipped, 27 not" />
+      <DotStrip dots={dotStripOutcomes.slice(0, 23)} length={50} size="lg" label="23 of 50 checked" />
     </div>
   </DemoCard>
 );

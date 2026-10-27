@@ -1852,6 +1852,70 @@ export const workflowJsonValueSchema = z
 export const validateWorkflowInputSchema = z.object({ source: workflowSourceSchema }).strict();
 export type ValidateWorkflowInput = z.infer<typeof validateWorkflowInputSchema>;
 
+export const tryWorkflowInputSchema = z
+  .object({
+    source: workflowSourceSchema.optional(),
+    workflowId: z.string().uuid().optional(),
+    last: z.number().int().min(1).max(100).default(50),
+    cursor: z.string().max(20_000).nullable().optional(),
+    batch: z.number().int().min(1).max(25).default(10),
+  })
+  .strict()
+  .refine((input) => (input.source !== undefined) !== (input.workflowId !== undefined), {
+    message: "Provide exactly one of source or workflowId",
+  });
+export type TryWorkflowInput = z.input<typeof tryWorkflowInputSchema>;
+const workflowAiCallsSchema = z.object({ min: z.number().int().nonnegative(), max: z.number().int().nonnegative() });
+const workflowTryProblemCodeSchema = z.enum(["target_no_access", "target_missing", "effect_not_allowed"]);
+export const workflowTryPreflightSchema = z.object({
+  targets: z.array(
+    z.object({
+      kind: z.enum(["user", "group", "folder"]),
+      value: z.string(),
+      ok: z.boolean(),
+      problem: z.enum(["target_no_access", "target_missing"]).nullable(),
+    }),
+  ),
+  sends: z.boolean(),
+  writesDrafts: z.boolean(),
+  aiSteps: z.number().int().nonnegative(),
+});
+export const workflowTryItemSchema = z.object({
+  messageId: ResourceShortIdSchema,
+  conversationId: ResourceShortIdSchema,
+  from: z.object({ name: z.string().nullable(), email: z.string() }),
+  subject: z.string(),
+  receivedAt: z.string(),
+  outcome: z.enum(["match", "skipped", "none"]),
+  reason: z.object({ code: z.enum(["excluded", "already_assigned", "upper_rule"]), field: z.string().optional() }).nullable(),
+  facts: z.array(z.object({ path: z.string(), value: z.union([z.number(), z.boolean(), z.string(), z.null()]) })),
+  effects: z.array(
+    z.object({
+      kind: z.string(),
+      ai: z.boolean(),
+      params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+      dependsOnAi: z.boolean(),
+    }),
+  ),
+  stoppedAtAi: z.boolean(),
+  problems: z.array(
+    z.object({ code: workflowTryProblemCodeSchema, path: z.array(z.union([z.string(), z.number()])), target: z.string().optional() }),
+  ),
+  aiCalls: workflowAiCallsSchema,
+});
+export const workflowTryResultSchema = z.object({
+  window: z.object({ last: z.number().int(), total: z.number().int() }),
+  cursor: z.string().nullable(),
+  checked: z.number().int().nonnegative(),
+  items: z.array(workflowTryItemSchema),
+  aiCalls: workflowAiCallsSchema,
+  maxAiCallsPerDay: z.number().int().positive().nullable(),
+  preflight: workflowTryPreflightSchema,
+});
+export type WorkflowTryResult = z.infer<typeof workflowTryResultSchema>;
+export type WorkflowTryItem = z.infer<typeof workflowTryItemSchema>;
+export type WorkflowTryPreflight = z.infer<typeof workflowTryPreflightSchema>;
+
 export const autocompleteWorkflowInputSchema = z
   .object({
     source: z.string().max(200_000),
