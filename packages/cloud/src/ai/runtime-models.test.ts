@@ -87,3 +87,43 @@ test("a deliberately requested missing variant fails instead of substituting", a
     }),
   ).rejects.toMatchObject({ aiError: { code: "model_policy_mismatch" } });
 });
+
+test.each([
+  { inherited: { class: "thorough" } as const, personal: { class: "balanced" } as const, projectDefault: undefined, expected: "thorough" },
+  { inherited: undefined, personal: { class: "thorough" } as const, projectDefault: undefined, expected: "thorough" },
+  { inherited: undefined, personal: null, projectDefault: undefined, expected: "balanced" },
+  {
+    inherited: { class: "thorough" } as const,
+    personal: { class: "thorough" } as const,
+    projectDefault: { class: "balanced" } as const,
+    expected: "balanced",
+  },
+])(
+  "scheduled chat selection follows project, chat, person, then balanced: %p",
+  async ({ inherited, personal, projectDefault, expected }) => {
+    setup();
+    const read = spyOn(settings, "readAiSettingsState").mockResolvedValue(
+      aiSettingsFixture({ assignments: [aiAssignmentFixture("balanced", "chat"), aiAssignmentFixture("thorough", "chat")] }),
+    );
+    spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "Previous", model: inherited });
+    spyOn(aiUserPrefs, "get").mockResolvedValue({
+      userId: user.id,
+      memoryEnabled: true,
+      memoryLearningEnabled: true,
+      selection: personal,
+      updatedAt: at,
+    });
+    const prepared = await prepareAiChatTurn({
+      conversationId: "chat",
+      input: "Routine",
+      userMessage: { role: "user", content: ["Routine"] },
+      assistantChat: true,
+      actor: { kind: "user", user },
+      model: projectDefault,
+      canInspectAttachedImages: false,
+      fileSnapshot: { attached: [], available: [], total: 0 },
+    });
+    expect(prepared.runConfig.model).toEqual({ class: expected });
+    expect(read).toHaveBeenCalledTimes(1);
+  },
+);

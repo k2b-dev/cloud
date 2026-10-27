@@ -17,7 +17,7 @@ export const assertSettingVersions = async (expected: Record<string, string | nu
         >`SELECT id,COALESCE(NULLIF(display_name,''),uid) AS name FROM auth.users WHERE id=${row.updated_by}::uuid`
       : [];
     throw new ConfigConflict(
-      SETTINGS_MAP.get(key)?.kind === "secret" ? "" : (await readKeyState(key, db)).value,
+      SETTINGS_MAP.has(key) && SETTINGS_MAP.get(key)?.kind !== "secret" ? (await readKeyState(key, db)).value : "",
       who ?? null,
       row?.updated_at.toISOString() ?? new Date(0).toISOString(),
       key,

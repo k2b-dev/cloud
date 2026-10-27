@@ -2,6 +2,7 @@ export { AiModelCard, type AiModelCardStop, aiModelClassLabel, aiModelClassSubti
 export { aiModelChooserMessages } from "./model-chooser-messages";
 export { AiModelIcon, aiModelDisplayIcon } from "./model-icon";
 export { AiTurnBlockView } from "./chat/blocks";
+export { AiModelIcon, aiModelDisplayIcon } from "./model-icon";
 
 import { latestLoopUsage, latestUsage, latestUsageSnapshot, textFromMessage } from "./chat/message-utils";
 

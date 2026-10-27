@@ -1,6 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
 import { aiModelCatalog } from "../ai/model-catalog";
 import { ConfigConflict } from "../services/config-conflict";
+import { ImageMetadataError } from "../services/image-metadata";
 import { buildProjectedUser } from "../services/session/user";
 import { createAdminAiRoutes } from "./admin-ai";
 
@@ -35,5 +36,20 @@ test("PATCH requires revision and rejects removed connection/profile fields", as
       body: JSON.stringify(input),
     });
     expect(response.status).toBe(400);
+  }
+});
+
+test("malformed image metadata returns 422", async () => {
+  const update = spyOn(aiModelCatalog, "updateModel").mockRejectedValue(new ImageMetadataError("PNG"));
+  try {
+    const response = await app().request("/models/chat", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ revision: 1, label: "Changed" }),
+    });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({ code: "MALFORMED_IMAGE", message: "Malformed PNG image." });
+  } finally {
+    update.mockRestore();
   }
 });

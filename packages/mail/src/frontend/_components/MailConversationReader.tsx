@@ -43,7 +43,7 @@ import type { ConversationKeep } from "../../service/conversation-keeps";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
 import type { MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
-import MailConversationSummaryCard from "./MailConversationSummaryCard";
+import MailConversationSummaryCard, { type MailSummaryGenerateMode, showsConversationSummary } from "./MailConversationSummaryCard";
 import { openMailConversationToolbarDialog } from "./MailConversationToolbarDialog";
 import MailMessageCard from "./MailMessageCard";
 import { getMailAction, type MailActionId } from "./mail-actions";
@@ -64,6 +64,7 @@ import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
+import { mailSummaryMessages } from "./mail-summary-messages";
 import type { MailReadingFormat } from "./mail-user-preferences";
 import { captureMailWorkspaceRefreshError } from "./mail-workspace-refresh";
 
@@ -147,6 +148,7 @@ export default function MailConversationReader(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
+  const summaryText = createMemo(() => mailSummaryMessages.resolve([locale()]).t);
   const retryToast = createRetryToasts();
   const intentLabel = (intent: DraftIntent): string =>
     intent === "reply"
@@ -269,6 +271,30 @@ export default function MailConversationReader(props: {
     });
   };
   const summarySaving = summarySave.loading;
+  type SummaryGenerate = { mailboxId: string; conversationId: string; expectedSummaryRevision: number; mode: MailSummaryGenerateMode };
+  /** A person asks the AI for this conversation's summary; the card shows "being written" until the live update arrives. */
+  const summaryGenerate = mutations.create<void, SummaryGenerate, { request: SummaryGenerate }>({
+    onBefore: (request) => ({ request }),
+    mutation: async ({ mailboxId, conversationId, expectedSummaryRevision, mode }, { abortSignal }) => {
+      const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].summary.generate.$post(
+        { param: { mailboxId, conversationId }, json: { expectedSummaryRevision, mode } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(await readApiError(response, summaryText().generateFailed));
+      const state = await response.json();
+      const refresh = () => props.onSummarySaved(conversationId, state);
+      const refreshError = await captureMailWorkspaceRefreshError(refresh);
+      if (refreshError) reportSummaryRefreshFailure(refreshError, refresh);
+    },
+    onError: (error, context) =>
+      retryToast(error.message, { retryLabel: t().retry, retry: () => context && summaryGenerate.mutate(context.request) }),
+  });
+  const generateSummary = (mode: MailSummaryGenerateMode) => {
+    const conversationId = props.selectedConversationId;
+    const current = props.conversationSummary;
+    if (!conversationId || !current || summaryGenerate.loading()) return;
+    void summaryGenerate.mutate({ mailboxId: props.mailboxId, conversationId, expectedSummaryRevision: current.summaryRevision, mode });
+  };
   const closeHref = () => buildMailListHref(mailRouteUrl(props.requestUrl));
   let closeDraftDialog: ((value: ConversationDraftSummary | null | undefined) => void) | null = null;
   let cleanupPrint: (() => void) | null = null;
@@ -1126,6 +1152,16 @@ export default function MailConversationReader(props: {
             disabled: summarySaving() || !props.conversationSummary,
             action: () => void editConversationSummary(),
           },
+          ...(props.conversationSummary?.canGenerate && !props.conversationSummary.summary
+            ? [
+                {
+                  label: summaryText().summarizeWithAi,
+                  icon: "ti ti-sparkles",
+                  disabled: summaryGenerate.loading() || props.conversationSummary.status === "writing",
+                  action: () => generateSummary("replace"),
+                },
+              ]
+            : []),
           ...(props.mailboxWide
             ? [
                 {
@@ -1369,13 +1405,15 @@ export default function MailConversationReader(props: {
             onScroll={handleReaderScroll}
           >
             <div class="mail-reading-column" data-mail-reading-column>
-              <Show when={props.conversationSummary?.summary}>
-                {(summary) => (
+              <Show when={showsConversationSummary(props.conversationSummary) && props.conversationSummary}>
+                {(state) => (
                   <MailConversationSummaryCard
-                    summary={summary()}
+                    state={state()}
                     canEdit={props.canWrite}
                     editDisabled={summarySaving()}
                     onEdit={() => void editConversationSummary()}
+                    onGenerate={generateSummary}
+                    generating={summaryGenerate.loading()}
                   />
                 )}
               </Show>

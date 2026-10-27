@@ -68,7 +68,10 @@ test("own view strips grant identities, history and inaccessible model scopes", 
   });
   try {
     const result = await getAiChatQuotas(subject);
-    expect(snapshot).toHaveBeenCalledWith(subject);
+    expect(snapshot).toHaveBeenCalledWith(subject, undefined, undefined, undefined, {
+      state: await configured.mock.results[0]?.value,
+      config: { enabled: true, revision: 0, rules: [] },
+    });
     expect(result.balances.map((b) => b.scope)).toEqual(["*"]);
     expect(JSON.stringify(result)).not.toContain("Private group");
     expect(result).not.toHaveProperty("usage");

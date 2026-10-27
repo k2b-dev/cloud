@@ -90,9 +90,9 @@ export function assistantPanelFixture() {
       status: {
         ok: true,
         enabled: true,
-        status: "ok",
+        status: "ok" as const,
         selection: null,
-        effectiveDefault: { class: "balanced" },
+        effectiveDefault: { class: "balanced" as const },
         classes: [],
         visionModelConfigured: false,
         error: null,

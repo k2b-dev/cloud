@@ -113,7 +113,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`CREATE TABLE settings.entries(key text PRIMARY KEY,value text,updated_at timestamptz DEFAULT now())`;
     await sql`CREATE SCHEMA ai`;
     await sql`CREATE TABLE ai.conversations(id uuid PRIMARY KEY,created_by_user_id uuid,archived_at timestamptz)`;
-    await sql`CREATE TABLE ai.projects(id uuid PRIMARY KEY,short_id text UNIQUE,name text,description text DEFAULT '',icon text DEFAULT '',instructions text DEFAULT '',default_model_profile_id text,revision integer DEFAULT 1,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now())`;
+    await sql`CREATE TABLE ai.projects(id uuid PRIMARY KEY,short_id text UNIQUE,name text,description text DEFAULT '',icon text DEFAULT '',instructions text DEFAULT '',default_model jsonb,revision integer DEFAULT 1,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now())`;
     await sql`CREATE TABLE ai.project_access(project_id uuid,access_id uuid)`;
     await sql`CREATE TABLE ai.turns(id uuid PRIMARY KEY,status text,conversation_id uuid,run_config jsonb)`;
     await sql`CREATE TABLE ai.files(conversation_id uuid,path text,bytes bytea,size bigint,media_type text,origin text,producer_call_key text,dictation_recorded_at timestamptz,updated_at timestamptz DEFAULT now(),version bigint DEFAULT 1,PRIMARY KEY(conversation_id,path))`;

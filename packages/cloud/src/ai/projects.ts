@@ -12,11 +12,11 @@ import {
 } from "../server/services/access";
 import { stripImageMetadata } from "../services/image-metadata";
 import { toPgUuidArray } from "../services/postgres";
+import { type AiModelRequest, AiModelRequestSchema } from "../shared/ai-models";
 import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
 import { isAiImage } from "./file-media-type";
 import { mountAiProjectFilePath } from "./file-mount";
 import { pickStoredAiFilePath } from "./files-store";
-import { type AiModelRequest, AiModelRequestSchema } from "../shared/ai-models";
 import { withAiShortIdForDb } from "./short-id";
 import type { AiProjectPromptSnapshot } from "./types";
 

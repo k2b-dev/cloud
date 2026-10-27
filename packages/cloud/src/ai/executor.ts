@@ -11,6 +11,7 @@ import { logger, trace } from "../services/logging";
 import { getMandate } from "../services/mandates";
 import type { MandatePolicyV1 } from "../services/mandates/policy";
 import { coreSettings } from "../services/settings/api";
+import type { AiModelRequest } from "../shared/ai-models";
 import { normalizeLocale } from "../shared/locale";
 import { type AiActionCheck, type AiStoredActionReview, storedActionReview } from "./action-review";
 import {
@@ -52,7 +53,6 @@ import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { aiModelAccess } from "./model-access";
-import type { AiModelRequest } from "../shared/ai-models";
 import { answerOpenToolCalls } from "./open-tool-calls";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";

@@ -30,17 +30,8 @@ export const setAiCredential = async (providerId: string, secret: string, db: Sq
   `;
 };
 
-/** Provider IDs whose stored key can currently be decrypted and used. */
+/** Provider IDs with a stored key; decrypt only the selected provider at execution. */
 export const listAiCredentialProviderIds = async (db: SqlClient = sql): Promise<string[]> => {
-  const rows = await db<{ provider_id: string; secret: string }[]>`SELECT provider_id, secret FROM ai.provider_credentials`;
-  const usable: string[] = [];
-  for (const row of rows) {
-    try {
-      const value = await decryptValue(row.secret);
-      if (typeof value === "string" && value.trim()) usable.push(row.provider_id);
-    } catch {
-      console.warn(`[ai] ignoring unreadable provider credential for provider ${JSON.stringify(row.provider_id)}`);
-    }
-  }
-  return usable;
+  const rows = await db<{ provider_id: string }[]>`SELECT provider_id FROM ai.provider_credentials`;
+  return rows.map((row) => row.provider_id);
 };

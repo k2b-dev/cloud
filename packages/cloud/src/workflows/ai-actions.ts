@@ -1,6 +1,6 @@
-import { type AiModelRequest, AiModelRequestSchema, type AiResolvedModelRef } from "../shared/ai-models";
 import { assertAiTaskRequestSize } from "../ai/task-contracts";
 import type { AiResolvedModel } from "../ai/types";
+import { type AiModelRequest, AiModelRequestSchema, type AiResolvedModelRef } from "../shared/ai-models";
 import { WorkflowAiAdmissionError, type WorkflowAiScope, workflowAiModelHash } from "./ai/policy";
 import type { WorkflowAiRequestInput, WorkflowAiTask } from "./ai/types";
 import type { WorkflowFieldSchema, WorkflowJsonValue } from "./contracts";
@@ -21,7 +21,7 @@ const model = {
 const prompt = text("Instructions for the AI task.");
 const choices = {
   kind: "array",
-  items: text("One allowed classification value.", false, 241),
+  items: text("One allowed classification value.", false, 200),
   minItems: 2,
   maxItems: 50,
   description: "Allowed classification values.",
@@ -45,7 +45,7 @@ const structuredFields = {
       type: { kind: "string", enum: structuredFieldTypes, description: "Field value type." },
       description: text("What the field means and how to extract it.", false, 500),
       required: { kind: "boolean", optional: true, description: "Whether the field must be present. Defaults to true." },
-      choices: { kind: "array", optional: true, minItems: 1, maxItems: 50, items: text("One enum value.", false, 241) },
+      choices: { kind: "array", optional: true, minItems: 1, maxItems: 50, items: text("One enum value.", false, 200) },
       maxLength: { kind: "number", integer: true, minimum: 1, maximum: 20_000, optional: true, description: "Maximum text length." },
     },
   },

@@ -1,8 +1,8 @@
 import { sql } from "bun";
 import { z } from "zod";
 import { logger } from "../services/logging";
-import { getAiCredential } from "./credentials";
 import type { AiProvider } from "../shared/ai-models";
+import { getAiCredential } from "./credentials";
 import { getAiRequestHeaders } from "./request-headers";
 
 export type AiProviderTestResult = {

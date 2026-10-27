@@ -684,7 +684,12 @@ export default function MailDetailsPanel(props: {
 
           <Show when={props.conversationSummary?.summary}>
             {(summary) => (
-              <DetailPanel.Section title={t().conversationSummary} icon="ti ti-sparkles" tone="accent">
+              // ✦ only when the AI wrote the text (F3); a person's summary keeps the neutral notes icon.
+              <DetailPanel.Section
+                title={t().conversationSummary}
+                icon={props.conversationSummary?.ai ? "ti ti-sparkles" : "ti ti-notes"}
+                tone="accent"
+              >
                 <MarkdownView markdown={summary()} headingScale="compact" class="text-sm text-primary" />
               </DetailPanel.Section>
             )}

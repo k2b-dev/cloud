@@ -107,7 +107,7 @@ const processOccurrence = async (ctx: JobContext<{ occurrenceId: string }>) => {
     fileSnapshot: { attached: [], ...aiConversationFileManifest(files) },
     actor: { kind: "user", user },
     modelPolicy: personalAiModelPolicy,
-    model: project?.defaultModel ?? { class: "fast" },
+    model: project?.defaultModel ?? undefined,
     project: project ?? undefined,
     toolSource: { kind: "default", appTools: true },
     toolApprovalContext: { actorUserId: user.id },

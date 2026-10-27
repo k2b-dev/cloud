@@ -218,7 +218,7 @@ const app = new Hono<AuthContext>()
       const updateKeys = Object.keys(updates);
       const keys = [...updateKeys, ...resets];
 
-      if (keys.length === 0 && replace.size === 0) {
+      if (keys.length === 0 && replace.size === 0 && Object.keys(expectedUpdatedAt).length === 0) {
         return c.body(null, 204);
       }
 
@@ -227,6 +227,9 @@ const app = new Hono<AuthContext>()
         if (!isKnownSetting(key)) {
           ownership[key] = `Unknown setting "${key}"`;
         }
+      }
+      for (const key of Object.keys(expectedUpdatedAt)) {
+        if (!keys.includes(key)) ownership[key] = `Setting "${key}" must be included in updates or resets`;
       }
       for (const key of replace) {
         if (!Object.hasOwn(updates, key)) ownership[key] = `Setting "${key}" must be included in updates to replace its unreadable value`;

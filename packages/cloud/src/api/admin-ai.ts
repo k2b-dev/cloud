@@ -4,16 +4,6 @@ import { z } from "zod";
 import { setAiCredential } from "../ai/credentials";
 import { AiModelAccessDraftSchema } from "../ai/model-access";
 import { AiConfigError, aiModelCatalog, assertAiRevision, lockAiModelCatalog } from "../ai/model-catalog";
-import {
-  AI_MODEL_SLOTS,
-  AiDeleteModelSchema,
-  AiModelInputSchema,
-  AiModelPatchSchema,
-  AiProviderInputSchema,
-  AiProviderPatchSchema,
-  AiVariantInputSchema,
-  AiVariantPatchSchema,
-} from "../shared/ai-models";
 import { deleteAiCatalogEntry } from "../ai/model-delete";
 import { readAiAdminOverview } from "../ai/model-overview";
 import { aiModelUsage } from "../ai/model-usage";
@@ -27,6 +17,17 @@ import {
 import { getAiRequestHeaders, setAiRequestHeaders } from "../ai/request-headers";
 import { type AuthContext, auth, v } from "../server";
 import { ConfigConflict } from "../services/config-conflict";
+import { ImageMetadataError } from "../services/image-metadata";
+import {
+  AI_MODEL_SLOTS,
+  AiDeleteModelSchema,
+  AiModelInputSchema,
+  AiModelPatchSchema,
+  AiProviderInputSchema,
+  AiProviderPatchSchema,
+  AiVariantInputSchema,
+  AiVariantPatchSchema,
+} from "../shared/ai-models";
 import { AiRequestHeadersSchema, patchAiRequestHeaders, providerSupportsRequestHeaders } from "../shared/ai-request-options";
 
 const revision = { revision: z.number().int().positive() };
@@ -40,6 +41,7 @@ export const createAdminAiRoutes = (authenticate: MiddlewareHandler<AuthContext>
   new Hono<AuthContext>()
     .use("*", authenticate)
     .onError((error, c) => {
+      if (error instanceof ImageMetadataError) return c.json({ code: error.code, message: error.message }, 422);
       if (error instanceof ConfigConflict)
         return c.json({ code: error.code, current: error.current, changedBy: error.changedBy, changedAt: error.changedAt }, 409);
       if (error instanceof AiConfigError)

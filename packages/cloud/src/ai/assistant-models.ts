@@ -1,6 +1,4 @@
 import type { AccessSubject, RequestActor } from "../server";
-import { aiModelAccess } from "./model-access";
-import { aiModelCatalog } from "./model-catalog";
 import {
   AI_MODEL_CLASSES,
   type AiModelRequest,
@@ -9,12 +7,14 @@ import {
   type AiPeopleModels,
   aiProviderMark,
 } from "../shared/ai-models";
+import { aiModelAccess } from "./model-access";
+import { aiModelCatalog } from "./model-catalog";
 import { personalAiModelPolicy } from "./personal-agent";
 import { aiUserPrefs } from "./prefs";
 import { aiQuotas } from "./quotas";
 import { listAiModels, readAiSettingsState, resolveAiModelRef, selectAiModelProfile, toPublicAiSettingsState } from "./settings";
 import { type AiResolvedAudioModel, AiTranscriptionError, resolveAiAudioModel } from "./transcription";
-import type { AiChatTurnRunConfig, AiDataBoundary, AiModelPolicy } from "./types";
+import type { AiChatTurnRunConfig, AiDataBoundary, AiModelPolicy, AiSettingsState } from "./types";
 import { isAiSettingsError } from "./validate";
 
 export const aiChatAccessSubject = (actor: RequestActor | undefined): AccessSubject | null => {
@@ -25,18 +25,23 @@ export const aiChatAccessSubject = (actor: RequestActor | undefined): AccessSubj
 };
 export const isAssistantChatTurn = (config: AiChatTurnRunConfig): boolean => config.assistantChat === true && !config.mandate;
 /** Server-side list for permission-aware execution and the developer API. */
-export const listAssistantAiModels = async (subject: AccessSubject | null, policy: AiModelPolicy = personalAiModelPolicy) =>
-  aiModelAccess.filterModels(await listAiModels(policy), subject);
+export const listAssistantAiModels = async (
+  subject: AccessSubject | null,
+  policy: AiModelPolicy = personalAiModelPolicy,
+  state?: AiSettingsState,
+) => aiModelAccess.filterModels(await listAiModels(policy, state), subject);
 export const peopleAiModels = async (
   subject: AccessSubject | null,
   policy: AiModelPolicy = personalAiModelPolicy,
 ): Promise<AiPeopleModels> => {
-  const [state, allowed, providers, prefs] = await Promise.all([
+  const [state, providers, prefs, config] = await Promise.all([
     readAiSettingsState(),
-    listAssistantAiModels(subject, policy),
-    aiModelCatalog.providers(),
+    aiModelCatalog.providers(undefined, false),
     subject?.type === "user" ? aiUserPrefs.get(subject.userId) : null,
+    aiQuotas.config(),
   ]);
+  const allowed = await listAssistantAiModels(subject, policy, state);
+  const quotaByModel = new Map<string, Awaited<ReturnType<typeof aiQuotas.snapshot>>>();
   const options: AiPeopleModels["options"] = [];
   const unavailable = new Map<string, AiModelUnavailableReason>();
   for (const profile of allowed) {
@@ -48,7 +53,11 @@ export const peopleAiModels = async (
           ? { code: "provider_unreachable" }
           : undefined;
     if (!reason && subject) {
-      const snapshot = await aiQuotas.snapshot(subject, profile.modelId);
+      let snapshot = quotaByModel.get(profile.modelId);
+      if (!snapshot) {
+        snapshot = await aiQuotas.snapshot(subject, profile.modelId, undefined, undefined, { state, config });
+        quotaByModel.set(profile.modelId, snapshot);
+      }
       const exhausted = snapshot.balances.find(
         (balance) => !balance.bypassed && balance.limit !== null && (balance.unknown > 0 || balance.used >= balance.limit),
       );
@@ -133,8 +142,9 @@ export const selectAssistantAiModel = async (
   subject: AccessSubject | null,
   model?: AiModelRequest,
   policy: AiModelPolicy = personalAiModelPolicy,
+  providedState?: AiSettingsState,
 ): Promise<AiModelRequest> => {
-  const state = await readAiSettingsState();
+  const state = providedState ?? (await readAiSettingsState());
   const stored = !model && subject?.type === "user" ? (await aiUserPrefs.get(subject.userId)).selection : null;
   const selection = stored && "id" in stored && !state.profiles.some((profile) => profile.id === stored.id) ? null : stored;
   const requested = model ?? selection ?? { class: "balanced" };

@@ -36,8 +36,11 @@ connections require an explicit URL. IDs cannot change after creation.
 
 Supply a key separately with `cld admin ai providers key local --key-file key.txt --yes`.
 Keys and additional headers are encrypted and write-only. Reads return
-`credentialSet` and `requestHeaderNames`. Extra headers are supported for vLLM
-and OpenAI-compatible connections.
+`credentialSet` and `requestHeaderNames`. A stored key does not mean the
+connection has been tested successfully. Extra headers are supported for vLLM
+and OpenAI-compatible connections. Changing the connection type or base URL
+clears the stored key and additional headers and resets the connection status.
+Enter the key again and test the connection after either change.
 
 Run `cld admin ai providers test local` to test the connection, or
 `cld admin ai providers models local` to discover provider model identifiers.

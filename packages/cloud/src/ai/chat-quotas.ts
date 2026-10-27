@@ -16,9 +16,10 @@ const usage = (b: AiQuotaBalance): AiChatQuotaBalance => {
 export async function getAiChatQuotas(subject: AccessSubject): Promise<AiChatQuotaSnapshot> {
   const config = await aiQuotas.config();
   if (!config.enabled) return { enabled: false, balances: [] };
-  const models = await listAssistantAiModels(subject);
-  const snapshot = await aiQuotas.snapshot(subject);
-  const profiles = (await readAiSettingsState()).profiles;
+  const state = await readAiSettingsState();
+  const models = await listAssistantAiModels(subject, undefined, state);
+  const snapshot = await aiQuotas.snapshot(subject, undefined, undefined, undefined, { state, config });
+  const profiles = state.profiles;
   return {
     enabled: snapshot.enabled,
     unlimitedModels: models

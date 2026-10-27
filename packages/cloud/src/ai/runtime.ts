@@ -8,6 +8,7 @@ import { type ApprovalDecisionChannel, approvals } from "../services/approvals";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { coreSettings } from "../services/settings/api";
+import type { AiModelRequest } from "../shared/ai-models";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
   type AiToolApprovalChangeContext,
@@ -21,7 +22,6 @@ import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
 import { drainQueuedMessages } from "./message-queue";
-import type { AiModelRequest } from "../shared/ai-models";
 import { aiUserPrefs } from "./prefs";
 import { AI_TURN_LEASE_MS } from "./protocol";
 import { aiQuotas } from "./quotas";
@@ -145,9 +145,10 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
   );
   const canonicalInput = files?.attached.length ? inputMessage.content : input.input;
   const hasImageAttachments = Boolean(files?.attached.some((file) => isAiImageMediaType(file.mediaType)));
+  const state = await readAiSettingsState();
   const canInspectAttachedImages =
     input.canInspectAttachedImages ??
-    (input.toolSource?.kind === "default" && (await isAiVisionModelConfigured(input.modelPolicy?.allowedDataBoundaries)));
+    (input.toolSource?.kind === "default" && (await isAiVisionModelConfigured(input.modelPolicy?.allowedDataBoundaries, state)));
   let requested = input.model;
   let previousLabel: string | undefined;
   if (input.assistantChat) {
@@ -156,7 +157,6 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     const inherited = previous?.kind === "chat" ? previous.model : undefined;
     requested ??= inherited;
     if (inherited && "id" in inherited && requested && "id" in requested && requested.id === inherited.id) {
-      const state = await readAiSettingsState();
       if (!state.profiles.some((profile) => profile.id === inherited.id)) {
         previousLabel = previous?.kind === "chat" ? (previous.modelLabel ?? inherited.id) : inherited.id;
         const subject = aiChatAccessSubject(input.actor);
@@ -166,17 +166,20 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     }
   }
   const model = input.assistantChat
-    ? await selectAssistantAiModel(aiChatAccessSubject(input.actor), requested, input.modelPolicy)
+    ? await selectAssistantAiModel(aiChatAccessSubject(input.actor), requested, input.modelPolicy, state)
     : requested;
-  const { resolved } = await validateAiTurnRequest({
-    input: canonicalInput,
-    hasImageAttachments,
-    canInspectAttachedImages,
-    modelPolicy: input.modelPolicy,
-    model,
-  });
+  const { resolved } = await validateAiTurnRequest(
+    {
+      input: canonicalInput,
+      hasImageAttachments,
+      canInspectAttachedImages,
+      modelPolicy: input.modelPolicy,
+      model,
+    },
+    state,
+  );
   const quotaSubject = aiChatAccessSubject(input.actor);
-  if (input.assistantChat && quotaSubject) await aiQuotas.assertAllowed(quotaSubject, resolved.profile.id);
+  if (input.assistantChat && quotaSubject) await aiQuotas.assertAllowed(quotaSubject, resolved.profile.id, state);
   const modelLabel =
     resolved.profile.label + (resolved.profile.id !== resolved.profile.modelId ? ` · ${resolved.profile.variantLabel}` : "");
   const runConfig: AiChatTurnRunConfig = {
