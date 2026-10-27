@@ -16,7 +16,14 @@ export type ContextMenuProps = {
   onOpen?: () => void;
   id?: string;
   label?: string;
+  /**
+   * Links, form fields, editable text, and selected text inside the host keep the browser's own menu, with its Copy,
+   * Paste, and Open link. Use it where the host wraps readable content rather than one row.
+   */
+  keepNativeMenu?: boolean;
 };
+
+const NATIVE_MENU_TARGETS = "a[href], input, textarea, select, [contenteditable]:not([contenteditable='false'])";
 
 let closeActiveContextMenu: (() => void) | undefined;
 
@@ -64,6 +71,14 @@ export function ContextMenuBase(
   let resizeObserver: ResizeObserver | undefined;
 
   const isOpen = () => position() !== undefined;
+  const keepsNativeMenu = (target: EventTarget | null): boolean => {
+    if (!props.keepNativeMenu || !(target instanceof Node)) return false;
+    const element = target instanceof Element ? target : target.parentElement;
+    const native = element?.closest(NATIVE_MENU_TARGETS);
+    if (native && host?.contains(native)) return true;
+    const selection = window.getSelection();
+    return Boolean(selection && !selection.isCollapsed && selection.toString().trim() && selection.containsNode(target, true));
+  };
   const hostClass = createMemo(() => (typeof props.class === "function" ? props.class(isOpen()) : props.class));
   const items = createMemo<readonly DropdownItem[]>(() => props.items);
 
@@ -200,12 +215,20 @@ export function ContextMenuBase(
         aria-disabled={props.disabled ? "true" : undefined}
         onContextMenu={(event) => {
           if (props.disabled) return;
+          // An enclosing context menu must not take over the browser's own either.
+          if (keepsNativeMenu(event.target)) return void event.stopPropagation();
           event.preventDefault();
           event.stopPropagation();
           open(event.clientX, event.clientY);
         }}
         onKeyDown={(event) => {
           if (props.disabled || (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10"))) return;
+          // A nested context menu already opened its own; a field keeps the browser's.
+          if (
+            event.defaultPrevented ||
+            (props.keepNativeMenu && event.target instanceof Element && event.target.closest(NATIVE_MENU_TARGETS))
+          )
+            return;
           event.preventDefault();
           // Beside the focused element, such as a row of a composite widget, rather than the corner of the whole host.
           const focused = document.activeElement;
