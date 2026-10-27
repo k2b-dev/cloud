@@ -138,3 +138,11 @@ export const aiModelSlots = (index: AiCatalogIndex, modelId: string): AiModelSlo
 
 export const formatAiTime = (locale: string, iso: string | null | undefined): string =>
   iso ? new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(iso)) : "";
+
+/** Stable provider status and HTTP codes become product copy; backend detail stays separate. */
+export const aiProviderFailureText = (t: AiAreaMessages, status: string | undefined, code: string | null | undefined): string => {
+  if (status === "key_rejected" || code === "401" || code === "403") return t.testFailKey;
+  if (code === "429") return t.providerRateLimited;
+  if (status === "unreachable") return t.testFailNet;
+  return t.providerRequestFailed;
+};

@@ -60,9 +60,17 @@ export default ssr<AuthContext>(async (c) => {
   }
 
   const provider = query.p ? overview?.providers.find((candidate) => candidate.id === query.p) : undefined;
-  const providerDetail = provider ? await aiModelCatalog.providerDetail(provider.id).catch(() => null) : null;
+  let detailLoadFailed = false;
+  const detailFailure = (error: unknown) => {
+    if (!(error instanceof Error && "code" in error && error.code === "model_not_found")) {
+      console.error("[admin/ai] detail failed", error);
+      detailLoadFailed = true;
+    }
+    return null;
+  };
+  const providerDetail = provider ? await aiModelCatalog.providerDetail(provider.id).catch(detailFailure) : null;
   const model: (AiModel & { variants: AiModelVariant[] }) | null =
-    query.m && provider ? await aiModelCatalog.modelDetail(query.m).catch(() => null) : null;
+    query.m && provider ? await aiModelCatalog.modelDetail(query.m).catch(detailFailure) : null;
   const [usage, quotaConfig] = model
     ? await Promise.all([
         aiModelUsage(
@@ -213,6 +221,7 @@ export default ssr<AuthContext>(async (c) => {
         overview={overview}
         index={index}
         loadFailed={loadFailed}
+        detailLoadFailed={detailLoadFailed}
         studioLinks={studioLinks}
         provider={provider}
         providerDetail={providerDetail}

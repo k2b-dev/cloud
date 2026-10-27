@@ -16,11 +16,17 @@ without changing application code. This release removes the old profile
 configuration. Follow [Upgrading to model classes](/en/docs/operations/upgrading-to-model-classes)
 before upgrading an existing installation.
 
-Browser and CLI clients import model request schemas, picker types and
-`aiModelClassFallbackChain` from `@k2b/cloud/shared`. The `@k2b/cloud/ai`
+Browser and CLI clients import model request schemas, picker types,
+`aiModelClassFallbackChain`, `aiModelSupportsSlot` and `aiReplacementProblem`
+from `@k2b/cloud/shared`. Use the latter two when offering assignment and
+replacement choices; the server enforces the same requirements. The `@k2b/cloud/ai`
 entry point executes server work and must not be bundled into a client.
 
 ## Create a provider connection
+
+In **Administration → AI → Models**, choose **Add provider**. If the provider
+was created but its key or headers could not be saved, retry to finish those
+steps. The dialog keeps the created provider and its current revision.
 
 Use `cld admin ai providers add --input-file provider.json --yes`. For example:
 
@@ -66,6 +72,10 @@ contains one model or an array:
   "capabilities": ["tools", "vision"]
 }
 ```
+
+The model dialog proposes globally unique IDs using the provider and model
+identifier. Open **Advanced** to correct an ID before creating models. When
+the provider returns an empty model list, enter its model identifier manually.
 
 Declare only capabilities supported by the provider model. Chat models can
 support tools and vision. Audio models use `kind: "transcription"`, support
@@ -130,7 +140,11 @@ defaults for the others. Provider-specific `extraBody` still applies.
 
 Updates require the current row's `revision`. A stale revision returns HTTP
 409 with `code: "conflict"`, the full current object, `changedBy` and
-`changedAt`. Read that object before deciding what to save again.
+`changedAt`. Read that object before deciding what to save again. In the
+administration editor, changes to different fields merge automatically.
+Choose between the displayed values for fields both people changed; **Your
+value** is the default. Budget rules merge against the rule originally read,
+while preserving other rules added in the meantime.
 
 Inspect `/api/admin/core/ai/models/:id/usage` before deleting a model. Delete
 requests supply replacements for every affected slot, including explicit
@@ -147,3 +161,7 @@ on its next turn and records a `model_replaced` timeline marker.
 See [Structured and background AI](/en/docs/ai/structured-and-background-ai)
 for the application contract and [OpenAI-compatible API](/en/docs/ai/openai-compatible-api)
 for external clients.
+
+Budget report links use `/admin/ai?sec=budgets&rule=people`; filtering and
+pagination keep that selection. Old `ai-quotas` settings links redirect to
+the people report by default, or the budget list for `view=rules`.

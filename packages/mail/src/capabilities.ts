@@ -2325,6 +2325,24 @@ const requireConversationForReview = async (
   });
 };
 
+const requireKeepReleaseForReview = async (mailboxId: string, conversationId: string, context: CapabilityExecutionContext) => {
+  if (!(await conversationKeeps.canLiftConversationKeeps(requestContext(context))))
+    return fail(err.forbidden(conversationKeeps.LIFT_KEEP_FORBIDDEN));
+  const scope = await resolveConversationScope(mailboxId, conversationId);
+  if (!scope.ok) return scope;
+  const row = await conversationKeeps.getConversationKeepReleaseSubject(
+    requestContext(context),
+    scope.data.mailbox.id,
+    scope.data.conversationId,
+  );
+  if (!row.ok) return row;
+  return ok({
+    subject: reviewSubject(row.data.subject, context),
+    mailboxInternalId: scope.data.mailbox.id,
+    conversationInternalId: scope.data.conversationId,
+  });
+};
+
 const requireCommentForReview = async (
   input: { mailboxId: string; conversationId: string; commentId: string; expectedRevision: number },
   context: CapabilityExecutionContext,
@@ -3712,43 +3730,50 @@ const actionDefinitions = {
   },
   "conversation.keep.release": {
     title: "Stop keeping conversation",
-    description: "Allow deletion again and hide Cloud copies already deleted on the mail server. Requires mailbox admin access.",
-    input: c.ConversationKeepInputSchema,
+    description: "Allow deletion again and hide Cloud copies already deleted on the mail server. Requires a Cloud administrator.",
+    input: c.ConversationKeepReleaseInputSchema,
     data: c.ConversationKeepReleaseDataSchema,
     destructive: true,
     openWorld: false,
     idempotency: "required",
     policy: { ask: "cannot_undo" },
-    review: async (input: z.output<typeof c.ConversationKeepInputSchema>, context: CapabilityExecutionContext) => {
-      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "admin");
+    review: async (input: z.output<typeof c.ConversationKeepReleaseInputSchema>, context: CapabilityExecutionContext) => {
+      const conversation = await requireKeepReleaseForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
       return ok(
         mailActionReviews["conversation.keep.release"](
           context.locale,
           { conversation: conversationSlot(input.conversationId, conversation.data.subject) },
-          { consequences: [{ text: mailReviewCopy(context.locale).releaseKeep }], links: [openLink(conversation.data.href)] },
+          { consequences: [{ text: mailReviewCopy(context.locale).releaseKeep }] },
         ),
       );
     },
-    run: async (input: z.output<typeof c.ConversationKeepInputSchema>, context: CapabilityExecutionContext) => {
+    run: async (input: z.output<typeof c.ConversationKeepReleaseInputSchema>, context: CapabilityExecutionContext) => {
       const key = requireIdempotencyKey(context, "conversation.keep.release");
       if (!key.ok) return key;
-      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "admin");
-      if (!conversation.ok) return conversation;
+      const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
+      if (!scope.ok) return scope;
       const result = await conversationKeeps.releaseConversationKeep({
         context: requestContext(context),
-        mailboxId: conversation.data.mailboxInternalId,
-        conversationId: conversation.data.conversationInternalId,
+        mailboxId: scope.data.mailbox.id,
+        conversationId: scope.data.conversationId,
+        reason: input.reason,
       });
+      if (!result.ok) return result;
+      const conversation = await conversationKeeps.getConversationKeepReleaseSubject(
+        requestContext(context),
+        scope.data.mailbox.id,
+        scope.data.conversationId,
+      );
+      if (!conversation.ok) return conversation;
       return mapResult(
         result,
         (value) => ({ ...value, conversationId: input.conversationId }),
         () => ({
           receipt: mailReceipt("conversation.keep.release", context.locale, {
-            conversation: conversationSlot(input.conversationId, conversation.data.subject),
+            conversation: conversationSlot(input.conversationId, reviewSubject(conversation.data.subject, context)),
           }),
-          summary: mailCapabilityMessages(context.locale).releasedKeep({ subject: conversation.data.subject }),
-          ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
+          summary: mailCapabilityMessages(context.locale).releasedKeep({ subject: reviewSubject(conversation.data.subject, context) }),
         }),
       );
     },

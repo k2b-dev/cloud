@@ -65,3 +65,11 @@ export const AI_SETTINGS_TAB_SECTIONS: Record<string, AiAreaSection> = {
   "ai-projects": "projects",
   "ai-jobs": "jobs",
 };
+
+/** Preserve old people reports, including the default user view, when settings links redirect. */
+export const aiSettingsRedirectHref = (tab: string | undefined, query: Record<string, string>): string | null => {
+  const section = tab ? AI_SETTINGS_TAB_SECTIONS[tab] : undefined;
+  if (!section) return null;
+  const extra = Object.fromEntries(Object.entries(query).filter(([key]) => key !== "tab"));
+  return aiAreaHref({ sec: section, ...(tab === "ai-quotas" && query.view !== "rules" ? { rule: "people" } : {}) }, extra);
+};

@@ -58,8 +58,14 @@ export const assertAiAdmin = async (
 };
 
 /** The conflict with its stored entry checked against the API contract, or `null` for any other failure. */
-export const asAiConflict = <T>(failure: unknown, schema: { parse(value: unknown): T }): AiAdminConflict<T> | null =>
-  failure instanceof AiAdminConflict ? new AiAdminConflict(schema.parse(failure.current), failure.changedBy, failure.changedAt) : null;
+export const asAiConflict = <T>(
+  failure: unknown,
+  schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } },
+): AiAdminConflict<T> | null => {
+  if (!(failure instanceof AiAdminConflict)) return null;
+  const parsed = schema.safeParse(failure.current);
+  return parsed.success ? new AiAdminConflict(parsed.data, failure.changedBy, failure.changedAt) : null;
+};
 
 /** A stable id from a name: lower case, letters, digits, dots, dashes. */
 export const aiSlug = (value: string): string =>

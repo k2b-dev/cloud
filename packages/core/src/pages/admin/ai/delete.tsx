@@ -5,6 +5,8 @@ import {
   type AiModelVariant,
   type AiProvider,
   aiModelClassFallbackChain,
+  aiModelSupportsSlot,
+  aiReplacementProblem,
 } from "@k2b/cloud/shared";
 import { Button, dialogCore, NoticeCard, PanelDialog, Placeholder, panelDialogOptions, RichSelect, Switch, useLocale } from "@k2b/ui";
 import { createResource, createSignal, For, Show } from "solid-js";
@@ -24,6 +26,7 @@ type Catalog = {
   variants: AiModelVariant[];
   assignments: Record<AiModelSlot, { variantId: string | null }>;
   usage: AiModelUsage;
+  referenceModels: string[];
 };
 
 const NONE = "__none";
@@ -73,29 +76,30 @@ const loadCatalog = async (target: AiDeleteTarget, t: AiAreaMessages): Promise<C
   );
   const affectedModels =
     target.kind === "provider" ? models.models.filter((model) => model.providerId === target.provider.id).map((model) => model.id) : [];
-  const usage =
-    target.kind === "variant"
-      ? await aiAdminApi.variants[":id"].usage
-          .$get({ param: { id: target.variant.id } })
-          .then((response) => readAiAdmin<AiModelUsage>(response, t.loadFailed))
-      : mergeUsage(
-          await Promise.all(
-            (target.kind === "model" ? [target.model.id] : affectedModels).map((id) =>
-              aiAdminApi.models[":id"].usage.$get({ param: { id } }).then((response) => readAiAdmin<AiModelUsage>(response, t.loadFailed)),
-            ),
-          ),
-        );
+  const modelUsages = await Promise.all(
+    (target.kind === "variant" ? [target.model.id] : target.kind === "model" ? [target.model.id] : affectedModels).map(async (id) => ({
+      modelId: id,
+      usage: await (target.kind === "variant"
+        ? aiAdminApi.variants[":id"].usage.$get({ param: { id: target.variant.id } })
+        : aiAdminApi.models[":id"].usage.$get({ param: { id } })
+      ).then((response) => readAiAdmin<AiModelUsage>(response, t.loadFailed)),
+    })),
+  );
+  const usage = mergeUsage(modelUsages.map((entry) => entry.usage));
   return {
     providers: providers.providers,
     models: models.models,
     variants: details.flatMap((detail) => detail.variants),
     assignments: overview.assignments,
     usage,
+    referenceModels: modelUsages
+      .filter(({ usage }) => usage.projects.length + usage.workflows.length + usage.scheduledTasks.length > 0)
+      .map((entry) => entry.modelId),
   };
 };
 
 /** B4: everything a delete changes, a replacement for every slot it fills, and the switch that moves references. */
-function DeleteDialog(props: { target: AiDeleteTarget; close: () => void }) {
+function DeleteDialog(props: { target: AiDeleteTarget; close: () => void; setDismissHandler: (handler: () => void) => void }) {
   const locale = useLocale();
   const t = () => aiAreaMessages.resolve([locale()]).t;
   const [catalog, { refetch }] = createResource(() => loadCatalog(props.target, t()));
@@ -104,6 +108,10 @@ function DeleteDialog(props: { target: AiDeleteTarget; close: () => void }) {
   const [retargetTo, setRetargetTo] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
+  const requestClose = () => {
+    if (!busy()) props.close();
+  };
+  props.setDismissHandler(requestClose);
 
   const name = () =>
     props.target.kind === "provider"
@@ -111,7 +119,6 @@ function DeleteDialog(props: { target: AiDeleteTarget; close: () => void }) {
       : props.target.kind === "model"
         ? props.target.model.label
         : `${props.target.model.label} · ${props.target.variant.label}`;
-  const sourceProvider = () => props.target.provider;
   const removedVariantIds = (data: Catalog) =>
     props.target.kind === "variant"
       ? [props.target.variant.id]
@@ -134,10 +141,20 @@ function DeleteDialog(props: { target: AiDeleteTarget; close: () => void }) {
       if (removedVariantIds(data).includes(variant.id)) return [];
       const model = data.models.find((candidate) => candidate.id === variant.modelId);
       const provider = model ? data.providers.find((candidate) => candidate.id === model.providerId) : undefined;
-      if (!model || !provider || !model.enabled || !provider.enabled) return [];
-      if (sourceProvider().dataBoundary === "private" && provider.dataBoundary !== "private") return [];
-      if (slot === "audio" ? model.kind !== "transcription" : model.kind !== "chat") return [];
-      if (slot === "vision" && !model.capabilities.includes("vision")) return [];
+      if (!model || !provider) return [];
+      const sourceVariant = slot ? data.assignments[slot]?.variantId : null;
+      const originals = slot
+        ? data.models.filter((entry) => entry.id === data.variants.find((variant) => variant.id === sourceVariant)?.modelId)
+        : data.models.filter((entry) => data.referenceModels.includes(entry.id));
+      if (
+        !originals.length ||
+        originals.some((original) => {
+          const source = data.providers.find((entry) => entry.id === original.providerId);
+          return !source || aiReplacementProblem(source, provider, original, model) !== null;
+        })
+      )
+        return [];
+      if (slot && !aiModelSupportsSlot(slot, model)) return [];
       return [
         {
           value: variant.id,
@@ -211,7 +228,7 @@ function DeleteDialog(props: { target: AiDeleteTarget; close: () => void }) {
       <PanelDialog.Header
         title={props.target.kind === "provider" ? t().delProvTitle({ p: name() }) : t().delTitle({ p: name() })}
         icon="ti ti-trash"
-        close={props.close}
+        close={requestClose}
         closeDisabled={busy()}
       />
       <PanelDialog.Body scrollPreserveKey="ai-delete">
@@ -332,7 +349,7 @@ function DeleteDialog(props: { target: AiDeleteTarget; close: () => void }) {
         </Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <Button type="button" variant="secondary" size="sm" onClick={props.close} disabled={busy()}>
+        <Button type="button" variant="secondary" size="sm" onClick={requestClose} disabled={busy()}>
           {t().cancel}
         </Button>
         <Button
@@ -352,4 +369,7 @@ function DeleteDialog(props: { target: AiDeleteTarget; close: () => void }) {
 }
 
 export const openAiDelete = (target: AiDeleteTarget) =>
-  void dialogCore.open<void>((close) => <DeleteDialog target={target} close={() => close()} />, panelDialogOptions);
+  void dialogCore.open<void>(
+    (close, context) => <DeleteDialog target={target} close={() => close()} setDismissHandler={context.setDismissHandler} />,
+    panelDialogOptions,
+  );

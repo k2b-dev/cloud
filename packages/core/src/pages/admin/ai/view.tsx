@@ -10,7 +10,7 @@ import {
   type AiQuotaConfig,
 } from "@k2b/cloud/shared";
 import { AppWorkspace, ButtonLink, NoticeCard, Placeholder, StatusBadge } from "@k2b/ui";
-import type { JSX } from "solid-js";
+import { type JSX, Show } from "solid-js";
 import AiAreaActions from "./AiAreaActions.island";
 import AiBudgetDetail from "./AiBudgetDetail.island";
 import AiBudgetToggle from "./AiBudgetToggle.island";
@@ -163,6 +163,8 @@ function ProviderColumn(props: {
         providerId={props.provider.id}
         providerLabel={props.provider.label}
         state={state}
+        status={props.provider.status}
+        statusCode={props.provider.statusCode}
         statusMessage={props.provider.statusMessage}
         checkedAt={props.provider.statusCheckedAt ?? null}
       />
@@ -377,6 +379,7 @@ export type AiAreaViewProps = {
   overview: Overview | null;
   index: AiCatalogIndex | null;
   loadFailed: boolean;
+  detailLoadFailed?: boolean;
   studioLinks: { href: string; label: string; icon: string; app: string }[];
   provider: ProviderRow | undefined;
   providerDetail: (AiProvider & { models: AiModel[] }) | null;
@@ -450,7 +453,10 @@ export function AiAreaView(props: AiAreaViewProps) {
   );
 
   const detail = (): JSX.Element => {
-    if (!overview || !index) return failure;
+    if (!overview || !index || props.detailLoadFailed) return failure;
+    if (query.sec === "providers" && query.p && (!provider || !providerDetail))
+      return <Placeholder state="error" icon="ti ti-plug-off" title={t.providerMissing} />;
+    if (query.sec === "providers" && query.m && !model) return <Placeholder state="error" icon="ti ti-cube-off" title={t.modelMissing} />;
     if (query.sec === "providers" && provider && query.pane === "conn" && providerDetail)
       return <AiConnectionDetail provider={providerDetail} />;
     if (query.sec === "providers" && provider && model && providerDetail)
@@ -545,6 +551,10 @@ export function AiAreaView(props: AiAreaViewProps) {
       />
     ) : undefined;
 
+  const detailActions =
+    model || (query.pane === "conn" && providerDetail) || (query.sec === "budgets" && query.rule && query.rule !== "people")
+      ? { enabled: Boolean(model), test: query.sec === "providers" }
+      : undefined;
   const budgetActions = (): JSX.Element =>
     query.sec === "budgets" && props.budgets ? <AiBudgetToggle config={props.budgets.config} /> : undefined;
 
@@ -631,14 +641,22 @@ export function AiAreaView(props: AiAreaViewProps) {
             label={detailTitle()}
             description={detailDescription()}
             actions={
-              model || (query.pane === "conn" && providerDetail) || (query.sec === "budgets" && query.rule && query.rule !== "people") ? (
+              detailActions ? (
                 <div class="hidden md:block">
-                  <AiDetailActions enabled={Boolean(model)} test={query.sec === "providers"} />
+                  <AiDetailActions {...detailActions} />
                 </div>
               ) : undefined
             }
           >
             {detail()}
+            {/* On a phone the level head has no room for them; they stay at hand below the form. */}
+            <Show when={detailActions}>
+              {(actions) => (
+                <div class="sticky bottom-0 flex justify-end border-t border-(--k2b-border) bg-(--k2b-surface) px-4 py-3 md:hidden">
+                  <AiDetailActions {...actions()} />
+                </div>
+              )}
+            </Show>
           </AppWorkspace.MainPane>
         </>
       )}

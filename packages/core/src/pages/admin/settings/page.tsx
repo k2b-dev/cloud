@@ -5,7 +5,7 @@ import { SettingsPage } from "@k2b/ui";
 import { z } from "zod";
 import { ssr } from "../../../config";
 import { approvalAvailability } from "../../app-approval/availability";
-import { AI_SETTINGS_TAB_SECTIONS, aiAreaHref } from "../ai/area";
+import { aiSettingsRedirectHref } from "../ai/area";
 import { adminMessages } from "../messages";
 import AccountOperations from "./_components/AccountOperations.island";
 import CoreSettingsForm, { type SettingFieldDef } from "./_components/CoreSettingsForm.island";
@@ -121,11 +121,8 @@ export default ssr<AuthContext>(async (c) => {
   // Places and maps has its own page that checks the key with the provider — keep old links working.
   if (rawTab === "places") return c.redirect("/admin/places-and-maps", 302);
   // The AI tabs moved into the AI area; old links land on the same section with their filters.
-  const aiSection = rawTab ? AI_SETTINGS_TAB_SECTIONS[rawTab] : undefined;
-  if (aiSection) {
-    const params = Object.fromEntries(Object.entries(c.req.query()).filter(([key]) => key !== "tab"));
-    return c.redirect(aiAreaHref({ sec: aiSection }, params), 302);
-  }
+  const aiHref = aiSettingsRedirectHref(rawTab, c.req.query());
+  if (aiHref) return c.redirect(aiHref, 302);
   const tabId: TabId = isTabId(rawTab, availableTabs) ? rawTab : "general";
   const tab = availableTabs.find((item) => item.id === tabId)!;
   const documentationBase = await coreSettings.get<string>("app.documentation_url");

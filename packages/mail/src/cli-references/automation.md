@@ -403,7 +403,9 @@ The shared parser understands `forEach`, but the Mail binder rejects it because 
 
 Literal folder, tag, sender, and user names are bound to accessible stable ids when a version is created. Unknown, inaccessible, or ambiguous names fail validation.
 
-`createDraft` and `createReplyDraft` default `format` to `markdown`; subject text is limited to 998 characters and body text to 2 MiB. `aiGenerateText.maxOutputChars` defaults to 4,000 and accepts 1–20,000. AI prompts accept 1–20,000 characters, model profile ids and identifiers accept at most 120 characters, and classification choices accept 1–200 characters each. `aiClassifyMany.minChoices` defaults to `0`; `maxChoices` defaults to the number of declared choices. Every selected variable name must be a valid identifier and is visible only to later steps in the same scope.
+`createDraft` and `createReplyDraft` default `format` to `markdown`; subject text is limited to 998 characters and body text to 2 MiB. `aiGenerateText.maxOutputChars` defaults to 4,000 and accepts 1–20,000. AI prompts accept 1–20,000 characters, identifiers accept at most 120 characters, and classification choices accept 1–200 characters each. `aiClassifyMany.minChoices` defaults to `0`; `maxChoices` defaults to the number of declared choices. Every selected variable name must be a valid identifier and is visible only to later steps in the same scope.
+
+The optional AI `model` field accepts `{ class: balanced }` or `{ id: "model:variant" }`. Classes are `fast`, `balanced`, `thorough`, and `maximum`; an explicit variant ID accepts at most 241 characters. Omitting `model` requests `balanced`. Only empty class assignments fall back to another class; access, budget, disabled-model, and capability failures stop the action. An explicit variant ID never falls back.
 
 Reference a value stored by `setVariable` or an action result as `${{ <name> }}` in later steps in the same scope. Mail validation reserves `inputs` and `trigger`.
 

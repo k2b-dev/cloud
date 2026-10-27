@@ -69,6 +69,7 @@ function VariantDialog(props: {
   provider: AiProvider;
   variant?: AiModelVariant;
   close: () => void;
+  setDismissHandler: (handler: () => void) => void;
 }) {
   const locale = useLocale();
   const t = () => aiAreaMessages.resolve([locale()]).t;
@@ -79,6 +80,10 @@ function VariantDialog(props: {
   );
   const [saving, setSaving] = createSignal(false);
   const [error, setError] = createSignal("");
+  const requestClose = () => {
+    if (!saving()) props.close();
+  };
+  props.setDismissHandler(requestClose);
   const [conflict, setConflict] = createSignal<AiAdminConflict<AiModelVariant> | null>(null);
   const [slots] = createResource(
     () => props.variant?.id,
@@ -143,6 +148,7 @@ function VariantDialog(props: {
       const conflict = asAiConflict(failure, AiVariantSchema);
       if (conflict) setConflict(conflict);
       else setError(failure instanceof Error ? failure.message : t().saveFailed);
+    } finally {
       setSaving(false);
     }
   };
@@ -165,7 +171,7 @@ function VariantDialog(props: {
           title={props.variant ? t().editVariant : t().newVariant}
           subtitle={props.model.label}
           icon="ti ti-versions"
-          close={props.close}
+          close={requestClose}
           closeDisabled={saving()}
         />
         <PanelDialog.Body scrollPreserveKey="ai-variant">
@@ -177,6 +183,8 @@ function VariantDialog(props: {
                   { key: "label", label: t().variantName },
                   { key: "reasoningEffort", label: t().thinkingLevel, format: (value) => effortLabel(t(), String(value ?? "")) },
                   { key: "hint", label: t().hint },
+                  { key: "ownPrice", label: t().ownPrices },
+                  { key: "ownOut", label: t().ownOut },
                   { key: "inputPerMillion", label: t().inPrice },
                   { key: "outputPerMillion", label: t().outPrice },
                   { key: "maxOutputTokens", label: t().maxOut },
@@ -188,15 +196,17 @@ function VariantDialog(props: {
                 theirs={toDraft(current().current)}
                 busy={saving()}
                 onMerge={(merged) => {
+                  const theirs = current().current;
                   setConflict(null);
-                  setBase(current().current);
+                  setBase(theirs);
                   setDraft(merged);
-                  void save(merged, current().current.revision);
+                  void save(merged, theirs.revision);
                 }}
                 onDiscard={() => {
+                  const theirs = current().current;
                   setConflict(null);
-                  setBase(current().current);
-                  setDraft(toDraft(current().current));
+                  setBase(theirs);
+                  setDraft(toDraft(theirs));
                 }}
               />
             )}
@@ -330,8 +340,8 @@ function VariantDialog(props: {
               disabled={saving()}
               onClick={() => {
                 const variant = props.variant;
-                if (!variant) return;
-                props.close();
+                if (!variant || saving()) return;
+                requestClose();
                 openAiDelete({ kind: "variant", variant, model: props.model, provider: props.provider });
               }}
             >
@@ -339,7 +349,7 @@ function VariantDialog(props: {
               {t().deleteVariant}
             </Button>
           </Show>
-          <Button type="button" variant="secondary" size="sm" onClick={props.close} disabled={saving()}>
+          <Button type="button" variant="secondary" size="sm" onClick={requestClose} disabled={saving()}>
             {t().cancel}
           </Button>
           <Button type="submit" size="sm" disabled={!draft().label.trim()} loading={saving()} loadingLabel={t().saving}>
@@ -353,4 +363,7 @@ function VariantDialog(props: {
 }
 
 export const openAiVariant = (input: { model: AiModel & { variants: AiModelVariant[] }; provider: AiProvider; variant?: AiModelVariant }) =>
-  void dialogCore.open<void>((close) => <VariantDialog {...input} close={() => close()} />, panelDialogOptions);
+  void dialogCore.open<void>(
+    (close, context) => <VariantDialog {...input} close={() => close()} setDismissHandler={context.setDismissHandler} />,
+    panelDialogOptions,
+  );

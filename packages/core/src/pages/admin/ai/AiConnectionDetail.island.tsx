@@ -1,9 +1,7 @@
 import { AiModelIcon } from "@k2b/cloud/ai/ui";
-import { type AiModel, type AiProvider, AiProviderSchema, aiProviderMark } from "@k2b/cloud/shared";
+import { type AiModel, type AiProvider, aiProviderMark } from "@k2b/cloud/shared";
 import { Button, NoticeCard, SegmentedControl, StatusBadge, TextInput, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
-import { HeaderRows } from "./AiAreaActions.island";
-import AiProviderNotice from "./AiProviderNotice.island";
 import { type AiAdminConflict, aiAdminApi, asAiConflict, readAiAdmin, reloadAiArea } from "./client";
 import { ConflictNotice } from "./conflict";
 import { openAiDelete } from "./delete";
@@ -17,6 +15,9 @@ import {
   aiProviderTypeLabel,
   formatAiTime,
 } from "./presentation";
+import { HeaderRows } from "./provider-dialogs";
+import { AiProviderNotice } from "./provider-notice";
+import { AiProviderDetailSchema } from "./read-shapes";
 
 type Draft = { label: string; baseUrl: string; dataBoundary: "hosted" | "private" };
 type Header = { name: string; value: string; stored?: boolean };
@@ -85,9 +86,10 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
       toast.success(t().saved);
       reloadAiArea();
     } catch (failure) {
-      const conflict = asAiConflict(failure, AiProviderSchema);
+      const conflict = asAiConflict(failure, AiProviderDetailSchema);
       if (conflict) setConflict(conflict);
       else setError(failure instanceof Error ? failure.message : t().saveFailed);
+    } finally {
       setSaving(false);
     }
   };
@@ -119,9 +121,10 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
       );
       reloadAiArea();
     } catch (failure) {
-      const conflict = asAiConflict(failure, AiProviderSchema);
+      const conflict = asAiConflict(failure, AiProviderDetailSchema);
       if (conflict) setConflict(conflict);
       else setError(failure instanceof Error ? failure.message : t().saveFailed);
+    } finally {
       setSaving(false);
     }
   };
@@ -146,6 +149,8 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
         providerId={base().id}
         providerLabel={base().label}
         state={state()}
+        status={base().status}
+        statusCode={base().statusCode}
         statusMessage={base().statusMessage}
         checkedAt={base().statusCheckedAt}
         inConnection
@@ -171,11 +176,12 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
               void save(merged, theirs.revision);
             }}
             onDiscard={() => {
+              const theirs = current().current;
               setConflict(null);
-              setBase(current().current);
-              setDraft(draftOf(current().current));
+              setBase(theirs);
+              setDraft(draftOf(theirs));
               setKey("");
-              setHeaders(current().current.requestHeaderNames.map((name) => ({ name, value: "", stored: true })));
+              setHeaders(theirs.requestHeaderNames.map((name) => ({ name, value: "", stored: true })));
             }}
           />
         )}
