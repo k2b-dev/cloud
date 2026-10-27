@@ -160,6 +160,7 @@ export const workflowAiActionCost = async (
 
 const planWorkflowAiAction = async (summary: string): Promise<WorkflowPlannedEffect> => ({
   summary,
+  outputUnavailable: true,
   issues: ["AI output is not available during a dry run."],
 });
 
@@ -172,7 +173,7 @@ export const createWorkflowAiActions = (options?: { scope(ctx: WorkflowActionCon
       description: "Extracts one bounded, validated object from supplied input.",
       outputType: "core.value",
       config: extractDataConfig,
-      cost: (ctx) => workflowAiActionCost(ctx),
+      cost: (ctx) => (ctx.invocation.mode === "dryRun" ? { maxAiCalls: 1 } : workflowAiActionCost(ctx)),
       plan: () => planWorkflowAiAction("Extract structured data with AI."),
       run: (ctx, values) =>
         run(ctx, {
@@ -204,7 +205,7 @@ export const createWorkflowAiActions = (options?: { scope(ctx: WorkflowActionCon
           saveAs: identifier("Variable name for the generated text."),
         },
       },
-      cost: (ctx) => workflowAiActionCost(ctx),
+      cost: (ctx) => (ctx.invocation.mode === "dryRun" ? { maxAiCalls: 1 } : workflowAiActionCost(ctx)),
       plan: () => planWorkflowAiAction("Generate text with AI."),
       run: (ctx, values) =>
         run(ctx, {
@@ -229,7 +230,7 @@ export const createWorkflowAiActions = (options?: { scope(ctx: WorkflowActionCon
           saveAs: identifier("Variable name for the selected choice."),
         },
       },
-      cost: (ctx) => workflowAiActionCost(ctx),
+      cost: (ctx) => (ctx.invocation.mode === "dryRun" ? { maxAiCalls: 1 } : workflowAiActionCost(ctx)),
       plan: () => planWorkflowAiAction("Classify one value with AI."),
       run: (ctx, values) =>
         run(ctx, {
@@ -270,7 +271,7 @@ export const createWorkflowAiActions = (options?: { scope(ctx: WorkflowActionCon
           saveAs: identifier("Variable name for the selected choices."),
         },
       },
-      cost: (ctx) => workflowAiActionCost(ctx),
+      cost: (ctx) => (ctx.invocation.mode === "dryRun" ? { maxAiCalls: 1 } : workflowAiActionCost(ctx)),
       plan: () => planWorkflowAiAction("Classify multiple values with AI."),
       run: (ctx, values) =>
         run(ctx, {

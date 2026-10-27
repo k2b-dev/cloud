@@ -282,9 +282,18 @@ export default function Settings(props: {
                 <Show
                   when={area === "cloud"}
                   fallback={
-                    <InlineGuidance tone="info" icon="ti ti-info-circle">
-                      {a().freeipaManual}
-                    </InlineGuidance>
+                    <>
+                      <Switch
+                        label={a().freeipaAutoCreate}
+                        description={a().freeipaAutoCreateHint}
+                        value={configuration.freeipa.autoCreate}
+                        onValueChange={(value) => setConfiguration("freeipa", "autoCreate", value)}
+                        disabled={!configuration.freeipa.enabled}
+                      />
+                      <InlineGuidance tone="info" icon="ti ti-info-circle">
+                        {a().freeipaManual}
+                      </InlineGuidance>
+                    </>
                   }
                 >
                   <Switch

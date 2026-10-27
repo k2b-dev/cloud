@@ -87,6 +87,25 @@ describe("DetailPanel", () => {
     expect(header([])).not.toContain("ti-dots");
   });
 
+  test("with primary actions, the resource menu ends their row instead of sitting beside close", () => {
+    const html = renderToString(() =>
+      createComponent(DetailPanel.Header, {
+        kind: "Conversation",
+        title: "Invoice review",
+        menu: [{ label: "Copy Cloud ID", action: () => {} }],
+        primaryActions: "Mark as done",
+        actions: "Close",
+      }),
+    );
+    const actions = html.slice(
+      html.indexOf('class="k2b-detail-panel__actions"'),
+      html.indexOf("</div>", html.indexOf('class="k2b-detail-panel__actions"')),
+    );
+    expect(actions).not.toContain("ti-dots");
+    expect(html).toMatch(/class="k2b-detail-panel__primary-actions">Mark as done.*aria-label="More actions".*ti-dots/s);
+    expect(html).toMatch(/class="k2b-detail-panel__kind">Conversation<\/div>.*<h2/s);
+  });
+
   test("keeps the panel and its sections free of card-per-group styling", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
     const panelRule = css.match(/\.k2b-ui \.k2b-detail-panel \{([^}]*)\}/)?.[1];
