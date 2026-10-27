@@ -1,8 +1,14 @@
+import type { SQL } from "bun";
 import { env } from "../config/env";
 import type { AccessSubject } from "../server/services/access";
 import { WorkflowAiAdmissionError, type WorkflowAiScope, workflowAiHash, workflowAiModelHash } from "../workflows/ai/policy";
 import { submitWorkflowAiTask } from "../workflows/ai/runtime";
-import { createWorkflowAiTask, getWorkflowAiTask, getWorkflowAiTaskByEffectKey } from "../workflows/ai/store";
+import {
+  createWorkflowAiTask,
+  getWorkflowAiTask,
+  getWorkflowAiTaskByEffectKey,
+  releaseApplicationAiTaskByEffectKey,
+} from "../workflows/ai/store";
 import { type AiTaskRequestInput, assertAiTaskRequestSize } from "./task-contracts";
 import { resolveApplicationAiTaskModel } from "./task-model";
 
@@ -16,6 +22,17 @@ export type ApplicationAiTaskInput = {
   usageSubject?: AccessSubject;
   signal: AbortSignal;
 };
+
+export type ApplicationAiTaskKey = Pick<ApplicationAiTaskInput, "appId" | "scopeId" | "effectKey" | "usageSubject">;
+
+const applicationEffectKey = (input: ApplicationAiTaskKey): string =>
+  `application:${workflowAiHash({ app: input.appId, scope: input.scopeId, subject: input.usageSubject ?? null, effect: input.effectKey })}`;
+
+/** Call in the transaction settling the application request, including discarded or failed requests. */
+export const releaseApplicationAiTask = (input: ApplicationAiTaskKey, db?: SQL): Promise<boolean> =>
+  releaseApplicationAiTaskByEffectKey({ appId: input.appId, scopeId: input.scopeId, effectKey: applicationEffectKey(input) }, db);
+
+export { deleteApplicationAiTasks } from "../workflows/ai/store";
 
 const waitForTask = (signal: AbortSignal, delayMs = 250) =>
   new Promise<void>((resolve, reject) => {
@@ -35,7 +52,7 @@ const waitForTask = (signal: AbortSignal, delayMs = 250) =>
 export const runApplicationAiTask = async (input: ApplicationAiTaskInput) => {
   input.signal.throwIfAborted();
   assertAiTaskRequestSize(input.request);
-  const effectKey = `application:${workflowAiHash({ app: input.appId, scope: input.scopeId, subject: input.usageSubject ?? null, effect: input.effectKey })}`;
+  const effectKey = applicationEffectKey(input);
   let task = await getWorkflowAiTaskByEffectKey(effectKey);
   if (!task) {
     const resolved = await resolveApplicationAiTaskModel(input.usageSubject, input.request.modelProfileId);

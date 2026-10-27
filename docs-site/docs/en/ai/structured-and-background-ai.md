@@ -587,8 +587,26 @@ for recovery of one logical request; use a new key for a new intentional
 calculation. Keys are namespaced by application, scope and usage subject.
 The shared AI runtime owns model pinning, input-size validation, admission,
 result caching, the absolute attempt deadline and bounded provider retries.
-A completed replay makes no provider call. Provider calls remain at least once
+A retained completed replay makes no provider call. Provider calls remain at least once
 across a crash before result persistence.
+
+After durably settling, discarding or failing the application request, call
+`releaseApplicationAiTask({ appId, scopeId, effectKey, usageSubject? }, db)`
+from `@k2b/cloud/ai` in the **same transaction**. Supply the identity fields used
+for generation. Do not release a recoverable request when its worker shuts down.
+Unreleased results remain available for dormant recovery. Released terminal
+results are pruned in bounded batches after both release and completion are at
+least 24 hours old; durable domain state must prevent replaying a settled key
+after pruning.
+
+When an owner is deleted, fence future task creation and recovery, then call
+`deleteApplicationAiTasks({ appId, scopeId, sourceId?, sourceIdPrefix? }, db)` in
+its deletion transaction. This removes application task payloads in every state,
+including cached results, without resetting admission accounting. Optional exact
+and literal-prefix source filters intersect; workflow tasks remain separate.
+Keep the transaction short and call cleanup last, because it holds the shared
+admission lock until commit. A worker that notices an obsolete request after
+creating its task must also release or delete that late task.
 
 Before using this API, run `migrateWorkflowAi()` and start
 `startWorkflowAiRuntime()` from `@k2b/cloud/workflows/ai`, then drain it during

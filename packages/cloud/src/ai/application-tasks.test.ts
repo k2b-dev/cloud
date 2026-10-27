@@ -3,7 +3,7 @@ import { WorkflowAiAdmissionError } from "../workflows/ai/policy";
 import * as runtime from "../workflows/ai/runtime";
 import * as store from "../workflows/ai/store";
 import type { WorkflowAiTask } from "../workflows/ai/types";
-import { type ApplicationAiTaskInput, runApplicationAiTask } from "./application-tasks";
+import { type ApplicationAiTaskInput, deleteApplicationAiTasks, releaseApplicationAiTask, runApplicationAiTask } from "./application-tasks";
 import * as model from "./task-model";
 import type { AiResolvedModel } from "./types";
 
@@ -63,6 +63,7 @@ const resolve = spyOn(model, "resolveApplicationAiTaskModel");
 const submit = spyOn(runtime, "submitWorkflowAiTask");
 const latest = spyOn(store, "getWorkflowAiTask");
 const cancel = spyOn(store, "markWorkflowAiTaskCanceledIfRequested");
+const release = spyOn(store, "releaseApplicationAiTaskByEffectKey");
 afterEach(() => {
   get.mockReset();
   create.mockReset();
@@ -70,6 +71,7 @@ afterEach(() => {
   submit.mockReset();
   latest.mockReset();
   cancel.mockReset();
+  release.mockReset();
 });
 
 test("completed replay returns durable output without resolving a changed default or charging again", async () => {
@@ -121,6 +123,35 @@ test("scope and person namespace effect keys independently", async () => {
   expect(new Set(get.mock.calls.map(([key]) => key)).size).toBe(3);
 });
 
+test("release uses the original scope/person effect identity and never runs inference", async () => {
+  get.mockResolvedValue(task);
+  release.mockResolvedValue(true);
+  const keys = [input, { ...input, scopeId: "other" }, { ...input, usageSubject: { type: "user", userId: "person" } as const }];
+  for (const key of keys) {
+    await runApplicationAiTask(key);
+    expect(await releaseApplicationAiTask(key)).toBe(true);
+  }
+  expect(release.mock.calls.map(([key]) => key.effectKey)).toEqual(get.mock.calls.map(([key]) => key));
+  expect(release.mock.calls[0]?.[0]).toMatchObject({ appId: input.appId, scopeId: input.scopeId });
+  expect(create).not.toHaveBeenCalled();
+  expect(submit).not.toHaveBeenCalled();
+  release.mockResolvedValue(false);
+  expect(await releaseApplicationAiTask(input)).toBe(false);
+});
+
+test("owner cleanup passes literal snapshot prefixes through the public bridge without inference", async () => {
+  const remove = spyOn(store, "deleteApplicationAiTasks").mockResolvedValue(3);
+  const selector = { appId: input.appId, scopeId: input.scopeId, sourceIdPrefix: "conversation_%:" };
+  try {
+    expect(await deleteApplicationAiTasks(selector)).toBe(3);
+    expect(remove).toHaveBeenCalledWith(selector);
+    expect(create).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+  } finally {
+    remove.mockRestore();
+  }
+});
+
 test("aborting one observer leaves the shared durable task available for recovery", async () => {
   const controller = new AbortController();
   get.mockResolvedValue({ ...task, status: "running", completedAt: null });
@@ -138,6 +169,7 @@ afterAll(() => {
   submit.mockRestore();
   latest.mockRestore();
   cancel.mockRestore();
+  release.mockRestore();
 });
 
 test("retryable shared capacity admission waits before creating a task, without changing the policy", async () => {

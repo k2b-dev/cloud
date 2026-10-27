@@ -16,6 +16,9 @@ import {
 
 export const WORKFLOW_AI_DEPENDENCY_KIND = "ai.workflow-task";
 
+// Released application results use the same 24-hour horizon as admission history.
+const APPLICATION_AI_TASK_RETENTION_HOURS = 24;
+
 type WorkflowAiTaskRow = {
   usage_user_id: string | null;
   id: string;
@@ -146,6 +149,9 @@ export const migrateWorkflowAi = async (db: SQL = sql): Promise<void> => {
     ALTER TABLE ai.workflow_task ADD COLUMN IF NOT EXISTS source_id TEXT;
     ALTER TABLE ai.workflow_task ADD COLUMN IF NOT EXISTS cache_key TEXT;
     ALTER TABLE ai.workflow_task ADD COLUMN IF NOT EXISTS model_config_hash TEXT;
+    ALTER TABLE ai.workflow_task ADD COLUMN IF NOT EXISTS released_at TIMESTAMPTZ;
+    CREATE INDEX IF NOT EXISTS idx_ai_application_task_retention ON ai.workflow_task(released_at, id)
+      WHERE run_id IS NULL AND released_at IS NOT NULL AND status IN ('succeeded', 'failed', 'canceled');
     CREATE INDEX IF NOT EXISTS idx_ai_workflow_task_cache ON ai.workflow_task(app_id, scope_id, cache_key, completed_at DESC) WHERE status = 'succeeded';
     CREATE INDEX IF NOT EXISTS idx_ai_workflow_task_active_scope ON ai.workflow_task(app_id, scope_id) WHERE status IN ('queued', 'running');
     CREATE TABLE IF NOT EXISTS ai.workflow_scope_budget (
@@ -191,6 +197,40 @@ export const workflowAiTaskExists = async (effectKey: string, db: SQL = sql): Pr
   `;
   return Boolean(row?.exists);
 };
+
+/** The application has durably settled or discarded the request; replay is no longer needed. */
+export const releaseApplicationAiTaskByEffectKey = async (
+  input: { appId: string; scopeId: string; effectKey: string },
+  db: SQL = sql,
+): Promise<boolean> => {
+  const rows = await db<{ id: string }[]>`
+    UPDATE ai.workflow_task SET released_at = COALESCE(released_at, now())
+    WHERE app_id = ${input.appId} AND scope_id = ${input.scopeId} AND effect_key = ${input.effectKey} AND run_id IS NULL
+    RETURNING id::text
+  `;
+  return rows.length > 0;
+};
+
+/** Remove an application's task payloads when their owning scope or source is deleted. */
+export const deleteApplicationAiTasks = async (
+  input: { appId: string; scopeId: string; sourceId?: string; sourceIdPrefix?: string },
+  db: SQL = sql,
+): Promise<number> =>
+  withTransaction(db, async (tx) => {
+    // Serialize with task creation/cache copies. The application fences future creation.
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended('workflow-ai-admission', 0))`;
+    const [row] = await tx<{ count: number }[]>`
+      WITH deleted AS (
+        DELETE FROM ai.workflow_task
+        WHERE app_id = ${input.appId} AND scope_id = ${input.scopeId} AND run_id IS NULL
+          AND (${input.sourceId ?? null}::text IS NULL OR source_id = ${input.sourceId ?? null})
+          AND (${input.sourceIdPrefix ?? null}::text IS NULL OR starts_with(source_id, ${input.sourceIdPrefix ?? null}))
+        RETURNING id
+      ) SELECT count(*)::int AS count FROM deleted
+    `;
+    // Keep admission history: deleting owner data must not reset rate/daily accounting.
+    return row?.count ?? 0;
+  });
 
 export const createWorkflowAiTask = async (
   input: {
@@ -309,7 +349,8 @@ export const workflowAiTaskCancellationRequested = async (id: string, db: SQL = 
     LEFT JOIN workflows.run AS run ON run.id = task.run_id
     WHERE task.id = ${id}::uuid
   `;
-  return Boolean(row?.canceled);
+  // Owner deletion also revokes an in-flight task; do not finish a removed request.
+  return !row || row.canceled;
 };
 
 export const wakeWorkflowAiTask = async (task: Pick<WorkflowAiTask, "appId" | "id"> & { runId?: string | null }): Promise<void> => {
@@ -462,6 +503,16 @@ export const expireWorkflowAiTasks = async (queueTimeoutMs: number, db: SQL = sq
   await db`DELETE FROM ai.workflow_scope_admission WHERE task_id IN (
     SELECT task_id FROM ai.workflow_scope_admission WHERE created_at <= now() - interval '24 hours' ORDER BY created_at LIMIT 100
   )`;
+  await db`
+    WITH expired AS (
+      SELECT id FROM ai.workflow_task
+      WHERE run_id IS NULL AND status IN ('succeeded', 'failed', 'canceled')
+        AND released_at < now() - ${APPLICATION_AI_TASK_RETENTION_HOURS} * interval '1 hour'
+        AND completed_at < now() - ${APPLICATION_AI_TASK_RETENTION_HOURS} * interval '1 hour'
+      ORDER BY released_at, id LIMIT 100 FOR UPDATE SKIP LOCKED
+    )
+    DELETE FROM ai.workflow_task task USING expired WHERE task.id = expired.id
+  `;
 };
 
 const reserveWorkflowAiBudget = async (db: SQL, run: { app_id: string; scope_id: string }, scope: WorkflowAiScope): Promise<void> => {

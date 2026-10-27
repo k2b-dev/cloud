@@ -606,3 +606,197 @@ describe("application-owned durable AI tasks", () => {
     }
   });
 });
+
+describe("application AI task retention", () => {
+  test("prunes at most 100 released terminal tasks, preserving dormant recovery and workflow results", async () => {
+    await ready();
+    const run = await createRun();
+    const base = {
+      owner: { appId: run.appId, scopeId: run.scopeId },
+      stepKey: "retention",
+      request: { kind: "generate_text" as const, prompt: "Summarize", input: "Private source", maxOutputChars: 100 },
+      modelProfileId: "pinned",
+    };
+    const terminal = async (key: string) => {
+      const created = await createWorkflowAiTask({ ...base, effectKey: `${run.appId}:${key}` });
+      await succeed(created.task.id);
+      return created.task;
+    };
+    try {
+      const dormant = await terminal("dormant");
+      const released = await terminal("released");
+      const recentRelease = await terminal("recent-release");
+      const recentCompletion = await terminal("recent-completion");
+      const active = await createWorkflowAiTask({ ...base, effectKey: `${run.appId}:active` });
+      const workflow = await createWorkflowAiTask({ ...base, owner: undefined, runId: run.runId, effectKey: `${run.appId}:workflow` });
+      await succeed(workflow.task.id);
+      for (const task of [released, recentRelease, recentCompletion, active.task]) {
+        expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: task.effectKey })).toBe(true);
+      }
+      expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: workflow.task.effectKey })).toBe(false);
+      await sql`
+        UPDATE ai.workflow_task SET completed_at = now() - interval '25 hours'
+        WHERE app_id = ${run.appId} AND status = 'succeeded' AND id <> ${recentCompletion.id}::uuid
+      `;
+      await sql`
+        UPDATE ai.workflow_task SET released_at = now() - interval '25 hours'
+        WHERE app_id = ${run.appId} AND id <> ${recentRelease.id}::uuid AND id <> ${dormant.id}::uuid
+      `;
+      // Include all terminal statuses, enough to require two bounded recovery sweeps.
+      await sql`
+        INSERT INTO ai.workflow_task (app_id, scope_id, step_key, effect_key, kind, request, input_hash,
+          model_profile_id, status, output, completed_at, released_at)
+        SELECT app_id, scope_id, step_key, effect_key || ':' || n, kind, request, input_hash,
+          model_profile_id, CASE n % 3 WHEN 0 THEN 'failed' WHEN 1 THEN 'canceled' ELSE 'succeeded' END,
+          output, completed_at, released_at
+        FROM ai.workflow_task CROSS JOIN generate_series(1, 100) n WHERE id = ${released.id}::uuid
+      `;
+      const expiredCount = async () => {
+        const [row] = await sql<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM ai.workflow_task
+          WHERE app_id = ${run.appId} AND run_id IS NULL AND released_at < now() - interval '24 hours'
+            AND completed_at < now() - interval '24 hours'
+        `;
+        return row?.count;
+      };
+      expect(await expiredCount()).toBe(101);
+      await expireWorkflowAiTasks(60_000);
+      expect(await expiredCount()).toBe(1);
+      await expireWorkflowAiTasks(60_000);
+      expect(await expiredCount()).toBe(0);
+      for (const task of [dormant, recentRelease, recentCompletion, active.task, workflow.task]) {
+        expect(await getWorkflowAiTask(task.id)).not.toBeNull();
+      }
+      const replay = await createWorkflowAiTask({ ...base, effectKey: dormant.effectKey });
+      expect(replay).toMatchObject({ created: false, task: { id: dormant.id, output: "a" } });
+    } finally {
+      await sql`DELETE FROM ai.workflow_task WHERE app_id = ${run.appId}`;
+    }
+  });
+
+  test("release composes with the domain transaction; owner deletion isolates scopes, sources and workflows", async () => {
+    await ready();
+    const run = await createRun();
+    const scope = {
+      sourceId: "source",
+      sourceRevision: "1",
+      budget: { ...pilotBudget, scopeConcurrent: 4, maxStepsPerSource: 10 },
+    };
+    const base = {
+      owner: { appId: run.appId, scopeId: run.scopeId },
+      stepKey: "cleanup",
+      request: { kind: "generate_text" as const, prompt: "Summarize", input: "Private source", maxOutputChars: 100 },
+      modelProfileId: "pinned",
+      modelConfigHash: "a".repeat(64),
+      scope,
+    };
+    try {
+      const terminal = await createWorkflowAiTask({ ...base, effectKey: `${run.appId}:terminal` });
+      await succeed(terminal.task.id);
+      const key = { ...base.owner, effectKey: terminal.task.effectKey };
+      await expect(
+        sql.begin(async (tx) => {
+          expect(await aiStore.releaseApplicationAiTaskByEffectKey(key, tx)).toBe(true);
+          throw new Error("Domain rollback");
+        }),
+      ).rejects.toThrow("Domain rollback");
+      const releaseTime = async () => {
+        const [row] = await sql<
+          { released_at: Date | null }[]
+        >`SELECT released_at FROM ai.workflow_task WHERE id = ${terminal.task.id}::uuid`;
+        return row?.released_at;
+      };
+      expect(await releaseTime()).toBeNull();
+      expect(await aiStore.releaseApplicationAiTaskByEffectKey(key)).toBe(true);
+      await sql`UPDATE ai.workflow_task SET released_at = '2026-01-01T00:00:00Z' WHERE id = ${terminal.task.id}::uuid`;
+      const firstRelease = await releaseTime();
+      expect(await aiStore.releaseApplicationAiTaskByEffectKey(key)).toBe(true);
+      expect(await releaseTime()).toEqual(firstRelease);
+      expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...key, scopeId: "other" })).toBe(false);
+      const active = await createWorkflowAiTask({ ...base, effectKey: `${run.appId}:active`, scope: { ...scope, sourceRevision: "2" } });
+      await claimWorkflowAiTask(active.task.id);
+      const otherSource = await createWorkflowAiTask({
+        ...base,
+        effectKey: `${run.appId}:other-source`,
+        scope: { ...scope, sourceId: "other" },
+      });
+      const otherScope = await createWorkflowAiTask({
+        ...base,
+        owner: { ...base.owner, scopeId: "other" },
+        effectKey: `${run.appId}:other-scope`,
+      });
+      const workflow = await createWorkflowAiTask({
+        ...base,
+        owner: undefined,
+        runId: run.runId,
+        effectKey: `${run.appId}:workflow`,
+        scope: { ...scope, sourceRevision: "3" },
+      });
+      expect(await aiStore.deleteApplicationAiTasks({ ...base.owner, sourceId: "missing" })).toBe(0);
+      expect(await aiStore.deleteApplicationAiTasks({ ...base.owner, sourceId: "source" })).toBe(2);
+      expect(await getWorkflowAiTask(terminal.task.id)).toBeNull();
+      expect(await aiStore.workflowAiTaskCancellationRequested(active.task.id)).toBe(true);
+      expect(await completeWorkflowAiTask(active.task.id, "Must not reappear", null)).toBeNull();
+      expect(await aiStore.deleteApplicationAiTasks(base.owner)).toBe(1);
+      expect(await getWorkflowAiTask(otherSource.task.id)).toBeNull();
+      expect(await getWorkflowAiTask(otherScope.task.id)).not.toBeNull();
+      expect(await getWorkflowAiTask(workflow.task.id)).not.toBeNull();
+      const [admissions] = await sql<{ count: number }[]>`
+        SELECT count(*)::int AS count FROM ai.workflow_scope_admission WHERE app_id = ${run.appId}
+      `;
+      expect(admissions?.count).toBe(5);
+    } finally {
+      await sql`DELETE FROM ai.workflow_scope_admission WHERE app_id = ${run.appId}`;
+      await sql`DELETE FROM ai.workflow_scope_budget WHERE app_id = ${run.appId}`;
+      await sql`DELETE FROM ai.workflow_task WHERE app_id = ${run.appId}`;
+    }
+  });
+});
+
+describe("application AI source history deletion", () => {
+  test("literal prefixes remove every snapshot only within the specified application and scope", async () => {
+    await ready();
+    const run = await createRun();
+    const otherAppId = `${run.appId}-other`;
+    const base = {
+      stepKey: "history",
+      request: { kind: "generate_text" as const, prompt: "Summarize", maxOutputChars: 100 },
+      modelProfileId: "pinned",
+      modelConfigHash: "a".repeat(64),
+    };
+    const source = (sourceId: string) => ({ sourceId, sourceRevision: "1", budget: pilotBudget });
+    const create = async (sourceId: string, owner = { appId: run.appId, scopeId: run.scopeId }) => {
+      const task = await createWorkflowAiTask({ ...base, owner, effectKey: crypto.randomUUID(), scope: source(sourceId) });
+      await succeed(task.task.id);
+      return task.task;
+    };
+    const owner = { appId: run.appId, scopeId: run.scopeId };
+    try {
+      const snapshot = await create("conversation_%:42");
+      const manual = await create("conversation_%:manual:request");
+      const similar = await create("conversation_X:42");
+      const neighbor = await create("conversation_%2:42");
+      const otherScope = await create("conversation_%:42", { ...owner, scopeId: "other" });
+      const otherApp = await create("conversation_%:42", { ...owner, appId: otherAppId });
+      const workflow = await createWorkflowAiTask({
+        ...base,
+        runId: run.runId,
+        effectKey: crypto.randomUUID(),
+        scope: source("conversation_%:42"),
+      });
+      await succeed(workflow.task.id);
+      const active = await createWorkflowAiTask({ ...base, owner, effectKey: crypto.randomUUID(), scope: source("conversation_%:43") });
+      expect(await aiStore.deleteApplicationAiTasks({ ...owner, sourceId: "conversation_X:42", sourceIdPrefix: "conversation_%:" })).toBe(
+        0,
+      );
+      expect(await aiStore.deleteApplicationAiTasks({ ...owner, sourceIdPrefix: "conversation_%:" })).toBe(3);
+      for (const removed of [snapshot, manual, active.task]) expect(await getWorkflowAiTask(removed.id)).toBeNull();
+      for (const retained of [similar, neighbor, otherScope, otherApp, workflow.task])
+        expect(await getWorkflowAiTask(retained.id)).not.toBeNull();
+    } finally {
+      await sql`DELETE FROM ai.workflow_scope_admission WHERE app_id IN (${run.appId}, ${otherAppId})`;
+      await sql`DELETE FROM ai.workflow_scope_budget WHERE app_id IN (${run.appId}, ${otherAppId})`;
+      await sql`DELETE FROM ai.workflow_task WHERE app_id IN (${run.appId}, ${otherAppId})`;
+    }
+  });
+});
