@@ -466,8 +466,8 @@ subscriptions remain blocked with `resource_events_unsupported`.
 `cld capabilities catalog --json` and `--jsonl` preserve the full manifests,
 including `events` and `subscribes`. The text table shows their counts per app.
 Use `cld events ls` for the event-focused catalog and `cld events subscriptions`
-for delivery readiness. Event-specific MCP discovery is not yet available;
-the current capability MCP projects tools and resources, not an event catalog.
+for delivery readiness. MCP clients can [discover declared events](/en/docs/platform/mcp#discover-declared-events)
+with `cloud__events__list` and `cloud__events__read`.
 
 A Type may name one canonical reader Query:
 
@@ -1924,6 +1924,8 @@ tools:
 
 ```text
 cloud__resource__read
+cloud__events__list
+cloud__events__read
 inventory__query__item.read
 inventory__action__item.rename
 ```

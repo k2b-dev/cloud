@@ -11,6 +11,15 @@ export const readCatalogSubscriptions = async (): Promise<CatalogSubscription[]>
   return rows.map((row) => ({ ...row, firstSeenAt: row.firstSeenAt.toISOString() }));
 };
 
+export const readEventCatalogSubscriptions = async (type: string, version: number): Promise<CatalogSubscription[]> => {
+  const rows = await sql<(Omit<CatalogSubscription, "firstSeenAt"> & { firstSeenAt: Date })[]>`
+    SELECT app_id AS "appId", id AS "subscriptionId", event_type AS "eventType", version, state, reason,
+      first_seen_at AS "firstSeenAt" FROM events.app_subscriptions
+      WHERE event_type = ${type} AND version = ${version} ORDER BY id
+  `;
+  return rows.map((row) => ({ ...row, firstSeenAt: row.firstSeenAt.toISOString() }));
+};
+
 /** Callers filter persisted subscription states to applications their discovery surface may expose. */
 export const projectAppEventCatalog = (
   manifest: CapabilityManifest,

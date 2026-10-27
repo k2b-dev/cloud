@@ -5,7 +5,7 @@ section: Platform services
 order: 565
 description: Connect MCP clients to live Cloud capabilities and registered app Help.
 tags: [mcp, capabilities, help, oauth, agents]
-updated: 2026-10-20
+updated: 2026-10-27
 ---
 
 # Cloud MCP server
@@ -20,6 +20,8 @@ The endpoint projects the current runtime registry. It does not keep a second
 tool catalog:
 
 - every live Capability Query and Action is an MCP tool;
+- `cloud__events__list` and `cloud__events__read` expose declared event metadata,
+  data schemas, and discoverable subscribers;
 - `cloud__resource__read` resolves any readable typed resource ref through its
   current canonical Query;
 - every current registered Help document the caller's user may see is an MCP
@@ -103,6 +105,28 @@ article.
 An application registers Help once through `app.start({ help })`. Cloud uses
 the same hash-selected PostgreSQL collection for the shared Help UI, HTTP Help,
 Assistant, and MCP. See [In-product Help](/en/docs/platform/help).
+
+## Discover declared events
+
+Call `cloud__events__list` with optional `appId`, boolean `automation`,
+`cursor`, and `limit` (1–100, default 100). Its `{ events, nextCursor? }`
+response includes publisher `appId`, `type`, `version`, `title`, `description`,
+`subject`, `place` (Type ID or `null`), and `automation`. Continue with the
+returned cursor and the same filters; pages respect both count and response
+byte limits. A cursor from a different `appId` returns `VALIDATION_FAILED`.
+
+Pass an exact `{ type, version }` to `cloud__events__read`. Its `{ event }`
+response adds `dataSchema` and persisted `subscribers` with their app IDs,
+subscription IDs, states, reasons, and optional `firstSeenAt`. Reads of absent
+or undiscoverable declarations return `EVENT_NOT_FOUND`. A catalog lookup
+failure returns `APP_UNAVAILABLE`; reads whose schema and subscriber list exceed
+the response size limit return `RESPONSE_TOO_LARGE`.
+
+Both tools require OAuth `read` or `admin` scope and use the capability
+catalog's app access filter for publishers and subscribers. They read live,
+hash-checked declarations only. They do not observe events, create
+subscriptions, or install Routines. See [App events](/en/docs/platform/app-events#discover-event-declarations)
+for the catalog and CLI presentation.
 
 ## Authenticate
 
