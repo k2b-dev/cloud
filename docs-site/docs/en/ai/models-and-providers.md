@@ -119,12 +119,45 @@ The `vision` slot requires a chat model with vision capability. The `audio`
 slot requires a transcription model. These slots do not use class fallback.
 Use `none` in the CLI to empty a slot.
 
+## Update request settings and prices
+
+Inspect a model and its variants, then update only the fields you want to change:
+
+```bash
+cld admin ai models show local-chat --json
+cld admin ai models update local-chat --input-file model-patch.json --yes --json
+cld admin ai variants update local-chat:deep --input-file variant-patch.json --yes --json
+```
+
+A model patch can set shared prices or parameters:
+
+```json
+{ "pricing": { "inputPerMillion": 0.5, "outputPerMillion": 2 }, "extraBody": { "custom": true } }
+```
+
+A variant patch can set the thinking level and override parameters or prices:
+
+```json
+{ "reasoningEffort": "low", "extraBody": null, "pricing": null }
+```
+
+Only supplied fields change. JSON `null` clears an optional value; clearing a
+variant's prices restores its model's prices. Use the model ID alone to update
+its standard variant. Commands also accept `--input <json>` or `--stdin` and
+read the current model or variant revision before writing.
+
 ## Set the thinking level
 
 Set `reasoningEffort` on a variant. Chat uses that variant's setting. Structured
-tasks and compaction keep their task reasoning policy: low for OpenAI,
-OpenRouter, vLLM and OpenAI-compatible providers, none for Gemini, and provider
-defaults for the others. Provider-specific `extraBody` still applies.
+tasks and compaction keep
+their task reasoning policy: low for OpenAI, OpenRouter, vLLM and
+OpenAI-compatible providers, none for Gemini, and provider defaults for the
+others. Provider-specific `extraBody` still applies.
+
+Endpoint headers belong to provider connections. Configure them in administration
+or use `PUT /api/admin/core/ai/providers/{id}/headers` with the current provider
+`revision` and a `headers` patch. A string sets a header, `null` removes it, and
+omitted names keep their values. Reads expose names only.
 
 ## Change or remove configuration
 
