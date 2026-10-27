@@ -14,7 +14,7 @@ databaseSuite()("setting write versions", () => {
         const [editor] = await db<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name)
         VALUES(${crypto.randomUUID()},'local','user','Settings editor') RETURNING id`;
         if (!editor) throw new Error("Missing settings editor");
-        for (const key of ["ai.global_instructions", "ai.firecrawl_api_key"]) {
+        for (const key of ["ai.global_instructions", "ai.firecrawl_api_key", "legacy.setting_versions_fixture"]) {
           const encrypted = await encryptValue("Current value");
           const [row] = await db<{ updated_at: Date }[]>`INSERT INTO settings.entries(key,value,updated_at,updated_by)
           VALUES(${key},${encrypted},'2026-10-16T12:00:00Z',${editor.id}::uuid)
@@ -25,7 +25,7 @@ databaseSuite()("setting write versions", () => {
             key,
             changedBy: { id: editor.id, name: "Settings editor" },
             changedAt: "2026-10-16T12:00:00.000Z",
-            current: key === "ai.firecrawl_api_key" ? "" : "Current value",
+            current: key === "ai.global_instructions" ? "Current value" : "",
           });
           await expect(assertSettingVersions({ [key]: row?.updated_at.toISOString() ?? null }, db)).resolves.toBeUndefined();
         }
