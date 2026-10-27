@@ -253,16 +253,19 @@ function AddProviderDialog(props: { close: () => void }) {
                     />
                   </Show>
                   <div class="grid gap-1.5">
-                    <SegmentedControl
-                      class="w-auto"
-                      label={t().dataBoundary}
-                      value={boundary}
-                      onValueChange={setBoundary}
-                      options={[
-                        { value: "hosted", label: t().hosted, icon: "ti ti-world" },
-                        { value: "private", label: t().private, icon: "ti ti-lock" },
-                      ]}
-                    />
+                    <span class="text-sm font-medium">{t().dataBoundary}</span>
+
+                    <span class="inline-flex">
+                      <SegmentedControl
+                        ariaLabel={t().dataBoundary}
+                        value={boundary}
+                        onValueChange={setBoundary}
+                        options={[
+                          { value: "hosted", label: t().hosted, icon: "ti ti-world" },
+                          { value: "private", label: t().private, icon: "ti ti-lock" },
+                        ]}
+                      />
+                    </span>
                     <p class="text-xs text-(--k2b-text-muted)">
                       {boundary() === "private" ? t().boundaryHelpPrivate : t().boundaryHelpHosted}
                     </p>

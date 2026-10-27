@@ -507,7 +507,13 @@ export function AiAreaView(props: AiAreaViewProps) {
             id="detail"
             label={detailTitle()}
             description={detailDescription()}
-            actions={model || (query.pane === "conn" && providerDetail) ? <AiDetailActions enabled={Boolean(model)} test /> : undefined}
+            actions={
+              model || (query.pane === "conn" && providerDetail) ? (
+                <div class="hidden md:block">
+                  <AiDetailActions enabled={Boolean(model)} test />
+                </div>
+              ) : undefined
+            }
           >
             {detail()}
           </AppWorkspace.MainPane>

@@ -129,6 +129,13 @@ export default function AiClassDetail(props: {
       const found = find(id);
       return found ? [{ class: entry, name: found.model.label, icon: aiModelDisplayIcon(found.model.icon, found.provider) }] : [];
     });
+  /** People see this class when it has a model; an empty class is missing, so the card starts where people start. */
+  const previewClass = (): AiModelClass | null => {
+    const shown = stops();
+    const own = modelClass();
+    if (own && shown.some((stop) => stop.class === own)) return own;
+    return shown.find((stop) => stop.class === "balanced")?.class ?? shown[0]?.class ?? null;
+  };
   const usageRows = () => assignment().usage.filter((row) => row.class === props.slot);
   const nothing = () => props.models.length === 0;
 
@@ -260,7 +267,7 @@ export default function AiClassDetail(props: {
         <section class="grid gap-2">
           <h3 class="text-sm font-semibold">{t().clsPreview}</h3>
           <div class="max-w-[21.25rem] rounded-xl bg-(--k2b-surface-elevated) p-3 shadow-[0_0_0_1px_var(--k2b-border)]">
-            <AiModelCard stops={stops()} value={stops().some((stop) => stop.class === modelClass()) ? modelClass() : null} preview />
+            <AiModelCard stops={stops()} value={previewClass()} preview />
           </div>
         </section>
       </Show>

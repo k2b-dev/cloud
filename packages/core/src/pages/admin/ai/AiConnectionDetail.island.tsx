@@ -229,17 +229,20 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
           </div>
         </Show>
         <div class="grid gap-1.5">
-          <SegmentedControl
-            class="w-auto"
-            label={t().dataBoundary}
-            value={() => draft().dataBoundary}
-            onValueChange={(dataBoundary) => update({ dataBoundary })}
-            disabled={saving()}
-            options={[
-              { value: "hosted", label: t().hosted, icon: "ti ti-world" },
-              { value: "private", label: t().private, icon: "ti ti-lock" },
-            ]}
-          />
+          <span class="text-sm font-medium">{t().dataBoundary}</span>
+
+          <span class="inline-flex">
+            <SegmentedControl
+              ariaLabel={t().dataBoundary}
+              value={() => draft().dataBoundary}
+              onValueChange={(dataBoundary) => update({ dataBoundary })}
+              disabled={saving()}
+              options={[
+                { value: "hosted", label: t().hosted, icon: "ti ti-world" },
+                { value: "private", label: t().private, icon: "ti ti-lock" },
+              ]}
+            />
+          </span>
           <p class="text-xs text-(--k2b-text-muted)">
             {draft().dataBoundary === "private" ? t().boundaryHelpPrivate : t().boundaryHelpHosted}
           </p>

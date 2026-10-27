@@ -183,6 +183,7 @@ export default function AiModelDetail(props: {
   const [conflict, setConflict] = createSignal<AiAdminConflict<Detail> | null>(null);
   const [emojiAnchor, setEmojiAnchor] = createSignal<HTMLElement | null>(null);
   let emojiButton: HTMLButtonElement | undefined;
+  let segments: HTMLSpanElement | undefined;
   let fileInput: HTMLInputElement | undefined;
 
   const providerState = () => aiProviderState(props.provider);
@@ -417,8 +418,26 @@ export default function AiModelDetail(props: {
           <div class="grid gap-1.5">
             <span class="text-sm font-medium">{t().iconLabel}</span>
             <div class="flex flex-wrap items-center gap-3">
-              <AiModelIcon icon={aiModelDisplayIcon(draft().icon, providerMark())} size="md" />
-              <span class="inline-flex">
+              <Show
+                when={draft().icon.kind !== "provider"}
+                fallback={<AiModelIcon icon={aiModelDisplayIcon(draft().icon, providerMark())} size="md" />}
+              >
+                <button
+                  ref={emojiButton}
+                  type="button"
+                  class="rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--k2b-focus-ring)"
+                  aria-label={draft().icon.kind === "emoji" ? t().chooseEmoji : t().iconUpload}
+                  aria-haspopup={draft().icon.kind === "emoji" ? "dialog" : undefined}
+                  aria-expanded={draft().icon.kind === "emoji" ? emojiAnchor() !== null : undefined}
+                  onClick={(event) => {
+                    if (draft().icon.kind === "emoji") setEmojiAnchor(emojiAnchor() ? null : event.currentTarget);
+                    else fileInput?.click();
+                  }}
+                >
+                  <AiModelIcon icon={aiModelDisplayIcon(draft().icon, providerMark())} size="md" />
+                </button>
+              </Show>
+              <span class="inline-flex" ref={segments}>
                 <SegmentedControl
                   ariaLabel={t().iconLabel}
                   class="w-auto"
@@ -426,7 +445,7 @@ export default function AiModelDetail(props: {
                   value={() => draft().icon.kind}
                   onValueChange={(kind) => {
                     if (kind === "provider") update({ icon: { kind: "provider" } });
-                    if (kind === "emoji") setEmojiAnchor(emojiButton ?? null);
+                    if (kind === "emoji") setEmojiAnchor(segments ?? null);
                     if (kind === "image") fileInput?.click();
                   }}
                   options={[
@@ -436,19 +455,6 @@ export default function AiModelDetail(props: {
                   ]}
                 />
               </span>
-              <Button
-                ref={emojiButton}
-                type="button"
-                variant="secondary"
-                size="sm"
-                aria-haspopup="dialog"
-                aria-expanded={emojiAnchor() !== null}
-                class={draft().icon.kind === "emoji" ? "" : "invisible"}
-                onClick={(event) => setEmojiAnchor(emojiAnchor() ? null : event.currentTarget)}
-              >
-                <i class="ti ti-mood-smile" aria-hidden="true" />
-                {t().chooseEmoji}
-              </Button>
               <input
                 ref={fileInput}
                 type="file"
@@ -583,16 +589,20 @@ export default function AiModelDetail(props: {
               onValueChange={(providerModel) => update({ providerModel })}
               required
             />
-            <SegmentedControl
-              class="w-auto"
-              label={t().kind}
-              value={() => draft().kind}
-              onValueChange={(kind) => update({ kind })}
-              options={[
-                { value: "chat", label: t().kindChat, icon: "ti ti-message-2" },
-                { value: "transcription", label: t().kindAudio, icon: "ti ti-microphone" },
-              ]}
-            />
+
+            <span class="text-sm font-medium">{t().kind}</span>
+
+            <span class="inline-flex">
+              <SegmentedControl
+                ariaLabel={t().kind}
+                value={() => draft().kind}
+                onValueChange={(kind) => update({ kind })}
+                options={[
+                  { value: "chat", label: t().kindChat, icon: "ti ti-message-2" },
+                  { value: "transcription", label: t().kindAudio, icon: "ti ti-microphone" },
+                ]}
+              />
+            </span>
             <Show when={!audio()}>
               <div class="grid gap-2 sm:col-span-2">
                 <span class="text-sm font-medium">{t().caps}</span>
