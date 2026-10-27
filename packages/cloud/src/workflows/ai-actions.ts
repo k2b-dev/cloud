@@ -149,6 +149,7 @@ export const workflowAiActionCost = async (
 
 const planWorkflowAiAction = async (summary: string): Promise<WorkflowPlannedEffect> => ({
   summary,
+  outputUnavailable: true,
   issues: ["AI output is not available during a dry run."],
 });
 

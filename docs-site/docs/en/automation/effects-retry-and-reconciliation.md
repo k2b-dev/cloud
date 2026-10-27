@@ -5,7 +5,7 @@ section: Automation
 order: 710
 description: Make external side effects recoverable when workflow steps retry or workers crash.
 tags: [workflows, effects, retry]
-updated: 2026-08-05
+updated: 2026-10-27
 ---
 
 # Effects, retry, and reconciliation
@@ -134,6 +134,12 @@ Execution and dry runs use the same `cost()` hook. Execution never calls
 `plan()`. An omitted cost means no effect-budget charge; it does not skip
 authorization, validation, or journaling. Keep those checks in `run()` or
 `authorize()`. Synthetic preview outputs must say that they are planned.
+
+A planned outcome preserves `output`, including `null`. If `plan()` omits
+`output`, the outcome records `output: null`. When the value cannot be
+predicted, return `outputUnavailable: true` and explain why in `issues`.
+The shared AI actions use this flag so dependent values stay unknown during
+dry runs.
 
 Publication can set an `effectBudget`. The kernel charges the root run, so
 fan-out cannot multiply an allowed effect count. Each step is charged once: a

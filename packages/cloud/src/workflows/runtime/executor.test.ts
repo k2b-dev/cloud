@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { WorkflowBoundPlan, WorkflowDependency, WorkflowInvocation, WorkflowJsonValue } from "../contracts";
+import { workflowAction } from "../definition";
+import { defineWorkflowModule } from "../module";
+import { createWorkflowDryRunPort } from "../store/actions";
 import { dryRunWorkflowPlan, executeWorkflowPlan, WorkflowLeaseLostError } from "./executor";
 import type {
   WorkflowDryRunActionHandler,
@@ -481,6 +484,40 @@ describe("workflow runtime executor", () => {
     expect(executeCalls).toBe(0);
     expect(planCalls).toBe(1);
     expect(result).toEqual({ state: "planned", output: "predicted", effects: [effect] });
+  });
+
+  test.each([undefined, null])("a planned dry-run outcome keeps output: null when the planner returns %p", async (output) => {
+    const repository = new FakeRepository();
+    const module = defineWorkflowModule({
+      id: "test",
+      version: 1,
+      inputs: [],
+      triggers: [],
+      limits: { maxSteps: 1 },
+      actions: {
+        validate: workflowAction.idempotent({
+          label: "Validate",
+          description: "Plans a validation failure without an output.",
+          config: { kind: "object", properties: {} },
+          run: async () => {
+            throw new Error("dry runs must not execute actions");
+          },
+          plan: async () => ({ summary: "Invalid request", issues: ["Invalid request"], ...(output === undefined ? {} : { output }) }),
+        }),
+      },
+    });
+    await dryRunWorkflowPlan({
+      ...runtime,
+      plan: plan([{ kind: "action", action: "validate", config: {}, sourcePath: ["steps", 0] }]),
+      invocation: invocation("dryRun"),
+      repository,
+      actions: createWorkflowDryRunPort(module),
+    });
+
+    expect(repository.finished[0]?.result).toMatchObject({
+      mode: "dryRun",
+      outcome: { state: "planned", output: null, issues: [{ reason: "Invalid request" }] },
+    });
   });
 
   test("restores a completed action and lets its hook rebuild variable state", async () => {

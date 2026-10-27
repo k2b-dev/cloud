@@ -434,7 +434,7 @@ export const createWorkflowDryRunPort = (module: DefinedWorkflowModule): Workflo
           applySaveAs(ctx, step, (planned.output ?? undefined) as WorkflowJsonValue | undefined);
           return {
             state: "planned" as const,
-            ...(planned.output === undefined ? {} : { output: planned.output }),
+            ...(planned.outputUnavailable ? {} : { output: planned.output ?? null }),
             effects: [{ action: name, summary: planned.summary, ...(consumes ? { consumes } : {}) } as WorkflowJsonValue],
             // An issue names the step it belongs to, so the dry-run view can point
             // at what could not be determined rather than listing loose strings.
