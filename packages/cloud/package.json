@@ -68,6 +68,7 @@
     "./services/*": "./src/services/*",
     "./ai": "./src/ai/index.ts",
     "./ai/admin": "./src/ai/admin.ts",
+    "./ai/app-frame": "./src/ai/app-frame.ts",
     "./ai/browser": "./src/ai/browser.ts",
     "./ai/question-text": "./src/ai/question-text.ts",
     "./ai/live": "./src/ai/live.ts",

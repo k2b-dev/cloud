@@ -1627,6 +1627,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: visible;
 }
 
+/* Labels below columns keep their pixel distance from the axis; in a box shorter
+ * than the drawing they hang below it instead of crossing the axis. */
+.k2b-ui .k2b-chart__svg > svg[data-bar-layout="columns"] {
+  overflow: visible;
+}
+
+/* Horizontal bar rows keep their own height: one row per category never shrinks
+ * below its text. A shorter box scrolls; a taller one leaves room below. */
+.k2b-ui .k2b-chart:has(> .k2b-chart__svg > svg[data-bar-layout="rows"]) {
+  overflow-y: auto;
+}
+.k2b-ui .k2b-chart__svg:has(> svg[data-bar-layout="rows"]) {
+  flex: none;
+  height: var(--k2b-chart-height);
+}
+
 /* Labels and guide strokes leave hit testing to the data geometry below. */
 .k2b-ui .k2b-chart[data-interactive] .k2b-chart__svg :is(.stdlib-chart-heatmap-label, .stdlib-chart-box-median, .stdlib-chart-box-whisker, .stdlib-chart-box-cap) {
   pointer-events: none;
@@ -1665,11 +1681,25 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: inherit;
 }
 
+/* Axis and value text uses the UI font; tabular figures keep numbers aligned. */
 .k2b-ui .k2b-chart .stdlib-chart-tick-label,
 .k2b-ui .k2b-chart .stdlib-chart-bar-value,
 .k2b-ui .k2b-chart .stdlib-chart-axis-label {
-  font-family: var(--k2b-font-mono);
+  font-family: var(--k2b-font-sans);
   font-variant-numeric: tabular-nums;
+}
+
+/* Category labels and printed values read like text, not like recessive ticks. */
+.k2b-ui .k2b-chart .stdlib-chart-category-label {
+  font-size: 11px;
+  opacity: 0.8;
+}
+.k2b-ui .k2b-chart .stdlib-chart-bar-value {
+  font-size: 11px;
+  opacity: 0.9;
+}
+.k2b-ui .k2b-chart .stdlib-chart-axis-label {
+  font-weight: 500;
 }
 
 .k2b-ui .k2b-chart .stdlib-chart a {
