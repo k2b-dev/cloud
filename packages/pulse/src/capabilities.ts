@@ -460,12 +460,14 @@ export const pulseCapabilities = defineCapabilities({
       description: "A permission-scoped Pulse telemetry workspace.",
       icon: "ti ti-activity-heartbeat",
       reader: "base.read",
+      pages: ["/app/pulse/:id"],
     },
     source: {
       title: "Pulse Source",
       description: "A telemetry source and its current ingest or scrape health.",
       icon: "ti ti-plug",
       reader: "source.read",
+      pages: ["/app/pulse/:base/sources/:id"],
     },
   },
   queries: {

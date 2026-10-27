@@ -368,3 +368,26 @@ test("generic CLI review returns the complete unsaved proposal without executing
   expect(calls).toEqual(["/api/capabilities/v1/actions/demo/write/review"]);
   expect(lines.map((line) => JSON.parse(line))).toEqual([review]);
 });
+
+test.each(["text", "json", "jsonl"] as const)(
+  "resolve prints the authorized identity, title and absolute permalink in %s",
+  async (output) => {
+    const result = { ref: { type: "demo.item", id: "a/b" }, title: "Item", href: "/app/demo/a%2Fb" };
+    const { ctx, lines } = createContext(["resolve", "https://cloud.test/app/demo/a%2Fb"], {}, async (path, init) => {
+      expect(path).toBe("/api/resources/resolve");
+      expect(init?.method).toBe("POST");
+      expect(JSON.parse(String(init?.body))).toEqual({ url: "https://cloud.test/app/demo/a%2Fb" });
+      return Response.json(result);
+    });
+    ctx.options.output = output;
+    await capabilitiesCliModule.run(ctx);
+    expect(JSON.parse(lines.join("\n"))).toEqual({ ...result, permalink: "http://cloud.test/open/demo.item/~a%2Fb" });
+  },
+);
+
+test("resolve reports the same failure for inaccessible resources without echoing the URL", async () => {
+  const { ctx } = createContext(["resolve", "https://foreign.example/private"], {}, async () =>
+    Response.json({ error: "Resource not found" }, { status: 404 }),
+  );
+  await expect(capabilitiesCliModule.run(ctx)).rejects.toThrow("Resource not found.");
+});
