@@ -1,4 +1,4 @@
-import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
+import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { query } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -357,6 +357,16 @@ export default function FileInspector(props: {
                           { term: f().modified, description: <Format.DateTime value={item().modified} /> },
                         ]}
                       />
+                      <Show when={cloudId.available() && entryRef(item())}>
+                        {(ref) => (
+                          <DetailPanel.Action
+                            type="button"
+                            leading={<i class="ti ti-copy" aria-hidden="true" />}
+                            title={cloudIdMessages.resolve([locale()]).t.copy}
+                            onClick={() => cloudId.copy(ref())}
+                          />
+                        )}
+                      </Show>
                     </DetailPanel.Section>
                   </DetailPanel.Group>
                 </DetailPanel.Body>

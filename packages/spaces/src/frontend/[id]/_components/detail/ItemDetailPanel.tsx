@@ -1,4 +1,4 @@
-import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
+import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
@@ -1216,6 +1216,14 @@ export default function ItemDetailPanel(props: Props) {
                   { term: "ID", description: <span class="break-all font-mono text-dimmed">{props.item.id}</span> },
                 ]}
               />
+              <Show when={cloudId.available()}>
+                <DetailPanel.Action
+                  type="button"
+                  leading={<i class="ti ti-copy" aria-hidden="true" />}
+                  title={cloudIdMessages.resolve([locale()]).t.copy}
+                  onClick={() => cloudId.copy({ type: "spaces.item", id: props.item.id })}
+                />
+              </Show>
             </DetailPanel.Section>
           </DetailPanel.Group>
         </DetailPanel.Body>
