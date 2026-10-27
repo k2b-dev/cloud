@@ -196,9 +196,8 @@ export default function RecordComments(props: Props) {
 
   return (
     <DetailPanel.Group label={t().recordComments}>
-      <DetailPanel.Section
-        title={props.title ?? t().comments}
-        icon="ti ti-messages"
+      <Discussion
+        label={props.title ?? t().comments}
         count={comments().length}
         actions={
           permissions().canWrite && !composerOpen() ? (
@@ -210,6 +209,7 @@ export default function RecordComments(props: Props) {
       >
         <div class="flex min-w-0 flex-col gap-3">
           <Discussion.List
+            fold={3}
             loading={loading() && comments().length === 0}
             loadingLabel={t().loadingComments}
             error={error()}
@@ -335,7 +335,7 @@ export default function RecordComments(props: Props) {
             />
           </Show>
         </div>
-      </DetailPanel.Section>
+      </Discussion>
     </DetailPanel.Group>
   );
 }

@@ -121,7 +121,7 @@ These single-key shortcuts stay inactive while you type in a field or editor. Cl
 
 ## Claim a task and hand it over {icon="notes"}
 
-Tasks can carry a progress note and a completion result. The task details show them as **Latest status** and **Last result**, below the **Assigned** list. Reopening a task keeps the last result.
+Tasks can carry a progress note and a completion result. The task details show them as **Latest status** and **Last result**, below the checklist. Reopening a task keeps the last result.
 
 Choose **I'm on it** on a board card or in the task details to claim a task. Choose **Release** to release the claim. In the details, you can leave a short handoff note when you release it.
 
@@ -129,7 +129,7 @@ While a task is claimed, other people see who works on it:
 
 - Board cards, list rows, and table cells show the working person first in the avatar stack with a green ring. They appear once and never in the `+N` overflow.
 - The **In progress** filter lists claimed tasks.
-- In the details, **Assigned** is one list. The working person's row comes first with the green ring, **working on it**, and the time they started working.
+- In the details, the **Assigned** row under **Properties** lists everyone assigned. The working person comes first with the green ring, **working on it**, and the time they started working.
 
 A holder outside the assignees, such as a personal automation key or an account that was deleted, still appears first as a working row. This row has no remove action.
 

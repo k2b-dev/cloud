@@ -546,7 +546,10 @@ that now shows the selection so the workspace can reveal it and return focus.
 F6 switches between the remembered item and the Detail title. Keyboard
 selection also waits for a title that arrives after loading. Pointer selection
 focuses the title only on phones. Closing returns focus to the remembered item
-when focus was inside the Detail. The application owns `open`.
+when focus was inside the Detail. Open menus and dialogs keep the workspace
+keys; passive tooltips allow J, K and F6. Tooltip and reaction hints handle Escape
+first to dismiss themselves.
+The application owns `open`.
 
 Use `scrollClass="k2b-detail-trail"` on DataTable to preserve its column widths
 beside Detail. Mark a board's horizontal scroller with `k2b-detail-trail` too.

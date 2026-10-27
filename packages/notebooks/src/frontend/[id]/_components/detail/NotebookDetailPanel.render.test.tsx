@@ -140,6 +140,48 @@ describe("Notebook note detail panel", () => {
       expect(rows.some((row) => /\bH[1-6]\b/.test(text(row)))).toBe(false);
     });
   });
+  test("follows the shared outline: kind line, no section icons, activity under Mehr zu dieser Notiz", () => {
+    inspect({}, (document) => {
+      expect(text(document.querySelector(".k2b-detail-panel__kind"))).toBe("Notiz");
+      expect(document.querySelector(".k2b-detail-panel__header-icon")).toBeNull();
+      expect(document.querySelector(".k2b-detail-panel__section-icon, .k2b-discussion__icon")).toBeNull();
+      // "More actions" sits in the action row beside Ansicht; the header's trailing slot keeps only Close.
+      expect(document.querySelector('.k2b-detail-panel__primary-actions [role="menu"][aria-label="Weitere Aktionen"]')).not.toBeNull();
+      const group = document.querySelector(".k2b-detail-panel__group-title")?.closest(".k2b-detail-panel__group");
+      expect(text(group?.querySelector(".k2b-detail-panel__group-title") ?? null)).toBe("Mehr zu dieser Notiz");
+      expect(group?.querySelector(".notebook-activity")).not.toBeNull();
+      // Closed, the activity says in one line what it holds: here the note's creation, before the log has loaded.
+      const summary = group?.querySelector(".notebook-activity .k2b-detail-panel__section-summary");
+      expect(summary?.getAttribute("aria-expanded")).toBe("false");
+    });
+  });
+  test("attachments are a short file list: kind and size, files before images", () => {
+    const attachment = (id: string, filename: string, mimeType: string) => ({
+      id,
+      kind: mimeType.startsWith("image/") ? ("image" as const) : ("file" as const),
+      filename,
+      mimeType,
+      sizeBytes: 4_400_000,
+      notebookId: "book01",
+      createdBy: null,
+      createdAt: created,
+    });
+    inspect(
+      {
+        attachments: [
+          attachment("img001", "Rampe.png", "image/png"),
+          attachment("pdf001", "Lieferschein.pdf", "application/pdf"),
+          attachment("xls001", "Bestand.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        ],
+      },
+      (document) => {
+        const names = [...document.querySelectorAll(".k2b-file-grid__name")].map((name) => text(name));
+        expect(names).toEqual(["Lieferschein.pdf", "Bestand.xlsx", "Rampe.png"]);
+        expect(text(document.querySelector(".k2b-file-grid__meta"))).toBe("PDF · 4,2 MB");
+        expect(document.querySelector('.k2b-file-grid a[href="/api/notebooks/book01/attachments/pdf001/content?v=1"]')).not.toBeNull();
+      },
+    );
+  });
   test("activity has no count and ends with the creator rather than a raw key", () => {
     inspect({}, (document) => {
       const activity = document.querySelector(".notebook-activity");
