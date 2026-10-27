@@ -41,8 +41,14 @@
  */
 import { afterAll, beforeAll, describe, test } from "bun:test";
 import { SQL, sql } from "bun";
-import { closeMigratedDatabaseTemplate, migratedDatabaseTemplate, quoteTestDatabase } from "./test-database-template";
-import { applyTestRuntimeEnv, dotenvLeak, type InfraKind, infraMappings as mappings, readTestTarget } from "./test-infra-env";
+import {
+  applyTestRuntimeEnv,
+  dotenvLeak,
+  type InfraKind,
+  infraMappings as mappings,
+  quoteTestDatabase,
+  readTestTarget,
+} from "./test-infra-env";
 import { connectTestNats } from "./test-nats";
 
 export type { InfraKind } from "./test-infra-env";
@@ -232,13 +238,18 @@ export const useFreshDatabase = async (prefix: string): Promise<{ url: string; n
 };
 
 const migratedDatabaseUrls = new Set<string>();
+// Unit tests and their subprocesses preload this gate without needing workspace discovery.
+let databaseTemplate: Promise<typeof import("./test-database-template")> | undefined;
 
 /** Whether the currently selected database was cloned with all production schemas. */
 export const usesMigratedDatabase = (): boolean => migratedDatabaseUrls.has(process.env.DATABASE_URL ?? "");
 
 /** A private clone of all migrated Core and application schemas, without replaying setup. */
 export const createMigratedDatabase = async (prefix: string) => {
-  const database = await createDisposableDatabase(prefix, await migratedDatabaseTemplate(requireDatabaseUrl()));
+  const target = requireDatabaseUrl();
+  databaseTemplate ??= import("./test-database-template");
+  const { migratedDatabaseTemplate } = await databaseTemplate;
+  const database = await createDisposableDatabase(prefix, await migratedDatabaseTemplate(target));
   migratedDatabaseUrls.add(database.url);
   return database;
 };
@@ -292,7 +303,9 @@ if (testInfra.nats) {
 }
 
 try {
-  afterAll(closeMigratedDatabaseTemplate);
+  afterAll(async () => {
+    if (databaseTemplate) await (await databaseTemplate).closeMigratedDatabaseTemplate();
+  });
 } catch {
   // Bootstrap scripts outside bun test close their lease explicitly.
 }

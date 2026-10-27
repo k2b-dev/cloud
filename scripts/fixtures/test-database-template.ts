@@ -4,14 +4,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { SQL } from "bun";
 import { packageIds, workspaceRoot } from "../workspace";
+import { quoteTestDatabase } from "./test-infra-env";
 
-/** Validate before SQL interpolation, including PostgreSQL's identifier truncation boundary. */
-export const quoteTestDatabase = (name: string): string => {
-  if (!name.endsWith("_test") || Buffer.byteLength(name) > 63 || name.includes("\0")) {
-    throw new Error("Integration database names must end in _test and fit within 63 bytes");
-  }
-  return `"${name.replaceAll('"', '""')}"`;
-};
+export { quoteTestDatabase } from "./test-infra-env";
 
 /**
  * Hash runtime sources and assets, not a hand-maintained list of migration files:
