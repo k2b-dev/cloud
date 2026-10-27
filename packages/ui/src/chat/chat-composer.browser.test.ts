@@ -24,6 +24,9 @@ const [items, setItems] = createSignal(
   Array.from({ length: 40 }, (_, index) => ({ id: "m" + index, text: "Message " + (index + 1) + " in the conversation" })),
 );
 const [draft, setDraft] = createSignal("");
+const [mentions, setMentions] = createSignal([]);
+window.mentions = () => mentions();
+const PEOPLE = [{ id: "u-mara", name: "Mara Schulz" }, { id: "u-max", name: "Max Weber" }, { id: "a-monitor", name: "Monitor", agent: true }];
 const [hint, setHint] = createSignal(undefined);
 const [dictation, setDictation] = createSignal(null);
 window.sent = [];
@@ -96,6 +99,13 @@ render(
               return draft();
             },
             onValueChange: setDraft,
+            get mentions() {
+              return options.people ? mentions() : undefined;
+            },
+            onMentionsChange: options.people ? setMentions : undefined,
+            people: options.people
+              ? { search: async (query) => PEOPLE.filter((person) => person.name.toLowerCase().split(" ").some((word) => word.startsWith(query.toLowerCase()))) }
+              : undefined,
             onSubmit: ({ text }) => {
               window.sent.push(text);
               setItems((current) => [...current, { id: "s" + current.length, text }]);
@@ -188,6 +198,8 @@ const open = async (
     dark?: boolean;
     submitDelay?: number;
     attach?: "files" | "menu" | "none";
+    /** Suggests three people after "@". */
+    people?: boolean;
   } = {},
   context: BrowserContextOptions = {},
 ): Promise<Page> => {
@@ -323,6 +335,38 @@ const formatButtons = (page: Page) =>
   });
 
 describe(`conversation ChatComposer in ${browserName}`, () => {
+  test("@ suggests people, keeps mail addresses alone, and inserts the chosen person as one mention", async () => {
+    const page = await open({ people: true });
+    try {
+      const field = page.locator("textarea").first();
+      await field.click();
+      await page.keyboard.type("mail@example ");
+      await frames(page, 2);
+      expect(await page.locator('[role="listbox"][aria-label="People"]').count()).toBe(0);
+      await page.keyboard.type("Hi @ma");
+      const list = page.locator('[role="listbox"][aria-label="People"]');
+      await list.waitFor();
+      expect(await list.getByRole("option").allInnerTexts()).toEqual(["Mara Schulz", "Max Weber"]);
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await list.waitFor({ state: "detached" });
+      expect(await field.inputValue()).toBe("mail@example Hi @Max Weber ");
+      const mentions = await page.evaluate(() =>
+        window.mentions().map((mention) => ({ start: mention.start, end: mention.end, id: mention.attachment.id })),
+      );
+      expect(mentions).toEqual([{ start: 16, end: 26, id: "u-max" }]);
+      // Escape closes the list until the next change; an agent says so.
+      await page.keyboard.type("@mo");
+      await list.waitFor();
+      expect(await list.getByRole("option").first().innerText()).toContain("Agent");
+      await page.keyboard.press("Escape");
+      await list.waitFor({ state: "detached" });
+      expect(await field.inputValue()).toBe("mail@example Hi @Max Weber @mo");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("starts with one line and grows to a third of its container, without collapsing or moving the newest message", async () => {
     const page = await open();
     const field = page.locator("textarea").first();
@@ -753,6 +797,8 @@ declare global {
     pops: string[];
     /** The text of every submission. */
     sent: string[];
+    /** The composer's current mentions with the `people` option. */
+    mentions: () => { start: number; end: number; attachment: { id: string } }[];
   }
 }
 

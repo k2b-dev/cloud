@@ -227,8 +227,8 @@ jobs:
   # The browser tests again in WebKit, the engine of Safari and of every
   # browser on iOS. The Playwright image of the catalog's version serves it
   # through `playwright run-server`; contributing/testing.md runs the same
-  # locally. Measured maxima include completed suites from failed run
-  # 40533200164: 10 shards need 13.6 min; 9 need 15.1 min after rebalancing.
+  # locally. Measured maxima include failed run 40533200164 and the five Mail
+  # shell files from 40561248493: 10 shards need 13.7 min; 9 need 15.2 min.
   # The runner tests enforce the 15-minute prediction for every heavy matrix.
   # The 20-min guard reserves the last third for setup and finalization;
   # strategy.job-total is the divisor.

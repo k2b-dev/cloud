@@ -5468,6 +5468,22 @@ test("sender commands cover preview and durable existing-message backfills", asy
   expect(requests[4]?.body).toEqual({ expectedRevision: 3, operationId: expect.any(String), retryFailed: true });
   expect(retried.stdout).toContain("Started retry backfill ");
   expect(retried.stdout).toContain("for 6 messages whose last run failed or was canceled.");
+  const recomputed = await runCli(origin, [
+    "mail",
+    "automation",
+    "backfill",
+    "start",
+    INCOMING_AUTOMATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+    "--revision",
+    "3",
+    "--retry-failed",
+    "--recompute-ai",
+    "--yes",
+  ]);
+  expect(recomputed.exitCode).toBe(0);
+  expect(requests[5]?.body).toEqual({ expectedRevision: 3, operationId: expect.any(String), retryFailed: true, recomputeAi: true });
   for (const state of ["limited", "completed"] as const) {
     retryStatus = state;
     const retry = await runCli(origin, [

@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-26
+updated: 2026-10-27
 ---
 
 # App capabilities
@@ -525,6 +525,46 @@ Type and ID. A CLI must omit a canonical link if its reader requires access the
 caller lacks. Published Grids app commands add no permalinks: projections can
 be accessible without Base access, but canonical readers require it.
 See [CLI modules](/en/docs/platform/cli-modules).
+
+### Declare pages for pasted links
+
+Add `pages` to a Type with a canonical reader so Cloud can recognize a pasted
+application page as that resource:
+
+```ts
+types: {
+  note: {
+    title: "Note",
+    description: "A note in a notebook.",
+    reader: "note.read",
+    pages: ["/app/inventory/:notebook/notes/:id"],
+  },
+},
+```
+
+Each Type accepts up to eight patterns, each at most 300 characters. Exactly
+one `:id` captures the reader's ID, as a whole path segment or query value
+(`"/app/inventory/:notebook?note=:id"`). Other `:name` captures match one
+non-empty segment or query value. Literal segments and values must match
+exactly. Captures are percent-decoded once; malformed escapes are rejected.
+All listed query keys must occur once. Extra query keys, a trailing slash,
+and fragments do not affect matching.
+
+The match with the most required query keys wins, then the most literal path
+segments. Equal best matches for different refs return no result. This lets
+an item query override its containing page without guessing between items.
+
+Every pattern must lie under one of the app's declared route prefixes.
+Startup validates this, and Core rechecks the live registration. The gateway's
+`/app/<id>` ownership and more specific live route owners also apply; an
+ancestor prefix cannot capture another app's pages. Pages only
+identify a candidate: Core invokes its reader with the caller's authority.
+Unknown, missing, forbidden, and unavailable resources all return the same
+result, so pasted links cannot bypass authorization or reveal existence.
+See [Recognize a pasted Cloud link](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link).
+For declaration tests, pass your route prefixes as the third argument to
+`compileCapabilityManifest(appId, capabilities, routes)`; without them the
+helper checks syntax and reader contracts only.
 
 ### Test resource links
 
@@ -1373,6 +1413,10 @@ come from a newer Cloud release than the code that reads it. Every reader in
   whole, and Core logs it with the left-out entries. Whether its operations
   exist and match the contract is checked by `fileProviderIssues`; see
   [File providers](/en/docs/platform/file-providers#understand-compatibility).
+- Optional top-level `resourcePages` contains `{ type: "localId", path }`
+  entries. Older releases ignore it and retain the Types and readers. Newer
+  readers omit invalid entries and pages whose Type or reader is unavailable;
+  Core also omits pages outside the app's registered prefixes.
 - Core ignores presentation fields it does not know and skips translations of
   left-out entries; the remaining translations still apply.
 - A manifest with a different `protocolVersion` is not read at all. Core also

@@ -430,6 +430,7 @@ export const ActivityDataSchema = z
       actor: z.strictObject({ type: z.enum(["user", "service_account", "system"]), id: z.uuid().nullable(), name: z.string().max(1000) }),
       icon: z.string().max(80),
       sentence: z.string().max(4000),
+      href: CapabilitySemanticLinkSchema.shape.href.optional(),
       count: z.number().int().min(1),
     }),
   )

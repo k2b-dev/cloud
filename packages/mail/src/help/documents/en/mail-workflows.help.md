@@ -623,3 +623,34 @@ cld admin workflows events --app mail
 `cld admin workflows cancel <run-id> --yes` prevents later effects but does not undo completed work. Resolve an uncertain external result only after you have checked it at the provider. Then record that decision with `cld admin workflows resolve`.
 
 For setup tasks and operational consequences, see [Automate responses and mailbox work](/app/mail/help/mail-automation).
+
+## Request an AI summary in the reader
+
+The conversation reader can continue or rewrite a summary. These requests use
+your own Assistant allowance. They do not use an automation's daily limit.
+You need the same access as for editing the summary. If your
+allowance is used up, the request leaves the conversation unchanged.
+
+The summary shows who wrote it and marks AI text. It can include a next step
+and a date explicitly mentioned in the mail. Editing the text clears that
+suggestion and protects your words from later automation. Clearing the summary
+also protects it until you explicitly ask AI to write again. A rule skips a
+protected summary with `edited_by_person`. A person can explicitly ask AI to
+continue or rewrite it again.
+
+The summary service bundles automatic requests for the same conversation for
+60 seconds after the latest request. The pending request survives a restart.
+While AI is writing, another request reuses that work. New replies can produce
+one further bundled update. The reader shows waiting, writing, failure and
+daily-limit states. Failed requests can be retried manually.
+
+AI receives at most 20,000 source characters, or the lower operator-configured
+Mail workflow AI text budget. Quotes and signatures are removed. When the
+conversation is longer, the newest messages that fit are used. The reader
+shows how many messages were covered and when newer messages arrived.
+
+Automatic summary requests reserve their call before changing content. A
+source or mailbox daily limit pauses new work until midnight in the
+installation time zone. The summary text and its revision stay unchanged.
+Costs remain in Cloud's central AI accounting. This service does not add a
+workflow YAML action or a new YAML budget format.

@@ -6,7 +6,9 @@ import {
   ButtonLink,
   Chat,
   type ChatAttachment,
+  type ChatComposerPeople,
   type ChatComposerReply,
+  type ChatMention,
   EmojiPicker,
   IconButtonLink,
   MessageEventGroup,
@@ -25,9 +27,9 @@ import {
   VirtualFeed,
   type VirtualFeedController,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { chatMessages } from "../messages";
-import { MAX_MESSAGE_REFS } from "../service/contracts";
+import { MAX_MESSAGE_REFS, type Mention } from "../service/contracts";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
 import { dayLabel, messageTime, sameDay } from "./chat-format";
 import { followVisualViewport } from "./follow-viewport";
@@ -42,6 +44,8 @@ export type ChatFeedItem = {
   kind: "text" | "system" | "event" | "eventGroup";
   /** An event's icon. */
   icon?: string;
+  /** Optional owning-app path to the passage or resource described by an event. */
+  href?: string;
   /** A group of three or more events in a row: its line, and whether its events show below it. */
   group?: { label: string; time: string; expanded: () => boolean; toggle: () => void };
   authorId: string;
@@ -120,7 +124,9 @@ export type ChatConversationProps = {
   notice?: JSX.Element;
   draft: string;
   onDraftChange: (value: string) => void;
-  onSend: (text: string, refs: readonly CloudResourceRef[]) => boolean | Promise<boolean>;
+  onSend: (text: string, refs: readonly CloudResourceRef[], mentions: readonly Mention[]) => boolean | Promise<boolean>;
+  /** Suggests the people "@" can mention in this chat. */
+  people?: ChatComposerPeople;
   /** Reads shared elements for their cards; missing on the server, where cards show their placeholder. */
   cards?: ResourceCards;
   /** "Share a Cloud element" in the composer's add menu: picks one, or null when the reader cancels. */
@@ -161,13 +167,35 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   const [emojiTarget, setEmojiTarget] = createSignal<{ anchor: HTMLElement; insert: (text: string) => void }>();
   // Elements picked for the next message; they belong to the draft they were picked for.
   const [shared, setShared] = createSignal<readonly ChatAttachment[]>([]);
+  // People mentioned in the draft; their identity travels as "type:id" in the composer's mention.
+  const [mentions, setMentions] = createSignal<readonly ChatMention[]>([]);
+  // Each draft keeps its mentions while the reader looks at another thread; coming back restores the ones whose name
+  // still stands where it was in the restored text.
+  const draftMentions = new Map<string, readonly ChatMention[]>();
   createEffect(
     on(
       () => props.draftKey ?? props.chatId,
-      () => setShared([]),
+      (key, previous) => {
+        if (previous !== undefined) draftMentions.set(previous, untrack(mentions));
+        setShared([]);
+        setMentions([]);
+        const saved = draftMentions.get(key) ?? [];
+        draftMentions.delete(key);
+        if (saved.length)
+          queueMicrotask(() =>
+            setMentions(saved.filter((mention) => props.draft.slice(mention.start, mention.end) === mention.attachment.name)),
+          );
+      },
       { defer: true },
     ),
   );
+  const mentionsOf = (list: readonly ChatMention[]): Mention[] =>
+    list.flatMap((mention) => {
+      const [type, id] = mention.attachment.id.split(":");
+      return (type === "user" || type === "service_account") && id
+        ? [{ start: mention.start, end: mention.end, principal: { type, id } }]
+        : [];
+    });
   const pickResource = async () => {
     // The server takes at most this many elements per message; the reader learns it before picking more.
     if (shared().length >= MAX_MESSAGE_REFS) {
@@ -400,7 +428,13 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               onToggle={item.group.toggle}
             />
           ) : item.kind === "event" ? (
-            <MessageEventRow icon={item.icon} origin={item.origin} time={messageTime(item.at, config())} dateTime={item.at}>
+            <MessageEventRow
+              icon={item.icon}
+              origin={item.origin}
+              href={item.href}
+              time={messageTime(item.at, config())}
+              dateTime={item.at}
+            >
               {item.body}
             </MessageEventRow>
           ) : item.kind === "system" ? (
@@ -515,11 +549,17 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             variant="conversation"
             value={props.draft}
             onValueChange={props.onDraftChange}
-            onSubmit={async ({ text, attachments }) => {
-              const sent = await props.onSend(text, refsOf(attachments));
-              if (sent) setShared([]);
+            onSubmit={async ({ text, attachments, mentions: typed }) => {
+              const sent = await props.onSend(text, refsOf(attachments), mentionsOf(typed ?? []));
+              if (sent) {
+                setShared([]);
+                setMentions([]);
+              }
               return sent;
             }}
+            mentions={mentions()}
+            onMentionsChange={setMentions}
+            people={props.people}
             attachments={shared()}
             onAttachmentsChange={setShared}
             menuActions={

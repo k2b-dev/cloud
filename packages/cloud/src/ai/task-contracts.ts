@@ -20,6 +20,7 @@ const structuredField = z
     required: z.boolean().default(true),
     choices: z.array(choice).min(1).max(50).optional(),
     maxLength: z.number().int().min(1).max(20_000).optional(),
+    minLength: z.number().int().min(1).max(20_000).optional(),
   })
   .strict()
   .superRefine((field, ctx) => {
@@ -27,6 +28,8 @@ const structuredField = z
       ctx.addIssue({ code: "custom", path: ["choices"], message: "Enum fields require choices." });
     if (field.type !== "enum" && field.choices)
       ctx.addIssue({ code: "custom", path: ["choices"], message: "Choices are only valid for enum fields." });
+    if (field.minLength !== undefined && (field.type !== "text" || field.minLength > (field.maxLength ?? 20_000)))
+      ctx.addIssue({ code: "custom", path: ["minLength"], message: "minLength requires a text field and cannot exceed maxLength." });
     if (field.type !== "text" && field.maxLength)
       ctx.addIssue({ code: "custom", path: ["maxLength"], message: "maxLength is only valid for text fields." });
   });
@@ -82,3 +85,19 @@ export const AiTaskRequestSchema = z.discriminatedUnion("kind", [
 
 export type AiTaskRequest = z.infer<typeof AiTaskRequestSchema>;
 export type AiTaskRequestInput = z.input<typeof AiTaskRequestSchema>;
+
+/** Existing durable task storage contract; measured in UTF-8 bytes, not characters. */
+export const AI_TASK_REQUEST_MAX_BYTES = 100_000;
+export class AiTaskInputTooLargeError extends Error {
+  readonly code = "WORKFLOW_AI_INPUT_TOO_LARGE";
+  readonly retryable = false;
+  constructor() {
+    super(
+      "AI input exceeds the 100,000-byte task budget. Narrow the supplied content or inspect the original source manually; nothing was truncated.",
+    );
+  }
+}
+
+export const assertAiTaskRequestSize = (request: unknown): void => {
+  if (Buffer.byteLength(JSON.stringify(request), "utf8") > AI_TASK_REQUEST_MAX_BYTES) throw new AiTaskInputTooLargeError();
+};
