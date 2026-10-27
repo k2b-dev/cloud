@@ -4,7 +4,7 @@ import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
-import { FileDropTarget, NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
+import { FileDropTarget, NoticeCard, personColor, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
 import { createCodeMirror } from "solid-codemirror";
 import { type Accessor, createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
@@ -26,7 +26,7 @@ import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
 import { remoteCursors } from "../../../lib/editor/remote-cursors";
 import { pressMissedEditor } from "../../../lib/editor/surface-press";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
-import { getNotebookPresenceColor, yjs } from "../../../lib/yjs";
+import { yjs } from "../../../lib/yjs";
 import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { applyToYText, changesBetween, rebaseOnto } from "../../../lib/yjs/lazy-collab";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -444,7 +444,7 @@ function EditorInstance(
   let baseText = (props.initialContent ?? "").replace(/\r\n?/g, "\n");
   const awareness = new Awareness(doc);
 
-  const color = getNotebookPresenceColor(props.userId);
+  const color = personColor(props.displayName);
   awareness.setLocalStateField("user", { userId: props.userId, name: props.displayName, color });
 
   const {

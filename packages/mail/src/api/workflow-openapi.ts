@@ -26,7 +26,21 @@ const workflowConditionJsonSchema = {
     {
       type: "object",
       properties: {
-        operator: { enum: ["equals", "notEquals", "contains", "startsWith", "endsWith"] },
+        operator: {
+          enum: [
+            "equals",
+            "notEquals",
+            "includes",
+            "textEquals",
+            "contains",
+            "startsWith",
+            "endsWith",
+            "greaterThan",
+            "lessThan",
+            "atLeast",
+            "atMost",
+          ],
+        },
         operands: {
           type: "array",
           minItems: 2,
