@@ -98,7 +98,6 @@ export * from "./access";
 export * from "./address";
 export { createAppAccessCommands } from "./app-access";
 export * from "./commands";
-export { default as eventsCliModule } from "./events";
 export * from "./locale";
 export * from "./output";
 export * from "./plugin";

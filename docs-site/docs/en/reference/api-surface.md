@@ -377,6 +377,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/styles/global.css` | Supported asset | Alias for the global stylesheet | [Styling](/en/docs/frontend/styling-and-accessibility) |
 | `@k2b/cloud/cli/access` | Supported | Resource access commands | [CLI modules](/en/docs/platform/cli-modules) |
 | `@k2b/cloud/cli/capabilities` | Platform-owned | Built-in generic capability client | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/cli/events` | Platform-owned | Built-in app event commands | [App events](/en/docs/platform/app-events) |
 | `@k2b/cloud/capabilities` | Supported, browser | Runtime-validated capability clients, `readCapabilityReviewContent`, and typed `actionReview` builder | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability clients and typed `actionReview` builder; `listCalendarSources(credentials, { deadline, signal? })`, `readCalendarEvents({ credentials, calendars, from, to, deadline, signal?, onSource? })`, and `listCapabilityCatalog({ caller, cursor?, limit? })` read a caller's calendar sources | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/store` | Platform-owned, server-only | Capability execution history: migration, recording, listing, summary, and retention | [App capabilities](/en/docs/platform/capabilities) |
