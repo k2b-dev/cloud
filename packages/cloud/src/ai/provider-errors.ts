@@ -76,7 +76,7 @@ export const withProviderErrors = (provider: Provider, providerId?: string): Pro
     try {
       const result = await runWithProviderFetchMarks(marks, () => provider.complete(request));
       if (providerId && !request.signal?.aborted)
-        void recordAiProviderStatus(
+        await recordAiProviderStatus(
           providerId,
           ["error", "aborted", "interrupted"].includes(result.finishReason ?? "")
             ? classifyProviderFailure(marks.httpStatus ? { status: marks.httpStatus } : {})
@@ -85,7 +85,7 @@ export const withProviderErrors = (provider: Provider, providerId?: string): Pro
       return result;
     } catch (error) {
       if (providerId && !request.signal?.aborted)
-        void recordAiProviderStatus(
+        await recordAiProviderStatus(
           providerId,
           classifyProviderFailure(marks.httpStatus ? { status: marks.httpStatus } : marks.networkFailure ? new TypeError() : error),
         );
@@ -106,7 +106,7 @@ export const withProviderErrors = (provider: Provider, providerId?: string): Pro
         if (event.type === "issue" && (event.issue.kind === "provider_error" || event.issue.kind === "timeout")) {
           failed = true;
           if (providerId)
-            void recordAiProviderStatus(
+            await recordAiProviderStatus(
               providerId,
               event.issue.kind === "timeout"
                 ? { status: "unreachable", message: "The provider timed out." }
@@ -118,10 +118,10 @@ export const withProviderErrors = (provider: Provider, providerId?: string): Pro
         yield event.type === "issue" ? { type: "issue", issue: providerIssue(event.issue, request.tools) } : event;
       }
       if (providerId && !failed && !request.signal?.aborted)
-        void recordAiProviderStatus(providerId, { status: "ok", message: "The provider connection works." });
+        await recordAiProviderStatus(providerId, { status: "ok", message: "The provider connection works." });
     } catch (error) {
       if (providerId && !request.signal?.aborted)
-        void recordAiProviderStatus(
+        await recordAiProviderStatus(
           providerId,
           classifyProviderFailure(marks.httpStatus ? { status: marks.httpStatus } : marks.networkFailure ? new TypeError() : error),
         );

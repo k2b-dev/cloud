@@ -1,13 +1,18 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { memoryStore, nessi, type StoreEntry } from "@k2b/nessi";
 import { z } from "zod";
 import { createCloudCompactFn } from "./compaction";
 import { createAiProvider, taskReasoningEffort } from "./provider";
+import * as connections from "./provider-connections";
 import { inferenceProvider } from "./quota-provider";
 import { aiConversations } from "./store";
 import * as structuredRuns from "./structured-runs";
 import { applyAiTurnPolicy } from "./turn-policy";
 import type { AiModelProfile, AiProviderId } from "./types";
+
+// Adapter unit tests own HTTP fakes; provider status persistence belongs to its integration seam.
+beforeEach(() => spyOn(connections, "recordAiProviderStatus").mockResolvedValue(undefined));
+afterEach(() => mock.restore());
 
 // A local HTTP fake exercises the real adapters without replacing the global fetch timing wrapper.
 let server: ReturnType<typeof Bun.serve> | undefined;

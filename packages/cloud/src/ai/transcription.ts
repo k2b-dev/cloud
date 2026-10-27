@@ -37,12 +37,12 @@ export const createAiTranscriptionProvider = (profile: AiModelProfile, apiKey?: 
     transcribe: async (request) => {
       try {
         const result = await provider.transcribe(request);
-        void recordAiProviderStatus(profile.providerId, { status: "ok", message: "The provider connection works." });
+        await recordAiProviderStatus(profile.providerId, { status: "ok", message: "The provider connection works." });
         return result;
       } catch (error) {
         const failure = describeTranscriptionFailure(error, "provider", request.signal?.aborted);
         if (!request.signal?.aborted)
-          void recordAiProviderStatus(
+          await recordAiProviderStatus(
             profile.providerId,
             failure.httpStatus
               ? classifyProviderFailure({ status: failure.httpStatus })
