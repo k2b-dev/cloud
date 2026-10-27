@@ -50,6 +50,7 @@ const result = await app.start({
       await snapshotRuntime.stop();
       await reindexRuntime.stop();
       await yjsSnapshotWorker.stop();
+      await notebooksService.note.annotations.close();
     },
   },
 });

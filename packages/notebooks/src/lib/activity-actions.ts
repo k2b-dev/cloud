@@ -4,6 +4,7 @@ export const NOTEBOOK_ACTIVITY_ACTIONS = [
   "note.created",
   "note.edited",
   "note.restored",
+  "annotation.create",
   "comment.created",
   "comment.updated",
   "comment.deleted",

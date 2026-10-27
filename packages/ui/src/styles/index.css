@@ -9788,6 +9788,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: nowrap;
 }
 
+/* A row that opens what it is about: only the ink responds, nothing moves. */
+.k2b-ui .k2b-message-event-row__link {
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--k2b-radius-control);
+}
+.k2b-ui .k2b-message-event-row__link:hover {
+  color: var(--k2b-text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.k2b-ui .k2b-message-event-row__link:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
 .k2b-ui .k2b-message-event-row time {
   flex: none;
   margin-inline-start: auto;

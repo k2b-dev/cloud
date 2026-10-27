@@ -5,7 +5,7 @@ section: Operations
 order: 1137
 description: Move existing Notebook snapshot work to the ordered worker without losing accepted edits.
 tags: [notebooks, snapshots, migration, nats]
-updated: 2026-09-23
+updated: 2026-10-27
 ---
 
 # Change the Notebook snapshot worker
@@ -133,3 +133,15 @@ and inspect the new job's dead letters in Gateway Ops. Preserve old resources
 and recovery backups until acceptance; any later cleanup needs exact-resource
 review. After new edits arrive, an image-only rollback can strand new jobs and
 requires the same drain-and-coverage discipline.
+
+## Passage suggestion metadata
+
+Notebooks startup migrates passage comments to support suggestions on replies.
+Each root and reply suggestion has its own open, accepted or rejected status;
+accept and undo record which suggestion changed the passage. Existing root
+suggestions start open, or accepted when the thread already has an accepted
+suggestion. Accepted roots recover the replacement that was actually accepted
+if an older author edit later changed or removed it. Comments without a
+suggestion and existing replies keep
+null suggestion metadata. Historical actions without recorded platform origin
+keep null provenance. No new operator configuration is required.

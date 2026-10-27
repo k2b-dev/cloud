@@ -1,4 +1,6 @@
+import { cloudResourceHref } from "@k2b/cloud/contracts";
 import { i18n } from "@k2b/stdlib";
+import { AnnotationIdSchema } from "../lib/annotation-contracts";
 import type { NotebookActivityEvent, NotebookActivityIdentity } from "./activity";
 
 type Words = { actor: string; self: boolean };
@@ -16,6 +18,7 @@ export const activityTimelineMessages = i18n.define({
       renamed: ({ actor }: Words) => `${actor} renamed the note`,
       moved: ({ actor }: Words) => `${actor} moved the note`,
       deleted: ({ actor }: Words) => `${actor} deleted the note`,
+      commented: ({ actor }: Words) => `${actor} left a comment`,
       changed: ({ actor }: Words) => `${actor} changed the note`,
     },
     de: {
@@ -29,6 +32,7 @@ export const activityTimelineMessages = i18n.define({
       renamed: ({ actor, self }: Words) => `${actor} ${self ? "hast" : "hat"} die Notiz umbenannt`,
       moved: ({ actor, self }: Words) => `${actor} ${self ? "hast" : "hat"} die Notiz verschoben`,
       deleted: ({ actor, self }: Words) => `${actor} ${self ? "hast" : "hat"} die Notiz gelöscht`,
+      commented: ({ actor, self }: Words) => `${actor} ${self ? "hast" : "hat"} einen Kommentar hinterlassen`,
       changed: ({ actor, self }: Words) => `${actor} ${self ? "hast" : "hat"} die Notiz geändert`,
     },
   },
@@ -46,27 +50,31 @@ export const notebookActivityRow = (event: NotebookActivityEvent, options: { vie
           ? t.formerService
           : event.actor.displayName.slice(0, 1000);
   const words = { actor: self ? t.you : actor, self };
+  const annotation = event.action === "annotation.create" ? AnnotationIdSchema.safeParse(event.metadata.annotationId) : null;
   const describe =
-    event.action === "note.created"
-      ? t.created
-      : event.action === "note.edited"
-        ? t.edited
-        : event.action === "note.restored"
-          ? t.restored
-          : event.action === "note.renamed"
-            ? t.renamed
-            : event.action === "note.moved"
-              ? t.moved
-              : event.action === "note.deleted"
-                ? t.deleted
-                : t.changed;
+    event.action === "annotation.create"
+      ? t.commented
+      : event.action === "note.created"
+        ? t.created
+        : event.action === "note.edited"
+          ? t.edited
+          : event.action === "note.restored"
+            ? t.restored
+            : event.action === "note.renamed"
+              ? t.renamed
+              : event.action === "note.moved"
+                ? t.moved
+                : event.action === "note.deleted"
+                  ? t.deleted
+                  : t.changed;
   return {
     id: event.id,
     at: event.lastOccurredAt,
     ref: event.note ? { type: "notebooks.note" as const, id: event.note.shortId } : null,
     title: event.note ? event.note.title.slice(0, 500) : null,
     actor: { type: event.actor.kind, id: event.actor.id, name: actor },
-    icon: event.action === "note.created" ? "ti ti-plus" : "ti ti-pencil",
+    icon: event.action === "annotation.create" ? "ti ti-message-plus" : event.action === "note.created" ? "ti ti-plus" : "ti ti-pencil",
+    ...(annotation?.success ? { href: cloudResourceHref({ type: "notebooks.annotation", id: annotation.data }) } : {}),
     sentence: describe(words),
     count: event.occurrenceCount,
   };
