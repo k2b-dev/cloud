@@ -7,6 +7,7 @@ import { canUseApp } from "../app-access";
 import { recordAppAccessDenied } from "../app-access-metrics";
 import { CLOUD_INVOCATION_TOKEN_TTL_SECONDS } from "./constants";
 import { resolveInvocationAuthority } from "./invocation-actor";
+import { matchesInvocationSubject } from "./invocation-authority";
 import { type InvocationAuthority, signInvocationToken } from "./invocation-token";
 import { readIdentityGroupsAdmin } from "./runtime-config";
 
@@ -62,6 +63,8 @@ export const issueInvocationToken = async (
     dependencies.db,
     dependencies.groupsAdmin,
   );
+  if (params.parent && (!authority || !matchesInvocationSubject(params.parent, authority)))
+    throw new AppAccessDeniedError({ id: params.targetAppId });
   await requireRegisteredAppAccess(authority, params.targetAppId, dependencies);
   return (dependencies.sign ?? signInvocationToken)(params);
 };

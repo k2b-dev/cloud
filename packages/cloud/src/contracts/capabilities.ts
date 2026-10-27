@@ -763,6 +763,11 @@ export const UniversalSearchDataSchema = z.array(CloudResourceViewSchema).max(10
 export type UniversalSearchData = z.infer<typeof UniversalSearchDataSchema>;
 
 export type CapabilityExecutionContext = {
+  /** One read-only cross-app dependency under this invocation, through Core. */
+  query?: <T extends z.ZodType>(
+    invocation: { appId: string; capabilityId: string; input: unknown; signal?: AbortSignal },
+    dataSchema: T,
+  ) => Promise<import("../capabilities/types").CapabilityClientResult<z.output<T>>>;
   /**
    * Resolved request authority, supplied by the framework for execution, review
    * and streams. Optional for existing in-process callers; authority-aware
