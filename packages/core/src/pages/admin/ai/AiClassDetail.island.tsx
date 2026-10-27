@@ -11,10 +11,10 @@ import {
 } from "@k2b/cloud/shared";
 import { Button, NoticeCard, RichSelect, StatusBadge, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
-import { openAddProvider } from "./AiAreaActions.island";
 import { type AiAdminConflict, aiAdminApi, asAiConflict, readAiAdmin, reloadAiArea } from "./client";
 import { aiAreaMessages } from "./messages";
 import { type AiProviderState, aiClassSubtitle, aiSlotLabel, aiVariantName, formatAiTime, isAiModelClass } from "./presentation";
+import { openAddProvider } from "./provider-dialogs";
 import { effortLabel } from "./variants";
 
 type Assignment = {

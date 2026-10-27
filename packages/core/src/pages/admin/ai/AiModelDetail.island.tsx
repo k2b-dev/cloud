@@ -31,7 +31,6 @@ import {
 } from "@k2b/ui";
 import { createEffect, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { z } from "zod";
-import AiProviderNotice from "./AiProviderNotice.island";
 import { aiAreaHref } from "./area";
 import { type AiAdminConflict, aiAdminApi, asAiConflict, readAiAdmin, reloadAiArea } from "./client";
 import { ConflictNotice } from "./conflict";
@@ -39,6 +38,7 @@ import { openAiDelete } from "./delete";
 import { setAiDetailControls } from "./detail-controls";
 import { aiAreaMessages } from "./messages";
 import { type AiAreaMessages, aiProviderState, aiSlotLabel, isAiModelClass } from "./presentation";
+import { AiProviderNotice } from "./provider-notice";
 import { effortLabel, openAiVariant } from "./variants";
 
 type Detail = AiModel & { variants: AiModelVariant[]; access?: { entries: AccessEntry[]; revision: number } };

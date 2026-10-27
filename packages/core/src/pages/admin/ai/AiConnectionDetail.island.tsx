@@ -2,8 +2,6 @@ import { AiModelIcon } from "@k2b/cloud/ai/ui";
 import { type AiModel, type AiProvider, AiProviderSchema, aiProviderMark } from "@k2b/cloud/shared";
 import { Button, NoticeCard, SegmentedControl, StatusBadge, TextInput, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
-import { HeaderRows } from "./AiAreaActions.island";
-import AiProviderNotice from "./AiProviderNotice.island";
 import { type AiAdminConflict, aiAdminApi, asAiConflict, readAiAdmin, reloadAiArea } from "./client";
 import { ConflictNotice } from "./conflict";
 import { openAiDelete } from "./delete";
@@ -17,6 +15,8 @@ import {
   aiProviderTypeLabel,
   formatAiTime,
 } from "./presentation";
+import { HeaderRows } from "./provider-dialogs";
+import { AiProviderNotice } from "./provider-notice";
 
 type Draft = { label: string; baseUrl: string; dataBoundary: "hosted" | "private" };
 type Header = { name: string; value: string; stored?: boolean };

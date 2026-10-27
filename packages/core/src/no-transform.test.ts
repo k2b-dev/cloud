@@ -48,3 +48,11 @@ test("profile, access and notification settings pages stay eligible for compress
     expect(response.headers.get("Cache-Control") ?? "").not.toContain("no-transform");
   }
 });
+
+// A page that only a browser fixture mounts is unreachable in Cloud: the real router sends the sign-in redirect, not a 404.
+test("every admin page the sidebar links is mounted in the pages router", async () => {
+  for (const path of ["/admin", "/admin/ai", "/admin/settings", "/admin/outgoing-mail", "/admin/places-and-maps", "/admin/apps"]) {
+    const response = await pages.request(path);
+    expect({ path, status: response.status }).toEqual({ path, status: 302 });
+  }
+});
