@@ -154,10 +154,16 @@ export const createCommentsStore = (options: {
     remove: (id: string) => call<unknown>(one().$delete(annotationParam(id))),
     restore: (id: string) => call<unknown>(one().restore.$post(annotationParam(id))),
     resolve: (id: string, resolved: boolean) => call<unknown>(one().resolve.$post({ ...annotationParam(id), json: { resolved } })),
-    accept: (id: string, operationId: string, expectedText?: string) =>
+    /** Accepts the thread's own suggestion, or the one a reply carries. */
+    accept: (id: string, operationId: string, expectedText?: string, replyId?: string) =>
       call<{ operationId: string }>(
-        one().accept.$post({ ...annotationParam(id), json: expectedText === undefined ? { operationId } : { operationId, expectedText } }),
+        one().accept.$post({
+          ...annotationParam(id),
+          json: { operationId, ...(expectedText === undefined ? {} : { expectedText }), ...(replyId ? { replyId } : {}) },
+        }),
       ),
+    reject: (id: string, rejected: boolean, replyId?: string) =>
+      call<unknown>(one().reject.$post({ ...annotationParam(id), json: { rejected, ...(replyId ? { replyId } : {}) } })),
     undoAccept: (id: string, operationId: string) =>
       call<unknown>(one()["undo-accept"].$post({ ...annotationParam(id), json: { operationId } })),
   };

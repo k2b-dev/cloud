@@ -424,4 +424,44 @@ describe("inline comments", () => {
       await close(page);
     }
   }, 60_000);
+
+  test("an agent's suggestion in a reply on my thread is accepted with one click and changes the text", async () => {
+    const page = await open("s=review&readonly");
+    try {
+      const card = page.locator("[data-annotation-card]", { hasText: "Mustersatzung" });
+      await card.click();
+      await settle(page);
+      expect(await card.textContent()).toContain("Review Agent");
+      expect(await card.textContent()).toContain("über Assistant");
+      expect(await card.locator(".notebook-comment__suggestion").textContent()).toContain("mit einer Frist von drei Monaten");
+      await card.getByRole("button", { name: "Übernehmen" }).click();
+      await settle(page);
+      await settle(page);
+      expect(await page.locator(".cm-content").textContent()).toContain("zum Ende eines Quartals mit einer Frist von drei Monaten möglich");
+      expect(await page.locator(".notebook-comments__head").textContent()).toContain("1 erledigt");
+    } finally {
+      await close(page);
+    }
+  }, 60_000);
+
+  test("rejecting an agent's suggestion keeps the text, marks it rejected and can be undone", async () => {
+    const page = await open("s=review");
+    try {
+      const card = page.locator("[data-annotation-card]", { hasText: "Mustersatzung" });
+      await card.click();
+      await settle(page);
+      await card.getByRole("button", { name: "Ablehnen" }).click();
+      await settle(page);
+      await settle(page);
+      expect(await card.locator(".notebook-comment__suggestion").textContent()).toContain("Abgelehnt");
+      expect(await card.getByRole("button", { name: "Übernehmen" }).count()).toBe(0);
+      expect(await page.locator(".cm-content").textContent()).toContain("mit einer Frist von sechs Wochen");
+      await page.getByRole("button", { name: "Rückgängig" }).click();
+      await settle(page);
+      await settle(page);
+      expect(await card.getByRole("button", { name: "Übernehmen" }).count()).toBe(1);
+    } finally {
+      await close(page);
+    }
+  }, 60_000);
 });

@@ -156,11 +156,10 @@ export const createEditorComments = (options: {
     options.view()?.dispatch({ effects: setAnnotationFocus.of({ hover: ui.hover(), active: ui.active() }) });
   });
   createEffect(() => {
-    const id = ui.preview();
-    const item = ui.byId(id);
-    options
-      .view()
-      ?.dispatch({ effects: setAnnotationPreview.of(item && item.suggestion !== null ? { id: item.id, insert: item.suggestion } : null) });
+    const previewing = ui.preview();
+    const item = ui.byId(previewing?.id ?? null);
+    const insert = item ? ui.suggestionOf(item, previewing?.replyId) : null;
+    options.view()?.dispatch({ effects: setAnnotationPreview.of(item && insert !== null ? { id: item.id, insert } : null) });
   });
   createEffect(() => {
     const draft = ui.draft();

@@ -54,6 +54,7 @@ const people = {
   jb: { kind: "user" as const, id: "00000000-0000-4000-8000-0000000000a3", name: "Jana Berger", avatarHash: null },
   pw: { kind: "user" as const, id: "00000000-0000-4000-8000-0000000000a4", name: "Paul Wagner", avatarHash: null },
   ir: { kind: "user" as const, id: "00000000-0000-4000-8000-0000000000a5", name: "Ida Roth", avatarHash: null },
+  ag: { kind: "service_account" as const, id: "00000000-0000-4000-8000-0000000000b1", name: "Review Agent", avatarHash: null },
 };
 export const ME = people.mk;
 /** Every scenario's clock; pages install it (`page.clock`), so relative times read the same in every run. */
@@ -86,13 +87,19 @@ const make = (
     suffix: text.slice(from + quote.length, from + quote.length + 32),
     body,
     suggestion: null,
+    suggestionState: null,
+    suggestionStateBy: null,
+    suggestionStateAt: null,
+    suggestionStateVia: null,
     state: "open",
     stateBy: null,
     stateAt: null,
+    stateVia: null,
     author: people[by],
     via: null,
     createdAt: ago(minutes),
     editedAt: null,
+    ...(extra.suggestion ? { suggestionState: "open" as const } : {}),
     canEdit: by === "mk" && minutes < 10,
     canDelete: by === "mk" && minutes < 10,
     replies: [],
@@ -103,6 +110,27 @@ const make = (
   };
 };
 
+const noSuggestion = {
+  suggestion: null,
+  suggestionState: null,
+  suggestionStateBy: null,
+  suggestionStateAt: null,
+  suggestionStateVia: null,
+};
+/** An agent's reply on Mara's own thread that carries a replacement for its passage: the review workflow. */
+const agentReply = (quote: string) => ({
+  id: "00000000-0000-4000-9100-000000000002",
+  author: people.ag,
+  via: "assistant" as const,
+  body: "Die Mustersatzung nennt drei Monate zum Quartalsende. Vorschlag:",
+  createdAt: ago(3),
+  editedAt: null,
+  canEdit: false,
+  canDelete: false,
+  ...noSuggestion,
+  suggestion: quote.replace("mit einer Frist von sechs Wochen", "mit einer Frist von drei Monaten"),
+  suggestionState: "open" as const,
+});
 const base = (text = NOTE) => {
   serial = 0;
   const comment = (...args: Parameters<typeof make>) => make(args[0], args[1], args[2], args[3], args[4], text);
@@ -119,6 +147,7 @@ const base = (text = NOTE) => {
           editedAt: null,
           canEdit: false,
           canDelete: false,
+          ...noSuggestion,
         },
       ],
     }),
@@ -181,6 +210,11 @@ export const SCENARIOS: Record<string, { text?: string; items: () => Annotation[
   many: { items: many },
   resolved: { items: resolvedSet },
   orphan: { text: orphanText, items: orphanSet },
+  // Mara asked an agent to go through her comments; it answered her thread with a replacement for the passage.
+  review: {
+    items: () =>
+      base().map((item) => (item.quote.startsWith("zum Ende eines Quartals") ? { ...item, replies: [agentReply(item.quote)] } : item)),
+  },
   error: { items: base, error: true },
   loading: { items: base, delay: 60_000 },
 };
@@ -294,13 +328,28 @@ export const startCommentsServer = async () => {
       if (input.expectedText === undefined && text.slice(item.from, item.to) !== item.quote)
         return fail(409, "Der Text wurde inzwischen geändert", { currentText: text.slice(item.from, item.to) });
       // As the server does: the passage becomes the suggestion for everyone, and later passages move with it.
-      const insert = item.suggestion ?? "";
+      const holder = typeof input.replyId === "string" ? item.replies.find((reply) => reply.id === input.replyId) : item;
+      if (!holder || holder.suggestionState !== "open" || item.state !== "open")
+        return fail(409, "Nur ein offener Vorschlag kann übernommen werden");
+      const insert = holder.suggestion ?? "";
+      Object.assign(holder, { suggestionState: "accepted", suggestionStateBy: ME, suggestionStateAt: new Date(NOW).toISOString() });
       const delta = insert.length - (item.to - item.from);
       text = text.slice(0, item.from) + insert + text.slice(item.to);
       for (const other of items)
         if (other !== item && other.from >= item.to) Object.assign(other, { from: other.from + delta, to: other.to + delta });
       Object.assign(item, { state: "accepted", stateBy: ME, stateAt: new Date(NOW).toISOString(), to: item.from + insert.length });
       return Response.json({ id: item.id, operationId: input.operationId, status: "applied", state: "accepted" });
+    }
+    if (action === "reject") {
+      const holder = typeof input.replyId === "string" ? item.replies.find((reply) => reply.id === input.replyId) : item;
+      if (!holder) return fail(404, "Unbekannt");
+      Object.assign(
+        holder,
+        input.rejected === false
+          ? { suggestionState: "open", suggestionStateBy: null }
+          : { suggestionState: "rejected", suggestionStateBy: ME },
+      );
+      return Response.json({ id: item.id, annotationId: item.id, deleted: false });
     }
     if (action === "undo-accept") {
       Object.assign(item, { state: "open", stateBy: null });
@@ -320,6 +369,7 @@ export const startCommentsServer = async () => {
         editedAt: null,
         canEdit: true,
         canDelete: true,
+        ...noSuggestion,
       });
       return Response.json(item.replies.at(-1));
     }

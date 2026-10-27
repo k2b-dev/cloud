@@ -137,6 +137,59 @@ const ReplyBox = (props: { ui: CommentsUi; item: Annotation }) => {
   );
 };
 
+/**
+ * A suggested replacement for the thread's passage, from the thread itself or from a reply (an agent's, for example):
+ * the difference, its state, and on the open card Accept and Reject for people who may write.
+ */
+const Suggestion = (props: {
+  ui: CommentsUi;
+  item: Annotation;
+  replyId?: string;
+  text: string;
+  state: "open" | "accepted" | "rejected" | null;
+  active: boolean;
+}) => {
+  const t = () => props.ui.t();
+  const decidable = () => props.active && props.state === "open" && props.item.state === "open" && props.ui.canWrite();
+  const preview = () => props.ui.setPreview({ id: props.item.id, replyId: props.replyId });
+  return (
+    <div class="notebook-comment__suggestion" data-state={props.state ?? undefined}>
+      <span class="notebook-comment__label">
+        {t().suggestion}
+        <Show when={props.state === "rejected" || props.state === "accepted"}>
+          {" · "}
+          {props.state === "rejected" ? t().suggestionRejected : t().suggestionAccepted}
+        </Show>
+      </span>
+      <SuggestionDiff from={props.item.quote} to={props.text} />
+      <Show when={decidable()}>
+        <div class="notebook-comment__row">
+          <Button
+            size="sm"
+            loading={props.ui.busy().has(props.item.id)}
+            onMouseEnter={preview}
+            onMouseLeave={() => props.ui.setPreview(null)}
+            onFocus={preview}
+            onBlur={() => props.ui.setPreview(null)}
+            onClick={() => void props.ui.accept(props.item, undefined, props.replyId)}
+          >
+            {t().accept}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={props.ui.busy().has(props.item.id)}
+            onClick={() => void props.ui.reject(props.item, props.replyId)}
+          >
+            {t().reject}
+          </Button>
+          <span class="notebook-comment__hint">{t().acceptHint}</span>
+        </div>
+      </Show>
+    </div>
+  );
+};
+
 /** A suggestion as the card shows it: the old passage struck through, the new text after it. */
 export const SuggestionDiff = (props: { from: string; to: string }) => (
   <>
@@ -159,6 +212,7 @@ export function CommentCard(props: { ui: CommentsUi; item: Annotation; ref?: (el
   const active = () => props.ui.active() === item().id;
   const resolved = () => !isOpen(item());
   const writer = () => props.ui.canWrite();
+  const openReplySuggestions = () => item().replies.filter((reply) => reply.suggestionState === "open").length;
   // Replies after the first page load on request and stay while the comment reloads.
   const [more, setMore] = createSignal<{ items: Annotation["replies"]; cursor: string | null } | null>(null);
   const [loadingMore, setLoadingMore] = createSignal(false);
@@ -262,16 +316,14 @@ export function CommentCard(props: { ui: CommentsUi; item: Annotation; ref?: (el
       >
         <EditBox ui={props.ui} item={item()} />
       </Show>
-      <Show when={item().suggestion !== null && item().state !== "accepted"}>
-        <div class="notebook-comment__suggestion">
-          <span class="notebook-comment__label">{t().suggestion}</span>
-          <SuggestionDiff from={item().quote} to={item().suggestion ?? ""} />
-        </div>
+      <Show when={item().suggestion !== null && item().suggestionState !== "accepted"}>
+        <Suggestion ui={props.ui} item={item()} text={item().suggestion ?? ""} state={item().suggestionState} active={active()} />
       </Show>
       <Show when={resolved()}>
         <p class="notebook-comment__state">
           <i class="ti ti-check" aria-hidden="true" />
           {item().state === "accepted" ? t().acceptedBy({ name: stateBy() }) : t().resolvedBy({ name: stateBy() })}
+          <Show when={item().stateVia}>{(via) => <> · {via() === "assistant" ? t().viaAssistant : t().viaMcp}</>}</Show>
           <Show when={writer() && item().state === "resolved"}>
             {" · "}
             <button type="button" class="notebook-comment__link" onClick={() => void props.ui.resolve(item(), false)}>
@@ -284,39 +336,38 @@ export function CommentCard(props: { ui: CommentsUi; item: Annotation; ref?: (el
         when={active() && !resolved()}
         fallback={
           <Show when={item().replies.length && !resolved()}>
-            <p class="notebook-comment__more">{t().replies({ count: item().replies.length })}</p>
+            <p class="notebook-comment__more">
+              {t().replies({ count: item().replies.length })}
+              <Show when={openReplySuggestions()}>{(count) => <> · {t().suggestionCount({ count: count() })}</>}</Show>
+            </p>
           </Show>
         }
       >
-        <Show when={item().suggestion !== null && writer()}>
-          <div class="notebook-comment__row">
-            <Button
-              size="sm"
-              loading={props.ui.busy().has(item().id)}
-              onMouseEnter={() => props.ui.setPreview(item().id)}
-              onMouseLeave={() => props.ui.setPreview(null)}
-              onFocus={() => props.ui.setPreview(item().id)}
-              onBlur={() => props.ui.setPreview(null)}
-              onClick={() => void props.ui.accept(item())}
-            >
-              {t().accept}
-            </Button>
-            <span class="notebook-comment__hint">{t().acceptHint}</span>
-          </div>
-        </Show>
         <Show when={replies().length}>
           <ul class="notebook-comment__replies">
             <For each={replies()}>
               {(reply) => (
                 <li>
                   <Who ui={props.ui} person={reply.author} at={reply.createdAt} via={reply.via} />
-                  <p class="notebook-comment__text">
-                    {reply.body}
-                    <Show when={reply.editedAt}>
-                      {" "}
-                      <span class="notebook-comment__edited">{t().edited}</span>
-                    </Show>
-                  </p>
+                  <Show when={reply.body}>
+                    <p class="notebook-comment__text">
+                      {reply.body}
+                      <Show when={reply.editedAt}>
+                        {" "}
+                        <span class="notebook-comment__edited">{t().edited}</span>
+                      </Show>
+                    </p>
+                  </Show>
+                  <Show when={reply.suggestion !== null}>
+                    <Suggestion
+                      ui={props.ui}
+                      item={item()}
+                      replyId={reply.id}
+                      text={reply.suggestion ?? ""}
+                      state={reply.suggestionState}
+                      active={active()}
+                    />
+                  </Show>
                 </li>
               )}
             </For>

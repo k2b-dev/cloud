@@ -37,7 +37,8 @@ export const createCommentsUi = (options: {
   const { store } = options;
   const [active, setActive] = createSignal<string | null>(null);
   const [hover, setHover] = createSignal<string | null>(null);
-  const [preview, setPreview] = createSignal<string | null>(null);
+  /** The suggestion previewed in the text: a thread's own, or one a reply carries. */
+  const [preview, setPreview] = createSignal<{ id: string; replyId?: string } | null>(null);
   const [draft, setDraft] = createSignal<CommentDraft | null>(null);
   const [showResolved, setShowResolved] = createSignal(false);
   const [editing, setEditing] = createSignal<string | null>(null);
@@ -190,20 +191,24 @@ export const createCommentsUi = (options: {
       }
     });
 
-  const accept = (item: Annotation, expectedText?: string): Promise<void> =>
+  /** The suggestion a thread or one of its replies carries. */
+  const suggestionOf = (item: Annotation, replyId?: string) =>
+    (replyId ? item.replies.find((reply) => reply.id === replyId)?.suggestion : item.suggestion) ?? null;
+
+  const accept = (item: Annotation, expectedText?: string, replyId?: string): Promise<void> =>
     working(item.id, async () => {
       setPreview(null);
-      const key = `accept:${item.id}:${expectedText ?? ""}`;
+      const key = `accept:${item.id}:${replyId ?? ""}:${expectedText ?? ""}`;
       try {
-        await store.accept(item.id, operationId(key), expectedText);
+        await store.accept(item.id, operationId(key), expectedText, replyId);
         operations.delete(key);
-        options.flash(item.id, (item.suggestion ?? "").length);
+        options.flash(item.id, (suggestionOf(item, replyId) ?? "").length);
         await store.reload();
         if (active() === item.id) setActive(null);
         announce(options.t().accepted);
         toast(options.t().accepted, { action: { label: options.t().undo, onClick: () => void undoAccept(item) } });
       } catch (error) {
-        if (uncertain(error)) return void retryToast(() => void accept(item, expectedText));
+        if (uncertain(error)) return void retryToast(() => void accept(item, expectedText, replyId));
         operations.delete(key);
         const current = error instanceof CommentRequestError ? error.details?.currentText : undefined;
         if (error instanceof CommentRequestError && error.status === 409 && typeof current === "string" && expectedText === undefined) {
@@ -211,9 +216,23 @@ export const createCommentsUi = (options: {
             title: options.t().accept,
             confirmText: options.t().acceptCurrent,
           });
-          if (again === true) await accept(item, current);
+          if (again === true) await accept(item, current, replyId);
           return;
         }
+        failed(error);
+      }
+    });
+
+  /** Rejects a suggestion without touching the text; the toast takes it back. */
+  const reject = (item: Annotation, replyId?: string, rejected = true): Promise<void> =>
+    working(item.id, async () => {
+      setPreview(null);
+      try {
+        await store.reject(item.id, rejected, replyId);
+        await store.reload();
+        if (rejected)
+          toast(options.t().rejected, { action: { label: options.t().undo, onClick: () => void reject(item, replyId, false) } });
+      } catch (error) {
         failed(error);
       }
     });
@@ -277,6 +296,8 @@ export const createCommentsUi = (options: {
     resolve,
     remove,
     accept,
+    reject,
+    suggestionOf,
     reply,
     edit,
     copyLink,
