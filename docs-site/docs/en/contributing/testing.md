@@ -964,7 +964,7 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in seven shards, WebKit tests in nine, and integration tests in
+Unit tests run in seven shards, WebKit tests in ten, and integration tests in
 three. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
@@ -984,10 +984,16 @@ Each shard prints its predicted and actual time. Its runner stops an active
 suite and fails with an annotation at the 20-minute budget, before the
 30-minute job limit. The budget also includes NATS housekeeping and integration database bootstrap.
 To refresh the weights, run
-`bun scripts/test-weights.ts --run <id> <id> <id>` with the three newest green
-merge-queue runs, using `gh-agent` authentication; add `--mode integration` to
-refresh only integration timings. The script keeps the slowest measurement of
-each suite and plans the current checkout, excluding Grids from integration.
+`bun scripts/test-weights.ts --run <id> <id> <id>` with recent completed runs,
+including slow or failed runs, using `gh-agent` authentication; add
+`--mode integration` to refresh only integration timings. The script keeps the
+maximum measurement in the selected runs, including completed suites from
+failed jobs. It retains previous measurements for suites an aborted job
+did not finish and removes suites no longer in the checkout. An interrupted
+suite's elapsed time is only a lower bound, so it does not replace a complete
+measurement. Later refreshes replace observed weights, so an exceptional slow
+runner does not increase them permanently. The script plans the current checkout,
+excluding Grids from integration.
 It reports the smallest shard count whose predicted slowest shard fits 15
 minutes. If one suite alone exceeds that target, split the suite. Commit the
 refreshed weights and adjust the matrix together; keep the 20-minute execution
@@ -998,8 +1004,11 @@ leaving actual times far apart.
 The runner tests check that every unit, WebKit, and integration suite is
 assigned exactly once and each predicted shard fits 15 minutes. They also
 cover deterministic assignment and distributing unmeasured new files. These
-checks validate the plan; actual times still depend on the runner and need
-measurement. Inspect a selection without
+checks validate the measured plan rather than a future runner's speed.
+Importer tests cover failed jobs, unexecuted suites, and replacing old weights
+when the selected runs are faster. Actual times still depend on the runner: a whole
+job running several times slower cannot be bounded by historical file weights.
+Inspect a selection without
 starting services with `bun run test --integration --exclude grids --shard 1/3 --list`.
 
 One third of the job limit stays in reserve because setup and GitHub's job

@@ -24,6 +24,47 @@ const github = (args: string[]): string => {
 
 const modes = ["browser", "unit", "integration"] as const;
 
+/** Failed jobs still measured completed suites; an aborted tail is not a complete observation. */
+export const collectJobTimes = (
+  jobs: unknown[],
+  readLog: (id: number) => string,
+  selectedModes: readonly (keyof TestWeights)[] = modes,
+) => {
+  const times = { browser: new Map<string, number>(), unit: new Map<string, number>(), integration: new Map<string, number>() };
+  for (const job of jobs) {
+    if (typeof job !== "object" || job === null || !("name" in job) || typeof job.name !== "string") {
+      throw new Error("malformed job response");
+    }
+    const mode = jobMode(job.name);
+    if (!mode || !selectedModes.includes(mode)) continue;
+    if ("conclusion" in job && job.conclusion === "skipped") continue;
+    if (
+      !("conclusion" in job) ||
+      typeof job.conclusion !== "string" ||
+      !["success", "failure", "timed_out", "cancelled"].includes(job.conclusion)
+    ) {
+      throw new Error(`${job.name}: expected success, failure, timed_out, or cancelled before importing measurements`);
+    }
+    if (!("id" in job) || typeof job.id !== "number" || !Number.isSafeInteger(job.id) || job.id <= 0) {
+      throw new Error(`${job.name}: invalid job id`);
+    }
+    for (const [name, seconds] of parseSuiteTimes(readLog(job.id))) {
+      times[mode].set(name, Math.max(times[mode].get(name) ?? 0, seconds));
+    }
+  }
+  return times;
+};
+
+/** Replace measured suites with this window's maxima; keep the unexecuted tail and prune deleted suites. */
+export const refreshSuiteWeights = (suites: TestSuite[], previous: Record<string, number>, times: Map<string, number>) =>
+  Object.fromEntries(
+    suites
+      .filter((suite) => times.has(suite.name) || previous[suite.name] !== undefined)
+      .map((suite) => [suite.name, times.get(suite.name) ?? previous[suite.name]!] as const)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([name, seconds]) => [name, Math.round(seconds * 10) / 10] as const),
+  );
+
 /** Both the old single integration job and the matrix jobs use the integration table. */
 export const jobMode = (name: string): keyof TestWeights | undefined => {
   const match = /^(unit|webkit|integration)(?: \(\d+\))?$/.exec(name);
@@ -42,13 +83,15 @@ export const recommendShardCount = (suites: TestSuite[], table: Record<string, n
 const run = async (): Promise<void> => {
   const args = Bun.argv.slice(2);
   if (args.includes("--help")) {
-    console.log(`Refresh measured test suite times from successful CI jobs.
+    console.log(`Refresh measured test suite times from finished CI jobs.
 
 Usage: bun scripts/test-weights.ts --run <id> [<id>...] [--mode browser|unit|integration]
        bun scripts/test-weights.ts --run <id> --run <id>
 
-Use the three newest green merge-queue runs. Requires gh-agent authentication.
-Writes scripts/test-weights.json with the maximum seconds per suite across runs.
+Include slow and failed runs, not only green runs. Requires gh-agent authentication.
+Writes scripts/test-weights.json with the maximum seconds per suite in the selected runs, retaining
+previous measurements when the selected runs have no complete observation. Only
+completed suites count; an interrupted suite's runtime is a lower bound.
 Plans the current checkout, excluding Grids from integration, and prints the
 smallest shard count at or below 15 minutes (half the 30-minute job limit).`);
     return;
@@ -80,23 +123,21 @@ smallest shard count at or below 15 minutes (half the 30-minute job limit).`);
       "--jq",
       ".jobs[] | {id, name, conclusion} | @json",
     ]);
-    for (const line of jobs.split("\n").filter((line) => line.trim())) {
-      const job: unknown = JSON.parse(line);
-      if (typeof job !== "object" || job === null || !("name" in job) || typeof job.name !== "string") {
-        throw new Error(`run ${id}: malformed job response`);
-      }
-      const mode = jobMode(job.name);
-      if (!mode || !selectedModes.includes(mode)) continue;
-      if (!("conclusion" in job) || job.conclusion !== "success") {
-        throw new Error(
-          `run ${id}: ${job.name} did not succeed (conclusion: ${"conclusion" in job ? job.conclusion : "missing"}); refusing to write weights`,
-        );
-      }
-      if (!("id" in job) || typeof job.id !== "number" || !Number.isSafeInteger(job.id) || job.id <= 0) {
-        throw new Error(`run ${id}: ${job.name} has an invalid job id`);
-      }
-      const log = github([`repos/k2b-dev/cloud/actions/jobs/${job.id}/logs`]);
-      for (const [name, seconds] of parseSuiteTimes(log)) {
+    let observed: ReturnType<typeof collectJobTimes>;
+    try {
+      observed = collectJobTimes(
+        jobs
+          .split("\n")
+          .filter((line) => line.trim())
+          .map((line): unknown => JSON.parse(line)),
+        (jobId) => github([`repos/k2b-dev/cloud/actions/jobs/${jobId}/logs`]),
+        selectedModes,
+      );
+    } catch (error) {
+      throw new Error(`run ${id}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    for (const mode of selectedModes) {
+      for (const [name, seconds] of observed[mode]) {
         times[mode].set(name, Math.max(times[mode].get(name) ?? 0, seconds));
       }
     }
@@ -104,21 +145,14 @@ smallest shard count at or below 15 minutes (half the 30-minute job limit).`);
   for (const mode of selectedModes) {
     if (times[mode].size === 0) throw new Error(`no ${mode} suite times found; refusing to write scripts/test-weights.json`);
   }
-  const table = (mode: keyof TestWeights): Record<string, number> =>
-    Object.fromEntries(
-      [...times[mode]].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([name, seconds]) => [name, Math.round(seconds * 10) / 10]),
-    );
   const weights: TestWeights = JSON.parse(readFileSync(new URL("./test-weights.json", import.meta.url), "utf8"));
-  for (const mode of selectedModes) weights[mode] = table(mode);
-  writeFileSync(new URL("./test-weights.json", import.meta.url), `${JSON.stringify(weights, null, 2)}\n`);
-  console.log("Wrote scripts/test-weights.json");
-
   for (const mode of selectedModes) {
     const suites = await discoverTestSuites(join(import.meta.dir, ".."), {
       integration: mode === "integration",
       browser: mode === "browser",
       exclude: mode === "integration" ? "grids" : undefined,
     });
+    weights[mode] = refreshSuiteWeights(suites, weights[mode], times[mode]);
     console.log(`\n${mode}: predicted slowest shard`);
     if (suites.length === 0) {
       console.log("  No suites selected in the current checkout.");
@@ -135,6 +169,8 @@ smallest shard count at or below 15 minutes (half the 30-minute job limit).`);
     }
     console.log(`  Smallest count at or below 15 min (half the 30-minute job limit): ${smallest}`);
   }
+  writeFileSync(new URL("./test-weights.json", import.meta.url), `${JSON.stringify(weights, null, 2)}\n`);
+  console.log("\nWrote scripts/test-weights.json");
 };
 
 if (import.meta.main) {

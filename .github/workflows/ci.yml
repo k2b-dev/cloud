@@ -227,8 +227,8 @@ jobs:
   # The browser tests again in WebKit, the engine of Safari and of every
   # browser on iOS. The Playwright image of the catalog's version serves it
   # through `playwright run-server`; contributing/testing.md runs the same
-  # locally. Measured maxima from green runs 40503698446, 40500643888 and
-  # 40500643622 predict 13.4 min for the slowest of 9 shards (8 need 15.1 min).
+  # locally. Measured maxima include completed suites from failed run
+  # 40533200164: 10 shards need 13.6 min; 9 need 15.1 min after rebalancing.
   # The runner tests enforce the 15-minute prediction for every heavy matrix.
   # The 20-min guard reserves the last third for setup and finalization;
   # strategy.job-total is the divisor.
@@ -240,7 +240,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     env:
       TEST_BROWSER: webkit
       TEST_BROWSER_ENDPOINT: ws://127.0.0.1:3333/
