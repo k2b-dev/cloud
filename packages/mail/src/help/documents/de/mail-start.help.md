@@ -89,6 +89,14 @@ Wähle **Details** im Kopfbereich des Postfachs, um Teamkontext, lokale Tags, Zu
 
 Neben einem Editor enthält der Unterhaltungsverlauf nur Nachrichten. Betriebliche Aktivitäten lenken dich beim Schreiben nicht ab.
 
+## Darstellung im Posteingang wählen {icon="layout-grid"}
+
+Wähle im Postfach unter **Darstellung**, wie Liste und Leser erscheinen. Auf großen Bildschirmen zeigt **Automatisch** zunächst Spalten. Sobald du einen Vorgang öffnest, stehen Liste und Leser nebeneinander. Du kannst auch **Immer Spalten** oder **Immer Liste + Leser** wählen. Auf dem Handy gibt es **Kompakt** und **Ausführlich**.
+
+Mail merkt sich die Wahl für dich und dieses Postfach, getrennt nach Handys und großen Bildschirmen. Deine Handywahl gilt auch auf deinen anderen Handys. Ohne gespeicherte Wahl verwendet Mail Automatisch und auf Handys Kompakt. Die Administration legt keine Vorgabe für dich fest.
+
+**Heute erledigt** zählt die für dich sichtbaren Vorgänge, die am heutigen Tag in der Cloud-Zeitzone erledigt wurden. Jeder Vorgang zählt einmal, auch wenn er danach wieder geöffnet wurde. Für den Automationsanteil zählt, wer den Vorgang heute zuletzt erledigt hat.
+
 ## Auf Kalendereinladungen antworten {icon="calendar-event"}
 
 Mail erkennt `.ics`- und `text/calendar`-Anhänge bis zu einer Größengrenze, aber **Spaces bleibt der Kalender**. Klappe eine Einladung auf, um Organisator, Zeit, Ort und aktuellen Status zu sehen.

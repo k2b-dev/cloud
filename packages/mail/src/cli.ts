@@ -25,7 +25,6 @@ import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contrac
 import { principalLabel } from "@k2b/cloud/shared";
 import { text } from "@k2b/stdlib";
 import { z } from "zod";
-import { LARGE_MAIL_VIEWS, PHONE_MAIL_VIEWS, type MailViewPreference } from "./mail-view-preference";
 import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesMailDestinationContext } from "./app-integration-contracts";
 import { composeFormattingMessages, describeComposeFormattingWarning, describeIgnoredMailboxCss } from "./compose-formatting-messages";
 import {
@@ -113,6 +112,7 @@ import {
 import { mailFolderPaths } from "./folder-tree";
 import { forwardMessageBody } from "./frontend/_components/mail-compose-derivation";
 import { incomingAutomationIssues } from "./incoming-automation-issues";
+import { LARGE_MAIL_VIEWS, type MailViewPreference, PHONE_MAIL_VIEWS } from "./mail-view-preference";
 import type { MailProtectedIdentity, MailSecurityPolicy, MailSecurityReport, MailSecuritySettings } from "./security-contracts";
 import type { AutomaticReplyConfiguration, AutomaticReplySetup } from "./service/automatic-reply-configuration";
 import type {

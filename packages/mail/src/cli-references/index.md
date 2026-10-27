@@ -70,6 +70,19 @@ cld --json mail ls Support:Archiv
 cld --json mail ls Support:Fa9x2Q
 ```
 
+## Choose your mailbox view
+
+```bash
+cld mail view get Support
+cld mail view set Support --large auto --phone compact
+cld mail view set Support --large columns
+cld mail view set Support --large split --phone detailed
+```
+
+Choices belong to the current person and mailbox. Read access, including assigned-only access, is enough. Large screens accept `auto` (columns until reading, then list + reader), `columns`, or `split`. Phones accept `compact` or `detailed`. An omitted flag keeps that device class unchanged; `set` requires at least one flag. With no stored choice, the defaults are `auto` and `compact`. JSON output is `{ "large": "auto", "phone": "compact" }`.
+
+The API exposes the same preference through `GET` and `PATCH /api/mail/mailboxes/:mailboxId/view`. A small refresh read, `GET /api/mail/mailboxes/:mailboxId/done-today`, returns `{ "doneToday": 0, "doneByAutomation": 0 }` for the caller's visible conversations. The Core time zone defines today, with Europe/Berlin as fallback. Each conversation counts once; its latest transition to done today determines the automation attribution. Reopening does not remove it from today's count.
+
 ## Read mail
 
 List your mailboxes, then the conversations of a mailbox or one folder:

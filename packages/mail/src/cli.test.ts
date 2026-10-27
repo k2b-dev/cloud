@@ -5994,3 +5994,40 @@ test("compose logo get/set/remove support structured output and require confirma
   expect(summary.exitCode).toBe(0);
   for (const text of ["image/png", "1x1", "250", "Team", "aaaaaaaaaaaa"]) expect(summary.stdout).toContain(text);
 });
+
+test("mailbox view get and set resolve a mailbox and preserve omitted device classes", async () => {
+  const requests: { method: string; path: string; body?: unknown }[] = [];
+  const view = { large: "auto", phone: "compact" };
+  const server = withMailbox(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path !== `/api/mail/mailboxes/${MAILBOX_ID}/view`) return api({ error: "Unexpected route" }, { status: 404 });
+    if (request.method === "PATCH") {
+      const body = await request.json();
+      requests.push({ method: request.method, path, body });
+      Object.assign(view, body);
+    } else requests.push({ method: request.method, path });
+    return api(view);
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const get = await runCli(origin, ["--json", "mail", "view", "get", "Support"]);
+  expect(get.exitCode).toBe(0);
+  expect(JSON.parse(get.stdout)).toEqual({ large: "auto", phone: "compact" });
+  const large = await runCli(origin, ["--json", "mail", "view", "set", MAILBOX_ID, "--large", "split"]);
+  expect(large.exitCode).toBe(0);
+  expect(JSON.parse(large.stdout)).toEqual({ large: "split", phone: "compact" });
+  const phone = await runCli(origin, ["--json", "mail", "view", "set", "Support", "--phone", "detailed"]);
+  expect(phone.exitCode).toBe(0);
+  expect(JSON.parse(phone.stdout)).toEqual({ large: "split", phone: "detailed" });
+  expect(requests).toEqual([
+    { method: "GET", path: `/api/mail/mailboxes/${MAILBOX_ID}/view` },
+    { method: "PATCH", path: `/api/mail/mailboxes/${MAILBOX_ID}/view`, body: { large: "split" } },
+    { method: "PATCH", path: `/api/mail/mailboxes/${MAILBOX_ID}/view`, body: { phone: "detailed" } },
+  ]);
+  const before = requests.length;
+  for (const flags of [[], ["--large", "compact"], ["--phone", "auto"]]) {
+    const invalid = await runCli(origin, ["--json", "mail", "view", "set", "Support", ...flags]);
+    expect(invalid.exitCode).not.toBe(0);
+  }
+  expect(requests).toHaveLength(before);
+});

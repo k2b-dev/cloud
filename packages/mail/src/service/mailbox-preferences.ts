@@ -4,9 +4,9 @@ import { sql } from "bun";
 import { MAX_MAILBOX_PREFERENCES } from "../contracts";
 import {
   DEFAULT_MAIL_VIEW,
-  mailViewPreferenceChangeSchema,
   type MailViewPreference,
   type MailViewPreferenceChange,
+  mailViewPreferenceChangeSchema,
 } from "../mail-view-preference";
 import { requireMailboxAccess, requireMailboxPermission } from "./access";
 import {

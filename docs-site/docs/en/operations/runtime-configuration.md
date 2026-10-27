@@ -300,3 +300,9 @@ Check configuration in this order:
 8. the application starts without fallback warnings.
 
 Do not print secrets while diagnosing configuration.
+
+## Mail inbox preferences and daily counts
+
+Mail stores inbox views per person and mailbox, separately for phones and large screens. There is no administrator default. The next Mail start adds two nullable view columns to the existing personal mailbox preferences table; it creates no additional history or environment setting. Mailbox deletion removes the view, and access revocation removes it when no readable grant remains. Pins and hidden mailbox choices retain their existing behavior.
+
+Mail's daily completion counts use Core's `app.timezone`, falling back to `Europe/Berlin`, as reminders do. They read the existing activity history for one mailbox and one local calendar day. Each visible conversation counts once; its latest completion that day determines whether it was completed by automation. Reopened conversations remain in that day's count.
