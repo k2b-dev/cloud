@@ -593,7 +593,7 @@ Einrichtungsaufgaben und betriebliche Auswirkungen beschreibt [Antworten und Pos
 
 Im Leser kannst du eine Zusammenfassung fortschreiben oder neu schreiben
 lassen. Dafür gilt dein eigenes Assistant-Kontingent. Das Tageslimit einer
-Regel gilt dabei nicht. Du brauchst Schreibrecht für die Zusammenfassung.
+Regel gilt dabei nicht. Du brauchst Bearbeiten für die Zusammenfassung.
 Ist dein Kontingent aufgebraucht, bleibt die Unterhaltung unverändert.
 
 Die Zusammenfassung zeigt ihren Autor. KI-Text ist gekennzeichnet. Er kann

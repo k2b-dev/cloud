@@ -1,12 +1,12 @@
 import { StructuredOutputError } from "@k2b/nessi";
 import { type Job, StoreFullError, type Worker } from "@k2b/sync";
 import { lazySync } from "../../_internal/process-sync";
-import { isAiSettingsError, runAiStructured } from "../../ai";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
 import { AiQuotaError } from "../../ai/quotas";
-import { resolveAiWorkflowModel } from "../../ai/structured";
+import { resolveAiWorkflowModel, runAiStructured } from "../../ai/structured";
 import { executeAiTask } from "../../ai/task-execution";
 import { resolveApplicationAiTaskModel } from "../../ai/task-model";
+import { isAiSettingsError } from "../../ai/validate";
 import { env } from "../../config/env";
 import { WorkflowAiAdmissionError, workflowAiModelHash } from "./policy";
 

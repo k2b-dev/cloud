@@ -80,14 +80,14 @@ export const mapConversationSummary = (row: SummaryRow): ConversationContentSumm
   summary: row.summary,
   summaryRevision: Number(row.summary_revision),
   conversationRevision: Number(row.revision),
-  source: row.summary_metadata.source ?? (row.summary === null ? null : "person"),
+  source: row.summary_metadata.source ?? null,
   author: row.summary_metadata.author ?? null,
   ai: row.summary_metadata.ai ?? false,
   generatedAt: row.summary_metadata.generatedAt ?? null,
   coveredMessageCount: row.summary_metadata.coveredMessageCount ?? null,
   truncated: row.summary_metadata.truncated ?? false,
   nextStep: row.summary_metadata.nextStep ?? null,
-  newMessagesSince: row.summary === null ? 0 : row.new_message_count,
+  newMessagesSince: row.summary === null || !("coveredThrough" in row.summary_metadata) ? 0 : row.new_message_count,
   status:
     row.generation_status === "limited" && row.generation_limit && Date.parse(row.generation_limit.resetsAt) <= Date.now()
       ? "idle"
@@ -110,7 +110,7 @@ export const loadConversationSummary = async (params: {
   // Lock only the conversation: request-row changes use the same lock order.
   if (params.lock)
     await params.db`SELECT id FROM mail.conversations
-    WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid FOR UPDATE`;
+    WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid FOR NO KEY UPDATE`;
   const [row] = await params.db<SummaryRow[]>`
     SELECT c.summary, c.summary_revision, c.revision, c.summary_metadata,
       (SELECT count(*)::int FROM mail.conversation_messages m WHERE m.conversation_id = c.id) AS message_count,
@@ -163,16 +163,18 @@ const applyConversationSummaryInTransaction = async (params: {
     return fail(err.conflict("Conversation summary was changed by another collaborator"));
   }
   // Even clearing a summary or accepting unchanged AI text is a person's decision.
-  if (
-    params.context === null &&
-    (current.summary_metadata.source === "person" || (!current.summary_metadata.source && current.summary !== null))
-  ) {
+  if (params.context === null && current.summary_metadata.source === "person") {
     return ok({ value: mapConversationSummary(current), event: null, skipped: "edited_by_person" });
   }
   const person = params.context ? userBackedActor(params.context) : null;
+  const workflowVersionId = params.actorOverride?.kind === "workflow" ? params.actorOverride.workflowVersionId : null;
+  const [workflow] = workflowVersionId
+    ? await params.db<{ id: string; name: string }[]>`SELECT w.id, w.name FROM workflows.workflow w
+        JOIN workflows.version v ON v.workflow_id = w.id WHERE v.id = ${workflowVersionId}::uuid`
+    : [];
   const metadata: SummaryMetadata = {
     source: params.context ? "person" : "workflow",
-    author: person ? { kind: "user", id: person.id, name: person.displayName } : null,
+    author: person ? { kind: "user", id: person.id, name: person.displayName } : workflow ? { kind: "workflow", ...workflow } : null,
     ai: false,
     generatedAt: new Date().toISOString(),
     coveredMessageCount: current.message_count,
@@ -194,6 +196,8 @@ const applyConversationSummaryInTransaction = async (params: {
       AND mailbox_id = ${params.mailboxId}::uuid
   `;
   // In-flight output is fenced by summary_revision; pending work can finish as skipped.
+  await params.db`UPDATE mail.conversation_summary_requests SET status = 'idle', failure = NULL, limit_info = NULL
+    WHERE conversation_id = ${params.conversationId}::uuid AND status IN ('failed','limited')`;
   const updated = await loadConversationSummary({ ...params });
   if (!updated) return fail(err.internal("Updated conversation summary could not be loaded"));
   const value = mapConversationSummary(updated);

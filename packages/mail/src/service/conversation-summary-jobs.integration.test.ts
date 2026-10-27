@@ -1,13 +1,21 @@
 import { afterAll, afterEach, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
-import { accounts } from "@k2b/cloud/services";
+import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
+import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { unwrap } from "@k2b/stdlib";
 import { sql } from "bun";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import api from "../api";
 import { newShortId } from "../lib/short-id";
 import { grantMailboxAccess } from "./access";
 import { getAiDailySourceStats, updateMailboxAiDailyLimit } from "./ai-daily-budget";
 import type { MailRequestContext } from "./auth";
-import { getConversationSummary, updateConversationSummary } from "./conversation-summary";
+import {
+  getConversationSummary,
+  loadConversationSummary,
+  updateConversationSummary,
+  updateWorkflowConversationSummaryInTransaction,
+} from "./conversation-summary";
 import * as summaryAi from "./conversation-summary-ai";
 import {
   executeConversationSummary,
@@ -15,6 +23,7 @@ import {
   SUMMARY_QUIET_PERIOD_MS,
   scheduleConversationSummary,
 } from "./conversation-summary-jobs";
+import { migrateConversationSummaries } from "./conversation-summary-migrate";
 import { createMailbox } from "./mailboxes";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -24,6 +33,7 @@ suite("durable conversation summaries", () => {
   let context: MailRequestContext;
   let reader: MailRequestContext;
   let mailboxId = "";
+  let token = "";
   const userIds: string[] = [];
   const grants: string[] = [];
   let messageSequence = 0;
@@ -43,6 +53,14 @@ suite("durable conversation summaries", () => {
     };
     context = await makeContext("Summary writer");
     reader = await makeContext("Summary reader");
+    if (context.actor.kind !== "user") throw new Error("Expected writer");
+    token = unwrap(
+      await serviceAccountCredentials.createUserApiToken({
+        user: context.actor.user,
+        browserSignIn: await createTestBrowserSignIn(context.actor.user.id),
+        name: "Summary API test",
+      }),
+    ).token;
     mailboxId = unwrap(await createMailbox(context, { name: "Summary fixture" })).id;
     if (reader.accessSubject.type !== "user") throw new Error("Expected reader");
     grants.push(unwrap(await grantMailboxAccess({ context, mailboxId, principal: reader.accessSubject, permission: "read" })).id);
@@ -95,6 +113,60 @@ suite("durable conversation summaries", () => {
     generate: typeof summaryAi.generateConversationSummaryAi = async () => output,
   ) => executeConversationSummary(scope, { generate });
   const state = async (scope: { mailboxId: string; conversationId: string }) => unwrap(await getConversationSummary({ ...scope, context }));
+
+  test("migration restores legacy provenance while unknown summaries stay unknown", async () => {
+    const workflow = await conversation();
+    const human = await conversation();
+    const unknown = await conversation();
+    for (const [scope, kind] of [
+      [workflow, "workflow"],
+      [human, "user"],
+    ] as const) {
+      await sql`UPDATE mail.conversations SET summary = 'Old summary', summary_revision = 2 WHERE id = ${scope.conversationId}::uuid`;
+      await sql`INSERT INTO mail.activity_events (mailbox_id,conversation_id,actor_kind,actor_id,action,outcome,target_type,target_id,metadata)
+        VALUES (${mailboxId}::uuid,${scope.conversationId}::uuid,${kind},${userIds[0]}::uuid,
+          'conversation.summary_updated','confirmed','conversation',${scope.conversationId}::uuid,
+          ${{ after: { summaryRevision: 2 } }}::jsonb)`;
+    }
+    await sql`UPDATE mail.conversations SET summary = 'Unknown summary' WHERE id = ${unknown.conversationId}::uuid`;
+    await migrateConversationSummaries(sql);
+    await migrateConversationSummaries(sql);
+    expect(await state(workflow)).toMatchObject({ source: "workflow", newMessagesSince: 0 });
+    expect(await state(human)).toMatchObject({ source: "person", author: { id: userIds[0] } });
+    expect(await state(unknown)).toMatchObject({ source: null, newMessagesSince: 0 });
+    const mutation = unwrap(
+      await sql.begin((db) =>
+        updateWorkflowConversationSummaryInTransaction({
+          ...workflow,
+          db,
+          workflowVersionId: userIds[0]!,
+          input: { summary: "Continued summary", expectedSummaryRevision: 2 },
+        }),
+      ),
+    );
+    expect(mutation.value.summary).toBe("Continued summary");
+    expect(unwrap(await scheduleConversationSummary({ ...human, context, source })).skipped).toBe("edited_by_person");
+  });
+
+  test("summary locking permits sync's conversation key-share then mailbox update", async () => {
+    const scope = await conversation();
+    const syncLocked = Promise.withResolvers<void>();
+    const mailboxLocked = Promise.withResolvers<void>();
+    const sync = sql.begin(async (db) => {
+      await db`SELECT id FROM mail.conversations WHERE id = ${scope.conversationId}::uuid FOR KEY SHARE`;
+      syncLocked.resolve();
+      await mailboxLocked.promise;
+      await db`UPDATE mail.mailboxes SET name = name WHERE id = ${mailboxId}::uuid`;
+    });
+    await syncLocked.promise;
+    const summary = sql.begin(async (db) => {
+      await db`SELECT id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR UPDATE`;
+      mailboxLocked.resolve();
+      return loadConversationSummary({ ...scope, db, lock: true });
+    });
+    const [, row] = await Promise.all([sync, summary]);
+    expect(Number(row?.summary_revision)).toBe(1);
+  });
 
   test("20 rapid requests keep one durable request and make one call", async () => {
     const scope = await conversation(20);
@@ -316,6 +388,184 @@ suite("durable conversation summaries", () => {
     });
     expect(calls).toBe(1);
     expect(await state(scope)).toMatchObject({ newMessagesSince: 0, status: "idle" });
+  });
+
+  test("an automatic trigger during manual inference schedules only a source-paid follow-up", async () => {
+    const scope = await conversation();
+    unwrap(await generateConversationSummary({ ...scope, context, input: { mode: "rolling", expectedSummaryRevision: 1 } }));
+    await run(scope, async (input) => {
+      expect(input.usageSubject).toMatchObject({ type: "user" });
+      await addMessages(scope.conversationId, 1);
+      unwrap(await scheduleConversationSummary({ ...scope, context, source }));
+      return output;
+    });
+    expect(await state(scope)).toMatchObject({ status: "pending", newMessagesSince: 1 });
+    await ready(scope);
+    await run(scope, async (input) => {
+      expect(input.usageSubject).toBeUndefined();
+      return output;
+    });
+  });
+
+  test("worker shutdown retains the writing request and its reservation", async () => {
+    const scope = await conversation();
+    const rule = { ...source, id: "shutdown-rule", maxAiCallsPerDay: 1 };
+    unwrap(await scheduleConversationSummary({ ...scope, context, source: rule }));
+    await ready(scope);
+    const controller = new AbortController();
+    const result = await executeConversationSummary(scope, {
+      signal: controller.signal,
+      generate: async () => {
+        controller.abort(new Error("worker stopped"));
+        throw controller.signal.reason;
+      },
+    });
+    expect(result.status).toBe("writing");
+    expect(await state(scope)).toMatchObject({ summary: null, status: "writing", failure: null });
+    expect(unwrap(await getAiDailySourceStats({ mailboxId, sourceId: rule.id }))).toMatchObject({ reservedAiCalls: 1, aiCallsToday: 0 });
+    await ready(scope);
+    await run(scope);
+    expect(unwrap(await getAiDailySourceStats({ mailboxId, sourceId: rule.id }))).toMatchObject({ reservedAiCalls: 0, aiCallsToday: 1 });
+  });
+
+  test("interrupted generation keeps its original coverage when another message arrives", async () => {
+    const scope = await conversation();
+    const rule = { ...source, id: "snapshot-rule" };
+    unwrap(await scheduleConversationSummary({ ...scope, context, source: rule }));
+    await ready(scope);
+    const controller = new AbortController();
+    let boundary: string | null = null;
+    let effectKey = "";
+    await executeConversationSummary(scope, {
+      signal: controller.signal,
+      generate: async (input) => {
+        boundary = input.throughMessageSeq;
+        effectKey = input.effectKey;
+        controller.abort(new Error("stop"));
+        throw controller.signal.reason;
+      },
+    });
+    await addMessages(scope.conversationId, 1);
+    unwrap(await scheduleConversationSummary({ ...scope, context, source: rule }));
+    await ready(scope);
+    await run(scope, async (input) => {
+      expect(input.effectKey).toBe(effectKey);
+      expect(input.throughMessageSeq).toBe(boundary);
+      return output;
+    });
+    expect(await state(scope)).toMatchObject({ status: "pending", newMessagesSince: 1 });
+  });
+
+  test("an interrupted manual request keeps one personal call", async () => {
+    const scope = await conversation();
+    const input = { mode: "rolling" as const, expectedSummaryRevision: 1 };
+    unwrap(await generateConversationSummary({ ...scope, context, input }));
+    const controller = new AbortController();
+    let effectKey = "";
+    await executeConversationSummary(scope, {
+      signal: controller.signal,
+      generate: async (request) => {
+        effectKey = request.effectKey;
+        controller.abort(new Error("stop"));
+        throw controller.signal.reason;
+      },
+    });
+    expect(unwrap(await generateConversationSummary({ ...scope, context, input })).summaryState.status).toBe("writing");
+    await ready(scope);
+    await run(scope, async (request) => {
+      expect(request.effectKey).toBe(effectKey);
+      return output;
+    });
+  });
+
+  test("a successful AI call stays counted if permission disappears before settlement", async () => {
+    const scope = await conversation();
+    const rule = { ...source, id: "settlement-rule" };
+    unwrap(await scheduleConversationSummary({ ...scope, context, source: rule }));
+    await ready(scope);
+    const personId = userIds[0]!;
+    try {
+      await run(scope, async () => {
+        await sql`UPDATE auth.users SET account_expires = now() - interval '1 day' WHERE id = ${personId}::uuid`;
+        return output;
+      });
+      expect(unwrap(await getAiDailySourceStats({ mailboxId, sourceId: rule.id }))).toMatchObject({ aiCallsToday: 1, reservedAiCalls: 0 });
+    } finally {
+      await sql`UPDATE auth.users SET account_expires = NULL WHERE id = ${personId}::uuid`;
+    }
+    expect(await state(scope)).toMatchObject({ status: "failed", summary: null });
+  });
+
+  const requestApi = async (scope: { conversationId: string }, body: unknown) => {
+    const [ids] = await sql<{ mailbox: string; conversation: string }[]>`SELECT m.short_id AS mailbox, c.short_id AS conversation
+      FROM mail.conversations c JOIN mail.mailboxes m ON m.id = c.mailbox_id WHERE c.id = ${scope.conversationId}::uuid`;
+    if (!ids) throw new Error("Missing public IDs");
+    return api.request(`/mailboxes/${ids.mailbox}/conversations/${ids.conversation}/summary/generate`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
+      body: JSON.stringify(body),
+    });
+  };
+
+  test("reader HTTP route returns 202 with the full writing contract", async () => {
+    const scope = await conversation();
+    const response = await requestApi(scope, { mode: "rolling", expectedSummaryRevision: 1 });
+    expect(response.status).toBe(202);
+    const result = await response.json();
+    expect(result).toMatchObject({ status: "writing", summaryRevision: 1, canGenerate: true });
+    expect(result).not.toHaveProperty("summaryState");
+  });
+
+  test("reader HTTP route rejects a revision conflict and bad input", async () => {
+    const scope = await conversation();
+    expect((await requestApi(scope, { mode: "rolling", expectedSummaryRevision: 9 })).status).toBe(409);
+    expect((await requestApi(scope, { mode: "invalid", expectedSummaryRevision: 1 })).status).toBe(400);
+    expect((await state(scope)).status).toBe("idle");
+  });
+
+  test("a queued API request checks its credential again before inference", async () => {
+    const scope = await conversation();
+    expect((await requestApi(scope, { mode: "rolling", expectedSummaryRevision: 1 })).status).toBe(202);
+    const [row] = await sql<{ credential: string }[]>`SELECT request->'context'->'actor'->>'credentialId' AS credential
+      FROM mail.conversation_summary_requests WHERE conversation_id = ${scope.conversationId}::uuid`;
+    if (!row?.credential) throw new Error("Missing API credential");
+    let calls = 0;
+    try {
+      await sql`UPDATE auth.service_account_credentials SET revoked_at = now() WHERE id = ${row.credential}::uuid`;
+      await run(scope, async () => {
+        calls++;
+        return output;
+      });
+    } finally {
+      await sql`UPDATE auth.service_account_credentials SET revoked_at = NULL WHERE id = ${row.credential}::uuid`;
+    }
+    expect(calls).toBe(0);
+    expect(await state(scope)).toMatchObject({ summary: null, status: "failed" });
+  });
+
+  test("editing after a failed request clears its old failure state", async () => {
+    const scope = await conversation();
+    unwrap(await scheduleConversationSummary({ ...scope, context, source }));
+    await ready(scope);
+    await run(scope, async () => {
+      throw new Error("Provider failed");
+    });
+    expect((await state(scope)).status).toBe("failed");
+    expect(
+      unwrap(await updateConversationSummary({ ...scope, context, input: { summary: "My words", expectedSummaryRevision: 1 } })),
+    ).toMatchObject({ source: "person", status: "idle", failure: null });
+  });
+
+  test("reader HTTP route exposes the stable allowance error", async () => {
+    const scope = await conversation();
+    available.mockResolvedValue({
+      allowance: { unlimited: false, usedPercent: 100, resetsAt: "2026-10-28T00:00:00Z" },
+      canGenerate: false,
+    });
+    const response = await requestApi(scope, { mode: "replace", expectedSummaryRevision: 1 });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "mail.summary.allowance_exhausted" });
+    expect((await state(scope)).status).toBe("idle");
   });
 
   test("an interrupted writing claim resumes the same request after its lease expires", async () => {

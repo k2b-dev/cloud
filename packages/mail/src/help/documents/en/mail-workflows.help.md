@@ -594,7 +594,7 @@ For setup tasks and operational consequences, see [Automate responses and mailbo
 
 The conversation reader can continue or rewrite a summary. These requests use
 your own Assistant allowance. They do not use an automation's daily limit.
-You need the same write permission as for editing the summary. If your
+You need the same access as for editing the summary. If your
 allowance is used up, the request leaves the conversation unchanged.
 
 The summary shows who wrote it and marks AI text. It can include a next step

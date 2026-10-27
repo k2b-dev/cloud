@@ -1883,7 +1883,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         ...internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
         input: c.req.valid("json"),
       });
-      return result.ok ? c.json(result.data.summaryState, 202) : respondPublic(c, result);
+      return result.ok ? respond(c, ok(result.data.summaryState), 202) : respondPublic(c, result);
     },
   )
   .put(

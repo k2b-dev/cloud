@@ -75,7 +75,7 @@ again. Releasing a completed reservation does not erase its successful calls.
 Reserve, consume, and release accept the caller's transaction as `db` so the
 reservation and pending work can commit or roll back together. Without `db`,
 each method owns a short transaction. Callers lock the mailbox before a
-conversation, unwrap failed results to roll back their transaction, and keep
+conversation using `FOR NO KEY UPDATE`, unwrap failed results to roll back their transaction, and keep
 network calls outside it. A durable pending-work owner must recover or release
 its holds after a crash; this core does not run a recovery worker.
 
@@ -96,3 +96,26 @@ Counters and reservation keys are durable Postgres data and are deleted with
 the mailbox. There is no automatic expiry or cleanup worker for this history:
 removing a completed key would also remove its protection against duplicate
 charges. Include this state in the existing Mail database backup policy.
+
+## Conversation summaries
+
+The reader's `summary.generate` route and `conversation summary generate` CLI
+request a durable job using the person's Assistant allowance. The HTTP route
+returns 202 with the current summary state. Concurrent requests share the same
+writing request. An explicit personal request has its own operator admission
+source; automatic requests share the captured conversation message boundary.
+Both use the platform AI task runtime, cache, deadline and central accounting.
+
+Automatic service requests wait for a 60-second quiet period. Postgres stores
+one request per conversation; a scheduler recovers interrupted work. Retries
+keep their captured input boundary and task key. New replies during inference
+can cause one automatic follow-up. A successful call remains counted if its
+result cannot subsequently be applied.
+
+Startup also adds summary provenance and pending-job storage. Existing summary
+writers are recovered from the latest matching summary activity: a person's
+edit remains protected, and an existing workflow can continue its own text.
+Without that evidence the writer and historical coverage remain unknown;
+Mail does not label such text as AI. New AI summaries record coverage, omissions,
+writer, generation time and an optional next step. Editing clears that suggestion.
+These additions leave the published workflow manifest unchanged.

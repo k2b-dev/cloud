@@ -218,7 +218,10 @@ export const generateConversationSummaryAi = async (
     usageSubject: input.usageSubject,
     signal: input.signal,
     source: {
-      sourceId: `${input.conversationId}:${input.throughMessageSeq}`,
+      // Each explicit personal request is a source; automatic work shares the message snapshot cap.
+      sourceId: input.usageSubject
+        ? `${input.conversationId}:manual:${input.effectKey}`
+        : `${input.conversationId}:${input.throughMessageSeq}`,
       sourceRevision: input.sourceRevision,
       budget: env.WORKFLOW_AI_BUDGET,
     },

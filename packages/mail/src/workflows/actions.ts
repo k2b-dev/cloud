@@ -777,6 +777,7 @@ export const MAIL_WORKFLOW_ACTIONS = {
             {
               action: "setConversationSummary",
               applied,
+              ...(mutation.data.skipped ? { skipped: mutation.data.skipped } : {}),
               value: mutation.data.value.summary,
               conversationId: publicConversationId,
               revision: mutation.data.value.conversationRevision,

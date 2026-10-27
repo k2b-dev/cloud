@@ -1,5 +1,5 @@
 import { lazySync } from "@k2b/cloud";
-import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs } from "@k2b/cloud/services";
+import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJobs, toPgTextArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result, unwrap } from "@k2b/stdlib";
 import type { JobContext, Worker } from "@k2b/sync";
 import { sql } from "bun";
@@ -36,6 +36,7 @@ type SummaryRequest = {
   context: MailRequestContext;
   expectedSummaryRevision?: number;
   source: SummarySource | null;
+  followup?: { context: MailRequestContext; source: SummarySource; style: SummaryRequest["style"]; mode: SummaryRequest["mode"] };
   style: "short" | "bullets" | "detailed";
   mode: "rolling" | "replace";
 };
@@ -60,7 +61,7 @@ type RequestRow = {
 type Scope = { mailboxId: string; conversationId: string };
 
 const lockScope = async (db: SqlClient, scope: Scope) => {
-  await db`SELECT id FROM mail.mailboxes WHERE id = ${scope.mailboxId}::uuid FOR UPDATE`;
+  await db`SELECT id FROM mail.mailboxes WHERE id = ${scope.mailboxId}::uuid FOR NO KEY UPDATE`;
   return loadConversationSummary({ ...scope, db, lock: true });
 };
 
@@ -120,8 +121,22 @@ export const scheduleConversationSummary = async (
       const state = mapConversationSummary(current);
       if (state.source === "person") return ok({ summaryState: state, skipped: "edited_by_person" as const });
       const pending = await requestRow(db, params);
-      if (pending?.status === "writing" || (pending?.status === "pending" && pending.request.source === null))
+      if (pending?.status === "writing" || (pending?.status === "pending" && pending.request.source === null)) {
+        if (!pending.request.source) {
+          const request: SummaryRequest = {
+            ...pending.request,
+            followup: {
+              context: params.context,
+              source: params.source,
+              style: params.style ?? "bullets",
+              mode: params.mode ?? "rolling",
+            },
+          };
+          await db`UPDATE mail.conversation_summary_requests SET request = ${request}::jsonb
+            WHERE conversation_id = ${params.conversationId}::uuid`;
+        }
         return ok({ summaryState: state });
+      }
       const key =
         pending?.status === "pending" && pending.request.source?.id === params.source.id ? pending.request_id : crypto.randomUUID();
       const admission = await reserve(db, params, params.source, key);
@@ -206,7 +221,11 @@ export const generateConversationSummary = async (
     if (!current.ok) return current;
     if (current.data.status === "writing") return ok({ summaryState: current.data });
     const available = await getConversationSummaryAiAvailability({ type: "user", userId: person.id });
-    if (available.allowance?.usedPercent === 100)
+    if (
+      available.allowance &&
+      !available.allowance.unlimited &&
+      (available.allowance.usedPercent === null || available.allowance.usedPercent >= 100)
+    )
       return fail({
         code: "mail.summary.allowance_exhausted",
         message: "Your AI allowance is used up. Try again after it resets.",
@@ -275,8 +294,23 @@ const summaryFailureCode = (error: unknown): ConversationSummaryFailureCode => {
   if (code.includes("quota") || code.includes("allowance")) return "allowance_exhausted";
   if (code.includes("timeout") || code.includes("deadline")) return "timeout";
   if (code.includes("size") || code.includes("large")) return "input_too_large";
-  if (code.includes("provider") || code.includes("unavailable") || code.includes("model")) return "provider_unavailable";
+  if (code.includes("provider") || code.includes("unavailable") || code.includes("model") || code.includes("source_budget"))
+    return "provider_unavailable";
   return "internal";
+};
+
+const assertRequestCredential = async (context: MailRequestContext, db: SqlClient = sql) => {
+  if (context.actor.kind === "user") return;
+  const snapshot = durableCredentialSnapshot(context);
+  if (!snapshot) throw new Error("Summary request credential expired");
+  if (!snapshot.credentialId) return; // Short-lived invocation; its stored expiry is checked above.
+  const [credential] = await db<{ active: boolean }[]>`SELECT EXISTS (
+    SELECT 1 FROM auth.service_account_credentials c
+    WHERE c.id = ${snapshot.credentialId}::uuid AND c.service_account_id = ${context.actor.serviceAccount.id}::uuid
+      AND c.status = 'active' AND c.revoked_at IS NULL AND (c.expires_at IS NULL OR c.expires_at > now())
+      AND c.scopes @> ${toPgTextArray(snapshot.scopes)}::text[] AND c.scopes <@ ${toPgTextArray(snapshot.scopes)}::text[]
+  ) AS active`;
+  if (!credential?.active) throw new Error("Summary request credential is unavailable");
 };
 
 /** One durable worker turn. Inject inference for focused public-service integration tests. */
@@ -325,10 +359,10 @@ export const executeConversationSummary = async (
   if (!claimed) return { status: "idle" };
   if ("delayMs" in claimed) return { status: "pending", delayMs: claimed.delayMs };
   const { row, basis } = claimed;
+  let inferenceCompleted = false;
   try {
     const context = row.request.context;
-    if (context.actor.kind === "service_account" && !durableCredentialSnapshot(context))
-      throw new Error("Summary request credential expired");
+    await assertRequestCredential(context);
     unwrap(await requireConversationCollaborationPermission(context, scope.mailboxId, scope.conversationId, "write"));
     const person = userBackedActor(context);
     const output = await withLeaseHeartbeat({
@@ -353,10 +387,13 @@ export const executeConversationSummary = async (
           signal: options.signal ? AbortSignal.any([signal, options.signal]) : signal,
         }),
     });
+    inferenceCompleted = true;
+    options.signal?.throwIfAborted();
     const settled = await sql.begin(async (db) => {
       const current = await lockScope(db, scope);
       const active = await requestRow(db, scope);
       if (!current || active?.claim_id !== claimId) return "idle";
+      await assertRequestCredential(row.request.context, db);
       unwrap(await requireConversationCollaborationPermission(row.request.context, scope.mailboxId, scope.conversationId, "write", db));
       if (row.request.source)
         unwrap(
@@ -392,27 +429,71 @@ export const executeConversationSummary = async (
       await db`UPDATE mail.conversation_summary_requests SET status = 'idle', failure = NULL, limit_info = NULL,
         claim_id = NULL, claimed_at = NULL, updated_at = now() WHERE conversation_id = ${scope.conversationId}::uuid`;
       await activity(db, scope, row.request, "idle", { applied: unchanged, ...(!unchanged ? { skipped: "edited_by_person" } : {}) });
-      // New links while inference ran get one further bundled generation. Manual requests never start extra personal calls.
-      return unchanged && row.request.source && current.last_message_seq !== basis.throughMessageSeq ? "followup" : "idle";
+      let followup: SummaryRequest["followup"] = undefined;
+      // A trigger during manual work may request an automatic follow-up, never another personal call.
+      if (unchanged && current.last_message_seq !== basis.throughMessageSeq) {
+        followup = row.request.source
+          ? {
+              context: row.request.context,
+              source: row.request.source,
+              mode: row.request.mode,
+              style: row.request.style,
+            }
+          : active.request.followup;
+      }
+      if (!followup) return "idle";
+      // Commit new work with the result so a crash cannot lose the latest replies.
+      const request: SummaryRequest = { ...followup };
+      const key = crypto.randomUUID();
+      const admission = await reserve(db, scope, followup.source, key);
+      if (admission.status === "limited") {
+        const limit = {
+          scope: admission.scope,
+          workflow: { id: followup.source.id, name: followup.source.name },
+          limit: admission.limit,
+          resetsAt: admission.resetsAt,
+        };
+        await db`UPDATE mail.conversation_summary_requests SET request_id = ${key}::uuid, request = ${request}::jsonb,
+          status = 'limited', due_at = ${admission.resetsAt}::timestamptz, limit_info = ${limit}::jsonb,
+          basis = NULL, attempts = 0 WHERE conversation_id = ${scope.conversationId}::uuid`;
+        await activity(db, scope, request, "limited", { limit });
+        return "limited";
+      }
+      await writePending(db, scope, request, key, new Date(Date.now() + SUMMARY_QUIET_PERIOD_MS), "pending");
+      return "followup";
     });
     mailLive.wake();
-    if (settled === "followup" && row.request.source) {
-      const next = await scheduleConversationSummary({
-        ...scope,
-        context: row.request.context,
-        source: row.request.source,
-        mode: row.request.mode,
-        style: row.request.style,
-      });
-      if (!next.ok) throw Object.assign(new Error(next.error.message), { code: next.error.code });
-    }
+    if (settled === "followup") await submitConversationSummary(scope).catch(reportSubmissionFailure);
     return { status: settled };
   } catch (error) {
+    if (options.signal?.aborted) {
+      // Worker shutdown is recovery, not a failed inference. Keep its reservation and stable task key.
+      await sql.begin(async (db) => {
+        await lockScope(db, scope);
+        const active = await requestRow(db, scope);
+        if (active?.claim_id !== claimId) return;
+        await db`UPDATE mail.conversation_summary_requests SET status = 'writing', claim_id = NULL,
+          claimed_at = NULL, due_at = now(), updated_at = now() WHERE conversation_id = ${scope.conversationId}::uuid`;
+        await activity(db, scope, row.request, "writing", { recovery: "worker_stopped" });
+      });
+      mailLive.wake();
+      return { status: "writing" };
+    }
     await sql.begin(async (db) => {
       await lockScope(db, scope);
       const active = await requestRow(db, scope);
       if (!active || active.claim_id !== claimId) return;
-      await release(db, active);
+      if (inferenceCompleted && row.request.source)
+        unwrap(
+          await consumeAiDailyBudget({
+            db,
+            mailboxId: scope.mailboxId,
+            sourceId: row.request.source.id,
+            reservationKey: row.request_id,
+            actualCalls: 1,
+          }),
+        );
+      else await release(db, active);
       const failure: NonNullable<ConversationContentSummary["failure"]> = {
         code: summaryFailureCode(error),
         attempts: active.attempts,

@@ -67,7 +67,7 @@ const mailboxTimeZone = async (): Promise<string> =>
 const lockMailbox = async (tx: SqlClient, mailboxId: string, includeDeleted = false) => {
   const [mailbox] = await tx<{ ai_calls_per_day: number | null }[]>`
     SELECT ai_calls_per_day FROM mail.mailboxes
-    WHERE id = ${mailboxId}::uuid AND (${includeDeleted} OR deleted_at IS NULL) FOR UPDATE
+    WHERE id = ${mailboxId}::uuid AND (${includeDeleted} OR deleted_at IS NULL) FOR NO KEY UPDATE
   `;
   if (!mailbox) throw err.notFound("Mailbox");
   return mailbox;
