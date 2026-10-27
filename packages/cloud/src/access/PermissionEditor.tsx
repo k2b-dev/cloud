@@ -758,7 +758,7 @@ function AccessEntryRow(props: {
                   aria-label={t().permissionFor({ name: displayName() })}
                   title={menuTitle()}
                   value={shownKey}
-                  disabled={props.disabled}
+                  disabled={props.disabled && !props.updating}
                   items={items()}
                   appearance="plain"
                   size={{ width: "21rem" }}

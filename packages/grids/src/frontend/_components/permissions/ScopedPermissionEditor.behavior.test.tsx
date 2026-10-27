@@ -33,6 +33,14 @@ const installPopoverApi = (dom: DomTestHarness) => {
   });
 };
 
+const openLevels = (row: Element) => {
+  const trigger = row.querySelector<HTMLButtonElement>('button[role="combobox"]')!;
+  if (trigger.getAttribute("aria-expanded") !== "true") trigger.click();
+  const list = row.ownerDocument.getElementById(trigger.getAttribute("aria-controls")!);
+  if (!list) throw new Error("The level picker did not open");
+  return Array.from(list.querySelectorAll<HTMLElement>('[role="option"]'));
+};
+
 const manager = (id: string, displayName: string): AccessEntry => ({
   id,
   principal: { type: "user", userId: `user-${id}` },
@@ -74,17 +82,16 @@ domTest("the base access editor turns read-only once a change costs the person M
   const removeButtons = () => dom.root.querySelectorAll("button[aria-label^='Remove ']");
   try {
     expect(removeButtons()).toHaveLength(2);
-    const edit = Array.from(rowOf("Quentin Dorn").querySelectorAll<HTMLButtonElement>("[role=menuitemradio]")).find((item) =>
-      item.textContent?.startsWith("Edit"),
-    )!;
+    const edit = openLevels(rowOf("Quentin Dorn")).find((item) => item.textContent?.startsWith("Edit"))!;
     edit.click();
 
     await waitFor(() => removeButtons().length === 0, "the read-only editor");
     expect(requests).toEqual(["PATCH /api/grids/access/qdt", "GET /api/grids/access/by-base/BASE01"]);
-    expect(rowOf("Quentin Dorn").querySelector("[role=menuitemradio]")).toBeNull();
+    expect(rowOf("Quentin Dorn").querySelector('button[role="combobox"]')).toBeNull();
     expect(rowOf("Quentin Dorn").textContent).toContain("Edit");
   } finally {
     dispose();
+    await Promise.resolve();
     globalThis.fetch = originalFetch;
     dom.cleanup();
   }
@@ -122,14 +129,13 @@ for (const scenario of precedenceScenarios) {
       expect(locked).toEqual(scenario.locked);
       for (const [index, item] of entries.entries()) {
         if (item.permission !== "admin") continue;
-        const lower = Array.from(rows()[index]!.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]")).filter(
-          (option) => !option.textContent?.startsWith("Manage"),
-        );
+        const lower = openLevels(rows()[index]!).filter((option) => !option.textContent?.startsWith("Manage"));
         expect(lower.length).toBeGreaterThan(0);
-        expect(lower.every((option) => option.disabled)).toBe(scenario.locked.includes(item.id));
+        expect(lower.every((option) => option.getAttribute("aria-disabled") === "true")).toBe(scenario.locked.includes(item.id));
       }
     } finally {
       dispose();
+      await Promise.resolve();
       globalThis.fetch = originalFetch;
       dom.cleanup();
     }

@@ -53,6 +53,7 @@ render(() => {
             allowedLevels={[
               { level: "read", label: "Level 1" },
               { level: "write", label: "Level 2" },
+              { level: "admin", label: "Level 3" },
             ]}
             allowAuthenticated={false}
             grantAccess={async () => {
