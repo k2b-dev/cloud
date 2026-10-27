@@ -508,6 +508,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       known.body === row.body &&
       known.at === row.at &&
       known.icon === row.icon &&
+      known.href === row.href &&
       known.origin?.label === row.origin?.label &&
       known.group?.label === row.group?.label &&
       known.group?.time === row.group?.time
@@ -730,6 +731,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             authorName: "",
             body: event.sentence,
             icon: event.icon,
+            href: event.href,
             at: event.at,
             own: false,
             origin: mixed ? eventOrigin(current.id, event) : undefined,

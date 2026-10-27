@@ -10,6 +10,17 @@ const syncReplicas = z
   .enum(["1", "3", "5"], { error: "must be 1, 3, or 5" })
   .transform((value): 1 | 3 | 5 => (value === "1" ? 1 : value === "3" ? 3 : 5));
 
+const budgetSchema = z
+  .object({
+    maxStepsPerSource: z.number().int().positive(),
+    tasksPerMinute: z.number().int().positive(),
+    burst: z.number().int().positive(),
+    sourcesPer24Hours: z.number().int().positive(),
+    scopeConcurrent: z.number().int().positive(),
+    globalConcurrent: z.number().int().positive(),
+  })
+  .strict();
+
 const registry = defineEnv({
   // Process
   NODE_ENV: {
@@ -64,6 +75,35 @@ const registry = defineEnv({
     default: true,
     example: "true",
     doc: "Only dial the listed servers and ignore cluster-advertised peer addresses; set to `false` when every advertised address is reachable.",
+  },
+
+  WORKFLOW_AI_BUDGET: {
+    schema: z
+      .string()
+      .transform((value, ctx) => {
+        try {
+          return JSON.parse(value);
+        } catch {
+          ctx.addIssue({ code: "custom", message: "must be JSON" });
+          return z.NEVER;
+        }
+      })
+      .pipe(budgetSchema),
+    default: { maxStepsPerSource: 2, tasksPerMinute: 10, burst: 20, sourcesPer24Hours: 2_000, scopeConcurrent: 1, globalConcurrent: 4 },
+    doc: "JSON scoped workflow inference budget: active or successful logical requests per source/24h, token-bucket admission per minute and burst, distinct sources per rolling 24h, outstanding tasks per scope and globally; capacity/rate overload uses bounded workflow retries, daily/source limits fail visibly, and cache hits consume no reservation.",
+  },
+
+  // Workflow inference: p95 ~4s in the pilot; 60s bounds a whole attempt,
+  // including admission and structured-output repair, not just stream idleness.
+  WORKFLOW_AI_ATTEMPT_TIMEOUT_MS: {
+    schema: z.coerce.number().int().positive(),
+    default: 60_000,
+    doc: "Absolute workflow AI attempt budget in milliseconds, including admission and repair; expiry aborts the provider and follows the bounded retry policy.",
+  },
+  WORKFLOW_AI_QUEUE_TIMEOUT_MS: {
+    schema: z.coerce.number().int().positive(),
+    default: 60_000,
+    doc: "Maximum workflow AI queue wait in milliseconds; recovery fails overdue or lost deliveries visibly so an operator can retry the workflow.",
   },
 
   // Installation

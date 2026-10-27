@@ -105,7 +105,14 @@ export class WorkflowRetryableStepError extends Error {
   }
 }
 
-class WorkflowValueError extends Error {}
+export class WorkflowValueError extends Error {
+  constructor(
+    message: string,
+    readonly code = "WORKFLOW_VALUE_UNAVAILABLE",
+  ) {
+    super(message);
+  }
+}
 
 export class WorkflowValueWaiting extends Error {
   constructor(
@@ -951,11 +958,7 @@ const evaluateStep = async (
     }
     const outcome: WorkflowStepOutcome = {
       state: "failed",
-      error: executionError(
-        error instanceof WorkflowValueError ? "WORKFLOW_VALUE_UNAVAILABLE" : "WORKFLOW_ACTION_ERROR",
-        errorMessage(error),
-        false,
-      ),
+      error: executionError(error instanceof WorkflowValueError ? error.code : "WORKFLOW_ACTION_ERROR", errorMessage(error), false),
     };
     return { flow: { state: "failed", error: outcome.error, step }, result: { mode: "execute", outcome } };
   }

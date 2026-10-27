@@ -171,6 +171,7 @@ const chartKinds = (limits = true) => {
       kind: z.literal("bar"),
       ...ChartKindCommon,
       data: list(ChartCategory, 1, CLOUD_AI_CHART_MAX_VALUES),
+      xAxis: ChartAxis.pick({ label: true }).strict().optional(),
       yAxis: ChartAxis.optional(),
       colorByBar: z.boolean().optional(),
       showValues: z.boolean().optional(),
@@ -387,14 +388,14 @@ const flatChartSchema = () => {
       .max(CLOUD_AI_CHART_MAX_SERIES)
       .optional()
       .describe("line, scatter: label/data, optional reference role; line: style. Line needs 2 points per series."),
-    xAxis: ChartAxis.optional().describe("line, scatter: x axis."),
-    yAxis: ChartAxis.optional().describe("bar, line, scatter, boxplot: y axis."),
+    xAxis: ChartAxis.optional().describe("line, scatter: x axis. bar: only label, the category axis title."),
+    yAxis: ChartAxis.optional().describe("bar, line, scatter, boxplot: y axis; label names the value, format sets units."),
     legend: z
       .boolean()
       .optional()
       .describe("bar (colorByBar), line, scatter, pie, donut: legend; defaults to several series or unlabeled slices."),
     colorByBar: z.boolean().optional().describe("bar: one palette color per bar."),
-    showValues: z.boolean().optional().describe("bar, heatmap: print values."),
+    showValues: z.boolean().optional().describe("bar: print values, by default when they stay readable. heatmap: print values."),
     area: z.boolean().optional().describe("line, sparkline: fill under the line."),
     smooth: z.boolean().optional().describe("line: smooth curves."),
     showLabels: z.boolean().optional().describe("pie, donut: name slices next to them."),

@@ -7503,6 +7503,7 @@ const specialistCommands = {
       flags: {
         ...mailboxFlag,
         revision: flag.int({ required: true, min: 1, description: "Expected current revision" }),
+        "recompute-ai": flag.boolean({ description: "Recompute successful inference during --retry-failed; consumes the mailbox budget" }),
         "retry-failed": flag.boolean({
           description: "Re-run only messages whose latest run of this automation version failed or was canceled",
         }),
@@ -7510,6 +7511,7 @@ const specialistCommands = {
       },
       run: async ({ ctx, args, flags }) => {
         if (!flags.yes) throw new Error("Pass --yes to start the incoming-automation backfill.");
+        if (flags["recompute-ai"] && !flags["retry-failed"]) throw new Error("--recompute-ai requires --retry-failed.");
         if (flags.revision === undefined) throw new Error("Missing expected incoming-automation revision.");
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
         const current = await readApi<IncomingAutomation>(
@@ -7525,6 +7527,7 @@ const specialistCommands = {
             operationId: crypto.randomUUID(),
             expectedRevision: flags.revision,
             ...(flags["retry-failed"] ? { retryFailed: true } : {}),
+            ...(flags["recompute-ai"] ? { recomputeAi: true } : {}),
           }),
         );
         if (printStructured(ctx, result)) return;
