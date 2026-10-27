@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-21
+updated: 2026-10-26
 ---
 
 # App capabilities
@@ -1725,6 +1725,63 @@ this is not a credential bridge for independently deployed application hosts.
 Never construct authority from JSON, tool arguments, workers, or browser state,
 and never mix it with credentials, a mandate or `transport`.
 
+### Read from another capability handler
+
+A Query, Action, or review handler can use `context.query()` to read one
+resource from another application under its incoming authority. For example,
+a discussion handler can ask the resource's owning application to authorize
+and read the discussed item before returning messages or writing a reply.
+Built-in and third-party applications use the same handler context:
+
+```ts
+if (!context.query) throw new Error("A live Cloud capability invocation is required");
+const item = await context.query(
+  { appId: "inventory", capabilityId: "item.read", input: { id: itemId } },
+  z.object({ id: z.string(), name: z.string() }).passthrough(),
+);
+if (!item.ok) throw new Error(item.error.message);
+```
+
+The helper sends the incoming invocation only to Core. Core checks the active
+parent, current principal and source credential, then signs a child invocation
+bound to the parent, target application, Query and current schema. The target
+still checks its application and resource permissions. No original session,
+API key or OAuth token reaches either application.
+
+Credential scopes, the mobile session restriction and the access subject stay
+unchanged. A mandate must permit the target Query and its input. An Assistant
+turn must still be active and its current `allowedTools` must include the
+target Query. Calling a discussion capability does not implicitly allow its
+resource reader: include both operations when configuring these restrictions.
+Missing or revoked authority fails closed; do not fall back to a browser
+session or an access cache.
+
+The initial budget is one child Query per parent, including concurrent
+attempts, and one application hop. This covers one resource-reader check.
+The child cannot call another capability or return a stream, and it cannot
+call the parent application. Actions are not supported as nested calls.
+Do not retry a nested call automatically; another attempt needs a new parent
+invocation.
+
+The child shares cancellation and the parent's remaining deadline. Its token
+expires no later than the parent token or source credential. Core removes
+the parent's exchange lease when dispatch ends or is cancelled; a child
+presented after revocation is rejected. The helper requires the existing
+`CLOUD_CORE_INTERNAL_ORIGIN` setting and an available shared Valkey service.
+If lease storage is unavailable, the original call can still run, but its
+nested Query fails closed. It is absent from manually constructed in-process contexts unless the host
+provides it; an in-process authority alone does not enable this exchange.
+
+The execution history preserves the original actor and adds `invocationId`,
+`parentInvocationId` and `viaAppId` to join the two calls. Both share the
+original `requestId` and `origin`. The target actor's invocation delegation
+also contains `parentInvocationId` and the calling application's ID. For a
+mandate child, `delegation.callingAppId` is this via-app, not the mandate's
+owning application. Stream handlers do not receive `context.query`. These
+fields describe the audit chain and grant no permissions.
+
+### Call Core from server-side code
+
 Framework-owned execution hosts can supply a server-only `transport(request)`
 to the capability client. It handles Queries, Actions, reviews, and binary
 continuations through Core. Managed Assistant execution uses a short-lived,
@@ -1737,12 +1794,11 @@ request credentials as shown below; background jobs use revocable mandates.
 
 This is a Core-only foreground-turn authority exchange: after verifying the
 callback and live turn, Core resumes dispatch under that user's authority.
-It does not create a session cookie or allow ordinary app invocation tokens to
-mint other invocations. Core rejects a requested cancellation immediately on
-subsequent callbacks. Stream continuations also recheck the conversation's
+It does not create a session cookie. Application invocation tokens can request
+only the bounded child Query described above. Core rejects a requested
+cancellation immediately on subsequent callbacks. Stream continuations also recheck the conversation's
 current `allowedTools`; the provider remains responsible for current resource
 permissions.
-
 
 Server-side app code uses the Core-backed adapter. Pass only credentials and
 trace data from the current request. The adapter sends them to Core's private

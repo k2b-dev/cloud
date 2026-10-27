@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { CapabilityRegistryEntry } from "@k2b/cloud/contracts/registry";
+import type { AuthContext } from "@k2b/cloud/server";
+import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
 import type { withActiveIdentitySigner } from "@k2b/cloud/services/identity";
 import { err, fail, ok } from "@k2b/stdlib";
 import { sql } from "bun";
+import { Hono } from "hono";
 import { generateKeyPair } from "jose";
 import { z } from "zod";
+import { app } from "../config";
 import { createIdentityInvocationRoutes } from "./identity-invocation";
 
 const mandateId = "11111111-1111-4111-8111-111111111111";
@@ -279,4 +283,17 @@ test("mandate invocation keeps its socket raised through dispatch and restores i
   }
   expect((await pending).status).toBe(503);
   expect(calls).toEqual([55, 10]);
+});
+
+test("Core's actual entry policy lets the child broker authenticate its own invocation", async () => {
+  const server = new Hono<AuthContext>()
+    .use(
+      "*",
+      requireAppAccess(app.meta, async (_c, message) => new Response(message, { status: 403 })),
+    )
+    .route("/api/_internal/identity/v1", createIdentityInvocationRoutes());
+  const response = await server.request("http://core.test/api/_internal/identity/v1/invoke-child", { method: "POST" });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ code: "FORBIDDEN" });
+  expect((await server.request("http://core.test/api/_internal/identity/v1/invoke-child/other", { method: "POST" })).status).toBe(401);
 });

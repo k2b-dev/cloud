@@ -265,6 +265,7 @@ export const rule: Rule = {
       "--mail-tag", // MailConversationRow.tsx: the color of each tag chip
       "--cloud-panel-width-set", // Layout.tsx and browser/panel-slot.ts: the panel width the reader saved
       "--assistant-waiting-accent", // AssistantWaitingStrip.tsx: the accent of the app that asks
+      "--spaces-calendar-color", // Spaces calendar EventDetail.tsx and AgendaList.tsx: the color of each item's calendar
       "--annotation-color", // Notebooks lib/editor/annotations.ts and NotePreview: the person color of a commented passage
     ]);
     // Cloud imports the UI package stylesheet. Its defaults are valid owners,

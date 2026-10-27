@@ -181,6 +181,8 @@ export type CalendarController = {
 export type CalendarCustomView<V extends string = string> = {
   value: V;
   label: string;
+  /** Days the previous and next buttons and keys move, such as 14 for a two-week list. Defaults to one day. */
+  days?: number;
 };
 
 export type CalendarProps<V extends string = never> = {
@@ -188,6 +190,11 @@ export type CalendarProps<V extends string = never> = {
   events: CalendarEvent[];
   view?: CalendarView | V;
   views?: CalendarView[];
+  /**
+   * `false` leaves the view switcher out of the toolbar, for a host that shows the views elsewhere, such as tabs in
+   * its page head. The view commands stay.
+   */
+  viewSwitcher?: boolean;
   /** Views after the built-in ones. While one is active, `children` is the body and the header pages by day. */
   customViews?: CalendarCustomView<V>[];
   /** The body of the active custom view. */
@@ -667,10 +674,18 @@ const addMonthsClamped = (date: Date, months: number, dateConfig: DateContext): 
 };
 
 /** Custom views page by day, like the day view. */
-const adjacentCalendarDate = (date: Date, view: string, direction: -1 | 1, dateConfig: DateContext) => {
+const adjacentCalendarDate = (
+  date: Date,
+  view: string,
+  direction: -1 | 1,
+  dateConfig: DateContext,
+  customViews?: readonly CalendarCustomView[],
+) => {
   if (view === "year") return addMonthsClamped(date, direction * 12, dateConfig);
   if (view === "month" || view === "mobile-month") return addMonthsClamped(date, direction, dateConfig);
-  return calendar.addDays(date, direction * (view === "week" ? 7 : 1), dateConfig);
+  const custom = customViews?.find((option) => option.value === view)?.days;
+  const days = view === "week" ? 7 : custom && Number.isInteger(custom) && custom > 0 ? custom : 1;
+  return calendar.addDays(date, direction * days, dateConfig);
 };
 
 /** Opens a view at a day through the host's callbacks. Hosts may keep the view and the date apart, so both hear it. */
@@ -727,8 +742,8 @@ const CalendarHeader = <V extends string>(props: {
     const shown = timeView()?.visibleKeys().first;
     return shown ? parseKey(shown) : (monthView()?.stepFrom() ?? props.date);
   };
-  const previous = () => adjacentCalendarDate(base(), props.view, -1, dateConfig());
-  const next = () => adjacentCalendarDate(base(), props.view, 1, dateConfig());
+  const previous = () => adjacentCalendarDate(base(), props.view, -1, dateConfig(), props.owner.customViews);
+  const next = () => adjacentCalendarDate(base(), props.view, 1, dateConfig(), props.owner.customViews);
   /** The day view's title, such as "Fri, Oct 9, 2026" or "Fr, 9. Okt 2026". */
   const formatDayTitle = (date: Date) =>
     compactGermanDate(
@@ -954,7 +969,7 @@ const CalendarHeader = <V extends string>(props: {
   );
 
   return (
-    <header class="k2b-calendar-header">
+    <header class="k2b-calendar-header" data-view-switcher={props.owner.viewSwitcher === false ? "false" : undefined}>
       <div class="k2b-calendar-header__navigation">
         {navButton(previous, "ti-chevron-left", props.labels.previous, -1)}
         {navButton(next, "ti-chevron-right", props.labels.next, 1)}
@@ -975,19 +990,21 @@ const CalendarHeader = <V extends string>(props: {
       </Show>
       <div class="k2b-calendar-header__actions">
         {todayButton()}
-        <Show
-          when={!props.owner.onViewChange && props.owner.getViewHref}
-          fallback={
-            <SegmentedControl
-              class="k2b-calendar-view-switcher"
-              value={() => (props.view === "mobile-month" ? "month" : props.view)}
-              onValueChange={goView}
-              ariaLabel={calendarMessages().calendarView}
-              options={viewOptions()}
-            />
-          }
-        >
-          <CalendarViewLinks owner={props.owner} view={props.view} options={viewOptions()} focusDay={props.focusDay} />
+        <Show when={props.owner.viewSwitcher !== false}>
+          <Show
+            when={!props.owner.onViewChange && props.owner.getViewHref}
+            fallback={
+              <SegmentedControl
+                class="k2b-calendar-view-switcher"
+                value={() => (props.view === "mobile-month" ? "month" : props.view)}
+                onValueChange={goView}
+                ariaLabel={calendarMessages().calendarView}
+                options={viewOptions()}
+              />
+            }
+          >
+            <CalendarViewLinks owner={props.owner} view={props.view} options={viewOptions()} focusDay={props.focusDay} />
+          </Show>
         </Show>
         {props.owner.toolbarActions}
         <Show when={props.nav.commands().length > 0}>
@@ -3579,7 +3596,7 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
   };
   const step = (direction: -1 | 1) => {
     if (scrollingView()?.step(direction)) return;
-    go(adjacentCalendarDate(monthView()?.stepFrom() ?? shownDay() ?? date(), view(), direction, dateConfig()), view());
+    go(adjacentCalendarDate(monthView()?.stepFrom() ?? shownDay() ?? date(), view(), direction, dateConfig(), props.customViews), view());
   };
   const goToday = () => {
     if (scrollingView()?.today()) return;

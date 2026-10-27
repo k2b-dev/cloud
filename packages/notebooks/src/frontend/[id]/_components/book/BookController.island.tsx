@@ -125,7 +125,7 @@ export default function BookController(props: Props) {
         );
     // This string is produced only by the permission-aware server renderer.
     if (html !== null) article.innerHTML = html;
-    else article.textContent = metadata.tree.length ? t().selectNote : t().empty;
+    else article.textContent = metadata.hasNotes ? t().selectNote : t().empty;
     for (const block of article.querySelectorAll<HTMLElement>(".notebook-book-query[data-query-line]")) {
       const height = listHeights.get(block.dataset.queryLine!);
       if (height && block.querySelector(".notebook-query-pager") && block.getBoundingClientRect().height < height)

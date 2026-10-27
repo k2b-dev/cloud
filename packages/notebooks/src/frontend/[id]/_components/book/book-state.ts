@@ -1,12 +1,11 @@
-import type { BookTreeNode } from "./BookNavigator.island";
-
 export type BookSnapshot = {
   href: string;
   html: string | null;
   title: string | null;
   notebookName: string;
   selectedNoteId: string | null;
-  tree: BookTreeNode[];
+  /** Whether the notebook has pages; the navigation loads its own levels. */
+  hasNotes: boolean;
   tags: Array<{ tag: string; count: number }>;
   activeTag?: string;
   canWrite: boolean;

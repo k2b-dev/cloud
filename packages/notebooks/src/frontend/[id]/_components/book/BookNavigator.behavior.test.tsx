@@ -3,6 +3,7 @@ import type { NavigationItem } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
+import { answerTreeLevels, bookNavigationState } from "../sidebar/sidebar-tree.test-fixture";
 import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
 import type { BookNavigatorProps, BookTreeNode } from "./BookNavigator.island";
 import { BOOK_SNAPSHOT_EVENT, type BookMetadata, type BookSnapshot } from "./book-state";
@@ -17,7 +18,7 @@ const snapshot = (noteId: string): BookSnapshot => ({
   title: noteId,
   notebookName: "Handbook",
   selectedNoteId: noteId,
-  tree,
+  hasNotes: true,
   tags: [],
   canWrite: false,
   locked: false,
@@ -50,10 +51,13 @@ describe("Book navigation tree", () => {
     dom.root.innerHTML = `<div class="notebook-book-shell"><div id="navigator"></div><div class="notebook-book-main">
       <article id="notebook-book-content" tabindex="-1"><h1>${selectedNoteId}</h1></article><div id="controller"></div></div></div>`;
     const requests: Array<{ href: string; resolve: (value: Response) => void }> = [];
+    let currentTree = tree;
     const originalFetch = globalThis.fetch;
     globalThis.fetch = Object.assign(
       (input: string | URL | Request) => {
         const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost");
+        // The navigation reads its levels at once; Book page loads wait for the test to answer them.
+        if (url.pathname.endsWith("/tree/levels")) return Promise.resolve(Response.json(answerTreeLevels(currentTree, url)));
         return new Promise<Response>((resolve) => requests.push({ href: url.searchParams.get("href")!, resolve }));
       },
       { preconnect: originalFetch.preconnect },
@@ -70,7 +74,7 @@ describe("Book navigation tree", () => {
           currentHref: initial.href,
           canWrite: initial.canWrite,
           locked: initial.locked,
-          tree,
+          navigation: bookNavigationState(tree, selectedNoteId),
           tags: [],
           navigationHidden: false,
         }),
@@ -99,12 +103,13 @@ describe("Book navigation tree", () => {
       expanded: (id: string) => item(id).getAttribute("aria-expanded"),
       /** A live change elsewhere reloads the current note and delivers a fresh snapshot of it. */
       refresh: async (noteId: string, nextTree = tree) => {
+        currentTree = nextTree;
         const covered = dispatchWorkspaceEvent(
           { v: 1, type: "workspace.invalidated", notebookId: "book01", reason: "bulk", scopes: ["tree"] },
           "1-0",
         );
         await flush();
-        requests.at(-1)!.resolve(Response.json({ ...snapshot(noteId), tree: nextTree }));
+        requests.at(-1)!.resolve(Response.json(snapshot(noteId)));
         await covered;
       },
       cleanup: () => {
@@ -502,7 +507,7 @@ describe("Book view with the notebook navigation hidden", () => {
           notebookIcon: null,
           selectedNoteId: "note02",
           currentHref: snapshot("note02").href,
-          tree,
+          navigation: bookNavigationState(tree, "note02"),
           tags: [],
           navigationHidden: false,
         }),
