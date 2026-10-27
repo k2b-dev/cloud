@@ -14,7 +14,7 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
 import { formatLogReasons, formatLogTime, formatLogTitle, type LogReasonPart } from "./mail-automation-log-format";
-import { mailAutomationLogMessages } from "./mail-automation-log-messages";
+import { type MailAutomationLogText, mailAutomationLogMessages } from "./mail-automation-log-messages";
 import type {
   AuditStep,
   AutomationLogDetail,
@@ -42,8 +42,15 @@ const FILTERS: AutomationLogFilter[] = ["all", "assignments", "uncertain", "skip
 const COLUMNS = "grid-cols-[4rem_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1.7fr)_7.5rem]";
 const COLUMNS_WITH_DETAIL = "grid-cols-[4rem_minmax(0,1.1fr)_minmax(0,1.7fr)_2rem]";
 const SKELETON_ROWS = 8;
+/** On phones a row stacks: who and time, the conversation, what happened, the action. */
+const ROW_PHONE =
+  "max-md:grid-cols-[minmax(0,1fr)_auto] max-md:py-2.5 max-md:[grid-template-areas:'by_time''conv_conv''what_what''act_act']";
+/** Pasting must never run anything: plain words stay bare, everything else is single-quoted for POSIX shells. */
+const shellQuote = (value: string) => (/^[A-Za-z0-9_./:@%+=-]+$/u.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`);
 
 function Reasons(props: { parts: LogReasonPart[]; struck?: boolean }) {
+  const locale = useLocale();
+  const t = createMemo(() => mailAutomationLogMessages.resolve([locale()]).t);
   return (
     <span class="block text-xs text-dimmed" classList={{ "line-through": props.struck }}>
       <For each={props.parts}>
@@ -53,6 +60,7 @@ function Reasons(props: { parts: LogReasonPart[]; struck?: boolean }) {
             {part.text}
             <Show when={part.ai}>
               <i class="ti ti-sparkles ml-0.5 text-[color:var(--k2b-ai-accent)]" aria-hidden="true" />
+              <span class="sr-only"> ({t().aiMark})</span>
             </Show>
           </>
         )}
@@ -71,8 +79,8 @@ export default function MailAutomationLog(props: {
   initialDetail?: AutomationLogDetail | null;
   canUndo: boolean;
   api: MailAutomationLogApi;
-  /** Keeps the filter and search in the URL, so reload and back return to the same view. */
-  onViewChange?: (view: { filter: AutomationLogFilter; q: string }) => void;
+  /** Keeps the filter, search and open entry in the URL, so reload and back return to the same view. */
+  onViewChange?: (view: { filter: AutomationLogFilter; q: string; entry: string | null }) => void;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailAutomationLogMessages.resolve([locale()]).t);
@@ -89,15 +97,33 @@ export default function MailAutomationLog(props: {
   const [busy, setBusy] = createSignal<string | null>(null);
   const [cliOpen, setCliOpen] = createSignal(false);
   const notices = new Set<ToastHandle>();
+  /** Keeps at most the three newest handles, like the toast rail itself. */
+  const keepNotice = (notice: ToastHandle) => {
+    notices.add(notice);
+    for (const older of notices) {
+      if (notices.size <= 3) break;
+      notices.delete(older);
+    }
+  };
   let controller: AbortController | null = null;
+  let moreController: AbortController | null = null;
   let detailController: AbortController | null = null;
+  /** Grows with every filter or search change; an older page only joins the view it was asked for. */
+  let viewVersion = 0;
   let disposed = false;
+  let detailHeading: HTMLHeadingElement | undefined;
+  let detailTrigger: string | null = null;
   onCleanup(() => {
     disposed = true;
     controller?.abort();
+    moreController?.abort();
     detailController?.abort();
     for (const notice of notices) notice.dismiss();
   });
+  const report = () => props.onViewChange?.({ filter: filter(), q: query(), entry: selected() });
+  /** Moves focus to the row's own button after the row changed or a detail closed. */
+  const focusRow = (id: string | null) =>
+    id && queueMicrotask(() => document.querySelector<HTMLElement>(`[data-log-row="${CSS.escape(id)}"] [data-log-open]`)?.focus());
 
   const reload = async () => {
     controller?.abort();
@@ -114,37 +140,57 @@ export default function MailAutomationLog(props: {
     }
   };
   const changeView = (patch: { filter?: AutomationLogFilter; q?: string }) => {
+    viewVersion += 1;
+    moreController?.abort();
+    moreController = null;
+    setLoadingMore(false);
     if (patch.filter !== undefined) setFilter(patch.filter);
     if (patch.q !== undefined) setQuery(patch.q);
-    props.onViewChange?.({ filter: filter(), q: query() });
+    report();
     void reload();
   };
   const loadOlder = async () => {
     const cursor = page().nextCursor;
     if (!cursor || loadingMore()) return;
+    const version = viewVersion;
+    const current = new AbortController();
+    moreController = current;
     setLoadingMore(true);
     try {
-      const next = await props.api.load({ filter: filter(), q: query().trim(), before: cursor }, new AbortController().signal);
-      setPage((current) => ({ ...next, items: [...current.items, ...next.items] }));
+      const next = await props.api.load({ filter: filter(), q: query().trim(), before: cursor }, current.signal);
+      if (current.signal.aborted || version !== viewVersion) return;
+      setPage((page) => ({ ...next, items: [...page.items, ...next.items] }));
     } catch {
-      if (!disposed) toast.error(t().errorTitle, { action: { label: t().retry, onClick: () => void loadOlder() } });
+      if (current.signal.aborted || version !== viewVersion || disposed) return;
+      keepNotice(toast.error(t().errorTitle, { action: { label: t().retry, onClick: () => void loadOlder() } }));
     } finally {
-      setLoadingMore(false);
+      if (moreController === current) {
+        moreController = null;
+        setLoadingMore(false);
+      }
     }
   };
-  const replaceItem = (item: AutomationLogItem) =>
+  /** One entry changed: the list row and an open detail show the same state. */
+  const replaceItem = (item: AutomationLogItem) => {
     setPage((current) => ({ ...current, items: current.items.map((candidate) => (candidate.id === item.id ? item : candidate)) }));
+    if (detail()?.id === item.id) setDetail((current) => (current ? { ...current, ...item } : current));
+  };
 
   const openDetail = async (id: string) => {
     detailController?.abort();
     const current = new AbortController();
     detailController = current;
+    detailTrigger = id;
     setSelected(id);
     setDetail(null);
     setDetailError(false);
+    report();
     try {
       const value = await props.api.detail(id, current.signal);
-      if (!current.signal.aborted) setDetail(value);
+      if (current.signal.aborted) return;
+      setDetail(value);
+      // The trigger may be hidden now (phone), so focus moves to the detail it opened.
+      queueMicrotask(() => detailHeading?.focus());
     } catch {
       if (!current.signal.aborted) setDetailError(true);
     }
@@ -153,6 +199,8 @@ export default function MailAutomationLog(props: {
     detailController?.abort();
     setSelected(null);
     setDetail(null);
+    report();
+    focusRow(detailTrigger);
   };
 
   const undo = async (item: AutomationLogItem) => {
@@ -162,7 +210,7 @@ export default function MailAutomationLog(props: {
     try {
       const updated = await props.api.undo(item.id);
       replaceItem(updated);
-      if (detail()?.id === item.id) setDetail((current) => (current ? { ...current, ...updated } : current));
+      if (!selected()) focusRow(item.id);
       if (disposed) return;
       const notice = toast(t().undoneToast({ subject: item.conversation.subject }), {
         action: {
@@ -173,11 +221,12 @@ export default function MailAutomationLog(props: {
           },
         },
       });
-      notices.add(notice);
+      keepNotice(notice);
     } catch (error) {
       if (error instanceof UndoNotPossible) {
         replaceItem(error.item);
         setNotPossible(item.id);
+        if (!selected()) focusRow(item.id);
       } else if (!disposed) {
         const notice = toast.error(t().undoFailed, {
           action: {
@@ -188,7 +237,7 @@ export default function MailAutomationLog(props: {
             },
           },
         });
-        notices.add(notice);
+        keepNotice(notice);
       }
     } finally {
       setBusy(null);
@@ -197,8 +246,10 @@ export default function MailAutomationLog(props: {
   const redo = async (item: AutomationLogItem) => {
     try {
       replaceItem(await props.api.redo(item.id));
-    } catch {
-      if (!disposed) toast.error(t().undoFailed);
+      setNotPossible(null);
+    } catch (error) {
+      if (error instanceof UndoNotPossible) replaceItem(error.item);
+      if (!disposed) keepNotice(toast.error(t().redoFailed));
     }
   };
 
@@ -211,10 +262,11 @@ export default function MailAutomationLog(props: {
       manual: t().filterManual,
     })[value];
   const cliCommands = () => {
-    const parts = ["cld mail automation log", `--day ${page().day}`];
+    const mailbox = `--mailbox ${shellQuote(props.mailboxName)}`;
+    const parts = ["cld mail automation log", mailbox, `--day ${page().day}`];
     if (filter() !== "all") parts.push(`--filter ${filter()}`);
-    if (query().trim()) parts.push(`--query ${JSON.stringify(query().trim())}`);
-    return `${parts.join(" ")}\ncld mail automation log show <id>\ncld mail automation log undo <id>`;
+    if (query().trim()) parts.push(`--q ${shellQuote(query().trim())}`);
+    return [parts.join(" "), `cld mail automation log show <id> ${mailbox}`, `cld mail automation log undo <id> ${mailbox}`].join("\n");
   };
   const olderCount = () => page().counts[filter()] - page().items.length;
   const time = (iso: string) => formatLogTime(iso, locale(), props.timeZone);
@@ -305,7 +357,7 @@ export default function MailAutomationLog(props: {
         />
 
         <div role="table" aria-label={t().title} aria-busy={phase() === "loading"} class="flex min-w-0 flex-col">
-          <div role="row" class={`grid ${columns()} gap-3 px-2 pb-1 text-xs font-semibold text-secondary max-md:hidden`}>
+          <div role="row" class={`grid ${columns()} gap-3 px-2 pb-1 text-xs font-semibold text-secondary max-md:sr-only`}>
             <span role="columnheader">{t().colTime}</span>
             <span role="columnheader">{t().colConversation}</span>
             <Show when={!selected()}>
@@ -320,14 +372,18 @@ export default function MailAutomationLog(props: {
             <Match when={phase() === "loading"}>
               <For each={Array.from({ length: SKELETON_ROWS }, (_, index) => index)}>
                 {() => (
-                  <div class={`grid ${columns()} min-h-14 items-center gap-3 px-2`} aria-hidden="true">
-                    <Skeleton class="h-3 w-9 rounded" />
-                    <Skeleton class="h-3 w-4/5 rounded" />
+                  // Same grid and areas as a loaded row, so loading → ready moves nothing on any width.
+                  <div
+                    class={`grid ${columns()} min-h-14 items-center gap-x-3 gap-y-1.5 px-2 py-1.5 ${ROW_PHONE} max-md:min-h-[7.5rem]`}
+                    aria-hidden="true"
+                  >
+                    <Skeleton class="h-3 w-9 rounded max-md:[grid-area:time]" />
+                    <Skeleton class="h-3 w-4/5 rounded max-md:[grid-area:conv]" />
                     <Show when={!selected()}>
-                      <Skeleton class="h-3 w-3/4 rounded" />
+                      <Skeleton class="h-3 w-3/4 rounded max-md:[grid-area:by]" />
                     </Show>
-                    <Skeleton class="h-3 w-11/12 rounded" />
-                    <span />
+                    <Skeleton class="h-3 w-11/12 rounded max-md:[grid-area:what]" />
+                    <Skeleton class="h-7 w-28 rounded max-md:[grid-area:act] md:invisible" />
                   </div>
                 )}
               </For>
@@ -374,9 +430,10 @@ export default function MailAutomationLog(props: {
                     <>
                       <div
                         role="row"
-                        class={`relative grid ${columns()} min-h-14 items-center gap-x-3 gap-y-1 rounded-[var(--ui-radius-control)] px-2 py-1.5 text-[0.8125rem] hover:bg-[var(--ui-hover)] max-md:grid-cols-[minmax(0,1fr)_auto] max-md:py-2.5 max-md:[grid-template-areas:'by_time''conv_conv''what_what''act_act']`}
+                        class={`relative grid ${columns()} min-h-14 items-center gap-x-3 gap-y-1 rounded-[var(--ui-radius-control)] px-2 py-1.5 text-[0.8125rem] hover:bg-[var(--ui-hover)] ${ROW_PHONE}`}
                         classList={{ "bg-[var(--ui-selected,var(--ui-hover))]": selected() === item.id }}
                         data-log-outcome={item.outcome}
+                        data-log-row={item.id}
                       >
                         <time
                           role="cell"
@@ -390,6 +447,7 @@ export default function MailAutomationLog(props: {
                             type="button"
                             class="block w-full min-w-0 truncate text-left font-medium text-primary after:absolute after:inset-0 after:content-['']"
                             aria-label={`${item.conversation.subject} · ${t().detail}`}
+                            data-log-open
                             onClick={() => void openDetail(item.id)}
                           >
                             {item.conversation.subject}
@@ -430,10 +488,7 @@ export default function MailAutomationLog(props: {
                         >
                           <p>
                             <i class="ti ti-alert-circle mr-1.5" aria-hidden="true" />
-                            <b>{t().notPossibleTitle}</b>{" "}
-                            {item.undo.reason === "conversation_gone" || !item.undo.by
-                              ? t().notPossibleGone
-                              : t().notPossible({ name: item.undo.by.name, time: item.undo.at ? time(item.undo.at) : "" })}
+                            <b>{t().notPossibleTitle}</b> {notPossibleText(item, t(), time)}
                           </p>
                           <Show when={item.undo.reason !== "conversation_gone"}>
                             <div>
@@ -475,11 +530,21 @@ export default function MailAutomationLog(props: {
           onClose={closeDetail}
           onRetry={() => void openDetail(selected()!)}
           onUndo={(item) => void undo(item)}
+          headingRef={(element) => {
+            detailHeading = element;
+          }}
         />
       </Show>
     </div>
   );
 }
+
+/** What Undo met instead: who changed the assignment and when, or that the conversation is gone. */
+const notPossibleText = (item: AutomationLogItem, t: MailAutomationLogText, time: (iso: string) => string) => {
+  const by = item.undo.by;
+  if (item.undo.reason === "conversation_gone" || !by) return t.notPossibleGone;
+  return t.notPossible({ name: by.name, time: item.undo.at ? time(item.undo.at) : "" });
+};
 
 /** The rule that acted, or null when a person did. */
 const ruleOf = (item: AutomationLogItem) => (item.by.kind === "rule" ? item.by : null);
@@ -493,6 +558,7 @@ function MailAutomationLogDetail(props: {
   onClose: () => void;
   onRetry: () => void;
   onUndo: (item: AutomationLogItem) => void;
+  headingRef: (element: HTMLHeadingElement) => void;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailAutomationLogMessages.resolve([locale()]).t);
@@ -578,7 +644,9 @@ function MailAutomationLogDetail(props: {
             <>
               <div class="flex items-start gap-2">
                 <div class="min-w-0 flex-1">
-                  <h2 class="text-base font-semibold text-primary">{formatLogTitle(detail(), t())}</h2>
+                  <h2 ref={props.headingRef} tabIndex={-1} class="text-base font-semibold text-primary outline-none">
+                    {formatLogTitle(detail(), t())}
+                  </h2>
                   <p class="text-[0.8125rem] text-dimmed">
                     {t().on({
                       time: props.time(detail().at),
@@ -603,6 +671,14 @@ function MailAutomationLogDetail(props: {
                 <i class="ti ti-sparkles text-[color:var(--k2b-ai-accent)]" aria-hidden="true" />
                 {t().aiCalls(detail().aiCalls)}
               </p>
+              <Show when={detail().undo.state === "not_possible"}>
+                <p
+                  class="rounded-[var(--ui-radius-control)] bg-red-50 px-3 py-2.5 text-[0.8125rem] text-red-900 dark:bg-red-950/30 dark:text-red-100"
+                  role="alert"
+                >
+                  <b>{t().notPossibleTitle}</b> {notPossibleText(detail(), t(), props.time)}
+                </p>
+              </Show>
               <div class="flex flex-wrap gap-2">
                 <Show when={props.canUndo && detail().undo.state === "available"}>
                   <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onUndo(detail())}>

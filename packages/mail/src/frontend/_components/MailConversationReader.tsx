@@ -1386,6 +1386,7 @@ export default function MailConversationReader(props: {
                 where="top"
                 canWrite={props.canWrite}
                 whyHref={automationWhyHref}
+                timeZone={props.dateConfig.timeZone}
                 orderHref={automationOrderHref()}
                 onUndo={(item) => void props.onUndoAutomation(item)}
                 onAssign={() => void props.onAssignConversation()}
@@ -1525,6 +1526,7 @@ export default function MailConversationReader(props: {
                   where="bottom"
                   canWrite={props.canWrite}
                   whyHref={automationWhyHref}
+                  timeZone={props.dateConfig.timeZone}
                   orderHref={automationOrderHref()}
                   onUndo={(item) => void props.onUndoAutomation(item)}
                   onAssign={() => void props.onAssignConversation()}

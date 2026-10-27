@@ -120,7 +120,7 @@ describe("Mail automation Protokoll", () => {
         expect(await page.locator('[role="row"][data-log-outcome]').count()).toBe(8);
         await page.getByText("„Mails nach Art verteilen“ steht in der Reihenfolge davor und hat schon zugewiesen.").waitFor();
         await page.getByText("Für „Sonstiges“ steht kein Ziel in der Regel.").waitFor();
-        await page.getByText("39 ältere anzeigen").waitFor();
+        await page.getByText("2 ältere anzeigen").waitFor();
         await keep(page, `protokoll-heute-light-${device}`);
 
         await page.getByRole("button", { name: /Fehldruck Tüten/ }).click();
@@ -138,7 +138,9 @@ describe("Mail automation Protokoll", () => {
         expect((await row(page, "assigned").boundingBox())?.y).toBe(before?.y);
         await keep(page, `protokoll-rueckgaengig-light-${device}`);
         await page.getByRole("button", { name: "Wiederholen" }).click();
-        await page.waitForFunction(() => window.logCalls.includes("redo:Log001"));
+        // Redo shows its result: the row is current again and offers Undo.
+        await row(page, "assigned").getByRole("button", { name: "Rückgängig" }).waitFor();
+        expect(await page.getByText("Rückgängig gemacht · 09:15").count()).toBe(0);
         expect(page.errors).toEqual([]);
       } finally {
         await page.context().close();
@@ -185,7 +187,7 @@ describe("Mail automation Protokoll", () => {
       await loading.locator('[role="table"][aria-busy="true"]').waitFor();
       await keep(loading, "protokoll-laedt-light-desktop");
       await loading.evaluate(() => window.releaseLoads());
-      await loading.getByText("Das Protokoll konnte nicht laden.").waitFor();
+      await loading.getByText("Das Protokoll konnte nicht geladen werden.").waitFor();
       await loading.getByText("Die Filter bleiben, wie sie sind.").waitFor();
       expect(await loading.getByRole("radio", { name: /Zuweisungen/ }).getAttribute("aria-checked")).toBe("true");
       await keep(loading, "protokoll-fehler-light-desktop");
@@ -196,11 +198,69 @@ describe("Mail automation Protokoll", () => {
     }
   }, 40_000);
 
+  test("Undo from the detail meets a person's change: the detail says so and offers no Undo", async () => {
+    const page = await open(desktop, { locale: "de", scenario: "notPossible" });
+    try {
+      await page.getByRole("button", { name: /Fehldruck Tüten/ }).click();
+      const detail = page.locator("[data-mail-automation-log-detail]");
+      await detail.getByRole("button", { name: "Rückgängig" }).click();
+      await detail
+        .getByText("Ida Lorenz hat die Unterhaltung um 09:10 selbst zugewiesen. Diese Zuweisung bleibt. Nichts wurde geändert.")
+        .waitFor();
+      expect(await detail.getByRole("button", { name: "Rückgängig" }).count()).toBe(0);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("an older page that arrives after a filter change stays out of the new view", async () => {
+    const page = await open(desktop, { locale: "de", scenario: "normal" });
+    try {
+      await page.evaluate(() => window.holdLoads());
+      await page.getByText("2 ältere anzeigen").click();
+      await page.getByRole("radio", { name: /Unsicher/ }).click();
+      await page.evaluate(() => window.releaseLoads());
+      await page.getByText("Unsicher: an „Eingang prüfen“").waitFor();
+      await page.waitForFunction(() => document.querySelectorAll('[role="row"][data-log-outcome]').length === 1);
+      expect(await page.getByText(/Ältere Anfrage/).count()).toBe(0);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("the detail takes focus, closing returns it to the row, and the entry stays in the URL state", async () => {
+    const page = await open(desktop, { locale: "de", scenario: "normal" });
+    try {
+      const trigger = page.getByRole("button", { name: /Fehldruck Tüten/ });
+      await trigger.focus();
+      await page.keyboard.press("Enter");
+      const heading = page.locator("[data-mail-automation-log-detail] h2");
+      await heading.waitFor();
+      await page.waitForFunction(() => document.activeElement?.tagName === "H2");
+      const opened = await page.evaluate(() => window.viewChanges.at(-1));
+      expect(opened?.entry).toBe("00000000-0000-4000-8000-000000000104");
+      await page.locator("[data-mail-automation-log-detail]").getByRole("button", { name: "Schließen" }).click();
+      await page.waitForFunction(() => document.activeElement?.hasAttribute("data-log-open") === true);
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Fehldruck Tüten");
+      expect(await page.evaluate(() => window.viewChanges.at(-1)?.entry)).toBeNull();
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("As CLI shows the same view as commands", async () => {
     const page = await open(desktop, { locale: "en", scenario: "normal" });
     try {
       await page.getByRole("button", { name: "As CLI" }).click();
-      await page.locator("[data-mail-automation-log-cli]").getByText("cld mail automation log --day 2026-10-26").waitFor();
+      await page
+        .locator("[data-mail-automation-log-cli]")
+        .getByText("cld mail automation log --mailbox Vertrieb --day 2026-10-26")
+        .waitFor();
+      // A search with shell syntax is quoted, so pasting it never runs anything.
+      await page.getByRole("button", { name: "Search the log" }).click();
+      await page.getByRole("searchbox", { name: "Search the log" }).fill("$(id) it's");
+      await page.getByRole("searchbox", { name: "Search the log" }).press("Enter");
+      await page.locator("[data-mail-automation-log-cli]").getByText(`--q '$(id) it'\\''s'`).waitFor();
     } finally {
       await page.context().close();
     }

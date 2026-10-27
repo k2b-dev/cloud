@@ -1,5 +1,5 @@
 import { Button, ButtonLink, Kbd, useLocale } from "@k2b/ui";
-import { createMemo, For, type JSX, Show } from "solid-js";
+import { createMemo, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { formatLogEffect, formatLogReasons, formatLogTime } from "./mail-automation-log-format";
 import { mailAutomationLogMessages } from "./mail-automation-log-messages";
 import type { AutomationLogItem } from "./mail-automation-log-model";
@@ -46,17 +46,47 @@ export default function MailAutomationTrace(props: {
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailAutomationLogMessages.resolve([locale()]).t);
+  /**
+   * The assignment that is current now, newest first: later skipped rules or other effects do not hide it, a later
+   * manual change, assignment or undo ends it.
+   */
   const lead = () => {
-    const first = props.items[0];
-    return first && isAiRule(first) && (first.outcome === "assigned" || first.outcome === "uncertain") && first.undo.state !== "done"
-      ? first
-      : null;
+    for (const item of props.items) {
+      const assigns = item.effects.some((effect) => effect.kind === "assign" || effect.kind === "unassign");
+      if (item.outcome === "manual_change") return null;
+      if (item.outcome !== "assigned" && item.outcome !== "uncertain") {
+        if (assigns) return null;
+        continue;
+      }
+      return isAiRule(item) && item.undo.state !== "done" && item.undo.state !== "not_possible" ? item : null;
+    }
+    return null;
   };
+  // A on the note opens the assignment, like the hint on its button; never while typing or inside a dialog or menu.
+  onMount(() => {
+    if (props.where !== "top") return;
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "a" || event.metaKey || event.ctrlKey || event.altKey || event.repeat || event.isComposing) return;
+      if (event.defaultPrevented || !props.canWrite || !lead()) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          '[role="dialog"],[role="menu"],[role="listbox"],input,textarea,select,[contenteditable]:not([contenteditable="false"])',
+        )
+      )
+        return;
+      event.preventDefault();
+      props.onAssign();
+    };
+    document.addEventListener("keydown", keydown);
+    onCleanup(() => document.removeEventListener("keydown", keydown));
+  });
   const target = (item: AutomationLogItem) => item.effects.find((effect) => effect.kind === "assign")?.target.name ?? "";
   const ruleName = (item: AutomationLogItem) => item.by.name;
   const time = (item: AutomationLogItem) => formatLogTime(item.at, locale(), props.timeZone);
   const did = (item: AutomationLogItem) => item.effects.map((effect) => formatLogEffect(effect, t())).join(", ");
   const sentence = (item: AutomationLogItem) => {
+    if (item.outcome === "failed") return t().traceFailed({ rule: ruleName(item), time: time(item) });
     if (item.outcome === "skipped") return t().traceSkipped({ rule: ruleName(item) });
     if (item.outcome === "nobody") return t().traceNobody({ rule: ruleName(item), time: time(item) });
     if (item.by.kind === "person") return t().tracePerson({ name: item.by.name, time: time(item), what: did(item) });
@@ -133,10 +163,13 @@ export default function MailAutomationTrace(props: {
       data-mail-automation-trace={item.outcome}
     >
       <i class={`ti ${item.by.kind === "person" ? "ti-user" : "ti-bolt"}`} aria-hidden="true" />
-      <span class="min-w-0">
+      <span class="min-w-0" classList={{ "line-through": item.undo.state === "done" }}>
         {sentence(item)}
         <ReasonLine item={item} />
       </span>
+      <Show when={item.undo.state === "done"}>
+        <span>{item.undo.at ? t().undone({ time: formatLogTime(item.undo.at, locale(), props.timeZone) }) : t().undoneShort}</span>
+      </Show>
       <Show when={props.canWrite && item.undo.state === "available"}>
         <button type="button" class="text-primary underline underline-offset-2" disabled={props.busy} onClick={() => props.onUndo(item)}>
           {t().undo}

@@ -80,12 +80,12 @@ export default function MailAutomationLogPage(props: {
         initialDetail={props.detail}
         canUndo={props.data.permission !== "read"}
         api={api}
-        onViewChange={({ filter, q }) => {
+        onViewChange={({ filter, q, entry }) => {
           const url = new URL(window.location.href);
-          if (filter === "all") url.searchParams.delete("filter");
-          else url.searchParams.set("filter", filter);
-          if (q.trim()) url.searchParams.set("q", q.trim());
-          else url.searchParams.delete("q");
+          const set = (key: string, value: string | null) => (value ? url.searchParams.set(key, value) : url.searchParams.delete(key));
+          set("filter", filter === "all" ? null : filter);
+          set("q", q.trim() || null);
+          set("entry", entry);
           window.history.replaceState(window.history.state, "", url);
         }}
       />

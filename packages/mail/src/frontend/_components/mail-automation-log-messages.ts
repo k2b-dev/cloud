@@ -77,6 +77,7 @@ export const mailAutomationLogMessages = i18n.define({
       undoneToast: ({ subject }: { subject: string }) =>
         `Assignment undone. “${subject}” has nobody responsible again; the rule will not assign it again.`,
       undoFailed: "Undo did not work",
+      redoFailed: "Redo did not work",
       notPossibleTitle: "Not undone.",
       notPossible: ({ name, time }: { name: string; time: string }) =>
         `${name} assigned the conversation by hand at ${time}. This assignment stays. Nothing was changed.`,
@@ -95,6 +96,8 @@ export const mailAutomationLogMessages = i18n.define({
       traceNobody: ({ rule, time }: { rule: string; time: string }) => `“${rule}” assigned nobody at ${time}.`,
       tracePerson: ({ name, time, what }: { name: string; time: string; what: string }) => `${name}: ${what} at ${time}.`,
       traceSkipped: ({ rule }: { rule: string }) => `“${rule}” skipped assigning:`,
+      traceFailed: ({ rule, time }: { rule: string; time: string }) => `“${rule}” failed at ${time}.`,
+      undoneShort: "Undone",
       detail: "Assignment in detail",
       aiMark: "AI",
       close: "Close",
@@ -144,7 +147,7 @@ export const mailAutomationLogMessages = i18n.define({
       emptyText: "Hier erscheint jede Wirkung von Regeln, mit Grund und Rückgängig.",
       emptyFilter: "Heute nichts in diesem Filter.",
       resetFilter: "Alle zeigen",
-      errorTitle: "Das Protokoll konnte nicht laden.",
+      errorTitle: "Das Protokoll konnte nicht geladen werden.",
       errorText: "Die Filter bleiben, wie sie sind.",
       retry: "Erneut versuchen",
       loading: "Protokoll wird geladen",
@@ -161,7 +164,7 @@ export const mailAutomationLogMessages = i18n.define({
       effectMoved: ({ name }: Name) => `in „${name}“ abgelegt`,
       effectArchived: "archiviert",
       effectStatus: ({ name }: Name) => `Status „${name}“ gesetzt`,
-      effectRead: "gelesen markiert",
+      effectRead: "als gelesen markiert",
       effectComment: "Kommentar geschrieben",
       effectSummary: "zusammengefasst",
       statusNeedsAction: "Handlungsbedarf",
@@ -184,6 +187,7 @@ export const mailAutomationLogMessages = i18n.define({
       undoneToast: ({ subject }: { subject: string }) =>
         `Zuweisung rückgängig gemacht. „${subject}“ ist wieder ohne Zuständige, die Regel weist sie nicht noch einmal zu.`,
       undoFailed: "Rückgängig hat nicht geklappt",
+      redoFailed: "Wiederholen hat nicht geklappt",
       notPossibleTitle: "Nicht rückgängig gemacht.",
       notPossible: ({ name, time }: { name: string; time: string }) =>
         `${name} hat die Unterhaltung um ${time} selbst zugewiesen. Diese Zuweisung bleibt. Nichts wurde geändert.`,
@@ -201,6 +205,8 @@ export const mailAutomationLogMessages = i18n.define({
       traceNobody: ({ rule, time }: { rule: string; time: string }) => `„${rule}“ hat um ${time} niemanden zugewiesen.`,
       tracePerson: ({ name, time, what }: { name: string; time: string; what: string }) => `${name} hat um ${time} ${what}.`,
       traceSkipped: ({ rule }: { rule: string }) => `„${rule}“ hat Zuweisen übersprungen:`,
+      traceFailed: ({ rule, time }: { rule: string; time: string }) => `„${rule}“ ist um ${time} fehlgeschlagen.`,
+      undoneShort: "Rückgängig gemacht",
       detail: "Zuweisung im Detail",
       aiMark: "KI",
       close: "Schließen",
@@ -219,7 +225,7 @@ export const mailAutomationLogMessages = i18n.define({
       openMail: "Mail öffnen",
       openRule: "Regel öffnen",
       undoNote: "Rückgängig nimmt nur diese Zuweisung zurück. Die Regel bleibt, wie sie ist.",
-      detailError: "Die Einzelheiten konnten nicht laden.",
+      detailError: "Die Einzelheiten konnten nicht geladen werden.",
     },
   },
 });

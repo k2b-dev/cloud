@@ -6,7 +6,8 @@ import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { logFixtureItems } from "./mail-automation-log-fixtures";
+import { automationLogDetailSchema, automationLogItemSchema } from "../../contracts";
+import { logFixtureDetail, logFixtureItems } from "./mail-automation-log-fixtures";
 import type { AutomationLogItem } from "./mail-automation-log-model";
 
 const root = mkdtempSync(join(tmpdir(), "mail-automation-trace-render-tests-"));
@@ -35,11 +36,11 @@ const render = (items: AutomationLogItem[], where: "top" | "bottom", canWrite = 
       },
     }),
   );
-const byId = (id: string) => logFixtureItems.find((item) => item.id === id)!;
+const byId = (n: number) => logFixtureItems[n - 1]!;
 
 describe("MailAutomationTrace", () => {
   test("an AI rule's assignment leads with who got it, the ✦ kind, that names do not count, and Undo", () => {
-    const html = render([byId("Log004")], "top");
+    const html = render([byId(4)], "top");
     expect(html).toContain('data-mail-automation-note="assigned"');
     expect(html).toContain("„Mails nach Art verteilen“ hat Nora Albrecht zugewiesen.");
     expect(html).toContain("Art: Reklamation");
@@ -50,7 +51,7 @@ describe("MailAutomationTrace", () => {
   });
 
   test("an uncertain AI sits on the AI surface and offers to take the mail", () => {
-    const html = render([byId("Log005")], "top");
+    const html = render([byId(5)], "top");
     expect(html).toContain('data-mail-automation-note="uncertain"');
     expect(html).toContain("--k2b-ai-surface");
     expect(html).toContain("Die KI war unsicher. „Mails nach Art verteilen“ hat die Mail an „Eingang prüfen“ gegeben.");
@@ -60,19 +61,38 @@ describe("MailAutomationTrace", () => {
   });
 
   test("no note for a plain rule, an undone assignment, or a reader without write access to act", () => {
-    expect(render([byId("Log007")], "top")).not.toContain("data-mail-automation-note");
-    expect(render([{ ...byId("Log004"), undo: { state: "done", reason: null, by: null, at: null } }], "top")).not.toContain(
+    expect(render([byId(7)], "top")).not.toContain("data-mail-automation-note");
+    expect(render([{ ...byId(4), undo: { state: "done", reason: null, by: null, at: null } }], "top")).not.toContain(
       "data-mail-automation-note",
     );
-    expect(render([byId("Log004")], "top", false)).not.toContain("Rückgängig");
+    expect(render([byId(4)], "top", false)).not.toContain("Rückgängig");
   });
 
   test("below the messages every effect stays as a quiet line, skipped ones point to the order", () => {
-    const html = render([byId("Log002"), byId("Log003"), byId("Log008")], "bottom");
+    const html = render([byId(2), byId(3), byId(8)], "bottom");
     expect(html).toContain("„Mails nach Art verteilen“ hat um 08:47 Team Angebote zugewiesen.");
     expect(html).toContain("„Großkunden an Can“ hat Zuweisen übersprungen:");
     expect(html).toContain("Reihenfolge ansehen");
     expect(html).toContain("Nora Albrecht hat um 06:40 Lisa Brandt zugewiesen.");
     expect(html).toContain("Die Regel bleibt, wie sie ist.");
+  });
+
+  test("a later skipped rule keeps the current assignment as the note; a manual change ends it", () => {
+    expect(render([byId(3), byId(2)], "top")).toContain("„Mails nach Art verteilen“ hat Team Angebote zugewiesen.");
+    expect(render([byId(8), byId(4)], "top")).not.toContain("data-mail-automation-note");
+  });
+
+  test("undone and failed effects say so below the messages", () => {
+    const undone = render([{ ...byId(2), undo: { state: "done", reason: null, by: null, at: "2026-10-26T09:15:00.000Z" } }], "bottom");
+    expect(undone).toContain("Rückgängig gemacht · 09:15");
+    expect(undone).toContain("line-through");
+    const failed = render([{ ...byId(7), outcome: "failed", effects: [], reasons: [] }], "bottom");
+    expect(failed).toContain("„Rechnungen ablegen“ ist um 07:05 fehlgeschlagen.");
+    expect(failed).toContain("Die Mail ist unverändert.");
+  });
+
+  test("the fixtures are what the API returns", () => {
+    for (const item of logFixtureItems) expect(automationLogItemSchema.safeParse(item).success).toBe(true);
+    expect(automationLogDetailSchema.safeParse(logFixtureDetail()).success).toBe(true);
   });
 });

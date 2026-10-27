@@ -2,10 +2,12 @@ import type { AutomationLogDetail, AutomationLogItem, AutomationLogPage, Automat
 
 /** Fictional Protokoll of the mailbox "Vertrieb" as the approved mockup shows it (26.10.). */
 const day = "2026-10-26";
+/** Stable UUIDs, as the API returns them. */
+export const logFixtureId = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const at = (time: string) => `${day}T${time}:00.000Z`;
 const sortRule = {
   kind: "rule" as const,
-  workflowId: "Wf001",
+  workflowId: "00000000-0000-4000-8000-000000000001",
   name: "Mails nach Art verteilen",
   position: 1,
   version: 3,
@@ -35,7 +37,7 @@ const choices = ["Reklamation", "Anfrage", "Sonstiges", "Unsicher"];
 
 export const logFixtureItems: AutomationLogItem[] = [
   {
-    id: "Log001",
+    id: "00000000-0000-4000-8000-000000000101",
     at: at("09:02"),
     conversation: conversation("Conv01", "Reklamation Lieferung vom 14.10.", "Tomás Silva"),
     by: sortRule,
@@ -49,7 +51,7 @@ export const logFixtureItems: AutomationLogItem[] = [
     undo: available,
   },
   {
-    id: "Log002",
+    id: "00000000-0000-4000-8000-000000000102",
     at: at("08:47"),
     conversation: conversation("Conv02", "Angebot Visitenkarten 2026", "Jana Berger"),
     by: sortRule,
@@ -59,17 +61,17 @@ export const logFixtureItems: AutomationLogItem[] = [
     undo: available,
   },
   {
-    id: "Log003",
+    id: "00000000-0000-4000-8000-000000000103",
     at: at("08:47"),
     conversation: conversation("Conv02", "Angebot Visitenkarten 2026", "Jana Berger"),
-    by: rule("Wf002", "Großkunden an Can", 2),
+    by: rule("00000000-0000-4000-8000-000000000002", "Großkunden an Can", 2),
     outcome: "skipped",
     effects: [],
-    reasons: [{ kind: "skipped_upper_rule", workflowId: "Wf001", name: "Mails nach Art verteilen" }],
+    reasons: [{ kind: "skipped_upper_rule", workflowId: "00000000-0000-4000-8000-000000000001", name: "Mails nach Art verteilen" }],
     undo: none,
   },
   {
-    id: "Log004",
+    id: "00000000-0000-4000-8000-000000000104",
     at: at("07:58"),
     conversation: conversation("Conv03", "Fehldruck Tüten – bitte an Herrn Seidel", "Kemal Aydın"),
     by: sortRule,
@@ -83,7 +85,7 @@ export const logFixtureItems: AutomationLogItem[] = [
     undo: available,
   },
   {
-    id: "Log005",
+    id: "00000000-0000-4000-8000-000000000105",
     at: at("07:30"),
     conversation: conversation("Conv04", "Quote request: 500 tote bags", "Mira Okafor"),
     by: sortRule,
@@ -93,7 +95,7 @@ export const logFixtureItems: AutomationLogItem[] = [
     undo: available,
   },
   {
-    id: "Log006",
+    id: "00000000-0000-4000-8000-000000000106",
     at: at("07:05"),
     conversation: conversation("Conv05", "Rechnung R-2026-0412", "Papier Krause GmbH"),
     by: sortRule,
@@ -106,10 +108,10 @@ export const logFixtureItems: AutomationLogItem[] = [
     undo: none,
   },
   {
-    id: "Log007",
+    id: "00000000-0000-4000-8000-000000000107",
     at: at("07:05"),
     conversation: conversation("Conv05", "Rechnung R-2026-0412", "Papier Krause GmbH"),
-    by: rule("Wf003", "Rechnungen ablegen", 3),
+    by: rule("00000000-0000-4000-8000-000000000003", "Rechnungen ablegen", 3),
     outcome: "effects",
     effects: [
       { kind: "tag", name: "Rechnung" },
@@ -123,7 +125,7 @@ export const logFixtureItems: AutomationLogItem[] = [
     undo: available,
   },
   {
-    id: "Log008",
+    id: "00000000-0000-4000-8000-000000000108",
     at: at("06:40"),
     conversation: conversation("Conv06", "Druckfreigabe Plakate Herbstfest", "Stadtwerke Linden"),
     by: { kind: "person", userId: "Usr001", name: "Nora Albrecht" },
