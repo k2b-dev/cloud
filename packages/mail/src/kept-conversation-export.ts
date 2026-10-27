@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { SHORT_ID_REGEX } from "./lib/short-id";
+// Browser code reads this contract too, so it imports only the server-free ID pattern.
+import { RESOURCE_SHORT_ID_PATTERN } from "./resource-short-id";
 
-const publicId = z.string().regex(SHORT_ID_REGEX);
+const publicId = z.string().regex(RESOURCE_SHORT_ID_PATTERN);
 const address = z.object({
   name: z.string().nullable().describe("Stored sender or recipient display name, if available."),
   address: z.string().describe("Stored email address."),
