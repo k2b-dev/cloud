@@ -948,10 +948,12 @@ export const MAIL_WORKFLOW_ACTIONS = {
   assignConversation: conversationMutation(
     "assignConversation",
     "Assign conversation",
-    "Assigns an unassigned conversation unless this rule’s earlier assignment was undone.",
+    // Descriptions enter the manifest hash; rewording stops every published workflow (WORKFLOW_MODULE_MISMATCH).
+    // The behaviour (no reassignment, null keeps the assignee) is documented in the Mail workflow reference.
+    "Assigns or unassigns a conversation.",
     object({
       conversation: conversationReference,
-      user: { kind: "value", description: "Assignable user name, ID, expression, or null to keep the current assignment." },
+      user: { kind: "value", description: "Assignable user name, ID, expression, or null." },
     }),
   ),
   setConversationStatus: conversationMutation(

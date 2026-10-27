@@ -396,7 +396,7 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         });
 
     for (const width of [1440, 390])
-      test(`rule traces ${width}: the current AI assignment leads, every effect stays below the messages`, async () => {
+      test(`automation: rule traces ${width}: the current AI assignment leads, every effect stays below the messages`, async () => {
         for (const kind of ["name", "uncertain", "manual", "normal"] as const) {
           const page = await open(`${boxPath}?conversation=Conv01&locale=de&trace=${kind}`, width, width === 390 ? 844 : 900);
           try {

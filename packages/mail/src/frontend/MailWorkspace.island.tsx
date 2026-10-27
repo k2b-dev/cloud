@@ -31,7 +31,7 @@ import { type Accessor, batch, createEffect, createMemo, createSignal, on, onCle
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory";
-import { type AutomationLogItem, automationLogItemSchema, type MailDraftSeed } from "../contracts";
+import type { AutomationLogItem, MailDraftSeed } from "../contracts";
 import { isAggregatedListing, mailListingExcludesTrashAndJunk, mailRowLeavesListing } from "../folder-display-rules";
 import { mailFolderPaths } from "../folder-tree";
 import { parseMailLiveEvent } from "../live-event";
@@ -2453,6 +2453,8 @@ function MailboxWorkspace(
     if (response.status === 409) {
       // Someone changed the assignment since: the refreshed entry says who; nothing changed.
       const body: unknown = await response.json();
+      // The schema loads only for this rare answer: Zod stays out of the mailbox's first load.
+      const { automationLogItemSchema } = await import("../contracts");
       const parsed = automationLogItemSchema.safeParse(body && typeof body === "object" && "item" in body ? body.item : null);
       throw new UndoNotPossible(parsed.success ? parsed.data : item);
     }

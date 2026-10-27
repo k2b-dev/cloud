@@ -137,7 +137,11 @@ describe("Mail automation Protokoll", () => {
         const before = await row(page, "assigned").boundingBox();
         await row(page, "assigned").getByRole("button", { name: "Rückgängig" }).click();
         await page.getByText("Rückgängig gemacht · 09:15").waitFor();
-        await page.getByText(/Zuweisung rückgängig gemacht\. „Reklamation Lieferung vom 14\.10\.“ ist wieder ohne Zuständige/).waitFor();
+        // The toast rail also mirrors its text into a status region for screen readers; check the visible toast.
+        await page
+          .getByRole("region", { name: "Benachrichtigungen" })
+          .getByText(/Zuweisung rückgängig gemacht\. „Reklamation Lieferung vom 14\.10\.“ ist wieder ohne Zuständige/)
+          .waitFor();
         expect((await row(page, "assigned").boundingBox())?.y).toBe(before?.y);
         await keep(page, `protokoll-rueckgaengig-light-${device}`);
         await page.getByRole("button", { name: "Wiederholen" }).click();

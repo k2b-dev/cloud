@@ -1,0 +1,6 @@
+### Rewording a Mail workflow action description would have stopped every published rule
+
+- **What happened:** The Mail rule-order change reworded the `assignConversation` description and its `user` field to describe the new "never reassign" behaviour. CI failed "preserves the published manifest hash".
+- **Root cause:** Action labels and descriptions are part of the workflow manifest. Each published version stores the manifest hash it was bound against, and the worker refuses a version whose hash differs from the running module with `WORKFLOW_MODULE_MISMATCH`. After a deploy, every active Mail rule would have stopped until someone published it again.
+- **Error class:** Documentation text placed in a hashed runtime contract turns a wording change into a breaking change.
+- **Guard:** The existing manifest hash test in `packages/mail/src/workflows/workflows.test.ts` caught it; the descriptions went back to their published text, and a comment at `assignConversation` says why. Behaviour changes are documented in the Mail workflow reference and the operations note instead. Never update the expected hash to make the test pass unless the module change is deliberate and ships with a republish path.
