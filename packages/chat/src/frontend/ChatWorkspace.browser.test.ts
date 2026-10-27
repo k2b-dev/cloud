@@ -397,6 +397,8 @@ const scrollFeed = async (page: Page, direction: number) => {
 };
 /** Opens a message's menu the way each device does: "…" beside the bubble on a desktop, a long press on a phone. */
 const openMessageMenu = async (page: Page, name: string, item: Locator) => {
+  // History commits before the view transition creates its animations; wait for the navigation to finish first.
+  await page.waitForFunction(() => !document.documentElement.matches(":active-view-transition"));
   await settled(page);
   if (name === "phone") {
     await item.locator(".k2b-message-row__text").scrollIntoViewIfNeeded();
@@ -652,7 +654,11 @@ describe("ChatWorkspace browser read state", () => {
             // An unfocused tab keeps receiving. Confirm each delivery batch before returning;
             // otherwise a slow renderer receives the rest after focus, changing what the test exercises.
             if (inactive === "unfocused" && index % 10 === 0)
-              await page.locator(`[data-key="${harness.messageId(chat, 8 + index)}"] .k2b-message-row__text`).waitFor();
+              await page
+                .getByRole("feed")
+                .locator(`[role="article"][aria-setsize="${8 + index}"]`)
+                .first()
+                .waitFor();
           }
           await noReportsForBatch(page, chat, before);
           const newest = page.locator(`[data-key="${harness.messageId(chat, 68)}"] .k2b-message-row__text`);
@@ -674,7 +680,7 @@ describe("ChatWorkspace browser read state", () => {
           ).toBe(true);
           await page.getByRole("button", { name: "New messages", exact: true }).click();
           await inFeed(page, `[data-key="${harness.messageId(chat, 9)}"]`);
-          await until(() => chatReads(chat).at(-1)!.seq > 8);
+          await until(() => (chatReads(chat).at(-1)?.seq ?? 0) > 8);
           expect(chatReads(chat).at(-1)!.seq).toBeLessThan(68);
           expect(errors).toEqual([]);
         } finally {
@@ -694,7 +700,12 @@ describe("ChatWorkspace browser read state", () => {
         });
         for (let index = 1; index <= 40; index++) {
           harness.receive(chat, nora, `Unread arrival ${index}`);
-          if (index % 10 === 0) await page.locator(`[data-key="${harness.messageId(chat, 8 + index)}"] .k2b-message-row__text`).waitFor();
+          if (index % 10 === 0)
+            await page
+              .getByRole("feed")
+              .locator(`[role="article"][aria-setsize="${8 + index}"]`)
+              .first()
+              .waitFor();
         }
         await page.evaluate(() => {
           document.hasFocus = () => true;
@@ -750,10 +761,15 @@ describe("ChatWorkspace browser read state", () => {
             document.hasFocus = () => false;
           });
           // Recovery is independent of hidden-tab replay, which the burst cases cover separately.
-          // Confirm delivery while unfocused before forcing the expired-replay snapshot below.
+          // The feed's set size confirms delivery even when the batch's last row is outside its virtual window.
           for (let index = 1; index <= 60; index++) {
             harness.receive(chat, nora, `Resync arrival ${index}`);
-            if (index % 10 === 0) await page.locator(`[data-key="${harness.messageId(chat, 8 + index)}"] .k2b-message-row__text`).waitFor();
+            if (index % 10 === 0)
+              await page
+                .getByRole("feed")
+                .locator(`[role="article"][aria-setsize="${8 + index}"]`)
+                .first()
+                .waitFor();
           }
           await page.evaluate(() => {
             Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
@@ -826,7 +842,7 @@ describe("ChatWorkspace browser read state", () => {
             expect(fullView.searchParams.get("filter")).toBe("unread");
           }
           expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(openingMarker);
-          await until(() => chatReads(chat).at(-1)!.seq > 8);
+          await until(() => (chatReads(chat).at(-1)?.seq ?? 0) > 8);
           expect(chatReads(chat).at(-1)!.seq).toBeLessThan(68);
           expect(errors).toEqual([]);
         } finally {
