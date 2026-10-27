@@ -316,8 +316,7 @@ The levels draw no lines between them. The last visible level fills the
 remaining width, whatever its content: a long title or text in the selected
 item never narrows the levels before it. Every level is a flat column on the
 same surface, edge to edge, at every width and in both themes; the deepest
-level is never a raised or inset card. Use `AppWorkspace.Detail` when a
-surface should float. Levels do not animate.
+level is never a raised or inset card. Levels do not animate.
 
 Inside a [`MobileShell`](/en/ui/layout/mobile-shell) with `scroll={false}`,
 levels follow the touch app instead: one level, with its back step, below
