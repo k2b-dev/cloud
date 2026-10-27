@@ -2,7 +2,7 @@ import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { documentNavigate } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, InlineGuidance, Placeholder, prompts, Select, StatusBadge, toast, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, InlineGuidance, Placeholder, prompts, RichSelect, StatusBadge, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
@@ -67,6 +67,7 @@ export default function MailCalendarInvitation(props: {
       return response.json();
     },
   });
+  const [destinationDenied, setDestinationDenied] = createSignal(false);
   const destinationQuery = query.create({
     source: () => props.mailboxId,
     enabled: () => props.canWrite,
@@ -75,6 +76,8 @@ export default function MailCalendarInvitation(props: {
         { param: { mailboxId } },
         { init: { signal: abortSignal } },
       );
+      setDestinationDenied(response.status === 403);
+      if (response.status === 403) return { selectedSpaceId: null, items: [] };
       if (!response.ok) throw new Error(await readApiError(response, messages().couldNotLoadCalendarDestinations));
       return response.json();
     },
@@ -148,7 +151,27 @@ export default function MailCalendarInvitation(props: {
   const canRespond = () =>
     props.canWrite && hasWritableDestination() && invitation()?.method === "request" && Boolean(invitation()?.organizer) && !isCancelled();
   const destinationOptions = createMemo(() =>
-    (destinations()?.items ?? []).map((space) => ({ id: space.id, label: space.name, color: space.color, icon: "ti ti-calendar-event" })),
+    (destinations()?.items ?? []).map((space) => {
+      const audience = space.audience;
+      const visibility = !audience
+        ? messages().calendarAudienceUnknown
+        : audience.public
+          ? messages().calendarPublic
+          : audience.authenticated
+            ? messages().calendarAuthenticated
+            : messages().calendarVisibleMembers({ count: audience.memberCount, guests: audience.guestCount });
+      return {
+        id: space.id,
+        value: space.id,
+        label: space.name,
+        color: space.color,
+        icon: "ti ti-calendar-event",
+        description: [
+          visibility,
+          ...(audience?.serviceAccountCount ? [messages().calendarAccounts({ count: audience.serviceAccountCount })] : []),
+        ].join(" · "),
+      };
+    }),
   );
 
   const chooseDestination = async (isCurrent: () => boolean) => {
@@ -285,14 +308,40 @@ export default function MailCalendarInvitation(props: {
             </div>
 
             <Show when={props.canWrite}>
+              <Show when={destinationQuery.error()}>
+                <InlineGuidance tone="danger" role="alert">
+                  {messages().couldNotLoadCalendarDestinations}
+                  <Button size="sm" variant="text" onClick={() => void destinationQuery.refresh()}>
+                    {messages().retry}
+                  </Button>
+                </InlineGuidance>
+              </Show>
+              <Show when={value().existing && (destinationQuery.loading() || destinationQuery.refreshing())}>
+                <Placeholder state="loading" description={messages().loadingCalendars} />
+              </Show>
+              <Show when={value().existing && !destinationQuery.loading() && !destinationQuery.error() && !hasWritableDestination()}>
+                <InlineGuidance tone="warning">
+                  {destinationDenied() ? messages().calendarNoPermission : messages().noWritableSpace}
+                </InlineGuidance>
+              </Show>
               <div class="flex flex-wrap items-end gap-2">
-                <Show when={!value().existing && destinationOptions().length > 1}>
+                <Show when={!value().existing}>
                   <div class="min-w-48 flex-1">
-                    <Select
+                    <RichSelect
                       aria-label={messages().destinationSpace}
                       value={() => selectedSpaceId() ?? null}
                       onValueChange={chooseSpace}
-                      options={destinationOptions()}
+                      items={destinationOptions()}
+                      status={
+                        destinationQuery.loading() || destinationQuery.refreshing()
+                          ? "loading"
+                          : destinationQuery.error()
+                            ? "error"
+                            : "ready"
+                      }
+                      onRetry={() => void destinationQuery.refresh()}
+                      empty={destinationDenied() ? messages().calendarNoPermission : messages().noWritableSpace}
+                      disabled={importEvent.loading() || respond.loading()}
                       placeholder={messages().chooseSpace}
                     />
                   </div>
@@ -306,7 +355,7 @@ export default function MailCalendarInvitation(props: {
                       type="button"
                       loading={importEvent.loading()}
                       loadingLabel={messages().addingToSpaces}
-                      disabled={!selectedSpaceId()}
+                      disabled={!hasWritableDestination() || destinationQuery.loading() || Boolean(destinationQuery.error())}
                       onClick={() => importEvent.mutate()}
                     >
                       <i class="ti ti-calendar-plus" aria-hidden="true" />
@@ -364,35 +413,8 @@ export default function MailCalendarInvitation(props: {
                 {importEvent.error()?.message ?? respond.error()?.message}
               </InlineGuidance>
             </Show>
-            <Show when={props.canWrite && destinationQuery.loading()}>
-              <Placeholder state="loading" variant="compact" align="left" title={messages().loadingWritableSpaces} />
-            </Show>
-            <Show when={props.canWrite && destinationQuery.error()}>
-              <Placeholder
-                state="error"
-                variant="compact"
-                align="left"
-                title={messages().writableSpacesUnavailable}
-                description={destinationQuery.error()?.message}
-                action={
-                  <Button variant="secondary" size="sm" type="button" onClick={() => void destinationQuery.refresh()}>
-                    {messages().retry}
-                  </Button>
-                }
-              />
-            </Show>
             <Show when={props.canWrite && value().existing && destinations() && !linkedSpaceIsWritable()}>
               <p class="text-xs text-dimmed">{messages().linkedSpaceNotWritable}</p>
-            </Show>
-            <Show when={props.canWrite && destinations() && destinationOptions().length === 0}>
-              <Placeholder
-                state="empty"
-                variant="compact"
-                align="left"
-                icon="ti ti-calendar-off"
-                title={messages().noWritableSpace}
-                description={messages().askSpaceOwner}
-              />
             </Show>
           </div>
         )}

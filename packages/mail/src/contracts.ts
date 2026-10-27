@@ -3248,6 +3248,27 @@ export const senderIdentitySchema = z.object({
 });
 export type SenderIdentity = z.infer<typeof senderIdentitySchema>;
 
+/** Consequences of choosing a sender; IDs are projected at the API boundary. */
+export const senderChoiceSchema = z.object({
+  id: ResourceShortIdSchema,
+  label: z.string(),
+  fromAddress: z.string().email(),
+  status: senderIdentitySchema.shape.status,
+  replyTo: z.string().email(),
+  defaultCc: z.array(mailAddressSchema),
+  defaultBcc: z.array(mailAddressSchema),
+  signatureName: z.string().nullable(),
+  audience: z.object({
+    memberCount: z.number().int().nonnegative(),
+    guestCount: z.number().int().nonnegative(),
+    serviceAccountCount: z.number().int().nonnegative(),
+    public: z.boolean(),
+    authenticated: z.boolean(),
+  }),
+  assignedReaders: z.boolean(),
+});
+export type SenderChoice = z.infer<typeof senderChoiceSchema>;
+
 export const createSenderIdentityInputSchema = z.object({
   label: z.string().trim().min(1).max(200),
   displayName: z.string().trim().max(200).default(""),
