@@ -8,6 +8,7 @@ import {
   Checkbox,
   CheckboxCard,
   ChoiceChips,
+  ChoiceSlider,
   ColorInput,
   Combobox,
   type Completion,
@@ -1191,6 +1192,49 @@ const TagEditorDemo = () => {
   );
 };
 
+const choiceSliderOptions = [
+  { value: "draft", label: "Draft", description: "Quick and rough" },
+  { value: "standard", label: "Standard", description: "For most documents" },
+  { value: "print", label: "Print", disabledReason: "The printer is offline" },
+  { value: "archive", label: "Archive", description: "Highest quality, slowest" },
+];
+
+const ChoiceSliderDemo = () => {
+  const [value, setValue] = createSignal<string | null>("standard");
+  const [active, setActive] = createSignal<string | null>(null);
+  const label = () => choiceSliderOptions.find((option) => option.value === (active() ?? value()))?.label ?? "Custom";
+  return (
+    <DemoCard
+      id="choice-slider"
+      chip={{ kind: "component", name: "ChoiceSlider", from: "@k2b/ui" }}
+      description="A few named stops on one track. The line above it always shows the active stop's description; an unavailable stop stays visible, is skipped by dragging and arrow keys, and explains itself when someone reaches it."
+      code={`<ChoiceSlider
+  aria-label="Export quality"
+  options={[
+    { value: "draft", label: "Draft", description: "Quick and rough" },
+    { value: "standard", label: "Standard", description: "For most documents" },
+    { value: "print", label: "Print", disabledReason: "The printer is offline" },
+    { value: "archive", label: "Archive", description: "Highest quality, slowest" },
+  ]}
+  value={value}
+  onValueChange={setValue}
+  onActiveChange={setActive}
+/>`}
+    >
+      <div class="mx-auto grid w-full max-w-80 gap-1">
+        <p class="text-center text-base font-semibold text-(--k2b-action)">{label()}</p>
+        <ChoiceSlider
+          aria-label="Export quality"
+          options={choiceSliderOptions}
+          value={value}
+          onValueChange={setValue}
+          onActiveChange={setActive}
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
 const SmallChoicesDemo = (props: { kind: "color" | "tags" | "pin" | "icon" | "slider" }) => {
   const [color, setColor] = createSignal("#06b6d4");
   const [transparent, setTransparent] = createSignal(false);
@@ -1748,6 +1792,11 @@ const demos: DemoSection = {
   slider: () => (
     <DemoGrid columns="one">
       <SmallChoicesDemo kind="slider" />
+    </DemoGrid>
+  ),
+  "choice-slider": () => (
+    <DemoGrid columns="one">
+      <ChoiceSliderDemo />
     </DemoGrid>
   ),
   boolean: () => (
