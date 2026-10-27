@@ -7,7 +7,8 @@ import {
   type AiModelUnavailableReason,
   type AiPeopleModelIcon,
   type AiPeopleModels,
-} from "./model-contracts";
+  aiProviderMark,
+} from "../shared/ai-models";
 import { personalAiModelPolicy } from "./personal-agent";
 import { aiUserPrefs } from "./prefs";
 import { aiQuotas } from "./quotas";
@@ -60,16 +61,7 @@ export const peopleAiModels = async (
         ? { kind: "image", src: profile.icon.dataUrl }
         : profile.icon.kind === "emoji"
           ? profile.icon
-          : {
-              kind: "mark",
-              text: (provider?.label ?? "AI")
-                .split(/\s+/)
-                .map((word) => word[0])
-                .join("")
-                .slice(0, 2)
-                .toUpperCase(),
-              color: String(Array.from(profile.providerId).reduce((sum, letter) => (sum * 31 + letter.charCodeAt(0)) >>> 0, 0) % 12),
-            };
+          : { kind: "mark", ...aiProviderMark(provider ?? { id: profile.providerId, label: "AI" }) };
     options.push({
       id: profile.id,
       label: profile.label,

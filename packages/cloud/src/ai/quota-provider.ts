@@ -5,7 +5,7 @@ import type { AccessSubject } from "../server/services/access";
 import { logger } from "../services/logging";
 import { isAssistantChatTurn } from "./assistant-models";
 import { AiBackgroundAdmissionError, type AiCallContext, type AiCallDetails, beginAiCall, finishAiCall } from "./inference-calls";
-import type { AiResolvedModelRef } from "./model-contracts";
+import type { AiResolvedModelRef } from "../shared/ai-models";
 import { type ProviderFetchMarks, runWithProviderFetchMarks } from "./provider-fetch";
 import type { AiModelProfile } from "./types";
 

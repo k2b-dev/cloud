@@ -1,5 +1,5 @@
 import type { Input } from "@k2b/nessi";
-import type { AiModelRequest } from "./model-contracts";
+import type { AiModelRequest } from "../shared/ai-models";
 import { readAiSettingsState, resolveAiModelFromState } from "./settings";
 import type { AiModelPolicy, AiSettingsError, AiSettingsState } from "./types";
 

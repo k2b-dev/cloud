@@ -5,7 +5,7 @@ import {
   AiModelRequestSchema,
   aiModelClassFallbackChain,
   parseAiModelChoice,
-} from "./model-contracts";
+} from "../shared/ai-models";
 import { aiAssignmentFixture, aiModelFixture, aiSettingsFixture } from "./model-fixture";
 import { resolveAiModelRef, selectAiModelProfile } from "./settings";
 

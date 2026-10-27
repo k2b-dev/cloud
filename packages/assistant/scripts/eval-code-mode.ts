@@ -1,4 +1,4 @@
-import { parseAiModelChoice } from "../../cloud/src/ai/model-contracts";
+import { parseAiModelChoice } from "../../cloud/src/shared/ai-models";
 // Real model evaluation against disposable data services; never writes to a user's chat.
 
 import { parseArgs } from "node:util";

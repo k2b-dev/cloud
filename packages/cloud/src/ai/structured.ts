@@ -4,7 +4,7 @@ import type { z } from "zod";
 import type { AccessSubject } from "../server";
 import type { TraceContext } from "../services/logging";
 import { trace } from "../services/logging";
-import type { AiModelRequest, AiResolvedModelRef } from "./model-contracts";
+import type { AiModelRequest, AiResolvedModelRef } from "../shared/ai-models";
 import { taskReasoningEffort } from "./provider";
 import { AiProviderError } from "./provider-errors";
 import { inferenceProvider } from "./quota-provider";

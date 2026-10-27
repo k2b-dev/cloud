@@ -1,6 +1,6 @@
 import { sql } from "bun";
 import type { RequestActor } from "../server";
-import { type AiModelRequest, AiModelRequestSchema } from "./model-contracts";
+import { type AiModelRequest, AiModelRequestSchema } from "../shared/ai-models";
 
 /**
  * Learning from private chats applies to everyone who has not chosen.

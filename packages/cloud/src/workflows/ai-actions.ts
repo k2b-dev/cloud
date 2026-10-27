@@ -1,4 +1,4 @@
-import { type AiModelRequest, AiModelRequestSchema, type AiResolvedModelRef } from "../ai/model-contracts";
+import { type AiModelRequest, AiModelRequestSchema, type AiResolvedModelRef } from "../shared/ai-models";
 import { assertAiTaskRequestSize } from "../ai/task-contracts";
 import type { AiResolvedModel } from "../ai/types";
 import { WorkflowAiAdmissionError, type WorkflowAiScope, workflowAiModelHash } from "./ai/policy";

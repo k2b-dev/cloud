@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { AiModelPricingSchema } from "../shared/ai-costs";
-import { AiExtraBodySchema, AiReasoningEffortSchema } from "../shared/ai-request-options";
+import { AiModelPricingSchema } from "./ai-costs";
+import { AiExtraBodySchema, AiReasoningEffortSchema } from "./ai-request-options";
 
 export const AI_MODEL_CLASSES = ["fast", "balanced", "thorough", "maximum"] as const;
 export type AiModelClass = (typeof AI_MODEL_CLASSES)[number];
@@ -53,6 +53,12 @@ export const AiProviderTypeSchema = z.enum([
   "vllm",
   "openai-compatible",
 ]);
+export type AiProviderType = z.infer<typeof AiProviderTypeSchema>;
+/** Hosted APIs refuse requests without a key; self-hosted endpoints may run without one. */
+export const providerRequiresCredential = (provider: AiProviderType): boolean =>
+  ["openai", "openrouter", "anthropic", "mistral", "gemini"].includes(provider);
+export const providerSupportsCredential = (provider: AiProviderType): boolean =>
+  providerRequiresCredential(provider) || provider === "vllm" || provider === "openai-compatible";
 export const AiProviderStatusSchema = z.enum(["unknown", "ok", "unreachable", "key_rejected", "error"]);
 export const AiProviderInputSchema = z
   .object({
@@ -175,6 +181,23 @@ export type AiPeopleModelIcon =
   | { kind: "emoji"; emoji: string }
   | { kind: "image"; src: string }
   | { kind: "mark"; text: string; color: string };
+/** Neutral provider marks: Cloud ships no brand logos, so a provider shows its initials on one of these colours. */
+export const AI_PROVIDER_MARK_COLORS = ["#0f766e", "#6d28d9", "#475569", "#15803d", "#1d4ed8", "#c2410c", "#be123c", "#a16207"] as const;
+/** The initials and colour a provider shows wherever it has no logo, the same in the AI area and in every chooser. */
+export const aiProviderMark = (provider: { id: string; label: string }): { text: string; color: string } => ({
+  text:
+    provider.label
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => word[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "AI",
+  color:
+    AI_PROVIDER_MARK_COLORS[
+      Array.from(provider.id).reduce((sum, letter) => (sum * 31 + letter.charCodeAt(0)) >>> 0, 0) % AI_PROVIDER_MARK_COLORS.length
+    ]!,
+});
 export type AiPeopleModels = {
   status: "ok";
   selection: AiModelRequest | null;

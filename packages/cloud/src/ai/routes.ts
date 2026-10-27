@@ -254,7 +254,7 @@ const publicMemory = async (userId: string, memory: Awaited<ReturnType<typeof ai
   (await publicMemories(userId, [memory]))[0]!;
 
 /** Fire-and-forget: remember the model this user actually ran a turn with (preselected for new chats). */
-const rememberLastUsedModel = (actor: RequestActor, model: import("./model-contracts").AiModelRequest | undefined): void => {
+const rememberLastUsedModel = (actor: RequestActor, model: import("../shared/ai-models").AiModelRequest | undefined): void => {
   const userId = aiPrefsUserId(actor);
   if (!userId || !model) return;
   void aiUserPrefs.update(userId, { selection: model }).catch(() => undefined);

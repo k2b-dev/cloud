@@ -1,4 +1,4 @@
-import type { AiResolvedModelRef } from "../../ai/model-contracts";
+import type { AiResolvedModelRef } from "../../shared/ai-models";
 import type { AiTaskRequest as WorkflowAiRequest } from "../../ai/task-contracts";
 import type { WorkflowJsonValue } from "../contracts";
 

@@ -9,7 +9,7 @@ import {
   AiProviderPatchSchema,
   AiVariantInputSchema,
   AiVariantPatchSchema,
-} from "../../ai/model-contracts";
+} from "../../shared/ai-models";
 import { arg, type CloudCliContext, command, confirmFlag, flag, printStructured, readCliInput } from "../index";
 import { apiGet, apiJson, readJsonInput } from "./shared";
 

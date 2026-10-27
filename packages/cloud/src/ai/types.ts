@@ -22,7 +22,7 @@ import type {
 import type { RequestActor } from "../server";
 import type { AiActionCheck, AiStoredActionReview } from "./action-review";
 import type { AiLocalClient, AiLocalContext, AiLocalToolName } from "./local-tool-contracts";
-import type { AiModelRequest, AiResolvedModelRef } from "./model-contracts";
+import type { AiModelRequest, AiResolvedModelRef } from "../shared/ai-models";
 import type { AiTurnBlock } from "./protocol";
 
 /** Current reader-confirmed metadata for a recently sent resource. */
@@ -67,7 +67,7 @@ export type AiModelProfile = {
   providerId: string;
   variantLabel: string;
   description: string;
-  icon: import("./model-contracts").AiModelIcon;
+  icon: import("../shared/ai-models").AiModelIcon;
   showInPicker: boolean;
   provider: AiProviderId;
   model: string;
@@ -94,7 +94,7 @@ export type AiSettingsError = { code: AiSettingsErrorCode; message: string; fiel
 export type AiSettingsState = {
   ok: true;
   enabled: boolean;
-  assignments: import("./model-contracts").AiModelAssignment[];
+  assignments: import("../shared/ai-models").AiModelAssignment[];
   globalInstructions: string;
   localClientInstructions: string;
   compactionInstructions: string;
@@ -114,7 +114,7 @@ export type AiModelPolicy =
     };
 
 export type AiResolvedModel = {
-  model: import("./model-contracts").AiResolvedModelRef;
+  model: import("../shared/ai-models").AiResolvedModelRef;
   profile: AiModelProfile;
   provider: Provider;
 };
@@ -510,7 +510,7 @@ export type AiProjectPromptSnapshot = {
   instructions: string;
   context: string;
   references: CloudResourceRef[];
-  defaultModel: import("./model-contracts").AiModelRequest | null;
+  defaultModel: import("../shared/ai-models").AiModelRequest | null;
 };
 
 export type AiProjectFileToolStat = {

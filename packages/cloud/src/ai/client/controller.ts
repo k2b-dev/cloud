@@ -5,7 +5,7 @@ import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
 import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
 import { aiChatMessages } from "../chat/messages";
-import type { AiModelRequest } from "../model-contracts";
+import type { AiModelRequest } from "../../shared/ai-models";
 import { AI_TURN_LEASE_MS, type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
 import { type AiResourceMarker, aiResourceMarker } from "../resource-markers";
 import type {
