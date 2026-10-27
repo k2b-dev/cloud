@@ -1,3 +1,4 @@
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
@@ -182,7 +183,8 @@ export default function NotebookSidebar(props: Props) {
   // --- Note menu ----------------------------------------------------------------------------------------------------
 
   const actions = useNoteActions(notebook().id, { onOrderChanged: () => void refreshWorkspace(), findNote: tree.findNote });
-  /** Everyone keeps favorites; writers also get the note's actions, with arranging where the notebook order shows. */
+  const cloudId = useCloudIdCopy();
+  /** Everyone keeps favorites and the Cloud ID; writers also get the note's actions, with arranging where the notebook order shows. */
   const noteMenu = (node: SidebarNote, level: SidebarNote[] | null): DropdownItem[] => {
     const favorite = favorites.favoriteNoteIds().has(node.id);
     const favoriteItem: DropdownItem = {
@@ -190,7 +192,8 @@ export default function NotebookSidebar(props: Props) {
       label: favorite ? t().removeFavorite : t().addFavorite,
       action: () => void favorites.toggleFavorite(node),
     };
-    if (!canWrite) return [favoriteItem];
+    const cloudIdItems = cloudId.section({ type: "notebooks.note", id: node.id });
+    if (!canWrite) return [favoriteItem, ...cloudIdItems];
     const [newSubnote, ...rest] = noteActionItems(
       node,
       actions,
@@ -198,7 +201,7 @@ export default function NotebookSidebar(props: Props) {
       canDeleteOrLockNotes(),
       level && orderable() ? { level, children: tree.level(node.id)?.items, homepageId: notebook().homepageNoteId } : undefined,
     );
-    return [newSubnote!, favoriteItem, ...rest];
+    return [newSubnote!, favoriteItem, ...rest, ...cloudIdItems];
   };
   const listMenu = (id: string) => {
     const note = listedNotes().find((candidate) => candidate.id === id);

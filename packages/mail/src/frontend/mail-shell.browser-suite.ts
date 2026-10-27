@@ -2570,6 +2570,177 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
       });
     });
 
+    describe("Mail Cloud ID and context menu", () => {
+      const cloudUrl = "https://cloud.example";
+      type Copied = { text: string; custom?: string };
+      // Records what Mail writes, in both the structured and the plain-text clipboard path, without browser permissions.
+      const recordClipboard = (page: Page) =>
+        page.evaluate(() => {
+          const copied: { text: string; custom?: string }[] = [];
+          (window as unknown as { copied: typeof copied }).copied = copied;
+          Object.defineProperty(navigator, "clipboard", {
+            configurable: true,
+            value: {
+              writeText: async (text: string) => void copied.push({ text }),
+              write: async (items: ClipboardItem[]) => {
+                for (const item of items) {
+                  const custom = item.types.find((type) => type.startsWith("web "));
+                  copied.push({
+                    text: await (await item.getType("text/plain")).text(),
+                    ...(custom ? { custom: await (await item.getType(custom)).text() } : {}),
+                  });
+                }
+              },
+            },
+          });
+        });
+      const copiedEntries = (page: Page) => page.evaluate(() => (window as unknown as { copied: Copied[] }).copied);
+      const menuEntries = async (page: Page, selector: string) => {
+        const menu = page.locator(selector);
+        await menu.waitFor({ state: "visible" });
+        return (await menu.getByRole("menuitem").allTextContents()).map((entry) => entry.trim());
+      };
+      const dismiss = async (page: Page, selector: string) => {
+        await page.keyboard.press("Escape");
+        await page.locator(selector).waitFor({ state: "hidden" });
+      };
+      const dropdown = ".k2b-dropdown__menu:popover-open";
+      const contextMenu = ".k2b-context-menu";
+
+      test("right-click opens the same menus as the conversation's and the message's …", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01`);
+        try {
+          await page.getByRole("button", { name: "More conversation actions" }).click();
+          const conversationItems = await menuEntries(page, dropdown);
+          expect(conversationItems).toContain("Copy conversation Cloud ID");
+          await dismiss(page, dropdown);
+          await page.locator("[data-mail-reader-heading]").click({ button: "right" });
+          expect(await menuEntries(page, contextMenu)).toEqual(conversationItems);
+          await dismiss(page, contextMenu);
+
+          const message = page.locator('[data-mail-message-id="Msg001"]');
+          await message.getByRole("button", { name: "Message actions" }).click();
+          const messageItems = await menuEntries(page, dropdown);
+          expect(messageItems.slice(-2)).toEqual(["Copy message Cloud ID", "Copy conversation Cloud ID"]);
+          await dismiss(page, dropdown);
+          await message.locator("[data-mail-message-header]").click({ button: "right" });
+          expect(await menuEntries(page, contextMenu)).toEqual(messageItems);
+          await dismiss(page, contextMenu);
+
+          // Keyboard: Shift+F10 on the focused message opens the same menu, and Escape returns focus.
+          await message.locator("[data-mail-message-header]").focus();
+          await page.keyboard.press("Shift+F10");
+          expect(await menuEntries(page, contextMenu)).toEqual(messageItems);
+          await dismiss(page, contextMenu);
+          expect(await message.locator("[data-mail-message-header]").evaluate((element) => element === document.activeElement)).toBe(true);
+
+          // A right-click on the body without a selection opens the message menu, and Escape leaves focus in the message.
+          const body = message.locator(".mail-message-body pre").first();
+          await page.locator("[data-mail-reader-heading]").focus();
+          await body.click({ button: "right" });
+          expect(await menuEntries(page, contextMenu)).toEqual(messageItems);
+          await dismiss(page, contextMenu);
+          expect(await message.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+
+          // Selected text in the body keeps the browser's own menu.
+          await body.selectText();
+          await body.click({ button: "right" });
+          await page.waitForTimeout(100);
+          expect(await page.locator(contextMenu).count()).toBe(0);
+        } finally {
+          await close(page);
+        }
+      });
+
+      test("Copy Cloud ID writes the permalink and the structured reference from every menu and the details", async () => {
+        const { parseCloudResourceClipboard, parseCloudResourceUrl } = await import("@k2b/cloud/contracts");
+        const page = await open(`${boxPath}?conversation=Conv01&details=1`);
+        try {
+          await recordClipboard(page);
+          const message = page.locator('[data-mail-message-id="Msg001"]');
+          await message.locator("[data-mail-message-header]").click({ button: "right" });
+          await page.locator(contextMenu).getByRole("menuitem", { name: "Copy message Cloud ID" }).click();
+          await page.getByText("Message Cloud ID copied").waitFor();
+
+          await page.getByRole("button", { name: "More conversation actions" }).click();
+          await page.locator(dropdown).getByRole("menuitem", { name: "Copy conversation Cloud ID" }).click();
+
+          const row = page.locator(".mail-list-entry").filter({ has: page.locator('a[href*="conversation=Conv02"]') });
+          await row.hover();
+          await row.getByRole("button", { name: /^Actions for/ }).click();
+          await page.locator(dropdown).getByRole("menuitem", { name: "Copy conversation Cloud ID" }).click();
+
+          const detailsCopy = page.locator('[data-mail-copy-cloud-id="conversation"]');
+          if (!(await detailsCopy.isVisible())) await page.locator("[data-app-workspace-detail-toggle]").first().click();
+          await detailsCopy.click();
+
+          await page.waitForFunction(() => (window as unknown as { copied: unknown[] }).copied.length === 4);
+          const copied = await copiedEntries(page);
+          const expected = [
+            { type: "mail.message", id: "Msg001" },
+            { type: "mail.conversation", id: "Conv01" },
+            { type: "mail.conversation", id: "Conv02" },
+            { type: "mail.conversation", id: "Conv01" },
+          ];
+          expect(copied.map((entry) => entry.text)).toEqual(expected.map((ref) => `${cloudUrl}/open/${ref.type}/~${ref.id}`));
+          expect(copied.map((entry) => parseCloudResourceUrl(entry.text, cloudUrl))).toEqual(expected);
+          // Chromium writes the web custom format too; WebKit has only the plain-text permalink.
+          for (const [index, entry] of copied.entries())
+            if (entry.custom !== undefined) expect(parseCloudResourceClipboard(entry.custom, cloudUrl)).toEqual(expected[index]!);
+          if (browserName === "chromium") expect(copied.every((entry) => entry.custom !== undefined)).toBe(true);
+        } finally {
+          await close(page);
+        }
+      });
+    });
+
+    if (screenshots)
+      test("optional Cloud ID review screenshots", async () => {
+        const directory = join(resolve(screenshots), "cloud-id");
+        mkdirSync(directory, { recursive: true });
+        const shot = async (page: Page, name: string) => {
+          await page.waitForTimeout(150);
+          await page.screenshot({ path: join(directory, `${name}.png`) });
+        };
+        const escape = async (page: Page) => {
+          await page.keyboard.press("Escape");
+          await page.waitForTimeout(100);
+        };
+        for (const width of [1920, 390] as const) {
+          const page = await open(`${boxPath}?conversation=Conv01&theme=light${width === 1920 ? "&details=1" : ""}`, width);
+          try {
+            if (width === 1920) {
+              const detailsCopy = page.locator("[data-mail-copy-cloud-id], .mail-details-meta").first();
+              if (!(await page.locator(".mail-details-meta").isVisible()))
+                await page.locator("[data-app-workspace-detail-toggle]").first().click();
+              await detailsCopy.waitFor({ state: "visible" });
+              await shot(page, `${width}-details`);
+              await page.getByRole("button", { name: "More conversation actions" }).click();
+              await shot(page, `${width}-conversation-menu`);
+              await escape(page);
+              await page.locator("[data-mail-reader-heading]").click({ button: "right" });
+              await shot(page, `${width}-conversation-right-click`);
+              await escape(page);
+              const row = page.locator(".mail-list-entry").first();
+              await row.hover();
+              await row.getByRole("button", { name: /^Actions for/ }).click();
+              await shot(page, `${width}-row-menu`);
+              await escape(page);
+            }
+            const message = page.locator('[data-mail-message-id="Msg001"]');
+            await message.getByRole("button", { name: "Message actions" }).click();
+            await shot(page, `${width}-message-menu`);
+            await escape(page);
+            if (width === 1920) {
+              await message.locator("[data-mail-message-header]").click({ button: "right", position: { x: 200, y: 20 } });
+              await shot(page, `${width}-message-right-click`);
+            }
+          } finally {
+            await page.context().close();
+          }
+        }
+      }, 120_000);
+
     if (screenshots)
       test("optional synthetic review screenshots", async () => {
         const directory = resolve(screenshots);

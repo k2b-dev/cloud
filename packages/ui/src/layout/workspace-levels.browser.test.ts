@@ -173,7 +173,7 @@ const boxes = (page: Page) =>
 const checkFill = async (page: Page) => {
   const result = await page.evaluate(() => {
     const main = document.querySelector("[data-workspace-levels]")!.getBoundingClientRect();
-    // A raised last level keeps its inset as margin; the margin box fills.
+    // Every level is a flat column; together their margin boxes fill Main.
     const shown = [...document.querySelectorAll<HTMLElement>("[data-workspace-level]")]
       .filter((element) => getComputedStyle(element).display !== "none")
       .map((element) => {
@@ -375,8 +375,7 @@ for (const width of [1440, 1920])
 
 // A mouse separator reaches 10 px into each level, so a level head's actions
 // end before it. On a touch screen the 44 px separator takes a width of its
-// own: a tap on the edge of a row in either level never lands on it, and
-// before a raised level it takes the place of that level's 8 px inset.
+// own: a tap on the edge of a row in either level never lands on it.
 for (const touch of [false, true])
   for (const width of [1024, 1440])
     test(`${touch ? "touch" : "mouse"} at ${width}: level separators stay clear of the levels' content`, async () => {
