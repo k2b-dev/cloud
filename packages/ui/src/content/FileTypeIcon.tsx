@@ -54,7 +54,7 @@ export const fileKindLabel = (file: { name: string; mediaType?: string; folder?:
   if (type !== "other") return t[type];
   const dot = file.name.lastIndexOf(".");
   const extension = dot > 0 ? file.name.slice(dot + 1) : "";
-  return /^[a-z0-9]{1,8}$/i.test(extension) ? extension.toUpperCase() : t.file;
+  return /^[a-z0-9]+$/i.test(extension) ? extension.toUpperCase() : t.file;
 };
 
 /** `fileIcons` adds Tailwind colour utilities that @k2b/ui does not ship; only the `ti-*` glyph is kept. */

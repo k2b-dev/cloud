@@ -1,4 +1,4 @@
-import { createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, Index, type JSX, on, Show } from "solid-js";
 import type { CollectionSelection } from "./collection-selection";
 import { useFileListMessages } from "./file-list-messages";
 
@@ -50,16 +50,16 @@ export type FileGridSelectableProps<T> = FileGridBaseProps<T> & {
 export type FileGridOpenProps<T> = FileGridBaseProps<T> & {
   selection?: never;
   onRowClick?: never;
-  /** Shows the first `limit` items, then "Show all N", which opens the full list in place. */
+  /** Shows the first `limit` items, then "Show all N", which opens the full list in place. Without it, the list is always full. */
   limit?: number;
   /** Controls whether the full list is open. Without it, the list keeps its own state. */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
   /** A quiet note at the end of "Show all N", such as how many duplicates were merged. */
   moreMeta?: JSX.Element;
-  /** Shown above the full list, such as a count, an arrangement switch, or "Download all". */
+  /** Shown above the full list, such as a count, an arrangement switch, or "Download all"; not in the short list. */
   toolbar?: JSX.Element;
-  /** How the full list arranges its items, such as files as rows, then images as tiles. Defaults to one list. */
+  /** How the full list arranges its items, such as files as rows, then images as tiles; the short list stays one list. */
   groups?: (rows: readonly T[]) => readonly FileGridGroup<T>[];
 };
 
@@ -153,37 +153,53 @@ function OpenFileGrid<T>(props: FileGridOpenProps<T>) {
   const messages = useFileListMessages();
   const [ownExpanded, setOwnExpanded] = createSignal(false);
   const limited = () => props.limit !== undefined && props.rows.length > props.limit;
-  const expanded = () => limited() && (props.expanded ?? ownExpanded());
+  // Without a limit the list is always complete, so its toolbar and groups always apply.
+  const full = () => props.limit === undefined || (limited() && (props.expanded ?? ownExpanded()));
   let more: HTMLButtonElement | undefined;
   let less: HTMLButtonElement | undefined;
+  let moveFocus = false;
   const toggle = (next: boolean) => {
+    moveFocus = true;
     if (props.expanded === undefined) setOwnExpanded(next);
     props.onExpandedChange?.(next);
-    // The pressed button leaves with the state it showed; focus moves to its counterpart.
-    queueMicrotask(() => (next ? less : more)?.focus());
   };
-  const groups = (): readonly FileGridGroup<T>[] =>
-    expanded() && props.groups
+  // The pressed button leaves with the state it showed; once the new state is there, focus moves to its
+  // counterpart, also when a controlling host applies it later.
+  createEffect(
+    on(
+      full,
+      (open) => {
+        if (!moveFocus) return;
+        moveFocus = false;
+        queueMicrotask(() => (open ? less : more)?.focus());
+      },
+      { defer: true },
+    ),
+  );
+  const groups = createMemo((): readonly FileGridGroup<T>[] =>
+    full() && props.groups
       ? props.groups(props.rows).filter((group) => group.rows.length > 0)
-      : [{ id: "rows", label: undefined, rows: expanded() || !limited() ? props.rows : props.rows.slice(0, props.limit) }];
+      : [{ id: "rows", label: undefined, rows: full() || !limited() ? props.rows : props.rows.slice(0, props.limit) }],
+  );
 
-  const list = (group: FileGridGroup<T>, labelId?: string) => (
+  const list = (group: () => FileGridGroup<T>, labelId?: string) => (
     <div
       class={`k2b-file-grid ${props.class ?? ""}`}
       data-size={props.size ?? "md"}
-      data-layout={group.layout === "tiles" ? "tiles" : (props.layout ?? "grid")}
+      data-layout={group().layout === "tiles" ? "tiles" : (props.layout ?? "grid")}
       data-action-visibility={props.actionVisibility ?? "always"}
       data-open-items="true"
       role="list"
       aria-label={labelId ? undefined : props.label}
       aria-labelledby={labelId}
     >
-      <For each={group.rows}>
+      {/* Keyed by the row itself: new data keeps every existing item, its focus, and its state. */}
+      <For each={group().rows}>
         {(row) => {
           const id = `k2b-file-grid-${createUniqueId()}`;
           return (
             <div role="listitem" class="k2b-file-grid__row">
-              <div {...props.itemProps?.(row)} class="k2b-file-grid__item" onContextMenu={() => props.onContextMenu?.(row)}>
+              <div {...props.itemProps?.(row)} class="k2b-file-grid__item">
                 {/* The whole item opens the file; its actions lie above this layer in their own slot. */}
                 <button
                   type="button"
@@ -191,6 +207,7 @@ function OpenFileGrid<T>(props: FileGridOpenProps<T>) {
                   aria-labelledby={`${id}-name`}
                   aria-describedby={props.renderMeta ? `${id}-meta` : undefined}
                   onClick={() => props.onOpen(row)}
+                  onContextMenu={() => props.onContextMenu?.(row)}
                 />
                 <div class="k2b-file-grid__preview">{props.renderPreview(row)}</div>
                 <div class="k2b-file-grid__name" id={`${id}-name`}>
@@ -209,31 +226,30 @@ function OpenFileGrid<T>(props: FileGridOpenProps<T>) {
   );
 
   return (
-    <div class="k2b-file-grid-stack" data-expanded={expanded() ? "true" : undefined}>
-      <Show when={expanded() && props.toolbar}>
+    <div class="k2b-file-grid-stack" data-expanded={full() ? "true" : undefined}>
+      <Show when={full() && props.toolbar}>
         <div class="k2b-file-grid-stack__toolbar">{props.toolbar}</div>
       </Show>
-      <For each={groups()}>
-        {(group) => (
-          <Show when={group.label !== undefined} fallback={list(group)}>
-            {(_) => {
-              const labelId = `k2b-file-grid-group-${createUniqueId()}`;
-              return (
-                <div class="k2b-file-grid-stack__group">
-                  <div class="k2b-file-grid-stack__label" id={labelId}>
-                    {group.label}
-                    <span class="k2b-file-grid-stack__count">{group.rows.length}</span>
-                  </div>
-                  {list(group, labelId)}
+      {/* By position: a group that only changes its rows keeps its list, so new data remounts nothing. */}
+      <Index each={groups()}>
+        {(group) => {
+          const labelId = `k2b-file-grid-group-${createUniqueId()}`;
+          return (
+            <Show when={group().label !== undefined} fallback={list(group)}>
+              <div class="k2b-file-grid-stack__group">
+                <div class="k2b-file-grid-stack__label" id={labelId}>
+                  {group().label}
+                  <span class="k2b-file-grid-stack__count">{group().rows.length}</span>
                 </div>
-              );
-            }}
-          </Show>
-        )}
-      </For>
+                {list(group, labelId)}
+              </div>
+            </Show>
+          );
+        }}
+      </Index>
       <Show when={limited()}>
         <Show
-          when={expanded()}
+          when={full()}
           fallback={
             <button ref={more} type="button" class="k2b-file-grid-stack__more" aria-expanded="false" onClick={() => toggle(true)}>
               <span>{messages().showAll({ count: props.rows.length })}</span>

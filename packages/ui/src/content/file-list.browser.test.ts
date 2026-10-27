@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // A details panel with an open file list, a row with a secondary action, and a closed section with a summary.
 // Whether actions keep their slot, a fill covers a whole row, and a row keeps its height is a question of layout
@@ -16,6 +16,7 @@ const fonts = ["plex.css", "tabler.css"]
 
 const entry = resolve(import.meta.dir, "file-list.fixture.ts");
 const fixture = `
+import { createSignal } from "solid-js";
 import { createComponent as c, render } from "solid-js/web";
 import { DetailPanel, FileGrid, FileTypeIcon, IconButton, fileKindLabel } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
@@ -32,7 +33,7 @@ const actions = (file) => [
   c(IconButton, { size: "sm", variant: "ghost", label: "Save " + file.name, get children() { return icon("ti-folder-down"); } }),
 ];
 const list = () => c(FileGrid, {
-  rows: files, label: "Attachments", layout: "list", limit: 5, actionVisibility: "progressive",
+  rows: files, label: "Attachments", class: "att", layout: "list", limit: 5, actionVisibility: "progressive",
   getRowId: (file) => file.name,
   renderPreview: (file) => isImage(file) ? Object.assign(document.createElement("img"), { src: pixel, alt: "" }) : c(FileTypeIcon, { name: file.name }),
   renderLabel: (file) => file.name,
@@ -46,11 +47,22 @@ const list = () => c(FileGrid, {
   ],
   onOpen: (file) => window.opened.push(file.name),
 });
+// A host that adds rows later and applies "Show all" only after a delay, as one that keeps the state elsewhere.
+const [liveRows, setLiveRows] = createSignal(files.slice(0, 6));
+const [liveOpen, setLiveOpen] = createSignal(false);
+window.addFile = () => setLiveRows((rows) => [...rows, { name: "Late-" + rows.length + ".pdf", size: "1 KB" }]);
+const live = () => c(FileGrid, {
+  get rows() { return liveRows(); }, label: "Live files", layout: "list", limit: 5,
+  get expanded() { return liveOpen(); }, onExpandedChange: (next) => setTimeout(() => setLiveOpen(next), 60),
+  getRowId: (file) => file.name, renderPreview: (file) => c(FileTypeIcon, { name: file.name }), renderLabel: (file) => file.name,
+  onOpen() {},
+});
 render(() => c(DetailPanel, { surface: "plain", get children() { return [c(DetailPanel.Header, {
   kind: "Conversation", title: "Brochure approval", subtitle: "Northern Light Print · 3 messages",
   get actions() { return c(IconButton, { size: "sm", variant: "ghost", label: "Close details", get children() { return icon("ti-x"); } }); },
 }), c(DetailPanel.Body, { scrollFade: false, get children() { return [
   c(DetailPanel.Section, { title: "Attachments", count: files.length, get children() { return list(); } }),
+  c(DetailPanel.Section, { title: "Live", get children() { return live(); } }),
   c(DetailPanel.Section, { title: "Linked", get children() { return c(DetailPanel.Action, {
     title: "Brochure task", href: "#task", secondaryAction: { icon: "ti ti-unlink", label: "Unlink Brochure task", onClick() {} },
   }); } }),
@@ -74,7 +86,9 @@ afterAll(async () => {
 
 const load = async (width: number, theme: "light" | "dark", input?: "touch") => {
   const page = await browser.newPage({ viewport: { width, height: 1100 } });
-  await page.route(`${assets}**`, (route) => route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)) }));
+  await page.route(`${assets}**`, (route) =>
+    route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)) }),
+  );
   await page.setContent(
     `<!doctype html><html lang="en"${input ? ` data-k2b-input="${input}"` : ""}><head><style>${css}</style><style>${fonts}</style>` +
       "<style>*,*::before,*::after{transition:none!important}</style></head>" +
@@ -85,6 +99,7 @@ const load = async (width: number, theme: "light" | "dark", input?: "touch") => 
   await page.getByRole("list", { name: "Attachments" }).waitFor();
   await page.evaluate(() => document.fonts.ready);
   await page.mouse.move(width - 2, 1090);
+  await settled(page);
   return page;
 };
 
@@ -109,9 +124,9 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
     test(`${theme}: shows the first five, opens the full list in place as files and image tiles, and closes it again`, async () => {
       const page = await load(1440, theme);
       try {
-        const names = () => page.locator(".k2b-file-grid__name").allTextContents();
+        const names = () => page.locator(".att .k2b-file-grid__name").allTextContents();
         expect(await names()).toEqual(["Brochure-v3.pdf", "Costing.xlsx", "Briefing.docx", "Colour-profile.icc", "Print-data.zip"]);
-        expect(await page.locator(".k2b-file-grid__meta").allTextContents()).toEqual([
+        expect(await page.locator(".att .k2b-file-grid__meta").allTextContents()).toEqual([
           "PDF · 4.2 MB",
           "Spreadsheet · 64 KB",
           "Document · 48 KB",
@@ -127,20 +142,23 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
         const more = page.getByRole("button", { name: /Show all 8/ });
         expect(await more.textContent()).toContain("2 duplicates merged");
         await more.click();
+        await settled(page);
         expect(await page.getByRole("button", { name: "Show less" }).evaluate((button) => button === document.activeElement)).toBe(true);
         expect(await page.locator(".k2b-file-grid-stack__toolbar").textContent()).toBe("8 files");
         expect(await page.locator(".k2b-file-grid-stack__label").allTextContents()).toEqual(["Files5", "Images3"]);
-        const tiles = page.locator('.k2b-file-grid[data-layout="tiles"] .k2b-file-grid__item');
+        const tiles = page.locator('.att[data-layout="tiles"] .k2b-file-grid__item');
         expect(await tiles.count()).toBe(3);
         const tile = (await tiles.first().boundingBox())!;
         expect(Math.abs(tile.width / tile.height - 4 / 3)).toBeLessThan(0.02);
         await page.screenshot({ path: `/tmp/k2b-ui-file-list-full-${theme}.png`, fullPage: true });
 
         // A tile opens like a row; its name is the button's accessible name.
-        await page.getByRole("button", { name: "Page-7.jpg", exact: true }).click();
+        await page.locator(".att").getByRole("button", { name: "Page-7.jpg", exact: true }).click();
+        await settled(page);
         expect(await page.evaluate(() => (window as unknown as { opened: string[] }).opened)).toEqual(["Page-7.jpg"]);
 
         await page.getByRole("button", { name: "Show less" }).click();
+        await settled(page);
         expect(await names()).toHaveLength(5);
         expect(await page.getByRole("button", { name: /Show all 8/ }).evaluate((button) => button === document.activeElement)).toBe(true);
       } finally {
@@ -156,6 +174,7 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
       expect(await actionOpacity(page, "Costing.xlsx")).toBe(0);
       const box = (await page.locator(".k2b-file-grid__item").nth(1).boundingBox())!;
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await settled(page);
       expect(await actionOpacity(page, "Costing.xlsx")).toBe(1);
       expect(await actionOpacity(page, "Brochure-v3.pdf")).toBe(0);
       // The actions lie inside the hovered surface.
@@ -164,9 +183,12 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
       expect(await boxes(page)).toEqual(rest);
 
       await page.mouse.move(1438, 1090);
-      await page.getByRole("button", { name: "Briefing.docx", exact: true }).focus();
+      await settled(page);
+      await page.locator(".att").getByRole("button", { name: "Briefing.docx", exact: true }).focus();
+      await settled(page);
       expect(await actionOpacity(page, "Briefing.docx")).toBe(1);
       await page.keyboard.press("Tab");
+      await settled(page);
       expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Download Briefing.docx");
       expect(await boxes(page)).toEqual(rest);
 
@@ -174,6 +196,7 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
       const linked = page.locator(".k2b-detail-panel__action-row");
       const rowBox = (await linked.boundingBox())!;
       await page.mouse.move(rowBox.x + 20, rowBox.y + rowBox.height / 2);
+      await settled(page);
       const fill = await linked.evaluate((row) => {
         const before = getComputedStyle(row, "::before");
         const secondary = row.querySelector(".k2b-detail-panel__action-secondary")!.getBoundingClientRect();
@@ -183,6 +206,32 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
       expect(fill.color).not.toBe("rgba(0, 0, 0, 0)");
       expect(fill.right).toBeGreaterThan(fill.secondaryRight);
       expect(await boxes(page)).toEqual(rest);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("new rows keep the focused item mounted, and a host that applies Show all later still gets focus moved", async () => {
+    const page = await load(1440, "light");
+    try {
+      const live = page.getByRole("list", { name: "Live files" });
+      const first = live.getByRole("button", { name: "Brochure-v3.pdf", exact: true });
+      await first.focus();
+      await settled(page);
+      const marked = await first.evaluate((button) => {
+        (button as HTMLElement & { marked?: boolean }).marked = true;
+        return true;
+      });
+      expect(marked).toBe(true);
+      await page.evaluate(() => (window as unknown as { addFile: () => void }).addFile());
+      await settled(page);
+      expect(await page.evaluate(() => (document.activeElement as HTMLElement & { marked?: boolean }).marked === true)).toBe(true);
+
+      const showAll = page.locator(".k2b-file-grid-stack__more", { hasText: "Show all 7" });
+      await showAll.click();
+      await page.waitForFunction(() => document.activeElement?.textContent?.includes("Show less") === true);
+      await page.locator(".k2b-file-grid-stack__more", { hasText: "Show less" }).last().click();
+      await page.waitForFunction(() => document.activeElement?.textContent?.includes("Show all 7") === true);
     } finally {
       await page.close();
     }
@@ -229,6 +278,7 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
       // The rows stand flush below the title.
       expect(Math.round(next.y - (closed.y + closed.height))).toBe(0);
       await toggle.click();
+      await settled(page);
       const header = page.locator('.k2b-detail-panel__section[data-open="true"] .k2b-detail-panel__section-header');
       expect(Math.round((await header.boundingBox())!.height)).toBe(44);
       expect(await page.locator(".k2b-detail-panel__section-preview").first().isVisible()).toBe(false);

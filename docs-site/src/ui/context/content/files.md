@@ -384,7 +384,10 @@ of "Show all N", such as how many duplicates were merged. `toolbar` stands
 above the full list, for a count, an arrangement switch, or "Download all".
 `groups` arranges the full list, for example files as rows first and images
 as `layout: "tiles"` after them; give the short and the full list the same
-order. Control the state with `expanded` and `onExpandedChange` when the host
+order. A list without `limit` is always full, so its `toolbar` and `groups`
+always apply; a list with `limit` and no more items than that stays one short
+list without them. New `rows` keep every existing item mounted, so focus and
+open menus stay where they are. Control the state with `expanded` and `onExpandedChange` when the host
 must keep it, for example in the URL.
 
 ```tsx
