@@ -1023,6 +1023,31 @@ test("every annotation command uses the canonical note routes, including reply m
       method: "POST",
       suffix: `/${annotationId}/replies/${replyId}/restore`,
     },
+    { args: ["reject", "note01", annotationId], method: "POST", suffix: `/${annotationId}/reject`, body: { rejected: true } },
+    {
+      args: ["reject", "note01", annotationId, "--reply", replyId, "--undo"],
+      method: "POST",
+      suffix: `/${annotationId}/reject`,
+      body: { replyId, rejected: false },
+    },
+    {
+      args: ["reply", "note01", annotationId, "--suggestion", "replacement", "--idempotency-key", "reply-suggestion"],
+      method: "POST",
+      suffix: `/${annotationId}/replies`,
+      body: { body: "", suggestion: "replacement", idempotencyKey: "reply-suggestion" },
+    },
+    {
+      args: ["add", "note01", "--quote", "target", "--occurrence", "2", "--suggestion", "", "--idempotency-key", "occurrence"],
+      method: "POST",
+      suffix: "",
+      body: { quote: "target", body: "", prefix: "", suffix: "", occurrence: 2, suggestion: "", idempotencyKey: "occurrence" },
+    },
+    {
+      args: ["accept", "note01", annotationId, "--reply", replyId, "--operation-id", operationId, "--yes"],
+      method: "POST",
+      suffix: `/${annotationId}/accept`,
+      body: { replyId, operationId },
+    },
     { args: ["resolve", "note01", annotationId], method: "POST", suffix: `/${annotationId}/resolve`, body: { resolved: true } },
     { args: ["reopen", "note01", annotationId], method: "POST", suffix: `/${annotationId}/resolve`, body: { resolved: false } },
     {
@@ -1044,3 +1069,69 @@ test("every annotation command uses the canonical note routes, including reply m
   }
   expect(requests).toEqual(cases.map(({ method, suffix, body }) => ({ method, path: base + suffix, body: body ?? null })));
 }, 60_000);
+
+test("annotation list forwards root filters and reply can read a replacement file", async () => {
+  const list = commandContext(["annotations", "list", "note01"], { state: "open", author: "me" });
+  const paths: string[] = [];
+  list.ctx.fetch = async (path) => {
+    paths.push(path);
+    return Response.json(path.includes("/annotations") ? { items: [], nextCursor: null } : noteFixture);
+  };
+  await notebooksCli.run(list.ctx);
+  expect(paths).toContain("/api/notebooks/notes/note01/annotations?state=open&author=me");
+  const file = join(cliHome, "replacement.md");
+  await Bun.write(file, "Replacement\nwith context");
+  const reply = commandContext(["annotations", "reply", "note01", "11111111-1111-4111-8111-111111111111"], {
+    "suggestion-from": file,
+    "idempotency-key": "from-file",
+  });
+  await notebooksCli.run(reply.ctx);
+  expect(reply.writes).toEqual([{ body: "", suggestion: "Replacement\nwith context", idempotencyKey: "from-file" }]);
+});
+
+test("annotation help tells agents to propose a reply suggestion and await the person's decision", async () => {
+  const help = await runCli("http://127.0.0.1:9", ["notebooks", "annotations", "accept", "--help"]);
+  expect(help.exitCode).toBe(0);
+  expect(help.stdout).toContain("never accept your own suggestion");
+  expect(help.stdout).toContain("--reply");
+});
+
+test("human annotation lists print thread blocks in passage order", async () => {
+  const listing = commandContext(["annotations", "list", "note01"]);
+  listing.ctx.options.output = "text";
+  const item = {
+    state: "open",
+    author: { name: "Mara Keller" },
+    via: null,
+    createdAt: "2026-10-26T14:02:00.000Z",
+    headingPath: [],
+    quote: "passage",
+    prefix: "Before ",
+    suffix: " after",
+    body: "Comment",
+    suggestion: null,
+    stateBy: null,
+    suggestionStateBy: null,
+    replies: [],
+    repliesNextCursor: null,
+    orphan: false,
+  };
+  listing.ctx.fetch = async (path) =>
+    Response.json(
+      path.includes("/annotations")
+        ? {
+            text: "Before passage after",
+            items: [
+              { ...item, id: "later", from: 10 },
+              { ...item, id: "earlier", from: 1 },
+            ],
+            nextCursor: null,
+          }
+        : noteFixture,
+    );
+  await notebooksCli.run(listing.ctx);
+  expect(listing.lines).toHaveLength(2);
+  expect(listing.lines[0]).toStartWith("earlier  open  Mara Keller");
+  expect(listing.lines[1]).toStartWith("later  open  Mara Keller");
+  expect(listing.lines[0]).toContain("Before [passage] after");
+});

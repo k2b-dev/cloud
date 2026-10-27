@@ -71,7 +71,35 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
   const reader = identity("Reader agent");
   const other = identity("Other writer");
   if (other.actor.kind === "service_account") other.actor.serviceAccount.kind = "standalone";
-  const contexts = { writer, reader, other };
+  const user = {
+    id: crypto.randomUUID(),
+    uid: `review-${crypto.randomUUID().slice(0, 8)}`,
+    roles: ["user"],
+    provider: "local",
+    profile: "user",
+    givenname: "Mara",
+    sn: "Keller",
+    displayName: "Mara Keller",
+    mail: "mara@example.test",
+    avatarHash: null,
+    ipa: null,
+    accountExpires: null,
+    lastLoginLocal: null,
+    memberofGroup: [],
+    memberofGroupIds: [],
+    manages: [],
+    managesGroupIds: [],
+  } satisfies import("@k2b/cloud/contracts").User;
+  const personContext: CapabilityExecutionContext = {
+    actor: { kind: "user", user },
+    accessSubject: { type: "user", userId: user.id },
+    user,
+    origin: "app",
+    locale: "en",
+    requestId: "person-review",
+    signal: new AbortController().signal,
+  };
+  const contexts = { writer, reader, other, person: personContext };
   const connection = await connectTestNats();
   const namespace = testSyncNamespace("notebooks-annotations");
   const sync = createSync({ connection, namespace, application: "notebooks", defaults: { replicas: 1 } });
@@ -87,7 +115,14 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     await sql`INSERT INTO notebooks.notebooks(id, short_id, name) VALUES (${notebookId}::uuid, ${notebookShortId}, 'Review handbook')`;
     for (const [name, context] of Object.entries(contexts)) {
       const who = context.actor;
-      if (who.kind !== "service_account") throw new Error("Expected service account");
+      if (who.kind === "user") {
+        await sql`INSERT INTO auth.users(id, uid, provider, profile) VALUES (${user.id}::uuid, ${user.uid}, 'local', 'user')`;
+        const [grant] = await sql<
+          { id: string }[]
+        >`INSERT INTO auth.access(user_id, permission) VALUES (${user.id}::uuid, 'write') RETURNING id`;
+        await sql`INSERT INTO notebooks.notebook_access(notebook_id, access_id) VALUES (${notebookId}::uuid, ${grant!.id}::uuid)`;
+        continue;
+      }
       await sql`INSERT INTO auth.service_accounts(id, name, kind) VALUES (${who.serviceAccount.id}::uuid, ${who.serviceAccount.name}, ${who.serviceAccount.kind})`;
       const [grant] = await sql<
         { id: string }[]
@@ -98,7 +133,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     activeSpies.push(
       spyOn(server.auth, "requireRole").mockReturnValue(async (c, next) => {
         const key = c.req.header("authorization")?.replace("Bearer ", "") ?? "writer";
-        const selected = key === "reader" ? reader : key === "other" ? other : writer;
+        const selected = key === "reader" ? reader : key === "other" ? other : key === "person" ? personContext : writer;
         c.set("actor", selected.actor);
         c.set("accessSubject", selected.accessSubject);
         await next();
@@ -126,6 +161,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
       for (const context of Object.values(contexts))
         if (context.actor.kind === "service_account")
           await sql`DELETE FROM auth.service_accounts WHERE id = ${context.actor.serviceAccount.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user.id}::uuid`;
       await annotations.close();
       await sync.drain();
       const manager = await jetstreamManager(connection);
@@ -505,6 +541,11 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     });
     expect(second).not.toEqual(first);
     expect((await annotations.operate(note.shortId, root.id, "accept", { operationId: input.operationId }, writer)).ok).toBeTrue();
+    expect(await annotations.readResource(root.id, writer)).toMatchObject({ ok: true, data: { canDelete: false } });
+    expect(await annotations.mutate(note.shortId, root.id, { kind: "delete" }, writer)).toMatchObject({
+      ok: false,
+      error: { status: 409 },
+    });
     expect(await annotations.previewOperation(note.shortId, root.id, "undo", undefined, writer)).toMatchObject({
       ok: true,
       data: { before: "revised", after: "target" },
@@ -674,13 +715,348 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     expect(result).toMatchObject({ details: { operationId, currentTextTruncated: true, currentTextLength: 2106 } });
     expect(result.details.currentText.length).toBe(2000);
   });
+  test("a person comments, an Assistant replies with suggestions, and REST accept/undo preserve history and other anchors", async () => {
+    const content = "# Membership\n\nBefore target after. Another passage stays.\n";
+    const note = await noteFixture(content);
+    const response = await request(
+      note.shortId,
+      "",
+      "POST",
+      { quote: "target", body: "Should we change this?", idempotencyKey: "person-comment" },
+      "person",
+    );
+    expect(response.status).toBe(200);
+    const root = await response.json();
+    expect(root).toMatchObject({ author: { kind: "user", id: user.id }, suggestion: null, suggestionState: null, stateVia: null });
+    const preserved = await add(note.shortId, { quote: "Another passage" });
+    const cap = notebooksCapabilities;
+    const listed = await cap.queries["annotation.list"].run({ noteId: note.shortId, author: user.id, state: "open", limit: 1 }, writer);
+    expect(listed).toMatchObject({ ok: true, data: { data: { items: [{ id: root.id }] } } });
+    const cliList = await cld(["annotations", "list", note.shortId, "--state", "open", "--author", user.id]);
+    expect(cliList.code).toBe(0);
+    expect(JSON.parse(cliList.stdout).items.map((item: { id: string }) => item.id)).toEqual([root.id]);
+    const proposed = await cap.actions["annotation.reply"].run(
+      { noteId: note.shortId, annotationId: root.id, body: "Here is clearer wording.", suggestion: "replacement" },
+      { ...writer, idempotencyKey: "agent-suggestion" },
+    );
+    if (!proposed.ok) throw new Error(proposed.error.message);
+    const replyId = proposed.data.data.id;
+    expect(proposed.data.data).toMatchObject({
+      via: "assistant",
+      suggestion: "replacement",
+      suggestionState: "open",
+      author: { kind: "service_account" },
+    });
+    const alternative = await annotations.reply(
+      note.shortId,
+      root.id,
+      { suggestion: "another replacement", idempotencyKey: "alternative" },
+      other,
+    );
+    expect(alternative.ok).toBeTrue();
+    const preview = await cap.actions["annotation.accept"].review!({ noteId: note.shortId, annotationId: root.id, replyId }, personContext);
+    expect(preview).toMatchObject({
+      ok: true,
+      data: { details: expect.arrayContaining([{ label: "Replace with", value: "replacement", display: "block" }]) },
+    });
+    const operationId = crypto.randomUUID();
+    expect((await request(note.shortId, `/${root.id}/accept`, "POST", { operationId, replyId }, "person")).status).toBe(200);
+    expect(await text(note.id)).toBe(content.replace("target", "replacement"));
+    const [version] = await sql<
+      { content_md: string; actor_id: string; actor_kind: string }[]
+    >`SELECT version.content_md, contributor.actor_id, contributor.actor_kind
+      FROM notebooks.note_versions version JOIN notebooks.note_version_contributors contributor ON contributor.version_id = version.id
+      WHERE version.note_id = ${note.id}::uuid ORDER BY version.created_at DESC, version.id DESC LIMIT 1`;
+    expect(version).toMatchObject({ content_md: content.replace("target", "replacement"), actor_id: user.id, actor_kind: "user" });
+    expect(await annotations.list(note.shortId, { state: "accepted", author: user.id }, reader)).toMatchObject({
+      ok: true,
+      data: { items: [{ id: root.id }], nextCursor: null },
+    });
+    const state = await annotations.readResource(root.id, reader);
+    expect(state).toMatchObject({
+      ok: true,
+      data: {
+        state: "accepted",
+        stateBy: { id: user.id },
+        stateVia: null,
+        suggestionState: null,
+        replies: [
+          {
+            id: replyId,
+            suggestionState: "accepted",
+            suggestionStateBy: { id: user.id },
+            suggestionStateAt: expect.any(String),
+            suggestionStateVia: null,
+          },
+          { suggestionState: "open" },
+        ],
+      },
+    });
+    const range = await annotations.read(note.shortId, preserved.id, reader);
+    if (!range.ok) throw new Error(range.error.message);
+    expect(range.data.orphan).toBeFalse();
+    expect((await text(note.id))!.slice(range.data.from, range.data.to)).toBe("Another passage");
+    expect((await request(note.shortId, `/${root.id}/accept`, "POST", { operationId, replyId }, "person")).status).toBe(200);
+    expect((await request(note.shortId, `/${root.id}/accept`, "POST", { operationId }, "person")).status).toBe(409);
+    expect((await request(note.shortId, `/${root.id}/undo-accept`, "POST", { operationId: crypto.randomUUID() }, "person")).status).toBe(
+      200,
+    );
+    expect(await text(note.id)).toBe(content);
+    expect(await annotations.readResource(root.id, reader)).toMatchObject({
+      ok: true,
+      data: { state: "open", replies: [{ id: replyId, suggestionState: "open" }, { suggestionState: "open" }] },
+    });
+    const shown = await cld(["annotations", "show", root.id], "reader");
+    expect(shown.code).toBe(0);
+    expect(JSON.parse(shown.stdout)).toMatchObject({ id: root.id, quote: "target", replies: [{ id: replyId }, {}] });
+  }, 60_000);
+  test("rejection is idempotent, targets one suggestion and prevents accept without changing text", async () => {
+    const note = await noteFixture();
+    const root = await add(note.shortId, { suggestion: "root replacement" });
+    const proposed = await annotations.reply(
+      note.shortId,
+      root.id,
+      { suggestion: "reply replacement", idempotencyKey: "reject-reply" },
+      writer,
+    );
+    if (!proposed.ok) throw new Error(proposed.error.message);
+    const replyId = proposed.data.id;
+    expect((await request(note.shortId, `/${root.id}/reject`, "POST", { replyId }, "person")).status).toBe(200);
+    const rejected = await annotations.readResource(root.id, reader);
+    expect(rejected).toMatchObject({
+      ok: true,
+      data: { state: "open", suggestionState: "open", replies: [{ suggestionState: "rejected", suggestionStateBy: { id: user.id } }] },
+    });
+    expect((await request(note.shortId, `/${root.id}/reject`, "POST", { replyId }, "person")).status).toBe(200);
+    expect(await annotations.readResource(root.id, reader)).toEqual(rejected);
+    expect(
+      (await request(note.shortId, `/${root.id}/accept`, "POST", { operationId: crypto.randomUUID(), replyId }, "person")).status,
+    ).toBe(409);
+    expect(await text(note.id)).toBe("# Handbook\n\nBefore target after\n");
+    expect((await cld(["annotations", "reject", note.shortId, root.id, "--reply", replyId, "--undo"], "person")).code).toBe(0);
+    expect(await annotations.readResource(root.id, reader)).toMatchObject({ ok: true, data: { replies: [{ suggestionState: "open" }] } });
+    expect(
+      await notebooksCapabilities.actions["annotation.reject"].run({ noteId: note.shortId, annotationId: root.id, rejected: true }, writer),
+    ).toMatchObject({ ok: true });
+    expect(await annotations.readResource(root.id, reader)).toMatchObject({
+      ok: true,
+      data: { suggestionState: "rejected", suggestionStateVia: "assistant" },
+    });
+    expect((await annotations.reject(note.shortId, root.id, { rejected: false }, writer)).ok).toBeTrue();
+    expect((await annotations.operate(note.shortId, root.id, "accept", { operationId: crypto.randomUUID() }, writer)).ok).toBeTrue();
+    expect(await annotations.readResource(root.id, reader)).toMatchObject({
+      ok: true,
+      data: { stateVia: "assistant", suggestionStateVia: "assistant", suggestionState: "accepted", replies: [{ suggestionState: "open" }] },
+    });
+    expect(await annotations.mutate(note.shortId, root.id, { kind: "delete" }, writer)).toMatchObject({
+      ok: false,
+      error: { status: 409 },
+    });
+    expect((await annotations.reject(note.shortId, root.id, {}, writer)).ok).toBeFalse();
+    expect((await annotations.operate(note.shortId, root.id, "undo", { operationId: crypto.randomUUID() }, writer)).ok).toBeTrue();
+    expect((await annotations.mutate(note.shortId, root.id, { kind: "resolve" }, writer)).ok).toBeTrue();
+    expect(await annotations.readResource(root.id, reader)).toMatchObject({ ok: true, data: { state: "resolved", stateVia: "assistant" } });
+  });
+  test("quote occurrence errors are distinct on service, REST, capabilities and CLI", async () => {
+    const note = await noteFixture("# Repeated\n\ntarget, then target\n");
+    const input = { quote: "target", body: "Check", idempotencyKey: "ambiguous" };
+    expect(await annotations.create(note.shortId, input, writer)).toMatchObject({
+      ok: false,
+      error: { code: "ANNOTATION_PASSAGE_AMBIGUOUS", status: 409, details: { matches: 2 } },
+    });
+    const response = await request(note.shortId, "", "POST", input);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "ANNOTATION_PASSAGE_AMBIGUOUS",
+      details: { matches: 2 },
+      message: "The quote occurs 2 times; pass --occurrence, --prefix/--suffix or --offset-hint",
+    });
+    expect(await annotations.create(note.shortId, { ...input, occurrence: 3 }, writer)).toMatchObject({
+      ok: false,
+      error: { code: "ANNOTATION_PASSAGE_NOT_FOUND", details: { matches: 2 } },
+    });
+    expect(await annotations.create(note.shortId, { ...input, quote: "absent" }, writer)).toMatchObject({
+      ok: false,
+      error: { code: "ANNOTATION_PASSAGE_NOT_FOUND", message: "The quote does not occur in the note", details: { matches: 0 } },
+    });
+    const created = await notebooksCapabilities.actions["annotation.create"].run(
+      notebooksCapabilities.actions["annotation.create"].input.parse({
+        noteId: note.shortId,
+        quote: "target",
+        occurrence: 2,
+        body: "Second",
+      }),
+      { ...writer, idempotencyKey: "second" },
+    );
+    expect(created).toMatchObject({ ok: true, data: { data: { from: "# Repeated\n\ntarget, then ".length } } });
+    const added = await cld([
+      "annotations",
+      "add",
+      note.shortId,
+      "--quote",
+      "target",
+      "--occurrence",
+      "2",
+      "--suggestion",
+      "replacement",
+      "--idempotency-key",
+      "cli-second",
+    ]);
+    expect(added.code).toBe(0);
+    expect(JSON.parse(added.stdout)).toMatchObject({ from: "# Repeated\n\ntarget, then ".length, suggestionState: "open" });
+    const ambiguous = await cld([
+      "annotations",
+      "add",
+      note.shortId,
+      "--quote",
+      "target",
+      "--content",
+      "Check",
+      "--idempotency-key",
+      "cli-ambiguous",
+    ]);
+    expect(ambiguous.code).not.toBe(0);
+    expect(ambiguous.stderr).toContain("--occurrence");
+  }, 60_000);
+  test("filters select thread state and root author before paging, including actor-relative me", async () => {
+    const note = await noteFixture();
+    const root = await add(note.shortId);
+    const response = await request(note.shortId, "", "POST", { quote: "target", body: "Person comment", idempotencyKey: "mine" }, "person");
+    const mine = await response.json();
+    await annotations.reply(note.shortId, mine.id, { body: "Agent reply", idempotencyKey: "not-root-author" }, writer);
+    await annotations.mutate(note.shortId, root.id, { kind: "resolve" }, writer);
+    expect(await annotations.list(note.shortId, { author: "me", state: "open", limit: 1 }, personContext)).toMatchObject({
+      ok: true,
+      data: { items: [{ id: mine.id }], nextCursor: null },
+    });
+    expect(await annotations.list(note.shortId, { author: "me", state: "open" }, writer)).toMatchObject({ ok: true, data: { items: [] } });
+    expect(await annotations.list(note.shortId, { state: "resolved" }, reader)).toMatchObject({
+      ok: true,
+      data: { items: [{ id: root.id }] },
+    });
+    expect(await annotations.list(note.shortId, { state: "accepted" }, reader)).toMatchObject({ ok: true, data: { items: [] } });
+    expect(await annotations.list(note.shortId, { author: "invalid" }, reader)).toMatchObject({ ok: false, error: { status: 400 } });
+    const listed = await request(note.shortId, "?state=open&author=me&limit=1", "GET", undefined, "person");
+    expect(await listed.json()).toMatchObject({ items: [{ id: mine.id }], nextCursor: null });
+    const show = await api.request(`/annotations/${mine.id}`, { headers: { authorization: "Bearer reader" } });
+    expect(show.status).toBe(200);
+  });
+  test("reply suggestions validate content, bind retries and remain recoverable after partial publication", async () => {
+    const note = await noteFixture();
+    const root = await add(note.shortId);
+    for (const suggestion of [null, "target"])
+      expect(await annotations.reply(note.shortId, root.id, { suggestion, idempotencyKey: "empty" }, writer)).toMatchObject({
+        ok: false,
+        error: { status: 400 },
+      });
+    const plain = { body: JSON.stringify({ body: "Review", suggestion: "replacement" }), idempotencyKey: "plain-retry" };
+    expect((await annotations.reply(note.shortId, root.id, plain, writer)).ok).toBeTrue();
+    expect(
+      await annotations.reply(
+        note.shortId,
+        root.id,
+        { body: "Review", suggestion: "replacement", idempotencyKey: plain.idempotencyKey },
+        writer,
+      ),
+    ).toMatchObject({ ok: false, error: { status: 409 } });
+    const input = { suggestion: "", idempotencyKey: "deletion" };
+    const reply = await annotations.reply(note.shortId, root.id, input, writer);
+    if (!reply.ok) throw new Error(reply.error.message);
+    expect(reply.data).toMatchObject({ suggestion: "", body: "", suggestionState: "open" });
+    expect(await annotations.reply(note.shortId, root.id, input, writer)).toMatchObject({ ok: true, data: { id: reply.data.id } });
+    expect(await annotations.reply(note.shortId, root.id, { ...input, suggestion: "different" }, writer)).toMatchObject({
+      ok: false,
+      error: { status: 409 },
+    });
+    const operationId = crypto.randomUUID();
+    const failure = spyOn(notes, "save").mockRejectedValueOnce(new Error("simulated reply store failure"));
+    try {
+      expect(await annotations.operate(note.shortId, root.id, "accept", { operationId, replyId: reply.data.id }, writer)).toMatchObject({
+        ok: false,
+        error: { code: "ANNOTATION_OPERATION_PENDING" },
+      });
+    } finally {
+      failure.mockRestore();
+    }
+    expect((await annotations.reject(note.shortId, root.id, { replyId: reply.data.id }, other)).ok).toBeFalse();
+    expect((await annotations.operate(note.shortId, root.id, "accept", { operationId, replyId: reply.data.id }, writer)).ok).toBeTrue();
+    expect(await text(note.id)).toBe("# Handbook\n\nBefore  after\n");
+    expect(await annotations.readResource(root.id, reader)).toMatchObject({
+      ok: true,
+      data: { replies: [{ suggestionState: null }, { suggestionState: "accepted", suggestionStateVia: "assistant" }] },
+    });
+    expect((await annotations.operate(note.shortId, root.id, "undo", { operationId: crypto.randomUUID() }, other)).ok).toBeTrue();
+    expect(await text(note.id)).toBe("# Handbook\n\nBefore target after\n");
+  });
+  test("reply edits preserve or reset suggestion state and cannot alter an accepted replacement", async () => {
+    const note = await noteFixture();
+    const root = await add(note.shortId);
+    const proposed = await annotations.reply(
+      note.shortId,
+      root.id,
+      { body: "Initial", suggestion: "replacement", idempotencyKey: "edit-suggestion" },
+      writer,
+    );
+    if (!proposed.ok) throw new Error(proposed.error.message);
+    const replyId = proposed.data.id;
+    await sql`UPDATE notebooks.annotation_replies SET created_at = ${new Date(Date.now())} WHERE id = ${replyId}::uuid`;
+    expect((await annotations.reject(note.shortId, root.id, { replyId }, other)).ok).toBeTrue();
+    expect((await annotations.mutate(note.shortId, root.id, { kind: "edit", replyId, body: "Body only" }, writer)).ok).toBeTrue();
+    expect(await annotations.readResource(root.id, writer)).toMatchObject({
+      ok: true,
+      data: { replies: [{ suggestion: "replacement", suggestionState: "rejected" }] },
+    });
+    expect((await request(note.shortId, `/${root.id}/replies/${replyId}`, "PATCH", { body: "", suggestion: "revised" })).status).toBe(200);
+    expect(await annotations.readResource(root.id, writer)).toMatchObject({
+      ok: true,
+      data: { replies: [{ suggestion: "revised", suggestionState: "open", suggestionStateBy: { id: proposed.data.author.id } }] },
+    });
+    expect(
+      (await annotations.operate(note.shortId, root.id, "accept", { operationId: crypto.randomUUID(), replyId }, writer)).ok,
+    ).toBeTrue();
+    expect(
+      await annotations.mutate(
+        note.shortId,
+        root.id,
+        { kind: "edit", replyId, body: "Try changing the accepted replacement", suggestion: "different" },
+        writer,
+      ),
+    ).toMatchObject({ ok: false, error: { status: 409 } });
+    expect(await annotations.mutate(note.shortId, root.id, { kind: "delete", replyId }, writer)).toMatchObject({
+      ok: false,
+      error: { status: 409 },
+    });
+    expect(await annotations.readResource(root.id, writer)).toMatchObject({
+      ok: true,
+      data: { canDelete: false, replies: [{ id: replyId, canDelete: false }] },
+    });
+    expect((await annotations.operate(note.shortId, root.id, "undo", { operationId: crypto.randomUUID() }, writer)).ok).toBeTrue();
+    expect(await text(note.id)).toBe("# Handbook\n\nBefore target after\n");
+    expect(
+      (await annotations.mutate(note.shortId, root.id, { kind: "edit", replyId, body: "Discussion only", suggestion: null }, writer)).ok,
+    ).toBeTrue();
+    expect(await annotations.readResource(root.id, writer)).toMatchObject({
+      ok: true,
+      data: {
+        replies: [{ suggestion: null, suggestionState: null, suggestionStateBy: null, suggestionStateAt: null, suggestionStateVia: null }],
+      },
+    });
+  });
   test("REST, capabilities and CLI all reject read-only mutations and respect revocation", async () => {
     const note = await noteFixture();
     const root = await add(note.shortId, { suggestion: "new" });
-    expect((await request(note.shortId)).status).toBe(200);
+    expect((await request(note.shortId, "", "GET", undefined, "reader")).status).toBe(200);
+    expect((await api.request(`/annotations/${root.id}`, { headers: { authorization: "Bearer reader" } })).status).toBe(200);
+    expect((await notebooksCapabilities.queries["annotation.read"].run({ id: root.id }, reader)).ok).toBeTrue();
+    expect((await cld(["annotations", "show", root.id], "reader")).code).toBe(0);
+    expect(
+      (await notebooksCapabilities.queries["annotation.list"].run({ noteId: note.shortId, state: "all", limit: 30 }, reader)).ok,
+    ).toBeTrue();
     for (const [suffix, body] of [
       ["", { quote: "target", body: "Denied", idempotencyKey: "rest-denied" }],
       [`/${root.id}/replies`, { body: "Denied", idempotencyKey: "rest-reply-denied" }],
+      [`/${root.id}/replies`, { suggestion: "replacement", idempotencyKey: "rest-suggestion-denied" }],
+      [`/${root.id}/reject`, {}],
       [`/${root.id}/resolve`, { resolved: true }],
       [`/${root.id}/accept`, { operationId: crypto.randomUUID() }],
     ] as const)
@@ -698,6 +1074,16 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
         { ...reader, idempotencyKey: "cap-reply-denied" },
       ),
     ).toMatchObject({ ok: false, error: { status: 403 } });
+    expect(
+      await cap["annotation.reply"].run(
+        { noteId: note.shortId, annotationId: root.id, body: "", suggestion: "replacement" },
+        { ...reader, idempotencyKey: "cap-suggestion-no" },
+      ),
+    ).toMatchObject({ ok: false, error: { status: 403 } });
+    expect(await cap["annotation.reject"].run({ noteId: note.shortId, annotationId: root.id, rejected: true }, reader)).toMatchObject({
+      ok: false,
+      error: { status: 403 },
+    });
     expect(await cap["annotation.resolve"].run({ noteId: note.shortId, annotationId: root.id, resolved: true }, reader)).toMatchObject({
       ok: false,
       error: { status: 403 },
@@ -721,6 +1107,8 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     for (const args of [
       ["add", note.shortId, "--quote", "target", "--content", "Denied", "--idempotency-key", "cli-no"],
       ["reply", note.shortId, root.id, "--content", "Denied", "--idempotency-key", "cli-reply-no"],
+      ["reply", note.shortId, root.id, "--suggestion", "replacement", "--idempotency-key", "cli-suggestion-no"],
+      ["reject", note.shortId, root.id],
       ["resolve", note.shortId, root.id],
       ["accept", note.shortId, root.id, "--operation-id", crypto.randomUUID(), "--yes"],
     ])
@@ -732,6 +1120,9 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     await sql`DELETE FROM auth.access WHERE service_account_id = ${reader.actor.serviceAccount.id}::uuid`;
     expect((await request(note.shortId, "", "GET", undefined, "reader")).status).toBe(404);
     expect((await annotations.list(note.shortId, {}, reader)).ok).toBeFalse();
+    expect((await api.request(`/annotations/${root.id}`, { headers: { authorization: "Bearer reader" } })).status).toBe(404);
+    expect((await notebooksCapabilities.queries["annotation.read"].run({ id: root.id }, reader)).ok).toBeFalse();
+    expect((await cld(["annotations", "show", root.id], "reader")).code).not.toBe(0);
     expect((await cld(["annotations", "list", note.shortId], "reader")).code).not.toBe(0);
   }, 60_000);
 }

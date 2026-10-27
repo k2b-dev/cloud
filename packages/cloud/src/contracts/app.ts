@@ -1,5 +1,6 @@
 import type { Sync } from "@k2b/sync";
 import type { AppAccessRule } from "./app-access";
+import type { AppInstallable } from "./installable";
 import type { PlatformPermission } from "./outgoing-mail";
 import type { AppRegistryHelpSummary } from "./registry";
 import type { Role } from "./shared";
@@ -158,6 +159,8 @@ export type AppMeta = {
   searchLinks?: readonly AppSearchLink[];
   /** The app's pages in the installable mobile app (preview), at `href` = `/pwa/<id>`. */
   pwa?: AppPwaPart;
+  /** One standalone installation under this app's own declared route. */
+  installable?: AppInstallable;
   panel?: AppPanel;
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an
