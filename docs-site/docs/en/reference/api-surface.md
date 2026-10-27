@@ -161,6 +161,15 @@ Raw stores, runtime starters, gateway telemetry, migrations, and platform
 composition helpers from the same barrel are maintainer APIs unless a guide
 names them.
 
+`appDetails(appId, { authority, locale? })` from `@k2b/cloud/services` is a
+Core-owned administration read, not an application service for third-party apps.
+Its HTTP route is
+`GET /api/app-events/apps/:appId`; `AppDetailsSchema` and `AppDetails` from
+`@k2b/cloud/contracts` describe the response. It returns `null` (HTTP 404) for
+an unknown app and requires administrator authority on both paths. See
+[Inspect readiness and failures](/en/docs/operations/app-events#inspect-readiness-and-failures)
+for fields, offline behavior and bounds.
+
 `linuxIdentities` is a platform-owned administration service from this barrel.
 It checks administrator access on reads and writes. See
 [Linux identities](/en/docs/operations/linux-identities) for configuration,
