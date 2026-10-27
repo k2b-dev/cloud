@@ -533,7 +533,15 @@ function MailAutomationLogDetail(props: {
       case "fixed_row":
         return step("ti-bolt", false, t().fixedRow({ text: entry.text }), t().fixedRowNote);
       case "result":
-        return step("ti-user-check", false, formatLogTitle({ outcome: "effects", effects: entry.effects }, t()), entry.unchanged.join(" "));
+        return step(
+          "ti-user-check",
+          false,
+          formatLogTitle(
+            { outcome: entry.effects.length === 1 && entry.effects[0]?.kind === "assign" ? "assigned" : "effects", effects: entry.effects },
+            t(),
+          ),
+          entry.unchanged.join(" "),
+        );
     }
   };
   return (
