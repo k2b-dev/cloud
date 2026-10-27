@@ -40,9 +40,13 @@ spacing as `AppWorkspace.Detail`. Omit it to keep the default section surfaces.
 
 `DetailPanel.Header` keeps identity and actions in one compact region. Pass
 `icon` for the standard accent-tinted identity tile or `leading` for an avatar
-or another custom identity; they are mutually exclusive. Pass `actions` for
-compact utilities such as more and close, and `primaryActions` for the small
-set of prominent commands below the identity row. On touch devices, primary
+or another custom identity; they are mutually exclusive. Pass the resource's
+less frequent commands as `menu` (`DropdownItem[]`): the header shows one
+"…" button before `actions` and opens a sheet on phones, so every panel opens
+its menu from the same place. An empty list shows no button; name it with
+`menuLabel` when "More actions" is too vague. Pass `actions` for compact
+utilities such as close, and `primaryActions` for the small set of prominent
+commands below the identity row. On touch devices, primary
 actions keep 0.625rem from the identity row and between wrapped lines, so
 their [tap areas](/en/ui/actions/buttons#touch-targets) stay clear of a
 `meta` action or the line above.

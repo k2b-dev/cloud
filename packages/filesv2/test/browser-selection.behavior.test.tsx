@@ -57,9 +57,7 @@ test("view changes preserve selection; superseded details cannot replace current
   const [directory, setDirectory] = createSignal(initial);
   const [source, setSource] = createSignal("/app/filesv2?base=home");
   const dispose = render(
-    () => (
-      <Browser directory={directory()} bases={[initial.base]} cloudUrl="https://cloud.test" source={source()} onNavigate={async () => {}} />
-    ),
+    () => <Browser directory={directory()} bases={[initial.base]} source={source()} onNavigate={async () => {}} />,
     dom.root,
   );
   cleanup = () => {
@@ -110,7 +108,6 @@ test("favorite action is beside primary actions, suppresses duplicate requests a
     () => (
       <FileInspector
         base={base()}
-        cloudUrl="https://cloud.test"
         selected={[entry]}
         paths={[entry.path]}
         initial={{ base: initial.base, entry, favorite: false }}
@@ -169,10 +166,7 @@ test("tree branches cannot cross full cloud base identities or accept a supersed
   const folder = { name: "Docs", path: "Docs", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
   const first = { ...initial, base: { ...initial.base, id: "cloud:groups:first" }, items: [folder] };
   const [directory, setDirectory] = createSignal(first);
-  const dispose = render(
-    () => <Browser directory={directory()} bases={[directory().base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />,
-    dom.root,
-  );
+  const dispose = render(() => <Browser directory={directory()} bases={[directory().base]} onNavigate={async () => {}} />, dom.root);
   cleanup = () => {
     dispose();
     dom.cleanup();
@@ -221,7 +215,6 @@ test("tree navigation keeps loaded ancestors and current files through folder ch
       <Browser
         directory={directory()}
         bases={[initial.base]}
-        cloudUrl="https://cloud.test"
         source={`/app/filesv2?base=home&path=${directory().path}`}
         onNavigate={async () => {}}
       />
@@ -255,10 +248,7 @@ test("a slow or failed tree root never hides the loaded folder and can be retrie
   const dom = createDomTestHarness();
   const Browser = await browserWithUploads();
   const current = { ...initial, path: "Bilder", items: [{ ...initial.items[0]!, path: "Bilder/A.txt" }] };
-  const dispose = render(
-    () => <Browser directory={current} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />,
-    dom.root,
-  );
+  const dispose = render(() => <Browser directory={current} bases={[initial.base]} onNavigate={async () => {}} />, dom.root);
   cleanup = () => {
     dispose();
     dom.cleanup();
@@ -290,9 +280,7 @@ test("tree query changes reject late ancestor replies and navigation supersedes 
   const [directory, setDirectory] = createSignal<DirectoryResult>(current);
   const [source, setSource] = createSignal("/app/filesv2?base=home&path=Bilder&sort=name");
   const dispose = render(
-    () => (
-      <Browser directory={directory()} source={source()} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />
-    ),
+    () => <Browser directory={directory()} source={source()} bases={[initial.base]} onNavigate={async () => {}} />,
     dom.root,
   );
   cleanup = () => {
@@ -340,15 +328,7 @@ test("list and tree mark their active row with one class; checked rows in select
     items: [folder("Projects/Drafts"), { ...initial.items[0]!, name: "Notes.md", path: "Projects/Notes.md" }],
   };
   const dispose = render(
-    () => (
-      <Browser
-        directory={current}
-        bases={[initial.base]}
-        cloudUrl="https://cloud.test"
-        source="/app/filesv2?base=home&path=Projects"
-        onNavigate={async () => {}}
-      />
-    ),
+    () => <Browser directory={current} bases={[initial.base]} source="/app/filesv2?base=home&path=Projects" onNavigate={async () => {}} />,
     dom.root,
   );
   cleanup = () => {
@@ -405,15 +385,7 @@ test("outside select mode Shift+Arrow moves the one active row; in select mode i
   const Browser = await browserWithUploads();
   const items = ["A.txt", "B.txt", "C.txt"].map((name) => ({ ...initial.items[0]!, name, path: name }));
   const dispose = render(
-    () => (
-      <Browser
-        directory={{ ...initial, items }}
-        bases={[initial.base]}
-        cloudUrl="https://cloud.test"
-        source="/app/filesv2?base=home"
-        onNavigate={async () => {}}
-      />
-    ),
+    () => <Browser directory={{ ...initial, items }} bases={[initial.base]} source="/app/filesv2?base=home" onNavigate={async () => {}} />,
     dom.root,
   );
   cleanup = () => {

@@ -39,7 +39,6 @@ import {
 } from "./record-snapshot-model";
 
 export default function RecordDocumentsSection(props: {
-  cloudUrl: string;
   tableId: string;
   tableName: string;
   recordId: string;
@@ -154,7 +153,6 @@ export default function RecordDocumentsSection(props: {
         () => (
           <div class="h-[70vh] min-h-0">
             <RecordReadView
-              cloudUrl={props.cloudUrl}
               baseId={snapshot.baseId}
               tableId={snapshot.tableId}
               tableName={snapshotTableName(snapshot)}

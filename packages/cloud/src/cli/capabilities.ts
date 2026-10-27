@@ -16,6 +16,7 @@ import {
   cloudResourceRefAppId,
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
+import { ResolvedCloudResourceUrlSchema } from "../contracts/resource-resolution";
 import { saveCapabilityStream } from "./capability-streams";
 import { arg, type CliInputFlagValue, type CloudCliContext, command, defineCliCommands, flag, readCliInput } from "./index";
 import { cloudResourceUrl } from "./resource-links";
@@ -179,6 +180,22 @@ export default defineCliCommands({
   name: "capabilities",
   summary: "Discover and invoke versioned Cloud app capabilities.",
   commands: [
+    command("resolve", {
+      summary: "Recognize a Cloud link and read its resource reference",
+      args: { url: arg.required({ description: "Cloud permalink or application page URL" }) },
+      run: async ({ ctx, args }) => {
+        const response = await ctx.fetch("/api/resources/resolve", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: args.url.trim() }),
+        });
+        if (!response.ok) throw new Error("Resource not found.");
+        const body = await readBoundedJson(response, CAPABILITY_MAX_RESULT_BYTES);
+        if (!body.ok) throw new Error("Resource not found.");
+        const result = ResolvedCloudResourceUrlSchema.parse(body.data);
+        printGenericResult(ctx, { ...result, permalink: cloudResourceUrl(ctx, result.ref) });
+      },
+    }),
     ...(["read", "write", "status", "abort"] as const).map((verb) =>
       command(`stream-${verb}`, {
         summary: `${verb} an authenticated binary capability stream`,
