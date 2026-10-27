@@ -457,10 +457,13 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             }
           });
 
-      for (const width of [1440, 390])
-        test(`automation: AI summary states ${width}: one place, fixed height while writing, cyan only for AI`, async () => {
-          const heights: Record<string, number> = {};
-          for (const state of ["ai", "stale", "writing", "failed", "limited", "person"] as const) {
+      // One case per summary state, each on its own page; a last case compares the heights they measured (#1966).
+      const summaryHeights = new Map<number, Record<string, number>>();
+      for (const width of [1440, 390]) {
+        for (const state of ["ai", "stale", "writing", "failed", "limited", "person"] as const)
+          test(`automation: AI summary ${state} at ${width}: one place, cyan only for AI`, async () => {
+            const heights = summaryHeights.get(width) ?? {};
+            summaryHeights.set(width, heights);
             const page = await open(`${boxPath}?conversation=Conv01&locale=de&summary=${state}`, width, width === 390 ? 844 : 900);
             try {
               const card = page.locator("[data-mail-conversation-summary]");
@@ -483,12 +486,17 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
             } finally {
               await close(page);
             }
-          }
+          });
+        // Reads the heights that the six state cases above measured, so it runs after them in the same file.
+        test(`automation: AI summary at ${width}: writing, failure and limit keep one height`, () => {
+          const heights = summaryHeights.get(width) ?? {};
+          expect(Object.keys(heights).length, "the six state cases above ran first").toBe(6);
           // Writing, failure and limit share the reserved height, so the messages below stay where they are.
           expect(heights.writing).toBeGreaterThanOrEqual(196);
           expect(Math.abs(heights.failed! - heights.writing!)).toBeLessThanOrEqual(width === 390 ? 60 : 0.5);
           expect(Math.abs(heights.limited! - heights.writing!)).toBeLessThanOrEqual(width === 390 ? 80 : 0.5);
         });
+      }
 
       for (const theme of reviewThemes)
         for (const width of [1440, 390])
@@ -2188,9 +2196,16 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
           });
         }
 
+        const persistentDetails = `${boxPath}?conversation=Conv01&shell=1&persist-details=1`;
+        const storedDetails = (page: Page, open: boolean) =>
+          page.waitForFunction((open) => {
+            const cookie = document.cookie.split("; ").find((part) => part.startsWith("cloud_mail_workspace="));
+            return cookie && JSON.parse(decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1))).detailsOpen === open;
+          }, open);
+        // One phase per case, each on its own page, so every case stays far inside its budget (#1966).
         for (const width of [1920, 1440, 834]) {
-          test(`persistent Details: default, close, resize and reload at ${width}`, async () => {
-            const page = await open(`${boxPath}?conversation=Conv01&shell=1&persist-details=1`, width, 900);
+          test(`persistent Details at ${width}: default, close and resize keep the toggle and the Detail in step`, async () => {
+            const page = await open(persistentDetails, width, 900);
             try {
               const button = page.locator("[data-app-workspace-detail-toggle]");
               const aside = page.locator(".k2b-app-workspace__detail");
@@ -2232,13 +2247,25 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               await settled(page);
               expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
               expect(await page.evaluate(() => document.activeElement?.matches("[data-app-workspace-detail-toggle]"))).toBe(true);
-              // Persist application visibility closed, then reload the same conversation.
-              if (width === 1920) await aside.getByRole("button", { name: "Close conversation details", exact: true }).click();
+            } finally {
+              await close(page);
+            }
+          });
+        }
+
+        // A window that the Detail cannot take as a column closes it with its own button, a wide one with Escape.
+        for (const width of [834, 1920]) {
+          test(`persistent Details at ${width}: a closed preference survives reload`, async () => {
+            const page = await open(persistentDetails, width, 900);
+            try {
+              const button = page.locator("[data-app-workspace-detail-toggle]");
+              const aside = page.locator(".k2b-app-workspace__detail");
+              await button.click();
+              await settled(page);
+              expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
+              if (width < 1024) await aside.getByRole("button", { name: "Close conversation details", exact: true }).click();
               else await pressEscapeForWorkspace(page);
-              await page.waitForFunction(() => {
-                const cookie = document.cookie.split("; ").find((part) => part.startsWith("cloud_mail_workspace="));
-                return cookie && JSON.parse(decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1))).detailsOpen === false;
-              });
+              await storedDetails(page, false);
               await page.reload();
               await page.locator("html[data-mail-shell-ready=true]").waitFor();
               expect(await button.isVisible()).toBe(true);
@@ -2247,16 +2274,26 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
               await button.click();
               await settled(page);
               expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
-              await page.waitForFunction(() => {
-                const cookie = document.cookie.split("; ").find((part) => part.startsWith("cloud_mail_workspace="));
-                return cookie && JSON.parse(decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1))).detailsOpen === true;
-              });
+            } finally {
+              await close(page);
+            }
+          });
+
+          test(`persistent Details at ${width}: an open preference survives reload`, async () => {
+            const page = await open(persistentDetails, width, 900);
+            try {
+              const button = page.locator("[data-app-workspace-detail-toggle]");
+              const aside = page.locator(".k2b-app-workspace__detail");
+              await button.click();
+              await settled(page);
+              expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
+              await storedDetails(page, true);
               await page.reload();
               await ready(page);
               // An initially open waiting drawer parks; the app preference still
               // restores true, while responsive presentation remains separate.
               expect(await aside.getAttribute("hidden")).toBeNull();
-              if (width === 1920) {
+              if (width < 1024) {
                 expect(await button.getAttribute("aria-expanded")).toBe("false");
                 await button.click();
                 await settled(page);
