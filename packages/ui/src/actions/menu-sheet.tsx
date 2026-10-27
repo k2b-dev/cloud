@@ -3,7 +3,7 @@ import { dialogCore } from "../feedback/dialog-core";
 import { LocaleProvider } from "../intl/locale";
 import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
 import type { DropdownAction, DropdownChoice, DropdownItem } from "./Dropdown";
-import { focusRowSegment } from "./menu-rows";
+import { focusMenuRow, focusRowSegment } from "./menu-rows";
 
 /** Phones, where a menu opens as a bottom sheet instead of beside its trigger. */
 export const PHONE_SHEET_QUERY = "(max-width: 47.999rem)";
@@ -65,17 +65,9 @@ function SheetMenu(props: {
   dialog: HTMLDialogElement;
 }): JSX.Element {
   let menu!: HTMLDivElement;
-  const focus = (index: number) => {
-    const items = menuItems(menu);
-    items[(index + items.length) % items.length]?.focus();
-  };
   const onKeyDown = (event: KeyboardEvent) => {
     const items = menuItems(menu);
-    const current = items.indexOf(document.activeElement as HTMLElement);
-    if (event.key === "ArrowDown") focus(current + 1);
-    else if (event.key === "ArrowUp") focus(current < 0 ? -1 : current - 1);
-    else if (event.key === "Home" || event.key === "End") focus(event.key === "Home" ? 0 : -1);
-    else if (!focusRowSegment(items, event.key)) return;
+    if (!focusMenuRow(items, event.key) && !focusRowSegment(items, event.key)) return;
     event.preventDefault();
   };
   // Keys pressed on the sheet itself, while it is the top level of the shared dialog.

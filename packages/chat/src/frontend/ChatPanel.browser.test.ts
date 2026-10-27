@@ -572,8 +572,12 @@ test("Assistant protects editing while only PanelRuntime is delayed", async () =
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
+  let runtimeHeld = false;
   await page.route(`**${fixture.panelRuntimePath}`, async (route) => {
-    if (route.request().frame().url().includes("/app/assistant/panel")) await gate;
+    // WebKit can still report the frame’s initial URL while its scripts load.
+    // The fixture marks the requested script by provider before navigation.
+    runtimeHeld = true;
+    await gate;
     await route.continue();
   });
   const releaseCreate = fixture.assistant.holdCreate();
@@ -586,6 +590,7 @@ test("Assistant protects editing while only PanelRuntime is delayed", async () =
     await panel.locator('html[data-fixture-ready="true"]').waitFor();
     const composer = panel.locator('textarea:not([aria-hidden="true"])');
     await composer.fill("Input before the runtime is ready");
+    expect(runtimeHeld).toBe(true);
     expect(await panel.locator("[data-cloud-panel-ready]").count()).toBe(0);
     await page.locator('[data-cloud-panel-provider="second"]').click();
     expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("assistant");

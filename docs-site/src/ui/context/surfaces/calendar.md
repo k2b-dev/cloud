@@ -98,7 +98,9 @@ follow, the hour gutter stays in view, and the vertical scrollbar stays at the
 frame's edge. An event or day that is selected or focused at the start edge
 stops beside the hour gutter, not under it.
 
-Limit the switcher with `views`. `getDateHref`, `getViewHref`, and
+Limit the switcher with `views`, or leave it out with `viewSwitcher={false}`
+when the page shows the views elsewhere, such as tabs in its head; the view
+commands stay. `getDateHref`, `getViewHref`, and
 `getEventHref` keep navigation functional in the server response.
 `onNavigate` progressively enhances those links after mount.
 
@@ -107,7 +109,8 @@ Limit the switcher with `views`. `getDateHref`, `getViewHref`, and
 `customViews` adds views after the built-in ones, each with a `value` and a
 `label`. While `view` is one of them, the calendar keeps its header and
 `toolbarContent` and shows `children` as the body; `events` are not drawn.
-The header names the day of `date` and pages by one day, as in the day view.
+The header names the day of `date` and pages by one day, as in the day view,
+or by `days` when the view sets it, such as 14 for a two-week list.
 The view's value reaches `getViewHref`, `getDateHref`, `onViewChange`, and
 `onDateChange` like a built-in one, and JSX infers its type from
 `customViews`. The application renders the body from its own data, for
@@ -278,7 +281,9 @@ and the visible hours.
   there, and in the week view the arrow keys reach the chips after the
   waking hours.
 - **The day view** is one scroll through the loaded days with each day's
-  heading on top while the day is in view. Runs of empty days merge into one
+  heading on top while the day is in view. Each day keeps one line for its
+  all-day entries, also while it has none, so an entry that loads later moves
+  nothing; more entries add lines. Runs of empty days merge into one
   row, "Nothing planned", that opens them; today, the day of `date`, and a day
   that Go to finds inside such a run never fold. When loaded days join a run
   at either end, it stays the same row, so its focused "Nothing planned"
@@ -296,8 +301,9 @@ and the visible hours.
   view stays there. The previous and next buttons move to the start of the week before or after,
   and Today returns to this week, on a phone to today within it. Nights open
   for the whole strip when an entry of the shown week lies in one. The all-day
-  row is as high as the weeks in view need, so a week that loads off screen
-  moves nothing. It opens at the start of the week of `date`, or on a phone
+  row is as high as the weeks in view need, at least one line, so a week that
+  loads off screen moves nothing, and neither does an entry that arrives for an
+  empty row. It opens at the start of the week of `date`, or on a phone
   at that day within its week.
 - **Entries.** Timed events are bands as long as they last, side by side when
   they overlap, with their time; the running one fills up with the time that
@@ -472,6 +478,9 @@ the window's:
   with icon-only chips. Keep `toolbarActions` compact there, for example an
   icon with a visually hidden label.
 
+Chips give up their names only to make room for the view switcher: with
+`viewSwitcher={false}` they keep their names at every width.
+
 ## API reference
 
 ```ts
@@ -509,7 +518,7 @@ type CalendarDayBadge = {
 };
 
 type CalendarCustomView<V extends string = string> = {
-  value: V; label: string;
+  value: V; label: string; days?: number;
 };
 
 ```
@@ -556,7 +565,7 @@ type CalendarEventTimeChange = {
 
 ```ts
 type CalendarProps<V extends string = never> = {
-  date: Date | string; events: CalendarEvent[]; view?: CalendarView | V; views?: CalendarView[];
+  date: Date | string; events: CalendarEvent[]; view?: CalendarView | V; views?: CalendarView[]; viewSwitcher?: boolean;
   customViews?: CalendarCustomView<V>[]; children?: JSX.Element; labels?: CalendarLabels; dateConfig?: DateContext; timeZone?: string; firstDayOfWeek?: 0 | 1;
   withWeekNumbers?: boolean; startHour?: number; endHour?: number;
   dayHours?: readonly [start: number, end: number]; range?: CalendarRange;

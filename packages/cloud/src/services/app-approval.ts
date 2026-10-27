@@ -55,11 +55,11 @@ const { create: secret, hash, matches, code: comparison } = pairingSecret;
 const iso = (value: Date | string) => new Date(value).toISOString();
 const future = (seconds: number) => new Date(Date.now() + seconds * 1000);
 
-export type AppApprovalConfig = { issuer: string; appOrigin: string; enabled: boolean; adminPairing: boolean };
+export type AppApprovalConfig = { issuer: string; appOrigin: string; enabled: boolean; adminPairing: boolean; label?: string };
 export const readAppApprovalConfig = async (db: SQL = sql, requireAppOrigin = true): Promise<AppApprovalConfig> => {
   const rows = await db<
     { key: string; value: string }[]
-  >`SELECT key, value FROM settings.entries WHERE key IN ('app.url','user.app_approval.enabled','user.app_approval.origin','user.app_approval.admin_pairing')`;
+  >`SELECT key, value FROM settings.entries WHERE key IN ('app.url','app.name','user.app_approval.label','user.app_approval.enabled','user.app_approval.origin','user.app_approval.admin_pairing')`;
   const values = new Map(await Promise.all(rows.map(async (row) => [row.key, await decryptValue(row.value)] as const)));
   const enabled = values.get("user.app_approval.enabled") ?? false;
   const adminPairing = values.get("user.app_approval.admin_pairing") ?? false;
@@ -93,6 +93,10 @@ export const readAppApprovalConfig = async (db: SQL = sql, requireAppOrigin = tr
   } catch {
     return reject("UNAVAILABLE", 503);
   }
+  const label = [values.get("user.app_approval.label"), values.get("app.name"), CORE_SETTINGS["app.name"].default]
+    .find((value): value is string => typeof value === "string" && !!value.trim())!
+    .trim()
+    .slice(0, 80);
   if (!enabled) return { issuer, appOrigin: "", enabled: false, adminPairing };
   let appOrigin = "";
   try {
@@ -102,7 +106,7 @@ export const readAppApprovalConfig = async (db: SQL = sql, requireAppOrigin = tr
     // Pairing, discovery and sign-in still require a valid trusted origin.
     if (requireAppOrigin) throw error;
   }
-  return { issuer, appOrigin, enabled, adminPairing };
+  return { issuer, appOrigin, enabled, adminPairing, label };
 };
 
 type AccountRow = {
@@ -532,7 +536,14 @@ export const createAppApprovalService = (
         await tx`INSERT INTO auth.app_pairings(id, issuer, user_id, initiated_by, initiator_sid, assisted, auth_epoch, secret_hash, expires_at)
           VALUES (${id}::uuid,${cfg.issuer},${targetId}::uuid,${actor.userId}::uuid,${actor.sid}::uuid,${targetId !== actor.userId},${target.auth_epoch},${hash(token)},${expiresAt})`;
         await record(tx, "pairing.start", actor.userId, id, { targetUserId: targetId, assisted: targetId !== actor.userId });
-        return { protocol: APP_APPROVAL_PROTOCOL, issuer: cfg.issuer, pairingId: id, secret: token, expiresAt: iso(expiresAt) };
+        return {
+          protocol: APP_APPROVAL_PROTOCOL,
+          issuer: cfg.issuer,
+          pairingId: id,
+          secret: token,
+          expiresAt: iso(expiresAt),
+          ...(cfg.label ? { label: cfg.label } : {}),
+        };
       });
     },
     claimPairing: async (claim: { pairingId: string; secret: string; publicKey: AppDevicePublicKey; name: string; signature: string }) => {

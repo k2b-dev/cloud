@@ -98,6 +98,8 @@ type AiCapabilityCall = {
   mandate?: { id: string; revision: number };
   /** Set only by the capability tool after its explicit approval request resolved true. */
   actionApproval?: "approved";
+  /** Outcome Queries retain turn authority without replacing the Action tool-call link. */
+  traceToolCall?: boolean;
   dependencies?: CapabilityDispatchDependencies & {
     dispatch?: typeof dispatchCapability;
   };
@@ -123,7 +125,7 @@ const dispatchAiCapability = async (
       ? idempotencyKey(input.conversationId, input.context.callId)
       : null;
   if (key) headers.set("idempotency-key", key);
-  if (!review && input.turnId && input.context.callId) {
+  if (!review && input.traceToolCall !== false && input.turnId && input.context.callId) {
     await aiToolAudit.noteCapabilityDispatch({
       conversationId: input.conversationId,
       turnId: input.turnId,
@@ -143,6 +145,7 @@ const dispatchAiCapability = async (
     request,
     kind: input.entry.kind === "query" ? "queries" : "actions",
     origin: "assistant",
+    ...(input.turnId ? { assistantTurn: { conversationId: input.conversationId, turnId: input.turnId } } : {}),
     review,
     appId: input.entry.appId,
     capabilityId: input.entry.operation.localId,
@@ -187,7 +190,7 @@ export const checkAiCapability = async (
     if (!query || "idempotency" in query.operation || !capabilityQueryChecksActionOutcome(query.operation))
       throw new Error("Action outcome Query is unavailable.");
     // The Action's audit keeps its own dispatch identity; the Query has its separate platform execution record.
-    const result = await dispatchAiCapability({ ...input, turnId: undefined, entry: query, args: input.check.input }, false);
+    const result = await dispatchAiCapability({ ...input, traceToolCall: false, entry: query, args: input.check.input }, false);
     if (!result || typeof result !== "object" || !("data" in result)) throw new Error("Invalid outcome check envelope.");
     const checked = CapabilityActionCheckSchema.parse(result.data);
     if (checked.receipt && capabilityActionReceiptIssues(checked.receipt, "links" in result ? result.links : undefined).length)
