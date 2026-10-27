@@ -1,14 +1,15 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import type { WorkflowBoundPlan } from "@k2b/cloud/workflows";
-import { createWorkflow, createWorkflowRun, publishWorkflowVersion } from "@k2b/cloud/workflows/store";
+import { createWorkflow, createWorkflowRun, deleteWorkflowScope, publishWorkflowVersion } from "@k2b/cloud/workflows/store";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-import { createWorkflowIntegrationFixture } from "../../../cloud/test/workflows/integration-fixture";
 import { mailWorkflowAiScope } from "./workflow-ai";
 
-const fixture = createWorkflowIntegrationFixture();
+// An isolated workflow scope, removed through the public scope contract when the module finishes.
+const scopeId = `workflow-test-${crypto.randomUUID()}`;
+afterAll(() => deleteWorkflowScope({ appId: "mail", scopeId }));
+
 suiteFor("database", "nats")("Mail inference source scope", () => {
   test("scheduled and manual runs without a message retain mailbox admission with a run source", async () => {
-    const scopeId = fixture.scope("mail");
     const workflow = await createWorkflow({
       appId: "mail",
       scopeId,

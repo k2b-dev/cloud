@@ -195,8 +195,9 @@ suiteFor("database")("workflow worker", () => {
         }),
       }),
     };
-    expect(await runOneWorkflow(options)).toMatchObject({ state: "retry" });
-    expect(await getWorkflowRun(runId)).toMatchObject({ error: { code: "WORKFLOW_AI_CAPACITY" } });
+    // The worker reports a retryable failure as released; the run row keeps the cause for the next attempt.
+    expect(await runOneWorkflow(options)).toMatchObject({ state: "released", runId });
+    expect(await getWorkflowRun(runId)).toMatchObject({ state: "queued", error: { code: "WORKFLOW_AI_CAPACITY" } });
     await sql`UPDATE workflows.run SET consecutive_failures = 8, retry_after = now() - interval '1 second' WHERE id = ${runId}::uuid`;
     expect(await runOneWorkflow(options)).toMatchObject({
       state: "finished",
