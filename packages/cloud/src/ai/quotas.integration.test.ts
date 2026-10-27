@@ -199,7 +199,6 @@ suite("Assistant quota PostgreSQL boundaries", () => {
   });
   test("default disabled and repeat migration keep ordinary chats unlimited", async () => {
     await migrateAiQuotas();
-    await sql`ALTER TABLE ai.inference_calls ADD COLUMN model_id TEXT, ADD COLUMN requested_class TEXT, ADD COLUMN resolved_class TEXT`;
     expect((await aiQuotas.config()).enabled).toBe(false);
     expect(await aiQuotas.assertAllowed(subject, "a")).toBe(false);
   });
