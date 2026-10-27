@@ -940,6 +940,8 @@ type CapabilityDefinitionCatalog<T> = Readonly<Record<string, T>>;
 /** Offers files to other apps: local IDs of the list Query, the read Query, and the optional save Action. */
 export type CapabilityFileProviderDeclaration = { list: string; read: string; save?: string };
 
+export type CapabilityCalendarSourceDeclaration = { calendars: string; events: string; update?: string; move?: string; delete?: string };
+
 export type CapabilityDefinitions = {
   protocolVersion: typeof CAPABILITY_PROTOCOL_VERSION;
   presentation?: CapabilityPresentationCatalog;
@@ -948,6 +950,7 @@ export type CapabilityDefinitions = {
   actions?: CapabilityDefinitionCatalog<CapabilityActionDefinition>;
   commands?: CapabilityDefinitionCatalog<CapabilityCommandDefinition>;
   fileProvider?: CapabilityFileProviderDeclaration;
+  calendarSource?: CapabilityCalendarSourceDeclaration;
 };
 
 /**
@@ -1015,6 +1018,16 @@ export const CapabilityFileProviderManifestSchema = z
   .object({ list: CapabilityLocalIdSchema, read: CapabilityLocalIdSchema, save: CapabilityLocalIdSchema.optional() })
   .strict();
 
+export const CapabilityCalendarSourceManifestSchema = z
+  .object({
+    calendars: CapabilityLocalIdSchema,
+    events: CapabilityLocalIdSchema,
+    update: CapabilityLocalIdSchema.optional(),
+    move: CapabilityLocalIdSchema.optional(),
+    delete: CapabilityLocalIdSchema.optional(),
+  })
+  .strict();
+
 /** Keeps the sent entries this release reads completely. */
 const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T>[] | null => {
   // Not a bounded list: leave the value to the manifest schema, which rejects it.
@@ -1074,11 +1087,13 @@ const readableManifest = (value: unknown): unknown => {
     policies[action.localId] = policy;
     return true;
   });
-  const { fileProvider: sentProvider, policies: _policies, ...rest } = sent;
+  const { calendarSource: sentCalendarSource, fileProvider: sentProvider, policies: _policies, ...rest } = sent;
   const provider = CapabilityFileProviderManifestSchema.safeParse(sentProvider);
+  const calendar = CapabilityCalendarSourceManifestSchema.safeParse(sentCalendarSource);
   return {
     ...rest,
     ...(provider.success ? { fileProvider: provider.data } : {}),
+    ...(calendar.success ? { calendarSource: calendar.data } : {}),
     types: types.map((type) => {
       if (!type.reader || queryIds.has(type.reader)) return type;
       const { reader: _missing, ...withoutReader } = type;
@@ -1107,6 +1122,7 @@ export const CapabilityManifestSchema = z.preprocess(
     commands: z.array(CapabilityCommandManifestSchema).max(MAX_MANIFEST_ENTRIES),
     // Optional without a default: a manifest without a provider keeps the shape and hash of earlier releases.
     fileProvider: CapabilityFileProviderManifestSchema.optional(),
+    calendarSource: CapabilityCalendarSourceManifestSchema.optional(),
     policies: z.record(CapabilityLocalIdSchema, CapabilityActionPolicySchema).optional(),
   }),
 );

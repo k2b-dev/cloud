@@ -1,4 +1,4 @@
-import { createMemo, type JSX, Show } from "solid-js";
+import { createMemo, For, type JSX, Show } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import type { ButtonVariant } from "./Button";
 import Dropdown, { type DropdownItem } from "./Dropdown";
@@ -9,6 +9,8 @@ export type FilterChipOption = {
   label: string;
   icon?: string;
   color?: string;
+  /** Quiet trailing information about the option, such as a short note or a loading or warning icon with its own label. */
+  trailing?: JSX.Element;
 };
 
 export type FilterChipSection = {
@@ -20,6 +22,8 @@ export type FilterChipSection = {
    * chosen option again keeps it; give the row a value in `defaultValue` so Reset keeps a choice too.
    */
   layout?: "row";
+  /** A labelled `multiple` section offers "All" or, once all its options are chosen, "None" beside its label. */
+  toggleAll?: boolean;
 };
 
 export type FilterChipProps = {
@@ -39,6 +43,13 @@ export type FilterChipProps = {
    * chips of `AppWorkspace.Head`; pass only the filter's name as `label`. The chip then grows with its value.
    */
   showValue?: boolean;
+  /**
+   * Each option of a `multiple` section offers "Only" at the end of its row: it chooses that option alone among the
+   * `multiple` sections and keeps the choices of single-select sections.
+   */
+  only?: boolean;
+  /** The trigger shows the colors of the first four chosen options before its label, as a quiet hint of what is in view. */
+  swatches?: boolean;
   disabled?: boolean;
   class?: string;
 };
@@ -90,6 +101,23 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
   };
   const reset = () => emit(props.defaultValue ? [...props.defaultValue] : []);
   const showReset = () => (hasDefault() && !atDefault()) || (!hasDefault() && props.value.length > 0);
+  const swatches = createMemo(() =>
+    props.swatches && !props.iconOnly
+      ? selectedOptions()
+          .flatMap((option) => (option.color ? [option.color] : []))
+          .slice(0, 4)
+      : [],
+  );
+  const onlyValue = (value: string) => {
+    const kept = props.value.filter((entry) => !sectionByValue().get(entry)?.multiple);
+    emit([...kept, value]);
+  };
+  const toggleSection = (section: FilterChipSection) => {
+    const values = section.options.map((option) => option.value);
+    const all = values.every((value) => selected(value));
+    const others = props.value.filter((entry) => !values.includes(entry));
+    emit(all ? others : [...others, ...values]);
+  };
   const optionItems = createMemo<DropdownItem[]>(() => {
     const result: DropdownItem[] = [];
     for (const section of props.options) {
@@ -102,8 +130,32 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
         color: option.color,
         icon: !section.multiple ? option.icon : undefined,
         label: option.label,
+        trailing: option.trailing,
+        secondary:
+          props.only && section.multiple
+            ? {
+                label: filterMessages().only,
+                ariaLabel: filterMessages().onlyOption({ label: option.label }),
+                action: () => onlyValue(option.value),
+              }
+            : undefined,
       }));
-      if (section.label || section.layout) result.push({ sectionLabel: section.label, layout: section.layout, items });
+      // Read when the row renders, so a change of the choice updates the label without rebuilding the rows.
+      const all = () => section.options.every((option) => selected(option.value));
+      const sectionLabel = section.label;
+      const labelAction =
+        section.toggleAll && section.multiple && sectionLabel && section.options.length > 0
+          ? {
+              get label() {
+                return all() ? filterMessages().none : filterMessages().all;
+              },
+              get ariaLabel() {
+                return (all() ? filterMessages().noneOf : filterMessages().allOf)({ label: sectionLabel });
+              },
+              action: () => toggleSection(section),
+            }
+          : undefined;
+      if (section.label || section.layout) result.push({ sectionLabel: section.label, layout: section.layout, labelAction, items });
       else result.push(...items);
     }
     return result;
@@ -144,7 +196,11 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
         data-icon-only={props.iconOnly ? "true" : undefined}
         label={triggerLabel()}
       >
-        <i class={props.icon} aria-hidden="true" />
+        <Show when={swatches().length > 0} fallback={<i class={props.icon} aria-hidden="true" />}>
+          <span class="k2b-filter-chip__swatches" aria-hidden="true">
+            <For each={swatches()}>{(color) => <span class="k2b-filter-chip__dot" style={{ "--k2b-filter-color": color }} />}</For>
+          </span>
+        </Show>
         <Show when={!props.iconOnly}>
           <span class="k2b-filter-chip__label">
             {props.label}

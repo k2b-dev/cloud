@@ -42,7 +42,7 @@
     "catalog": {
       "@firecrawl/anydoc": "0.2.4",
       "@k2b/stdlib": "0.30.0",
-      "@k2b/sync": "7.0.0",
+      "@k2b/sync": "7.0.1",
       "@nats-io/jetstream": "3.4.0",
       "@nats-io/transport-node": "3.4.0",
       "@types/bun": "1.4.2",
@@ -86,7 +86,7 @@
   },
   "overrides": {
     "zod": "4.6.5",
-    "@k2b/sync": "7.0.0",
+    "@k2b/sync": "7.0.1",
     "fast-uri": "3.1.8",
     "nanoid": "3.3.18",
     "nodemailer": "10.0.10",

@@ -66,6 +66,14 @@ export default function SpacesSidebarList(props: SpacesSidebarProps) {
           >
             <AppWorkspace.SidebarItemLabel marquee={false}>{t.myWork}</AppWorkspace.SidebarItemLabel>
           </AppWorkspace.SidebarItem>
+          <AppWorkspace.SidebarItem
+            href="/app/spaces/calendar"
+            title={t.calendar}
+            icon="ti ti-calendar"
+            active={props.current.kind === "calendar"}
+          >
+            <AppWorkspace.SidebarItemLabel marquee={false}>{t.calendar}</AppWorkspace.SidebarItemLabel>
+          </AppWorkspace.SidebarItem>
         </AppWorkspace.SidebarSection>
         <Show when={props.hint?.id === "spaces.overview-sidebar"}>
           <MovedHint
