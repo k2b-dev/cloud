@@ -59,7 +59,7 @@ const page = (lang: string) =>
   `<body class="k2b-ui" data-theme="light" style="margin:0;height:100vh"><div id="root" style="height:100vh;display:flex"></div>` +
   `<script src="/harness.js"></script></body></html>`;
 
-const open = async (options: BrowserContextOptions, state: string, query = "", lang = "en") => {
+const open = async (options: BrowserContextOptions, hash: string, lang = "en") => {
   const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
   const tab = await context.newPage();
   const errors: string[] = [];
@@ -72,11 +72,13 @@ const open = async (options: BrowserContextOptions, state: string, query = "", l
     if (path.endsWith(".woff2")) return route.fulfill({ contentType: "font/woff2", body: readFileSync(`${ui}dist${path}`) });
     return route.fulfill({ status: 404, body: "{}" });
   });
-  await tab.goto(`http://files-search.test/app/filesv2${query ? `?${query}` : ""}#${state}`);
+  await tab.goto(`http://files-search.test/app/filesv2#${hash}`);
   await tab.waitForSelector(".filesv2-browser__header");
   await tab.evaluate(() => document.fonts.ready);
   return { tab, errors };
 };
+/** Another state of the same page: the harness follows the hash without loading again. */
+const show = (tab: Page, hash: string) => tab.evaluate((next) => (window.location.hash = next), hash);
 const requested = async (tab: Page) => JSON.parse((await tab.getAttribute("#root", "data-search")) ?? "undefined");
 const box = (tab: Page, selector: string) =>
   tab.$eval(selector, (element) => {
@@ -89,49 +91,46 @@ describe("Files search in a browser", () => {
     ["desktop", desktop],
     ["phone", phone],
   ] as const) {
-    test(`${device}: results mark the match in name and folder, count all hits, and keep one row height`, async () => {
+    test(`${device}: results mark the match in name and folder and count all hits; loading keeps the geometry`, async () => {
       const { tab, errors } = await open(options, "results");
       try {
         const row = tab.locator(".filesv2-list__row", { hasText: "Rechnung Oktober.pdf" });
         expect(await row.locator(".filesv2-list__name mark").allTextContents()).toEqual(["Rechnung"]);
         expect(await row.locator(".filesv2-list__detail").textContent()).toBe("Kunden/Bäckerei Sonnenschein");
         // A folder segment that matched is marked too; a hit directly in the folder names that folder.
-        expect(await tab.locator(".filesv2-list__row", { hasText: "Rechnung-2026-031.pdf" }).locator(".filesv2-list__detail mark").allTextContents()).toEqual(["Rechnung"]);
-        expect(await tab.locator(".filesv2-list__row", { hasText: "Team Nordlicht" }).locator(".filesv2-list__name").textContent()).toBe("Rechnungen");
-        expect(await tab.getByRole("status").first().textContent()).toContain("7 results");
+        const nested = tab.locator(".filesv2-list__row", { hasText: "Rechnung-2026-031.pdf" });
+        expect(await nested.locator(".filesv2-list__detail mark").allTextContents()).toEqual(["Rechnung"]);
+        expect(await tab.locator(".filesv2-list__row", { hasText: "Team Nordlicht" }).locator(".filesv2-list__name").textContent()).toBe(
+          "Rechnungen",
+        );
+        expect(await tab.locator(".filesv2-toolbar").textContent()).toContain("7 results");
         expect(await tab.getByRole("group", { name: "Search filters" }).getByRole("button").count()).toBe(3);
         // The list, grid and tree switch has no meaning for results.
-        expect(await tab.getByRole("radiogroup", { name: "View" }).isVisible().catch(() => false)).toBe(false);
+        expect(await tab.getByRole("radiogroup", { name: "View" }).isVisible()).toBe(false);
         const heights = await tab.$$eval(".filesv2-list__row", (rows) => rows.map((item) => item.getBoundingClientRect().height));
         expect(new Set(heights)).toEqual(new Set([40]));
-        const marked = await row.locator(".filesv2-list__name").evaluate((name) => {
-          const mark = name.querySelector("mark")!;
-          return { background: getComputedStyle(mark).backgroundColor, padding: getComputedStyle(mark).paddingLeft };
+        const mark = await row.locator(".filesv2-list__name mark").evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { background: style.backgroundColor, padding: style.paddingLeft };
         });
-        expect(marked.background).not.toBe("rgba(0, 0, 0, 0)");
-        expect(marked.padding).toBe("0px");
+        expect(mark.background).not.toBe("rgba(0, 0, 0, 0)");
+        expect(mark.padding).toBe("0px");
         expect(await tab.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+
+        const toolbar = await box(tab, ".filesv2-toolbar");
+        const firstHit = await box(tab, ".filesv2-list__row");
+        await show(tab, "loading");
+        await tab.waitForSelector(".filesv2-search-loading");
+        // Nothing above the results moves, and the placeholder rows sit where the hits were.
+        expect(await box(tab, ".filesv2-toolbar")).toEqual(toolbar);
+        expect(await tab.locator(".filesv2-toolbar").textContent()).toContain("Searching…");
+        const rows = await tab.$$eval(".filesv2-search-loading__row", (items) => items.map((item) => item.getBoundingClientRect()));
+        expect(new Set(rows.map((item) => item.height))).toEqual(new Set([40]));
+        expect(rows[0]!.top).toBe(firstHit.top);
+        expect(await tab.locator(".filesv2-list__row").count()).toBe(0);
         expect(errors).toEqual([]);
       } finally {
         await tab.context().close();
-      }
-    });
-
-    test(`${device}: loading rows keep the list's geometry and the toolbar does not move`, async () => {
-      const results = await open(options, "results");
-      const loading = await open(options, "loading");
-      try {
-        expect(await box(loading.tab, ".filesv2-toolbar")).toEqual(await box(results.tab, ".filesv2-toolbar"));
-        expect(await loading.tab.getByRole("status").filter({ hasText: "Searching…" }).count()).toBeGreaterThan(0);
-        const rows = await loading.tab.$$eval(".filesv2-search-loading__row", (items) => items.map((item) => item.getBoundingClientRect()));
-        expect(rows.length).toBeGreaterThan(0);
-        expect(new Set(rows.map((item) => item.height))).toEqual(new Set([40]));
-        const firstHit = await box(results.tab, ".filesv2-list__row");
-        expect(rows[0]!.top).toBe(firstHit.top);
-        expect(await loading.tab.locator(".filesv2-list__row").count()).toBe(0);
-      } finally {
-        await results.tab.context().close();
-        await loading.tab.context().close();
       }
     });
   }
@@ -142,48 +141,41 @@ describe("Files search in a browser", () => {
       await tab.getByRole("button", { name: "Type" }).click();
       await tab.getByRole("menuitemradio", { name: "PDFs" }).click();
       expect(await requested(tab)).toMatchObject({ q: "rechnung", kind: "pdf" });
-    } finally {
-      await tab.context().close();
-    }
-    const filtered = await open(desktop, "empty", "kind=pdf&modified=week");
-    try {
-      expect(await filtered.tab.getByText("Nothing below this folder matches the search and its filters.").isVisible()).toBe(true);
-      await filtered.tab.getByRole("button", { name: "Reset filters" }).last().click();
-      const next = await requested(filtered.tab);
+      await show(tab, "empty?kind=pdf&modified=week");
+      const message = tab.getByText("Nothing below this folder matches the search and its filters.");
+      await message.waitFor();
+      await tab.getByRole("button", { name: "Reset filters" }).last().click();
+      const next = await requested(tab);
       expect(next).toMatchObject({ q: "rechnung" });
       expect(next.kind).toBeUndefined();
       expect(next.modified).toBeUndefined();
     } finally {
-      await filtered.tab.context().close();
+      await tab.context().close();
     }
   });
 
   test("a spent search budget explains itself and offers exact names or the folder; other failures offer a retry", async () => {
-    const limited = await open(phone, "limited");
+    const { tab } = await open(phone, "limited");
     try {
-      expect(await limited.tab.getByText("This search takes too long").isVisible()).toBe(true);
+      expect(await tab.getByText("This search takes too long").isVisible()).toBe(true);
       // A failure shows no count of zero results.
-      expect(await limited.tab.locator(".filesv2-toolbar").textContent()).not.toContain("result");
-      await limited.tab.getByRole("button", { name: "Search exact names" }).click();
-      expect(await requested(limited.tab)).toMatchObject({ q: "rechnung", exact: true });
-      await limited.tab.getByRole("button", { name: "Show folder" }).click();
-      expect(await requested(limited.tab)).toBeNull();
-      expect(await limited.tab.getByRole("searchbox").inputValue()).toBe("rechnung");
+      expect(await tab.locator(".filesv2-toolbar").textContent()).not.toContain("result");
+      await tab.getByRole("button", { name: "Search exact names" }).click();
+      expect(await requested(tab)).toMatchObject({ q: "rechnung", exact: true });
+      await tab.getByRole("button", { name: "Show folder" }).click();
+      expect(await requested(tab)).toBeNull();
+      expect(await tab.getByRole("searchbox").inputValue()).toBe("rechnung");
+      await show(tab, "error");
+      await tab.getByText("The search failed").waitFor();
+      await tab.getByRole("button", { name: "Try again" }).click();
+      expect(await tab.getAttribute("#root", "data-retried")).toBe("true");
     } finally {
-      await limited.tab.context().close();
-    }
-    const failed = await open(desktop, "error");
-    try {
-      expect(await failed.tab.getByText("The search failed").isVisible()).toBe(true);
-      await failed.tab.getByRole("button", { name: "Try again" }).click();
-      expect(await failed.tab.getAttribute("#root", "data-retried")).toBe("true");
-    } finally {
-      await failed.tab.context().close();
+      await tab.context().close();
     }
   });
 
   test("German: an unknown total says how many hits this page holds", async () => {
-    const { tab } = await open(desktop, "unknown", "", "de");
+    const { tab } = await open(desktop, "unknown", "de");
     try {
       expect(await tab.locator(".filesv2-toolbar").textContent()).toContain("7 Treffer auf dieser Seite");
       expect(await tab.getByRole("button", { name: "Typ" }).isVisible()).toBe(true);

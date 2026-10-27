@@ -1,4 +1,5 @@
 import { AppWorkspace, LocaleProvider } from "@k2b/ui";
+import { createEffect, createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import type { BaseSummary } from "../contracts";
 import Browser from "./Browser";
@@ -38,11 +39,15 @@ const ranges = (path: string, query: string): [number, number][] => {
     if (needle.every((point, offset) => points[index + offset] === point)) found.push([index, index + needle.length]);
   return found;
 };
-const filters = new URLSearchParams(location.search);
-filters.set("base", base.id);
-if (!filters.has("q")) filters.set("q", "rechnung");
-const search = searchState(filters);
-const result = (state: string): DirectoryView => {
+/** The hash names the state and, after "?", the search's address fields: "#empty?kind=pdf". It changes without a reload. */
+const address = (hash: string) => {
+  const [state = "", query = ""] = hash.slice(1).split("?");
+  const filters = new URLSearchParams(query);
+  filters.set("base", base.id);
+  if (!filters.has("q")) filters.set("q", "rechnung");
+  return { state: state || "results", filters, search: searchState(filters) };
+};
+const result = ({ state, search }: ReturnType<typeof address>): DirectoryView => {
   const query = search?.q ?? "";
   const extensions: readonly string[] = search?.kind ? SEARCH_KINDS[search.kind] : [];
   const items =
@@ -69,20 +74,26 @@ const result = (state: string): DirectoryView => {
     ...(state === "error" ? { items: [], total: null, failure: "unavailable" } : {}),
   };
 };
-const state = location.hash.slice(1) || "results";
+const [current, setCurrent] = createSignal(address(location.hash));
+window.addEventListener("hashchange", () => setCurrent(address(location.hash)));
 render(() => {
   const uploads = createFilesUploads();
+  // A loading search keeps the previous results underneath, as the workspace does while it navigates.
+  const [shown, setShown] = createSignal(result(current()));
+  createEffect(() => {
+    if (current().state !== "loading") setShown(result(current()));
+  });
   return (
     <LocaleProvider locale={document.documentElement.lang || "en"}>
       <AppWorkspace mobileSurface="flush">
         <AppWorkspace.Content>
           <Browser
-            directory={result(state)}
+            directory={shown()}
             bases={[base]}
             cloudUrl="https://cloud.example"
-            source={`/app/filesv2?${filters}`}
-            pending={state === "loading"}
-            pendingSearch={state === "loading"}
+            source={`/app/filesv2?${current().filters}`}
+            pending={current().state === "loading"}
+            pendingSearch={current().state === "loading"}
             uploads={uploads}
             onSearch={(next) => host.setAttribute("data-search", JSON.stringify(next))}
             onRetry={() => host.setAttribute("data-retried", "true")}
