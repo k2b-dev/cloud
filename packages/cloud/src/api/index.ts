@@ -37,6 +37,7 @@ import adminOutgoingMailRoutes from "./admin-outgoing-mail";
 import adminRailRoutes from "./admin-rail";
 import { adminAnnouncementRoutes, announcementRoutes } from "./announcements";
 import { createAppApprovalRoutes } from "./app-approval";
+import { createAppEventRoutes } from "./app-events";
 import { approvalRoutes } from "./approvals";
 import { appDiscoveryRoutes } from "./apps";
 import { createAuthRoutes } from "./auth";
@@ -87,6 +88,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/accounts", accountsEntitiesRoutes)
     .route("/geo", geoRoutes)
     .route("/apps", appDiscoveryRoutes)
+    .route("/app-events", createAppEventRoutes())
     .route("/resources", createResourceResolveRoutes())
     .route("/approvals", approvalRoutes)
     .route("/announcements", announcementRoutes)

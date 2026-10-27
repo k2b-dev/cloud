@@ -195,8 +195,18 @@ describe("Core AI capabilities", () => {
         read: async () => aiCapabilities.queries["ai.skill.read"].run({ id: skill.shortId }, context),
       },
     };
-    expect(Object.keys(cases).sort()).toEqual(Object.keys(aiCapabilities.types).sort());
+    expect(Object.keys(cases).sort()).toEqual(
+      Object.entries(aiCapabilities.types)
+        .filter(([, type]) => "reader" in type)
+        .map(([id]) => id)
+        .sort(),
+    );
     for (const [typeId, type] of Object.entries(aiCapabilities.types)) {
+      if (!("reader" in type)) {
+        expect(typeId).toBe("user");
+        expect(String(aiCapabilities.events["user.created"].subject)).toBe(typeId);
+        continue;
+      }
       const fixture = cases[typeId];
       if (!fixture) throw new Error(`Missing reader fixture for ${typeId}`);
       expect(fixture.reader).toBe(type.reader);
@@ -317,7 +327,12 @@ describe("Core AI capabilities", () => {
       "ai.task.run",
       "ai.task.update",
     ];
-    expect(manifest.types.map((type) => `core.${type.localId}`).sort()).toEqual(["core.ai.chat", "core.ai.skill", "core.ai.task"]);
+    expect(manifest.types.map((type) => `core.${type.localId}`).sort()).toEqual([
+      "core.ai.chat",
+      "core.ai.skill",
+      "core.ai.task",
+      "core.user",
+    ]);
     expect(Object.keys(aiCapabilities.queries).sort()).toEqual(queries);
     expect(manifest.queries.map((query) => query.localId).sort()).toEqual(queries);
     expect(

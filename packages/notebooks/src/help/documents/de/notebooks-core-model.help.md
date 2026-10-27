@@ -27,10 +27,10 @@ Ein Notizbuch ist ein gemeinsamer Arbeitsbereich. Eine Notiz ist ein Markdown-Qu
 :::reference
 - **Bearbeiten:** Den Markdown-Text gemeinsam mit anderen bearbeiten.
 - **Schreibgeschützt:** Arbeitsbereich und Detailbereich behalten, ohne den Notiztext zu bearbeiten.
-- **Buch:** Die Notiz als Webseite mit Navigation und Tagfiltern lesen. Buch hat keinen Editor und keinen Diskussionsbereich.
+- **Buch:** Die Notiz als Webseite mit Navigation und Tagfiltern lesen. Buch hat keinen Editor, keinen Diskussionsbereich und keine Kommentare am Text.
 :::
 
-Zugriff **Ansehen** öffnet immer die Buchansicht. Mit Zugriff **Bearbeiten** oder **Verwalten** wechselst du die Ansicht. Personen mit Zugriff **Verwalten** wählen die gemeinsame Standardansicht in den Einstellungen. Eine Ansicht in der URL hat Vorrang vor der Standardansicht. Gesperrte Notizen öffnen in **Schreibgeschützt** statt in **Bearbeiten**. In **Buch** öffnet **Bearbeiten** oben in der Navigation die Notiz zum Bearbeiten. Personen mit Zugriff **Bearbeiten** oder **Verwalten** sehen den Eintrag.
+Zugriff **Ansehen** öffnet die Buchansicht. Für Kommentare am Text öffnest du **Schreibgeschützt**. Mit Zugriff **Bearbeiten** oder **Verwalten** wechselst du jede Ansicht. Personen mit Zugriff **Verwalten** wählen die gemeinsame Standardansicht in den Einstellungen. Eine Ansicht in der URL hat Vorrang vor der Standardansicht. Gesperrte Notizen öffnen in **Schreibgeschützt** statt in **Bearbeiten**. In **Buch** öffnet **Bearbeiten** oben in der Navigation die Notiz zum Bearbeiten. Personen mit Zugriff **Bearbeiten** oder **Verwalten** sehen den Eintrag.
 
 **Verknüpfungen** unten in der Navigation öffnet den Graphen in jeder Ansicht, auch mit Zugriff **Ansehen**.
 
