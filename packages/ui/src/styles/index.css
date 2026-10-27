@@ -8308,6 +8308,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-warning-text);
 }
 
+/* Without a thumb, for a choice outside the stops, the track carries the focus ring. */
+.k2b-ui .k2b-choice-slider__track:focus-visible:has(> .k2b-choice-slider__thumb[hidden]) {
+  border-radius: var(--k2b-radius-control);
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+
 .k2b-ui .k2b-choice-slider__track:focus-visible .k2b-choice-slider__thumb {
   box-shadow:
     0 0 0 3px var(--k2b-surface-elevated),
