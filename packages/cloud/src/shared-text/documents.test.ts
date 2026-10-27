@@ -241,3 +241,44 @@ test("an edit of fallback text without a snapshot keeps the edit in the saved st
   // A later read from the same fallback replays the published edit, too.
   expect((await f.documents.read("doc"))?.text).toBe("hello!");
 });
+
+test("server edits preserve unchanged identities and a concurrent middle insertion between distant changes", async () => {
+  const f = fixture();
+  const before = "First old paragraph\n\nMiddle stable 😀 paragraph\n\nThird old paragraph\n";
+  await f.append(before);
+  const current = await f.documents.read("doc");
+  const browser = new Y.Doc();
+  const saved = new Y.Doc();
+  try {
+    Y.applyUpdate(browser, current!.state!);
+    const position = Y.createRelativePositionFromTypeIndex(browser.getText(SHARED_TEXT_NAME), before.indexOf("stable"));
+    const vector = Y.encodeStateVector(browser);
+    browser.getText(SHARED_TEXT_NAME).insert(before.indexOf("stable"), "client ");
+    const next = before.replaceAll("old", "NEW WORDS");
+    const expected = next.replace("stable", "client stable");
+    expect(
+      await f.documents.edit("doc", { actor: null }, ({ text }) => {
+        expect(text).toBe(before);
+        f.events.push({
+          cursor: "s6t.fixture.2",
+          data: {
+            kind: "sync",
+            payload: toBase64(Y.encodeStateAsUpdate(browser, vector)),
+            originNodeId: "browser",
+            originPeerId: "peer",
+          },
+        });
+        return next;
+      }),
+    ).toMatchObject({ status: "edited", text: expected });
+    Y.applyUpdate(saved, f.saves[0]!.input.state);
+    const savedText = saved.getText(SHARED_TEXT_NAME);
+    const resolved = Y.createAbsolutePositionFromRelativePosition(position, saved, false);
+    expect(resolved?.type === savedText).toBe(true);
+    expect(savedText.toString()).toBe(expected);
+    expect(expected.slice(resolved!.index, resolved!.index + "stable 😀".length)).toBe("stable 😀");
+  } finally {
+    browser.destroy();
+    saved.destroy();
+  }
+});
