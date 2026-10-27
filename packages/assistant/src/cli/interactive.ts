@@ -13,7 +13,6 @@ import type {
   CloudAiSurveyInput,
   CloudAiTextEditorInput,
 } from "@k2b/cloud/ai";
-import { parseAiModelChoice } from "@k2b/cloud/ai";
 import {
   AI_LOCAL_SELECTED_SKILLS_MAX_ITEMS,
   AI_LOCAL_TOOL_NAMES,
@@ -24,6 +23,7 @@ import {
 import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
+import { parseAiModelChoice } from "@k2b/cloud/shared";
 import { httpApprovalNotice } from "../artifacts/code-approval-message";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { pendingActionQuestion, printPendingActionContent, printReviewContent } from "./action-question";

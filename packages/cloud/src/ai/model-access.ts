@@ -1,26 +1,14 @@
 import { sql } from "bun";
-import { z } from "zod";
-import { type AccessEntry, type Principal, PrincipalSchema, type ServiceAccountKind } from "../contracts/shared";
+import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
 import { type AccessSubject, buildAccessPrincipalCondition, createAccess } from "../server/services/access";
 import { toPgTextArray } from "../services/postgres";
+import type { AiModelAccessDraft } from "../shared/ai-models";
 import type { AiSettingsError } from "./types";
 
 export type AiModelAccessState = { entries: AccessEntry[]; revision: number };
 export type AiModelAccessMap = Record<string, AiModelAccessState>;
 
-const GrantSchema = z
-  .object({
-    principal: PrincipalSchema.refine((principal) => principal.type !== "public", "Assistant models cannot be public."),
-    permission: z.literal("read"),
-  })
-  .strict();
-export const AiModelAccessDraftSchema = z
-  .object({
-    expectedRevision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable(),
-    entries: z.array(GrantSchema),
-  })
-  .strict();
-export type AiModelAccessDraft = z.infer<typeof AiModelAccessDraftSchema>;
+export { type AiModelAccessDraft, AiModelAccessDraftSchema } from "../shared/ai-models";
 export type AiModelAccessChange = AiModelAccessDraft & { modelId: string };
 
 export class AiModelAccessConflict extends Error {
