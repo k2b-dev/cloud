@@ -24,9 +24,9 @@ Nach 24 Stunden darf eine untere Regel eine offene Entscheidung übernehmen. Dan
 
 `assignConversation` überspringt die Zuweisung, sobald der Unterhaltung jemand zugewiesen ist (`already_assigned`), auch bei einer Zuweisung von Hand. Es überspringt sie auch, wenn eine Zuweisung dieses Workflows für diese Unterhaltung rückgängig gemacht wurde (`undone_before`), selbst bei späteren Antworten und nach dem 30-Tage-Protokollfenster. Nur unmittelbares **Wiederholen** durch dieselbe Person entfernt diese Sperre. Eine Zuweisung von Hand zu ändern, ändert den Workflow nie. `user: null` lässt bestehende Zuständigkeiten stehen. Entferne die Zuweisung von Hand oder mache den Regeleintrag rückgängig.
 
-Im [Automatisierungsprotokoll](/app/mail/help/mail-automation) prüfst du die Entscheidungskette und machst eine aktuelle Regelzuweisung rückgängig. Dafür brauchst du dieselbe Berechtigung wie zum Zuweisen von Hand; spätere manuelle Änderungen werden nicht überschrieben.
+Im [Automatisierungsprotokoll](/app/mail/help/mail-automation) prüfst du die Entscheidungskette und machst eine aktuelle Regelzuweisung rückgängig. Dafür brauchst du denselben Zugriff wie zum Zuweisen von Hand; spätere manuelle Änderungen werden nicht überschrieben.
 
-Im [Automatisierungsprotokoll](/app/mail/help/mail-automation) kannst du aktuelle Regeländerungen mit Schreibzugriff auf das ganze Postfach rückgängig machen. Spätere persönliche Änderungen bleiben erhalten. Die Regel überspringt danach die zurückgenommenen Änderungsarten mit `undone_before`, auch Tags, Ablage, Status, Markierungen und Schlüsselwörter bei späteren Antworten. Kommentare und Zusammenfassungen werden hier nicht zurückgenommen.
+Im [Automatisierungsprotokoll](/app/mail/help/mail-automation) kannst du aktuelle Regeländerungen rückgängig machen, wenn du das ganze Postfach bearbeiten darfst. Spätere persönliche Änderungen bleiben erhalten. Die Regel überspringt danach die zurückgenommenen Änderungsarten mit `undone_before`, auch Tags, Ablage, Status, Markierungen und Schlüsselwörter bei späteren Antworten. Kommentare und Zusammenfassungen werden hier nicht zurückgenommen.
 
 ## Mit einem Workflow für empfangene Nachrichten beginnen {icon="route"}
 

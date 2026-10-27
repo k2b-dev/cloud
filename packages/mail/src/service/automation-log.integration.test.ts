@@ -2,15 +2,19 @@ import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "@k2b/cloud/ai";
 import { encryptSecret, toPgTextArray } from "@k2b/cloud/services";
 import { workflowPathKey } from "@k2b/cloud/workflows";
-import { createWorkflowAiTask } from "@k2b/cloud/workflows/ai";
+import {
+  createWorkflowAiTask,
+  getWorkflowAiTask,
+  startWorkflowAiRuntime,
+  stopWorkflowAiRuntime,
+  submitWorkflowAiTask,
+} from "@k2b/cloud/workflows/ai";
 import { deleteWorkflowScope, emitWorkflowEvent, wakeExpiredWorkflowRuns } from "@k2b/cloud/workflows/store";
 import type { Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
 import type { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
-// Test-only processor seam, shared with the workflow AI store integration suite.
-import { processWorkflowAiTask } from "../../../cloud/src/workflows/ai/runtime";
 import automationLogRoutes from "../api/automation-log";
 import type { MailApiContext } from "../api/public-resource-boundary";
 import {
@@ -926,8 +930,9 @@ steps:
         structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
       };
     };
-    // Materialize the existing durable task contract and process it through the real worker's injected provider.
+    // Materialize the existing durable task contract and process it through the public AI runtime with an injected provider.
     // The Mail run subsequently restores these tasks and cannot call a model resolver or remote provider.
+    const taskIds: string[] = [];
     for (const step of definition.currentVersion.boundPlan.steps) {
       if (step.kind !== "action" || (step.action !== "aiClassify" && step.action !== "aiExtractData")) continue;
       const stepKey = workflowPathKey(step.sourcePath);
@@ -947,11 +952,18 @@ steps:
         request,
         modelProfileId: "fixture",
       });
-      await processWorkflowAiTask(
-        task.task.id,
-        { signal: new AbortController().signal, heartbeat: async () => undefined },
-        { runStructured: fake, maxAttempts: 1, cancelPollMs: 10 },
-      );
+      taskIds.push(task.task.id);
+    }
+    await startWorkflowAiRuntime({ runStructured: fake, cancelPollMs: 10 });
+    try {
+      for (const taskId of taskIds) await submitWorkflowAiTask(taskId);
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const tasks = await Promise.all(taskIds.map((taskId) => getWorkflowAiTask(taskId)));
+        if (tasks.every((task) => task?.status === "succeeded")) break;
+        await Bun.sleep(25);
+      }
+    } finally {
+      stopWorkflowAiRuntime();
     }
     expect(await runMailWorkflow(runId)).toMatchObject({ result: { state: "succeeded" } });
     expect(calls).toBe(2);

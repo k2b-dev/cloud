@@ -447,7 +447,7 @@ export default function MailAutomationLog(props: {
                       <div
                         role="row"
                         class={`relative grid ${columns()} min-h-14 items-center gap-x-3 gap-y-1 rounded-[var(--ui-radius-control)] px-2 py-1.5 text-[0.8125rem] hover:bg-[var(--ui-hover)] ${ROW_PHONE}`}
-                        classList={{ "bg-[var(--ui-selected,var(--ui-hover))]": selected() === item.id }}
+                        classList={{ "bg-[var(--ui-app-selected)]": selected() === item.id }}
                         data-log-outcome={item.outcome}
                         data-log-row={item.id}
                       >

@@ -38,7 +38,7 @@ Open **Automations → Log** to see what rules changed, left unassigned, or skip
 
 Open an entry for the decision chain: conditions, AI choices and available extracted values, the fixed rule row, target, effects, and AI call counts. These are recorded results; opening the entry does not ask AI again. A source quote is shown only when one was recorded.
 
-**Undo** reverses the entry's current assignments, added or removed local tags, folder moves and archives, status, read state, other flags, and keywords in one click, without confirmation. You need write access to the whole mailbox. Changes someone made afterwards stay as they are and are reported as kept. If nothing can safely be reversed, Undo is unavailable and changes nothing. Comments remain as records; summaries keep their own version history and are not undone here.
+**Undo** reverses the entry's current assignments, added or removed local tags, folder moves and archives, status, read state, other flags, and keywords at once, without confirmation. You need Edit access to the whole mailbox. Changes someone made afterwards stay as they are and are reported as kept. If nothing can safely be reversed, Undo is unavailable and changes nothing. Comments remain as records; summaries keep their own version history and are not undone here.
 
 Folder, flag, and keyword changes go through the provider. Undo is done when Mail accepts those commands; provider failures appear with the other failed commands. **Redo**, by the same person, reapplies only what Undo reversed and preserves later personal changes. While provider commands are still running, wait for them to finish before undoing or redoing the group. Refresh the entry and try again.
 
