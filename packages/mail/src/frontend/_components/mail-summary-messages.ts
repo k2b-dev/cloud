@@ -65,11 +65,11 @@ export const mailSummaryMessages = i18n.define({
       editedByPerson: "Von einer Person geschrieben",
       failed_timeout:
         "Die Zusammenfassung ist nicht entstanden: Die KI hat nicht rechtzeitig geantwortet. Die Unterhaltung ist unverändert.",
-      provider_unavailable:
+      failed_provider_unavailable:
         "Die Zusammenfassung ist nicht entstanden: Die KI ist gerade nicht erreichbar. Die Unterhaltung ist unverändert.",
-      input_too_large:
+      failed_input_too_large:
         "Die Zusammenfassung ist nicht entstanden: Die Unterhaltung ist zu lang für die KI. Die Unterhaltung ist unverändert.",
-      allowance_exhausted:
+      failed_allowance_exhausted:
         "Die Zusammenfassung ist nicht entstanden: Dein KI-Kontingent ist gerade aufgebraucht. Die Unterhaltung ist unverändert.",
       failed_internal: "Die Zusammenfassung ist nicht entstanden: Etwas ist schiefgegangen. Die Unterhaltung ist unverändert.",
       updateFailed: "Fortschreiben hat nicht geklappt. Die gezeigte Fassung bleibt.",
