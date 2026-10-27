@@ -438,7 +438,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    clamp instead of dimming every label.
    `--k2b-truncate-fade-inset` (inherited) is the length of the end that a
    control overlays, such as a row's hover actions, including a 0.75rem fade
-   before it: text under that control fades out whether it overflows or not. */
+   before it: text under that control fades out whether it overflows or not.
+   It is registered as a length, so a derived inset computes to one too. */
+@property --k2b-truncate-fade-inset {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 @property --k2b-truncate-fade-on {
   syntax: "<number>";
   inherits: false;
@@ -5127,6 +5134,21 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   pointer-events: auto;
 }
 
+/* While a control overlays the row's end, `--k2b-sidebar-item-overlay` is the
+   end it covers from the count, including a 0.75rem fade before it. The row
+   measures what its hover actions cover (`--k2b-sidebar-item-cover`), and
+   the label ends before the count and its gap
+   (`--k2b-sidebar-item-label-trail`), so it gives up only the rest. */
+.k2b-ui .k2b-app-workspace__sidebar-item-main {
+  --k2b-truncate-fade-inset: var(--k2b-sidebar-item-overlay, 0px);
+}
+
+.k2b-ui
+  .k2b-app-workspace__sidebar-item-main
+  > :is(.k2b-app-workspace__sidebar-item-copy, .k2b-app-workspace__sidebar-item-label) {
+  --k2b-truncate-fade-inset: max(0px, var(--k2b-sidebar-item-overlay, 0px) - var(--k2b-sidebar-item-label-trail, 0px));
+}
+
 /* The overlay layout follows the pointer capability, never the recorded input
    mode, so a mode change moves nothing. */
 @media (any-hover: hover) {
@@ -5160,7 +5182,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 2.5rem;
+    --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 1.75rem) + 0.75rem);
   }
 
   .k2b-ui
@@ -5170,10 +5192,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
         > .k2b-app-workspace__nav-tree-row,
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions [aria-haspopup][aria-expanded="true"])
     ):not([data-variant="object"]:has(.k2b-app-workspace__sidebar-item-meta)):has(
-      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child > :nth-child(2)
+      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child > :nth-child(2 of :not([popover]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 4.25rem;
+    --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 3.5rem) + 0.75rem);
   }
 
   /* Hover actions and the row chevron overlay the row's trailing edge:
@@ -5216,7 +5238,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 2.5rem;
+    --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 1.75rem) + 0.75rem);
   }
 
   .k2b-ui
@@ -5227,7 +5249,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
     ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 4.25rem;
+    --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 3.5rem) + 0.75rem);
   }
 
   /* Without a touch screen, an action preview opens on hover, so its button
@@ -5257,7 +5279,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     .k2b-ui
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
       > .k2b-app-workspace__sidebar-item-main {
-      --k2b-truncate-fade-inset: 2.5rem;
+      --k2b-sidebar-item-overlay: 2.5rem;
     }
   }
 
@@ -5758,6 +5780,89 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: min(var(--k2b-focus-offset), 1px);
 }
 
+/* A row with a secondary action, such as "Only": the action keeps its place while hidden, so the row never changes
+   width, and shows while the row is hovered or focused, and always where the pointer is coarse. */
+.k2b-ui .k2b-dropdown__pair {
+  display: flex;
+  align-items: center;
+  border-radius: 0.375rem;
+  transition: background-color 150ms ease-out;
+}
+
+.k2b-ui .k2b-dropdown__pair:hover,
+.k2b-ui .k2b-dropdown__pair:focus-within {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-dropdown__pair > .k2b-dropdown__item {
+  min-width: 0;
+  flex: 1;
+}
+
+.k2b-ui .k2b-dropdown__pair > .k2b-dropdown__item:hover,
+.k2b-ui .k2b-dropdown__pair > .k2b-dropdown__item:focus-visible {
+  background: transparent;
+}
+
+.k2b-ui :is(.k2b-dropdown__secondary, .k2b-dropdown__label-action) {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-muted);
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-dropdown__secondary {
+  margin-inline-end: 0.25rem;
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-dropdown__pair:is(:hover, :focus-within) > .k2b-dropdown__secondary {
+  visibility: visible;
+}
+
+/* On a touch screen the second action is always there and as tall as its row, the 44 px of a touch target. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-dropdown__secondary {
+    visibility: visible;
+    align-self: stretch;
+    min-height: 2.75rem;
+  }
+
+  .k2b-ui .k2b-dropdown__label-action {
+    min-height: 2.75rem;
+  }
+}
+
+.k2b-ui :is(.k2b-dropdown__secondary, .k2b-dropdown__label-action):hover {
+  color: var(--k2b-text);
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui :is(.k2b-dropdown__secondary, .k2b-dropdown__label-action):focus-visible {
+  color: var(--k2b-text);
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
+}
+
+/* The label row keeps the label's own spacing; its action sits at the end without making the row taller. */
+.k2b-ui .k2b-dropdown__label--action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-block: 0.25rem 0;
+  padding-inline-end: 0.25rem;
+}
+
 /* Opt-in touch menus leave the compact default and shared ContextMenu rows unchanged. */
 .k2b-ui .k2b-dropdown__menu[data-variant="touch"] {
   min-width: min(18rem, 100vw - 2rem);
@@ -5874,6 +5979,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* A tag's colour sits beside its name, never alone. */
+/* The colors of the chosen options, overlapping a little, in the place of the icon. */
+.k2b-ui .k2b-filter-chip__swatches {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding-inline-end: 0.125rem;
+}
+
+.k2b-ui .k2b-filter-chip__swatches > .k2b-filter-chip__dot {
+  margin: 0;
+  box-shadow: 0 0 0 1.5px var(--k2b-surface);
+  vertical-align: middle;
+}
+
+.k2b-ui .k2b-filter-chip__swatches > .k2b-filter-chip__dot + .k2b-filter-chip__dot {
+  margin-inline-start: -0.1875rem;
+}
+
 .k2b-ui .k2b-filter-chip__dot {
   display: inline-block;
   width: 0.5rem;
@@ -9602,6 +9725,65 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-message-system-row time {
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
+}
+
+/* A change to something the conversation is about: one quiet line, aligned with the messages' text after the avatar
+   gutter (0.75rem padding + 2rem gutter + 0.5rem gap), its time at the end. Never a bubble, never a rule. */
+.k2b-ui .k2b-message-event-row {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 1.625rem;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0.125rem 0.75rem 0.125rem 3.25rem;
+  border: 0;
+  color: var(--k2b-text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  text-align: start;
+}
+
+.k2b-ui .k2b-message-event-row > i {
+  flex: none;
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-message-event-row__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-message-event-row time {
+  flex: none;
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .k2b-message-event-row .k2b-message-row__origin {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-message-event-group {
+  cursor: pointer;
+  border-radius: var(--k2b-radius-control);
+}
+
+/* Only the ink responds; nothing moves. */
+.k2b-ui .k2b-message-event-group:hover {
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .k2b-message-event-group:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(var(--k2b-focus-offset) * -1);
 }
 
 /* Above the bubble: a forwarded marker. */
@@ -14172,7 +14354,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 2.5rem;
+    --k2b-sidebar-item-overlay: 2.5rem;
   }
   .k2b-ui
     .k2b-app-workspace__sidebar-item:not(
@@ -14182,7 +14364,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
     ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 4.25rem;
+    --k2b-sidebar-item-overlay: 4.25rem;
   }
 }
 

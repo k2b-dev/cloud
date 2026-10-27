@@ -15,6 +15,7 @@ import {
   CreateThreadSchema,
   ExistingMatchSchema,
   type ForYouItemSchema,
+  type ItemEventSchema,
   LeaveResultSchema,
   LeaveSchema,
   MAX_EXISTING_MATCHES,
@@ -205,6 +206,9 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   let failingUnread = 0;
   let failingThreads = 0;
   let failingShared = 0;
+  // Changes the owning app reports for a Space or notebook chat, as GET …/events answers them.
+  const itemEvents = new Map<string, z.infer<typeof ItemEventSchema>[]>();
+  let failingItemEvents = 0;
   /** Every read of a chat's shared list, in order. */
   const sharedReads: string[] = [];
   let failingSystems = 0;
@@ -1510,6 +1514,20 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
           const data = markUnread(id!, message);
           return data ? Response.json(data) : Response.json({ code: "NOT_FOUND", message: "Message not found." }, { status: 404 });
         }
+        if (part === "events" && request.method === "GET") {
+          if (failingItemEvents > 0) {
+            failingItemEvents -= 1;
+            return Response.json({ items: [], nextCursor: null, unavailable: true });
+          }
+          const thread = url.searchParams.get("thread") ?? "all";
+          const after = url.searchParams.get("after");
+          const before = url.searchParams.get("before");
+          const items = (itemEvents.get(id!) ?? [])
+            .filter((event) => thread === "all" || ("id" in event.thread && event.thread.id === thread))
+            .filter((event) => (!after || event.at > after) && (!before || event.at < before))
+            .toSorted((a, b) => b.at.localeCompare(a.at));
+          return Response.json({ items, nextCursor: null });
+        }
         if (!part) return Response.json(chat.conversation);
         if (part === "snapshot") {
           const open = snapshot(id!, url.searchParams.get("message"), url.searchParams.get("thread") ?? "all");
@@ -1787,7 +1805,17 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     /** Advances the viewer's read state on another device, without recording a page report. */
     readElsewhere: read,
     /** Isolates scenarios; IDs stay unique so a closing page cannot report against a later chat. */
+    /** Changes of the chat's items, as the owning app reports them. */
+    addItemEvents: (chat: string, list: z.infer<typeof ItemEventSchema>[]) => {
+      itemEvents.set(chat, [...(itemEvents.get(chat) ?? []), ...list]);
+    },
+    /** The next item event reads answer that the owning app is unavailable. */
+    failItemEvents: (times = 1) => {
+      failingItemEvents = times;
+    },
     reset: () => {
+      itemEvents.clear();
+      failingItemEvents = 0;
       forYou = [];
       failingForYou = 0;
       emptyContainerHits = [];

@@ -130,3 +130,16 @@ export const sweepStaleTestNamespaces = async (now = Date.now()): Promise<{ name
     await deleteStreams(connection, names);
     return { namespaces: stale.size, streams: names.length };
   });
+
+if (import.meta.main) {
+  if (Bun.argv.includes("--help")) {
+    console.log(
+      "Usage: bun --no-env-file scripts/fixtures/test-sync.ts\n\nRemove abandoned test Sync namespaces from CLOUD_TEST_NATS_SERVERS.",
+    );
+  } else {
+    const swept = await sweepStaleTestNamespaces();
+    if (swept.namespaces > 0) {
+      console.log(`Removed ${swept.streams} stream(s) of ${swept.namespaces} abandoned test Sync namespace(s).`);
+    }
+  }
+}

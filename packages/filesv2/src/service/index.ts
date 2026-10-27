@@ -6,6 +6,7 @@ import {
   type AccountIdentityUser,
   accountIdentities,
   accounts,
+  audit,
   coreSettings,
   logger,
 } from "@k2b/cloud/services";
@@ -51,15 +52,7 @@ import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "..
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { isPdfName, pdfBody } from "../pdf-body";
 import { parseStableEntryRefId } from "../resource-ref";
-import {
-  currentActivityId,
-  fileAction,
-  pendingMigration,
-  purgeActivity,
-  recoverActivity,
-  type UserFilesCall,
-  uploadAction,
-} from "./activity";
+import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActivity, type UserFilesCall, uploadAction } from "./activity";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
@@ -526,6 +519,27 @@ export function createFilesService(
     );
   }
 
+  function versionIntent(
+    current: Awaited<ReturnType<typeof authorized>>,
+    action: "version.comment" | "version.restore" | "version.restore_copy" | "version.delete",
+    versionId: string,
+  ): Intent {
+    return {
+      action,
+      serverUrl: current.state.config.url,
+      root: current.root.name,
+      baseId: current.inspection.binding!.id,
+      itemId: current.info.stableIds ? current.node.id : null,
+      directory: false,
+      name: current.relative.split("/").at(-1)!,
+      pathBefore: current.target,
+      pathAfter: current.target,
+      revisionBefore: current.node.revision,
+      versionId,
+      size: current.node.size,
+    };
+  }
+
   async function createFolder(call: UserFilesCall, current: Awaited<ReturnType<typeof writableParent>>, batchId?: string) {
     const path = joinPath(current.target, current.name);
     return fileAction(
@@ -968,9 +982,7 @@ export function createFilesService(
         const target = joinPath(candidate.path, "trash");
         try {
           const node = await current.root.stat(candidate.path);
-          await pendingMigration("files.ensure_trash", () =>
-            current.root.mkdir(target, { ownership: ownershipFor({ ...current, node }, true) }),
-          );
+          await current.root.mkdir(target, { ownership: ownershipFor({ ...current, node }, true) });
         } catch (error) {
           if (!(error instanceof FilegateError && error.status === 409)) throw error;
           if (!(await current.root.stat(target)).directory) throw new FilesError("not_directory", 409);
@@ -1482,9 +1494,19 @@ export function createFilesService(
         comment: input.comment || undefined,
         author: input.comment ? current.state.self.user.username : undefined,
       };
+      const options = { pinned: existing.pinned, metadata };
       return versionEntry(
-        await pendingMigration("files.version_comment", () =>
-          current.root.updateVersion(current.target, input.id, { pinned: existing.pinned, metadata }),
+        await fileAction(
+          call,
+          { ...versionIntent(current, "version.comment", input.id), versionOptions: options },
+          () =>
+            current.root.updateVersion(current.target, input.id, {
+              ...options,
+              metadata: { ...metadata, comment_activity: currentActivityId() },
+            }),
+          async (_tx, version) => {
+            if (version.id !== input.id) throw new FilesError("unavailable", 503);
+          },
         ),
       );
     },
@@ -1493,43 +1515,97 @@ export function createFilesService(
       const current = await versionFile(actor, input.baseId, input.path, true);
       return publish(current.root.name, async () => {
         const fresh = await versionFile(actor, input.baseId, input.path, true);
-        const node = await pendingMigration("files.version_restore", () => fresh.root.restore(fresh.target, input.id));
+        if (
+          fresh.root.name !== current.root.name ||
+          fresh.state.config.url !== current.state.config.url ||
+          fresh.inspection.binding!.id !== current.inspection.binding!.id
+        )
+          throw new FilesError("configuration_changed", 409);
+        const node = await fileAction(
+          call,
+          versionIntent(fresh, "version.restore", input.id),
+          () => fresh.root.restore(fresh.target, input.id),
+          async (_tx, node) => {
+            if (
+              node.root !== fresh.root.name ||
+              node.path !== fresh.target ||
+              node.directory ||
+              (fresh.info.stableIds && node.id !== fresh.node.id)
+            )
+              throw new FilesError("unavailable", 503);
+            return { itemAfterId: fresh.info.stableIds ? node.id : null, size: node.size, revisionAfter: node.revision };
+          },
+        );
         return { base: fresh.inspection.summary, entry: fileEntry(fresh.inspection.summary, fresh.relative, node) };
       });
     },
     async restoreVersionAs(call: UserFilesCall, input: { baseId: string; path: string; id: string; name: string }): Promise<EntryResult> {
       const actor = call.actor;
-      const current = await versionFile(actor, input.baseId, input.path, false);
-      const relative = userPath(joinPath(current.relative.split("/").slice(0, -1).join("/"), input.name));
-      if (relative.split("/").length !== current.relative.split("/").length || relative === current.relative)
-        throw new FilesError("invalid_path");
-      const destination = await writableParent(actor, input.baseId, relative);
-      if (JSON.stringify(executionFor(current)) !== JSON.stringify(executionFor(destination)))
-        throw new FilesError("configuration_changed", 409);
-      if (
-        current.state.config.url !== destination.state.config.url ||
-        current.inspection.binding?.id !== destination.inspection.binding?.id
-      )
-        throw new FilesError("configuration_changed", 409);
-      const node = await pendingMigration("files.version_restore_copy", () =>
-        current.root.copyVersion(current.target, input.id, destination.root.name, joinPath(destination.target, destination.name), {
-          onConflict: "error",
+      const prepared = await versionFile(actor, input.baseId, input.path, false);
+      return publish(prepared.root.name, async () => {
+        const current = await versionFile(actor, input.baseId, input.path, false);
+        if (
+          current.root.name !== prepared.root.name ||
+          current.state.config.url !== prepared.state.config.url ||
+          current.inspection.binding!.id !== prepared.inspection.binding!.id
+        )
+          throw new FilesError("configuration_changed", 409);
+        const relative = userPath(joinPath(current.relative.split("/").slice(0, -1).join("/"), input.name));
+        if (relative.split("/").length !== current.relative.split("/").length || relative === current.relative)
+          throw new FilesError("invalid_path");
+        const destination = await writableParent(actor, input.baseId, relative);
+        if (
+          JSON.stringify(executionFor(current)) !== JSON.stringify(executionFor(destination)) ||
+          current.state.config.url !== destination.state.config.url ||
+          current.inspection.binding!.id !== destination.inspection.binding!.id
+        )
+          throw new FilesError("configuration_changed", 409);
+        const target = joinPath(destination.target, destination.name);
+        const options = {
+          onConflict: "error" as const,
           ownership: ownershipFor(destination, false),
           targetExecution: targetExecution(destination),
-        }),
-      );
-      if (node.root !== destination.root.name || !node.path.startsWith(`${destination.inspection.candidate.path}/`))
-        throw new FilesError("unavailable", 503);
-      return {
-        base: current.inspection.summary,
-        entry: fileEntry(destination.inspection.summary, userPath(node.path.slice(destination.inspection.candidate.path.length + 1)), node),
-      };
+        };
+        const node = await fileAction(
+          call,
+          {
+            ...versionIntent(current, "version.restore_copy", input.id),
+            rootAfter: destination.root.name,
+            baseAfterId: destination.inspection.binding!.id,
+            pathAfter: target,
+            copyOptions: options,
+          },
+          () => current.root.copyVersion(current.target, input.id, destination.root.name, target, options),
+          async (_tx, node) => {
+            if (node.root !== destination.root.name || node.path !== target || node.directory) throw new FilesError("unavailable", 503);
+            return { itemAfterId: destination.info.stableIds ? node.id : null, size: node.size, revisionAfter: node.revision };
+          },
+        );
+        return { base: destination.inspection.summary, entry: fileEntry(destination.inspection.summary, relative, node) };
+      });
     },
     async deleteVersion(call: UserFilesCall, input: { baseId: string; path: string; id: string }): Promise<void> {
       const actor = call.actor;
       await requireAdmin(actor);
       const current = await versionFile(actor, input.baseId, input.path, true);
-      await pendingMigration("files.version_delete", () => current.root.deleteVersion(current.target, input.id));
+      await fileAction(
+        call,
+        versionIntent(current, "version.delete", input.id),
+        () => current.root.deleteVersion(current.target, input.id),
+        async (tx) => {
+          await audit.record(
+            {
+              action: "filesv2.version.delete",
+              outcome: "allowed",
+              actor: { userId: current.state.self.user.id },
+              target: { type: "filesv2.version", id: input.id, label: current.target },
+              requestId: call.requestId,
+              metadata: { root: current.root.name },
+            },
+            tx,
+          );
+        },
+      );
     },
     async versionDownload(call: UserFilesCall, input: { baseId: string; path: string; id: string }): Promise<DownloadLease> {
       const actor = call.actor;

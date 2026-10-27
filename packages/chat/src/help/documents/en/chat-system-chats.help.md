@@ -37,6 +37,16 @@ The thread's title and status come from the item. When available, its due date, 
 
 A message written in **All threads** goes to the Space or Notebook itself. A reply goes to the thread of the message you answer. The label under each message shows where it belongs.
 
+## See what changed {icon="history"}
+
+Changes to items show as quiet lines between the messages, such as "Mara set the status to “In review”". An item's thread shows only its own changes; **All threads** shows the changes of the whole Space or Notebook, each with the item's label.
+
+:::reference
+- Three or more changes in a row become one line such as **4 changes to …**. Choose it to see each change.
+- Changes never count as unread and never appear in the chat list.
+- You see only changes to items you may open.
+:::
+
 ## Manage access {icon="users"}
 
 Change access in the Space or Notebook. Chat does not offer member editing, leaving, or manual thread names for these chats.

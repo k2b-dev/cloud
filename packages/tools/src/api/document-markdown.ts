@@ -152,8 +152,9 @@ export const createDocumentMarkdownRoutes = (dependencies: DocumentMarkdownRoute
     }
   };
 
-  return new Hono<AuthContext>().post(
+  return new Hono<AuthContext>().use("/markdown", noStore).post(
     "/markdown",
+    auth.readOnly,
     describeRoute({
       tags: ["Tools"],
       summary: "Convert a document to Markdown",
@@ -174,7 +175,6 @@ export const createDocumentMarkdownRoutes = (dependencies: DocumentMarkdownRoute
     }),
     authenticate,
     rateLimiter,
-    noStore,
     rejectWhenBusy,
     documentBodyLimit,
     requireBoundedMultipart(),

@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-22
+updated: 2026-10-26
 ---
 
 # Deployment requirements
@@ -26,6 +26,50 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 `app-mail`; the routing service is named `gateway`. The shared library, UI
 package, CLI and desktop development tools are not additional server apps in
 this service set.
+
+## Upgrade personal Linux group retirement
+
+This security fix changes account deletion: the account and its personal Linux
+group now retire atomically. For application authors, a `RESTRICT` or `NO ACTION`
+foreign key referencing that group blocks the entire account deletion and rolls
+it back. Use `ON DELETE CASCADE` for dependent grants or memberships that must
+retire with the group. Review other references deliberately before upgrading;
+see [Personal Linux groups](/en/docs/operations/linux-identities#personal-linux-groups).
+
+Apply Core's migration before starting updated applications: shared group
+queries now require `auth.personal_groups`. Production Compose only orders
+OAuth after Core, so a plain parallel `up` does not enforce this upgrade order.
+In a maintenance window, stop the existing application services, set the new
+release tag and start Core alone:
+
+```bash
+docker compose -f compose.prod.yml up -d --wait app-core
+```
+
+Use the same environment and infrastructure overlay files as your normal
+deployment. Check Core's migration logs and health before starting the rest of
+the release with your normal Compose command. Keep old application processes
+stopped during this step. This sequence also applies to a fresh installation.
+The background historical scan is not a Core health prerequisite.
+
+After Core is ready, operators must review `auth.personal_group_review` and
+resolve orphaned groups through the normal Accounts group deletion path.
+Referenced or uncertain historical groups remain usable until resolved;
+upgrading alone does not remove their authority. Follow
+[Review historical groups after upgrading](/en/docs/operations/linux-identities#review-historical-groups-after-upgrading).
+
+## Review Mail workflows that send automatically
+
+Mail refuses automatic send effects in workflows containing AI actions or
+reading conversation summaries, which another AI workflow may have written.
+The rule covers the entire definition, including unused branches and AI actions
+after a send. It applies to existing versions, queued sends, and retries;
+blocked sends fail with `MAIL_WORKFLOW_SEND_REVIEW_REQUIRED` before SMTP.
+
+Replace generated replies with `createDraft` or `createReplyDraft` and have a
+person review and send the complete message. Fixed operator-approved reply
+templates in workflows without AI or summary reads keep working. Direct
+machine-token Mail permissions retain their documented authorization contract.
 
 ## Size Mail for large messages
 
@@ -752,6 +796,26 @@ Provide and [connect ClickHouse](#provide-clickhouse-for-pulse) before resuming
 collection. A fresh or reset installation creates no Postgres extension.
 Measurements live in each base's ClickHouse database; Postgres keeps control
 data and write reservations. Later starts preserve the new data.
+
+### Discover calendar sources
+
+The additive `calendarSource` declaration lets applications offer calendars
+through their existing capability manifests. Upgrade Core and the consumer's
+`@k2b/cloud` package before expecting discovery. Older readers ignore the new
+declaration; applications without it retain their existing manifest hashes.
+An unreadable declaration is ignored as a whole while its other capabilities
+remain available. Incompatible live sources produce one registry log per
+manifest. See [Calendar sources](/en/docs/platform/calendar-sources).
+
+Spaces adds read-only `calendar.list` and `calendar.events` Queries and
+`GET /api/spaces/calendar/sources` and `GET /api/spaces/calendar/events` for
+unbound user-backed callers, and the read-only page `/app/spaces/calendar`
+(**Calendar** in the Spaces sidebar), which shows every source a person can
+read. The existing Space iCal link and `event.agenda` remain available. No new service, configuration, migration, or subscription is
+needed. Verify source discovery and one authorized event read after upgrading;
+a healthy container alone does not prove that the caller can read a calendar.
+The aggregate reader has a 42-day view range, 100-calendar selection,
+60-call/six-concurrent-call budget, 4 MiB page budget, and caller deadline.
 
 ### Upgrade Spaces task deadlines
 
@@ -1490,6 +1554,35 @@ secrets, and old image set if rollback is necessary. See the
 [identity cutover contract](/en/docs/reference/deprecations-and-migrations#jwt-only-sessions-and-internal-invocations)
 for token compatibility and [Identity key operations](/en/docs/operations/identity-key-operations)
 for key recovery.
+
+## Enable nested capability Queries
+
+Upgrade Core and the applications taking part in a nested Query to the same
+Cloud release before using `context.query()`. Older invocation verifiers reject
+the child token's new parent binding. Core adds three nullable columns to
+`capabilities.executions` during its normal migration; existing history remains
+readable.
+
+Set the existing `CLOUD_CORE_INTERNAL_ORIGIN` on the calling application and
+allow its private requests to Core's
+`POST /api/_internal/identity/v1/invoke-child` route. Core and the target
+application need their shared Valkey connection. Core holds a short-lived
+exchange lease there, containing revocation coordinates and turn metadata,
+never the original session cookie or bearer credential. Optional lease setup
+runs after signing commits and gets 1% of the 30-second parent-token window
+(300 ms); a failed or stalled store disables nesting. Leases expire within
+the parent's 30-second token lifetime. Cleanup starts when dispatch ends and
+does not delay the original response; expiry bounds cleanup failures.
+Unavailable or lost lease state disables nesting without failing the original
+invocation. It denies the nested Query; do not substitute an
+application permission cache.
+
+The initial budget permits one child Query and no further nesting. Mandate
+policies and Assistant tool restrictions must include that Query explicitly.
+Check a permitted reader, a denied reader and cancellation before enabling the
+consuming workflow. Use `requestId`, `parentInvocationId` and `viaAppId` in
+capability execution history to inspect the chain. See
+[App capabilities](/en/docs/platform/capabilities#read-from-another-capability-handler).
 
 ## Upgrade from Sync v5
 

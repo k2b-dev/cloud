@@ -2,6 +2,7 @@ import {
   type AuthContext,
   auth,
   getLocale,
+  getTimeZone,
   jsonResponse,
   rateLimit,
   requiresAdmin,
@@ -13,6 +14,7 @@ import { ok } from "@k2b/stdlib";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { ChatComposeInputSchema } from "../commands";
 import { chatMessages } from "../messages";
 import { chatRequestContext as context } from "../request-context";
 import { ChatHealthSchema, chatService } from "../service";
@@ -38,6 +40,8 @@ import {
   ForResourceSchema,
   ForYouPageSchema,
   ForYouQuerySchema,
+  ItemEventsPageSchema,
+  ItemEventsQuerySchema,
   LeaveResultSchema,
   LeaveSchema,
   MarkUnreadSchema,
@@ -109,6 +113,13 @@ const app = new Hono<AuthContext>()
     async (c) => respond(c, ok(await chatService.health())),
   )
   .route("/live", chatLive.routes(chatLiveChannels))
+  .get(
+    "/people/:userId",
+    auth.requireRole("user", "guest"),
+    description("Resolve a person selectable in New chat without creating a chat", PeoplePageSchema.shape.items.element),
+    validator("param", ChatComposeInputSchema, invalidInput),
+    async (c) => respond(c, chatService.conversations.resolvePerson({ ...context(c), input: c.req.valid("param") })),
+  )
   .get(
     "/people",
     auth.requireRole("authenticated"),
@@ -579,6 +590,33 @@ const app = new Hono<AuthContext>()
       ),
   )
   .get(
+    "/conversations/:conversation/events",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Read item events in a system conversation",
+      ...requiresAuth,
+      description:
+        "Reads the owning application's activity with the request's caller. Only system conversations are supported. Select an item thread or all (default). Newest first, at most 100 rows. Follow nextCursor with cursor; before and after are exclusive ISO datetime bounds. Events do not affect messages, unread state, previews, or notifications. An unavailable owner returns an empty page with unavailable: true; denied access returns 404.",
+      responses: {
+        200: jsonResponse(ItemEventsPageSchema, "Item events and continuation cursor"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Conversation or thread not readable"),
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("query", ItemEventsQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.itemEvents.list({
+          ...context(c),
+          timeZone: getTimeZone(c),
+          conversationId: c.req.valid("param").conversation,
+          query: c.req.valid("query"),
+        }),
+      ),
+  )
+  .get(
     "/conversations/:conversation/messages",
     description("Page through chat history", MessagePageSchema),
     validator("param", ConversationParamSchema, invalidInput),
@@ -771,6 +809,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/conversations/:conversation/members/preview",
+    auth.readOnly,
     description("Preview people joining a chat through people and groups", MemberPreviewSchema),
     validator("param", ConversationParamSchema, invalidInput),
     validator("json", AddMembersSchema, invalidInput),

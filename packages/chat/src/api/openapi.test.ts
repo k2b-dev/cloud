@@ -38,6 +38,7 @@ test("publishes every conversation operation with typed request and response sch
   const spec = SpecSchema.parse(await generateSpecs(app));
   for (const [path, method] of [
     ["/people", "get"],
+    ["/people/{userId}", "get"],
     ["/search", "get"],
     ["/for-you", "get"],
     ["/conversations/{conversation}/mention-candidates", "get"],
@@ -63,6 +64,7 @@ test("publishes every conversation operation with typed request and response sch
     ["/conversations/{conversation}/messages", "post"],
     ["/conversations/{conversation}/messages", "get"],
     ["/conversations/{conversation}/shared", "get"],
+    ["/conversations/{conversation}/events", "get"],
     ["/conversations/{conversation}/messages/{message}", "get"],
     ["/conversations/{conversation}/changes", "get"],
     ["/conversations/{conversation}/snapshot", "get"],
@@ -269,6 +271,16 @@ test("reactions document read projection, empty writes and stable budget errors"
     expect(JSON.stringify(op?.responses["409"])).toContain("REACTION_MESSAGE_LIMIT");
     expect(JSON.stringify(op?.responses["204"])).not.toContain("content");
   }
+});
+
+test("item events document selection, bounded paging and unavailable responses", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const operation = spec.paths["/api/chat/conversations/{conversation}/events"]?.get;
+  expect(operation?.responses["200"]).toBeDefined();
+  expect(operation?.responses["404"]).toBeDefined();
+  const parameters = z.array(z.object({ name: z.string() })).parse(operation?.parameters);
+  for (const name of ["conversation", "thread", "before", "after", "cursor", "limit"])
+    expect(parameters.some((parameter) => parameter.name === name)).toBeTrue();
 });
 
 test("search documents the required bounded query, eight-hit response and partial owner failure", async () => {

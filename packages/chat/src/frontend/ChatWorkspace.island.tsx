@@ -32,6 +32,7 @@ import {
   type ConversationPageSchema,
   type ConversationSchema,
   type ForYouPageSchema,
+  type ItemEventSchema,
   MAX_MESSAGE_REFS,
   MESSAGE_MAX_CODE_POINTS,
   type Mention,
@@ -58,13 +59,17 @@ import ChatThreadColumn from "./ChatThreadColumn";
 import { ThreadMenu, ThreadPicker } from "./ChatThreads";
 import ChatThreadsPage from "./ChatThreadsPage";
 import { createChannelApi } from "./channel-api";
+import { createChatCommands } from "./chat-commands";
 import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
+import { messageTime, sameDay } from "./chat-format";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
 import DiscoverChannels from "./DiscoverChannels";
 import ForYou from "./ForYou";
 import { createForYouApi } from "./for-you-api";
+import { createItemEventsApi } from "./item-events-api";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
+import type { ChosenMember } from "./MemberPicker";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
@@ -373,6 +378,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   );
   const draftNotice = () => (
     <>
+      <Show when={eventsFailed()}>
+        <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+          {t().itemEventsFailed}{" "}
+          <Button variant="text" size="xs" onClick={() => void loadEvents()}>
+            {t().retry}
+          </Button>
+        </InlineGuidance>
+      </Show>
       <Show when={draftStorageFailed()}>
         <NoticeCard tone="danger" title={t().draftNotSaved} detail={t().draftNotSavedDescription}>
           <Button variant="ghost" onClick={retryDraftStorage}>
@@ -510,6 +523,186 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       onSelect: () => void openView(chatId, view),
     };
   };
+  // Changes to the items of a Space or notebook show between its messages. They are read through the owning app
+  // for the loaded window of messages, again when the history changes, when the page comes back and once a minute.
+  // They are no messages; a failed read keeps the ones shown and says so, with a way to read them again.
+  type ItemEvent = z.infer<typeof ItemEventSchema>;
+  const itemEvents = createItemEventsApi();
+  const [events, setEvents] = createSignal<{ key: string; chat: string; view: string; list: readonly ItemEvent[] }>();
+  // Event and group rows keep their objects while they show the same, so the feed keeps their elements and focus.
+  const eventRows = new Map<string, ChatFeedItem>();
+  const keepEventRow = (row: ChatFeedItem) => {
+    const known = eventRows.get(row.key);
+    if (
+      known &&
+      known.body === row.body &&
+      known.at === row.at &&
+      known.icon === row.icon &&
+      known.origin?.label === row.origin?.label &&
+      known.group?.label === row.group?.label &&
+      known.group?.time === row.group?.time
+    )
+      return known;
+    eventRows.set(row.key, row);
+    return row;
+  };
+  const [eventsFailed, setEventsFailed] = createSignal(false);
+  const [openGroups, setOpenGroups] = createSignal<ReadonlySet<string>>(new Set());
+  /** The window the events belong to: from the first loaded message, up to the last one when newer ones follow. */
+  const eventsWindow = () => {
+    const current = openChat();
+    if (!current || current.conversation?.kind !== "system" || current.view === "general") return null;
+    return {
+      chat: current.id,
+      view: current.view,
+      after: current.messages[0]?.createdAt,
+      before: current.hasNewer ? current.messages.at(-1)?.createdAt : undefined,
+    };
+  };
+  // Memos, so an update of the chat that keeps the window and the history's length reads nothing again.
+  const eventsKey = createMemo(() => {
+    const window = eventsWindow();
+    return window ? JSON.stringify(window) : null;
+  });
+  const loadedMessages = createMemo(() => openChat()?.messages.length);
+  let eventsRequest: AbortController | undefined;
+  const loadEvents = async () => {
+    const window = eventsWindow();
+    const key = eventsKey();
+    eventsRequest?.abort();
+    if (!window || !key) return;
+    const request = new AbortController();
+    eventsRequest = request;
+    const list: ItemEvent[] = [];
+    try {
+      let cursor: string | undefined;
+      // A window holds the changes between its messages; ten pages bound a very busy one. A chat without messages
+      // shows its latest page of changes.
+      for (let page = 0; page < (window.after ? 10 : 1); page++) {
+        const result = await itemEvents.list(
+          window.chat,
+          {
+            thread: window.view === "all" ? "all" : window.view,
+            limit: 100,
+            ...(window.after ? { after: window.after } : {}),
+            ...(window.before ? { before: window.before } : {}),
+            ...(cursor ? { cursor } : {}),
+          },
+          request.signal,
+        );
+        if (result.unavailable) throw new Error("Item events unavailable");
+        list.push(...result.items);
+        if (!result.nextCursor) break;
+        cursor = result.nextCursor;
+      }
+      if (request.signal.aborted) return;
+      setEvents({ key, chat: window.chat, view: window.view, list });
+      setEventsFailed(false);
+    } catch (error) {
+      if (!request.signal.aborted && !(error instanceof Error && error.name === "AbortError")) setEventsFailed(true);
+    }
+  };
+  const eventsPlace = createMemo(() => {
+    const window = eventsWindow();
+    return window ? `${window.chat}:${window.view}` : null;
+  });
+  createEffect(
+    on(eventsPlace, () => {
+      setOpenGroups(new Set<string>());
+      setEventsFailed(false);
+    }),
+  );
+  createEffect(
+    on(eventsKey, (key) => {
+      if (key) void loadEvents();
+      else {
+        eventsRequest?.abort();
+        setEvents(undefined);
+      }
+    }),
+  );
+  createEffect(on(loadedMessages, () => void loadEvents(), { defer: true }));
+  onMount(() => {
+    const visible = () => {
+      if (document.visibilityState === "visible") void loadEvents();
+    };
+    document.addEventListener("visibilitychange", visible);
+    const timer = setInterval(visible, 60_000);
+    onCleanup(() => {
+      document.removeEventListener("visibilitychange", visible);
+      clearInterval(timer);
+      eventsRequest?.abort();
+    });
+  });
+  const eventOrigin = (chatId: string, event: ItemEvent) => {
+    const thread = event.thread;
+    if ("id" in thread)
+      return {
+        label: thread.name,
+        icon: threadIcon(threadOf(openChat()?.threads ?? null, thread.id)),
+        selectLabel: t().openThread({ name: thread.name }),
+        onSelect: () => void openView(chatId, thread.id),
+      };
+    const canOpen = ["write", "admin"].includes(openChat()?.conversation?.permission ?? "");
+    return {
+      label: thread.name,
+      icon: thread.ref.type === "notebooks.note" ? "ti ti-file-text" : "ti ti-circle",
+      ...(canOpen
+        ? {
+            selectLabel: t().openThread({ name: thread.name }),
+            onSelect: () =>
+              void openResourceThread(chatId, { ref: thread.ref }).then(
+                (opened) => openView(chatId, opened.id),
+                () => toast(t().requestFailed, { iconClass: "ti ti-alert-circle" }),
+              ),
+          }
+        : {}),
+    };
+  };
+  /** Three or more events in a row on one day stand as one line that opens them. */
+  const groupEvents = (list: readonly ChatFeedItem[], mixed: boolean): ChatFeedItem[] => {
+    const result: ChatFeedItem[] = [];
+    const config = { ...props.dateConfig, locale: locale() };
+    for (let index = 0; index < list.length; ) {
+      const run: ChatFeedItem[] = [];
+      while (index < list.length && list[index]!.kind === "event" && (run.length === 0 || sameDay(run[0]!.at, list[index]!.at, config)))
+        run.push(list[index++]!);
+      if (run.length >= 3) {
+        const first = run[0]!;
+        const key = `events:${first.key}`;
+        const expanded = openGroups().has(key);
+        const names = [...new Set(run.map((item) => item.origin?.label).filter((name): name is string => Boolean(name)))];
+        result.push(
+          keepEventRow({
+            key,
+            kind: "eventGroup",
+            authorId: "",
+            authorName: "",
+            body: "",
+            at: first.at,
+            own: false,
+            group: {
+              label: mixed
+                ? t().eventChangesTo({ count: run.length, names: names.slice(0, 2).join(", "), more: Math.max(names.length - 2, 0) })
+                : t().eventChanges({ count: run.length }),
+              time: `${messageTime(first.at, config)}–${messageTime(run.at(-1)!.at, config)}`,
+              expanded: () => openGroups().has(key),
+              toggle: () =>
+                setOpenGroups((open) => {
+                  const next = new Set(open);
+                  if (next.has(key)) next.delete(key);
+                  else next.add(key);
+                  return next;
+                }),
+            },
+          }),
+        );
+        if (expanded) result.push(...run);
+      } else if (run.length) result.push(...run);
+      else result.push(list[index++]!);
+    }
+    return result;
+  };
   const items = createMemo<readonly ChatFeedItem[]>((previous) => {
     const current = openChat();
     if (!current) return [];
@@ -551,6 +744,37 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         messageId: message.id,
       });
     });
+    // Events stand between the stored messages by time; the window's own bounds keep out what belongs to other pages.
+    const loaded = events();
+    const first = current.messages[0]?.createdAt;
+    const last = current.messages.at(-1)?.createdAt;
+    // The previous window's events stay until the new window's arrive, as long as the chat and view are the same.
+    if (loaded && loaded.chat === current.id && loaded.view === current.view) {
+      const shown = loaded.list
+        .filter((event) => (!first || event.at >= first) && (!current.hasNewer || !last || event.at <= last))
+        .map((event) =>
+          keepEventRow({
+            key: `event:${event.id}`,
+            kind: "event",
+            authorId: "",
+            authorName: "",
+            body: event.sentence,
+            icon: event.icon,
+            at: event.at,
+            own: false,
+            origin: mixed ? eventOrigin(current.id, event) : undefined,
+          }),
+        )
+        .sort((a, b) => a.at.localeCompare(b.at));
+      let next = 0;
+      const merged: ChatFeedItem[] = [];
+      for (const item of result) {
+        while (next < shown.length && shown[next]!.at < item.at) merged.push(shown[next++]!);
+        merged.push(item);
+      }
+      merged.push(...shown.slice(next));
+      result.splice(0, result.length, ...groupEvents(merged, mixed));
+    }
     // Sends wait at the end of the newest history; a window further back shows them once the reader is there.
     if (!current.hasNewer) {
       const lastSeq = current.messages.at(-1)?.seq ?? 0;
@@ -1306,12 +1530,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       },
     });
   };
-  const newChat = async () => {
+  const newChat = async (initialPerson?: ChosenMember, active = () => true) => {
     if (!store) return;
-    await openChosen(
-      await openNewChatDialog({ store, guest: props.guest, viewerId: props.viewerId, dateConfig: props.dateConfig, locale: locale() }),
-    );
+    const id = await openNewChatDialog({
+      store,
+      guest: props.guest,
+      viewerId: props.viewerId,
+      dateConfig: props.dateConfig,
+      locale: locale(),
+      initialPerson,
+    });
+    if (active()) await openChosen(id);
   };
+  createChatCommands(newChat, () => t().contactUnavailable);
   // The dialogs only offer what the viewer may do; the server decides every request again.
   const addPeople = async () => {
     const current = conversation();

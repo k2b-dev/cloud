@@ -187,8 +187,8 @@ describe("PermissionEditor last manager in a browser", () => {
     }
   });
 
-  test("expanded rows explain the last-manager lock and keep a 36px remove control with status before the desktop select", async () => {
-    for (const width of [320, 390, 768, 1440]) {
+  for (const width of [320, 390, 768, 1440]) {
+    test(`${width}px: expanded rows explain the last-manager lock and keep a 36px remove control with status before the desktop select`, async () => {
       const tab = await open(width, "de", [manager("qdt", "Quentin Dorn"), entries[1]!], true);
       try {
         for (const dark of [false, true]) {
@@ -215,8 +215,8 @@ describe("PermissionEditor last manager in a browser", () => {
       } finally {
         await tab.close();
       }
-    }
-  });
+    });
+  }
 });
 
 describe("PermissionEditor group coverage in a browser", () => {

@@ -9,6 +9,7 @@ import { notebooksService } from "../../service";
 import * as notebookStore from "../../service/notebooks";
 import * as noteStore from "../../service/notes";
 import { loadNotebookPageData } from "./page-data";
+import { mockNoteTree } from "./page-tree.test-fixture";
 
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -80,7 +81,7 @@ function fixtures(permission: PermissionLevel, defaultPresentationMode: Presenta
   track(spyOn(notebooksService.notebook.permission, "get")).mockResolvedValue(permission);
   track(spyOn(notebookStore, "canAccess")).mockResolvedValue(permission !== "none");
   track(spyOn(notebooksService.workspaceEvents, "latestCursor")).mockResolvedValue("1-0");
-  track(spyOn(notebooksService.note, "getTree")).mockResolvedValue([{ ...currentNote, children: [] }]);
+  for (const spy of mockNoteTree([{ ...currentNote, children: [] }])) track(spy);
   track(spyOn(notebooksService.note, "getByShortId")).mockResolvedValue(currentNote);
   track(spyOn(noteStore, "getWithContentByShortId")).mockResolvedValue(currentNote);
   track(spyOn(notebooksService.note, "getWithContentByShortId")).mockResolvedValue(currentNote);
@@ -96,7 +97,7 @@ function fixtures(permission: PermissionLevel, defaultPresentationMode: Presenta
     perPage: 30,
     hasNext: false,
   });
-  const graph = track(spyOn(notebooksService.notebook, "graph")).mockResolvedValue({ nodes: [], edges: [] });
+  const graph = track(spyOn(notebooksService.notebook, "graphView")).mockResolvedValue({ nodes: [], edges: [] });
   const versions = track(spyOn(notebooksService.note.versions, "list"));
   return { backlinks, comments, graph, versions };
 }
@@ -188,6 +189,9 @@ describe("notebook page presentation authorization", () => {
       fixtures("write");
       track(spyOn(noteStore, "getWithContentByShortId")).mockResolvedValue(null);
       track(spyOn(notebooksService.note, "getWithContentByShortId")).mockResolvedValue(null);
+      // Write opens with the saved Markdown of the same lookup: the note resolves, then is gone when it loads.
+      const found = await notebooksService.note.getByShortId({ shortId: "note01" });
+      track(spyOn(notebooksService.note, "getByShortId")).mockResolvedValueOnce(found).mockResolvedValue(null);
       expect(await requestPageData(mode)).toEqual({ kind: "not_found" });
     });
   }
@@ -204,7 +208,6 @@ describe("notebook page presentation authorization", () => {
       expect(data.showDetailPanel).toBe(false);
       expect(data.selectedRouteState).toBeNull();
       expect(data.selectedNote?.contentMd).toBeNull();
-      expect(data.selectedNote?.yjsSnapshot).toBeNull();
       expect(data.bookHtml).toContain("<strong>handbook</strong>");
       expect(data.ctx.tags).toEqual([{ tag: "team", count: 1 }]);
       expect(data.initialCommentsPage).toBeNull();
@@ -248,19 +251,21 @@ describe("notebook page presentation authorization", () => {
 
   for (const [permission, opened] of [
     ["read", "note02"],
-    ["write", "note01"],
+    ["write", "note02"],
   ] as const) {
     test(`without a start page, ${permission} access opens ${permission === "read" ? "Book at its first sidebar page" : "Write at the first workspace page"}`, async () => {
       fixtures(permission);
-      // The workspace tree compares titles as text, so "Kapitel 10" arrives before "Kapitel 2".
+      // Both orders compare numbers in titles as numbers, so "Kapitel 2" comes before "Kapitel 10".
       const pages = [
         { ...note, id: "uuid-note01", shortId: "note01", title: "Kapitel 10" },
         { ...note, id: "uuid-note02", shortId: "note02", title: "Kapitel 2" },
       ];
       const byShortId = async ({ shortId }: { shortId: string }) => pages.find((page) => page.shortId === shortId) ?? null;
-      track(spyOn(notebooksService.note, "getTree")).mockResolvedValue(pages.map((page) => ({ ...page, children: [] })));
+      for (const spy of mockNoteTree(pages.map((page) => ({ ...page, children: [] })))) track(spy);
       track(spyOn(noteStore, "getWithContentByShortId")).mockImplementation(byShortId);
       track(spyOn(notebooksService.note, "getWithContentByShortId")).mockImplementation(byShortId);
+      // Write reads the note without its content once collaboration is lazy (#1898).
+      track(spyOn(notebooksService.note, "getByShortId")).mockImplementation(byShortId);
       expect(await requestPageData(undefined, "/app/notebooks/book01")).toEqual({
         kind: "redirect",
         href: `/app/notebooks/book01/notes/${opened}`,
@@ -296,9 +301,10 @@ for (const [permission, query, shell, from] of [
     expect(data.isBookMode).toBe(false);
     expect(data.graphShell).toBe(shell);
     expect(data.graphFrom).toBe(from);
-    expect(data.bookTree).toHaveLength(shell === "book" ? 1 : 0);
+    expect(data.bookNavigation.total).toBe(shell === "book" ? 1 : 0);
     expect(data.ctx.presentationMode).toBe(from);
-    expect(data.selectedNote).toMatchObject({ id: "note01", title: "Welcome", contentMd: null, yjsSnapshot: null });
+    expect(data.selectedNote).toMatchObject({ id: "note01", title: "Welcome", contentMd: null });
+    expect(data.selectedNote).not.toHaveProperty("yjsSnapshot");
     expect(data.bookHtml).toBeNull();
     expect(data.selectedRouteState).toBeNull();
     expect(data.backlinks).toEqual([]);
@@ -308,7 +314,7 @@ for (const [permission, query, shell, from] of [
     expect(data.showDetailPanel).toBe(false);
     expect(data.graph).toEqual({ nodes: [], edges: [] });
     expect(calls.graph).toHaveBeenCalledTimes(1);
-    expect(calls.graph).toHaveBeenCalledWith({ notebookId: notebook.id });
+    expect(calls.graph).toHaveBeenCalledWith({ notebookId: notebook.id, noteId: note.id });
     for (const call of [calls.backlinks, calls.comments, calls.versions, content, bookContent]) expect(call).not.toHaveBeenCalled();
   });
 }
@@ -351,7 +357,7 @@ test("a graph path note wins over the query, and invalid paths never fall back",
 
 for (const [permission, expected] of [
   ["read", "note02"],
-  ["write", "note01"],
+  ["write", "note02"],
 ] as const) {
   test(`${permission} graph with a foreign query and no cookie starts at the shell's first note`, async () => {
     fixtures(permission);
@@ -359,7 +365,7 @@ for (const [permission, expected] of [
       { ...note, shortId: "note01", title: "Kapitel 10" },
       { ...note, id: "other-id", shortId: "note02", title: "Kapitel 2" },
     ];
-    track(spyOn(notebooksService.note, "getTree")).mockResolvedValue(pages.map((page) => ({ ...page, children: [] })));
+    for (const spy of mockNoteTree(pages.map((page) => ({ ...page, children: [] })))) track(spy);
     track(spyOn(notebooksService.note, "getByShortId")).mockImplementation(
       async ({ shortId }) => pages.find((page) => page.shortId === shortId) ?? null,
     );

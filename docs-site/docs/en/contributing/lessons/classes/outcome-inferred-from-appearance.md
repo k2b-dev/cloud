@@ -1,0 +1,1 @@
+| Outcome inferred from appearance | Recovery marks an operation done because the target looks right, although another writer could have created it. | Test: `activity.integration.test.ts` recovery cases keep lost folder responses unclear and accept only a late real result as done. |

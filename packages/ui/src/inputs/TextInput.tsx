@@ -115,7 +115,10 @@ export function TextInput(props: TextInputProps): JSX.Element {
     else if (Array.isArray(handler)) handler[0](handler[1], event);
     if (!event.defaultPrevented) submitOnEnter(event);
   };
-  const clear = () => {
+  const clear: JSX.EventHandler<HTMLButtonElement, MouseEvent> = (event) => {
+    // Clearing removes the button. Return to the field before notifying the caller, whose handler
+    // may deliberately navigate or move focus somewhere else.
+    event.currentTarget.ownerDocument.getElementById(meta.controlId)?.focus();
     if (local.onClear) {
       local.onClear();
       return;

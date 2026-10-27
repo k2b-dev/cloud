@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-24
+updated: 2026-10-23
 ---
 
 # Build and deploy
@@ -301,76 +301,6 @@ links, autolinks and bare URLs. URLs longer than 2,048 characters are excluded.
 The shared list reads the messages themselves, so deleting a message removes
 its items from subsequent reads.
 
-## Chat mentions and For you
-
-Send `mentions: [{ start, end, principal: { type, id } }]` with a message to
-mention a person or agent. `type` is `user` or `service_account`; `id` is that
-principal's UUID. Membership APIs continue to use grant `accessId` values.
-`start` is inclusive and `end` exclusive, measured in UTF-16 code units of the
-unchanged `body`. Select the person's typed display name, excluding `@`.
-A message accepts at most 20 non-overlapping, nonempty ranges inside its body;
-ranges cannot split a surrogate pair. Invalid ranges return 400 `BAD_INPUT`.
-Use a candidate's `principal`. Ordinary chats and channels require an active
-principal who can currently read the thread through direct or group membership.
-System chats require an active eligible principal; sending does not depend on
-that principal having opened the container or item before. User-delegated
-service-account identities and accounts bound to another resource are not
-eligible. A mention of an unavailable or ineligible principal is dropped and
-the message is still posted, so a person who lost access never blocks a send.
-Self-mentions are allowed.
-
-`GET /api/chat/conversations/:conversation/mention-candidates?q=&thread=general`
-returns `{ items: [{ principal: { type, id }, name, agent }] }`, at most 20
-results. `agent` identifies agent service accounts. The caller is excluded.
-`q` is case-insensitive, matches a name or word prefix, and accepts at most 100
-characters. `thread` defaults to `general` or selects one thread by ID. The
-route uses the same request limiter as member searches.
-Ordinary chats and channels list eligible direct members with read access plus
-principals who wrote in the conversation. Group-only members become candidates
-once they have written. System chats list eligible conversation authors only.
-Candidates need no individual grant. A previous author can remain a candidate
-after losing access; ordinary-chat send validation still checks current access.
-
-Message reads and live message events carry
-`mentions: [{ start, end, principal: { type, id }, name }]`, including an empty
-array when no one was mentioned. Names use the principal's current display name. Deleting
-the principal retains the range with the localized former-account label.
-Deleting the message removes its mentions. Messages currently have no body-edit
-operation. Retrying a `clientId` keeps the original body and mentions.
-
-`GET /api/chat/for-you?cursor=...` returns `{ items, nextCursor }`, newest first,
-with at most 30 items. Each item contains:
-
-- `kind`: `mention` or `reply`; a message satisfying both appears once as `mention`.
-- `conversation`: `{ id, title, kind }`, where `kind` is `chat` or `system`.
-- `thread`: `{ id, name }`; General has `id: "general"`.
-- `message`: `{ id, seq, author, preview, createdAt }`.
-- `unread`: whether the message is beyond the existing thread read position.
-
-The feed includes replies quoting a message the caller authored, excludes their
-own messages, and rechecks conversation and item access with the reader's own
-authority. The feed, its unread count, message views, and content-bearing live
-events show only messages that reader can currently read. Unreadable items drop
-out. Follow every non-null `nextCursor`, including after an empty page; access
-checks apply to a bounded candidate page. Cursors are opaque and accept at most
-256 characters. Invalid cursors return 400. Open an item using its conversation,
-thread, and message IDs; the existing snapshot endpoint accepts `message` and
-`thread` to return the focused message window.
-
-The member sidebar response at `GET /api/chat/conversations` and the SSR sidebar
-snapshot include `forYouUnread`, capped at 99. Channel discovery pages omit
-this field. Reading a thread clears unread feed entries through the existing
-read-reporting endpoint; marking it unread also updates the count. A first
-mention or reply in a system chat creates its recipient's read position
-immediately before that message, so it can be unread before the first open.
-
-The existing personal live channel `me` emits `{ type: "for-you" }` after a new
-mention or reply commits and after a relevant read-state change. Re-read the
-sidebar and feed before acknowledging the live cursor. This invalidation carries
-no message contents or resource IDs. No separate mark-read endpoint or transport
-is needed. Startup migration adds mention storage and lookup indexes; existing
-messages have no mentions and require no backfill or new configuration.
-
 ## Chat channels after the upgrade
 
 The Chat API supports channels with a name, purpose, and discovery audience.
@@ -612,6 +542,88 @@ cookie list in your privacy notice if you keep one.
 No data migration or configuration change is required. See
 [Follow the person's theme](/en/docs/frontend/styling-and-accessibility#follow-the-persons-theme).
 
+## Deploy App-PWA support
+
+Applications can declare one independent [App-PWA](/en/docs/frontend/app-pwa)
+under `/app/<id>/<surface>/`. Deploy the gateway with App-PWA support before
+applications that declare `installable`; older gateways do not enforce its
+worker and path boundaries. Registry readers on the new runtime validate the
+complete declaration. A malformed declaration makes that application
+unavailable through the gateway until its configuration is corrected.
+
+The gateway now reserves `/app/<id>` and every descendant for app `<id>`,
+including prefixes published by older applications. A root or ancestor fallback
+cannot answer for a missing or rejected owner. Check custom deployments for
+foreign claims in that namespace before upgrading and move those routes to
+the owning application. Existing `/pwa` parts keep their own routing contract.
+
+Only a declared App-PWA's exact `sw.js`, the Cloud mobile app's `/pwa/sw.js`,
+and Core's existing `/service-worker.js` can load as service-worker scripts.
+Custom workers at other paths are refused. Only Core's exact root push worker
+keeps `Service-Worker-Allowed`; generated App-PWA workers cannot broaden their
+scope. Path scopes do not isolate scripts from other trusted code on the
+same origin, and these guards do not remove workers already installed by an
+older deployment.
+
+Build each declaring application with the standard `scripts/build.ts`, or use
+`preload.ts` during development, from its pinned Cloud package. Ship the
+complete `dist/public` directory: it includes both themes of its generated
+PNG icons. Rendering runs in the existing bounded Linux native-worker process
+during the build, not in the application server. An unknown Tabler icon or a
+failed renderer fails the build. No new runtime service or environment variable
+is required.
+
+Verify the public manifest, icon, and `sw.js` below the declared scope without
+a session cookie. The manifest's `id`, `start_url`, and `scope` must all equal
+the neutral trailing-slash path. Verify that a different worker URL is refused,
+and that `Service-Worker-Allowed` is absent from the generated worker response.
+
+Use HTTPS and preserve service-worker request headers through any external
+proxy. The generated worker keeps no private offline cache. A failed navigation
+shows a neutral document; API calls and writes still need a network. Updated
+workers wait until all windows of that installation close, so a deployment does
+not replace a running customer page. Installation, Safari storage separation,
+and Home Screen behavior still need verification on the target devices.
+
+### Paired App-PWA devices and visits
+
+Applications that opt into [App-PWA sessions](/en/docs/identity/app-pwa-sessions)
+run their service's `setup()` in the normal application startup lifecycle. The
+reserved `_cloud_pwa_*` tables live in that application's Postgres schema and
+need the same backup coverage as its domain data. Pairing secrets are stored
+as hashes. This contract supports the platform's PostgreSQL 15–17 range.
+
+Configure the existing canonical public Cloud URL as HTTPS. The service uses
+that origin for QR validation and same-origin requests, even when the upstream
+request arrives over internal HTTP. Forward the `Origin`, `Cookie`, and
+`X-App-Pwa-CSRF` headers unchanged through the trusted gateway. The application
+must expose its explicit guest routes while keeping staff operations subject
+to current web-session and application authorization.
+
+The device can live at most 12 hours. Its initiating web session and owner
+validity can shorten that lifetime. Customer visits last at most 60 minutes,
+with a 15-minute idle deadline; status traffic does not renew them. Logout,
+authority invalidation and device revocation close access to its visits.
+Revocation and domain completion serialize in Postgres. Audit records include
+app, owner, device and visit identifiers, without QR or signature content.
+
+Guest operations hold authority locks only for their bounded request
+transaction. Category-policy reads also hold a shared settings-table lock, and
+local device resource operations hold shared permission-table locks, so policy
+or grant writes can briefly wait for the command. Handlers must finish within
+the existing request budget and keep external work outside this transaction.
+A timeout or database failure returns a recoverable error rather than a
+successful completion.
+
+Cancelling an active transaction can open one short-lived control connection
+with the same configured database identity. Include these connections in the
+Postgres connection budget. The database role must retain permission to cancel
+its own backends; no superuser permission is required.
+
+Use a separate browser profile without an employee sign-in on shared devices.
+Installing under another path does not create a separate origin. The example
+and this release do not migrate existing application share links or change
+Cloud mobile-app pairing.
 ## Chat reactions after the upgrade
 
 Chat's additive startup migration creates the message reaction table and indexes.
@@ -665,3 +677,22 @@ once per loaded message in a live batch and ignores older revisions.
 Reactions leave read state, unread counts, sidebar order and notifications
 unchanged. Leaving a chat preserves the principal and display name on existing
 reactions; deleting the message removes them.
+
+## Mobile app runtime updates
+
+Rebuild Core, the `pwa` shell, and applications with mobile parts to receive
+restart recovery, account-scoped local drafts, and safe foreground updates.
+The existing keepalive reports registered build identities; each page compares
+its own build and Core's shared-asset build. Publish a distinct release label
+for each build, including independently deployed parts. Unnamed `local` and
+`development` builds do not trigger update reloads. A temporarily absent
+registry entry does not trigger a reload.
+
+The manifest keeps its `/pwa/` id and changes its start URL to `/pwa/?launch`.
+Browsers decide when installed apps adopt manifest changes; installations that
+retain the old start URL may need reinstalling to resume with a still-valid
+session. The last-page cookie is functional, scoped to `/pwa/`, and contains no
+credentials. Include it in an operator-maintained cookie notice. The service
+worker still stores no pages, code, or API responses. No database migration or
+new environment variable is required. See
+[Pages in the mobile app](/en/docs/frontend/mobile-app-pages).

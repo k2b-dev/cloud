@@ -545,8 +545,9 @@ describe(`Spaces shared head in ${browserName}`, () => {
             expect(await page.locator("body").getAttribute("data-theme")).toBe(theme);
             await expectStableFrame(page);
             const frame = await geometry(page);
-            // querySelectorAll records all four rows even when the phone sidebar has zero-sized rectangles.
-            expect(frame.filter((part) => part.class.includes("k2b-app-workspace__sidebar-item"))).toHaveLength(4);
+            // querySelectorAll records all five rows (My work, Calendar, two Spaces, New space) even when the phone
+            // sidebar has zero-sized rectangles.
+            expect(frame.filter((part) => part.class.includes("k2b-app-workspace__sidebar-item"))).toHaveLength(5);
             if (view === "list" && theme === "light" && width === 390) await expectPhoneControls(page);
             if (view === "kanban" && theme === "light") {
               if (width === 1440) await expectKanbanAppearance(page);

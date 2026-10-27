@@ -22,6 +22,14 @@ export const notebookWorkspaceMessages = i18n.define({
       moveNote: "Move note",
       moveTo: ({ title }: { title: string }) => `Move ${title} to:`,
       rootLevel: "Root level",
+      moveTarget: "New place",
+      searchMoveTarget: "Search notes by title",
+      moreNotes: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: `1 more note`, other: `${count.toLocaleString("en")} more notes` }),
+      earlierNotes: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: `1 earlier note`, other: `${count.toLocaleString("en")} earlier notes` }),
+      loadingNotes: "Loading notes…",
+      failedLoadNotes: "Notes could not be loaded.",
       move: "Move",
       moveUp: "Move up",
       moveDown: "Move down",
@@ -151,6 +159,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphLinksUnlinked: "Only unlinked",
       graphAreas: "Areas",
       graphTopLevel: "Top level",
+      graphScope: ({ shown, total, title }: { shown: number; total: number; title: string }) =>
+        `This notebook has ${total.toLocaleString("en")} pages. The graph shows the ${shown.toLocaleString("en")} around “${title}”: its links, their links, its sub-pages and their places in the notebook. To see the pages around another page, move it to the center in Neighborhood or open the graph from there.`,
       graphNoteCount: ({ notes, links }: { notes: number; links: number }) =>
         `${notes === 1 ? "1 note" : `${notes} notes`} · ${links === 1 ? "1 link" : `${links} links`}`,
       graphLinkCounts: ({ out, incoming }: { out: number; incoming: number }) => `links to ${out} · linked from ${incoming}`,
@@ -275,6 +285,9 @@ export const notebookWorkspaceMessages = i18n.define({
       copyText: "Copy text",
       discardUnsavedConfirm: "Reload the note? Changes that are not saved will be lost.",
       leaveUnsavedConfirm: "Leave the note? Changes that are not saved will be lost.",
+      firstEditsNotMerged:
+        "Someone rewrote this note while you started typing. The note shows their version; your first changes were not added.",
+      copyFirstEdits: "Copy my version",
       leaveNote: "Leave",
       signInAgain: "Sign in again",
       storageFull: "Storage is full",
@@ -494,6 +507,14 @@ export const notebookWorkspaceMessages = i18n.define({
       moveNote: "Notiz verschieben",
       moveTo: ({ title }) => `${title} verschieben nach:`,
       rootLevel: "Oberste Ebene",
+      moveTarget: "Neuer Ort",
+      searchMoveTarget: "Notizen nach Titel suchen",
+      moreNotes: ({ count }) =>
+        i18n.plural(count, "de", { one: `1 weitere Notiz`, other: `${count.toLocaleString("de")} weitere Notizen` }),
+      earlierNotes: ({ count }) =>
+        i18n.plural(count, "de", { one: `1 vorherige Notiz`, other: `${count.toLocaleString("de")} vorherige Notizen` }),
+      loadingNotes: "Notizen werden geladen…",
+      failedLoadNotes: "Die Notizen konnten nicht geladen werden.",
       move: "Verschieben",
       moveUp: "Nach oben verschieben",
       moveDown: "Nach unten verschieben",
@@ -622,6 +643,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphLinksUnlinked: "Nur ohne Verknüpfung",
       graphAreas: "Bereiche",
       graphTopLevel: "Oberste Ebene",
+      graphScope: ({ shown, total, title }) =>
+        `Dieses Notizbuch hat ${total.toLocaleString("de")} Seiten. Der Graph zeigt die ${shown.toLocaleString("de")} rund um „${title}“: ihre Links, deren Links, ihre Unterseiten und deren Orte im Notizbuch. Um die Seiten um eine andere Seite zu sehen, bringe sie in Umgebung in die Mitte oder öffne den Graphen von dort.`,
       graphNoteCount: ({ notes, links }) =>
         `${notes === 1 ? "1 Notiz" : `${notes} Notizen`} · ${links === 1 ? "1 Verknüpfung" : `${links} Verknüpfungen`}`,
       graphLinkCounts: ({ out, incoming }) => `verweist auf ${out} · verwiesen von ${incoming}`,
@@ -732,6 +755,9 @@ export const notebookWorkspaceMessages = i18n.define({
       copyText: "Text kopieren",
       discardUnsavedConfirm: "Notiz neu laden? Nicht gespeicherte Änderungen gehen verloren.",
       leaveUnsavedConfirm: "Notiz verlassen? Nicht gespeicherte Änderungen gehen verloren.",
+      firstEditsNotMerged:
+        "Jemand hat diese Notiz umgeschrieben, während du zu tippen begonnen hast. Die Notiz zeigt diese Fassung; deine ersten Änderungen wurden nicht eingefügt.",
+      copyFirstEdits: "Meine Fassung kopieren",
       leaveNote: "Verlassen",
       signInAgain: "Erneut anmelden",
       storageFull: "Speicher ist voll",

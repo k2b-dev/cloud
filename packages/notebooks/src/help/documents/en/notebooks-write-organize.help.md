@@ -129,6 +129,7 @@ The sidebar shows the notebook's notes as a tree, with the homepage first. Filte
 :::reference
 - **Notebook name:** Choose the name at the top to switch to another notebook or to open **All notebooks**.
 - **Search and new notes:** Choose **Search notes**, or press **Cmd/Ctrl+Shift+K**. With **Edit** or **Manage** access, choose the pencil next to the name, or press **Cmd/Ctrl+Alt+N**, to create a note. The last word you type also matches the start of a word: *meet* finds *meetings*. Notes whose title is or starts with what you typed come first.
+- **Large notebooks:** In a notebook with more than 100 notes, the tree opens only the way to the open note. Open a note with sub-notes to load them. Around the open note, a level first shows 20 notes. Choose **… more notes** at its end or **… earlier notes** at its start to show up to 100 more.
 - **Favorites, Recent, and Tags:** These filters show a list instead of the tree, with the most recently changed note first. **Recent** shows the 12 most recently changed notes. Each note shows when it changed and its first two tags. Choose the filter again, or **×** above the list, to see the tree again.
 - **The list stays in place:** While the list is open, changes from you or others do not move its notes. A note that starts to match the filter comes at the end. To sort the list again, choose the filter two times.
 - **Your favorites:** In the menu of a note, choose **Add favorite**. Only you see your favorites.
@@ -247,6 +248,7 @@ In the editor, the controls appear when you point at the diagram or focus it. Af
 - **Timeline:** Notes are rows, with the last change first. Groups start with **Today**, **Yesterday**, **This week**, and **Last week**, then months and years. Links are arcs on the left, in the color of the area they start from. Point at a row or focus it to see its links. Incoming links are dashed. This display scrolls instead of zooming. It opens at the open note.
 - **Depth:** Choose **1 step** or **2 steps** in **Neighborhood**.
 - **Move to center:** Focus a note and press **Space**. On a touchscreen, select a note and choose **Move to center**. This note becomes the middle.
+- **Large notebooks:** In a notebook with more than 500 pages, the graph shows the pages around the open page: its links, their links, its sub-pages, and the pages above them. A line above the graph says how many pages it shows. To see the pages around another page, move it to the center in **Neighborhood**, or open the graph from that page.
 - **On a phone:** Links opens in **Neighborhood** unless you choose another display. Your choice stays in the address.
 - **No links here:** Choose **Show whole notebook** to see **Network**. If filters hide all links of the current note, choose **Reset filters**.
 - **Areas:** Each top-level page with sub-pages is an area with its own color. The other top-level pages are in **Top level**. The network does not move by itself. You can drag a note, and its neighbors follow a little.
