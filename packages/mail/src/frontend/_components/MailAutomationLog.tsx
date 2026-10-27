@@ -223,7 +223,7 @@ export default function MailAutomationLog(props: {
   const byCell = (item: AutomationLogItem): JSX.Element => {
     const by = item.by;
     return by.kind === "rule" ? (
-      <span class="flex min-w-0 items-center gap-1.5 text-[0.8125rem]">
+      <span class="flex min-w-0 items-center gap-1.5 text-[0.8125rem] max-md:text-xs">
         <i class="ti ti-bolt text-dimmed" aria-hidden="true" />
         <span class="min-w-0 truncate">
           <span class="font-medium">{t().rule}</span> · {by.name}
@@ -374,14 +374,18 @@ export default function MailAutomationLog(props: {
                     <>
                       <div
                         role="row"
-                        class={`relative grid ${columns()} min-h-14 items-center gap-x-3 gap-y-1 rounded-[var(--ui-radius-control)] px-2 py-1.5 text-[0.8125rem] hover:bg-[var(--ui-hover)] max-md:grid-cols-[3rem_minmax(0,1fr)]`}
+                        class={`relative grid ${columns()} min-h-14 items-center gap-x-3 gap-y-1 rounded-[var(--ui-radius-control)] px-2 py-1.5 text-[0.8125rem] hover:bg-[var(--ui-hover)] max-md:grid-cols-[minmax(0,1fr)_auto] max-md:py-2.5 max-md:[grid-template-areas:'by_time''conv_conv''what_what''act_act']`}
                         classList={{ "bg-[var(--ui-selected,var(--ui-hover))]": selected() === item.id }}
                         data-log-outcome={item.outcome}
                       >
-                        <time role="cell" class="tabular-nums text-dimmed" dateTime={item.at}>
+                        <time
+                          role="cell"
+                          class="tabular-nums text-dimmed max-md:text-right max-md:text-xs max-md:[grid-area:time]"
+                          dateTime={item.at}
+                        >
                           {time(item.at)}
                         </time>
-                        <span role="cell" class="min-w-0">
+                        <span role="cell" class="min-w-0 max-md:[grid-area:conv]">
                           <button
                             type="button"
                             class="block w-full min-w-0 truncate text-left font-medium text-primary after:absolute after:inset-0 after:content-['']"
@@ -390,16 +394,16 @@ export default function MailAutomationLog(props: {
                           >
                             {item.conversation.subject}
                           </button>
-                          <span class="block truncate text-xs text-dimmed">
+                          <span class="block truncate text-xs text-dimmed max-md:hidden">
                             {item.conversation.from.name || item.conversation.from.email}
                           </span>
                         </span>
                         <Show when={!selected()}>
-                          <span role="cell" class="min-w-0 max-md:col-start-2">
+                          <span role="cell" class="min-w-0 max-md:text-xs max-md:text-dimmed max-md:[grid-area:by]">
                             {byCell(item)}
                           </span>
                         </Show>
-                        <span role="cell" class="min-w-0 max-md:col-start-2">
+                        <span role="cell" class="min-w-0 max-md:[grid-area:what]">
                           <span
                             class="block font-medium"
                             classList={{
@@ -413,7 +417,7 @@ export default function MailAutomationLog(props: {
                           </span>
                           <Reasons parts={formatLogReasons(item, t(), locale())} struck={struck()} />
                         </span>
-                        <span role="cell" class="relative z-[1] flex justify-end text-right max-md:col-start-2 max-md:justify-start">
+                        <span role="cell" class="relative z-[1] flex justify-end text-right max-md:justify-start max-md:[grid-area:act]">
                           <Show when={!selected()} fallback={<i class="ti ti-chevron-right text-dimmed" aria-hidden="true" />}>
                             {actionCell(item)}
                           </Show>
