@@ -160,6 +160,7 @@ test("requires authentication for all conversation routes", async () => {
 
 const textMessage = {
   reactions: [],
+  mentions: [],
   refs: [],
   thread: null,
   replyTo: null,

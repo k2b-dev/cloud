@@ -325,3 +325,18 @@ endpoints above.
 This alpha cut starts a fresh cost ledger and budget configuration. Previous
 credits and token limits are not converted or backfilled. Configure prices and
 cost allowances explicitly; the default remains unlimited.
+
+## Mail conversation summaries
+
+Asking for an AI summary in Mail uses the requesting person's Assistant
+allowance. It applies the same model grants and central accounting as other
+personal AI use. An automation uses background accounting and Mail's
+source and mailbox daily call reservations instead. There is no additional
+Mail cost ledger.
+
+The reader shows only whether the personal allowance is unlimited, the used
+percentage and its reset time. An exhausted allowance rejects the request
+with `mail.summary.allowance_exhausted` before changing the summary. A person
+can request a new AI version of their own edited text. Automatic requests
+skip that text. See [Mail AI daily limits](/en/docs/operations/mail-ai-daily-limits)
+for the operator settings and migration.

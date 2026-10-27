@@ -25,6 +25,8 @@ export default ssr<AuthContext>(async (c) => {
   const channelResult = channelsPage
     ? await chatService.channels.browse({ actor: c.get("actor"), accessSubject, locale, query: { q: channelQuery } }).catch(() => null)
     : null;
+  const forYouPage = /\/for-you\/?$/.test(c.req.path);
+  const forYouResult = forYouPage ? await chatService.forYou.list({ ...chatRequestContext(c), query: {} }).catch(() => null) : null;
   const chatId = c.req.param("chat") ?? null;
   const thread = c.req.param("thread") ?? "all";
   const view = await loadChatView(chatRequestContext(c), {
@@ -51,7 +53,13 @@ export default ssr<AuthContext>(async (c) => {
   if (!preferences.ok) throw new Error("Chat preferences could not be loaded");
   const collapsed = preferences.data.collapsed;
   // Without access the page names neither the chat nor whether it exists.
-  const title = channelsPage ? t.browseChannels : chatId ? (view.open?.conversation.title ?? t.noAccessTitle) : undefined;
+  const title = channelsPage
+    ? t.browseChannels
+    : forYouPage
+      ? t.forYou
+      : chatId
+        ? (view.open?.conversation.title ?? t.noAccessTitle)
+        : undefined;
   const workspace = () => (
     <ChatWorkspace
       embedded={embedded}
@@ -61,6 +69,8 @@ export default ssr<AuthContext>(async (c) => {
       channelsPage={channelsPage}
       channelQuery={channelQuery}
       channelPage={channelResult?.ok ? channelResult.data : null}
+      forYouPage={forYouPage}
+      forYouInitial={forYouResult?.ok ? forYouResult.data : null}
       cursor={view.cursor}
       sidebar={view.sidebar}
       open={view.open}

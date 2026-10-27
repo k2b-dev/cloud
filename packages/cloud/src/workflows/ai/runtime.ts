@@ -1,10 +1,12 @@
 import { StructuredOutputError } from "@k2b/nessi";
 import { type Job, StoreFullError, type Worker } from "@k2b/sync";
 import { lazySync } from "../../_internal/process-sync";
-import { isAiSettingsError, runAiStructured } from "../../ai";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
-import { resolveAiWorkflowModel } from "../../ai/structured";
+import { AiQuotaError } from "../../ai/quotas";
+import { resolveAiWorkflowModel, runAiStructured } from "../../ai/structured";
 import { executeAiTask } from "../../ai/task-execution";
+import { resolveApplicationAiTaskModel } from "../../ai/task-model";
+import { isAiSettingsError } from "../../ai/validate";
 import { env } from "../../config/env";
 import { WorkflowAiAdmissionError, workflowAiModelHash } from "./policy";
 
@@ -91,16 +93,23 @@ export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructur
     task.request,
     {
       appId: task.appId,
-      attribution: { workflowRunId: task.runId, stepKey: task.stepKey, userId: task.usageUserId },
+      attribution: {
+        workflowRunId: task.runId ?? undefined,
+        stepKey: task.stepKey,
+        userId: task.usageSubject?.type === "user" ? task.usageSubject.userId : task.usageUserId,
+      },
+      usageSubject: task.usageSubject,
       model: { id: task.modelId },
       resolveModel: async () => {
-        const resolved = await resolveAiWorkflowModel({ id: task.modelId });
+        const resolved = task.runId
+          ? await resolveAiWorkflowModel({ id: task.modelId })
+          : await resolveApplicationAiTaskModel(task.usageSubject, { id: task.modelId });
         if (task.modelConfigHash && workflowAiModelHash(resolved.profile) !== task.modelConfigHash)
           throw new WorkflowAiAdmissionError("WORKFLOW_AI_MODEL_CHANGED");
         return { ...resolved, model: task.modelRef ?? resolved.model };
       },
       signal,
-      taskPrefix: "workflow",
+      taskPrefix: task.runId ? "workflow" : "application",
     },
     runStructured,
   );
@@ -108,7 +117,7 @@ export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructur
 const retryableError = (error: unknown): boolean => {
   if (error instanceof WorkflowAiAdmissionError) return error.retryable;
   if (error instanceof AiBackgroundAdmissionError) return error.retryable;
-  if (error instanceof AiBackgroundCostError) return false;
+  if (error instanceof AiBackgroundCostError || error instanceof AiQuotaError) return false;
   if (isAiSettingsError(error)) return false;
   if (error instanceof StructuredOutputError) return error.code === "loop_failed";
   return true;
@@ -116,7 +125,8 @@ const retryableError = (error: unknown): boolean => {
 
 const errorCode = (error: unknown): string => {
   if (error instanceof WorkflowAiAdmissionError) return error.code;
-  if (error instanceof AiBackgroundCostError || error instanceof AiBackgroundAdmissionError) return error.code;
+  if (error instanceof AiBackgroundCostError || error instanceof AiBackgroundAdmissionError || error instanceof AiQuotaError)
+    return error.code;
   if (isAiSettingsError(error)) return error.aiError.code.toUpperCase();
   if (error instanceof StructuredOutputError) return `WORKFLOW_AI_${error.code.toUpperCase()}`;
   return "WORKFLOW_AI_PROVIDER_ERROR";

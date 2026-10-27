@@ -14,6 +14,7 @@ import {
   CreateOutcomeSchema,
   CreateThreadSchema,
   ExistingMatchSchema,
+  type ForYouItemSchema,
   type ItemEventSchema,
   LeaveResultSchema,
   LeaveSchema,
@@ -266,7 +267,15 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   const reads: { chat: string; seq: number }[] = [];
   // Which part of the chat each read named: "general", "all", or a thread.
   const readViews: { chat: string; seq: number; thread: string }[] = [];
-  const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string; refs?: CloudResourceRef[] }[] = [];
+  const posted: {
+    chat: string;
+    clientId: string;
+    body: string;
+    thread?: string;
+    replyTo?: string;
+    refs?: CloudResourceRef[];
+    mentions?: { start: number; end: number; principal: { type: string; id: string } }[];
+  }[] = [];
   const discoveryUpdates: { entries: unknown[]; name?: string; purpose?: string; revision?: string }[] = [];
 
   const principalId = (principal: MemberPrincipal) =>
@@ -466,6 +475,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     const thread = original ? original.thread : (target.thread ?? null);
     const message: Message = {
       reactions: [],
+      mentions: [],
       refs: target.refs ?? [],
       thread,
       replyTo: original ? { id: original.id, author: original.author, preview: original.body ?? "" } : null,
@@ -650,6 +660,20 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   };
   let allowAuthenticated = true;
   let collapsed: string[] = [];
+  // "For you" as the server answers it, set by the test; failing reads answer 503.
+  let forYou: z.infer<typeof ForYouItemSchema>[] = [];
+  let failingForYou = 0;
+  const forYouFails = () => {
+    if (failingForYou <= 0) return false;
+    failingForYou -= 1;
+    return true;
+  };
+  // The list's search as the server answers it: member chats and Space or notebook chats by title, their named threads,
+  // and the Spaces and notebooks without a chat that a test adds; at most eight.
+  let emptyContainerHits: { ref: { type: "spaces.space" | "notebooks.notebook"; id: string }; name: string }[] = [];
+  let searchSystemUnavailable = false;
+  let failingSearch = 0;
+  const searchQueries: string[] = [];
   const list = (archived = false, unread = false, ids?: string[], cursor?: z.infer<typeof ConversationQuerySchema>["cursor"]) => {
     const items = [...chats.values()]
       .map((chat) => chat.conversation)
@@ -675,6 +699,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     const last = page.at(-1);
     return {
       items: page,
+      forYouUnread: forYou.filter((item) => item.unread).length,
       nextCursor:
         items.length > CONVERSATION_PAGE_SIZE && last
           ? JSON.stringify({ at: last.lastActivityAt, id: last.id, rank: last.pinnedRank ?? 2147483647 })
@@ -722,6 +747,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
       thread?: string;
       threadsPage?: boolean;
       channelsPage?: boolean;
+      /** The "For you" page; the server read its first page unless "For you" fails. */
+      forYouPage?: boolean;
       query?: string;
       archived?: boolean;
       filter?: "all" | "unread";
@@ -733,6 +760,9 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     return {
       channelsPage: address.channelsPage,
       channelQuery: address.query,
+      forYouPage: address.forYouPage,
+      // The server's first page is a read like any other, so a failing read makes it absent.
+      forYouInitial: address.forYouPage ? (forYouFails() ? null : { items: forYou, nextCursor: null }) : undefined,
       cursor: `c.${cursor}`,
       sidebar: list(address.archived, address.filter === "unread"),
       archived: address.archived,
@@ -980,6 +1010,62 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
             .sort((a, b) => a.title.localeCompare(b.title)),
           nextCursor: null,
         });
+      }
+      if (url.pathname === "/api/chat/search" && request.method === "GET") {
+        const q = (url.searchParams.get("q") ?? "").trim();
+        searchQueries.push(q);
+        if (failingSearch > 0) {
+          failingSearch -= 1;
+          return Response.json({ message: "Unavailable" }, { status: 503 });
+        }
+        const match = (name: string) => name.toLowerCase().includes(q.toLowerCase());
+        const items: unknown[] = [];
+        for (const chat of chats.values()) {
+          const row = chat.conversation;
+          const ref = row.resource;
+          // Without Spaces and Notebooks, their chats and item threads cannot be checked, so none come back.
+          if (row.kind === "system" && searchSystemUnavailable) continue;
+          if (row.kind === "system" && (ref?.type === "spaces.space" || ref?.type === "notebooks.notebook")) {
+            if (match(row.title)) items.push({ kind: "system", ref, name: row.title, conversation: row });
+          } else if (row.member && match(row.title)) items.push({ kind: "chat", conversation: row });
+          if (row.kind !== "system" && !row.member) continue;
+          for (const thread of chat.threads)
+            if (!thread.archived && match(thread.name))
+              items.push({
+                kind: "thread",
+                conversation: { id: row.id, title: row.title, kind: row.kind === "system" ? "system" : "chat" },
+                thread: {
+                  id: thread.id,
+                  name: thread.name,
+                  ...(thread.resource ? { resource: { kind: thread.resource.kind, done: thread.resource.done } } : {}),
+                },
+              });
+        }
+        if (!searchSystemUnavailable)
+          for (const hit of emptyContainerHits) if (match(hit.name)) items.push({ kind: "system", ...hit, conversation: null });
+        return Response.json({ items: items.slice(0, 8), ...(searchSystemUnavailable ? { systemUnavailable: true } : {}) });
+      }
+      if (url.pathname === "/api/chat/for-you" && request.method === "GET") {
+        if (forYouFails()) return Response.json({ message: "Unavailable" }, { status: 503 });
+        return Response.json({ items: forYou, nextCursor: null });
+      }
+      const candidates = /^\/api\/chat\/conversations\/([^/]+)\/mention-candidates$/.exec(url.pathname);
+      if (candidates && request.method === "GET") {
+        const query = (url.searchParams.get("q") ?? "").toLowerCase();
+        const chat = chats.get(candidates[1]!);
+        const items = (chat?.members ?? [])
+          .flatMap((member) =>
+            member.principal.type === "user" && member.principal.userId !== viewer.id
+              ? [{ principal: { type: "user" as const, id: member.principal.userId }, name: member.displayName, agent: false }]
+              : [],
+          )
+          .filter((candidate) =>
+            candidate.name
+              .toLowerCase()
+              .split(/\s+/)
+              .some((word) => word.startsWith(query)),
+          );
+        return Response.json({ items });
       }
       if (url.pathname === "/api/chat/conversations" && request.method === "GET") {
         const query = ConversationQuerySchema.parse(Object.fromEntries(url.searchParams));
@@ -1685,6 +1771,28 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     /** A message from someone else that shares elements, delivered live. */
     receiveShared: (chat: string, author: Person, body: string, refs: CloudResourceRef[]) =>
       publish(append(chat, author, body, now(), "text", { refs })),
+    /** What "For you" answers from now on; `notify` sends the reader's content-free live hint. */
+    setForYou: (items: z.infer<typeof ForYouItemSchema>[], notify = false) => {
+      forYou = items;
+      if (notify) deliver("me", "", { type: "for-you" });
+    },
+    /** A Space or notebook nobody has written in yet, found by the list's search. */
+    searchContainer: (ref: { type: "spaces.space" | "notebooks.notebook"; id: string }, name: string) => {
+      emptyContainerHits.push({ ref, name });
+    },
+    /** Spaces and Notebooks do not answer the list's search; the other hits still come. */
+    failSearchSystem: (failing = true) => {
+      searchSystemUnavailable = failing;
+    },
+    /** The next searches fail as a whole. */
+    failSearch: (times = 1) => {
+      failingSearch = times;
+    },
+    searchQueries,
+    /** The next "For you" reads fail. */
+    failForYou: (times = 1) => {
+      failingForYou = times;
+    },
     sharedReads,
     /** The next shared lists fail. */
     failShared: (times = 1) => {
@@ -1708,6 +1816,12 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     reset: () => {
       itemEvents.clear();
       failingItemEvents = 0;
+      forYou = [];
+      failingForYou = 0;
+      emptyContainerHits = [];
+      searchSystemUnavailable = false;
+      failingSearch = 0;
+      searchQueries.length = 0;
       sharedReads.length = 0;
       collapsed = [];
       allowAuthenticated = true;

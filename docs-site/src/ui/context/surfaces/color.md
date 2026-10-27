@@ -115,6 +115,7 @@ and checked cards.
 | Checked card | `CheckboxCard` | `k2b-checkbox-card` |
 | Keyboard-active or selected option | `Select`, `Combobox`, `MultiSelectInput` | `k2b-choice-option` |
 | Checked choice chip in a field or picker filter | `ChoiceChips`, `Select` | `k2b-choice-groups` |
+| Chosen tile with a preview | `ChoiceTiles` | `k2b-choice-tiles` |
 | Keyboard-active suggestion | `AutocompleteEditor` | `k2b-autocomplete` |
 | Current page | `Pagination` | `k2b-pagination` |
 | Selected date, month, or duration | `DatePicker` | `k2b-date-grid`, `k2b-date-months`, `k2b-date-durations` |

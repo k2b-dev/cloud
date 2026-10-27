@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
 import { normalizeEmailAddress } from "./address-normalization";
 import { sha256Json } from "./canonical";
+import { discardConversationSummaries } from "./conversation-summary-lifecycle";
 import { refreshConversationTimeline } from "./conversation-timeline";
 import { enqueueMailInvalidation } from "./live";
 import { storeReadableBlob } from "./message-blobs";
@@ -384,6 +385,11 @@ export const removeUnsentOutboundMessage = async (db: SqlClient, outboxId: strin
     WHERE conversation_id = ${projection.conversation_id}::uuid
   `;
   if ((remaining?.count ?? 0) === 0) {
+    const [conversation] = await db<
+      { mailbox_id: string }[]
+    >`SELECT mailbox_id FROM mail.conversations WHERE id = ${projection.conversation_id}::uuid`;
+    if (conversation)
+      await discardConversationSummaries(db, { mailboxId: conversation.mailbox_id, conversationId: projection.conversation_id });
     await db`DELETE FROM mail.conversations WHERE id = ${projection.conversation_id}::uuid`;
     return;
   }
