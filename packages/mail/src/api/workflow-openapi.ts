@@ -260,6 +260,7 @@ const errorResponses = {
   403: jsonResponse(ErrorResponseSchema, "Forbidden"),
   404: jsonResponse(ErrorResponseSchema, "Not found"),
   409: jsonResponse(ErrorResponseSchema, "Conflict"),
+  422: jsonResponse(workflowValidationSchema, "Invalid workflow source and diagnostics"),
   500: jsonResponse(ErrorResponseSchema, "Internal server error"),
 };
 type ErrorStatus = keyof typeof errorResponses;

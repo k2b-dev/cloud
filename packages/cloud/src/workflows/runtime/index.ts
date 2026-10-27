@@ -15,6 +15,7 @@ export {
   WorkflowLeaseLostError,
   WorkflowRetryableStepError,
   WorkflowValueError,
+  WorkflowValueWaiting,
 } from "./executor";
 export type {
   WorkflowActionStep,

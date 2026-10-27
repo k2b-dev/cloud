@@ -49,6 +49,28 @@ steps:
 
 Wähle vor dem Speichern **Prüfen**. Die Validierung prüft striktes YAML, das Mail-Vokabular, Wertepfade, zugängliche Katalognamen und unvereinbare Aktionskombinationen.
 
+## Probelauf ohne KI {icon="player-play"}
+
+Wähle **Probelauf**. Er prüft die letzten 50 Mails, die neueste zuerst.
+Du kannst bis zu 100 Mails prüfen. Der Probelauf ändert keine Mail.
+Er sendet nichts, erstellt keine Entwürfe und ruft keine KI auf.
+Mit **Abbrechen** stoppst du weitere Prüfschritte.
+
+Du siehst die Werte aus den Bedingungen und die vorgesehenen Aktionen.
+**Übersprungen** bedeutet: Ein ausdrücklicher Ausschluss greift.
+Das kann etwa ein Newsletter sein, den die Regel mit `not` ausschließt.
+**Nicht** bedeutet: Die Bedingungen treffen nicht zu.
+
+Bei KI-Schritten siehst du nur, dass sie starten würden.
+KI-Ergebnisse und davon abhängige Zweige bleiben offen.
+Die Spanne der KI-Aufrufe zeigt sichere und höchstens mögliche Aufrufe.
+Ziele werden vorab geprüft. Fehlende Ziele und fehlender Postfachzugriff
+erscheinen als Probleme.
+
+Wer eine gespeicherte Regel ansehen darf, kann ihre aktuelle Version prüfen.
+Für ungespeichertes YAML brauchst du wie beim Speichern die Administration
+des Postfachs.
+
 ## Eingaben deklarieren {icon="point"}
 
 Mail unterstützt zwei Eingabetypen:

@@ -83,6 +83,10 @@ export const capabilityOpsMessages = i18n.define({
       originApp: "App",
       kindQuery: "Query",
       kindAction: "Action",
+      properties: "Properties",
+      technicalDetails: "Technical details",
+      moreAboutCall: "More about this call",
+      callCount: ({ count }: { count: number }) => (count === 1 ? "1 call" : `${count} calls`),
     },
     de: {
       title: "Capabilities",
@@ -165,6 +169,10 @@ export const capabilityOpsMessages = i18n.define({
       originApp: "App",
       kindQuery: "Abfrage",
       kindAction: "Aktion",
+      properties: "Eigenschaften",
+      technicalDetails: "Technische Details",
+      moreAboutCall: "Mehr zu diesem Aufruf",
+      callCount: ({ count }) => (count === 1 ? "1 Aufruf" : `${count} Aufrufe`),
     },
   },
 });

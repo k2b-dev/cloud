@@ -107,6 +107,7 @@ import {
   savedConversationViewFilterSchema,
   type UnsubscribeMailingListResult,
   type WorkflowEffectBudget,
+  type WorkflowTryResult,
   type WorkflowValidation,
 } from "./contracts";
 import { mailFolderPaths } from "./folder-tree";
@@ -2263,12 +2264,18 @@ const everydayCommands = (t: Translate) => {
     }),
     command("unkeep", {
       summary: t({
-        en: "Stop keeping a conversation (Manage access required)",
-        de: "Unterhaltung nicht mehr aufbewahren (Verwaltungszugriff erforderlich)",
+        en: "Stop keeping a conversation (Cloud administrator required)",
+        de: "Unterhaltung nicht mehr aufbewahren (Cloud-Admin-Rechte erforderlich)",
       }),
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
         ...mailboxOption,
+        reason: flag.string({
+          description: t({
+            en: "Reason for lifting the keep (at most 500 characters)",
+            de: "Grund für das Aufheben der Aufbewahrung (höchstens 500 Zeichen)",
+          }),
+        }),
         yes: confirmFlag(
           t({
             en: "The conversation can be deleted again. Cloud copies already deleted on the mail server disappear from view; their stored contents remain. Stop keeping it?",
@@ -2286,11 +2293,13 @@ const everydayCommands = (t: Translate) => {
             }),
           );
         const id = requireMailResourceId(args.conversation, t({ en: "Conversation ID", de: "Unterhaltungs-ID" }));
-        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const mailboxRef = await mailboxRefOrDefault(ctx, flags.mailbox, t);
+        // Cloud admins can lift keeps without a mailbox grant; exact IDs must reach that service directly.
+        const mailboxId = MAIL_RESOURCE_ID_PATTERN.test(mailboxRef) ? mailboxRef : (await resolveMailbox(ctx, mailboxRef, t)).id;
         const result = await readApi<{ conversationId: string; released: boolean }>(
           ctx,
-          `/mailboxes/${mailbox.id}/conversations/${id}/keep`,
-          { method: "DELETE" },
+          `/mailboxes/${mailboxId}/conversations/${id}/keep`,
+          flags.reason !== undefined ? jsonRequest("DELETE", { reason: flags.reason }) : { method: "DELETE" },
         );
         if (!printStructured(ctx, result))
           ctx.print(t({ en: "The conversation is no longer kept.", de: "Die Unterhaltung wird nicht mehr aufbewahrt." }));
@@ -7644,6 +7653,54 @@ const specialistCommands = {
             ctx.print(`${diagnostic.severity}: ${diagnostic.path}: ${diagnostic.message}`);
           }
         }
+      },
+    }),
+    command("workflow try", {
+      summary: "Try a workflow on recent messages without making changes or calling AI",
+      args: { workflowId: arg.optional({ description: "Stable workflow id (omit with --file)" }) },
+      flags: {
+        ...mailboxFlag,
+        last: flag.int({ min: 1, max: 100, default: 50, description: "Number of recent messages (1–100)" }),
+        file: flag.string({ description: "Unsaved YAML file (mailbox admin)" }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        if (Boolean(args.workflowId) === Boolean(flags.file)) throw new Error("Provide a workflow id or --file, exclusively.");
+        const mailbox = await resolveMailbox(ctx, flags.mailbox);
+        const definition = flags.file ? { source: await Bun.file(flags.file).text() } : { workflowId: args.workflowId };
+        let merged: WorkflowTryResult | undefined;
+        let cursor: string | null = null;
+        do {
+          const result: WorkflowTryResult = await readApi<WorkflowTryResult>(
+            ctx,
+            `/mailboxes/${mailbox.id}/workflows/try`,
+            jsonRequest("POST", { ...definition, last: flags.last, cursor, batch: 25 }),
+          );
+          if (merged && result.checked <= merged.checked) throw new Error("Workflow preview did not advance; run it again.");
+          merged = merged
+            ? {
+                ...result,
+                items: [...merged.items, ...result.items],
+                aiCalls: {
+                  min: merged.aiCalls.min + result.aiCalls.min,
+                  max: merged.aiCalls.max + result.aiCalls.max,
+                },
+              }
+            : result;
+          cursor = result.cursor;
+        } while (cursor !== null);
+        if (printStructured(ctx, merged)) return;
+        const count = (outcome: string) => merged.items.filter((item) => item.outcome === outcome).length;
+        const calls =
+          merged.aiCalls.min === merged.aiCalls.max ? String(merged.aiCalls.min) : `${merged.aiCalls.min}–${merged.aiCalls.max}`;
+        ctx.print(
+          `${count("match")} match · ${count("skipped")} skipped · ${count("none")} none · ${calls} AI calls would be needed, none made`,
+        );
+        for (const item of merged.items)
+          ctx.print(
+            `${item.outcome} · ${item.from.name ?? item.from.email} · ${item.subject} · ${item.messageId}${
+              item.problems.length ? ` · ${item.problems.map((problem) => problem.code).join(", ")}` : ""
+            }`,
+          );
       },
     }),
     command("workflow list", {
