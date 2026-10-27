@@ -4,6 +4,7 @@ import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import type { ConversationView, MailFocusPage, MailFocusView } from "../contracts";
 import { resolveMailSearchRoute } from "../search-state";
 import type { MailboxListView, MailboxPageData } from "../service/workspace";
+import { logFixtureItems } from "./_components/mail-automation-log-fixtures";
 import { normalizeMailConversationToolbarActions } from "./_components/mail-conversation-toolbar";
 import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtures";
 import { readMailUserPreferencesFromCookieHeader } from "./_components/mail-user-preferences";
@@ -12,6 +13,24 @@ import MailOverview from "./MailOverview.island";
 import MailWorkspace from "./MailWorkspace.island";
 
 export const MAIL_SHELL_NOW = "2026-10-14T10:00:00.000Z";
+/** `?trace=` picks what rules did with the open conversation (fictional, from the approved mockup). */
+const traceFixture = (kind: string | null) => {
+  const [sortUncertain, sortNora, sortAngebote, skippedCan, , , , manual] = [
+    logFixtureItems[4]!,
+    logFixtureItems[3]!,
+    logFixtureItems[1]!,
+    logFixtureItems[2]!,
+    null,
+    null,
+    null,
+    logFixtureItems[7]!,
+  ];
+  if (kind === "name") return [sortNora];
+  if (kind === "uncertain") return [sortUncertain];
+  if (kind === "manual") return [manual, sortAngebote];
+  if (kind === "normal") return [skippedCan, sortAngebote];
+  return [];
+};
 export const focusCounts = { mine: 12, unassigned: 7, waiting: 4, all: 23 };
 export const viewCounts = {
   needs_action: 12,
@@ -321,7 +340,7 @@ export function mailboxData(url: URL): MailboxPageData {
       ? { summary: "Invented request summary.", summaryRevision: 1, conversationRevision: 1 }
       : null,
     conversationDrafts: [],
-    automationTrace: [],
+    automationTrace: selectedConversationId ? traceFixture(url.searchParams.get("trace")) : [],
     detailError: null,
     collaborationState: selectedConversationId
       ? { conversationId: selectedConversationId, assignees: [], workStatus: "needs_action", snoozedUntil: null, revision: 1 }
