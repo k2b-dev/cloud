@@ -3059,6 +3059,41 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-clamp: 2;
 }
 
+/* The kind line names what the panel shows, then its state, in the quiet
+   meta type; badges keep their own size. */
+.k2b-ui .k2b-detail-panel__kind {
+  display: flex;
+  min-width: 0;
+  min-height: 1.25rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  grid-row: 1;
+  grid-column: -3 / -2;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+/* With a kind line, it takes the first row beside the compact actions, and
+   the title and subtitle move one row down. */
+.k2b-ui .k2b-detail-panel__header-main:has(> .k2b-detail-panel__heading > .k2b-detail-panel__kind) > .k2b-detail-panel__heading > h2 {
+  grid-row: 2;
+}
+
+.k2b-ui
+  .k2b-detail-panel__header-main:has(> .k2b-detail-panel__heading > .k2b-detail-panel__kind)
+  > .k2b-detail-panel__heading
+  > .k2b-detail-panel__supporting {
+  grid-row: 3;
+}
+
+.k2b-ui
+  .k2b-detail-panel__header-main:has(> .k2b-detail-panel__heading > .k2b-detail-panel__kind)
+  > :is(.k2b-detail-panel__header-icon, .k2b-detail-panel__header-leading) {
+  grid-row: 1 / span 2;
+}
+
 .k2b-ui .k2b-detail-panel__heading p {
   overflow: hidden;
   color: var(--k2b-text-muted);

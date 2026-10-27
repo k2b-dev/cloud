@@ -46,7 +46,10 @@ const list = () => c(FileGrid, {
   ],
   onOpen: (file) => window.opened.push(file.name),
 });
-render(() => c(DetailPanel, { surface: "plain", get children() { return c(DetailPanel.Body, { scrollFade: false, get children() { return [
+render(() => c(DetailPanel, { surface: "plain", get children() { return [c(DetailPanel.Header, {
+  kind: "Conversation", title: "Brochure approval", subtitle: "Northern Light Print · 3 messages",
+  get actions() { return c(IconButton, { size: "sm", variant: "ghost", label: "Close details", get children() { return icon("ti-x"); } }); },
+}), c(DetailPanel.Body, { scrollFade: false, get children() { return [
   c(DetailPanel.Section, { title: "Attachments", count: files.length, get children() { return list(); } }),
   c(DetailPanel.Section, { title: "Linked", get children() { return c(DetailPanel.Action, {
     title: "Brochure task", href: "#task", secondaryAction: { icon: "ti ti-unlink", label: "Unlink Brochure task", onClick() {} },
@@ -55,7 +58,7 @@ render(() => c(DetailPanel, { surface: "plain", get children() { return c(Detail
     c(DetailPanel.Section, { title: "Activity", count: 4, collapsible: true, summary: "Lena Hoffmann assigned herself", children: "Assigned, tagged, received" }),
     c(DetailPanel.Section, { title: "Technical details", collapsible: true, summary: "Sender, headers, original", children: "Message-ID" }),
   ]; } }),
-]; } }); } }), document.getElementById("app"));
+]; } })]; } }), document.getElementById("app"));
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the file list fixture.");
@@ -85,11 +88,11 @@ const load = async (width: number, theme: "light" | "dark", input?: "touch") => 
   return page;
 };
 
-/** Every box in the panel; a hover, focus, or reveal must leave all of them where they are. */
+/** Every box in the panel except tooltips in the top layer; a hover, focus, or reveal must leave all of them where they are. */
 const boxes = (page: Page) =>
   page.evaluate(() =>
     Array.from(document.querySelectorAll(".k2b-detail-panel *"))
-      .filter((element) => getComputedStyle(element).display !== "none" && !element.closest("[hidden]"))
+      .filter((element) => getComputedStyle(element).display !== "none" && !element.closest("[hidden], .k2b-tooltip"))
       .map((element) => {
         const box = element.getBoundingClientRect();
         return `${element.className || element.tagName} ${[box.x, box.y, box.width, box.height].map((value) => value.toFixed(2)).join(" ")}`;
@@ -192,6 +195,23 @@ describe("@k2b/ui open file list and K1 detail rows", () => {
       await touch.screenshot({ path: "/tmp/k2b-ui-file-list-touch.png", fullPage: true });
     } finally {
       await touch.close();
+    }
+  }, 30_000);
+
+  test("the kind line shares the first row with the close button, above the title and subtitle", async () => {
+    const page = await load(1440, "light");
+    try {
+      const box = async (selector: string) => (await page.locator(selector).first().boundingBox())!;
+      const kind = await box(".k2b-detail-panel__kind");
+      const close = await box('button[aria-label="Close details"]');
+      const title = await box(".k2b-detail-panel__heading h2");
+      const subtitle = await box(".k2b-detail-panel__supporting");
+      expect(Math.abs(kind.y + kind.height / 2 - (close.y + close.height / 2))).toBeLessThan(1);
+      expect(title.y).toBeGreaterThanOrEqual(kind.y + kind.height);
+      expect(subtitle.y).toBeGreaterThanOrEqual(title.y + title.height);
+      expect(title.x).toBe(kind.x);
+    } finally {
+      await page.close();
     }
   }, 30_000);
 

@@ -96,9 +96,13 @@ export const DetailPanelOutlineDemo = () => {
         <div style={{ width: "min(25rem, 100%)", height: "52rem", display: "flex" }}>
           <DetailPanel surface="plain">
             <DetailPanel.Header
+              kind={
+                <>
+                  Conversation <StatusBadge tone="warning" label="Open" />
+                </>
+              }
               title="Brochure approval"
               subtitle="Northern Light Print · 3 messages · today, 09:15"
-              meta={<StatusBadge tone="warning" label="Open" />}
               actions={
                 <IconButton variant="ghost" size="xs" label="Close details">
                   <i class="ti ti-x" aria-hidden="true" />

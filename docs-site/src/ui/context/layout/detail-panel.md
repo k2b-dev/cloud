@@ -61,6 +61,9 @@ spacing as `AppWorkspace.Detail`. Omit it to keep the default section surfaces.
 ```
 
 `DetailPanel.Header` keeps identity and actions in one compact region. Pass
+`kind` for a short line above the title that names what the panel shows, such
+as "Conversation" or "Task", followed by its state badge; it shares the first
+row with the compact `actions`. Pass
 `icon` for the standard accent-tinted identity tile or `leading` for an avatar
 or another custom identity; they are mutually exclusive. Pass `actions` for
 compact utilities such as more and close, and `primaryActions` for the small
@@ -225,7 +228,7 @@ type DetailPanelProps = {
 };
 
 type DetailPanelHeaderBaseProps = {
-  title: JSX.Element; subtitle?: JSX.Element; meta?: JSX.Element; actions?: JSX.Element;
+  kind?: JSX.Element; title: JSX.Element; subtitle?: JSX.Element; meta?: JSX.Element; actions?: JSX.Element;
   primaryActions?: JSX.Element; class?: string;
 };
 

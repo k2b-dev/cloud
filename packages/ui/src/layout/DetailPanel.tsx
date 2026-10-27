@@ -12,6 +12,8 @@ export type DetailPanelProps = {
 };
 
 type DetailPanelHeaderBaseProps = {
+  /** A short line above the title that names what is shown, such as "Conversation", followed by its state. */
+  kind?: JSX.Element;
   title: JSX.Element;
   subtitle?: JSX.Element;
   meta?: JSX.Element;
@@ -174,6 +176,9 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => (
         <div class="k2b-detail-panel__header-leading">{props.leading}</div>
       </Show>
       <div class="k2b-detail-panel__heading">
+        <Show when={props.kind}>
+          <div class="k2b-detail-panel__kind">{props.kind}</div>
+        </Show>
         {/* A long title wraps to two lines and ends with an ellipsis; then the native hint shows all of it. */}
         <h2 onPointerEnter={showTruncatedTitle}>{props.title}</h2>
         <Show when={props.subtitle || props.meta}>
