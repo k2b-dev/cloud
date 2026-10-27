@@ -2941,7 +2941,7 @@ const sourceMessageFixture = {
   folderId: FOLDER_ID,
   plainText: "Original text",
   forwardText: "Original text",
-  attachments: [{ id: ATTACHMENT_ID, filename: "a.pdf", contentType: "application/pdf", sizeBytes: 3, contentId: null }],
+  attachments: [{ id: ATTACHMENT_ID, filename: "a.pdf", contentType: "application/pdf", sizeBytes: 3, contentId: null, checksum: null }],
 };
 
 /** A mailbox with one conversation, its latest message, a default identity, and a send pipeline. */

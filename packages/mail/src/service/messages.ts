@@ -918,6 +918,7 @@ export type MessageDetail = MessageSummary & {
     contentType: string;
     sizeBytes: number;
     contentId: string | null;
+    checksum: string | null;
   }>;
 };
 
@@ -942,7 +943,7 @@ type DbMessageDetail = DbMessageSummary & {
   delivery_error_code: string | null;
   delivery_error_message: string | null;
   delivery_provider_response: Record<string, unknown> | string | null;
-  attachments: Array<{ id: string; filename: string | null; contentType: string; sizeBytes: number; contentId: string | null }> | string;
+  attachments: MessageDetail["attachments"] | string;
 };
 
 export const messageForwardText = (plainText: string | null, sanitizedHtml: string | null): string => {
@@ -958,7 +959,7 @@ export const messageForwardText = (plainText: string | null, sanitizedHtml: stri
   }
 };
 
-const mapMessageDetail = (row: DbMessageDetail): MessageDetail => ({
+export const mapMessageDetail = (row: DbMessageDetail): MessageDetail => ({
   ...mapMessageSummary(row),
   deletedOnServer: row.deleted_on_server,
   contentType: row.content_type,
@@ -1096,7 +1097,8 @@ const messageDetailAttachmentJoin = sql`
         'filename', attachment.filename,
         'contentType', attachment.content_type,
         'sizeBytes', attachment.size_bytes,
-        'contentId', attachment.content_id
+        'contentId', attachment.content_id,
+        'checksum', attachment.checksum
       ) ORDER BY ${attachmentMimeOrder}
     ) AS items
     FROM mail.attachments attachment

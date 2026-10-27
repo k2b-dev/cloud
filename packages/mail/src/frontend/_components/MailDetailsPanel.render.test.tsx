@@ -167,6 +167,7 @@ const message: MessageDetail = {
       contentType: "application/pdf",
       sizeBytes: 2048,
       contentId: null,
+      checksum: null,
     },
   ],
 };
