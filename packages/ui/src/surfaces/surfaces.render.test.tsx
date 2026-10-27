@@ -375,6 +375,10 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(ring({ value: Number.NaN })).toContain('stroke-dasharray="0 100"');
     expect(ring({ value: 90, tone: "warning" })).toContain('<circle class="k2b-progress-ring__mark"');
     expect(ring({ value: 100, tone: "danger" })).toContain('<path class="k2b-progress-ring__mark"');
+    // The app colour carries no state, so it adds no mark.
+    const accent = ring({ value: 60, tone: "accent" });
+    expect(accent).toContain('data-tone="accent"');
+    expect(accent).not.toContain("k2b-progress-ring__mark");
     const named = ring({ value: 35, label: "Storage used" });
     expect(named).toContain('role="progressbar"');
     expect(named).toContain('aria-label="Storage used"');

@@ -7,7 +7,7 @@ places too small for a bar, such as a toolbar or a chat composer.
 
 ## Use progress
 
-Use the default tone for ordinary work, success for a positive completion state, warning when a limit is close, and danger when the progress itself represents a reached limit or failing state.
+Use the default tone for ordinary work, success for a positive completion state, warning when a limit is close, and danger when the progress itself represents a reached limit or failing state. `ProgressRing` also takes `accent` for progress that belongs to the app itself, such as the share of today's work done; it uses the app colour and carries no state.
 
 Use the ring only next to a control or text that names the value, for example a button whose label says "Usage: 35%". In warning the ring adds a centre dot and in danger an exclamation mark, so the states differ without colour.
 
@@ -27,7 +27,7 @@ type ProgressBarProps = {
   class?: string;
 };
 
-type ProgressRingTone = Extract<IntentTone, "info" | "warning" | "danger">;
+type ProgressRingTone = Extract<IntentTone, "info" | "warning" | "danger"> | "accent";
 
 type ProgressRingProps = {
   value: number; tone?: ProgressRingTone; label?: string; class?: string;

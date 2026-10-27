@@ -539,6 +539,7 @@
 .k2b-ui .k2b-progress[data-tone="danger"] .k2b-progress__value { background: var(--k2b-danger-500); }
 .k2b-ui .k2b-progress__percent { flex: 0 0 auto; color: var(--k2b-text-muted); font-size: 0.6875rem; font-variant-numeric: tabular-nums; }
 .k2b-ui .k2b-progress-ring { display: block; width: 1rem; height: 1rem; flex: 0 0 auto; color: var(--k2b-action-solid); }
+.k2b-ui .k2b-progress-ring[data-tone="accent"] { color: var(--app-accent, var(--k2b-action-solid)); }
 .k2b-ui .k2b-progress-ring[data-tone="warning"] { color: var(--k2b-warning-500); }
 .k2b-ui .k2b-progress-ring[data-tone="danger"] { color: var(--k2b-danger-500); }
 .k2b-ui .k2b-progress-ring__track { stroke: var(--k2b-border-strong); }
