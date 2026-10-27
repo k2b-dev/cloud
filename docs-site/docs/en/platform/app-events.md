@@ -15,10 +15,23 @@ has already happened. The publisher owns its event schema; each subscriber
 owns its handler and effects. Use a [Query or Action](/en/docs/platform/capabilities)
 when a caller needs an immediate answer or asks another application to do work.
 
-Cloud currently delivers **service events**, whose declarations have no `place`. Resource
-event subscriptions are refused with
-`resource_events_unsupported`; declaring a resource event does not enable its
-delivery. `automation` metadata does not grant authority or install a Routine.
+## Who receives an event
+
+- A **service event** has no `place`. Cloud delivers it to every application
+  that subscribes to it; deploying the application approves its declared
+  subscriptions.
+- A **resource event** has a `place`. Cloud delivers it only to a subscription
+  that a person stands behind with a mandate, such as an automation that runs
+  on that person's behalf. Before every delivery Cloud checks, through the
+  reader of the place's Type, that this person may still read the place. An
+  event never carries the rights of its publisher or of whoever caused it.
+- Applications receive service events only. An application subscription to a
+  resource event stays `blocked` with `resource_events_unsupported`. This is the
+  rule, not a missing feature: applications are not readers of places.
+
+Person-mandated subscriptions are not available yet, so resource events are
+stored and listed in the catalog but not delivered. `automation` metadata does
+not grant authority or install a Routine.
 
 Deployed applications are trusted parts of the installation and share the
 platform database and NATS credentials. Deploying an application is approval
@@ -80,10 +93,10 @@ participate in a caller-owned transaction, so they rely on the platform's
 one-second outbox reconciliation instead of waking before that transaction
 commits. The note sweep owns its transaction and calls `wake()` after commit.
 
-**App delivery remains blocked.** These are resource events; declaring or
-subscribing to them does not establish an app's right to read their place.
-Subscriptions remain `blocked` with `resource_events_unsupported` until Cloud
-has an approved receiver authorization contract.
+**Applications do not receive these events.** They are resource events: an
+application subscription to them stays `blocked` with
+`resource_events_unsupported`, and only subscriptions a person stands behind
+with a mandate will receive them (see [Who receives an event](#who-receives-an-event)).
 
 ## Declare events and subscriptions
 

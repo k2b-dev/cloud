@@ -51,9 +51,11 @@ metadata, `dataSchema`, and subscribers, including their persisted state and
 `firstSeenAt`. Offline applications remain in this administrative catalog. `--app` selects the publisher.
 
 `subscriptions` shows subscription readiness and blocked reasons; `--app`
-selects the subscriber. Cloud currently delivers service events only. A resource event
-subscription remains blocked with `resource_events_unsupported`; retrying or
-redelivering does not remove that restriction.
+selects the subscriber. Applications receive service events only. An application's
+subscription to a resource event stays blocked with `resource_events_unsupported`
+by design; retrying or redelivering does not change that. Resource events go only
+to subscriptions a person stands behind with a mandate, and each delivery checks
+that this person may read the place.
 
 `deliveries` accepts `--app`, `--state`, and `--event-type`.
 Use `--offset` and `--limit` to page through retained work. Structured output
