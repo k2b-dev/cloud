@@ -67,6 +67,7 @@ import {
 import { chooseMailAssignee } from "./_components/mail-assign-picker";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./_components/mail-bulk-actions";
 import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
+import { MailCloudIdProvider } from "./_components/mail-cloud-id";
 import { mailDraftSeedHref } from "./_components/mail-compose-route";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
@@ -168,6 +169,8 @@ type MailWorkspaceProps = {
   data: MailboxPageData;
   /** Route as `pathname + search`; resolved against the browser origin, never an upstream URL. */
   requestPath: string;
+  /** Canonical Cloud origin from `app.url`, for copied resource references. */
+  cloudUrl: string;
   currentUserId: string;
   currentUserEmail: string | null;
   contactDirectory: MailContactDirectory;
@@ -1874,20 +1877,33 @@ function MailboxWorkspace(
   >({
     onBefore: ({ keep }) => ({ keep }),
     mutation: async ({ conversationId, keep }, { abortSignal }) => {
+      let reason: string | undefined;
       if (!keep) {
-        const confirmed = await prompts.confirm(conversationText().stopKeepingConsequence, {
+        // Only a Cloud administrator gets here; the reason goes into the log with the change.
+        const confirmed = await prompts.form({
           title: conversationText().stopKeepingTitle,
           icon: "ti ti-lock-open",
           confirmText: conversationText().stopKeeping,
           variant: "danger",
+          fields: {
+            consequence: { type: "info", content: () => <p class="k2b-prompt-copy">{conversationText().stopKeepingConsequence}</p> },
+            reason: {
+              type: "text",
+              multiline: true,
+              label: conversationText().stopKeepingReason,
+              description: conversationText().stopKeepingReasonDescription,
+              maxLength: 500,
+            },
+          },
         });
         if (!confirmed || abortSignal.aborted || disposed) return;
+        reason = confirmed.reason?.trim() || undefined;
       }
       const route = apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].keep;
       const request = { param: { mailboxId, conversationId } };
       const response = keep
         ? await route.$put(request, { init: { signal: abortSignal } })
-        : await route.$delete(request, { init: { signal: abortSignal } });
+        : await route.$delete({ ...request, json: reason ? { reason } : {} }, { init: { signal: abortSignal } });
       if (!response.ok) {
         throw new Error(await readApiError(response, keep ? conversationText().keepFailed : conversationText().stopKeepingFailed));
       }
@@ -1907,7 +1923,7 @@ function MailboxWorkspace(
   });
   const setConversationKept = (keep: boolean) => {
     const conversationId = data.selectedConversationId;
-    if (!conversationId || disposed || structurePending() || (keep ? !canWrite() : !canAdmin())) return Promise.resolve();
+    if (!conversationId || disposed || structurePending() || (keep ? !canWrite() : !data.keep?.canLift)) return Promise.resolve();
     return keepMutation.mutate({ conversationId, keep });
   };
 
@@ -3128,43 +3144,45 @@ export default function MailWorkspace(props: MailWorkspaceProps) {
 
   return (
     <MailContactDirectoryProvider value={props.contactDirectory}>
-      <AppWorkspace mobileSurface="flush" class="mail-workspace">
-        {(() => {
-          // Resolve the session before the sidebar, so its first server and browser render already has the open mailbox.
-          const workspace = (
-            <Show when={session()} keyed>
-              {(s) => (
-                <MailboxWorkspace
-                  {...props}
-                  {...s}
-                  switching={switching}
-                  onReady={setControls}
-                  onNavigationStart={cancelSwitch}
-                  onOpenMailboxHistory={(url, completeScrollRestore) => {
-                    void switchMailbox(url, undefined, completeScrollRestore);
-                  }}
+      <MailCloudIdProvider cloudUrl={props.cloudUrl}>
+        <AppWorkspace mobileSurface="flush" class="mail-workspace">
+          {(() => {
+            // Resolve the session before the sidebar, so its first server and browser render already has the open mailbox.
+            const workspace = (
+              <Show when={session()} keyed>
+                {(s) => (
+                  <MailboxWorkspace
+                    {...props}
+                    {...s}
+                    switching={switching}
+                    onReady={setControls}
+                    onNavigationStart={cancelSwitch}
+                    onOpenMailboxHistory={(url, completeScrollRestore) => {
+                      void switchMailbox(url, undefined, completeScrollRestore);
+                    }}
+                  />
+                )}
+              </Show>
+            );
+            return (
+              <>
+                <MailSidebar
+                  canCreate={Boolean(props.currentUserId)}
+                  currentUserEmail={props.currentUserEmail}
+                  contactDirectory={props.contactDirectory}
+                  mailboxes={props.sidebar.mailboxes}
+                  preferences={mailboxPreferences}
+                  counts={[]}
+                  open={controls()?.open() ?? null}
+                  onOpenPlaceRowHiddenChange={(hidden) => controls()?.onOpenPlaceRowHiddenChange(hidden)}
+                  onOpenMailbox={(nav) => switchMailbox(new URL(nav.href, window.location.origin), nav)}
                 />
-              )}
-            </Show>
-          );
-          return (
-            <>
-              <MailSidebar
-                canCreate={Boolean(props.currentUserId)}
-                currentUserEmail={props.currentUserEmail}
-                contactDirectory={props.contactDirectory}
-                mailboxes={props.sidebar.mailboxes}
-                preferences={mailboxPreferences}
-                counts={[]}
-                open={controls()?.open() ?? null}
-                onOpenPlaceRowHiddenChange={(hidden) => controls()?.onOpenPlaceRowHiddenChange(hidden)}
-                onOpenMailbox={(nav) => switchMailbox(new URL(nav.href, window.location.origin), nav)}
-              />
-              {workspace}
-            </>
-          );
-        })()}
-      </AppWorkspace>
+                {workspace}
+              </>
+            );
+          })()}
+        </AppWorkspace>
+      </MailCloudIdProvider>
     </MailContactDirectoryProvider>
   );
 }

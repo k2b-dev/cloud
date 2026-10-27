@@ -90,6 +90,54 @@ describe("icon-only controls", () => {
     done();
   });
 
+  for (const key of [" ", "Enter"]) {
+    test(`keyboard activation (${JSON.stringify(key)}) dismisses a hint before local propagation stops`, async () => {
+      const harness = setup();
+      const { IconButton } = await import("../src/actions/Button");
+      const { Tooltip } = await import("../src/feedback/Tooltip");
+      const { dom, done } = mount(harness, () => (
+        <Tooltip.Anchor content="Move card" delay={0}>
+          <IconButton label="Move card">
+            <i class="ti ti-grip-vertical" aria-hidden="true" />
+          </IconButton>
+        </Tooltip.Anchor>
+      ));
+      try {
+        const button = dom.root.querySelector<HTMLButtonElement>("button")!;
+        const surface = dom.root.querySelector<HTMLElement>('[role="tooltip"]')!;
+        const target = dom.root.querySelector<HTMLElement>(".k2b-tooltip-wrapper")!;
+        let activated = false;
+        button.addEventListener("keydown", (event) => {
+          if (event.key !== key) return;
+          activated = true;
+          event.stopPropagation();
+        });
+        pointer(dom, target, "pointerenter", "mouse");
+        expect(isOpen(surface)).toBe(true);
+        const activation = new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+        button.dispatchEvent(activation as unknown as Event);
+        expect(activated).toBe(true);
+        expect(activation.defaultPrevented).toBe(false);
+        expect(isOpen(surface)).toBe(false);
+
+        // Leaving makes the hint available again; Escape still belongs to an open hint first.
+        pointer(dom, target, "pointerleave", "mouse");
+        pointer(dom, target, "pointerenter", "mouse");
+        expect(isOpen(surface)).toBe(true);
+        const escape = () => {
+          const event = new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+          button.dispatchEvent(event as unknown as Event);
+          return event.defaultPrevented;
+        };
+        expect(escape()).toBe(true);
+        expect(isOpen(surface)).toBe(false);
+        expect(escape()).toBe(false);
+      } finally {
+        done();
+      }
+    });
+  }
+
   test("an explicit tooltip that adds information describes the control", async () => {
     const harness = setup();
     const { IconButton } = await import("../src/actions/Button");
