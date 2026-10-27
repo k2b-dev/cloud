@@ -395,6 +395,39 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           }
         });
 
+    for (const width of [1440, 390])
+      test(`automation: AI summary states ${width}: one place, fixed height while writing, cyan only for AI`, async () => {
+        const heights: Record<string, number> = {};
+        for (const state of ["ai", "stale", "writing", "failed", "limited", "person"] as const) {
+          const page = await open(`${boxPath}?conversation=Conv01&locale=de&summary=${state}`, width, width === 390 ? 844 : 900);
+          try {
+            const card = page.locator("[data-mail-conversation-summary]");
+            await card.waitFor();
+            const box = (await card.boundingBox())!;
+            heights[state] = box.height;
+            const ai = (await card.getAttribute("data-mail-summary-ai")) !== null;
+            expect(ai, `${state}: AI surface only for AI`).toBe(state !== "person");
+            const background = await card.evaluate((element) => getComputedStyle(element).backgroundColor);
+            if (state === "person") expect(background).not.toBe("rgb(236, 254, 255)");
+            else expect(background).toBe("rgb(236, 254, 255)");
+            if (state === "writing") expect(await card.getAttribute("aria-busy")).toBe("true");
+            if (state === "stale") await page.getByText("1 neue Nachricht seit dieser Fassung").waitFor();
+            if (state === "failed") await card.getByRole("button", { name: "Erneut versuchen" }).waitFor();
+            if (state === "limited") await card.getByRole("button", { name: "Diese eine jetzt zusammenfassen" }).waitFor();
+            if (screenshots) {
+              await card.scrollIntoViewIfNeeded();
+              await page.screenshot({ path: join(screenshots, `summary-${state}-light-${width}.png`) });
+            }
+          } finally {
+            await close(page);
+          }
+        }
+        // Writing, failure and limit share the reserved height, so the messages below stay where they are.
+        expect(heights.writing).toBeGreaterThanOrEqual(196);
+        expect(Math.abs(heights.failed! - heights.writing!)).toBeLessThanOrEqual(width === 390 ? 60 : 0.5);
+        expect(Math.abs(heights.limited! - heights.writing!)).toBeLessThanOrEqual(width === 390 ? 80 : 0.5);
+      });
+
     for (const theme of ["light", "dark"] as const)
       for (const width of [1440, 390])
         test(`compact reader short subject ${theme} ${width}: count beside the title, hidden on phones`, async () => {

@@ -168,6 +168,8 @@ import {
 } from "../service";
 import { resolveByteRange } from "../service/byte-range";
 import { requestContactDirectory } from "../service/contact-directory";
+import { conversationSummaryStateSchema } from "../service/conversation-summary-contract";
+import { generateConversationSummary, generateConversationSummarySchema } from "../service/conversation-summary-jobs";
 import { localizeMailError } from "../service/error-messages";
 import { mailLive } from "../service/live";
 import { mailLiveChannels } from "../service/live-channels";
@@ -1857,6 +1859,32 @@ const mailOperationsApi = new Hono<MailApiContext>()
         ...internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
       }),
     ),
+  )
+  .post(
+    "/mailboxes/:mailboxId/conversations/:conversationId/summary/generate",
+    describeRoute({
+      operationId: "mailGenerateConversationSummary",
+      tags: ["Conversations"],
+      summary: "Request an AI summary using the person's Assistant allowance",
+      ...requiresAuth,
+      responses: {
+        202: jsonResponse(conversationSummaryStateSchema, "Current summary state; writing or already in flight"),
+        400: jsonResponse(ErrorResponseSchema, "AI summaries unavailable or invalid request"),
+        403: jsonResponse(ErrorResponseSchema, "Write permission or personal AI allowance missing"),
+        404: jsonResponse(ErrorResponseSchema, "Conversation not readable"),
+        409: jsonResponse(ErrorResponseSchema, "Summary revision changed"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("conversationId")),
+    v("json", generateConversationSummarySchema),
+    async (c) => {
+      const result = await generateConversationSummary({
+        context: requestContext(c),
+        ...internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
+        input: c.req.valid("json"),
+      });
+      return result.ok ? respond(c, ok(result.data.summaryState), 202) : respondPublic(c, result);
+    },
   )
   .put(
     "/mailboxes/:mailboxId/conversations/:conversationId/summary",

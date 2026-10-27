@@ -3,11 +3,14 @@ import { sql } from "bun";
 import { z } from "zod";
 import { channels } from "./channels";
 import { conversations } from "./conversations";
+import { forYou } from "./for-you";
 import { itemEvents } from "./item-events";
+import { mentions } from "./mentions";
 import { messages } from "./messages";
 import { personal } from "./personal";
 import { reactions } from "./reactions";
 import { readState } from "./read-state";
+import { search } from "./search";
 import { shared } from "./shared";
 import { systemChats } from "./system-chats";
 import { threads } from "./threads";
@@ -48,7 +51,10 @@ const health = async (): Promise<ChatHealth> => {
 
 export const chatService = {
   itemEvents,
+  search,
   health,
+  forYou,
+  mentions,
   channels,
   conversations,
   messages,

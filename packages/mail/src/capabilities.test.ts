@@ -36,6 +36,7 @@ import {
   SubscriptionUnsubscribeInputSchema,
 } from "./capability-contracts";
 import { checkMailCapabilityMessages } from "./capability-messages";
+import { summaryState } from "./frontend/_components/mail-summary-fixtures";
 import {
   attachmentExtraction,
   collaboration,
@@ -2143,7 +2144,7 @@ describe("mail capabilities", () => {
     spyOn(resourceParents, "conversation").mockResolvedValue(internalMailboxId);
     const getSummary = spyOn(conversationSummaries, "getConversationSummary").mockResolvedValue({
       ok: true,
-      data: { summary: "Launch approved; waiting for the checklist.", summaryRevision: 3, conversationRevision: 7 },
+      data: summaryState({ summary: "Launch approved; waiting for the checklist.", summaryRevision: 3, conversationRevision: 7 }),
     });
     const getCollaboration = spyOn(collaboration, "getConversationCollaboration").mockResolvedValue({
       ok: true,
@@ -3100,7 +3101,7 @@ test("every declared Type has a reader open-link case or an explicit reason", as
   spyOn(messages, "listConversationMessages").mockResolvedValue({ ok: true, data: { items: [message], nextCursor: null } });
   spyOn(conversationSummaries, "getConversationSummary").mockResolvedValue({
     ok: true,
-    data: { summary: "Follow-up", summaryRevision: 1, conversationRevision: 5 },
+    data: summaryState({ summary: "Follow-up", summaryRevision: 1, conversationRevision: 5 }),
   });
   spyOn(collaboration, "getConversationCollaboration").mockResolvedValue({
     ok: true,

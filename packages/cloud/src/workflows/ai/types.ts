@@ -1,4 +1,5 @@
 import type { AiTaskRequest as WorkflowAiRequest } from "../../ai/task-contracts";
+import type { AccessSubject } from "../../server/services/access";
 import type { WorkflowJsonValue } from "../contracts";
 
 export {
@@ -14,7 +15,9 @@ export type WorkflowAiTask = {
   usageUserId?: string;
   id: string;
   appId: string;
-  runId: string;
+  runId: string | null;
+  /** Authenticated owner of an interactive application task; never supplied by model input. */
+  usageSubject?: AccessSubject;
   stepKey: string;
   effectKey: string;
   kind: WorkflowAiRequest["kind"];

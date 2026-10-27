@@ -67,6 +67,29 @@ none has a hard side parting; the moustache is always wider than the mouth;
 the random choice never changes the skin tone and never picks religious
 headwear.
 
+## Change the picture: the dialog
+
+A person opens **Change profile picture** with a click on the large picture at
+the top of their account page (`/me`). The dialog shows the three kinds as a
+choice at the top, the active one marked **Active**:
+
+- **Photo**: drop or choose a PNG, JPEG, or WebP, then crop it. A stored photo
+  shows with **Other photo** and **Delete photo**, and says when it is stored but
+  not visible.
+- **Avatar**: the builder. Parts are tabs (face, hair, eyes, brows, mouth,
+  beard, glasses, head, extras, colour); every option shows the person's own
+  face with that change. A preview shows the avatar at 64, 40, 32, 24, and
+  20 px, light and dark, with **Random**, **Undo**, and **Reset**. A person
+  without an avatar starts from a random first draft.
+- **Initials**: built from the display name.
+
+**Save** stores and shows the chosen kind in one step. When saving fails, the
+choice stays and the footer offers **Retry**. Closing with unsaved changes asks
+first. The dialog keeps one size on wide screens and fills the screen on
+phones. Applications can open the same dialog with `openProfilePictureDialog()`
+from `@k2b/cloud/account/ui`, passing the subject (`"person"` or `"agent"`),
+the account name, and `load`, `save`, and `deletePhoto` functions for its routes.
+
 ## Show a picture in an application
 
 Use `CloudAvatar` from `@k2b/cloud/account/ui` with the account ID and, for

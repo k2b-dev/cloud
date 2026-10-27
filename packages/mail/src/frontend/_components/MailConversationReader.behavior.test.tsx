@@ -5,6 +5,7 @@ import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
 import type MailConversationReaderComponent from "./MailConversationReader";
+import { summaryState } from "./mail-summary-fixtures";
 
 // Load once outside any test, so the cold Solid transform of the reader's source graph does not count against the
 // 5 s test timeout. The @k2b/ui browser build needs a document while its modules evaluate.
@@ -378,7 +379,7 @@ test.skipIf(isServer)("a saved summary is announced to screen readers, with no t
     async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method !== "PUT") return Response.json({ items: [] });
       puts.push(JSON.parse(String(init.body)));
-      return Response.json({ summary: "Numbers agreed, invoice next week.", summaryRevision: 2, conversationRevision: 1 });
+      return Response.json(summaryState({ summary: "Numbers agreed, invoice next week.", summaryRevision: 2, conversationRevision: 1 }));
     },
     { preconnect: originalFetch.preconnect },
   );
@@ -388,7 +389,7 @@ test.skipIf(isServer)("a saved summary is announced to screen readers, with no t
     () =>
       createComponent(MailConversationReader, {
         ...readerProps,
-        conversationSummary: { summary: "Numbers pending.", summaryRevision: 1, conversationRevision: 1 },
+        conversationSummary: summaryState({ summary: "Numbers pending.", summaryRevision: 1, conversationRevision: 1 }),
         onSummarySaved: async () => {
           saved = true;
         },

@@ -5,6 +5,7 @@ import { createChatSends, createChatSendsApi } from "./chat-sends";
 
 const message = MessageViewSchema.parse({
   reactions: [],
+  mentions: [],
   refs: [],
   thread: null,
   replyTo: null,
@@ -322,4 +323,38 @@ test("send API passes the gateway deadline signal and rejects when it aborts", a
     globalThis.fetch = originalFetch;
     AbortSignal.timeout = originalTimeout;
   }
+});
+
+test("queued sends and retries retain an immutable snapshot of UTF-16 mention ranges", async () => {
+  const calls: unknown[] = [];
+  let attempt = 0;
+  const controller = createChatSends({
+    post: async (_id, input) => {
+      calls.push(structuredClone(input));
+      if (++attempt === 1) {
+        input.mentions![0]!.principal.id = "33333333-3333-4333-8333-333333333333";
+        throw new Error("offline");
+      }
+      return message;
+    },
+    newClientId: () => "mention-retry",
+    now: () => new Date(message.createdAt),
+  });
+  const mentions = [{ start: 3, end: 7, principal: { type: "user" as const, id: message.author.id } }];
+  const send = controller.send("abcdef", "😀 Mara", { mentions });
+  mentions[0]!.start = 0;
+  mentions[0]!.principal.id = "22222222-2222-4222-8222-222222222222";
+  mentions.length = 0;
+  await Bun.sleep(0);
+  expect(send.status).toBe("failed");
+  controller.retry(send.clientId);
+  await Bun.sleep(0);
+  const expected = {
+    clientId: "mention-retry",
+    body: "😀 Mara",
+    mentions: [{ start: 3, end: 7, principal: { type: "user" as const, id: message.author.id } }],
+  };
+  expect(calls).toEqual([expected, expected]);
+  expect(send.status).toBe("sent");
+  controller.dispose();
 });

@@ -20,6 +20,7 @@ const structuredField = z
     required: z.boolean().default(true),
     choices: z.array(choice).min(1).max(50).optional(),
     maxLength: z.number().int().min(1).max(20_000).optional(),
+    minLength: z.number().int().min(1).max(20_000).optional(),
   })
   .strict()
   .superRefine((field, ctx) => {
@@ -27,6 +28,8 @@ const structuredField = z
       ctx.addIssue({ code: "custom", path: ["choices"], message: "Enum fields require choices." });
     if (field.type !== "enum" && field.choices)
       ctx.addIssue({ code: "custom", path: ["choices"], message: "Choices are only valid for enum fields." });
+    if (field.minLength !== undefined && (field.type !== "text" || field.minLength > (field.maxLength ?? 20_000)))
+      ctx.addIssue({ code: "custom", path: ["minLength"], message: "minLength requires a text field and cannot exceed maxLength." });
     if (field.type !== "text" && field.maxLength)
       ctx.addIssue({ code: "custom", path: ["maxLength"], message: "maxLength is only valid for text fields." });
   });
