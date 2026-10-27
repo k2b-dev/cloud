@@ -1,6 +1,7 @@
 // Cloud-specific server services
 
 export type {
+  AccessAudience,
   AccessDb,
   AccessEntry,
   AccessPrincipalColumns,
@@ -29,6 +30,8 @@ export {
   listUsersWithAccess,
   PERMISSION_LEVELS,
   resolveDisplayNames,
+  summarizeAccessAudience,
+  summarizeAccessAudiences,
   updateAccess,
 } from "./access";
 export { freeipa } from "./freeipa";

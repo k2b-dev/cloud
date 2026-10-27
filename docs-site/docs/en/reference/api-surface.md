@@ -49,6 +49,10 @@ Core's app bar administration uses `railShortcuts` from
 resolved navigation through `Layout`; see
 [Global app bar shortcuts](/en/docs/frontend/layout-and-navigation#provide-global-app-bar-shortcuts).
 
+Access previews can use `summarizeAccessAudience` or the batch reader `summarizeAccessAudiences` and its `AccessAudience`
+result from `@k2b/cloud/server` after authorizing their resource. See
+[Authorization](/en/docs/identity/authorization#list-and-pick-principals).
+
 ## Define the application
 
 Import `defineApp()` from the package root:
