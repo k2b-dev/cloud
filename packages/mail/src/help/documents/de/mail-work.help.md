@@ -194,7 +194,7 @@ Eine andere Cloud-App kann einen Verweis auf eine Unterhaltung oder eine Nachric
 - In einer Unterhaltung öffnest du **Weitere Unterhaltungsaktionen** oder mit einem Rechtsklick das Menü der Unterhaltung. Wähle **Cloud-ID der Unterhaltung kopieren**.
 - Bei einer Nachricht öffnest du **Nachrichtenaktionen** oder mit einem Rechtsklick das Menü der Nachricht. Wähle **Cloud-ID der Nachricht kopieren**. Dasselbe Menü hat auch **Cloud-ID der Unterhaltung kopieren**.
 - In der Liste haben die Aktionen einer Zeile **Cloud-ID der Unterhaltung kopieren**.
-- In den **Unterhaltungsdetails** nutzt du den ID-Knopf im Kopf für die Unterhaltung oder **Cloud-ID der Nachricht kopieren** unter **E-Mail-Details** für die neueste Nachricht.
+- In den **Unterhaltungsdetails** wählst du im Kopf **…** und dann **Cloud-ID der Unterhaltung kopieren**. Für die neueste Nachricht wählst du unter **Mehr zu dieser Unterhaltung** › **Technische Details** den Eintrag **Cloud-ID der Nachricht kopieren**.
 
 Mail bestätigt das Kopieren. Füge die Cloud-ID in der anderen App ein. Sie ist ein Link wie `https://cloud.example.com/open/mail.message/~Ab12Cd` und öffnet die Mail. Die Cloud-ID gibt keinen Zugriff: Die andere App zeigt die Mail nur Personen, die sie auch in Mail öffnen dürfen.
 
@@ -216,7 +216,7 @@ Nur wer das Postfach verwaltet, kann den Schutz aufheben. Wähle **Weitere Unter
 
 ## Eine einzelne Nachricht untersuchen {icon="file-search"}
 
-Wenn du technische Angaben zu einer Nachricht brauchst, öffne die **Unterhaltungsdetails**. Klappe **E-Mail-Details** auf und wähle **Header** oder **Quelltext**. Wähle bei einer Unterhaltung mit mehreren Nachrichten oben im Inspektor die genaue Nachricht aus.
+Wenn du technische Angaben zu einer Nachricht brauchst, öffne die **Unterhaltungsdetails**. Klappe unter **Mehr zu dieser Unterhaltung** die **Technischen Details** auf und wähle **Header** oder **Quelltext**. Wähle bei einer Unterhaltung mit mehreren Nachrichten oben im Inspektor die genaue Nachricht aus.
 
 - **Übersicht** zeigt Nachrichten-IDs, Ablage beim Anbieter, Standardmarkierungen, Anbieter-Schlüsselwörter, MIME-Teile, Anhänge, Synchronisierungsstatus und Warnungen beim Auswerten.
 - **Spamdiagnose** zeigt die Spam-Header des Anbieters, falls vorhanden. Cloud berechnet oder erschließt keinen eigenen Spamwert.
