@@ -125,8 +125,9 @@ export const applyMailConversationTransition = (
     if (typeof value !== "string" || conversation.workStatus === value) return false;
     conversation.workStatus = value;
   } else {
-    if (typeof value !== "string" || conversation.summary === value) return false;
+    if (typeof value !== "string" || conversation.summarySource === "person" || conversation.summary === value) return false;
     conversation.summary = value;
+    conversation.summarySource = "workflow";
     conversation.summaryRevision = Number(conversation.summaryRevision ?? 0) + 1;
   }
   conversation.revision = Number(conversation.revision ?? 0) + 1;

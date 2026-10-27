@@ -6466,6 +6466,183 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* ChoiceTiles: a preview over its label; choosing changes only paint, so no tile moves. */
+.k2b-ui .k2b-choice-tiles__group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.75rem, 1fr));
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-choice-tiles__tile {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.25rem 0.5rem;
+  border: 0;
+  border-radius: 0.875rem;
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Only real hover: a tap on a touch screen must not leave a tile looking chosen. */
+@media (hover: hover) {
+  .k2b-ui .k2b-choice-tiles__tile:hover:not(:disabled) {
+    background: var(--k2b-hover);
+  }
+}
+
+.k2b-ui .k2b-choice-tiles__tile[aria-checked="true"] {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
+
+.k2b-ui .k2b-choice-tiles__tile:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
+}
+
+.k2b-ui .k2b-choice-tiles__tile:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.k2b-ui .k2b-choice-tiles__visual {
+  display: inline-flex;
+  line-height: 0;
+}
+
+.k2b-ui .k2b-choice-tiles__group[data-dimmed="true"] .k2b-choice-tiles__visual {
+  opacity: 0.55;
+}
+
+.k2b-ui .k2b-choice-tiles__text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.k2b-ui .k2b-choice-tiles__label {
+  font-size: 0.71875rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+/* Row: the preview beside its label, with a status line that always keeps its height. */
+.k2b-ui .k2b-choice-tiles__group[data-layout="row"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.k2b-ui .k2b-choice-tiles__group[data-layout="row"] .k2b-choice-tiles__tile {
+  flex-direction: row;
+  gap: 0.625rem;
+  padding: 0.375rem 0.875rem 0.375rem 0.375rem;
+  border-radius: 0.75rem;
+  text-align: start;
+}
+
+.k2b-ui .k2b-choice-tiles__group[data-layout="row"] .k2b-choice-tiles__label {
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: start;
+}
+
+.k2b-ui .k2b-choice-tiles__group[data-layout="row"] .k2b-choice-tiles__tile[aria-checked="true"] .k2b-choice-tiles__label {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-choice-tiles__status {
+  min-height: 0.9375rem;
+  color: var(--k2b-success-text);
+  font-size: 0.71875rem;
+  font-weight: 550;
+  line-height: 1.3;
+}
+
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-choice-tiles__group[data-layout="row"] {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    gap: 0.25rem;
+  }
+
+  .k2b-ui .k2b-choice-tiles__group[data-layout="row"] .k2b-choice-tiles__tile {
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem 0.25rem;
+  }
+
+  .k2b-ui .k2b-choice-tiles__group[data-layout="row"] :is(.k2b-choice-tiles__label, .k2b-choice-tiles__text) {
+    align-items: center;
+    text-align: center;
+  }
+}
+
+/* ColorChoices: named round swatches; the chosen one carries a check and a ring that does not change its size. */
+.k2b-ui .k2b-color-choices__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  padding: 0.25rem;
+}
+
+.k2b-ui .k2b-color-choices__swatch {
+  position: relative;
+  display: inline-grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 9999px;
+  color: #ffffff;
+  background: var(--k2b-color-choice);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-color-choices__swatch > i {
+  visibility: hidden;
+  font-size: 1rem;
+  text-shadow: 0 0 2px rgb(0 0 0 / 0.55);
+}
+
+.k2b-ui .k2b-color-choices__swatch[aria-checked="true"] > i {
+  visibility: visible;
+}
+
+.k2b-ui .k2b-color-choices__swatch[aria-checked="true"]::after {
+  position: absolute;
+  inset: -0.25rem;
+  border: 2px solid var(--k2b-action);
+  border-radius: 9999px;
+  content: "";
+}
+
+.k2b-ui .k2b-color-choices__swatch:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(var(--k2b-focus-offset) + 0.25rem);
+}
+
+.k2b-ui .k2b-color-choices__swatch:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+@media (pointer: coarse) {
+  .k2b-ui .k2b-color-choices__swatch {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+}
+
 .k2b-ui .k2b-choice-view-toggle {
   display: inline-flex;
   width: 1.75rem;

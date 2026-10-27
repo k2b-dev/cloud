@@ -28,7 +28,7 @@ const task = (overrides: Partial<WorkflowAiTask> = {}): WorkflowAiTask => ({
   ...overrides,
 });
 
-const context = { runId: task().runId, stepKey: "step:ai", effectKey: task().effectKey };
+const context = { runId: "00000000-0000-0000-0000-000000000002", stepKey: "step:ai", effectKey: task().effectKey };
 const resolved = { profile: { id: "workflow-model" } } as AiResolvedModel;
 
 describe("shared workflow AI actions", () => {

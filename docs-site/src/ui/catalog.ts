@@ -73,6 +73,13 @@ const portableSections = [
       ),
       page("choice-chips", "ChoiceChips", "ti ti-circle-dot", "A labeled row of quick single choices that scrolls instead of wrapping."),
       page(
+        "choice-tiles",
+        "ChoiceTiles",
+        "ti ti-layout-grid",
+        "A labeled single choice of tiles with a preview, for picking how something looks.",
+      ),
+      page("color-choices", "ColorChoices", "ti ti-palette", "A labeled single choice from a fixed palette of named colour swatches."),
+      page(
         "autocomplete-select",
         "AutocompleteSelect",
         "ti ti-input-search",
@@ -403,7 +410,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 158;
+export const portableUiComponentCount = 160;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
