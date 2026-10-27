@@ -126,14 +126,21 @@ function TooltipSurface(props: TooltipProps): JSX.Element {
     const focusOut = (event: FocusEvent) => {
       if (!target?.contains(event.relatedTarget as Node | null)) leave();
     };
-    const pointerDown = () => {
+    const dismissForUse = () => {
       dismissedUntilLeave = true;
       close();
     };
 
+    // Keyboard activation uses the control just as a pointer press does. Capture it before
+    // a local handler (for example drag pickup) stops propagation.
+    const keyDown = (event: KeyboardEvent) => {
+      if (event.key === " " || event.key === "Enter") dismissForUse();
+    };
+
+    target.addEventListener("keydown", keyDown, true);
     target.addEventListener("pointerenter", enter);
     target.addEventListener("pointerleave", leave);
-    target.addEventListener("pointerdown", pointerDown);
+    target.addEventListener("pointerdown", dismissForUse);
     target.addEventListener("focusin", focusIn);
     target.addEventListener("focusout", focusOut);
 
@@ -142,9 +149,10 @@ function TooltipSurface(props: TooltipProps): JSX.Element {
       if (originalTitle !== null) target?.setAttribute("title", originalTitle);
       if (originalDescription) target?.setAttribute("aria-describedby", originalDescription);
       else target?.removeAttribute("aria-describedby");
+      target?.removeEventListener("keydown", keyDown, true);
       target?.removeEventListener("pointerenter", enter);
       target?.removeEventListener("pointerleave", leave);
-      target?.removeEventListener("pointerdown", pointerDown);
+      target?.removeEventListener("pointerdown", dismissForUse);
       target?.removeEventListener("focusin", focusIn);
       target?.removeEventListener("focusout", focusOut);
     });
