@@ -265,7 +265,7 @@ export const migrate = async (): Promise<void> => {
       suggestion_state_by_name = CASE WHEN state = 'accepted' THEN state_by_name END,
       suggestion_state_at = CASE WHEN state = 'accepted' THEN state_at END
       WHERE suggestion IS NOT NULL`;
-    await tx`ALTER TABLE notebooks.annotations ADD CONSTRAINT annotations_suggestion_state_check
+    await tx`ALTER TABLE notebooks.annotations ADD CONSTRAINT annotations_suggestion_presence_check
       CHECK ((suggestion IS NULL) = (suggestion_state IS NULL))`;
     await tx`ALTER TABLE notebooks.annotation_replies
       DROP CONSTRAINT annotation_replies_body_check,
@@ -277,7 +277,7 @@ export const migrate = async (): Promise<void> => {
       ADD COLUMN suggestion_state_at TIMESTAMPTZ,
       ADD COLUMN suggestion_state_via TEXT CHECK (suggestion_state_via IN ('assistant', 'mcp')),
       ADD CONSTRAINT annotation_replies_content_check CHECK (length(trim(body)) > 0 OR suggestion IS NOT NULL),
-      ADD CONSTRAINT annotation_replies_suggestion_state_check CHECK ((suggestion IS NULL) = (suggestion_state IS NULL))`;
+      ADD CONSTRAINT annotation_replies_suggestion_presence_check CHECK ((suggestion IS NULL) = (suggestion_state IS NULL))`;
     // Keep the target UUID in durable history even if a reply is later removed.
     await tx`ALTER TABLE notebooks.annotation_operations ADD COLUMN reply_id UUID,
       ADD COLUMN via TEXT CHECK (via IN ('assistant', 'mcp'))`;

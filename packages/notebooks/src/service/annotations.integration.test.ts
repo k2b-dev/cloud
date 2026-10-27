@@ -673,7 +673,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     const preserved = await add(note.shortId, { quote: "Another passage" });
     const cap = notebooksCapabilities;
     const listed = await cap.queries["annotation.list"].run({ noteId: note.shortId, author: user.id, state: "open", limit: 1 }, writer);
-    expect(listed).toMatchObject({ ok: true, data: { items: [{ id: root.id }] } });
+    expect(listed).toMatchObject({ ok: true, data: { data: { items: [{ id: root.id }] } } });
     const cliList = await cld(["annotations", "list", note.shortId, "--state", "open", "--author", user.id]);
     expect(cliList.code).toBe(0);
     expect(JSON.parse(cliList.stdout).items.map((item: { id: string }) => item.id)).toEqual([root.id]);
@@ -746,7 +746,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
     expect(await text(note.id)).toBe(content);
     expect(await annotations.readResource(root.id, reader)).toMatchObject({
       ok: true,
-      data: { state: "open", replies: [{ id: replyId, suggestionState: "open" }] },
+      data: { state: "open", replies: [{ id: replyId, suggestionState: "open" }, { suggestionState: "open" }] },
     });
     const shown = await cld(["annotations", "show", root.id], "reader");
     expect(shown.code).toBe(0);
@@ -830,7 +830,7 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
       }),
       { ...writer, idempotencyKey: "second" },
     );
-    expect(created).toMatchObject({ ok: true, data: { from: "# Repeated\n\ntarget, then ".length } });
+    expect(created).toMatchObject({ ok: true, data: { data: { from: "# Repeated\n\ntarget, then ".length } } });
     const added = await cld([
       "annotations",
       "add",
