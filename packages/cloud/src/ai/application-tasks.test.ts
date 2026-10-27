@@ -139,9 +139,9 @@ test("release uses the original scope/person effect identity and never runs infe
   expect(await releaseApplicationAiTask(input)).toBe(false);
 });
 
-test("owner cleanup passes literal snapshot prefixes through the public bridge without inference", async () => {
+test("owner cleanup passes an exact source identity through the public bridge without inference", async () => {
   const remove = spyOn(store, "deleteApplicationAiTasks").mockResolvedValue(3);
-  const selector = { appId: input.appId, scopeId: input.scopeId, sourceIdPrefix: "conversation_%:" };
+  const selector = { appId: input.appId, scopeId: input.scopeId, sourceId: "conversation_%:42" };
   try {
     expect(await deleteApplicationAiTasks(selector)).toBe(3);
     expect(remove).toHaveBeenCalledWith(selector);

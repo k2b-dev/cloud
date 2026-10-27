@@ -208,6 +208,7 @@ export const releaseApplicationAiTaskByEffectKey = async (
   const rows = await db<{ id: string }[]>`
     UPDATE ai.workflow_task SET released_at = COALESCE(released_at, now())
     WHERE app_id = ${input.appId} AND scope_id = ${input.scopeId} AND effect_key = ${input.effectKey} AND run_id IS NULL
+      AND status IN ('succeeded', 'failed', 'canceled')
     RETURNING id::text
   `;
   return rows.length > 0;
@@ -228,7 +229,7 @@ export const listUnreleasedApplicationAiTaskSources = async (
 
 /** Remove an application's task payloads when their owning scope or source is deleted. */
 export const deleteApplicationAiTasks = async (
-  input: { appId: string; scopeId: string; sourceId?: string; sourceIdPrefix?: string },
+  input: { appId: string; scopeId: string; sourceId?: string },
   db: SQL = sql,
 ): Promise<number> =>
   withTransaction(db, async (tx) => {
@@ -239,7 +240,6 @@ export const deleteApplicationAiTasks = async (
         DELETE FROM ai.workflow_task
         WHERE app_id = ${input.appId} AND scope_id = ${input.scopeId} AND run_id IS NULL
           AND (${input.sourceId ?? null}::text IS NULL OR source_id = ${input.sourceId ?? null})
-          AND (${input.sourceIdPrefix ?? null}::text IS NULL OR starts_with(source_id, ${input.sourceIdPrefix ?? null}))
         RETURNING id
       ) SELECT count(*)::int AS count FROM deleted
     `;

@@ -630,9 +630,13 @@ describe("application AI task retention", () => {
       const active = await createWorkflowAiTask({ ...base, effectKey: `${run.appId}:active` });
       const workflow = await createWorkflowAiTask({ ...base, owner: undefined, runId: run.runId, effectKey: `${run.appId}:workflow` });
       await succeed(workflow.task.id);
-      for (const task of [released, recentRelease, recentCompletion, active.task]) {
+      for (const task of [released, recentRelease, recentCompletion]) {
         expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: task.effectKey })).toBe(true);
       }
+      expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: active.task.effectKey })).toBe(false);
+      await claimWorkflowAiTask(active.task.id);
+      expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: active.task.effectKey })).toBe(false);
+      expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: "absent" })).toBe(false);
       expect(await aiStore.releaseApplicationAiTaskByEffectKey({ ...base.owner, effectKey: workflow.task.effectKey })).toBe(false);
       await sql`
         UPDATE ai.workflow_task SET completed_at = now() - interval '25 hours'
@@ -640,7 +644,7 @@ describe("application AI task retention", () => {
       `;
       await sql`
         UPDATE ai.workflow_task SET released_at = now() - interval '25 hours'
-        WHERE app_id = ${run.appId} AND id <> ${recentRelease.id}::uuid AND id <> ${dormant.id}::uuid
+        WHERE app_id = ${run.appId} AND released_at IS NOT NULL AND id <> ${recentRelease.id}::uuid
       `;
       // Include all terminal statuses, enough to require two bounded recovery sweeps.
       await sql`
@@ -754,7 +758,7 @@ describe("application AI task retention", () => {
 });
 
 describe("application AI source history deletion", () => {
-  test("literal prefixes remove every snapshot only within the specified application and scope", async () => {
+  test("exact source identities do not match neighboring snapshots, wildcards or other owners", async () => {
     await ready();
     const run = await createRun();
     const otherAppId = `${run.appId}-other`;
@@ -786,12 +790,10 @@ describe("application AI source history deletion", () => {
       });
       await succeed(workflow.task.id);
       const active = await createWorkflowAiTask({ ...base, owner, effectKey: crypto.randomUUID(), scope: source("conversation_%:43") });
-      expect(await aiStore.deleteApplicationAiTasks({ ...owner, sourceId: "conversation_X:42", sourceIdPrefix: "conversation_%:" })).toBe(
-        0,
-      );
-      expect(await aiStore.deleteApplicationAiTasks({ ...owner, sourceIdPrefix: "conversation_%:" })).toBe(3);
-      for (const removed of [snapshot, manual, active.task]) expect(await getWorkflowAiTask(removed.id)).toBeNull();
-      for (const retained of [similar, neighbor, otherScope, otherApp, workflow.task])
+      expect(await aiStore.deleteApplicationAiTasks({ ...owner, sourceId: "conversation_%:" })).toBe(0);
+      expect(await aiStore.deleteApplicationAiTasks({ ...owner, sourceId: "conversation_%:42" })).toBe(1);
+      expect(await getWorkflowAiTask(snapshot.id)).toBeNull();
+      for (const retained of [manual, active.task, similar, neighbor, otherScope, otherApp, workflow.task])
         expect(await getWorkflowAiTask(retained.id)).not.toBeNull();
     } finally {
       await sql`DELETE FROM ai.workflow_scope_admission WHERE app_id IN (${run.appId}, ${otherAppId})`;

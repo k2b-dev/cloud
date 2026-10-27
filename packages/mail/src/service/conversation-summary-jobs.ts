@@ -18,6 +18,7 @@ import {
 import { generateConversationSummaryAi, getConversationSummaryAiAvailability } from "./conversation-summary-ai";
 import {
   discardConversationSummaries,
+  discardConversationSummaryTask,
   reconcileConversationSummaryTasks,
   releaseConversationSummaryTask,
 } from "./conversation-summary-lifecycle";
@@ -361,7 +362,7 @@ export const executeConversationSummary = async (
       (row.request.expectedSummaryRevision !== undefined && Number(summary.summary_revision) !== row.request.expectedSummaryRevision)
     ) {
       await release(db, row);
-      await releaseConversationSummaryTask(db, row);
+      await discardConversationSummaryTask(db, row);
       await db`UPDATE mail.conversation_summary_requests SET status = 'idle', claim_id = NULL, claimed_at = NULL
         WHERE conversation_id = ${scope.conversationId}::uuid`;
       await enqueueMailInvalidation(db, scope);
@@ -385,6 +386,7 @@ export const executeConversationSummary = async (
   if ("delayMs" in claimed) return { status: "pending", delayMs: claimed.delayMs };
   const { row, basis } = claimed;
   let inferenceCompleted = false;
+  let leaseInterrupted = false;
   try {
     const context = row.request.context;
     await assertRequestCredential(context);
@@ -393,11 +395,16 @@ export const executeConversationSummary = async (
     const output = await withLeaseHeartbeat({
       intervalMs: 30_000,
       heartbeat: async () => {
-        if (options.signal?.aborted) throw options.signal.reason;
-        await options.heartbeat?.();
-        const renewed = await sql`UPDATE mail.conversation_summary_requests SET claimed_at = now()
-          WHERE conversation_id = ${scope.conversationId}::uuid AND claim_id = ${claimId}::uuid RETURNING conversation_id`;
-        if (!renewed.length) throw new Error("Summary worker lost its claim");
+        try {
+          if (options.signal?.aborted) throw options.signal.reason;
+          await options.heartbeat?.();
+          const renewed = await sql`UPDATE mail.conversation_summary_requests SET claimed_at = now()
+            WHERE conversation_id = ${scope.conversationId}::uuid AND claim_id = ${claimId}::uuid RETURNING conversation_id`;
+          if (!renewed.length) throw new Error("Summary worker lost its claim");
+        } catch (error) {
+          leaseInterrupted = true;
+          throw error;
+        }
       },
       work: async (_assertLease, signal) =>
         (options.generate ?? generateConversationSummaryAi)({
@@ -509,8 +516,9 @@ export const executeConversationSummary = async (
     if (settled === "followup") await submitConversationSummary(scope).catch(reportSubmissionFailure);
     return { status: settled };
   } catch (error) {
-    if (options.signal?.aborted) {
-      // Worker shutdown is recovery, not a failed inference. Keep its reservation and stable task key.
+    if (options.signal?.aborted || leaseInterrupted) {
+      // An interrupted observer leaves shared inference alive. Preserve its key and reservation for recovery.
+      const delayMs = options.signal?.aborted ? 0 : SUMMARY_QUIET_PERIOD_MS;
       await sql.begin(async (db) => {
         const current = await lockScope(db, scope);
         if (!current) {
@@ -520,11 +528,12 @@ export const executeConversationSummary = async (
         const active = await requestRow(db, scope);
         if (active?.claim_id !== claimId) return;
         await db`UPDATE mail.conversation_summary_requests SET status = 'writing', claim_id = NULL,
-          claimed_at = NULL, due_at = now(), updated_at = now() WHERE conversation_id = ${scope.conversationId}::uuid`;
+          claimed_at = NULL, due_at = now() + (${delayMs}::int * interval '1 millisecond'), updated_at = now()
+          WHERE conversation_id = ${scope.conversationId}::uuid`;
         await enqueueMailInvalidation(db, scope);
       });
       mailLive.wake();
-      return { status: "writing" };
+      return { status: "writing", ...(delayMs ? { delayMs } : {}) };
     }
     const recovered = await sql.begin(async (db) => {
       const current = await lockScope(db, scope);
@@ -534,7 +543,8 @@ export const executeConversationSummary = async (
         return;
       }
       if (!active || active.claim_id !== claimId) {
-        if (active?.request_id !== row.request_id || active.status !== "writing") await releaseConversationSummaryTask(db, row);
+        if (active?.request_id !== row.request_id || active.status !== "writing")
+          await discardConversationSummaryTask(db, { ...row, basis });
         return;
       }
       if (inferenceCompleted && row.request.source)
@@ -548,7 +558,7 @@ export const executeConversationSummary = async (
           }),
         );
       else await release(db, active);
-      await releaseConversationSummaryTask(db, row);
+      await discardConversationSummaryTask(db, { ...row, basis });
       const failure: NonNullable<ConversationContentSummary["failure"]> = {
         code: summaryFailureCode(error),
         attempts: active.attempts,

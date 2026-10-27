@@ -63,11 +63,13 @@ await sql.begin(async (tx) => {
 });
 ```
 
-Release returns `true` when the task exists and `false` when none exists.
-Repeated release preserves the first release time. It can also release active
-work that the application no longer needs; it does not cancel inference or
-reset admission accounting. Do not release from an observer's abort handler
-while another worker still needs the result.
+Release returns `true` when a terminal task exists and `false` when the task
+is absent or still active. Repeated release preserves the first release time.
+Release does not cancel inference or reset admission accounting. Do not release
+from an observer's abort handler while another worker still needs the result.
+A `false` result for an active task leaves it unreleased: preserve the request's
+identity and retry release after it becomes terminal, or delete it when its owner
+is removed. An interrupted observer must not discard the only recovery key.
 
 The existing AI recovery sweep deletes at most 100 terminal application tasks
 per pass once **both release and completion are more than 24 hours old**.
@@ -87,11 +89,11 @@ a settled request. Keep the application's permanent request state authoritative.
 
 Call `deleteApplicationAiTasks({ appId, scopeId }, tx)` from `@k2b/cloud/ai`
 inside the transaction deleting an owning scope. Add `sourceId` to restrict
-deletion to one exact source identity, or `sourceIdPrefix` to remove a source's
-snapshot history. For example, `sourceIdPrefix: itemId + ":"` removes both
-`itemId + ":42"` and `itemId + ":manual:request"`. Prefixes are literal;
-`%` and `_` are not wildcards. When both source filters are supplied, both must
-match. Application and scope filters always apply. The function returns the deleted count
+deletion to one exact source identity. Composite snapshot identities are distinct
+sources: `itemId + ":42"` does not match `itemId + ":43"`. There is no prefix
+selector; `%` and `_` are literal characters. Omitting `sourceId` deletes the
+entire owning scope. Application and scope filters always apply.
+The function returns the deleted count
 and removes application tasks in every status immediately. Workflow-owned
 tasks and other scopes remain untouched. Existing rate and daily admission
 history retains its normal 24-hour lifetime; deleting data does not replenish
@@ -111,3 +113,17 @@ lock, delete sources whose owner no longer exists. This reconciles a worker
 crash between late task creation and noticing owner deletion, while retaining
 unreleased results for live dormant requests. Mail performs this at startup and
 in its minute recovery sweep.
+
+Mail removes a mailbox's full scope in its deletion transaction. Conversation
+sources include snapshot identities, so deleting one conversation releases its
+request. Active work with a known captured source is deleted by exact identity;
+other orphan cleanup uses the bounded exact-source reconciliation.
+Released results retain the normal 24-hour grace period; unreleased orphaned
+sources are removed on the next sweep that reaches them.
+
+Mail retains an interrupted summary observer's request key, frozen source and
+daily reservation. Heartbeat failures retry after 60 seconds; shutdown recovery
+can resume immediately. These lease retries have no attempt cap while the
+request remains recoverable. They rejoin the existing platform task rather than
+starting another inference. Check job delivery and database health if a summary
+remains writing.

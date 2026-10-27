@@ -593,17 +593,22 @@ across a crash before result persistence.
 After durably settling, discarding or failing the application request, call
 `releaseApplicationAiTask({ appId, scopeId, effectKey, usageSubject? }, db)`
 from `@k2b/cloud/ai` in the **same transaction**. Supply the identity fields used
-for generation. Do not release a recoverable request when its worker shuts down.
+for generation. Release returns `true` for a terminal task and `false` for an
+absent or active task; repeated release preserves the first release time.
+An active task remains unreleased: retain its request identity and retry release
+after terminal completion, or delete it with its owner. Keep interrupted observers
+recoverable, including lease failures. Do not release a recoverable request when
+its worker shuts down.
 Unreleased results remain available for dormant recovery. Released terminal
 results are pruned in bounded batches after both release and completion are at
 least 24 hours old; durable domain state must prevent replaying a settled key
 after pruning.
 
 When an owner is deleted, fence future task creation and recovery, then call
-`deleteApplicationAiTasks({ appId, scopeId, sourceId?, sourceIdPrefix? }, db)` in
+`deleteApplicationAiTasks({ appId, scopeId, sourceId? }, db)` in
 its deletion transaction. This removes application task payloads in every state,
-including cached results, without resetting admission accounting. Optional exact
-and literal-prefix source filters intersect; workflow tasks remain separate.
+including cached results, without resetting admission accounting. The optional
+source selector matches one exact identity; workflow tasks remain separate.
 Keep the transaction short and call cleanup last, because it holds the shared
 admission lock until commit. A worker that notices an obsolete request after
 creating its task must also release or delete that late task. For crash recovery,

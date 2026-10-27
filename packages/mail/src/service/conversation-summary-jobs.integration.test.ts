@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import * as applicationAi from "@k2b/cloud/ai";
 import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
@@ -525,28 +525,37 @@ suite("durable conversation summaries", () => {
     return task.id;
   };
 
-  test("conversation cleanup releases holds and removes every snapshot without touching another conversation", async () => {
+  test("conversation cleanup releases holds; exact reconciliation removes its orphaned snapshots", async () => {
     const scope = await conversation();
     const other = await conversation();
     const rule = { ...source, id: "cleanup-rule" };
     unwrap(await scheduleConversationSummary({ ...scope, context, source: rule }));
     const ids = [await seedTask(scope, "snapshot"), await seedTask(scope, "manual:request")];
     const neighbor = await seedTask(other, "snapshot");
+    const retainedRelease = await seedTask(scope, "released-snapshot");
+    await sql`UPDATE ai.workflow_task SET released_at = now() WHERE id = ${retainedRelease}::uuid`;
     try {
       await sql.begin(async (db) => {
         await db`SELECT id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR NO KEY UPDATE`;
         await discardConversationSummaries(db, scope);
+        await db`DELETE FROM mail.conversations WHERE id = ${scope.conversationId}::uuid`;
       });
+      await reconcileConversationSummaryTasks();
       expect(await sql`SELECT id FROM ai.workflow_task WHERE id IN (${ids[0]}::uuid,${ids[1]}::uuid)`).toHaveLength(0);
       expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${neighbor}::uuid`).toHaveLength(1);
+      expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${retainedRelease}::uuid`).toHaveLength(1);
       expect(unwrap(await getAiDailySourceStats({ mailboxId, sourceId: rule.id }))).toMatchObject({ reservedAiCalls: 0 });
-      expect(await state(scope)).toMatchObject({ status: "idle", summary: null });
+      expect(
+        await sql`SELECT conversation_id FROM mail.conversation_summary_requests
+        WHERE conversation_id = ${scope.conversationId}::uuid`,
+      ).toHaveLength(0);
     } finally {
       await sql`DELETE FROM ai.workflow_task WHERE scope_id = ${mailboxId}`;
     }
   });
 
-  test("mailbox deletion discards its pending summaries and AI task payloads", async () => {
+  test("mailbox deletion cleans settled summary history with one scope deletion", async () => {
+    const cleanup = spyOn(applicationAi, "deleteApplicationAiTasks");
     const mailbox = unwrap(await createMailbox(context, { name: "Summary deletion" }));
     try {
       const [row] = await sql<{ id: string }[]>`INSERT INTO mail.conversations(short_id,mailbox_id,subject,latest_message_at)
@@ -554,13 +563,18 @@ suite("durable conversation summaries", () => {
       if (!row) throw new Error("Missing deletion conversation");
       const scope = { mailboxId: mailbox.id, conversationId: row.id };
       unwrap(await scheduleConversationSummary({ ...scope, context, source }));
+      await ready(scope);
+      await run(scope); // Historical basis remains after its platform result was pruned or absent.
       const taskId = await seedTask(scope, "snapshot");
       unwrap(await deleteMailbox(context, mailbox.id));
+      expect(cleanup).toHaveBeenCalledTimes(1);
+      expect(cleanup.mock.calls[0]?.[0]).toEqual({ appId: "mail", scopeId: mailbox.id });
       expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${taskId}::uuid`).toHaveLength(0);
       expect(await sql`SELECT conversation_id FROM mail.conversation_summary_requests WHERE mailbox_id = ${mailbox.id}::uuid`).toHaveLength(
         0,
       );
     } finally {
+      cleanup.mockRestore();
       await sql`DELETE FROM ai.workflow_task WHERE scope_id = ${mailbox.id}`;
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox.id}::uuid`;
     }
@@ -581,7 +595,7 @@ suite("durable conversation summaries", () => {
     }
   });
 
-  test("a late task created after conversation deletion is removed when its worker settles", async () => {
+  test("exact reconciliation removes a late task created after conversation deletion", async () => {
     const scope = await conversation();
     unwrap(await scheduleConversationSummary({ ...scope, context, source }));
     await ready(scope);
@@ -595,10 +609,11 @@ suite("durable conversation summaries", () => {
       lateTaskId = await seedTask(scope, "late-snapshot");
       return output;
     });
+    await reconcileConversationSummaryTasks();
     expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${lateTaskId}::uuid`).toHaveLength(0);
   });
 
-  test("shutdown after owner deletion discards a task created in the deletion race", async () => {
+  test("exact reconciliation removes the task when shutdown follows owner deletion", async () => {
     const scope = await conversation();
     unwrap(await scheduleConversationSummary({ ...scope, context, source }));
     await ready(scope);
@@ -617,6 +632,7 @@ suite("durable conversation summaries", () => {
         throw abort.signal.reason;
       },
     });
+    await reconcileConversationSummaryTasks();
     expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${lateTaskId}::uuid`).toHaveLength(0);
   });
 
@@ -636,11 +652,90 @@ suite("durable conversation summaries", () => {
       });
       expect(release).not.toHaveBeenCalled();
       await ready(scope);
+      const [request] = await sql<{ request_id: string }[]>`SELECT request_id FROM mail.conversation_summary_requests
+        WHERE conversation_id = ${scope.conversationId}::uuid`;
+      if (!request) throw new Error("Missing durable request");
       await run(scope);
       expect(release).toHaveBeenCalledTimes(1);
+      expect(release.mock.calls[0]?.[0].effectKey).toBe(request.request_id);
+      expect(release.mock.calls[0]?.[1]).toBeDefined();
+      expect(release.mock.calls[0]?.[1]).not.toBe(sql);
       expect(release.mock.calls[0]?.[0]).toMatchObject({ appId: "mail", scopeId: mailboxId, usageSubject: context.accessSubject });
     } finally {
       release.mockRestore();
+    }
+  });
+
+  test("a lost heartbeat retains the request key and hold until its shared inference can settle", async () => {
+    const scope = await conversation();
+    const rule = { ...source, id: "lease-recovery" };
+    unwrap(await scheduleConversationSummary({ ...scope, context, source: rule }));
+    await ready(scope);
+    const release = spyOn(applicationAi, "releaseApplicationAiTask");
+    const entered = Promise.withResolvers<void>();
+    let beats = 0;
+    let originalKey = "";
+    jest.useFakeTimers();
+    try {
+      const interrupted = executeConversationSummary(scope, {
+        heartbeat: async () => {
+          if (++beats > 1) throw new Error("Temporary heartbeat failure");
+        },
+        generate: async ({ signal, effectKey }) => {
+          originalKey = effectKey;
+          entered.resolve();
+          return new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+        },
+      });
+      await entered.promise;
+      jest.advanceTimersByTime(30_000);
+      expect(await interrupted).toEqual({ status: "writing", delayMs: SUMMARY_QUIET_PERIOD_MS });
+      expect(release).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+      setSystemTime(NOW);
+      release.mockRestore();
+    }
+    expect(await state(scope)).toMatchObject({ status: "writing", failure: null });
+    expect(unwrap(await getAiDailySourceStats({ mailboxId, sourceId: rule.id }))).toMatchObject({ reservedAiCalls: 1, aiCallsToday: 0 });
+    await ready(scope);
+    await run(scope, async ({ effectKey }) => {
+      expect(effectKey).toBe(originalKey);
+      return output;
+    });
+    expect(await state(scope)).toMatchObject({ status: "idle", ai: true });
+    expect(unwrap(await getAiDailySourceStats({ mailboxId, sourceId: rule.id }))).toMatchObject({ reservedAiCalls: 0, aiCallsToday: 1 });
+  });
+
+  test("a person edit during interrupted inference discards the exact active source", async () => {
+    const scope = await conversation();
+    const rule = { ...source, id: "discard-recovery" };
+    unwrap(await scheduleConversationSummary({ ...scope, context, source: rule }));
+    await ready(scope);
+    const abort = new AbortController();
+    await executeConversationSummary(scope, {
+      signal: abort.signal,
+      generate: async () => {
+        abort.abort(new Error("Shutdown"));
+        throw abort.signal.reason;
+      },
+    });
+    const [request] = await sql<{ basis: { throughMessageSeq: string | null; messageCount: number } }[]>`SELECT basis
+      FROM mail.conversation_summary_requests WHERE conversation_id = ${scope.conversationId}::uuid`;
+    if (!request) throw new Error("Missing frozen basis");
+    const activeTask = await seedTask(scope, `${request.basis.throughMessageSeq}:${request.basis.messageCount}`);
+    const neighbor = await seedTask(scope, "different-snapshot");
+    await sql`UPDATE ai.workflow_task SET status = 'running', completed_at = NULL WHERE id = ${activeTask}::uuid`;
+    try {
+      unwrap(await updateConversationSummary({ ...scope, context, input: { summary: "Person's version", expectedSummaryRevision: 1 } }));
+      await ready(scope);
+      expect(await run(scope)).toEqual({ status: "idle" });
+      expect(await state(scope)).toMatchObject({ summary: "Person's version", source: "person", status: "idle" });
+      expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${activeTask}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${neighbor}::uuid`).toHaveLength(1);
+      expect(unwrap(await getAiDailySourceStats({ mailboxId, sourceId: rule.id }))).toMatchObject({ reservedAiCalls: 0 });
+    } finally {
+      await sql`DELETE FROM ai.workflow_task WHERE id IN (${activeTask}::uuid,${neighbor}::uuid)`;
     }
   });
 

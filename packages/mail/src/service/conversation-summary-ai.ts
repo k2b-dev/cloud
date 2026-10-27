@@ -21,6 +21,14 @@ export type GenerateConversationSummaryAiInput = {
   signal: AbortSignal;
 };
 
+/** Exact platform source identity, shared by inference and discarded-request cleanup. */
+export const conversationSummaryAiSourceId = (
+  input: Pick<GenerateConversationSummaryAiInput, "conversationId" | "effectKey" | "usageSubject" | "throughMessageSeq" | "messageCount">,
+): string =>
+  input.usageSubject
+    ? `${input.conversationId}:manual:${input.effectKey}`
+    : `${input.conversationId}:${input.throughMessageSeq}:${input.messageCount}`;
+
 export type ConversationSummaryAiAllowance = { unlimited: boolean; usedPercent: number | null; resetsAt: string | null };
 
 const OUTPUT_CHARS = { short: 1_000, bullets: 3_000, detailed: 6_000 } as const;
@@ -220,9 +228,7 @@ export const generateConversationSummaryAi = async (
     signal: input.signal,
     source: {
       // Each explicit personal request is a source; automatic work shares the message snapshot cap.
-      sourceId: input.usageSubject
-        ? `${input.conversationId}:manual:${input.effectKey}`
-        : `${input.conversationId}:${input.throughMessageSeq}:${input.messageCount}`,
+      sourceId: conversationSummaryAiSourceId(input),
       sourceRevision: input.sourceRevision,
       budget: env.WORKFLOW_AI_BUDGET,
     },
