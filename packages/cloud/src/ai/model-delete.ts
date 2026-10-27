@@ -170,7 +170,7 @@ export const deleteAiCatalogEntry = async (
       for (const owner of owners)
         await db`INSERT INTO ai.model_change_notices(user_id,name,retargeted) VALUES(${owner.id}::uuid,${project.name},${input.retarget})`;
       if (input.retarget)
-        await db`UPDATE ai.projects SET default_model=${JSON.stringify({ id: input.retargetTo })}::jsonb,revision=revision+1,updated_at=clock_timestamp() WHERE id=${project.id}::uuid`;
+        await db`UPDATE ai.projects SET default_model=${JSON.stringify({ id: input.retargetTo })}::text::jsonb,revision=revision+1,updated_at=clock_timestamp() WHERE id=${project.id}::uuid`;
     }
     for (const workflow of workflows) {
       if (workflow.created_by_kind === "user" && workflow.created_by_id)
@@ -211,7 +211,7 @@ export const deleteAiCatalogEntry = async (
         { db },
       );
       for (const activation of activations)
-        await db`UPDATE workflows.activation SET authorization_snapshot=${JSON.stringify(activation.authorization_snapshot)}::jsonb WHERE workflow_id=${workflow.id}::uuid AND key=${activation.key}`;
+        await db`UPDATE workflows.activation SET authorization_snapshot=${JSON.stringify(activation.authorization_snapshot)}::text::jsonb WHERE workflow_id=${workflow.id}::uuid AND key=${activation.key}`;
     }
     if (kind === "variant") await db`DELETE FROM ai.model_variants WHERE id=${id}`;
     else if (kind === "model") await db`DELETE FROM ai.models WHERE id=${id}`;
@@ -227,7 +227,7 @@ export const deleteAiCatalogEntry = async (
           typeof rule.scope !== "string" ||
           !modelIds.includes(rule.scope),
       );
-      await db`UPDATE ai.cost_config SET rules=${JSON.stringify(rules)}::jsonb,revision=revision+1 WHERE singleton`;
+      await db`UPDATE ai.cost_config SET rules=${JSON.stringify(rules)}::text::jsonb,revision=revision+1 WHERE singleton`;
       await aiModelAccess.syncModels(
         (await aiModelCatalog.models(db)).map((model) => model.id),
         [],

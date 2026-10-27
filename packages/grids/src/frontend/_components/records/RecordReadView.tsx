@@ -1,7 +1,6 @@
-import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import type { DateContext } from "@k2b/stdlib";
-import { clipboard } from "@k2b/stdlib/solid";
-import { DescriptionList, DetailPanel, IconButton, Placeholder, StatusBadge, Tooltip, useLocale } from "@k2b/ui";
+import { DescriptionList, DetailPanel, type DropdownItem, Placeholder, StatusBadge, useLocale } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { ColumnSpec, FormatSpec } from "../../../contracts";
@@ -16,7 +15,6 @@ import { fieldDisplayFormatForView, recordDisplayTitle, recordTitleField } from 
 type RecordReadViewMode = "live" | "trash" | "snapshot";
 
 type RecordReadViewProps = {
-  cloudUrl: string;
   baseId: string;
   tableId: string;
   tableName: string;
@@ -25,6 +23,9 @@ type RecordReadViewProps = {
   mode?: RecordReadViewMode;
   headerMeta?: JSX.Element;
   showFinalizationStatus?: boolean;
+  /** The record's "…" menu; a live record adds "Copy Cloud ID". */
+  headerMenu?: readonly DropdownItem[];
+  headerMenuLabel?: string;
   headerActions?: JSX.Element;
   quickActions?: JSX.Element;
   relationLabels?: Record<string, string>;
@@ -44,7 +45,7 @@ export const hasRecordDetailValue = (value: unknown): boolean => value !== null 
 export default function RecordReadView(props: RecordReadViewProps) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
-  const recordClipboard = clipboard.createWriter({ write: cloudResourceClipboard.write, copiedFor: 1800 });
+  const cloudId = useCloudIdCopy();
   const mode = () => props.mode ?? "live";
   const visibleFields = () => visibleFieldsFor(props.fields);
   const titleField = () => recordTitleField(visibleFields());
@@ -111,18 +112,10 @@ export default function RecordReadView(props: RecordReadViewProps) {
 
   const relationTargetTableId = (field: Field): string | undefined => (field.config as { targetTableId?: string }).targetTableId;
 
-  const recordHref = () =>
-    `/app/grids/${encodeURIComponent(props.baseId)}/table/${encodeURIComponent(props.tableId)}?record=${encodeURIComponent(props.record.id)}`;
-  const copyRecord = () =>
-    recordClipboard.copy({
-      cloudUrl: props.cloudUrl,
-      ref: { type: "grids.record" as const, id: props.record.id },
-      fallbackText: new URL(recordHref(), props.cloudUrl).href,
-    });
-  const copyRecordLabel = () => {
-    if (recordClipboard.error()) return t().copyReferenceFailed;
-    return recordClipboard.wasCopied() ? t().copiedReference : t().copyReference;
-  };
+  const headerMenu = (): DropdownItem[] => [
+    ...(props.headerMenu ?? []),
+    ...(mode() === "live" ? cloudId.section({ type: "grids.record", id: props.record.id }) : []),
+  ];
 
   const defaultHeaderMeta = () => (
     <>
@@ -146,14 +139,6 @@ export default function RecordReadView(props: RecordReadViewProps) {
       </Show>
       <span class="text-[0.6875rem] leading-4 text-dimmed">v{props.record.version}</span>
       <span class="text-[0.6875rem] leading-4 text-dimmed">{props.record.id}</span>
-      <Tooltip.Anchor content={copyRecordLabel()}>
-        <IconButton type="button" variant="ghost" size="xs" class="h-5! w-5!" label={copyRecordLabel()} onClick={() => void copyRecord()}>
-          <i
-            class={recordClipboard.error() ? "ti ti-alert-circle text-danger" : recordClipboard.wasCopied() ? "ti ti-check" : "ti ti-copy"}
-            aria-hidden="true"
-          />
-        </IconButton>
-      </Tooltip.Anchor>
     </>
   );
 
@@ -193,6 +178,8 @@ export default function RecordReadView(props: RecordReadViewProps) {
         title={recordTitle()}
         subtitle={props.tableName}
         meta={props.headerMeta ?? defaultHeaderMeta()}
+        menu={headerMenu()}
+        menuLabel={props.headerMenuLabel}
         actions={props.headerActions}
         primaryActions={props.quickActions}
       />

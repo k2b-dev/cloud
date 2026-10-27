@@ -1,7 +1,6 @@
 import type { AiProject, AiProjectAccess, AiProjectFile, AiProjectKnowledge, AiProjectReference } from "@k2b/cloud/ai";
-import { parseAiModelChoice } from "@k2b/cloud/ai";
 import { arg, type CloudCliContext, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
-import { principalLabel } from "@k2b/cloud/shared";
+import { parseAiModelChoice, principalLabel } from "@k2b/cloud/shared";
 import { jsonRequest, printRows, printValue, queryString, readApi, readProjectsApi, requireConfirmation } from "./shared";
 
 /** Human rows name each grantee for people; structured output keeps the entries. */

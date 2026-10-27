@@ -9,7 +9,6 @@ import type {
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
-import { type AiModelRequest, type AiPeopleModels, aiModelClassFallbackChain } from "@k2b/cloud/ai";
 import { CODE_RUNTIME_TOOL_NAMES, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
@@ -40,6 +39,7 @@ import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
 import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
+import { type AiModelRequest, type AiPeopleModels, aiModelClassFallbackChain } from "@k2b/cloud/shared";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {

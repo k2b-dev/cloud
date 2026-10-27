@@ -4431,7 +4431,13 @@ export const mailCapabilities = localizeCapabilityErrors(
       },
     },
     types: {
-      mailbox: { title: "Mailbox", description: "A mailbox the actor may access.", icon: "ti ti-inbox", reader: "mailbox.read" },
+      mailbox: {
+        title: "Mailbox",
+        description: "A mailbox the actor may access.",
+        icon: "ti ti-inbox",
+        reader: "mailbox.read",
+        pages: ["/app/mail/:id"],
+      },
       "sender-identity": { title: "Sender identity", description: "A From identity configured for a mailbox.", icon: "ti ti-user-send" },
       folder: { title: "Mail folder", description: "A selectable provider mail folder.", icon: "ti ti-folder" },
       conversation: {
@@ -4439,15 +4445,28 @@ export const mailCapabilities = localizeCapabilityErrors(
         description: "A grouped mail conversation with collaboration state.",
         icon: "ti ti-mail",
         reader: "conversation.read",
+        pages: ["/app/mail/:mailbox?conversation=:id"],
       },
-      message: { title: "Mail message", description: "One message in an accessible mailbox.", icon: "ti ti-mail", reader: "message.read" },
+      message: {
+        title: "Mail message",
+        description: "One message in an accessible mailbox.",
+        icon: "ti ti-mail",
+        reader: "message.read",
+        pages: ["/app/mail/:mailbox?message=:id"],
+      },
       attachment: {
         title: "Mail attachment",
         description: "Bounded metadata for a message attachment.",
         icon: "ti ti-paperclip",
         reader: "attachment.read",
       },
-      draft: { title: "Mail draft", description: "An editable outgoing message.", icon: "ti ti-mail-pencil", reader: "draft.read" },
+      draft: {
+        title: "Mail draft",
+        description: "An editable outgoing message.",
+        icon: "ti ti-mail-pencil",
+        reader: "draft.read",
+        pages: ["/app/mail/:mailbox/compose/:id", "/app/mail/:mailbox/drafts/:id"],
+      },
       tag: { title: "Mail tag", description: "A Cloud-local collaboration tag.", icon: "ti ti-tag" },
       comment: { title: "Mail comment", description: "An internal conversation comment.", icon: "ti ti-message", reader: "comment.read" },
       reminder: {

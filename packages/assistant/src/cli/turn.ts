@@ -1,6 +1,5 @@
 import { basename } from "node:path";
 import type { AiConversation, AiDraftContentPart, AiFileStat, AiTurnContentPart } from "@k2b/cloud/ai";
-import { AiModelRequestSchema } from "@k2b/cloud/ai";
 import {
   AI_IMAGE_INPUT_MAX_BYTES,
   AI_TURN_ATTACHMENT_MAX_ITEMS,
@@ -11,6 +10,7 @@ import {
   isAiImageMediaType,
 } from "@k2b/cloud/ai/browser";
 import { type CloudCliContext, printStructured } from "@k2b/cloud/cli";
+import { AiModelRequestSchema } from "@k2b/cloud/shared";
 import { z } from "zod";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { classifyLocalPath } from "./local-paths";

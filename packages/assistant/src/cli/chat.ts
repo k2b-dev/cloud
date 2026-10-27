@@ -11,9 +11,9 @@ import type {
   AiStoredMessage,
   AiUserPrefs,
 } from "@k2b/cloud/ai";
-import { parseAiModelChoice } from "@k2b/cloud/ai";
 import { guessAiMediaType } from "@k2b/cloud/ai/browser";
 import { arg, cloudResourceUrl, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
+import { parseAiModelChoice } from "@k2b/cloud/shared";
 import { pendingActionQuestion, printPendingActionContent } from "./action-question";
 import { buildAssistantChatDiagnostic } from "./diagnostics";
 import { AI_API, jsonRequest, parseJson, printRows, printValue, queryString, readApi, requireConfirmation, shortId } from "./shared";
