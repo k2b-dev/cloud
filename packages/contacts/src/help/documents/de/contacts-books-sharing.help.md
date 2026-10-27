@@ -6,7 +6,7 @@ description: Ein Kontaktbuch umbenennen, seine Tags bearbeiten, Zugriff geben, A
 order: 120
 ---
 
-Die Kontaktbuch-Einstellungen steuern Name, Beschreibung, Tags, Zugriff, API-Schlüssel, Import, Export und Löschen eines Kontaktbuchs. Öffne sie mit der Einstellungsaktion neben einem Kontaktbuch in der Kontakte-Seitenleiste. Auf Mobilgeräten bleibt diese Aktion neben den Kontaktbüchern sichtbar, auf die du Zugriff **Verwalten** hast.
+Die Kontaktbuch-Einstellungen steuern Name, Beschreibung, Tags, Zugriff, API-Schlüssel, Import, Export und Löschen eines Kontaktbuchs. Öffne innerhalb eines Kontaktbuchs **… → Buch-Einstellungen**. Dafür brauchst du Zugriff **Verwalten**. Du kannst auch die Einstellungsaktion neben dem Kontaktbuch in der Seitenleiste oder im Navigationsmenü auf dem Telefon nutzen.
 
 Auch Cloud-Administratoren sehen ein Kontaktbuch in Kontakte nur mit Zugriff; **Administration → Kontakte** zeigt jedes Kontaktbuch und seinen Zugriff.
 

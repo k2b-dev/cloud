@@ -44,7 +44,6 @@ describe("Contacts results", () => {
       <ContactsResults
         scope="book"
         bookId="team"
-        initialSearch="Ada"
         initialHref="/app/contacts/team?search=Ada&contact=ada&contactBook=team"
         initialContacts={[contact]}
         initialTotal={1}
@@ -54,7 +53,6 @@ describe("Contacts results", () => {
         bookNames={{ team: "Team contacts" }}
         initialSelectedContactId={contact.id}
         initialSelectedBookId={contact.bookId}
-        searchPlaceholder="Filter contacts"
         initialFavoriteKeys={[]}
         canWrite={false}
         writableBooks={[]}
@@ -75,7 +73,6 @@ const renderEmpty = (locale: string, scope: ContactsScope, href = "/app/contacts
       <ContactsResults
         scope={scope}
         bookId={scope === "book" ? "team" : undefined}
-        initialSearch=""
         initialHref={href}
         initialContacts={[]}
         initialTotal={0}
@@ -85,7 +82,6 @@ const renderEmpty = (locale: string, scope: ContactsScope, href = "/app/contacts
         bookNames={{}}
         initialSelectedContactId={null}
         initialSelectedBookId={null}
-        searchPlaceholder="Filter contacts"
         initialFavoriteKeys={[]}
         canWrite={scope === "book" && canWrite}
         writableBooks={writableBooks}
@@ -99,13 +95,12 @@ for (const locale of ["en", "de"]) {
     const t = resultsMessages.resolve([locale]).t;
     const cases = [
       ["all", t.emptyAllTitle, t.emptyAllHint],
-      ["favorites", t.emptyFavoritesTitle, t.emptyFavoritesHint],
       ["book", t.emptyBookTitle, t.emptyBookHint],
       ["noBooks", t.emptyNoBooksTitle, t.emptyNoBooksHint],
     ] satisfies [ContactsScope, string, string][];
     for (const [scope, title, hint] of cases) {
       test(`renders the ${scope} title and hint from the initial snapshot`, () => {
-        const html = renderEmpty(locale, scope, scope === "favorites" ? "/app/contacts?favorites=true" : "/app/contacts");
+        const html = renderEmpty(locale, scope, "/app/contacts");
         expect(html).toContain(title);
         expect(html).toContain(hint);
         if (scope === "noBooks") {
@@ -116,6 +111,15 @@ for (const locale of ["en", "de"]) {
           expect(html).not.toContain("ti-cube-plus");
           expect(html).not.toContain("k2b-placeholder__action");
         }
+      });
+    }
+
+    for (const scope of ["all", "book"] as const) {
+      test(`favorites has its own empty state in ${scope}`, () => {
+        const html = renderEmpty(locale, scope, `/app/contacts${scope === "book" ? "/team" : ""}?favorites=true`);
+        expect(html).toContain(t.emptyFavoritesTitle);
+        expect(html).toContain(t.emptyFavoritesHint);
+        expect(html).not.toContain(t.noMatchingContacts);
       });
     }
 
