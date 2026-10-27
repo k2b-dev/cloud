@@ -55,7 +55,7 @@ function fixture(
       autoCreate: options.autoCreate ?? true,
       autoArchive: true,
     },
-    freeipa: area,
+    freeipa: { ...area, autoCreate: false },
     collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
   };
   const requests: string[] = [];
