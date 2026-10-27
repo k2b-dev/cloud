@@ -347,6 +347,12 @@ suite("Mail conversation keeps", () => {
     expect(first.data.items).toHaveLength(2);
     expect(first.data.total).toBe(3);
     expect(first.data.nextCursor).not.toBeNull();
+    // Each page of the list is a view of subjects and senders, so it is logged with the conversations it showed.
+    const [listed] = await sql<{ outcome: string; actor_user_id: string; metadata: { query: string; conversations: unknown[] } }[]>`
+      SELECT outcome, actor_user_id, metadata FROM audit.events
+      WHERE request_id = ${cloudAdmin.requestId} AND action = 'mail.conversation.keep.list' ORDER BY id DESC LIMIT 1`;
+    expect(listed).toMatchObject({ outcome: "allowed", actor_user_id: users[3]!.id, metadata: { query: suffix } });
+    expect(listed!.metadata.conversations).toHaveLength(2);
     const second = await listKeptConversations(cloudAdmin, { q: suffix, limit: 2, cursor: first.data.nextCursor! });
     if (!second.ok) throw new Error(second.error.message);
     expect(second.data.items).toHaveLength(1);
@@ -392,6 +398,31 @@ suite("Mail conversation keeps", () => {
       expect(document.conversations[0]?.messages).toHaveLength(51);
       expect(new Set(document.conversations[0]?.messages.map((item) => item.id)).size).toBe(51);
       expect(document.conversations[0]?.messages.every((message) => message.delivery === null)).toBeTrue();
+      // A merge between two message batches must fail the download, never end it as valid but incomplete JSON.
+      const moving = await exportKeptConversations(cloudAdmin, [{ mailboxId, conversationId: id }]);
+      if (!moving.ok) throw new Error(moving.error.message);
+      const reader = moving.data.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      while ((text.match(/"messageId"/g)?.length ?? 0) < 10) {
+        const chunk = await reader.read();
+        if (chunk.done) throw new Error("Export ended before the merge");
+        text += decoder.decode(chunk.value);
+      }
+      const target = await conversation();
+      await sql`UPDATE mail.conversation_messages SET conversation_id = ${target}::uuid WHERE conversation_id = ${id}::uuid`;
+      try {
+        let failure: unknown = null;
+        try {
+          while (!(await reader.read()).done);
+        } catch (error) {
+          failure = error;
+        }
+        expect(failure).toBeInstanceOf(Error);
+      } finally {
+        await sql`UPDATE mail.conversation_messages SET conversation_id = ${id}::uuid WHERE conversation_id = ${target}::uuid`;
+        await releaseConversationKeep(scope(target, cloudAdmin));
+      }
       const missing = await conversation();
       expect(
         await exportKeptConversations(cloudAdmin, [

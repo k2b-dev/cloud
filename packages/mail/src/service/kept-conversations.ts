@@ -1,9 +1,9 @@
-import { escapeLikePattern } from "@k2b/cloud/services";
+import { audit, escapeLikePattern } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
 import type { KeptConversationExport } from "../kept-conversation-export";
-import { type MailRequestContext, userBackedActor } from "./auth";
+import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext, userBackedActor } from "./auth";
 import { type ConversationKeep, canReadKeptConversations, recordConversationKeepAudit } from "./conversation-keeps";
 
 export type KeptConversationSummary = {
@@ -109,6 +109,18 @@ export const listKeptConversations = async (
     JOIN mail.conversations conversation ON conversation.id = keep.conversation_id WHERE ${filter}`;
   const page = rows.slice(0, limit);
   const last = page.at(-1);
+  // The list shows subjects and senders of mail the admin may hold no grant for, so every page is logged too.
+  await audit.record({
+    action: "mail.conversation.keep.list",
+    outcome: "allowed",
+    actor: auditActorFromRequest(context),
+    requestId: context.requestId,
+    metadata: {
+      query: options.q?.trim() || null,
+      principal: actorRefFromRequest(context),
+      conversations: page.map((row) => ({ mailboxId: row.mailbox_id, conversationId: row.conversation_id })),
+    },
+  });
   return ok({
     items: page.map(summary),
     total: count?.total ?? 0,
@@ -249,10 +261,15 @@ export const exportKeptConversations = async (
     for (const [index, row] of rows.entries()) {
       yield encoder.encode(`${index ? "," : ""}${JSON.stringify(exportHeader(row)).slice(0, -1)},"messages":[`);
       let first = true;
+      let exported = 0;
       for await (const message of exportMessages(row)) {
         yield encoder.encode(`${first ? "" : ","}${JSON.stringify(message)}`);
         first = false;
+        exported += 1;
       }
+      // A merge or split during the download moves messages away between batches. Evidence must never arrive
+      // silently incomplete, so the stream fails and the download shows an error instead.
+      if (exported < row.message_count) throw new Error("A kept conversation changed while it was exported");
       yield encoder.encode("]}");
     }
     yield encoder.encode("]}");

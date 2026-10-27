@@ -1,8 +1,8 @@
 import { LocaleProvider, ViewTabs } from "@k2b/ui";
 import { render } from "solid-js/web";
-import { mailKeptAdminMessages } from "../kept-admin-messages";
 import type { KeptConversationExport } from "../../contracts";
 import type { KeepHistoryEntry } from "../../service/kept-conversations";
+import { mailKeptAdminMessages } from "../kept-admin-messages";
 import MailAdminKeptDetail from "./MailAdminKeptDetail";
 import MailAdminKeptTable, { type KeptTableRow } from "./MailAdminKeptTable.island";
 

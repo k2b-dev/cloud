@@ -22,7 +22,10 @@ export const downloadKeptConversations = async (refs: readonly KeptConversationR
       ? await apiClient.admin.kept[":mailboxId"][":conversationId"].export.$get({ param: single }, { init: { signal } })
       : await apiClient.admin.kept.export.$post({ json: { items } }, { init: { signal } });
   if (!response.ok) throw new Error(await readApiError(response, fallbackError));
-  const blob = await response.blob();
+  // The server streams; a connection that breaks or a conversation that changes mid-export fails here.
+  const blob = await response.blob().catch(() => {
+    throw new Error(fallbackError);
+  });
   downloadFileFromContent(
     blob,
     filenameOf(response, items.length === 1 ? `kept-conversation-${single.conversationId}.json` : "kept-conversations.json"),
