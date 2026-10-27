@@ -191,7 +191,7 @@ const lifecycle = createRuntimeLifecycle({
       await worker.start();
     } catch (error) {
       await stopMailWorkflowScheduleRuntime();
-      stopWorkflowAiRuntime();
+      await stopWorkflowAiRuntime();
       await worker.stop();
       throw error;
     }
@@ -199,7 +199,7 @@ const lifecycle = createRuntimeLifecycle({
   stop: async () => {
     await worker.stop();
     await stopMailWorkflowScheduleRuntime();
-    stopWorkflowAiRuntime();
+    await stopWorkflowAiRuntime();
   },
 });
 

@@ -17,6 +17,7 @@ import {
 import { type EvalResult, evaluateTableCell, isFormula, isTotalRow } from "@k2b/cloud/shared";
 import { highlight, text } from "@k2b/stdlib";
 import { prepareChartSnapshot } from "@k2b/ui";
+import { barChartLayout } from "@k2b/ui/charts";
 import { Lexer, type Tokens } from "marked";
 import { evaluatePrettyTable } from "../frontend/lib/pretty-table";
 import { bookRendererMessages } from "./book-renderer-messages";
@@ -32,7 +33,8 @@ import {
 
 export const CHART_MAX_BLOCKS = QUERY_MAX_BLOCKS;
 export type ChartBlock = { line: number; input: CloudAiChartInput };
-type Frame = { kind: CloudAiChartInput["kind"]; area?: boolean; title: string; subtitle?: string };
+/** `height` is the drawing's own height in CSS pixels when it needs more than the kind's frame (app.css). */
+type Frame = { kind: CloudAiChartInput["kind"]; area?: boolean; title: string; subtitle?: string; height?: number };
 type Entry = { value: string; line: number };
 type Cell = { raw: string; result: EvalResult };
 type SourceData = { columns: string[]; rows: Cell[][]; implicit: boolean; entries?: NamedDataEntry[]; invalid?: boolean };
@@ -132,7 +134,9 @@ const parseChart = (
     if (entry) {
       const key = entry[1]!;
       section = "";
-      if (!["type", "title", "subtitle", "data", "columns", "rows", "x", "y", "label", "value", "tooltip"].includes(key)) {
+      if (
+        !["type", "title", "subtitle", "data", "columns", "rows", "x", "y", "label", "value", "format", "unit", "tooltip"].includes(key)
+      ) {
         add("unknown-key", key, line);
         continue;
       }
@@ -238,13 +242,21 @@ const parseChart = (
       if (cell.result.kind === "error") once("not-a-number", key, { name, row: index + 1 });
       return isFormula(cell.raw) && cell.result.kind === "ok" ? String(cell.result.value) : cell.raw.trim();
     });
-  let format: CloudAiNumberFormat | undefined;
-  const formatName = string("format", tooltip);
-  const unit = string("unit", tooltip);
-  if (formatName === "number" || formatName === "percent") format = { style: formatName };
-  else if (formatName && /^[A-Z]{3}$/.test(formatName)) format = { style: "currency", currency: formatName };
-  else if (formatName) add("invalid-type", "tooltip.format", tooltip.get("format")?.line);
-  if (unit) format = { ...format, unit };
+  const readFormat = (entries: Map<string, Entry>): CloudAiNumberFormat | undefined => {
+    let format: CloudAiNumberFormat | undefined;
+    const name = string("format", entries);
+    const unit = string("unit", entries);
+    if (name === "number" || name === "percent") format = { style: name };
+    else if (name && /^[A-Z]{3}$/.test(name)) format = { style: "currency", currency: name };
+    else if (name) add("invalid-type", entries === tooltip ? "tooltip.format" : "format", entries.get("format")?.line);
+    return unit ? { ...format, unit } : format;
+  };
+  // The chart's format writes its axis, printed values and tooltips; a tooltip format applies to tooltips first.
+  const chartFormat = readFormat(top);
+  const tooltipFormat = readFormat(tooltip);
+  const format = tooltipFormat ?? chartFormat;
+  const axisFormat = chartFormat ?? tooltipFormat;
+  const namedValue = string("label", tooltip);
   let valueLabel: string | undefined;
   let mapped: unknown;
   const common = { title, ...(subtitle ? { subtitle } : {}) };
@@ -289,9 +301,21 @@ const parseChart = (
         // The implicit `label` and `value` of a list or data block are no names a reader wrote: the contract's own
         // localized value label stays.
         if (ys.length === 1 && !data.implicit) valueLabel = String(ys[0]);
+        // Axis titles name what a reader wrote: the x column and the value, as the tooltip calls it.
+        const valueTitle = namedValue ?? valueLabel;
+        const yAxis =
+          valueTitle || axisFormat
+            ? { yAxis: { ...(valueTitle ? { label: valueTitle } : {}), ...(axisFormat ? { format: axisFormat } : {}) } }
+            : {};
         if (type === "bar") {
           const values = numbers(String(ys[0]), "y");
-          mapped = { ...common, kind: "bar", data: labels(x, "x").map((label, i) => ({ label, value: values[i] })) };
+          mapped = {
+            ...common,
+            kind: "bar",
+            data: labels(x, "x").map((label, i) => ({ label, value: values[i] })),
+            ...(data.implicit ? {} : { xAxis: { label: x } }),
+            ...yAxis,
+          };
         } else {
           const xs = cells(x).map((cell, i) => {
             if (cell.result.kind === "error") {
@@ -310,13 +334,14 @@ const parseChart = (
             kind: type === "area" ? "line" : type,
             ...(type === "area" ? { area: true } : {}),
             ...(data.implicit ? {} : { xAxis: { label: x } }),
+            ...yAxis,
             series: ys.map((name) => ({ label: name, data: numbers(String(name), "y").map((y, i) => ({ x: xs[i], y })) })),
           };
         }
       }
     }
   }
-  const tooltipLabel = string("label", tooltip) ?? valueLabel;
+  const tooltipLabel = namedValue ?? valueLabel;
   const parsed = chartSchema.safeParse({
     ...(typeof mapped === "object" && mapped !== null ? mapped : {}),
     ...(tooltipLabel || format ? { tooltip: { ...(tooltipLabel ? { label: tooltipLabel } : {}), ...(format ? { format } : {}) } } : {}),
@@ -327,27 +352,32 @@ const parseChart = (
     for (const issue of parsed.error.issues) {
       const path = issue.path.map(String);
       const first = path[0];
-      const tooltipField =
-        first === "tooltip" || first === "format"
-          ? first === "tooltip" && path[1] === "label"
-            ? "label"
-            : path.includes("unit")
-              ? "unit"
-              : "format"
-          : undefined;
+      // The axis and printed values share the format and value name with the tooltip; an issue points at the entry the
+      // value came from, once.
+      const yLabel = first === "yAxis" && path[1] === "label";
+      const formatField = path.includes("unit") ? "unit" : "format";
+      const fromTooltip =
+        first === "tooltip" ||
+        (first === "format" && !!tooltipFormat) ||
+        (first === "yAxis" && (yLabel ? !!namedValue : path.includes("format") && !chartFormat));
+      const tooltipField = fromTooltip ? ((first === "tooltip" && path[1] === "label") || yLabel ? "label" : formatField) : undefined;
       const key = tooltipField
         ? `tooltip.${tooltipField}`
-        : first === "series"
-          ? path.includes("x")
-            ? "x"
-            : "y"
-          : first === "data" || first === "sparkline"
-            ? dataKey
-            : first === "xAxis"
+        : first === "format" || (first === "yAxis" && path.includes("format"))
+          ? formatField
+          : first === "series"
+            ? path.includes("x")
               ? "x"
-              : first === "kind"
-                ? "type"
-                : (first ?? "");
+              : "y"
+            : first === "data" || first === "sparkline"
+              ? dataKey
+              : first === "xAxis"
+                ? "x"
+                : first === "yAxis"
+                  ? "y"
+                  : first === "kind"
+                    ? "type"
+                    : (first ?? "");
       const line = (tooltipField ? (tooltip.get(tooltipField)?.line ?? top.get("tooltip")?.line) : top.get(key)?.line) ?? directive.line;
       const id = `${line}:${key}`;
       if (unsupported.has(id)) continue;
@@ -423,9 +453,21 @@ export const chartBlockFrame = (body: string[]): Frame | null => {
 };
 
 /**
+ * The height of a chart's drawing where it grows past the kind's frame: bar rows take one line per category, so many
+ * categories make the drawing taller. The server and an editor placeholder read it from the same parsed block, so
+ * both reserve the same box. Undefined for every other drawing, which fits the frame.
+ */
+export const notebookChartHeight = (input: CloudAiChartInput, locale: string): number | undefined => {
+  const options = cloudAiChartRenderOptions(input, locale, { legend: "outside" });
+  if (options.kind !== "bar") return undefined;
+  const layout = barChartLayout(options);
+  return layout.layout === "rows" ? layout.height : undefined;
+};
+
+/**
  * The figure around a chart: title, subtitle, a place for the chart's controls and a viewport whose height comes from
- * the kind alone (app.css). The editor draws the same frame with an empty viewport while a preview loads, so the
- * drawing never moves the text. `input` is the drawn chart for the browser enhancement (`notebook-charts.tsx`): it adds
+ * the kind (app.css), or from `frame.height` where the drawing needs more. The editor draws the same frame with an
+ * empty viewport while a preview loads, so the drawing never moves the text. `input` is the drawn chart for the browser enhancement (`notebook-charts.tsx`): it adds
  * tooltips, the table view and Copy data in place, so the controls' box is reserved here. Print frames have no controls.
  */
 export const notebookChartFrameHtml = (
@@ -433,7 +475,7 @@ export const notebookChartFrameHtml = (
   viewportHtml: string,
   options: { legend?: boolean; input?: CloudAiChartInput; print?: boolean } = {},
 ): string =>
-  `<figure class="notebook-book-chart" data-kind="${frame.kind === "line" && frame.area ? "area" : frame.kind}"${options.input ? ` data-chart="${escape(JSON.stringify(options.input))}"` : ""}><figcaption class="notebook-book-chart__header"><span class="notebook-book-chart__title">${escape(frame.title)}</span>${frame.subtitle ? `<span class="notebook-book-chart__subtitle">${escape(frame.subtitle)}</span>` : ""}</figcaption>${options.print ? "" : '<div class="notebook-book-chart__actions"></div>'}<div class="notebook-book-chart__viewport"${options.legend ? ' data-legend="true"' : ""}>${viewportHtml}</div></figure>`;
+  `<figure class="notebook-book-chart" data-kind="${frame.kind === "line" && frame.area ? "area" : frame.kind}"${options.input ? ` data-chart="${escape(JSON.stringify(options.input))}"` : ""}><figcaption class="notebook-book-chart__header"><span class="notebook-book-chart__title">${escape(frame.title)}</span>${frame.subtitle ? `<span class="notebook-book-chart__subtitle">${escape(frame.subtitle)}</span>` : ""}</figcaption>${options.print ? "" : '<div class="notebook-book-chart__actions"></div>'}<div class="notebook-book-chart__viewport"${options.legend ? ' data-legend="true"' : ""}${frame.height ? ` style="--notebook-chart-height:${frame.height}px"` : ""}>${viewportHtml}</div></figure>`;
 
 /** A chart's data as a note table: the PDF prints it below the figure, and the table view shows it in the frame. */
 export const notebookChartTableHtml = (table: CloudAiChartTable, options: { label?: string; className?: string } = {}): string =>
@@ -458,7 +500,11 @@ export const renderNotebookChartFigure = (input: CloudAiChartInput, locale: stri
       ? `<ul class="k2b-chart-legend" aria-label="${escape(t.chartLegend)}">${legend.map((entry) => `<li><span class="k2b-chart-legend__swatch"${entry.style && entry.style !== "solid" ? ` data-style="${entry.style}"` : ""}${entry.reference ? ' data-reference="true"' : ""} style="--k2b-chart-legend-color:var(--stdlib-chart-c${(entry.color % 8) + 1})" aria-hidden="true"></span>${escape(entry.label)}</li>`).join("")}</ul>`
       : "";
     const viewport = `<div class="k2b-chart" data-chart-kind="${snapshot.kind}"><div class="k2b-chart__svg"${snapshot.stretch ? ' data-stretch="true"' : ""} style="--k2b-chart-width:${snapshot.width}px;--k2b-chart-height:${snapshot.height}px">${snapshot.svg}</div></div>${legendHtml}`;
-    const figure = notebookChartFrameHtml(input, viewport, { legend: legend.length > 0, ...(options.print ? { print: true } : { input }) });
+    const height = notebookChartHeight(input, locale);
+    const figure = notebookChartFrameHtml(height ? { ...input, height } : input, viewport, {
+      legend: legend.length > 0,
+      ...(options.print ? { print: true } : { input }),
+    });
     if (!options.print) return figure;
     return `${figure}${notebookChartTableHtml(cloudAiChartTable(input, locale))}`;
   } catch {

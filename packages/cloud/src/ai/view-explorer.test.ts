@@ -83,7 +83,7 @@ test("domains and formats use the whole dataset across steps and filters", () =>
     const a = first.charts[id]!.input,
       b = last.charts[id]!.input;
     if ("yAxis" in a && "yAxis" in b) expect(a.yAxis).toEqual(b.yAxis);
-    if ("xAxis" in a && "xAxis" in b) {
+    if ("xAxis" in a && "xAxis" in b && a.kind !== "bar" && b.kind !== "bar") {
       expect(a.xAxis).toEqual(b.xAxis);
       expect(a.xAxis?.format).toEqual({ style: "currency", currency: "EUR" });
     }

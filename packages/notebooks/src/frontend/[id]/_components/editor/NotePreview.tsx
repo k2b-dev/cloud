@@ -39,7 +39,7 @@ export default function NotePreview(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const lines = notePreviewLines(props.text, props.mode);
-  const chart = props.mode === "rich" ? notePreviewChart(props.text, lines) : null;
+  const chart = props.mode === "rich" ? notePreviewChart(props.text, lines, locale()) : null;
   const blocks = () => queryBlockMessages.resolve([locale()]).t;
   // CodeMirror sizes the gutter with a hidden spacer for the note's last line number, which can lie past the preview.
   const lastNumber = "9".repeat(String((props.text.match(/\r\n?|\n/g)?.length ?? 0) + 1).length);

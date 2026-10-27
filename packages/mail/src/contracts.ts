@@ -2814,8 +2814,10 @@ export const startIncomingAutomationBackfillInputSchema = z
     operationId: z.string().uuid(),
     expectedRevision: z.number().int().positive(),
     retryFailed: z.boolean().optional(),
+    recomputeAi: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine((input) => !input.recomputeAi || input.retryFailed, "recomputeAi requires retryFailed");
 export type StartIncomingAutomationBackfillInput = z.infer<typeof startIncomingAutomationBackfillInputSchema>;
 
 export const incomingAutomationBackfillSchema = z

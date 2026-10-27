@@ -70,11 +70,33 @@ const chartMarkdown = [
   "",
   "Danach geht es weiter.",
 ].join("\n");
+// Bar charts of 5, 15 and 30 categories: a few columns, rows of the usual height and rows that make the frame grow.
+const barMarkdown = (count: number) =>
+  [
+    "# Besuche",
+    "",
+    "Wir vergleichen die Besuche aller Standorte im Oktober.",
+    "",
+    ":::chart",
+    "type: bar",
+    "title: Besuche nach Standort",
+    "columns: [Standort, Besuche]",
+    "rows:",
+    ...Array.from({ length: count }, (_, index) => `  - [Standort ${index + 1}, ${(index + 1) * 37}]`),
+    "x: Standort",
+    "y: Besuche",
+    ":::",
+    "",
+    "Danach geht es weiter.",
+  ].join("\n");
 // A note of paragraphs far longer than the editor draws at once, for printing.
 const printMarkdown = `# Feldnotizen\n\n${Array.from({ length: 150 }, (_, index) => `Absatz ${index + 1}: Das Team notiert Beobachtungen für den nächsten Besuch.`).join("\n\n")}`;
 const notes = {
   markdown: { text: markdown, snapshot: snapshot(markdown) },
   chart: { text: chartMarkdown, snapshot: snapshot(chartMarkdown) },
+  bars5: { text: barMarkdown(5), snapshot: snapshot(barMarkdown(5)) },
+  bars15: { text: barMarkdown(15), snapshot: snapshot(barMarkdown(15)) },
+  bars30: { text: barMarkdown(30), snapshot: snapshot(barMarkdown(30)) },
   print: { text: printMarkdown, snapshot: snapshot(printMarkdown) },
   headings: { text: headingMarkdown, snapshot: snapshot(headingMarkdown) },
   long: { text: longMarkdown, snapshot: snapshot(longMarkdown) },
@@ -140,7 +162,11 @@ beforeAll(async () => {
         return Response.json({ markdown: draft, blocks, diagnostics: [], headings: [] });
       }
       const { text: note, snapshot: served } =
-        notes[(["many", "long", "headings", "chart", "print"] as const).find((name) => url.searchParams.has(name)) ?? "markdown"];
+        notes[
+          (["many", "long", "headings", "chart", "bars5", "bars15", "bars30", "print"] as const).find((name) =>
+            url.searchParams.has(name),
+          ) ?? "markdown"
+        ];
       // Only the page itself names the note; other requests, such as the icon, fall through to the default one.
       if (url.pathname === "/") servedSnapshot = served;
       const mode = url.searchParams.get("mode") === "source" ? "source" : "rich";
@@ -450,9 +476,18 @@ for (const fixture of [
   }, 30_000);
 }
 
-for (const width of [375, 1280]) {
-  test(`a chart keeps the box the preview reserved, while it loads and once it is drawn: ${width}px`, async () => {
-    expect(notePreviewChart(chartMarkdown, notePreviewLines(chartMarkdown, "rich"))).toMatchObject({ kind: "line", area: true });
+for (const [note, width] of [
+  ["chart", 375],
+  ["chart", 1280],
+  ["bars5", 375],
+  ["bars15", 375],
+  ["bars30", 375],
+] as const) {
+  test(`a chart keeps the box the preview reserved, while it loads and once it is drawn: ${note}, ${width}px`, async () => {
+    const text = notes[note].text;
+    expect(notePreviewChart(text, notePreviewLines(text, "rich"), "en")).toMatchObject(
+      note === "chart" ? { kind: "line", area: true } : { kind: "bar" },
+    );
     const page = await browser.newPage({ viewport: { width, height: 900 }, isMobile: width < 600, hasTouch: width < 600 });
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -482,14 +517,14 @@ for (const width of [375, 1280]) {
         closeTo(actual[property], expected[property], `${context}: ${property}`);
     };
     try {
-      await page.goto(`${server.url}?chart&mode=rich`, { waitUntil: "commit" });
+      await page.goto(`${server.url}?${note}&mode=rich`, { waitUntil: "commit" });
       const preview = page.locator(`#${NOTE_PREVIEW_ID}`);
       await preview.waitFor({ state: "visible" });
       await settle(page);
       const reserved = await box(`#${NOTE_PREVIEW_ID} .cm-query-block-widget`);
       const reservedFrame = await box(`#${NOTE_PREVIEW_ID} .notebook-book-chart`);
-      // Title, subtitle and an 18rem frame: never a one-line placeholder.
-      expect(reservedFrame.height).toBeGreaterThan(320);
+      // Title, subtitle and an 18rem frame: never a one-line placeholder. Thirty bar rows need far more.
+      expect(reservedFrame.height).toBeGreaterThan(note === "bars30" ? 640 : 320);
       releaseEditor?.();
       await page.waitForSelector(".cm-content .cm-query-block-widget .notebook-book-chart");
       await preview.waitFor({ state: "detached" });
@@ -501,7 +536,8 @@ for (const width of [375, 1280]) {
       await settle(page);
       same(await box(".cm-content .cm-query-block-widget"), reserved, "Drawn widget");
       same(await box(".cm-content .notebook-book-chart"), reservedFrame, "Drawn frame");
-      expect(await page.locator(".cm-content .k2b-chart-legend li").allTextContents()).toEqual(["Umsatz", "Kosten"]);
+      if (note === "chart") expect(await page.locator(".cm-content .k2b-chart-legend li").allTextContents()).toEqual(["Umsatz", "Kosten"]);
+      else expect(await page.locator(".cm-content .notebook-book-chart svg [data-chart-datum]").count()).toBe(Number(note.slice(4)));
       expect(errors).toEqual([]);
     } finally {
       releaseEditor?.();

@@ -122,6 +122,35 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_short_id ON notebooks.notes(short_id)`.simple();
 
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_notebook_id
+    ON notebooks.notes(notebook_id, id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_notebook_updated
+    ON notebooks.notes(notebook_id, updated_at DESC, id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_updated
+    ON notebooks.notes(updated_at DESC, id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_notebook_list
+    ON notebooks.notes(notebook_id, position, updated_at DESC, id DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_notebook_parent_list
+    ON notebooks.notes(notebook_id, parent_id, position, updated_at DESC, id DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_notebook_created
+    ON notebooks.notes(notebook_id, created_at, id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_created
+    ON notebooks.notes(created_at, id)
+  `.simple();
+
   // Canonical search projection. `simple` keeps mixed-language notebooks
   // predictable; title lexemes rank above body lexemes. This native GIN path
   // is always available and remains the correctness baseline even when an
@@ -182,6 +211,82 @@ export const migrate = async (): Promise<void> => {
       VALUES ('note-order-alphabetical-default') ON CONFLICT DO NOTHING RETURNING name`;
     if (inserted.length) await tx`UPDATE notebooks.notes SET position = 0 WHERE position <> 0`;
   });
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS notebooks.annotations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      note_id UUID NOT NULL REFERENCES notebooks.notes(id) ON DELETE CASCADE,
+      start_rel BYTEA NOT NULL, end_rel BYTEA NOT NULL, restore_revision BIGINT NOT NULL,
+      quote TEXT NOT NULL CHECK (char_length(quote) BETWEEN 1 AND 2000),
+      prefix TEXT NOT NULL CHECK (char_length(prefix) <= 32),
+      suffix TEXT NOT NULL CHECK (char_length(suffix) <= 32),
+      body TEXT NOT NULL CHECK (char_length(body) <= 5000),
+      suggestion TEXT CHECK (char_length(suggestion) <= 2000),
+      suggestion_state TEXT CHECK (suggestion_state IN ('open', 'accepted', 'rejected')),
+      suggestion_state_by_kind TEXT CHECK (suggestion_state_by_kind IN ('user', 'service_account')),
+      suggestion_state_by_id UUID, suggestion_state_by_name TEXT, suggestion_state_at TIMESTAMPTZ,
+      suggestion_state_via TEXT CHECK (suggestion_state_via IN ('assistant', 'mcp')),
+      state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'resolved', 'accepted')),
+      state_by_kind TEXT CHECK (state_by_kind IN ('user', 'service_account')),
+      state_by_id UUID, state_by_name TEXT, state_at TIMESTAMPTZ,
+      state_via TEXT CHECK (state_via IN ('assistant', 'mcp')),
+      author_kind TEXT NOT NULL CHECK (author_kind IN ('user', 'service_account')),
+      author_id UUID NOT NULL, author_name TEXT NOT NULL, author_avatar_hash TEXT,
+      via TEXT CHECK (via IN ('assistant', 'mcp')),
+      idempotency_key TEXT NOT NULL CHECK (char_length(idempotency_key) BETWEEN 1 AND 200),
+      payload_hash TEXT NOT NULL, request_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      edited_at TIMESTAMPTZ, deleted_at TIMESTAMPTZ,
+      CHECK (length(trim(body)) > 0 OR (suggestion IS NOT NULL AND suggestion <> quote)),
+      CONSTRAINT annotations_suggestion_presence_check CHECK ((suggestion IS NULL) = (suggestion_state IS NULL)),
+      UNIQUE (note_id, author_kind, author_id, idempotency_key)
+    )
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS annotations_note_page ON notebooks.annotations(note_id, created_at, id)`.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS notebooks.annotation_replies (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      annotation_id UUID NOT NULL REFERENCES notebooks.annotations(id) ON DELETE CASCADE,
+      author_kind TEXT NOT NULL CHECK (author_kind IN ('user', 'service_account')),
+      author_id UUID NOT NULL, author_name TEXT NOT NULL, author_avatar_hash TEXT,
+      via TEXT CHECK (via IN ('assistant', 'mcp')),
+      body TEXT NOT NULL CHECK (char_length(body) <= 5000),
+      suggestion TEXT CHECK (char_length(suggestion) <= 2000),
+      suggestion_state TEXT CHECK (suggestion_state IN ('open', 'accepted', 'rejected')),
+      suggestion_state_by_kind TEXT CHECK (suggestion_state_by_kind IN ('user', 'service_account')),
+      suggestion_state_by_id UUID, suggestion_state_by_name TEXT, suggestion_state_at TIMESTAMPTZ,
+      suggestion_state_via TEXT CHECK (suggestion_state_via IN ('assistant', 'mcp')),
+      idempotency_key TEXT NOT NULL CHECK (char_length(idempotency_key) BETWEEN 1 AND 200),
+      payload_hash TEXT NOT NULL, request_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      edited_at TIMESTAMPTZ, deleted_at TIMESTAMPTZ,
+      CONSTRAINT annotation_replies_content_check CHECK (length(trim(body)) > 0 OR suggestion IS NOT NULL),
+      CONSTRAINT annotation_replies_suggestion_presence_check CHECK ((suggestion IS NULL) = (suggestion_state IS NULL)),
+      UNIQUE (annotation_id, author_kind, author_id, idempotency_key)
+    )
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS annotation_replies_page ON notebooks.annotation_replies(annotation_id, created_at, id)`.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS notebooks.annotation_operations (
+      id UUID PRIMARY KEY,
+      annotation_id UUID NOT NULL REFERENCES notebooks.annotations(id) ON DELETE CASCADE,
+      -- Keep the target UUID in durable history even if a reply is later removed.
+      reply_id UUID,
+      via TEXT CHECK (via IN ('assistant', 'mcp')),
+      kind TEXT NOT NULL CHECK (kind IN ('accept', 'undo')),
+      expected_text TEXT NOT NULL, before_text TEXT NOT NULL, after_text TEXT NOT NULL,
+      source_start_rel BYTEA NOT NULL, source_end_rel BYTEA NOT NULL,
+      start_rel BYTEA, end_rel BYTEA, prepared_update BYTEA,
+      restore_revision BIGINT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'applied', 'conflict', 'failed')),
+      current_text TEXT, actor_kind TEXT NOT NULL CHECK (actor_kind IN ('user', 'service_account')),
+      actor_id UUID NOT NULL, actor_name TEXT NOT NULL, request_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS annotation_operations_pending
+    ON notebooks.annotation_operations(annotation_id) WHERE status = 'pending'`.simple();
+  console.log("  ✓ notebooks annotations, replies and operations tables");
 
   await sql`
     CREATE TABLE IF NOT EXISTS notebooks.note_comments (
@@ -272,6 +377,10 @@ export const migrate = async (): Promise<void> => {
     WHERE note_id IS NOT NULL
   `.simple();
   await sql`
+    CREATE INDEX IF NOT EXISTS idx_notebooks_activity_version
+    ON notebooks.activity_events(note_version_id) WHERE note_version_id IS NOT NULL
+  `.simple();
+  await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_notebooks_activity_bucket
     ON notebooks.activity_events(note_id, actor_kind, actor_id, action, bucket_started_at)
     WHERE bucket_started_at IS NOT NULL
@@ -348,6 +457,10 @@ export const migrate = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_note_tags_nb_prefix
     ON notebooks.note_tags(notebook_id, tag text_pattern_ops)
   `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_note_tags_tag_note
+    ON notebooks.note_tags(tag, note_id)
+  `.simple();
   console.log("  ✓ notebooks.note_tags table");
 
   // Per-user starred notes. Favorites are intentionally user-scoped
@@ -365,6 +478,10 @@ export const migrate = async (): Promise<void> => {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_note_favorites_user_notebook
     ON notebooks.note_favorites(user_id, notebook_id, created_at DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_note_favorites_note
+    ON notebooks.note_favorites(note_id)
   `.simple();
   console.log("  ✓ notebooks.note_favorites table");
 
