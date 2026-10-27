@@ -1,4 +1,5 @@
 import { defineCapabilities } from "@k2b/cloud";
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { cloudOrigin, resolveCloudUrl } from "@k2b/cloud/browser/resource-links";
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
@@ -10,6 +11,8 @@ import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 
 export const inventoryResourceClipboard = cloudResourceClipboard;
+/** Call inside a component: the last section of an item's "…" menu. */
+export const inventoryCloudIdMenu = (itemId: string) => useCloudIdCopy().section({ type: "inventory.item", id: itemId });
 export const recognizePastedInventoryLink = (text: string) => (cloudOrigin() ? resolveCloudUrl(text) : Promise.resolve(null));
 
 type Item = {
