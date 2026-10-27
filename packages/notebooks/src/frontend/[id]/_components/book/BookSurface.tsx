@@ -3,6 +3,7 @@ import { katexStylesHref } from "../../../../lib/katex-assets";
 import { notebookWorkspaceMessages } from "../../messages";
 import WorkspaceEventBridge from "../sidebar/WorkspaceEventBridge.island";
 import BookCharts from "./BookCharts.island";
+import BookCommentsLink from "./BookCommentsLink.island";
 import BookController from "./BookController.island";
 import BookMermaid from "./BookMermaid.island";
 import BookNavigator, { type BookNavigatorProps } from "./BookNavigator.island";
@@ -19,6 +20,7 @@ export type BookSurfaceProps = BookNavigatorProps & {
   historyIncomplete: boolean;
   appUrl: string;
   cursor: string | null;
+  openComments?: number;
 };
 
 export default function BookSurface(props: BookSurfaceProps) {
@@ -49,6 +51,7 @@ export default function BookSurface(props: BookSurfaceProps) {
               <span id="notebook-book-name" class="text-sm text-dimmed truncate">
                 {props.notebookName}
               </span>
+              <BookCommentsLink href={props.currentHref} count={props.openComments ?? 0} />
             </header>
             <div class="notebook-document-surface notebook-book-document" data-full-width={props.fullWidth ? "" : undefined}>
               <AppWorkspace.Main class="notebook-book-main">
@@ -66,6 +69,7 @@ export default function BookSurface(props: BookSurfaceProps) {
                     locked: props.locked,
                     historyIncomplete: props.historyIncomplete,
                     cursor: props.cursor,
+                    openComments: props.openComments,
                   }}
                 />
                 <WorkspaceEventBridge notebookId={props.notebookId} appUrl={props.appUrl} initialCursor={props.cursor} />
