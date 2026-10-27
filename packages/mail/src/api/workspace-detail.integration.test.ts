@@ -269,6 +269,7 @@ suite("Mail workspace conversation detail", () => {
       reasons: [],
       undo: { state: "none", reason: null, by: null, at: null },
     };
+    const projectedItem: AutomationLogItem = { ...item, undo: { ...item.undo, kept: [], reverted: [] } };
     expect(await (await detailRequest()).json()).toMatchObject({ automationTrace: [] });
     try {
       await sql`INSERT INTO mail.automation_log (id, mailbox_id, conversation_id, item, created_at)
@@ -280,11 +281,11 @@ suite("Mail workspace conversation detail", () => {
         expect(snapshotResponse.status).toBe(200);
         const detail: MailConversationDetailData = await detailResponse.json();
         const snapshot: MailboxPageData = await snapshotResponse.json();
-        expect(detail.automationTrace).toEqual([item]);
+        expect(detail.automationTrace).toEqual([projectedItem]);
         expect(snapshot.automationTrace).toEqual(detail.automationTrace);
         expect(detail.automationTrace[0]?.conversation.id).toBe(visible.shortId);
         expect(detail.automationTrace[0]?.conversation.href).toBe(`/app/mail/${mailboxShortId}?conversation=${visible.shortId}`);
-        expect((await projectMailConversationDetail(detail)).automationTrace).toEqual([item]);
+        expect((await projectMailConversationDetail(detail)).automationTrace).toEqual([projectedItem]);
       }
       const hiddenResponse = await detailRequest(hidden, folderA, "reader");
       expect(hiddenResponse.status).toBe(404);
