@@ -395,6 +395,36 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           }
         });
 
+    for (const width of [1440, 390])
+      test(`views: automatic shows columns without a selection ${width}, from the server on`, async () => {
+        const page = await open(`${boxPath}?layout=auto`, width, width === 390 ? 844 : 900);
+        try {
+          const firstRow = page.locator('.mail-list-entry[data-lines="1"]').first();
+          await firstRow.waitFor({ state: "visible" });
+          // The server already drew the columns: the first row does not move once the page is interactive.
+          const before = (await firstRow.boundingBox())!;
+          await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+          expect((await firstRow.boundingBox())!.y).toBe(before.y);
+          expect(await page.locator(".mail-reader-title").count()).toBe(0);
+          expect(await page.locator("[data-mail-day-group]").count()).toBeGreaterThan(0);
+          if (width >= 768) {
+            await page.locator(".mail-columns-head").waitFor({ state: "visible" });
+            expect(before.height).toBeCloseTo(44, 0);
+            await page.locator("[data-mail-view-menu]").waitFor({ state: "visible" });
+          } else {
+            // Phones: compact two-line rows without the column header.
+            expect(await page.locator(".mail-columns-head").isVisible()).toBe(false);
+            expect(before.height).toBeCloseTo(65, 0);
+          }
+          if (screenshots) {
+            mkdirSync(join(screenshots, browserName), { recursive: true });
+            await page.screenshot({ path: join(screenshots, browserName, `views-columns-light-${width}.png`) });
+          }
+        } finally {
+          await close(page);
+        }
+      });
+
     for (const theme of ["light", "dark"] as const)
       for (const width of [1440, 390])
         test(`compact reader short subject ${theme} ${width}: count beside the title, hidden on phones`, async () => {

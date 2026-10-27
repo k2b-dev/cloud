@@ -239,6 +239,44 @@
     color: var(--k2b-text-secondary);
   }
 
+  /* Phones show the columns view as compact two-line rows: sender and time, then subject and preview. As in the
+     three-line rows, touch input lets the row menu cover the time. The height is fixed like every other row. */
+  @media (max-width: 47.99rem) {
+    .mail-list-entry {
+      --mail-row-height-1: 4.0625rem;
+    }
+
+    .mail-columns-head {
+      display: none;
+    }
+
+    .mail-row-cells {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "sender time"
+        "subject subject";
+      row-gap: 1px;
+      height: auto;
+    }
+
+    .mail-row-sender-cell {
+      grid-area: sender;
+    }
+
+    .mail-row-subject-cell {
+      grid-area: subject;
+    }
+
+    .mail-row-cells .mail-row-time {
+      grid-area: time;
+    }
+
+    .mail-row-assignee-cell,
+    .mail-row-status-cell {
+      display: none;
+    }
+  }
+
   .mail-row-from,
   .mail-row-subject-line,
   .mail-row-extra {
