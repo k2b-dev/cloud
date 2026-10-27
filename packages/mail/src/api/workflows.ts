@@ -46,7 +46,12 @@ const workflowTryRoutes = new Hono<MailApiContext>().post(
   v("param", mailboxParamSchema),
   v("json", tryWorkflowInputSchema),
   async (c) => {
-    const result = await workflows.tryWorkflow({ context: requestContext(c), mailboxId: internalMailboxId(c), input: c.req.valid("json") });
+    const input = c.req.valid("json");
+    // Unsaved YAML needs what saving needs: a bearer token must also carry a write scope (sessions carry none).
+    const scopes = c.get("oauthScopes");
+    if (input.source !== undefined && scopes && !scopes.some((scope) => scope === "write" || scope === "admin"))
+      return c.json({ code: "FORBIDDEN", message: "OAuth scope write or admin is required" }, 403);
+    const result = await workflows.tryWorkflow({ context: requestContext(c), mailboxId: internalMailboxId(c), input });
     if (!result.ok) return respondPublic(c, result);
     if ("valid" in result.data) return c.json(result.data, 422);
     return c.json(result.data);

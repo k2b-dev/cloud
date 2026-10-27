@@ -102,7 +102,7 @@ suite("Mail no-AI workflow dry run HTTP boundary", () => {
     sessions.set("owner-read", owner);
     verify = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token) => {
       const user = sessions.get(token);
-      return user ? { kind: "user", payload: {}, user, scopes: token === "owner-read" ? ["read"] : [] } : null;
+      return user ? { kind: "user", payload: {}, user, scopes: token === "owner-read" ? ["read"] : ["read", "write"] } : null;
     });
     context = { actor: { kind: "user", user: owner }, accessSubject: { type: "user", userId: owner.id }, requestId: `try-${suffix}` };
     mailboxId = unwrap(await createMailbox(context, { name: `Workflow try ${suffix}` })).id;
@@ -118,7 +118,7 @@ suite("Mail no-AI workflow dry run HTTP boundary", () => {
         scope: "assigned",
       }),
     );
-    unwrap(await createLocalTag({ context, mailboxId, input: { name: "Long", color: "blue" } }));
+    unwrap(await createLocalTag({ context, mailboxId, input: { name: "Long", color: "#2563eb" } }));
     workflowId = unwrap(
       await createWorkflow({ context, mailboxId, input: createWorkflowInputSchema.parse({ name: "Long messages", source: example }) }),
     ).id;
