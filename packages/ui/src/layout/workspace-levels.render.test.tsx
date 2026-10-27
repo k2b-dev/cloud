@@ -101,6 +101,28 @@ describe("AppWorkspace ordered levels SSR", () => {
       );
       expect(attributes(html, "button", "data-app-workspace-resize").map((attrs) => attrs["data-workspace-level-shown"])).toEqual(["2 3"]);
     });
+  test("a wide level pushes the shallowest level aside where their minimum widths do not fit", () => {
+    // 280 + 240 + 900 exceeds the three-level class (1280 px), so it shows the deepest two; 240 + 900 exceeds the
+    // two-level class (768 px), so that one shows the wide level alone.
+    const [sections, items, item] = panes();
+    const html = renderToString(() => main({ level: "item" }, [{ ...sections!, minSize: 280 }, items!, { ...item!, minSize: 900 }]));
+    const sectionsAttrs = attributes(html, "section", "data-workspace-level");
+    expect(sectionsAttrs.map((attrs) => [attrs["data-workspace-level-shown"], attrs["data-workspace-level-first"]])).toEqual([
+      ["", ""],
+      ["3", "3"],
+      ["1 2 3", "1 2"],
+    ]);
+    // The wide level declares its minimum for the stylesheet, so it never shrinks below it.
+    expect(sectionsAttrs[2]!.style).toContain("--k2b-workspace-level-min:900px");
+  });
+
+  test("levels without minimum widths keep the width classes unchanged", () => {
+    const [sections, items, item] = panes();
+    expect(renderToString(() => main({ level: "item" }, [{ ...sections!, minSize: 240 }, items!, item!]))).toContain(
+      'data-workspace-level-shown="3"',
+    );
+  });
+
   test("an unknown id selects the first open level", () => {
     expect(renderToString(() => main({ level: "unknown" }))).toBe(renderToString(() => main({ level: "sections" })));
   });

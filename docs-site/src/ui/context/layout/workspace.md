@@ -283,6 +283,17 @@ The selected level ends the window unless the first levels already fit.
 For three levels, selecting level 3 shows level 3 on a phone, levels 2–3 at
 1024 px, and levels 1–3 at 1440 px. Selecting level 1 shows levels 1, 1–2,
 or 1–3 at those widths. An unknown id selects the first level.
+
+A level that needs more room, such as a wide log list, declares it with
+`minSize` in px. A class shows its levels only while their minimum widths fit
+its narrowest host (768 px for class 2, 1280 px for class 3); otherwise the
+shallowest of them gives way, and its back step moves to the next level. A
+first level with `minSize={280}` beside a log list with `minSize={900}` and a
+240 px middle level therefore shows levels 2–3 at 1440 px and the log list
+alone at 1024 px. The last visible level never shrinks below its `minSize`
+(320 px without one). Levels without `minSize` keep the table above. The
+decision depends only on the props, so the server and the first client frame
+show the same levels.
 Hidden levels stay mounted; CSS hides them without losing local state.
 
 The width classes count the host, not the room beside the sidebar: from a

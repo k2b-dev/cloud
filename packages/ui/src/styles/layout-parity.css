@@ -3147,7 +3147,7 @@ html {
 
     .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="2"] {
       width: auto;
-      min-width: min(320px, 100%);
+      min-width: min(var(--k2b-workspace-level-min, 320px), 100%);
       flex: 1 1 0;
     }
 
@@ -3175,7 +3175,7 @@ html {
 
   .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="3"] {
     width: auto;
-    min-width: min(320px, 100%);
+    min-width: min(var(--k2b-workspace-level-min, 320px), 100%);
     flex: 1 1 0;
   }
 
