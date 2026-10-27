@@ -1,0 +1,6 @@
+### The column shadow showed only beside Detail
+
+- **What happened:** The approved quiet shadow between workspace columns appeared only before an open Detail. The boundaries after the sidebar, between panes, and between levels had none, so Mail's list and reading area met without it. `Main` also drew a thin side shadow of its own, so the sidebar and Detail boundaries looked different from each other.
+- **Root cause:** The shade was one pseudo-element on `AppWorkspace.Content`, selected through `:has(> .k2b-app-workspace__detail)` and placed in Detail's grid area. It depended on that one DOM nesting. Panes and levels are flex items in `Main`, and each column clips or scrolls its own content, so the rule could not extend to them.
+- **Error class:** A shared visual rule tied to one DOM nesting instead of to the boundary it marks.
+- **Guard:** `packages/ui/src/layout/workspace-column-shadow.browser.test.ts` measures every boundary of a workspace with a sidebar, a list pane, a reading area, and Detail, and of one with three levels, in light and dark. Each boundary must carry the same shade, darkest at the edge, on the column before it, with no line. The test also checks that a phone has no shade.
