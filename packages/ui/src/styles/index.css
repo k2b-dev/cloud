@@ -438,7 +438,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    clamp instead of dimming every label.
    `--k2b-truncate-fade-inset` (inherited) is the length of the end that a
    control overlays, such as a row's hover actions, including a 0.75rem fade
-   before it: text under that control fades out whether it overflows or not. */
+   before it: text under that control fades out whether it overflows or not.
+   It is registered as a length, so a derived inset computes to one too. */
+@property --k2b-truncate-fade-inset {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 @property --k2b-truncate-fade-on {
   syntax: "<number>";
   inherits: false;
@@ -5127,6 +5134,21 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   pointer-events: auto;
 }
 
+/* While a control overlays the row's end, `--k2b-sidebar-item-overlay` is the
+   end it covers from the count, including a 0.75rem fade before it. The row
+   measures what its hover actions cover (`--k2b-sidebar-item-cover`), and
+   the label ends before the count and its gap
+   (`--k2b-sidebar-item-label-trail`), so it gives up only the rest. */
+.k2b-ui .k2b-app-workspace__sidebar-item-main {
+  --k2b-truncate-fade-inset: var(--k2b-sidebar-item-overlay, 0px);
+}
+
+.k2b-ui
+  .k2b-app-workspace__sidebar-item-main
+  > :is(.k2b-app-workspace__sidebar-item-copy, .k2b-app-workspace__sidebar-item-label) {
+  --k2b-truncate-fade-inset: max(0px, var(--k2b-sidebar-item-overlay, 0px) - var(--k2b-sidebar-item-label-trail, 0px));
+}
+
 /* The overlay layout follows the pointer capability, never the recorded input
    mode, so a mode change moves nothing. */
 @media (any-hover: hover) {
@@ -5160,7 +5182,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 2.5rem;
+    --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 1.75rem) + 0.75rem);
   }
 
   .k2b-ui
@@ -5170,10 +5192,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
         > .k2b-app-workspace__nav-tree-row,
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions [aria-haspopup][aria-expanded="true"])
     ):not([data-variant="object"]:has(.k2b-app-workspace__sidebar-item-meta)):has(
-      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child > :nth-child(2)
+      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child > :nth-child(2 of :not([popover]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 4.25rem;
+    --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 3.5rem) + 0.75rem);
   }
 
   /* Hover actions and the row chevron overlay the row's trailing edge:
@@ -5216,7 +5238,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 2.5rem;
+    --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 1.75rem) + 0.75rem);
   }
 
   .k2b-ui
@@ -5227,7 +5249,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
     ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 4.25rem;
+    --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 3.5rem) + 0.75rem);
   }
 
   /* Without a touch screen, an action preview opens on hover, so its button
@@ -5257,7 +5279,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     .k2b-ui
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
       > .k2b-app-workspace__sidebar-item-main {
-      --k2b-truncate-fade-inset: 2.5rem;
+      --k2b-sidebar-item-overlay: 2.5rem;
     }
   }
 
@@ -14332,7 +14354,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 2.5rem;
+    --k2b-sidebar-item-overlay: 2.5rem;
   }
   .k2b-ui
     .k2b-app-workspace__sidebar-item:not(
@@ -14342,7 +14364,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
     ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 4.25rem;
+    --k2b-sidebar-item-overlay: 4.25rem;
   }
 }
 
