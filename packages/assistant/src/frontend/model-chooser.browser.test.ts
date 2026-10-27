@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { startModelChooserHarness } from "./model-chooser.browser-fixture";
 
 // The chip has a fixed width, so a model, a note or a state never moves another control of the composer. This
@@ -39,6 +39,7 @@ const open = async (width: number, query: string) => {
   const page = await browser.newPage({ viewport: { width, height: width === 390 ? 844 : 900 }, reducedMotion: "reduce" });
   await page.goto(`${harness.url}${query}`);
   await page.waitForSelector("body[data-ready=true] .ai-model-chip");
+  await settled(page);
   return page;
 };
 

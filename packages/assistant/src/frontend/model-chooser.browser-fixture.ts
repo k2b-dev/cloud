@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 const ui = resolve(import.meta.dir, "../../../ui");
 const cloud = resolve(import.meta.dir, "../../../cloud");
 
-export async function startModelChooserHarness() {
+export async function startModelChooserHarness(options: { port?: number } = {}) {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
@@ -45,7 +45,7 @@ export async function startModelChooserHarness() {
     .join("\n");
   const css = `${fonts}\n${await styles.outputs[0]!.text()}\n${await assistantStyles.outputs[0]!.text()}`;
   const server = Bun.serve({
-    port: Number(process.env.MODEL_CHOOSER_HARNESS_PORT ?? 0),
+    port: options.port ?? 0,
     hostname: "127.0.0.1",
     fetch: (request) => {
       const url = new URL(request.url);
@@ -63,4 +63,4 @@ export async function startModelChooserHarness() {
   return { url: `http://127.0.0.1:${server.port}/`, close: () => server.stop(true) };
 }
 
-if (import.meta.main) console.log((await startModelChooserHarness()).url);
+if (import.meta.main) console.log((await startModelChooserHarness({ port: Number(Bun.argv[2] ?? 0) })).url);

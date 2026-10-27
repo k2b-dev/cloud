@@ -248,7 +248,7 @@ export function AiModelChooser(props: {
         <Show
           when={step() === "card"}
           fallback={
-            <div class="grid" onKeyDown={onListKey}>
+            <div class="grid" role="group" aria-label={t().allModels} onKeyDown={onListKey}>
               <div class="flex items-center gap-1 px-2 pt-2">
                 <IconButton
                   type="button"
@@ -312,6 +312,9 @@ export function AiModelChooser(props: {
                         }}
                         onPointerMove={() => setActive(index())}
                         onClick={() => choose(option)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") choose(option);
+                        }}
                       >
                         <AiModelIcon icon={option.icon} size="xs" />
                         <span class="grid min-w-0">
@@ -339,6 +342,8 @@ export function AiModelChooser(props: {
         >
           <div
             class="px-3.5 pt-3 pb-4"
+            role="group"
+            aria-label={t().chooseModel}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
