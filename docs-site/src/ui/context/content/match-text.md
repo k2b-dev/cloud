@@ -1,6 +1,7 @@
 # MatchText
 
-`MatchText` shows text with its search matches marked.
+`MatchText` shows text with its search matches marked. It renders inline text
+and `mark` elements only; the host's element styles and truncates the whole text.
 
 ## Use MatchText
 
@@ -17,7 +18,7 @@ import { MatchText, matchParts, type MatchRange } from "@k2b/ui";
 ## Example
 
 ```tsx
-<MatchText text="Rechnung Oktober.pdf" ranges={[[0, 8]]} />
+<span class="result-name"><MatchText text="Rechnung Oktober.pdf" ranges={[[0, 8]]} /></span>
 <MatchText text="Kunden/Bäckerei/Rechnung.pdf" ranges={[[0, 6], [16, 24]]} />
 ```
 
@@ -51,6 +52,6 @@ some also announce the marked parts.
 
 ```ts
 type MatchRange = readonly [number, number];
-type MatchTextProps = { text: string; ranges?: readonly MatchRange[]; class?: string };
+type MatchTextProps = { text: string; ranges?: readonly MatchRange[] };
 function matchParts(text: string, ranges?: readonly MatchRange[]): { text: string; hit: boolean }[];
 ```

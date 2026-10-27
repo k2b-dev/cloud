@@ -6,7 +6,6 @@ export type MatchTextProps = {
   text: string;
   /** Code point ranges to mark, as search engines such as Filegate return them; not UTF-16 offsets. */
   ranges?: readonly MatchRange[];
-  class?: string;
 };
 
 /** Splits text into marked and plain parts. Ranges are clipped to the text, sorted, and merged when they touch. */
@@ -33,16 +32,13 @@ export function matchParts(text: string, ranges: readonly MatchRange[] = []): { 
 }
 
 /**
- * Text with its search matches marked, for result names and paths. The marks change only the fill, never the
- * text's width, and screen readers read the text unchanged.
- * @example <MatchText text="Rechnung Oktober.pdf" ranges={[[0, 8]]} />
+ * Text with its search matches marked, for result names and paths. It renders inline text and `mark` elements
+ * only, so the host's element keeps truncating and styling the whole text. The marks change only the fill, never
+ * the text's width, and screen readers read the text unchanged.
+ * @example <span class="name"><MatchText text="Rechnung Oktober.pdf" ranges={[[0, 8]]} /></span>
  */
 export function MatchText(props: MatchTextProps): JSX.Element {
   const parts = createMemo(() => matchParts(props.text, props.ranges));
-  return (
-    <span class={`k2b-match-text${props.class ? ` ${props.class}` : ""}`}>
-      <For each={parts()}>{(part) => (part.hit ? <mark class="k2b-match-text__hit">{part.text}</mark> : part.text)}</For>
-    </span>
-  );
+  return <For each={parts()}>{(part) => (part.hit ? <mark class="k2b-match-text__hit">{part.text}</mark> : part.text)}</For>;
 }
 export default MatchText;

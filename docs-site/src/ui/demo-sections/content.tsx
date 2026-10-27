@@ -1954,7 +1954,7 @@ const demos: DemoSection = {
         chip={{ kind: "component", name: "MatchText", from: "@k2b/ui" }}
         description="A search result's name and folder path with their matches."
         code={`<MatchText text="Rechnung Oktober.pdf" ranges={[[0, 8]]} />
-<MatchText text="Kunden/Bäckerei Sonnenschein" ranges={[[0, 6]]} class="text-dimmed" />`}
+<span class="text-dimmed"><MatchText text="Kunden/Bäckerei Sonnenschein" ranges={[[0, 6]]} /></span>`}
       >
         <p>
           <MatchText text="Rechnung Oktober.pdf" ranges={[[0, 8]]} />

@@ -42,8 +42,7 @@ describe("MatchText", () => {
   });
 
   test("renders marks on the server", () => {
-    const html = renderToString(() => createComponent(MatchText, { text: "Alte Rechnung.pdf", ranges: [[5, 13]], class: "name" }));
-    expect(html).toContain('class="k2b-match-text name"');
-    expect(html).toContain('Alte <mark class="k2b-match-text__hit">Rechnung</mark>.pdf');
+    const html = renderToString(() => createComponent(MatchText, { text: "Alte Rechnung.pdf", ranges: [[5, 13]] }));
+    expect(html.replace(/<!--[^>]*-->/g, "")).toBe('Alte <mark class="k2b-match-text__hit">Rechnung</mark>.pdf');
   });
 });
