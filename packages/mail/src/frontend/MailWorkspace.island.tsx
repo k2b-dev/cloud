@@ -46,7 +46,7 @@ import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTa
 import { createMailboxMenu, MailboxMenuButton } from "./_components/MailboxMenu";
 import MailConversationList from "./_components/MailConversationList";
 import MailConversationReader, { MAIL_CONTEXT_DETAIL_ID } from "./_components/MailConversationReader";
-import MailDetailsPanel from "./_components/MailDetailsPanel";
+import MailDetailsPanel, { MailDetailsSkeleton } from "./_components/MailDetailsPanel";
 import MailDraftsView from "./_components/MailDraftsView";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, readMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
@@ -3000,17 +3000,18 @@ function MailboxWorkspace(
           <Show
             when={data.selectedConversationId && data.collaborationState && data.conversationLocalTags}
             fallback={
-              <div class="flex h-full items-center justify-center p-4">
-                <Placeholder
-                  state={routeLoading() ? "loading" : "error"}
-                  title={routeLoading() ? t().loadingDetails : t().detailsUnavailable}
-                  description={
-                    routeLoading()
-                      ? undefined
-                      : (data.detailErrors.collaboration ?? data.detailErrors.tags ?? data.collaborationError ?? t().refreshConversation)
-                  }
-                />
-              </div>
+              <Show when={!routeLoading()} fallback={<MailDetailsSkeleton label={t().loadingDetails} />}>
+                <div class="flex h-full items-center justify-center p-4">
+                  <Placeholder
+                    state="error"
+                    title={t().detailsUnavailable}
+                    description={
+                      data.detailErrors.collaboration ?? data.detailErrors.tags ?? data.collaborationError ?? t().refreshConversation
+                    }
+                    onRetry={() => void reconcileWorkspace()}
+                  />
+                </div>
+              </Show>
             }
           >
             <MailDetailsPanel

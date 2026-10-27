@@ -217,21 +217,73 @@ const renderPanel = (overrides: Partial<Parameters<typeof MailDetailsPanel>[0]> 
     }),
   );
 
-describe("Mail conversation detail panel", () => {
-  test("can surface overview context and a full conversation destination", () => {
-    const html = renderPanel({
-      conversationHref: `/app/mail/${mailboxId}?conversation=${conversationId}`,
-      conversationSummary: summaryState({ summary: "Payment is due **Friday**.", summaryRevision: 2, conversationRevision: 5 }),
-    });
+const between = (html: string, from: string, to: string) => html.slice(html.indexOf(from), html.indexOf(to));
 
-    expect(html).toContain("Conversation summary");
-    expect(html).toContain("Payment is due");
-    expect(html).toContain("<strong>Friday</strong>");
-    expect(html).toContain(`href="/app/mail/${mailboxId}?conversation=${conversationId}"`);
-    expect(html).toContain("Open conversation");
+describe("Mail conversation detail panel", () => {
+  test("follows the shared outline: header, properties, linked, attachments, notes, then More about", () => {
+    const html = renderPanel();
+    const order = [
+      'class="k2b-detail-panel__kind"',
+      ">Properties<",
+      ">Linked<",
+      ">Attachments<",
+      ">Team notes<",
+      ">More about this conversation<",
+      ">People<",
+      ">Activity<",
+      ">Technical details<",
+    ].map((marker) => html.indexOf(marker));
+    for (const index of order) expect(index).toBeGreaterThan(-1);
+    expect([...order].sort((left, right) => left - right)).toEqual(order);
+    // No section icons and no boxes: the titles start on the text edge.
+    expect(html).not.toContain("k2b-detail-panel__section-icon");
+    expect(html).not.toContain("bg-[var(--ui-surface)] p-3");
+    expect(html).not.toContain("k2b-checkbox-card");
+    expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
+    expect(html).toContain('data-scroll-preserve="mail-conversation-detail"');
   });
 
-  test("surfaces the newest conversation draft before workflow", () => {
+  test("the header names the conversation, its state, and offers Mark as done with more actions", () => {
+    const html = renderPanel({ conversationHref: `/app/mail/${mailboxId}?conversation=${conversationId}` });
+    const header = html.slice(0, html.indexOf('class="k2b-detail-panel__body"'));
+    expect(header).toContain(">Conversation<");
+    expect(header).toContain("Needs action");
+    expect(header).toContain("<h2>Quarterly review</h2>");
+    expect(header).toContain("Ada Lovelace · 1 message · latest");
+    expect(header).toContain("Mark as done");
+    expect(header).toContain('aria-label="More conversation actions"');
+    expect(header).toContain('aria-label="Close conversation details"');
+    expect(header).toContain("@min-[64rem]/k2b-app-area:hidden");
+    expect(header).toContain('class="k2b-avatar-stack__trigger" aria-label="Active collaborators: Mara Klein"');
+    expect(header).not.toContain("Read only");
+  });
+
+  test("properties are quiet rows that open their pickers, with the reminder marked as personal", () => {
+    const html = renderPanel();
+    const properties = between(html, ">Properties<", ">Linked<");
+    for (const term of ["Assigned", "Tags", "Show later", "Reminder"]) expect(properties).toContain(`>${term}<`);
+    expect(properties).toContain('data-appearance="plain"');
+    expect(properties).toContain("only for you");
+    expect(properties).toContain("Not planned");
+    expect(properties).toContain("Not set");
+    expect(properties).toContain('aria-label="Create tag"');
+  });
+
+  test("an AI summary carries ✦ AI, a person's summary stays neutral", () => {
+    const ai = renderPanel({
+      conversationSummary: summaryState({ summary: "Payment is due **Friday**.", summaryRevision: 2, conversationRevision: 5 }),
+    });
+    expect(ai).toContain("<strong>Friday</strong>");
+    expect(ai.indexOf("Payment is due")).toBeLessThan(ai.indexOf(">Properties<"));
+    const aiSummary = summaryState({ summary: "Payment is due.", summaryRevision: 2, conversationRevision: 5 });
+    if (aiSummary?.ai) expect(ai).toContain("✦ AI");
+    const person = renderPanel({
+      conversationSummary: aiSummary ? { ...aiSummary, ai: false } : aiSummary,
+    });
+    expect(person).not.toContain("✦");
+  });
+
+  test("surfaces the newest conversation draft before the properties", () => {
     const html = renderPanel({
       conversationDrafts: [draft, { ...draft, id: "Draft2", createdByDisplayName: "Mara Klein" }],
     });
@@ -240,85 +292,76 @@ describe("Mail conversation detail panel", () => {
     expect(html).toContain("Continue newest draft");
     expect(html).toContain("Created by Valentin Kolb · Updated");
     expect(html).toContain("/compose/Draft1?");
-    expect(html).toContain('class="k2b-detail-panel__group" role="group" aria-label="Draft"');
-    expect(html.indexOf("Drafts available")).toBeLessThan(html.indexOf(">Workflow<"));
+    expect(html.indexOf("Drafts available")).toBeLessThan(html.indexOf(">Properties<"));
   });
 
-  test("composes the inspector from the shared grouped panel contract", () => {
+  test("attachments show their kind and size, a preview button, and download and save in their slot", () => {
     const html = renderPanel();
-    const header = html.slice(0, html.indexOf('class="k2b-detail-panel__body"'));
+    const attachments = between(html, ">Attachments<", ">Team notes<");
+    expect(attachments).toContain("PDF · 2 KB");
+    expect(attachments).not.toContain("application/pdf");
+    expect(attachments).toContain('class="k2b-file-grid__open"');
+    expect(attachments).toContain('data-action-visibility="progressive"');
+    expect(attachments).toContain('href="/api/mail/mailboxes/Box001/messages/Msg001/attachments/Att001"');
+    expect(attachments).toContain('download="review.pdf"');
+    expect(attachments).toContain('aria-label="Save review.pdf to…"');
+    expect(attachments).not.toContain("ti-paperclip");
+  });
 
-    expect(html).toContain('class="k2b-detail-panel"');
-    expect(html).toContain("<h2>Quarterly review</h2>");
-    expect(header).toContain("Ada Lovelace");
-    expect(header).not.toContain("1 message");
-    expect(header).not.toContain("1 attachment");
-    expect(header).toContain('class="k2b-detail-panel__meta"');
-    expect(header).toContain("Needs action");
-    expect(header).toContain('aria-label="Close conversation details"');
-    expect(header).toContain("@min-[64rem]/k2b-app-area:hidden");
-    expect(html).toContain('class="k2b-detail-panel__group" role="group" aria-label="Workflow"');
-    // People here sit in the header as one avatar stack beside the status; it opens the list.
-    expect(header).toContain('class="k2b-avatar-stack__trigger" aria-label="Active collaborators: Mara Klein"');
-    expect(header).toMatch(/<h3 id="[^"]+">Active collaborators<\/h3><span class="k2b-count-chip">1<\/span>/);
-    expect(html).not.toContain("Here now");
-    expect(html).toContain(">Tags<");
-    expect(html).not.toContain("Next step");
-    expect(html).toContain("Mark as done");
-    expect(html).toContain('class="k2b-checkbox-card-field');
-    expect(html.indexOf("Mark as done")).toBeLessThan(html.indexOf(">Workflow<"));
-    expect(html).toContain('data-scroll-preserve="mail-conversation-detail"');
-    expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
-    expect(html).toContain('aria-label="Conversation context"');
-    expect(html).toContain('aria-label="Conversation history"');
-    expect(html).not.toContain('aria-label="Active collaborators" class="bg-[var(--ui-surface)] p-3"');
-    expect(html).toContain('aria-label="Contacts" class="bg-[var(--ui-surface)] p-3"');
-    expect(html).toContain('aria-label="Spaces" class="space-y-1 bg-[var(--ui-surface)] p-3"');
-    expect(html).toContain("Related mail");
-    expect(html).toContain("No related mail");
-
-    expect(html.indexOf('aria-label="Active collaborators"')).toBeLessThan(html.indexOf('aria-label="Contacts"'));
-    expect(html).not.toContain(">Contacts<");
-    expect(html).not.toContain("border-t");
-    expect(html).toContain('class="k2b-discussion');
-    expect(html).toContain('class="k2b-discussion__item');
-    expect(html).toContain('class="k2b-discussion__composer-inset-action"');
-    expect(html).toContain('aria-label="Post comment"');
-    const postButton = html.slice(html.indexOf('aria-label="Post comment"') - 180, html.indexOf('aria-label="Post comment"') + 220);
-    expect(postButton).toContain("disabled");
-    expect(postButton).toContain('data-variant="primary"');
-    expect(html).not.toContain("Write a comment first.");
-    expect(html).toContain('class="k2b-content-markdown');
-    expect(html).toContain('href="/api/mail/mailboxes/Box001/messages/Msg001/attachments/Att001"');
-    expect(html).toContain('download="review.pdf"');
-    // Beside each download, the attachment can be saved into an app that stores files.
-    expect(html).toContain('aria-label="Save review.pdf to…"');
-    expect(html).toContain("Recent activity");
-    expect(html).toContain("Mail details");
-    expect(html.match(/<section class="k2b-detail-panel__section"[^>]*data-open="false"/g)).toHaveLength(2);
-    expect(html).toContain('data-visibility="progressive"');
-    expect(html).not.toContain('data-visibility="always"');
-    expect(html.indexOf('aria-label="Edit comment"')).toBeLessThan(html.indexOf('aria-label="Delete comment"'));
-    expect(html).toContain('class="ti ti-pencil"');
-    expect(html).not.toContain('aria-label="Reply to Valentin Kolb"');
-    expect(html.slice(html.indexOf('aria-label="Edit comment"'), html.indexOf('aria-label="Edit comment"') + 220)).toContain(
-      'data-size="xs"',
-    );
-    expect(html).not.toContain('class="detail-stack');
-    expect(html).not.toContain('class="detail-section');
-    expect(html).not.toContain("overflow-y-auto");
+  test("the same file in two messages is one row; the same name with other content names its sender", () => {
+    const pdf = message.attachments[0]!;
+    const html = renderPanel({
+      messages: [
+        { ...message, id: "Msg001", attachments: [{ ...pdf, id: "Att001", checksum: "aa" }] },
+        {
+          ...message,
+          id: "Msg002",
+          from: [{ name: "Mara Klein", address: "mara@example.com" }],
+          attachments: [
+            { ...pdf, id: "Att002", checksum: "aa" },
+            {
+              ...pdf,
+              id: "Att003",
+              filename: "budget.xlsx",
+              contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              checksum: "bb",
+            },
+          ],
+        },
+        {
+          ...message,
+          id: "Msg003",
+          attachments: [
+            {
+              ...pdf,
+              id: "Att004",
+              filename: "budget.xlsx",
+              contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              checksum: "cc",
+            },
+          ],
+        },
+      ],
+    });
+    const attachments = between(html, ">Attachments<", ">Team notes<");
+    expect(attachments.match(/class="k2b-file-grid__open"/g)).toHaveLength(3);
+    expect(attachments).toContain("PDF · 2 KB · in 2 messages");
+    expect(attachments).toContain("Spreadsheet · 2 KB · from Mara Klein");
+    expect(attachments).toContain("Spreadsheet · 2 KB · from Ada Lovelace");
   });
 
   test("omits deleted comments from the visible discussion", () => {
-    const html = renderPanel({ initialComments: [comment, deletedComment] });
-
-    expect(html).toContain('class="k2b-count-chip">1</span>');
+    const html = renderPanel({
+      initialComments: [
+        comment,
+        { ...comment, id: "Deleted", deletedAt: "2026-08-18T12:00:00.000Z", author: { ...comment.author, displayName: "Deleted Author" } },
+      ],
+    });
     expect(html).toContain("Valentin Kolb");
     expect(html).not.toContain("Deleted Author");
-    expect(html).not.toContain("Comment deleted");
   });
 
-  test("keeps expired and workflow comments immutable with a workflow icon", () => {
+  test("read only: a lock badge, no Mark as done, and properties that cannot open", () => {
     const html = renderPanel({
       canWrite: false,
       initialComments: [
@@ -332,35 +375,33 @@ describe("Mail conversation detail panel", () => {
         },
       ],
     });
-    const editIndex = html.indexOf('aria-label="Edit comment"');
-    const deleteIndex = html.indexOf('aria-label="Delete comment"');
-
-    expect(editIndex).toBe(-1);
-    expect(deleteIndex).toBe(-1);
-    expect(html).not.toContain("Reply to");
+    const header = html.slice(0, html.indexOf('class="k2b-detail-panel__body"'));
+    expect(header).toContain("Read only");
+    expect(header).toContain("you can only read");
+    expect(header).not.toContain("Mark as done");
+    expect(html).not.toContain('aria-label="Edit comment"');
+    expect(html).not.toContain('aria-label="Delete comment"');
     expect(html).toContain('class="ti ti-route"');
-    expect(html).toContain('aria-label="Create tag"');
-    expect(html).toContain("disabled");
-    expect(html).toContain('aria-label="Add internal comment"');
+    expect(html).not.toContain('aria-label="Create tag"');
+    expect(html).not.toContain("Create task in Spaces");
+    expect(between(html, ">Properties<", ">Linked<")).toContain("disabled");
   });
 
-  test("preserves partial-error and empty states without empty attachment shells", () => {
+  test("empty and partly failed: one quiet line per section, each failure with its retry where it happened", () => {
     const html = renderPanel({
       initialComments: [],
       presence: [],
+      activity: [],
       messages: [{ ...message, attachments: [] }],
-      detailErrors: { ...noDetailErrors, tags: "Tags unavailable", activity: "Activity unavailable" },
+      detailErrors: { ...noDetailErrors, tags: "Tags unavailable", activity: "Activity unavailable", keep: "Keep unavailable" },
     });
-
-    expect(html).toContain("Some conversation details are temporarily unavailable");
-    expect(html).toContain("Could not refresh tags and recent activity.");
-    expect(html).toContain("Retry");
-    expect(html).toContain('data-align="center"');
-    // An empty discussion reads as one line, not a bare zero.
+    expect(between(html, ">Properties<", ">Linked<")).toContain("Some properties can");
+    expect(between(html, ">Attachments<", ">Team notes<")).toContain("No attachments");
     expect(html).toContain('class="k2b-detail-panel__none">None yet</span>');
-    expect(html).not.toContain("No team notes yet.");
-    expect(html).toContain("Loading contacts…");
-    expect(html).not.toContain(">Attachments<");
-    expect(html).not.toContain(">Here now<");
+    expect(between(html, ">Activity<", ">Technical details<")).toContain("Activity can");
+    // A failure outside the outline's sections stays one line above them.
+    expect(html.indexOf("keep")).toBeLessThan(html.indexOf(">Properties<"));
+    expect(html).toContain('data-state="error"');
+    expect(html).toContain("Try again");
   });
 });
