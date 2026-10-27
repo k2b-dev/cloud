@@ -2399,7 +2399,7 @@ suite("AI executor integration", () => {
 
       expect(requests).toHaveLength(1);
       expect(String(requests[0]?.messages.find((message) => message.role === "system")?.content)).toContain(
-        "Audio files in this conversation cannot be transcribed: Audio transcription is not set up: no audio model is configured.",
+        "Audio files in this conversation cannot be transcribed: Audio transcription is not set up: no audio model is assigned.",
       );
       expect((requests[0]?.tools ?? []).map((tool) => tool.function.name)).not.toContain("transcribe_audio");
     } finally {

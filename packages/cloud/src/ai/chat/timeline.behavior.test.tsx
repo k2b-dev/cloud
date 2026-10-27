@@ -337,7 +337,7 @@ import { aiTurnErrorText } from "./turn-error";
     expect(messages().map((message) => [message.getAttribute("data-role"), message.getAttribute("data-status")])).toEqual([
       ["assistant", "complete"],
       ["user", "pending"],
-      ["assistant"],
+      ["assistant", "streaming"],
     ]);
 
     emit({ ...base, seq: 3, type: "block_set", block: { ...tool, status: "completed", result: {} } });
