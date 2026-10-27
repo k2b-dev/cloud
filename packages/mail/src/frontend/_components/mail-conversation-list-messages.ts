@@ -44,6 +44,15 @@ export const mailConversationListMessages = i18n.define({
       retry: "Retry",
       noMatchingMessages: "No matching messages",
       noConversations: "No conversations here",
+      doneToday: ({ count }: { count: number }) => `${count} done today`,
+      doneAutomated: ({ count }: { count: number }) => `${count} of them automatically`,
+      doneRing: ({ done, total }: { done: number; total: number }) => `${done} of ${total} conversations done today`,
+      allDoneTitle: "All done.",
+      allDoneText: ({ done, automated }: { done: number; automated: number }) =>
+        automated > 0
+          ? `${done} conversations done today, ${automated} of them taken off your hands by automations.`
+          : `${done} conversations done today.`,
+      allDoneLog: "What happened automatically today",
       dayToday: "Today",
       dayYesterday: "Yesterday",
       dayWeek: "This week",
@@ -109,6 +118,15 @@ export const mailConversationListMessages = i18n.define({
       retry: "Erneut versuchen",
       noMatchingMessages: "Keine passenden Nachrichten",
       noConversations: "Keine Unterhaltungen in dieser Ansicht",
+      doneToday: ({ count }: { count: number }) => `Heute ${count} erledigt`,
+      doneAutomated: ({ count }: { count: number }) => `${count} davon automatisch`,
+      doneRing: ({ done, total }: { done: number; total: number }) => `${done} von ${total} Unterhaltungen heute erledigt`,
+      allDoneTitle: "Alles erledigt.",
+      allDoneText: ({ done, automated }: { done: number; automated: number }) =>
+        automated > 0
+          ? `Heute ${done} Mails erledigt, ${automated} davon haben eure Automationen abgenommen.`
+          : `Heute ${done} Mails erledigt.`,
+      allDoneLog: "Was heute automatisch passiert ist",
       dayToday: "Heute",
       dayYesterday: "Gestern",
       dayWeek: "Diese Woche",

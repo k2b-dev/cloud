@@ -2741,6 +2741,16 @@ function MailboxWorkspace(
       onLoadMore={loadMoreConversations}
       onRefresh={reconcileWorkspace}
       columns={wide ? { shared: sharedMailbox(), assigneeNames } : undefined}
+      doneToday={
+        data.listMode === "conversations"
+          ? {
+              done: data.doneTodayCounts.doneToday,
+              automated: data.doneTodayCounts.doneByAutomation,
+              open: data.viewCounts.needs_action,
+              logHref: `/app/mail/${data.mailbox.id}/automations/log`,
+            }
+          : null
+      }
     />
   );
 

@@ -425,6 +425,29 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       });
 
+    test("views: the day's done line above the list, and All done with the way to the log", async () => {
+      const page = await open(`${boxPath}?layout=auto&done=19,14`, 1440, 900);
+      try {
+        const line = page.locator("[data-mail-done-line]");
+        await line.getByText("Heute 19 erledigt").or(line.getByText("19 done today")).waitFor();
+        await line.getByRole("progressbar").waitFor({ state: "attached" });
+        expect((await line.boundingBox())!.height).toBeCloseTo(28, 0);
+        if (screenshots) await page.screenshot({ path: join(screenshots, browserName, "views-done-line-light-1440.png") });
+      } finally {
+        await close(page);
+      }
+      const empty = await open(`${boxPath}?layout=auto&done=26,17&inbox=empty`, 1440, 900);
+      try {
+        const done = empty.locator("[data-mail-all-done]");
+        await done.waitFor({ state: "visible" });
+        expect(await done.getByRole("link").getAttribute("href")).toBe("/app/mail/Box001/automations/log");
+        expect(await empty.locator("[data-mail-list-count]").count()).toBe(0);
+        if (screenshots) await empty.screenshot({ path: join(screenshots, browserName, "views-all-done-light-1440.png") });
+      } finally {
+        await close(empty);
+      }
+    });
+
     for (const theme of ["light", "dark"] as const)
       for (const width of [1440, 390])
         test(`compact reader short subject ${theme} ${width}: count beside the title, hidden on phones`, async () => {

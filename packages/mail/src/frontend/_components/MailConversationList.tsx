@@ -8,6 +8,7 @@ import {
   IconButton,
   NoticeCard,
   Placeholder,
+  ProgressRing,
   PullToRefresh,
   ScrollArea,
   Tooltip,
@@ -92,6 +93,8 @@ export default function MailConversationList(props: {
   onRefresh: () => Promise<void>;
   /** The columns view (F2): a header and one line per conversation. Absent for today's rows. */
   columns?: { shared: boolean; assigneeNames: (userIds: readonly string[]) => string[] };
+  /** Conversations done today and how many still need action; drives the done line and "All done." */
+  doneToday?: { done: number; automated: number; open: number; logHref: string } | null;
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
@@ -170,6 +173,8 @@ export default function MailConversationList(props: {
   const listHref = () => buildMailListHref(requestUrl());
   const searchActive = () => Boolean(props.query.trim() || requestUrl().searchParams.has("search") || props.activeSavedViewId);
   // Day headings follow the person's calendar; a search may sort by relevance, so it shows none.
+  /** An empty list after a day with completed work: "All done." takes the placeholder's place. */
+  const allDone = () => props.items.length === 0 && !searchActive() && (props.doneToday?.done ?? 0) > 0;
   const dayStarts = createMemo(() =>
     searchActive()
       ? new Map<number, MailDayGroup>()
@@ -352,6 +357,17 @@ export default function MailConversationList(props: {
                 </ButtonLink>
               }
             />
+          ) : allDone() && props.doneToday ? (
+            <div class="mail-all-done" data-mail-all-done>
+              <span class="mail-all-done-mark" aria-hidden="true">
+                <i class="ti ti-check" />
+              </span>
+              <h2>{messages().allDoneTitle}</h2>
+              <p>{messages().allDoneText({ done: props.doneToday.done, automated: props.doneToday.automated })}</p>
+              <ButtonLink href={props.doneToday.logHref} variant="secondary" size="sm">
+                <i class="ti ti-history" aria-hidden="true" /> {messages().allDoneLog}
+              </ButtonLink>
+            </div>
           ) : props.items.length === 0 ? (
             <Placeholder
               icon={searchActive() ? "ti ti-search" : "ti ti-mail-off"}
@@ -387,6 +403,20 @@ export default function MailConversationList(props: {
             />
           ) : (
             <>
+              <Show when={!searchActive() && props.doneToday && props.doneToday.done > 0 ? props.doneToday : null}>
+                {(done) => (
+                  <p class="mail-done-line" data-mail-done-line>
+                    <ProgressRing
+                      value={(done().done / Math.max(1, done().done + done().open)) * 100}
+                      label={messages().doneRing({ done: done().done, total: done().done + done().open })}
+                    />
+                    <b>{messages().doneToday({ count: done().done })}</b>
+                    <Show when={done().automated > 0}>
+                      <span>· {messages().doneAutomated({ count: done().automated })}</span>
+                    </Show>
+                  </p>
+                )}
+              </Show>
               <Show when={props.columns}>
                 {(columns) => (
                   <div class="mail-columns-head" classList={{ "mail-columns-personal": !columns().shared }} aria-hidden="true">
@@ -487,9 +517,11 @@ export default function MailConversationList(props: {
               </div>
             </>
           )}
-          <p class="px-2 py-3 text-xs text-muted" data-mail-list-count>
-            {messages().shown({ count: props.items.length })}
-          </p>
+          <Show when={!allDone()}>
+            <p class="px-2 py-3 text-xs text-muted" data-mail-list-count>
+              {messages().shown({ count: props.items.length })}
+            </p>
+          </Show>
           <Show when={nextHref()}>
             {(href) => (
               <div ref={(element) => setLoadMoreElement(element)} class="flex min-h-14 items-center justify-center py-3">

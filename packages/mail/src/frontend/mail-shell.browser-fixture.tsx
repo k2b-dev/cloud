@@ -186,7 +186,11 @@ export function mailboxData(url: URL): MailboxPageData {
       large: url.searchParams.get("layout") === "auto" ? "auto" : url.searchParams.get("layout") === "columns" ? "columns" : "split",
       phone: "compact",
     },
-    doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
+    // ?done=19,14 sets today's completed conversations and how many automations completed.
+    doneTodayCounts: (() => {
+      const [done = 0, automated = 0] = (url.searchParams.get("done") ?? "").split(",").map((value) => Number(value) || 0);
+      return { doneToday: done, doneByAutomation: automated };
+    })(),
     receivingAddress: selectedMailbox.id === "Box001" ? "support@example.test" : selectedMailbox.receivingAddress,
     mailbox: selectedMailbox,
     permission,
@@ -242,7 +246,7 @@ export function mailboxData(url: URL): MailboxPageData {
     selectedConversationId,
     selectedMessageId: url.searchParams.get("message"),
     listItems:
-      scheduledMode || draftsMode
+      scheduledMode || draftsMode || url.searchParams.get("inbox") === "empty"
         ? []
         : selectedMailbox.id === "Box001"
           ? listRows
