@@ -408,6 +408,7 @@ export default function MailConversationList(props: {
                   <p class="mail-done-line" data-mail-done-line>
                     <ProgressRing
                       value={(done().done / Math.max(1, done().done + done().open)) * 100}
+                      tone="accent"
                       label={messages().doneRing({ done: done().done, total: done().done + done().open })}
                     />
                     <b>{messages().doneToday({ count: done().done })}</b>

@@ -1233,7 +1233,7 @@ function MailboxWorkspace(
   // Who is responsible only matters where more than one person can be assigned.
   const sharedMailbox = () => data.assignableUsers.length > 1;
   const assigneeNames = (userIds: readonly string[]) =>
-    userIds.map((userId) => data.assignableUsers.find((user) => user.id === userId)?.displayName ?? userId);
+    userIds.map((userId) => data.assignableUsers.find((user) => user.id === userId)?.displayName ?? listText().unknownPerson);
   /** Shows the new view at once and stores it for this person and mailbox; a failed save keeps it until reload. */
   const changeLargeView = async (large: MailLargeView) => {
     const before = viewPreference();

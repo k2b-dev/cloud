@@ -253,7 +253,7 @@
 
   .mail-done-line b {
     font-weight: 600;
-    color: var(--app-accent);
+    color: var(--ui-app-accent-text);
   }
 
   /* "All done.": a calm moment in the list's place, with the way to what automations did today. */
@@ -276,7 +276,7 @@
     border-radius: 9999px;
     background: var(--k2b-surface-muted);
     font-size: 2.25rem;
-    color: var(--app-accent);
+    color: var(--ui-app-accent-text);
   }
 
   .mail-all-done h2 {
