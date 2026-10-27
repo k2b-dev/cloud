@@ -58,6 +58,16 @@ Referenced or uncertain historical groups remain usable until resolved;
 upgrading alone does not remove their authority. Follow
 [Review historical groups after upgrading](/en/docs/operations/linux-identities#review-historical-groups-after-upgrading).
 
+## Enable numeric workflow conditions
+
+Upgrade every application that compiles or executes workflows before publishing
+definitions using `greaterThan`, `lessThan`, `atLeast`, or `atMost`. Older
+workers do not understand these operators. Mail also adds reply text length,
+attachment count, bulk-message classification, and conversation message count
+for new run snapshots. No schema migration or new configuration is required.
+See [workflow conditions](/en/docs/automation/author-and-publish-workflows#compare-values-in-conditions)
+and Mail's workflow Help for the field semantics.
+
 ## Review Mail workflows that send automatically
 
 Mail refuses automatic send effects in workflows containing AI actions or
