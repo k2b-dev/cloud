@@ -1716,7 +1716,7 @@ steps:
             Status: Checked
 ```
 
-Conditions are `equals`, `notEquals`, `includes`, `textEquals`, `contains`, `startsWith`, `endsWith`, `exists`, `all`, `any`, and `not`. Use `includes` for exact list membership, not `contains`. Text operators require text operands. Binary conditions take
+Conditions are `equals`, `notEquals`, `includes`, `textEquals`, `contains`, `startsWith`, `endsWith`, `greaterThan`, `lessThan`, `atLeast`, `atMost`, `exists`, `all`, `any`, and `not`. Number comparisons require two finite JSON numbers and do not convert strings. Grids decimal inputs and record number fields resolve to decimal strings, so they cannot be compared with these operators. Known text operands are rejected during binding; missing or non-number dynamic values evaluate to `false`. Use `includes` for exact list membership, not `contains`. Text operators require text operands. Binary conditions take
 exactly two values; `exists` takes one raw reference; `all` and `any` take non-empty condition lists.
 
 Plain strings are literals. A dynamic value must occupy the whole string as `${{ reference }}` or `${{ now() }}`. References include

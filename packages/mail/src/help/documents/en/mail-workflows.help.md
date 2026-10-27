@@ -130,17 +130,26 @@ Message paths:
 
 - `inputs.message.id`, `conversationId`, `subject`, `body`, `bodyText`, `bodyHtml`
 - `inputs.message.fromAddress`, `fromDomain`
+- `inputs.message.textLength`, `attachmentCount`, `isBulk`
 - `inputs.message.sender.0.role`, `name`, or `email`
 - `inputs.message.recipients.0.role`, `name`, or `email`
 - `inputs.message.attachments.0.id`, `filename`, `contentType`, `disposition`, `contentId`, or `sizeBytes`
 - `inputs.message.hasAttachments`, `folderId`, `flags`, `keywords`, `direction`, `internalDate`, `receivedAt`
+
+`textLength` counts Unicode characters in the message's plain text. It removes `>` quoted lines and their attribution, and history below original-message separators or Outlook header blocks. It removes signatures starting with a line consisting exactly of `-- ` (two hyphens and a space). Unmarked signatures remain. Line endings become `\n`; outer whitespace is trimmed. Line breaks within the reply count. For HTML-only messages, Mail counts the plain text derived during message import.
+
+Mail loads `textLength` through the same lazy body read as `bodyText` and freezes that text for retries. `attachmentCount` waits for attachment metadata and counts the same stored attachments as `hasAttachments`, including inline images stored as attachments. `hasAttachments` retains its receipt-time value; unlike `attachmentCount`, it does not wait for metadata. If the message no longer exists, a number comparison using either metric evaluates to `false`.
+
+`isBulk` is true for a non-empty `List-Id`, `Precedence: bulk`, `list`, or `junk`, or `Auto-Submitted` other than `no`. Header values ignore case and outer whitespace. Missing headers do not mark a message as bulk.
+
+`conversation.messageCount` counts all linked messages in the source snapshot, just like the conversation list. It counts messages, not provider copies. Bind `trigger.message` and `trigger.conversation` to inputs to use these fields in steps. Scheduled workflows do not supply a conversation.
 
 Mail reads `body`, `bodyText`, and `bodyHtml` when a step needs them. The step waits until Mail has loaded the message and fails if the message no longer exists. A whole message value such as `inputs.message` includes the body only when Mail has already loaded it; use a body path when a step needs the text. Run details no longer show message bodies in the event data.
 
 Conversation paths:
 
 - `inputs.conversation.id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`
-- `inputs.conversation.workStatus`, `latestMessageAt`
+- `inputs.conversation.workStatus`, `latestMessageAt`, `messageCount`
 
 Mail resource IDs in a workflow are the same stable six-character IDs as in Mail URLs and capabilities. Provider references and database UUIDs are internal and are not workflow fields.
 
@@ -489,11 +498,36 @@ An `if` step takes one condition and a non-empty `then` list. `else` is optional
 
 Supported comparisons:
 
+- `greaterThan` (`>`), `lessThan` (`<`), `atLeast` (`>=`), and `atMost` (`<=`) compare two numbers.
 - `equals` and `notEquals`
 - `textEquals`, `contains`, `startsWith`, and `endsWith` for normalized, case-insensitive text
 - `includes` for exact membership in an array such as `aiClassifyMany` output
 - `exists` for one raw reference
 - recursive `all`, `any`, and `not`
+
+Number comparisons require exactly two finite JSON numbers. Numeric strings are not converted. Missing or non-number values evaluate to `false`; pending message hydration still waits. Validation reports known non-number literals and reference types at their source position.
+
+For example, apply the existing local tag `Lang` to a non-bulk message with more than 150 characters of reply text or a conversation with more than three messages:
+
+```yaml
+inputs:
+  message: { type: mailMessage, required: true }
+  conversation: { type: mailConversation, required: true }
+triggers:
+  messageReceived:
+    with:
+      message: "${{ trigger.message }}"
+      conversation: "${{ trigger.conversation }}"
+steps:
+  - if:
+      all:
+        - not: { equals: ["${{ inputs.message.isBulk }}", true] }
+        - any:
+            - greaterThan: ["${{ inputs.message.textLength }}", 150]
+            - greaterThan: ["${{ inputs.conversation.messageCount }}", 3]
+    then:
+      - addLocalTag: { conversation: inputs.conversation, tag: Lang }
+```
 
 `equals`, `notEquals`, and `includes` compare exact values. `textEquals`, `contains`, `startsWith`, and `endsWith` normalize Unicode text and ignore letter case.
 

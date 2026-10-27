@@ -338,9 +338,9 @@ Activation reconciles schedules into the shared scheduler. Every delivered slot 
 
 Mail exposes two input types:
 
-- `mailMessage`: `id`, `conversationId`, `subject`, `sender`, `fromAddress`, `fromDomain`, `recipients`, `body`, `bodyText`, `bodyHtml`, `attachments`, `hasAttachments`, `folderId`, `flags`, `keywords`, `direction`, `internalDate`, and `receivedAt`.
+- `mailMessage`: `id`, `conversationId`, `subject`, `sender`, `fromAddress`, `fromDomain`, `recipients`, `body`, `bodyText`, `bodyHtml`, `attachments`, `hasAttachments`, `textLength`, `attachmentCount`, `isBulk`, `folderId`, `flags`, `keywords`, `direction`, `internalDate`, and `receivedAt`.
 - Mail resource fields in workflow inputs and outputs use stable six-character Mail IDs; provider references and database UUIDs are not part of that workflow vocabulary.
-- `mailConversation`: `id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`, `workStatus`, and `latestMessageAt`.
+- `mailConversation`: `id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`, `workStatus`, `latestMessageAt`, and `messageCount`.
 
 Mail reads `body`, `bodyText`, and `bodyHtml` when a step needs them. The step waits until Mail has loaded the message and fails if the message no longer exists. A whole message value such as `inputs.message` includes the body only when Mail has already loaded it; use a body path when a step needs the text. Run details no longer show message bodies in the event data.
 
@@ -348,11 +348,36 @@ Use `${{ inputs.<name> }}` for a whole input and `${{ inputs.<name>.<field> }}` 
 
 Conditions are recursive and contain exactly one operator:
 
+- `greaterThan` (`>`), `lessThan` (`<`), `atLeast` (`>=`), and `atMost` (`<=`) compare exactly two finite JSON numbers. Numeric strings are not converted. Missing or non-number values yield `false`; pending hydration waits. Known non-number operands produce source-located validation errors.
 - `equals` and `notEquals` compare two values.
 - `textEquals`, `contains`, `startsWith`, and `endsWith` compare two normalized, case-insensitive text values.
 - `includes` tests exact membership in an array such as an `aiClassifyMany` result.
 - `exists` accepts one reference such as `inputs.conversation.summary`.
 - `all` and `any` contain one or more conditions; `not` contains one condition.
+
+`textLength` counts Unicode code points in trimmed plain text, with CRLF/CR normalized to LF. It reuses Mail's quote stripping: `>` quotes and their attribution, original-message separators and Outlook header history are excluded. A line consisting exactly of `-- ` starts the excluded signature. Unmarked signatures remain. Internal line breaks count. For HTML-only messages, Mail counts the plain text derived during message import. The body is loaded and frozen lazily. `attachmentCount` waits for metadata and counts the same stored attachments as `hasAttachments`, including stored inline images. `hasAttachments` retains its receipt-time value and does not wait for metadata. If the message no longer exists, a number comparison using either metric evaluates to `false`. `isBulk` uses non-empty `List-Id`, `Precedence: bulk|list|junk`, or non-empty `Auto-Submitted` other than `no` (case-insensitive, trimmed). `messageCount` counts all linked messages in the source snapshot, just like the conversation list; provider copies do not add messages.
+
+Bind the whole `trigger.message` and `trigger.conversation` into inputs for steps. A schedule currently supplies neither. For example, use the existing local tag `Lang`:
+
+```yaml
+inputs:
+  message: { type: mailMessage, required: true }
+  conversation: { type: mailConversation, required: true }
+triggers:
+  messageReceived:
+    with:
+      message: "${{ trigger.message }}"
+      conversation: "${{ trigger.conversation }}"
+steps:
+  - if:
+      all:
+        - not: { equals: ["${{ inputs.message.isBulk }}", true] }
+        - any:
+            - greaterThan: ["${{ inputs.message.textLength }}", 150]
+            - greaterThan: ["${{ inputs.conversation.messageCount }}", 3]
+    then:
+      - addLocalTag: { conversation: inputs.conversation, tag: Lang }
+```
 
 Steps may use `if`/`then`/`else`. A switch uses `switch: <expression>`, `cases:` as a non-empty list of `{ when: <value>, do: [steps] }` entries, and an optional `default: [steps]`:
 
