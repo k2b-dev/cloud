@@ -693,7 +693,7 @@ export const defineApp = <
       // derive the spec from. The mount block lower down uses the same
       // flag so the registry never points at a URL that 404s.
       const advertiseOpenapi = !!(opts.openapi && startOpts.openapi);
-      const compiledCapabilities = startOpts.capabilities ? compileCapabilities(meta.id, startOpts.capabilities) : undefined;
+      const compiledCapabilities = startOpts.capabilities ? compileCapabilities(meta.id, startOpts.capabilities, meta.routes) : undefined;
       const compiledHelp = startOpts.help
         ? compileHelp({
             appId: meta.id,
