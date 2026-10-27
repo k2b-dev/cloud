@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { appHostCss } from "../../../ui/test/app-host-fixture";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 
 // The real Browser in its search states, with fictional data; marks, chips and row geometry need a layout engine.
 const ui = new URL("../../../ui/", import.meta.url).pathname;
@@ -107,6 +107,7 @@ describe("Files search in a browser", () => {
         expect(await tab.getByRole("group", { name: "Search filters" }).getByRole("button").count()).toBe(3);
         // The list, grid and tree switch has no meaning for results.
         expect(await tab.getByRole("radiogroup", { name: "View" }).isVisible()).toBe(false);
+        await settled(tab);
         const heights = await tab.$$eval(".filesv2-list__row", (rows) => rows.map((item) => item.getBoundingClientRect().height));
         expect(new Set(heights)).toEqual(new Set([40]));
         const mark = await row.locator(".filesv2-list__name mark").evaluate((element) => {
@@ -121,6 +122,7 @@ describe("Files search in a browser", () => {
         const firstHit = await box(tab, ".filesv2-list__row");
         await show(tab, "loading");
         await tab.waitForSelector(".filesv2-search-loading");
+        await settled(tab);
         // Nothing above the results moves, and the placeholder rows sit where the hits were.
         expect(await box(tab, ".filesv2-toolbar")).toEqual(toolbar);
         expect(await tab.locator(".filesv2-toolbar").textContent()).toContain("Searching…");
