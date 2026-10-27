@@ -102,6 +102,7 @@ export const storage = {
     const row = await guarded<SealedRecord | undefined>("enrollments", "readonly", (s) => s.get(id));
     return row ? read("enrollments", id, row, (v) => enrollmentSchema.parse(v)) : undefined;
   },
+  hasEnrollments: async () => (await guarded<number>("enrollments", "readonly", (s) => s.count())) > 0,
   saveEnrollment: (value: Enrollment) => save("enrollments", value),
   removeEnrollment: (id: string) => guarded("enrollments", "readwrite", (s) => s.delete(id)),
   // Atomic cross-tab reservation: polls respect server cadence; decisions are at most once.

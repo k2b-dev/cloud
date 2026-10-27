@@ -40,6 +40,7 @@ export const app = defineApp({
       "/.well-known/cloud-invocation-jwks.json",
       "/.well-known/oauth-protected-resource/api/mcp/v1",
       "/api/_internal/identity/v1/invoke",
+      "/api/_internal/identity/v1/invoke-child",
       "/api/_internal/ai/code/*",
       "/api/_internal/identity/v1/mandates/:mandateId",
       "/api/_internal/identity/v1/mandates/:mandateId/confirm",

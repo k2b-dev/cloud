@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { createRemoteJWKSet, decodeProtectedHeader, errors, type JWTVerifyGetKey, jwtVerify, SignJWT } from "jose";
 import { z } from "zod";
 import {
@@ -9,6 +10,7 @@ import {
   IDENTITY_MAX_COMPACT_TOKEN_BYTES,
   INVOCATION_CLOCK_TOLERANCE_SECONDS,
 } from "./constants";
+import { authorityFromParentInvocation } from "./invocation-authority";
 import { type PreparedIdentitySigner, prepareIdentitySigner } from "./key-ring";
 import { identityMetrics } from "./metrics";
 import { getIdentityRuntimeConfig } from "./runtime-config";
@@ -71,6 +73,7 @@ const InvocationPayloadSchema = z
     mandate_revision: z.number().int().positive().optional(),
     workload_type: BoundedIdentifierSchema.optional(),
     workload_id: BoundedIdentifierSchema.optional(),
+    parent_invocation_id: z.uuid().optional(),
     jti: z.string().uuid(),
     iat: z.number().int().nonnegative(),
     nbf: z.number().int().nonnegative(),
@@ -78,7 +81,14 @@ const InvocationPayloadSchema = z
   })
   .strict()
   .superRefine((claims, context) => {
-    if (claims.exp - claims.iat !== CLOUD_INVOCATION_TOKEN_TTL_SECONDS || claims.nbf !== claims.iat) {
+    if (
+      (claims.parent_invocation_id
+        ? claims.exp <= claims.iat ||
+          claims.exp - claims.iat > CLOUD_INVOCATION_TOKEN_TTL_SECONDS ||
+          !claims.op.startsWith("capability.query:")
+        : claims.exp - claims.iat !== CLOUD_INVOCATION_TOKEN_TTL_SECONDS) ||
+      claims.nbf !== claims.iat
+    ) {
       context.addIssue({ code: "custom", message: "Invocation lifetime is invalid" });
     }
 
@@ -181,11 +191,23 @@ export const signInvocationToken = async (params: {
   schemaHash: string | null;
   authority: InvocationAuthority;
   requestId?: string;
+  parent?: CloudInvocationClaims;
+  expiresAt?: number;
   issuedAt?: Date;
   jti?: string;
   signer?: PreparedIdentitySigner;
   issuer?: string;
 }): Promise<{ token: string; kid: string; claims: CloudInvocationClaims }> => {
+  if (
+    params.parent &&
+    (params.parent.parent_invocation_id ||
+      params.parent.aud !== `app:${params.callingAppId}` ||
+      params.parent.aud === `app:${params.targetAppId}` ||
+      !params.operation.startsWith("capability.query:") ||
+      !isDeepStrictEqual(authorityFromParentInvocation(params.parent), params.authority))
+  ) {
+    throw new Error("Child invocation cannot widen or change its parent authority");
+  }
   const issuer = params.issuer ?? (await getIdentityRuntimeConfig()).issuer;
   const signer = params.signer ?? (await prepareIdentitySigner("invocation"));
   const issuedAt = params.issuedAt ?? new Date();
@@ -204,7 +226,8 @@ export const signInvocationToken = async (params: {
     jti: params.jti ?? crypto.randomUUID(),
     iat: issuedAtSeconds,
     nbf: issuedAtSeconds,
-    exp: issuedAtSeconds + CLOUD_INVOCATION_TOKEN_TTL_SECONDS,
+    ...(params.parent ? { parent_invocation_id: params.parent.jti } : {}),
+    exp: Math.min(issuedAtSeconds + CLOUD_INVOCATION_TOKEN_TTL_SECONDS, params.parent?.exp ?? Infinity, params.expiresAt ?? Infinity),
   });
 
   try {

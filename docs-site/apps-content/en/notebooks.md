@@ -55,7 +55,9 @@ for the shared event contract.
   dragging in the sidebar, with Alt+ArrowUp or Alt+ArrowDown, or with **Move
   up** and **Move down** in the note menu; the sidebar, Book, and export follow
   that order for everyone, and the folder menu sorts a level alphabetically
-  again.
+  again. Notebooks with thousands of notes open as fast as small ones: the
+  sidebar loads a level when it opens, shows 20 notes around the open one,
+  and loads up to 100 more on request.
 - Publish an internal handbook in Book view, with page navigation and tag
   filters but no editing controls or detail panel.
 - Discuss a page in a durable Markdown thread. New comments appear live for

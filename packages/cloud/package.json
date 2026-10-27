@@ -1,6 +1,6 @@
 {
   "name": "@k2b/cloud",
-  "version": "0.42.0",
+  "version": "0.43.0",
   "description": "Application platform library for independently deployed Hono and SolidJS services behind a dynamic gateway.",
   "license": "AGPL-3.0-or-later",
   "repository": {
@@ -101,7 +101,9 @@
     "./workflows/testing": "./src/workflows/testing/index.ts",
     "./api": "./src/api/index.ts",
     "./clients/core": "./src/clients/core.ts",
-    "./styles/global.css": "./src/styles/global.css"
+    "./styles/global.css": "./src/styles/global.css",
+    "./app-pwa": "./src/app-pwa/index.ts",
+    "./app-pwa/browser": "./src/app-pwa/protocol.ts"
   },
   "scripts": {
     "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
@@ -116,10 +118,10 @@
     "@tabler/icons": "3.48.0",
     "@tailwindcss/typography": "0.5.20",
     "@k2b/nessi": "0.18.0",
-    "@k2b/ssr": "0.20.0",
-    "@k2b/ui": "0.32.0",
+    "@k2b/ssr": "0.20.1",
+    "@k2b/ui": "0.33.0",
     "@k2b/stdlib": "0.30.0",
-    "@k2b/sync": "7.0.0",
+    "@k2b/sync": "7.0.1",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",
     "@modelcontextprotocol/sdk": "1.32.1",

@@ -55,6 +55,10 @@ export const migrateCloudCapabilities = async (): Promise<void> => {
 
   await sql`ALTER TABLE capabilities.executions ADD COLUMN IF NOT EXISTS replayed BOOLEAN NOT NULL DEFAULT false`.simple();
 
+  await sql`ALTER TABLE capabilities.executions ADD COLUMN IF NOT EXISTS invocation_id UUID`.simple();
+  await sql`ALTER TABLE capabilities.executions ADD COLUMN IF NOT EXISTS parent_invocation_id UUID`.simple();
+  await sql`ALTER TABLE capabilities.executions ADD COLUMN IF NOT EXISTS via_app_id TEXT`.simple();
+
   // Platform-owned idempotency claims. One row per
   // (app, capability, principal, key); the dispatcher claims before it
   // forwards and resolves the row once the outcome is known. Response bodies

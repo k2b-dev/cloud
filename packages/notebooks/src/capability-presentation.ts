@@ -84,15 +84,31 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Textstellenkommentare auflisten",
           description:
             "Kommentare einer Notiz mit Positionen, Status, Überschriftenpfad und verwaisten Stellen lesen. Vor der Seitenauswahl nach state und Hauptautor (author UUID oder me) filtern. Dem nextCursor folgen; Antworten sind separat paginiert. contentHash und cursor bezeichnen den zugehörigen Markdown-Stand.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            state: "Genauer Threadstatus; all umfasst jeden nicht gelöschten Thread.",
+            author: "UUID des Hauptautors (Benutzer oder Dienstkonto) oder me für den angemeldeten Akteur.",
+            cursor: "Undurchsichtiger nextCursor oder repliesNextCursor der vorherigen Seite.",
+            limit: "Höchstzahl der Kommentare oder Antworten pro Seite, 1 bis 30; Bytegrenzen können die Seite kürzen.",
+          },
         },
         "annotation.read": {
           title: "Textstellenkommentar lesen",
           description:
             "Einen notebooks.annotation-Verweis mit Antworten und aktuellen Rechten lesen. repliesNextCursor mit annotation.replies fortsetzen.",
+          input: {
+            id: "ref.id eines notebooks.annotation-Verweises aus annotation.list oder annotation.create.",
+          },
         },
         "annotation.replies": {
           title: "Kommentarantworten auflisten",
           description: "Weitere Antworten eines Textstellenkommentars mit vollständigem Text und aktuellen Bearbeitungsrechten lesen.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            cursor: "Undurchsichtiger nextCursor oder repliesNextCursor der vorherigen Seite.",
+            limit: "Höchstzahl der Kommentare oder Antworten pro Seite, 1 bis 30; Bytegrenzen können die Seite kürzen.",
+          },
         },
         "notebook.activity": {
           title: "Notizereignisse lesen",
@@ -279,6 +295,17 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Textstelle kommentieren",
           description:
             "Einen Kommentar oder Änderungsvorschlag zu einer beschreibbaren Notiz hinzufügen. Wiederholte Zitate mit occurrence (ab 1), Kontext oder offsetHint unterscheiden. Idempotency-Key ist erforderlich.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            quote: "Exakt ausgewählte Markdown-Textstelle mit höchstens 2.000 UTF-16-Zeichen.",
+            prefix: "Exakter angrenzender Markdown-Kontext davor, höchstens 32 UTF-16-Zeichen.",
+            suffix: "Exakter angrenzender Markdown-Kontext danach, höchstens 32 UTF-16-Zeichen.",
+            occurrence: "Welches exakte Vorkommen des Zitats im aktuellen Markdown der Notiz gemeint ist, ab 1.",
+            offsetHint: "Optionaler UTF-16-Startversatz im Markdown der Notiz, ohne gespiegeltes Front Matter.",
+            body: "Markdown-Kommentar mit höchstens 5.000 Zeichen; darf leer sein, wenn ein Vorschlag das Zitat ändert.",
+            suggestion:
+              "Optionaler Ersatztext für die Textstelle mit höchstens 2.000 Zeichen. Leer bedeutet Löschen, null bedeutet kein Vorschlag.",
+          },
           sentences: {
             approval: "Kommentar hinzufügen",
             done: "Kommentar hinzugefügt",
@@ -290,6 +317,12 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Auf einen Textstellenkommentar antworten",
           description:
             "Mit Schreibzugriff als Benutzer, Agent oder Dienstkonto auf fremde Kommentare antworten, mit Text und/oder Änderungsvorschlag. Agents dürfen eigene Vorschläge nur auf ausdrücklichen Wunsch übernehmen. Idempotency-Key ist erforderlich.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            body: "Markdown-Antwort mit höchstens 5.000 Zeichen; darf mit einem Ersatzvorschlag leer sein.",
+            suggestion: "Ersatztext für die Textstelle des Threads; leer bedeutet Löschen, null bedeutet kein Vorschlag.",
+          },
           sentences: {
             approval: "Auf einen Kommentar antworten",
             done: "Antwort hinzugefügt",
@@ -300,6 +333,14 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         "annotation.edit": {
           title: "Eigenen neuen Kommentar bearbeiten",
           description: "Eigenen Kommentar oder eigene Antwort innerhalb von zehn Minuten mit aktuellem Schreibzugriff bearbeiten.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            replyId: "Antwort-ID aus annotation.reply oder annotation.replies; weglassen, um den Hauptkommentar zu ändern.",
+            body: "Neuer Text des Kommentars oder der Antwort mit höchstens 5.000 Zeichen.",
+            suggestion:
+              "Optionaler Ersatztext für die Textstelle mit höchstens 2.000 Zeichen. Leer bedeutet Löschen, null bedeutet kein Vorschlag.",
+          },
           sentences: {
             approval: "Kommentar bearbeiten",
             done: "Kommentar bearbeitet",
@@ -311,6 +352,11 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Eigenen neuen Kommentar löschen",
           description:
             "Eigenen Kommentar oder eigene Antwort innerhalb von zehn Minuten löschen. Kommentare mit Antworten können nicht gelöscht werden.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            replyId: "Antwort-ID aus annotation.reply oder annotation.replies; weglassen, um den Hauptkommentar zu ändern.",
+          },
           sentences: {
             approval: "Kommentar löschen",
             done: "Kommentar gelöscht",
@@ -321,6 +367,11 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         "annotation.restore": {
           title: "Eigenen gelöschten Kommentar wiederherstellen",
           description: "Gelöschten Kommentar oder gelöschte Antwort innerhalb des ursprünglichen Zehn-Minuten-Fensters wiederherstellen.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            replyId: "Antwort-ID aus annotation.reply oder annotation.replies; weglassen, um den Hauptkommentar zu ändern.",
+          },
           sentences: {
             approval: "Kommentar wiederherstellen",
             done: "Kommentar wiederhergestellt",
@@ -331,6 +382,11 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         "annotation.resolve": {
           title: "Kommentar erledigen oder wieder öffnen",
           description: "Jeder mit Schreibzugriff kann Kommentare erledigen oder wieder öffnen, auch in gesperrten Notizen.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            resolved: "true erledigt den Kommentar, false öffnet ihn wieder. Übernommene Vorschläge brauchen annotation.undo-accept.",
+          },
           sentences: {
             approval: "Kommentarstatus ändern",
             done: "Kommentarstatus geändert",
@@ -342,6 +398,12 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Vorschlag ablehnen oder wieder öffnen",
           description:
             "Mit Schreibzugriff den Hauptvorschlag oder eine Antwort über replyId ablehnen oder mit rejected false wieder öffnen. Text und Kommentarstatus bleiben gleich.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            replyId: "Antwort mit dem Vorschlag; für den Hauptvorschlag weglassen.",
+            rejected: "true lehnt den Vorschlag ab, false öffnet einen abgelehnten Vorschlag wieder. Ändert nie den Notiztext.",
+          },
           sentences: {
             approval: "Ablehnungsstatus des Vorschlags ändern",
             done: "Vorschlagsstatus geändert",
@@ -353,6 +415,15 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Änderungsvorschlag übernehmen",
           description:
             "Den Hauptvorschlag oder mit replyId einen Antwortvorschlag übernehmen. Kommentar und Vorschlag müssen offen sein. Nur die verankerte Textstelle einer entsperrten Notiz ersetzen. Bei unklarem Ergebnis dieselbe operationId erneut verwenden.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            replyId: "Antwort mit dem zu übernehmenden Vorschlag; für den Hauptvorschlag weglassen.",
+            operationId:
+              "Stabile Vorgangs-UUID des Aufrufers. Erneut verwenden, um ein unklares Ergebnis von Übernehmen oder Rückgängig zu klären.",
+            expectedText:
+              "Erwartete aktuelle Textstelle; beim Übernehmen standardmäßig das Zitat, beim Rückgängigmachen der eingesetzte Text.",
+          },
           sentences: {
             approval: "Änderungsvorschlag übernehmen",
             done: "Änderungsvorschlag übernommen",
@@ -364,6 +435,14 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Übernommenen Vorschlag rückgängig machen",
           description:
             "Nur unveränderten eingesetzten Text zurücksetzen. Benötigt Schreibzugriff und eine entsperrte Notiz. Dieselbe operationId bei Wiederholung verwenden.",
+          input: {
+            noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
+            annotationId: "Kommentar-ID aus annotation.list oder annotation.create.",
+            operationId:
+              "Stabile Vorgangs-UUID des Aufrufers. Erneut verwenden, um ein unklares Ergebnis von Übernehmen oder Rückgängig zu klären.",
+            expectedText:
+              "Erwartete aktuelle Textstelle; beim Übernehmen standardmäßig das Zitat, beim Rückgängigmachen der eingesetzte Text.",
+          },
           sentences: {
             approval: "Änderungsvorschlag rückgängig machen",
             done: "Änderungsvorschlag rückgängig gemacht",

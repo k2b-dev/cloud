@@ -10,7 +10,7 @@ const initial: BookMetadata = {
   title: "First",
   notebookName: "Handbook",
   selectedNoteId: "note01",
-  tree: [],
+  hasNotes: false,
   tags: [],
   canWrite: true,
   locked: false,

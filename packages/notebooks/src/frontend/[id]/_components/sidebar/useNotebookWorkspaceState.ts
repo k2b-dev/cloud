@@ -1,13 +1,15 @@
 import { query } from "@k2b/stdlib/solid";
 import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { apiClient } from "@/api/client";
+import type { SidebarTreeSort } from "../../../../lib/sidebar-tree";
 import { NOTE_SOFT_NAVIGATED_EVENT, NOTE_TITLE_CHANGED_EVENT } from "../detail/events";
-import type { Notebook, NotebookContext, NoteTreeNode, TagSummary } from "./types";
+import { createSidebarList } from "./sidebar-list";
+import { createSidebarTree } from "./sidebar-tree";
+import type { Notebook, NotebookContext, TagSummary } from "./types";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "./workspace-events";
 
 type WorkspaceState = {
   notebook: Notebook;
-  tree: NoteTreeNode[];
   favoriteNoteIds: string[];
   tags: TagSummary[];
   attachmentCount: number;
@@ -18,20 +20,18 @@ type LoadedWorkspaceState = {
   state: WorkspaceState;
 };
 
-const applyOptimisticTitles = (nodes: NoteTreeNode[], titles: ReadonlyMap<string, string>): NoteTreeNode[] =>
-  nodes.map((node) => ({
-    ...node,
-    title: titles.get(node.id) ?? node.title,
-    children: applyOptimisticTitles(node.children, titles),
-  }));
-
 const loadWorkspaceState = async (source: string, abortSignal: AbortSignal): Promise<LoadedWorkspaceState> => {
   const response = await apiClient[":id"]["workspace-state"].$get({ param: { id: source } }, { init: { signal: abortSignal } });
   if (!response.ok) throw new Error(`Failed to load notebook workspace (${response.status})`);
   return { source, state: (await response.json()) as WorkspaceState };
 };
 
-export function useNotebookWorkspaceState(ctx: NotebookContext) {
+/**
+ * The sidebar's live state: the notebook, favorites, tags and attachment count from one small snapshot, and the note
+ * tree and filtered list as bounded windows. A change anywhere in the notebook reads them again; none of it ever
+ * loads every note.
+ */
+export function useNotebookWorkspaceState(ctx: NotebookContext, sort: () => SidebarTreeSort) {
   const source = () => ctx.notebook.id;
   const workspace = query.create<string, LoadedWorkspaceState, { cursor: string | null }>({
     source,
@@ -41,7 +41,6 @@ export function useNotebookWorkspaceState(ctx: NotebookContext) {
         source: ctx.notebook.id,
         state: {
           notebook: ctx.notebook,
-          tree: ctx.tree,
           favoriteNoteIds: ctx.favoriteNoteIds,
           tags: ctx.tags,
           attachmentCount: ctx.attachmentCount,
@@ -50,17 +49,37 @@ export function useNotebookWorkspaceState(ctx: NotebookContext) {
     },
     load: (nextSource, { abortSignal }) => loadWorkspaceState(nextSource, abortSignal),
   });
+  const tree = createSidebarTree({ notebookId: source, initial: ctx.sidebarTree, sort });
+  const list = createSidebarList({ notebookId: source, initial: { filter: ctx.sidebarFilter, list: ctx.sidebarList } });
   const [selectedNoteId, setSelectedNoteId] = createSignal(ctx.selectedNoteId);
   const [optimisticTitles, setOptimisticTitles] = createSignal<ReadonlyMap<string, string>>(new Map());
+  const [refreshing, setRefreshing] = createSignal(false);
+  const [refreshError, setRefreshError] = createSignal<unknown>(null);
   const current = createMemo(() => {
     const loaded = workspace.data();
     return loaded?.source === source() ? loaded.state : null;
   });
   const notebook = createMemo(() => current()?.notebook ?? ctx.notebook);
-  const noteTree = createMemo(() => applyOptimisticTitles(current()?.tree ?? ctx.tree, optimisticTitles()));
   const favoriteNoteIds = createMemo(() => new Set(current()?.favoriteNoteIds ?? ctx.favoriteNoteIds));
   const tags = createMemo(() => current()?.tags ?? ctx.tags);
   const attachmentCount = createMemo(() => current()?.attachmentCount ?? ctx.attachmentCount);
+  /** A title typed in the editor shows in the sidebar before the next save reaches every reader. */
+  const titleOf = (note: { id: string; title: string }) => optimisticTitles().get(note.id) ?? note.title;
+
+  const refreshViews = async () => {
+    await Promise.all([tree.refresh(), list.refresh()]);
+  };
+  const refreshWorkspace = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([workspace.refresh(), refreshViews()]);
+      setRefreshError(null);
+    } catch (error) {
+      setRefreshError(error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   onMount(() => {
     const onWorkspaceEvent = (raw: Event) => {
@@ -75,7 +94,15 @@ export function useNotebookWorkspaceState(ctx: NotebookContext) {
         detail.cover(Promise.resolve());
         return;
       }
-      const coverage = workspace.invalidate({ cursor: detail.cursor });
+      if (detail.event.type === "note.deleted") list.forget(detail.event.noteId);
+      const views = refreshViews().then(
+        () => setRefreshError(null),
+        (error: unknown) => {
+          setRefreshError(error);
+          throw error;
+        },
+      );
+      const coverage = Promise.all([workspace.invalidate({ cursor: detail.cursor }), views]).then(() => undefined);
       detail.cover(coverage);
       if (detail.event.type === "note.updated" || detail.event.type === "workspace.invalidated") {
         const noteId = detail.event.type === "note.updated" ? detail.event.note.id : null;
@@ -94,7 +121,10 @@ export function useNotebookWorkspaceState(ctx: NotebookContext) {
     };
     const onSoftNavigated = (raw: Event) => {
       const detail = (raw as CustomEvent<{ noteId?: string }>).detail;
-      if (detail?.noteId) setSelectedNoteId(detail.noteId);
+      if (!detail?.noteId) return;
+      setSelectedNoteId(detail.noteId);
+      // The note may sit in a branch that is closed or not loaded; its way down opens.
+      void tree.reveal(detail.noteId).catch(() => undefined);
     };
     const onTitleChanged = (raw: Event) => {
       const detail = (raw as CustomEvent<{ noteId?: string; title?: string }>).detail;
@@ -117,13 +147,15 @@ export function useNotebookWorkspaceState(ctx: NotebookContext) {
 
   return {
     notebook,
-    noteTree,
+    tree,
+    list,
+    titleOf,
     favoriteNoteIds,
     selectedNoteId,
     tags,
     attachmentCount,
-    workspaceError: workspace.error,
-    workspaceRefreshing: workspace.refreshing,
-    refreshWorkspace: workspace.refresh,
+    workspaceError: () => workspace.error() ?? refreshError() ?? tree.error() ?? list.error(),
+    workspaceRefreshing: () => workspace.refreshing() || refreshing(),
+    refreshWorkspace,
   };
 }

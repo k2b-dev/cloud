@@ -23,6 +23,7 @@ test("a catalog page from a newer release keeps every entry this release can rea
 
   const manifest = page.apps[0]!.manifest;
   expect(manifest).not.toHaveProperty("fileProvider");
+  expect(manifest).not.toHaveProperty("calendarSource");
   expect(manifest).not.toHaveProperty("events");
   expect(manifest.manifestHash).toBe(future.manifestHash);
   // Readable entries stay exactly as sent.
@@ -77,4 +78,20 @@ test("the documented catalog response stays the shape this release produces", ()
       },
     },
   });
+});
+
+test("calendar source declarations remain whole when a newer operation is unreadable", () => {
+  const future = futureLibrary().manifest;
+  const calendarSource = { calendars: "book.search", events: "book.read" };
+  const read = (sent: unknown) => CapabilityManifestSchema.parse({ ...future, calendarSource: sent });
+  expect(read(calendarSource).calendarSource).toEqual(calendarSource);
+  for (const sent of [
+    { ...calendarSource, subscribe: "book.archive" },
+    { ...calendarSource, update: 1 },
+  ]) {
+    const parsed = read(sent);
+    expect(parsed).not.toHaveProperty("calendarSource");
+    expect(parsed.queries.map((query) => query.localId)).toEqual(["book.read"]);
+    expect(parsed.manifestHash).toBe(future.manifestHash);
+  }
 });
