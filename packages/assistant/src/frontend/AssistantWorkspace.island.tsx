@@ -135,6 +135,7 @@ import {
 } from "./composer-commands";
 import { releaseWhenPageReturns } from "./composer-file-choice";
 import {
+  type ComposerSession,
   confirmComposerSave,
   editComposerSession,
   newComposerSession,
@@ -564,12 +565,15 @@ export default function AssistantWorkspace(props: Props) {
     setComposerAttachments((current) => ({ ...current, [key]: attachments }));
   };
 
+  /** Pending pasted links per composer session; a restored draft replaces the text without any input in the field. */
+  const pastedLinkRestores = new WeakMap<ComposerSession, Set<() => void>>();
   const hydrateComposer = (key: string, draft: AiConversation["draft"]) => {
     const restored = aiComposerDraft(draft.content);
     setComposerDrafts((current) => ({ ...current, [key]: restored.text }));
     setComposerAttachments((current) => ({ ...current, [key]: restored.attachments }));
     setComposerMentions((current) => ({ ...current, [key]: restored.mentions }));
     const local = session(key);
+    for (const restored of pastedLinkRestores.get(local) ?? []) restored();
     local.editGeneration++;
     local.baseRevision = draft.revision;
     local.dirty = false;
@@ -1747,13 +1751,15 @@ export default function AssistantWorkspace(props: Props) {
       );
       const target = followComposerSession(sessionKey);
       const watch = watchPastedLink(event.target);
-      // A restored draft, such as "Use saved draft", replaces the text without any input in the field.
-      const generation = session(sessionKey).editGeneration;
-      const inPlace = (key: string) =>
-        pastedLinkCurrent(
-          { edited: watch.edited(), generation: session(key).editGeneration, draft: composerDraft(key) },
-          { generation, place },
-        );
+      // A restored draft, such as "Use saved draft", also ends this paste.
+      const restores = pastedLinkRestores.get(session(sessionKey)) ?? new Set<() => void>();
+      pastedLinkRestores.set(session(sessionKey), restores);
+      let restored = false;
+      const onRestore = () => {
+        restored = true;
+      };
+      restores.add(onRestore);
+      const inPlace = (key: string) => pastedLinkCurrent({ edited: watch.edited() || restored, draft: composerDraft(key) }, place);
       void resolveCloudUrl(link)
         .then(async (resolved) => {
           if (!resolved) return;
@@ -1771,7 +1777,10 @@ export default function AssistantWorkspace(props: Props) {
           if (composerAttachmentsFor(current).length === count || !inPlace(current)) return;
           setComposerDraft(current, withoutPastedLink(composerDraft(current), place, link));
         })
-        .finally(watch.stop);
+        .finally(() => {
+          watch.stop();
+          restores.delete(onRestore);
+        });
       return;
     }
     const text = event.clipboardData?.getData("text/plain") ?? "";

@@ -24,12 +24,10 @@ test("removing the link takes exactly the pasted copy and keeps one space betwee
   expect(withoutPastedLink(only.draft, only, LINK)).toBe("");
 });
 
-test("a draft restored to the same text, an input, or other text is no longer this paste's draft", () => {
+test("an edit, a restored draft, or other text is no longer this paste's draft", () => {
   const place = pastedLinkPlace("Old text", at(0, 8), LINK, LINK);
-  const paste = { generation: 3, place };
-  expect(pastedLinkCurrent({ edited: false, generation: 3, draft: LINK }, paste)).toBe(true);
-  // "Use saved draft" restoring a saved draft that happens to read the same.
-  expect(pastedLinkCurrent({ edited: false, generation: 4, draft: LINK }, paste)).toBe(false);
-  expect(pastedLinkCurrent({ edited: true, generation: 3, draft: LINK }, paste)).toBe(false);
-  expect(pastedLinkCurrent({ edited: false, generation: 3, draft: `${LINK} ` }, paste)).toBe(false);
+  expect(pastedLinkCurrent({ edited: false, draft: LINK }, place)).toBe(true);
+  // Typing, undo, or "Use saved draft" restoring a draft that happens to read the same.
+  expect(pastedLinkCurrent({ edited: true, draft: LINK }, place)).toBe(false);
+  expect(pastedLinkCurrent({ edited: false, draft: `${LINK} ` }, place)).toBe(false);
 });

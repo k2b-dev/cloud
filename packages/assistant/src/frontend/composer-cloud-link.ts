@@ -3,12 +3,10 @@ export type PastedLinkPlace = { draft: string; at: number };
 
 /**
  * Whether the draft is still the one this paste left: no input in the field but the paste itself, no restored draft
- * (a restore replaces the text without input and counts up the session's edit generation), and the same text.
+ * (both count as `edited`), and the same text.
  */
-export const pastedLinkCurrent = (
-  now: { edited: boolean; generation: number; draft: string },
-  paste: { generation: number; place: PastedLinkPlace },
-): boolean => !now.edited && now.generation === paste.generation && now.draft === paste.place.draft;
+export const pastedLinkCurrent = (now: { edited: boolean; draft: string }, place: PastedLinkPlace): boolean =>
+  !now.edited && now.draft === place.draft;
 
 export const pastedLinkPlace = (
   draft: string,
