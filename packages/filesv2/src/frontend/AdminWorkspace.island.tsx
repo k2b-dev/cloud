@@ -30,6 +30,7 @@ import { createAdminActions } from "./admin-actions";
 import { type AdminLocation, type AdminSnapshot, type AdminView, adminHref, parseAdminLocation } from "./admin-location";
 import { useAdminMessages } from "./admin-messages";
 import { useAssetMessages } from "./asset-messages";
+import HomeProvisioning from "./HomeProvisioning";
 import Inventory from "./Inventory";
 import { useFilesMessages } from "./messages";
 import Settings from "./Settings";
@@ -56,6 +57,7 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
         await apiClient.admin.$get(
           {
             query: {
+              view: location.view,
               includeEntries: location.view === "directories" && !location.name && !location.archiveId ? "true" : "false",
               area: location.area,
               kind: location.kind,
@@ -568,6 +570,15 @@ export default function AdminWorkspace(props: { initial: AdminSnapshot }) {
                     </DataTable.Panel>
                   </Match>
                 </Switch>
+              </Show>
+              <Show when={location().view === "overview" && result().provisioning}>
+                {(overview) => (
+                  <HomeProvisioning
+                    overview={overview()}
+                    settingsHref={adminHref(location(), { ...clearDetail, view: "settings" })}
+                    onNavigate={onNavigate}
+                  />
+                )}
               </Show>
             </SettingsPage>
           </Show>

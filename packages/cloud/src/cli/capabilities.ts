@@ -264,6 +264,8 @@ export default defineCliCommands({
             types: app.manifest.types.length,
             queries: app.manifest.queries.length,
             actions: app.manifest.actions.length,
+            events: app.manifest.events?.length ?? 0,
+            subscribes: app.manifest.subscribes?.length ?? 0,
           })),
           [
             { key: "app", label: "APP" },
@@ -271,6 +273,8 @@ export default defineCliCommands({
             { key: "types", label: "TYPES" },
             { key: "queries", label: "QUERIES" },
             { key: "actions", label: "ACTIONS" },
+            { key: "events", label: "EVENTS" },
+            { key: "subscribes", label: "SUBSCRIBES" },
           ],
         );
         if (result.page.hasMore) ctx.error(`More apps available; continue with --cursor ${result.page.nextCursor}`);
