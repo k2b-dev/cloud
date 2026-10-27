@@ -390,10 +390,40 @@
   outline-offset: -1px;
 }
 
-.grids-record-file-thumbnail {
-  width: 5rem;
-  height: 5rem;
-  flex: 0 0 5rem;
+/* Details in the shared outline: a quiet line for an empty section, a quiet
+   label above a field's files, and the panel's one main action in a soft
+   tint of the app colour. */
+.k2b-ui .grids-details-none {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .grids-details-field-label {
+  margin: 0 0 0.25rem;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-button.grids-details-main {
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+}
+
+.k2b-ui .k2b-button.grids-details-main:not(:disabled, [aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);
+}
+
+/* Text actions in a section, such as "Upload" or "Create snapshot", read in the panel accent. */
+.k2b-ui .k2b-button.k2b-detail-panel__action.grids-details-add,
+.k2b-ui .k2b-button.k2b-detail-panel__action.grids-details-add:not(:disabled, [aria-disabled="true"]):hover,
+.k2b-ui .grids-details-add .k2b-detail-panel__action-leading {
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
 }
 
 .grids-code-display {
