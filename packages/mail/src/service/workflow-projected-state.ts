@@ -203,6 +203,18 @@ export const restoreMailWorkflowProjectedState = async (
     return;
   }
 
+  // A skipped assignment may have observed a newer live state; restore that snapshot, never its requested target.
+  if (output.skipped) {
+    if (output.action === "assignConversation") {
+      const conversation = await restoredObject(ctx, step, config, "conversation");
+      if (conversation && Array.isArray(output.assigneeUserIds)) {
+        conversation.assigneeUserIds = output.assigneeUserIds;
+        if (typeof output.revision === "number") conversation.revision = output.revision;
+      }
+    }
+    return;
+  }
+
   // A status step that found its value already set still reports the live revision it saw.
   if (
     (output.applied === true || (output.action === "setConversationStatus" && output.value !== undefined)) &&

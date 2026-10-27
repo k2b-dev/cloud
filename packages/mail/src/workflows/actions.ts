@@ -579,14 +579,35 @@ const conversationMutation = (
             };
           }
         }
-        // Exclusive classes are independent: an upper assignment/tag may have advanced the
-        // revision without deciding status. The ordering lock makes this a fresh decision.
+        let statusExpectedRevision = expectedRevision;
+        // Advance across committed sibling effects only. A person's change or a newer
+        // message must still hit the existing status/hydration revision fence.
         if (kind === "setConversationStatus" && ordering.ordered) {
+          const preconditions = ctx.invocation.context?.preconditions;
+          const frozen = isObject(preconditions) && isObject(preconditions.conversation) ? preconditions.conversation : null;
+          if (frozen?.id === conversationId && typeof frozen.revision === "number") statusExpectedRevision = frozen.revision;
           const [current] = await tx<{ revision: string | number }[]>`
             SELECT revision FROM mail.conversations
             WHERE id = ${conversationId}::uuid AND mailbox_id = ${scope.mailboxId}::uuid FOR UPDATE
           `;
-          if (current) conversation.revision = Number(current.revision);
+          if (current && Number(current.revision) > statusExpectedRevision) {
+            const [siblings] = await tx<{ revisions: number }[]>`
+              SELECT count(DISTINCT (step.effect_output->>'revision')::bigint)::int AS revisions
+              FROM workflows.run self
+              JOIN mail.workflow_effect_order participant ON participant.event_id = self.event_id
+              JOIN mail.workflow_effect_order sibling ON sibling.remote_message_ref_id = participant.remote_message_ref_id
+              JOIN workflows.run sibling_run ON sibling_run.event_id = sibling.event_id AND sibling_run.mode = 'execute'
+              JOIN workflows.step_outcome step ON step.run_id = sibling_run.id AND step.effect_state = 'succeeded'
+              WHERE self.id = ${ctx.runId}::uuid AND step.effect_output->>'conversationId' = ${publicConversationId}
+                AND step.effect_output->'applied' = 'true'::jsonb
+                AND step.action IN ('assignConversation', 'setConversationStatus', 'addLocalTag', 'removeLocalTag', 'setConversationSummary')
+                AND jsonb_typeof(step.effect_output->'revision') = 'number'
+                AND (step.effect_output->>'revision')::bigint > ${statusExpectedRevision}
+                AND (step.effect_output->>'revision')::bigint <= ${Number(current.revision)}
+            `;
+            if (siblings?.revisions === Number(current.revision) - statusExpectedRevision)
+              statusExpectedRevision = Number(current.revision);
+          }
         }
         const triggerMessageId = mailWorkflowTriggerMessageId(ctx.invocation.context);
         const live =
@@ -594,7 +615,7 @@ const conversationMutation = (
             ? await lockWorkflowConversationStatus(tx, {
                 mailboxId: scope.mailboxId,
                 conversationId,
-                expectedRevision: kind === "setConversationStatus" && ordering.ordered ? Number(conversation.revision) : expectedRevision,
+                expectedRevision: statusExpectedRevision,
                 triggerMessageId,
                 viewLinks: mailWorkflowConversationLinkView(ctx.invocation.context, conversationId),
               })
@@ -634,7 +655,7 @@ const conversationMutation = (
           input:
             kind === "assignConversation"
               ? { expectedRevision: assignment?.revision ?? expectedRevision, assigneeUserIds: typeof value === "string" ? [value] : [] }
-              : { expectedRevision: live?.revision ?? expectedRevision, workStatus: conversationWorkStatusSchema.parse(value) },
+              : { expectedRevision: live?.revision ?? statusExpectedRevision, workStatus: conversationWorkStatusSchema.parse(value) },
           db: tx,
           activityMetadata: { workflowRunId: ctx.runId, workflowStepKey: ctx.stepKey },
         });
@@ -803,7 +824,7 @@ export const MAIL_WORKFLOW_ACTIONS = {
     "Assigns an unassigned conversation unless this rule’s earlier assignment was undone.",
     object({
       conversation: conversationReference,
-      user: { kind: "value", description: "Assignable user name, ID, expression, or null to leave the conversation unassigned." },
+      user: { kind: "value", description: "Assignable user name, ID, expression, or null to keep the current assignment." },
     }),
   ),
   setConversationStatus: conversationMutation(

@@ -2856,3 +2856,70 @@ CREATE INDEX mailbox_logo_versions_mailbox_idx ON mail.mailbox_logo_versions (ma
 ALTER TABLE mail.mailboxes ADD COLUMN logo_version_id uuid REFERENCES mail.mailbox_logo_versions(id);
 ALTER TABLE mail.outbox_submissions ADD COLUMN inline_logo_version_id uuid REFERENCES mail.mailbox_logo_versions(id) ON DELETE SET NULL;
 CREATE INDEX outbox_inline_logo_version_idx ON mail.outbox_submissions (inline_logo_version_id) WHERE inline_logo_version_id IS NOT NULL;
+
+-- Conversation automation audit, assignment decisions, and frozen effect order ----
+
+CREATE TABLE IF NOT EXISTS mail.automation_log (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+  conversation_id uuid REFERENCES mail.conversations(id) ON DELETE SET NULL,
+  run_id uuid REFERENCES workflows.run(id) ON DELETE SET NULL,
+  item jsonb NOT NULL CHECK (jsonb_typeof(item) = 'object'),
+  chain jsonb NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(chain) = 'array'),
+  assignment_user_id uuid,
+  undone_by_id text,
+  undone_by_name text,
+  undone_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (run_id, conversation_id)
+);
+CREATE INDEX IF NOT EXISTS automation_log_mailbox_date_idx ON mail.automation_log (mailbox_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS automation_log_conversation_date_idx ON mail.automation_log (conversation_id, created_at DESC, id DESC);
+-- A person changing assignment invalidates provenance even if they restore the same person later.
+CREATE TABLE IF NOT EXISTS mail.automation_assignment (
+  conversation_id uuid PRIMARY KEY REFERENCES mail.conversations(id) ON DELETE CASCADE,
+  mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+  workflow_id uuid NOT NULL,
+  run_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  changed_by_id text,
+  changed_by_name text,
+  changed_at timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+-- This small semantic marker outlives the audit's 30-day retention window.
+CREATE TABLE IF NOT EXISTS mail.automation_assignment_undone (
+  conversation_id uuid NOT NULL REFERENCES mail.conversations(id) ON DELETE CASCADE,
+  workflow_id uuid NOT NULL REFERENCES workflows.workflow(id) ON DELETE CASCADE,
+  mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (conversation_id, workflow_id)
+);
+
+ALTER TABLE mail.workflow_run_state ADD COLUMN IF NOT EXISTS audit_updated_at timestamptz;
+
+-- Frozen messageReceived delivery order. Apply to baseline + idempotent additions.
+CREATE TABLE IF NOT EXISTS mail.workflow_effect_order (
+    event_id uuid PRIMARY KEY REFERENCES workflows.event(id) ON DELETE CASCADE,
+    mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+    remote_message_ref_id uuid NOT NULL REFERENCES mail.remote_message_refs(id) ON DELETE CASCADE,
+    workflow_id uuid NOT NULL,
+    position integer NOT NULL CHECK (position >= 0),
+    workflow_name text NOT NULL,
+    expires_at timestamptz NOT NULL DEFAULT (now() + interval '24 hours'),
+    closed_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (remote_message_ref_id, workflow_id)
+);
+CREATE INDEX IF NOT EXISTS workflow_effect_order_message_position_idx
+    ON mail.workflow_effect_order (remote_message_ref_id, position);
+CREATE INDEX IF NOT EXISTS workflow_effect_order_retention_idx ON mail.workflow_effect_order (created_at, event_id);
+
+CREATE TABLE IF NOT EXISTS mail.workflow_effect_claim (
+    remote_message_ref_id uuid NOT NULL REFERENCES mail.remote_message_refs(id) ON DELETE CASCADE,
+    effect_class text NOT NULL CHECK (effect_class IN ('assignment', 'placement', 'status')),
+    event_id uuid NOT NULL REFERENCES mail.workflow_effect_order(event_id) ON DELETE CASCADE,
+    run_id uuid NOT NULL REFERENCES workflows.run(id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (remote_message_ref_id, effect_class)
+);

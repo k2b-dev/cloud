@@ -25,7 +25,9 @@ Regeln für dieselbe eingehende Nachricht folgen der Priorität im Postfach von 
 
 Zuweisung, Ablage (Verschieben, Archivieren, Papierkorb oder Spam) und Status haben jeweils eine gewinnende Regel. Eine untere Regel wartet, bis die oberen Regeln entschieden haben, auch wenn eine obere Regel auf KI wartet. Die erste Regel, die eine dieser Aktionen ausführt, gewinnt dafür. Endet eine obere Regel ohne diese Änderung, darf eine untere sie ausführen. Tags, Kommentare und Zusammenfassungen können von allen passenden Regeln kommen.
 
-Keine Regel ersetzt bestehende Zuständigkeiten. Sobald jemand zuständig ist, wird der Zuweisungsschritt übersprungen, unabhängig davon, ob eine Person oder eine andere Regel zugewiesen hat. Eine Zuweisung von Hand zu ändern, ändert die Regel nicht. Das gilt auch für bestehende geführte Automatisierungen und Workflow-YAML.
+Nach 24 Stunden darf eine untere Regel eine offene Entscheidung übernehmen. Danach kann die obere Regel keine exklusive Änderung mehr nachholen; eine bereits beanspruchte Änderung behält Vorrang.
+
+Keine Regel ersetzt bestehende Zuständigkeiten. Sobald jemand zuständig ist, wird der Zuweisungsschritt übersprungen, unabhängig davon, ob eine Person oder eine andere Regel zugewiesen hat. Eine Zuweisung von Hand zu ändern, ändert die Regel nicht. Das gilt auch für bestehende geführte Automatisierungen und Workflow-YAML. `user: null` lässt bestehende Zuständigkeiten stehen. Entferne die Zuweisung von Hand oder mache den Regeleintrag rückgängig.
 
 Bei einer KI-Klassifizierung legst du das Ziel in der Regel fest. Die KI wählt eine Kategorie, niemals eine Person anhand eines Namens in der Nachricht. Hat die Kategorie kein Ziel, weist diese Regel niemanden zu; eine untere Regel darf weiterhin jemanden zuweisen.
 

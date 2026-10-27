@@ -6,6 +6,7 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
+import { applyConversationCollaboration } from "./collaboration";
 import { createMailbox } from "./mailboxes";
 import { ingestEnvelope } from "./sync-runtime";
 import { getWorkflowSnapshot } from "./workflow-data";
@@ -474,6 +475,35 @@ ${steps}
       await disable();
     }
   }, 30000);
+  test("a lower status preserves a person's change even after a sibling assignment", async () => {
+    const upper = await rule(1, assign());
+    const lower = await rule(2, "  - setConversationStatus: { conversation: inputs.conversation, status: waiting }");
+    try {
+      const received = await receive(),
+        run = await dispatch(received.events);
+      expect(await runMailWorkflow(run(upper.id))).toMatchObject({ result: { state: "succeeded" } });
+      const conversationId = received.snapshot.preconditions.conversation!.id;
+      const [current] = await sql<
+        { revision: string | number }[]
+      >`SELECT revision FROM mail.conversations WHERE id = ${conversationId}::uuid`;
+      const changed = await applyConversationCollaboration({
+        context,
+        mailboxId,
+        conversationId,
+        input: { expectedRevision: Number(current!.revision), completion: "done" },
+      });
+      expect(changed.ok).toBe(true);
+      expect(await runMailWorkflow(run(lower.id))).toMatchObject({ result: { state: "failed" } });
+      const [after] = await sql<{ work_status: string }[]>`SELECT work_status FROM mail.conversations WHERE id = ${conversationId}::uuid`;
+      expect(after?.work_status).toBe("done");
+      const claims =
+        await sql`SELECT 1 FROM mail.workflow_effect_claim WHERE remote_message_ref_id = ${received.remoteMessageRefId}::uuid AND effect_class = 'status'`;
+      expect(claims).toHaveLength(0);
+    } finally {
+      await disable();
+    }
+  }, 30000);
+
   test("concurrent rule workers cannot claim the same exclusive class", async () => {
     const upper = await rule(1, assign());
     const lower = await rule(2, assign());

@@ -3726,3 +3726,122 @@ export type ConnectorVerification = {
   limits: ProviderLimitSnapshot;
   accounts: RemoteAccount[];
 };
+
+// Mail's user-facing, conversation-scoped automation audit contract.
+const automationTargetSchema = z.object({ kind: z.enum(["user", "group"]), id: z.string(), name: z.string() });
+export const automationLogEffectSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("assign"), target: automationTargetSchema }),
+  z.object({ kind: z.literal("unassign") }),
+  z.object({ kind: z.literal("tag"), name: z.string() }),
+  z.object({ kind: z.literal("move"), folder: z.string() }),
+  z.object({ kind: z.literal("archive") }),
+  z.object({ kind: z.literal("status"), status: conversationWorkStatusSchema }),
+  z.object({ kind: z.literal("read") }),
+  z.object({ kind: z.literal("comment") }),
+  z.object({ kind: z.literal("summary") }),
+]);
+const automationAiChoiceSchema = z.object({ kind: z.literal("ai_choice"), value: z.string(), choices: z.array(z.string()) });
+const automationAiValueSchema = z.object({
+  kind: z.literal("ai_value"),
+  field: z.string(),
+  value: z.union([z.string(), z.number(), z.boolean()]),
+  evidence: z.string().nullable(),
+});
+export const automationLogReasonSchema = z.discriminatedUnion("kind", [
+  automationAiChoiceSchema,
+  automationAiValueSchema,
+  z.object({ kind: z.literal("comparison"), text: z.string(), met: z.boolean() }),
+  z.object({ kind: z.literal("no_target"), choice: z.string() }),
+  z.object({ kind: z.literal("condition"), text: z.string() }),
+  z.object({ kind: z.literal("skipped_upper_rule"), workflowId: z.string().uuid(), name: z.string() }),
+  z.object({ kind: z.literal("already_assigned") }),
+  z.object({ kind: z.literal("undone_before") }),
+  z.object({
+    kind: z.literal("manual"),
+    before: z.object({ kind: z.enum(["user", "group"]), name: z.string(), byRule: z.string().nullable() }).nullable(),
+    after: z.object({ kind: z.enum(["user", "group"]), name: z.string() }).nullable(),
+  }),
+]);
+export const automationLogItemSchema = z.object({
+  id: z.string().uuid(),
+  at: z.string().datetime(),
+  conversation: z.object({
+    id: ResourceShortIdSchema,
+    subject: z.string(),
+    from: z.object({ name: z.string().nullable(), email: z.string() }),
+    href: z.string(),
+  }),
+  by: z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("rule"),
+      workflowId: z.string().uuid(),
+      name: z.string(),
+      position: z.number().int().positive(),
+      version: z.number().int().positive(),
+      ai: z.boolean(),
+      href: z.string(),
+    }),
+    z.object({ kind: z.literal("person"), userId: z.string(), name: z.string() }),
+  ]),
+  outcome: z.enum(["assigned", "uncertain", "nobody", "skipped", "effects", "manual_change", "failed"]),
+  effects: z.array(automationLogEffectSchema),
+  reasons: z.array(automationLogReasonSchema),
+  undo: z.object({
+    state: z.enum(["available", "done", "not_possible", "none"]),
+    reason: z.enum(["changed_by_person", "conversation_gone"]).nullable(),
+    by: z.object({ userId: z.string(), name: z.string() }).nullable(),
+  }),
+});
+export const automationAuditStepSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("rule_start"),
+    name: z.string(),
+    version: z.number().int().positive(),
+    position: z.number().int().positive(),
+    preconditions: z.array(z.string()),
+  }),
+  automationAiChoiceSchema,
+  automationAiValueSchema,
+  z.object({
+    kind: z.literal("fixed_row"),
+    text: z.string(),
+    target: z.object({ kind: z.enum(["user", "group"]), name: z.string() }).nullable(),
+  }),
+  z.object({ kind: z.literal("result"), effects: z.array(automationLogEffectSchema), unchanged: z.array(z.string()) }),
+]);
+export const automationLogQuerySchema = z.object({
+  day: z.string().date().optional(),
+  filter: z.enum(["all", "assignments", "uncertain", "skipped", "manual"]).default("all"),
+  q: z.string().trim().max(200).optional(),
+  before: z.string().max(1000).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(50),
+});
+export const automationLogPageSchema = z.object({
+  day: z.string().date(),
+  counts: z.object({
+    all: z.number().int().nonnegative(),
+    assignments: z.number().int().nonnegative(),
+    uncertain: z.number().int().nonnegative(),
+    skipped: z.number().int().nonnegative(),
+    manual: z.number().int().nonnegative(),
+  }),
+  items: z.array(automationLogItemSchema),
+  nextCursor: z.string().nullable(),
+});
+export const automationLogDetailSchema = automationLogItemSchema.extend({
+  chain: z.array(automationAuditStepSchema),
+  aiCalls: z.object({
+    run: z.number().int().nonnegative(),
+    today: z.number().int().nonnegative(),
+    limit: z.number().int().nonnegative().nullable(),
+  }),
+});
+export const automationLogUndoConflictSchema = z.object({
+  code: z.literal("mail.automation.undo_not_possible"),
+  reason: z.enum(["changed_by_person", "conversation_gone"]),
+});
+export type AutomationLogItem = z.infer<typeof automationLogItemSchema>;
+export type AutomationLogPage = z.infer<typeof automationLogPageSchema>;
+export type AutomationLogDetail = z.infer<typeof automationLogDetailSchema>;
+export type AuditStep = z.infer<typeof automationAuditStepSchema>;
+export type AutomationLogQuery = z.input<typeof automationLogQuerySchema>;

@@ -15,6 +15,9 @@ a rule no longer replaces an existing assignment. Any assignee prevents the
 assignment step, whether assigned by a person or another rule. Editing an
 assignment by hand does not modify the rule. Review workflows that previously
 relied on automatic reassignment before rolling out the new Mail image.
+`assignConversation` with `user: null` now leaves existing assignees in place;
+it no longer clears them. Remove an assignment by hand or undo the rule's
+current assignment from the log.
 
 ## Review overlapping rules
 
@@ -35,15 +38,17 @@ guard; recreating a rule is not necessary to receive the new behavior.
 
 Waiting uses durable workflow dependencies and rechecks unresolved state every
 30 seconds. Restarts preserve the wait. A failed or canceled upper run releases
-classes it did not claim; an active upper run remains a dependency. Thirty
-seconds is a recheck interval, not permission for a lower rule to overtake an
-active upper rule.
+classes it did not claim. After 24 hours from ingress, a lower rule may retire
+an unresolved upper participant and take over. That upper rule can no longer
+apply exclusive effects after takeover. A claim already made still wins.
+Thirty seconds is the recheck interval; it is not the takeover deadline.
 
 ## Explain undo and retention
 
 The automation log records effects, skipped steps, decision chains, and manual
 assignment changes. It uses the existing 30-day activity window. It is an
-operational view, not a permanent compliance archive. Opening a decision chain
+operational view, not a permanent compliance archive. Calendar days use UTC;
+mailboxes have no separate timezone setting. Opening a decision chain
 uses recorded AI output and makes no new AI call; source quotes may be absent.
 
 Undo needs the same permission as manual assignment. It reverses the rule's

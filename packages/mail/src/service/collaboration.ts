@@ -22,6 +22,7 @@ import {
 } from "./access";
 import { projectActivityItems } from "./activity-public";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
+import { recordAutomationAssignmentChange } from "./automation-log-recording";
 import { listCurrentMailboxUsers, listEligibleAssignees } from "./collaborators";
 import { deriveReopenedConversationWorkStatus, isAutomaticSubmission } from "./conversation-work-state";
 import { resolveMailExecution } from "./execution";
@@ -741,6 +742,17 @@ const applyConversationCollaborationInTransaction = async (params: {
       },
     },
   });
+  if (assigneesChanged)
+    await recordAutomationAssignmentChange({
+      db: params.db,
+      mailboxId: params.mailboxId,
+      conversationId: params.conversationId,
+      context: params.context,
+      actorOverride: params.actorOverride,
+      activityMetadata: params.activityMetadata,
+      before: currentAssigneeIds,
+      after: nextAssigneeIds,
+    });
   return ok({
     value: state,
     event: {

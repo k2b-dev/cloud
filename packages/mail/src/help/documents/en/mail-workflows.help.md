@@ -21,7 +21,9 @@ Workflow source is limited to 200,000 characters.
 
 For one received message, the first rule in mailbox priority order that claims assignment, placement, or status wins that effect class. Lower rules wait for upper decisions, including AI steps. An upper rule that finishes without an effect leaves that class available to lower rules. Tags, comments, and summaries may apply from all rules.
 
-`assignConversation` skips if the conversation has any assignee (`already_assigned`), including a manual assignment. It also skips if this workflow's assignment for the conversation was undone (`undone_before`), even on a later reply and after the 30-day log window. Only immediate redo by the same person removes that marker. A manual assignment change never edits the workflow.
+After 24 hours, a lower rule may take over an unresolved upper decision. Once it does, the upper rule cannot apply a late exclusive effect; an existing claim still wins.
+
+`assignConversation` skips if the conversation has any assignee (`already_assigned`), including a manual assignment. It also skips if this workflow's assignment for the conversation was undone (`undone_before`), even on a later reply and after the 30-day log window. Only immediate redo by the same person removes that marker. A manual assignment change never edits the workflow. `user: null` leaves existing assignees in place; remove the assignment by hand or undo its rule entry.
 
 Use [the automation log](/app/mail/help/mail-automation) to inspect the decision chain and undo a current rule assignment. Undo needs the same permission as assigning by hand and cannot overwrite a later manual change.
 

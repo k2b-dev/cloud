@@ -176,6 +176,7 @@ import { discoverMailConfigurations } from "../service/onboarding-discovery";
 import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
+import automationLogRoutes from "./automation-log";
 import contactDirectoryRoutes from "./contact-directory";
 import {
   internalInput,
@@ -3244,7 +3245,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
         }),
       ),
   )
-  .route("/", workflowRoutes);
+  .route("/", workflowRoutes)
+  .route("/", automationLogRoutes);
 
 const adminApi = new Hono<MailApiContext>()
   .use("/admin/*", auth.requireRole("admin"))

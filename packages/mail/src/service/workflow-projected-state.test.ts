@@ -201,4 +201,26 @@ describe("Mail workflow projected state", () => {
     );
     expect(projected.source.conversation).toMatchObject({ workStatus: "waiting", revision: 3 });
   });
+  test("a skipped upper-rule status never restores its requested value", async () => {
+    const projected = createMailWorkflowProjectedState(plan, source, {});
+    const ctx = {
+      invocation: { inputs: projected.inputs, context: { source: projected.source } },
+      evaluate: async (value: WorkflowJsonValue) => value,
+      resolveReference: async () => projected.source.conversation,
+    } as unknown as WorkflowExecuteActionContext;
+    await restoreMailWorkflowProjectedState(
+      ctx,
+      {
+        kind: "action",
+        action: "setConversationStatus",
+        config: { conversation: "conversation" },
+        sourcePath: ["steps", 0],
+      },
+      {
+        state: "completed",
+        output: { action: "setConversationStatus", applied: false, skipped: "upper_rule", value: "done", revision: 10 },
+      },
+    );
+    expect(projected.source.conversation).toMatchObject({ workStatus: "needs_action", revision: 2 });
+  });
 });

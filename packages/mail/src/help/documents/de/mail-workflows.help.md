@@ -20,7 +20,9 @@ Der Workflow-Quelltext ist auf 200.000 Zeichen begrenzt.
 
 Für eine empfangene Nachricht gewinnt die erste Regel in der Prioritätsreihenfolge des Postfachs, die Zuweisung, Ablage oder Status beansprucht, für diese Art von Änderung. Untere Regeln warten auf die Entscheidungen der oberen, auch auf KI-Schritte. Endet eine obere Regel ohne diese Änderung, bleibt sie für untere Regeln verfügbar. Tags, Kommentare und Zusammenfassungen dürfen aus allen Regeln kommen.
 
-`assignConversation` überspringt die Zuweisung, sobald der Unterhaltung jemand zugewiesen ist (`already_assigned`), auch bei einer Zuweisung von Hand. Es überspringt sie auch, wenn eine Zuweisung dieses Workflows für diese Unterhaltung rückgängig gemacht wurde (`undone_before`), selbst bei späteren Antworten und nach dem 30-Tage-Protokollfenster. Nur unmittelbares **Wiederholen** durch dieselbe Person entfernt diese Sperre. Eine Zuweisung von Hand zu ändern, ändert den Workflow nie.
+Nach 24 Stunden darf eine untere Regel eine offene Entscheidung übernehmen. Danach kann die obere Regel keine exklusive Änderung mehr nachholen; eine bereits beanspruchte Änderung behält Vorrang.
+
+`assignConversation` überspringt die Zuweisung, sobald der Unterhaltung jemand zugewiesen ist (`already_assigned`), auch bei einer Zuweisung von Hand. Es überspringt sie auch, wenn eine Zuweisung dieses Workflows für diese Unterhaltung rückgängig gemacht wurde (`undone_before`), selbst bei späteren Antworten und nach dem 30-Tage-Protokollfenster. Nur unmittelbares **Wiederholen** durch dieselbe Person entfernt diese Sperre. Eine Zuweisung von Hand zu ändern, ändert den Workflow nie. `user: null` lässt bestehende Zuständigkeiten stehen. Entferne die Zuweisung von Hand oder mache den Regeleintrag rückgängig.
 
 Im [Automatisierungsprotokoll](/app/mail/help/mail-automation) prüfst du die Entscheidungskette und machst eine aktuelle Regelzuweisung rückgängig. Dafür brauchst du dieselbe Berechtigung wie zum Zuweisen von Hand; spätere manuelle Änderungen werden nicht überschrieben.
 

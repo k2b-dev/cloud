@@ -1,7 +1,7 @@
 import { logger, trace } from "@k2b/cloud/services";
 import { listWorkflowRuns } from "@k2b/cloud/workflows/store";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import type { Mailbox, MailWorkflow, SenderIdentity } from "../contracts";
+import type { AutomationLogPage, AutomationLogQuery, Mailbox, MailWorkflow, SenderIdentity } from "../contracts";
 import { type MailWorkflowCatalogSnapshot, snapshotMailWorkflowCatalog } from "../workflows/catalog";
 import * as access from "./access";
 import type { MailRequestContext } from "./auth";
@@ -15,6 +15,7 @@ import {
   projectMailWorkflowActivity,
   summarizeMailAutomationActivity,
 } from "./automation-activity";
+import { listAutomationLog, MAIL_AUTOMATION_LOG_TIME_ZONE } from "./automation-log";
 import type { ConversationReferenceConfiguration } from "./conversation-reference";
 import * as conversationReferences from "./conversation-reference";
 import type { IncomingAutomation, IncomingAutomationActivityMetadata } from "./incoming-automations";
@@ -279,5 +280,28 @@ export const loadMailAutomationActivity = async (
     ...accessResult.data,
     items,
     counts: summarizeMailAutomationActivity(items),
+  });
+};
+
+export type MailAutomationLogData = Omit<MailAutomationAccessData, "mailbox"> & {
+  mailbox: Mailbox & { timeZone: string };
+  log: AutomationLogPage;
+};
+
+export const loadMailAutomationLog = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  query: AutomationLogQuery = {},
+): Promise<Result<MailAutomationLogData>> => {
+  const permission = await access.requireMailboxAccess(context, mailboxId, "read");
+  if (!permission.ok) return permission;
+  const mailbox = await mailboxes.getMailbox(context, mailboxId);
+  if (!mailbox.ok) return mailbox;
+  const log = await listAutomationLog(context, mailboxId, query);
+  if (!log.ok) return log;
+  return ok({
+    mailbox: { ...mailbox.data, timeZone: MAIL_AUTOMATION_LOG_TIME_ZONE },
+    permission: permission.data.permission,
+    log: log.data,
   });
 };

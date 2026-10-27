@@ -1,5 +1,5 @@
 import { env } from "@k2b/cloud/config";
-import { createRuntimeLifecycle } from "@k2b/cloud/services";
+import { createRuntimeLifecycle, logger } from "@k2b/cloud/services";
 import {
   AI_WORKFLOW_ACTIONS,
   createWorkflowBuiltinActionPorts,
@@ -20,6 +20,7 @@ import { sql } from "bun";
 import { authorizeMailWorkflowExecution, MAIL_WORKFLOW_ACTIONS } from "../workflows/actions";
 import { MAIL_WORKFLOW_APP_ID } from "../workflows/events";
 import { mailWorkflows } from "../workflows/module";
+import { recordMailWorkflowAudit } from "./automation-log-recording";
 import { renderMailWorkflowTemplate } from "./template-rendering";
 import { publishMailWorkflowCollaborationEventFromOutput } from "./workflow-collaboration-events";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
@@ -36,6 +37,7 @@ import {
 import { startMailWorkflowScheduleRuntime, stopMailWorkflowScheduleRuntime } from "./workflow-schedule-runtime";
 import { resolveMailWorkflowTemplateBodies } from "./workflow-template-values";
 
+const auditLog = logger("mail:automation-log");
 const workerId = `mail:${env.HOSTNAME ?? "local"}:${process.pid}`;
 const inputReadiness = new WeakMap<Record<string, WorkflowJsonValue>, Promise<Record<string, WorkflowJsonValue>>>();
 
@@ -134,14 +136,50 @@ const values = (claim: WorkflowRunClaim) => {
 
 const workerPorts = { worker: workerId, appId: MAIL_WORKFLOW_APP_ID, module: mailWorkflows, values } as const;
 
+const auditTrace = (forward?: WorkflowTracePort): WorkflowTracePort => ({
+  emit: async (event) => {
+    await forward?.emit(event);
+    const runId = "run" in event ? event.run.runId : event.step.runId;
+    if (event.type === "step.finished" || event.type === "step.restored" || event.type === "run.finished") {
+      try {
+        await recordMailWorkflowAudit(runId);
+      } catch (error) {
+        auditLog.error("Automation log projection failed; recovery will retry", { runId, error: String(error) });
+      }
+    }
+  },
+});
+
+const recoverAudit = async (): Promise<void> => {
+  const runs = await sql<{ id: string; updated_at: string }[]>`SELECT run.id, run.updated_at::text AS updated_at FROM workflows.run run
+    LEFT JOIN mail.workflow_run_state snapshot ON snapshot.run_id = run.id
+    WHERE run.app_id = 'mail' AND run.mode = 'execute' AND run.state IN ('succeeded', 'failed', 'canceled', 'needs_attention')
+      AND run.created_at > now() - interval '30 days'
+      AND (snapshot.audit_updated_at IS NULL OR snapshot.audit_updated_at < run.updated_at)
+    ORDER BY run.updated_at, run.id LIMIT 100`;
+  for (const run of runs) {
+    try {
+      await recordMailWorkflowAudit(run.id);
+      await sql`INSERT INTO mail.workflow_run_state (run_id, audit_updated_at)
+      SELECT id, ${run.updated_at}::timestamptz FROM workflows.run WHERE id = ${run.id}::uuid
+      ON CONFLICT (run_id) DO UPDATE SET audit_updated_at = EXCLUDED.audit_updated_at`;
+    } catch (error) {
+      auditLog.error("Automation log recovery failed; later runs will still be repaired", { runId: run.id, error: String(error) });
+    }
+  }
+};
+
 export const runMailWorkflow = (runId: string, trace?: WorkflowTracePort) =>
-  runOneWorkflow({ ...workerPorts, actions, runId, ...(trace ? { trace } : {}) });
+  runOneWorkflow({ ...workerPorts, actions, runId, trace: auditTrace(trace) });
 
 const worker = createWorkflowWorker({
   appId: MAIL_WORKFLOW_APP_ID,
   concurrency: 2,
-  recover: () => tickWorkflows({ ...workerPorts, actions, maxRuns: 0 }),
-  run: async () => (await runOneWorkflow({ ...workerPorts, actions })).state !== "idle",
+  recover: async () => {
+    await tickWorkflows({ ...workerPorts, actions, maxRuns: 0 });
+    await recoverAudit();
+  },
+  run: async () => (await runOneWorkflow({ ...workerPorts, actions, trace: auditTrace() })).state !== "idle",
 });
 
 const lifecycle = createRuntimeLifecycle({

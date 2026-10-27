@@ -26,7 +26,9 @@ Rules for the same incoming message follow mailbox priority order, from top to b
 
 Assignment, placement (move, archive, trash, or junk), and status each have one winning rule. A lower rule waits until upper rules have decided, even if an upper rule is waiting for AI. The first rule that takes one of these actions wins for that kind of change. If an upper rule finishes without that effect, a lower rule can apply it. Tags, comments, and summaries can come from all matching rules.
 
-No rule replaces existing assignees. If anyone is already responsible, the assignment step is skipped, whether a person or another rule made that assignment. Changing an assignment by hand does not change the rule. This also applies to existing guided automations and workflow YAML.
+After 24 hours, a lower rule may take over an unresolved upper decision. Once it does, the upper rule cannot apply a late exclusive effect; an existing claim still wins.
+
+No rule replaces existing assignees. If anyone is already responsible, the assignment step is skipped, whether a person or another rule made that assignment. Changing an assignment by hand does not change the rule. This also applies to existing guided automations and workflow YAML. `user: null` leaves existing assignees in place; remove the assignment by hand or undo its rule entry.
 
 For AI classification, configure the target in the rule. AI chooses a category, never a person from a name in the message. If that category has no target, this rule assigns nobody; a lower rule may still assign someone.
 
