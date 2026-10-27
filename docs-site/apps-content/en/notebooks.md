@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-24
+updated: 2026-10-27
 ---
 
 # Notebooks
@@ -36,7 +36,12 @@ including from Book view. Use the overview to start from a template.
 `notebook.activity` reads recorded changes for a `notebook` short ID,
 optionally one `item` (note short ID). Each edit bucket remains one row, with
 an actor, icon, localized sentence, last occurrence time, resource ref, and
-count. Comments and deleted notes are omitted. Follow `page.nextCursor` with
+count. Each new passage comment (`annotation.create`) adds one separate row,
+with count 1 and an optional `href` to its `notebooks.annotation` reader. The
+reader opens the note with `?annotation=<id>`. Replies, comment edits,
+resolution and acceptance add no comment rows. Deleted comments, deleted notes,
+and notes the caller cannot read are omitted. Comments remain available when
+Chat is unavailable; the Chat row is only a projection. Follow `page.nextCursor` with
 `cursor`; `before` and `after` are exclusive ISO datetime bounds. `limit`
 defaults to 50 and accepts 1–100. See [Chat system conversations](/en/docs/operations/chat-system-chats#read-item-events)
 for the shared event contract.
@@ -397,6 +402,80 @@ Notebooks owns notes, hierarchy, attachments, realtime document state, search,
 exports, and snapshots. Cloud supplies identity, resource access,
 resource-bound API keys, settings, background schedules, dashboard widgets,
 application discovery, and the shared Help surface.
+
+### Automate passage comments
+
+`notebooks.annotation` identifies an inline comment thread owned by Notebooks.
+`annotation.list` and `annotation.read` return anchored source offsets, quoted
+text, status, replies, current author permissions, and `headingPath`.
+`annotation.replies` continues a thread's `repliesNextCursor`. Lists default
+to every non-deleted thread. Filter by exact `state`
+(`open|resolved|accepted|all`) and root `author` (user/service-account UUID or
+`me`, the authenticated actor) before paging. Follow `nextCursor`
+(or the capability envelope's `page.nextCursor`); pages contain at most 30
+roots or replies and may be shorter to fit the response budget.
+
+Use `annotation.create`, `annotation.reply`, `annotation.edit`,
+`annotation.delete`, `annotation.restore`, and `annotation.resolve`
+(`resolved: false` reopens) with write access. Agents and service accounts use
+the same grants as people. Editing, deleting, and restoring require the author
+and the original ten-minute window; a root with replies cannot be deleted.
+Create and reply require `Idempotency-Key`; changing the payload under a used
+key returns 409. `via` comes from the platform's Assistant or MCP origin and
+cannot be supplied by the caller. `stateVia` and `suggestionStateVia` preserve
+that origin for thread and suggestion status changes.
+
+`annotation.accept` and `annotation.undo-accept` require an unlocked note and
+a caller-stable `operationId` UUID. Retry that ID after an uncertain result.
+Replies may carry a replacement suggestion, including on somebody else's
+thread. A body or a suggestion that changes the current passage is required.
+Root and reply suggestions expose `suggestionState` (`open|accepted|rejected`,
+null without a suggestion), `suggestionStateBy` (Person or null),
+`suggestionStateAt` (ISO time or null), and `suggestionStateVia`
+(`assistant|mcp|null`). `Person` has `kind`, `id`, `name`, and optional
+`avatarHash`. Accept chooses `replyId`, or the root by default, and requires
+both an open thread and an open suggestion. It accepts that suggestion and the
+thread; other suggestions retain their status. Undo reopens the accepted
+suggestion and the thread. `annotation.reject` selects the same target and
+sets it to `rejected`, or reopens it with `rejected: false`, without changing
+text or thread state. Any writer may reject; repeating the same request is safe.
+
+Agents should list the person's open threads, read the passages in context,
+and propose suggestions as replies. They must never accept their own suggestions
+unless the person explicitly asks them to.
+
+Accept compares the live passage against `expectedText` (the quote by default);
+undo compares the accepted text before restoring only that range. A conflict
+returns 409 with `details.currentText` and `details.operationId`. Conflict text
+is capped at 2,000 UTF-16 characters; longer passages also return
+`details.currentTextTruncated: true` and `details.currentTextLength`. Select a
+smaller passage to make a new suggestion.
+
+REST uses `/api/notebooks/notes/:noteId/annotations`; GET its list with
+`?state=open&author=me`, and POST `/:annotationId/accept` with
+`{ operationId, expectedText?, replyId? }` or `/:annotationId/reject` with
+`{ replyId?, rejected? }` (default true). Read a thread without the note ID at
+`GET /api/notebooks/annotations/:annotationId`. Its list returns
+`{ text, contentHash, cursor, restoreRevision, items, nextCursor }`; offsets
+refer to exactly that Markdown snapshot. Capability lists omit `text`; compare
+`contentHash` with `note.read` before using the offsets. A deleted passage
+remains an orphan unless its exact surrounding context can be recovered
+unambiguously nearby. Quotes and suggestions allow 2,000 UTF-16 characters,
+context 32 on each side, and comment/reply text 5,000.
+
+Create accepts 1-based `occurrence` among exact quotes, alongside context and
+`offsetHint`. Missing/out-of-range quotes return HTTP 409
+`ANNOTATION_PASSAGE_NOT_FOUND`; ambiguous quotes return
+`ANNOTATION_PASSAGE_AMBIGUOUS`, both with `details.matches`.
+
+The CLI offers `cld notebooks annotations list|show|add|reply|edit|delete|restore|resolve|reopen|accept|reject|undo`.
+`list` accepts `--state` and `--author`; `show <thread-id>` follows replies within
+the response budget and retains a continuation for larger threads. `reply` can
+use `--suggestion` or `--suggestion-from <file|->`; `accept` and `reject` select
+reply suggestions with `--reply`.
+Run `cld notebooks annotations --help` for flags and use the bundled
+`annotations.md` CLI reference for retry IDs and reply pagination. Creating a comment records an
+`annotation.create` activity row; replies do not create activity rows.
 
 ## Find detailed product help
 

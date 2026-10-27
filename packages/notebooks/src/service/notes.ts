@@ -1555,7 +1555,7 @@ export const getAnchoredYjsState = async (params: { noteId: string; signal?: Abo
 
 type NoteTextContext = { createdBy: string | null; restoredBy?: activity.NotebookActivityIdentity };
 
-const noteDocuments = notebooksTextLog.withStore<NoteTextSaved, NoteTextContext>({
+export const noteDocuments = notebooksTextLog.withStore<NoteTextSaved, NoteTextContext>({
   load: async (noteId, { signal }) => {
     const stored = await getAnchoredYjsState({ noteId, signal });
     return stored

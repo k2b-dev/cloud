@@ -55,7 +55,7 @@ const providers: ReadonlyArray<{
   {
     appId: "notebooks",
     definitions: notebooksCapabilities,
-    types: ["comment", "note", "notebook"],
+    types: ["annotation", "comment", "note", "notebook"],
     searches: ["note.search", "notebook.search"],
   },
   {
@@ -152,6 +152,11 @@ describe("Capability v2 provider conformance", () => {
       "mail.mailbox.tag.create",
       "mail.mailbox.tag.delete",
       "mail.mailing-list.unsubscribe",
+      "notebooks.annotation.accept",
+      "notebooks.annotation.create",
+      "notebooks.annotation.delete",
+      "notebooks.annotation.reply",
+      "notebooks.annotation.undo-accept",
       "notebooks.comment.create",
       "notebooks.comment.delete",
       "notebooks.note.create",
