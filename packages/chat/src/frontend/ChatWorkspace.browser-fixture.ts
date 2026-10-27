@@ -1415,6 +1415,9 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
         }
         if (part === "read" && request.method === "POST") {
           const { seq, thread } = ReadSchema.parse(await request.json());
+          // Closing a browser context does not drain a read whose body is still arriving.
+          // A reset may have removed this chat while request.json() yielded.
+          if (chats.get(id!) !== chat) return Response.json({ code: "NOT_FOUND", message: "Chat not found." }, { status: 404 });
           reads.push({ chat: id!, seq });
           readViews.push({ chat: id!, seq, thread });
           return Response.json(read(id!, seq, thread));
@@ -1568,6 +1571,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
 
   return {
     url: server.url.href,
+    // Exercise request-body races directly, without relying on browser/network timing.
+    fetch: (request: Request) => server.fetch(request),
     now,
     addChat,
     systemRequests,

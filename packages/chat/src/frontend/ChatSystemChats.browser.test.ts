@@ -110,6 +110,37 @@ const seed = (permission: "admin" | "write" | "read" = "admin") => {
   return { chat, ref, threads };
 };
 
+test("a read whose body finishes after reset cannot record into the next fixture", async () => {
+  const chat = harness.addChat({ members: [viewer, nora], count: 3, end: chatTestNow });
+  const readingBody = Promise.withResolvers<void>();
+  const body = Promise.withResolvers<void>();
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      async pull(controller) {
+        readingBody.resolve();
+        await body.promise;
+        controller.enqueue(new TextEncoder().encode(JSON.stringify({ seq: 3, thread: "all" })));
+        controller.close();
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  const request = new Request(new URL(`/api/chat/conversations/${chat}/read`, harness.url), { method: "POST", body: stream });
+  const pending = harness.fetch(request);
+  try {
+    await readingBody.promise;
+    harness.reset();
+    seed();
+    body.resolve();
+    expect((await pending).status).toBe(404);
+    expect(harness.reads).toEqual([]);
+    expect(harness.readViews).toEqual([]);
+  } finally {
+    body.resolve();
+    await pending;
+  }
+});
+
 for (const [name, options, mobile] of [
   ["desktop", desktop, false],
   ["phone", phone, true],
