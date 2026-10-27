@@ -45,7 +45,7 @@ Start here for everyday mail, mailbox setup, search, and collaboration. Continue
 
 - Run `cld mail help` and confirm that the Mail module is available before changing a mailbox.
 - Use `--json` when a later command needs an id, revision, token, or cursor.
-- Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
+- Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself. It is the same Cloud ID that **Copy conversation Cloud ID** and **Copy message Cloud ID** copy in Mail, and other Cloud apps accept it as a reference to that conversation or message. `cld mail show` prints it as `Cloud ID`.
 - Pass provider credentials with `--secret-stdin` or `--secret-file`. Credentials are write-only and are never returned by the API.
 - Read a message and its folder ids before changing provider state, moving, copying, or deleting it.
 - Public Mail resource ids are case-sensitive, exactly six ASCII letters or digits, and must be passed through unchanged. This applies to mailboxes, folders, conversations, messages, attachments, drafts and draft attachments, sender identities, tags, comments, reminders, scheduled deliveries, saved views, compose templates, incoming automations, and automatic replies. Legacy UUID resource ids are rejected. Mailboxes also accept their exact name, folders their path, and tags their exact name; see [Address mailboxes and folders](#address-mailboxes-and-folders).
@@ -775,3 +775,24 @@ Use `cld mail <group> help` for all flags. The durable day-to-day surface is:
 Message-level provider changes, junk and keyword changes, folder, attachment, and maintenance commands are documented in [Mail operations](operations.md). Compose, draft, scheduling, and command-journal operations are documented in [Mail compose and drafts](compose.md).
 
 Live presence and cursor-based WebSocket invalidation are browser transport concerns rather than durable CLI operations. Shared draft leases, recovery copies, and resumable uploads are durable CLI capabilities and are documented in [Mail compose and drafts](compose.md).
+
+## Request a conversation summary
+
+```bash
+cld mail conversation summary generate <conversation> --mailbox <mailbox> --mode rolling
+cld --json mail conversation summary generate <conversation> --mode replace
+```
+
+The command reads the current summary revision, then requests generation.
+`rolling` continues the current text; `replace` rewrites it. The request can
+replace your own edited text because you explicitly asked. It uses your
+Assistant allowance and requires conversation write permission. A conflict
+asks you to reread the summary; it never overwrites a newer edit. A second
+request while writing returns the current state.
+
+The API responds with HTTP 202 and the full `ConversationContentSummary`.
+Structured CLI output has the same shape. Read
+`GET /mailboxes/:mailboxId/conversations/:conversationId/summary` for progress
+and results. `mail.summary.allowance_exhausted` leaves the conversation
+unchanged. Allowance presentation contains only `unlimited`, `usedPercent`
+and `resetsAt`.

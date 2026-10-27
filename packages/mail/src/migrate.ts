@@ -12,7 +12,9 @@ import { lazySync } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { migrateWorkflowAi } from "@k2b/cloud/workflows/ai";
 import { sql } from "bun";
+import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
 import baselineSchema from "./schema.sql" with { type: "text" };
+import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
 
 type SqlClient = typeof sql;
 
@@ -433,6 +435,8 @@ export const migrate = async (): Promise<void> => {
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
         await applyBaseline(tx);
         await applyAdditions(tx);
+        await migrateAiDailyBudget(tx);
+        await migrateConversationSummaries(tx);
         await migrateWorkflowAi(tx);
       });
       return;

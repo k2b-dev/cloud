@@ -50,6 +50,7 @@ export const filesCapabilities = defineCapabilities({
       description: "One file or folder in an accessible Cloud or FreeIPA storage base.",
       icon: "ti ti-folders",
       reader: "entry.read",
+      pages: ["/app/filesv2/ref/:id"],
     },
   },
   actions: fileActions,
