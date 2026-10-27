@@ -17,6 +17,7 @@ import * as notes from "./notes";
 import * as presence from "./presence";
 import { reindexRuntime } from "./reindex-scheduler";
 import * as search from "./search";
+import * as sidebarTree from "./sidebar-tree";
 import * as tags from "./tags";
 import * as templates from "./templates";
 import * as workspaceEvents from "./workspace-events";
@@ -97,6 +98,8 @@ export const notebooksService = {
       summary: async (config: { filter?: { query?: string } }) => notebooks.adminSummary({ search: config.filter?.query }),
     },
     graph: links.buildNotebookGraph,
+    /** The Links page's graph: whole while small, otherwise the bounded pages around one page. */
+    graphView: links.buildNotebookGraphView,
     access: {
       list: async (config: {
         notebookId: string;
@@ -174,6 +177,15 @@ export const notebooksService = {
     resolveIdsToShortIds: notes.resolveIdsToShortIds,
     resolveShortIdsToNotebookShortIds: notes.resolveShortIdsToNotebookShortIds,
     getTree: notes.getTree,
+    /** The sidebar's bounded view of the tree: opened levels as windows, and the filtered lists. */
+    sidebar: {
+      tree: sidebarTree.loadSidebarTree,
+      levels: sidebarTree.loadSidebarLevels,
+      reveal: sidebarTree.revealSidebarNote,
+      list: sidebarTree.loadSidebarList,
+      firstNote: sidebarTree.firstSidebarNote,
+      book: sidebarTree.loadBookNavigation,
+    },
     /** `<notebook>:<path>` addresses and the content-free outline used by the CLI mirror. */
     paths: {
       outline: notePaths.listOutline,

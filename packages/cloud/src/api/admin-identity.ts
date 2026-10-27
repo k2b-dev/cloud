@@ -67,14 +67,19 @@ const ServiceAccountStatusInputSchema = z.object({ status: z.enum(["active", "di
 const ServiceAccountApiKeyInputSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
+    access: z.enum(["full", "models"]).default("full"),
     scopes: z
       .array(z.string().trim().min(1).max(64))
       .max(20)
       .default([])
-      .refine((scopes) => !scopes.includes(AI_INFERENCE_SCOPE), "ai:inference is reserved for models-only personal API keys"),
+      .refine((scopes) => !scopes.includes(AI_INFERENCE_SCOPE), "Use access: models to create a models-only key"),
     expiresAt: z.iso.datetime().nullable().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (input) => input.access !== "models" || input.scopes.length === 0,
+    "Models-only access cannot be combined with general credential scopes",
+  );
 
 type IdentityAdminDependencies = {
   apps: () => Promise<Array<{ id: string; name: string }>>;
@@ -122,6 +127,9 @@ export const createAdminIdentityRoutes = (
     // Mandate lists hold every user's grant inputs, which users write at will and which can carry private text.
     .use("*", noTransform())
     .use(authenticate)
+    .use("*", (c, next) =>
+      ["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method) ? auth.requireOAuthScope("write", "admin")(c, next) : next(),
+    )
     .use("*", async (c, next) => {
       c.header("Cache-Control", "no-store");
       await next();

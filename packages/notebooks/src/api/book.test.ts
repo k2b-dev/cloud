@@ -81,7 +81,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
     title: "Welcome",
     notebookName: "Handbook",
     selectedNoteId: "note01",
-    tree: [],
+    hasNotes: false,
     tags: [],
     canWrite: false,
     locked: false,
@@ -105,7 +105,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
   const pdf = (body: unknown) => app.request("/book01/notes/note01/pdf", { method: "POST", headers, body: JSON.stringify(body) });
 
   beforeEach(() => {
-    token.mockReset().mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    token.mockReset().mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read"] });
     getNotebook.mockReset().mockResolvedValue(notebook);
     permission.mockReset().mockResolvedValue("read");
     loadRoute.mockReset().mockResolvedValue({ kind: "ok", snapshot });
@@ -161,7 +161,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
     });
 
     test("derives the platform-admin override from the authenticated actor", async () => {
-      token.mockResolvedValue({ kind: "user", payload: {}, user: { ...user, roles: ["admin"] }, scopes: [] });
+      token.mockResolvedValue({ kind: "user", payload: {}, user: { ...user, roles: ["admin"] }, scopes: ["read"] });
       permission.mockResolvedValue("none");
       expect((await refresh()).status).toBe(200);
       expect(loadRoute.mock.calls[0]?.[0].bypassAccess).toBe(true);
@@ -204,6 +204,7 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
         noteShortId: "note01",
         userId: user.id,
         locale: "de",
+        pages: new Map(),
       });
       loadPreview.mockClear();
       expect((await preview({ markdown: "# Draft" })).status).toBe(403);

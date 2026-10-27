@@ -1,17 +1,5 @@
 import type { LogTableEntry } from "@k2b/ui";
-import type { NoteTreeNode } from "../sidebar/types";
-import type { BackupDraft, BackupRunResult, BackupStatus, NoteSelectOption } from "./types";
-
-export const flattenNoteOptions = (nodes: NoteTreeNode[], untitled = "Untitled", depth = 0): NoteSelectOption[] =>
-  nodes.flatMap((note) => [
-    {
-      id: note.id,
-      label: `${"\u00A0\u00A0".repeat(depth)}${note.title || untitled}`,
-      description: `#${note.id}`,
-      icon: note.lockedAt ? "ti ti-lock" : "ti ti-file-text",
-    },
-    ...flattenNoteOptions(note.children, untitled, depth + 1),
-  ]);
+import type { BackupDraft, BackupRunResult, BackupStatus } from "./types";
 
 export const readErrorMessage = async (response: Pick<Response, "json">, fallback: string): Promise<string> => {
   try {

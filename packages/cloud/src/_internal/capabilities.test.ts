@@ -725,6 +725,10 @@ describe("capability v1 compilation", () => {
       'Capability declaration contains unsupported field "events"',
     );
     rejects(
+      defineCapabilities({ ...base, calendarSource: { calendars: "get", events: "get", subscribe: "rename" } }),
+      'calendarSource contains unsupported field "subscribe"',
+    );
+    rejects(
       defineCapabilities({ ...base, fileProvider: { list: "get", read: "get", trash: "rename" } }),
       'fileProvider contains unsupported field "trash"',
     );
@@ -1698,3 +1702,31 @@ for (const kind of ["query", "action", "review"] as const) {
     expect(review).not.toHaveBeenCalled();
   });
 }
+
+test("capability execution caps OAuth actions even for direct and delegated callers", async () => {
+  const compiled = compileCapabilities("example", example());
+  for (const credentialKind of ["oauth", "invocation", "session", "api_key"] as const) {
+    for (const scopes of [[], ["read"], ["write"], ["admin"]]) {
+      const actor = {
+        ...context.actor,
+        delegation: { kind: "invocation" as const, callingAppId: "core", credentialKind: "oauth" as const, invocationId: "scope-test" },
+      };
+      const result = await invokeCompiledCapability({
+        compiled,
+        kind: "action",
+        localId: "rename",
+        input: { id: "one", name: "renamed" },
+        expectedSchemaHash: compiled.actions.get("rename")!.manifest.schemaHash,
+        context: {
+          ...context,
+          actor,
+          idempotencyKey: "scope-test-action",
+          authority: { actor, accessSubject: context.accessSubject, credentialKind, scopes },
+        },
+      });
+      const allowed = credentialKind === "session" || credentialKind === "api_key" || scopes.includes("write") || scopes.includes("admin");
+      expect(result.ok).toBe(allowed);
+      if (!allowed) expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
+    }
+  }
+});

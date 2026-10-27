@@ -1,4 +1,4 @@
-import { describe, expect, jest, mock, spyOn, test } from "bun:test";
+import { describe, expect, jest, mock, setSystemTime, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { generateKeyPair } from "jose";
@@ -27,10 +27,10 @@ Object.defineProperty(env, "APP_SECRET", { value: "capability-stream-tests-only"
 // The dispatcher records executions and idempotency claims through the store.
 // This suite is a unit test of the dispatch path: keep it away from any database.
 const executionStore = await import("../capabilities/executions");
-let recordExecution: () => Promise<string> = async () => crypto.randomUUID();
+let recordExecution: typeof executionStore.recordCapabilityExecution = async () => crypto.randomUUID();
 mock.module(new URL("../capabilities/executions.ts", import.meta.url).pathname, () => ({
   ...executionStore,
-  recordCapabilityExecution: () => recordExecution(),
+  recordCapabilityExecution: (input: Parameters<typeof recordExecution>[0]) => recordExecution(input),
   claimCapabilityIdempotency: async () => ({ state: "claimed" as const }),
   completeCapabilityClaim: async () => undefined,
   releaseCapabilityClaim: async () => undefined,
@@ -261,6 +261,7 @@ describe("capability API", () => {
     const catalog = CapabilityCatalogSchema.parse(await (await routes.request("/capabilities/v1/catalog")).json());
     expect(catalog.apps.map((entry) => entry.manifest.queries.map((query) => query.localId))).toEqual([["book.read"]]);
     expect(catalog.apps[0]?.manifest.manifestHash).toBe(manifest.manifestHash);
+    expect(catalog.apps[0]?.manifest).not.toHaveProperty("calendarSource");
 
     const leftOut = await routes.request("/capabilities/v1/actions/library/book.archive", {
       method: "POST",
@@ -1754,4 +1755,134 @@ test("invocation issuance preserves structured app denial and never reaches the 
   expect(response.status).toBe(403);
   expect(await response.json()).toMatchObject({ code: "app_access_denied", app: "demo" });
   expect(fetch).not.toHaveBeenCalled();
+});
+
+test("OAuth scope denial records exactly one denied capability execution", async () => {
+  const rows: Parameters<typeof recordExecution>[0][] = [];
+  const previous = recordExecution;
+  recordExecution = async (input) => {
+    rows.push(input);
+    return "recorded";
+  };
+  try {
+    const response = await dispatchCapability({
+      request: new Request("https://cloud.test/capabilities", { method: "POST" }),
+      kind: "actions",
+      appId: "demo",
+      capabilityId: "rename",
+      input: {},
+      origin: "http",
+      authority: { ...resourceAuthority, credentialKind: "oauth", scopes: ["read"] },
+      dependencies: {
+        getCapability: async () => {
+          throw new Error("Must reject before registry lookup");
+        },
+      },
+    });
+    expect(response.status).toBe(403);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: "denied", errorCode: "FORBIDDEN", capability: "demo.rename", kind: "action" });
+  } finally {
+    recordExecution = previous;
+  }
+});
+
+test("calendar sources are discovered and read through Core's normal capability routes", async () => {
+  setSystemTime(new Date("2026-03-01T00:00:00Z"));
+  const { invokeCompiledCapability } = await import("../_internal/capabilities");
+  const contract = await import("../contracts/calendar-source");
+  const { listCalendarSources, readCalendarEvents } = await import("../capabilities/server");
+  const descriptor = { id: "team", name: "Team", suggested: true, visibility: "details" as const, writable: false };
+  const deadline = {
+    type: "deadline" as const,
+    id: "review",
+    calendarId: "team",
+    title: "Review",
+    due: { kind: "date" as const, date: "2026-03-20" },
+    done: false,
+    occurrence: null,
+    ref: null,
+    open: null,
+    version: "v1",
+  };
+  const provider = compileCapabilities(
+    "absence",
+    defineCapabilities({
+      protocolVersion: 2,
+      queries: {
+        calendars: {
+          title: "Calendars",
+          description: "List calendars.",
+          input: contract.CalendarListInputSchema,
+          data: contract.CalendarListDataSchema,
+          openWorld: false,
+          run: async () => ok({ data: { items: [descriptor], next: null } }),
+        },
+        events: {
+          title: "Events",
+          description: "Read calendar items.",
+          input: contract.CalendarEventsInputSchema,
+          data: contract.CalendarEventsDataSchema,
+          openWorld: false,
+          run: async () => ok({ data: { items: [deadline], next: null } }),
+        },
+      },
+      calendarSource: { calendars: "calendars", events: "events" },
+    }),
+  );
+  const app: CapabilityRegistryEntry = { ...entry("absence"), manifest: provider.manifest };
+  const upstream: string[] = [];
+  const routes = createCapabilityRoutes({
+    listApps: async () => [summary(app)],
+    getCapability: async (id) => (id === app.appId ? app : null),
+    authenticate,
+    fetch: async (url, init) => {
+      const request = new Request(url, init);
+      const localId = new URL(request.url).pathname.split("/").at(-1)!;
+      upstream.push(localId);
+      const { input } = await request.json();
+      const result = await invokeCompiledCapability({
+        compiled: provider,
+        kind: "query",
+        localId,
+        input,
+        expectedSchemaHash: request.headers.get("x-cloud-capability-schema-hash"),
+        context: {
+          actor: resourceAuthority.actor,
+          accessSubject: resourceAuthority.accessSubject,
+          user: null,
+          requestId: "calendar-wire",
+          locale: "en",
+          origin: "http",
+          signal: request.signal,
+        },
+      });
+      return result.ok ? Response.json(result.data) : Response.json(result.error, { status: result.error.status });
+    },
+  });
+  const previous = env.CLOUD_CORE_INTERNAL_ORIGIN;
+  Object.defineProperty(env, "CLOUD_CORE_INTERNAL_ORIGIN", { value: "http://core.test", configurable: true });
+  try {
+    const credentials = {
+      cookie: "session=test",
+      requestId: "calendar-wire",
+      locale: "en",
+      transport: async (request: Request) => routes.request(new Request(request.url.replace("/api/", "/"), request)),
+    };
+    const sources = await listCalendarSources(credentials, { deadline: Date.now() + 2500 });
+    expect(sources).toMatchObject([{ appId: "absence", state: "ok", calendars: [descriptor] }]);
+    const result = await readCalendarEvents({
+      credentials,
+      calendars: [{ appId: "absence", calendarId: "team" }],
+      from: "2026-03-01T00:00:00Z",
+      to: "2026-04-01T00:00:00Z",
+      deadline: Date.now() + 2500,
+    });
+    expect(result.items).toEqual([{ ...deadline, appId: "absence" }]);
+    expect(result.sources).toEqual([{ appId: "absence", state: "ok", error: null }]);
+    expect(upstream).toEqual(["calendars", "events"]);
+  } finally {
+    Object.defineProperty(env, "CLOUD_CORE_INTERNAL_ORIGIN", { value: previous, configurable: true });
+    setSystemTime();
+  }
 });

@@ -55,15 +55,23 @@ import {
   v,
 } from "../server/middleware";
 import { AppAccessDeniedError, appAccessDeniedBody } from "../server/middleware/app-access";
+import { oauthScopeByOperation } from "../server/middleware/auth";
 import { noTransform } from "../server/middleware/no-transform";
+import { hasOAuthScope } from "../server/oauth-scope";
 import { appAccessAuthority, canUseApp } from "../services/app-access";
 import { discoverableApps } from "../services/app-discovery";
-import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
+import { authorityFromParentInvocation, invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
-import type { InvocationAuthority } from "../services/identity/invocation-token";
+import type { CloudInvocationClaims, InvocationAuthority } from "../services/identity/invocation-token";
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
+import {
+  NESTED_INVOCATION_SETUP_BUDGET_MS,
+  type NestedInvocationLease,
+  nestedInvocationLeases,
+  nestedSourceDeadline,
+} from "../services/identity/nested-invocation";
 import { logger } from "../services/logging";
 import { withMandateIssueAuthority } from "../services/mandates";
 import * as settings from "../services/settings";
@@ -238,6 +246,12 @@ export type CapabilityDispatchParams = {
   /** Cloud surface this invocation came from; recorded on the execution row. */
   origin: CapabilityOrigin;
   authority?: RequestAuthority;
+  /** Core-only verified parent; never constructed from app JSON. */
+  parentInvocation?: CloudInvocationClaims;
+  /** Core-only turn coordinates used to recheck allowed tools at a child exchange. */
+  assistantTurn?: { conversationId: string; turnId: string };
+  /** Core-only absolute child deadline; cannot be extended by the application. */
+  deadline?: number;
   mandate?: MandatedCapabilityAuthority;
   callingAppId?: string;
   /** Internal observation only: called immediately before attempting the app request. */
@@ -251,6 +265,8 @@ type CapabilityDispatchOutcome = { body: unknown; status: number; replayed?: boo
 type CapabilityDispatchObservation = {
   subject: { type: "user" | "service_account"; id: string } | null;
   destructive: boolean;
+  invocationId?: string;
+  leaseId?: string;
 };
 
 type CapabilityPrincipal = { type: "user" | "service_account"; id: string } | null;
@@ -347,7 +363,7 @@ const runCapabilityDispatch = async (
     return invalid;
   }
 
-  if (params.mandate && operation.stream)
+  if ((params.mandate || params.parentInvocation) && operation.stream)
     return errorResponse("STREAM_UNSUPPORTED_AUTHORITY", "Streams require an interactive user or service-account request", 403);
 
   let requestBody: string;
@@ -364,6 +380,28 @@ const runCapabilityDispatch = async (
 
   const invocationOperation = capabilityInvocationOperation(params.kind, params.capabilityId, params.review);
   const mandate = params.mandate;
+  const lease: NestedInvocationLease | undefined =
+    !params.parentInvocation && (mandate || params.authority?.credentialProof || params.assistantTurn)
+      ? {
+          appId: params.appId,
+          deadline: Math.min(
+            Date.now() + deadline.remainingMs(),
+            nestedSourceDeadline(params.authority?.credentialProof),
+            params.authority?.actor.kind === "service_account" && params.authority.actor.credentialExpiresAt
+              ? Date.parse(params.authority.actor.credentialExpiresAt)
+              : Infinity,
+          ),
+          origin: params.origin,
+          ...(params.authority?.credentialProof ? { proof: params.authority.credentialProof } : {}),
+          ...(params.assistantTurn ? { assistantTurn: params.assistantTurn } : {}),
+        }
+      : undefined;
+  let leaseClaims: CloudInvocationClaims | undefined;
+  const observeSigned = (signed: Awaited<ReturnType<typeof signInvocationToken>>) => {
+    observed.invocationId = signed.claims.jti;
+    leaseClaims = signed.claims;
+    return signed;
+  };
   let headers: Headers;
   try {
     headers = mandate
@@ -392,16 +430,22 @@ const runCapabilityDispatch = async (
                     return (params.dependencies?.signInvocation ?? signInvocationToken)(
                       {
                         targetAppId: params.appId,
-                        callingAppId: mandate.ownerAppId,
+                        callingAppId: params.callingAppId ?? mandate.ownerAppId,
                         operation: invocationOperation,
                         schemaHash: operation.schemaHash,
-                        authority: invocationAuthorityFromMandate(mandateAuthority),
+                        authority: params.parentInvocation
+                          ? authorityFromParentInvocation(params.parentInvocation)
+                          : invocationAuthorityFromMandate(mandateAuthority),
+                        parent: params.parentInvocation,
+                        expiresAt: params.parentInvocation
+                          ? Math.floor((params.deadline ?? params.parentInvocation.exp * 1000) / 1000)
+                          : undefined,
                         requestId,
                         signer,
                         issuer: signer.issuer,
                       },
                       { db, groupsAdmin: signer.groupsAdmin },
-                    );
+                    ).then(observeSigned);
                   },
                   { db, groupsAdmin: signer.groupsAdmin },
                 );
@@ -433,13 +477,19 @@ const runCapabilityDispatch = async (
                     callingAppId: params.callingAppId ?? "core",
                     operation: invocationOperation,
                     schemaHash: operation.schemaHash,
-                    authority: invocationAuthorityFromRequest(authority),
+                    authority: params.parentInvocation
+                      ? authorityFromParentInvocation(params.parentInvocation)
+                      : invocationAuthorityFromRequest(authority),
+                    parent: params.parentInvocation,
+                    expiresAt: params.parentInvocation
+                      ? Math.floor((params.deadline ?? params.parentInvocation.exp * 1000) / 1000)
+                      : undefined,
                     requestId,
                     signer,
                     issuer: signer.issuer,
                   },
                   { db, groupsAdmin: signer.groupsAdmin },
-                );
+                ).then(observeSigned);
               },
               { signal, timeoutMs: deadline.remainingMs() },
             ),
@@ -473,6 +523,20 @@ const runCapabilityDispatch = async (
     console.error("[capabilities] Invocation issuance failed", { appId: params.appId, operation: invocationOperation });
     const failure = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.internal, messages.issuanceFailed, 500, { retrySafe: true });
     return failure;
+  }
+  // Optional exchange state belongs to the active dispatch, after the signing
+  // transaction. Losing it disables nesting without failing the original call.
+  if (lease && leaseClaims) {
+    const claims = leaseClaims;
+    observed.leaseId = claims.jti;
+    const setup = createCapabilityDeadline(NESTED_INVOCATION_SETUP_BUDGET_MS, signal);
+    try {
+      await setup.wait(() => nestedInvocationLeases.create(claims, lease, setup.signal));
+    } catch {
+      log.warn("Nested Query exchange unavailable", { invocationId: claims.jti });
+    } finally {
+      setup.clear();
+    }
   }
   deadline.check();
   headers.set("x-request-id", requestId);
@@ -755,16 +819,31 @@ const resultDataMeta = (body: unknown) =>
  */
 export const dispatchCapability = async (params: CapabilityDispatchParams): Promise<Response> => {
   const deadline = createCapabilityDeadline(
-    capabilityTimeoutMs(params.review ? "review" : params.kind === "queries" ? "query" : "action", params.dependencies),
+    Math.min(
+      capabilityTimeoutMs(params.review ? "review" : params.kind === "queries" ? "query" : "action", params.dependencies),
+      params.deadline ? Math.max(0, params.deadline - Date.now()) : Infinity,
+    ),
     params.request.signal,
   );
+  const observed: CapabilityDispatchObservation = { subject: null, destructive: false };
+  const revoke = () =>
+    observed.leaseId
+      ? nestedInvocationLeases.revoke(observed.leaseId).catch(() => {
+          log.error("Invocation exchange lease could not be revoked", { invocationId: observed.leaseId });
+        })
+      : Promise.resolve();
+  const onAbort = () => {
+    void revoke();
+  };
+  deadline.signal.addEventListener("abort", onAbort, { once: true });
   try {
     const requestId = normalizeInvocationRequestId(params.request.headers.get("x-request-id")) ?? crypto.randomUUID();
-    const observed: CapabilityDispatchObservation = { subject: null, destructive: false };
     const startedAt = new Date();
     let outcome: CapabilityDispatchOutcome;
     try {
-      outcome = await runCapabilityDispatch(params, requestId, observed, deadline);
+      outcome = hasOAuthScope(params.authority, params.review || params.kind === "queries" ? "read" : "write", "admin")
+        ? await runCapabilityDispatch(params, requestId, observed, deadline)
+        : errorResponse("FORBIDDEN", "Insufficient OAuth scope", 403);
     } catch (error) {
       if (!deadline.signal.aborted) throw error;
       const cancelled = params.request.signal.aborted;
@@ -790,6 +869,9 @@ export const dispatchCapability = async (params: CapabilityDispatchParams): Prom
       const recording = recordCapabilityExecution({
         requestId,
         origin: params.origin,
+        invocationId: observed.invocationId,
+        parentInvocationId: params.parentInvocation?.jti,
+        viaAppId: params.parentInvocation ? params.callingAppId : undefined,
         appId: params.appId,
         capability: `${params.appId}.${params.capabilityId}`,
         kind: params.kind === "queries" ? "query" : "action",
@@ -828,6 +910,8 @@ export const dispatchCapability = async (params: CapabilityDispatchParams): Prom
     }
     return capabilityJsonResponse(outcome.body, outcome.status);
   } finally {
+    deadline.signal.removeEventListener("abort", onAbort);
+    void revoke();
     deadline.clear();
   }
 };
@@ -850,6 +934,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     .use("/capabilities/v1/*", rejectReservedWorkloadCredential)
     .post(
       "/capabilities/v1/streams/:verb",
+      oauthScopeByOperation,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Transfer or inspect one authorized binary stream",
@@ -895,6 +980,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     )
     .post(
       "/capabilities/v1/commands/:appId/:capabilityId",
+      auth.readOnly,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Resolve an interactive Command link",
@@ -944,6 +1030,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     )
     .post(
       "/capabilities/v1/actions/:appId/:capabilityId/review",
+      auth.readOnly,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Review one live app Action",
@@ -995,6 +1082,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     )
     .post(
       "/capabilities/v1/:kind{queries|actions}/:appId/:capabilityId",
+      oauthScopeByOperation,
       describeRoute({
         tags: ["Capabilities"],
         summary: "Invoke one live app capability",

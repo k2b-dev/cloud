@@ -252,6 +252,7 @@ export const tablesRoutes = new Hono<AuthContext>()
 
   .post(
     "/:tableId/federation/validate",
+    auth.readOnly,
     requirePublicIdParam("tableId", "table", "Combined table"),
     describeRoute({
       tags: ["Grids:Table"],
@@ -461,6 +462,7 @@ export const tablesRoutes = new Hono<AuthContext>()
 
   .post(
     "/:tableId/mutation-policy/impact",
+    auth.readOnly,
     requirePublicIdParam("tableId", "table", "Table"),
     describeRoute({
       tags: ["Grids:Table"],

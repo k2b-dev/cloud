@@ -68,7 +68,7 @@ suite("Chat batched live authorization", () => {
     }
   });
 
-  test("one batch matches service reads across direct, nested-group, authenticated and public tiers, with people-only delivery", async () => {
+  test("one batch matches service reads across direct, nested-group, authenticated and public tiers, for every account kind", async () => {
     const owner = await f.person("Owner"),
       read = await f.person("Read"),
       write = await f.person("Write"),
@@ -113,7 +113,7 @@ suite("Chat batched live authorization", () => {
       accessSubject: { type: "user", userId: read.id, delegatedByServiceAccountId: delegated.id },
       scopes: [],
     };
-    // Exercise the shared binding and scope rules independently of the people-only filter.
+    // Exercise the shared binding and scope rules for bound credentials.
     const boundUser = (key: typeof ownKey, scopes: string[]): LiveViewer => ({
       ...viewer(read),
       id: `user:${read.id}:${key.id}:${scopes.join(",")}`,
@@ -137,21 +137,23 @@ suite("Chat batched live authorization", () => {
         ),
       );
       const allowed = await chatLiveChannels.conversation.authorize(`c:${shortId}`, viewers);
-      expect(allowed).toEqual(new Set(viewers.filter((v, i) => v.accessSubject.type === "user" && answers[i]?.ok).map((v) => v.id)));
+      expect(allowed).toEqual(new Set(viewers.filter((v, i) => answers[i]?.ok).map((v) => v.id)));
       expect(await chatLiveChannels.list.authorize(`l:${shortId}`, viewers)).toEqual(allowed);
       return { allowed, answers };
     };
     const direct = await check(chat.shortId);
     expect(direct.allowed).toEqual(
       new Set(
-        [owner, read, write, admin, grouped, nested].map((p) => `user:${p.id}`).concat(delegatedViewer.id, boundUser(ownKey, ["read"]).id),
+        [owner, read, write, admin, grouped, nested]
+          .map((p) => `user:${p.id}`)
+          .concat(delegatedViewer.id, boundUser(ownKey, ["read"]).id, keyViewer(standalone, ["read"]).id, keyViewer(ownKey, ["read"]).id),
       ),
     );
     const standalonePosition = viewers.findIndex(
       (v) => v.accessSubject.type === "service_account" && v.accessSubject.serviceAccountId === standalone.id,
     );
     expect(direct.answers[standalonePosition]?.ok).toBe(true);
-    expect(direct.allowed.has(viewers[standalonePosition]!.id)).toBe(false);
+    expect(direct.allowed.has(viewers[standalonePosition]!.id)).toBe(true);
     expect(direct.answers[viewers.findIndex((v) => v.id === keyViewer(ownKey, ["read"]).id)]?.ok).toBe(true);
     expect(direct.answers[viewers.findIndex((v) => v.id === keyViewer(otherKey, ["read"]).id)]?.ok).toBe(false);
     for (const principal of [{ type: "authenticated" }, { type: "public" }] as const) {
@@ -164,9 +166,17 @@ suite("Chat batched live authorization", () => {
     }
     expect(await chatLiveChannels.conversation.authorize("c:absent", viewers)).toEqual(new Set());
     expect(await chatLiveChannels.conversation.keys({ conversation: "absent" })).toEqual(["c:absent"]);
-    expect(await chatLiveChannels.me.authorize(`p:${read.id}`, viewers)).toEqual(
-      new Set(viewers.filter((v) => v.accessSubject.type === "user" && v.accessSubject.userId === read.id).map((v) => v.id)),
+    expect(await chatLiveChannels.me.authorize(`p:${read.id}`, viewers)).toEqual(new Set([viewer(read).id, delegatedViewer.id]));
+    expect(await chatLiveChannels.me.keys({}, keyViewer(standalone, ["read"]))).toEqual([`p:service_account:${standalone.id}`]);
+    const serviceReader = keyViewer(standalone, ["read"]);
+    const serviceWithoutRead = keyViewer(standalone, ["openid"]);
+    expect(await chatLiveChannels.me.keys({}, serviceWithoutRead)).toEqual([]);
+    expect(await chatLiveChannels.me.authorize(`p:service_account:${standalone.id}`, [serviceReader, serviceWithoutRead])).toEqual(
+      new Set([serviceReader.id]),
     );
-    expect(await chatLiveChannels.me.keys({}, keyViewer(standalone, ["read"]))).toBeNull();
+    expect(await chatLiveChannels.me.keys({}, keyViewer(ownKey, ["read"]))).toEqual([]);
+    const foreignBound = keyViewer({ ...ownKey, appId: "files" }, ["read"]);
+    expect(await chatLiveChannels.me.keys({}, foreignBound)).toEqual([]);
+    expect(await chatLiveChannels.me.authorize(`p:service_account:${ownKey.id}`, [foreignBound])).toEqual(new Set());
   });
 });

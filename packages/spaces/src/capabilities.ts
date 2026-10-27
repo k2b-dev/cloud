@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
+  CalendarEventsDataSchema,
+  CalendarEventsInputSchema,
+  CalendarListDataSchema,
+  CalendarListInputSchema,
   type CapabilityActionReview,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
@@ -21,6 +25,8 @@ import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Resu
 import type { z } from "zod";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import {
+  ActivityDataSchema,
+  ActivityInputSchema,
   CalendarDestinationListDataSchema,
   CalendarDestinationListInputSchema,
   CalendarInvitationImportCapabilityDataSchema,
@@ -134,6 +140,9 @@ import { buildSpaceItemHref } from "./routes";
 import type { ItemAcrossKind, SpaceWithPermission } from "./service";
 import { spacesService } from "./service";
 import { isSpaceResourceId, resolveSpaceApiKeyPermission, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./service/access";
+import * as activity from "./service/activity";
+import { spaceActivityRow } from "./service/activity-timeline";
+import { CalendarSourceError, listSourceCalendars, readSourceEvents } from "./service/calendar-source";
 import type { CommentAuthor } from "./service/comments";
 import { localizeSpacesError, type SpacesMessages, spacesMessages } from "./service/messages";
 import { spacesPublicResources } from "./service/public-resources";
@@ -342,6 +351,47 @@ const requireItem = async (
   return internalId
     ? requireItemUuid(internalId, context, required, viewer)
     : capabilityFail(context, err.notFound("Item"), "itemNotFound");
+};
+
+export const runSpaceActivity = async (input: z.output<typeof ActivityInputSchema>, context: CapabilityExecutionContext) => {
+  const access = await requireSpace(input.space, context);
+  if (!access.ok) return access;
+  const item = input.item ? await requireItem(input.item, context) : null;
+  if (item && (!item.ok || item.data.internalSpaceId !== access.data.internalId))
+    return capabilityFail(context, err.notFound("Item"), "itemNotFound");
+  try {
+    context.signal.throwIfAborted();
+    const page = await activity.list({
+      subject: context.accessSubject,
+      spaceId: access.data.internalId,
+      itemId: item?.ok ? item.data.internalId : undefined,
+      timeline: true,
+      before: input.before,
+      after: input.after,
+      cursor: input.cursor,
+      limit: input.limit,
+    });
+    const dateConfig = await capabilityDateConfig(context);
+    const data = page.items.map((event) =>
+      spaceActivityRow(event, {
+        viewer: spaceActivityActor(context),
+        assigneeId: context.accessSubject.type === "user" ? context.accessSubject.userId : context.accessSubject.serviceAccountId,
+        locale: context.locale,
+        timeZone: input.timeZone ?? dateConfig.timeZone,
+      }),
+    );
+    const result = (count: number) => ({
+      data: data.slice(0, count),
+      page: capabilityPage(count < data.length ? page.items[count - 1]!.cursor : page.nextCursor),
+    });
+    let count = data.length;
+    while (count > 1 && Buffer.byteLength(JSON.stringify(result(count)), "utf8") > CAPABILITY_MAX_RESULT_BYTES) count--;
+    return ok(result(count));
+  } catch (error) {
+    if (error instanceof activity.InvalidActivityCursorError)
+      return capabilityFail(context, err.badInput("Invalid cursor"), "invalidCursor");
+    throw error;
+  }
 };
 
 const isEvent = (item: SpaceItem): item is SpaceItem & { startsAt: string; endsAt: string } => Boolean(item.startsAt && item.endsAt);
@@ -2168,6 +2218,7 @@ const runEventInvitationCommit = async (input: z.infer<typeof EventInvitationCom
 
 export const spacesCapabilities = defineCapabilities({
   protocolVersion: 2,
+  calendarSource: { calendars: "calendar.list", events: "calendar.events" },
   presentation: spacesCapabilityPresentation,
   commands: {
     "event.invite": {
@@ -2205,6 +2256,15 @@ export const spacesCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "space.activity": {
+      title: "Read item activity",
+      description:
+        "Read a newest-first page of authorized item changes in one Space, optionally for one item. Sentences use the caller's locale. Comments and deleted items are omitted. Follow page.nextCursor with cursor; before and after are exclusive time bounds.",
+      input: ActivityInputSchema,
+      data: ActivityDataSchema,
+      openWorld: false,
+      run: runSpaceActivity,
+    },
     "task.work.read": {
       title: "Read task work state",
       description:
@@ -2271,6 +2331,43 @@ export const spacesCapabilities = defineCapabilities({
       run: async (input, context) => {
         const access = await workQueryContext(input, context);
         return access.ok ? ok(await runTaskFocus(input, access.data)) : access;
+      },
+    },
+    "calendar.list": {
+      title: "List calendars",
+      description: "List readable Space calendars; member calendars are suggested. Read only in this version.",
+      input: CalendarListInputSchema,
+      data: CalendarListDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const access = await workQueryContext({ assignedTo: "all" }, context, true);
+        if (!access.ok) return access;
+        try {
+          return ok({ data: await listSourceCalendars(input, access.data) });
+        } catch (error) {
+          if (error instanceof CalendarSourceError) return fail({ ...err.badInput("Invalid calendar cursor"), code: error.code });
+          throw error;
+        }
+      },
+    },
+    "calendar.events": {
+      title: "Read calendar items",
+      description:
+        "Read open events and deadlines in readable Space calendars. Recurrences are expanded by Spaces; pages are chronological. Range is half-open and at most 31 elapsed days.",
+      input: CalendarEventsInputSchema,
+      data: CalendarEventsDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const access = await workQueryContext({ assignedTo: "all" }, context, true);
+        if (!access.ok) return access;
+        try {
+          return ok({ data: await readSourceEvents(input, access.data) });
+        } catch (error) {
+          if (error instanceof CalendarSourceError) return fail({ ...err.badInput("Calendar data could not be read"), code: error.code });
+          if (error instanceof CalendarReadLimitError)
+            return fail({ ...err.badInput("Calendar expansion exceeded its complete-read budget"), code: "CALENDAR_READ_LIMIT" });
+          throw error;
+        }
       },
     },
     "event.agenda": {

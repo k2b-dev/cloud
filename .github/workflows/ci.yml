@@ -43,6 +43,11 @@ env:
   BUN_VERSION: 1.4.2
   TEST_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
+# The heavy matrix jobs (unit, webkit, integration, grids) run on the runner named by
+# the repository variable CI_HEAVY_RUNNER, or on ubuntu-24.04 when it is unset. The
+# variable switches them to a larger GitHub-hosted runner, which is billed per minute
+# against the enterprise Actions budget; delete the variable to fall back without a PR.
+
 jobs:
   changes:
     runs-on: ubuntu-24.04
@@ -170,7 +175,7 @@ jobs:
 
   unit:
     needs: [setup, mirror]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -229,7 +234,7 @@ jobs:
   webkit:
     needs: [changes, setup]
     if: needs.changes.outputs.webkit == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -262,8 +267,12 @@ jobs:
 
   integration:
     needs: [setup, mirror]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     services:
       clickhouse:
         image: ghcr.io/k2b-dev/mirror/clickhouse/clickhouse-server:26.9.19.9@sha256:bdb5c911a23d92fd364e246ab20b5a0a485f00112f3663fa626b083fb46c146b
@@ -335,14 +344,14 @@ jobs:
       - name: Install the Playwright browser used by the Assistant code host
         run: ./packages/assistant/node_modules/.bin/playwright install chromium
       # Grids certification runs in its own sharded job below.
-      - run: bun run test --integration --exclude grids
+      - run: bun run test --integration --exclude grids --shard ${{ matrix.shard }}/3 --max-minutes 20
       - if: always()
         run: docker rm --force ci-nats
 
   grids:
     needs: [changes, setup, mirror]
     if: needs.changes.outputs.grids == 'true' || needs.changes.outputs.cloud == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 40
     strategy:
       fail-fast: false

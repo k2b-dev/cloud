@@ -36,7 +36,7 @@ suite("Mail draft public boundary", () => {
   test("resolves public route IDs once before listing conversation drafts", async () => {
     const mailboxId = "22222222-2222-4222-8222-222222222222";
     const conversationId = "33333333-3333-4333-8333-333333333333";
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
     spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
     spyOn(publicResources, "publicIds").mockImplementation(
@@ -62,7 +62,7 @@ suite("Mail command public boundary", () => {
     const messageId = "33333333-3333-4333-8333-333333333333";
     const folderId = "44444444-4444-4444-8444-444444444444";
     const commandId = "55555555-5555-4555-8555-555555555555";
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue(ok("admin"));
     spyOn(mailboxAccess, "getMailboxPermission").mockResolvedValue("admin");
     spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);

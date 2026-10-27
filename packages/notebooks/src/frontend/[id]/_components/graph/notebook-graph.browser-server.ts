@@ -5,6 +5,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { NoteGraph } from "../../../../service/links";
 import type { BookTreeNode } from "../book/BookNavigator.island";
+import { bookNavigationState } from "../sidebar/sidebar-tree.test-fixture";
 import { bigGraph, crossAreaGraph, FIXTURE_NOW, HANDBOOK_IDS, handbookGraph, unlinkedGraph } from "./graph.fixtures";
 import { NotebookGraphFixture, type NotebookGraphFixtureProps } from "./notebook-graph.browser-harness";
 import { parseGraphViewState } from "./view-state";
@@ -110,7 +111,7 @@ export async function startGraphServer() {
           canWrite: false,
           locked: false,
           navigationHidden: false,
-          tree: tree(graph),
+          navigation: bookNavigationState(tree(graph), selected),
           tags: [],
           current: "graph",
           graphBack: url.searchParams.get("back") ?? undefined,

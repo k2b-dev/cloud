@@ -49,6 +49,8 @@ import { NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY }
 import { NOTE_PATH_MAX_LENGTH, NOTE_PATH_MAX_SEGMENTS } from "@/lib/note-path";
 import { encodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, NOTE_PDF_OMISSIONS_HEADER_MAX_BYTES } from "@/lib/pdf-omissions";
 import { PRESENTATION_MODES } from "@/lib/presentation-mode";
+import { QUERY_MAX_BLOCKS } from "@/lib/query-blocks";
+import { SIDEBAR_MAX_LEVELS, SIDEBAR_MAX_WINDOW, SIDEBAR_PAGE_SIZE } from "@/lib/sidebar-tree";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
 import { InvalidActivityCursorError, NOTEBOOK_ACTIVITY_ACTIONS } from "../service/activity";
@@ -60,6 +62,7 @@ import { notePdfPhaseMs, renderNotePdf } from "../service/note-pdf";
 import type { Notebook } from "../service/notebooks";
 import type { Note, NotePlacement } from "../service/notes";
 import { loadEditableNoteRouteData } from "../service/route-state";
+import { resolveNotebookNoteIds } from "../service/tree-levels";
 import { notebookApiMessages } from "./messages";
 import {
   ResourceShortIdSchema,
@@ -259,9 +262,44 @@ const TagSummarySchema = z.object({
   count: z.number().int(),
 });
 
+const SidebarNoteSchema = z
+  .object({
+    id: ResourceShortIdSchema,
+    parentId: ResourceShortIdSchema.nullable(),
+    title: z.string(),
+    position: z.number().int(),
+    hasChildren: z.boolean(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    lockedAt: z.string().nullable(),
+  })
+  .meta({ id: "SidebarNote" });
+
+const SidebarLevelSchema = z.object({
+  parentId: ResourceShortIdSchema.nullable().describe("The level's parent note; null is the top level"),
+  total: z.number().int().nonnegative().describe("Notes in the level"),
+  offset: z.number().int().nonnegative(),
+  items: z.array(SidebarNoteSchema),
+});
+
+const SIDEBAR_LEVEL_PATTERN = /^([0-9A-Za-z]{6})?:(\d{1,6}):(\d{1,4})$/;
+
+const SidebarLevelsQuerySchema = z.object({
+  sort: z.enum(["title", "updated", "created"]).default("title"),
+  levels: z.string().max(2000).optional().describe("Comma-separated `<parent>:<offset>:<limit>` windows; an empty parent is the top level"),
+  reveal: ResourceShortIdSchema.optional().describe("A note whose way down from the top level is returned as well"),
+  book: z.literal("1").optional().describe("Book's reading order: the start page leads the top level wherever it lives"),
+});
+
+const SidebarListQuerySchema = z.object({
+  view: z.enum(["favorites", "recents", "tag"]),
+  tag: z.string().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
+  limit: z.coerce.number().int().min(1).max(SIDEBAR_MAX_WINDOW).default(SIDEBAR_PAGE_SIZE),
+});
+
 const WorkspaceStateSchema = z.object({
   notebook: NotebookSchema,
-  tree: z.array(NoteTreeNodeSchema),
   favoriteNoteIds: z.array(ResourceShortIdSchema),
   tags: z.array(TagSummarySchema),
   attachmentCount: z.number().int().nonnegative(),
@@ -394,6 +432,10 @@ const GraphEdgeSchema = z.object({
 const NoteGraphSchema = z.object({
   nodes: z.array(GraphNodeSchema),
   edges: z.array(GraphEdgeSchema),
+  scope: z
+    .object({ around: ResourceShortIdSchema, total: z.number().int().nonnegative() })
+    .optional()
+    .describe("Present when the graph holds only the notes around one note of a large notebook"),
 });
 
 const FavoriteNoteSchema = z.object({
@@ -498,7 +540,6 @@ const EditableNoteRouteStateSchema = z.object({
   note: z.object({
     id: ResourceShortIdSchema,
     title: z.string(),
-    yjsSnapshot: z.string().nullable(),
     historyIncomplete: z.boolean(),
     contentMd: z.string().nullable(),
     createdAt: z.string(),
@@ -527,16 +568,13 @@ const RouteStateQuerySchema = z.object({
   href: z.string().min(1).max(500),
 });
 
-const BookTreeSchema: z.ZodType<{ id: string; title: string; children: z.infer<typeof BookTreeSchema>[] }> = z
-  .lazy(() => z.object({ id: ResourceShortIdSchema, title: z.string(), children: z.array(BookTreeSchema) }))
-  .meta({ id: "BookTreeNode" });
 const BookSnapshotSchema = z.object({
   href: z.string(),
   html: z.string().nullable(),
   title: z.string().nullable(),
   notebookName: z.string(),
   selectedNoteId: ResourceShortIdSchema.nullable(),
-  tree: z.array(BookTreeSchema),
+  hasNotes: z.boolean().describe("Whether the notebook has any page; the navigation reads its levels from /tree/levels"),
   tags: z.array(TagSummarySchema),
   activeTag: z.string().optional(),
   canWrite: z.boolean(),
@@ -547,7 +585,16 @@ const BookSnapshotSchema = z.object({
 // Same request envelope budget as a collaboration sync payload. Preview never
 // persists the draft; query block/row work is further bounded by its parser.
 const BLOCK_PREVIEW_MAX_REQUEST_BYTES = 8_000_000;
-const BlockPreviewInputSchema = z.object({ markdown: z.string().max(BLOCK_PREVIEW_MAX_REQUEST_BYTES).optional() }).strict();
+const BlockPreviewInputSchema = z
+  .object({
+    markdown: z.string().max(BLOCK_PREVIEW_MAX_REQUEST_BYTES).optional(),
+    pages: z
+      .record(z.string().regex(/^\d{1,7}$/), z.number().int().min(1).max(1_000_000))
+      .refine((pages) => Object.keys(pages).length <= QUERY_MAX_BLOCKS)
+      .optional()
+      .describe("The page each query shows, by the query's one-based source line; other queries show their first page"),
+  })
+  .strict();
 const BlockPreviewSchema = z.object({
   markdown: z.string(),
   blocks: z.array(z.object({ line: z.number().int().positive(), html: z.string() })),
@@ -1384,8 +1431,7 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
       if (error) return error;
 
-      const [tree, favoriteRows, tags, attachmentCount] = await Promise.all([
-        notebooksService.note.getTree({ notebookId: notebook!.id, locale: getLocale(c) }),
+      const [favoriteRows, tags, attachmentCount] = await Promise.all([
         notebooksService.note.favorites.listIds({ notebookId: notebook!.id, userId: userResult.data.id }),
         notebooksService.tag.listForNotebook({ notebookId: notebook!.id }),
         notebooksService.attachment.count({ notebookId: notebook!.id }),
@@ -1394,12 +1440,101 @@ const app = new Hono<AuthContext>()
         c,
         ok({
           notebook: toPublicNotebook(notebook!),
-          tree: await toPublicNoteTree(tree, notebook!.shortId),
           favoriteNoteIds: favoriteRows.map((row) => row.noteId),
           tags,
           attachmentCount,
         }),
       );
+    },
+  )
+
+  // The sidebar's open levels, a window of rows each, without Markdown
+  .get(
+    "/:id/tree/levels",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Get sidebar tree levels",
+      description:
+        "Returns windows of note rows for the requested levels, in the order on screen, and optionally the levels that lead to one note. Each request is bounded by the levels it names.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(z.object({ levels: z.array(SidebarLevelSchema), expandedIds: z.array(ResourceShortIdSchema) }), "Tree levels"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid levels"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
+      },
+    }),
+    v("query", SidebarLevelsQuerySchema),
+    async (c) => {
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      if (error) return error;
+      const query = c.req.valid("query");
+      const requested = (query.levels ? query.levels.split(",") : []).map((entry) => SIDEBAR_LEVEL_PATTERN.exec(entry));
+      if (requested.length > SIDEBAR_MAX_LEVELS || requested.some((match) => !match || Number(match[3]) > SIDEBAR_MAX_WINDOW)) {
+        return respond(c, fail(err.badInput(messages(c).requestInvalid)));
+      }
+      const parentShortIds = requested.map((match) => match![1]).filter((id): id is string => !!id);
+      const parents = await resolveNotebookNoteIds(notebook!.id, [...parentShortIds, ...(query.reveal ? [query.reveal] : [])]);
+      const scope = {
+        notebookId: notebook!.id,
+        sort: query.sort,
+        locale: getLocale(c),
+        homepageId: notebook!.homepageNoteId,
+        book: query.book === "1",
+      };
+      const known = requested.filter((match) => !match![1] || parents.has(match![1]));
+      const [levels, revealed] = await Promise.all([
+        notebooksService.note.sidebar.levels({
+          ...scope,
+          levels: known.map((match) => ({
+            parentId: match![1] ? parents.get(match![1])! : null,
+            offset: Number(match![2]),
+            limit: Number(match![3]),
+          })),
+        }),
+        query.reveal && parents.has(query.reveal)
+          ? notebooksService.note.sidebar.reveal({ ...scope, noteId: parents.get(query.reveal)! })
+          : Promise.resolve(null),
+      ]);
+      // A parent that left the notebook answers as an empty level, so the sidebar drops it.
+      const gone = requested
+        .filter((match) => match![1] && !parents.has(match![1]))
+        .map((match) => ({ parentId: match![1]!, total: 0, offset: 0, items: [] }));
+      return respond(c, ok({ levels: [...levels, ...gone, ...(revealed?.levels ?? [])], expandedIds: revealed?.expandedIds ?? [] }));
+    },
+  )
+
+  // The notes of a sidebar filter, newest first
+  .get(
+    "/:id/tree/list",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "List notes of a sidebar filter",
+      description: "Returns a page of the person's favorites, the most recently changed notes, or the notes with one tag, newest first.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(
+          z.object({
+            total: z.number().int().nonnegative(),
+            offset: z.number().int().nonnegative(),
+            items: z.array(SidebarNoteSchema.extend({ tags: z.array(z.string()) })),
+          }),
+          "Filtered notes",
+        ),
+        400: jsonResponse(ErrorResponseSchema, "Invalid filter"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
+      },
+    }),
+    v("query", SidebarListQuerySchema),
+    async (c) => {
+      const userResult = requireUserBackedActor(c);
+      if (!userResult.ok) return respond(c, userResult);
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      if (error) return error;
+      const query = c.req.valid("query");
+      if (query.view === "tag" && !query.tag) return respond(c, fail(err.badInput(messages(c).requestInvalid)));
+      return respond(c, ok(await notebooksService.note.sidebar.list({ notebookId: notebook!.id, userId: userResult.data.id, ...query })));
     },
   )
 
@@ -1443,6 +1578,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/:id/notes/:noteId/block-preview",
+    auth.readOnly,
     describeRoute({
       tags: ["Notebooks"],
       summary: "Preview query and contents blocks",
@@ -1461,7 +1597,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const actor = requireUserBackedActor(c);
       if (!actor.ok) return respond(c, actor);
-      const { markdown } = c.req.valid("json");
+      const { markdown, pages } = c.req.valid("json");
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, markdown === undefined ? "read" : "write");
       if (error) return error;
       const result = await loadBookBlockPreview({
@@ -1472,6 +1608,7 @@ const app = new Hono<AuthContext>()
         bypassAccess: hasRole(actor.data, "admin"),
         locale: getLocale(c),
         ...(markdown === undefined ? {} : { markdown }),
+        pages: new Map(Object.entries(pages ?? {}).map(([line, page]) => [Number(line), page])),
       });
       c.header("Cache-Control", "private, no-store");
       if (result.kind === "denied") return respond(c, fail(err.forbidden(messages(c).accessDenied)));
@@ -1995,6 +2132,7 @@ const app = new Hono<AuthContext>()
   // Render the current browser-side Markdown snapshot without persisting it.
   .post(
     "/:id/notes/:noteId/pdf",
+    auth.readOnly,
     describeRoute({
       tags: ["Notebooks"],
       summary: "Download note as PDF",
@@ -2753,7 +2891,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Get link graph",
-      description: "Return all notes (nodes) and all internal note-links (edges) for the notebook.",
+      description:
+        "Return all notes (nodes) and all internal note-links (edges) for the notebook. With `around`, a notebook of more than 500 notes returns only the bounded graph around that note, with `scope`.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(z.object({ data: NoteGraphSchema }), "Graph data"),
@@ -2761,11 +2900,18 @@ const app = new Hono<AuthContext>()
         404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
       },
     }),
+    v("query", z.object({ around: ResourceShortIdSchema.optional().describe("The note the Links page draws around") })),
     async (c) => {
       let notebookId = c.req.param("id")!;
       const { notebook, error } = await checkNotebookAccess(c, notebookId);
       if (error) return error;
       notebookId = notebook!.id;
+      const { around } = c.req.valid("query");
+      if (around) {
+        const note = await requireNoteInNotebook(notebookId, around, getLocale(c));
+        if (!note.ok) return respond(c, note);
+        return respond(c, ok({ data: await notebooksService.notebook.graphView({ notebookId, noteId: note.data.id }) }));
+      }
       const graph = await notebooksService.notebook.graph({ notebookId });
       return respond(c, ok({ data: graph }));
     },
@@ -3473,6 +3619,7 @@ const requireAdmin = (c: Context<AuthContext>) => {
 };
 
 const appWithAdmin = appWithLimits
+  .use("/admin/*", auth.requireRole("admin"))
   // List all notebooks-namespaced settings
   .get(
     "/admin/settings",

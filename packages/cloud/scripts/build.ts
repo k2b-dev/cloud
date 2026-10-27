@@ -36,6 +36,7 @@ import type { AppCliModules } from "../src/contracts/app";
 import { writeAppFavicon } from "./app-favicon";
 import { buildBrowserPerformance } from "./browser-performance";
 import { buildCanvasWorkers, CANVAS_WORKER_DEFINES } from "./build-canvas-workers";
+import { writeInstallableIcons } from "./installable-assets";
 
 const appId = process.env.APP_ID;
 if (!appId) throw new Error("APP_ID env var required");
@@ -184,6 +185,8 @@ for (const [name, declaration] of Object.entries(cliModules)) {
   const plugin = await buildCliPlugin({ appDir, appId, name, declaration, version });
   await writeCliPlugin(resolve(dist, "cli", name), plugin);
 }
+
+if (app?.meta.installable) await writeInstallableIcons(distPublic, appId, app.meta.installable);
 
 if (appId !== "core" && app) {
   await writeAppFavicon({
