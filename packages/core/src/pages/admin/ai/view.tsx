@@ -142,7 +142,14 @@ const ClassChips = (props: { t: AiAreaMessages; slots: AiModelSlot[]; enabled: b
 );
 
 /** Column 2 for a provider: its connection, then its models. */
-function ProviderColumn(props: { t: AiAreaMessages; locale: string; query: AiAreaQuery; provider: ProviderRow; index: AiCatalogIndex }) {
+function ProviderColumn(props: {
+  t: AiAreaMessages;
+  locale: string;
+  query: AiAreaQuery;
+  provider: ProviderRow;
+  providerUrl: string | null;
+  index: AiCatalogIndex;
+}) {
   const t = props.t;
   const state = aiProviderState(props.provider);
   const models = props.index.models.filter((model) => model.providerId === props.provider.id);
