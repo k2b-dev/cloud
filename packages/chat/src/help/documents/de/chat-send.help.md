@@ -43,6 +43,16 @@ Du kannst in einem Chat, in dem du Mitglied bist, mit Zugriff **Schreiben** oder
 - Wenn du Chat mit noch nicht gesendeten Nachrichten verlässt oder neu lädst, fragt dein Browser zuerst nach, weil diese Nachrichten beim Verlassen verloren gehen.
 :::
 
+## Jemanden erwähnen {icon="at"}
+
+:::steps
+1. Tippe **@** und die ersten Buchstaben eines Namens in das Eingabefeld.
+2. Wähle die Person oder den Agenten in der Liste. Mit der Tastatur nimmst du die Pfeiltasten und Enter.
+3. Sende die Nachricht.
+:::
+
+Die Liste zeigt die Mitglieder des Chats und die Personen, die darin geschrieben haben. In einem Chat eines Space oder Notebooks zeigt sie die Personen, die dort geschrieben haben. Die erwähnte Person findet die Nachricht unter **Für dich**, sofern sie sie lesen darf.
+
 ## Cloud-Element teilen {icon="share"}
 
 :::steps
