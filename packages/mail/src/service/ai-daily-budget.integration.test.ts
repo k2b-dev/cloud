@@ -4,6 +4,7 @@ import { coreSettings } from "@k2b/cloud/services";
 import { unwrap } from "@k2b/stdlib";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { newShortId } from "../lib/short-id";
 import { migrateAiDailyBudget } from "../migrate-ai-daily-budget";
 import { grantMailboxAccess } from "./access";
 import {
@@ -93,7 +94,8 @@ suite("Mail source and mailbox calendar-day AI reservations", () => {
     mailboxId = unwrap(await createMailbox(owner, { name: "Daily AI integration" })).id;
     mailboxes.push(mailboxId);
     const [conversation] = await sql<{ id: string }[]>`
-      INSERT INTO mail.conversations (mailbox_id, subject, summary, latest_message_at) VALUES (${mailboxId}::uuid, 'Budget guard', 'A person wrote this', ${at}::timestamptz) RETURNING id
+      INSERT INTO mail.conversations (mailbox_id, short_id, subject, summary, latest_message_at)
+      VALUES (${mailboxId}::uuid, ${newShortId()}, 'Budget guard', 'A person wrote this', ${at}::timestamptz) RETURNING id
     `;
     if (!conversation) throw new Error("Missing daily AI fixture conversation");
     conversationId = conversation.id;
