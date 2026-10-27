@@ -14,6 +14,8 @@ Choose **Compose** for a new message. In a conversation, choose **Reply**, **Rep
 
 Choose a verified sender in **From**, add recipients, and enter a subject and body. **Cc/Bcc** shows the additional recipient fields. Recipients never see the Bcc list. Your own copy in Sent keeps it, so any mail client shows whom you blind-copied.
 
+The sender choice shows each name and address. Its details explain who can read the mailbox, where replies go, and the default signature. Before a new draft starts, the details also show its default Cc/Bcc recipients; switching the sender in an existing draft keeps its recipients. Senders that are not yet enabled stay visible with a reason and cannot be chosen. If the list fails to load, choose **Retry**.
+
 While you type in **To**, **Cc**, or **Bcc**, Mail suggests contacts from the contact directory first. Then it suggests addresses this mailbox wrote to or received mail from. Mailbox suggestions also work without the Contacts app. A mail icon marks them. Use the arrow keys to highlight a suggestion and Enter to add it. People who see only assigned conversations get no mailbox suggestions.
 
 The composer is separate from the mailbox workspace. **Back to mailbox** saves the latest changes, releases the editing lease, and returns to the mailbox. **Open in new window** moves the same draft to its own browser window. It never creates a second draft.

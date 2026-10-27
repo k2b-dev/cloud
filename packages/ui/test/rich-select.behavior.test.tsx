@@ -154,6 +154,18 @@ describe("RichSelect desktop behavior", () => {
     expect(picker.trigger.getAttribute("aria-expanded")).toBe("false");
   });
 
+  test("an action picker can suppress search for eight or more destinations", async () => {
+    const picker = await mount({ items: searchableItems, search: false });
+    await picker.open();
+    expect(picker.dom.root.querySelector('input[type="search"]')).toBeNull();
+    expect(picker.rows()).toHaveLength(8);
+    key(picker.trigger, "a");
+    expect(picker.rows()).toHaveLength(8);
+    key(picker.trigger, "End");
+    key(picker.trigger, "Enter");
+    expect(picker.value()).toBe("extra-4");
+  });
+
   test("typing transfers focus to search, filters labels/descriptions/keywords, and Escape restores the trigger", async () => {
     const picker = await mount({ items: searchableItems });
     await picker.open();
@@ -237,6 +249,18 @@ describe("RichSelect desktop behavior", () => {
     key(picker.trigger, "ArrowDown");
     key(picker.trigger, "Enter");
     expect(picker.commits).toEqual(["archive"]);
+  });
+
+  test("open callbacks track actual transitions so applications can refresh consequences", async () => {
+    const changes: boolean[] = [];
+    const picker = await mount({ onOpenChange: (open) => changes.push(open) });
+    expect(changes).toEqual([]);
+    await picker.open();
+    expect(changes).toEqual([true]);
+    key(picker.trigger, "Escape");
+    expect(changes).toEqual([true, false]);
+    await picker.open();
+    expect(changes).toEqual([true, false, true]);
   });
 
   test("loading, errors and fewer items return focus from the removed search to the trigger", async () => {

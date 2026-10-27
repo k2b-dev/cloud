@@ -466,6 +466,17 @@ permission, and a limit from `1` to `500`. It does not expand `public` or
 Search results list exact login-name matches first, then exact display-name
 matches, so a limit never hides them.
 
+For a consequence preview, import `summarizeAccessAudience` or the batch reader `summarizeAccessAudiences` from
+`@k2b/cloud/server`. After authorizing the resource, pass its `accessIds`. The batch reader accepts
+`accessIdsByResource: Record<string, string[]>` and returns a summary under each
+resource key; authorize every requested resource before calling it.
+The result counts distinct current members, including nested groups, and
+reports `guestCount` and `serviceAccountCount` separately. `memberCount`
+includes guests. Expired people and inactive service accounts are excluded. The `public` and
+`authenticated` flags describe broad grants; they are not expanded into a
+finite member count. This aggregate has no picker limit and exposes no names.
+Applications own permission to disclose it and translate the resulting facts.
+
 Keep grant editing and credential creation separate. The permission editor
 must not display raw keys or own secret lifecycle.
 

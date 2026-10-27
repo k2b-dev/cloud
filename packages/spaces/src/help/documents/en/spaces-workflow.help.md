@@ -151,3 +151,7 @@ You need access to edit the event and an eligible mailbox.
 3. Choose the sending mailbox and the recipients.
 4. Continue in Mail to review and send the draft.
 :::
+
+## Move through a wormhole {icon="arrow-bounce"}
+
+In the item details, choose **Move to…**. Each destination names what will be removed, or says that nothing is removed. Its details show who can see the card after the move, which tags, assignees and dependencies are removed, and that comments and attachments move with it. A destination you cannot edit stays visible with a reason. If loading fails, choose **Retry**. Choosing a destination uses the normal move flow, including confirmation when someone else holds the claim.

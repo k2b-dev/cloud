@@ -27,7 +27,20 @@ if (process.env.MAIL_CALENDAR_DESTINATIONS_CHILD !== "1") {
     },
   }));
   const { listCalendarDestinations } = await import("./app-integrations");
-  const destination = (id: string) => ({ id, name: id, color: "#3b82f6" });
+  const { spacesMailDestinationSchema } = await import("../app-integration-contracts");
+  test("a rolling deployment can still read a destination from an older Spaces image", () => {
+    expect(spacesMailDestinationSchema.parse({ id: "Space1", name: "Calendar", color: "#3b82f6" })).toEqual({
+      id: "Space1",
+      name: "Calendar",
+      color: "#3b82f6",
+    });
+  });
+  const destination = (id: string) => ({
+    id,
+    name: id,
+    color: "#3b82f6",
+    audience: { memberCount: 8, guestCount: 1, serviceAccountCount: 0, public: false, authenticated: false },
+  });
   beforeEach(() => {
     calls.length = 0;
     responses = [];

@@ -75,6 +75,7 @@ import EventInvitations from "./EventInvitations";
 import ItemLinksSection from "./ItemLinksSection";
 import TaskAttachmentsSection from "./TaskAttachmentsSection";
 import TaskChecklistSection from "./TaskChecklistSection";
+import WormholeSelect from "./WormholeSelect";
 
 type Props = {
   item: SpaceItem;
@@ -732,22 +733,6 @@ export default function ItemDetailPanel(props: Props) {
       },
     ];
 
-    if (canTransferThroughWormhole(props.item) && props.wormholes.length > 0) {
-      actions.push({
-        items: props.wormholes.flatMap((wormhole) =>
-          wormhole.target
-            ? [
-                {
-                  label: t.moveTo({ space: wormhole.target.spaceName, column: wormhole.target.columnName }),
-                  icon: "ti ti-arrow-bounce",
-                  action: () => void transferTo(wormhole.id),
-                },
-              ]
-            : [],
-        ),
-      });
-    }
-
     actions.push({
       items: [
         {
@@ -1106,6 +1091,15 @@ export default function ItemDetailPanel(props: Props) {
                     {isCompleted() ? t.reopen : completionBlocked() ? t.blockedByCount({ count: activeBlockerCount() }) : t.markComplete}
                   </Button>
                   <Show when={!isEvent() && !isCompleted()}>{claimButton()}</Show>
+                  <Show when={canTransferThroughWormhole(props.item)}>
+                    <WormholeSelect
+                      spaceId={props.spaceId}
+                      revision={JSON.stringify([props.item, props.blockedBy, props.blocks, props.wormholes])}
+                      itemId={props.item.id}
+                      disabled={isLoading() || transferMutation.loading()}
+                      onChoose={(id) => void transferTo(id)}
+                    />
+                  </Show>
                   <Button type="button" variant="ghost" size="sm" onClick={() => void handleEdit()} disabled={isLoading()}>
                     <i class="ti ti-pencil" aria-hidden="true" /> {t.edit}
                   </Button>

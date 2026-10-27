@@ -4,7 +4,7 @@ import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { actorForUser, create, transfer, type WormholeActor } from "./wormholes";
+import { actorForUser, create, previewTransfer, transfer, type WormholeActor } from "./wormholes";
 
 type Fixture = {
   sourceSpaceId: string;
@@ -163,6 +163,28 @@ suite("Spaces wormholes", () => {
       expect(created.ok).toBe(true);
       if (!created.ok) throw new Error(created.error);
 
+      const preview = await previewTransfer({ sourceSpaceId: fixture.sourceSpaceId, itemId: item!.id, actor: actorFor(fixture) });
+      expect(preview.ok).toBe(true);
+      if (!preview.ok) throw new Error(preview.error);
+      expect(preview.data).toMatchObject([
+        {
+          id: created.data.id,
+          canWrite: true,
+          removedTags: ["Source only"],
+          removedAssignees: ["Wormhole removed"],
+          removedDependencies: expect.arrayContaining([expect.any(String)]),
+          commentsMove: true,
+          attachmentsMove: true,
+          audience: { memberCount: 2, guestCount: 0, public: false, authenticated: false },
+        },
+      ]);
+      // The dry run changes neither the card nor its relations.
+      const [beforeMove] = await sql<{ space_id: string; tags: number }[]>`
+        SELECT space_id, (SELECT COUNT(*)::int FROM spaces.item_tags WHERE item_id = ${item!.id}::uuid) AS tags
+        FROM spaces.items WHERE id = ${item!.id}::uuid
+      `;
+      expect(beforeMove).toEqual({ space_id: fixture.sourceSpaceId, tags: 1 });
+
       const result = await transfer({
         sourceSpaceId: fixture.sourceSpaceId,
         itemId: item!.id,
@@ -220,6 +242,38 @@ suite("Spaces wormholes", () => {
       if (!broadAccessResult.ok) throw new Error(broadAccessResult.error);
       expect(broadAccessResult.data.item.assignees?.map((assignee) => assignee.id)).toEqual([fixture.removedUserId]);
       expect(broadAccessResult.data.removedAssigneeCount).toBe(0);
+    } finally {
+      await cleanup(fixture);
+    }
+  });
+
+  test("retains readable targets without write access and redacts unreadable targets", async () => {
+    const fixture = await createFixture();
+    try {
+      const created = await create({
+        sourceSpaceId: fixture.sourceSpaceId,
+        data: { targetColumnId: fixture.targetColumnId, color: "#6366f1" },
+        actor: actorFor(fixture),
+      });
+      if (!created.ok) throw new Error(created.error);
+      const [item] = await sql<{ id: string }[]>`
+        INSERT INTO spaces.items (short_id, space_id, column_id, title, rank)
+        VALUES (${newShortId()}, ${fixture.sourceSpaceId}::uuid, ${fixture.sourceColumnId}::uuid, 'Preview only', 1024) RETURNING id
+      `;
+      const params = { sourceSpaceId: fixture.sourceSpaceId, itemId: item!.id, actor: actorFor(fixture) };
+      await sql`UPDATE auth.access SET permission = 'read' WHERE id = ${fixture.accessIds[1]!}::uuid`;
+      expect(await previewTransfer(params)).toMatchObject({
+        ok: true,
+        data: [{ canWrite: false, target: { spaceId: fixture.targetSpaceId } }],
+      });
+      await sql`UPDATE auth.access SET permission = 'none' WHERE id = ${fixture.accessIds[1]!}::uuid`;
+      expect(await previewTransfer(params)).toMatchObject({ ok: true, data: [{ canWrite: false, target: null, audience: null }] });
+      expect(await previewTransfer({ ...params, actor: { ...params.actor, resourceBoundSpaceId: fixture.sourceSpaceId } })).toMatchObject({
+        ok: true,
+        data: [{ canWrite: false, target: null }],
+      });
+      await sql`UPDATE auth.access SET permission = 'read' WHERE id = ${fixture.accessIds[0]!}::uuid`;
+      expect(await previewTransfer(params)).toMatchObject({ ok: false, status: 403 });
     } finally {
       await cleanup(fixture);
     }

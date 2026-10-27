@@ -190,6 +190,33 @@ describe("MailComposer signature choice", () => {
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
         const path = new URL(request.url).pathname;
+        if (path.endsWith("/sender-choices"))
+          return Response.json([
+            {
+              id: "Send01",
+              label: "Support",
+              fromAddress: "support@example.test",
+              status: "verified",
+              replyTo: "support@example.test",
+              defaultCc: [],
+              defaultBcc: [],
+              signatureName: "Personal signature",
+              assignedReaders: false,
+              audience: { memberCount: 2, guestCount: 0, serviceAccountCount: 0, public: false, authenticated: false },
+            },
+            {
+              id: "Send02",
+              label: "Sales",
+              fromAddress: "sales@example.test",
+              status: "verified",
+              replyTo: "sales@example.test",
+              defaultCc: [],
+              defaultBcc: [],
+              signatureName: "Sales signature",
+              assignedReaders: false,
+              audience: { memberCount: 2, guestCount: 0, serviceAccountCount: 0, public: false, authenticated: false },
+            },
+          ]);
         if (path.endsWith("/lease"))
           return Response.json({
             token: crypto.randomUUID(),
@@ -627,8 +654,12 @@ describe("MailComposer signature choice", () => {
 
   test("a sender menu change uses that sender's personal default", async () => {
     await mount();
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label^="Change sender identity"]')!.click();
-    choose("Sales · sales@example.test", "menuitem");
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Choose sender"]')!.click();
+    const sales =
+      dom.document.querySelector<HTMLElement>('[role="option"][data-value="Send02"]') ??
+      Array.from(dom.document.querySelectorAll<HTMLElement>('[role="option"]')).find((item) => item.textContent?.includes("Sales"));
+    expect(sales).toBeDefined();
+    sales!.click();
     expect(trigger().textContent).toContain("Sales signature");
     await waitFor(() => saves.length > 0);
     expect(saves.at(-1)).toMatchObject({ senderIdentityId: "Send02", signatureTemplateId: "Sign03" });

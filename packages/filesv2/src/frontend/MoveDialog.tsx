@@ -1,7 +1,17 @@
-import { Button, dialogCore, InlineGuidance, PanelDialog, Placeholder, panelDialogOptions, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import {
+  Button,
+  dialogCore,
+  InlineGuidance,
+  PanelDialog,
+  Placeholder,
+  panelDialogOptions,
+  RichSelect,
+  RichSelectFacts,
+  useLocale,
+} from "@k2b/ui";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
-import { type BaseSummary, ErrorSchema, type FileEntry } from "../contracts";
+import { BATCH_LIMIT, type BaseSummary, type DestinationPreview, ErrorSchema, type FileEntry } from "../contracts";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import { apiFailure } from "./file-preview";
@@ -23,7 +33,7 @@ export function openDestinationDialog(options: {
     .then((value) => value ?? null);
 }
 
-function DestinationPicker(props: {
+export function DestinationPicker(props: {
   bases: readonly BaseSummary[];
   sourceBaseId: string;
   sourcePaths: readonly string[];
@@ -49,6 +59,8 @@ function DestinationPicker(props: {
     const pending = new AbortController();
     request = pending;
     if (!baseId) {
+      setLoading(false);
+      setError(false);
       setFolders([]);
       setNext(null);
       return;
@@ -91,7 +103,120 @@ function DestinationPicker(props: {
     void load();
   });
   onCleanup(() => request?.abort());
-  const copy = () => props.copyOnly || location().baseId !== props.sourceBaseId;
+  const [previews, setPreviews] = createSignal<DestinationPreview[]>([]);
+  const [previewLoading, setPreviewLoading] = createSignal(false);
+  const [previewError, setPreviewError] = createSignal(false);
+  const [previewDenied, setPreviewDenied] = createSignal(false);
+  let previewRequest: AbortController | undefined;
+  const key = (baseId: string, folder: string) => JSON.stringify([baseId, folder]);
+  const targets = createMemo(() => {
+    const here = location();
+    if (!here.baseId) return bases().map((item) => ({ baseId: item.id, folder: "", label: baseLabel(item, b(), locale()) }));
+    return [
+      {
+        baseId: here.baseId,
+        folder: here.folder,
+        label: here.folder.split("/").at(-1) || (base() ? baseLabel(base()!, b(), locale()) : t().storage),
+      },
+      ...folders().map((entry) => ({ baseId: here.baseId!, folder: entry.path, label: entry.name })),
+    ];
+  });
+  const loadPreviews = async () => {
+    previewRequest?.abort();
+    const pending = new AbortController();
+    previewRequest = pending;
+    setPreviews([]);
+    setPreviewLoading(true);
+    setPreviewError(false);
+    setPreviewDenied(false);
+    try {
+      const items = new Map<string, DestinationPreview>();
+      const destinations = targets();
+      const sourcePaths = [...new Set(props.sourcePaths)].filter(
+        (path) => !props.sourcePaths.some((parent) => parent !== path && path.startsWith(`${parent}/`)),
+      );
+      for (let sourceOffset = 0; sourceOffset < sourcePaths.length; sourceOffset += BATCH_LIMIT) {
+        for (let offset = 0; offset < destinations.length; offset += BATCH_LIMIT) {
+          const response = await apiClient.bases[":baseId"]["destination-previews"].$post(
+            {
+              param: { baseId: props.sourceBaseId },
+              json: {
+                paths: sourcePaths.slice(sourceOffset, sourceOffset + BATCH_LIMIT),
+                copyOnly: Boolean(props.copyOnly),
+                targets: destinations.slice(offset, offset + BATCH_LIMIT).map(({ baseId, folder }) => ({ baseId, folder })),
+              },
+            },
+            { init: { signal: pending.signal } },
+          );
+          if (!response.ok) {
+            const failure = ErrorSchema.safeParse(await response.clone().json());
+            if (failure.success && failure.data.code === "forbidden") {
+              if (!pending.signal.aborted) setPreviewDenied(true);
+              return;
+            }
+            await apiFailure(response, t().unavailable);
+          }
+          for (const item of await response.json()) {
+            const targetKey = key(item.baseId, item.folder);
+            const previous = items.get(targetKey);
+            const sourceCount = item.sourceCount + (previous?.sourceCount ?? 0);
+            const sourceMovableCount = item.sourceMovableCount + (previous?.sourceMovableCount ?? 0);
+            const copyReason = props.copyOnly
+              ? "requested"
+              : item.baseId !== props.sourceBaseId
+                ? "boundary"
+                : sourceMovableCount === 0
+                  ? "source_read_only"
+                  : null;
+            items.set(targetKey, {
+              ...item,
+              canWrite: item.canWrite && (previous?.canWrite ?? true),
+              sourceCount,
+              sourceMovableCount,
+              copy: copyReason !== null,
+              copyReason,
+            });
+          }
+        }
+      }
+      if (!pending.signal.aborted) setPreviews([...items.values()]);
+    } catch {
+      if (!pending.signal.aborted) setPreviewError(true);
+    } finally {
+      if (!pending.signal.aborted) setPreviewLoading(false);
+    }
+  };
+  createEffect(() => {
+    targets();
+    void loadPreviews();
+  });
+  onCleanup(() => previewRequest?.abort());
+  const previewFor = (baseId: string, folder: string) => previews().find((item) => item.baseId === baseId && item.folder === folder);
+  const selectedPreview = () => (location().baseId ? previewFor(location().baseId!, location().folder) : undefined);
+  const copy = () => selectedPreview()?.copy ?? Boolean(props.copyOnly || location().baseId !== props.sourceBaseId);
+  const consequence = (preview: DestinationPreview) =>
+    preview.copyReason === "boundary"
+      ? b().destinationCopyBoundary
+      : preview.copyReason === "source_read_only"
+        ? b().destinationCopyReadonly
+        : preview.copy
+          ? b().destinationCopy
+          : preview.sourceMovableCount < preview.sourceCount
+            ? b().destinationMixed
+            : b().destinationMove;
+  const accessText = (preview: DestinationPreview) => {
+    const access = preview.access;
+    if (!access) return b().destinationNoWrite;
+    if (access.kind === "personal") return b().destinationPersonal;
+    if (access.kind === "group") return b().destinationGroup({ name: access.name! });
+    return [
+      ...(access.owner ? [b().destinationOwner] : []),
+      ...(access.group ? [access.name ? b().destinationGroup({ name: access.name }) : b().destinationOwningGroup] : []),
+      ...(access.additionalUsers ? [b().destinationExtraUsers({ count: access.additionalUsers })] : []),
+      ...(access.additionalGroups ? [b().destinationExtraGroups({ count: access.additionalGroups })] : []),
+      ...(access.others ? [b().destinationOthers] : []),
+    ].join(" ");
+  };
   const crumbs = () => location().folder.split("/").filter(Boolean);
   // Inside the source base nothing may land in its own subtree; a move additionally needs a different parent.
   const invalid = () =>
@@ -118,7 +243,7 @@ function DestinationPicker(props: {
         <Show when={reset()}>
           <InlineGuidance tone="info">{b().cursorReset}</InlineGuidance>
         </Show>
-        <InlineGuidance icon="ti ti-info-circle">{copy() ? b().otherStorageCopies : b().sameStorageMoves}</InlineGuidance>
+
         <nav aria-label={t().breadcrumbs} class="flex min-h-7 flex-wrap items-center gap-1 text-sm">
           <Button size="xs" variant={location().baseId ? "text" : "subtle"} onClick={() => setLocation({ baseId: null, folder: "" })}>
             <i class="ti ti-database" aria-hidden="true" />
@@ -164,19 +289,60 @@ function DestinationPicker(props: {
             )}
           </For>
         </nav>
-        <div class="filesv2-picker" role="list" aria-label={b().chooseDestination}>
-          <Show
-            when={location().baseId}
-            fallback={
-              <For each={bases()}>
-                {(item) =>
-                  tile(item.kind === "users" ? "ti ti-home" : "ti ti-users", baseLabel(item, b(), locale()), () =>
-                    setLocation({ baseId: item.id, folder: "" }),
-                  )
-                }
-              </For>
-            }
-          >
+        <RichSelect
+          label={b().chooseDestination}
+          placeholder={b().chooseDestination}
+          value={location().baseId ? key(location().baseId!, location().folder) : null}
+          onValueChange={(value) => {
+            const target = targets().find((item) => key(item.baseId, item.folder) === value);
+            if (target) setLocation({ baseId: target.baseId, folder: target.folder });
+          }}
+          items={targets().map((target) => {
+            const preview = previewFor(target.baseId, target.folder);
+            return {
+              value: key(target.baseId, target.folder),
+              label: target.label,
+              icon: "ti ti-folder",
+              description: preview ? consequence(preview) : undefined,
+              disabledReason: previewDenied() || (preview && !preview.canWrite) ? b().destinationNoWrite : undefined,
+            };
+          })}
+          status={loading() || previewLoading() ? "loading" : error() || previewError() ? "error" : "ready"}
+          onRetry={() => {
+            if (error()) void load();
+            else void loadPreviews();
+          }}
+          empty={previewDenied() ? b().destinationNoWrite : b().destinationNone}
+          renderPreview={(item) => {
+            const target = targets().find((target) => key(target.baseId, target.folder) === item.value);
+            const preview = target && previewFor(target.baseId, target.folder);
+            if (!preview || item.disabledReason) return <p>{item.disabledReason}</p>;
+            return (
+              <RichSelectFacts
+                facts={[
+                  { icon: "ti ti-users", text: accessText(preview) },
+                  { icon: "ti ti-history", text: preview.versioningEnabled ? b().destinationVersioned : b().destinationUnversioned },
+                  {
+                    icon: preview.copy ? "ti ti-copy" : "ti ti-arrow-move-right",
+                    text: consequence(preview),
+                    tone: preview.copyReason === "source_read_only" || preview.copyReason === "boundary" ? "warning" : "default",
+                  },
+                ]}
+              />
+            );
+          }}
+        />
+        <Show when={!location().baseId}>
+          <p class="text-xs text-dimmed">{b().destinationBrowse}</p>
+          <div class="filesv2-picker">
+            <For each={bases()}>
+              {(item) => tile("ti ti-database", baseLabel(item, b(), locale()), () => setLocation({ baseId: item.id, folder: "" }))}
+            </For>
+          </div>
+        </Show>
+        <Show when={location().baseId}>
+          <p class="text-xs text-dimmed">{b().destinationBrowse}</p>
+          <div class="filesv2-picker" role="list" aria-label={b().chooseDestination}>
             <Show
               when={!loading()}
               fallback={<Placeholder state="loading" align="left" class="col-span-full" description={t().loadingFiles} />}
@@ -200,8 +366,8 @@ function DestinationPicker(props: {
                 </Show>
               </Show>
             </Show>
-          </Show>
-        </div>
+          </div>
+        </Show>
         <Show when={next()}>
           {(cursor) => (
             <Button variant="ghost" disabled={loading()} onClick={() => void load(cursor())}>
@@ -216,7 +382,9 @@ function DestinationPicker(props: {
         </Button>
         <Button
           variant="primary"
-          disabled={invalid()}
+          disabled={
+            invalid() || loading() || previewLoading() || previewError() || error() || previewDenied() || !selectedPreview()?.canWrite
+          }
           onClick={() => props.close({ baseId: location().baseId!, folder: location().folder, copy: copy() })}
         >
           <i class={copy() ? "ti ti-copy" : "ti ti-arrow-move-right"} aria-hidden="true" />

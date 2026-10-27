@@ -13,6 +13,8 @@ Wähle **Verfassen** für eine neue Nachricht. Wähle in einer Unterhaltung **An
 
 Wähle unter **Von** eine bestätigte Absenderidentität, füge Empfänger hinzu und gib Betreff und Text ein. **Cc/Bcc** zeigt die weiteren Empfängerfelder. Empfänger sehen die Bcc-Liste nie. Deine eigene Kopie in Gesendet behält sie, sodass jedes E-Mail-Programm zeigt, wen du in Bcc gesetzt hast.
 
+Die Absenderauswahl zeigt jeweils Name und Adresse. Die Details erklären, wer das Postfach mitliest, wohin Antworten gehen, und welche Signatur voreingestellt ist. Vor einem neuen Entwurf zeigen sie auch dessen Cc-/Bcc-Vorgaben; ein Absenderwechsel im bestehenden Entwurf behält dessen Empfänger. Noch nicht freigeschaltete Absender bleiben mit einem Grund sichtbar und sind nicht wählbar. Lädt die Liste nicht, wähle **Erneut versuchen**.
+
 Während du in **An**, **Cc** oder **Bcc** tippst, schlägt Mail zuerst Kontakte aus dem Kontaktverzeichnis vor. Danach folgen Adressen, an die dieses Postfach geschrieben oder von denen es E-Mails erhalten hat. Diese Vorschläge funktionieren auch ohne die Contacts-App. Ein Briefsymbol kennzeichnet sie. Mit den Pfeiltasten markierst du einen Vorschlag, mit der Eingabetaste fügst du ihn hinzu. Wer nur zugewiesene Unterhaltungen sieht, bekommt keine Vorschläge aus dem Postfach.
 
 Der Editor ist vom Arbeitsbereich des Postfachs getrennt. **Zurück zum Postfach** speichert die letzten Änderungen, gibt die Bearbeitungssperre frei und kehrt zum Postfach zurück. **In neuem Fenster öffnen** verschiebt denselben Entwurf in ein eigenes Browserfenster. Dabei entsteht nie ein zweiter Entwurf.

@@ -8,8 +8,6 @@ import {
   Button,
   CheckboxCard,
   type Completion,
-  Dropdown,
-  type DropdownItem,
   FileDropTarget,
   IconButton,
   isPanesItemVisible,
@@ -53,6 +51,7 @@ import MailComposerSignature from "./MailComposerSignature";
 import { mailDraftCollaborationCopy, openMailDraftCollaborationDialog } from "./MailDraftCollaborationDialog";
 import MailRecipientInput from "./MailRecipientInput";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
+import MailSenderSelect from "./MailSenderSelect";
 import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
 import { readMailUserPreferences, writeMailComposerPanes } from "./MailSettingsStore";
 import { mailConversationHref, mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
@@ -130,19 +129,6 @@ export default function MailComposer(props: {
   const signatureChoiceVisible = () => props.signatures.templates.length > 0 || Boolean(initialContent.signatureTemplateId);
   const senderDefaultSignatureId = () => defaultSignatureTemplateId(props.signatures, props.identities, identityId());
   const selectedIdentity = () => verifiedIdentities().find((identity) => identity.id === identityId()) ?? null;
-  const identityMenuItems = createMemo<DropdownItem[]>(() =>
-    verifiedIdentities().map((identity) => ({
-      icon: identity.id === identityId() ? "ti ti-check" : "ti ti-user",
-      label: `${identity.label} · ${identity.fromAddress}`,
-      action: () => {
-        if (identity.id !== identityId()) {
-          setIdentityId(identity.id);
-          setSignatureTemplateId(defaultSignatureTemplateId(props.signatures, props.identities, identity.id));
-        }
-        writeMailSenderPreference(localStorage, props.mailboxId, identity.id);
-      },
-    })),
-  );
   const [to, setTo] = createSignal(formatMailRecipients(initialContent.to));
   const [cc, setCc] = createSignal(formatMailRecipients(initialContent.cc));
   const [bcc, setBcc] = createSignal(formatMailRecipients(initialContent.bcc));
@@ -1179,42 +1165,25 @@ export default function MailComposer(props: {
 
   const composerIntent = () => draft()?.intent ?? initial.intent;
   const retryPreview = () => void previewQuery.refresh();
-  const IdentitySwitcher = () => {
-    const label = () => selectedIdentity()?.label ?? t().chooseSender;
-    const address = () => selectedIdentity()?.fromAddress ?? "";
-    const Content = () => (
-      <>
-        <span class="shrink-0 text-dimmed">{t().from}</span>
-        <span class="min-w-0 truncate font-medium text-secondary" title={address()}>
-          {label()}
-        </span>
-      </>
-    );
-
-    return (
-      <Show
-        when={verifiedIdentities().length > 1}
-        fallback={
-          <span class="flex min-w-0 items-center gap-1.5">
-            <Content />
-          </span>
-        }
-      >
-        <Dropdown.Root position="bottom-right" width="18rem" items={identityMenuItems()}>
-          <Dropdown.Trigger
-            appearance="plain"
-            type="button"
-            class="focus-ui flex max-w-[min(18rem,45vw)] min-w-0 items-center gap-1.5 rounded-[var(--ui-radius-control)] px-1.5 py-1 text-sm hover:bg-[var(--ui-hover)] disabled:cursor-default"
-            aria-label={t().changeSender({ label: label(), address: address() })}
-            disabled={!editable()}
-          >
-            <Content />
-            <i class="ti ti-chevron-down shrink-0 text-xs text-dimmed" aria-hidden="true" />
-          </Dropdown.Trigger>
-        </Dropdown.Root>
-      </Show>
-    );
-  };
+  const IdentitySwitcher = () => (
+    <div class="flex min-w-0 items-center gap-1.5">
+      <span class="shrink-0 text-dimmed">{t().from}</span>
+      <MailSenderSelect
+        mailboxId={props.mailboxId}
+        identities={props.identities}
+        value={identityId()}
+        disabled={!editable()}
+        appearance="plain"
+        onChange={(id) => {
+          if (id !== identityId()) {
+            setIdentityId(id);
+            setSignatureTemplateId(defaultSignatureTemplateId(props.signatures, props.identities, id));
+          }
+          writeMailSenderPreference(localStorage, props.mailboxId, id);
+        }}
+      />
+    </div>
+  );
 
   const slashCompletion = createMemo<Completion[]>(() => [
     {

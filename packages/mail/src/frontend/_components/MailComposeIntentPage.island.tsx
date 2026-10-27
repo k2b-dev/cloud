@@ -10,6 +10,7 @@ import type { MailContactDirectory } from "../../contact-directory-settings";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
 import { readApiError } from "./api-response";
 import { readContact } from "./contact-capabilities";
+import MailSenderSelect from "./MailSenderSelect";
 import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
 import { type MailComposeIntentErrorCode, parseMailtoIntent } from "./mail-compose-intent";
 import { mailDraftReturnHref, mailDraftSeedHref } from "./mail-compose-route";
@@ -290,17 +291,13 @@ export default function MailComposeIntentPage(props: {
                 }))}
                 disabled={draftCreation.loading()}
               />
-              <Select
-                label={t().from}
-                placeholder={identityLoading() ? t().loadingSenders : t().chooseSender}
-                value={identityId}
-                onValueChange={setIdentityId}
-                options={identities().map((identity) => ({
-                  id: identity.id,
-                  label: identity.label,
-                  description: `${identity.displayName ? `${identity.displayName} · ` : ""}${identity.fromAddress}`,
-                }))}
-                disabled={!mailboxId() || identityLoading() || draftCreation.loading()}
+              <MailSenderSelect
+                showRecipientDefaults
+                mailboxId={mailboxId()}
+                identities={allIdentities()}
+                value={identityId() || null}
+                onChange={setIdentityId}
+                disabled={draftCreation.loading()}
               />
               <Show when={identityError()}>
                 {(message) => (

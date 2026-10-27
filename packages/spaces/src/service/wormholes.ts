@@ -9,10 +9,11 @@ import type {
   SpaceWormholeTarget,
   UpdateWormhole,
   User,
+  WormholeTransferPreview,
   WormholeTransferResult,
 } from "@/contracts";
 import { withShortId } from "../lib/short-id";
-import { buildSpacePrincipalCondition, getSpacePermission } from "./access";
+import { buildSpacePrincipalCondition, getSpaceAudiences, getSpacePermission } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as columns from "./columns";
 import { publishDependentsChange } from "./item-dependencies";
@@ -309,6 +310,113 @@ export const remove = async (params: { sourceSpaceId: string; id: string; actor:
   return { ok: true, data: undefined };
 };
 
+/** Used by the dry run and the transaction: people follow readable grants; accounts require a direct grant. */
+const retainedAssignees = async (db: typeof sql, itemId: string, targetSpaceId: string) => {
+  const assigneeRows = await db<{ user_id: string | null; service_account_id: string | null }[]>`
+    SELECT user_id, service_account_id FROM spaces.item_assignees WHERE item_id = ${itemId}::uuid
+  `;
+  const accessRows = await db<{ access_id: string }[]>`
+    SELECT access_id FROM spaces.space_access WHERE space_id = ${targetSpaceId}::uuid
+  `;
+  // Broad access preserves existing people only. Accounts always need their own direct grant.
+  const [broadAccess] = await db<{ allowed: boolean }[]>`
+    SELECT EXISTS (
+    SELECT 1
+    FROM spaces.space_access sa
+    JOIN auth.access a ON a.id = sa.access_id
+    WHERE sa.space_id = ${targetSpaceId}::uuid
+      AND a.permission IN ('read'::auth.permission_level, 'write'::auth.permission_level, 'admin'::auth.permission_level)
+      AND (
+      a.authenticated_only = true
+      OR (
+        a.user_id IS NULL
+        AND a.group_id IS NULL
+        AND a.service_account_id IS NULL
+        AND a.authenticated_only = false
+      )
+      )
+    ) AS allowed
+  `;
+  const userIds = assigneeRows.flatMap((row) => (row.user_id ? [row.user_id] : []));
+  const accountIds = assigneeRows.flatMap((row) => (row.service_account_id ? [row.service_account_id] : []));
+  const validAccountIds = (
+    await listServiceAccountsWithAccess({
+      spaceId: targetSpaceId,
+      ids: accountIds,
+      limit: accountIds.length,
+      db: db,
+    })
+  ).map((account) => account.id);
+  const validUserIds = broadAccess?.allowed
+    ? userIds
+    : (
+        await listUsersWithAccess({
+          accessIds: accessRows.map((row) => row.access_id),
+          userIds,
+          limit: Math.max(assigneeRows.length, 1),
+          db: db,
+        })
+      ).map((user) => user.id);
+
+  return { validUserIds, validAccountIds };
+};
+
+/** A read-only explanation, never authority for the subsequent transfer. Unreadable targets stay redacted. */
+export const previewTransfer = async (params: {
+  sourceSpaceId: string;
+  itemId: string;
+  actor: WormholeActor;
+}): Promise<MutationResult<WormholeTransferPreview[]>> => {
+  if (!(await canAccess(params.sourceSpaceId, params.actor, "write"))) return denied();
+  const item = await getItem({ id: params.itemId });
+  if (!item || item.spaceId !== params.sourceSpaceId) return { ok: false, error: "Item not found", status: 404 };
+  if (item.recurrence || item.recurringEventId) return { ok: false, error: "Recurring items cannot move through wormholes", status: 400 };
+  const dependencies = await sql<{ title: string }[]>`
+    SELECT other.title FROM spaces.item_dependencies d
+    JOIN spaces.items other ON other.id = CASE WHEN d.item_id = ${params.itemId}::uuid THEN d.blocker_item_id ELSE d.item_id END
+    WHERE d.item_id = ${params.itemId}::uuid OR d.blocker_item_id = ${params.itemId}::uuid
+    ORDER BY other.title, other.id
+  `;
+  const rows = await listRows(params.sourceSpaceId);
+  const targetStates = new Map<
+    string,
+    { readable: boolean; writable: boolean; kept: Awaited<ReturnType<typeof retainedAssignees>> | null }
+  >();
+  for (const targetSpaceId of new Set(rows.map((row) => row.target_space_id))) {
+    const readable = await canAccess(targetSpaceId, params.actor, "read");
+    targetStates.set(targetSpaceId, {
+      readable,
+      writable: readable && (await canAccess(targetSpaceId, params.actor, "write")),
+      kept: readable ? await retainedAssignees(sql, params.itemId, targetSpaceId) : null,
+    });
+  }
+  const audiences = await getSpaceAudiences({
+    spaceIds: [...targetStates].filter(([, state]) => state.readable).map(([id]) => id),
+    subject: params.actor.subject,
+    boundSpaceId: params.actor.resourceBoundSpaceId,
+  });
+  if (!audiences.ok) return denied();
+  const result: WormholeTransferPreview[] = [];
+  for (const row of rows) {
+    const { readable, writable, kept } = targetStates.get(row.target_space_id)!;
+    result.push({
+      ...mapWormhole(row, readable),
+      canWrite: writable,
+      audience: readable ? audiences.data[row.target_space_id]! : null,
+      removedTags: (item.tags ?? []).map((tag) => tag.name),
+      removedAssignees: kept
+        ? (item.assignees ?? [])
+            .filter((assignee) => !(assignee.kind === "service_account" ? kept.validAccountIds : kept.validUserIds).includes(assignee.id))
+            .map((assignee) => assignee.displayName)
+        : [],
+      removedDependencies: dependencies.map((dependency) => dependency.title),
+      commentsMove: true,
+      attachmentsMove: true,
+    });
+  }
+  return { ok: true, data: result };
+};
+
 /**
  * Moves an item into the wormhole's destination. The item leaves the Space whose grants backed its claim, so a
  * transfer ends the claim and is guarded like completion: the holder names it with `claimId`, and anyone else takes
@@ -395,52 +503,7 @@ export const transfer = async (params: {
     const [tagCount] = await tx<{ count: number }[]>`
       SELECT COUNT(*)::int AS count FROM spaces.item_tags WHERE item_id = ${params.itemId}::uuid
     `;
-    const assigneeRows = await tx<{ user_id: string | null; service_account_id: string | null }[]>`
-      SELECT user_id, service_account_id FROM spaces.item_assignees WHERE item_id = ${params.itemId}::uuid
-    `;
-    const accessRows = await tx<{ access_id: string }[]>`
-      SELECT access_id FROM spaces.space_access WHERE space_id = ${locked.target_space_id}::uuid
-    `;
-    // Broad access preserves existing people only. Accounts always need their own direct grant.
-    const [broadAccess] = await tx<{ allowed: boolean }[]>`
-      SELECT EXISTS (
-        SELECT 1
-        FROM spaces.space_access sa
-        JOIN auth.access a ON a.id = sa.access_id
-        WHERE sa.space_id = ${locked.target_space_id}::uuid
-          AND a.permission IN ('read'::auth.permission_level, 'write'::auth.permission_level, 'admin'::auth.permission_level)
-          AND (
-            a.authenticated_only = true
-            OR (
-              a.user_id IS NULL
-              AND a.group_id IS NULL
-              AND a.service_account_id IS NULL
-              AND a.authenticated_only = false
-            )
-          )
-      ) AS allowed
-    `;
-    const userIds = assigneeRows.flatMap((row) => (row.user_id ? [row.user_id] : []));
-    const accountIds = assigneeRows.flatMap((row) => (row.service_account_id ? [row.service_account_id] : []));
-    const validAccountIds = (
-      await listServiceAccountsWithAccess({
-        spaceId: locked.target_space_id,
-        ids: accountIds,
-        limit: accountIds.length,
-        db: tx,
-      })
-    ).map((account) => account.id);
-    const validUserIds = broadAccess?.allowed
-      ? userIds
-      : (
-          await listUsersWithAccess({
-            accessIds: accessRows.map((row) => row.access_id),
-            userIds,
-            limit: Math.max(assigneeRows.length, 1),
-            db: tx,
-          })
-        ).map((user) => user.id);
-
+    const { validUserIds, validAccountIds } = await retainedAssignees(tx, params.itemId, locked.target_space_id);
     await tx`DELETE FROM spaces.item_tags WHERE item_id = ${params.itemId}::uuid`;
     const removedAssignees = await tx`
       DELETE FROM spaces.item_assignees

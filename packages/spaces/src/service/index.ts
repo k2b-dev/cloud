@@ -158,6 +158,7 @@ export const spacesService = {
     reorder: wormholes.reorder,
     remove: wormholes.remove,
     transfer: wormholes.transfer,
+    previewTransfer: wormholes.previewTransfer,
   },
   item: {
     work,
@@ -290,6 +291,7 @@ export const spacesService = {
     remove: access.revokeSpaceAccess,
     update: access.updateSpaceAccessPermission,
     add: (config: { spaceId: string; accessId: string }) => access.addSpaceAccess(config.spaceId, config.accessId),
+    audiences: access.getSpaceAudiences,
     count: (config: { spaceId: string }) => access.countSpaceAccess(config.spaceId),
     getPermission: access.getSpacePermission,
     ensureServiceAccount: access.ensureSpaceServiceAccountAccess,

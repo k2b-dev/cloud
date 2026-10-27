@@ -12,6 +12,8 @@ import {
   getEffectivePermissions,
   listUsersWithAccess,
   resolveDisplayNames,
+  summarizeAccessAudience,
+  summarizeAccessAudiences,
 } from "./access";
 
 type Fixture = {
@@ -429,4 +431,35 @@ test("resolveDisplayNames batches each kind once and leaves missing names absent
     new Response(child.stderr).text(),
   ]);
   expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+});
+
+suite("summarizeAccessAudience", () => {
+  test("counts distinct nested members and guests, excludes expired readers, and keeps broad grants explicit", async () => {
+    const fixture = await createFixture();
+    try {
+      await sql`UPDATE auth.users SET profile = 'guest' WHERE id = ${fixture.userIds.nested}::uuid`;
+      expect(await summarizeAccessAudience({ accessIds: [...fixture.accessIds, fixture.groupAccessId] })).toEqual({
+        memberCount: 3,
+        guestCount: 1,
+        serviceAccountCount: 0,
+        public: true,
+        authenticated: true,
+      });
+      expect(await summarizeAccessAudiences({ accessIdsByResource: { all: fixture.accessIds, empty: [] } })).toMatchObject({
+        all: { memberCount: 3, guestCount: 1, public: true },
+        empty: { memberCount: 0, guestCount: 0, public: false },
+      });
+      await sql`UPDATE auth.users SET account_expires = '2000-01-01T00:00:00Z' WHERE id = ${fixture.userIds.group}::uuid`;
+      expect(await summarizeAccessAudience({ accessIds: fixture.accessIds })).toMatchObject({ memberCount: 2, guestCount: 1 });
+      expect(await summarizeAccessAudience({ accessIds: [] })).toEqual({
+        memberCount: 0,
+        guestCount: 0,
+        serviceAccountCount: 0,
+        public: false,
+        authenticated: false,
+      });
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
 });

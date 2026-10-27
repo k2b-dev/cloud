@@ -337,3 +337,5 @@ Mail records changes in the conversation activity. If another person changes eit
 In a mailbox, press **Cmd/Ctrl+Shift+K** to search its messages and attachments. The mailbox name appears as a chip. Remove the chip to search the whole Cloud.
 
 For an open calendar invitation, Cloud search offers **Add or update this event in Spaces**. When you can reply, it also offers **Prepare a reply to this invitation**. Choose a calendar where you have **Edit** access. Then confirm the import or choose your response. Replies open as drafts that you review before sending.
+
+The calendar choice below an invitation names who can see the event in each shared calendar. Choose a calendar with **Edit** access, then use the normal import action. If the calendar list fails to load, choose **Retry**; without an available calendar, importing stays unavailable.
