@@ -207,7 +207,6 @@ export default function ContactNotesSection(props: Props) {
     <Discussion
       ref={sectionRoot}
       label={t().comments}
-      icon="ti ti-message"
       count={notesPage().total}
       actions={
         props.canWrite && !composerOpen() ? (
@@ -235,6 +234,7 @@ export default function ContactNotesSection(props: Props) {
       </Show>
 
       <Discussion.List
+        fold={3}
         loading={(notesQuery.loading() || notesQuery.refreshing()) && notesPage().items.length === 0}
         loadingLabel={t().loadingComments}
         error={notesQuery.error()?.message}
@@ -255,12 +255,14 @@ export default function ContactNotesSection(props: Props) {
                 }
                 author={note.authorDisplayName}
                 timestamp={
-                  <time dateTime={note.createdAt} title={dates.formatDateTime(note.createdAt)}>
-                    {dates.formatDateTimeRelative(note.createdAt)}
+                  <time dateTime={note.createdAt} title={dates.formatDateTime(note.createdAt, { locale: locale() })}>
+                    {dates.formatDateTimeRelative(note.createdAt, { locale: locale() })}
                   </time>
                 }
                 meta={
-                  note.updatedAt !== note.createdAt ? <span title={dates.formatDateTime(note.updatedAt)}>{t().edited}</span> : undefined
+                  note.updatedAt !== note.createdAt ? (
+                    <span title={dates.formatDateTime(note.updatedAt, { locale: locale() })}>{t().edited}</span>
+                  ) : undefined
                 }
                 actions={
                   props.canWrite && !isEditing() && (note.canEdit || note.canDelete) ? (

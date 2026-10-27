@@ -129,23 +129,9 @@ export default function CommentsSection(props: Props) {
   return (
     <Discussion
       label={props.recurrenceId ? t.occurrenceComments : t.comments}
-      icon="ti ti-message"
       count={props.total}
       style="view-transition-name: space-item-detail-comments"
     >
-      <Show when={props.canWrite}>
-        <Discussion.Composer
-          label={t.addComment}
-          placeholder={t.commentPlaceholder}
-          submitLabel={t.postComment}
-          onSubmit={async (content) => {
-            await createCommentMutation.mutate(content);
-            const error = createCommentMutation.error();
-            if (error) throw error;
-          }}
-        />
-      </Show>
-
       <Discussion.List
         loading={props.loading && sortedComments().length === 0}
         loadingLabel={t.loadingComments}
@@ -155,6 +141,7 @@ export default function CommentsSection(props: Props) {
         loadingMore={props.loadingMore}
         loadMoreLabel={t.loadEarlierComments}
         onLoadMore={props.onLoadMore}
+        fold={3}
       >
         <For each={sortedComments()}>
           {(comment) => (
@@ -210,6 +197,19 @@ export default function CommentsSection(props: Props) {
           )}
         </For>
       </Discussion.List>
+
+      <Show when={props.canWrite}>
+        <Discussion.Composer
+          label={t.addComment}
+          placeholder={t.commentPlaceholder}
+          submitLabel={t.postComment}
+          onSubmit={async (content) => {
+            await createCommentMutation.mutate(content);
+            const error = createCommentMutation.error();
+            if (error) throw error;
+          }}
+        />
+      </Show>
     </Discussion>
   );
 }
