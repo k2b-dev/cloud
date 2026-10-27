@@ -1,4 +1,4 @@
-import { AI_MODEL_SLOTS, type AiModelSlot } from "@k2b/cloud/ai";
+import { AI_MODEL_SLOTS, type AiModelSlot } from "@k2b/cloud/shared";
 
 /** The AI area's sections. Each one is a row in the first column. */
 export const AI_AREA_SECTIONS = ["classes", "providers", "general", "budgets", "jobs", "tools", "skills", "projects", "usage"] as const;

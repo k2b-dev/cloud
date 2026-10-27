@@ -59,7 +59,7 @@ export default function AiClassDetail(props: {
   };
   const name = (variantId: string | null | undefined) => {
     const found = find(variantId);
-    return found ? aiVariantName(found.model, found.variant) : t().clsUnassigned;
+    return found ? aiVariantName(found.model, found.variant, props.variants) : t().clsUnassigned;
   };
 
   /** Only models that can fill this slot: chat for classes, image capability for the image tool, transcription for audio. */
@@ -77,7 +77,7 @@ export default function AiClassDetail(props: {
       return [
         {
           value: variant.id,
-          label: aiVariantName(model, variant),
+          label: aiVariantName(model, variant, props.variants),
           description: [
             variant.reasoningEffort ? t().variantFallback({ p: effortLabel(t(), variant.reasoningEffort) }) : "",
             others.map((slot) => aiSlotLabel(t(), slot)).join(", "),
@@ -197,7 +197,6 @@ export default function AiClassDetail(props: {
         </Show>
       </Show>
       <section class="grid gap-2">
-        <h3 class="text-sm font-semibold">{isClass() ? t().clsModelHead : t().slotChoose}</h3>
         <RichSelect
           label={isClass() ? t().clsModelHead : t().slotChoose}
           title={aiSlotLabel(t(), props.slot)}

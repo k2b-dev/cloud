@@ -110,7 +110,7 @@ function DeleteDialog(props: { target: AiDeleteTarget; close: () => void }) {
       ? props.target.provider.label
       : props.target.kind === "model"
         ? props.target.model.label
-        : aiVariantName(props.target.model, props.target.variant);
+        : `${props.target.model.label} · ${props.target.variant.label}`;
   const sourceProvider = () => props.target.provider;
   const removedVariantIds = (data: Catalog) =>
     props.target.kind === "variant"
@@ -141,7 +141,7 @@ function DeleteDialog(props: { target: AiDeleteTarget; close: () => void }) {
       return [
         {
           value: variant.id,
-          label: aiVariantName(model, variant),
+          label: aiVariantName(model, variant, data.variants),
           description: provider.label,
           section: provider.id,
         },

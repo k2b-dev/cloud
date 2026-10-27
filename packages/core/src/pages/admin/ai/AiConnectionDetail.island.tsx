@@ -230,6 +230,7 @@ export default function AiConnectionDetail(props: { provider: AiProvider & { mod
         </Show>
         <div class="grid gap-1.5">
           <SegmentedControl
+            class="w-auto"
             label={t().dataBoundary}
             value={() => draft().dataBoundary}
             onValueChange={(dataBoundary) => update({ dataBoundary })}

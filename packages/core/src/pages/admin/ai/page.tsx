@@ -11,7 +11,7 @@ import {
 } from "@k2b/cloud/ai/admin";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
-import { type AiModel, type AiModelVariant, AiUsageQuerySchema } from "@k2b/cloud/shared";
+import { type AiModel, type AiModelVariant, AiUsageQuerySchema, isAdminUser } from "@k2b/cloud/shared";
 import { AdminLayout, getLocalizedRuntimeContext, getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
 import { Placeholder } from "@k2b/ui";
 import type { JSX } from "solid-js";
@@ -194,6 +194,7 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <AdminLayout c={c} title={t.aiArea} ownMain>
       <AiAreaView
+        noPermission={!isAdminUser(c.get("user"))}
         t={t}
         locale={locale}
         query={query}

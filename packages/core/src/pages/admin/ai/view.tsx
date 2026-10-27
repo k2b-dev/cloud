@@ -51,6 +51,8 @@ const ProviderMark = (props: { provider: Pick<ProviderRow, "id" | "label"> }) =>
   <AiModelIcon icon={aiModelDisplayIcon({ kind: "provider" }, props.provider)} size="sm" />
 );
 
+const host = (url: string | null) => (url ? url.replace(/^https?:\/\//, "").replace(/\/.*$/, "") : "");
+
 const providerLine = (t: AiAreaMessages, provider: ProviderRow) => {
   const state = aiProviderState(provider);
   return `${aiProviderStateLabel(t, state)} · ${t.nModels({ p: provider.modelCount })}`;
@@ -90,6 +92,7 @@ function AreaColumn(props: {
             const state = aiProviderState(provider);
             return (
               <AppWorkspace.SidebarItem
+                variant="object"
                 href={aiAreaHref({ sec: "providers", p: provider.id })}
                 active={props.query.sec === "providers" && props.query.p === provider.id}
                 description={
@@ -161,7 +164,7 @@ function ProviderColumn(props: { t: AiAreaMessages; locale: string; query: AiAre
           description={
             <span class="inline-flex items-center gap-1.5">
               <StatusBadge tone={aiProviderStateTone(state)} variant="dot" label="" class="shrink-0" />
-              {aiProviderStateLabel(t, state)}
+              {[aiProviderStateLabel(t, state), host(props.providerUrl)].filter(Boolean).join(" · ")}
             </span>
           }
         >
@@ -179,6 +182,7 @@ function ProviderColumn(props: { t: AiAreaMessages; locale: string; query: AiAre
         <AppWorkspace.SidebarSection title={t.nModels({ p: models.length })}>
           {models.map((model) => (
             <AppWorkspace.SidebarItem
+              variant="object"
               href={aiAreaHref({ sec: "providers", p: props.provider.id, m: model.id })}
               active={props.query.m === model.id}
               description={variantsOf(model)
@@ -218,13 +222,14 @@ function ClassesColumn(props: { t: AiAreaMessages; query: AiAreaQuery; overview:
     const issue = affected(variantId);
     return (
       <AppWorkspace.SidebarItem
+        variant="object"
         href={aiAreaHref({ sec: "classes", slot })}
         active={props.query.slot === slot}
         description={
           <span class="grid">
             {subtitle ? <span>{subtitle}</span> : null}
             <span class={found ? "text-(--k2b-text-secondary)" : "text-(--k2b-warning-text)"}>
-              {found ? aiVariantName(found.model, found.variant) : fallback}
+              {found ? aiVariantName(found.model, found.variant, props.index.variants) : fallback}
               {issue ? <span class="text-(--k2b-danger-text)"> · {issue}</span> : null}
             </span>
           </span>
@@ -285,6 +290,8 @@ export type AiAreaViewProps = {
   retryHref: string;
   /** Content of a wide section, which fills the second and third column. */
   wide?: JSX.Element;
+  /** The person is no administrator: a note instead of the content. */
+  noPermission?: boolean;
 };
 
 type AssignmentDetail = {
@@ -377,7 +384,16 @@ export function AiAreaView(props: AiAreaViewProps) {
   const secondColumn = (): JSX.Element => {
     if (!overview || !index) return failure;
     if (query.sec === "providers" && provider)
-      return <ProviderColumn t={t} locale={locale} query={query} provider={provider} index={index} />;
+      return (
+        <ProviderColumn
+          t={t}
+          locale={locale}
+          query={query}
+          provider={provider}
+          providerUrl={providerDetail?.baseUrl ?? null}
+          index={index}
+        />
+      );
     if (query.sec === "providers" && query.p) return <Placeholder state="error" icon="ti ti-plug-off" title={t.providerMissing} />;
     if (query.sec === "classes") return <ClassesColumn t={t} query={query} overview={overview} index={index} />;
     if (overview.providers.length === 0)
@@ -417,7 +433,7 @@ export function AiAreaView(props: AiAreaViewProps) {
   };
 
   const detailDescription = (): string | undefined => {
-    if (model) return provider?.label;
+    if (model) return `${model.providerModel} · ${provider?.label ?? ""}`;
     if (query.pane === "conn") return provider?.label;
     if (query.slot)
       return isAiModelClass(query.slot) ? aiClassSubtitle(t, query.slot) : query.slot === "vision" ? t.slotd_vision : t.slotd_audio;
@@ -431,6 +447,24 @@ export function AiAreaView(props: AiAreaViewProps) {
     return query.sec === "classes" ? t.recs : t.g_models;
   };
 
+  if (props.noPermission)
+    return (
+      <AppWorkspace.Main level="area">
+        <AppWorkspace.MainPane id="area" label={t.aiArea}>
+          <Placeholder
+            state="no-access"
+            icon="ti ti-lock"
+            title={t.nopermTitle}
+            description={t.nopermSub}
+            action={
+              <a class="k2b-button" data-variant="secondary" href="/">
+                {t.toStart}
+              </a>
+            }
+          />
+        </AppWorkspace.MainPane>
+      </AppWorkspace.Main>
+    );
   return (
     <AppWorkspace.Main level={isWideSection(section) ? (level === "area" ? "area" : "section") : level}>
       <AppWorkspace.MainPane

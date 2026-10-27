@@ -22,6 +22,8 @@ describe("Core compression boundaries", () => {
     "/admin/settings?tab=ai-skills",
     "/admin/settings?tab=ai-jobs",
     "/admin/settings?tab=ai-providers",
+    "/admin/ai",
+    "/admin/ai?sec=providers&p=example",
     "/admin/settings/__new_route__",
   ]) {
     test(`${path} opts out before authentication`, async () => {

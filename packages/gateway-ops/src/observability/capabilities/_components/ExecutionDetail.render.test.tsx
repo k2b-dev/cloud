@@ -61,7 +61,7 @@ test("execution detail shows correlation, shape and the user's AI usage without 
   expect(html).toContain("3 items");
   expect(html).toContain("&lt;script");
   expect(html).not.toContain("<script>");
-  expect(html).toContain("/admin/settings?tab=ai-usage");
+  expect(html).toContain("/admin/ai?sec=usage");
   expect(html).toContain("5de41b38-a3ac-47f3-b47c-da6472afbb42");
   expect(html).toContain("/admin/observability/capabilities?app=contacts");
 });

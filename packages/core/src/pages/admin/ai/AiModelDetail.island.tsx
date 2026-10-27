@@ -342,9 +342,6 @@ export default function AiModelDetail(props: {
           />
         )}
       </Show>
-      <p class="-mt-2 font-mono text-xs text-(--k2b-text-muted)">
-        {base().providerModel} · {props.provider.label}
-      </p>
       <fieldset class="grid gap-6" disabled={saving()}>
         <Section
           title={t().usedAs}
@@ -421,21 +418,24 @@ export default function AiModelDetail(props: {
             <span class="text-sm font-medium">{t().iconLabel}</span>
             <div class="flex flex-wrap items-center gap-3">
               <AiModelIcon icon={aiModelDisplayIcon(draft().icon, providerMark())} size="md" />
-              <SegmentedControl
-                ariaLabel={t().iconLabel}
-                size="sm"
-                value={() => draft().icon.kind}
-                onValueChange={(kind) => {
-                  if (kind === "provider") update({ icon: { kind: "provider" } });
-                  if (kind === "emoji") setEmojiAnchor(emojiButton ?? null);
-                  if (kind === "image") fileInput?.click();
-                }}
-                options={[
-                  { value: "provider", label: t().iconProvider },
-                  { value: "emoji", label: t().iconEmoji },
-                  { value: "image", label: t().iconUpload },
-                ]}
-              />
+              <span class="inline-flex">
+                <SegmentedControl
+                  ariaLabel={t().iconLabel}
+                  class="w-auto"
+                  size="sm"
+                  value={() => draft().icon.kind}
+                  onValueChange={(kind) => {
+                    if (kind === "provider") update({ icon: { kind: "provider" } });
+                    if (kind === "emoji") setEmojiAnchor(emojiButton ?? null);
+                    if (kind === "image") fileInput?.click();
+                  }}
+                  options={[
+                    { value: "provider", label: t().iconProvider },
+                    { value: "emoji", label: t().iconEmoji },
+                    { value: "image", label: t().iconUpload },
+                  ]}
+                />
+              </span>
               <Button
                 ref={emojiButton}
                 type="button"
@@ -533,6 +533,7 @@ export default function AiModelDetail(props: {
 
         <Section title={t().access} description={t().accessSub}>
           <SegmentedControl
+            class="w-auto"
             ariaLabel={t().access}
             value={() => (draft().restricted ? "restricted" : "all")}
             onValueChange={(value) => update({ restricted: value === "restricted" })}
@@ -583,6 +584,7 @@ export default function AiModelDetail(props: {
               required
             />
             <SegmentedControl
+              class="w-auto"
               label={t().kind}
               value={() => draft().kind}
               onValueChange={(kind) => update({ kind })}

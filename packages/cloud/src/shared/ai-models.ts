@@ -184,20 +184,23 @@ export type AiPeopleModelIcon =
 /** Neutral provider marks: Cloud ships no brand logos, so a provider shows its initials on one of these colours. */
 export const AI_PROVIDER_MARK_COLORS = ["#0f766e", "#6d28d9", "#475569", "#15803d", "#1d4ed8", "#c2410c", "#be123c", "#a16207"] as const;
 /** The initials and colour a provider shows wherever it has no logo, the same in the AI area and in every chooser. */
-export const aiProviderMark = (provider: { id: string; label: string }): { text: string; color: string } => ({
-  text:
-    provider.label
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((word) => word[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase() || "AI",
-  color:
-    AI_PROVIDER_MARK_COLORS[
-      Array.from(provider.id).reduce((sum, letter) => (sum * 31 + letter.charCodeAt(0)) >>> 0, 0) % AI_PROVIDER_MARK_COLORS.length
-    ]!,
-});
+export const aiProviderMark = (provider: { id: string; label: string }): { text: string; color: string } => {
+  const words = provider.label.split(/\s+/).filter(Boolean);
+  const capitals = words[0]?.match(/\p{Lu}/gu) ?? [];
+  const text =
+    words.length > 1
+      ? `${words[0]![0]}${words[1]![0]}`
+      : capitals.length >= 2
+        ? capitals.slice(0, 2).join("")
+        : (words[0] ?? "").slice(0, 2);
+  return {
+    text: text.toUpperCase() || "AI",
+    color:
+      AI_PROVIDER_MARK_COLORS[
+        Array.from(provider.id).reduce((sum, letter) => (sum * 31 + letter.charCodeAt(0)) >>> 0, 0) % AI_PROVIDER_MARK_COLORS.length
+      ]!,
+  };
+};
 export type AiPeopleModels = {
   status: "ok";
   selection: AiModelRequest | null;

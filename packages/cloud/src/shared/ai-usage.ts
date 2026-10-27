@@ -36,4 +36,4 @@ export const aiUsageSearchParams = (query: Partial<AiUsageQuery>): URLSearchPara
   for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== "") params.set(key, String(value));
   return params;
 };
-export const aiUsageHref = (query: Partial<AiUsageQuery>) => `/admin/settings?tab=ai-usage&${aiUsageSearchParams(query)}`;
+export const aiUsageHref = (query: Partial<AiUsageQuery>) => `/admin/ai?sec=usage&${aiUsageSearchParams(query)}`;

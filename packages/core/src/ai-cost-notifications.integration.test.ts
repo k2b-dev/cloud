@@ -79,7 +79,7 @@ suiteFor("database", "valkey")("background cost alert recovery", () => {
         [localAdmin.id, localAdmin.id, ipaAdmin.id, ipaAdmin.id].sort(),
       );
       expect(new Set(events.map((event) => event.idempotency_key)).size).toBe(4);
-      expect(events.every((event) => event.target_href === "/admin/settings?tab=ai-quotas&view=rules")).toBe(true);
+      expect(events.every((event) => event.target_href === "/admin/ai?sec=budgets&view=rules")).toBe(true);
       expect(events.map((event) => event.title).sort()).toEqual(
         ["Background AI cost warning", "Background AI cost warning", "Background AI stopped", "Background AI stopped"].sort(),
       );

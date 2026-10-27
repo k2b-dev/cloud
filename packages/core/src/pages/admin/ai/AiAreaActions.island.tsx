@@ -254,6 +254,7 @@ function AddProviderDialog(props: { close: () => void }) {
                   </Show>
                   <div class="grid gap-1.5">
                     <SegmentedControl
+                      class="w-auto"
                       label={t().dataBoundary}
                       value={boundary}
                       onValueChange={setBoundary}

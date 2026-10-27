@@ -110,9 +110,12 @@ export const aiClassSubtitle = (t: AiAreaMessages, modelClass: AiModelClass): st
 
 export const isAiModelClass = (slot: AiModelSlot): slot is AiModelClass => AI_MODEL_CLASSES.some((modelClass) => modelClass === slot);
 
-/** "GPT-OSS · Gründlich"; the standard variant shows the model name alone. */
-export const aiVariantName = (model: Pick<AiModel, "id" | "label">, variant: Pick<AiModelVariant, "id" | "label">): string =>
-  variant.id === model.id ? model.label : `${model.label} · ${variant.label}`;
+/** "GPT-OSS · Gründlich" when the model has several variants; a model with one variant shows its name alone. */
+export const aiVariantName = (
+  model: Pick<AiModel, "id" | "label">,
+  variant: Pick<AiModelVariant, "id" | "label">,
+  variants: readonly Pick<AiModelVariant, "modelId">[],
+): string => (variants.filter((entry) => entry.modelId === model.id).length > 1 ? `${model.label} · ${variant.label}` : model.label);
 
 export type AiCatalogIndex = {
   models: AiModel[];
