@@ -24,13 +24,13 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 
 ## Review my comments and propose suggestions
 
-1. List open threads on the note with `notebooks.annotation.list`, `state: "open"` and `author` set to the person's UUID. Use `author: "me"` only when authenticated as that person; for an agent account it means the agent. Follow `nextCursor`.
-2. Read each thread with `notebooks.annotation.read` using its ID, and read the passage in the note's context. Follow `repliesNextCursor` with `notebooks.annotation.replies`; use `note.read` for more context and compare the content hash before using source offsets.
-3. Reply on the person's existing thread with `notebooks.annotation.reply`: body and/or `suggestion` containing the replacement for that thread's passage, plus a stable idempotency key. Write access permits replies and suggestions on somebody else's thread. An empty suggestion means deletion; omit it for discussion only.
-4. Add separate comments with `notebooks.annotation.create` by exact quote. If the quote repeats, pass `occurrence` (1-based), exact prefix/suffix, or offsetHint. Missing and ambiguous quotes return distinct errors with the match count; read and disambiguate before retrying.
-5. Never accept your own suggestion unless the person explicitly asked you to. Let the person accept or reject it. Summarize the proposed changes and any unresolved comments.
+1. List with `notebooks.annotation.list`, `state: "open"`, `author: <person-uuid>`. `author: "me"` means the authenticated actor, including an agent. Follow `nextCursor`.
+2. Read each thread by ID with `notebooks.annotation.read` and the note for context. Compare contentHash before using offsets. Follow `repliesNextCursor` with `notebooks.annotation.replies`.
+3. Any writer can use `notebooks.annotation.reply` on the person's thread: body and/or replacement `suggestion`, plus a stable idempotency key. An empty suggestion means deletion.
+4. Add separate comments with `notebooks.annotation.create` by exact quote; disambiguate repetitions with 1-based `occurrence`, prefix/suffix or offsetHint.
+5. Never accept your own suggestion unless the person explicitly asked you to. Let them accept or reject it; summarize proposals and unresolved comments.
 
-`annotation.accept` selects a reply suggestion with `replyId`, or the root suggestion by default. Both the thread and that suggestion must be open. `annotation.reject` changes only the suggestion status, with `rejected: false` reopening a rejected suggestion. Resolve/reopen changes the thread status. Accept and undo-accept use stable operation IDs; retry an uncertain outcome with the same ID. All mutations require write access, including for service accounts; accepting/undoing also require an unlocked note. Provenance comes from the platform, never from comment content or caller input.
+Accept selects `replyId` or the root by default; thread and suggestion must be open. Reject changes only suggestion status; `rejected: false` reopens it. Accept/undo require an unlocked note and a stable operation ID; reuse it after an uncertain outcome. Origin comes only from the platform.
 
 ## Content and specialist features
 
