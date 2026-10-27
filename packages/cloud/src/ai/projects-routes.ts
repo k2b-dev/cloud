@@ -8,6 +8,7 @@ import { noTransform } from "../server/middleware/no-transform";
 import { ImageMetadataError } from "../services/image-metadata";
 import { aiChatMessages } from "./chat/messages";
 import { decodeAiFileContent } from "./files-store";
+import { AiModelRequestSchema } from "./model-contracts";
 import {
   AI_PROJECT_DESCRIPTION_MAX_CHARS,
   AI_PROJECT_FILE_MAX_BYTES,
@@ -27,7 +28,7 @@ const ProjectFieldsSchema = z.object({
   description: z.string().trim().max(AI_PROJECT_DESCRIPTION_MAX_CHARS).default(""),
   icon: z.string().trim().min(1).max(80).default("ti ti-folders"),
   instructions: z.string().trim().max(AI_PROJECT_INSTRUCTIONS_MAX_CHARS).default(""),
-  defaultModelProfileId: z.string().trim().min(1).max(120).nullable().optional(),
+  defaultModel: AiModelRequestSchema.nullable().optional(),
 });
 
 const UpdateProjectSchema = ProjectFieldsSchema.partial().refine((input) => Object.keys(input).length > 0, "No changes supplied.");

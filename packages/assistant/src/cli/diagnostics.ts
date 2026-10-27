@@ -74,7 +74,7 @@ export const buildAssistantChatDiagnostic = (input: DiagnosticInput): AssistantC
     const providerModels = new Set<string>();
 
     for (const stored of messages) {
-      if (stored.modelProfileId) modelProfiles.add(stored.modelProfileId);
+      if (stored.modelId) modelProfiles.add(stored.modelId);
       if (stored.providerModel) providerModels.add(stored.providerModel);
 
       if (stored.kind === "summary") {

@@ -39,7 +39,7 @@ integration(
       if (!draft.ok) throw new Error("fixture draft failed");
       const input: Parameters<AiConversationService["submitChatTurn"]>[0] = {
         conversationId: chat.id,
-        modelProfileId: "fixture",
+        modelId: "fixture",
         runConfig: {
           kind: "chat",
           input: text,

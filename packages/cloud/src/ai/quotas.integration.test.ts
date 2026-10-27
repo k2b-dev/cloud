@@ -4,6 +4,7 @@ import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/te
 import type { AiQuotaRule } from "../shared/ai-quotas";
 import { backgroundCostState, beginAiCall, finishAiCall, releaseBackgroundCostStop } from "./inference-calls";
 import { drainQueuedMessages } from "./message-queue";
+import { aiPeopleAtLimit } from "./quota-limits";
 import { quotaAdminConfig, quotaReport } from "./quota-report";
 import { aiQuotas, quotaWindow } from "./quotas";
 import { migrateAiQuotas } from "./quotas-migrate";
@@ -27,11 +28,17 @@ const rule = (scope: string, limit: number | null): AiQuotaRule => ({
 });
 const save = async (rules: AiQuotaRule[], enabled = true) => aiQuotas.save({ ...(await aiQuotas.config()), rules, enabled }, user);
 const pricedModel = (id = "a"): AiModelProfile => ({
+  modelId: id,
+  providerId: id,
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id,
   label: id,
   provider: "openai",
   model: id,
-  capabilities: ["streaming"],
+  capabilities: [],
   enabled: true,
   dataBoundary: "hosted",
   pricing: { inputPerMillion: 1_000_000, outputPerMillion: 1_000_000 },
@@ -43,9 +50,9 @@ const fixtureCalls = {
     turnId: string,
   ) {
     const id = crypto.randomUUID();
-    await sql`INSERT INTO ai.inference_calls(id,user_id,service_account_id,model_profile_id,provider_model,kind,task,turn_id,turn_attempt,pricing,lease_expires_at)
+    await sql`INSERT INTO ai.inference_calls(id,user_id,service_account_id,model_profile_id,model_id,provider_model,kind,task,turn_id,turn_attempt,pricing,lease_expires_at)
       VALUES(${id}::uuid,${who.type === "user" ? who.userId : null}::uuid,${who.type === "service_account" ? who.serviceAccountId : null}::uuid,
-      ${model},${model},'chat','chat',${turnId}::uuid,(SELECT attempt FROM ai.turns WHERE id=${turnId}::uuid),'{"inputPerMillion":1000000,"outputPerMillion":1000000}',now()+interval '2 minutes')`;
+      ${model},${model},${model},'chat','chat',${turnId}::uuid,(SELECT attempt FROM ai.turns WHERE id=${turnId}::uuid),'{"inputPerMillion":1000000,"outputPerMillion":1000000}',now()+interval '2 minutes')`;
     return id;
   },
   finish: (id: string, usage?: { input: number; output: number; estimated?: boolean }) => finishAiCall(id, usage, "ok"),
@@ -80,10 +87,12 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await sql`INSERT INTO auth.group_groups_v2 VALUES(${group}::uuid,${child}::uuid)`;
     await sql`INSERT INTO ai.turns(id,status,attempt,lease_expires_at) VALUES(${turn}::uuid,'running',1,now()+interval '1 hour')`;
     await migrateAiQuotas();
+    await sql`ALTER TABLE ai.inference_calls ADD COLUMN model_id TEXT, ADD COLUMN requested_class TEXT, ADD COLUMN resolved_class TEXT`;
     spyOn(modelSettings, "readAiSettingsState").mockResolvedValue({
+      assignments: [{ slot: "balanced", variantId: "a", revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
       ok: true,
       enabled: true,
-      defaultModelId: "a",
+
       globalInstructions: "",
       localClientInstructions: "",
       compactionInstructions: "",
@@ -96,6 +105,13 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await sql`TRUNCATE ai.cost_alerts,ai.inference_calls,ai.cost_resets,ai.cost_changes`;
     await sql`UPDATE ai.cost_config SET enabled=false,revision=0,rules='[]',unit='EUR',background=NULL,background_stopped_at=NULL,background_warned=false`;
     await sql`UPDATE ai.turns SET attempt=1,status='running',lease_expires_at=now()+interval '1 hour'`;
+  });
+  test("people at limit are counted only in the exhausted model rule and deduplicated", async () => {
+    await save([rule("a", 50), rule("b", 200)]);
+    await charge("a");
+    expect(await aiPeopleAtLimit()).toEqual([{ scope: "a", people: [user] }]);
+    await save([rule("*", null), rule("a", 50)]);
+    expect(await aiPeopleAtLimit()).toEqual([]);
   });
   test("report matches canonical nested grants, model constraints and wildcard bypass", async () => {
     const all = rule("*", 50);
@@ -164,7 +180,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await sql`INSERT INTO auth.users ${sql(users, "id", "uid", "display_name")}`;
     try {
       await save([rule("a", 15)]);
-      await sql`INSERT INTO ai.inference_calls ${sql(users.map((u, i) => ({ id: crypto.randomUUID(), user_id: u.id, model_profile_id: "a", input: i, output: 0, kind: "chat", task: "chat", provider_model: "a", started_at: startedAt, lease_expires_at: now, cost: i })))}`;
+      await sql`INSERT INTO ai.inference_calls ${sql(users.map((u, i) => ({ id: crypto.randomUUID(), user_id: u.id, model_profile_id: "a", model_id: "a", input: i, output: 0, kind: "chat", task: "chat", provider_model: "a", started_at: startedAt, lease_expires_at: now, cost: i })))}`;
       const first = await quotaReport({ search: "Report", sort: "cost", direction: "desc" }, now);
       const second = await quotaReport({ ...first.query, page: 2 }, now);
       expect(first.total).toBe(30);
@@ -183,6 +199,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
   });
   test("default disabled and repeat migration keep ordinary chats unlimited", async () => {
     await migrateAiQuotas();
+    await sql`ALTER TABLE ai.inference_calls ADD COLUMN model_id TEXT, ADD COLUMN requested_class TEXT, ADD COLUMN resolved_class TEXT`;
     expect((await aiQuotas.config()).enabled).toBe(false);
     expect(await aiQuotas.assertAllowed(subject, "a")).toBe(false);
   });
@@ -286,7 +303,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
       await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${conversation}::uuid,${i === 32 ? other : user}::uuid)`;
       const submission = {
         conversationId: conversation,
-        modelProfileId: "a",
+        modelId: "a",
         runConfig: { assistantChat: true, kind: "chat", actor: { kind: "user", user: { id: i === 32 ? other : user } } },
       };
       await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,status) VALUES(${id}::uuid,${conversation}::uuid,(${JSON.stringify(submission)}::text)::jsonb,'pending')`;
@@ -303,7 +320,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
       expect(dispatched).toBe(1);
       const [head] = await sql`SELECT status,error,submission FROM ai.queued_messages WHERE id=${ids[0]}::uuid`;
       expect(head!.error).toBe("quota_exhausted");
-      expect(head!.submission.modelProfileId).toBe("a");
+      expect(head!.submission.modelId).toBe("a");
     } finally {
       spy.mockRestore();
     }

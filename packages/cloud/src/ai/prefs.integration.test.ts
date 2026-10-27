@@ -79,7 +79,7 @@ databaseSuite()("aiUserPrefs (integration)", () => {
   test("a row written for another preference leaves learning on the default", async () => {
     const userId = await insertUser();
     try {
-      expect((await aiUserPrefs.update(userId, { lastModelId: "model-a" })).memoryLearningEnabled).toBe(true);
+      expect((await aiUserPrefs.update(userId, { selection: { id: "model-a" } })).memoryLearningEnabled).toBe(true);
       expect((await aiUserPrefs.update(userId, { memoryEnabled: false })).memoryLearningEnabled).toBe(true);
       expect(await storedLearning(userId)).toBeNull();
       expect(await learningChosenAt(userId)).toBeNull();
@@ -94,7 +94,7 @@ databaseSuite()("aiUserPrefs (integration)", () => {
       expect((await aiUserPrefs.update(userId, { memoryLearningEnabled: false })).memoryLearningEnabled).toBe(false);
       const chosenAt = await learningChosenAt(userId);
       expect(chosenAt).not.toBeNull();
-      await aiUserPrefs.update(userId, { lastModelId: "model-a" });
+      await aiUserPrefs.update(userId, { selection: { id: "model-a" } });
       await aiUserPrefs.update(userId, { memoryEnabled: true });
       expect((await aiUserPrefs.get(userId)).memoryLearningEnabled).toBe(false);
       expect(await storedLearning(userId)).toBe(false);

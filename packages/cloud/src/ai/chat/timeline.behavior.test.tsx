@@ -29,7 +29,7 @@ import { aiTurnErrorText } from "./turn-error";
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   try {
-    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     for (let index = 0; index < 10; index++) {
       emit({
         ...base,
@@ -112,7 +112,7 @@ import { aiTurnErrorText } from "./turn-error";
     kind: "message",
     message,
     loopId: "turn",
-    modelProfileId: null,
+    modelId: null,
     providerModel: null,
     usage: null,
     stopReason: null,
@@ -125,7 +125,7 @@ import { aiTurnErrorText } from "./turn-error";
   });
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
   try {
-    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     emit({ ...base, seq: 2, type: "block_delta", blockId: "a1-t0-0", blockKind: "text", delta: "I build the dashboard." });
     const running = {
       id: "tool-view",
@@ -201,7 +201,7 @@ import { aiTurnErrorText } from "./turn-error";
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
   const rows = () => Array.from(dom.root.querySelectorAll(".k2b-chat-activity")).map((row) => row.textContent?.trim());
   try {
-    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     emit({ ...base, seq: 2, type: "provider_retry" });
     await settle();
     expect(rows()).toEqual(["Reconnecting"]);
@@ -263,7 +263,7 @@ import { aiTurnErrorText } from "./turn-error";
   const rows = () => Array.from(dom.root.querySelectorAll(".k2b-chat-activity")).map((row) => row.textContent?.trim());
   const nodes = () => dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message");
   try {
-    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     emit({ ...base, seq: 2, type: "block_delta", blockId: "text-1", blockKind: "text", delta: "Reading the report." });
     // The controller appends the steer locally; the server applies it with the next model call.
     setState("activeTurn", "blocks", (blocks): AiTurnBlock[] => [
@@ -320,7 +320,7 @@ import { aiTurnErrorText } from "./turn-error";
     status: "running" as const,
   };
   try {
-    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     emit({ ...base, seq: 2, type: "block_set", block: tool });
     await settle();
     const working = work();
@@ -337,7 +337,7 @@ import { aiTurnErrorText } from "./turn-error";
     expect(messages().map((message) => [message.getAttribute("data-role"), message.getAttribute("data-status")])).toEqual([
       ["assistant", "complete"],
       ["user", "pending"],
-      ["assistant", "streaming"],
+      ["assistant"],
     ]);
 
     emit({ ...base, seq: 3, type: "block_set", block: { ...tool, status: "completed", result: {} } });
@@ -358,7 +358,7 @@ const storedMessage = (seq: number, message: AiStoredMessage["message"], patch: 
   kind: "message",
   message,
   loopId: "turn",
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: null,
@@ -426,7 +426,7 @@ const renderTimeline = async (
   let seq = 0;
   const set = (block: AiTurnBlock) => emit({ ...base, seq: ++seq, type: "block_set", block });
   try {
-    emit({ ...base, seq: ++seq, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: ++seq, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     emit({ ...base, seq: ++seq, type: "block_delta", blockId: "a1-t0-0", blockKind: "text", delta: "I read the data first." });
     set({ id: "tool-read", kind: "tool", callId: "read", name: "read_file", args: { path: "/a.csv" }, status: "completed", result: "a" });
     for (const [steerId, text] of [
@@ -513,7 +513,7 @@ const renderTimeline = async (
   const clock = () => workLine()?.querySelector(".ai-turn-work__meta")?.firstChild?.textContent?.trim();
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
   try {
-    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     emit({ ...base, seq: 2, type: "block_set", block: { ...run, status: "running" } });
     jest.advanceTimersByTime(10_000);
     expect(label()).toBe("Running code · Report");
@@ -574,7 +574,7 @@ const renderTimeline = async (
   const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/a.csv" } };
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
   try {
-    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     emit({ ...base, seq: 2, type: "block_set", block: { ...read, status: "completed", result: {} } });
     jest.advanceTimersByTime(5_000);
 
@@ -654,7 +654,7 @@ const renderFailedTurnTimeline = async (
     return copy.textContent;
   };
   try {
-    emit({ ...base, seq: ++seq, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: ++seq, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     await tick();
     const turn = dom.root.querySelector(".ai-turn");
     for (let round = 0; round < rounds; round++) {
@@ -741,7 +741,7 @@ const renderFailedTurnTimeline = async (
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
   const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/q1.csv" } };
   try {
-    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     emit({ ...base, seq: 2, type: "block_delta", blockId: "a1-t0-0", blockKind: "text", delta: "Jetzt lese ich die Daten." });
     emit({ ...base, seq: 3, type: "block_set", block: { ...read, status: "completed", result: "a" } });
     await tick();
@@ -835,7 +835,7 @@ const renderFailedTurnTimeline = async (
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
   try {
-    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     await tick();
     const progress = dom.root.querySelector(".ai-turn");
     expect(progress).not.toBeNull();
@@ -882,7 +882,7 @@ const renderFailedTurnTimeline = async (
   const args = { title: "Invoice details", questions: [{ id: "amount", type: "text", label: "Amount" }] };
   const answer = { submitted: true, answers: { amount: "150 EUR" } };
   try {
-    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     emit({
       ...base,
       seq: 2,
@@ -942,7 +942,7 @@ const renderFailedTurnTimeline = async (
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
   const agentMessage = { id: "forward-1", sourceChatId: "cSrc12", sourceTurnId: "tSrc12", sourceTitle: "Planning" };
   try {
-    emit({ ...base, seq: 1, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     await tick();
     const progress = dom.root.querySelector(".ai-turn");
     expect(progress).not.toBeNull();
@@ -1002,7 +1002,7 @@ const renderFailedTurnTimeline = async (
       kind: "message",
       message,
       loopId: turnId,
-      modelProfileId: null,
+      modelId: null,
       providerModel: null,
       usage: null,
       stopReason: null,
@@ -1046,7 +1046,7 @@ const renderFailedTurnTimeline = async (
     const live = (turnId: string) => {
       const base = { v: 1 as const, conversationId: "chat", turnId, attempt: 1 };
       let seq = 0;
-      emit({ ...base, seq: ++seq, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+      emit({ ...base, seq: ++seq, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
       emit({ ...base, seq: ++seq, type: "block_set", block: { ...read, status: "completed", result: "{}" } });
       emit({ ...base, seq: ++seq, type: "block_delta", blockId: `${turnId}-t1`, blockKind: "text", delta: status });
       return { base, next: () => ++seq };

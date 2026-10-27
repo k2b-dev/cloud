@@ -11,7 +11,7 @@ describe("submitAssistantProjectMessage", () => {
     const result = await submitAssistantProjectMessage({
       projectId: "project123",
       message: { message: "Hello", files: [new File(["notes"], "notes.txt", { type: "text/plain" })] },
-      modelProfileId: "model123",
+      model: { id: "model123" },
       activeConversationId: () => activeId,
       openConversation: async () => "failed",
       createConversation: async () => {
@@ -20,7 +20,7 @@ describe("submitAssistantProjectMessage", () => {
         return conversation;
       },
       send: async (message) => {
-        events.push(`send:${message.message}:${message.modelProfileId}:${message.files?.length}`);
+        events.push(`send:${message.message}:${message.model && "id" in message.model ? message.model.id : ""}:${message.files?.length}`);
         return true;
       },
       rememberPending: () => events.push("remember"),

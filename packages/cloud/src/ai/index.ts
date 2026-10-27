@@ -19,7 +19,7 @@ export {
   rememberAiToolApproval,
   revokeAiToolApprovalPreference,
 } from "./approvals";
-export { assistantAiSettingsState, listAssistantAiModels, selectAssistantAiModelId } from "./assistant-models";
+export { assistantAiSettingsState, listAssistantAiModels, peopleAiModels, selectAssistantAiModel } from "./assistant-models";
 export { type AiAttachmentRef, aiAttachmentMarker, formatAiFileSize, parseAiAttachmentMarkers } from "./attachments";
 export { CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema, createCloudAiTranscribeAudioTool } from "./audio-tool";
 export { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
@@ -65,7 +65,7 @@ export { parseAiSse } from "./client/transport";
 export { CODE_CAPABILITY_TOKEN_HEADER, createCodeCapabilityTransport } from "./code-capability-transport";
 export { authorizeCodeExecution } from "./code-execution";
 export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
-export { listAiCredentialProfileIds } from "./credentials";
+export { listAiCredentialProviderIds } from "./credentials";
 export {
   CLOUD_AI_CHART_MAX_SERIES,
   CLOUD_AI_CHART_MAX_VALUES,
@@ -262,6 +262,7 @@ export {
   createCloudAiMemoryTool,
 } from "./memory-tool";
 export { migrateCloudAi } from "./migrate";
+export * from "./model-contracts";
 export { type AiOpenQuestion, type AiOpenQuestions, listAiOpenQuestions } from "./open-questions";
 export { personalAiModelPolicy } from "./personal-agent";
 export { type AiUserPrefs, aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
@@ -306,7 +307,6 @@ export {
   listAiModels,
   readAiSettingsState,
   resolveAiModel,
-  resolveAiSettingsStateFromRaw,
   resolveAiVisionModel,
   selectAiModelProfile,
   toPublicAiSettingsState,
@@ -365,7 +365,6 @@ export {
   streamAiConversationEvents,
 } from "./stream";
 export {
-  AI_BACKGROUND_MODEL_SETTING_KEY,
   type RunAiStructuredInput,
   type RunAiStructuredResult,
   resolveAiBackgroundModel,

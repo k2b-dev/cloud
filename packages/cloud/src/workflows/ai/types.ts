@@ -1,3 +1,4 @@
+import type { AiResolvedModelRef } from "../../ai/model-contracts";
 import type { AiTaskRequest as WorkflowAiRequest } from "../../ai/task-contracts";
 import type { WorkflowJsonValue } from "../contracts";
 
@@ -20,7 +21,8 @@ export type WorkflowAiTask = {
   kind: WorkflowAiRequest["kind"];
   request: WorkflowAiRequest;
   inputHash: string;
-  modelProfileId: string;
+  modelId: string;
+  modelRef?: AiResolvedModelRef;
   modelConfigHash?: string;
   status: WorkflowAiTaskStatus;
   output: WorkflowJsonValue | null;

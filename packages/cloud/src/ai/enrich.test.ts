@@ -46,7 +46,7 @@ const stored = (seq: number, message: Message): AiStoredMessage => ({
   seq,
   kind: "message",
   message,
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: null,
@@ -77,7 +77,7 @@ const fakeStructured =
     calls.push(input as RunAiStructuredInput<z.ZodType>);
     return {
       output: result as z.infer<TOutput>,
-      modelProfileId: "test-model",
+      model: { id: "test-model" },
       structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
     };
   };

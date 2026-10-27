@@ -18,7 +18,7 @@ test("Project settings count unsaved changes in the page's language and discard 
     description: "Angebote und Wochenberichte",
     icon: "ti ti-folder",
     instructions: "Schreibe kurz.",
-    defaultModelProfileId: null,
+    defaultModel: null,
     // Write access keeps the dialog to its General tab, without loading Project access.
     permission: "write",
     revision: 1,

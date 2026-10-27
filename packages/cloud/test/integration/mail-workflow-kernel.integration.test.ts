@@ -1864,6 +1864,12 @@ steps:
     );
     const runId = emission.runIds[0]!;
     const profile = {
+      modelId: "fixture-model",
+      providerId: "fixture-model",
+      variantLabel: "Standard",
+      description: "",
+      icon: { kind: "provider" as const },
+      showInPicker: true,
       id: "fixture-model",
       label: "Fixture",
       provider: "openai" as const,
@@ -1873,6 +1879,7 @@ steps:
       dataBoundary: "private" as const,
     };
     const model = spyOn(aiStructured, "resolveAiWorkflowModel").mockResolvedValue({
+      model: { id: profile.id },
       profile,
       provider: createAiProvider(profile, "fixture-key"),
     });
@@ -2266,6 +2273,12 @@ steps:
     );
     const runId = event.runIds[0]!;
     const profile = {
+      modelId: "fixture-model",
+      providerId: "fixture-model",
+      variantLabel: "Standard",
+      description: "",
+      icon: { kind: "provider" as const },
+      showInPicker: true,
       id: "fixture-model",
       label: "Fixture",
       provider: "openai" as const,
@@ -2275,6 +2288,7 @@ steps:
       dataBoundary: "private" as const,
     };
     const model = spyOn(aiStructured, "resolveAiWorkflowModel").mockResolvedValue({
+      model: { id: profile.id },
       profile,
       provider: createAiProvider(profile, "fixture-key"),
     });

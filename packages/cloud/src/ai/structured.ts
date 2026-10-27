@@ -2,9 +2,9 @@ import type { Input, LoopAggregate, StructuredMeta, Usage } from "@k2b/nessi";
 import { nessi, StructuredOutputError } from "@k2b/nessi";
 import type { z } from "zod";
 import type { AccessSubject } from "../server";
-import { coreSettings } from "../services";
 import type { TraceContext } from "../services/logging";
 import { trace } from "../services/logging";
+import type { AiModelRequest, AiResolvedModelRef } from "./model-contracts";
 import { taskReasoningEffort } from "./provider";
 import { AiProviderError } from "./provider-errors";
 import { inferenceProvider } from "./quota-provider";
@@ -12,40 +12,10 @@ import { resolveAiModel } from "./settings";
 import { type AiUsageAttribution, safelyRecordStructuredRun } from "./structured-runs";
 import type { AiResolvedModel } from "./types";
 
-export const AI_BACKGROUND_MODEL_SETTING_KEY = "ai.background_model_id";
-export const AI_WORKFLOW_MODEL_SETTING_KEY = "ai.workflow_model_id";
-
-export const selectAiWorkflowModelId = (input: {
-  requestedModelId?: string;
-  workflowModelId?: string;
-  backgroundModelId?: string;
-}): string | undefined => input.requestedModelId?.trim() || input.workflowModelId?.trim() || input.backgroundModelId?.trim() || undefined;
-
-/**
- * Resolve the model for background inference: explicit request →
- * `ai.background_model_id` setting → platform default. Throws when AI is
- * disabled or the model is unavailable — callers skip their work then.
- */
-export const resolveAiBackgroundModel = async (requestedModelId?: string): Promise<AiResolvedModel> => {
-  const backgroundModelId = String((await coreSettings.get<string>(AI_BACKGROUND_MODEL_SETTING_KEY)) ?? "").trim();
-  return resolveAiModel({ kind: "selectable" }, requestedModelId?.trim() || backgroundModelId || undefined);
-};
-
-/** Resolve a workflow model: action override → workflow setting → background setting → platform default. */
-export const resolveAiWorkflowModel = async (requestedModelId?: string): Promise<AiResolvedModel> => {
-  const [workflowModelId, backgroundModelId] = await Promise.all([
-    coreSettings.get<string>(AI_WORKFLOW_MODEL_SETTING_KEY),
-    coreSettings.get<string>(AI_BACKGROUND_MODEL_SETTING_KEY),
-  ]);
-  return resolveAiModel(
-    { kind: "selectable" },
-    selectAiWorkflowModelId({
-      requestedModelId,
-      workflowModelId: String(workflowModelId ?? ""),
-      backgroundModelId: String(backgroundModelId ?? ""),
-    }),
-  );
-};
+export const resolveAiBackgroundModel = (model: AiModelRequest = { class: "fast" }): Promise<AiResolvedModel> =>
+  resolveAiModel({ kind: "selectable" }, model);
+export const resolveAiWorkflowModel = (model: AiModelRequest = { class: "balanced" }): Promise<AiResolvedModel> =>
+  resolveAiModel({ kind: "selectable" }, model);
 
 export type RunAiStructuredInput<TOutput extends z.ZodType> = {
   /** Short machine name for tracing, e.g. "chat-enrich". */
@@ -54,7 +24,7 @@ export type RunAiStructuredInput<TOutput extends z.ZodType> = {
   output: TOutput;
   outputName?: string;
   systemPrompt?: string;
-  requestedModelId?: string;
+  model?: AiModelRequest;
   temperature?: number;
   maxOutputTokens?: number;
   signal?: AbortSignal;
@@ -66,12 +36,12 @@ export type RunAiStructuredInput<TOutput extends z.ZodType> = {
   /** Metadata-only attribution, supplied by the authorized caller. */
   attribution?: AiUsageAttribution;
   /** Model resolution seam — tests inject a fake so they never touch shared settings. */
-  resolveModel?: (requestedModelId?: string) => Promise<AiResolvedModel>;
+  resolveModel?: (model?: AiModelRequest) => Promise<AiResolvedModel>;
 };
 
 export type RunAiStructuredResult<TOutput extends z.ZodType> = {
   output: z.infer<TOutput>;
-  modelProfileId: string;
+  model: AiResolvedModelRef;
   usage?: Usage;
   structuredMeta: StructuredMeta;
 };
@@ -110,11 +80,17 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
       const startedAt = Date.now();
       let resolved: AiResolvedModel | undefined;
       try {
-        resolved = await (input.resolveModel ?? resolveAiBackgroundModel)(input.requestedModelId);
+        resolved = await (input.resolveModel ?? resolveAiBackgroundModel)(input.model ?? { class: "balanced" });
         await trace.record({
           context: span,
           event: "model.resolved",
-          attributes: { model: resolved.profile.id, providerModel: resolved.profile.model, provider: resolved.profile.provider },
+          attributes: {
+            model: resolved.profile.id,
+            providerModel: resolved.profile.model,
+            provider: resolved.profile.provider,
+            requestedClass: resolved.model.requestedClass,
+            resolvedClass: resolved.model.class,
+          },
         });
 
         const result = await nessi.structured({
@@ -123,6 +99,7 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
             kind: input.usageSubject ? "chat" : "background",
             subject: input.usageSubject,
             task: input.task,
+            modelRef: resolved.model,
             appId: input.appId,
             traceId: span.traceId,
             ...input.attribution,
@@ -156,7 +133,7 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
           attribution: input.attribution,
           traceId: span.traceId,
           appId: input.appId,
-          modelProfileId: resolved.profile.id,
+          modelId: resolved.profile.id,
           providerModel: resolved.profile.model,
           status: "ok",
           durationMs,
@@ -168,7 +145,7 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
 
         return {
           output: result.output,
-          modelProfileId: resolved.profile.id,
+          model: resolved.model,
           usage: result.usage,
           structuredMeta: result.structuredMeta,
         };
@@ -183,7 +160,7 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
           attribution: input.attribution,
           traceId: span.traceId,
           appId: input.appId,
-          modelProfileId: resolved?.profile.id,
+          modelId: resolved?.profile.id,
           providerModel: resolved?.profile.model,
           status: "failed",
           durationMs: Date.now() - startedAt,
@@ -201,7 +178,7 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
       }
     },
     {
-      summarize: (result) => ({ model: result.modelProfileId, mode: result.structuredMeta.mode, repaired: result.structuredMeta.repaired }),
+      summarize: (result) => ({ model: result.model.id, mode: result.structuredMeta.mode, repaired: result.structuredMeta.repaired }),
       onError: (error) => (error instanceof StructuredOutputError ? structuredFailureSummary(error) : undefined),
     },
   );

@@ -82,7 +82,7 @@ function MemoryLearningRunDetails(props: { run: AiMemoryLearningRun; close: () =
         <PanelDialog.Section
           title={props.run.conversationTitle}
           subtitle={`${text(runKindLabel(props.run.kind))} · ${changeSummary(props.run, text)} · ${props.run.accountedTokens.toLocaleString(locale())} ${text("tokens")} · ${formatDuration(props.run.durationMs)}${
-            props.run.modelProfileId ? ` · ${props.run.modelProfileId}` : ""
+            props.run.modelId ? ` · ${props.run.modelId}` : ""
           }`}
           icon="ti ti-message-circle"
           actions={<StatusBadge label={status().label} tone={status().tone} />}

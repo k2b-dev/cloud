@@ -24,12 +24,18 @@ for (const kind of ["provider-message", "provider-body", "nested-error", "schema
         }),
     });
     const profile: AiModelProfile = {
+      modelId: "fixture",
+      providerId: "fixture",
+      variantLabel: "Standard",
+      description: "",
+      icon: { kind: "provider" },
+      showInPicker: true,
       id: "fixture",
       label: "Fixture",
       provider: "openai-compatible",
       model: "fixture",
       enabled: true,
-      capabilities: ["streaming", "tools"],
+      capabilities: ["tools"],
       dataBoundary: "private",
       baseURL: `${server.url}v1`,
     };
@@ -83,7 +89,7 @@ for (const kind of ["provider-message", "provider-body", "nested-error", "schema
             task,
             input: marker,
             output: z.object({ number: z.string() }),
-            resolveModel: async () => ({ profile, provider }),
+            resolveModel: async () => ({ model: { id: profile.id }, profile, provider }),
           });
         } catch (error) {
           failure = error;

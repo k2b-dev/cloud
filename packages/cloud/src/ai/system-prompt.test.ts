@@ -387,7 +387,7 @@ describe("composeAiSystemPrompt", () => {
         revision: 3,
         context: "Project: Meeting summary\nKnowledge entries:\n- Team glossary [knowledge-1]",
         references: [],
-        defaultModelProfileId: null,
+        defaultModel: null,
       },
       user,
       memoryEnabled: true,
@@ -500,7 +500,7 @@ test("workspace blocks preserve text and cannot be ended by embedded closing tag
     globalInstructions: "",
     project: {
       id: "project",
-      defaultModelProfileId: null,
+      defaultModel: null,
       name: "Project",
       instructions: "Project rules.",
       revision: 1,

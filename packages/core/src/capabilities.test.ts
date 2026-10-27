@@ -156,7 +156,7 @@ const storedMessage = (seq: number, message: AiStoredMessage["message"], overrid
   kind: "message",
   message,
   loopId: null,
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: null,

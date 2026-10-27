@@ -1,78 +1,35 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { assistantAiSettingsState, isAssistantChatTurn, resolveAssistantAudioModel, selectAssistantAiModelId } from "./assistant-models";
+import { afterEach, expect, mock, spyOn, test } from "bun:test";
+import { isAssistantChatTurn, resolveAssistantAudioModel, selectAssistantAiModel } from "./assistant-models";
 import { aiModelAccess } from "./model-access";
+import { aiModelFixture, aiSettingsFixture } from "./model-fixture";
 import * as settings from "./settings";
 import * as transcription from "./transcription";
-import type { AiModelProfile, AiPublicModelProfile } from "./types";
+import type { AiModelProfile } from "./types";
 
 const subject = { type: "user" as const, userId: "user" };
-const models: AiPublicModelProfile[] = ["restricted", "allowed"].map((id) => ({
-  id,
-  label: id,
-  provider: "ollama",
-  model: id,
-  capabilities: ["streaming"],
-  dataBoundary: "private",
-}));
 afterEach(() => mock.restore());
-const setup = (allowed = models.slice(1)) => {
-  spyOn(transcription, "resolveAiAudioModel").mockRejectedValue(new Error("No audio model configured"));
-  spyOn(settings, "listAiModels").mockResolvedValue(models);
-  spyOn(settings, "toPublicAiSettingsState").mockResolvedValue({
-    ok: true,
-    enabled: true,
-    defaultModelId: "restricted",
-    visionModelConfigured: true,
-    error: null,
-    firecrawlConfigured: false,
-    models,
-  });
-  spyOn(aiModelAccess, "filterModels").mockImplementation(async (candidates) =>
-    candidates.filter((candidate) => allowed.some((model) => model.id === candidate.id)),
-  );
-  spyOn(aiModelAccess, "assertAllowed").mockImplementation(async (id) => {
-    if (!allowed.some((model) => model.id === id)) throw new Error("Model access denied");
-  });
-};
-
-describe("Assistant model boundary", () => {
-  test("explicit forbidden selections cannot silently fall back", async () => {
-    setup();
-    await expect(selectAssistantAiModelId(subject, "restricted")).rejects.toThrow("Model access denied");
-    expect(await selectAssistantAiModelId(subject, "allowed")).toBe("allowed");
-  });
-  test("an unspecified model uses an allowed default and the status exposes the same models", async () => {
-    setup();
-    expect(await selectAssistantAiModelId(subject)).toBe("allowed");
-    const status = await assistantAiSettingsState(subject);
-    expect(status.defaultModelId).toBe("allowed");
-    expect(status.models.map((model) => model.id)).toEqual(["allowed"]);
-    expect(status.visionModelConfigured).toBe(true);
-    expect(status.audioModelConfigured).toBe(false);
-    expect(transcription.resolveAiAudioModel).toHaveBeenCalledTimes(1);
-  });
-  test("locked and platform-default policies never substitute another allowed model", async () => {
-    setup();
-    await expect(selectAssistantAiModelId(subject, "allowed", { kind: "locked", modelId: "restricted" })).rejects.toThrow(
-      "Model access denied",
-    );
-    await expect(selectAssistantAiModelId(subject, "allowed", { kind: "platform-default" })).rejects.toThrow("Model access denied");
-    expect(await selectAssistantAiModelId(subject, "restricted", { kind: "locked", modelId: "allowed" })).toBe("allowed");
-  });
-  test("no grants produces an empty picker and a clear submission failure", async () => {
-    setup([]);
-    expect((await assistantAiSettingsState(subject)).defaultModelId).toBe("");
-    await expect(selectAssistantAiModelId(subject)).rejects.toThrow("No AI model is available");
-  });
-  test("only marked interactive turns are restricted; background default-tool deliveries stay exempt", () => {
-    expect(isAssistantChatTurn({ input: "chat", assistantChat: true })).toBe(true);
-    expect(isAssistantChatTurn({ input: "delivery", toolSource: { kind: "default" } })).toBe(false);
-    expect(isAssistantChatTurn({ input: "job", assistantChat: true, mandate: { id: "mandate", revision: 1 } })).toBe(false);
-    expect(isAssistantChatTurn({ input: "job" })).toBe(false);
-  });
+test("classes never substitute on denied access", async () => {
+  spyOn(settings, "readAiSettingsState").mockResolvedValue(aiSettingsFixture());
+  spyOn(aiModelAccess, "assertAllowed").mockRejectedValue(new Error("denied"));
+  await expect(selectAssistantAiModel(subject, { class: "balanced" })).rejects.toThrow("denied");
 });
-
+test("explicit variants authorize the owning model", async () => {
+  spyOn(settings, "readAiSettingsState").mockResolvedValue(aiSettingsFixture({ profiles: [aiModelFixture({ id: "chat:deep" })] }));
+  const access = spyOn(aiModelAccess, "assertAllowed").mockResolvedValue();
+  expect(await selectAssistantAiModel(subject, { id: "chat:deep" })).toEqual({ id: "chat:deep" });
+  expect(access).toHaveBeenCalledWith("chat", subject);
+});
+test("background mandates keep their own authorization", () => {
+  expect(isAssistantChatTurn({ input: "chat", assistantChat: true })).toBe(true);
+  expect(isAssistantChatTurn({ input: "job", assistantChat: true, mandate: { id: "m", revision: 1 } })).toBe(false);
+});
 const audioProfile: AiModelProfile = {
+  modelId: "speech",
+  providerId: "speech",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "speech",
   label: "Speech",
   provider: "openai-compatible",
@@ -91,7 +48,7 @@ const setupAudio = () => {
 
 test("Assistant audio access failures keep their cause during configuration classification", async () => {
   setupAudio();
-  const aiError = { code: "model_access_denied", message: "Model access denied" };
+  const aiError = { code: "model_policy_mismatch", message: "Model access denied" };
   spyOn(aiModelAccess, "assertAllowed").mockRejectedValue(Object.assign(new Error(aiError.message), { aiError }));
   let failure: unknown;
   try {
@@ -102,9 +59,7 @@ test("Assistant audio access failures keep their cause during configuration clas
   expect(failure).toBeInstanceOf(transcription.AiTranscriptionError);
   if (!(failure instanceof transcription.AiTranscriptionError)) throw new Error("Expected audio access failure");
   expect(failure.code).toBe("transcription_access_denied");
-  expect(failure.message).toBe(
-    "Audio transcription is not available to you: you do not have access to the audio model. An administrator can grant access in the AI settings.",
-  );
+  expect(failure.message).toBe("Audio transcription is not available to you.");
   expect(failure).toMatchObject({ aiError });
   expect(transcription.describeTranscriptionFailure(failure, "configuration")).toBe(failure);
 });

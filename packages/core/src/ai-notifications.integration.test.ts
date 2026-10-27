@@ -118,6 +118,26 @@ suite("Core AI completion notifications", () => {
     }
   });
 
+  test("model change notices use the existing notification sender and are recovered once", async () => {
+    const uid = `model-notify-${crypto.randomUUID()}`;
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile) VALUES(${uid},'local','user') RETURNING id`;
+    if (!user) throw new Error("Missing model notice recipient");
+    const service = createAiNotificationService(app.notifications);
+    try {
+      const [notice] = await sql<{ id: string }[]>`INSERT INTO ai.model_change_notices(user_id,name,retargeted)
+        VALUES(${user.id}::uuid,'Project fixture',true) RETURNING id`;
+      if (!notice) throw new Error("Missing model notice");
+      await service.recover();
+      await service.recover();
+      const events = await sql<{ idempotency_key: string }[]>`SELECT idempotency_key FROM notifications.events
+        WHERE definition_id=${app.notifications.modelChanged.id} AND recipient_user_id=${user.id}::uuid`;
+      expect(events).toEqual([{ idempotency_key: `model-change:${notice.id}` }]);
+      expect(await sql`SELECT 1 FROM ai.model_change_notices WHERE id=${notice.id}::uuid`).toHaveLength(0);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id=${user.id}::uuid`;
+    }
+  });
+
   test("approval notifications bundle new external requests at most every 15 minutes", async () => {
     const uid = `approval-notify-${crypto.randomUUID()}`;
     const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,mail)
@@ -136,7 +156,7 @@ suite("Core AI completion notifications", () => {
       const chat = await aiConversations.createConversation({ ownerUserId: userId });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig: {
           kind: "chat",
           input: "Send",
@@ -285,7 +305,7 @@ suite("Core AI completion notifications", () => {
       }))!;
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: "test",
+        modelId: "test",
         runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
         expectedRevision: task.revision,

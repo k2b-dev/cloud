@@ -44,12 +44,19 @@ const initialConversation = (): AiConversation => ({
   updatedAt: "2026-10-11T00:00:00Z",
 });
 const profile: AiPublicModelProfile = {
+  modelId: "model",
+  providerId: "model",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
+  enabled: true,
   id: "model",
   label: "Model",
   provider: "openai",
   model: "example",
   image: "",
-  capabilities: ["tools", "streaming"],
+  capabilities: ["tools"],
   dataBoundary: "hosted",
 };
 const approval = (confirm = false): AiPendingTurnAction => ({
@@ -176,7 +183,7 @@ const harness = async (
       if (path.endsWith("/turns") && method === "POST") {
         conversation.draft = { ...conversation.draft, content: [] };
         submission();
-        return Response.json({ turn: { id: "turn", status: "running", modelProfileId: null } });
+        return Response.json({ turn: { id: "turn", status: "running", modelId: null } });
       }
       if (path.endsWith("/stream")) {
         const events = streams.shift();
@@ -324,7 +331,7 @@ describe("Assistant ACP", () => {
     expect(await h.send("Hello")).toEqual({ stopReason: "end_turn" });
     const turn = h.requests.find((r) => r.path.endsWith("/turns"));
     expect(turn?.body).toMatchObject({
-      modelProfileId: "model",
+      modelId: "model",
       client: { kind: "acp", name: "Test Editor", cwd: h.cwd, shell: "/bin/bash", localTools: "ask" },
     });
     expect(turn?.body).not.toMatchObject({ clientToolIds: expect.arrayContaining(["code_open"]) });

@@ -15,7 +15,7 @@ export type AiStructuredRunRecord = {
   traceId?: string;
   task: string;
   appId?: string;
-  modelProfileId?: string;
+  modelId?: string;
   providerModel?: string;
   status: "ok" | "failed";
   durationMs: number;
@@ -40,7 +40,7 @@ export const recordAiStructuredRun = async (record: AiStructuredRunRecord): Prom
       input_tokens, output_tokens, total_tokens,
       mode, repaired, attempts, error_code, error, user_id, conversation_id, turn_id, workflow_run_id, trace_id
     ) VALUES (
-      ${record.task}, ${record.appId ?? null}, ${record.modelProfileId ?? null}, ${record.providerModel ?? null},
+      ${record.task}, ${record.appId ?? null}, ${record.modelId ?? null}, ${record.providerModel ?? null},
       ${record.status}, ${Math.max(0, Math.round(record.durationMs))},
       ${usageNumber(record.usage, "input")}, ${usageNumber(record.usage, "output")},
       ${usageNumber(record.usage, "total")},

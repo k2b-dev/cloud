@@ -489,8 +489,14 @@ const interactiveSession = (
     const response = route?.(path, init);
     if (response) return response;
     if (path === "/api/ai/skills") return Response.json({ skills: [] });
-    if (path === "/api/ai/status") return Response.json({});
-    if (path === "/api/ai/models") return Response.json([{ id: "model", label: "Test model", provider: "test", model: "test" }]);
+    if (path === "/api/ai/status" || path === "/api/ai/models")
+      return Response.json({
+        status: "ok",
+        selection: null,
+        effectiveDefault: { class: "balanced" },
+        classes: [],
+        options: [{ id: "model", label: "Test model", description: "", icon: { kind: "mark", text: "T", color: "test" }, classes: [] }],
+      });
     if (path === "/api/ai/projects")
       return Response.json({ projects: [{ id: "project-uuid", shortId: "proj", name: "Project", description: "Shared\nwork" }] });
     if (path === "/api/ai/conversations?limit=20") return Response.json([...chats.values()]);
@@ -814,7 +820,7 @@ test("/new forgets the chat while preserving session choices and queued attachme
       "/api/ai/conversations/new-2/turns",
     ]);
     expect(submissions(session)[0]?.body).toMatchObject({
-      modelProfileId: "model",
+      model: { id: "model" },
       clientToolIds: expect.not.arrayContaining(["local_bash"]),
     });
     const output = session.printed.join("\n");
@@ -868,7 +874,7 @@ test.each(["retry", "details", "concise"])("/retry %s posts to the last stored u
     method: "POST",
     body: {
       mode,
-      modelProfileId: "model",
+      model: { id: "model" },
       client: { kind: "cli", cwd: process.cwd(), localTools: "ask" },
       clientToolIds: expect.arrayContaining(["local_bash", "local_list", "code_open", "code_secret"]),
       localContext: { instructions: expect.any(Array), skills: expect.any(Array) },

@@ -21,13 +21,13 @@ describe("AI task prompt viewer", () => {
           aiSection: "jobs",
           entries: [
             {
-              key: "ai.model_profiles_json",
-              label: "Models",
+              key: "ai.memory_learning_instructions",
+              label: "Additional instructions",
               description: "",
               kind: "text",
-              value: "[]",
-              default: "[]",
-              resetValue: "[]",
+              value: "",
+              default: "",
+              resetValue: "",
               valueSource: "default",
               resetValueSource: "default",
               isCustom: false,

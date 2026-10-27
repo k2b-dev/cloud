@@ -55,7 +55,7 @@ describe("AI stream transport lifecycle", () => {
           controller.enqueue(encoder.encode(': heartbeat\n\nevent: turn_started\ndata: {"v":1,"type":"turn_started","con'));
           controller.enqueue(
             encoder.encode(
-              'versationId":"Chat01","turnId":"Turn01","attempt":1,"seq":1,"modelProfileId":"m","providerModel":"p"}\n\nevent: turn_finished\ndata: {"v":1,"type":"turn_finished","conversationId":"Chat01","turnId":"Turn01","attempt":1,"seq":2,"status":"completed","error":null}\n\n',
+              'versationId":"Chat01","turnId":"Turn01","attempt":1,"seq":1,"modelId":"m","providerModel":"p"}\n\nevent: turn_finished\ndata: {"v":1,"type":"turn_finished","conversationId":"Chat01","turnId":"Turn01","attempt":1,"seq":2,"status":"completed","error":null}\n\n',
             ),
           );
           controller.close();

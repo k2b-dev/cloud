@@ -40,7 +40,7 @@ const commonOptions = (profile: AiModelProfile, apiKey?: string) => ({
 
 export const createAiProvider = (profile: AiModelProfile, apiKey?: string, headers?: Record<string, string>): Provider => {
   if (profile.capabilities.includes("transcription")) throw new Error("Transcription profiles cannot be used for chat generation.");
-  return withProviderErrors(completeThroughStream(createAdapter(profile, apiKey, headers)));
+  return withProviderErrors(completeThroughStream(createAdapter(profile, apiKey, headers)), profile.providerId);
 };
 
 const createAdapter = (profile: AiModelProfile, apiKey?: string, headers?: Record<string, string>): Provider => {

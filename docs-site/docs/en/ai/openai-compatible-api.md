@@ -20,7 +20,7 @@ projects or global instructions. For Assistant with tools, use the
 
 An administrator must enable **OpenAI-compatible API** in AI settings
 (`ai.openai_api_enabled`, off by default). You also need
-[access to a chat model](/en/docs/ai/models-and-providers#restrict-a-model-in-assistant).
+[access to a chat model](/en/docs/ai/models-and-providers#add-models-and-variants).
 
 In your profile under **Developer → API keys**, create a key with the access
 **AI models only**, or run:
@@ -37,22 +37,23 @@ Configure the client with:
 | --- | --- |
 | Base URL | `https://<your-cloud>/api/ai/openai/v1` |
 | API key | Your models-only key |
-| Model | A profile ID from `GET /models` |
+| Model | A variant ID or `cloud/balanced` from `GET /models` |
 
 Send the key as `Authorization: Bearer <key>`. Full-access personal keys,
 sessions and OAuth tokens are refused here. Listing models returns only allowed
-chat profiles, with `id`, `object: "model"`, `created: 0` and
-`owned_by: "cloud"`. Transcription profiles, prices, provider details and data
+chat variants and assigned classes (`cloud/fast`, `cloud/balanced`,
+`cloud/thorough`, `cloud/maximum`), with `id`, `object: "model"`, `created: 0` and
+`owned_by: "cloud"`. Transcription models, prices, provider details and data
 boundaries are omitted.
 
-Replace `<your-cloud>` and `MODEL_PROFILE_ID`. With the key already loaded
+Replace `<your-cloud>` and `VARIANT_ID`. With the key already loaded
 into `CLOUD_MODELS_KEY` from your secret store:
 
 ```bash
 curl 'https://<your-cloud>/api/ai/openai/v1/chat/completions' \
   -H @- \
   -H "Content-Type: application/json" \
-  -d '{"model":"MODEL_PROFILE_ID","messages":[{"role":"user","content":"Clean up this transcript: um, the meeting starts at ten."}]}' <<EOF
+  -d '{"model":"VARIANT_ID","messages":[{"role":"user","content":"Clean up this transcript: um, the meeting starts at ten."}]}' <<EOF
 Authorization: Bearer $CLOUD_MODELS_KEY
 EOF
 ```
@@ -91,7 +92,7 @@ IDs as for a personal key. OAuth access tokens cannot call this API.
 
 | Supported field | Behavior |
 | --- | --- |
-| `model` | Required allowed model profile ID |
+| `model` | Required allowed variant ID or `cloud/<class>` |
 | `messages` | Required non-empty array; text only |
 | `temperature` | 0–2; omitted uses the profile/provider default |
 | `top_p` | 0–1; forwarded in the provider's parameter format |

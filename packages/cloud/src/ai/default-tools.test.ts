@@ -12,12 +12,19 @@ import {
 } from "./default-tool-contracts";
 import { createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiModelAccess } from "./model-access";
+import { aiAssignmentFixture, aiSettingsFixture } from "./model-fixture";
 import * as settings from "./settings";
 import { aiToolPromptHints } from "./tools";
 import type { AiModelProfile } from "./types";
 import { parseCloudAiChartToolView } from "./view-block";
 
 const audio: AiModelProfile = {
+  modelId: "speech",
+  providerId: "speech",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "speech",
   label: "Speech",
   provider: "openai-compatible",
@@ -27,17 +34,17 @@ const audio: AiModelProfile = {
   capabilities: ["transcription"],
   dataBoundary: "private",
 };
-const chat: AiModelProfile = { ...audio, id: "chat", capabilities: ["streaming", "tools"] };
+const chat: AiModelProfile = { ...audio, id: "chat", capabilities: ["tools"] };
 const subject = { type: "user" as const, userId: "user" };
 const accessError = Object.assign(new Error("Model access denied"), { aiError: { code: "model_access_denied" } });
 
 afterEach(() => mock.restore());
 
 const configure = async (modelId: string, profile = audio, enabled = true) => {
-  const state = await settings.resolveAiSettingsStateFromRaw({
+  const state = aiSettingsFixture({
     enabled,
-    defaultModelId: chat.id,
-    profilesJson: JSON.stringify([chat, profile]),
+    assignments: [aiAssignmentFixture("balanced", chat.id), aiAssignmentFixture("audio", modelId)],
+    profiles: [chat, profile],
   });
   spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
   spyOn(coreSettings, "get").mockResolvedValue(modelId);
@@ -152,11 +159,11 @@ for (const [provider, boundaries, expected, code] of [
   test(`vision failures explain ${expected} and keep the error code`, async () => {
     await configure(audio.id);
     const vision: AiModelProfile = { ...audio, provider, capabilities: ["vision"] };
-    const state = await settings.resolveAiSettingsStateFromRaw({
+    const state = aiSettingsFixture({
       enabled: true,
-      defaultModelId: chat.id,
-      visionModelId: vision.id,
-      profilesJson: JSON.stringify([chat, vision]),
+      assignments: [aiAssignmentFixture("balanced", chat.id), aiAssignmentFixture("vision", vision.id)],
+
+      profiles: [chat, vision],
     });
     spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
     let failure: unknown;

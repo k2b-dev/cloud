@@ -518,3 +518,11 @@ addresses and normalize shared network budgets. See
 Application entry declarations use `appAccess` from `@k2b/cloud`; see
 [App access](/en/docs/identity/app-access). The batch resolver and registry
 filtering helpers are platform-owned.
+
+### Model-class requests
+
+`@k2b/cloud/ai` exports `AI_MODEL_CLASSES`, `AiModelClass`, `AiModelRequest`,
+`AiResolvedModelRef`, `AiModelRequestSchema`, `aiModelClassFallbackChain`,
+`parseAiModelChoice` and `AiPeopleModels`. Use them to request a deployment's
+model class and interpret the resolved variant. See
+[Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).

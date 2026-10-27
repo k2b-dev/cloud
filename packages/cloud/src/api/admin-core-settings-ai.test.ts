@@ -1,90 +1,33 @@
-import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
-import * as credentials from "../ai/credentials";
-import * as requestHeaders from "../ai/request-headers";
+import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { session } from "../services/session";
 import { buildProjectedUser } from "../services/session/user";
-import * as settings from "../services/settings";
 import routes from "./admin-core-settings";
 
-// Every setting read and credential lookup is injected; nothing touches the shared settings store.
-const profile = (id: string, label: string) => ({
-  id,
-  label,
-  provider: "ollama",
-  model: id,
-  enabled: true,
-  capabilities: ["streaming", "vision"],
-});
-const stored: Record<string, unknown> = {
-  "ai.enabled": true,
-  "ai.default_model_id": "cortecs",
-  "ai.background_model_id": "",
-  "ai.vision_model_id": "tensorx",
-  "ai.audio_model_id": "",
-  "ai.workflow_model_id": "",
-  "ai.model_profiles_json": JSON.stringify([profile("tensorx", "TensorX Standard"), profile("cortecs", "Cortecs")]),
-};
-
-const restores: Array<{ mockRestore: () => void }> = [];
-beforeEach(() => {
-  restores.push(spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-02T03:04:05Z")));
-  const user = buildProjectedUser({ id: crypto.randomUUID(), provider: "local", profile: "user", effective_admin: true });
-  restores.push(
-    spyOn(session, "authenticateRequest").mockResolvedValue({
-      user,
-      data: { userId: user.id, sid: "test", authEpoch: 0, kind: "web", expiresAt: new Date(Date.now() + 60000).toISOString() },
-    }),
-    spyOn(settings, "readStates").mockImplementation(
-      async (keys) => new Map(keys.map((key) => [key, { stored: "readable" as const, value: stored[key] }])),
-    ),
-    spyOn(settings, "get").mockImplementation((async (key: string) => stored[key]) as typeof settings.get),
-    spyOn(settings, "set").mockRejectedValue(new Error("test must not write settings")),
-    spyOn(credentials, "listAiCredentialProfileIds").mockResolvedValue([]),
-    spyOn(requestHeaders, "listAiRequestHeaderNames").mockResolvedValue({}),
-  );
-});
-afterEach(() => {
-  for (const spy of restores.splice(0)) spy.mockRestore();
-});
-
-const removeTensorX = (language: string) =>
-  routes.request("/", {
-    method: "PUT",
-    headers: { Accept: "application/json", "Content-Type": "application/json", "Accept-Language": language, Cookie: "session_token=test" },
-    body: JSON.stringify({ "ai.model_profiles_json": JSON.stringify([profile("cortecs", "Cortecs")]) }),
+afterEach(() => mock.restore());
+test("removed model settings cannot be written through generic settings", async () => {
+  const user = buildProjectedUser({
+    id: "00000000-0000-4000-8000-000000000001",
+    provider: "local",
+    profile: "user",
+    effective_admin: true,
   });
-
-test("removing a profile the Vision model still uses returns a coded, localized, field-level error", async () => {
-  const response = await removeTensorX("en");
-
-  expect(response.status).toBe(400);
-  const message =
-    "The Vision tool model still references “TensorX Standard”. Select another Vision tool model or disable the view_image fallback before removing this profile.";
-  expect(await response.json()).toEqual({
-    message: "The AI settings were not saved. Resolve the problems below and save again.",
-    errors: { "ai.vision_model_id": message },
-    issues: [{ code: "model_profile_missing", setting: "ai.vision_model_id", profileId: "tensorx", message }],
+  spyOn(session, "authenticateRequest").mockResolvedValue({
+    user,
+    data: { userId: user.id, sid: "test", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00.000Z" },
   });
-});
-
-test("the same rejection follows the request locale", async () => {
-  const body = (await (await removeTensorX("de-DE")).json()) as { message: string; errors: Record<string, string> };
-
-  expect(body.message).toStartWith("Die KI-Einstellungen wurden nicht gespeichert.");
-  expect(body.errors["ai.vision_model_id"]).toStartWith("Das Modell für das Bildwerkzeug verweist noch auf „TensorX Standard“.");
-});
-
-test("a newly uploaded model logo with malformed JPEG bytes returns 422 before any settings write", async () => {
-  const response = await routes.request("/", {
-    method: "PUT",
-    headers: { Accept: "application/json", "Content-Type": "application/json", Cookie: "session_token=test" },
-    body: JSON.stringify({
-      "ai.model_profiles_json": JSON.stringify([
-        { ...profile("tensorx", "TensorX Standard"), image: "data:image/jpeg;base64,/9j/2wA=" },
-        profile("cortecs", "Cortecs"),
-      ]),
-    }),
-  });
-  expect(response.status).toBe(422);
-  expect(await response.json()).toMatchObject({ code: "MALFORMED_IMAGE" });
+  for (const key of [
+    "ai.model_profiles_json",
+    "ai.default_model_id",
+    "ai.background_model_id",
+    "ai.workflow_model_id",
+    "ai.vision_model_id",
+    "ai.audio_model_id",
+  ]) {
+    const response = await routes.request("/", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Cookie: "session_token=test" },
+      body: JSON.stringify({ updates: { [key]: "old" } }),
+    });
+    expect(response.status).toBe(400);
+  }
 });

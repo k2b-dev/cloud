@@ -24,6 +24,6 @@ export async function getAiChatQuotas(subject: AccessSubject): Promise<AiChatQuo
     unlimitedModels: models
       .filter((model) => !hasBillableAiPricing(profiles.find((profile) => profile.id === model.id)?.pricing))
       .map((model) => model.id),
-    balances: snapshot.balances.filter((b) => b.scope === "*" || models.some((m) => m.id === b.scope)).map(usage),
+    balances: snapshot.balances.filter((b) => b.scope === "*" || models.some((m) => m.modelId === b.scope)).map(usage),
   };
 }

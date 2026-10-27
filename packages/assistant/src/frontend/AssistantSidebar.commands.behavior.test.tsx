@@ -17,7 +17,7 @@ if (!isServer) {
       description: "",
       icon: "ti ti-folders",
       instructions: "",
-      defaultModelProfileId: null,
+      defaultModel: null,
       permission: "read" as const,
       revision: 1,
       createdAt: "",

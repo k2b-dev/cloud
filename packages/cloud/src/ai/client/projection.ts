@@ -8,7 +8,7 @@ export type AiActiveTurn = {
   seq: number;
   status: "running" | "waiting_for_action";
   blocks: AiTurnBlock[];
-  modelProfileId: string | null;
+  modelId: string | null;
   /**
    * A model call failed transiently and waits for its retry. Live only: the next turn event ends it, and so does a
    * snapshot that has moved past the retry.
@@ -124,7 +124,7 @@ export const activeTurnFromSnapshot = (snapshot: AiTurnSnapshot | null): AiActiv
     seq: snapshot.seq,
     status: snapshot.status === "waiting_for_action" ? "waiting_for_action" : "running",
     blocks: normalizeCustomApprovalBlocks(snapshot.blocks),
-    modelProfileId: snapshot.modelProfileId,
+    modelId: snapshot.modelId,
     createdAt: snapshot.createdAt,
     ...(snapshot.actionWaitMs !== undefined ? { actionWaitMs: snapshot.actionWaitMs } : {}),
     ...(snapshot.waitingSince !== undefined ? { waitingSince: snapshot.waitingSince } : {}),
@@ -191,7 +191,7 @@ export const reduceWireEvent = (state: AiChatProjection, event: AiWireEvent): Ai
         seq: event.seq,
         status: deriveStatus(blocks),
         blocks,
-        modelProfileId: event.modelProfileId,
+        modelId: event.modelId,
         ...turnTiming(active?.turnId === event.turnId ? active : null),
       },
     };

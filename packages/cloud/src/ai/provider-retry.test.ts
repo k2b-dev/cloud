@@ -8,12 +8,18 @@ import { inferenceProvider } from "./quota-provider";
 import type { AiModelProfile } from "./types";
 
 const profile: AiModelProfile = {
+  modelId: "retry-model",
+  providerId: "retry-model",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "retry-model",
   label: "Retry model",
   provider: "openai-compatible",
   model: "mock",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "private",
   pricing: { inputPerMillion: 1, outputPerMillion: 2 },
 };

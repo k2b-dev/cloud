@@ -8,7 +8,7 @@ const stored = (input: Pick<AiStoredMessage, "seq" | "message"> & Partial<AiStor
   conversationId: "chat-1",
   kind: "message",
   loopId: "loop-1",
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: null,
@@ -37,7 +37,7 @@ describe("Assistant chat diagnostics", () => {
         stored({ seq: 1, message: { role: "user", content: [{ type: "text", text: "Find it" }] } }),
         stored({
           seq: 2,
-          modelProfileId: "model-profile",
+          modelId: "model-profile",
           providerModel: "provider-model",
           message: {
             role: "assistant",

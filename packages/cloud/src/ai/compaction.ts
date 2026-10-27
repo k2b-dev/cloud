@@ -120,7 +120,7 @@ const buildCompactionPrompt = (additionalInstructions: string, source: string) =
 export const createCloudCompactFn = (input: {
   conversationId: string;
   turnId?: string;
-  modelProfileId: string;
+  modelId: string;
   additionalInstructions: string;
   maxOutputTokens?: number;
   signal: AbortSignal;
@@ -157,7 +157,7 @@ export const createCloudCompactFn = (input: {
         task: "chat-compaction",
         attribution: { conversationId: input.conversationId, turnId: input.turnId },
         appId: "core",
-        modelProfileId: input.modelProfileId,
+        modelId: input.modelId,
         providerModel: ctx.provider.model,
       };
       let usage: Usage | undefined;
@@ -203,7 +203,7 @@ export const createCloudCompactFn = (input: {
         conversationId: input.conversationId,
         turnId: input.turnId,
         checkpointSeq: checkpoint.seq,
-        modelProfileId: input.modelProfileId,
+        modelId: input.modelId,
         summary: {
           role: "assistant",
           content: [{ type: "text", text: `Conversation summary:\n${summaryText}` }],

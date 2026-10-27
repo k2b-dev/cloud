@@ -17,34 +17,11 @@ const GrantSchema = z
 export const AiModelAccessDraftSchema = z
   .object({
     expectedRevision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).nullable(),
-    sourceProfileId: z
-      .string()
-      .trim()
-      .regex(/^[a-z0-9][a-z0-9._-]*$/)
-      .optional(),
     entries: z.array(GrantSchema),
   })
   .strict();
 export type AiModelAccessDraft = z.infer<typeof AiModelAccessDraftSchema>;
-export type AiModelAccessChange = AiModelAccessDraft & { profileId: string };
-
-/** Transport-only draft fields never enter the provider setting. */
-export const splitAiModelAccess = (profilesJson: string): { profilesJson: string; changes: AiModelAccessChange[] } => {
-  const profiles = z.array(z.record(z.string(), z.unknown())).parse(JSON.parse(profilesJson));
-  const changes: AiModelAccessChange[] = [];
-  const stored = profiles.map(({ assistantAccess, ...profile }) => {
-    if (assistantAccess !== undefined) {
-      const profileId = z
-        .string()
-        .trim()
-        .regex(/^[a-z0-9][a-z0-9._-]*$/)
-        .parse(profile.id);
-      changes.push({ profileId, ...AiModelAccessDraftSchema.parse(assistantAccess) });
-    }
-    return profile;
-  });
-  return { profilesJson: JSON.stringify(stored), changes };
-};
+export type AiModelAccessChange = AiModelAccessDraft & { modelId: string };
 
 export class AiModelAccessConflict extends Error {
   constructor() {
@@ -61,14 +38,14 @@ const principalKey = (principal: Principal): string => {
   return principal.type;
 };
 
-const grant = async (profileId: string, principal: Principal, db: typeof sql): Promise<void> => {
+const grant = async (modelId: string, principal: Principal, db: typeof sql): Promise<void> => {
   const result = await createAccess({ principal, permission: "read" }, db);
   if (!result.ok) throw new AiModelAccessInvalid(result.error.message);
-  await db`INSERT INTO ai.model_access (profile_id, access_id) VALUES (${profileId}, ${result.data.id}::uuid)`;
+  await db`INSERT INTO ai.model_access (model_id, access_id) VALUES (${modelId}, ${result.data.id}::uuid)`;
 };
 
-const allowedProfileIds = async (profileIds: string[], subject: AccessSubject | null): Promise<Set<string>> => {
-  if (!subject || profileIds.length === 0) return new Set();
+const allowedModelIds = async (modelIds: string[], subject: AccessSubject | null): Promise<Set<string>> => {
+  if (!subject || modelIds.length === 0) return new Set();
   const match = buildAccessPrincipalCondition({
     subject,
     columns: {
@@ -78,34 +55,34 @@ const allowedProfileIds = async (profileIds: string[], subject: AccessSubject | 
       authenticatedOnly: sql`access.authenticated_only`,
     },
   });
-  const rows = await sql<{ profile_id: string }[]>`
-    SELECT DISTINCT model.profile_id FROM ai.model_access model JOIN auth.access access ON access.id = model.access_id
-    WHERE model.profile_id = ANY(${toPgTextArray(profileIds)}::text[])
+  const rows = await sql<{ model_id: string }[]>`
+    SELECT DISTINCT model.model_id FROM ai.model_access model JOIN auth.access access ON access.id = model.access_id
+    WHERE model.model_id = ANY(${toPgTextArray(modelIds)}::text[])
       AND access.permission IN ('read', 'write', 'admin') AND ${match}
   `;
-  return new Set(rows.map((row) => row.profile_id));
+  return new Set(rows.map((row) => row.model_id));
 };
 
 /** Assistant chat authorization only. Global/background model resolution does not call this service. */
 export const aiModelAccess = {
-  filterModels: async <T extends { id: string }>(models: T[], subject: AccessSubject | null): Promise<T[]> => {
-    const allowed = await allowedProfileIds(
-      models.map((model) => model.id),
+  filterModels: async <T extends { id: string; modelId: string }>(models: T[], subject: AccessSubject | null): Promise<T[]> => {
+    const allowed = await allowedModelIds(
+      models.map((model) => model.modelId),
       subject,
     );
-    return models.filter((model) => allowed.has(model.id));
+    return models.filter((model) => allowed.has(model.modelId));
   },
-  assertAllowed: async (profileId: string, subject: AccessSubject | null): Promise<void> => {
-    if ((await allowedProfileIds([profileId], subject)).has(profileId)) return;
+  assertAllowed: async (modelId: string, subject: AccessSubject | null): Promise<void> => {
+    if ((await allowedModelIds([modelId], subject)).has(modelId)) return;
     const message = "You do not have permission to use this model in Assistant. Choose another model.";
     throw Object.assign(new Error(message), {
-      aiError: { code: "model_access_denied", message, fields: { modelProfileId: message } } satisfies AiSettingsError,
+      aiError: { code: "model_policy_mismatch", message, fields: { model: message } } satisfies AiSettingsError,
     });
   },
-  listForAdmin: async (): Promise<AiModelAccessMap> => {
-    const rows = await sql<
+  listForAdmin: async (db = sql): Promise<AiModelAccessMap> => {
+    const rows = await db<
       {
-        profile_id: string;
+        model_id: string;
         revision: number | string;
         id: string | null;
         created_at: Date | null;
@@ -118,21 +95,21 @@ export const aiModelAccess = {
         service_account_kind: ServiceAccountKind | null;
       }[]
     >`
-      SELECT resource.profile_id, resource.revision, access.id, access.created_at,
+      SELECT resource.model_id, resource.revision, access.id, access.created_at,
         access.user_id, access.group_id, access.service_account_id, access.authenticated_only,
         COALESCE(NULLIF(users.display_name, ''), users.uid, groups.name, service_accounts.name) AS display_name,
         users.avatar_hash, service_accounts.kind AS service_account_kind
-      FROM ai.model_access_resources resource LEFT JOIN ai.model_access model ON model.profile_id = resource.profile_id
+      FROM ai.model_access_resources resource LEFT JOIN ai.model_access model ON model.model_id = resource.model_id
       LEFT JOIN auth.access access ON access.id = model.access_id
       LEFT JOIN auth.users users ON users.id = access.user_id
       LEFT JOIN auth.groups groups ON groups.id = access.group_id
       LEFT JOIN auth.service_accounts service_accounts ON service_accounts.id = access.service_account_id
-      ORDER BY resource.profile_id, access.created_at, access.id
+      ORDER BY resource.model_id, access.created_at, access.id
     `;
     const result = new Map<string, AiModelAccessState>();
     for (const row of rows) {
-      const state = result.get(row.profile_id) ?? { entries: [], revision: Number(row.revision) };
-      result.set(row.profile_id, state);
+      const state = result.get(row.model_id) ?? { entries: [], revision: Number(row.revision) };
+      result.set(row.model_id, state);
       if (!row.id || !row.created_at) continue;
       const principal: Principal = row.user_id
         ? { type: "user", userId: row.user_id }
@@ -156,41 +133,35 @@ export const aiModelAccess = {
     return Object.fromEntries(result);
   },
 
-  /** Called in the settings transaction. Existing grants survive edits that omit the ACL draft. */
-  syncProfiles: async (profileIds: readonly string[], changes: readonly AiModelAccessChange[], db: typeof sql): Promise<void> => {
-    // Serialize lifecycle changes (including a previously absent profile) with saves and migration seeding.
+  /** Called in the catalog transaction. Existing grants survive edits that omit the ACL draft. */
+  syncModels: async (modelIds: readonly string[], changes: readonly AiModelAccessChange[], db: typeof sql): Promise<void> => {
+    // Serialize lifecycle changes (including a previously absent model) with catalog saves.
     await db`LOCK TABLE ai.model_access_resources IN SHARE ROW EXCLUSIVE MODE`;
-    const current = await db<
-      { profile_id: string; revision: number | string }[]
-    >`SELECT profile_id, revision FROM ai.model_access_resources`;
-    const revisions = new Map(current.map((row) => [row.profile_id, Number(row.revision)]));
-    const keep = new Set(profileIds);
+    const current = await db<{ model_id: string; revision: number | string }[]>`SELECT model_id, revision FROM ai.model_access_resources`;
+    const revisions = new Map(current.map((row) => [row.model_id, Number(row.revision)]));
+    const keep = new Set(modelIds);
     for (const change of changes) {
-      if (!keep.has(change.profileId)) throw new Error("Permissions reference an unknown model profile.");
-      const sourceId = change.sourceProfileId ?? change.profileId;
-      if ((revisions.get(sourceId) ?? null) !== change.expectedRevision) throw new AiModelAccessConflict();
-      if (change.sourceProfileId && change.sourceProfileId !== change.profileId && revisions.has(change.profileId)) {
-        throw new AiModelAccessConflict();
-      }
+      if (!keep.has(change.modelId)) throw new Error("Permissions reference an unknown model.");
+      if ((revisions.get(change.modelId) ?? null) !== change.expectedRevision) throw new AiModelAccessConflict();
     }
-    for (const profileId of keep) {
-      if (revisions.has(profileId)) continue;
-      await db`INSERT INTO ai.model_access_resources (profile_id) VALUES (${profileId})`;
-      await grant(profileId, { type: "authenticated" }, db);
+    for (const modelId of keep) {
+      if (revisions.has(modelId)) continue;
+      await db`INSERT INTO ai.model_access_resources (model_id) VALUES (${modelId})`;
+      await grant(modelId, { type: "authenticated" }, db);
     }
     for (const change of changes) {
-      await db`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access WHERE profile_id = ${change.profileId})`;
+      await db`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access WHERE model_id = ${change.modelId})`;
       const seen = new Set<string>();
       for (const entry of change.entries) {
         const key = principalKey(entry.principal);
         if (seen.has(key)) continue;
         seen.add(key);
-        await grant(change.profileId, entry.principal, db);
+        await grant(change.modelId, entry.principal, db);
       }
-      await db`UPDATE ai.model_access_resources SET revision = nextval('ai.model_access_revision') WHERE profile_id = ${change.profileId}`;
+      await db`UPDATE ai.model_access_resources SET revision = nextval('ai.model_access_revision') WHERE model_id = ${change.modelId}`;
     }
     const ids = toPgTextArray([...keep]);
-    await db`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access WHERE profile_id <> ALL(${ids}::text[]))`;
-    await db`DELETE FROM ai.model_access_resources WHERE profile_id <> ALL(${ids}::text[])`;
+    await db`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access WHERE model_id <> ALL(${ids}::text[]))`;
+    await db`DELETE FROM ai.model_access_resources WHERE model_id <> ALL(${ids}::text[])`;
   },
 };

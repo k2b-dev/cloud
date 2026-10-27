@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import type { RequestActor } from "../server";
+import { type AiModelRequest, AiModelRequestSchema } from "./model-contracts";
 
 /**
  * Learning from private chats applies to everyone who has not chosen.
@@ -12,8 +13,8 @@ export type AiUserPrefs = {
   memoryEnabled: boolean;
   /** Effective setting: the user's explicit choice, otherwise the default. */
   memoryLearningEnabled: boolean;
-  /** Model profile id of the user's most recent chat turn — preselected for new chats. */
-  lastModelId: string;
+  /** Class or explicit variant choice, preselected for new chats. */
+  selection: AiModelRequest | null;
   updatedAt: string;
 };
 
@@ -21,7 +22,7 @@ type PrefsRow = {
   user_id: string;
   memory_enabled: boolean;
   memory_learning_enabled: boolean | null;
-  last_model_id: string | null;
+  model_choice: unknown;
   updated_at: string | Date;
 };
 
@@ -29,7 +30,7 @@ const toPrefs = (row: PrefsRow): AiUserPrefs => ({
   userId: row.user_id,
   memoryEnabled: row.memory_enabled,
   memoryLearningEnabled: row.memory_learning_enabled ?? AI_MEMORY_LEARNING_DEFAULT_ENABLED,
-  lastModelId: row.last_model_id ?? "",
+  selection: row.model_choice ? AiModelRequestSchema.parse(row.model_choice) : null,
   updatedAt: new Date(row.updated_at).toISOString(),
 });
 
@@ -37,7 +38,7 @@ const emptyPrefs = (userId: string): AiUserPrefs => ({
   userId,
   memoryEnabled: true,
   memoryLearningEnabled: AI_MEMORY_LEARNING_DEFAULT_ENABLED,
-  lastModelId: "",
+  selection: null,
   updatedAt: new Date(0).toISOString(),
 });
 
@@ -59,25 +60,26 @@ export const aiUserPrefs = {
 
   async update(
     userId: string,
-    patch: { memoryEnabled?: boolean; memoryLearningEnabled?: boolean; lastModelId?: string },
+    patch: { memoryEnabled?: boolean; memoryLearningEnabled?: boolean; selection?: AiModelRequest | null },
   ): Promise<AiUserPrefs> {
     const memoryEnabled = patch.memoryEnabled ?? null;
     const memoryLearningEnabled = patch.memoryLearningEnabled ?? null;
     // Records when the person last saved the learning switch, so a stored "off"
     // from an earlier release stays distinguishable from a choice made since.
     const learningChosen = memoryLearningEnabled !== null;
-    const lastModelId = patch.lastModelId?.trim().slice(0, 200) ?? null;
+    const choiceChanged = Object.hasOwn(patch, "selection");
+    const modelChoice = patch.selection ? JSON.stringify(AiModelRequestSchema.parse(patch.selection)) : null;
     const rows = (await sql`
-      INSERT INTO ai.user_prefs (user_id, memory_enabled, memory_learning_enabled, memory_learning_chosen_at, last_model_id, updated_at)
+      INSERT INTO ai.user_prefs (user_id, memory_enabled, memory_learning_enabled, memory_learning_chosen_at, model_choice, updated_at)
       VALUES (
         ${userId}, ${memoryEnabled ?? true}, ${memoryLearningEnabled},
-        CASE WHEN ${learningChosen}::boolean THEN now() END, ${lastModelId ?? ""}, now()
+        CASE WHEN ${learningChosen}::boolean THEN now() END, ${modelChoice}::jsonb, now()
       )
       ON CONFLICT (user_id) DO UPDATE SET
         memory_enabled = COALESCE(${memoryEnabled}, ai.user_prefs.memory_enabled),
         memory_learning_enabled = COALESCE(${memoryLearningEnabled}, ai.user_prefs.memory_learning_enabled),
         memory_learning_chosen_at = CASE WHEN ${learningChosen}::boolean THEN now() ELSE ai.user_prefs.memory_learning_chosen_at END,
-        last_model_id = COALESCE(${lastModelId}, ai.user_prefs.last_model_id),
+        model_choice = CASE WHEN ${choiceChanged} THEN ${modelChoice}::jsonb ELSE ai.user_prefs.model_choice END,
         updated_at = now()
       RETURNING *
     `) as PrefsRow[];

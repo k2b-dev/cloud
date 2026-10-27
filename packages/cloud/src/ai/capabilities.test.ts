@@ -36,6 +36,7 @@ import { aiChatTasks } from "./chat-tasks";
 import * as credentials from "./credentials";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiModelAccess } from "./model-access";
+import { aiAssignmentFixture, aiSettingsFixture } from "./model-fixture";
 import * as settings from "./settings";
 import { prepareAiTools } from "./tools";
 import type { AiModelProfile } from "./types";
@@ -72,6 +73,12 @@ afterEach(() => mock.restore());
 
 const configureAudio = async (audioModelId = "speech") => {
   const audio: AiModelProfile = {
+    modelId: "speech",
+    providerId: "speech",
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
     id: "speech",
     label: "Speech",
     provider: "openai-compatible",
@@ -81,11 +88,11 @@ const configureAudio = async (audioModelId = "speech") => {
     capabilities: ["transcription"],
     dataBoundary: "private",
   };
-  const chat: AiModelProfile = { ...audio, id: "chat", capabilities: ["streaming", "tools"] };
-  const state = await settings.resolveAiSettingsStateFromRaw({
+  const chat: AiModelProfile = { ...audio, id: "chat", capabilities: ["tools"] };
+  const state = aiSettingsFixture({
     enabled: true,
-    defaultModelId: chat.id,
-    profilesJson: JSON.stringify([chat, audio]),
+    assignments: [aiAssignmentFixture("balanced", chat.id), aiAssignmentFixture("audio", audioModelId)],
+    profiles: [chat, audio],
   });
   spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
   spyOn(coreSettings, "get").mockResolvedValue(audioModelId);

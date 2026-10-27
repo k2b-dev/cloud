@@ -95,14 +95,14 @@ describe("durable workflow AI tasks", () => {
       stepKey: "step:ai",
       effectKey: `workflow:${runId}:step:ai`,
       request: { kind: "classify" as const, prompt: "Choose", input: "hello", choices: ["a", "b"] },
-      modelProfileId: "workflow-model",
+      modelId: "workflow-model",
     };
 
     const first = await createWorkflowAiTask(input);
     const duplicate = await createWorkflowAiTask(input);
     expect(first.created).toBe(true);
     expect(duplicate).toMatchObject({ created: false, task: { id: first.task.id } });
-    expect(first.task).toMatchObject({ appId, modelProfileId: "workflow-model", attempts: 0, status: "queued" });
+    expect(first.task).toMatchObject({ appId, modelId: "workflow-model", attempts: 0, status: "queued" });
 
     const claimed = await claimWorkflowAiTask(first.task.id);
     expect(claimed).toMatchObject({ status: "running", attempts: 1 });
@@ -126,7 +126,7 @@ describe("durable workflow AI tasks", () => {
       stepKey: "step:ai",
       effectKey: `workflow:${runId}:step:ai`,
       request: { kind: "generate_text", prompt: "Draft" },
-      modelProfileId: "workflow-model",
+      modelId: "workflow-model",
     });
 
     expect(await requestWorkflowRunCancel(runId)).toBe(true);
@@ -141,7 +141,7 @@ describe("durable workflow AI tasks", () => {
       stepKey: "step:ai",
       effectKey: `workflow:${runId}:step:ai`,
       request: { kind: "generate_text", prompt: "Draft" },
-      modelProfileId: "workflow-model",
+      modelId: "workflow-model",
     });
 
     await claimWorkflowAiTask(created.task.id);
@@ -163,7 +163,7 @@ describe("durable workflow AI tasks", () => {
       stepKey: "step:ai",
       effectKey: `workflow:${runId}:step:ai`,
       request: { kind: "generate_text", prompt: "Draft" },
-      modelProfileId: "pinned-model",
+      modelId: "pinned-model",
     });
     const models: Array<string | undefined> = [];
     let calls = 0;
@@ -171,11 +171,11 @@ describe("durable workflow AI tasks", () => {
       input: RunAiStructuredInput<TOutput>,
     ): Promise<RunAiStructuredResult<TOutput>> => {
       calls += 1;
-      models.push(input.requestedModelId);
+      models.push(input.model && "id" in input.model ? input.model.id : input.model?.class);
       if (calls === 1) throw new Error("provider interrupted");
       return {
         output: input.output.parse({ text: "draft" }),
-        modelProfileId: "pinned-model",
+        model: { id: "pinned-model" },
         structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
       };
     }) as typeof import("../../ai")["runAiStructured"];
@@ -198,7 +198,7 @@ describe("durable workflow AI tasks", () => {
       stepKey: "step:transient",
       effectKey: `workflow:${transientRun.runId}:step:transient`,
       request: { kind: "generate_text", prompt: "Draft" },
-      modelProfileId: "workflow-model",
+      modelId: "workflow-model",
     });
     const unavailable = (async () => {
       throw new Error("provider unavailable");
@@ -222,7 +222,7 @@ describe("durable workflow AI tasks", () => {
       stepKey: "step:invalid",
       effectKey: `workflow:${invalidRun.runId}:step:invalid`,
       request: { kind: "generate_text", prompt: "Draft" },
-      modelProfileId: "workflow-model",
+      modelId: "workflow-model",
     });
     const invalidOutput = (async () => {
       throw new StructuredOutputError("invalid output", "invalid_output");
@@ -246,7 +246,7 @@ describe("durable workflow AI tasks", () => {
       stepKey: "step:ai",
       effectKey: `workflow:${runId}:step:ai`,
       request: { kind: "generate_text", prompt: "Draft" },
-      modelProfileId: "workflow-model",
+      modelId: "workflow-model",
     });
     let started!: () => void;
     const providerStarted = new Promise<void>((resolve) => (started = resolve));
@@ -280,7 +280,7 @@ describe("durable workflow AI tasks", () => {
       stepKey: "step:ai",
       effectKey: `workflow:${runId}:step:ai`,
       request: { kind: "generate_text", prompt: "Draft" },
-      modelProfileId: "workflow-model",
+      modelId: "workflow-model",
     });
     let started!: () => void;
     const providerStarted = new Promise<void>((resolve) => (started = resolve));
@@ -293,7 +293,7 @@ describe("durable workflow AI tasks", () => {
       await cancelled.promise;
       return {
         output: input.output.parse({ text: "late" }),
-        modelProfileId: "workflow-model",
+        model: { id: "workflow-model" },
         structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
       };
     }) as typeof import("../../ai")["runAiStructured"];
@@ -320,7 +320,7 @@ test("a lost queued delivery fails visibly and wakes its workflow without restar
     stepKey: "lost",
     effectKey: `workflow:${runId}:lost`,
     request: { kind: "classify", prompt: "Choose", input: "hello", choices: ["a", "b"] },
-    modelProfileId: "model",
+    modelId: "model",
   });
   await sql`UPDATE ai.workflow_task SET updated_at = now() - interval '61 seconds' WHERE id = ${task.id}::uuid`;
   await expireWorkflowAiTasks(60_000);
@@ -338,7 +338,7 @@ test("recovery repairs a missing terminal wake by following a waiting step", asy
     stepKey: "repair-wake",
     effectKey: `workflow:${runId}:repair-wake`,
     request: { kind: "classify", prompt: "Choose", input: "hello", choices: ["a", "b"] },
-    modelProfileId: "model",
+    modelId: "model",
   });
   await claimWorkflowAiTask(task.id);
   await completeWorkflowAiTask(task.id, "a", null);
@@ -361,7 +361,7 @@ test("delivery expiry preserves requested cancellation", async () => {
     stepKey: "expired-cancel",
     effectKey: `workflow:${runId}:expired-cancel`,
     request: { kind: "classify", prompt: "Choose", input: "hello", choices: ["a", "b"] },
-    modelProfileId: "model",
+    modelId: "model",
   });
   await requestWorkflowRunCancel(runId);
   await sql`UPDATE ai.workflow_task SET updated_at = now() - interval '61 seconds' WHERE id = ${task.id}::uuid`;
@@ -375,7 +375,7 @@ test("JSONB separator and numeric expansion exceed the budget with a stable inpu
   const request = { kind: "classify" as const, prompt: "Choose", input: Array.from({ length: 400 }, () => 1e300), choices: ["a", "b"] };
   expect(Buffer.byteLength(JSON.stringify(request))).toBeLessThan(100_000);
   await expect(
-    createWorkflowAiTask({ runId, stepKey: "oversized", effectKey: `workflow:${runId}:oversized`, request, modelProfileId: "model" }),
+    createWorkflowAiTask({ runId, stepKey: "oversized", effectKey: `workflow:${runId}:oversized`, request, modelId: "model" }),
   ).rejects.toMatchObject({ code: "WORKFLOW_AI_INPUT_TOO_LARGE" });
 });
 
@@ -403,7 +403,7 @@ const scopedTask = async (
     stepKey: "ai",
     effectKey: `workflow:${run.runId}:ai`,
     request: { kind: "classify", prompt: options.prompt ?? "Choose", input: { body: "hello", subject: "invoice" }, choices: ["a", "b"] },
-    modelProfileId: "model",
+    modelId: "model",
     modelConfigHash: options.modelConfigHash ?? "a".repeat(64),
     scope: {
       sourceId: options.sourceId ?? "message",
@@ -528,7 +528,7 @@ testFor("database", "nats")("shutdown drains an interrupted attempt into queued 
     stepKey: "shutdown",
     effectKey: `workflow:${run.runId}:shutdown`,
     request: { kind: "classify", prompt: "Choose", input: "hello", choices: ["a", "b"] },
-    modelProfileId: "model",
+    modelId: "model",
   });
   const fixture = await openSync("workflow-ai-shutdown");
   const pending = spyOn(aiStore, "listRecoverableWorkflowAiTaskIds").mockResolvedValue([]);

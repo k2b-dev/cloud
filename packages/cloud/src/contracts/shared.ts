@@ -392,6 +392,8 @@ export type SettingOption = {
 export type SettingValueSource = "custom" | "env" | "default";
 
 export type SettingEntry = {
+  updatedAt?: string | null;
+  updatedBy?: { id: string; name: string } | null;
   key: string;
   label: string;
   kind: SettingKind;

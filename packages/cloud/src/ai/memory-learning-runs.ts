@@ -21,7 +21,7 @@ export type AiMemoryLearningRun = {
   conversationTitle: string;
   kind: AiMemoryLearningRunKind;
   status: AiMemoryLearningRunStatus;
-  modelProfileId: string | null;
+  modelId: string | null;
   durationMs: number | null;
   addedCount: number;
   updatedCount: number;
@@ -79,7 +79,7 @@ const toRun = (row: RunRow): AiMemoryLearningRun => ({
   conversationTitle: row.conversation_title,
   kind: row.run_kind,
   status: row.status,
-  modelProfileId: row.model_profile_id,
+  modelId: row.model_profile_id,
   durationMs: row.duration_ms,
   addedCount: row.added_count,
   updatedCount: row.updated_count,
@@ -107,7 +107,7 @@ export const aiMemoryLearningRuns = {
     turnId: string;
     runKind: AiMemoryLearningRunKind;
     evidenceKey?: string;
-    modelProfileId: string;
+    modelId: string;
     accountedTokens: number;
   }): Promise<string | null> {
     if ((input.runKind === "workflow") !== Boolean(input.evidenceKey)) {
@@ -119,7 +119,7 @@ export const aiMemoryLearningRuns = {
         INSERT INTO ai.memory_learning_runs (
           short_id, user_id, conversation_id, turn_id, conversation_title, run_kind, model_profile_id, accounted_tokens
         )
-        SELECT ${shortId}, ${input.userId}::uuid, c.id, turn.id, c.title, ${input.runKind}, ${input.modelProfileId}, ${input.accountedTokens}
+        SELECT ${shortId}, ${input.userId}::uuid, c.id, turn.id, c.title, ${input.runKind}, ${input.modelId}, ${input.accountedTokens}
         FROM ai.conversations c
         JOIN ai.turns turn ON turn.conversation_id = c.id AND turn.id = ${input.turnId}::uuid
         WHERE c.id = ${input.conversationId}::uuid AND c.created_by_user_id = ${input.userId}::uuid
@@ -136,7 +136,7 @@ export const aiMemoryLearningRuns = {
           short_id, user_id, conversation_id, turn_id, conversation_title, run_kind, evidence_key, model_profile_id, accounted_tokens
         )
         SELECT ${shortId}, ${input.userId}::uuid, c.id, turn.id, c.title, 'workflow', ${input.evidenceKey!},
-               ${input.modelProfileId}, ${input.accountedTokens}
+               ${input.modelId}, ${input.accountedTokens}
         FROM ai.conversations c
         JOIN ai.turns turn ON turn.conversation_id = c.id AND turn.id = ${input.turnId}::uuid
         WHERE c.id = ${input.conversationId}::uuid AND c.created_by_user_id = ${input.userId}::uuid

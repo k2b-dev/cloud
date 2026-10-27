@@ -133,7 +133,7 @@ describe("AI controller draft submission", () => {
           conversationId: current.id,
           status: "running",
           attempt: 0,
-          modelProfileId: null,
+          modelId: null,
           createdAt: "2026-07-11T00:00:00.000Z",
           completedAt: null,
           error: null,
@@ -146,7 +146,7 @@ describe("AI controller draft submission", () => {
           kind: "message",
           message: { role: "user", content: [{ type: "text", text: "Sent" }] },
           loopId: null,
-          modelProfileId: null,
+          modelId: null,
           providerModel: null,
           usage: null,
           stopReason: null,
@@ -224,7 +224,7 @@ describe("AI controller draft submission", () => {
           status: "completed",
           error: null,
         });
-      finishTurn(Response.json({ message: saved, turn: { id: "turn-1", modelProfileId: null } }));
+      finishTurn(Response.json({ message: saved, turn: { id: "turn-1", modelId: null } }));
       expect(await sending).toBe(true);
       expect(controller.activeTurn()?.status ?? null).toBe(finishBeforeAck ? null : "running");
       emit({ type: "state", conversation: current, messages: finishBeforeAck ? [saved] : [], activeTurn: null });
@@ -346,11 +346,11 @@ describe("AI controller draft submission", () => {
       });
     });
     try {
-      expect(await controller.send({ message: "Only once", modelProfileId: "chosen", expectedDraftRevision: 0 })).toBe(false);
+      expect(await controller.send({ message: "Only once", model: { id: "chosen" }, expectedDraftRevision: 0 })).toBe(false);
       expect(await controller.retrySubmission(current.id)).toBe("accepted");
       expect(bodies).toHaveLength(2);
       expect(bodies[1]).toBe(bodies[0]);
-      expect(JSON.parse(bodies[1]!)).toEqual({ draftRevision: 9, modelProfileId: "chosen" });
+      expect(JSON.parse(bodies[1]!)).toEqual({ draftRevision: 9, model: { id: "chosen" } });
       expect(saves).toBe(1);
       expect(controller.uncertainSubmissions()).toEqual({});
     } finally {
@@ -379,7 +379,7 @@ describe("AI controller draft submission", () => {
               conversationId: "resource-chat",
               status: "running",
               attempt: 0,
-              modelProfileId: null,
+              modelId: null,
               createdAt: "2026-07-11T00:00:00.000Z",
               completedAt: null,
               error: null,
@@ -392,7 +392,7 @@ describe("AI controller draft submission", () => {
               kind: "message",
               message: { role: "user", content: [{ type: "text", text: "Resource attached" }] },
               loopId: null,
-              modelProfileId: null,
+              modelId: null,
               providerModel: null,
               usage: null,
               stopReason: null,
@@ -496,7 +496,7 @@ describe("AI controller conversation transitions", () => {
               seq: 1,
               status: "running",
               blocks: [],
-              modelProfileId: null,
+              modelId: null,
               createdAt: "2026-09-14T00:00:00.000Z",
             },
           });
@@ -520,7 +520,7 @@ describe("AI controller conversation transitions", () => {
             seq: 1,
             status: "running",
             blocks: [],
-            modelProfileId: null,
+            modelId: null,
             createdAt: "2026-09-14T00:00:00.000Z",
           },
         },
@@ -624,7 +624,7 @@ describe("AI controller conversation transitions", () => {
               conversationId: "waiting",
               status: "queued",
               attempt: 0,
-              modelProfileId: null,
+              modelId: null,
               createdAt: "2026-07-11T00:00:00.000Z",
               completedAt: null,
               error: null,
@@ -637,7 +637,7 @@ describe("AI controller conversation transitions", () => {
               kind: "message",
               message: { role: "user", content: [{ type: "text", text: "ja" }] },
               loopId: "turn-retry",
-              modelProfileId: null,
+              modelId: null,
               providerModel: null,
               usage: null,
               stopReason: null,
@@ -671,7 +671,7 @@ describe("AI controller conversation transitions", () => {
             status: "waiting_for_action",
             seq: 1,
             blocks: [],
-            modelProfileId: null,
+            modelId: null,
             createdAt: "2026-07-11T00:00:00.000Z",
           },
         },
@@ -723,7 +723,7 @@ describe("AI controller message feedback", () => {
               kind: "message",
               message: { role: "assistant", content: [{ type: "text", text: "It happened on Tuesday." }] },
               loopId: "turn-1",
-              modelProfileId: "fast",
+              modelId: "fast",
               providerModel: "model-fast",
               usage: null,
               stopReason: "stop",
@@ -842,7 +842,7 @@ describe("AI controller stream sessions", () => {
           status: "awaiting_client" as const,
         },
       ],
-      modelProfileId: null,
+      modelId: null,
       createdAt: "2026-10-05T10:00:00.000Z",
     };
     const sse = (event: unknown, end: boolean) =>
@@ -1131,7 +1131,7 @@ describe("AI controller turn failures", () => {
       kind: "message",
       message: { role: "user", content: [{ type: "text", text: "Hi" }] },
       loopId: "turn-1",
-      modelProfileId: null,
+      modelId: null,
       providerModel: null,
       usage: null,
       stopReason: null,
@@ -1286,7 +1286,7 @@ for (const recovery of ["snapshot", "refresh"] as const)
       seq: 1,
       status: "waiting_for_action",
       blocks: [],
-      modelProfileId: null,
+      modelId: null,
       createdAt: "2026-09-20T00:00:00Z",
     };
     let emit!: Parameters<AiConversationStreamTransport["subscribe"]>[0]["onEvent"];
@@ -1330,7 +1330,7 @@ describe("AI controller silence", () => {
     seq: 3,
     status,
     blocks,
-    modelProfileId: null,
+    modelId: null,
     createdAt: "2026-10-07T00:00:00Z",
   });
   const delta = (seq: number): AiStreamSseEvent => ({

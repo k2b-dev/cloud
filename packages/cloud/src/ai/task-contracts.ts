@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { AiModelRequestSchema } from "./model-contracts";
 
 const prompt = z.string().trim().min(1).max(20_000);
-const modelProfileId = z.string().trim().min(1).max(120).optional();
+const model = AiModelRequestSchema.optional();
 const choice = z.string().trim().min(1).max(200);
 const choices = z
   .array(choice)
@@ -42,7 +43,7 @@ export const AiTaskRequestSchema = z.discriminatedUnion("kind", [
     kind: z.literal("generate_text"),
     prompt,
     input: z.unknown().optional(),
-    modelProfileId,
+    model,
     maxOutputChars: z.number().int().min(1).max(20_000).default(4_000),
   }),
   z.object({
@@ -50,7 +51,7 @@ export const AiTaskRequestSchema = z.discriminatedUnion("kind", [
     prompt,
     input: z.unknown(),
     choices,
-    modelProfileId,
+    model,
   }),
   z
     .object({
@@ -60,7 +61,7 @@ export const AiTaskRequestSchema = z.discriminatedUnion("kind", [
       choices,
       minChoices: z.number().int().min(0).max(50).default(0),
       maxChoices: z.number().int().min(0).max(50).optional(),
-      modelProfileId,
+      model,
     })
     .superRefine((value, ctx) => {
       const maximum = value.maxChoices ?? value.choices.length;
@@ -76,7 +77,7 @@ export const AiTaskRequestSchema = z.discriminatedUnion("kind", [
     prompt,
     input: z.unknown(),
     fields: structuredFields,
-    modelProfileId,
+    model,
   }),
 ]);
 

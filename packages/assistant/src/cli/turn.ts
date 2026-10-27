@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import type { AiConversation, AiDraftContentPart, AiFileStat, AiTurnContentPart } from "@k2b/cloud/ai";
+import { AiModelRequestSchema } from "@k2b/cloud/ai";
 import {
   AI_IMAGE_INPUT_MAX_BYTES,
   AI_TURN_ATTACHMENT_MAX_ITEMS,
@@ -21,7 +22,7 @@ export type ConversationDetail = {
   activeTurn: { turnId: string; status: string } | null;
 };
 
-type TurnSubmission = { turn: { id: string; status: string; modelProfileId: string | null } };
+type TurnSubmission = { turn: { id: string; status: string; modelId: string | null } };
 
 export const conversationPath = (conversationId: string, suffix = ""): string =>
   `/conversations/${encodeURIComponent(conversationId)}${suffix}`;
@@ -122,7 +123,7 @@ const submitDraftBody = async (ctx: CloudCliContext, conversationId: string, bod
           ]),
         )
         .optional(),
-      modelProfileId: z.string().optional(),
+      model: AiModelRequestSchema.optional(),
       clientToolIds: z.array(z.string()).optional(),
       client: AiLocalClientSchema.optional(),
       localContext: AiLocalContextSchema.optional(),
@@ -150,7 +151,7 @@ const submitDraftBody = async (ctx: CloudCliContext, conversationId: string, bod
   );
   return {
     draftRevision: draft.revision,
-    modelProfileId: input.modelProfileId,
+    model: input.model,
     ...(input.client ? { client: input.client } : {}),
     ...(input.localContext ? { localContext: input.localContext } : {}),
     clientToolIds: [...new Set([...(input.clientToolIds ?? []), ...(codeHost ? ["code_open", "code_secret"] : [])])],

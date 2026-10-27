@@ -11,6 +11,8 @@ import { authenticateModelsOnlyCredential } from "../services/identity/models-on
 import { coreSettings } from "../services/settings/api";
 import { listAssistantAiModels } from "./assistant-models";
 import { aiModelAccess } from "./model-access";
+import { aiModelCatalog } from "./model-catalog";
+import { AI_MODEL_CLASSES, AiModelRequestSchema } from "./model-contracts";
 import { type OpenAiErrorCode, openAiApiMessages } from "./openai-api-messages";
 import { acquire } from "./openai-api-slots";
 import { personalAiModelPolicy } from "./personal-agent";
@@ -78,6 +80,7 @@ type Dependencies = {
   settings?: Pick<typeof coreSettings, "get">;
   authenticate?: typeof authenticateModelsOnlyCredential;
   listModels?: typeof listAssistantAiModels;
+  assignments?: typeof aiModelCatalog.assignments;
   resolveModel?: typeof resolveAiModel;
   assertModelAccess?: typeof aiModelAccess.assertAllowed;
   acquire?: typeof acquire;
@@ -89,6 +92,7 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
   const settings = dependencies.settings ?? coreSettings;
   const authenticate = dependencies.authenticate ?? authenticateModelsOnlyCredential;
   const listModels = dependencies.listModels ?? listAssistantAiModels;
+  const assignments = dependencies.assignments ?? (() => aiModelCatalog.assignments());
   const resolveModel = dependencies.resolveModel ?? resolveAiModel;
   const assertModelAccess = dependencies.assertModelAccess ?? aiModelAccess.assertAllowed;
   const acquireSlot = dependencies.acquire ?? acquire;
@@ -136,9 +140,16 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
         const models = await listModels(c.get("accessSubject"));
         return c.json({
           object: "list",
-          data: models
-            .filter((model) => !model.capabilities.includes("transcription"))
-            .map((model) => ({ id: model.id, object: "model", created: 0, owned_by: "cloud" })),
+          data: [
+            ...models.filter((model) => !model.capabilities.includes("transcription")).map((model) => model.id),
+            ...(await assignments()).flatMap((assignment) =>
+              AI_MODEL_CLASSES.some((cls) => cls === assignment.slot) &&
+              assignment.variantId &&
+              models.some((model) => model.id === assignment.variantId)
+                ? [`cloud/${assignment.slot}`]
+                : [],
+            ),
+          ].map((id) => ({ id, object: "model", created: 0, owned_by: "cloud" })),
         });
       },
     )
@@ -204,9 +215,15 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
             else if (message.role === "user") messages.push({ role: "user", content: [text] });
             else messages.push({ role: "assistant", content: [{ type: "text", text }] });
           }
-          if (!models.some((model) => model.id === data.model))
+          if (
+            !models.some((model) => model.id === data.model) &&
+            !(data.model.startsWith("cloud/") && AI_MODEL_CLASSES.some((cls) => `cloud/${cls}` === data.model))
+          )
             return errorResponse(c, 404, "model_not_found", "invalid_request_error", "model");
-          const resolved = await resolveModel(personalAiModelPolicy, data.model);
+          const resolved = await resolveModel(
+            personalAiModelPolicy,
+            AiModelRequestSchema.parse(data.model.startsWith("cloud/") ? { class: data.model.slice(6) } : { id: data.model }),
+          );
           const systemPrompt = system.join("\n\n");
           const inputTokens = estimateTokens(messages) + Math.ceil(systemPrompt.length / 4);
           if (resolved.provider.contextWindow !== undefined && inputTokens > resolved.provider.contextWindow)
@@ -248,7 +265,7 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
                 JSON.stringify(current.subject) !== JSON.stringify(subject)
               )
                 throw new ModelsCredentialRevoked();
-              await assertModelAccess(resolved.profile.id, subject);
+              await assertModelAccess(resolved.profile.modelId, subject);
             } catch (error) {
               if (error instanceof ModelsCredentialRevoked) throw error;
               if (error instanceof Error && "aiError" in error)
@@ -271,6 +288,7 @@ export const createAiOpenAiRoutes = (dependencies: Dependencies = {}) => {
           };
           const provider: Provider = wrapProvider(guarded, resolved.profile, {
             kind: "chat",
+            modelRef: resolved.model,
             task: "openai-api",
             subject,
             credentialId: credential.credentialId,

@@ -12,12 +12,18 @@ import { AiProviderAdmissionError, inferenceProvider } from "./quota-provider";
 import type { AiModelProfile } from "./types";
 
 const profile: AiModelProfile = {
+  modelId: "a",
+  providerId: "a",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "a",
   label: "A",
   provider: "openai",
   model: "a",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "hosted",
   pricing: { inputPerMillion: 1, outputPerMillion: 2 },
 };

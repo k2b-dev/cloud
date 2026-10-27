@@ -31,7 +31,7 @@ const platformTasks = (t: ReturnType<typeof adminMessages.resolve>["t"]) =>
       color: "orange",
     },
     {
-      href: "/admin/settings?tab=ai-providers",
+      href: "/admin/settings?tab=ai-general",
       title: t.aiProviders,
       description: t.aiProvidersDescription,
       icon: "ti ti-sparkles",

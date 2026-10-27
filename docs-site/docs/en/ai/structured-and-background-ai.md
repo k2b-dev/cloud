@@ -37,6 +37,7 @@ const item = await loadItemForAi({
 if (!item) throw new Error("Item not found");
 
 const result = await runAiStructured({
+  model: { class: "fast" },
   task: "inventory-categorize",
   appId: "inventory",
   input: JSON.stringify({
@@ -60,7 +61,7 @@ console.log(result.output.category);
 `loadItemForAi()` is the authorization boundary. Its return value is the
 redacted model input.
 
-The returned value includes the parsed output, model profile ID, usage, and
+The returned value includes the parsed output, a resolved `model` reference, usage, and
 structured-output metadata.
 
 Structured tasks and context compaction keep their previous reasoning requests:
@@ -79,7 +80,7 @@ keep their model defaults. The profile thinking level does not apply. Profile
 | `output` | Zod schema for the result |
 | `outputName` | Optional provider-facing schema name |
 | `systemPrompt` | Optional task instructions |
-| `requestedModelId` | Optional explicit profile |
+| `model` | `{ class: AiModelClass }` or `{ id: string }`; omitted means balanced |
 | `temperature` | Task-level override |
 | `maxOutputTokens` | Task-level output limit |
 | `signal` | Cancellation |
@@ -99,18 +100,14 @@ model, duration, token counts, output mode, repair state, and attempts.
 
 ## Choose the background model
 
-Model resolution follows this order:
-
-1. `requestedModelId`;
-2. the `ai.background_model_id` setting;
-3. the platform default.
-
-Resolution fails when AI is disabled or the model is unavailable.
+Pass `model: { class: "fast" }` for optional short background work. Without
+`model`, `runAiStructured` requests balanced. The operator assigns models to
+classes; there is no separate background-model setting.
 
 Cloud's built-in chat enrichment, personalization learning, and long-chat
 compaction use one prompt model: a code-owned task, optional administrator
 guidance, and a final code-owned output and safety contract. Administrators
-configure the shared background model, chat enrichment schedule,
+configure model classes, the chat enrichment schedule,
 personalization learning schedule, and each task's additional instructions in
 **Settings → AI → Background jobs**. Additional instructions can supply local
 terminology or conventions; they cannot replace the task, loosen privacy
@@ -211,15 +208,9 @@ The server-only lifecycle exports are available from
 
 ### Choose the workflow model
 
-Workflow model resolution follows this order:
-
-1. the action's optional `model` profile ID;
-2. the `ai.workflow_model_id` platform setting;
-3. `ai.background_model_id`;
-4. the platform default.
-
-The resolved profile ID is pinned when the durable task is created. A later
-settings change does not alter an in-flight or replayed task.
+An action's optional `model` accepts a class or variant request. Omitted
+requests use balanced. The resolved variant ID is pinned when the durable
+task is created. Class reassignment does not change that task or its retries.
 
 ### Understand durable execution
 
@@ -309,7 +300,7 @@ conversion, splitting, or automatic retry.
 Each attempt records model, task, duration, status, and optional attribution in
 the metadata-only AI usage ledger. Audio and transcripts are excluded, and
 unknown provider usage or costs remain unknown. See
-[Models and providers](/en/docs/ai/models-and-providers#configure-audio-transcription)
+[Models and providers](/en/docs/ai/models-and-providers#assign-classes-and-tools)
 for configuration and file limits.
 
 
@@ -355,7 +346,7 @@ background-budget behavior. Attribution alone never selects a budget or grants
 model access. `AiQuotaError` exposes allowance failures to server callers.
 
 Authorize the resource before inference. Use `selectAssistantAiModelId(subject,
-requestedModelId)` for Assistant model grants and `resolveAiModel` with
+model)` for Assistant model grants and `resolveAiModel` with
 `personalAiModelPolicy` for the matching data-boundary policy; pass that resolver
 through `resolveModel`. Supply only verified server-side identities, not IDs from
 the calculation's input. The calculations receive only the supplied prompt and
@@ -548,3 +539,38 @@ The shared Workflow AI consumer also uses the registry budget’s `globalConcurr
 value as its global NATS in-flight bound, including unscoped callers. Changing
 that resource setting requires the same deliberate Sync migration as other
 durable consumer configuration changes.
+
+## Request a class
+
+Import `AiModelRequest` and `AiResolvedModelRef` from `@k2b/cloud/ai`:
+
+```ts
+type AiModelRequest = { class: "fast" | "balanced" | "thorough" | "maximum" } | { id: string };
+type AiResolvedModelRef = {
+  requestedClass?: "fast" | "balanced" | "thorough" | "maximum";
+  class?: "fast" | "balanced" | "thorough" | "maximum";
+  id: string;
+};
+```
+
+Use a class when the operator should choose the deployment's model. Use an
+explicit variant ID only when the task requires that specific model. The
+same request shape is used by `runAiStructured`, `AiTaskRequestSchema.model`,
+workflow AI actions, project `defaultModel`, personal selection and chat turns.
+A stored class follows later assignment changes. Durable workflow tasks pin
+the resolved variant when admitted, so a retry uses the same model.
+
+`runAiStructured` returns `{ output, model, usage, structuredMeta }`. The
+reference records the requested class, the class actually used, and the
+variant ID. Traces and inference accounting retain this resolution metadata.
+
+Without `model`, the public default is balanced. Built-in titles, conversation
+enrichment, memory learning and scheduled background routines request fast.
+Workflow steps default to balanced. Interactive Assistant calculations inherit
+the person's chat selection.
+
+An empty class follows the [fallback order](/en/docs/ai/models-and-providers#assign-classes-and-tools).
+AI off produces `ai_disabled`; all classes empty produces `ai_no_model`.
+Missing, disabled, forbidden or incompatible models produce
+`model_policy_mismatch`. Budget exhaustion fails without fallback. Show errors
+for work a person started. Optional titles and enrichment skip unavailable AI.

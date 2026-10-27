@@ -56,12 +56,18 @@ afterAll(() => {
 });
 
 const profile: AiModelProfile = {
+  modelId: "hosted-glm",
+  providerId: "hosted-glm",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "hosted-glm",
   label: "Hosted GLM",
   provider: "openai-compatible",
   model: "glm-5-flash",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "hosted",
   baseURL: `http://localhost:${0}/v1`,
 };

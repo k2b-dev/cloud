@@ -16,7 +16,14 @@ testFor("database")("transcription failure reaches logs, trace and accounting wi
         file: new Blob([bytes]),
         filename: "test.wav",
         resolveModel: async () => ({
+          model: { id: "diagnostic" },
           profile: {
+            modelId: "diagnostic",
+            providerId: "diagnostic",
+            variantLabel: "Standard",
+            description: "",
+            icon: { kind: "provider" },
+            showInPicker: true,
             id: "diagnostic",
             label: "Diagnostic",
             provider: "openai-compatible",

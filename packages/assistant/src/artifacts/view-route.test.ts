@@ -36,7 +36,7 @@ const turn: AiTurn = {
   conversationId: conversation.id,
   status: "running",
   attempt: 1,
-  modelProfileId: null,
+  modelId: null,
   createdAt: "",
   completedAt: null,
   error: null,

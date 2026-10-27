@@ -97,12 +97,15 @@ describe("models-only credential boundary", () => {
     const state = spyOn(assistantModels, "assistantAiSettingsState").mockResolvedValue({
       ok: true,
       enabled: true,
-      defaultModelId: "",
+      status: "ok",
+      selection: null,
+      effectiveDefault: { class: "balanced" },
+      classes: [],
       visionModelConfigured: false,
       audioModelConfigured: false,
       error: null,
       firecrawlConfigured: false,
-      models: [],
+      options: [],
     });
     try {
       const headers = { authorization: `Bearer ${token}` };

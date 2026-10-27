@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAuth } from "../../../core/src/migrate/core/auth";
@@ -6,10 +6,8 @@ import { migrate as migrateSettings } from "../../../core/src/migrate/core/setti
 import { AiModelAccessConflict, aiModelAccess } from "../../src/ai/model-access";
 import { migrateAiModelAccess } from "../../src/ai/model-access-migrate";
 import type { Principal } from "../../src/contracts/shared";
-import { decryptValue, encryptValue } from "../../src/services/settings/crypto";
 
 const suite = databaseSuite();
-const profiles = ["open", "limited"].map((id) => ({ id, label: id, provider: "ollama", model: id }));
 const draft = <T extends Principal>(principal: T) => ({ principal, permission: "read" as const });
 
 suite("Assistant model grants using normal Cloud access", () => {
@@ -23,16 +21,14 @@ suite("Assistant model grants using normal Cloud access", () => {
     await sql.close();
     await fresh?.drop();
   });
-  const sync = (ids: string[], changes: Parameters<typeof aiModelAccess.syncProfiles>[1] = []) =>
-    sql.begin((tx) => aiModelAccess.syncProfiles(ids, changes, tx));
+  const sync = (ids: string[], changes: Parameters<typeof aiModelAccess.syncModels>[1] = []) =>
+    sql.begin((tx) => aiModelAccess.syncModels(ids, changes, tx));
 
   beforeAll(async () => {
     fresh = await useFreshDatabase("model_access");
     await migrateAuth();
     await migrateSettings();
     await sql`CREATE SCHEMA IF NOT EXISTS ai`;
-    const value = await encryptValue(JSON.stringify(profiles));
-    await sql`INSERT INTO settings.entries (key, value) VALUES ('ai.model_profiles_json', ${value})`;
     for (const label of ["member", "outsider"]) {
       const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name, mail)
         VALUES (${label}, 'local', 'user', ${label}, ${`${label}@example.test`}) RETURNING id`;
@@ -56,23 +52,23 @@ suite("Assistant model grants using normal Cloud access", () => {
     if (!account) throw new Error("Missing fixture account");
     serviceAccountId = account.id;
     await migrateAiModelAccess();
-    await sql`CREATE TABLE ai.model_credentials (
-      profile_id TEXT PRIMARY KEY, secret TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )`;
-    await sql`CREATE TABLE ai.model_request_headers (
-      profile_id TEXT PRIMARY KEY, secret TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )`;
+    await sync(["open", "limited"]);
   });
 
-  test("migration seeds real authenticated grants and is idempotent", async () => {
+  test("new models receive real authenticated grants and schema migration is idempotent", async () => {
     const initial = await aiModelAccess.listForAdmin();
     expect(initial.open?.entries.map((entry) => entry.principal)).toEqual([{ type: "authenticated" }]);
     await migrateAiModelAccess();
     expect(await aiModelAccess.listForAdmin()).toEqual(initial);
-    const candidates = [{ id: "limited" }, { id: "missing" }, { id: "open" }];
-    expect(await aiModelAccess.filterModels(candidates, subject())).toEqual([{ id: "limited" }, { id: "open" }]);
+    const candidates = [
+      { id: "limited", modelId: "limited" },
+      { id: "missing", modelId: "missing" },
+      { id: "open", modelId: "open" },
+    ];
+    expect(await aiModelAccess.filterModels(candidates, subject())).toEqual([
+      { id: "limited", modelId: "limited" },
+      { id: "open", modelId: "open" },
+    ]);
     expect(await aiModelAccess.filterModels(candidates, null)).toEqual([]);
   });
 
@@ -82,7 +78,7 @@ suite("Assistant model grants using normal Cloud access", () => {
       ["open", "limited"],
       [
         {
-          profileId: "limited",
+          modelId: "limited",
           expectedRevision: state.limited!.revision,
           entries: [draft({ type: "group", groupId }), draft({ type: "service_account", serviceAccountId })],
         },
@@ -104,7 +100,7 @@ suite("Assistant model grants using normal Cloud access", () => {
 
   test("empty permissions stay denied across migration and stale drafts conflict", async () => {
     const state = await aiModelAccess.listForAdmin();
-    const change = { profileId: "limited", expectedRevision: state.limited!.revision, entries: [] };
+    const change = { modelId: "limited", expectedRevision: state.limited!.revision, entries: [] };
     await sync(["open", "limited"], [change]);
     await expect(sync(["open", "limited"], [change])).rejects.toBeInstanceOf(AiModelAccessConflict);
     await migrateAiModelAccess();
@@ -117,9 +113,9 @@ suite("Assistant model grants using normal Cloud access", () => {
     await expect(
       sql.begin(async (tx) => {
         await tx`INSERT INTO settings.entries (key, value) VALUES ('model_access_rollback_probe', 'changed')`;
-        await aiModelAccess.syncProfiles(
+        await aiModelAccess.syncModels(
           ["open", "limited"],
-          [{ profileId: "open", expectedRevision: before.open!.revision, entries: [draft({ type: "user", userId: crypto.randomUUID() })] }],
+          [{ modelId: "open", expectedRevision: before.open!.revision, entries: [draft({ type: "user", userId: crypto.randomUUID() })] }],
           tx,
         );
       }),
@@ -128,15 +124,14 @@ suite("Assistant model grants using normal Cloud access", () => {
     expect(await sql`SELECT key FROM settings.entries WHERE key = 'model_access_rollback_probe'`).toHaveLength(0);
   });
 
-  test("duplicate and rename preserve independent grants, deletion cleans grant rows", async () => {
+  test("new models have independent grants and deletion cleans grant rows", async () => {
     let state = await aiModelAccess.listForAdmin();
     await sync(
       ["open", "limited", "copy"],
       [
         {
-          profileId: "copy",
-          sourceProfileId: "open",
-          expectedRevision: state.open!.revision,
+          modelId: "copy",
+          expectedRevision: null,
           entries: state.open!.entries.map(({ principal }) => {
             if (principal.type === "public") throw new Error("Fixture grant must not be public");
             return draft(principal);
@@ -150,9 +145,8 @@ suite("Assistant model grants using normal Cloud access", () => {
       ["renamed", "limited", "copy"],
       [
         {
-          profileId: "renamed",
-          sourceProfileId: "open",
-          expectedRevision: state.open!.revision,
+          modelId: "renamed",
+          expectedRevision: null,
           entries: [draft({ type: "user", userId }), draft({ type: "user", userId })],
         },
       ],
@@ -160,7 +154,7 @@ suite("Assistant model grants using normal Cloud access", () => {
     state = await aiModelAccess.listForAdmin();
     expect(state.open).toBeUndefined();
     expect(state.renamed!.entries).toHaveLength(1);
-    expect(await aiModelAccess.filterModels([{ id: "renamed" }], subject())).toHaveLength(1);
+    expect(await aiModelAccess.filterModels([{ id: "renamed", modelId: "renamed" }], subject())).toHaveLength(1);
     const ids = Object.values(state).flatMap((entry) => entry.entries.map((grant) => grant.id));
     await sync([]);
     expect(await aiModelAccess.listForAdmin()).toEqual({});
@@ -172,82 +166,8 @@ suite("Assistant model grants using normal Cloud access", () => {
     const old = (await aiModelAccess.listForAdmin()).recreated!.revision;
     await sync([]);
     await sync(["recreated"]);
-    await expect(sync(["recreated"], [{ profileId: "recreated", expectedRevision: old, entries: [] }])).rejects.toBeInstanceOf(
+    await expect(sync(["recreated"], [{ modelId: "recreated", expectedRevision: old, entries: [] }])).rejects.toBeInstanceOf(
       AiModelAccessConflict,
     );
-  });
-
-  test("admin settings PUT keeps keyless model grants and rolls back settings, credentials and headers", async () => {
-    const { auth } = await import("../../src/server");
-    // Exercise the actual settings transaction; authentication is a separate tested middleware.
-    const role = spyOn(auth, "requireRole").mockImplementation(() => async (_c, next) => next());
-    let app: typeof import("../../src/api/admin-core-settings")["default"];
-    try {
-      app = (await import("../../src/api/admin-core-settings")).default;
-    } finally {
-      role.mockRestore();
-    }
-    const put = (submitted: unknown[]) =>
-      app.request("/", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ updates: { "ai.enabled": false, "ai.model_profiles_json": JSON.stringify(submitted) } }),
-      });
-    const local = { id: "local", label: "Local", provider: "ollama", model: "local" };
-    const remote = {
-      id: "remote",
-      label: "Remote",
-      provider: "openai-compatible",
-      model: "remote",
-      baseURL: "http://provider.test/v1",
-    };
-    const headers = { "X-Token": "fixture-header-secret", "X-Keep": "keep-secret" };
-    const saved = await put([
-      { ...local, assistantAccess: { expectedRevision: null, entries: [] } },
-      {
-        ...remote,
-        apiKey: "fixture-secret",
-        requestHeaders: headers,
-        assistantAccess: { expectedRevision: null, entries: [draft({ type: "authenticated" })] },
-      },
-    ]);
-    expect(saved.status).toBe(204);
-    const state = await aiModelAccess.listForAdmin();
-    expect(state.local?.entries).toEqual([]);
-    expect(state.remote?.entries).toHaveLength(1);
-    const readProfiles = async () => {
-      const [row] = await sql<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = 'ai.model_profiles_json'`;
-      return JSON.parse(String(await decryptValue(row!.value)));
-    };
-    expect(await readProfiles()).toEqual([local, remote]);
-    const { getAiCredential } = await import("../../src/ai/credentials");
-    const { getAiRequestHeaders } = await import("../../src/ai/request-headers");
-    expect(await getAiCredential("remote")).toBe("fixture-secret");
-    expect(await getAiRequestHeaders("remote")).toEqual(headers);
-    const invalid = await put([
-      local,
-      {
-        ...remote,
-        label: "Do not persist",
-        apiKey: "replacement",
-        requestHeaders: { "X-Token": "replacement-header-secret", "X-Keep": null, "X-New": "new-secret" },
-        assistantAccess: { expectedRevision: state.remote!.revision, entries: [draft({ type: "user", userId: crypto.randomUUID() })] },
-      },
-    ]);
-    expect(invalid.status).toBe(400);
-    expect(await readProfiles()).toEqual([local, remote]);
-    expect(await getAiCredential("remote")).toBe("fixture-secret");
-    expect(await getAiRequestHeaders("remote")).toEqual(headers);
-    expect(await aiModelAccess.listForAdmin()).toEqual(state);
-    const update = [local, { ...remote, assistantAccess: { expectedRevision: state.remote!.revision, entries: [] } }];
-    expect((await put(update)).status).toBe(204);
-    expect((await put(update)).status).toBe(409);
-    expect(await getAiRequestHeaders("remote")).toEqual(headers);
-    expect((await aiModelAccess.listForAdmin()).remote?.entries).toEqual([]);
-    const reset = await app.request("/ai.model_profiles_json", { method: "DELETE" });
-    expect(reset.status).toBe(204);
-    expect(await aiModelAccess.listForAdmin()).toEqual({});
-    expect(await getAiCredential("remote")).toBeNull();
-    expect(await getAiRequestHeaders("remote")).toEqual({});
   });
 });

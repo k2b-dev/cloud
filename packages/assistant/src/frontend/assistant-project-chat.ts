@@ -4,12 +4,12 @@ import type { AiComposerSendInput } from "@k2b/cloud/ai/ui";
 export const submitAssistantProjectMessage = async (input: {
   projectId: string;
   message: AiComposerSendInput;
-  modelProfileId?: string;
+  model?: import("@k2b/cloud/ai").AiModelRequest;
   pendingConversation?: AiConversation;
   activeConversationId: () => string | null;
   openConversation: (conversationId: string) => Promise<"opened" | "current" | "stale" | "failed">;
   createConversation: (projectId: string) => Promise<AiConversation | null>;
-  send: (message: AiComposerSendInput & { modelProfileId?: string }) => Promise<boolean>;
+  send: (message: AiComposerSendInput & { model?: import("@k2b/cloud/ai").AiModelRequest }) => Promise<boolean>;
   rememberPending: (conversation: AiConversation) => void;
   clearPending: () => void;
   navigate: (conversationId: string) => void;
@@ -25,7 +25,7 @@ export const submitAssistantProjectMessage = async (input: {
     input.rememberPending(conversation);
   }
 
-  const sent = await input.send({ ...input.message, modelProfileId: input.modelProfileId });
+  const sent = await input.send({ ...input.message, model: input.model });
   if (!sent) return false;
   input.clearPending();
   input.navigate(conversation.id);

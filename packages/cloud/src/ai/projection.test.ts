@@ -39,7 +39,7 @@ const storedMessage = (overrides: Partial<AiStoredMessage> & { id: string; seq: 
   kind: "message",
   message: { role: "user", content: [{ type: "text", text: "hi" }] },
   loopId: null,
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: null,
@@ -129,7 +129,7 @@ describe("projection reducer", () => {
         seq: 8,
         status: "running" as const,
         blocks: [firstTool, secondTool],
-        modelProfileId: "m",
+        modelId: "m",
       },
     };
     const refreshed = reduceProjection(current, {
@@ -142,7 +142,7 @@ describe("projection reducer", () => {
         seq: 5,
         status: "running",
         blocks: [firstTool],
-        modelProfileId: "m",
+        modelId: "m",
         createdAt: "2026-07-07T00:00:00.000Z",
       },
     });
@@ -156,13 +156,13 @@ describe("projection reducer", () => {
     const persisted: AiTurnBlock = { id: messageBlockId(2, 0), kind: "text", text: "Same output" };
     let state = feed([
       { type: "state", conversation, messages: [], activeTurn: null },
-      wire({ attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p", blocks: [streamed] }),
+      wire({ attempt: 1, seq: 1, type: "turn_started", modelId: "m", providerModel: "p", blocks: [streamed] }),
     ]);
     const snapshot = (seq: number, blocks: AiTurnBlock[]): AiStreamSseEvent => ({
       type: "state",
       conversation,
       messages: [],
-      activeTurn: { turnId: "turn-1", attempt: 1, seq, blocks, status: "running", modelProfileId: "m", createdAt: conversation.createdAt },
+      activeTurn: { turnId: "turn-1", attempt: 1, seq, blocks, status: "running", modelId: "m", createdAt: conversation.createdAt },
     });
     state = reduceProjection(state, snapshot(4, [persisted]));
     expect(state.activeTurn?.blocks).toEqual([persisted]);
@@ -170,7 +170,7 @@ describe("projection reducer", () => {
     expect(state.activeTurn?.blocks).toEqual([persisted]);
     state = reduceProjection(
       state,
-      wire({ attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p", blocks: [streamed] }),
+      wire({ attempt: 1, seq: 1, type: "turn_started", modelId: "m", providerModel: "p", blocks: [streamed] }),
     );
     expect(state.activeTurn?.blocks).toEqual([persisted]);
   });
@@ -200,7 +200,7 @@ describe("projection reducer", () => {
 
     let state = feed([
       { type: "state", conversation, messages: [userMessage], activeTurn: null } as AiStreamSseEvent,
-      wire({ turnId: "turn-1", attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p" }),
+      wire({ turnId: "turn-1", attempt: 1, seq: 1, type: "turn_started", modelId: "m", providerModel: "p" }),
       wire({ turnId: "turn-1", attempt: 1, seq: 2, type: "block_set", block: { id: "s1-1", kind: "text", text: "Hello" } }),
       wire({ turnId: "turn-1", attempt: 1, seq: 3, type: "block_delta", blockId: "s1-1", blockKind: "text", delta: " there" }),
     ]);
@@ -246,7 +246,7 @@ describe("projection reducer", () => {
           seq: 5,
           status: "running",
           blocks: [{ id: "s2-1", kind: "text", text: "resuming" }],
-          modelProfileId: "m",
+          modelId: "m",
           createdAt: "x",
         },
       } as AiStreamSseEvent,
@@ -278,7 +278,7 @@ describe("projection reducer", () => {
             { id: "steer-message-steer-1", kind: "steer_message", steerId: "steer-1", text: "change course", status: "consumed" },
             { id: "steer-applied-steer-1", kind: "steer_applied", steerId: "steer-1" },
           ],
-          modelProfileId: "m",
+          modelId: "m",
           createdAt: "x",
         },
       } as AiStreamSseEvent,
@@ -302,7 +302,7 @@ describe("projection reducer", () => {
   test("stale attempt events are ignored; newer attempt supersedes", () => {
     let state = feed([
       { type: "state", conversation, messages: [], activeTurn: null } as AiStreamSseEvent,
-      wire({ turnId: "turn-1", attempt: 2, seq: 10, type: "turn_started", modelProfileId: "m", providerModel: "p" }),
+      wire({ turnId: "turn-1", attempt: 2, seq: 10, type: "turn_started", modelId: "m", providerModel: "p" }),
       wire({ turnId: "turn-1", attempt: 2, seq: 11, type: "block_set", block: { id: "s2-1", kind: "text", text: "new" } }),
     ]);
     // A late attempt-1 delta must not corrupt the attempt-2 view.
@@ -324,10 +324,10 @@ describe("projection reducer", () => {
           seq: 0,
           status: "running",
           blocks: [{ id: "steer-request-1", kind: "steer_message", steerId: "request-1", text: "change", status: "pending" }],
-          modelProfileId: "m",
+          modelId: "m",
         },
       },
-      wire({ turnId: "turn-1", attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p" }),
+      wire({ turnId: "turn-1", attempt: 1, seq: 1, type: "turn_started", modelId: "m", providerModel: "p" }),
     );
     expect(state.activeTurn?.blocks).toEqual([
       { id: "steer-request-1", kind: "steer_message", steerId: "request-1", text: "change", status: "pending" },
@@ -362,7 +362,7 @@ describe("projection reducer", () => {
           seq: 8,
           status: "running",
           blocks: orderedBlocks,
-          modelProfileId: "m",
+          modelId: "m",
         },
       },
       wire({
@@ -370,7 +370,7 @@ describe("projection reducer", () => {
         attempt: 2,
         seq: 9,
         type: "turn_started",
-        modelProfileId: "m",
+        modelId: "m",
         providerModel: "p",
         blocks: orderedBlocks,
       }),
@@ -386,7 +386,7 @@ describe("projection reducer", () => {
   test("derives waiting_for_action from an awaiting tool block", () => {
     const state = feed([
       { type: "state", conversation, messages: [], activeTurn: null } as AiStreamSseEvent,
-      wire({ turnId: "turn-1", attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p" }),
+      wire({ turnId: "turn-1", attempt: 1, seq: 1, type: "turn_started", modelId: "m", providerModel: "p" }),
       wire({
         turnId: "turn-1",
         attempt: 1,
@@ -434,7 +434,7 @@ describe("projection reducer", () => {
         attempt: 1,
         seq: 3,
         status: "waiting_for_action",
-        modelProfileId: "m",
+        modelId: "m",
         createdAt: "2026-08-19T15:31:30.000Z",
         blocks: [
           {
@@ -488,7 +488,7 @@ describe("projection reducer", () => {
           approval: { allowAlways: false },
         },
       ],
-      modelProfileId: "model",
+      modelId: "model",
     };
     const result = { submitted: true, answers: { timing: "tomorrow" } };
 
@@ -505,7 +505,7 @@ describe("projection reducer", () => {
   test("a provider retry marks the active turn until its next event or a snapshot past it", () => {
     const started = [
       { type: "state", conversation, messages: [], activeTurn: null } as AiStreamSseEvent,
-      wire({ turnId: "turn-1", attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p" }),
+      wire({ turnId: "turn-1", attempt: 1, seq: 1, type: "turn_started", modelId: "m", providerModel: "p" }),
       wire({ turnId: "turn-1", attempt: 1, seq: 2, type: "provider_retry" }),
     ];
     const waiting = feed(started);
@@ -545,7 +545,7 @@ describe("projection reducer", () => {
           status: "running",
           seq,
           blocks: [],
-          modelProfileId: "m",
+          modelId: "m",
           createdAt: conversation.createdAt,
         },
       });
@@ -558,7 +558,7 @@ describe("projection reducer", () => {
   test("turn_finished for a different turn is ignored", () => {
     const state = feed([
       { type: "state", conversation, messages: [], activeTurn: null } as AiStreamSseEvent,
-      wire({ turnId: "turn-1", attempt: 1, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "p" }),
+      wire({ turnId: "turn-1", attempt: 1, seq: 1, type: "turn_started", modelId: "m", providerModel: "p" }),
       wire({ turnId: "turn-2", attempt: 1, seq: 1, type: "turn_finished", status: "completed", error: null, messages: [] }),
     ]);
     expect(state.activeTurn?.turnId).toBe("turn-1");
@@ -642,7 +642,7 @@ test("a saved model round updates usage before loop completion without duplicati
     turnId: "loop",
     attempt: 1,
     seq: 1,
-    modelProfileId: "model",
+    modelId: "model",
     providerModel: "provider",
   });
   const message = storedMessage({

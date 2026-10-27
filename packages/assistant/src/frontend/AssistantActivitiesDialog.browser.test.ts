@@ -41,7 +41,7 @@ const message: AiStoredMessage = {
   kind: "message",
   message: { role: "user", content: [{ type: "text", text: "Plan the week." }] },
   loopId: "run001",
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: null,

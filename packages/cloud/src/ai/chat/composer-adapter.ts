@@ -1,7 +1,7 @@
 import type { ChatAttachment, ChatMention, ChatModelOption, ChatSubmitInput } from "@k2b/ui";
 import { AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "../limits";
 import type { AiResourceMarker } from "../resource-markers";
-import type { AiDraftContentPart, AiPublicModelProfile, AiUserContentPart } from "../types";
+import type { AiDraftContentPart, AiUserContentPart } from "../types";
 import {
   type AiComposerAttachment,
   FILE_INPUT_ACCEPT,
@@ -45,14 +45,15 @@ export const aiComposerFileAccept = FILE_INPUT_ACCEPT;
  */
 export const aiComposerChooseMaxBytes = (attached: number): number => Math.max(0, MAX_ATTACHMENTS - attached) * VFS_FILE_MAX_BYTES;
 
-export const aiChatModelOptions = (profiles: readonly AiPublicModelProfile[]): ChatModelOption[] =>
+export const aiChatModelOptions = (
+  profiles: readonly import("../model-contracts").AiPeopleModels["options"][number][],
+): ChatModelOption[] =>
   profiles.map((profile) => ({
     id: profile.id,
-    label: profile.label,
-    description: profile.model,
-    image: profile.image,
-    icon: profile.capabilities.includes("vision") ? "ti ti-photo-spark" : "ti ti-message",
-    capabilities: profile.capabilities,
+    label: [profile.label, profile.variantLabel].filter(Boolean).join(" · "),
+    description: profile.description,
+    image: profile.icon.kind === "image" ? profile.icon.src : undefined,
+    icon: "ti ti-sparkles",
   }));
 
 const isTextAttachment = (

@@ -46,7 +46,7 @@ databaseSuite()("Scheduled Code Mode", () => {
       }))!;
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: "test",
+        modelId: "test",
         runConfig: { kind: "chat", input: "Calculate", toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: "Calculate" }] },
         expectedRevision: task.revision,
@@ -148,7 +148,7 @@ databaseSuite()("Scheduled Code Mode", () => {
     }))!;
     const delivered = await aiChatTasks.deliverOccurrence({
       occurrenceId: occurrence.id,
-      modelProfileId: "test",
+      modelId: "test",
       runConfig: { kind: "chat", input: "Check invoices", toolSource: { kind: "none" } },
       userMessage: { role: "user", content: [{ type: "text", text: "Check invoices" }] },
       expectedRevision: task.revision,

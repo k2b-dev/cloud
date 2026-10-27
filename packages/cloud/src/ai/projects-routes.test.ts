@@ -181,7 +181,7 @@ test("Project uploads preserve the typed malformed-image 422", async () => {
     description: "",
     icon: "",
     instructions: "",
-    defaultModelProfileId: null,
+    defaultModel: null,
     permission: "admin",
     revision: 1,
     createdAt: "2026-01-01T00:00:00Z",

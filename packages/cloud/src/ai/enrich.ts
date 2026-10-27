@@ -151,7 +151,7 @@ export const enrichDirtyAiConversations = async (input: {
   // Resolve the background model once per run; AI disabled / no model = quiet no-op.
   let resolved: AiResolvedModel;
   try {
-    resolved = await (input.deps?.resolveModel ?? resolveAiBackgroundModel)();
+    resolved = await (input.deps?.resolveModel ?? resolveAiBackgroundModel)({ class: "fast" });
   } catch (error) {
     log.info("Enrichment skipped: no background model available", {
       error: error instanceof Error ? error.message : String(error),
@@ -224,7 +224,7 @@ export const enrichDirtyAiConversations = async (input: {
       conversationId: conversation.id,
       status: "ok",
       trigger,
-      modelProfileId: result.modelProfileId,
+      modelId: result.model.id,
       mode: result.structuredMeta.mode,
       durationMs: Date.now() - startedAt,
       titleUpdated: applyTitle,

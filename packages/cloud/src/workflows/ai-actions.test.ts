@@ -13,7 +13,7 @@ const task = (overrides: Partial<WorkflowAiTask> = {}): WorkflowAiTask => ({
   kind: "classify",
   request: { kind: "classify", prompt: "Choose", input: "mail", choices: ["a", "b"] },
   inputHash: "a".repeat(64),
-  modelProfileId: "workflow-model",
+  modelId: "workflow-model",
   status: "queued",
   output: null,
   usage: null,
@@ -43,16 +43,16 @@ describe("shared workflow AI actions", () => {
     const created = task();
     const result = await runWorkflowAiAction(
       context,
-      { kind: "classify", prompt: "Choose", input: "mail", choices: ["a", "b"], modelProfileId: "override" },
+      { kind: "classify", prompt: "Choose", input: "mail", choices: ["a", "b"], model: { id: "override" } },
       {
         getByEffectKey: async () => null,
         create: async (input) => {
-          expect(input.modelProfileId).toBe("workflow-model");
+          expect(input.modelId).toBe("workflow-model");
           return { task: created, created: true };
         },
         exists: async () => false,
         resolveModel: async (requested) => {
-          expect(requested).toBe("override");
+          expect(requested).toEqual({ id: "override" });
           return resolved;
         },
         submit: async (id) => {

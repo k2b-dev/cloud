@@ -1,93 +1,153 @@
 import type { AccessSubject, RequestActor } from "../server";
 import { aiModelAccess } from "./model-access";
+import { aiModelCatalog } from "./model-catalog";
+import {
+  AI_MODEL_CLASSES,
+  type AiModelRequest,
+  type AiModelUnavailableReason,
+  type AiPeopleModelIcon,
+  type AiPeopleModels,
+} from "./model-contracts";
 import { personalAiModelPolicy } from "./personal-agent";
-import { listAiModels, toPublicAiSettingsState } from "./settings";
+import { aiUserPrefs } from "./prefs";
+import { aiQuotas } from "./quotas";
+import { listAiModels, readAiSettingsState, resolveAiModelRef, selectAiModelProfile, toPublicAiSettingsState } from "./settings";
 import { type AiResolvedAudioModel, AiTranscriptionError, resolveAiAudioModel } from "./transcription";
-import type { AiChatTurnRunConfig, AiDataBoundary, AiModelPolicy, AiSettingsError } from "./types";
+import type { AiChatTurnRunConfig, AiDataBoundary, AiModelPolicy } from "./types";
 import { isAiSettingsError } from "./validate";
 
 export const aiChatAccessSubject = (actor: RequestActor | undefined): AccessSubject | null => {
   if (!actor) return null;
   if (actor.kind === "user") return { type: "user", userId: actor.user.id };
-  if (actor.delegatedUser) {
-    return { type: "user", userId: actor.delegatedUser.id, delegatedByServiceAccountId: actor.serviceAccount.id };
-  }
+  if (actor.delegatedUser) return { type: "user", userId: actor.delegatedUser.id, delegatedByServiceAccountId: actor.serviceAccount.id };
   return { type: "service_account", serviceAccountId: actor.serviceAccount.id };
 };
-
-/** Background chat deliveries also use default tools; only the explicit HTTP marker identifies interactive turns. */
 export const isAssistantChatTurn = (config: AiChatTurnRunConfig): boolean => config.assistantChat === true && !config.mandate;
-
+/** Server-side list for permission-aware execution and the developer API. */
 export const listAssistantAiModels = async (subject: AccessSubject | null, policy: AiModelPolicy = personalAiModelPolicy) =>
   aiModelAccess.filterModels(await listAiModels(policy), subject);
-
-/** The one audio check behind the composer microphone, dictation, and offering and running transcribe_audio. */
+export const peopleAiModels = async (
+  subject: AccessSubject | null,
+  policy: AiModelPolicy = personalAiModelPolicy,
+): Promise<AiPeopleModels> => {
+  const [state, allowed, providers, prefs] = await Promise.all([
+    readAiSettingsState(),
+    listAssistantAiModels(subject, policy),
+    aiModelCatalog.providers(),
+    subject?.type === "user" ? aiUserPrefs.get(subject.userId) : null,
+  ]);
+  const options: AiPeopleModels["options"] = [];
+  const unavailable = new Map<string, AiModelUnavailableReason>();
+  for (const profile of allowed) {
+    const provider = providers.find((provider) => provider.id === profile.providerId);
+    let reason: AiModelUnavailableReason | undefined =
+      provider?.status === "key_rejected"
+        ? { code: "key_rejected" }
+        : provider?.status === "unreachable"
+          ? { code: "provider_unreachable" }
+          : undefined;
+    if (!reason && subject) {
+      const snapshot = await aiQuotas.snapshot(subject, profile.modelId);
+      const exhausted = snapshot.balances.find(
+        (balance) => !balance.bypassed && balance.limit !== null && (balance.unknown > 0 || balance.used >= balance.limit),
+      );
+      if (exhausted) reason = { code: "budget_exhausted", resetsAt: exhausted.resetsAt };
+    }
+    if (reason) unavailable.set(profile.id, reason);
+    if (!profile.showInPicker) continue;
+    const icon: AiPeopleModelIcon =
+      profile.icon.kind === "image"
+        ? { kind: "image", src: profile.icon.dataUrl }
+        : profile.icon.kind === "emoji"
+          ? profile.icon
+          : {
+              kind: "mark",
+              text: (provider?.label ?? "AI")
+                .split(/\s+/)
+                .map((word) => word[0])
+                .join("")
+                .slice(0, 2)
+                .toUpperCase(),
+              color: String(Array.from(profile.providerId).reduce((sum, letter) => (sum * 31 + letter.charCodeAt(0)) >>> 0, 0) % 12),
+            };
+    options.push({
+      id: profile.id,
+      label: profile.label,
+      ...(profile.id !== profile.modelId ? { variantLabel: profile.variantLabel } : {}),
+      description: profile.description,
+      icon,
+      classes: AI_MODEL_CLASSES.filter((modelClass) =>
+        state.assignments.some((assignment) => assignment.slot === modelClass && assignment.variantId === profile.id),
+      ),
+      ...(reason ? { unavailable: reason } : {}),
+    });
+  }
+  const storedSelection = prefs?.selection;
+  const selection =
+    storedSelection && "id" in storedSelection && !state.profiles.some((profile) => profile.id === storedSelection.id)
+      ? null
+      : (storedSelection ?? null);
+  return {
+    status: "ok",
+    selection,
+    effectiveDefault: { class: "balanced" },
+    classes: AI_MODEL_CLASSES.flatMap((modelClass) => {
+      const id = state.assignments.find((assignment) => assignment.slot === modelClass)?.variantId;
+      return id
+        ? [
+            {
+              class: modelClass,
+              variantId: id,
+              ...(!allowed.some((model) => model.id === id)
+                ? { unavailable: { code: "access_revoked" } as const }
+                : unavailable.has(id)
+                  ? { unavailable: unavailable.get(id) }
+                  : {}),
+            },
+          ]
+        : [];
+    }),
+    options,
+  };
+};
 export const resolveAssistantAudioModel = async (
   subject: AccessSubject | null,
   allowedDataBoundaries?: AiDataBoundary[],
 ): Promise<AiResolvedAudioModel> => {
   const model = await resolveAiAudioModel({ allowedDataBoundaries });
   try {
-    await aiModelAccess.assertAllowed(model.profile.id, subject);
+    await aiModelAccess.assertAllowed(model.profile.modelId, subject);
   } catch (error) {
-    if (!isAiSettingsError(error) || error.aiError.code !== "model_access_denied") throw error;
-    throw Object.assign(
-      new AiTranscriptionError(
-        "transcription_access_denied",
-        "Audio transcription is not available to you: you do not have access to the audio model. An administrator can grant access in the AI settings.",
-      ),
-      { aiError: error.aiError },
-    );
+    if (!isAiSettingsError(error)) throw error;
+    throw Object.assign(new AiTranscriptionError("transcription_access_denied", "Audio transcription is not available to you."), {
+      aiError: error.aiError,
+    });
   }
   return model;
 };
-
 export const assistantAiSettingsState = async (subject: AccessSubject | null) => {
-  const [status, models, audioModelConfigured] = await Promise.all([
+  const [status, choices, audioModelConfigured] = await Promise.all([
     toPublicAiSettingsState(personalAiModelPolicy.allowedDataBoundaries),
-    listAssistantAiModels(subject),
-    (async () => {
-      try {
-        await resolveAssistantAudioModel(subject, personalAiModelPolicy.allowedDataBoundaries);
-        return true;
-      } catch {
-        return false;
-      }
-    })(),
+    peopleAiModels(subject),
+    resolveAssistantAudioModel(subject, personalAiModelPolicy.allowedDataBoundaries).then(
+      () => true,
+      () => false,
+    ),
   ]);
-  return {
-    ...status,
-    audioModelConfigured,
-    models,
-    defaultModelId: models.some((model) => model.id === status.defaultModelId) ? status.defaultModelId : (models[0]?.id ?? ""),
-  };
+  return { ...status, ...choices, audioModelConfigured };
 };
-
-/** Explicit and project selections never silently switch models. */
-export const selectAssistantAiModelId = async (
+/** Class fallback only considers empty assignments, and access is checked on the owning model. */
+export const selectAssistantAiModel = async (
   subject: AccessSubject | null,
-  requestedModelId?: string,
+  model?: AiModelRequest,
   policy: AiModelPolicy = personalAiModelPolicy,
-): Promise<string> => {
-  if (policy.kind === "locked") {
-    await aiModelAccess.assertAllowed(policy.modelId, subject);
-    return policy.modelId;
-  }
-  if (policy.kind === "platform-default") {
-    const status = await toPublicAiSettingsState();
-    await aiModelAccess.assertAllowed(status.defaultModelId, subject);
-    return status.defaultModelId;
-  }
-  if (requestedModelId) {
-    await aiModelAccess.assertAllowed(requestedModelId, subject);
-    return requestedModelId;
-  }
-  const [status, models] = await Promise.all([toPublicAiSettingsState(), listAssistantAiModels(subject, policy)]);
-  const preferred = policy.defaultModelId;
-  const model = models.find((candidate) => candidate.id === (preferred ?? status.defaultModelId)) ?? models[0];
-  if (!model) {
-    const message = "No AI model is available for your Assistant access. Contact an administrator.";
-    throw Object.assign(new Error(message), { aiError: { code: "model_access_denied", message } satisfies AiSettingsError });
-  }
-  return model.id;
+): Promise<AiModelRequest> => {
+  const state = await readAiSettingsState();
+  const stored = !model && subject?.type === "user" ? (await aiUserPrefs.get(subject.userId)).selection : null;
+  const selection = stored && "id" in stored && !state.profiles.some((profile) => profile.id === stored.id) ? null : stored;
+  const requested = model ?? selection ?? { class: "balanced" };
+  const profile = selectAiModelProfile(state, policy, requested);
+  await aiModelAccess.assertAllowed(profile.modelId, subject);
+  resolveAiModelRef(state, requested);
+  return requested;
 };

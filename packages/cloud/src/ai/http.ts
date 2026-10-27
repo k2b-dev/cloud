@@ -7,17 +7,12 @@ import { aiAttachmentMarker } from "./attachments";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema, AiLocalContextSchema } from "./local-tool-contracts";
+import { AiModelRequestSchema } from "./model-contracts";
 import { AiQuotaError } from "./quotas";
 import { AiResourceMarkerSchema } from "./resource-markers";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { AI_SKILL_NAME_MAX_CHARS, AI_SKILL_NAME_PATTERN } from "./skill-format";
-import {
-  AI_MESSAGE_FEEDBACK_REASONS,
-  type AiClientToolId,
-  type AiDraftContentPart,
-  type AiSettingsError,
-  type AiUserContentPart,
-} from "./types";
+import { AI_MESSAGE_FEEDBACK_REASONS, type AiClientToolId, type AiDraftContentPart, type AiUserContentPart } from "./types";
 import { isAiSettingsError } from "./validate";
 
 export const AiDraftContentPartSchema = z.discriminatedUnion("type", [
@@ -144,9 +139,10 @@ export const AiTurnInputSchema = z
       .min(1)
       .max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1)
       .optional(),
-    modelProfileId: z.string().trim().min(1).optional(),
+    model: AiModelRequestSchema.optional(),
     clientToolIds: AiClientToolIdsSchema.optional(),
   })
+  .strict()
   .refine((input) => Boolean(input.message?.trim() || input.content?.length), {
     message: "Message or content is required.",
     path: ["message"],
@@ -166,13 +162,14 @@ export const AiSubmitConversationDraftInputSchema = z
   .object({
     queueId: z.uuid().optional(),
     draftRevision: z.number().int().min(1),
-    modelProfileId: z.string().trim().min(1).optional(),
+    model: AiModelRequestSchema.optional(),
     clientToolIds: AiClientToolIdsSchema.optional(),
     /** Set by a local client such as cld; the web never sends it. */
     client: AiLocalClientSchema.optional(),
     /** AGENTS.md files and local Skills a local client found; only valid together with client. */
     localContext: AiLocalContextSchema.optional(),
   })
+  .strict()
   .refine((input) => !input.localContext || Boolean(input.client), {
     message: "Local context requires a local client.",
     path: ["localContext"],
@@ -183,9 +180,11 @@ export const AiSteerInputSchema = z.object({
   clientRequestId: z.string().trim().min(1).max(120),
 });
 
-export const AiCompactionInputSchema = z.object({
-  modelProfileId: z.string().trim().min(1).optional(),
-});
+export const AiCompactionInputSchema = z
+  .object({
+    model: AiModelRequestSchema.optional(),
+  })
+  .strict();
 
 export type AiCompactionInput = z.infer<typeof AiCompactionInputSchema>;
 
@@ -200,11 +199,12 @@ export const AiMessageRetryInputSchema = z
       .min(1)
       .max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1)
       .optional(),
-    modelProfileId: z.string().trim().min(1).optional(),
+    model: AiModelRequestSchema.optional(),
     clientToolIds: AiClientToolIdsSchema.optional(),
     client: AiLocalClientSchema.optional(),
     localContext: AiLocalContextSchema.omit({ selectedSkills: true }).optional(),
   })
+  .strict()
   .refine((input) => !input.localContext || Boolean(input.client), {
     message: "Local context requires a local client.",
     path: ["localContext"],
@@ -268,25 +268,13 @@ export const AiApiErrorSchema = z.object({
 
 const conflict = (message: string) => ({ code: "CONFLICT" as const, message, status: 409 as const });
 
-const aiSettingsServiceError = (error: AiSettingsError) => {
-  switch (error.code) {
-    case "model_access_denied":
-      return err.forbidden(error.message);
-    case "invalid_model_profiles":
-    case "model_policy_mismatch":
-      return err.badInput(error.message);
-    case "ai_disabled":
-    case "missing_default_model":
-    case "default_model_disabled":
-    case "missing_provider_credential":
-      return conflict(error.message);
-  }
-};
-
 export const toAiErrorResponse = (c: Context<AuthContext>, error: unknown) => {
   if (error instanceof AiQuotaError) return c.json({ ok: false, error: error.message, message: error.message, code: error.code }, 429);
   if (isAiSettingsError(error)) {
-    return respond(c, fail(aiSettingsServiceError(error.aiError)));
+    return c.json(
+      { ok: false, code: error.aiError.code, message: error.aiError.message, error: error.aiError.message },
+      error.aiError.code === "model_policy_mismatch" ? 400 : 409,
+    );
   }
   const message = error instanceof Error ? error.message : "AI request failed";
   if (message.includes("idx_ai_turns_one_active")) return respond(c, fail(err.conflict("Running turn")));

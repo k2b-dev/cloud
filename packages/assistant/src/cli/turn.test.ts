@@ -56,7 +56,7 @@ const setup = () => {
           `data: ${JSON.stringify({ v: 1, type: "turn_finished", conversationId: "chat", turnId: "turn", attempt: 1, seq: 1, status: "completed", error: null, messages: [] })}\n\n`,
         );
       if (path.endsWith("/draft")) return Response.json({ revision: 1 });
-      if (path.endsWith("/turns")) return Response.json({ turn: { id: "turn", status: "queued", modelProfileId: null } });
+      if (path.endsWith("/turns")) return Response.json({ turn: { id: "turn", status: "queued", modelId: null } });
       return Response.json({ conversation: { draft: { content: [], revision: 0 } } });
     },
     readJson: (response) => response.json(),

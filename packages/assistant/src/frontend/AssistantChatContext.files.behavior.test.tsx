@@ -23,7 +23,7 @@ const project: AiProject = {
   description: "",
   icon: "ti ti-folder",
   instructions: "",
-  defaultModelProfileId: null,
+  defaultModel: null,
   permission: "admin",
   revision: 1,
   createdAt: "2026-09-01T10:00:00.000Z",

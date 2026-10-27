@@ -340,6 +340,7 @@ type InterChatMessageRow = {
 };
 
 type TimelineRow = {
+  model_replacement: { kind: "model_replaced"; previousLabel: string; nextLabel: string } | null;
   id: string;
   seq: number;
   loop_id: string | null;
@@ -649,7 +650,7 @@ const rowToEnrichmentRun = (row: EnrichmentRunRow): AiEnrichmentRun => ({
   conversationId: row.conversation_id,
   status: row.status,
   trigger: row.trigger,
-  modelProfileId: row.model_profile_id,
+  modelId: row.model_profile_id,
   mode: row.mode,
   durationMs: row.duration_ms === null ? null : Number(row.duration_ms),
   titleUpdated: row.title_updated,
@@ -689,7 +690,7 @@ const rowToMessage = (row: MessageRow): AiStoredMessage => {
     kind: row.kind,
     message,
     loopId: row.loop_id,
-    modelProfileId: row.model_profile_id,
+    modelId: row.model_profile_id,
     providerModel: row.provider_model,
     usage: row.usage ? parseJsonValue<Usage>(row.usage) : null,
     stopReason: row.stop_reason,
@@ -719,7 +720,7 @@ const rowToTurn = (row: TurnRow): AiTurn => ({
   conversationId: row.conversation_id,
   status: row.status,
   attempt: Number(row.attempt ?? 0),
-  modelProfileId: row.model_profile_id,
+  modelId: row.model_profile_id,
   createdAt: iso(row.created_at),
   completedAt: row.completed_at ? iso(row.completed_at) : null,
   error: row.error,
@@ -1140,7 +1141,7 @@ const insertMessageLocked = async (
     kind?: "message" | "summary";
     seq?: number;
     loopId?: string | null;
-    modelProfileId?: string | null;
+    modelId?: string | null;
     meta?: AiStoredMessage["meta"];
   },
   db: typeof sql = sql,
@@ -1181,7 +1182,7 @@ const insertMessageLocked = async (
       ${JSON.stringify(input.message)}::text::jsonb,
       ${messageSearchText(input.message)},
       ${input.loopId ?? null},
-      ${input.modelProfileId ?? null},
+      ${input.modelId ?? null},
       ${providerModel},
       ${usage ? JSON.stringify(usage) : null}::text::jsonb,
       ${stopReason},
@@ -1217,7 +1218,7 @@ const appendTurnOwnedMessage = async (input: {
   kind?: "message" | "summary";
   seq?: number;
   loopId: string | null;
-  modelProfileId?: string | null;
+  modelId?: string | null;
   meta?: AiStoredMessage["meta"];
 }): Promise<AiStoredMessage | null> => {
   return sql.begin(async (tx) => {
@@ -1252,7 +1253,7 @@ const appendTurnOwnedMessage = async (input: {
       ${input.message.role},
       ${JSON.stringify(input.message)}::text::jsonb,
       ${input.loopId},
-      ${input.modelProfileId ?? null},
+      ${input.modelId ?? null},
       ${providerModel},
       ${usage ? JSON.stringify(usage) : null}::text::jsonb,
       ${stopReason},
@@ -2135,7 +2136,7 @@ export const aiConversations: AiConversationService = {
         "idx_ai_turns_conversation_short_id",
         (attempt, shortId) => attempt<TurnRow[]>`
           INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
-          VALUES (${shortId}, ${message.target_conversation_id}, ${input.modelProfileId}, 'queued', (${JSON.stringify(input.runConfig)}::text)::jsonb)
+          VALUES (${shortId}, ${message.target_conversation_id}, ${input.modelId}, 'queued', (${JSON.stringify(input.runConfig)}::text)::jsonb)
           RETURNING *
         `,
       );
@@ -2434,7 +2435,7 @@ export const aiConversations: AiConversationService = {
         ${input.conversationId},
         ${input.status},
         ${input.trigger},
-        ${input.modelProfileId ?? null},
+        ${input.modelId ?? null},
         ${input.mode ?? null},
         ${input.durationMs ?? null},
         ${input.titleUpdated ?? false},
@@ -2691,6 +2692,7 @@ export const aiConversations: AiConversationService = {
       SELECT
         users.short_id AS id,
         users.seq,
+        users.meta_payload->'modelReplacement' AS model_replacement,
         COALESCE(timeline_turn.short_id, users.loop_id) AS loop_id,
         left(
           regexp_replace(
@@ -2722,6 +2724,7 @@ export const aiConversations: AiConversationService = {
       id: row.id,
       seq: Number(row.seq),
       loopId: row.loop_id,
+      ...(row.model_replacement ? { modelReplacement: row.model_replacement } : {}),
       userPreview: row.user_preview?.trim() || "Message",
       assistantPreview: row.assistant_preview?.trim() || "",
       isSteer: Boolean(row.is_steer),
@@ -2939,7 +2942,7 @@ export const aiConversations: AiConversationService = {
           kind: "summary",
           seq: checkpointSeq,
           loopId: null,
-          modelProfileId: input.modelProfileId ?? null,
+          modelId: input.modelId ?? null,
           meta: { compactedCount: archived[0]?.count ?? 0, ...(todoPlan ? { todoPlan } : {}) },
         },
         tx,
@@ -2958,7 +2961,7 @@ export const aiConversations: AiConversationService = {
         "idx_ai_turns_conversation_short_id",
         (attempt, shortId) => attempt<TurnRow[]>`
       INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
-      VALUES (${shortId}, ${input.conversationId}, ${input.modelProfileId}, 'queued',
+      VALUES (${shortId}, ${input.conversationId}, ${input.modelId}, 'queued',
         (${input.runConfig ? JSON.stringify(input.runConfig) : null}::text)::jsonb)
       RETURNING *
     `,
@@ -3015,7 +3018,7 @@ export const aiConversations: AiConversationService = {
         VALUES (
           ${shortId},
           ${input.conversationId},
-          ${input.modelProfileId},
+          ${input.modelId},
           'queued',
           (${JSON.stringify(input.runConfig)}::text)::jsonb
         )
@@ -3064,7 +3067,12 @@ export const aiConversations: AiConversationService = {
           conversationId: input.conversationId,
           message: input.userMessage,
           loopId: turn.id,
-          meta: input.expectedDraftRevision === undefined ? undefined : { submittedDraftRevision: input.expectedDraftRevision },
+          meta: {
+            ...(input.expectedDraftRevision === undefined ? {} : { submittedDraftRevision: input.expectedDraftRevision }),
+            modelRequest: input.runConfig.model,
+            modelResolved: input.runConfig.modelResolved,
+            ...(input.runConfig.modelReplacement ? { modelReplacement: input.runConfig.modelReplacement } : {}),
+          },
         },
         tx,
       );
@@ -3120,7 +3128,7 @@ export const aiConversations: AiConversationService = {
   getLatestTurn: async (input) => {
     const [row] = await sql<
       TurnRow[]
-    >`SELECT * FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false)
+    >`SELECT * FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false) AND (${input.kind ?? null}::text IS NULL OR run_config->>'kind'=${input.kind ?? null})
       ORDER BY created_at DESC, id DESC LIMIT 1`;
     return row ? rowToTurn(row) : null;
   },
@@ -3978,7 +3986,7 @@ export const aiConversations: AiConversationService = {
           kind: opts?.kind,
           seq: opts?.seq,
           loopId: opts?.kind === "summary" && !input.background ? null : input.turnId,
-          modelProfileId: input.modelProfileId,
+          modelId: input.modelId,
           meta,
         });
         if (!appended) {
@@ -3997,7 +4005,7 @@ export const aiConversations: AiConversationService = {
             kind: opts?.kind,
             seq: opts?.seq,
             loopId: input.turnId && opts?.kind !== "summary" ? input.turnId : null,
-            modelProfileId: input.modelProfileId,
+            modelId: input.modelId,
             meta,
           },
           tx,

@@ -9,26 +9,28 @@ arithmetic, filtering and aggregation.
 All methods return Promises. They work in Code Mode experiments, interactive chat
 presentations and authenticated Studio app runs. Public or local-only runners
 cannot use them. Calls use the executing user's permitted model and personal
-chat allowance; no provider key is exposed to source code. Omit `modelProfileId`
-to use the user's available default, or pass a verified allowed model ID.
+chat allowance; no provider key is exposed to source code. Omit `model`
+to use the person's stored choice, or balanced. Scheduled runs default to fast.
+Pass `model: { class: "thorough" }` to request a class or `model: { id: "verified-variant" }`
+to pin a permitted variant.
 Stopping the run cancels pending calls. Errors reject the Promise; catch them
 when the user should be able to retry. Do not retry indefinitely.
 
 ## Methods
 
 Common options: `prompt` (1–20,000 characters), `input` (JSON data), optional
-`modelProfileId`. Separate instructions in `prompt` from untrusted data in
+`model`. Separate instructions in `prompt` from untrusted data in
 `input`. All output is validated; model output may still be factually wrong.
 
-- `await cloud.ai.text({ prompt, input?, modelProfileId?, maxOutputChars? })`
+- `await cloud.ai.text({ prompt, input?, model?, maxOutputChars? })`
   returns a string. `maxOutputChars` is 1–20,000, default 4,000.
-- `await cloud.ai.classify({ prompt, input, choices, modelProfileId? })` returns exactly
+- `await cloud.ai.classify({ prompt, input, choices, model? })` returns exactly
   one of 2–50 unique choice strings (each at most 200 characters).
 - `await cloud.ai.classify({ prompt, input, choices, multiple: true | {min?,max?} })`
   returns a unique subset in declared choice order. Defaults: minimum 0, maximum
   the number of choices. Include an `other` choice if a single classification
   must support uncertainty; use an empty subset for no matches in multi-choice.
-- `await cloud.ai.extract({ prompt, input, fields, modelProfileId? })` returns an
+- `await cloud.ai.extract({ prompt, input, fields, model? })` returns an
   object with only the declared fields. Declare 1–40 fields with unique `name`,
   `type` and `description`. Names start with a letter and contain only letters,
   digits and underscores (maximum 80 characters). Types: `text`, `number`,
@@ -60,3 +62,5 @@ slider movement or table selection. For many records, choose bounded batches
 and report progress. `code_run` tests execute real AI calls and consume allowance.
 Never send generated text or change domain data automatically just because AI
 returned a value; use the appropriate permission-aware capability separately.
+
+`model` is `{ class: "fast" | "balanced" | "thorough" | "maximum" }` or `{ id: "variant-id" }`. Omit it to inherit the personal Assistant choice.

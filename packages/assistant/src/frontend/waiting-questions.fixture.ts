@@ -55,7 +55,7 @@ const turn = (open: Key[]): AiTurnSnapshot => ({
   seq: 20,
   status: open.length ? "waiting_for_action" : "completed",
   blocks: [{ id: "intro", kind: "text", text: "Zwei Dinge brauchen dein Ja:" }, ...open.map((key) => blocks()[key])],
-  modelProfileId: "standard",
+  modelId: "standard",
   createdAt: at(5),
 });
 

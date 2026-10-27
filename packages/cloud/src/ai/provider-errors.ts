@@ -1,4 +1,6 @@
-import type { NessiIssue, Provider } from "@k2b/nessi/ai";
+import type { NessiIssue, Provider, StreamEvent } from "@k2b/nessi/ai";
+import { classifyProviderFailure, recordAiProviderStatus } from "./provider-connections";
+import { type ProviderFetchMarks, runWithProviderFetchMarks } from "./provider-fetch";
 
 /** No provider-owned message, name, stack, cause, or extension fields cross this boundary. */
 export class AiProviderError extends Error {
@@ -63,27 +65,74 @@ const toolStreamReason = (reason: string) => {
 };
 
 /** Apply before accounting, retry, nessi loops, traces, capabilities, and loggers observe an adapter. */
-export const withProviderErrors = (provider: Provider): Provider => ({
+export const withProviderErrors = (provider: Provider, providerId?: string): Provider => ({
   name: provider.name,
   family: provider.family,
   model: provider.model,
   contextWindow: provider.contextWindow,
   capabilities: provider.capabilities,
   complete: async (request) => {
+    const marks: ProviderFetchMarks = {};
     try {
-      return await provider.complete(request);
-    } catch {
+      const result = await runWithProviderFetchMarks(marks, () => provider.complete(request));
+      if (providerId && !request.signal?.aborted)
+        void recordAiProviderStatus(
+          providerId,
+          ["error", "aborted", "interrupted"].includes(result.finishReason ?? "")
+            ? classifyProviderFailure(marks.httpStatus ? { status: marks.httpStatus } : {})
+            : { status: "ok", message: "The provider connection works." },
+        );
+      return result;
+    } catch (error) {
+      if (providerId && !request.signal?.aborted)
+        void recordAiProviderStatus(
+          providerId,
+          classifyProviderFailure(marks.httpStatus ? { status: marks.httpStatus } : marks.networkFailure ? new TypeError() : error),
+        );
       throw new AiProviderError(request.signal?.aborted);
     }
   },
   stream: async function* (request) {
+    const marks: ProviderFetchMarks = {};
+    let iterator: AsyncIterator<StreamEvent> | undefined;
     try {
-      for await (const event of provider.stream(request)) {
+      const activeIterator = provider.stream(request)[Symbol.asyncIterator]();
+      iterator = activeIterator;
+      let failed = false;
+      for (;;) {
+        const next = await runWithProviderFetchMarks(marks, () => activeIterator.next());
+        if (next.done) break;
+        const event = next.value;
+        if (event.type === "issue" && (event.issue.kind === "provider_error" || event.issue.kind === "timeout")) {
+          failed = true;
+          if (providerId)
+            void recordAiProviderStatus(
+              providerId,
+              event.issue.kind === "timeout"
+                ? { status: "unreachable", message: "The provider timed out." }
+                : classifyProviderFailure(
+                    marks.httpStatus ? { status: marks.httpStatus } : marks.networkFailure ? new TypeError() : event.issue,
+                  ),
+            );
+        }
         yield event.type === "issue" ? { type: "issue", issue: providerIssue(event.issue, request.tools) } : event;
       }
-    } catch {
+      if (providerId && !failed && !request.signal?.aborted)
+        void recordAiProviderStatus(providerId, { status: "ok", message: "The provider connection works." });
+    } catch (error) {
+      if (providerId && !request.signal?.aborted)
+        void recordAiProviderStatus(
+          providerId,
+          classifyProviderFailure(marks.httpStatus ? { status: marks.httpStatus } : marks.networkFailure ? new TypeError() : error),
+        );
       // Includes synchronous creation, iteration, and iterator cleanup failures.
       throw new AiProviderError(request.signal?.aborted);
+    } finally {
+      try {
+        await iterator?.return?.();
+      } catch {
+        throw new AiProviderError(request.signal?.aborted);
+      }
     }
   },
 });

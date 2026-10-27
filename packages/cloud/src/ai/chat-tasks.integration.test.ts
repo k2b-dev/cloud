@@ -64,7 +64,7 @@ suite("AI chat tasks", () => {
     }))!;
     const delivered = await aiChatTasks.deliverOccurrence({
       occurrenceId: occurrence.id,
-      modelProfileId: "test",
+      modelId: "test",
       runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
       userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
       expectedRevision: task.revision,
@@ -133,7 +133,7 @@ suite("AI chat tasks", () => {
         turnId: run.turnId,
         runKind: "workflow",
         evidenceKey,
-        modelProfileId: "test",
+        modelId: "test",
         accountedTokens: 0,
       });
       expect(learningRunId).not.toBeNull();
@@ -474,7 +474,7 @@ suite("AI chat tasks", () => {
       const deliver = () =>
         aiChatTasks.deliverOccurrence({
           occurrenceId: occurrence!.id,
-          modelProfileId: "test",
+          modelId: "test",
           runConfig: { kind: "chat", input: waiting.prompt, toolSource: { kind: "none" } },
           userMessage: { role: "user", content: [{ type: "text", text: waiting.prompt }] },
           expectedRevision: waiting.revision,
@@ -544,7 +544,7 @@ suite("AI chat tasks", () => {
           }))!;
           const result = await aiChatTasks.deliverOccurrence({
             occurrenceId: occurrence.id,
-            modelProfileId: "test",
+            modelId: "test",
             runConfig: {
               kind: "chat",
               input: task!.prompt,
@@ -624,7 +624,7 @@ suite("AI chat tasks", () => {
         }
         const delivery = await aiChatTasks.deliverOccurrence({
           occurrenceId: occurrence.id,
-          modelProfileId: "test",
+          modelId: "test",
           runConfig: { kind: "chat", input: condition, toolSource: { kind: "none" } },
           userMessage: { role: "user", content: [{ type: "text", text: condition }] },
           expectedRevision: task.revision,
@@ -699,7 +699,7 @@ suite("AI chat tasks", () => {
         }))!;
         const delivered = await aiChatTasks.deliverOccurrence({
           occurrenceId: occurrence.id,
-          modelProfileId: "test",
+          modelId: "test",
           runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
           userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
           expectedRevision: task.revision,
@@ -807,7 +807,7 @@ suite("AI chat tasks", () => {
         }))!;
         const delivered = await aiChatTasks.deliverOccurrence({
           occurrenceId: occurrence.id,
-          modelProfileId: "test",
+          modelId: "test",
           runConfig: { kind: "chat", input: condition, toolSource: { kind: "none" } },
           userMessage: { role: "user", content: [{ type: "text", text: condition }] },
           expectedRevision: task.revision,
@@ -855,7 +855,7 @@ suite("AI chat tasks", () => {
         }))!;
         const delivered = await aiChatTasks.deliverOccurrence({
           occurrenceId: occurrence.id,
-          modelProfileId: "test",
+          modelId: "test",
           runConfig: { kind: "chat", input: condition, toolSource: { kind: "none" } },
           userMessage: { role: "user", content: [{ type: "text", text: condition }] },
           expectedRevision: task.revision,
@@ -1010,7 +1010,7 @@ suite("AI chat tasks", () => {
       `;
       const manualDelivery = await aiChatTasks.deliverOccurrence({
         occurrenceId: manual!.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig: { kind: "chat", input: task!.prompt, toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: task!.prompt }] },
         expectedRevision: (await aiChatTasks.get({ userId: user!.id, taskId: task!.shortId }))!.revision,
@@ -1029,7 +1029,7 @@ suite("AI chat tasks", () => {
       expect((await aiChatTasks.materializeDueOnce()).find((entry) => entry.taskId === task!.id)?.id).toBe(occurrence!.id);
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence!.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig: { kind: "chat", input: task!.prompt, toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: task!.prompt }] },
         expectedRevision: (await aiChatTasks.get({ userId: user!.id, taskId: task!.shortId }))!.revision,
@@ -1123,7 +1123,7 @@ suite("AI chat tasks", () => {
       }))!;
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: "test",
+        modelId: "test",
         runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
         expectedRevision: task.revision,
@@ -1323,7 +1323,7 @@ suite("AI chat tasks", () => {
       const rebound = await aiChatTasks.getQueuedOccurrence(stale!.id);
       const staleDelivery = await aiChatTasks.deliverOccurrence({
         occurrenceId: stale!.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig: { kind: "chat", input: rebound!.task.prompt, toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: rebound!.task.prompt }] },
         expectedRevision: rebound!.task.revision,
@@ -1345,7 +1345,7 @@ suite("AI chat tasks", () => {
       });
       const failedDelivery = await aiChatTasks.deliverOccurrence({
         occurrenceId: failed!.id,
-        modelProfileId: "test-model",
+        modelId: "test-model",
         runConfig: { kind: "chat", input: "Fail", toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: "Fail" }] },
         expectedRevision: (await aiChatTasks.get({ userId: owner.id, taskId: task!.shortId }))!.revision,
@@ -1667,7 +1667,7 @@ suite("AI chat tasks", () => {
       }))!;
       const turn = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: "test",
+        modelId: "test",
         runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
         expectedRevision: task.revision,
@@ -1722,7 +1722,7 @@ suite("AI chat tasks", () => {
         }))!;
         const delivered = await aiChatTasks.deliverOccurrence({
           occurrenceId: occurrence.id,
-          modelProfileId: "test",
+          modelId: "test",
           runConfig: { kind: "chat", input: task.prompt, locale: "de", toolSource: { kind: "none" } },
           userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
           expectedRevision: task.revision,
@@ -1859,7 +1859,7 @@ suite("AI chat tasks", () => {
         }))!;
         const turn = await aiChatTasks.deliverOccurrence({
           occurrenceId: occurrence.id,
-          modelProfileId: "test",
+          modelId: "test",
           runConfig: { kind: "chat", input: task.prompt, toolSource: { kind: "none" } },
           userMessage: { role: "user", content: [{ type: "text", text: task.prompt }] },
           expectedRevision: task.revision,

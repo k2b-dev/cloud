@@ -1,627 +1,135 @@
-import { z } from "zod";
 import { coreSettings } from "../services";
-import { stripImageDataUrlMetadata } from "../services/image-metadata";
-import { AiModelPricingSchema } from "../shared/ai-costs";
-import {
-  AI_REQUEST_HEADERS_PROVIDER_ERROR,
-  AiExtraBodySchema,
-  AiReasoningEffortSchema,
-  AiRequestHeadersSchema,
-  providerSupportsRequestHeaders,
-} from "../shared/ai-request-options";
-import { getAiCredential, listAiCredentialProfileIds } from "./credentials";
+import { providerSupportsRequestHeaders } from "../shared/ai-request-options";
+import { getAiCredential, listAiCredentialProviderIds } from "./credentials";
 import { AI_FIRECRAWL_API_KEY_SETTING_KEY } from "./firecrawl-tools";
+import { aiModelCatalog, readAiModelProfiles } from "./model-catalog";
+import { type AiModelRequest, type AiResolvedModelRef, aiModelClassFallbackChain } from "./model-contracts";
 import { createAiProvider } from "./provider";
 import { getAiRequestHeaders } from "./request-headers";
-import {
-  AI_DATA_BOUNDARIES,
-  AI_MODEL_CAPABILITIES,
-  type AiDataBoundary,
-  type AiModelCapability,
-  type AiModelPolicy,
-  type AiModelProfile,
-  type AiProviderId,
-  type AiPublicModelProfile,
-  type AiResolvedModel,
-  type AiSettingsError,
-  type AiSettingsState,
+import type {
+  AiDataBoundary,
+  AiModelPolicy,
+  AiModelProfile,
+  AiPublicModelProfile,
+  AiResolvedModel,
+  AiSettingsError,
+  AiSettingsState,
 } from "./types";
 
-const PROVIDERS = ["openai", "openrouter", "anthropic", "mistral", "gemini", "ollama", "vllm", "openai-compatible"] as const;
-const LEGACY_DATA_BOUNDARIES = ["local", "internal"] as const;
-const DATA_BOUNDARY_INPUTS = [...AI_DATA_BOUNDARIES, ...LEGACY_DATA_BOUNDARIES] as const;
-const HttpUrlSchema = z
-  .string()
-  .trim()
-  .url()
-  .refine((value) => {
-    const protocol = new URL(value).protocol;
-    return protocol === "http:" || protocol === "https:";
-  }, "Provider endpoints must use HTTP or HTTPS.");
-
-export const providerRequiresCredential = (provider: AiProviderId): boolean =>
-  provider === "openai" || provider === "openrouter" || provider === "anthropic" || provider === "mistral" || provider === "gemini";
-
-export const providerSupportsCredential = (provider: AiProviderId): boolean =>
+export const providerRequiresCredential = (provider: import("./types").AiProviderId): boolean =>
+  ["openai", "openrouter", "anthropic", "mistral", "gemini"].includes(provider);
+export const providerSupportsCredential = (provider: import("./types").AiProviderId): boolean =>
   providerRequiresCredential(provider) || provider === "vllm" || provider === "openai-compatible";
-
-const defaultDataBoundary = (provider: AiProviderId): AiDataBoundary =>
-  provider === "ollama" || provider === "vllm" || provider === "openai-compatible" ? "private" : "hosted";
-
-const normalizeDataBoundary = (boundary: (typeof DATA_BOUNDARY_INPUTS)[number] | undefined, provider: AiProviderId): AiDataBoundary => {
-  if (boundary === "hosted") return "hosted";
-  if (boundary === "private" || boundary === "local" || boundary === "internal") return "private";
-  return defaultDataBoundary(provider);
+export const aiSettingsFailure = (code: AiSettingsError["code"], message: string): never => {
+  throw Object.assign(new Error(message), { aiError: { code, message } satisfies AiSettingsError });
 };
-
-const isModelCapability = (value: string): value is AiModelCapability => AI_MODEL_CAPABILITIES.some((capability) => capability === value);
-
-// Keep in sync with the ai.max_tool_result_chars default in core-settings.ts.
-// This is an operator ceiling. The runtime derives the actual per-result
-// budget from the selected model's context window.
-const DEFAULT_MAX_TOOL_RESULT_CHARS = 2_000_000;
-
-const normalizeMaxToolResultChars = (value: unknown): number => {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric) || numeric <= 0) return DEFAULT_MAX_TOOL_RESULT_CHARS;
-  return Math.floor(numeric);
-};
-
-const normalizeCapabilities = (values: string[] | undefined): AiModelCapability[] => {
-  if (!values) return ["streaming"];
-  const capabilities = values.filter(isModelCapability);
-  return [...new Set(capabilities)];
-};
-
-const ModelProfileSchema = z
-  .object({
-    id: z
-      .string()
-      .trim()
-      .min(1)
-      .regex(/^[a-z0-9][a-z0-9._-]*$/),
-    label: z.string().trim().min(1),
-    provider: z.enum(PROVIDERS),
-    model: z.string().trim().min(1),
-    enabled: z.boolean().default(true),
-    // Small logo shown in the admin card and the composer model picker. Hard cap:
-    // it ships to every user via the public model list (64x64 webp ≈ a few KB).
-    image: z
-      .string()
-      .trim()
-      .regex(/^data:image\//)
-      .max(28_000)
-      .optional(),
-    // Legacy/advanced metadata is tolerated but no longer used for model selection.
-    tags: z.array(z.string()).optional(),
-    capabilities: z.array(z.string()).optional(),
-    dataBoundary: z.enum(DATA_BOUNDARY_INPUTS).optional(),
-    // Legacy name accepted for stored profiles created before dataBoundary.
-    dataPolicy: z.enum(DATA_BOUNDARY_INPUTS).optional(),
-    baseURL: HttpUrlSchema.optional(),
-    contextWindow: z.number().int().positive().optional(),
-    temperature: z.number().min(0).max(2).optional(),
-    maxOutputTokens: z.number().int().positive().optional(),
-    reasoningEffort: AiReasoningEffortSchema,
-    extraBody: AiExtraBodySchema.optional(),
-    requestHeaders: AiRequestHeadersSchema.optional(),
-    maxLoadedTools: z.number().int().optional(),
-    maxToolRounds: z.number().int().optional(),
-    pricing: AiModelPricingSchema.optional(),
-  })
-  .superRefine((profile, ctx) => {
-    if (profile.requestHeaders !== undefined && !providerSupportsRequestHeaders(profile.provider))
-      ctx.addIssue({ code: "custom", path: ["requestHeaders"], message: AI_REQUEST_HEADERS_PROVIDER_ERROR });
-    if (profile.capabilities?.includes("transcription")) {
-      for (const key of ["reasoningEffort", "extraBody", "requestHeaders"] as const)
-        if (profile[key] !== undefined)
-          ctx.addIssue({ code: "custom", path: [key], message: "Request settings are not supported on transcription profiles." });
-      if (profile.pricing) ctx.addIssue({ code: "custom", path: ["pricing"], message: "Audio pricing is not supported." });
-      if (profile.capabilities.some((capability) => capability !== "transcription")) {
-        ctx.addIssue({ code: "custom", path: ["capabilities"], message: "Audio transcription cannot be combined with chat capabilities." });
-      }
-      if (profile.provider !== "openai" && profile.provider !== "openai-compatible") {
-        ctx.addIssue({
-          code: "custom",
-          path: ["provider"],
-          message: "Audio transcription requires OpenAI or an OpenAI-compatible endpoint.",
-        });
-      }
-    }
-    if (profile.provider === "openai-compatible" && !profile.baseURL) {
-      ctx.addIssue({ code: "custom", path: ["baseURL"], message: "OpenAI-compatible profiles require a base URL." });
-    }
-  });
-
-const profileToPublic = (profile: AiModelProfile): AiPublicModelProfile => ({
-  id: profile.id,
-  label: profile.label,
-  provider: profile.provider,
-  model: profile.model,
-  image: profile.image,
-  capabilities: profile.capabilities,
-  dataBoundary: profile.dataBoundary,
-  contextWindow: profile.contextWindow,
-});
-
-const normalizeProfile = (raw: z.infer<typeof ModelProfileSchema>): AiModelProfile => {
-  const { requestHeaders: _requestHeaders, capabilities, dataBoundary, dataPolicy: legacyDataPolicy, tags: _legacyTags, ...profile } = raw;
-  return {
-    ...profile,
-    capabilities: normalizeCapabilities(capabilities),
-    dataBoundary: normalizeDataBoundary(dataBoundary ?? legacyDataPolicy, raw.provider),
-  };
-};
-
-/** Sanitize every submitted model logo, including unchanged images from stored profiles. */
-export const prepareAiModelProfileImages = (rawJson: string): string => {
-  const raw: unknown = JSON.parse(rawJson);
-  if (!Array.isArray(raw)) return rawJson;
-  return JSON.stringify(
-    raw.map((profile: unknown) => {
-      if (typeof profile !== "object" || profile === null || !("image" in profile) || typeof profile.image !== "string") return profile;
-      return { ...profile, image: stripImageDataUrlMetadata(profile.image) };
-    }),
-  );
-};
-
-export const parseAiModelProfiles = (rawJson: string): { profiles: AiModelProfile[]; error?: AiSettingsError } => {
-  let raw: unknown;
-  try {
-    raw = rawJson.trim() ? JSON.parse(rawJson) : [];
-  } catch (error) {
-    return {
-      profiles: [],
-      error: {
-        code: "invalid_model_profiles",
-        message: "AI model profiles must be valid JSON.",
-        fields: { "ai.model_profiles_json": error instanceof Error ? error.message : "Invalid JSON" },
-      },
-    };
-  }
-
-  const parsed = z.array(ModelProfileSchema).safeParse(raw);
-  if (!parsed.success) {
-    return {
-      profiles: [],
-      error: {
-        code: "invalid_model_profiles",
-        message: "AI model profiles do not match the expected shape.",
-        fields: { "ai.model_profiles_json": z.prettifyError(parsed.error) },
-      },
-    };
-  }
-
-  const seen = new Set<string>();
-  const duplicate = parsed.data.find((profile) => {
-    if (seen.has(profile.id)) return true;
-    seen.add(profile.id);
-    return false;
-  });
-
-  if (duplicate) {
-    return {
-      profiles: [],
-      error: {
-        code: "invalid_model_profiles",
-        message: `Duplicate AI model profile id "${duplicate.id}".`,
-        fields: { "ai.model_profiles_json": `Duplicate model profile id "${duplicate.id}".` },
-      },
-    };
-  }
-
-  const profiles = parsed.data.map(normalizeProfile);
-  return { profiles };
-};
-
-export type AiModelReferenceSetting =
-  | "ai.default_model_id"
-  | "ai.background_model_id"
-  | "ai.workflow_model_id"
-  | "ai.vision_model_id"
-  | "ai.audio_model_id";
-
-/**
- * One reason why a prospective AI configuration cannot be saved. Codes and
- * profile ids are stable and locale-free; the admin route turns them into
- * request-localized messages.
- */
-export type AiSettingsIssue =
-  | { code: "model_required"; setting: AiModelReferenceSetting }
-  | {
-      code: "model_profile_missing" | "model_profile_disabled" | "model_profile_incompatible";
-      setting: AiModelReferenceSetting;
-      profileId: string;
-    }
-  | { code: "provider_credential_missing"; setting: "ai.model_profiles_json"; profileId: string };
-
-export const validateAiSettingsConfiguration = (input: {
-  enabled: boolean;
-  defaultModelId: string;
-  backgroundModelId: string;
-  visionModelId?: string;
-  audioModelId?: string;
-  workflowModelId: string;
-  profiles: readonly AiModelProfile[];
-  credentialProfileIds: readonly string[];
-}): AiSettingsIssue[] => {
-  if (!input.enabled) return [];
-
-  const issues: AiSettingsIssue[] = [];
-  const isChatModel = (profile: AiModelProfile) => !profile.capabilities.includes("transcription");
-  const checkReference = (
-    setting: AiModelReferenceSetting,
-    profileId: string | undefined,
-    fits: (profile: AiModelProfile) => boolean,
-    required = false,
-  ) => {
-    if (!profileId) {
-      if (required) issues.push({ code: "model_required", setting });
-      return;
-    }
-    const profile = input.profiles.find((item) => item.id === profileId);
-    if (!profile) issues.push({ code: "model_profile_missing", setting, profileId });
-    else if (!profile.enabled) issues.push({ code: "model_profile_disabled", setting, profileId });
-    else if (!fits(profile)) issues.push({ code: "model_profile_incompatible", setting, profileId });
-  };
-
-  checkReference("ai.default_model_id", input.defaultModelId, isChatModel, true);
-  checkReference("ai.background_model_id", input.backgroundModelId, isChatModel);
-  checkReference("ai.workflow_model_id", input.workflowModelId, isChatModel);
-  checkReference("ai.vision_model_id", input.visionModelId, (profile) => profile.capabilities.includes("vision"));
-  checkReference("ai.audio_model_id", input.audioModelId, (profile) => profile.capabilities.includes("transcription"));
-
-  const configured = new Set(input.credentialProfileIds);
-  for (const profile of input.profiles) {
-    if (profile.enabled && providerRequiresCredential(profile.provider) && !configured.has(profile.id)) {
-      issues.push({ code: "provider_credential_missing", setting: "ai.model_profiles_json", profileId: profile.id });
-    }
-  }
-
-  return issues;
-};
-
-export const planAiProfileCredentials = (input: {
-  currentProfiles: readonly AiModelProfile[];
-  nextProfiles: readonly AiModelProfile[];
-  existingCredentialProfileIds: readonly string[];
-  submittedCredentialProfileIds: readonly string[];
-}): { keepCredentialProfileIds: string[]; unsupportedCredentialProfileId?: string } => {
-  const nextProfilesById = new Map(input.nextProfiles.map((profile) => [profile.id, profile]));
-  const unsupportedCredentialProfileId = input.submittedCredentialProfileIds.find((profileId) => {
-    const profile = nextProfilesById.get(profileId);
-    return !profile || !providerSupportsCredential(profile.provider);
-  });
-  if (unsupportedCredentialProfileId) return { keepCredentialProfileIds: [], unsupportedCredentialProfileId };
-
-  const existingCredentials = new Set(input.existingCredentialProfileIds);
-  const submittedCredentials = new Set(input.submittedCredentialProfileIds);
-  const currentProfilesById = new Map(input.currentProfiles.map((profile) => [profile.id, profile]));
-  const keepCredentialProfileIds = input.nextProfiles
-    .filter((profile) => {
-      if (!providerSupportsCredential(profile.provider)) return false;
-      if (submittedCredentials.has(profile.id)) return true;
-      const current = currentProfilesById.get(profile.id);
-      return current?.provider === profile.provider && existingCredentials.has(profile.id);
-    })
-    .map((profile) => profile.id);
-
-  return { keepCredentialProfileIds };
-};
-
-export const resolveAiSettingsStateFromRaw = async (input: {
-  enabled: boolean;
-  defaultModelId: string;
-  visionModelId?: string;
-  profilesJson: string;
-  globalInstructions?: string;
-  localClientInstructions?: string;
-  compactionInstructions?: string;
-  maxToolResultChars?: unknown;
-  firecrawlApiKey?: string;
-  credentialProfileIds?: readonly string[];
-  readCredential?: (profileId: string) => Promise<string | null | undefined>;
-}): Promise<AiSettingsState> => {
-  const parsed = parseAiModelProfiles(input.profilesJson ?? "[]");
-  const baseState = {
-    enabled: Boolean(input.enabled),
-    defaultModelId: input.defaultModelId ?? "",
-    visionModelId: input.visionModelId ?? "",
-    globalInstructions: input.globalInstructions ?? "",
-    localClientInstructions: input.localClientInstructions ?? "",
-    compactionInstructions: input.compactionInstructions ?? "",
-    maxToolResultChars: normalizeMaxToolResultChars(input.maxToolResultChars),
-    firecrawlConfigured: Boolean(input.firecrawlApiKey?.trim()),
-  };
-  if (parsed.error) {
-    return {
-      ok: false,
-      ...baseState,
-      profiles: parsed.profiles,
-      error: parsed.error,
-    };
-  }
-
-  if (!input.enabled) {
-    return {
-      ok: true,
-      ...baseState,
-      enabled: false,
-      profiles: parsed.profiles,
-    };
-  }
-
-  const defaultProfile = parsed.profiles.find((profile) => profile.id === input.defaultModelId);
-  if (!input.defaultModelId || !defaultProfile) {
-    return {
-      ok: false,
-      ...baseState,
-      enabled: true,
-      profiles: parsed.profiles,
-      error: {
-        code: "missing_default_model",
-        message: "AI is enabled but no valid default model profile is configured.",
-        fields: { "ai.default_model_id": "Choose an enabled model profile id." },
-      },
-    };
-  }
-
-  if (!defaultProfile.enabled || defaultProfile.capabilities.includes("transcription")) {
-    return {
-      ok: false,
-      ...baseState,
-      enabled: true,
-      profiles: parsed.profiles,
-      error: {
-        code: "default_model_disabled",
-        message: `Default AI model "${input.defaultModelId}" must be an enabled text model.`,
-        fields: { "ai.default_model_id": "Choose an enabled model profile id." },
-      },
-    };
-  }
-
-  if (providerRequiresCredential(defaultProfile.provider)) {
-    let credentialConfigured = input.credentialProfileIds?.includes(defaultProfile.id) ?? false;
-    if (!input.credentialProfileIds && input.readCredential) {
-      try {
-        credentialConfigured = Boolean((await input.readCredential(defaultProfile.id))?.trim());
-      } catch {
-        credentialConfigured = false;
-      }
-    }
-    if (!credentialConfigured) {
-      return {
-        ok: false,
-        ...baseState,
-        enabled: true,
-        profiles: parsed.profiles,
-        error: {
-          code: "missing_provider_credential",
-          message: `Default AI model "${input.defaultModelId}" is missing provider credentials.`,
-          fields: { "ai.model_profiles_json": "Enter the provider API key on the default model profile." },
-        },
-      };
-    }
-  }
-
-  return {
-    ok: true,
-    ...baseState,
-    enabled: true,
-    profiles: parsed.profiles,
-  };
-};
-
-const readAiSettingsSnapshot = async (): Promise<{ state: AiSettingsState; credentialProfileIds: string[] }> => {
+export const readAiSettingsState = async (): Promise<AiSettingsState> => {
   const [
     enabled,
-    defaultModelId,
-    visionModelId,
-    profilesJson,
     globalInstructions,
     localClientInstructions,
     compactionInstructions,
     maxToolResultChars,
     firecrawlApiKey,
+    profiles,
+    assignments,
   ] = await Promise.all([
     coreSettings.get<boolean>("ai.enabled"),
-    coreSettings.get<string>("ai.default_model_id"),
-    coreSettings.get<string>("ai.vision_model_id"),
-    coreSettings.get<string>("ai.model_profiles_json"),
     coreSettings.get<string>("ai.global_instructions"),
     coreSettings.get<string>("ai.local_client_instructions"),
     coreSettings.get<string>("ai.compaction_instructions"),
     coreSettings.get<number>("ai.max_tool_result_chars"),
     coreSettings.get<string>(AI_FIRECRAWL_API_KEY_SETTING_KEY),
+    readAiModelProfiles(),
+    aiModelCatalog.assignments(),
   ]);
-
-  const parsed = parseAiModelProfiles(profilesJson ?? "[]");
-  const defaultProfile = parsed.profiles.find((profile) => profile.id === defaultModelId);
-  const needsCredentials =
-    Boolean(enabled) &&
-    !parsed.error &&
-    Boolean(defaultProfile?.enabled) &&
-    parsed.profiles.some((profile) => profile.enabled && providerRequiresCredential(profile.provider));
-  const credentialProfileIds = needsCredentials ? await listAiCredentialProfileIds() : [];
-
-  const state = await resolveAiSettingsStateFromRaw({
+  return {
+    ok: true,
     enabled: Boolean(enabled),
-    defaultModelId: defaultModelId ?? "",
-    visionModelId: visionModelId ?? "",
-    profilesJson: profilesJson ?? "[]",
+    assignments,
     globalInstructions: globalInstructions ?? "",
     localClientInstructions: localClientInstructions ?? "",
     compactionInstructions: compactionInstructions ?? "",
-    maxToolResultChars,
-    firecrawlApiKey: firecrawlApiKey ?? "",
-    credentialProfileIds,
-  });
-  return { state, credentialProfileIds };
+    maxToolResultChars: maxToolResultChars > 0 ? maxToolResultChars : 2_000_000,
+    firecrawlConfigured: Boolean(firecrawlApiKey?.trim()),
+    profiles,
+  };
 };
+export const matchesAiModelPolicy = (profile: AiModelProfile, policy: AiModelPolicy): boolean =>
+  profile.enabled &&
+  profile.capabilities.includes("transcription") === Boolean(policy.requiredCapabilities?.includes("transcription")) &&
+  (!("allowedModelIds" in policy) || !policy.allowedModelIds || policy.allowedModelIds.includes(profile.id)) &&
+  (!policy.allowedDataBoundaries || policy.allowedDataBoundaries.includes(profile.dataBoundary)) &&
+  (!policy.requiredCapabilities || policy.requiredCapabilities.every((capability) => profile.capabilities.includes(capability)));
 
-export const readAiSettingsState = async (): Promise<AiSettingsState> => (await readAiSettingsSnapshot()).state;
-
-const hasAll = <T extends string>(values: readonly T[], required: readonly T[] | undefined): boolean =>
-  !required || required.every((requiredValue) => values.includes(requiredValue));
-
-const matchesPolicy = (profile: AiModelProfile, policy: AiModelPolicy): boolean => {
-  if (!profile.enabled) return false;
-  if (profile.capabilities.includes("transcription") !== Boolean(policy.requiredCapabilities?.includes("transcription"))) return false;
-  if ("allowedModelIds" in policy && policy.allowedModelIds && !policy.allowedModelIds.includes(profile.id)) return false;
-  if (policy.allowedDataBoundaries && !policy.allowedDataBoundaries.includes(profile.dataBoundary)) return false;
-  return hasAll(profile.capabilities, policy.requiredCapabilities);
-};
-
-const resolvePolicyModelId = (state: Extract<AiSettingsState, { ok: true }>, policy: AiModelPolicy, requestedModelId?: string): string => {
-  if (policy.kind === "locked") return policy.modelId;
-  if (policy.kind === "selectable") return requestedModelId ?? policy.defaultModelId ?? state.defaultModelId;
-  return state.defaultModelId;
-};
-
-export const selectAiModelProfile = (
-  state: Extract<AiSettingsState, { ok: true }>,
-  policy: AiModelPolicy,
-  requestedModelId?: string,
-): AiModelProfile => {
-  const modelId = resolvePolicyModelId(state, policy, requestedModelId);
-  const profile = state.profiles.find((candidate) => candidate.id === modelId);
-  if (!profile || !matchesPolicy(profile, policy)) {
-    throw Object.assign(
-      new Error(
-        `AI model "${modelId}" is unavailable or not allowed for this chat or data boundary. An administrator can enable a compatible model permitted by the application policy in the AI settings.`,
-      ),
-      {
-        aiError: {
-          code: "model_policy_mismatch",
-          message: `AI model "${modelId}" is unavailable or not allowed for this chat or data boundary. An administrator can enable a compatible model permitted by the application policy in the AI settings.`,
-          fields: { modelProfileId: "Choose an allowed enabled model profile." },
-        } satisfies AiSettingsError,
-      },
-    );
+export const resolveAiModelRef = (
+  state: Pick<AiSettingsState, "enabled" | "assignments">,
+  request: AiModelRequest = { class: "balanced" },
+): AiResolvedModelRef => {
+  if (!state.enabled) return aiSettingsFailure("ai_disabled", "AI is disabled.");
+  if ("id" in request) return { id: request.id };
+  for (const modelClass of [request.class, ...aiModelClassFallbackChain(request.class)]) {
+    const assignment = state.assignments.find((assignment) => assignment.slot === modelClass);
+    if (assignment?.variantId) return { requestedClass: request.class, class: modelClass, id: assignment.variantId };
   }
+  return aiSettingsFailure("ai_no_model", "No AI model class is assigned.");
+};
+const policyRequest = (policy: AiModelPolicy, request?: AiModelRequest): AiModelRequest | undefined =>
+  policy.kind === "locked" ? { id: policy.modelId } : request;
+export const selectAiModelProfile = (state: AiSettingsState, policy: AiModelPolicy, request?: AiModelRequest): AiModelProfile => {
+  const ref = resolveAiModelRef(state, policyRequest(policy, request));
+  const profile = state.profiles.find((candidate) => candidate.id === ref.id);
+  if (!profile || !matchesAiModelPolicy(profile, policy))
+    return aiSettingsFailure("model_policy_mismatch", "The AI model is missing, disabled, or outside the permitted policy.");
   return profile;
 };
-
+export const resolveAiModelFromState = async (
+  state: AiSettingsState,
+  policy: AiModelPolicy = { kind: "platform-default" },
+  request?: AiModelRequest,
+): Promise<AiResolvedModel> => {
+  const model = resolveAiModelRef(state, policyRequest(policy, request));
+  const profile = selectAiModelProfile(state, policy, request);
+  const credential = providerSupportsCredential(profile.provider) ? await getAiCredential(profile.providerId) : null;
+  if (providerRequiresCredential(profile.provider) && !credential?.trim())
+    return aiSettingsFailure("model_policy_mismatch", "The AI provider has no usable credential.");
+  const headers = providerSupportsRequestHeaders(profile.provider) ? await getAiRequestHeaders(profile.providerId) : {};
+  return { model, profile, provider: createAiProvider(profile, credential?.trim() || undefined, headers) };
+};
 export const resolveAiModel = async (
   policy: AiModelPolicy = { kind: "platform-default" },
-  requestedModelId?: string,
-): Promise<AiResolvedModel> => {
-  const state = await readAiSettingsState();
-  return resolveAiModelFromState(state, policy, requestedModelId);
-};
-
-const visionModelPolicy = (modelId: string, allowedDataBoundaries?: AiDataBoundary[]): AiModelPolicy => ({
-  kind: "locked",
-  modelId,
-  requiredCapabilities: ["vision"],
-  allowedDataBoundaries,
-});
-
+  request?: AiModelRequest,
+): Promise<AiResolvedModel> => resolveAiModelFromState(await readAiSettingsState(), policy, request);
 export const resolveAiVisionModel = async (allowedDataBoundaries?: AiDataBoundary[]): Promise<AiResolvedModel> => {
   const state = await readAiSettingsState();
-  if (!state.ok) throw Object.assign(new Error(state.error.message), { aiError: state.error });
-  if (!state.enabled) {
-    throw Object.assign(new Error("AI is disabled. An administrator can enable AI in the AI settings."), {
-      aiError: {
-        code: "ai_disabled",
-        message: "AI is disabled. An administrator can enable AI in the AI settings.",
-      } satisfies AiSettingsError,
-    });
-  }
-  const modelId = (state.visionModelId ?? "").trim();
-  if (!modelId)
-    throw new Error(
-      "Image inspection is not set up: no vision model is configured. An administrator can configure a vision model in the AI settings.",
-    );
-  return resolveAiModelFromState(state, visionModelPolicy(modelId, allowedDataBoundaries));
+  const id = state.assignments.find((assignment) => assignment.slot === "vision")?.variantId;
+  if (!id) return aiSettingsFailure("model_policy_mismatch", "No image inspection model is assigned.");
+  return resolveAiModelFromState(state, { kind: "locked", modelId: id, requiredCapabilities: ["vision"], allowedDataBoundaries });
 };
-
 export const isAiVisionModelConfigured = async (allowedDataBoundaries?: AiDataBoundary[]): Promise<boolean> => {
-  const { state, credentialProfileIds } = await readAiSettingsSnapshot();
-  if (!state.ok || !state.enabled || !state.visionModelId?.trim()) return false;
   try {
-    const profile = selectAiModelProfile(state, visionModelPolicy(state.visionModelId, allowedDataBoundaries));
-    return isUsableProfile(profile, new Set(credentialProfileIds));
+    await resolveAiVisionModel(allowedDataBoundaries);
+    return true;
   } catch {
     return false;
   }
 };
-
-export const resolveAiModelFromState = async (
-  state: AiSettingsState,
-  policy: AiModelPolicy = { kind: "platform-default" },
-  requestedModelId?: string,
-): Promise<AiResolvedModel> => {
-  if (!state.ok) throw Object.assign(new Error(state.error.message), { aiError: state.error });
-  if (!state.enabled) {
-    throw Object.assign(new Error("AI is disabled. An administrator can enable AI in the AI settings."), {
-      aiError: {
-        code: "ai_disabled",
-        message: "AI is disabled. An administrator can enable AI in the AI settings.",
-      } satisfies AiSettingsError,
-    });
-  }
-
-  const profile = selectAiModelProfile(state, policy, requestedModelId);
-
-  const credential = providerSupportsCredential(profile.provider) ? await getAiCredential(profile.id) : null;
-  if (providerRequiresCredential(profile.provider) && !credential?.trim()) {
-    throw Object.assign(
-      new Error(
-        `AI model "${profile.id}" is missing provider credentials. An administrator can add the provider API key in the AI settings.`,
-      ),
-      {
-        aiError: {
-          code: "missing_provider_credential",
-          message: `AI model "${profile.id}" is missing provider credentials. An administrator can add the provider API key in the AI settings.`,
-          fields: { "ai.model_profiles_json": "Enter the provider API key on this model profile." },
-        } satisfies AiSettingsError,
-      },
-    );
-  }
-
-  const headers = providerSupportsRequestHeaders(profile.provider) ? await getAiRequestHeaders(profile.id) : {};
-  return { profile, provider: createAiProvider(profile, credential?.trim() || undefined, headers) };
-};
-
-const isUsableProfile = (profile: AiModelProfile, credentialProfileIds: ReadonlySet<string>): boolean =>
-  !providerRequiresCredential(profile.provider) || credentialProfileIds.has(profile.id);
-
 export const listAiModels = async (policy: AiModelPolicy = { kind: "selectable" }): Promise<AiPublicModelProfile[]> => {
-  const { state, credentialProfileIds } = await readAiSettingsSnapshot();
-  if (!state.ok || !state.enabled) return [];
-  const configured = new Set(credentialProfileIds);
-  return state.profiles.filter((profile) => matchesPolicy(profile, policy) && isUsableProfile(profile, configured)).map(profileToPublic);
+  const [state, credentials] = await Promise.all([readAiSettingsState(), listAiCredentialProviderIds()]);
+  if (!state.enabled) return [];
+  return state.profiles.filter(
+    (profile) =>
+      matchesAiModelPolicy(profile, policy) && (!providerRequiresCredential(profile.provider) || credentials.includes(profile.providerId)),
+  );
 };
-
 export const toPublicAiSettingsState = async (allowedDataBoundaries?: AiDataBoundary[]) => {
-  const { state, credentialProfileIds } = await readAiSettingsSnapshot();
-  const configured = new Set(credentialProfileIds);
-  let visionModelConfigured = false;
-  if (state.ok && state.enabled && state.visionModelId?.trim()) {
-    try {
-      const profile = selectAiModelProfile(state, visionModelPolicy(state.visionModelId, allowedDataBoundaries));
-      visionModelConfigured = isUsableProfile(profile, configured);
-    } catch {
-      // The configured auxiliary model is outside this application's policy.
-    }
-  }
+  const state = await readAiSettingsState();
   return {
-    ok: state.ok,
+    ok: true,
     enabled: state.enabled,
-    defaultModelId: state.defaultModelId,
-    visionModelConfigured,
-    error: state.ok ? null : state.error,
+    visionModelConfigured: await isAiVisionModelConfigured(allowedDataBoundaries),
     firecrawlConfigured: state.firecrawlConfigured,
-    models:
-      state.ok && state.enabled
-        ? state.profiles
-            .filter(
-              (profile) => matchesPolicy(profile, { kind: "selectable", allowedDataBoundaries }) && isUsableProfile(profile, configured),
-            )
-            .map(profileToPublic)
-        : [],
+    error: null,
   };
 };
-
-export type { AiDataBoundary, AiModelCapability, AiModelPolicy, AiModelProfile };
+export type { AiDataBoundary, AiModelCapability, AiModelPolicy, AiModelProfile } from "./types";

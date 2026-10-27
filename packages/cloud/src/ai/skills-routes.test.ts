@@ -262,7 +262,7 @@ describe("AI Skill routes", () => {
       description: "",
       icon: "",
       instructions: "",
-      defaultModelProfileId: null,
+      defaultModel: null,
       revision: 1,
       createdAt: "",
       updatedAt: "",

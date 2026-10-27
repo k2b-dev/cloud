@@ -359,7 +359,7 @@ suite("aiFileStore integration", () => {
     try {
       await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "legacy-test",
+        modelId: "legacy-test",
         runConfig: {
           kind: "chat",
           input: [{ type: "file", mediaType: "image/png", data: "AQID" }],

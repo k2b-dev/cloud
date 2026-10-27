@@ -46,7 +46,7 @@ const project = {
   description: "",
   icon: "ti ti-folders",
   instructions: "",
-  defaultModelProfileId: null,
+  defaultModel: null,
   permission: "read",
   revision: 1,
   createdAt: "2026-09-04T00:00:00.000Z",
@@ -64,12 +64,15 @@ beforeEach(() => {
     spyOn(ai, "assistantAiSettingsState").mockResolvedValue({
       ok: true,
       enabled: false,
-      defaultModelId: "",
+      status: "ok",
+      selection: null,
+      effectiveDefault: { class: "balanced" },
+      classes: [],
       visionModelConfigured: false,
       audioModelConfigured: false,
       error: null,
       firecrawlConfigured: false,
-      models: [],
+      options: [],
     }),
   );
   spies.push(spyOn(ai, "listAssistantAiModels").mockResolvedValue([]));
@@ -79,7 +82,7 @@ beforeEach(() => {
       userId: user.id,
       memoryEnabled: true,
       memoryLearningEnabled: false,
-      lastModelId: "",
+      selection: null,
       updatedAt: project.updatedAt,
     }),
   );

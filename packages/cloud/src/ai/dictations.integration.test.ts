@@ -26,10 +26,16 @@ const setup = async () => {
   const profileId = `audio-test-${tag}`;
   const access = await createAccess({ principal: { type: "user", userId }, permission: "read" });
   if (!access.ok) throw new Error("Could not create test access");
-  await sql`INSERT INTO ai.model_access_resources (profile_id) VALUES (${profileId})`;
-  await sql`INSERT INTO ai.model_access (profile_id, access_id) VALUES (${profileId}, ${access.data.id})`;
+  await sql`INSERT INTO ai.model_access_resources (model_id) VALUES (${profileId})`;
+  await sql`INSERT INTO ai.model_access (model_id, access_id) VALUES (${profileId}, ${access.data.id})`;
   const model: AiResolvedAudioModel = {
     profile: {
+      modelId: profileId,
+      providerId: profileId,
+      variantLabel: "Standard",
+      description: "",
+      icon: { kind: "provider" },
+      showInPicker: true,
       id: profileId,
       label: "Test",
       provider: "openai-compatible",
@@ -55,7 +61,7 @@ const setup = async () => {
     cleanup: async () => {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}`;
       await sql`DELETE FROM auth.access WHERE id = ${access.data.id}`;
-      await sql`DELETE FROM ai.model_access_resources WHERE profile_id = ${profileId}`;
+      await sql`DELETE FROM ai.model_access_resources WHERE model_id = ${profileId}`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}`;
     },
   };
@@ -82,7 +88,7 @@ suite("durable dictation", () => {
       );
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: input.conversationId,
-        modelProfileId: "test",
+        modelId: "test",
         runConfig: {
           kind: "chat",
           input: "Inspect recording",
@@ -185,8 +191,8 @@ suite("durable dictation", () => {
       const [row] = await sql<{ id: string }[]>`SELECT id FROM ai.dictations WHERE short_id = ${task.id}`;
       await processAiDictation(row!.id, new AbortController().signal, async (request) => {
         expect(new Uint8Array(await request.file.arrayBuffer())).toEqual(audio);
-        expect(request.requestedModelId).toBe(model.profile.id);
-        return { text: "Das Memo", modelProfileId: model.profile.id };
+        expect(request.model).toEqual({ id: model.profile.id });
+        return { text: "Das Memo", modelId: model.profile.id };
       });
       expect((await aiDictations.get({ ...input, id: task.id }))?.text).toBe("Das Memo");
       expect(await aiFileStore.totalBytes(input.conversationId)).toBe(1);
@@ -218,7 +224,7 @@ suite("durable dictation", () => {
       const run = async () => {
         calls++;
         await new Promise((resolve) => setTimeout(resolve, 50));
-        return { text: "Recovered", modelProfileId: model.profile.id };
+        return { text: "Recovered", modelId: model.profile.id };
       };
       await Promise.all([
         processAiDictation(row!.id, new AbortController().signal, run),
@@ -254,7 +260,7 @@ suite("durable dictation", () => {
       const [row] = await sql<{ id: string }[]>`SELECT id FROM ai.dictations WHERE short_id = ${task.id}`;
       await processAiDictation(row!.id, new AbortController().signal, async () => {
         await aiDictations.discard({ ...input, id: task.id });
-        return { text: "Too late", modelProfileId: model.profile.id };
+        return { text: "Too late", modelId: model.profile.id };
       });
       const result = await aiDictations.get({ ...input, id: task.id });
       expect(result?.status).toBe("canceled");

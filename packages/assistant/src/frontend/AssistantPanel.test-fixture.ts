@@ -1,16 +1,10 @@
-import type { AiConversation, AiPublicModelProfile, AiStoredMessage } from "@k2b/cloud/ai";
+import type { AiConversation, AiPeopleModels, AiStoredMessage } from "@k2b/cloud/ai";
 
 const now = "2026-10-21T12:00:00.000Z";
-const models: AiPublicModelProfile[] = [
-  {
-    id: "standard",
-    label: "Standard",
-    provider: "ollama",
-    model: "standard",
-    capabilities: ["streaming", "vision"],
-    dataBoundary: "private",
-  },
+const models: AiPeopleModels["options"] = [
+  { id: "standard", label: "Standard", description: "", icon: { kind: "mark", text: "AI", color: "0" }, classes: ["balanced"] },
 ];
+
 const conversation = (id: string): AiConversation => ({
   id,
   shortId: id,
@@ -80,7 +74,7 @@ export function assistantPanelFixture() {
           seq: 1,
           status: "running" as const,
           blocks: [],
-          modelProfileId: "standard",
+          modelId: "standard",
           createdAt: now,
         }
       : null,
@@ -93,9 +87,19 @@ export function assistantPanelFixture() {
       embedded: url.pathname.includes("/panel"),
       userId: "fixture-user",
       cloudUrl: url.origin,
-      status: { ok: true, enabled: true, defaultModelId: "standard", visionModelConfigured: false, error: null, models },
+      status: {
+        ok: true,
+        enabled: true,
+        status: "ok",
+        selection: null,
+        effectiveDefault: { class: "balanced" },
+        classes: [],
+        visionModelConfigured: false,
+        error: null,
+        options: models,
+      },
       models,
-      lastModelId: "standard",
+      selection: null,
       timeZone: "UTC",
       renderedAt: now,
       initialLiveCursor: "s6t.cloud-live-core.0",
@@ -199,7 +203,7 @@ export function assistantPanelFixture() {
         kind: "message",
         message: { role: "user", content: chat.draft.content.filter((part) => part.type === "text") },
         loopId: `Turn${seq}`,
-        modelProfileId: "standard",
+        modelId: "standard",
         providerModel: "standard",
         usage: null,
         stopReason: null,
@@ -224,7 +228,7 @@ export function assistantPanelFixture() {
         lostSend = false;
         return new Response("Lost turn response", { status: 502 });
       }
-      return Response.json({ message, turn: { id: message.loopId, modelProfileId: "standard" } });
+      return Response.json({ message, turn: { id: message.loopId, modelId: "standard" } });
     }
     if (suffix.startsWith("/submission/")) {
       const revision = Number(suffix.split("/").at(-1));

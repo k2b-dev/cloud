@@ -79,6 +79,12 @@ let onCompletionRequest: ((body: unknown, index: number) => void | Promise<void>
 let completionRequestCount = 0;
 
 const mockProfile = (): AiModelProfile => ({
+  modelId: MODEL_ID,
+  providerId: MODEL_ID,
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: MODEL_ID,
   label: "Mock",
   reasoningEffort: "low",
@@ -86,7 +92,7 @@ const mockProfile = (): AiModelProfile => ({
   provider: "openai-compatible",
   model: "mock",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "private",
   baseURL: `http://localhost:${mockServer?.port ?? 0}/v1`,
 });
@@ -96,9 +102,10 @@ const fakeValidateTurn: typeof validateAiTurnRequest = async () => {
   const profile = mockProfile();
   return {
     settings: {
+      assignments: [{ slot: "balanced", variantId: MODEL_ID, revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
       ok: true,
       enabled: true,
-      defaultModelId: MODEL_ID,
+
       globalInstructions: "",
       localClientInstructions: "",
       compactionInstructions: "",
@@ -106,7 +113,7 @@ const fakeValidateTurn: typeof validateAiTurnRequest = async () => {
       firecrawlConfigured: false,
       profiles: [profile],
     },
-    resolved: { profile, provider: createAiProvider(profile, "test") },
+    resolved: { model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") },
   };
 };
 
@@ -117,9 +124,10 @@ const fakeValidateWithProvider =
     const profile = mockProfile();
     return {
       settings: {
+        assignments: [{ slot: "balanced", variantId: MODEL_ID, revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
         ok: true,
         enabled: true,
-        defaultModelId: MODEL_ID,
+
         globalInstructions: "",
         localClientInstructions: "",
         compactionInstructions: "",
@@ -127,7 +135,7 @@ const fakeValidateWithProvider =
         firecrawlConfigured: false,
         profiles: [profile],
       },
-      resolved: { profile, provider: withProviderErrors(provider) },
+      resolved: { model: { id: profile.id }, profile, provider: withProviderErrors(provider) },
     };
   };
 
@@ -144,12 +152,13 @@ const syntheticProvider = (stream: Provider["stream"]): Provider => ({
 });
 
 const fakeValidateToolTurn: typeof validateAiTurnRequest = async () => {
-  const profile: AiModelProfile = { ...mockProfile(), capabilities: ["streaming", "tools"] };
+  const profile: AiModelProfile = { ...mockProfile(), capabilities: ["tools"] };
   return {
     settings: {
+      assignments: [{ slot: "balanced", variantId: MODEL_ID, revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
       ok: true,
       enabled: true,
-      defaultModelId: MODEL_ID,
+
       globalInstructions: "",
       localClientInstructions: "",
       compactionInstructions: "",
@@ -157,17 +166,18 @@ const fakeValidateToolTurn: typeof validateAiTurnRequest = async () => {
       firecrawlConfigured: false,
       profiles: [profile],
     },
-    resolved: { profile, provider: createAiProvider(profile, "test") },
+    resolved: { model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") },
   };
 };
 
 const fakeValidateBoundedToolTurn: typeof validateAiTurnRequest = async () => {
-  const profile: AiModelProfile = { ...mockProfile(), capabilities: ["streaming", "tools"], maxToolRounds: 1 };
+  const profile: AiModelProfile = { ...mockProfile(), capabilities: ["tools"], maxToolRounds: 1 };
   return {
     settings: {
+      assignments: [{ slot: "balanced", variantId: MODEL_ID, revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
       ok: true,
       enabled: true,
-      defaultModelId: MODEL_ID,
+
       globalInstructions: "",
       localClientInstructions: "",
       compactionInstructions: "",
@@ -175,17 +185,18 @@ const fakeValidateBoundedToolTurn: typeof validateAiTurnRequest = async () => {
       firecrawlConfigured: false,
       profiles: [profile],
     },
-    resolved: { profile, provider: createAiProvider(profile, "test") },
+    resolved: { model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") },
   };
 };
 
 const fakeValidateVisionTurn: typeof validateAiTurnRequest = async () => {
-  const profile: AiModelProfile = { ...mockProfile(), capabilities: ["streaming", "vision"] };
+  const profile: AiModelProfile = { ...mockProfile(), capabilities: ["vision"] };
   return {
     settings: {
+      assignments: [{ slot: "balanced", variantId: MODEL_ID, revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }],
       ok: true,
       enabled: true,
-      defaultModelId: MODEL_ID,
+
       globalInstructions: "",
       localClientInstructions: "",
       compactionInstructions: "",
@@ -193,7 +204,7 @@ const fakeValidateVisionTurn: typeof validateAiTurnRequest = async () => {
       firecrawlConfigured: false,
       profiles: [profile],
     },
-    resolved: { profile, provider: createAiProvider(profile, "test") },
+    resolved: { model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") },
   };
 };
 
@@ -468,7 +479,7 @@ suite("AI executor integration", () => {
       ];
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Write item",
@@ -678,7 +689,7 @@ suite("AI executor integration", () => {
       if (!occurrence) throw new Error("Expected occurrence");
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: task.prompt,
@@ -873,7 +884,7 @@ suite("AI executor integration", () => {
       if (!occurrence) throw new Error("Expected occurrence");
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: task.prompt,
@@ -986,7 +997,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "What can you do?",
@@ -1081,7 +1092,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig,
         userMessage: userMessage("Weekly report, like last time"),
       });
@@ -1102,7 +1113,7 @@ suite("AI executor integration", () => {
       }))!;
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { ...runConfig, input: task.prompt },
         userMessage: userMessage(task.prompt),
         expectedRevision: task.revision,
@@ -1127,7 +1138,7 @@ suite("AI executor integration", () => {
       expect(await aiSkills.setEnabled(creator.id, owner, false, authority)).toBeFalse();
       const { turn: withoutCreator } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig,
         userMessage: userMessage("Weekly report, like last time"),
       });
@@ -1161,7 +1172,7 @@ suite("AI executor integration", () => {
       });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "What can you do for me?",
@@ -1216,7 +1227,7 @@ suite("AI executor integration", () => {
           };
           const { turn } = await aiConversations.submitChatTurn({
             conversationId: conversation.id,
-            modelProfileId: MODEL_ID,
+            modelId: MODEL_ID,
             runConfig,
             userMessage: userMessage("Run the action"),
           });
@@ -1331,7 +1342,7 @@ suite("AI executor integration", () => {
           };
           const { turn } = await aiConversations.submitChatTurn({
             conversationId: conversation.id,
-            modelProfileId: MODEL_ID,
+            modelId: MODEL_ID,
             runConfig,
             userMessage: userMessage("Chart the orders"),
           });
@@ -1416,7 +1427,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Run", signedInSession: true },
         userMessage: userMessage("Run"),
       });
@@ -1569,7 +1580,7 @@ suite("AI executor integration", () => {
         const runConfig: AiChatTurnRunConfig = { kind: "chat", input: "Run", signedInSession: true };
         const { turn } = await aiConversations.submitChatTurn({
           conversationId: chat.id,
-          modelProfileId: MODEL_ID,
+          modelId: MODEL_ID,
           runConfig,
           userMessage: userMessage("Run"),
         });
@@ -1677,7 +1688,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Hi", toolSource: { kind: "none" } },
         userMessage: userMessage("Hi"),
       });
@@ -1745,7 +1756,7 @@ suite("AI executor integration", () => {
       const message: Message = { role: "user", content: [{ type: "text", text: `Describe this image\n${marker}` }] };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: `Describe this image\n${marker}`,
@@ -1827,7 +1838,7 @@ suite("AI executor integration", () => {
       const marker = '<attachment path="/missing.png" media-type="image/png" size="3" />';
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: marker,
@@ -1880,7 +1891,7 @@ suite("AI executor integration", () => {
       const marker = '<attachment path="/label.png" media-type="image/png" size="3" />';
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: marker,
@@ -1904,7 +1915,7 @@ suite("AI executor integration", () => {
       };
       nextJsonCompletion = '{"description":"The label reads Cloud."}';
       const tool = createCloudAiViewImageTool({
-        resolveModel: async () => ({ profile, provider: createAiProvider(profile, "test") }),
+        resolveModel: async () => ({ model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") }),
       });
       if (tool.location !== "server") throw new Error("view_image must be a server tool");
       const result = await tool.run({ path: "/label.png", prompt: "Read only the label." }, {
@@ -1937,7 +1948,7 @@ suite("AI executor integration", () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     try {
-      const profile: AiModelProfile = { ...mockProfile(), capabilities: ["streaming", "tools", "vision"] };
+      const profile: AiModelProfile = { ...mockProfile(), capabilities: ["tools", "vision"] };
       let requestBody: unknown;
       onCompletionRequest = (body) => {
         requestBody = body;
@@ -1948,7 +1959,7 @@ suite("AI executor integration", () => {
       const result = await tool.run({ path: "/project/diagram.png", prompt: "Describe the diagram." }, {
         actor: { kind: "user", user: actorUser(userId) },
         conversationId: conversation.id,
-        selectedModel: { profile, provider: createAiProvider(profile, "test") },
+        selectedModel: { model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") },
         projectFiles: {
           list: async () => [],
           read: async (path: string) =>
@@ -1996,7 +2007,9 @@ suite("AI executor integration", () => {
           requestBody = body;
         };
         nextJsonCompletion = '{"pages":[{"page":2,"description":"Total 42.00 EUR"}]}';
-        const tool = createCloudAiViewImageTool({ resolveModel: async () => ({ profile, provider: createAiProvider(profile, "test") }) });
+        const tool = createCloudAiViewImageTool({
+          resolveModel: async () => ({ model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") }),
+        });
         if (tool.location !== "server") throw new Error("Expected server tool");
         const context = {
           actor: { kind: "user", user: actorUser(userId) },
@@ -2047,7 +2060,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "List the Project files.",
@@ -2111,7 +2124,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "How do contacts work?",
@@ -2164,7 +2177,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Inspect this checkout",
@@ -2217,7 +2230,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Run a script",
@@ -2280,7 +2293,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Write a file",
@@ -2348,14 +2361,14 @@ suite("AI executor integration", () => {
       const validated = await fakeValidateToolTurn({ input: "Was sagt sie?" });
       spyOn(settings, "readAiSettingsState").mockResolvedValue(validated.settings);
       spyOn(aiModelAccess, "assertAllowed").mockResolvedValue();
-      spyOn(coreSettings, "get").mockResolvedValue(""); // Includes an empty ai.audio_model_id.
+      spyOn(coreSettings, "get").mockResolvedValue(""); // No audio assignment is configured.
       completionQueue = [textCompletion("An administrator must configure an audio model.")];
       onCompletionRequest = (body) => {
         requests.push(requestSchema.parse(body));
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           assistantChat: true,
@@ -2412,7 +2425,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Remember that I prefer short answers.",
@@ -2483,7 +2496,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Summarize", actor: { kind: "user", user: actorUser(userId) }, toolSource: { kind: "none" } },
         userMessage: userMessage("Summarize"),
       });
@@ -2504,7 +2517,7 @@ suite("AI executor integration", () => {
       }))!;
       const delivered = await aiChatTasks.deliverOccurrence({
         occurrenceId: occurrence.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: task.prompt,
@@ -2553,7 +2566,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize this meeting.",
@@ -2565,7 +2578,7 @@ suite("AI executor integration", () => {
             revision: 4,
             context: "Project: Meeting summary",
             references: [],
-            defaultModelProfileId: null,
+            defaultModel: null,
           },
           toolSource: { kind: "none" },
         },
@@ -2609,7 +2622,7 @@ suite("AI executor integration", () => {
       nextCompletion = textCompletion("Recovered answer");
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Hi", toolSource: { kind: "none" } },
         userMessage: userMessage("Hi"),
       });
@@ -2661,7 +2674,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Find the report",
@@ -2752,7 +2765,7 @@ suite("AI executor integration", () => {
       const requests: unknown[] = [];
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Start", toolSource: { kind: "none" } },
         userMessage: userMessage("Start"),
       });
@@ -2813,7 +2826,7 @@ suite("AI executor integration", () => {
       nextCompletion = textCompletion("Recovered answer");
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Hi", toolSource: { kind: "none" } },
         userMessage: userMessage("Hi"),
       });
@@ -2888,7 +2901,7 @@ suite("AI executor integration", () => {
         const input = `Earlier request ${index}`;
         const { turn } = await aiConversations.submitChatTurn({
           conversationId: conversation.id,
-          modelProfileId: MODEL_ID,
+          modelId: MODEL_ID,
           runConfig: { kind: "chat", input, toolSource: { kind: "none" } },
           userMessage: userMessage(input),
         });
@@ -2904,13 +2917,13 @@ suite("AI executor integration", () => {
       const turn = manual
         ? await aiConversations.createCompactionTurn({
             conversationId: conversation.id,
-            modelProfileId: MODEL_ID,
+            modelId: MODEL_ID,
             runConfig: { kind: "compact" },
           })
         : (
             await aiConversations.submitChatTurn({
               conversationId: conversation.id,
-              modelProfileId: MODEL_ID,
+              modelId: MODEL_ID,
               runConfig: { kind: "chat", input: "Continue", locale: "en", toolSource: { kind: "none" } },
               userMessage: userMessage("Continue"),
             })
@@ -2972,7 +2985,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Hi", toolSource: { kind: "none" } },
         userMessage: userMessage("Hi"),
       });
@@ -3033,7 +3046,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Hi", locale: "en", toolSource: { kind: "none" } },
         userMessage: userMessage("Hi"),
       });
@@ -3083,7 +3096,7 @@ suite("AI executor integration", () => {
       const run = async (text: string, leaseOwner: string) => {
         const { turn } = await aiConversations.submitChatTurn({
           conversationId: conversation.id,
-          modelProfileId: MODEL_ID,
+          modelId: MODEL_ID,
           runConfig: {
             kind: "chat",
             input: text,
@@ -3189,7 +3202,7 @@ suite("AI executor integration", () => {
       }
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Edit the note",
@@ -3242,7 +3255,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: { kind: "chat", input: "Hi", toolSource: { kind: "none" } },
         userMessage: userMessage("Hi"),
       });
@@ -3298,7 +3311,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize the report",
@@ -3360,7 +3373,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Continue the analysis",
@@ -3414,7 +3427,7 @@ suite("AI executor integration", () => {
       ];
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize the report",
@@ -3486,7 +3499,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Export the report",
@@ -3546,7 +3559,7 @@ suite("AI executor integration", () => {
       ];
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Fictional test",
@@ -3599,7 +3612,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize the report",
@@ -3688,7 +3701,7 @@ suite("AI executor integration", () => {
       };
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize the report",
@@ -3792,7 +3805,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize the report",
@@ -3813,7 +3826,7 @@ suite("AI executor integration", () => {
       if (!deadClaim) throw new Error("Expected dead worker claim");
       const earlier = aiConversations.createSessionStore({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         turnId: turn.id,
         leaseOwner: "malformed-dead-worker",
       });
@@ -3880,7 +3893,7 @@ suite("AI executor integration", () => {
     try {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Summarize the report",
@@ -3901,7 +3914,7 @@ suite("AI executor integration", () => {
       });
       const earlier = aiConversations.createSessionStore({
         conversationId: conversation.id,
-        modelProfileId: MODEL_ID,
+        modelId: MODEL_ID,
         turnId: turn.id,
         leaseOwner: "archived-dead-worker",
       });
@@ -4027,7 +4040,7 @@ suite("local client in-lease results", () => {
         ];
         const { turn } = await aiConversations.submitChatTurn({
           conversationId: conversation.id,
-          modelProfileId: MODEL_ID,
+          modelId: MODEL_ID,
           runConfig: {
             kind: "chat",
             input: "List files, then ask",
@@ -4177,9 +4190,9 @@ suiteFor(
       const claimSpy = claimFails
         ? spyOn(conversationStore, "claimAiToolCheck").mockRejectedValue(new Error("Transient check claim failure"))
         : undefined;
-      const modelRequests: unknown[] = [];
+      const models: unknown[] = [];
       onCompletionRequest = (body) => {
-        modelRequests.push(body);
+        models.push(body);
       };
       try {
         // Existing global approvals continue to apply, even though new cards no longer offer that choice.
@@ -4187,7 +4200,7 @@ suiteFor(
         completionQueue = [toolCallCompletion("send-1", "demo__action__send", {}), textCompletion("Checked the result")];
         const { turn } = await aiConversations.submitChatTurn({
           conversationId: conversation.id,
-          modelProfileId: MODEL_ID,
+          modelId: MODEL_ID,
           runConfig: {
             kind: "chat",
             input: "Send the draft",
@@ -4228,8 +4241,8 @@ suiteFor(
           expect(claimSpy).toHaveBeenCalledTimes(1);
           expect(block).toMatchObject({ status: "failed", isError: true });
           expect(JSON.stringify(block)).toContain("ACTION_OUTCOME_UNKNOWN");
-          expect(JSON.stringify(modelRequests.at(-1))).toContain("ACTION_OUTCOME_UNKNOWN");
-          expect(JSON.stringify(modelRequests.at(-1))).not.toContain("Transient check claim failure");
+          expect(JSON.stringify(models.at(-1))).toContain("ACTION_OUTCOME_UNKNOWN");
+          expect(JSON.stringify(models.at(-1))).not.toContain("Transient check claim failure");
         } else if (withCheck && !preDispatchFailure) {
           expect(block).toMatchObject({ check: { state: outcome }, status: outcome === "done" ? "completed" : "failed" });
           if (outcome === "done")

@@ -5,6 +5,7 @@ import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
 import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
 import { aiChatMessages } from "../chat/messages";
+import type { AiModelRequest } from "../model-contracts";
 import { AI_TURN_LEASE_MS, type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
 import { type AiResourceMarker, aiResourceMarker } from "../resource-markers";
 import type {
@@ -857,7 +858,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   };
 
   const queuedAttempts = new Map<string, { key: string; files?: File[]; id: string }>();
-  const queueMessage = (input: ComposerDraftInput & { modelProfileId?: string }): Promise<boolean> => {
+  const queueMessage = (input: ComposerDraftInput & { model?: AiModelRequest }): Promise<boolean> => {
     if (!input.conversationId || !isComposerDraftSendable(input)) return Promise.resolve(false);
     const conversationId = input.conversationId;
     const key = JSON.stringify({
@@ -866,7 +867,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       draftContent: input.draftContent,
       resources: input.resources,
       storedFiles: input.storedFiles,
-      model: input.modelProfileId,
+      model: input.model,
     });
     const previous = queuedAttempts.get(conversationId);
     if (uncertainSubmissions()[conversationId] !== undefined) {
@@ -886,7 +887,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         const body = JSON.stringify({
           draftRevision: saved.revision,
           queueId,
-          modelProfileId: input.modelProfileId,
+          model: input.model,
           clientToolIds: options.clientToolIds?.filter((id) => options.frontendTools?.[id]),
         });
         queuedAttempts.set(conversationId, { key, files: input.files, id: queueId });
@@ -914,7 +915,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     });
   };
 
-  const send = (input: ComposerDraftInput & { modelProfileId?: string }): Promise<boolean> => {
+  const send = (input: ComposerDraftInput & { model?: AiModelRequest }): Promise<boolean> => {
     if (!isComposerDraftSendable(input)) return Promise.resolve(false);
     const targetConversation = input.conversationId ? Promise.resolve(input.conversationId) : ensureConversation();
     return queueDraftOperation(async () => {
@@ -945,7 +946,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         kind: "message",
         message: { role: "user", content: optimisticContent },
         loopId: null,
-        modelProfileId: null,
+        modelId: null,
         providerModel: null,
         usage: null,
         stopReason: null,
@@ -993,7 +994,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         const submissionBody = JSON.stringify({
           draftRevision: savedDraft.revision,
           clientToolIds: options.clientToolIds?.filter((id) => options.frontendTools?.[id]),
-          modelProfileId: input.modelProfileId,
+          model: input.model,
         });
         submissionBodies.set(conversationId, submissionBody);
         const result = await request<SubmitTurnResult>(
@@ -1024,7 +1025,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
                   seq: 0,
                   status: "running",
                   blocks: [],
-                  modelProfileId: result.turn.modelProfileId,
+                  modelId: result.turn.modelId,
                 }),
         );
         if (state.conversation) {
@@ -1244,7 +1245,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     return requestPromise;
   };
 
-  const compactConversation = async (input: { modelProfileId?: string } = {}) => {
+  const compactConversation = async (input: { model?: AiModelRequest } = {}) => {
     const conversationId = activeConversationId();
     if (!conversationId) {
       setGlobalError("Open a chat before compacting context.");
@@ -1272,7 +1273,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     input: {
       content?: AiUserContentPart[];
       mode?: "retry" | "details" | "concise";
-      modelProfileId?: string;
+      model?: AiModelRequest;
     } = {},
   ) => {
     const conversationId = activeConversationId();
@@ -1292,7 +1293,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
           body: JSON.stringify({
             mode: input.mode ?? "retry",
             content: input.content,
-            modelProfileId: input.modelProfileId,
+            model: input.model,
           }),
         },
         "AI retry failed",

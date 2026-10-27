@@ -107,14 +107,14 @@ const processOccurrence = async (ctx: JobContext<{ occurrenceId: string }>) => {
     fileSnapshot: { attached: [], ...aiConversationFileManifest(files) },
     actor: { kind: "user", user },
     modelPolicy: personalAiModelPolicy,
-    requestedModelId: project?.defaultModelProfileId ?? undefined,
+    model: project?.defaultModel ?? { class: "fast" },
     project: project ?? undefined,
     toolSource: { kind: "default", appTools: true },
     toolApprovalContext: { actorUserId: user.id },
   });
   const delivered = await aiChatTasks.deliverOccurrence({
     occurrenceId: occurrence.id,
-    modelProfileId: prepared.modelProfileId,
+    modelId: prepared.modelId,
     runConfig: { ...prepared.runConfig, mandate: taskMandate(task) },
     userMessage: prepared.userMessage,
     expectedRevision: task.revision,

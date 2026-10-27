@@ -1,14 +1,13 @@
 import { openAICompatibleTranscription, type TranscriptionProvider } from "@k2b/nessi/ai";
-import { coreSettings } from "../services";
 import { logger, type TraceContext, trace } from "../services/logging";
 import { AI_AUDIO_MAX_BYTES, inspectAiAudio } from "./audio-format";
 import { getAiCredential } from "./credentials";
 import { beginAiCall, finishAiCall } from "./inference-calls";
+import { classifyProviderFailure, recordAiProviderStatus } from "./provider-connections";
 import { readAiSettingsState, selectAiModelProfile } from "./settings";
 import { type AiUsageAttribution, safelyRecordStructuredRun } from "./structured-runs";
 import type { AiDataBoundary, AiModelProfile } from "./types";
 
-export const AI_AUDIO_MODEL_SETTING_KEY = "ai.audio_model_id";
 /** Matches the existing chat turn execution budget; callers may cancel sooner. */
 export const AI_TRANSCRIPTION_TIMEOUT_MS = 10 * 60_000;
 
@@ -37,36 +36,41 @@ export const createAiTranscriptionProvider = (profile: AiModelProfile, apiKey?: 
     model: provider.model,
     transcribe: async (request) => {
       try {
-        return await provider.transcribe(request);
+        const result = await provider.transcribe(request);
+        void recordAiProviderStatus(profile.providerId, { status: "ok", message: "The provider connection works." });
+        return result;
       } catch (error) {
-        throw describeTranscriptionFailure(error, "provider", request.signal?.aborted);
+        const failure = describeTranscriptionFailure(error, "provider", request.signal?.aborted);
+        if (!request.signal?.aborted)
+          void recordAiProviderStatus(
+            profile.providerId,
+            failure.httpStatus
+              ? classifyProviderFailure({ status: failure.httpStatus })
+              : failure.code === "transcription_connection_failed"
+                ? classifyProviderFailure(new TypeError())
+                : classifyProviderFailure(error),
+          );
+        throw failure;
       }
     },
   };
 };
 
 export const resolveAiAudioModel = async (
-  input: { requestedModelId?: string; allowedDataBoundaries?: AiDataBoundary[] } = {},
+  input: { model?: import("./model-contracts").AiModelRequest; allowedDataBoundaries?: AiDataBoundary[] } = {},
 ): Promise<AiResolvedAudioModel> => {
   const state = await readAiSettingsState();
-  if (!state.ok)
-    throw Object.assign(
-      new AiTranscriptionError(
-        "transcription_configuration_failed",
-        `Audio transcription is not available: ${state.error.message} An administrator can fix this in the AI settings.`,
-      ),
-      { aiError: state.error },
-    );
   if (!state.enabled)
     throw new AiTranscriptionError(
       "transcription_configuration_failed",
       "Audio transcription is not available: AI is disabled. An administrator can enable AI in the AI settings.",
     );
-  const modelId = input.requestedModelId ?? String((await coreSettings.get<string>(AI_AUDIO_MODEL_SETTING_KEY)) ?? "").trim();
+  const modelId =
+    input.model && "id" in input.model ? input.model.id : state.assignments.find((assignment) => assignment.slot === "audio")?.variantId;
   if (!modelId)
     throw new AiTranscriptionError(
       "transcription_configuration_failed",
-      "Audio transcription is not set up: no audio model is configured. An administrator can configure an audio model in the AI settings.",
+      "Audio transcription is not set up: no audio model is assigned. An administrator can configure an audio model in the AI settings.",
     );
   let profile: AiModelProfile;
   try {
@@ -93,7 +97,7 @@ export const resolveAiAudioModel = async (
       error instanceof Error && "aiError" in error ? { aiError: error.aiError } : {},
     );
   }
-  const credential = await getAiCredential(profile.id);
+  const credential = await getAiCredential(profile.providerId);
   if (profile.provider === "openai" && !credential?.trim())
     throw new AiTranscriptionError(
       "transcription_configuration_failed",
@@ -108,7 +112,7 @@ export type RunAiTranscriptionInput = {
   filename: string;
   language?: string;
   prompt?: string;
-  requestedModelId?: string;
+  model?: import("./model-contracts").AiModelRequest;
   allowedDataBoundaries?: AiDataBoundary[];
   signal?: AbortSignal;
   appId?: string;
@@ -119,7 +123,7 @@ export type RunAiTranscriptionInput = {
 };
 
 /** One provider call. Durable execution and input authorization belong to the caller. */
-export const runAiTranscription = async (input: RunAiTranscriptionInput): Promise<{ text: string; modelProfileId: string }> => {
+export const runAiTranscription = async (input: RunAiTranscriptionInput): Promise<{ text: string; modelId: string }> => {
   return trace.withSpan(
     {
       name: `ai.transcription.${input.task}`,
@@ -165,13 +169,13 @@ export const runAiTranscription = async (input: RunAiTranscriptionInput): Promis
         });
         signal.throwIfAborted();
         succeeded = true;
-        return { text: result.text, modelProfileId: resolved.profile.id };
+        return { text: result.text, modelId: resolved.profile.id };
       } catch (error) {
         failure = describeTranscriptionFailure(error, stage, signal.aborted);
         logger("ai:transcription")[input.signal?.aborted ? "info" : "error"](failure.message, {
           traceId: span.traceId,
           task: input.task,
-          modelProfileId: resolved?.profile.id ?? input.requestedModelId,
+          modelId: resolved?.profile.id ?? input.model,
           providerModel: resolved?.profile.model,
           stage,
           errorCode: failure.code,
@@ -191,7 +195,7 @@ export const runAiTranscription = async (input: RunAiTranscriptionInput): Promis
           task: input.task,
           appId: input.appId,
           attribution: input.attribution,
-          modelProfileId: resolved?.profile.id,
+          modelId: resolved?.profile.id,
           providerModel: resolved?.profile.model,
           mode: "transcription",
           attempts: resolved ? 1 : 0,

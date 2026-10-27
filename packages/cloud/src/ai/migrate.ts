@@ -1100,7 +1100,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   `.simple();
 
   // Last model the user actually ran a turn with — preselected for new chats.
-  await sql`ALTER TABLE ai.user_prefs ADD COLUMN IF NOT EXISTS last_model_id TEXT NOT NULL DEFAULT ''`.simple();
+  await sql`ALTER TABLE ai.user_prefs ADD COLUMN IF NOT EXISTS model_choice JSONB`.simple();
 
   await sql`
     CREATE TABLE IF NOT EXISTS ai.memories (
@@ -1880,7 +1880,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       description TEXT NOT NULL DEFAULT '',
       icon TEXT NOT NULL DEFAULT 'ti ti-folders',
       instructions TEXT NOT NULL DEFAULT '',
-      default_model_profile_id TEXT,
+      default_model JSONB,
       revision INTEGER NOT NULL DEFAULT 1,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -2497,46 +2497,6 @@ export const migrateCloudAi = async (): Promise<void> => {
     FOR EACH ROW EXECUTE FUNCTION ai.live_project_group_membership_changed()
   `.simple();
 
-  // Provider API keys used to live inside the ai.model_profiles_json setting.
-  // A JSON setting is delivered to the admin UI in full, so every key rode
-  // along in the page payload; a per-profile row keeps them server-side and
-  // lets a deployment hold as many as it has profiles.
-  await sql`
-    CREATE TABLE IF NOT EXISTS ai.model_credentials (
-      profile_id TEXT PRIMARY KEY,
-      secret TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.simple();
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS ai.model_request_headers (
-      profile_id TEXT PRIMARY KEY,
-      secret TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.simple();
-
-  // One-time move of keys that were stored inside the profiles setting. Once
-  // the blob holds no apiKey the split yields nothing and this is a no-op, so
-  // it is safe to re-run. Dynamic imports keep the module free of store deps.
-  {
-    const { coreSettings } = await import("../services");
-    const { setAiCredential, splitAiProfileCredentials } = await import("./credentials");
-    const profiles = await coreSettings.read<string>("ai.model_profiles_json");
-    if (profiles.stored === "unreadable") {
-      console.warn('[ai] cannot read setting "ai.model_profiles_json"; skipping credential split');
-    }
-    const split = profiles.stored === "unreadable" ? null : splitAiProfileCredentials(profiles.value ?? "[]");
-    if (split && split.credentials.length > 0) {
-      for (const { profileId, secret } of split.credentials) await setAiCredential(profileId, secret);
-      await coreSettings.set("ai.model_profiles_json", split.profilesJson);
-      console.log(`  ✓ moved ${split.credentials.length} AI provider key(s) out of ai.model_profiles_json`);
-    }
-  }
-
   await sql`ALTER TABLE ai.structured_runs
     ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS conversation_id UUID REFERENCES ai.conversations(id) ON DELETE SET NULL,
@@ -2609,6 +2569,7 @@ export const migrateCloudAi = async (): Promise<void> => {
 
   await migrateAiModelAccess();
   await migrateAiQuotas();
+  await migrateAiModelClasses();
 
   await sql`CREATE OR REPLACE FUNCTION ai.sidebar_tool_label(blocks jsonb) RETURNS jsonb AS $$
     SELECT jsonb_build_object('label', left(COALESCE(block->'presentation'->>'title', block->>'name'),200), 'status', block->>'status')
@@ -2732,4 +2693,74 @@ const backfillApprovalRequests = async (): Promise<void> => {
     });
     if (!count) return;
   }
+};
+
+/** Breaking cut: configuration is deliberately discarded once; history stays intact. */
+export const migrateAiModelClasses = async (): Promise<void> => {
+  await sql.begin(migrateAiModelClassesInTransaction);
+};
+
+export const migrateAiModelClassesInTransaction = async (db: typeof sql): Promise<void> => {
+  await db`SELECT pg_advisory_xact_lock(hashtext('ai.model-classes-v9'))`;
+  const [state] = await db<{ exists: boolean }[]>`SELECT to_regclass('ai.providers') IS NOT NULL AS exists`;
+  if (!state?.exists) {
+    await db`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access)`;
+    await db`DELETE FROM ai.model_access_resources`;
+    await db`DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='ai' AND table_name='model_access_resources' AND column_name='profile_id') THEN
+          ALTER TABLE ai.model_access_resources RENAME COLUMN profile_id TO model_id;
+          ALTER TABLE ai.model_access RENAME COLUMN profile_id TO model_id;
+        END IF;
+      END $$`;
+    await db`UPDATE ai.cost_config SET rules = COALESCE((SELECT jsonb_agg(rule) FROM jsonb_array_elements(rules) rule WHERE rule->>'scope' = '*'), '[]'::jsonb), revision = revision + 1`;
+    await db`DELETE FROM settings.entries WHERE key IN ('ai.model_profiles_json','ai.model_profiles','ai.default_model_id','ai.background_model_id','ai.workflow_model_id','ai.vision_model_id','ai.audio_model_id')`;
+    await db`DROP TABLE IF EXISTS ai.model_credentials`;
+    await db`DROP TABLE IF EXISTS ai.model_request_headers`;
+    await db`ALTER TABLE ai.projects DROP COLUMN IF EXISTS default_model_profile_id`;
+    await db`ALTER TABLE ai.user_prefs DROP COLUMN IF EXISTS last_model_id`;
+  }
+  await db`ALTER TABLE ai.projects ADD COLUMN IF NOT EXISTS default_model JSONB`;
+  await db`ALTER TABLE ai.user_prefs ADD COLUMN IF NOT EXISTS model_choice JSONB`;
+  await db`ALTER TABLE settings.entries ADD COLUMN IF NOT EXISTS updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL`;
+  await db`CREATE TABLE IF NOT EXISTS ai.model_change_notices (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,retargeted BOOLEAN NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`;
+  await db`CREATE TABLE IF NOT EXISTS ai.providers (
+      id TEXT PRIMARY KEY, type TEXT NOT NULL, label TEXT NOT NULL, base_url TEXT, data_boundary TEXT NOT NULL CHECK(data_boundary IN ('hosted','private')),
+      enabled BOOLEAN NOT NULL DEFAULT true, logo TEXT, status TEXT NOT NULL DEFAULT 'unknown' CHECK(status IN ('unknown','ok','unreachable','key_rejected','error')),
+      status_code TEXT, status_message TEXT, status_checked_at TIMESTAMPTZ,
+      revision INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL
+    )`;
+  await db`CREATE TABLE IF NOT EXISTS ai.provider_credentials (
+      provider_id TEXT PRIMARY KEY REFERENCES ai.providers(id) ON DELETE CASCADE, secret TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`;
+  await db`CREATE TABLE IF NOT EXISTS ai.provider_request_headers (
+      provider_id TEXT PRIMARY KEY REFERENCES ai.providers(id) ON DELETE CASCADE, secret TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`;
+  await db`CREATE TABLE IF NOT EXISTS ai.models (
+      id TEXT PRIMARY KEY, provider_id TEXT NOT NULL REFERENCES ai.providers(id) ON DELETE CASCADE, provider_model TEXT NOT NULL,
+      label TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL CHECK(kind IN ('chat','transcription')),
+      capabilities JSONB NOT NULL DEFAULT '[]', context_window INTEGER, max_output_tokens INTEGER, temperature DOUBLE PRECISION, extra_body JSONB,
+      max_loaded_tools INTEGER, max_tool_rounds INTEGER, pricing JSONB, icon JSONB NOT NULL DEFAULT '{"kind":"provider"}', enabled BOOLEAN NOT NULL DEFAULT true,
+      revision INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL
+    )`;
+  await db`CREATE TABLE IF NOT EXISTS ai.model_variants (
+      id TEXT PRIMARY KEY, model_id TEXT NOT NULL REFERENCES ai.models(id) ON DELETE CASCADE, slug TEXT NOT NULL, label TEXT NOT NULL,
+      hint TEXT NOT NULL DEFAULT '', reasoning_effort TEXT, max_output_tokens INTEGER, pricing JSONB, extra_body JSONB,
+      show_in_picker BOOLEAN NOT NULL DEFAULT true, position INTEGER NOT NULL DEFAULT 0,
+      revision INTEGER NOT NULL DEFAULT 1, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL, UNIQUE(model_id,slug),
+      CHECK(id = CASE WHEN slug = 'standard' THEN model_id ELSE model_id || ':' || slug END)
+    )`;
+  await db`CREATE TABLE IF NOT EXISTS ai.model_assignments (
+      slot TEXT PRIMARY KEY CHECK(slot IN ('fast','balanced','thorough','maximum','vision','audio')),
+      variant_id TEXT REFERENCES ai.model_variants(id), revision INTEGER NOT NULL DEFAULT 1,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL
+    )`;
+  for (const slot of ["fast", "balanced", "thorough", "maximum", "vision", "audio"])
+    await db`INSERT INTO ai.model_assignments(slot) VALUES(${slot}) ON CONFLICT DO NOTHING`;
+  await db`ALTER TABLE ai.inference_calls ADD COLUMN IF NOT EXISTS requested_class TEXT, ADD COLUMN IF NOT EXISTS resolved_class TEXT, ADD COLUMN IF NOT EXISTS model_id TEXT`;
 };

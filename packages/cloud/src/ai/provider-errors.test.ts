@@ -85,8 +85,15 @@ for (const kind of ["provider-message", "provider-body", "schema"] as const)
           input: marker,
           output: z.object({ number: z.string().nullable() }),
           resolveModel: async () => ({
+            model: { id: "fixture" },
             provider: withProviderErrors(provider),
             profile: {
+              modelId: "fixture",
+              providerId: "fixture",
+              variantLabel: "Standard",
+              description: "",
+              icon: { kind: "provider" },
+              showInPicker: true,
               id: "fixture",
               label: "Fixture",
               provider: "openai-compatible",

@@ -9,20 +9,9 @@ import {
   aiConversations,
   aiProjects,
   aiSkills,
-  listAiCredentialProfileIds,
   readAiSettingsState,
 } from "@k2b/cloud/ai";
-import {
-  AI_BACKGROUND_TASK_PROMPTS,
-  type AiModelAccessMap,
-  type AiUsageReport,
-  aiModelAccess,
-  aiQuotas,
-  aiUsage,
-  listAiRequestHeaderNames,
-  quotaAdminConfig,
-  quotaReport,
-} from "@k2b/cloud/ai/admin";
+import { AI_BACKGROUND_TASK_PROMPTS, type AiUsageReport, aiUsage, quotaAdminConfig, quotaReport } from "@k2b/cloud/ai/admin";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { appApproval, coreSettings, geoip, linuxIdentities, settingsService } from "@k2b/cloud/services";
 import { AiUsageQuerySchema } from "@k2b/cloud/shared";
@@ -82,13 +71,6 @@ const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) 
       title: t.aiGeneral,
       description: t.aiGeneralDescription,
       icon: "ti ti-adjustments",
-      group: "ai" as const,
-    },
-    {
-      id: "ai-providers",
-      title: t.aiProviders,
-      description: t.aiProvidersDescription,
-      icon: "ti ti-sparkles",
       group: "ai" as const,
     },
     {
@@ -175,6 +157,8 @@ const isTabId = (value: string | undefined, availableTabs: ReturnType<typeof tab
 const buildEntries = async (group: string, locale: string): Promise<SettingFieldDef[]> => {
   const result = await settingsService.entry.list({ filter: { group }, locale });
   return result.items.map((item) => ({
+    updatedAt: item.updatedAt,
+    updatedBy: item.updatedBy,
     key: item.key,
     label: item.label,
     description: item.description,
@@ -237,8 +221,7 @@ export default ssr<AuthContext>(async (c) => {
   const operationsFreeIpaEnabled = tab.id === "account-operations" && (await coreSettings.get<boolean>("freeipa.enable"));
   const showAiJobsLink = hasDedicatedRuntimeRoute(getRuntimeContext(c).apps, "/admin/observability/jobs", "core");
 
-  const aiSection =
-    tab.id === "ai-general" ? "general" : tab.id === "ai-providers" ? "providers" : tab.id === "ai-jobs" ? "jobs" : undefined;
+  const aiSection = tab.id === "ai-general" ? "general" : tab.id === "ai-jobs" ? "jobs" : undefined;
 
   let entries: SettingFieldDef[] = [];
   const linuxCursor = z.uuid().safeParse(c.req.query("after"));
@@ -251,10 +234,6 @@ export default ssr<AuthContext>(async (c) => {
   let aiEnrichmentOverview: AiEnrichmentOverview | null = null;
   // Which profiles have a stored provider key. The keys themselves never leave
   // the server, so the form shows presence instead of a value.
-  let aiCredentialProfileIds: string[] = [];
-  let aiRequestHeaderNames: Record<string, string[]> = {};
-  let aiAccountingUnit: string | undefined;
-  let modelAccess: AiModelAccessMap = {};
   let aiProjectItems: AiProjectAdminListItem[] = [];
   let aiProjectSummary: AiProjectAdminSummary | null = null;
   let aiProjectTotal = 0;
@@ -288,18 +267,6 @@ export default ssr<AuthContext>(async (c) => {
     entries = await buildEntries(tab.group, locale);
     if (tab.id === "email-templates") entries = entries.filter((entry) => entry.kind === "template");
     if (tab.id === "ai-jobs") aiEnrichmentOverview = await aiConversations.getEnrichmentOverview();
-    if (tab.id === "ai-providers") {
-      const [credentials, access, costConfig, headerNames] = await Promise.all([
-        listAiCredentialProfileIds(),
-        aiModelAccess.listForAdmin(),
-        aiQuotas.config(),
-        listAiRequestHeaderNames(),
-      ]);
-      aiCredentialProfileIds = credentials;
-      aiRequestHeaderNames = headerNames;
-      modelAccess = access;
-      aiAccountingUnit = costConfig.unit;
-    }
   } else if (tab.id === "legal") {
     entries = await buildEntries("legal", locale);
     legalInitial = buildLegalInitial(entries);
@@ -372,10 +339,6 @@ export default ssr<AuthContext>(async (c) => {
             showLegacySettings={tab.id === "general"}
             aiEnrichmentOverview={aiEnrichmentOverview}
             backgroundTaskPrompts={tab.id === "ai-jobs" ? AI_BACKGROUND_TASK_PROMPTS : undefined}
-            aiCredentialProfileIds={aiCredentialProfileIds}
-            aiRequestHeaderNames={aiRequestHeaderNames}
-            aiModelAccess={modelAccess}
-            aiAccountingUnit={aiAccountingUnit}
             aiSection={aiSection}
             showAiJobsLink={showAiJobsLink}
           />

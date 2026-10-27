@@ -14,7 +14,22 @@ import type { RunAiStructuredInput, RunAiStructuredResult } from "./structured";
 import type { AiResolvedModel } from "./types";
 
 const learningTestModel: AiResolvedModel = {
-  profile: { id: "test-model", label: "Test", provider: "openai", model: "test", enabled: true, capabilities: [], dataBoundary: "private" },
+  model: { id: "test-model" },
+  profile: {
+    modelId: "test-model",
+    providerId: "test-model",
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
+    id: "test-model",
+    label: "Test",
+    provider: "openai",
+    model: "test",
+    enabled: true,
+    capabilities: [],
+    dataBoundary: "private",
+  },
   provider: {
     name: "test",
     family: "openai-compatible",
@@ -93,7 +108,7 @@ const proposeLearning =
           ? { workflow: { content: "Use Accounting for invoice mail.", memoryIds: [] } }
           : { changes: [{ action: "add", kind: "preference", content: "Prefers concise answers.", memoryIds: [], resourceRef: null }] },
       ),
-      modelProfileId: "test-model",
+      model: { id: "test-model" },
       structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
     };
   };
@@ -162,7 +177,7 @@ databaseSuite()("AI memory learning (integration)", () => {
               output: request.output.parse({
                 changes: [{ action: "add", kind: "preference", content: "Send invoices to Anna.", memoryIds: [], resourceRef: null }],
               }),
-              modelProfileId: "test-model",
+              model: { id: "test-model" },
               structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
             };
           },
@@ -256,7 +271,7 @@ databaseSuite()("AI memory learning (integration)", () => {
                   },
                 ],
               },
-              modelProfileId: "test-model",
+              model: { id: "test-model" },
               structuredMeta: { mode: "native" },
             }) as never,
         },
@@ -363,7 +378,7 @@ databaseSuite()("AI memory learning (integration)", () => {
           expect(String(request.input).match(/^Chat: chat outside Projects$/gm)).toHaveLength(3);
           return {
             output: { workflow: { content: "Use Accounting for invoice mail searches.", memoryIds: [] } },
-            modelProfileId: "test-model",
+            model: { id: "test-model" },
             structuredMeta: { mode: "native" },
           } as never;
         },
@@ -501,7 +516,7 @@ databaseSuite()("AI memory learning (integration)", () => {
     const noRow = await createUserWithTurn("none");
     const neverChose = await createUserWithTurn("null");
     const chose = await createUserWithTurn("off");
-    await aiUserPrefs.update(neverChose.userId, { lastModelId: "test-model" });
+    await aiUserPrefs.update(neverChose.userId, { selection: { id: "test-model" } });
     await aiUserPrefs.update(chose.userId, { memoryLearningEnabled: false });
 
     try {

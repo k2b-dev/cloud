@@ -6,13 +6,14 @@ import type {
   AiDraftContentPart,
   AiFileStat,
   AiPendingTurnAction,
+  AiPeopleModels,
   AiProject,
-  AiPublicModelProfile,
   AiSkillSummary,
   AiStoredMessage,
   CloudAiSurveyInput,
   CloudAiTextEditorInput,
 } from "@k2b/cloud/ai";
+import { parseAiModelChoice } from "@k2b/cloud/ai";
 import {
   AI_LOCAL_SELECTED_SKILLS_MAX_ITEMS,
   AI_LOCAL_TOOL_NAMES,
@@ -63,7 +64,7 @@ type InteractiveOptions = {
 };
 
 type FileList = { files: AiFileStat[]; totalBytes: number };
-type AssistantStatus = { defaultModelId?: string; models?: AiPublicModelProfile[] };
+type AssistantStatus = AiPeopleModels;
 
 export const INTERACTIVE_COMMANDS: ReadonlyArray<{ name: string; usage: string; summary: string }> = [
   { name: "/help", usage: "/help", summary: "Show these commands" },
@@ -105,13 +106,13 @@ const printInteractiveHelp = (ctx: CloudCliContext): void => {
   ctx.print(`${"/<skill>".padEnd(width)}Select a Skill for your next message (/skills lists them)`);
 };
 
-const readInitialModelLabel = async (ctx: CloudCliContext, requestedModelId?: string): Promise<string> => {
+const readInitialModelLabel = async (ctx: CloudCliContext, model?: string): Promise<string> => {
   try {
     const status = await readApi<AssistantStatus>(ctx, "/status");
-    const modelId = requestedModelId ?? status.defaultModelId;
-    return status.models?.find((profile) => profile.id === modelId)?.label ?? modelId ?? "Cloud default";
+    const choice = model ? parseAiModelChoice(model) : status.effectiveDefault;
+    return "class" in choice ? choice.class : (status.options.find((profile) => profile.id === choice.id)?.label ?? choice.id);
   } catch {
-    return requestedModelId ?? "Cloud default";
+    return model ?? "Cloud default";
   }
 };
 
@@ -704,7 +705,7 @@ They go to the model with every message and can steer what it does with your Clo
       body: {
         message,
         ...(content.length > 0 ? { content } : {}),
-        ...(model ? { modelProfileId: model } : {}),
+        ...(model ? { model: parseAiModelChoice(model) } : {}),
         ...clientInput,
         localContext: {
           ...clientInput.localContext,
@@ -803,7 +804,7 @@ They go to the model with every message and can steer what it does with your Clo
           printInfo(ctx, model ? `Model: ${model}` : "Model: default");
           break;
         }
-        const models = await readApi<AiPublicModelProfile[]>(ctx, "/models");
+        const models = await readApi<AiPeopleModels>(ctx, "/models").then((payload) => payload.options);
         const selected = await selectNumberedChoice<string | null>({
           output: ctx,
           reader: choiceReader,
@@ -813,7 +814,7 @@ They go to the model with every message and can steer what it does with your Clo
           choices: models.map((profile) => ({
             value: profile.id,
             label: profile.label,
-            description: `${profile.provider} · ${profile.model}`,
+            description: profile.description,
             current: model === profile.id,
           })),
           emptyMessage: "No selectable models are available.",
@@ -868,7 +869,7 @@ They go to the model with every message and can steer what it does with your Clo
             path: conversationPath(conversationId, `/messages/${encodeURIComponent(message.id)}/retry`),
             body: {
               mode,
-              ...(model ? { modelProfileId: model } : {}),
+              ...(model ? { model: parseAiModelChoice(model) } : {}),
               ...clientInput,
               clientToolIds: [...clientInput.clientToolIds, "code_open", "code_secret"],
             },
@@ -977,7 +978,7 @@ They go to the model with every message and can steer what it does with your Clo
           ctx.print("No usage limits apply.");
           break;
         }
-        const models = await readApi<AiPublicModelProfile[]>(ctx, "/models");
+        const models = await readApi<AiPeopleModels>(ctx, "/models").then((payload) => payload.options);
         const label = (id: string) => models.find((model) => model.id === id)?.label ?? id;
         const dates = new Intl.DateTimeFormat(ctx.options.locale, { dateStyle: "medium", timeStyle: "short" });
         for (const balance of quota.balances) {
@@ -1219,7 +1220,7 @@ export const assistantRootCommand = command("", {
       body: {
         message,
         ...(content.length > 0 ? { content } : {}),
-        ...(flags.model ? { modelProfileId: flags.model } : {}),
+        ...(flags.model ? { model: parseAiModelChoice(flags.model) } : {}),
       },
       watch: !flags.detach,
       approveTools: flags.approve,

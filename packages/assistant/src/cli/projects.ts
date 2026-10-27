@@ -1,4 +1,5 @@
 import type { AiProject, AiProjectAccess, AiProjectFile, AiProjectKnowledge, AiProjectReference } from "@k2b/cloud/ai";
+import { parseAiModelChoice } from "@k2b/cloud/ai";
 import { arg, type CloudCliContext, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
 import { principalLabel } from "@k2b/cloud/shared";
 import { jsonRequest, printRows, printValue, queryString, readApi, readProjectsApi, requireConfirmation } from "./shared";
@@ -37,7 +38,7 @@ export const assistantProjectCommands = [
           name: project.name,
           permission: project.permission,
           revision: project.revision,
-          model: project.defaultModelProfileId ?? "-",
+          model: project.defaultModel ? ("class" in project.defaultModel ? project.defaultModel.class : project.defaultModel.id) : "-",
           description: project.description,
         })),
         [{ key: "id" }, { key: "name" }, { key: "permission" }, { key: "revision" }, { key: "model" }, { key: "description" }],
@@ -94,7 +95,7 @@ export const assistantProjectCommands = [
       description: flag.string(),
       icon: flag.string(),
       instructions: flag.input({ description: "Instructions text or --instructions-file" }),
-      model: flag.string({ description: "Default model profile ID" }),
+      model: flag.string({ description: "Default model class or variant ID" }),
     },
     async run({ ctx, args, flags }) {
       const instructions = await readText(flags.instructions, "Project instructions");
@@ -106,7 +107,7 @@ export const assistantProjectCommands = [
           description: flags.description ?? "",
           icon: flags.icon ?? "ti ti-folders",
           instructions: instructions ?? "",
-          ...(flags.model ? { defaultModelProfileId: flags.model } : {}),
+          ...(flags.model ? { defaultModel: parseAiModelChoice(flags.model) } : {}),
         }),
       );
       printValue(ctx, result, `${result.project.shortId}\t${result.project.name}`);
@@ -120,7 +121,7 @@ export const assistantProjectCommands = [
       description: flag.string(),
       icon: flag.string(),
       instructions: flag.input({ description: "Instructions text or --instructions-file" }),
-      model: flag.string({ description: "Default model profile ID; pass an empty value to clear" }),
+      model: flag.string({ description: "Default model class or variant ID; pass an empty value to clear" }),
     },
     async run({ ctx, args, flags }) {
       const project = await resolveProject(ctx, args.project);
@@ -130,7 +131,7 @@ export const assistantProjectCommands = [
         ...(flags.description !== undefined ? { description: flags.description } : {}),
         ...(flags.icon !== undefined ? { icon: flags.icon } : {}),
         ...(instructions !== undefined ? { instructions } : {}),
-        ...(flags.model !== undefined ? { defaultModelProfileId: flags.model || null } : {}),
+        ...(flags.model !== undefined ? { defaultModel: flags.model ? parseAiModelChoice(flags.model) : null } : {}),
       };
       if (!Object.keys(changes).length) throw new Error("Supply a changed Project field.");
       printValue(ctx, await readProjectsApi(ctx, path(project.shortId), jsonRequest("PATCH", changes)), `Updated ${project.name}.`);

@@ -259,7 +259,7 @@ export const textAttachmentSummariesFromMessage = (message: Message) => {
 export type AiLatestUsageSnapshot = {
   request: Usage;
   loop: Usage;
-  modelProfileId: string | null;
+  modelId: string | null;
 };
 
 export const latestUsageSnapshot = (messages: AiStoredMessage[]): AiLatestUsageSnapshot | null => {
@@ -287,7 +287,7 @@ export const latestUsageSnapshot = (messages: AiStoredMessage[]): AiLatestUsageS
                   { input: 0, output: 0, total: 0 },
                 )
             : request),
-        modelProfileId: entry?.modelProfileId ?? null,
+        modelId: entry?.modelId ?? null,
       };
     }
     // A provider without usage must not inherit a previous request's numbers.

@@ -449,7 +449,7 @@ export const streamAssistantTurn = async (input: {
           }
         }
       }
-      emitJsonLine({ type: "turn_started", modelProfileId: event.modelProfileId, providerModel: event.providerModel });
+      emitJsonLine({ type: "turn_started", modelId: event.modelId, providerModel: event.providerModel });
       return null;
     }
     if (event.type === "block_delta") {

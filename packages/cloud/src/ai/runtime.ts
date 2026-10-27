@@ -15,16 +15,18 @@ import {
   aiTurnAllowsRememberedApprovals,
   rememberAiToolApproval,
 } from "./approvals";
-import { aiChatAccessSubject, selectAssistantAiModelId } from "./assistant-models";
+import { aiChatAccessSubject, selectAssistantAiModel } from "./assistant-models";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
 import { drainQueuedMessages } from "./message-queue";
+import type { AiModelRequest } from "./model-contracts";
+import { aiUserPrefs } from "./prefs";
 import { AI_TURN_LEASE_MS } from "./protocol";
 import { aiQuotas } from "./quotas";
 import { parseAiResourceMarker } from "./resource-markers";
-import { isAiVisionModelConfigured } from "./settings";
+import { isAiVisionModelConfigured, readAiSettingsState } from "./settings";
 import { aiConversations } from "./store";
 import { publishAiWireEvent } from "./stream";
 import { aiToolAudit } from "./tool-audit";
@@ -110,7 +112,7 @@ export type SubmitAiChatTurnInput = {
   theme?: "light" | "dark";
   timeZone?: string;
   modelPolicy?: AiModelPolicy;
-  requestedModelId?: string;
+  model?: AiModelRequest;
   /** Optional instructions that apply only to this turn. */
   systemPrompt?: string;
   project?: AiChatTurnRunConfig["project"];
@@ -146,18 +148,37 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
   const canInspectAttachedImages =
     input.canInspectAttachedImages ??
     (input.toolSource?.kind === "default" && (await isAiVisionModelConfigured(input.modelPolicy?.allowedDataBoundaries)));
-  const requestedModelId = input.assistantChat
-    ? await selectAssistantAiModelId(aiChatAccessSubject(input.actor), input.requestedModelId, input.modelPolicy)
-    : input.requestedModelId;
+  let requested = input.model;
+  let previousLabel: string | undefined;
+  if (input.assistantChat) {
+    const latest = await aiConversations.getLatestTurn({ conversationId: input.conversationId, kind: "chat" });
+    const previous = latest ? await aiConversations.getTurnRunConfig({ conversationId: input.conversationId, turnId: latest.id }) : null;
+    const inherited = previous?.kind === "chat" ? previous.model : undefined;
+    requested ??= inherited;
+    if (inherited && "id" in inherited && requested && "id" in requested && requested.id === inherited.id) {
+      const state = await readAiSettingsState();
+      if (!state.profiles.some((profile) => profile.id === inherited.id)) {
+        previousLabel = previous?.kind === "chat" ? (previous.modelLabel ?? inherited.id) : inherited.id;
+        const subject = aiChatAccessSubject(input.actor);
+        const prefs = subject?.type === "user" ? await aiUserPrefs.get(subject.userId) : null;
+        requested = prefs?.selection && "class" in prefs.selection ? prefs.selection : { class: "balanced" };
+      }
+    }
+  }
+  const model = input.assistantChat
+    ? await selectAssistantAiModel(aiChatAccessSubject(input.actor), requested, input.modelPolicy)
+    : requested;
   const { resolved } = await validateAiTurnRequest({
     input: canonicalInput,
     hasImageAttachments,
     canInspectAttachedImages,
     modelPolicy: input.modelPolicy,
-    requestedModelId,
+    model,
   });
   const quotaSubject = aiChatAccessSubject(input.actor);
   if (input.assistantChat && quotaSubject) await aiQuotas.assertAllowed(quotaSubject, resolved.profile.id);
+  const modelLabel =
+    resolved.profile.label + (resolved.profile.id !== resolved.profile.modelId ? ` · ${resolved.profile.variantLabel}` : "");
   const runConfig: AiChatTurnRunConfig = {
     kind: "chat",
     selectedSkillIds: [
@@ -177,7 +198,10 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     ...(input.theme ? { theme: input.theme } : {}),
     ...(input.timeZone ? { timeZone: input.timeZone } : {}),
     modelPolicy: input.modelPolicy,
-    requestedModelId,
+    model,
+    modelResolved: resolved.model,
+    modelLabel,
+    ...(previousLabel ? { modelReplacement: { kind: "model_replaced", previousLabel, nextLabel: modelLabel } } : {}),
     systemPrompt: input.systemPrompt,
     project: input.project,
     files,
@@ -191,7 +215,7 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
 
   return {
     conversationId: input.conversationId,
-    modelProfileId: resolved.profile.id,
+    modelId: resolved.profile.id,
     runConfig,
     userMessage,
     truncateFromSeq: input.truncateFromSeq,
@@ -244,7 +268,7 @@ export const deliverAiInterChatMessage = async (input: {
   };
   const delivered = await aiConversations.deliverInterChatMessage({
     messageId: input.message.id,
-    modelProfileId: resolved.profile.id,
+    modelId: resolved.profile.id,
     runConfig,
     userMessage: { role: "user", content: [{ type: "text", text }] },
     sourceHref: input.sourceHref,
@@ -257,20 +281,21 @@ export type SubmitAiCompactionInput = {
   conversationId: string;
   actor?: RequestActor;
   modelPolicy?: AiModelPolicy;
-  requestedModelId?: string;
+  model?: AiModelRequest;
 };
 
 export const submitAiCompaction = async (input: SubmitAiCompactionInput): Promise<{ turn: AiTurn }> => {
-  const { resolved } = await validateAiTurnRequest({ input: "", modelPolicy: input.modelPolicy, requestedModelId: input.requestedModelId });
+  const { resolved } = await validateAiTurnRequest({ input: "", modelPolicy: input.modelPolicy, model: input.model });
   const runConfig: AiCompactionTurnRunConfig = {
     kind: "compact",
     actor: input.actor,
     modelPolicy: input.modelPolicy,
-    requestedModelId: input.requestedModelId,
+    model: { id: resolved.profile.id },
+    modelResolved: resolved.model,
   };
   const turn = await aiConversations.createCompactionTurn({
     conversationId: input.conversationId,
-    modelProfileId: resolved.profile.id,
+    modelId: resolved.profile.id,
     runConfig,
   });
   await enqueueAiTurn({ conversationId: input.conversationId, turnId: turn.id });

@@ -315,48 +315,6 @@ export const CORE_SETTINGS = {
     default: false,
     description: "Enable Cloud AI features including personal conversations, Assistant, and app Capabilities.",
   },
-  "ai.default_model_id": {
-    kind: "string",
-    label: "Default Model ID",
-    default: "",
-    description: "Model profile id used when an app asks for the platform default AI model.",
-    placeholder: "e.g. openrouter-fast",
-  },
-  "ai.model_profiles_json": {
-    kind: "text",
-    label: "Model Profiles",
-    default: "[]",
-    description: "JSON array of model profiles. Provider API keys are stored on the profile they belong to.",
-    placeholder:
-      '[{"id":"openrouter-fast","label":"OpenRouter Fast","provider":"openrouter","model":"openai/gpt-4.1-mini","enabled":true,"dataBoundary":"hosted","capabilities":["streaming"],"apiKey":"sk-or-..."}]',
-  },
-  "ai.background_model_id": {
-    kind: "string",
-    label: "Background Model ID",
-    default: "",
-    description: "Model profile id used for background AI jobs. Empty = platform default model.",
-    placeholder: "e.g. openrouter-fast",
-  },
-  "ai.audio_model_id": {
-    kind: "string",
-    label: "Audio Model ID",
-    default: "",
-    description: "Audio transcription model profile for dictation and audio files. Empty disables transcription.",
-  },
-  "ai.vision_model_id": {
-    kind: "string",
-    label: "Vision Model ID",
-    default: "",
-    description: "Vision-capable model profile used by the view_image tool. Empty disables the tool fallback.",
-    placeholder: "e.g. openrouter-vision",
-  },
-  "ai.workflow_model_id": {
-    kind: "string",
-    label: "Workflow Model ID",
-    default: "",
-    description: "Model profile id used for AI workflow actions. Empty = background model, then platform default.",
-    placeholder: "e.g. openrouter-fast",
-  },
   "ai.enrich_cron": {
     kind: "cron",
     label: "Chat Enrichment Schedule",

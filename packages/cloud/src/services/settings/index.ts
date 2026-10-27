@@ -209,6 +209,9 @@ export { invalidateSettingsCache, readStates, SettingUnreadableError } from "./s
 export async function getAll(locale?: string): Promise<SettingEntry[]> {
   const allKeys = SETTINGS.map((def) => def.key);
   const values = await readStates(allKeys);
+  const versions = await sql<
+    { key: string; updated_at: Date; updated_by: string | null; name: string | null }[]
+  >`SELECT e.key,e.updated_at,e.updated_by,COALESCE(NULLIF(u.display_name,''),u.uid) AS name FROM settings.entries e LEFT JOIN auth.users u ON u.id=e.updated_by`;
 
   return SETTINGS.map((def) => {
     const presentation = resolveSettingPresentation(def, locale);
@@ -218,6 +221,11 @@ export async function getAll(locale?: string): Promise<SettingEntry[]> {
     const resetValue = envFallback ?? def.default;
 
     return {
+      updatedAt: versions.find((row) => row.key === def.key)?.updated_at.toISOString() ?? null,
+      updatedBy: (() => {
+        const row = versions.find((row) => row.key === def.key);
+        return row?.updated_by ? { id: row.updated_by, name: row.name ?? row.updated_by } : null;
+      })(),
       key: def.key,
       label: presentation.label,
       kind: def.kind,

@@ -38,7 +38,7 @@ const message: AiStoredMessage = {
   seq: 1,
   kind: "message",
   loopId: "turn",
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: null,
@@ -76,7 +76,7 @@ test("checkAction posts only the check route and updates persisted-message and l
           attempt: 1,
           seq: 1,
           status: "running",
-          modelProfileId: null,
+          modelId: null,
           createdAt: at,
           blocks: [
             { id: toolBlockId("send"), kind: "tool", callId: "send", name: "demo.send", status: "failed", check: { state: "pending" } },
@@ -143,7 +143,7 @@ test.each(["both", "message", "live"])(
                 attempt: 1,
                 seq: 2,
                 status: "running",
-                modelProfileId: null,
+                modelId: null,
                 createdAt: at,
                 blocks: [
                   {

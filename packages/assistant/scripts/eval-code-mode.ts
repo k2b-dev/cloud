@@ -1,9 +1,9 @@
+import { parseAiModelChoice } from "../../cloud/src/ai/model-contracts";
 // Real model evaluation against disposable data services; never writes to a user's chat.
 
 import { parseArgs } from "node:util";
 import { sql } from "bun";
-import { createAiProvider } from "../../cloud/src/ai/provider";
-import { parseAiModelProfiles, resolveAiModel } from "../../cloud/src/ai/settings";
+import { resolveAiModel } from "../../cloud/src/ai/settings";
 import type { AiResolvedModel } from "../../cloud/src/ai/types";
 import { STUDIO_EVAL_CASES } from "../src/artifacts/studio-eval-cases";
 
@@ -13,12 +13,12 @@ const { values: options } = parseArgs({
     case: { type: "string", multiple: true },
     out: { type: "string", default: `/tmp/assistant-code-mode-eval/${new Date().toISOString().replace(/[:.]/g, "-")}` },
     concurrency: { type: "string", default: "3" },
-    profile: { type: "string" },
+    model: { type: "string" },
     help: { type: "boolean", default: false },
   },
 });
 if (options.help) {
-  console.log(`Usage: bun packages/assistant/scripts/eval-code-mode.ts [--case <name>]... [--out <dir>] [--concurrency <n>] [--profile <json>]
+  console.log(`Usage: bun packages/assistant/scripts/eval-code-mode.ts [--case <name>]... [--out <dir>] [--concurrency <n>] [--model <class-or-id>]
 
 Runs the real Assistant system prompt, Skill catalog and tool discovery in disposable chats.
 Reports the route and time per case, plus first-check and correction metrics for apps.
@@ -29,9 +29,8 @@ Options:
   --case <name>       Run only this case; repeat for several (default: all)
   --out <dir>         Directory for summary.md and one folder per case (default: /tmp/assistant-code-mode-eval/<time>)
   --concurrency <n>   Cases running at the same time (default: 3)
-  --profile <json>    One model profile in the ai.model_profiles_json format; its API key comes from
-                      ASSISTANT_EVAL_API_KEY. Without it, the configured Cloud default model is used,
-                      which needs DATABASE_URL and APP_SECRET of that installation.
+  --model <class-or-id> Class or variant from the configured Cloud catalog (default: balanced).
+                      Requires DATABASE_URL and APP_SECRET of that installation.
   --help              Show this help
 
 Needs CLOUD_TEST_VALKEY_URL and CLOUD_TEST_GOTENBERG_URL; Postgres and rsql run in disposable containers.
@@ -51,11 +50,7 @@ const commit = Bun.spawnSync(["git", "describe", "--always", "--dirty", "--exclu
   .trim();
 
 async function model(): Promise<AiResolvedModel> {
-  if (!options.profile) return resolveAiModel();
-  const { profiles, error } = parseAiModelProfiles(`[${options.profile}]`);
-  if (error || profiles.length !== 1) throw new Error(`Invalid --profile: ${error?.message ?? "expected one profile"}`);
-  const profile = profiles[0]!;
-  return { profile, provider: createAiProvider(profile, process.env.ASSISTANT_EVAL_API_KEY || undefined) };
+  return resolveAiModel(undefined, options.model ? parseAiModelChoice(options.model) : undefined);
 }
 const { provider, profile } = await model();
 const token = crypto.randomUUID();

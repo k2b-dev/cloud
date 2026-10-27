@@ -4,18 +4,21 @@ import { recursiveGroupIdsSubquery } from "../services/accounts/group-sql";
 import { toPgTextArray } from "../services/postgres";
 import { hasBillableAiPricing } from "../shared/ai-costs";
 import { type AiQuotaReport, type AiQuotaReportQuery, AiQuotaReportQuerySchema } from "../shared/ai-quotas";
+import { aiPeopleAtLimit } from "./quota-limits";
 import { aiQuotas } from "./quotas";
 import { readAiSettingsState } from "./settings";
 
 /** Resolve display metadata only for administration, never on the inference path. */
 export async function quotaAdminConfig() {
   const config = await aiQuotas.config();
+  const limits = await aiPeopleAtLimit();
   const grants = await resolveDisplayNames(config.rules.flatMap((rule) => rule.grants));
   let offset = 0;
   return {
     ...config,
     rules: config.rules.map((rule) => ({
       ...rule,
+      peopleAtLimit: limits.find((limit) => limit.scope === rule.scope)?.people.length ?? 0,
       grants: rule.grants.map(() => {
         const grant = grants[offset++]!;
         return {
@@ -50,7 +53,7 @@ export async function quotaReport(input: Partial<AiQuotaReportQuery> = {}, now =
       page: 1,
       perPage: 25,
     };
-  const pricedModels = (await readAiSettingsState()).profiles.filter((p) => hasBillableAiPricing(p.pricing)).map((p) => p.id);
+  const pricedModels = (await readAiSettingsState()).profiles.filter((p) => hasBillableAiPricing(p.pricing)).map((p) => p.modelId);
   const bucket = query.range === "24h" ? "hour" : "day";
   const order = query.sort === "label" ? sql`label` : query.sort === "cost" ? sql`cost` : sql`last_used`;
   const direction = query.direction === "asc" ? sql`ASC` : sql`DESC`;
@@ -80,7 +83,7 @@ export async function quotaReport(input: Partial<AiQuotaReportQuery> = {}, now =
       FROM ai.inference_calls c WHERE c.kind='chat' AND c.started_at<=${now}
     ), periods AS MATERIALIZED (
       SELECT * FROM calls WHERE started_at>=${since} AND started_at<${until}
-        AND (${query.model}='' OR model_profile_id=${query.model})
+        AND (${query.model}='' OR model_id=${query.model})
     ), allowances AS MATERIALIZED (
       SELECT a.id,a.type,r.scope,
         CASE WHEN bool_or((g->>'limit') IS NULL) FILTER(WHERE g IS NOT NULL) THEN NULL ELSE COALESCE(max((g->>'limit')::float8),0) END AS amount,
@@ -95,7 +98,7 @@ export async function quotaReport(input: Partial<AiQuotaReportQuery> = {}, now =
     ), balances AS MATERIALIZED (
       SELECT a.*,COALESCE(sum(c.cost),0)::float8 AS used,count(c.id) FILTER(WHERE c.unknown)::int AS unknown
       FROM allowances a LEFT JOIN calls c ON c.identity_id=a.id AND c.identity_type=a.type
-        AND (a.scope='*' OR c.model_profile_id=a.scope) AND c.started_at>=a.starts
+        AND (a.scope='*' OR c.model_id=a.scope) AND c.started_at>=a.starts
         AND c.started_at>COALESCE((SELECT max(created_at) FROM ai.cost_resets z
           WHERE COALESCE(z.user_id,z.service_account_id)=a.id AND (z.user_id IS NOT NULL)=(a.type='user') AND z.scope=a.scope),'-infinity'::timestamptz)
       GROUP BY a.id,a.type,a.scope,a.amount,a.starts
@@ -111,7 +114,7 @@ export async function quotaReport(input: Partial<AiQuotaReportQuery> = {}, now =
       SELECT a.id,a.type,a.label,
         CASE WHEN NOT COALESCE((SELECT enabled FROM config),false) THEN 'disabled' ELSE COALESCE(s.status,'unlimited') END AS status,
         COALESCE(s.scopes,0) AS scopes,CASE WHEN s.status='unlimited' OR NOT COALESCE((SELECT enabled FROM config),false) THEN 0 ELSE COALESCE(s.exhausted,0) END AS exhausted,
-        (SELECT max(started_at) FROM calls c WHERE c.identity_id=a.id AND c.identity_type=a.type AND (${query.model}='' OR c.model_profile_id=${query.model})) AS last_used,
+        (SELECT max(started_at) FROM calls c WHERE c.identity_id=a.id AND c.identity_type=a.type AND (${query.model}='' OR c.model_id=${query.model})) AS last_used,
         sum(p.cost)::float8 AS cost,COALESCE(sum(p.input),0)::float8 AS input,COALESCE(sum(p.output),0)::float8 AS output,
         count(p.id)::int AS calls,count(p.id) FILTER(WHERE p.input IS NOT NULL AND p.output IS NOT NULL)::int AS measured,count(p.id) FILTER(WHERE p.estimated)::int AS estimated,count(p.id) FILTER(WHERE p.unknown)::int AS unknown
       FROM identities a LEFT JOIN states s ON s.id=a.id AND s.type=a.type

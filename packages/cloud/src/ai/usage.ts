@@ -12,7 +12,7 @@ export type AiUsageRun = {
   createdAt: string;
   userId: string | null;
   userLabel: string | null;
-  modelProfileId: string | null;
+  modelId: string | null;
   providerModel: string | null;
   appId: string | null;
   conversationId: string | null;
@@ -42,7 +42,7 @@ export type AiUsageFeedback = {
   conversationTitle: string;
   userId: string | null;
   userLabel: string | null;
-  modelProfileId: string | null;
+  modelId: string | null;
   providerModel: string | null;
   rating: "up" | "down";
   reasons: string[];
@@ -137,7 +137,7 @@ const events = (since: Date, until: Date) => sql`
 `;
 const globalFilter = (q: AiUsageQuery) => sql`
   (${q.userId ?? null}::text IS NULL OR (${q.userId === "unassigned"} AND e.user_id IS NULL) OR e.user_id::text=${q.userId ?? null})
-  AND (${q.modelProfileId ?? null}::text IS NULL OR e.model_profile_id=${q.modelProfileId ?? null})
+  AND (${q.modelId ?? null}::text IS NULL OR e.model_profile_id=${q.modelId ?? null})
   AND (${q.providerModel ?? null}::text IS NULL OR e.provider_model=${q.providerModel ?? null})
   AND (${q.workflowId ?? null}::uuid IS NULL OR e.workflow_id=${q.workflowId ?? null}::uuid)
   AND (${q.workflowRunId ?? null}::uuid IS NULL OR e.workflow_run_id=${q.workflowRunId ?? null}::uuid)
@@ -187,7 +187,7 @@ const pageOf = async <T>(projection: ReturnType<typeof events>, q: AiUsageQuery)
   return { items, total, page, perPage: q.perPage };
 };
 const runColumns = () => sql`e.id, e.kind, e.task, e.status, e.created_at::text AS "createdAt", e.user_id::text AS "userId",
-  COALESCE(NULLIF(u.display_name,''),u.uid,sa.name) AS "userLabel",e.model_profile_id AS "modelProfileId",e.provider_model AS "providerModel",
+  COALESCE(NULLIF(u.display_name,''),u.uid,sa.name) AS "userLabel",e.model_profile_id AS "modelId",e.provider_model AS "providerModel",
   e.app_id AS "appId",e.conversation_id::text AS "conversationId",e.turn_id::text AS "turnId",e.workflow_run_id::text AS "workflowRunId",
   e.workflow_id::text AS "workflowId",e.workflow_name AS "workflowName",e.estimated,e.trace_id AS "traceId",e.tokens,e.cost::float8 AS cost,e.duration_ms AS "durationMs",e.error_code AS "errorCode",e.error,e.attempts,
   e.request_started_at::text AS "requestStartedAt",e.generation_ms AS "generationMs",e.headers_ms AS "headersMs",e.first_byte_ms AS "firstByteMs",
@@ -235,7 +235,7 @@ export const aiUsage = {
     // The response period is authoritative for both summary and feedback. Editing a rating never moves its response into a different period.
     const feedbackRows = sql`SELECT m.id::text AS id,c.id::text AS "conversationId",c.title AS "conversationTitle",
       e.user_id::text AS "userId",COALESCE(NULLIF(u.display_name,''),u.uid,sa.name) AS "userLabel",
-      e.model_profile_id AS "modelProfileId",e.provider_model AS "providerModel",
+      e.model_profile_id AS "modelId",e.provider_model AS "providerModel",
       CASE WHEN m.feedback_rating=1 THEN 'up' ELSE 'down' END AS rating,
       m.feedback_reasons AS reasons,m.feedback_comment AS comment,m.created_at::text AS "createdAt",m.feedback_updated_at::text AS "updatedAt"
       FROM (${filtered}) e JOIN ai.messages m ON m.loop_id=e.turn_id::text AND m.conversation_id=e.conversation_id
@@ -266,7 +266,7 @@ export const aiUsage = {
         FROM ai.conversations c WHERE c.created_at >= ${since} AND c.created_at <= ${until} AND c.launched_by_app_id IS NOT NULL
         AND (${q.userId ?? null}::text IS NULL OR (${q.userId === "unassigned"} AND c.created_by_user_id IS NULL) OR c.created_by_user_id::text=${q.userId ?? null})
         AND (${q.appId ?? null}::text IS NULL OR c.launched_by_app_id=${q.appId ?? null})
-        AND ((${q.modelProfileId ?? null}::text IS NULL AND ${q.providerModel ?? null}::text IS NULL) OR EXISTS (
+        AND ((${q.modelId ?? null}::text IS NULL AND ${q.providerModel ?? null}::text IS NULL) OR EXISTS (
           SELECT 1 FROM (${filtered}) e WHERE e.kind='chat' AND e.conversation_id=c.id
         )) GROUP BY c.launched_by_app_id ORDER BY chats DESC,c.launched_by_app_id`,
         q,
@@ -305,12 +305,12 @@ export const aiUsage = {
       LEFT JOIN auth.users u ON u.id=e.user_id LEFT JOIN auth.service_accounts sa ON sa.id=e.user_id WHERE e.kind=${kind} AND e.id=${id}`;
     return row ?? null;
   },
-  facets: async (field: "userId" | "modelProfileId" | "providerModel" | "appId" | "task", search: string, input: Partial<AiUsageQuery>) => {
+  facets: async (field: "userId" | "modelId" | "providerModel" | "appId" | "task", search: string, input: Partial<AiUsageQuery>) => {
     const { query, since, until } = period(input);
     const key =
       field === "userId"
         ? sql`e.user_id::text`
-        : field === "modelProfileId"
+        : field === "modelId"
           ? sql`e.model_profile_id`
           : field === "providerModel"
             ? sql`e.provider_model`

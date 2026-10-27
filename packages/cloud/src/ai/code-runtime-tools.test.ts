@@ -301,7 +301,7 @@ const stubManagedCodeTurn = async () => {
       conversationId: "chat-test",
       status: "running",
       attempt: 1,
-      modelProfileId: null,
+      modelId: null,
       createdAt: "2026-10-07",
       completedAt: null,
       error: null,

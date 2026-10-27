@@ -5,12 +5,18 @@ import { createAiProvider } from "./provider";
 import type { AiModelProfile } from "./types";
 
 const profile = (overrides: Partial<AiModelProfile>): AiModelProfile => ({
+  modelId: "model-1",
+  providerId: "model-1",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "model-1",
   label: "Model 1",
   provider: "openrouter",
   model: "openai/gpt-4.1-mini",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "hosted",
   ...overrides,
 });

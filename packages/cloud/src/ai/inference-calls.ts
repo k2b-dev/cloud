@@ -27,6 +27,7 @@ export class AiBackgroundAdmissionError extends Error {
 export type AiCallContext = {
   kind: "chat" | "background";
   task: string;
+  modelRef?: import("./model-contracts").AiResolvedModelRef;
   subject?: AccessSubject | null;
   userId?: string;
   credentialId?: string;
@@ -92,7 +93,7 @@ export async function beginAiCall(
     }
     if (hasBillableAiPricing(profile.pricing) && context.kind === "chat" && context.subject && config.enabled) {
       const now = new Date();
-      const snapshot = await aiQuotas.snapshot(context.subject, profile.id, now, db);
+      const snapshot = await aiQuotas.snapshot(context.subject, profile.modelId, now, db);
       for (const balance of snapshot.balances) {
         if (balance.bypassed || balance.limit === null) continue;
         if (balance.unknown)
@@ -110,7 +111,7 @@ export async function beginAiCall(
           SELECT (COALESCE(sum(cost),0)+COALESCE(sum(reserved) FILTER(WHERE finished_at IS NULL AND lease_expires_at>now()),0))::text AS committed FROM ai.inference_calls c
           WHERE kind='chat'
             AND user_id IS NOT DISTINCT FROM ${user}::uuid AND service_account_id IS NOT DISTINCT FROM ${service}::uuid
-            AND (${balance.scope}='*' OR model_profile_id=${balance.scope}) AND started_at>=${window.from} AND started_at<${window.until}
+            AND (${balance.scope}='*' OR model_id=${balance.scope}) AND started_at>=${window.from} AND started_at<${window.until}
             AND started_at>COALESCE((SELECT max(created_at) FROM ai.cost_resets r
               WHERE r.user_id IS NOT DISTINCT FROM ${user}::uuid AND r.service_account_id IS NOT DISTINCT FROM ${service}::uuid AND r.scope=${balance.scope}),'-infinity'::timestamptz)`;
         const available = aiBudgetUnits(balance.limit) - aiDecimalUnits(pending?.committed ?? "0");
@@ -146,10 +147,10 @@ export async function beginAiCall(
     const id = crypto.randomUUID();
     const userId = context.subject?.type === "user" ? context.subject.userId : context.userId;
     const serviceId = context.subject?.type === "service_account" ? context.subject.serviceAccountId : null;
-    await db`INSERT INTO ai.inference_calls(id,user_id,service_account_id,credential_id,model_profile_id,provider_model,kind,task,
+    await db`INSERT INTO ai.inference_calls(id,user_id,service_account_id,credential_id,model_profile_id,model_id,requested_class,resolved_class,provider_model,kind,task,
       turn_id,turn_attempt,conversation_id,workflow_run_id,step_key,trace_id,app_id,workflow_id,workflow_name,workflow_version,pricing,reserved,lease_expires_at)
       VALUES(${id}::uuid,CASE WHEN ${serviceId}::uuid IS NULL THEN COALESCE(${userId ?? null}::uuid,(SELECT created_by_user_id FROM ai.conversations WHERE id=${context.conversationId ?? null}::uuid)) ELSE NULL END,
-        ${serviceId}::uuid,${context.credentialId ?? null}::uuid,${profile.id},${profile.model},${context.kind},${context.task},${context.turnId ?? null}::uuid,
+        ${serviceId}::uuid,${context.credentialId ?? null}::uuid,${profile.id},${profile.modelId},${context.modelRef?.requestedClass ?? null},${context.modelRef?.class ?? null},${profile.model},${context.kind},${context.task},${context.turnId ?? null}::uuid,
         (SELECT attempt FROM ai.turns WHERE id=${context.turnId ?? null}::uuid),${context.conversationId ?? null}::uuid,
         ${context.workflowRunId ?? null}::uuid,${context.stepKey ?? null},${context.traceId ?? null},COALESCE(${workflow?.app ?? context.appId ?? null},(SELECT launched_by_app_id FROM ai.conversations WHERE id=${context.conversationId ?? null}::uuid),'core'),${workflow?.id ?? null}::uuid,${workflow?.name ?? null},${workflow?.revision ?? null},
         (${profile.pricing ? JSON.stringify(profile.pricing) : null}::text)::jsonb,${reserved}::numeric,now()+interval '2 minutes')`;

@@ -56,7 +56,7 @@ suiteFor(
       const chat = await aiConversations.createConversation({ ownerUserId: user.id });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig: { kind: "chat", input: "Send" },
         userMessage: { role: "user", content: [{ type: "text", text: "Send" }] },
       });

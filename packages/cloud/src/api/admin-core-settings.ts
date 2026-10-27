@@ -11,46 +11,33 @@ import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { listApps } from "../_internal/registry";
-import { listAiCredentialProfileIds, pruneAiCredentials, setAiCredential, splitAiProfileCredentials } from "../ai/credentials";
 import { enrichDirtyAiConversations } from "../ai/enrich";
-import {
-  type AiModelAccessChange,
-  AiModelAccessConflict,
-  AiModelAccessInvalid,
-  aiModelAccess,
-  splitAiModelAccess,
-} from "../ai/model-access";
-import { listAiRequestHeaderNames, planAiProfileRequestHeaders, storeAiRequestHeaderPlan } from "../ai/request-headers";
-import {
-  parseAiModelProfiles,
-  planAiProfileCredentials,
-  prepareAiModelProfileImages,
-  validateAiSettingsConfiguration,
-} from "../ai/settings";
-import { type AiSettingsIssueWithMessage, aiSettingsNotSavedMessage, describeAiSettingsIssues } from "../ai/settings-messages";
 import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, v } from "../server";
 import { settingsDeleteLegacyKeys, settingsListLegacyKeys } from "../services";
 import { readAccountCategoryPolicy } from "../services/account-category-policy";
 import { audit } from "../services/audit";
+import { ConfigConflict } from "../services/config-conflict";
 import { validateFreeIpaCaCert } from "../services/freeipa-config";
 import { ImageMetadataError } from "../services/image-metadata";
 import { testFreeIpaConnection } from "../services/ipa/connection";
 import { GotenbergRenderError, testGotenberg } from "../services/pdf";
 import * as settings from "../services/settings";
 import { SETTINGS_MAP, validateSettingValue } from "../services/settings/defaults";
-
 import { assertGeoBudgetPair, GeoBudgetSettingError } from "../services/settings/geo-budget";
 import { invalidateSettingsCacheForAdmin } from "../services/settings/store";
+import { assertSettingVersions } from "../services/settings/versions";
 
+const BulkUpdatesSchema = z
+  .object({
+    updates: z.record(z.string(), z.unknown()).optional().default({}),
+    resets: z.array(z.string()).optional().default([]),
+    replaceUnreadable: z.array(z.string()).optional().default([]),
+    expectedUpdatedAt: z.record(z.string(), z.string().nullable()).optional().default({}),
+  })
+  .strict();
 const BulkSaveSchema = z.union([
-  z
-    .object({
-      updates: z.record(z.string(), z.unknown()).optional().default({}),
-      resets: z.array(z.string()).optional().default([]),
-      replaceUnreadable: z.array(z.string()).optional().default([]),
-    })
-    .strict(),
-  z.record(z.string(), z.unknown()).transform((updates) => ({ updates, resets: [] as string[], replaceUnreadable: [] as string[] })),
+  BulkUpdatesSchema,
+  z.record(z.string(), z.unknown()).transform((updates) => BulkUpdatesSchema.parse({ updates })),
 ]);
 const LEGAL_DOCUMENTS = [
   { kind: "terms", path: "/legal/terms" },
@@ -72,149 +59,7 @@ const isKnownSetting = (key: string): boolean => SETTINGS_MAP.has(key);
 const GEO_KEY = "geo.api_key";
 const GEO_KEY_DEDICATED = "Set or remove the Geoapify key with /api/admin/core/geo/key, which verifies it first.";
 
-const AI_PROFILES_KEY = "ai.model_profiles_json";
-const AI_ENABLED_KEY = "ai.enabled";
-const AI_DEFAULT_MODEL_KEY = "ai.default_model_id";
-const AI_BACKGROUND_MODEL_KEY = "ai.background_model_id";
-const AI_AUDIO_MODEL_KEY = "ai.audio_model_id";
-const AI_VISION_MODEL_KEY = "ai.vision_model_id";
-const AI_WORKFLOW_MODEL_KEY = "ai.workflow_model_id";
-const AI_CONFIGURATION_KEYS = new Set([
-  AI_ENABLED_KEY,
-  AI_DEFAULT_MODEL_KEY,
-  AI_BACKGROUND_MODEL_KEY,
-  AI_VISION_MODEL_KEY,
-  AI_AUDIO_MODEL_KEY,
-  AI_WORKFLOW_MODEL_KEY,
-  AI_PROFILES_KEY,
-]);
 const INTEGER_FREEIPA_SETTINGS = new Set(["freeipa.sync_guard.max_user_changes", "freeipa.sync_guard.max_group_deletions"]);
-
-/**
- * Move provider keys out of the model-profiles value before it is stored.
- *
- * The admin form posts profiles as one value, and a newly typed key rides along
- * on its profile. Keys must not land in the setting — it is a `text` setting and
- * would be handed back to the browser in full — so they go to
- * `ai.model_credentials` here and are stripped from what gets saved. A profile
- * whose key field was left empty keeps whatever is already stored.
- *
- * Doing this in the route rather than the settings service keeps the generic
- * store free of AI knowledge, and keeps the admin page at a single save request.
- */
-const storeAiCredentials = async (
-  split: NonNullable<ReturnType<typeof splitAiProfileCredentials>>,
-  keepCredentialProfileIds: readonly string[],
-  db: typeof sql,
-): Promise<void> => {
-  for (const { profileId, secret } of split.credentials) await setAiCredential(profileId, secret, db);
-  await pruneAiCredentials(keepCredentialProfileIds, db);
-};
-
-type AiSettingsMutationPlan = {
-  errors: FieldErrors;
-  /** Structured validation issues with stable codes; `errors` carries the same messages keyed by setting. */
-  issues?: AiSettingsIssueWithMessage[];
-  keepCredentialProfileIds?: string[];
-  headerPlan?: ReturnType<typeof planAiProfileRequestHeaders>;
-  modelProfileIds?: string[];
-};
-
-const valueAfterMutation = <T>(key: string, current: T, updates: Record<string, unknown>, resets: readonly string[]): T => {
-  if (key in updates) return updates[key] as T;
-  if (resets.includes(key)) return SETTINGS_MAP.get(key)?.default as T;
-  return current;
-};
-
-const prepareAiSettingsMutation = async (
-  updates: Record<string, unknown>,
-  resets: readonly string[],
-  aiSplit: ReturnType<typeof splitAiProfileCredentials>,
-  locale: string,
-): Promise<AiSettingsMutationPlan> => {
-  const keys = [...Object.keys(updates), ...resets];
-  if (!keys.some((key) => AI_CONFIGURATION_KEYS.has(key))) return { errors: {} };
-
-  const [
-    currentEnabled,
-    currentDefaultModelId,
-    currentBackgroundModelId,
-    currentVisionModelId,
-    currentAudioModelId,
-    currentWorkflowModelId,
-    currentProfilesJson,
-  ] = await Promise.all([
-    settings.get<boolean>(AI_ENABLED_KEY),
-    settings.get<string>(AI_DEFAULT_MODEL_KEY),
-    settings.get<string>(AI_BACKGROUND_MODEL_KEY),
-    settings.get<string>(AI_VISION_MODEL_KEY),
-    settings.get<string>(AI_AUDIO_MODEL_KEY),
-    settings.get<string>(AI_WORKFLOW_MODEL_KEY),
-    settings.get<string>(AI_PROFILES_KEY),
-  ]);
-
-  const currentParsed = parseAiModelProfiles(currentProfilesJson ?? "[]");
-  const profilesUpdated = AI_PROFILES_KEY in updates;
-  const profilesReset = resets.includes(AI_PROFILES_KEY);
-  const nextParsed: ReturnType<typeof parseAiModelProfiles> = profilesUpdated
-    ? parseAiModelProfiles(aiSplit?.profilesJson ?? "[]")
-    : profilesReset
-      ? { profiles: [] }
-      : currentParsed;
-  if (nextParsed.error) return { errors: nextParsed.error.fields ?? { [AI_PROFILES_KEY]: nextParsed.error.message } };
-
-  const nextEnabled = Boolean(valueAfterMutation(AI_ENABLED_KEY, currentEnabled, updates, resets));
-  const existingCredentialProfileIds = profilesUpdated || (!profilesReset && nextEnabled) ? await listAiCredentialProfileIds() : [];
-
-  let keepCredentialProfileIds: string[] | undefined;
-  if (profilesUpdated || profilesReset) {
-    const credentialPlan = planAiProfileCredentials({
-      currentProfiles: currentParsed.profiles,
-      nextProfiles: nextParsed.profiles,
-      existingCredentialProfileIds,
-      submittedCredentialProfileIds: aiSplit?.credentials.map(({ profileId }) => profileId) ?? [],
-    });
-    if (credentialPlan.unsupportedCredentialProfileId) {
-      return {
-        errors: {
-          [AI_PROFILES_KEY]: `Profile "${credentialPlan.unsupportedCredentialProfileId}" does not support provider credentials.`,
-        },
-      };
-    }
-    keepCredentialProfileIds = credentialPlan.keepCredentialProfileIds;
-  }
-
-  const headerPlan =
-    profilesUpdated || profilesReset
-      ? planAiProfileRequestHeaders({
-          currentProfiles: currentParsed.profiles,
-          nextProfiles: nextParsed.profiles,
-          existingNames: profilesUpdated ? await listAiRequestHeaderNames() : {},
-          submitted: aiSplit?.requestHeaders ?? [],
-        })
-      : undefined;
-  if (headerPlan?.error) return { errors: { [AI_PROFILES_KEY]: headerPlan.error } };
-
-  const issues = validateAiSettingsConfiguration({
-    enabled: nextEnabled,
-    defaultModelId: String(valueAfterMutation(AI_DEFAULT_MODEL_KEY, currentDefaultModelId ?? "", updates, resets)),
-    backgroundModelId: String(valueAfterMutation(AI_BACKGROUND_MODEL_KEY, currentBackgroundModelId ?? "", updates, resets)),
-    audioModelId: String(valueAfterMutation(AI_AUDIO_MODEL_KEY, currentAudioModelId ?? "", updates, resets)),
-    visionModelId: String(valueAfterMutation(AI_VISION_MODEL_KEY, currentVisionModelId ?? "", updates, resets)),
-    workflowModelId: String(valueAfterMutation(AI_WORKFLOW_MODEL_KEY, currentWorkflowModelId ?? "", updates, resets)),
-    profiles: nextParsed.profiles,
-    credentialProfileIds: keepCredentialProfileIds ?? existingCredentialProfileIds,
-  });
-  // Stored profiles come second so a profile that is being removed keeps its label.
-  const described = describeAiSettingsIssues(issues, { locale, profiles: [...nextParsed.profiles, ...currentParsed.profiles] });
-  return {
-    errors: described.errors,
-    issues: described.issues,
-    headerPlan,
-    keepCredentialProfileIds,
-    modelProfileIds: profilesUpdated || profilesReset ? nextParsed.profiles.map((profile) => profile.id) : undefined,
-  };
-};
 
 const invalidateCommittedSettings = async (keys: readonly string[]): Promise<void> => {
   try {
@@ -368,7 +213,7 @@ const app = new Hono<AuthContext>()
     }),
     v("json", BulkSaveSchema),
     async (c) => {
-      const { updates, resets, replaceUnreadable } = c.req.valid("json");
+      const { updates, resets, replaceUnreadable, expectedUpdatedAt } = c.req.valid("json");
       const replace = new Set(replaceUnreadable);
       const updateKeys = Object.keys(updates);
       const keys = [...updateKeys, ...resets];
@@ -405,38 +250,7 @@ const app = new Hono<AuthContext>()
         return c.json({ message: settingsNotSavedMessage(getLocale(c)), errors: unreadable, code: "setting_unreadable" }, 409);
       }
 
-      // Strip AI provider keys before anything is validated or written, so the
-      // value that gets checked is the value that gets stored.
-      const aiSplit = AI_PROFILES_KEY in updates ? splitAiProfileCredentials(updates[AI_PROFILES_KEY]) : null;
-      if (AI_PROFILES_KEY in updates && !aiSplit) {
-        // Unsplittable means the keys could not be separated out, and storing the
-        // value as posted would put them back in a setting the browser reads.
-        return c.json({ message: "Invalid values", errors: { [AI_PROFILES_KEY]: "Model profiles must be a JSON array" } }, 400);
-      }
-      let accessChanges: AiModelAccessChange[] = [];
-      if (aiSplit) {
-        try {
-          aiSplit.profilesJson = prepareAiModelProfileImages(aiSplit.profilesJson);
-        } catch (error) {
-          if (error instanceof ImageMetadataError)
-            return c.json({ message: error.message, code: error.code, errors: { [AI_PROFILES_KEY]: error.message } }, 422);
-          throw error;
-        }
-        try {
-          const split = splitAiModelAccess(aiSplit.profilesJson);
-          aiSplit.profilesJson = split.profilesJson;
-          accessChanges = split.changes;
-        } catch {
-          return c.json(
-            {
-              message: "Invalid model permissions",
-              errors: { [AI_PROFILES_KEY]: "Invalid Assistant model permissions. Reload the settings and try again." },
-            },
-            400,
-          );
-        }
-      }
-      const finalValues: Record<string, unknown> = aiSplit ? { ...updates, [AI_PROFILES_KEY]: aiSplit.profilesJson } : updates;
+      const finalValues = updates;
 
       // Validate everything up front. settings.set validates as it writes, so a
       // single bad field used to leave the earlier keys already saved — with the
@@ -461,26 +275,17 @@ const app = new Hono<AuthContext>()
         return c.json({ message: "Invalid values", errors: invalid }, 400);
       }
 
-      let aiPlan: AiSettingsMutationPlan;
-      try {
-        aiPlan = await prepareAiSettingsMutation(validatedValues, resets, aiSplit, getLocale(c));
-      } catch (error) {
-        console.error("[settings] failed to validate the prospective AI configuration", error);
-        return c.json({ message: "Failed to validate AI settings" }, 500);
-      }
-      if (Object.keys(aiPlan.errors).length > 0) {
-        return c.json({ message: aiSettingsNotSavedMessage(getLocale(c)), errors: aiPlan.errors, issues: aiPlan.issues ?? [] }, 400);
-      }
-
       const fieldErrors: FieldErrors = {};
       try {
         // Every settings and AI credential write runs on the transaction's own
         // connection, so a failure rolls the whole save back.
         await sql.begin(async (tx) => {
+          await assertSettingVersions(expectedUpdatedAt, tx);
           await assertGeoBudgetPair(tx, validatedValues, resets);
           for (const [key, value] of Object.entries(validatedValues)) {
             try {
               await settings.set(key, value, tx, { replaceUnreadable: replace.has(key) });
+              await tx`UPDATE settings.entries SET updated_by=${c.get("user").id}::uuid WHERE key=${key}`;
             } catch (error) {
               fieldErrors[key] = `Failed to save ${key}`;
               throw error;
@@ -512,15 +317,6 @@ const app = new Hono<AuthContext>()
               },
               tx,
             );
-          if (aiSplit && aiPlan.keepCredentialProfileIds) {
-            await storeAiCredentials(aiSplit, aiPlan.keepCredentialProfileIds, tx);
-          } else if (aiPlan.keepCredentialProfileIds) {
-            await pruneAiCredentials(aiPlan.keepCredentialProfileIds, tx);
-          }
-          if (aiPlan.headerPlan) await storeAiRequestHeaderPlan(aiPlan.headerPlan, tx);
-          if (aiPlan.modelProfileIds) {
-            await aiModelAccess.syncProfiles(aiPlan.modelProfileIds, accessChanges, tx);
-          }
         });
       } catch (error) {
         if (error instanceof GeoBudgetSettingError) return error.getResponse();
@@ -535,12 +331,11 @@ const app = new Hono<AuthContext>()
           );
         }
         if (error instanceof ImageMetadataError) return c.json({ message: error.message, code: error.code, errors: fieldErrors }, 422);
-        if (error instanceof AiModelAccessConflict || error instanceof AiModelAccessInvalid) {
+        if (error instanceof ConfigConflict)
           return c.json(
-            { message: error.message, errors: { [AI_PROFILES_KEY]: error.message } },
-            error instanceof AiModelAccessConflict ? 409 : 400,
+            { code: error.code, current: error.current, key: error.key, changedBy: error.changedBy, changedAt: error.changedAt },
+            409,
           );
-        }
         console.error("[settings] failed to commit settings update", error);
         return c.json(
           {
@@ -565,17 +360,6 @@ const app = new Hono<AuthContext>()
     }
     if (key === GEO_KEY) return c.json({ message: GEO_KEY_DEDICATED, errors: { [GEO_KEY]: GEO_KEY_DEDICATED } }, 400);
 
-    let aiPlan: AiSettingsMutationPlan;
-    try {
-      aiPlan = await prepareAiSettingsMutation({}, [key], null, getLocale(c));
-    } catch (error) {
-      console.error("[settings] failed to validate the prospective AI configuration", error);
-      return c.json({ message: "Failed to validate AI settings" }, 500);
-    }
-    if (Object.keys(aiPlan.errors).length > 0) {
-      return c.json({ message: aiSettingsNotSavedMessage(getLocale(c)), errors: aiPlan.errors, issues: aiPlan.issues ?? [] }, 400);
-    }
-
     try {
       await sql.begin(async (tx) => {
         await assertGeoBudgetPair(tx, {}, [key]);
@@ -591,13 +375,6 @@ const app = new Hono<AuthContext>()
             },
             tx,
           );
-        if (aiPlan.keepCredentialProfileIds) {
-          await pruneAiCredentials(aiPlan.keepCredentialProfileIds, tx);
-        }
-        if (aiPlan.headerPlan) await storeAiRequestHeaderPlan(aiPlan.headerPlan, tx);
-        if (aiPlan.modelProfileIds) {
-          await aiModelAccess.syncProfiles(aiPlan.modelProfileIds, [], tx);
-        }
       });
     } catch (error) {
       if (error instanceof GeoBudgetSettingError || error instanceof settings.SettingUnreadableError) return error.getResponse();

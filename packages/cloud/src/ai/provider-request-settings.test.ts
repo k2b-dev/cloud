@@ -62,13 +62,19 @@ for (const providerId of providers)
       },
     });
     const profile: AiModelProfile = {
+      modelId: "test",
+      providerId: "test",
+      variantLabel: "Standard",
+      description: "",
+      icon: { kind: "provider" },
+      showInPicker: true,
       id: "test",
       label: "Test",
       provider: providerId,
       model: "test",
       baseURL: `http://localhost:${server.port}/v1`,
       enabled: true,
-      capabilities: ["streaming"],
+      capabilities: [],
       dataBoundary: "private",
       reasoningEffort: "medium",
       extraBody: { custom: { feature: true } },
@@ -159,7 +165,7 @@ for (const providerId of providers)
     try {
       await createCloudCompactFn({
         conversationId: "test",
-        modelProfileId: "test",
+        modelId: "test",
         additionalInstructions: "",
         signal: new AbortController().signal,
       })({
@@ -202,13 +208,19 @@ test("interrupted provider streams finish the loop as errors instead of successf
       }),
   });
   const profile: AiModelProfile = {
+    modelId: "partial",
+    providerId: "partial",
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
     id: "partial",
     label: "Partial",
     provider: "vllm",
     model: "test",
     baseURL: `http://localhost:${server.port}/v1`,
     enabled: true,
-    capabilities: ["streaming"],
+    capabilities: [],
     dataBoundary: "private",
   };
   const store = memoryStore();

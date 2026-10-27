@@ -57,7 +57,7 @@ databaseSuite()("open questions", () => {
     const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Write a letter" });
     const { turn } = await aiConversations.submitChatTurn({
       conversationId: chat.id,
-      modelProfileId: "mock",
+      modelId: "mock",
       runConfig: { kind: "chat", input: "Write a letter" },
       userMessage: { role: "user", content: [{ type: "text", text: "Write a letter" }] },
     });

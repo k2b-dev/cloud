@@ -18,7 +18,7 @@ const stored = (seq: number, message: AiStoredMessage["message"], meta: AiStored
   kind: "message",
   message,
   loopId: null,
-  modelProfileId: null,
+  modelId: null,
   providerModel: null,
   usage: null,
   stopReason: null,

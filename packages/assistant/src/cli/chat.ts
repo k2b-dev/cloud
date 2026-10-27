@@ -7,10 +7,11 @@ import type {
   AiConversationTimelineEntry,
   AiFileStat,
   AiPendingTurnAction,
-  AiPublicModelProfile,
+  AiPeopleModels,
   AiStoredMessage,
   AiUserPrefs,
 } from "@k2b/cloud/ai";
+import { parseAiModelChoice } from "@k2b/cloud/ai";
 import { guessAiMediaType } from "@k2b/cloud/ai/browser";
 import { arg, cloudResourceUrl, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
 import { pendingActionQuestion, printPendingActionContent } from "./action-question";
@@ -56,19 +57,17 @@ export const assistantChatCommands = [
   command("models", {
     summary: "List selectable Assistant models",
     async run({ ctx }) {
-      const models = await readApi<AiPublicModelProfile[]>(ctx, "/models");
+      const models = await readApi<AiPeopleModels>(ctx, "/models").then((payload) => payload.options);
       printRows(
         ctx,
         models,
         models.map((model) => ({
           id: model.id,
           label: model.label,
-          provider: model.provider,
-          model: model.model,
-          context: model.contextWindow ?? "-",
-          images: model.capabilities.includes("vision") ? "yes" : "no",
+          description: model.description,
+          classes: model.classes.join(", "),
         })),
-        [{ key: "id" }, { key: "label" }, { key: "provider" }, { key: "model" }, { key: "context" }, { key: "images" }],
+        [{ key: "id" }, { key: "label" }, { key: "description" }, { key: "classes" }],
       );
     },
   }),
@@ -233,7 +232,7 @@ export const assistantChatCommands = [
         ctx,
         conversationId: args.chat,
         path: conversationPath(args.chat, "/compact"),
-        body: flags.model ? { modelProfileId: flags.model } : {},
+        body: flags.model ? { model: parseAiModelChoice(flags.model) } : {},
         watch: !flags.detach,
       });
     },
@@ -383,7 +382,7 @@ export const assistantManagementCommands = [
       const replacement = await readCliInput(flags.replacement, { label: "replacement message", trimFinalNewline: true });
       const body = {
         mode: flags.mode,
-        ...(flags.model ? { modelProfileId: flags.model } : {}),
+        ...(flags.model ? { model: parseAiModelChoice(flags.model) } : {}),
         ...(replacement?.trim() ? { content: [{ type: "text", text: replacement.trim() }] } : {}),
       };
       return submitAndMaybeWatch({

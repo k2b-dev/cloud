@@ -87,3 +87,18 @@ editable list; all built-ins keep fixed rules in the first rollout.
 <!-- cld:modules -->
 No module is installed for any profile yet. `cld plugins install --all` installs the modules of the current profile's Cloud and fills this table.
 <!-- /cld:modules -->
+
+## Configure AI models
+
+Use `cld admin ai providers list|show|add|update|delete|test|key|models`,
+`cld admin ai models list|show|add|update|delete`,
+`cld admin ai variants add|update|delete` and
+`cld admin ai classes show|set <slot> <variant-id|none>`.
+Slots are fast, balanced, thorough, maximum, vision and audio. Mutations require
+`--yes`. Pass JSON through `--input-file` or stdin, keys through `--key-file`.
+Read current revisions before changes; HTTP 409 requires reconciling the current
+object. Delete JSON must include revision, assignment replacements, retarget
+and retargetTo. Preserve data boundaries and inspect usage first. Assistant
+project `--model` accepts a class or variant ID. The old model pricing/settings
+commands are removed. Read the model-class upgrade guide before upgrading an
+installation with profile configuration.

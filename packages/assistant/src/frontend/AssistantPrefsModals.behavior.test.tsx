@@ -15,7 +15,7 @@ test("saving one personalization switch does not record a choice for learning", 
     userId: "user",
     memoryEnabled: true,
     memoryLearningEnabled: true,
-    lastModelId: "",
+    selection: null,
     updatedAt: new Date(0).toISOString(),
   };
   const getPrefs = spyOn(assistantApi, "getPrefs").mockResolvedValue(prefs);
@@ -65,7 +65,7 @@ test("searching personalization keeps the field, its focus and the previous resu
     userId: "user",
     memoryEnabled: true,
     memoryLearningEnabled: true,
-    lastModelId: "",
+    selection: null,
     updatedAt: new Date(0).toISOString(),
   };
   const memory = (id: string, content: string): AiMemory => ({
@@ -136,10 +136,17 @@ test("API access appears only while the operator offers the OpenAI-compatible AP
     userId: "user",
     memoryEnabled: true,
     memoryLearningEnabled: true,
-    lastModelId: "",
+    selection: null,
     updatedAt: new Date(0).toISOString(),
   };
   const model = (id: string, capabilities: string[]) => ({
+    modelId: id,
+    providerId: id,
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
+    enabled: true,
     id,
     label: `${id} label`,
     provider: "openai",
@@ -156,7 +163,7 @@ test("API access appears only while the operator offers the OpenAI-compatible AP
         String(input instanceof Request ? input.url : input).includes("/ai/status")
           ? Response.json({
               openaiApi: { enabled },
-              models: [model("flash", ["streaming", "tools"]), model("whisper", ["transcription"])],
+              models: [model("flash", ["tools"]), model("whisper", ["transcription"])],
             })
           : Response.json([]),
       { preconnect: globalThis.fetch.preconnect },
@@ -199,7 +206,7 @@ test("a Skill link opens that Skill's editor directly", async () => {
     userId: "user",
     memoryEnabled: true,
     memoryLearningEnabled: true,
-    lastModelId: "",
+    selection: null,
     updatedAt: new Date(0).toISOString(),
   };
   const skill: AiSkill = {

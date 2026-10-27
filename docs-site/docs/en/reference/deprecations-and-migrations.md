@@ -2436,3 +2436,17 @@ route are replaced by outgoing mail profiles and the per-profile test route.
 Core imports configured legacy SMTP settings automatically.
 See [Outgoing mail operations](/en/docs/operations/outgoing-mail) for the upgrade
 and rollback rules.
+
+## AI model classes
+
+The model-profile JSON setting and the five default/background/workflow/tool
+model settings are removed. Configure providers, models, variants and class
+assignments instead. See [Upgrading to model classes](/en/docs/operations/upgrading-to-model-classes).
+
+Replace `requestedModelId` and `modelProfileId` request fields with
+`model: { class: "balanced" }` or `model: { id: "variant-id" }`.
+Structured results expose `model: AiResolvedModelRef`. Public history and
+accounting fields use `modelId`; historical SQL columns keep their names.
+Project defaults are `defaultModel: AiModelRequest | null`, and personal
+selection is `selection: AiModelRequest | null`. Old pricing/settings CLI
+commands are replaced by `admin ai models update` and `admin ai variants update`.

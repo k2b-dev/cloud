@@ -5,6 +5,7 @@ import type { AccessSubject } from "../server/services/access";
 import { logger } from "../services/logging";
 import { isAssistantChatTurn } from "./assistant-models";
 import { AiBackgroundAdmissionError, type AiCallContext, type AiCallDetails, beginAiCall, finishAiCall } from "./inference-calls";
+import type { AiResolvedModelRef } from "./model-contracts";
 import { type ProviderFetchMarks, runWithProviderFetchMarks } from "./provider-fetch";
 import type { AiModelProfile } from "./types";
 
@@ -230,7 +231,7 @@ export function inferenceProvider(
               firstByteMs: marks.firstByteAt === undefined ? undefined : marks.firstByteAt - requestStartedAt,
               firstBlockMs: marks.firstBlockAt === undefined ? undefined : marks.firstBlockAt - requestStartedAt,
             });
-          } catch (error) {
+          } catch {
             log.warn("Chat usage booking failed", { code: "quota_booking_failed", turnId: context.turnId, callId: id });
           }
         }
@@ -246,8 +247,9 @@ export function assistantQuotaProvider(
   profile: AiModelProfile,
   turnId: string,
   conversationId: string,
+  modelRef: AiResolvedModelRef,
 ) {
-  const common = { subject, turnId, conversationId };
+  const common = { subject, turnId, conversationId, modelRef };
   return inferenceProvider(
     provider,
     profile,

@@ -10,6 +10,7 @@ import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { aiLive, aiLiveChannels } from "../../src/ai/live";
 import { aiModelAccess } from "../../src/ai/model-access";
+import { aiModelCatalog } from "../../src/ai/model-catalog";
 import { createAiOpenAiRoutes } from "../../src/ai/openai-api";
 import { acquire } from "../../src/ai/openai-api-slots";
 import { aiQuotas } from "../../src/ai/quotas";
@@ -27,12 +28,18 @@ import { coreSettings } from "../../src/services/settings/api";
 
 const suite = databaseSuite();
 const profile: AiModelProfile = {
+  modelId: "openai-api-integration",
+  providerId: "openai-api-integration",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "openai-api-integration",
   label: "API fixture",
   provider: "ollama",
   model: "fixture",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "private",
   contextWindow: 1000,
   maxOutputTokens: 20,
@@ -172,7 +179,7 @@ suite("models-only API identity and inference boundaries", () => {
       const inference = createAiOpenAiRoutes({
         assertModelAccess: async () => {},
         listModels: async () => [profile],
-        resolveModel: async () => ({ profile, provider }),
+        resolveModel: async () => ({ model: { id: profile.id }, profile, provider }),
       });
       const completed = await inference.request("/chat/completions", {
         method: "POST",
@@ -241,8 +248,8 @@ for (const kind of ["standalone", "agent"] as const) {
       const ownerId = crypto.randomUUID();
       const enabled = await coreSettings.get<boolean>("ai.openai_api_enabled");
       const previousQuota = await aiQuotas.config();
-      const previousProfiles = await coreSettings.get<string>("ai.model_profiles_json");
-      const model = { ...profile, id: `machine-${crypto.randomUUID()}`, pricing: { inputPerMillion: 1, outputPerMillion: 1 } };
+      const modelId = `machine-${crypto.randomUUID()}`;
+      const model = { ...profile, id: modelId, modelId, providerId: modelId, pricing: { inputPerMillion: 1, outputPerMillion: 1 } };
       const otherModel = `${model.id}-other`;
       let machineId: string | undefined;
       let dispatches = 0;
@@ -250,7 +257,13 @@ for (const kind of ["standalone", "agent"] as const) {
       try {
         await coreSettings.set("ai.openai_api_enabled", true);
         await sql`UPDATE ai.cost_config SET enabled=false`;
-        await coreSettings.set("ai.model_profiles_json", JSON.stringify([model]));
+        await aiModelCatalog.createProvider({ id: model.id, label: "Machine fixture", type: "ollama", dataBoundary: "private" }, ownerId);
+        await aiModelCatalog.createModels(
+          model.id,
+          [{ id: model.id, label: model.label, providerModel: model.model, pricing: model.pricing }],
+          ownerId,
+        );
+        await sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access WHERE model_id=${model.id})`;
         const actor = await accounts.users.get({ id: ownerId });
         if (!actor) throw new Error("Missing actor fixture");
         const account = await serviceAccounts.createStandalone({ name: `Model worker ${ownerId}`, kind, createdBy: ownerId });
@@ -290,6 +303,7 @@ for (const kind of ["standalone", "agent"] as const) {
             resolveModel: async () => {
               await beforeResolve?.();
               return {
+                model: { id: model.id },
                 profile: model,
                 provider: {
                   ...provider,
@@ -307,13 +321,13 @@ for (const kind of ["standalone", "agent"] as const) {
             headers: { ...headers, authorization: `Bearer ${token}` },
             body: JSON.stringify({ model: modelId, messages: [{ role: "user", content: "Hello" }], stream }),
           });
-        await sql`INSERT INTO ai.model_access_resources(profile_id) VALUES(${model.id}),(${otherModel})`;
+        await sql`INSERT INTO ai.model_access_resources(model_id) VALUES(${model.id}),(${otherModel}) ON CONFLICT DO NOTHING`;
         const grant = async (id: string, principal: Principal) => {
           const access = await createAccess({ principal, permission: "read" });
           if (!access.ok) throw new Error("Grant fixture failed");
-          await sql`INSERT INTO ai.model_access(profile_id,access_id) VALUES(${id},${access.data.id}::uuid)`;
+          await sql`INSERT INTO ai.model_access(model_id,access_id) VALUES(${id},${access.data.id}::uuid)`;
         };
-        const clear = () => sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access WHERE profile_id=${model.id})`;
+        const clear = () => sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access WHERE model_id=${model.id})`;
         // The creator's access never supplies the machine's access.
         await grant(model.id, { type: "user", userId: ownerId });
         expect((await call()).status).toBe(404);
@@ -403,10 +417,10 @@ for (const kind of ["standalone", "agent"] as const) {
         expect((await app().request("/models", { headers })).status).toBe(401);
       } finally {
         await coreSettings.set("ai.openai_api_enabled", enabled);
-        await coreSettings.set("ai.model_profiles_json", previousProfiles);
+        await sql`DELETE FROM ai.providers WHERE id=${model.id}`;
         await sql`UPDATE ai.cost_config SET enabled=${previousQuota.enabled},rules=(${JSON.stringify(previousQuota.rules)}::text)::jsonb`;
-        await sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access WHERE profile_id IN (${model.id},${otherModel}))`;
-        await sql`DELETE FROM ai.model_access_resources WHERE profile_id IN (${model.id},${otherModel})`;
+        await sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.model_access WHERE model_id IN (${model.id},${otherModel}))`;
+        await sql`DELETE FROM ai.model_access_resources WHERE model_id IN (${model.id},${otherModel})`;
         if (machineId) {
           await sql`DELETE FROM ai.inference_calls WHERE service_account_id=${machineId}::uuid`;
           await sql`DELETE FROM auth.service_accounts WHERE id=${machineId}::uuid`;

@@ -134,7 +134,7 @@ const turnSnapshotFromActive = (active: NonNullable<Awaited<ReturnType<typeof ai
   status: active.turn.status,
   seq: active.liveSeq,
   blocks: [...active.liveBlocks],
-  modelProfileId: active.turn.modelProfileId,
+  modelId: active.turn.modelId,
   createdAt: active.turn.createdAt,
   actionWaitMs: active.actionWaitMs,
   waitingSince: active.waitingSince,

@@ -92,17 +92,13 @@ export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructur
     {
       appId: task.appId,
       attribution: { workflowRunId: task.runId, stepKey: task.stepKey, userId: task.usageUserId },
-      requestedModelId: task.modelProfileId,
-      ...(task.modelConfigHash
-        ? {
-            resolveModel: async () => {
-              const resolved = await resolveAiWorkflowModel(task.modelProfileId);
-              if (workflowAiModelHash(resolved.profile) !== task.modelConfigHash)
-                throw new WorkflowAiAdmissionError("WORKFLOW_AI_MODEL_CHANGED");
-              return resolved;
-            },
-          }
-        : {}),
+      model: { id: task.modelId },
+      resolveModel: async () => {
+        const resolved = await resolveAiWorkflowModel({ id: task.modelId });
+        if (task.modelConfigHash && workflowAiModelHash(resolved.profile) !== task.modelConfigHash)
+          throw new WorkflowAiAdmissionError("WORKFLOW_AI_MODEL_CHANGED");
+        return { ...resolved, model: task.modelRef ?? resolved.model };
+      },
       signal,
       taskPrefix: "workflow",
     },
