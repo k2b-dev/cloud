@@ -490,10 +490,3 @@ const reserveWorkflowAiBudget = async (db: SQL, run: { app_id: string; scope_id:
   if (!bucket || bucket.available < 1) throw new WorkflowAiAdmissionError("WORKFLOW_AI_RATE_LIMIT");
   await db`UPDATE ai.workflow_scope_budget SET tokens = ${bucket.available - 1}, refilled_at = now() WHERE app_id = ${run.app_id} AND scope_id = ${run.scope_id}`;
 };
-
-/** Cancel application-owned work without inventing a workflow run. */
-export const cancelApplicationAiTask = async (id: string, db: SQL = sql): Promise<void> => {
-  await db`UPDATE ai.workflow_task SET cancel_requested_at = now()
-    WHERE id = ${id}::uuid AND run_id IS NULL AND status IN ('queued', 'running')`;
-  await markWorkflowAiTaskCanceledIfRequested(id, db);
-};

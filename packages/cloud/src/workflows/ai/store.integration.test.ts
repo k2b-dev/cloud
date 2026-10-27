@@ -591,7 +591,8 @@ describe("application-owned durable AI tasks", () => {
       >`SELECT count(*)::int AS count FROM ai.workflow_scope_admission WHERE app_id = ${appId}`;
       expect(admissions?.count).toBe(1);
       const queued = await createWorkflowAiTask({ ...base, effectKey: `${appId}:cancel`, scope: { ...scope, sourceRevision: "43" } });
-      await aiStore.cancelApplicationAiTask(queued.task.id);
+      await sql`UPDATE ai.workflow_task SET cancel_requested_at = now() WHERE id = ${queued.task.id}::uuid`;
+      await aiStore.markWorkflowAiTaskCanceledIfRequested(queued.task.id);
       expect(await getWorkflowAiTask(queued.task.id)).toMatchObject({ status: "canceled", errorCode: "WORKFLOW_AI_CANCELED" });
       const expiring = await createWorkflowAiTask({ ...base, effectKey: `${appId}:expire`, scope: { ...scope, sourceRevision: "44" } });
       await sql`UPDATE ai.workflow_task SET updated_at = now() - interval '2 minutes' WHERE id = ${expiring.task.id}::uuid`;

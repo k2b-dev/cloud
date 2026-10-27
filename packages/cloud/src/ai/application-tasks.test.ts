@@ -62,7 +62,7 @@ const create = spyOn(store, "createWorkflowAiTask");
 const resolve = spyOn(model, "resolveApplicationAiTaskModel");
 const submit = spyOn(runtime, "submitWorkflowAiTask");
 const latest = spyOn(store, "getWorkflowAiTask");
-const cancel = spyOn(store, "cancelApplicationAiTask");
+const cancel = spyOn(store, "markWorkflowAiTaskCanceledIfRequested");
 afterEach(() => {
   get.mockReset();
   create.mockReset();
@@ -124,7 +124,7 @@ test("scope and person namespace effect keys independently", async () => {
 test("aborting one observer leaves the shared durable task available for recovery", async () => {
   const controller = new AbortController();
   get.mockResolvedValue({ ...task, status: "running", completedAt: null });
-  cancel.mockResolvedValue(undefined);
+  cancel.mockResolvedValue(null);
   const running = runApplicationAiTask({ ...input, signal: controller.signal });
   queueMicrotask(() => controller.abort(new Error("Stopped")));
   await expect(running).rejects.toThrow("Stopped");
