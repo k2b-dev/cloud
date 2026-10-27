@@ -974,7 +974,10 @@ export const MAIL_WORKFLOW_ACTIONS = {
     }),
     authorize: authorized,
     cost: () => ({ maxCollaborationChanges: 1 }),
-    plan: async () => planned("Replace the conversation summary."),
+    plan: async (ctx, values) => {
+      const conversation = await resolveObject(ctx, values.conversation, "conversation");
+      return planned(conversation.summarySource === "person" ? "Keep the person's summary." : "Replace the conversation summary.");
+    },
     run: (ctx, values) =>
       attempt(async () => {
         const tx = ctx.tx as SqlClient;
@@ -1007,8 +1010,12 @@ export const MAIL_WORKFLOW_ACTIONS = {
         });
         if (!mutation.ok) return resultFailure(mutation.error);
         const applied = Boolean(mutation.data.event);
-        conversation.summary = mutation.data.value.summary;
-        conversation.summaryRevision = mutation.data.value.summaryRevision;
+        if (applied) {
+          conversation.summary = mutation.data.value.summary;
+          conversation.summaryRevision = mutation.data.value.summaryRevision;
+          conversation.summarySource = mutation.data.value.source;
+        }
+        // A rule in the mailbox order also moves the revision, so later rules read the conversation it left.
         if (applied || isObject(ctx.invocation.context?.automationOrder)) conversation.revision = mutation.data.value.conversationRevision;
         return {
           state: "succeeded",
@@ -1016,6 +1023,7 @@ export const MAIL_WORKFLOW_ACTIONS = {
             {
               action: "setConversationSummary",
               applied,
+              ...(mutation.data.skipped ? { skipped: mutation.data.skipped } : {}),
               value: mutation.data.value.summary,
               conversationId: publicConversationId,
               revision: mutation.data.value.conversationRevision,

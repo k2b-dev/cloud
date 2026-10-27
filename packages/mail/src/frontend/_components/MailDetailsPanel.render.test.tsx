@@ -11,6 +11,7 @@ import type { ConversationLocalTags, LocalTag } from "../../service/local-tags";
 import type { MessageDetail } from "../../service/messages";
 import type { ConversationPresenceParticipant } from "../../service/presence";
 import type { MailDetailErrors } from "../../service/workspace";
+import { summaryState } from "./mail-summary-fixtures";
 
 const root = mkdtempSync(join(tmpdir(), "mail-detail-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -219,7 +220,7 @@ describe("Mail conversation detail panel", () => {
   test("can surface overview context and a full conversation destination", () => {
     const html = renderPanel({
       conversationHref: `/app/mail/${mailboxId}?conversation=${conversationId}`,
-      conversationSummary: { summary: "Payment is due **Friday**.", summaryRevision: 2, conversationRevision: 5 },
+      conversationSummary: summaryState({ summary: "Payment is due **Friday**.", summaryRevision: 2, conversationRevision: 5 }),
     });
 
     expect(html).toContain("Conversation summary");

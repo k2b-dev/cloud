@@ -236,3 +236,9 @@ describe("Mail workflow projected state", () => {
     expect(projected.source.conversation).toMatchObject({ workStatus: "needs_action", revision: 2 });
   });
 });
+
+test("projected summaries preserve a person's text and revisions", () => {
+  const conversation = { id: "conversation", summary: "My words", summarySource: "person", summaryRevision: 2, revision: 3 };
+  expect(applyMailConversationTransition(conversation, "setConversationSummary", "AI text")).toBe(false);
+  expect(conversation).toMatchObject({ summary: "My words", summaryRevision: 2, revision: 3 });
+});

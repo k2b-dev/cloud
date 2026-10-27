@@ -1,3 +1,4 @@
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import type { Paginated } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
@@ -7,7 +8,6 @@ import {
   ButtonLink,
   DescriptionList,
   DetailPanel,
-  Dropdown,
   Format,
   IconButton,
   InlineGuidance,
@@ -273,6 +273,7 @@ export default function ContactDetailPanel(props: Props) {
     });
   });
 
+  const cloudId = useCloudIdCopy();
   const actions = createContactDetailActions({
     bookId,
     writableBooks: props.writableBooks,
@@ -437,43 +438,43 @@ export default function ContactDetailPanel(props: Props) {
                       </nav>
                     ) : undefined
                   }
+                  menu={[
+                    {
+                      label: t().downloadVCard,
+                      icon: "ti ti-download",
+                      href: `/api/contacts/books/${encodeURIComponent(c().bookId)}/contacts/${encodeURIComponent(c().id)}/export.vcf`,
+                    },
+                    ...(actions.canEdit()
+                      ? [
+                          {
+                            label: t().editAllFields,
+                            icon: "ti ti-pencil",
+                            action: () => actions.openEditDialog(c()),
+                          },
+                        ]
+                      : []),
+                    ...(actions.canMove()
+                      ? [
+                          {
+                            label: t().moveToAnotherBook,
+                            icon: "ti ti-folder-symlink",
+                            action: () => actions.moveToBook(c()),
+                          },
+                        ]
+                      : []),
+                    ...cloudId.section({ type: "contacts.contact", id: c().id }),
+                  ]}
+                  menuLabel={t().moreContactActions}
                   actions={
                     <>
-                      <ContactFavoriteButton bookId={c().bookId} contactId={c().id} initialFavorite={selectedFavorite()} />
-                      <Dropdown.Root
-                        position="bottom-left"
-                        items={[
-                          {
-                            label: t().downloadVCard,
-                            icon: "ti ti-download",
-                            href: `/api/contacts/books/${encodeURIComponent(c().bookId)}/contacts/${encodeURIComponent(c().id)}/export.vcf`,
-                          },
-                          ...(actions.canEdit()
-                            ? [
-                                {
-                                  label: t().editAllFields,
-                                  icon: "ti ti-pencil",
-                                  action: () => actions.openEditDialog(c()),
-                                },
-                              ]
-                            : []),
-                          ...(actions.canMove()
-                            ? [
-                                {
-                                  label: t().moveToAnotherBook,
-                                  icon: "ti ti-folder-symlink",
-                                  action: () => actions.moveToBook(c()),
-                                },
-                              ]
-                            : []),
-                        ]}
-                      >
-                        <Dropdown.Trigger iconOnly label={t().moreContactActions} tooltip={t().moreContactActions}>
-                          <i class="ti ti-dots" aria-hidden="true" />
-                        </Dropdown.Trigger>
-                      </Dropdown.Root>
+                      <ContactFavoriteButton size="sm" bookId={c().bookId} contactId={c().id} initialFavorite={selectedFavorite()} />
                       {/* The workspace renders its detail on the server, so Escape and swipes reach this button. */}
-                      <IconButton label={t().closeDetailPanel} data-workspace-detail-close onClick={() => clearSelectedContactInUrl()}>
+                      <IconButton
+                        size="sm"
+                        label={t().closeDetailPanel}
+                        data-workspace-detail-close
+                        onClick={() => clearSelectedContactInUrl()}
+                      >
                         <i class="ti ti-x" aria-hidden="true" />
                       </IconButton>
                     </>

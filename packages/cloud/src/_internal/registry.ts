@@ -5,6 +5,7 @@ import { calendarSourceIssues } from "../contracts/calendar-source";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
 import { fileProviderIssues } from "../contracts/file-provider";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { resourcePageIssue } from "../contracts/resource-pages";
 import { type Role, RoleSchema } from "../contracts/shared";
 import {
   type DashboardWidgetPresentation,
@@ -333,7 +334,13 @@ export const resolveLiveCapabilityRegistryEntry = (
   if (!endpoint) return null;
   try {
     const read = parseCapabilityManifest(record.manifest, app.id);
-    const manifest = withValidCalendarSource(withValidFileProvider(read));
+    const supported = withValidCalendarSource(withValidFileProvider(read));
+    const manifest = supported.resourcePages
+      ? {
+          ...supported,
+          resourcePages: supported.resourcePages.filter((page) => !resourcePageIssue(page.path, app.routes, app.id)),
+        }
+      : supported;
     const presentation = compileCapabilityPresentation(manifest, record.presentation, "reader");
     if (app.capabilities.protocolVersion !== manifest.protocolVersion || app.capabilities.manifestHash !== manifest.manifestHash) {
       return null;

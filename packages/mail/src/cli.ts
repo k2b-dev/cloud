@@ -1982,6 +1982,7 @@ const everydayCommands = (t: Translate) => {
           return;
         const none = t({ en: "none", de: "keine" });
         ctx.print(`${t({ en: "Conversation", de: "Unterhaltung" })}: ${conversationId}`);
+        ctx.print(`${t({ en: "Cloud ID", de: "Cloud-ID" })}: ${cloudResourceUrl(ctx, { type: "mail.conversation", id: conversationId })}`);
         ctx.print(
           `${t({ en: "Summary", de: "Zusammenfassung" })}: ${value.summary ?? t({ en: "No shared summary", de: "Keine gemeinsame Zusammenfassung" })}`,
         );
@@ -2026,6 +2027,38 @@ const everydayCommands = (t: Translate) => {
         }
         ctx.print("");
         ctx.print(message.plainText ?? t({ en: "[Body not loaded yet]", de: "[Text noch nicht geladen]" }));
+      },
+    }),
+    command("conversation summary generate", {
+      summary: t({
+        en: "Request an AI summary using your Assistant allowance",
+        de: "Eine KI-Zusammenfassung mit dem eigenen Assistant-Kontingent anfordern",
+      }),
+      args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
+      flags: {
+        ...mailboxOption,
+        mode: flag.enum(["rolling", "replace"], {
+          default: "rolling",
+          description: t({ en: "Continue or rewrite the summary", de: "Die Zusammenfassung fortschreiben oder neu schreiben" }),
+        }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const conversationId = requireMailResourceId(args.conversation, "Conversation id");
+        const path = `/mailboxes/${mailbox.id}/conversations/${conversationId}/summary`;
+        const current = await readApi<ConversationContentSummary>(ctx, path);
+        const result = await readApi<ConversationContentSummary>(
+          ctx,
+          `${path}/generate`,
+          jsonRequest("POST", { mode: flags.mode ?? "rolling", expectedSummaryRevision: current.summaryRevision }),
+        );
+        if (!printStructured(ctx, result))
+          ctx.print(
+            t({
+              en: "Summary requested. Open the conversation to see its progress.",
+              de: "Zusammenfassung angefordert. Der Fortschritt steht in der Unterhaltung.",
+            }),
+          );
       },
     }),
     command("conversation update", {
@@ -2233,12 +2266,18 @@ const everydayCommands = (t: Translate) => {
     }),
     command("unkeep", {
       summary: t({
-        en: "Stop keeping a conversation (Manage access required)",
-        de: "Unterhaltung nicht mehr aufbewahren (Verwaltungszugriff erforderlich)",
+        en: "Stop keeping a conversation (Cloud administrator required)",
+        de: "Unterhaltung nicht mehr aufbewahren (Cloud-Admin-Rechte erforderlich)",
       }),
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
         ...mailboxOption,
+        reason: flag.string({
+          description: t({
+            en: "Reason for lifting the keep (at most 500 characters)",
+            de: "Grund für das Aufheben der Aufbewahrung (höchstens 500 Zeichen)",
+          }),
+        }),
         yes: confirmFlag(
           t({
             en: "The conversation can be deleted again. Cloud copies already deleted on the mail server disappear from view; their stored contents remain. Stop keeping it?",
@@ -2256,11 +2295,13 @@ const everydayCommands = (t: Translate) => {
             }),
           );
         const id = requireMailResourceId(args.conversation, t({ en: "Conversation ID", de: "Unterhaltungs-ID" }));
-        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const mailboxRef = await mailboxRefOrDefault(ctx, flags.mailbox, t);
+        // Cloud admins can lift keeps without a mailbox grant; exact IDs must reach that service directly.
+        const mailboxId = MAIL_RESOURCE_ID_PATTERN.test(mailboxRef) ? mailboxRef : (await resolveMailbox(ctx, mailboxRef, t)).id;
         const result = await readApi<{ conversationId: string; released: boolean }>(
           ctx,
-          `/mailboxes/${mailbox.id}/conversations/${id}/keep`,
-          { method: "DELETE" },
+          `/mailboxes/${mailboxId}/conversations/${id}/keep`,
+          flags.reason !== undefined ? jsonRequest("DELETE", { reason: flags.reason }) : { method: "DELETE" },
         );
         if (!printStructured(ctx, result))
           ctx.print(t({ en: "The conversation is no longer kept.", de: "Die Unterhaltung wird nicht mehr aufbewahrt." }));
@@ -8135,6 +8176,10 @@ const mailCommands = (locale?: string) => {
       }),
       comments: t({ en: "Discuss a conversation internally", de: "Eine Unterhaltung intern besprechen" }),
       tag: t({ en: "Tag conversations and manage mailbox tags", de: "Unterhaltungen taggen und Postfach-Tags verwalten" }),
+      "conversation summary": t({
+        en: "Request and inspect conversation summaries",
+        de: "Zusammenfassungen von Unterhaltungen anfordern und prüfen",
+      }),
       conversation: t({ en: "Inspect, merge, and split conversations", de: "Unterhaltungen prüfen, zusammenführen und teilen" }),
     },
     commands: [...everydayCommands(t), ...specialistCommands.commands, ...composeLogoCommands(t), ...automationLogCommands(t)],

@@ -13,7 +13,9 @@ import { logger } from "@k2b/cloud/services";
 import { migrateWorkflowAi } from "@k2b/cloud/workflows/ai";
 import { sql } from "bun";
 import automationLogSchema from "./automation-log-schema.sql" with { type: "text" };
+import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
 import baselineSchema from "./schema.sql" with { type: "text" };
+import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
 import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
 
 type SqlClient = typeof sql;
@@ -116,6 +118,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       kept_at timestamptz NOT NULL DEFAULT now()
     )
   `.simple();
+  await tx`CREATE INDEX IF NOT EXISTS conversation_keeps_admin_page_idx
+    ON mail.conversation_keeps (kept_at DESC, conversation_id DESC)`.simple();
   await tx`CREATE INDEX IF NOT EXISTS conversation_keeps_mailbox_idx
     ON mail.conversation_keeps (mailbox_id, kept_at DESC, conversation_id)`.simple();
   await tx`
@@ -437,6 +441,8 @@ export const migrate = async (): Promise<void> => {
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${MIGRATION_LOCK_KEY}, 0))`;
         await applyBaseline(tx);
         await applyAdditions(tx);
+        await migrateAiDailyBudget(tx);
+        await migrateConversationSummaries(tx);
         await migrateWorkflowAi(tx);
       });
       return;
