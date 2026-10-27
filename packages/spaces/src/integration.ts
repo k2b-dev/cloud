@@ -138,6 +138,13 @@ export const SpacesMailDestinationSchema = z
     id: ResourceShortIdSchema,
     name: z.string().min(1).max(100),
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    audience: z.object({
+      memberCount: z.number().int().nonnegative(),
+      guestCount: z.number().int().nonnegative(),
+      serviceAccountCount: z.number().int().nonnegative(),
+      public: z.boolean(),
+      authenticated: z.boolean(),
+    }),
   })
   .strict();
 export type SpacesMailDestination = z.infer<typeof SpacesMailDestinationSchema>;

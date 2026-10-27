@@ -150,3 +150,7 @@ Du brauchst Zugriff zum Bearbeiten des Termins und ein geeignetes Postfach.
 3. Wähle das sendende Postfach und die Empfänger.
 4. Prüfe und versende den Entwurf anschließend in Mail.
 :::
+
+## Durch ein Wormhole verschieben {icon="arrow-bounce"}
+
+Wähle in den Kartendetails **Verschieben nach…**. Jedes Ziel nennt, was wegfällt, oder zeigt, dass nichts wegfällt. Die Details zeigen, wer die Karte danach sieht, welche Tags, Zuständigen und Abhängigkeiten entfernt werden und dass Kommentare und Anhänge mitkommen. Ein Ziel, das du nicht bearbeiten darfst, bleibt mit einem Grund sichtbar. Schlägt das Laden fehl, wähle **Erneut versuchen**. Nach der Zielwahl folgt das übliche Verschieben einschließlich der Bestätigung, falls jemand anderes die Aufgabe übernommen hat.

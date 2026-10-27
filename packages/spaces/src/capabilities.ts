@@ -2096,13 +2096,20 @@ const calendarDestinationContext = async (
     requiredLevel: "write",
     pagination: { page: cursor.data, perPage: input.limit },
   });
+  const audiences = await spacesService.access.audiences({
+    spaceIds: page.items.map((space) => space.id),
+    subject: context.accessSubject,
+    boundSpaceId: scope.data,
+  });
+  if (!audiences.ok) return fail(localizeSpacesError(audiences.error, context.locale));
   const spaces = await spacesPublicResources.projectSpaces(page.items);
   return ok({
-    data: spaces.map((space) => ({
+    data: spaces.map((space, index) => ({
       id: space.id,
       ref: { type: "spaces.space" as const, id: space.id },
       name: space.name,
       color: space.color,
+      audience: audiences.data[page.items[index]!.id]!,
       links: [{ rel: "open" as const, href: `/app/spaces/${space.id}` }],
     })),
     refs: spaces.map(spaceRef),

@@ -851,6 +851,25 @@ export const ReorderWormholesSchema = z.object({
 });
 export type ReorderWormholes = z.infer<typeof ReorderWormholesSchema>;
 
+export const WormholeTransferPreviewSchema = SpaceWormholeSchema.extend({
+  canWrite: z.boolean(),
+  audience: z
+    .object({
+      memberCount: z.number().int().nonnegative(),
+      guestCount: z.number().int().nonnegative(),
+      serviceAccountCount: z.number().int().nonnegative(),
+      public: z.boolean(),
+      authenticated: z.boolean(),
+    })
+    .nullable(),
+  removedTags: z.array(z.string()),
+  removedAssignees: z.array(z.string()),
+  removedDependencies: z.array(z.string()),
+  commentsMove: z.literal(true),
+  attachmentsMove: z.literal(true),
+});
+export type WormholeTransferPreview = z.infer<typeof WormholeTransferPreviewSchema>;
+
 export const WormholeTransferResultSchema = z.object({
   item: SpaceItemSchema.describe("Transferred item in its destination space"),
   destination: SpaceWormholeTargetSchema.describe("Resolved destination"),
