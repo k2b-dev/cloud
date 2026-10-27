@@ -587,7 +587,13 @@ export default function AiAreaActions(props: {
       </Button>
     );
   return (
-    <Button type="button" variant={props.variant === "button" ? "secondary" : "primary"} size="sm" onClick={open} data-ai-action={props.kind}>
+    <Button
+      type="button"
+      variant={props.variant === "button" ? "secondary" : "primary"}
+      size="sm"
+      onClick={open}
+      data-ai-action={props.kind}
+    >
       <i class="ti ti-plus" aria-hidden="true" />
       {label()}
     </Button>

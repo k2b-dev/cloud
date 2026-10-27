@@ -25,9 +25,7 @@ export class AiAdminError extends Error {
 const field = (body: unknown, key: string): unknown =>
   body && typeof body === "object" && key in body ? (body as Record<string, unknown>)[key] : undefined;
 
-/** Reads an API answer: the JSON body on success, a conflict on 409, otherwise an error with the server's message. */
-export const readAiAdmin = async <T>(response: { ok: boolean; status: number; json(): Promise<T> }, fallback: string): Promise<T> => {
-  if (response.ok) return response.json();
+const failureOf = async (response: { status: number; json(): Promise<unknown> }, fallback: string): Promise<Error> => {
   const body: unknown = await response.json().catch(() => null);
   const code = field(body, "code");
   const message = field(body, "message");
@@ -36,13 +34,27 @@ export const readAiAdmin = async <T>(response: { ok: boolean; status: number; js
     const name = field(by, "name");
     const id = field(by, "id");
     const changedAt = field(body, "changedAt");
-    throw new AiAdminConflict(
+    return new AiAdminConflict(
       field(body, "current"),
       typeof name === "string" && typeof id === "string" ? { id, name } : null,
       typeof changedAt === "string" ? changedAt : "",
     );
   }
-  throw new AiAdminError(typeof message === "string" ? message : fallback, typeof code === "string" ? code : undefined);
+  return new AiAdminError(typeof message === "string" ? message : fallback, typeof code === "string" ? code : undefined);
+};
+
+/** Reads an API answer: the JSON body on success, a conflict on 409, otherwise an error with the server's message. */
+export const readAiAdmin = async <T>(response: { ok: boolean; status: number; json(): Promise<T> }, fallback: string): Promise<T> => {
+  if (response.ok) return response.json();
+  throw await failureOf(response, fallback);
+};
+
+/** Like `readAiAdmin` for answers whose body the caller does not need. */
+export const assertAiAdmin = async (
+  response: { ok: boolean; status: number; json(): Promise<unknown> },
+  fallback: string,
+): Promise<void> => {
+  if (!response.ok) throw await failureOf(response, fallback);
 };
 
 /** The conflict with its stored entry checked against the API contract, or `null` for any other failure. */

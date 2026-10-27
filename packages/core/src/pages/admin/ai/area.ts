@@ -15,6 +15,8 @@ export type AiAreaQuery = {
   pane?: "conn";
   /** Class or tool in `classes`. */
   slot?: AiModelSlot;
+  /** In `budgets`: a rule's scope, `new`, `brake` or `people`. */
+  rule?: string;
 };
 
 export const AI_AREA_PATH = "/admin/ai";
@@ -37,16 +39,17 @@ export const parseAiAreaQuery = (query: Record<string, string | undefined>): AiA
       ...(query.p && query.pane === "conn" ? { pane: "conn" } : query.p && query.m ? { m: query.m } : {}),
     };
   if (sec === "classes") return { sec, ...(slot ? { slot } : {}) };
+  if (sec === "budgets") return { sec, ...(query.rule ? { rule: query.rule } : {}) };
   return { sec };
 };
 
 /** Sections whose content fills the second and third column together. */
 export const isWideSection = (section: AiAreaSection | undefined): boolean =>
-  section !== undefined && section !== "classes" && section !== "providers";
+  section !== undefined && section !== "classes" && section !== "providers" && section !== "budgets";
 
 /** The deepest level the selection reaches; the workspace shows it and as many levels before it as fit. */
 export const aiAreaLevel = (query: AiAreaQuery): "area" | "section" | "detail" => {
-  if (query.m || query.pane || query.slot) return "detail";
+  if (query.m || query.pane || query.slot || query.rule) return "detail";
   if (query.sec && (query.sec !== "providers" || query.p)) return "section";
   return "area";
 };

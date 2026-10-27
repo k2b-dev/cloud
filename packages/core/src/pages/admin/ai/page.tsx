@@ -101,20 +101,33 @@ export default ssr<AuthContext>(async (c) => {
   const usageQuery = section === "usage" ? AiUsageQuerySchema.safeParse(c.req.query()) : null;
   if (usageQuery && !usageQuery.success) return c.text("Invalid AI usage filters", 400);
   const usageReport = usageQuery?.success ? await aiUsage.report(usageQuery.data.range, usageQuery.data) : null;
+  // Budgets: the rule configuration always; the per-person report only when that row is open.
+  const budgetConfig = section === "budgets" ? await quotaAdminConfig() : null;
+  const quotaModels = (index?.models ?? []).map((m) => ({
+    id: m.id,
+    label: m.label,
+    pricing: m.pricing ?? undefined,
+    enabled: m.enabled,
+    capabilities: m.kind === "transcription" ? ["transcription"] : [...m.capabilities],
+  }));
+  const peopleReport = section === "budgets" && query.rule === "people" ? await quotaReport({ ...c.req.query(), view: "users" }) : null;
+  const personalizationTokens =
+    section === "budgets" ? await coreSettings.get<number>("ai.memory_learning_monthly_token_budget").catch(() => null) : null;
   const budgets =
-    section === "budgets" && index
+    budgetConfig && index
       ? {
-          config: await quotaAdminConfig(),
-          report: await quotaReport(c.req.query()),
-          models: index.models.map((m) => ({
-            id: m.id,
-            label: m.label,
-            pricing: m.pricing ?? undefined,
-            enabled: m.enabled,
-            capabilities: m.kind === "transcription" ? ["transcription"] : [...m.capabilities],
-          })),
+          config: budgetConfig,
+          personalizationTokens,
+          models: index.models
+            .filter((m) => m.kind === "chat" && m.enabled)
+            .map((m) => ({
+              id: m.id,
+              label: m.label,
+              priced: Boolean(m.pricing && (m.pricing.inputPerMillion > 0 || m.pricing.outputPerMillion > 0)),
+            })),
+          people: peopleReport ? <AiQuotaAdmin config={budgetConfig} models={quotaModels} report={peopleReport} /> : undefined,
         }
-      : null;
+      : undefined;
 
   const sectionTitle = section
     ? {
@@ -187,7 +200,6 @@ export default ssr<AuthContext>(async (c) => {
         />
       );
     if (section === "usage" && usageReport) return <AiUsageAdminPanel report={usageReport} />;
-    if (section === "budgets" && budgets) return <AiQuotaAdmin config={budgets.config} models={budgets.models} report={budgets.report} />;
     return failure;
   };
 
@@ -211,6 +223,7 @@ export default ssr<AuthContext>(async (c) => {
         appNames={Object.fromEntries(runtime.apps.map((app) => [app.id, app.name]))}
         retryHref={c.req.url}
         wide={isWideSection(section) ? wideContent() : undefined}
+        budgets={budgets}
       />
     </AdminLayout>
   );

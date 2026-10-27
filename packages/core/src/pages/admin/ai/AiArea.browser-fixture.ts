@@ -211,6 +211,46 @@ export async function aiAreaBrowserFixture() {
             appNames: { core: "Cloud", mail: "Mail", workflows: "Workflows", assistant: "Assistent" },
             retryHref: c.req.url,
             noPermission: state === "noperm",
+            budgets:
+              query.sec === "budgets"
+                ? {
+                    config: {
+                      enabled: true,
+                      revision: 4,
+                      unit: "EUR",
+                      background: { enabled: true, warnAt: 40, stopAt: 60 },
+                      rules:
+                        state === "empty"
+                          ? []
+                          : [
+                              {
+                                scope: "*",
+                                hours: 168,
+                                anchor: "2026-10-26T00:00:00.000Z",
+                                grants: [{ principal: { type: "authenticated" as const }, limit: 10 }],
+                                peopleAtLimit: 0,
+                              },
+                              {
+                                scope: "claude",
+                                hours: 168,
+                                anchor: "2026-10-26T00:00:00.000Z",
+                                grants: [
+                                  {
+                                    principal: { type: "group" as const, groupId: "33333333-3333-4333-8333-333333333333" },
+                                    displayName: "Gruppe Entwicklung",
+                                    limit: 30,
+                                  },
+                                ],
+                                peopleAtLimit: 4,
+                              },
+                            ],
+                    },
+                    personalizationTokens: 100_000,
+                    models: catalog.models
+                      .filter((entry) => entry.kind === "chat" && entry.enabled)
+                      .map((entry) => ({ id: entry.id, label: entry.label, priced: Boolean(entry.pricing) })),
+                  }
+                : undefined,
           });
         },
       }),
@@ -307,6 +347,9 @@ export async function aiAreaBrowserFixture() {
         const path = resolve(root, `.${url.pathname}`);
         return path.startsWith(`${publicDir}/`) ? new Response(Bun.file(path)) : new Response(null, { status: 404 });
       }
+      if (url.pathname === "/api/admin/core/ai-quotas/background")
+        return Response.json({ used: 12.4, reserved: 0, unknown: 0, stoppedAt: null });
+      if (url.pathname.startsWith("/api/admin/core/ai-quotas")) return Response.json({ enabled: true, revision: 5, rules: [] });
       if (url.pathname.startsWith("/api/admin/core/ai")) return api(request, url);
       if (url.pathname.startsWith("/api/")) return Response.json({ message: "Synthetic fixture: service unavailable" }, { status: 503 });
       return pages.fetch(request);

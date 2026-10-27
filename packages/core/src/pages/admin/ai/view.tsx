@@ -7,10 +7,13 @@ import {
   type AiModelUsage,
   type AiModelVariant,
   type AiProvider,
+  type AiQuotaConfig,
 } from "@k2b/cloud/shared";
-import { AppWorkspace, NoticeCard, Placeholder, StatusBadge } from "@k2b/ui";
+import { AppWorkspace, ButtonLink, NoticeCard, Placeholder, StatusBadge } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import AiAreaActions from "./AiAreaActions.island";
+import AiBudgetDetail from "./AiBudgetDetail.island";
+import AiBudgetToggle from "./AiBudgetToggle.island";
 import AiClassDetail from "./AiClassDetail.island";
 import AiConnectionDetail from "./AiConnectionDetail.island";
 import AiDetailActions from "./AiDetailActions.island";
@@ -279,6 +282,99 @@ function ClassesColumn(props: { t: AiAreaMessages; query: AiAreaQuery; overview:
   );
 }
 
+/** Column 2 for budgets: the rules, the background brake and personalization, and use per person. */
+function BudgetsColumn(props: { t: AiAreaMessages; locale: string; query: AiAreaQuery; budgets: NonNullable<AiAreaViewProps["budgets"]> }) {
+  const t = props.t;
+  const unit = props.budgets.config.unit ?? "EUR";
+  const money = (value: number | null) =>
+    value === null
+      ? t.unlimited
+      : new Intl.NumberFormat(
+          props.locale,
+          unit.length === 3 ? { style: "currency", currency: unit } : { maximumFractionDigits: 2 },
+        ).format(value) + (unit.length === 3 ? "" : ` ${unit}`);
+  const period = (hours: number) =>
+    hours === 24 ? t.perDay : hours === 168 ? t.perWeek : hours === 720 ? t.perMonth : t.perHours({ p: hours });
+  const scopeName = (scope: string) =>
+    scope === "*" ? t.allModels : (props.budgets.models.find((model) => model.id === scope)?.label ?? scope);
+  const grantName = (grant: AiQuotaConfig["rules"][number]["grants"][number]) =>
+    grant.principal.type === "authenticated" ? t.accessAll : (grant.displayName ?? grant.principal.type);
+  const background = props.budgets.config.background;
+  return (
+    <>
+      <AppWorkspace.SidebarSection
+        title={t.rules}
+        actions={
+          <ButtonLink variant="ghost" size="sm" href={aiAreaHref({ sec: "budgets", rule: "new" })}>
+            <i class="ti ti-plus" aria-hidden="true" />
+            {t.addRule}
+          </ButtonLink>
+        }
+      >
+        {props.budgets.config.rules.length === 0 ? (
+          <Placeholder icon="ti ti-gauge" title={t.noRules} description={t.noRulesSub} variant="compact" />
+        ) : (
+          props.budgets.config.rules.map((rule) => (
+            <AppWorkspace.SidebarItem
+              variant="object"
+              href={aiAreaHref({ sec: "budgets", rule: rule.scope })}
+              active={props.query.rule === rule.scope}
+              description={[
+                rule.grants[0]
+                  ? t.grantSummary({ who: grantName(rule.grants[0]), limit: money(rule.grants[0].limit), period: period(rule.hours) })
+                  : period(rule.hours),
+                rule.grants.length > 1 ? t.moreGrants({ p: rule.grants.length - 1 }) : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              meta={
+                (rule.peopleAtLimit ?? 0) > 0 ? (
+                  <StatusBadge tone="warning" variant="chip" icon={null} label={t.atLimitShort({ p: rule.peopleAtLimit ?? 0 })} />
+                ) : undefined
+              }
+            >
+              {scopeName(rule.scope)}
+            </AppWorkspace.SidebarItem>
+          ))
+        )}
+      </AppWorkspace.SidebarSection>
+      <AppWorkspace.SidebarSection title={t.jobs}>
+        <AppWorkspace.SidebarItem
+          variant="object"
+          href={aiAreaHref({ sec: "budgets", rule: "brake" })}
+          active={props.query.rule === "brake"}
+          description={background?.enabled ? t.brakeOn({ warn: money(background.warnAt), stop: money(background.stopAt) }) : t.brakeOff}
+        >
+          {t.brake}
+        </AppWorkspace.SidebarItem>
+        <AppWorkspace.SidebarItem
+          variant="object"
+          href={aiAreaHref({ sec: "jobs" })}
+          description={
+            props.budgets.personalizationTokens
+              ? t.persTokens({ p: props.budgets.personalizationTokens.toLocaleString(props.locale) })
+              : t.editInJobs
+          }
+        >
+          {t.persBudget}
+        </AppWorkspace.SidebarItem>
+      </AppWorkspace.SidebarSection>
+      <AppWorkspace.SidebarSection>
+        <AppWorkspace.SidebarItem
+          variant="object"
+          href={aiAreaHref({ sec: "budgets", rule: "people" })}
+          active={props.query.rule === "people"}
+          icon="ti ti-users"
+          description={t.peopleUsageSub}
+        >
+          {t.peopleUsage}
+        </AppWorkspace.SidebarItem>
+      </AppWorkspace.SidebarSection>
+      <p class="px-4 pb-3 text-xs text-(--k2b-text-muted)">{t.movedBudgets}</p>
+    </>
+  );
+}
+
 export type AiAreaViewProps = {
   t: AiAreaMessages;
   locale: string;
@@ -299,7 +395,17 @@ export type AiAreaViewProps = {
   wide?: JSX.Element;
   /** The person is no administrator: a note instead of the content. */
   noPermission?: boolean;
+  /** Budgets: the rules with people at their limit, the personalization budget, the models a rule can cover. */
+  budgets?: {
+    config: BudgetConfig;
+    personalizationTokens: number | null;
+    models: { id: string; label: string; priced: boolean }[];
+    /** Use per person, the former report, when that row is open. */
+    people?: JSX.Element;
+  };
 };
+
+type BudgetConfig = Omit<AiQuotaConfig, "rules"> & { rules: (AiQuotaConfig["rules"][number] & { peopleAtLimit?: number })[] };
 
 type AssignmentDetail = {
   slot: AiModelSlot;
@@ -340,10 +446,10 @@ export function AiAreaView(props: AiAreaViewProps) {
       title={t.loadFailTitle}
       description={t.loadFailSub}
       action={
-        <a class="k2b-button" data-variant="secondary" href={props.retryHref}>
+        <ButtonLink variant="secondary" size="sm" href={props.retryHref}>
           <i class="ti ti-refresh" aria-hidden="true" />
           {t.retry}
-        </a>
+        </ButtonLink>
       }
     />
   );
@@ -364,6 +470,17 @@ export function AiAreaView(props: AiAreaViewProps) {
           budgetRules={usage?.budgetRules ?? []}
         />
       );
+    if (query.sec === "budgets" && props.budgets && query.rule) {
+      if (query.rule === "people") return props.budgets.people ?? failure;
+      return (
+        <AiBudgetDetail
+          config={props.budgets.config}
+          scope={query.rule === "new" || query.rule === "brake" ? null : query.rule}
+          brake={query.rule === "brake"}
+          models={props.budgets.models}
+        />
+      );
+    }
     if (query.sec === "classes" && query.slot) {
       const detail = assignmentDetails?.find((entry) => entry.slot === query.slot);
       if (!detail) return failure;
@@ -402,6 +519,7 @@ export function AiAreaView(props: AiAreaViewProps) {
         />
       );
     if (query.sec === "providers" && query.p) return <Placeholder state="error" icon="ti ti-plug-off" title={t.providerMissing} />;
+    if (query.sec === "budgets" && props.budgets) return <BudgetsColumn t={t} locale={locale} query={query} budgets={props.budgets} />;
     if (query.sec === "classes") return <ClassesColumn t={t} query={query} overview={overview} index={index} />;
     if (overview.providers.length === 0)
       return (
@@ -432,7 +550,11 @@ export function AiAreaView(props: AiAreaViewProps) {
       />
     ) : undefined;
 
+  const budgetActions = (): JSX.Element =>
+    query.sec === "budgets" && props.budgets ? <AiBudgetToggle config={props.budgets.config} /> : undefined;
+
   const secondDescription = (): string | undefined => {
+    if (query.sec === "budgets" && props.budgets) return t.unitLine({ p: props.budgets.config.unit ?? "EUR" });
     if (query.sec === "providers" && provider) return aiProviderTypeLabel(t, provider.type);
     if (query.sec === "classes" && overview)
       return t.recsSub({ p: AI_MODEL_CLASSES.filter((modelClass) => overview?.assignments[modelClass]?.variantId).length });
@@ -451,7 +573,13 @@ export function AiAreaView(props: AiAreaViewProps) {
     if (model) return model.label;
     if (query.pane === "conn") return t.connection;
     if (query.slot) return aiSlotLabel(t, query.slot);
-    return query.sec === "classes" ? t.recs : t.g_models;
+    if (query.sec === "budgets" && query.rule) {
+      if (query.rule === "new") return t.newRule;
+      if (query.rule === "brake") return t.brake;
+      if (query.rule === "people") return t.peopleUsage;
+      return query.rule === "*" ? t.allModels : (props.budgets?.models.find((entry) => entry.id === query.rule)?.label ?? query.rule);
+    }
+    return query.sec === "classes" ? t.recs : query.sec === "budgets" ? t.budgets : t.g_models;
   };
 
   if (props.noPermission)
@@ -464,9 +592,9 @@ export function AiAreaView(props: AiAreaViewProps) {
             title={t.nopermTitle}
             description={t.nopermSub}
             action={
-              <a class="k2b-button" data-variant="secondary" href="/">
+              <ButtonLink variant="secondary" size="sm" href="/">
                 {t.toStart}
-              </a>
+              </ButtonLink>
             }
           />
         </AppWorkspace.MainPane>
@@ -499,7 +627,7 @@ export function AiAreaView(props: AiAreaViewProps) {
             defaultSize={320}
             minSize={280}
             maxSize={480}
-            actions={secondActions()}
+            actions={secondActions() ?? budgetActions()}
           >
             {secondColumn()}
           </AppWorkspace.MainPane>
@@ -508,9 +636,9 @@ export function AiAreaView(props: AiAreaViewProps) {
             label={detailTitle()}
             description={detailDescription()}
             actions={
-              model || (query.pane === "conn" && providerDetail) ? (
+              model || (query.pane === "conn" && providerDetail) || (query.sec === "budgets" && query.rule && query.rule !== "people") ? (
                 <div class="hidden md:block">
-                  <AiDetailActions enabled={Boolean(model)} test />
+                  <AiDetailActions enabled={Boolean(model)} test={query.sec === "providers"} />
                 </div>
               ) : undefined
             }

@@ -3,6 +3,8 @@ import { fromJSON } from "seroval";
 import type { Component } from "solid-js";
 import { createComponent, render } from "solid-js/web";
 import AiAreaActions from "./AiAreaActions.island.tsx";
+import AiBudgetDetail from "./AiBudgetDetail.island.tsx";
+import AiBudgetToggle from "./AiBudgetToggle.island.tsx";
 import AiClassDetail from "./AiClassDetail.island.tsx";
 import AiConnectionDetail from "./AiConnectionDetail.island.tsx";
 import AiDetailActions from "./AiDetailActions.island.tsx";
@@ -12,6 +14,8 @@ import AiProviderNotice from "./AiProviderNotice.island.tsx";
 /** Mounts every AI area island the way @k2b/ssr does: the server-rendered wrapper carries its props. */
 const islands: Record<string, Component<never>> = {
   "AiAreaActions.island.tsx": AiAreaActions as Component<never>,
+  "AiBudgetDetail.island.tsx": AiBudgetDetail as Component<never>,
+  "AiBudgetToggle.island.tsx": AiBudgetToggle as Component<never>,
   "AiClassDetail.island.tsx": AiClassDetail as Component<never>,
   "AiConnectionDetail.island.tsx": AiConnectionDetail as Component<never>,
   "AiDetailActions.island.tsx": AiDetailActions as Component<never>,
