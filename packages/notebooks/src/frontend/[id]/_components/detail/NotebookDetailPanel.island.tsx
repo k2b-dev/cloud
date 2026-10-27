@@ -829,11 +829,6 @@ export default function NotebookDetailPanel(props: Props) {
                   onToggleRich={toggleRichMode}
                   fullWidth={props.fullWidth}
                 />
-                <Dropdown.Root items={moreItems()} align="end" label={t().moreActions} phone="sheet">
-                  <Dropdown.Trigger iconOnly size="sm" variant="ghost" label={t().moreActions}>
-                    <i class="ti ti-dots" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
               </nav>
               {/* Only a connection that will come back promises to resend; an ended session shows the editor's
                   own recovery bar instead, which this band must not contradict. */}

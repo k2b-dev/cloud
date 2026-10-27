@@ -219,28 +219,11 @@ export default function ChatInfoPanel(props: {
           </IconButton>
         }
         primaryActions={
-          manager() || commands().length > 0 ? (
-            <>
-              <Show when={manager()}>
-                <Button size="sm" variant="subtle" class="chat-info__main" onClick={props.onAddPeople}>
-                  <i class="ti ti-user-plus" aria-hidden="true" />
-                  {t().addPeople}
-                </Button>
-              </Show>
-              <Show when={commands().length > 0}>
-                <Dropdown.Root items={commands()} align="end" label={t().chatActions({ title: props.conversation.title })}>
-                  <Dropdown.Trigger
-                    iconOnly
-                    label={t().chatActions({ title: props.conversation.title })}
-                    tooltip={t().chatActions({ title: props.conversation.title })}
-                    size="sm"
-                    variant="ghost"
-                  >
-                    <i class="ti ti-dots" aria-hidden="true" />
-                  </Dropdown.Trigger>
-                </Dropdown.Root>
-              </Show>
-            </>
+          manager() ? (
+            <Button size="sm" variant="subtle" class="chat-info__main" onClick={props.onAddPeople}>
+              <i class="ti ti-user-plus" aria-hidden="true" />
+              {t().addPeople}
+            </Button>
           ) : undefined
         }
       />
