@@ -598,10 +598,13 @@ status and `false` only when it is absent. Repeated release preserves the first
 release time. Release does not cancel active inference: bounded runtime recovery,
 deadlines and central accounting continue normally. Keep requests needed by a
 replacement observer unreleased, including recoverable lease failures or shutdown.
-Unreleased results remain available for dormant recovery. Released terminal
-results are pruned in bounded batches after both release and completion are at
-least 24 hours old; durable domain state must prevent replaying a settled key
-after pruning.
+Unreleased results remain available indefinitely for dormant recovery. Released
+terminal results are pruned in batches of at most 100 after both release and
+completion are more than 24 hours old. Reusing a settled key after pruning can
+start another inference and charge again: durable domain state must prevent
+resubmitting settled requests. When adopting this lifecycle, also release known
+already settled requests using their original keys and usage subjects. Preserve
+unknown or pending results for recovery.
 
 When an owner is deleted, fence future task creation and recovery, then call
 `deleteApplicationAiTasks({ appId, scopeId, sourceId? }, db)` in
