@@ -6,6 +6,8 @@ export const mailComposerMessages = i18n.define({
     en: {
       senderNotVerified: "Not yet enabled",
       senderNoWrite: "No write access",
+      senderPreviewLoading: "Checking sender details…",
+      senderPreviewUnknown: "Sender details could not be checked.",
       noSenders: "No sender addresses available.",
       senderMembers: ({ count }: { count: number }) => `${count} ${count === 1 ? "member can" : "members can"} read this mailbox.`,
       senderPublic: "This mailbox is publicly readable.",
@@ -294,6 +296,8 @@ export const mailComposerMessages = i18n.define({
     de: {
       senderNotVerified: "Noch nicht freigeschaltet",
       senderNoWrite: "Kein Schreibrecht",
+      senderPreviewLoading: "Die Absenderdetails werden geprüft…",
+      senderPreviewUnknown: "Die Absenderdetails konnten nicht geprüft werden.",
       noSenders: "Keine Absenderadressen verfügbar.",
       senderMembers: ({ count }: { count: number }) =>
         `${count} ${count === 1 ? "Mitglied kann" : "Mitglieder können"} dieses Postfach lesen.`,

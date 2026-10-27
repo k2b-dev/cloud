@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from "bun:test";
 import { UserSchema } from "@k2b/cloud/contracts";
-import { sql } from "bun";
+import type { sql } from "bun";
 import type { MailRequestContext } from "./auth";
 
 // The isolated child keeps service mocks out of every other Mail test file.
@@ -36,6 +36,7 @@ if (process.env.MAIL_SENDER_CHOICES_CHILD !== "1") {
   });
   const context: MailRequestContext = { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } };
   let allowed = true;
+  let scope: "mailbox" | "assigned" = "mailbox";
   let personalTemplateId = "personal";
   const audience = { memberCount: 8, guestCount: 1, serviceAccountCount: 1, public: false, authenticated: false };
   const reads: string[] = [];
@@ -46,7 +47,7 @@ if (process.env.MAIL_SENDER_CHOICES_CHILD !== "1") {
   mock.module("@k2b/cloud/server", () => ({ summarizeAccessAudience: async () => audience }));
   mock.module("./access", () => ({
     requireMailboxAccess: async () =>
-      allowed ? { ok: true, data: {} } : { ok: false, error: { code: "FORBIDDEN", message: "Denied", status: 403 } },
+      allowed ? { ok: true, data: { scope } } : { ok: false, error: { code: "FORBIDDEN", message: "Denied", status: 403 } },
   }));
   mock.module("./sender-identities", () => ({
     listSenderIdentities: async () => {
@@ -56,7 +57,8 @@ if (process.env.MAIL_SENDER_CHOICES_CHILD !== "1") {
         data: [
           {
             id: "sender",
-            label: "Support",
+            label: "Internal label",
+            displayName: "Support",
             fromAddress: "support@example.test",
             status: "verified",
             replyTo: "replies@example.test",
@@ -67,6 +69,7 @@ if (process.env.MAIL_SENDER_CHOICES_CHILD !== "1") {
           {
             id: "unverified",
             label: "Pending",
+            displayName: "Pending",
             fromAddress: "pending@example.test",
             status: "unverified",
             replyTo: null,
@@ -95,6 +98,7 @@ if (process.env.MAIL_SENDER_CHOICES_CHILD !== "1") {
   beforeEach(() => {
     reads.length = 0;
     allowed = true;
+    scope = "mailbox";
     personalTemplateId = "personal";
   });
 
@@ -122,6 +126,17 @@ if (process.env.MAIL_SENDER_CHOICES_CHILD !== "1") {
     });
     expect(JSON.stringify(result)).not.toContain("bodyTemplate");
     expect(reads.filter((read) => /INSERT|UPDATE|DELETE/.test(read))).toEqual([]);
+  });
+  test("assigned conversation writers receive sender defaults without mailbox audience reads", async () => {
+    scope = "assigned";
+    expect(await listSenderChoices(context, "mailbox", db)).toMatchObject({
+      ok: true,
+      data: [
+        { audience: null, assignedReaders: null, displayName: "Support" },
+        { audience: null, assignedReaders: null },
+      ],
+    });
+    expect(reads).toEqual(["identities"]);
   });
   test("an unavailable personal signature falls back to the same shared default as compose", async () => {
     personalTemplateId = "archived";

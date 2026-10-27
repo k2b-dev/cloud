@@ -27,7 +27,19 @@ const info: RootInfo = {
   stagingBytes: 0,
 };
 afterEach(() => mock.restore());
-function fixture(sourceWritable = true) {
+function fixture(
+  sourceWritable = true,
+  options: {
+    unreadable?: boolean;
+    missing?: boolean;
+    unbound?: boolean;
+    autoCreate?: boolean;
+    cloudEnabled?: boolean;
+    missingCloud?: boolean;
+    missingFreeipa?: boolean;
+  } = {},
+) {
+  spyOn(operations, "retiredPath").mockResolvedValue(false);
   spyOn(operations, "pending").mockResolvedValue(null);
   const area = { enabled: true, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" };
   const config = {
@@ -36,18 +48,27 @@ function fixture(sourceWritable = true) {
     token: "test",
     tokenConfigured: true,
     unreadable: false,
-    cloud: { ...area, enabled: false, root: "cloud", autoCreate: true, autoArchive: true },
+    cloud: {
+      ...area,
+      enabled: options.cloudEnabled ?? Boolean(options.autoCreate),
+      root: "cloud",
+      autoCreate: options.autoCreate ?? true,
+      autoArchive: true,
+    },
     freeipa: area,
     collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
   };
   const requests: string[] = [];
+  const aclPaths: string[] = [];
   const transport: typeof fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
       requests.push(`${init?.method ?? "GET"} ${url.pathname}`);
       if (url.pathname === "/v1/roots/freeipa") return Response.json(info);
+      if (url.pathname === "/v1/roots/cloud") return Response.json({ ...info, name: "cloud" });
       const path = url.searchParams.get("path") ?? "";
       if (url.pathname.endsWith("/acl")) {
+        aclPaths.push(path);
         const readonly = path.endsWith("/readonly") || (!sourceWritable && path === "users/alice");
         return Response.json({
           entries: [
@@ -57,16 +78,23 @@ function fixture(sourceWritable = true) {
           ],
         });
       }
-      if (url.pathname.endsWith("/stat"))
+      if (url.pathname.endsWith("/stat")) {
+        if (
+          (options.missing && path.endsWith("/gone.txt")) ||
+          ((options.autoCreate || options.missingCloud) && path === "groups/newgroup") ||
+          (options.missingFreeipa && path === "groups/team")
+        )
+          return Response.json({ error: "not_found" }, { status: 404 });
         return Response.json({
           path,
-          directory: !path.endsWith("/item.txt"),
+          directory: !path.endsWith(".txt"),
           size: 0,
           modified: "2026-10-01T12:00:00Z",
-          mode: 0o700,
-          uid: 1001,
-          gid: 2001,
+          mode: path.endsWith(".txt") ? 0o600 : 0o700,
+          uid: options.unreadable && path.endsWith("/private.txt") ? 9999 : 1001,
+          gid: path === "groups/team" ? 3001 : 2001,
         });
+      }
       throw new Error(`Unexpected Filegate request: ${url}`);
     },
     { preconnect: fetch.preconnect },
@@ -87,9 +115,20 @@ function fixture(sourceWritable = true) {
         },
         availability: { localLinuxEnabled: true, freeipaEnabled: true },
       }),
-      groups: async () => ({ items: [], nextCursor: null }),
+      groups: async () => ({
+        items: [
+          { id: "team", name: "team", provider: "ipa" as const, gidNumber: 3001, personal: false },
+          { id: "newgroup", name: "newgroup", provider: "local" as const, gidNumber: 3002, personal: false },
+        ],
+        nextCursor: null,
+      }),
     },
-    bindings: { ...bindings, find: async (candidate) => [{ ...candidate, id: "binding", lifecycle: "active" as const }], claim },
+    bindings: {
+      ...bindings,
+      find: async (candidate) =>
+        options.unbound && candidate.kind === "groups" ? [] : [{ ...candidate, id: "binding", lifecycle: "active" as const }],
+      claim,
+    },
     displayNames: async (entries) => entries.map((entry) => ({ ...entry, displayName: "Alice" })),
     readConfiguration: async () => config,
     writeConfiguration: async () => {},
@@ -99,7 +138,7 @@ function fixture(sourceWritable = true) {
     transfer: transport,
     connect: (configuration) => connectFilegate(configuration, transport),
   });
-  return { service, requests, claim };
+  return { service, requests, aclPaths, claim };
 }
 test("dry run reports versioning and writable/read-only targets without any writes", async () => {
   const f = fixture();
@@ -120,6 +159,7 @@ test("dry run reports versioning and writable/read-only targets without any writ
     { canWrite: false, access: null },
     { canWrite: false, folder: "trash", access: null },
   ]);
+  expect(f.aclPaths.filter((path) => path === "users/alice/target")).toHaveLength(2);
   expect(f.claim).not.toHaveBeenCalled();
   expect(f.requests.every((request) => request.startsWith("GET "))).toBe(true);
 });
@@ -155,4 +195,65 @@ test("a foreign source is rejected before Filegate reads", async () => {
     }),
   ).rejects.toMatchObject({ status: 404 });
   expect(f.requests).toEqual([]);
+});
+
+test("an unreadable 0600 leaf does not stop previews for the readable selection", async () => {
+  const f = fixture(true, { unreadable: true });
+  expect(
+    await f.service.destinationPreviews(testCall(testActor), {
+      baseId,
+      paths: ["private.txt", "item.txt"],
+      copyOnly: false,
+      targets: [{ baseId, folder: "target" }],
+    }),
+  ).toMatchObject([{ canWrite: true, sourceCount: 2, sourceMovableCount: 1, copy: false }]);
+});
+test("a deleted source is counted without stopping destination reads", async () => {
+  const f = fixture(true, { missing: true });
+  expect(
+    await f.service.destinationPreviews(testCall(testActor), {
+      baseId,
+      paths: ["gone.txt", "item.txt"],
+      copyOnly: false,
+      targets: [{ baseId, folder: "target" }],
+    }),
+  ).toMatchObject([{ canWrite: true, sourceCount: 2, sourceMovableCount: 1, copy: false }]);
+});
+test("first-use FreeIPA and auto-created Cloud targets stay unknown without claiming or provisioning", async () => {
+  const f = fixture(true, { unbound: true, autoCreate: true });
+  expect(
+    await f.service.destinationPreviews(testCall(testActor), {
+      baseId,
+      paths: ["item.txt"],
+      copyOnly: false,
+      targets: [
+        { baseId: "freeipa:groups:team", folder: "" },
+        { baseId: "cloud:groups:newgroup", folder: "" },
+      ],
+    }),
+  ).toMatchObject([
+    { canWrite: null, access: null },
+    { canWrite: null, access: null },
+  ]);
+  expect(f.claim).not.toHaveBeenCalled();
+  expect(f.requests.every((request) => request.startsWith("GET "))).toBe(true);
+});
+
+test("missing FreeIPA, disabled auto-creation, and unbound Cloud targets stay unavailable", async () => {
+  for (const input of [
+    { options: { missingFreeipa: true }, target: "freeipa:groups:team" },
+    { options: { missingCloud: true, cloudEnabled: true, autoCreate: false }, target: "cloud:groups:newgroup" },
+    { options: { unbound: true, cloudEnabled: true }, target: "cloud:groups:newgroup" },
+  ]) {
+    const f = fixture(true, input.options);
+    expect(
+      await f.service.destinationPreviews(testCall(testActor), {
+        baseId,
+        paths: ["item.txt"],
+        copyOnly: false,
+        targets: [{ baseId: input.target, folder: "" }],
+      }),
+    ).toMatchObject([{ canWrite: false, access: null }]);
+    expect(f.claim).not.toHaveBeenCalled();
+  }
 });

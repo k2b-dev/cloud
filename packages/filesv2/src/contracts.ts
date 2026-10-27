@@ -138,7 +138,8 @@ export type DestinationAccess = {
 export type DestinationPreview = {
   baseId: string;
   folder: string;
-  canWrite: boolean;
+  /** Null when a read-only preview cannot bind or provision this base. */
+  canWrite: boolean | null;
   sourceCount: number;
   sourceMovableCount: number;
   copy: boolean;

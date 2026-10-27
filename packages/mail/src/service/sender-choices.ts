@@ -17,14 +17,19 @@ export const listSenderChoices = async (context: MailRequestContext, mailboxId: 
   if (!templates.ok) return templates;
   const defaults = await listComposeSignatureDefaults(context, mailboxId);
   if (!defaults.ok) return defaults;
-  const grants = await db<{ access_id: string }[]>`
-    SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid
-  `;
-  const audience = await summarizeAccessAudience({ accessIds: grants.map((row) => row.access_id), db });
-  const [assigned] = await db<{ exists: boolean }[]>`
-    SELECT EXISTS (SELECT 1 FROM mail.mailbox_assigned_access ma JOIN auth.access a ON a.id = ma.access_id
-      WHERE ma.mailbox_id = ${mailboxId}::uuid AND a.permission IN ('read', 'write', 'admin')) AS exists
-  `;
+  let audience: SenderChoice["audience"] = null;
+  let assignedReaders: SenderChoice["assignedReaders"] = null;
+  if (allowed.data.scope === "mailbox") {
+    const grants = await db<{ access_id: string }[]>`
+      SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid
+    `;
+    audience = await summarizeAccessAudience({ accessIds: grants.map((row) => row.access_id), db });
+    const [assigned] = await db<{ exists: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM mail.mailbox_assigned_access ma JOIN auth.access a ON a.id = ma.access_id
+        WHERE ma.mailbox_id = ${mailboxId}::uuid AND a.permission IN ('read', 'write', 'admin')) AS exists
+    `;
+    assignedReaders = assigned?.exists ?? false;
+  }
   return ok(
     identities.data.map((identity) => {
       const personal = defaults.data.find((entry) => entry.senderIdentityId === identity.id && entry.userId !== null);
@@ -34,6 +39,7 @@ export const listSenderChoices = async (context: MailRequestContext, mailboxId: 
       return {
         id: identity.id,
         label: identity.label,
+        displayName: identity.displayName,
         fromAddress: identity.fromAddress,
         status: identity.status,
         replyTo: identity.replyTo ?? identity.fromAddress,
@@ -41,7 +47,7 @@ export const listSenderChoices = async (context: MailRequestContext, mailboxId: 
         defaultBcc: identity.defaultBcc,
         signatureName: signature?.name ?? null,
         audience,
-        assignedReaders: assigned?.exists ?? false,
+        assignedReaders,
       };
     }),
   );

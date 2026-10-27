@@ -675,26 +675,41 @@ export const summarizeAccessAudiences = async (params: {
       SELECT r.resource, a.* FROM resources r
       CROSS JOIN LATERAL jsonb_array_elements_text(r.access_ids) ids(id)
       JOIN auth.access a ON a.id = ids.id::uuid AND a.permission IN ('read', 'write', 'admin')
-    ), groups(resource, id) AS (
-      SELECT resource, group_id FROM grants WHERE group_id IS NOT NULL
+    ), groups(resource, id, provider) AS (
+      SELECT a.resource, g.id, g.provider FROM grants a JOIN auth.groups g ON g.id = a.group_id
       UNION
-      SELECT g.resource, gg.child_group_id FROM auth.group_groups_v2 gg JOIN groups g ON g.id = gg.parent_group_id
+      SELECT g.resource, child.id, child.provider
+      FROM groups g
+      JOIN auth.group_groups_v2 gg ON gg.parent_group_id = g.id
+      JOIN auth.groups child ON child.id = gg.child_group_id AND child.provider = g.provider
     ), readers(resource, id) AS (
       SELECT resource, user_id FROM grants WHERE user_id IS NOT NULL
       UNION
       SELECT g.resource, ug.user_id FROM auth.user_groups_v2 ug JOIN groups g ON g.id = ug.group_id
     ), people AS (
-      SELECT r.resource, u.id, u.provider, u.profile FROM auth.users u JOIN readers r ON r.id = u.id
+      SELECT r.resource,
+        COUNT(*)::int AS member_count,
+        (COUNT(*) FILTER (WHERE u.provider = 'local' AND u.profile = 'guest'))::int AS guest_count
+      FROM readers r JOIN auth.users u ON u.id = r.id
       WHERE u.account_expires IS NULL OR u.account_expires > now()
+      GROUP BY r.resource
+    ), audiences AS (
+      SELECT g.resource,
+        (COUNT(DISTINCT sa.id) FILTER (WHERE sa.status = 'active'))::int AS service_account_count,
+        BOOL_OR(g.user_id IS NULL AND g.group_id IS NULL AND g.service_account_id IS NULL AND NOT g.authenticated_only) AS public,
+        BOOL_OR(g.authenticated_only) AS authenticated
+      FROM grants g LEFT JOIN auth.service_accounts sa ON sa.id = g.service_account_id
+      GROUP BY g.resource
     )
     SELECT r.resource,
-      (SELECT COUNT(*)::int FROM people p WHERE p.resource = r.resource) AS "memberCount",
-      (SELECT COUNT(*)::int FROM people p WHERE p.resource = r.resource AND provider = 'local' AND profile = 'guest') AS "guestCount",
-      (SELECT COUNT(DISTINCT sa.id)::int FROM grants g JOIN auth.service_accounts sa ON sa.id = g.service_account_id
-        WHERE g.resource = r.resource AND sa.status = 'active') AS "serviceAccountCount",
-      EXISTS (SELECT 1 FROM grants g WHERE g.resource = r.resource AND user_id IS NULL AND group_id IS NULL AND service_account_id IS NULL AND NOT authenticated_only) AS public,
-      EXISTS (SELECT 1 FROM grants g WHERE g.resource = r.resource AND authenticated_only) AS authenticated
+      COALESCE(p.member_count, 0) AS "memberCount",
+      COALESCE(p.guest_count, 0) AS "guestCount",
+      COALESCE(a.service_account_count, 0) AS "serviceAccountCount",
+      COALESCE(a.public, FALSE) AS public,
+      COALESCE(a.authenticated, FALSE) AS authenticated
     FROM resources r
+    LEFT JOIN people p ON p.resource = r.resource
+    LEFT JOIN audiences a ON a.resource = r.resource
   `;
   return Object.fromEntries(rows.map(({ resource, ...audience }) => [resource, audience]));
 };

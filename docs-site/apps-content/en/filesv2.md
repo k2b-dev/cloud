@@ -123,6 +123,13 @@ contexts require distinct Filegate roots. Deleting moves entries into the reserv
 `trash` folder with a restorable record; only administrators empty it.
 Renaming, duplicating and moving reuse Filegate transfers.
 
+The move and copy picker previews destination access, version history, and
+whether the selection moves or copies. An unreadable or missing source entry
+does not stop previews for the other entries. If the preview fails, or a storage
+location still needs its first binding or creation, the destination stays
+selectable with unknown details. The action checks access again and reports
+individual failures.
+
 The details panel shows a preview hero (images enlarge into a dialog),
 facts including the storage area, an action list, and, where the root keeps
 versions, a versions section with comments (stored as version metadata),

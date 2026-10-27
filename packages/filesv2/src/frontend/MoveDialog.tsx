@@ -106,7 +106,6 @@ export function DestinationPicker(props: {
   const [previews, setPreviews] = createSignal<DestinationPreview[]>([]);
   const [previewLoading, setPreviewLoading] = createSignal(false);
   const [previewError, setPreviewError] = createSignal(false);
-  const [previewDenied, setPreviewDenied] = createSignal(false);
   let previewRequest: AbortController | undefined;
   const key = (baseId: string, folder: string) => JSON.stringify([baseId, folder]);
   const targets = createMemo(() => {
@@ -128,7 +127,6 @@ export function DestinationPicker(props: {
     setPreviews([]);
     setPreviewLoading(true);
     setPreviewError(false);
-    setPreviewDenied(false);
     try {
       const items = new Map<string, DestinationPreview>();
       const destinations = targets();
@@ -149,11 +147,6 @@ export function DestinationPicker(props: {
             { init: { signal: pending.signal } },
           );
           if (!response.ok) {
-            const failure = ErrorSchema.safeParse(await response.clone().json());
-            if (failure.success && failure.data.code === "forbidden") {
-              if (!pending.signal.aborted) setPreviewDenied(true);
-              return;
-            }
             await apiFailure(response, t().unavailable);
           }
           for (const item of await response.json()) {
@@ -170,7 +163,7 @@ export function DestinationPicker(props: {
                   : null;
             items.set(targetKey, {
               ...item,
-              canWrite: item.canWrite && (previous?.canWrite ?? true),
+              canWrite: item.canWrite === false || previous?.canWrite === false ? false : item.canWrite,
               sourceCount,
               sourceMovableCount,
               copy: copyReason !== null,
@@ -194,6 +187,7 @@ export function DestinationPicker(props: {
   const previewFor = (baseId: string, folder: string) => previews().find((item) => item.baseId === baseId && item.folder === folder);
   const selectedPreview = () => (location().baseId ? previewFor(location().baseId!, location().folder) : undefined);
   const copy = () => selectedPreview()?.copy ?? Boolean(props.copyOnly || location().baseId !== props.sourceBaseId);
+  const missingPreview = () => (previewLoading() ? b().destinationPreviewLoading : b().destinationPreviewUnknown);
   const consequence = (preview: DestinationPreview) =>
     preview.copyReason === "boundary"
       ? b().destinationCopyBoundary
@@ -303,20 +297,20 @@ export function DestinationPicker(props: {
               value: key(target.baseId, target.folder),
               label: target.label,
               icon: "ti ti-folder",
-              description: preview ? consequence(preview) : undefined,
-              disabledReason: previewDenied() || (preview && !preview.canWrite) ? b().destinationNoWrite : undefined,
+              description: preview?.canWrite != null ? consequence(preview) : missingPreview(),
+              disabledReason: preview?.canWrite === false ? b().destinationNoWrite : undefined,
             };
           })}
-          status={loading() || previewLoading() ? "loading" : error() || previewError() ? "error" : "ready"}
+          status={loading() ? "loading" : error() ? "error" : "ready"}
           onRetry={() => {
             if (error()) void load();
             else void loadPreviews();
           }}
-          empty={previewDenied() ? b().destinationNoWrite : b().destinationNone}
+          empty={b().destinationNone}
           renderPreview={(item) => {
             const target = targets().find((target) => key(target.baseId, target.folder) === item.value);
             const preview = target && previewFor(target.baseId, target.folder);
-            if (!preview || item.disabledReason) return <p>{item.disabledReason}</p>;
+            if (!preview || preview.canWrite === null || item.disabledReason) return <p>{item.disabledReason ?? missingPreview()}</p>;
             return (
               <RichSelectFacts
                 facts={[
@@ -332,6 +326,14 @@ export function DestinationPicker(props: {
             );
           }}
         />
+        <Show when={previewError()}>
+          <InlineGuidance tone="warning">
+            {b().destinationPreviewUnknown}{" "}
+            <Button size="xs" variant="text" disabled={previewLoading()} onClick={() => void loadPreviews()}>
+              {b().retry}
+            </Button>
+          </InlineGuidance>
+        </Show>
         <Show when={!location().baseId}>
           <p class="text-xs text-dimmed">{b().destinationBrowse}</p>
           <div class="filesv2-picker">
@@ -382,9 +384,7 @@ export function DestinationPicker(props: {
         </Button>
         <Button
           variant="primary"
-          disabled={
-            invalid() || loading() || previewLoading() || previewError() || error() || previewDenied() || !selectedPreview()?.canWrite
-          }
+          disabled={invalid() || loading() || previewLoading() || error() || selectedPreview()?.canWrite === false}
           onClick={() => props.close({ baseId: location().baseId!, folder: location().folder, copy: copy() })}
         >
           <i class={copy() ? "ti ti-copy" : "ti ti-arrow-move-right"} aria-hidden="true" />

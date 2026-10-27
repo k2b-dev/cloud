@@ -451,6 +451,21 @@ suite("summarizeAccessAudience", () => {
       });
       await sql`UPDATE auth.users SET account_expires = '2000-01-01T00:00:00Z' WHERE id = ${fixture.userIds.group}::uuid`;
       expect(await summarizeAccessAudience({ accessIds: fixture.accessIds })).toMatchObject({ memberCount: 2, guestCount: 1 });
+      await sql`UPDATE auth.groups SET provider = 'ipa' WHERE id = ${fixture.groupIds.child}::uuid`;
+      expect(await summarizeAccessAudience({ accessIds: fixture.accessIds })).toMatchObject({ memberCount: 1, guestCount: 0 });
+      const [accountGrant] = await sql<{ id: string }[]>`
+        INSERT INTO auth.access (service_account_id, permission) VALUES (${fixture.serviceAccountId}::uuid, 'read') RETURNING id
+      `;
+      fixture.accessIds.push(accountGrant!.id);
+      expect(
+        await summarizeAccessAudiences({
+          accessIdsByResource: { all: [...fixture.accessIds, accountGrant!.id], empty: [], account: [accountGrant!.id] },
+        }),
+      ).toMatchObject({
+        all: { memberCount: 1, serviceAccountCount: 1 },
+        empty: { memberCount: 0, serviceAccountCount: 0 },
+        account: { memberCount: 0, serviceAccountCount: 1 },
+      });
       expect(await summarizeAccessAudience({ accessIds: [] })).toEqual({
         memberCount: 0,
         guestCount: 0,

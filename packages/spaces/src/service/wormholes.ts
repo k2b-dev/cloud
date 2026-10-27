@@ -12,6 +12,7 @@ import type {
   WormholeTransferPreview,
   WormholeTransferResult,
 } from "@/contracts";
+import { MAX_WORMHOLE_PREVIEW_DEPENDENCY_TITLES, MAX_WORMHOLE_PREVIEW_TARGETS } from "@/contracts";
 import { withShortId } from "../lib/short-id";
 import { buildSpacePrincipalCondition, getSpaceAudiences, getSpacePermission } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
@@ -75,7 +76,7 @@ const canAccess = async (spaceId: string, actor: WormholeActor, requiredLevel: P
 
 const denied = <T>(): MutationResult<T> => ({ ok: false, error: "Access denied", status: 403 });
 
-const listRows = async (sourceSpaceId: string): Promise<DbWormhole[]> =>
+const listRows = async (sourceSpaceId: string, limit: number | null = null): Promise<DbWormhole[]> =>
   sql<DbWormhole[]>`
     SELECT
       w.id,
@@ -95,6 +96,7 @@ const listRows = async (sourceSpaceId: string): Promise<DbWormhole[]> =>
     JOIN spaces.spaces target ON target.id = c.space_id
     WHERE w.source_space_id = ${sourceSpaceId}::uuid
     ORDER BY w.rank, w.id
+    LIMIT ${limit}
   `;
 
 const getRow = async (params: { sourceSpaceId: string; id: string }): Promise<DbWormhole | null> => {
@@ -371,27 +373,37 @@ export const previewTransfer = async (params: {
   const item = await getItem({ id: params.itemId });
   if (!item || item.spaceId !== params.sourceSpaceId) return { ok: false, error: "Item not found", status: 404 };
   if (item.recurrence || item.recurringEventId) return { ok: false, error: "Recurring items cannot move through wormholes", status: 400 };
-  const dependencies = await sql<{ title: string }[]>`
-    SELECT other.title FROM spaces.item_dependencies d
+  const dependencies = await sql<{ title: string; total: number }[]>`
+    SELECT other.title, COUNT(*) OVER ()::int AS total FROM spaces.item_dependencies d
     JOIN spaces.items other ON other.id = CASE WHEN d.item_id = ${params.itemId}::uuid THEN d.blocker_item_id ELSE d.item_id END
     WHERE d.item_id = ${params.itemId}::uuid OR d.blocker_item_id = ${params.itemId}::uuid
     ORDER BY other.title, other.id
+    LIMIT ${MAX_WORMHOLE_PREVIEW_DEPENDENCY_TITLES}
   `;
-  const rows = await listRows(params.sourceSpaceId);
+  const rows = await listRows(params.sourceSpaceId, MAX_WORMHOLE_PREVIEW_TARGETS);
   const targetStates = new Map<
     string,
     { readable: boolean; writable: boolean; kept: Awaited<ReturnType<typeof retainedAssignees>> | null }
   >();
-  for (const targetSpaceId of new Set(rows.map((row) => row.target_space_id))) {
-    const readable = await canAccess(targetSpaceId, params.actor, "read");
-    targetStates.set(targetSpaceId, {
-      readable,
-      writable: readable && (await canAccess(targetSpaceId, params.actor, "write")),
-      kept: readable ? await retainedAssignees(sql, params.itemId, targetSpaceId) : null,
-    });
-  }
+  const targetSpaceIds = [...new Set(rows.map((row) => row.target_space_id))];
+  // Four workers bound database fan-out while independent targets resolve together.
+  let nextTarget = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(4, targetSpaceIds.length) }, async () => {
+      while (nextTarget < targetSpaceIds.length) {
+        const targetSpaceId = targetSpaceIds[nextTarget++]!;
+        const readable = await canAccess(targetSpaceId, params.actor, "read");
+        const writable = readable && (await canAccess(targetSpaceId, params.actor, "write"));
+        targetStates.set(targetSpaceId, {
+          readable,
+          writable,
+          kept: writable ? await retainedAssignees(sql, params.itemId, targetSpaceId) : null,
+        });
+      }
+    }),
+  );
   const audiences = await getSpaceAudiences({
-    spaceIds: [...targetStates].filter(([, state]) => state.readable).map(([id]) => id),
+    spaceIds: [...targetStates].filter(([, state]) => state.writable).map(([id]) => id),
     subject: params.actor.subject,
     boundSpaceId: params.actor.resourceBoundSpaceId,
   });
@@ -399,10 +411,11 @@ export const previewTransfer = async (params: {
   const result: WormholeTransferPreview[] = [];
   for (const row of rows) {
     const { readable, writable, kept } = targetStates.get(row.target_space_id)!;
+    if (!readable) continue;
     result.push({
-      ...mapWormhole(row, readable),
+      ...mapWormhole(row),
       canWrite: writable,
-      audience: readable ? audiences.data[row.target_space_id]! : null,
+      audience: writable ? audiences.data[row.target_space_id]! : null,
       removedTags: (item.tags ?? []).map((tag) => tag.name),
       removedAssignees: kept
         ? (item.assignees ?? [])
@@ -410,6 +423,7 @@ export const previewTransfer = async (params: {
             .map((assignee) => assignee.displayName)
         : [],
       removedDependencies: dependencies.map((dependency) => dependency.title),
+      removedDependencyCount: dependencies[0]?.total ?? 0,
       commentsMove: true,
       attachmentsMove: true,
     });
