@@ -3,6 +3,7 @@ export { AiModelCard, type AiModelCardStop, aiModelClassLabel, aiModelClassSubti
 export {
   AiModelChooser,
   type AiModelChooserState,
+  AiModelField,
   AiModelNote,
   aiModelBlocksSending,
   aiModelUnavailableText,

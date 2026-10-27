@@ -1,4 +1,4 @@
-import { AnchoredPopover, Button, IconButton, NoticeCard, TextInput, useLocale } from "@k2b/ui";
+import { AnchoredPopover, Button, IconButton, NoticeCard, RichSelect, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import {
   AI_MODEL_CLASSES,
@@ -427,3 +427,69 @@ export const aiModelBlocksSending = (state: AiModelChooserState, value: AiModelR
   const reason = resolveAiModelChoice(state.models, value).option?.unavailable;
   return reason?.code === "budget_exhausted" || reason?.code === "access_revoked";
 };
+
+const NONE = "__none";
+
+/**
+ * A model setting outside the composer, such as a Project's default: no default, one of the assigned classes, or a
+ * model outside them, in the same words as the card. A class follows the administration's assignment.
+ */
+export function AiModelField(props: {
+  label: string;
+  description?: string;
+  noneLabel: string;
+  state: AiModelChooserState;
+  value: AiModelRequest | null;
+  onChange: (request: AiModelRequest | null) => void;
+  onRetry?: () => void;
+  disabled?: boolean;
+}): JSX.Element {
+  const locale = useLocale();
+  const t = () => aiModelChooserMessages.resolve([locale()]).t;
+  const models = () => (props.state.status === "ready" ? props.state.models : null);
+  const items = () => {
+    const current = models();
+    if (!current) return [];
+    const classes = current.classes.map((stop) => {
+      const option = current.options.find((entry) => entry.id === stop.variantId);
+      const reason = stop.unavailable ?? option?.unavailable;
+      return {
+        value: `class:${stop.class}`,
+        label: aiModelClassLabel(locale(), stop.class),
+        description: reason ? aiModelUnavailableText(locale(), reason) : aiModelClassSubtitle(locale(), stop.class),
+        section: "classes",
+      };
+    });
+    const others = current.options
+      .filter((option) => !option.classes.some((modelClass) => current.classes.some((stop) => stop.class === modelClass)))
+      .map((option) => ({
+        value: `id:${option.id}`,
+        label: optionName(option),
+        description: option.unavailable ? aiModelUnavailableText(locale(), option.unavailable) : option.description,
+        section: "models",
+      }));
+    return [{ value: NONE, label: props.noneLabel, section: "none" }, ...classes, ...others];
+  };
+  const value = () => (props.value ? ("class" in props.value ? `class:${props.value.class}` : `id:${props.value.id}`) : NONE);
+  return (
+    <RichSelect
+      label={props.label}
+      description={props.description}
+      items={items()}
+      sections={[
+        { id: "none", label: props.noneLabel },
+        { id: "classes", label: t().classes },
+        { id: "models", label: t().allModels },
+      ]}
+      status={props.state.status === "loading" ? "loading" : props.state.status === "error" ? "error" : "ready"}
+      onRetry={props.onRetry}
+      value={value}
+      disabled={props.disabled}
+      onValueChange={(next) => {
+        if (!next || next === NONE) return props.onChange(null);
+        const modelClass = AI_MODEL_CLASSES.find((entry) => `class:${entry}` === next);
+        props.onChange(modelClass ? { class: modelClass } : { id: next.slice(3) });
+      }}
+    />
+  );
+}
