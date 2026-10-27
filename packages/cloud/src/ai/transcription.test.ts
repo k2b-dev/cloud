@@ -1,12 +1,17 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { coreSettings } from "../services";
 import * as credentials from "./credentials";
 import { aiAssignmentFixture, aiSettingsFixture } from "./model-fixture";
 import { createAiProvider } from "./provider";
+import * as connections from "./provider-connections";
 import * as settings from "./settings";
 import { selectAiModelProfile } from "./settings";
 import { createAiTranscriptionProvider, describeTranscriptionFailure, resolveAiAudioModel } from "./transcription";
 import type { AiModelProfile } from "./types";
+
+// Adapter unit tests own HTTP fakes; provider status persistence belongs to its integration seam.
+beforeEach(() => spyOn(connections, "recordAiProviderStatus").mockResolvedValue(undefined));
+afterEach(() => mock.restore());
 
 const audio: AiModelProfile = {
   modelId: "speech",
@@ -89,8 +94,6 @@ test("classifies provider failures without storing response bodies", () => {
   expect(describeTranscriptionFailure(new Error("secret"), "provider", true).code).toBe("transcription_aborted");
 });
 
-afterEach(() => mock.restore());
-
 test("an explicit class request is validated instead of silently using the audio slot", async () => {
   spyOn(settings, "readAiSettingsState").mockResolvedValue(
     aiSettingsFixture({
@@ -172,3 +175,43 @@ test("the public transcription provider excludes HTTP error bodies before caller
     server.stop(true);
   }
 });
+
+for (const httpStatus of [200, 422])
+  test(`transcription settles status persistence before returning HTTP ${httpStatus}`, async () => {
+    const started = Promise.withResolvers<void>();
+    const finished = Promise.withResolvers<void>();
+    spyOn(connections, "recordAiProviderStatus").mockImplementation(async () => {
+      started.resolve();
+      await finished.promise;
+    });
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => Response.json(httpStatus === 200 ? { text: "fixture" } : {}, { status: httpStatus }),
+    });
+    let settled = false;
+    const provider = createAiTranscriptionProvider({ ...audio, baseURL: `${server.url}v1` });
+    const call = provider.transcribe({ file: new Blob(["fictional audio"]), filename: "fixture.wav" }).then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    try {
+      await Promise.race([
+        started.promise,
+        call.then(() => {
+          throw new Error("Transcription settled without waiting for status persistence");
+        }),
+      ]);
+      await Bun.sleep(0);
+      expect(settled).toBe(false);
+    } finally {
+      finished.resolve();
+      await call;
+      server.stop(true);
+    }
+    expect(settled).toBe(true);
+  });

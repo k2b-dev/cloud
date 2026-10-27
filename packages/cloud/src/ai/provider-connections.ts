@@ -1,6 +1,5 @@
 import { sql } from "bun";
 import { z } from "zod";
-import { logger } from "../services/logging";
 import type { AiProvider } from "../shared/ai-models";
 import { getAiCredential } from "./credentials";
 import { getAiRequestHeaders } from "./request-headers";
@@ -63,11 +62,13 @@ export const classifyProviderFailure = (error: unknown): AiProviderTestResult =>
           : "The provider request failed.",
   };
 };
+/** Best-effort persistence never rejects: callers await it inside their provider error boundary. */
 export const recordAiProviderStatus = async (id: string, result: AiProviderTestResult, force = false) => {
   try {
     await sql`UPDATE ai.providers SET status=${result.status},status_code=${result.httpStatus?.toString() ?? null},status_message=${result.message},status_checked_at=clock_timestamp() WHERE id=${id} AND (${force} OR status IS DISTINCT FROM ${result.status} OR status_code IS DISTINCT FROM ${result.httpStatus?.toString() ?? null})`;
   } catch {
-    logger("ai:providers").warn("Could not persist provider connection status", { providerId: id });
+    // A failed database write must not start another write through the persistent logger.
+    console.warn("[ai:providers] Could not persist provider connection status", { providerId: id });
   }
 };
 const requestModels = async (provider: Connection, signal?: AbortSignal, after?: string) => {
