@@ -1,7 +1,8 @@
 ---
 title: App events
+navTitle: App events
 section: Platform services
-order: 557
+order: 556
 description: Declare versioned application facts and consume service events with retryable handlers.
 tags: [events, capabilities, subscriptions, automation]
 updated: 2026-10-27

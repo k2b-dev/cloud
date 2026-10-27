@@ -1,5 +1,6 @@
 ---
 title: Operate app events
+navTitle: App events
 section: Operations
 order: 585
 description: Inspect event subscriptions and deliveries, diagnose blocked handlers, and redeliver retained work.
