@@ -62,7 +62,6 @@ describe("GridsWorkspace", () => {
   test("owns one content shell outside the interactive route island", () => {
     const html = renderToString(() =>
       createComponent(GridsWorkspace, {
-        cloudUrl: "https://cloud.example",
         state: workspaceState(),
       }),
     );

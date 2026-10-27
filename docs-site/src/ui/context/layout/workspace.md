@@ -314,9 +314,9 @@ description. Selecting a row keeps every visible level where it is.
 
 The levels draw no lines between them. The last visible level fills the
 remaining width, whatever its content: a long title or text in the selected
-item never narrows the levels before it. When another level shows before it,
-it is a raised surface with an 8 px inset. On a
-phone the one level is flat. Levels do not animate.
+item never narrows the levels before it. Every level is a flat column on the
+same surface, edge to edge, at every width and in both themes; the deepest
+level is never a raised or inset card. Levels do not animate.
 
 Inside a [`MobileShell`](/en/ui/layout/mobile-shell) with `scroll={false}`,
 levels follow the touch app instead: one level, with its back step, below
@@ -546,7 +546,10 @@ that now shows the selection so the workspace can reveal it and return focus.
 F6 switches between the remembered item and the Detail title. Keyboard
 selection also waits for a title that arrives after loading. Pointer selection
 focuses the title only on phones. Closing returns focus to the remembered item
-when focus was inside the Detail. The application owns `open`.
+when focus was inside the Detail. Open menus and dialogs keep the workspace
+keys; passive tooltips allow J, K and F6. Tooltip and reaction hints handle Escape
+first to dismiss themselves.
+The application owns `open`.
 
 Use `scrollClass="k2b-detail-trail"` on DataTable to preserve its column widths
 beside Detail. Mark a board's horizontal scroller with `k2b-detail-trail` too.

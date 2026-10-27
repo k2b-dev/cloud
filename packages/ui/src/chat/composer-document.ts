@@ -12,6 +12,26 @@ export function chatCommandQuery(text: string, caret: number, selectionEnd = car
   return { start: caret - match[1]!.length - 1, end: caret, query: match[1]! };
 }
 
+/**
+ * The `@name` being typed at the caret, for person suggestions: after the start, a space or an opening parenthesis,
+ * outside code and outside an existing mention. The query stops at whitespace, so "@Mar" suggests "Mara Schulz".
+ */
+export function chatPeopleQuery(
+  text: string,
+  caret: number,
+  selectionEnd = caret,
+  mentions: readonly ChatMention[] = [],
+): ChatCommandQuery | null {
+  if (caret !== selectionEnd) return null;
+  const before = text.slice(0, caret);
+  if ((before.match(/`/g)?.length ?? 0) % 2) return null;
+  const match = /(?:^|[\s(])@([^\s@`]{0,40})$/u.exec(before);
+  if (!match) return null;
+  const start = caret - match[1]!.length - 1;
+  if (mentions.some((mention) => mention.start < caret && mention.end > start)) return null;
+  return { start, end: caret, query: match[1]! };
+}
+
 /** An edit inside a mention removes its identity; edits around it shift the range. */
 export function reconcileChatMentions(before: string, after: string, mentions: readonly ChatMention[]): ChatMention[] {
   if (before === after) return [...mentions];

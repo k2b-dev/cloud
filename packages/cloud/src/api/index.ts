@@ -45,6 +45,7 @@ import { createHelpRoutes } from "./help";
 import { createMcpRoutes } from "./mcp";
 import meRoutes from "./me";
 import { createPwaRoutes } from "./pwa";
+import { createResourceResolveRoutes } from "./resource-resolve";
 import { createSearchRoutes } from "./search";
 import { createSyncOpsProxyRoutes } from "./sync-ops";
 import { createWidgetRoutes } from "./widgets";
@@ -85,6 +86,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/accounts", accountsEntitiesRoutes)
     .route("/geo", geoRoutes)
     .route("/apps", appDiscoveryRoutes)
+    .route("/resources", createResourceResolveRoutes())
     .route("/approvals", approvalRoutes)
     .route("/announcements", announcementRoutes)
     .route("/admin/core/ai-usage", adminAiUsageRoutes)
@@ -136,4 +138,4 @@ export {
   createMcpRoutes,
   publicCloudOrigin,
 } from "./mcp";
-export { resolveCloudResourceHref } from "./resource-links";
+export { resolveCloudResourceHref, resolveCloudResourceUrl } from "./resource-links";

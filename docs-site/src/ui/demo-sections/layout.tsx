@@ -1545,8 +1545,13 @@ const DetailPanelDemo = () => {
               <DetailPanel.Header
                 title="Bug report"
                 subtitle="No preview · 5 minutes ago"
+                menu={[
+                  { label: "Duplicate request", icon: "ti ti-copy-plus", action: () => {} },
+                  { items: [{ label: "Copy Cloud ID", icon: "ti ti-id", action: () => {} }] },
+                ]}
+                menuLabel="Request actions"
                 actions={
-                  <IconButton variant="ghost" size="xs" label="Close request details">
+                  <IconButton variant="ghost" size="sm" label="Close request details">
                     <i class="ti ti-x" aria-hidden="true" />
                   </IconButton>
                 }
