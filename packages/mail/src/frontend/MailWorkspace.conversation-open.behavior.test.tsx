@@ -288,6 +288,8 @@ describe("Mail workspace conversation open", () => {
     } = conversation ? detailFor(conversation) : { ...detailFor("none"), detailMessages: [], selectedSubject: "" };
     const unreadCount = unread.size;
     return {
+      viewPreference: { large: "auto", phone: "compact" },
+      doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
       receivingAddress: null,
       initialLiveCursor: "s6t.mail.4",
       folders: [

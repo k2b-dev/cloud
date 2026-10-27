@@ -4,6 +4,7 @@ import {
   buildAccessPrincipalCondition,
   createAccess,
   deleteAccess,
+  getEffectivePermission,
   getEffectivePermissions,
   hasPermission,
   type PermissionLevel,
@@ -612,6 +613,42 @@ const updateMailboxAccessWithAuthority = async (params: {
     () => err.internal("Failed to update mailbox access"),
   );
 
+/** Access removal forgets personal views only when no readable grant remains.
+ * Read one stored principal at a time; the platform resolves groups and public/authenticated grants.
+ */
+const pruneMailboxViews = async (mailboxId: string, db: SqlClient): Promise<void> => {
+  const grants = await db<{ access_id: string; scope: MailboxAccessScope }[]>`SELECT * FROM (${accessRows(mailboxId)}) grants`;
+  let after = "";
+  while (true) {
+    const [row] = await db<{ user_id: string | null; service_account_id: string | null; key: string }[]>`
+      SELECT user_id, service_account_id,
+        COALESCE(user_id::text, 'service:' || service_account_id::text) AS key
+      FROM mail.personal_mailbox_preferences
+      WHERE mailbox_id = ${mailboxId}::uuid AND (large_view IS NOT NULL OR phone_view IS NOT NULL)
+        AND COALESCE(user_id::text, 'service:' || service_account_id::text) > ${after}
+      ORDER BY COALESCE(user_id::text, 'service:' || service_account_id::text) LIMIT 1`;
+    if (!row) break;
+    after = row.key;
+    const subject: AccessSubject = row.user_id
+      ? { type: "user", userId: row.user_id }
+      : { type: "service_account", serviceAccountId: row.service_account_id! };
+    const permission = await getEffectivePermission(
+      {
+        subject,
+        accessIds: grants.filter((grant) => row.user_id || grant.scope === "mailbox").map((grant) => grant.access_id),
+      },
+      db,
+    );
+    if (hasPermission(permission, "read")) continue;
+    await db`UPDATE mail.personal_mailbox_preferences SET large_view = NULL, phone_view = NULL
+      WHERE mailbox_id = ${mailboxId}::uuid
+        AND user_id IS NOT DISTINCT FROM ${row.user_id}::uuid
+        AND service_account_id IS NOT DISTINCT FROM ${row.service_account_id}::uuid`;
+  }
+  await db`DELETE FROM mail.personal_mailbox_preferences WHERE mailbox_id = ${mailboxId}::uuid
+    AND large_view IS NULL AND phone_view IS NULL AND pinned_at IS NULL AND hidden_at IS NULL`;
+};
+
 const revokeMailboxAccessWithAuthority = async (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -627,6 +664,7 @@ const revokeMailboxAccessWithAuthority = async (params: {
         unwrap(ensureAdminRemains(entries, params.accessId, null));
         await deleteGrantLinks(tx, params.mailboxId, params.accessId);
         unwrap(await deleteAccess({ id: params.accessId }, tx));
+        await pruneMailboxViews(params.mailboxId, tx);
         await audit.record(
           {
             action: "mail.mailbox.access.revoke",

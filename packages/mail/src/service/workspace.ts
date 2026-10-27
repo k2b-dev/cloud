@@ -12,6 +12,7 @@ import {
   type SenderIdentity,
 } from "../contracts";
 import { isAggregatedListing, mailListingExcludesTrashAndJunk } from "../folder-display-rules";
+import type { MailDoneTodayCounts, MailViewPreference } from "../mail-view-preference";
 import {
   MAIL_SEARCH_MATCHES_NOTHING,
   MAIL_SEARCH_PARAMETER,
@@ -29,11 +30,13 @@ import * as conversationKeeps from "./conversation-keeps";
 import * as conversationReferences from "./conversation-reference";
 import type { ConversationContentSummary } from "./conversation-summary";
 import * as conversationSummaries from "./conversation-summary";
+import { getMailboxDoneTodayCounts } from "./done-today";
 import * as drafts from "./drafts";
 import { localizeMailError } from "./error-messages";
 import { mailLive } from "./live";
 import type { ConversationLocalTags, LocalTag } from "./local-tags";
 import * as localTags from "./local-tags";
+import { getMailboxViewPreference } from "./mailbox-preferences";
 import * as mailboxes from "./mailboxes";
 import type { ConversationRowState, ConversationSummary, ConversationViewCounts, MailFolderView, MessageDetail } from "./messages";
 import * as messages from "./messages";
@@ -146,6 +149,8 @@ const workspaceMessage = (message: MessageDetail): MailWorkspaceMessage => {
 };
 
 export type MailboxPageData = {
+  viewPreference: MailViewPreference;
+  doneTodayCounts: MailDoneTodayCounts;
   receivingAddress: string | null;
   mailbox: Mailbox;
   permission: "read" | "write" | "admin";
@@ -832,6 +837,8 @@ export const loadMailboxPageData = async (params: {
     localTagResult,
     scheduledCountResult,
     receivingAddress,
+    viewPreference,
+    doneTodayCounts,
   ] = await Promise.all([
     mailboxes.getMailbox(params.context, params.mailboxId),
     messages.listFolders(params.context, params.mailboxId),
@@ -850,8 +857,12 @@ export const loadMailboxPageData = async (params: {
       mailboxId: params.mailboxId,
     }),
     mailboxes.getMailboxReceivingAddress(params.mailboxId),
+    getMailboxViewPreference(params.context, params.mailboxId),
+    getMailboxDoneTodayCounts(params.context, params.mailboxId),
   ]);
   if (!mailboxResult.ok) return fail(mailboxResult.error);
+  if (!viewPreference.ok) return viewPreference;
+  if (!doneTodayCounts.ok) return doneTodayCounts;
 
   const listView = await buildMailboxListView(params, folderResult, savedViewResult);
   const { scheduledMode, draftsMode, folderId } = listView;
@@ -883,6 +894,8 @@ export const loadMailboxPageData = async (params: {
     ...listView,
     mailbox: mailboxResult.data,
     receivingAddress,
+    viewPreference: viewPreference.data,
+    doneTodayCounts: doneTodayCounts.data,
     permission: permission.data.permission,
     access: { scope: permission.data.scope, permission: permission.data.permission },
     initialLiveCursor,

@@ -25,6 +25,7 @@ import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contrac
 import { principalLabel } from "@k2b/cloud/shared";
 import { text } from "@k2b/stdlib";
 import { z } from "zod";
+import { LARGE_MAIL_VIEWS, PHONE_MAIL_VIEWS, type MailViewPreference } from "./mail-view-preference";
 import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesMailDestinationContext } from "./app-integration-contracts";
 import { composeFormattingMessages, describeComposeFormattingWarning, describeIgnoredMailboxCss } from "./compose-formatting-messages";
 import {
@@ -3044,6 +3045,35 @@ const specialistCommands = {
         const restored = await readApi<Mailbox>(ctx, `/mailboxes/${mailboxId}/restore`, { method: "POST" });
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.mailbox", restored))) return;
         ctx.print(`Restored ${restored.name} in paused state. Verify the provider, then explicitly resume synchronization.`);
+      },
+    }),
+    command("view get", {
+      summary: "Read your view for a mailbox on large screens and phones",
+      args: { mailbox: arg.required({ description: "Mailbox id or exact name" }) },
+      run: async ({ ctx, args }) => {
+        const mailbox = await resolveMailbox(ctx, args.mailbox);
+        const view = await readApi<MailViewPreference>(ctx, `/mailboxes/${mailbox.id}/view`);
+        if (printStructured(ctx, view)) return;
+        ctx.print(`Large: ${view.large} · Phone: ${view.phone}`);
+      },
+    }),
+    command("view set", {
+      summary: "Choose your view for a mailbox; omitted device classes keep their value",
+      args: { mailbox: arg.required({ description: "Mailbox id or exact name" }) },
+      flags: {
+        large: flag.enum(LARGE_MAIL_VIEWS, { description: "Large-screen view" }),
+        phone: flag.enum(PHONE_MAIL_VIEWS, { description: "Phone view" }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        if (!flags.large && !flags.phone) throw new Error("Pass --large, --phone, or both.");
+        const mailbox = await resolveMailbox(ctx, args.mailbox);
+        const view = await readApi<MailViewPreference>(
+          ctx,
+          `/mailboxes/${mailbox.id}/view`,
+          jsonRequest("PATCH", { large: flags.large, phone: flags.phone }),
+        );
+        if (printStructured(ctx, view)) return;
+        ctx.print(`Large: ${view.large} · Phone: ${view.phone}`);
       },
     }),
     command("mailbox preferences", {

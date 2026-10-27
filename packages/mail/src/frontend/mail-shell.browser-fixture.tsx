@@ -181,6 +181,8 @@ export function mailboxData(url: URL): MailboxPageData {
   const selectedConversationId = url.searchParams.get("conversation");
   const selectedMailbox = mailboxes.find((box) => box.id === url.pathname.split("/").at(-1)) ?? mailboxes[0]!;
   return {
+    viewPreference: { large: "auto", phone: "compact" },
+    doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
     receivingAddress: selectedMailbox.id === "Box001" ? "support@example.test" : selectedMailbox.receivingAddress,
     mailbox: selectedMailbox,
     permission,

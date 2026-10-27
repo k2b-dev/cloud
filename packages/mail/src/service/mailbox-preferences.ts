@@ -2,8 +2,20 @@ import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { MAX_MAILBOX_PREFERENCES } from "../contracts";
-import { requireMailboxPermission } from "./access";
-import { capByCredentialScopes, type MailRequestContext, type PersonalPrincipal, personalPrincipal } from "./auth";
+import {
+  DEFAULT_MAIL_VIEW,
+  mailViewPreferenceChangeSchema,
+  type MailViewPreference,
+  type MailViewPreferenceChange,
+} from "../mail-view-preference";
+import { requireMailboxAccess, requireMailboxPermission } from "./access";
+import {
+  capByCredentialScopes,
+  isResourceBoundToMailbox,
+  type MailRequestContext,
+  type PersonalPrincipal,
+  personalPrincipal,
+} from "./auth";
 import { readableMailboxes } from "./focus";
 
 type SqlClient = typeof sql;
@@ -121,6 +133,7 @@ export const setMailboxPreference = async (
       await tx`
         DELETE FROM mail.personal_mailbox_preferences preference
         WHERE ${principalMatches(principal)} AND preference.mailbox_id = ${mailboxId}::uuid
+          AND preference.large_view IS NULL AND preference.phone_view IS NULL
       `;
     }
     return ok({ pinned: stored?.pinned_at != null, hidden: stored?.hidden_at != null });
@@ -183,5 +196,57 @@ export const importBrowserMailboxPreferences = async (
         ON CONFLICT (user_id, service_account_id, mailbox_id) DO UPDATE SET hidden_at = COALESCE(preference.hidden_at, EXCLUDED.hidden_at)
       `;
     }
+  });
+};
+
+/** Remove only the view on lost access; pins keep their existing restore-on-return behavior. */
+const requireViewAccess = async (context: MailRequestContext, mailboxId: string) => {
+  const allowed = await requireMailboxAccess(context, mailboxId, "read");
+  if (!allowed.ok && capByCredentialScopes(context, "read") === "read" && isResourceBoundToMailbox(context, mailboxId)) {
+    await sql`UPDATE mail.personal_mailbox_preferences preference SET large_view = NULL, phone_view = NULL
+      WHERE ${principalMatches(personalPrincipal(context))} AND mailbox_id = ${mailboxId}::uuid`;
+    await sql`DELETE FROM mail.personal_mailbox_preferences preference
+      WHERE ${principalMatches(personalPrincipal(context))} AND mailbox_id = ${mailboxId}::uuid
+        AND pinned_at IS NULL AND hidden_at IS NULL AND large_view IS NULL AND phone_view IS NULL`;
+  }
+  return allowed;
+};
+
+export const getMailboxViewPreference = async (context: MailRequestContext, mailboxId: string): Promise<Result<MailViewPreference>> => {
+  const allowed = await requireViewAccess(context, mailboxId);
+  if (!allowed.ok) return allowed;
+  const [row] = await sql<{ large: MailViewPreference["large"]; phone: MailViewPreference["phone"] }[]>`
+    SELECT COALESCE(large_view, 'auto') AS large, COALESCE(phone_view, 'compact') AS phone
+    FROM mail.personal_mailbox_preferences preference
+    WHERE ${principalMatches(personalPrincipal(context))} AND mailbox_id = ${mailboxId}::uuid`;
+  return ok(row ?? { ...DEFAULT_MAIL_VIEW });
+};
+
+export const setMailboxViewPreference = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  change: MailViewPreferenceChange,
+): Promise<Result<MailViewPreference>> => {
+  const parsed = mailViewPreferenceChangeSchema.safeParse(change);
+  if (!parsed.success) return fail(err.badInput("Set a valid large or phone view"));
+  const allowed = await requireViewAccess(context, mailboxId);
+  if (!allowed.ok) return allowed;
+  const principal = personalPrincipal(context);
+  const { userId, serviceAccountId } = principalColumns(principal);
+  return sql.begin(async (tx) => {
+    const [mailbox] = await tx`SELECT id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid AND deleted_at IS NULL FOR SHARE`;
+    if (!mailbox) return fail(err.notFound("Mailbox"));
+    const locked = await requireMailboxAccess(context, mailboxId, "read", tx);
+    if (!locked.ok) return locked;
+    await lockPrincipal(tx, principal);
+    const [row] = await tx<MailViewPreference[]>`
+      INSERT INTO mail.personal_mailbox_preferences AS preference (mailbox_id, user_id, service_account_id, large_view, phone_view)
+      VALUES (${mailboxId}::uuid, ${userId}::uuid, ${serviceAccountId}::uuid, ${parsed.data.large ?? null}, ${parsed.data.phone ?? null})
+      ON CONFLICT (user_id, service_account_id, mailbox_id) DO UPDATE SET
+        large_view = COALESCE(EXCLUDED.large_view, preference.large_view),
+        phone_view = COALESCE(EXCLUDED.phone_view, preference.phone_view)
+      RETURNING COALESCE(large_view, 'auto') AS large, COALESCE(phone_view, 'compact') AS phone`;
+    if (!row) throw new Error("Mailbox view preference insert returned no row");
+    return ok(row);
   });
 };

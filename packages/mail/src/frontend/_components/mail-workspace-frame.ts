@@ -8,11 +8,21 @@ import { emptyMailSelection } from "./mail-selection-detail";
  */
 export type MailWorkspaceFrame = Pick<
   MailboxPageData,
-  "receivingAddress" | "initialLiveCursor" | "folders" | "identities" | "scheduledCount" | "viewCounts" | "localTags"
+  | "viewPreference"
+  | "doneTodayCounts"
+  | "receivingAddress"
+  | "initialLiveCursor"
+  | "folders"
+  | "identities"
+  | "scheduledCount"
+  | "viewCounts"
+  | "localTags"
 >;
 
 /** Typed field by field, so the frame cannot take a list or selection field the snapshot gains. */
 export const pickMailWorkspaceFrame = (data: MailboxPageData): MailWorkspaceFrame => ({
+  viewPreference: data.viewPreference,
+  doneTodayCounts: data.doneTodayCounts,
   receivingAddress: data.receivingAddress,
   initialLiveCursor: data.initialLiveCursor,
   folders: data.folders,
