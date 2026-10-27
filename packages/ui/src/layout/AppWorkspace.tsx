@@ -72,6 +72,8 @@ export type { AppWorkspaceWidthShare } from "./app-workspace-width";
 const LEVEL_CLASS_WIDTH = { 1: 0, 2: 768, 3: 1280 } as const;
 /** The last shown level's minimum width when the level does not declare one; the stylesheet uses the same value. */
 const LEVEL_LAST_MIN = 320;
+/** The width the last shown level keeps at least: its declared minimum, never below the default. */
+const levelLastMin = (minSize: number | undefined) => Math.max(minSize ?? 0, LEVEL_LAST_MIN);
 const nonEmptyStyle = (style: Record<string, string>) => (Object.keys(style).length ? style : undefined);
 const ResizeContext = createContext(true);
 /** The enclosing workspace: its head names the sidebar, and a nested workspace leaves the page title to it. */
@@ -703,7 +705,8 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
       const needed = all
         .slice(end - count, end)
         .reduce(
-          (sum, pane, offset) => sum + (pane.props.minSize ?? (end - count + offset + 1 === end ? LEVEL_LAST_MIN : APP_WORKSPACE_PANE_MIN)),
+          (sum, pane, offset) =>
+            sum + (end - count + offset + 1 === end ? levelLastMin(pane.props.minSize) : (pane.props.minSize ?? APP_WORKSPACE_PANE_MIN)),
           0,
         );
       if (needed <= LEVEL_CLASS_WIDTH[widthClass]) break;
@@ -880,10 +883,9 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                             "--k2b-workspace-panel-size": `clamp(${minSize()}px, var(${variable}, ${appWorkspaceWidthCss(defaultSize(), "var(--k2b-workspace-width)")}), ${maxSize()}px)`,
                             "--k2b-workspace-panel-min": `${minSize()}px`,
                           }),
-                      // The last shown level fills the rest, but never below the minimum it declares.
-                      ...(levelsMode() && pane.props.minSize !== undefined
-                        ? { "--k2b-workspace-level-min": `${pane.props.minSize}px` }
-                        : {}),
+                      // The last shown level fills the rest, but never below its minimum; set on every level, so a workspace
+                      // nested in a wide level does not inherit that minimum.
+                      ...(levelsMode() ? { "--k2b-workspace-level-min": `${levelLastMin(pane.props.minSize)}px` } : {}),
                     })}
                   >
                     {levelsMode() ? (

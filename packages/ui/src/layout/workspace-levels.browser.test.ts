@@ -330,6 +330,24 @@ test("1440px: a wide last level pushes the first level aside and keeps its minim
     expect(await page.locator('[data-workspace-level="2"] .k2b-app-workspace__level-back').isVisible()).toBe(true);
     const width = await page.locator('[data-workspace-level="3"]').evaluate((element) => element.getBoundingClientRect().width);
     expect(width).toBeGreaterThanOrEqual(900);
+    // Resizing the level beside it stops where the wide level keeps its minimum, and the separator says so.
+    const separator = page.locator('[data-app-workspace-resize="pane"][data-workspace-panel-id="items"]');
+    await separator.focus();
+    await page.keyboard.press("End");
+    await settled(page);
+    const after = await page.evaluate(() => ({
+      items: document.querySelector('[data-workspace-level="2"]')!.getBoundingClientRect().width,
+      item: document.querySelector('[data-workspace-level="3"]')!.getBoundingClientRect().width,
+      now: Number(
+        document.querySelector('[data-app-workspace-resize="pane"][data-workspace-panel-id="items"]')!.getAttribute("aria-valuenow"),
+      ),
+      max: Number(
+        document.querySelector('[data-app-workspace-resize="pane"][data-workspace-panel-id="items"]')!.getAttribute("aria-valuemax"),
+      ),
+    }));
+    expect(after.item).toBeGreaterThanOrEqual(899.5);
+    expect(Math.abs(after.now - after.items)).toBeLessThanOrEqual(1);
+    expect(after.max).toBeLessThanOrEqual(Math.ceil(after.items));
     await page.goto(`${origin}/?level=item`);
     await page.waitForSelector('body[data-ready="true"]');
     await settled(page);

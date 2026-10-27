@@ -114,6 +114,8 @@ describe("AppWorkspace ordered levels SSR", () => {
     ]);
     // The wide level declares its minimum for the stylesheet, so it never shrinks below it.
     expect(sectionsAttrs[2]!.style).toContain("--k2b-workspace-level-min:900px");
+    // Every level sets its own minimum, so a workspace nested in the wide level does not inherit 900 px.
+    expect(sectionsAttrs[1]!.style).toContain("--k2b-workspace-level-min:320px");
   });
 
   test("levels without minimum widths keep the width classes unchanged", () => {
