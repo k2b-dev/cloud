@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to Spaces and Notebooks.
-updated: 2026-10-26
+updated: 2026-10-27
 ---
 
 # Chat system conversations
@@ -55,7 +55,7 @@ Chat does not enumerate that app's members or copy their grants.
 Unread messages begin at each participant's first open, or immediately before
 their first incoming mention or reply. Reopening preserves that position. Earlier
 messages cannot be marked unread. Mentions and replies appear in the same
-[For you feed](/en/docs/operations/build-and-deploy#chat-mentions-and-for-you)
+**For you** feed
 as ordinary chats, subject to current container and item access.
 
 Mention targets use principal UUIDs and need only be active eligible people or
