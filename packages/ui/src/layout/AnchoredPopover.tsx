@@ -13,6 +13,11 @@ export type AnchoredPopoverProps = {
   align?: "start" | "end";
   /** The side tried first; the panel flips only when the other side has more room. Defaults to `below`. */
   side?: "below" | "above";
+  /**
+   * The tallest the panel gets while open, in px, such as a list it can switch to. The side is chosen for this height
+   * and kept, so a panel that grows never flips. Defaults to its height when it opens.
+   */
+  plannedHeight?: number;
   /** Width of the panel on wide screens, such as `21rem`. On a phone it is a bottom sheet across the screen. */
   width?: string;
   /** Moves the focus into the panel when it opens; defaults to the panel itself. */

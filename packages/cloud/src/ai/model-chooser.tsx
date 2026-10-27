@@ -241,7 +241,7 @@ export function AiModelChooser(props: {
         onClose={close}
         label={t().chooseModel}
         align="end"
-        side="above"
+        plannedHeight={520}
         width="21.25rem"
         initialFocus={() => document.getElementById(sliderId)}
       >
