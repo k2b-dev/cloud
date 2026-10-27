@@ -20,6 +20,36 @@ Open **… → Automations**. The full-width overview shows what is active and o
 
 The tools can work together, but creating one does not activate another. Reference-number settings define the format; a workflow still decides when to allocate a number. Saving a workflow does not activate it.
 
+## Rule order and existing assignees {icon="list-numbers"}
+
+Rules for the same incoming message follow mailbox priority order, from top to bottom. Lower `priority` numbers come first; equal priorities use workflow UUID ascending. Mail fixes this order when it accepts the message event, so later edits do not reorder that message's runs.
+
+Assignment, placement (move, archive, trash, or junk), and status each have one winning rule. A lower rule waits until upper rules have decided, even if an upper rule is waiting for AI. The first rule that takes one of these actions wins for that kind of change. If an upper rule finishes without that effect, a lower rule can apply it. Tags, comments, and summaries can come from all matching rules.
+
+No rule replaces existing assignees. If anyone is already responsible, the assignment step is skipped, whether a person or another rule made that assignment. Changing an assignment by hand does not change the rule. This also applies to existing guided automations and workflow YAML.
+
+For AI classification, configure the target in the rule. AI chooses a category, never a person from a name in the message. If that category has no target, this rule assigns nobody; a lower rule may still assign someone.
+
+## Check the automation log and undo an assignment {icon="history"}
+
+Open **Automations → Log** to see what rules changed, left unassigned, or skipped, and assignments changed by hand. Choose a day, filter the result, or search by subject, sender, rule, or target. Counts follow the day and search across all filters. The log covers the last 30 days and shows only conversations you may read.
+
+Open an entry for the decision chain: conditions, AI choices and available extracted values, the fixed rule row, target, effects, and AI call counts. These are recorded results; opening the entry does not ask AI again. A source quote is shown only when one was recorded.
+
+**Undo** reverses the rule's assignment while it is still current. It needs the same permission as assigning by hand. It does not reverse tags, comments, or moves. If someone changed the assignment or the conversation is gone, undo is unavailable and changes nothing.
+
+After undo, that rule never assigns the same conversation again, including when the customer replies later. This protection stays after the log entry expires. Only **Redo**, immediately after undo by the same person, restores the assignment and removes that protection. Other rules remain subject to their normal conditions.
+
+In the terminal:
+
+```bash
+cld mail automation log --mailbox Support --day 2026-10-27 --filter assignments
+cld mail automation log show <entry-id> --mailbox Support --json
+cld mail automation log undo <entry-id> --mailbox Support
+```
+
+Use `--q` to search (at most 200 characters, without case sensitivity). The default day is today in the mailbox timezone. Use `--before` with `nextCursor` for another page; `--limit` accepts 1–50 entries and defaults to 50. Keep the same day, search, and filter when paging.
+
 ## Build an incoming automation {icon="mailbox"}
 
 With **Manage** access, you create one guided flow under **Automations → Incoming mail**. You can also start it directly from the organization menu of a message.
@@ -88,7 +118,7 @@ The guided editor and the CLI use the same strict definition. Mail rejects unkno
 
 Mail generates canonical workflow YAML from the flow and shows it read-only in the editor. Steps run from top to bottom through the shared workflow runtime.
 
-- **Several matching automations:** The oldest automation decides where the message goes. A later automation skips its move, trash, or junk step. Any matching automation also skips its Mark as read or keyword step if the message has left its folder or is being moved. Neither automation fails because of the other. Only incoming automations yield this way; a hand-written workflow's step fails instead. A read by one does not make the other's move fail. To make sure a message is both read and moved, put both steps in one automation.
+- **Several matching automations:** Mail uses the mailbox rule order described above. The first rule that claims placement wins; a lower rule may move the message if upper rules finish without placement. Incoming automations still skip Mark as read or keyword steps if the message has left its folder or is being moved. A read by one does not make another rule’s move fail. Keep read and move steps in one automation when both must apply.
 - **Failed step:** If a later step fails, the effects of earlier completed steps stay.
 - **Versions:** Editing the flow publishes a new unchangeable workflow version. Changing only the name or the active state does not duplicate identical source.
 - **Protected targets:** Destructive actions cannot target an identity of the mailbox, a configured internal domain, its subdomains, or an unsafe parent domain.

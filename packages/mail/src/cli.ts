@@ -38,6 +38,9 @@ import {
   type AcquiredDraftLease,
   type AttachmentLink,
   type AttachmentLinkPage,
+  type AutomationLogDetail,
+  type AutomationLogItem,
+  type AutomationLogPage,
   type CancelScheduledSendResult,
   type ComposeFormattingWarning,
   type ComposePreview,
@@ -2872,6 +2875,140 @@ const composeLogoCommands = (t: Translate) => [
     },
   }),
 ];
+
+/** Read and reverse mailbox-scoped rule assignments through the public log API. */
+const automationLogCommands = (t: Translate) => {
+  const mailbox = {
+    mailbox: flag.string({
+      description: t({
+        en: "Mailbox id or exact name; defaults to `cld mail use`",
+        de: "Postfach-ID oder exakter Name; Standard aus `cld mail use`",
+      }),
+    }),
+  };
+  const itemArgs = { id: arg.required({ description: t({ en: "Automation log entry id", de: "ID des Protokolleintrags" }) }) };
+  const printItem = (ctx: CloudCliContext, item: AutomationLogItem) => {
+    ctx.print(`${item.conversation.subject} (${item.id})`);
+    ctx.print(`${item.at} · ${item.by.name} · ${item.outcome}`);
+    ctx.print(`${t({ en: "Sender", de: "Absender" })}: ${item.conversation.from.name ?? ""} <${item.conversation.from.email}>`);
+    ctx.print(`${t({ en: "Effects", de: "Änderungen" })}: ${JSON.stringify(item.effects)}`);
+    ctx.print(`${t({ en: "Reasons", de: "Gründe" })}: ${JSON.stringify(item.reasons)}`);
+    ctx.print(`${t({ en: "Undo", de: "Rückgängig" })}: ${item.undo.state}${item.undo.reason ? ` (${item.undo.reason})` : ""}`);
+  };
+  return [
+    command("automation log", {
+      summary: t({ en: "List the mailbox automation log", de: "Das Automatisierungsprotokoll des Postfachs anzeigen" }),
+      flags: {
+        ...mailbox,
+        day: flag.string({
+          description: t({
+            en: "Day as YYYY-MM-DD; defaults to today in the mailbox timezone",
+            de: "Tag als YYYY-MM-DD; Standard ist heute in der Postfach-Zeitzone",
+          }),
+        }),
+        filter: flag.enum(["all", "assignments", "uncertain", "skipped", "manual"] as const, {
+          description: t({ en: "Outcome filter", de: "Ergebnisfilter" }),
+        }),
+        q: flag.string({
+          description: t({
+            en: "Search subject, sender, rule, or target (at most 200 characters)",
+            de: "Betreff, Absender, Regel oder Ziel suchen (höchstens 200 Zeichen)",
+          }),
+        }),
+        before: flag.string({ description: t({ en: "Cursor from nextCursor", de: "Cursor aus nextCursor" }) }),
+        limit: flag.int({
+          min: 1,
+          max: 50,
+          default: 50,
+          description: t({ en: "Maximum entries per page (1–50)", de: "Höchstzahl der Einträge pro Seite (1–50)" }),
+        }),
+      },
+      run: async ({ ctx, flags }) => {
+        if (flags.day !== undefined && !z.iso.date().safeParse(flags.day).success)
+          throw new Error(t({ en: "--day must be a valid date as YYYY-MM-DD.", de: "--day muss ein gültiges Datum als YYYY-MM-DD sein." }));
+        if (flags.q !== undefined && flags.q.length > 200)
+          throw new Error(t({ en: "--q accepts at most 200 characters.", de: "--q erlaubt höchstens 200 Zeichen." }));
+        const resolved = await resolveMailbox(ctx, flags.mailbox, t);
+        const query = new URLSearchParams({ limit: String(flags.limit) });
+        for (const [key, value] of Object.entries({ day: flags.day, filter: flags.filter, q: flags.q, before: flags.before }))
+          if (value !== undefined) query.set(key, value);
+        const page = await readApi<AutomationLogPage>(ctx, `/mailboxes/${resolved.id}/automation-log?${query}`);
+        printTable(
+          ctx,
+          page,
+          page.items.map((item) => ({
+            id: item.id,
+            at: item.at,
+            subject: item.conversation.subject,
+            sender: item.conversation.from.email,
+            by: item.by.name,
+            outcome: item.outcome,
+            undo: item.undo.state,
+          })),
+          [
+            { key: "at", label: t({ en: "TIME", de: "ZEIT" }) },
+            { key: "subject", label: t({ en: "SUBJECT", de: "BETREFF" }) },
+            { key: "sender", label: t({ en: "SENDER", de: "ABSENDER" }) },
+            { key: "by", label: t({ en: "BY", de: "DURCH" }) },
+            { key: "outcome", label: t({ en: "OUTCOME", de: "ERGEBNIS" }) },
+            { key: "undo", label: t({ en: "UNDO", de: "RÜCKGÄNGIG" }) },
+            { key: "id", label: "ID" },
+          ],
+        );
+        if (ctx.options.output !== "text") return;
+        ctx.print(`${page.day}: ${JSON.stringify(page.counts)}`);
+        if (page.items.length === 0) ctx.print(t({ en: "No automation log entries match.", de: "Keine passenden Protokolleinträge." }));
+        if (page.nextCursor) {
+          const next = new URLSearchParams(query);
+          next.set("day", page.day);
+          next.set("before", page.nextCursor);
+          const argumentsText = [...next].map(([key, value]) => `--${key} '${value.replaceAll("'", "'\\''")}'`).join(" ");
+          ctx.print(`${t({ en: "Next page", de: "Nächste Seite" })}: cld mail automation log --mailbox '${resolved.id}' ${argumentsText}`);
+        }
+      },
+    }),
+    command("automation log show", {
+      summary: t({
+        en: "Show a rule's effects, decision chain, and AI call counts",
+        de: "Änderungen, Entscheidungskette und KI-Aufrufe einer Regel anzeigen",
+      }),
+      args: itemArgs,
+      flags: mailbox,
+      run: async ({ ctx, args, flags }) => {
+        const resolved = await resolveMailbox(ctx, flags.mailbox, t);
+        const detail = await readApi<AutomationLogDetail>(ctx, `/mailboxes/${resolved.id}/automation-log/${encodeURIComponent(args.id)}`);
+        if (printStructured(ctx, detail)) return;
+        printItem(ctx, detail);
+        ctx.print(`${t({ en: "Decision chain", de: "Entscheidungskette" })}: ${JSON.stringify(detail.chain, null, 2)}`);
+        ctx.print(`${t({ en: "AI calls", de: "KI-Aufrufe" })}: ${JSON.stringify(detail.aiCalls)}`);
+      },
+    }),
+    command("automation log undo", {
+      summary: t({
+        en: "Undo a current rule assignment and prevent this rule assigning the conversation again",
+        de: "Eine aktuelle Regelzuweisung rückgängig machen und weitere Zuweisungen dieser Regel für die Unterhaltung verhindern",
+      }),
+      args: itemArgs,
+      flags: mailbox,
+      run: async ({ ctx, args, flags }) => {
+        const resolved = await resolveMailbox(ctx, flags.mailbox, t);
+        const result = await readApi<{ item: AutomationLogItem }>(
+          ctx,
+          `/mailboxes/${resolved.id}/automation-log/${encodeURIComponent(args.id)}/undo`,
+          { method: "POST" },
+        );
+        if (printStructured(ctx, result)) return;
+        printItem(ctx, result.item);
+        ctx.print(
+          t({
+            en: "This rule will not assign this conversation again, including on later replies, unless you redo the undo.",
+            de: "Diese Regel weist diese Unterhaltung auch bei späteren Antworten nicht erneut zu. Nur unmittelbares „Wiederholen“ stellt die Zuweisung wieder her.",
+          }),
+        );
+      },
+    }),
+  ];
+};
 
 /** Commands whose help stays in English; `mailCommands` adds the localized everyday commands. */
 const specialistCommands = {
@@ -7983,6 +8120,10 @@ const mailCommands = (locale?: string) => {
     }),
     groupSummaries: {
       ...specialistCommands.groupSummaries,
+      automation: t({
+        en: "Manage incoming automations and inspect rule effects",
+        de: "Eingehende Automatisierungen verwalten und Regeländerungen prüfen",
+      }),
       "compose logo": t({
         en: "Inspect and replace the mailbox signature logo",
         de: "Das Signaturlogo des Postfachs anzeigen und ersetzen",
@@ -7991,7 +8132,7 @@ const mailCommands = (locale?: string) => {
       tag: t({ en: "Tag conversations and manage mailbox tags", de: "Unterhaltungen taggen und Postfach-Tags verwalten" }),
       conversation: t({ en: "Inspect, merge, and split conversations", de: "Unterhaltungen prüfen, zusammenführen und teilen" }),
     },
-    commands: [...everydayCommands(t), ...specialistCommands.commands, ...composeLogoCommands(t)],
+    commands: [...everydayCommands(t), ...specialistCommands.commands, ...composeLogoCommands(t), ...automationLogCommands(t)],
   });
 };
 

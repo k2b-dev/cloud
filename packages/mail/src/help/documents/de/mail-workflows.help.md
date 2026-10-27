@@ -13,8 +13,16 @@ Der Workflow-Quelltext ist auf 200.000 Zeichen begrenzt.
 :::reference
 - **Name:** 1–160 Zeichen.
 - **Beschreibung:** Optional, höchstens 2.000 Zeichen.
-- **Priorität:** Eine ganze Zahl von -1.000 bis 1.000, Standard 100. Nehmen mehrere Mail-Workflows dasselbe Ereignis an, laufen niedrigere Werte zuerst.
+- **Priorität:** Eine ganze Zahl von -1.000 bis 1.000, Standard 100. Für dasselbe Ereignis einer empfangenen Nachricht kommen kleinere Werte zuerst; bei Gleichstand entscheidet die Workflow-UUID aufsteigend. Die Reihenfolge steht bei Annahme des Ereignisses fest.
 :::
+
+## Zuweisung und konkurrierende Regeln {icon="list-numbers"}
+
+Für eine empfangene Nachricht gewinnt die erste Regel in der Prioritätsreihenfolge des Postfachs, die Zuweisung, Ablage oder Status beansprucht, für diese Art von Änderung. Untere Regeln warten auf die Entscheidungen der oberen, auch auf KI-Schritte. Endet eine obere Regel ohne diese Änderung, bleibt sie für untere Regeln verfügbar. Tags, Kommentare und Zusammenfassungen dürfen aus allen Regeln kommen.
+
+`assignConversation` überspringt die Zuweisung, sobald der Unterhaltung jemand zugewiesen ist (`already_assigned`), auch bei einer Zuweisung von Hand. Es überspringt sie auch, wenn eine Zuweisung dieses Workflows für diese Unterhaltung rückgängig gemacht wurde (`undone_before`), selbst bei späteren Antworten und nach dem 30-Tage-Protokollfenster. Nur unmittelbares **Wiederholen** durch dieselbe Person entfernt diese Sperre. Eine Zuweisung von Hand zu ändern, ändert den Workflow nie.
+
+Im [Automatisierungsprotokoll](/app/mail/help/mail-automation) prüfst du die Entscheidungskette und machst eine aktuelle Regelzuweisung rückgängig. Dafür brauchst du dieselbe Berechtigung wie zum Zuweisen von Hand; spätere manuelle Änderungen werden nicht überschrieben.
 
 ## Mit einem Workflow für empfangene Nachrichten beginnen {icon="route"}
 
@@ -178,7 +186,7 @@ Variablen, die innerhalb eines Zweigs erstellt werden, sind außerhalb dieses Zw
 | `trashMessage` | `message` | Verschiebt die Nachricht in den Papierkorbordner des Postfachs |
 | `junkMessage` | `message` | Verschiebt die Nachricht in den Spamordner des Postfachs |
 | `addFlag` / `removeFlag` | `message`, `flag` | Ändert `seen`, `answered`, `flagged` oder `draft` über das Befehlsjournal des Anbieters |
-| `assignConversation` | `conversation`, `user` | Ersetzt die zugewiesenen Personen durch eine Person, die zugewiesen werden kann, anhand ihres Namens oder ihrer ID; `null` entfernt alle Zuweisungen |
+| `assignConversation` | `conversation`, `user` | Weist eine festgelegte Person anhand ihres Namens oder ihrer ID nur zu, wenn niemand zuständig ist; `null` lässt eine unzugewiesene Unterhaltung unzugewiesen |
 | `setConversationStatus` | `conversation`, `status` | Setzt `needs_action`, `waiting` oder `done` |
 | `setConversationSummary` | `conversation`, `summary` | Ersetzt die bearbeitbare Zusammenfassung der Unterhaltung |
 | `ensureConversationReference` | `conversation`; optional `saveAs` | Vergibt die permanente Postfachreferenz oder verwendet sie erneut und speichert optional das Ergebnis |

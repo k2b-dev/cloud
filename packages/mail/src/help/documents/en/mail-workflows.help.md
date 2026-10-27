@@ -14,8 +14,16 @@ Workflow source is limited to 200,000 characters.
 :::reference
 - **Name:** 1–160 characters.
 - **Description:** Optional, at most 2,000 characters.
-- **Priority:** An integer from -1,000 to 1,000, default 100. When several Mail workflows accept the same event, lower numbers run first.
+- **Priority:** An integer from -1,000 to 1,000, default 100. For the same received-message event, lower numbers come first, with workflow UUID ascending as the tie-break. The order is fixed when Mail accepts the event.
 :::
+
+## Assignment and competing rules {icon="list-numbers"}
+
+For one received message, the first rule in mailbox priority order that claims assignment, placement, or status wins that effect class. Lower rules wait for upper decisions, including AI steps. An upper rule that finishes without an effect leaves that class available to lower rules. Tags, comments, and summaries may apply from all rules.
+
+`assignConversation` skips if the conversation has any assignee (`already_assigned`), including a manual assignment. It also skips if this workflow's assignment for the conversation was undone (`undone_before`), even on a later reply and after the 30-day log window. Only immediate redo by the same person removes that marker. A manual assignment change never edits the workflow.
+
+Use [the automation log](/app/mail/help/mail-automation) to inspect the decision chain and undo a current rule assignment. Undo needs the same permission as assigning by hand and cannot overwrite a later manual change.
 
 ## Start with a received-message workflow {icon="route"}
 
@@ -179,7 +187,7 @@ Variables created inside a branch do not escape that branch. Defining the same v
 | `trashMessage` | `message` | Moves the message to the mailbox trash folder |
 | `junkMessage` | `message` | Moves the message to the mailbox junk folder |
 | `addFlag` / `removeFlag` | `message`, `flag` | Changes `seen`, `answered`, `flagged`, or `draft` through the provider command journal |
-| `assignConversation` | `conversation`, `user` | Replaces the assignees with one person who can be assigned, by user name or ID; `null` removes all assignees |
+| `assignConversation` | `conversation`, `user` | Assigns one configured person by user name or ID only when nobody is assigned; `null` leaves an unassigned conversation unassigned |
 | `setConversationStatus` | `conversation`, `status` | Sets `needs_action`, `waiting`, or `done` |
 | `setConversationSummary` | `conversation`, `summary` | Replaces the editable conversation summary |
 | `ensureConversationReference` | `conversation`; optional `saveAs` | Allocates or reuses the permanent mailbox reference and optionally stores its result |

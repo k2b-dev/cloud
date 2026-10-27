@@ -19,6 +19,36 @@ order: 60
 
 Die Werkzeuge können zusammenarbeiten, aber keines aktiviert ein anderes. Einstellungen für Referenznummern legen das Format fest. Ein Workflow entscheidet weiterhin, wann eine Nummer vergeben wird. Das Speichern eines Workflows aktiviert ihn nicht.
 
+## Reihenfolge und bestehende Zuständigkeiten {icon="list-numbers"}
+
+Regeln für dieselbe eingehende Nachricht folgen der Priorität im Postfach von oben nach unten. Kleinere `priority`-Werte kommen zuerst; bei gleicher Priorität entscheidet die Workflow-UUID aufsteigend. Mail hält die Reihenfolge bei Annahme des Nachrichtenereignisses fest. Spätere Änderungen ordnen die Läufe dieser Nachricht nicht neu.
+
+Zuweisung, Ablage (Verschieben, Archivieren, Papierkorb oder Spam) und Status haben jeweils eine gewinnende Regel. Eine untere Regel wartet, bis die oberen Regeln entschieden haben, auch wenn eine obere Regel auf KI wartet. Die erste Regel, die eine dieser Aktionen ausführt, gewinnt dafür. Endet eine obere Regel ohne diese Änderung, darf eine untere sie ausführen. Tags, Kommentare und Zusammenfassungen können von allen passenden Regeln kommen.
+
+Keine Regel ersetzt bestehende Zuständigkeiten. Sobald jemand zuständig ist, wird der Zuweisungsschritt übersprungen, unabhängig davon, ob eine Person oder eine andere Regel zugewiesen hat. Eine Zuweisung von Hand zu ändern, ändert die Regel nicht. Das gilt auch für bestehende geführte Automatisierungen und Workflow-YAML.
+
+Bei einer KI-Klassifizierung legst du das Ziel in der Regel fest. Die KI wählt eine Kategorie, niemals eine Person anhand eines Namens in der Nachricht. Hat die Kategorie kein Ziel, weist diese Regel niemanden zu; eine untere Regel darf weiterhin jemanden zuweisen.
+
+## Im Protokoll nachsehen und eine Zuweisung rückgängig machen {icon="history"}
+
+Unter **Automatisierungen → Protokoll** siehst du, was Regeln geändert, nicht zugewiesen oder übersprungen haben, sowie von Hand geänderte Zuweisungen. Wähle einen Tag, filtere das Ergebnis oder suche nach Betreff, Absender, Regel oder Ziel. Die Zähler folgen Tag und Suche über alle Filter. Das Protokoll umfasst die letzten 30 Tage und zeigt nur Unterhaltungen, die du lesen darfst.
+
+Öffne einen Eintrag für die Entscheidungskette: Bedingungen, KI-Auswahlen und vorhandene ausgelesene Werte, die feste Regelzeile, Ziel, Änderungen und KI-Aufrufe. Das sind gespeicherte Ergebnisse; beim Öffnen wird die KI nicht erneut gefragt. Ein Quellenzitat erscheint nur, wenn eines gespeichert wurde.
+
+**Rückgängig** hebt die Zuweisung der Regel auf, solange sie noch aktuell ist. Dafür brauchst du dieselbe Berechtigung wie zum Zuweisen von Hand. Tags, Kommentare und Verschiebungen werden nicht rückgängig gemacht. Hat jemand die Zuweisung geändert oder gibt es die Unterhaltung nicht mehr, ist Rückgängig nicht möglich und ändert nichts.
+
+Nach Rückgängig weist diese Regel dieselbe Unterhaltung nie wieder zu, auch nicht bei einer späteren Antwort des Kunden. Dieser Schutz bleibt nach Ablauf des Protokolleintrags bestehen. Nur **Wiederholen**, unmittelbar nach Rückgängig durch dieselbe Person, stellt die Zuweisung wieder her und entfernt den Schutz. Für andere Regeln gelten weiterhin ihre normalen Bedingungen.
+
+Im Terminal:
+
+```bash
+cld mail automation log --mailbox Support --day 2026-10-27 --filter assignments
+cld mail automation log show <entry-id> --mailbox Support --json
+cld mail automation log undo <entry-id> --mailbox Support
+```
+
+Mit `--q` suchst du ohne Beachtung der Groß- und Kleinschreibung mit höchstens 200 Zeichen. Der Standardtag ist heute in der Postfach-Zeitzone. Nutze `--before` mit `nextCursor` für eine weitere Seite; `--limit` erlaubt 1–50 Einträge und hat den Standardwert 50. Behalte beim Blättern Tag, Suche und Filter bei.
+
 ## Eine Automatisierung für eingehende E-Mails erstellen {icon="mailbox"}
 
 Mit Zugriff **Verwalten** erstellst du unter **Automatisierungen → Eingehende E-Mails** einen geführten Ablauf. Du kannst ihn auch direkt im Organisationsmenü einer Nachricht beginnen.
@@ -87,7 +117,7 @@ Der geführte Editor und die CLI nutzen dieselbe strikte Definition. Mail lehnt 
 
 Mail erzeugt aus dem Ablauf kanonisches Workflow-YAML und zeigt es im Editor schreibgeschützt. Die Schritte laufen von oben nach unten in der gemeinsamen Workflow-Laufzeit.
 
-- **Mehrere passende Automatisierungen:** Die älteste Automatisierung entscheidet, wohin die Nachricht kommt. Eine spätere Automatisierung überspringt ihren Schritt zum Verschieben, Löschen oder Verschieben in Spam. Jede passende Automatisierung überspringt außerdem „Als gelesen markieren“ oder einen Schlüsselwort-Schritt, wenn die Nachricht ihren Ordner verlassen hat oder gerade verschoben wird. Keine der beiden scheitert an der anderen. Nur Automatisierungen für eingehende E-Mails geben auf diese Weise nach; der Schritt eines selbst geschriebenen Workflows scheitert stattdessen. Das Markieren als gelesen lässt den Verschiebe-Schritt der anderen nicht scheitern. Wenn du sicherstellen willst, dass eine Nachricht gelesen und verschoben wird, fasse beide Schritte in einer Automatisierung zusammen.
+- **Mehrere passende Automatisierungen:** Mail nutzt die oben beschriebene Regelreihenfolge im Postfach. Die erste Regel, die die Ablage beansprucht, gewinnt; eine untere Regel darf verschieben, wenn obere Regeln ohne Ablage enden. Automatisierungen für eingehende E-Mails überspringen weiterhin „Als gelesen markieren“ oder Schlüsselwort-Schritte, wenn die Nachricht ihren Ordner verlassen hat oder gerade verschoben wird. Das Lesen durch eine Regel lässt das Verschieben einer anderen nicht scheitern. Fasse Lesen und Verschieben in einer Automatisierung zusammen, wenn beides ausgeführt werden soll.
 - **Fehlgeschlagener Schritt:** Schlägt ein späterer Schritt fehl, bleiben die Effekte früherer abgeschlossener Schritte.
 - **Versionen:** Eine Änderung am Ablauf veröffentlicht eine neue unveränderliche Workflow-Version. Änderst du nur den Namen oder den Aktivstatus, entsteht keine doppelte identische Quelle.
 - **Geschützte Ziele:** Zerstörende Aktionen dürfen keine Absenderidentität des Postfachs, keine eingerichtete interne Domain, keine ihrer Subdomains und keine unsichere übergeordnete Domain treffen.
