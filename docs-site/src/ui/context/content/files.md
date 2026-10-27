@@ -251,7 +251,7 @@ type FileBrowserPanelProps = {
 
 `FileSource` and `FileViewContent` are defined above. `Component<P>` is a Solid component taking `P` and returning JSX. Renderer order matters: the first matching custom renderer wins before built-ins. Its `editable` capability and the supplied `save` determine editing availability. `registerRefresh` receives a refresh function and may return cleanup; the host should release stored references on cleanup. `onSelectedPathChange` reports selection; `initialPath` initializes it rather than controlling it. `refreshKey`/`revision` may be any changing identity.
 
-`contextMenu` returns [DropdownItem](/en/ui/actions/menus#api-reference) entries. `FileTreeActions.rename` receives a path and new **name**; `FileSource.rename` receives full from/to **paths**. Size fields are bytes. `getFileViewPreviewKind(file: FileViewFile): FileViewPreviewKind | null` infers the format; `canPreviewFile(file: FileViewFile): boolean` applies format and size support; `formatFileViewSize(bytes: number): string` formats bytes.
+`contextMenu` returns [DropdownItem](/en/ui/actions/menus#api-reference) entries. `FileTreeActions.rename` receives a path and new **name**; `FileSource.rename` receives full from/to **paths**. Size fields are bytes. `getFileViewPreviewKind(file: FileViewFile): FileViewPreviewKind | null` infers the format; `canPreviewFile(file: FileViewFile): boolean` applies format and size support; `formatFileViewSize(bytes: number, locale?: string): string` formats bytes; with `locale`, the number follows that language ("4,2 MB" in German) and drops a trailing zero.
 
 ## Accessibility
 
@@ -400,7 +400,7 @@ must keep it, for example in the URL.
   actionVisibility="progressive"
   renderPreview={(file) => (isImage(file) ? <img src={file.thumbnail} alt="" /> : <FileTypeIcon name={file.name} />)}
   renderLabel={(file) => file.name}
-  renderMeta={(file) => `${fileKindLabel(file, locale())} · ${formatFileViewSize(file.size)}`}
+  renderMeta={(file) => `${fileKindLabel(file, locale())} · ${formatFileViewSize(file.size, locale())}`}
   renderActions={(file) => <DownloadButton file={file} />}
   groups={(rows) => [
     { id: "files", label: t().files, rows: rows.filter((file) => !isImage(file)) },
