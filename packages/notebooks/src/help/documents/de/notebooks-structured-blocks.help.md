@@ -134,9 +134,9 @@ title: Sales 2026
 data: @sales
 x: Date
 y: [Revenue, Costs]
+format: EUR
 tooltip:
   label: Amount
-  format: EUR
 :::
 ```
 
@@ -163,7 +163,11 @@ y: Revenue
 
 Rücke Zeileneinträge und Tooltip-Felder um zwei Leerzeichen ein. Jede Zeile muss zur Spaltenzahl passen. Kombiniere `data` nicht mit direkt angegebenen Zeilen. Das Format ähnelt YAML, ist aber kein allgemeines YAML.
 
-Der optionale Abschnitt `tooltip` erlaubt `label`, `format` und `unit`. Formate sind `number`, `percent` oder ein Währungscode aus drei Großbuchstaben wie `EUR`. `unit` ergänzt ein kurzes Suffix. Kreis-, Ring- und Kennzahldiagramme verwenden dieses Format auch für die angezeigte Zahl. Eine einzelne Wertspalte liefert standardmäßig die Tooltip-Beschriftung; die y-Spaltennamen beschriften die Datenreihen.
+Mit `format` und `unit` legst du fest, wie das Diagramm seine Werte schreibt: an der Werteachse, neben den Balken, in Tooltips und in der Tabelle. Formate sind `number`, `percent` oder ein Währungscode aus drei Großbuchstaben wie `EUR`. `unit` ergänzt ein kurzes Suffix wie `kg`. Kreis-, Ring- und Kennzahldiagramme verwenden dieses Format für die angezeigte Zahl.
+
+Das Diagramm beschriftet seine Achsen mit der `x`-Spalte und dem Namen des Werts. Eine einzelne Wertspalte benennt den Wert; `tooltip.label` kann ihn umbenennen. Zwei oder mehr y-Spalten bekommen eine Legende mit ihren Namen. Ein Balkendiagramm beschriftet jede Kategorie und zeigt jeden Wert neben seinem Balken. Wenige kurze Beschriftungen stehen unter Säulen. Sonst bekommt jede Kategorie eine eigene Zeile, und das Diagramm wächst mit der Zahl der Zeilen.
+
+Der optionale Abschnitt `tooltip` erlaubt `label`, `format` und `unit`. Ein `format` oder `unit` im Tooltip gilt für Tooltips und die Tabelle. Ohne `format` für das ganze Diagramm formatiert es auch die Achse und die Werte neben den Balken.
 
 Eine Notiz kann 20 Diagramme enthalten. Jede Datenliste hat höchstens 480 Werte, ein Diagramm höchstens 8 Datenreihen. Das Diagramm prüft außerdem die Gesamtzahl der Datenpunkte und ob Werte und Beschriftungen passen. Ungültige Einstellungen zeigen einen Fehler in der Quellzeile; der Quelltext bleibt sichtbar. Der PDF-Export enthält das Diagramm und danach seine Datentabelle.
 
