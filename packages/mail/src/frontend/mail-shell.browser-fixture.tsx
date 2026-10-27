@@ -321,6 +321,7 @@ export function mailboxData(url: URL): MailboxPageData {
       ? { summary: "Invented request summary.", summaryRevision: 1, conversationRevision: 1 }
       : null,
     conversationDrafts: [],
+    automationTrace: [],
     detailError: null,
     collaborationState: selectedConversationId
       ? { conversationId: selectedConversationId, assignees: [], workStatus: "needs_action", snoozedUntil: null, revision: 1 }

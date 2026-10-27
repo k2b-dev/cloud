@@ -38,6 +38,7 @@ const selectionPart = (page: MailboxPageData): MailConversationDetailData => {
     conversationRowState: page.conversationRowState,
     conversationSummary: page.conversationSummary,
     conversationDrafts: page.conversationDrafts,
+    automationTrace: page.automationTrace,
     detailError: page.detailError,
     collaborationState: page.collaborationState,
     conversationLocalTags: page.conversationLocalTags,

@@ -31,7 +31,7 @@ import { type Accessor, batch, createEffect, createMemo, createSignal, on, onCle
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory";
-import type { MailDraftSeed } from "../contracts";
+import type { AutomationLogItem, MailDraftSeed } from "../contracts";
 import { isAggregatedListing, mailListingExcludesTrashAndJunk, mailRowLeavesListing } from "../folder-display-rules";
 import { mailFolderPaths } from "../folder-tree";
 import { parseMailLiveEvent } from "../live-event";
@@ -2442,6 +2442,32 @@ function MailboxWorkspace(
       ),
     onError: (error) => toast.error(error.message),
   });
+  /** Undo of a rule's assignment from the reader: the rule never assigns this conversation again. */
+  const automationUndo = mutation.create<void, AutomationLogItem>({
+    mutation: async (item) => {
+      const response = await apiClient.mailboxes[":mailboxId"]["automation-log"][":itemId"].undo.$post({
+        param: { mailboxId, itemId: item.id },
+      });
+      if (!response.ok) throw new Error(await readApiError(response, t().assignFailed));
+      await requireWorkspaceReconcile();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const assignOpenConversation = () => {
+    const conversationId = data.selectedConversationId;
+    if (!canWrite() || structurePending() || !conversationId) return Promise.resolve();
+    return assignSelectionMutation.mutate([conversationId]);
+  };
+  const assignOpenConversationToMe = async () => {
+    const conversationId = data.selectedConversationId;
+    if (!canWrite() || structurePending() || !conversationId || !props.currentUserId) return;
+    const response = await apiClient.mailboxes[":mailboxId"].conversations.assign.$post({
+      param: { mailboxId },
+      json: { conversationIds: [conversationId], assigneeUserIds: [props.currentUserId], mode: "replace" },
+    });
+    if (!response.ok) return void toast.error(await readApiError(response, t().assignFailed));
+    await requireWorkspaceReconcile();
+  };
   const assignSelection = () => {
     const conversationIds = [...selectedConversationIds()];
     if (!canWrite() || structurePending() || conversationIds.length === 0) return Promise.resolve();
@@ -2913,6 +2939,11 @@ function MailboxWorkspace(
                   activity={conversationActivity()}
                   conversationSummary={data.conversationSummary}
                   conversationDrafts={data.conversationDrafts}
+                  automationTrace={data.automationTrace}
+                  onUndoAutomation={(item) => automationUndo.mutate(item)}
+                  onAssignConversation={assignOpenConversation}
+                  onAssignConversationToMe={assignOpenConversationToMe}
+                  automationPending={automationUndo.loading()}
                   totalMessageCount={hasSelection() ? (selectedListItem()?.messageCount ?? data.detailMessages.length) : 0}
                   error={hasSelection() ? data.detailError : null}
                   dateConfig={props.dateConfig}

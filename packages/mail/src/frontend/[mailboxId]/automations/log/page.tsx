@@ -1,7 +1,9 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
+import { z } from "zod";
 import { ssr } from "../../../../config";
 import type { MailRequestContext } from "../../../../service";
+import { getAutomationLogItem } from "../../../../service/automation-log";
 import { loadMailAutomationLog } from "../../../../service/automation-workspace";
 import { requestContactDirectory } from "../../../../service/contact-directory";
 import MailAutomationLogPage from "../../../MailAutomationLogPage.island";
@@ -29,7 +31,12 @@ export default ssr<AuthContext>(async (c) => {
   // The URL holds the filter and search, so reload and back show the same view the server rendered.
   const filter = readFilter(c.req.query("filter"));
   const q = c.req.query("q")?.trim().slice(0, 200) || undefined;
-  const result = await loadMailAutomationLog(context, mailboxId, { filter, q });
+  // Only a well-formed entry ID reaches the service; anything else opens the log without a detail.
+  const entry = z.string().uuid().safeParse(c.req.query("entry")).data;
+  const [result, detail] = await Promise.all([
+    loadMailAutomationLog(context, mailboxId, { filter, q }),
+    entry ? getAutomationLogItem(context, mailboxId, entry) : null,
+  ]);
   if (!result.ok) return ssr.error(c, result.error.status);
   const data = await projectAutomationWorkspace(result.data);
   const directory = await requestContactDirectory(c);
@@ -47,7 +54,14 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.breadcrumbLog },
       ]}
     >
-      <MailAutomationLogPage data={data} filter={filter} q={q ?? null} currentUserEmail={user.mail} contactDirectory={directory} />
+      <MailAutomationLogPage
+        data={data}
+        detail={detail?.ok ? detail.data : null}
+        filter={filter}
+        q={q ?? null}
+        currentUserEmail={user.mail}
+        contactDirectory={directory}
+      />
     </Layout>
   );
 });

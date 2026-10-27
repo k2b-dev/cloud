@@ -265,6 +265,7 @@ describe("Mail workspace conversation open", () => {
           ],
       conversationSummary: null,
       conversationDrafts: [],
+      automationTrace: [],
       detailError: null,
       collaborationState: null,
       conversationLocalTags: { conversationId, conversationRevision: revisions.get(conversationId) ?? 1, tags: [] },

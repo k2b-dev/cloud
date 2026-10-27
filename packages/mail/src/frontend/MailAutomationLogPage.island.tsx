@@ -1,7 +1,7 @@
 import { createMemo } from "solid-js";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory-settings";
-import { automationLogItemSchema } from "../contracts";
+import { type AutomationLogDetail, automationLogItemSchema } from "../contracts";
 import type { MailAutomationLogData } from "../service/automation-workspace";
 import { readApiError } from "./_components/api-response";
 import MailAutomationLog, { type MailAutomationLogApi, UndoNotPossible } from "./_components/MailAutomationLog";
@@ -13,6 +13,7 @@ const isFilter = (value: string | null): value is AutomationLogFilter => value !
 
 export default function MailAutomationLogPage(props: {
   data: MailAutomationLogData;
+  detail: AutomationLogDetail | null;
   filter: string | null;
   q: string | null;
   currentUserEmail: string | null;
@@ -76,6 +77,7 @@ export default function MailAutomationLogPage(props: {
         initial={props.data.log}
         initialFilter={initialFilter()}
         initialQuery={props.q ?? ""}
+        initialDetail={props.detail}
         canUndo={props.data.permission !== "read"}
         api={api}
         onViewChange={({ filter, q }) => {

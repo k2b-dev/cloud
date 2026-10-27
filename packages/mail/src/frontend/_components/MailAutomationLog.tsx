@@ -67,6 +67,8 @@ export default function MailAutomationLog(props: {
   initial: AutomationLogPage;
   initialFilter?: AutomationLogFilter;
   initialQuery?: string;
+  /** An entry opened from elsewhere (the reader's "Why?"), rendered with its chain on the server. */
+  initialDetail?: AutomationLogDetail | null;
   canUndo: boolean;
   api: MailAutomationLogApi;
   /** Keeps the filter and search in the URL, so reload and back return to the same view. */
@@ -80,8 +82,8 @@ export default function MailAutomationLog(props: {
   const [page, setPage] = createSignal<AutomationLogPage>(props.initial);
   const [phase, setPhase] = createSignal<"ready" | "loading" | "error">("ready");
   const [loadingMore, setLoadingMore] = createSignal(false);
-  const [selected, setSelected] = createSignal<string | null>(null);
-  const [detail, setDetail] = createSignal<AutomationLogDetail | null>(null);
+  const [selected, setSelected] = createSignal<string | null>(props.initialDetail?.id ?? null);
+  const [detail, setDetail] = createSignal<AutomationLogDetail | null>(props.initialDetail ?? null);
   const [detailError, setDetailError] = createSignal(false);
   const [notPossible, setNotPossible] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal<string | null>(null);

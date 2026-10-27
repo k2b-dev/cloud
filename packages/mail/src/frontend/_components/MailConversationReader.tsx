@@ -30,6 +30,7 @@ import { batch, createEffect, createMemo, createSignal, For, onCleanup, onMount,
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
 import type {
+  AutomationLogItem,
   ConversationDraftSummary,
   DeriveDraftFromMessageInput,
   DraftDerivationKind,
@@ -43,6 +44,7 @@ import type { ConversationKeep } from "../../service/conversation-keeps";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
 import type { MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
+import MailAutomationTrace from "./MailAutomationTrace";
 import MailConversationSummaryCard from "./MailConversationSummaryCard";
 import { openMailConversationToolbarDialog } from "./MailConversationToolbarDialog";
 import MailMessageCard from "./MailMessageCard";
@@ -137,6 +139,12 @@ export default function MailConversationReader(props: {
   onManageTags: () => void | Promise<void>;
   onMergeConversation: () => void | Promise<void>;
   onReassignMessage: (messageId: string) => void | Promise<void>;
+  /** What rules did with this conversation, newest first. */
+  automationTrace: AutomationLogItem[];
+  onUndoAutomation: (item: AutomationLogItem) => void | Promise<void>;
+  onAssignConversation: () => void | Promise<void>;
+  onAssignConversationToMe: () => void | Promise<void>;
+  automationPending?: boolean;
   onSplitMessage: (messageId: string) => void | Promise<void>;
   onKeep: () => void | Promise<void>;
   onStopKeeping: () => void | Promise<void>;
@@ -269,6 +277,10 @@ export default function MailConversationReader(props: {
     });
   };
   const summarySaving = summarySave.loading;
+  const automationOrderHref = () => `/app/mail/${props.mailboxId}/automations/workflows`;
+  /** The Protokoll entry with the whole chain, from rule to the fixed row that decided. */
+  const automationWhyHref = (item: AutomationLogItem) =>
+    `/app/mail/${props.mailboxId}/automations/log?entry=${encodeURIComponent(item.id)}`;
   const closeHref = () => buildMailListHref(mailRouteUrl(props.requestUrl));
   let closeDraftDialog: ((value: ConversationDraftSummary | null | undefined) => void) | null = null;
   let cleanupPrint: (() => void) | null = null;
@@ -1369,6 +1381,17 @@ export default function MailConversationReader(props: {
             onScroll={handleReaderScroll}
           >
             <div class="mail-reading-column" data-mail-reading-column>
+              <MailAutomationTrace
+                items={props.automationTrace}
+                where="top"
+                canWrite={props.canWrite}
+                whyHref={automationWhyHref}
+                orderHref={automationOrderHref()}
+                onUndo={(item) => void props.onUndoAutomation(item)}
+                onAssign={() => void props.onAssignConversation()}
+                onAssignToMe={() => void props.onAssignConversationToMe()}
+                busy={props.automationPending}
+              />
               <Show when={props.conversationSummary?.summary}>
                 {(summary) => (
                   <MailConversationSummaryCard
@@ -1496,6 +1519,19 @@ export default function MailConversationReader(props: {
                   )}
                 </Show>
               </div>
+              <Show when={props.automationTrace.length > 0}>
+                <MailAutomationTrace
+                  items={props.automationTrace}
+                  where="bottom"
+                  canWrite={props.canWrite}
+                  whyHref={automationWhyHref}
+                  orderHref={automationOrderHref()}
+                  onUndo={(item) => void props.onUndoAutomation(item)}
+                  onAssign={() => void props.onAssignConversation()}
+                  onAssignToMe={() => void props.onAssignConversationToMe()}
+                  busy={props.automationPending}
+                />
+              </Show>
             </div>
           </ScrollArea>
           <Show when={pendingNewMessages()}>
