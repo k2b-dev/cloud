@@ -2,6 +2,7 @@ import type { WorkflowBoundPlan, WorkflowIrStep } from "@k2b/cloud/workflows";
 import { sql } from "bun";
 import type { ActorRef, AuditStep, AutomationLogItem } from "../contracts";
 import { actorRefFromRequest, type MailRequestContext, userBackedActor } from "./auth";
+import { enqueueMailInvalidation, mailLive } from "./live";
 
 type SqlClient = typeof sql;
 type Reason = AutomationLogItem["reasons"][number];
@@ -365,9 +366,15 @@ const projectMailWorkflowAudit = async (runId: string, db: SqlClient): Promise<v
       },
     ];
     const assignment = audit.effects.find((effect) => effect.kind === "assign");
-    await db`INSERT INTO mail.automation_log (id, mailbox_id, conversation_id, run_id, item, chain, assignment_user_id, created_at)
+    const changed = await db<
+      { id: string }[]
+    >`INSERT INTO mail.automation_log (id, mailbox_id, conversation_id, run_id, item, chain, assignment_user_id, created_at)
       VALUES (${itemId}::uuid, ${run.mailbox_id}::uuid, ${conv.id}::uuid, ${runId}::uuid, ${item}, ${chain}, ${assignment?.kind === "assign" ? assignment.target.id : null}::uuid, ${item.at}::timestamptz)
-      ON CONFLICT (run_id, conversation_id) DO UPDATE SET item = EXCLUDED.item || jsonb_build_object('id', mail.automation_log.id, 'at', mail.automation_log.item->'at'), chain = EXCLUDED.chain, assignment_user_id = EXCLUDED.assignment_user_id`;
+      ON CONFLICT (run_id, conversation_id) DO UPDATE SET item = EXCLUDED.item || jsonb_build_object('id', mail.automation_log.id, 'at', mail.automation_log.item->'at'), chain = EXCLUDED.chain, assignment_user_id = EXCLUDED.assignment_user_id
+      WHERE (mail.automation_log.item, mail.automation_log.chain, mail.automation_log.assignment_user_id)
+        IS DISTINCT FROM (EXCLUDED.item, EXCLUDED.chain, EXCLUDED.assignment_user_id)
+      RETURNING id`;
+    if (changed.length) await enqueueMailInvalidation(db, { mailboxId: run.mailbox_id, conversationId: conv.id });
   }
 };
 
@@ -377,4 +384,5 @@ export const recordMailWorkflowAudit = async (runId: string, db: SqlClient = sql
     await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`mail:automation-log:${runId}`}, 0))`;
     await projectMailWorkflowAudit(runId, tx);
   });
+  mailLive.wake();
 };

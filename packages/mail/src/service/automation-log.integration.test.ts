@@ -29,9 +29,10 @@ import { applyConversationCollaboration } from "./collaboration";
 import { createMailbox } from "./mailboxes";
 import { ingestEnvelope } from "./sync-runtime";
 import { getWorkflowSnapshot, mailWorkflowEventContext } from "./workflow-data";
-import { activateWorkflow, createWorkflow } from "./workflow-definition-service";
+import { activateWorkflow, createWorkflow, createWorkflowVersion } from "./workflow-definition-service";
 import { captureMailWorkflowEffectOrder } from "./workflow-effect-order";
 import { runMailWorkflow } from "./workflow-runtime";
+import { loadMailboxConversationDetail } from "./workspace";
 
 const unwrap = <T>(result: Result<T>): T => {
   if (!result.ok) throw new Error(JSON.stringify(result.error));
@@ -130,6 +131,7 @@ suite("Mail conversation automation log and undo", () => {
       >`SELECT access_id FROM mail.mailbox_access WHERE mailbox_id = ${mailboxId}::uuid UNION SELECT access_id FROM mail.mailbox_assigned_access WHERE mailbox_id = ${mailboxId}::uuid`;
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailboxId}::uuid`;
       await deleteWorkflowScope({ appId: "mail", scopeId: mailboxId });
+      await sql`DELETE FROM events.outbox WHERE app_id = 'mail' AND ordering_key LIKE ${`${mailboxId}%`}`;
       for (const row of access) await sql`DELETE FROM auth.access WHERE id = ${row.access_id}::uuid`;
     }
     await sql`DELETE FROM audit.events WHERE request_id = ${`s4-audit-${suffix}`}`;
@@ -261,6 +263,9 @@ suite("Mail conversation automation log and undo", () => {
     const detail = unwrap(await getAutomationLogItem(users[0]!, mailboxId, item.id));
     expect(automationLogDetailSchema.safeParse(detail).success).toBe(true);
     expect(detail.chain.map((step) => step.kind)).toEqual(["rule_start", "fixed_row", "result"]);
+    expect(
+      (await loadMailboxConversationDetail({ context: users[0]!, mailboxId, conversationId: first.conversationId }))?.automationTrace,
+    ).toContainEqual(item);
     const undone = unwrap(await changeAutomationLogAssignment(users[0]!, mailboxId, item.id, "undo"));
     const [persistedUndo] = await sql<{ undone_at: Date }[]>`SELECT undone_at FROM mail.automation_log WHERE id = ${item.id}::uuid`;
     expect(undone.item.undo).toEqual({
@@ -270,6 +275,9 @@ suite("Mail conversation automation log and undo", () => {
       at: persistedUndo!.undone_at.toISOString(),
     });
     expect(unwrap(await getAutomationLogItem(users[0]!, mailboxId, item.id)).undo).toEqual(undone.item.undo);
+    expect(
+      (await loadMailboxConversationDetail({ context: users[0]!, mailboxId, conversationId: first.conversationId }))?.automationTrace,
+    ).toContainEqual(undone.item);
     expect(await assignment(first.conversationId)).toEqual([]);
     const [marker] = await sql<
       { present: boolean }[]
@@ -421,6 +429,30 @@ suite("Mail conversation automation log and undo", () => {
     expect(await assignment(input.conversationId)).toEqual([userId(2)]);
   });
 
+  test("a skipped rule publishes its trace after projection, and unchanged recovery publishes nothing", async () => {
+    const definition = await rule(),
+      input = await message();
+    await manual(input.conversationId, [userId(3)]);
+    const runId = await run(definition, input);
+    await sql`DELETE FROM events.outbox WHERE app_id = 'mail' AND ordering_key LIKE ${`${mailboxId}%`}`;
+    expect(await runMailWorkflow(runId)).toMatchObject({ result: { state: "succeeded" } });
+    const updates = await sql<{ ordering_key: string; payload: { d: { conversationId: string } } }[]>`
+      SELECT ordering_key, payload FROM events.outbox WHERE app_id = 'mail' AND kind = 'live' AND ordering_key LIKE ${`${mailboxId}%`}`;
+    expect(updates.map((row) => row.ordering_key).sort()).toEqual([mailboxId, `${mailboxId}:${userId(3)}`].sort());
+    expect(updates.every((row) => row.payload.d.conversationId === input.snapshot.source.conversation!.id)).toBe(true);
+    const detail = await loadMailboxConversationDetail({ context: users[3]!, mailboxId, conversationId: input.conversationId });
+    expect(detail?.automationTrace).toContainEqual(
+      expect.objectContaining({ outcome: "skipped", reasons: [{ kind: "already_assigned" }] }),
+    );
+    await sql`DELETE FROM events.outbox WHERE app_id = 'mail' AND ordering_key LIKE ${`${mailboxId}%`}`;
+    await recordMailWorkflowAudit(runId);
+    const [pending] = await sql<
+      { count: number }[]
+    >`SELECT count(*)::int AS count FROM events.outbox WHERE app_id = 'mail' AND kind = 'live' AND ordering_key LIKE ${`${mailboxId}%`}`;
+    expect(pending?.count).toBe(0);
+    await manual(input.conversationId, [userId(1)]);
+  });
+
   test("AI audit uses the fake structured provider's stored choice, fields and executed fixed row", async () => {
     const input = await message();
     const definition = unwrap(
@@ -511,6 +543,50 @@ steps:
     expect(detail.reasons).toContainEqual(expect.objectContaining({ kind: "comparison", met: true }));
     expect(detail.chain).toContainEqual(expect.objectContaining({ kind: "fixed_row", target: { kind: "user", name: "Nora" } }));
     expect(detail.aiCalls.run).toBe(2);
+    // Count the same rule across versions, excluding other rules and conversations hidden from an assigned-only reader.
+    await sql`UPDATE ai.workflow_task SET created_at = ${fixed} WHERE run_id = ${runId}::uuid`;
+    const version = unwrap(
+      await createWorkflowVersion({
+        context: users[0]!,
+        mailboxId,
+        workflowId: definition.id,
+        input: {
+          source: definition.currentVersion.source,
+          effectBudget: workflowEffectBudgetSchema.parse(definition.currentVersion.effectBudget),
+        },
+      }),
+    );
+    unwrap(
+      await activateWorkflow({
+        context: users[0]!,
+        mailboxId,
+        workflowId: definition.id,
+        input: { expectedVersionId: version.currentVersion.id },
+      }),
+    );
+    const sibling = await message(),
+      siblingRunId = await run(version, sibling);
+    const other = await rule(),
+      otherRunId = await run(other, await message());
+    const taskFor = async (taskRunId: string) => {
+      const { task } = await createWorkflowAiTask({
+        runId: taskRunId,
+        stepKey: "steps.0",
+        effectKey: `workflow:${taskRunId}:step:steps.0`,
+        request: { kind: "classify", input: "650 EUR", prompt: "Classify", choices: ["Complaint", "Other"] },
+        modelProfileId: "fixture",
+      });
+      await sql`UPDATE ai.workflow_task SET created_at = ${fixed} WHERE id = ${task.id}::uuid`;
+    };
+    await taskFor(siblingRunId);
+    await taskFor(otherRunId);
+    expect(unwrap(await getAutomationLogItem(users[0]!, mailboxId, item.id)).aiCalls).toEqual({ run: 2, today: 3, limit: null });
+    await manual(input.conversationId, [userId(3)]);
+    expect(unwrap(await getAutomationLogItem(users[3]!, mailboxId, item.id)).aiCalls).toEqual({ run: 2, today: 2, limit: null });
+    await manual(sibling.conversationId, [userId(3)]);
+    expect(unwrap(await getAutomationLogItem(users[3]!, mailboxId, item.id)).aiCalls.today).toBe(3);
+    await manual(input.conversationId, [userId(1)]);
+    await manual(sibling.conversationId, [userId(1)]);
     expect(detail.by).toMatchObject({ kind: "rule", ai: true });
   });
 

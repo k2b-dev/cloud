@@ -50,6 +50,9 @@ assignment changes. It uses the existing 30-day activity window. It is an
 operational view, not a permanent compliance archive. Calendar days use UTC;
 mailboxes have no separate timezone setting. Opening a decision chain
 uses recorded AI output and makes no new AI call; source quotes may be absent.
+The daily AI count covers that rule across all its versions, restricted to
+conversations the reader may see. New audit entries refresh the open reader
+through the same live updates as conversation changes.
 
 Undo needs the same permission as manual assignment. It reverses the rule's
 assignment only while that assignment is still current; it does not reverse

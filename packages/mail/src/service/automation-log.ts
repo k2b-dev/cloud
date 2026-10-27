@@ -141,14 +141,17 @@ export const getAutomationLogItem = async (
   const [row] = await sql<LogRow[]>`SELECT ${rowColumns} ${rowFrom} WHERE log.mailbox_id = ${mailboxId}::uuid AND log.id = ${itemId}::uuid
     AND ${conversationVisibleTo(allowed.data, sql`log.conversation_id`)}`;
   if (!row) return fail(err.notFound("Automation log entry"));
+  const item = itemFromRow(row);
+  const workflowId = item.by.kind === "rule" ? item.by.workflowId : null;
+  const today = `${new Date().toISOString().slice(0, 10)}T00:00:00Z`;
   const [calls] = await sql<{ run: number; today: number }[]>`
     SELECT count(*) FILTER (WHERE task.run_id = ${row.run_id}::uuid)::int AS run,
-      count(*) FILTER (WHERE task.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')::int AS today
+      count(*) FILTER (WHERE task.created_at >= ${today}::timestamptz AND task.created_at < ${today}::timestamptz + interval '1 day')::int AS today
     FROM ai.workflow_task task JOIN workflows.run run ON run.id = task.run_id
-    WHERE run.app_id = 'mail' AND run.scope_id = ${mailboxId}
-      AND (task.run_id = ${row.run_id}::uuid OR task.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
+    WHERE run.app_id = 'mail' AND run.scope_id = ${mailboxId} AND run.workflow_id = ${workflowId}::uuid
+      AND (task.run_id = ${row.run_id}::uuid OR (task.created_at >= ${today}::timestamptz AND task.created_at < ${today}::timestamptz + interval '1 day'))
       AND ${allowed.data.scope === "mailbox" ? sql`true` : sql`EXISTS (SELECT 1 FROM mail.conversations conversation WHERE conversation.short_id = run.context #>> '{source,conversation,id}' AND conversation.mailbox_id = ${mailboxId}::uuid AND ${conversationVisibleTo(allowed.data, sql`conversation.id`)})`}`;
-  return ok({ ...itemFromRow(row), chain: row.chain, aiCalls: { run: calls?.run ?? 0, today: calls?.today ?? 0, limit: null } });
+  return ok({ ...item, chain: row.chain, aiCalls: { run: calls?.run ?? 0, today: calls?.today ?? 0, limit: null } });
 };
 
 export const getConversationAutomationTrace = async (
