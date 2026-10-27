@@ -452,14 +452,16 @@ describe("inline comments", () => {
         const right = card.getBoundingClientRect().right;
         return [...card.querySelectorAll<HTMLElement>(".notebook-comment__who")].map((who) => {
           const name = who.querySelector("b")!;
-          const times = [...who.querySelectorAll<HTMLElement>(".notebook-comment__time")];
+          const meta = who.querySelector<HTMLElement>(".notebook-comment__time")!;
           return {
             name: name.textContent!,
             overflows: who.scrollWidth > who.clientWidth || who.getBoundingClientRect().right > right + 0.5,
             truncated: name.scrollWidth > name.clientWidth,
             nameWidth: Math.round(name.getBoundingClientRect().width),
-            metaBelow: times.every((time) => time.getBoundingClientRect().top >= name.getBoundingClientRect().bottom - 1),
-            meta: times.map((time) => time.textContent!.trim()).join(" "),
+            metaBelow: meta.getBoundingClientRect().top >= name.getBoundingClientRect().bottom - 1,
+            // Time and origin wrap as one: the "·" never starts a line.
+            metaOneLine: meta.getClientRects().length === 1,
+            meta: meta.textContent!.trim(),
           };
         });
       }, scope);
@@ -482,7 +484,12 @@ describe("inline comments", () => {
           rows.filter((row) => row.overflows),
           `${query} ${width}`,
         ).toEqual([]);
-        expect(agent, `${query} ${width}`).toMatchObject({ truncated: true, metaBelow: true, meta: "vor 3 Minuten · über Assistant" });
+        expect(agent, `${query} ${width}`).toMatchObject({
+          truncated: true,
+          metaBelow: true,
+          metaOneLine: true,
+          meta: "vor 3 Minuten · über Assistant",
+        });
         expect(agent!.nameWidth, `${query} ${width}`).toBeGreaterThan(120);
         // A short name keeps time and origin beside it on one line.
         expect(rows.find((row) => row.name === "Du")?.metaBelow, `${query} ${width}`).toBe(false);
