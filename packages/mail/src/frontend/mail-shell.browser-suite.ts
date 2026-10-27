@@ -396,7 +396,7 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         });
 
     for (const width of [1440, 390])
-      test(`AI summary states ${width}: one place, fixed height while writing, cyan only for AI`, async () => {
+      test(`automation: AI summary states ${width}: one place, fixed height while writing, cyan only for AI`, async () => {
         const heights: Record<string, number> = {};
         for (const state of ["ai", "stale", "writing", "failed", "limited", "person"] as const) {
           const page = await open(`${boxPath}?conversation=Conv01&locale=de&summary=${state}`, width, width === 390 ? 844 : 900);
