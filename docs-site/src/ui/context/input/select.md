@@ -56,12 +56,12 @@ group.
 | --- | --- | --- |
 | Sharing level (View, Edit, Manage) | `RichSelect`, no preview | One line per level says what it allows; the last manager sees why lower levels are locked |
 | Mail sender | `RichSelect` with preview | Reply address, copies, folder and signature differ per sender; an unconfirmed sender shows its reason |
-| Space for a moved card | `RichSelect` with preview | The preview names only what the move drops, such as tags or assignees |
-| Target folder for moving or copying files | `RichSelect` | One line says who has access there; a folder without write access shows the reason |
+| Space for a moved card | `RichSelect` with preview | The row says what the move drops and whether a guest sees the card; the preview names the details |
+| Target folder for moving or copying files | `RichSelect` with preview | Access, versioning and whether the files move or are copied differ per folder; a folder without write access shows the reason |
 | Calendar for an invitation | `RichSelect` | One line says who sees the event |
 | AI model class in the composer | `ChoiceSlider` in a card | Fast, Balanced, Thorough and Maximum form an order; a list of every model opens from the card |
 | A Project's default AI model | `RichSelect` | No default, a class, or one model outside the classes, each with one line |
-| Provider type when adding an AI provider | `ChoiceChips` or radio choices | Few short choices, all visible at once |
+| Provider type when adding an AI provider | `ChoiceTiles` | Few choices, all visible at once, each with its provider mark |
 
 Use [RichSelect](rich-select) for explained choices and unavailable reasons;
 do not build select rows inside an action menu.
