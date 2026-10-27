@@ -1097,16 +1097,8 @@ test("annotation help tells agents to propose a reply suggestion and await the p
 });
 
 test("comments add without a quote points to the page discussion and sends nothing", async () => {
-  const result = await runCli("http://127.0.0.1:9", [
-    "notebooks",
-    "comments",
-    "add",
-    "note01",
-    "--content",
-    "Looks good",
-    "--idempotency-key",
-    "k1",
-  ]);
+  // A former page discussion call: no --quote and no --idempotency-key.
+  const result = await runCli("http://127.0.0.1:9", ["notebooks", "comments", "add", "note01", "--content", "Looks good"]);
   expect(result.exitCode).toBe(1);
   expect(result.stderr).toContain("needs --quote");
   expect(result.stderr).toContain("cld notebooks discussion add note01");

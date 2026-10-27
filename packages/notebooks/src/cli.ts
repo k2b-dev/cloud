@@ -1917,7 +1917,8 @@ function notebooksCommands(locale?: string) {
         args: noteArg,
         flags: {
           ...inputFlags,
-          // Checked in run, so that a page discussion post sent here gets a pointer to `discussion add`.
+          // --quote and --idempotency-key are checked in run, so that a page discussion post sent here
+          // gets a pointer to `discussion add` before any other missing flag.
           quote: flag.string({
             description: t({
               en: "Required. Exact selected Markdown (up to 2,000 characters)",
@@ -1954,10 +1955,9 @@ function notebooksCommands(locale?: string) {
           }),
           idempotencyKey: flag.string({
             name: "idempotency-key",
-            required: true,
             description: t({
-              en: "Stable key reused for retries of this comment",
-              de: "Stabiler Schlüssel für Wiederholungen dieses Kommentars",
+              en: "Required. Stable key reused for retries of this comment",
+              de: "Erforderlich. Stabiler Schlüssel für Wiederholungen dieses Kommentars",
             }),
           }),
         },
@@ -1969,6 +1969,7 @@ function notebooksCommands(locale?: string) {
                 de: `${annotationCommand("add")} kommentiert eine Textstelle und braucht --quote. Für einen Beitrag zur Seitendiskussion: \`cld notebooks discussion add ${args.note} --content …\`.`,
               }),
             );
+          if (flags.idempotencyKey === undefined) throw new Error("Missing required flag --idempotency-key.");
           if (flags.from === "-" && flags.suggestionFrom === "-")
             throw new Error(
               t({ en: "Read stdin for either body or suggestion", de: "Standardeingabe für Kommentar oder Vorschlag wählen" }),

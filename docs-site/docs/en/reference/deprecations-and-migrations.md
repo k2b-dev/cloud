@@ -1908,7 +1908,7 @@ or `--content <text>` instead of `--file`, `--stdin`, and `--content`. See
 | `lock-note` | `lock <note>` |
 | `search --all`, `tag-notes` | `search [query] [--notebook] [--tags]` |
 | `favorite`, `unfavorite`, `favorites` | `favorites add`, `favorites remove`, `favorites list` |
-| `comments`, `add-comment`, `update-comment`, `delete-comment` | `comments list`, `add`, `update`, `delete` |
+| `comments`, `add-comment`, `update-comment`, `delete-comment` | `discussion list`, `add`, `update`, `delete` (named `comments` until the page discussion moved) |
 | `versions`, `version`, `restore-version` | `versions list`, `versions cat`, `versions restore --into` |
 | `upload-attachment` | `attach <note> <file>` |
 | `attachments`, `download-attachment`, `delete-attachment` | `attachments list`, `download`, `delete` |

@@ -20,7 +20,7 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 - Replace complete Markdown only when the whole note should change and the complete source is available. Never replace a complete note with a partial window. On conflict, read again and reconcile rather than overwriting newer work.
 - Block selectors use name, type and hash; retain the handle unless the user intends to change it. The optional index disambiguates repeated names and is zero-based within that selector.
 - Create with `notebooks.note.create` only after choosing a writable notebook. A parent must be a returned note in that same notebook. Use `notebooks.note.move` for later hierarchy changes.
-- Comments on the text are `notebooks.annotation.*` (below; `cld notebooks comments`). The page discussion, not tied to a passage, is `notebooks.comment.*` (`cld notebooks discussion`): start with `notebooks.comment.browse`; read truncated posts with `notebooks.comment.read` before replying or editing. Both are separate from the note body. Mutations require a user-backed actor and write access; update/delete are limited to your own posts within ten minutes. Never retry an uncertain mutation blindly.
+- Comments on the text are `notebooks.annotation.*` (below; `cld notebooks comments`). The page discussion, not tied to a passage, is `notebooks.comment.*` (`cld notebooks discussion`): start with `notebooks.comment.browse`; read truncated posts with `notebooks.comment.read` before replying or editing. Both are separate from the note body. Page discussion mutations require a user-backed actor and write access; update/delete are limited to your own posts within ten minutes. Never retry an uncertain mutation blindly.
 
 ## Review my comments and propose suggestions
 
