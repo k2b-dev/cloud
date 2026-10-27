@@ -234,6 +234,8 @@ export type MessageEventRowProps = {
   icon?: string;
   /** Where the change belongs, such as its thread, where several threads mix. */
   origin?: MessageRowOrigin;
+  /** Opens what the change is about, such as the commented passage; the sentence becomes the link. */
+  href?: string;
   /** Visible time, formatted by the caller. */
   time?: string;
   dateTime?: string | Date;
@@ -943,7 +945,13 @@ export function MessageEventRow(props: MessageEventRowProps): JSX.Element {
   return (
     <div class={props.class ? `k2b-message-event-row ${props.class}` : "k2b-message-event-row"}>
       <i class={props.icon ?? "ti ti-point"} aria-hidden="true" />
-      <span class="k2b-message-event-row__text">{props.children}</span>
+      <Show when={props.href} fallback={<span class="k2b-message-event-row__text">{props.children}</span>}>
+        {(href) => (
+          <a class="k2b-message-event-row__text k2b-message-event-row__link" href={href()}>
+            {props.children}
+          </a>
+        )}
+      </Show>
       <Show when={props.origin}>{(origin) => <OriginChip origin={origin()} />}</Show>
       <Show when={props.time}>
         <time datetime={dateTimeOf(props.dateTime)}>{props.time}</time>

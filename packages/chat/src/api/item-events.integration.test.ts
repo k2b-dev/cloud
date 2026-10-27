@@ -91,7 +91,11 @@ suite("system chat item events", () => {
       thread = testShortId();
     grant(person, "spaces.item", ref, { title: "Current task title", kind: "task", spaceId: chat.resource });
     await sql`INSERT INTO chat.threads (short_id, conversation_id, name, resource_type, resource_id, created_by_type, created_by_id) VALUES (${thread}, ${chat.id}::uuid, 'Stale title', 'spaces.item', ${ref}, 'user', ${person.id}::uuid)`;
-    events = [event(ref), { ...event(missing), id: "2" }];
+    const href = "/app/spaces/Spc001/items/Itm001";
+    events = [
+      { ...event(ref), href },
+      { ...event(missing), id: "2" },
+    ];
     const response = await f.request(
       { ...person.headers, "accept-language": "de", cookie: `${person.headers.cookie}; cloud.timezone=America/New_York` },
       `/${chat.shortId}/events?thread=all&limit=100&cursor=previous`,
@@ -102,6 +106,8 @@ suite("system chat item events", () => {
       { id: thread, name: "Current task title" },
       { ref: { type: "spaces.item", id: missing }, name: "" },
     ]);
+    expect(page.items[0]?.href).toBe(href);
+    expect(page.items[1]).not.toHaveProperty("href");
     expect(page.nextCursor).toBe("owner-cursor");
     const call = calls.find((call) => call.capability === "space.activity")!;
     expect(call).toMatchObject({
@@ -112,7 +118,7 @@ suite("system chat item events", () => {
     expect(call.cookie).toContain(person.headers.cookie!);
     const selected = await f.request(person.headers, `/${chat.shortId}/events?thread=${thread}&after=2026-10-22T00:00:00Z`);
     expect(selected.status).toBe(200);
-    expect(ItemEventsPageSchema.parse(await selected.json()).items).toHaveLength(1);
+    expect(ItemEventsPageSchema.parse(await selected.json()).items).toEqual([expect.objectContaining({ href })]);
     expect(calls.at(-1)?.input).toMatchObject({ item: ref, after: "2026-10-22T00:00:00Z" });
     const [state] = await sql<
       { seq_head: string | bigint; messages: number; participants: number }[]
@@ -138,6 +144,17 @@ suite("system chat item events", () => {
     });
     events = [event(testShortId(), "notebooks.note")];
     expect(ItemEventsPageSchema.parse(await (await f.request(person.headers, `/${chat.shortId}/events`)).json()).items).toHaveLength(1);
+    for (const href of ["https://example.invalid", "//example.invalid", "javascript:alert(1)"]) {
+      events = [{ ...event(testShortId(), "notebooks.note"), href }];
+      expect(await (await f.request(person.headers, `/${chat.shortId}/events`)).json()).toEqual({
+        items: [],
+        nextCursor: null,
+        unavailable: true,
+      });
+    }
+    const href = "/open/notebooks.annotation/~11111111-1111-4111-8111-111111111111";
+    events = [{ ...event(testShortId(), "notebooks.note"), href }];
+    expect(ItemEventsPageSchema.parse(await (await f.request(person.headers, `/${chat.shortId}/events`)).json()).items[0]?.href).toBe(href);
     expect((await f.request(person.headers, `/${chat.shortId}/events?limit=101`)).status).toBe(400);
   });
 });

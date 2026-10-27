@@ -166,6 +166,16 @@ panel dialogs take the selection ink `--k2b-app-workspace-active`, so in a
 Cloud app they carry the app color. Sizes, fill shares, and states are in
 [Icon tile](/en/ui/surfaces/utilities#icon-tile).
 
+## One color per person
+
+A person has one color wherever they appear: the tint behind their avatar
+initials, their cursor in a shared text, and the passages they comment on.
+`personColor(name)` returns it from the display name, and `Avatar` uses the
+same palette (`PERSON_COLORS`), so build person colors from it instead of a
+second palette. The palette has no cyan, which means AI, and no yellow, which
+reads as a text highlight. Two people can share a color, so the name always
+appears next to it.
+
 ## App color in Cloud
 
 A Cloud app declares one six-digit `accent`. Cloud derives the app ink and

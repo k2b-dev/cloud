@@ -8,6 +8,7 @@ Use `cld notebooks` to read and write notes by ID or path, keep a notebook as a 
 
 ## Contents
 
+- [Passage comments](annotations.md)
 - [Core model](#core-model)
 - [Markdown knowledge conventions](#markdown-knowledge-conventions)
 - [Declarative summaries](#declarative-summaries)

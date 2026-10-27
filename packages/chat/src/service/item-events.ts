@@ -3,7 +3,7 @@ import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 import { type ChatContext, messages, requireConversation } from "./access";
-import { type ItemEventsPageSchema, ItemEventsQuerySchema } from "./contracts";
+import { ItemEventSchema, type ItemEventsPageSchema, ItemEventsQuerySchema } from "./contracts";
 import { ContainerRefSchema, ItemRefSchema, readerBatch, readResource, resourceReaderDependencies } from "./resource-access";
 import { findThread, threadNotFound } from "./threads";
 
@@ -18,6 +18,7 @@ const OwnerEventSchema = z.object({
     .regex(/^ti ti-[a-z0-9-]+$/)
     .max(80),
   sentence: z.string().max(4000),
+  href: ItemEventSchema.shape.href,
   count: z.number().int().min(1),
 });
 export const OwnerActivitySchema = z.array(OwnerEventSchema).max(100);
@@ -32,6 +33,7 @@ export const mapItemEvent = (event: OwnerEvent & { ref: ItemRef }, thread?: { id
   icon: event.icon,
   sentence: event.sentence,
   count: event.count,
+  ...(event.href === undefined ? {} : { href: event.href }),
   thread: thread ?? { ref: event.ref, name: event.title ?? "" },
 });
 export const activityQuery = (

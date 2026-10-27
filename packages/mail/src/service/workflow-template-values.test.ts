@@ -4,7 +4,7 @@ import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/clou
 import { MAIL_WORKFLOW_RENDERED_TEMPLATE_FIELDS, mailWorkflowTemplateOutput } from "../workflows/template-validation";
 import { renderMailWorkflowTemplate } from "./template-rendering";
 import { markMailWorkflowBodyFieldsLoaded } from "./workflow-body-fields";
-import { projectMailWorkflowFrozenBody } from "./workflow-runtime-values";
+import { projectMailWorkflowFrozenMessage } from "./workflow-runtime-values";
 import { resolveMailWorkflowTemplateBodies } from "./workflow-template-values";
 
 const step = (message: string): WorkflowActionStep => ({
@@ -133,7 +133,7 @@ describe("Mail workflow template body access", () => {
     const { ctx, message, resolveReference } = fixture();
     ctx.plan.inputs.push({ name: "second", type: "mailMessage", config: {} });
     ctx.invocation.inputs.second = message;
-    projectMailWorkflowFrozenBody("second", message, { "inputs.second.bodyText": "" });
+    projectMailWorkflowFrozenMessage("second", message, { "inputs.second.bodyText": "" });
 
     await resolveMailWorkflowTemplateBodies(ctx, step("{{ inputs.second.bodyText }}"));
 
@@ -340,4 +340,27 @@ describe("Mail workflow template rendering guard", () => {
     markMailWorkflowBodyFieldsLoaded(message, ["body", "bodyText"]);
     expect(renderMailWorkflowTemplate(context, "Body: {{ inputs.message.bodyText }}")).toBe("Body: ");
   });
+});
+
+test.each(["textLength", "attachmentCount"] as const)("templates wait for %s instead of rendering an unloaded metric", async (field) => {
+  const { ctx, message } = fixture();
+  let reads = 0;
+  ctx.resolveReference = async (reference) => {
+    expect(reference).toBe(`inputs.message.${field}`);
+    reads += 1;
+    projectMailWorkflowFrozenMessage(
+      "message",
+      message,
+      field === "textLength"
+        ? { "inputs.message.bodyText": "Reply\n\n-- \nSignature" }
+        : { "inputs.message.attachments": [{ id: "att001" }] },
+    );
+    return field === "textLength" ? 5 : 1;
+  };
+  const source = `Count {{ inputs.message.${field} }}`;
+  await resolveMailWorkflowTemplateBodies(ctx, step(source));
+  expect(reads).toBe(1);
+  expect(renderMailWorkflowTemplate({ invocation: ctx.invocation, variableSnapshot: () => ({}) }, source)).toBe(
+    `Count ${field === "textLength" ? 5 : 1}`,
+  );
 });

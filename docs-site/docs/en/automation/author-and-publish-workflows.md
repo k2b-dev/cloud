@@ -5,7 +5,7 @@ section: Automation
 order: 680
 description: Build a workflow definition and publish a version that can be executed.
 tags: [workflows, authoring, publication]
-updated: 2026-08-05
+updated: 2026-10-26
 ---
 
 # Author and publish workflows
@@ -210,6 +210,43 @@ const actions = createWorkflowActionPort(inventoryWorkflows);
 The runtime port remains application-wired because authorization and text
 rendering belong to the application, including for independently deployed
 workflow providers.
+
+## Compare values in conditions
+
+A condition contains one operator. Use `equals` or `notEquals` for exact JSON
+values, `includes` for exact array membership, and `textEquals`, `contains`,
+`startsWith`, or `endsWith` for normalized, case-insensitive text. `exists`
+accepts one reference. `all` and `any` combine non-empty condition lists;
+`not` negates one condition.
+
+Number comparisons take exactly two operands, in left-to-right order:
+
+| Operator | True when |
+| --- | --- |
+| `greaterThan` | Left is greater than right (`>`) |
+| `lessThan` | Left is less than right (`<`) |
+| `atLeast` | Left is greater than or equal to right (`>=`) |
+| `atMost` | Left is less than or equal to right (`<=`) |
+
+```yaml
+steps:
+  - if:
+      greaterThan: ["${{ inputs.quantity }}", 150]
+    then:
+      - setVariable: { name: largeOrder, value: true }
+```
+
+Both resolved operands must be finite JSON numbers. Numeric strings are not
+converted. This includes Grids decimal inputs and record number fields, which
+resolve to decimal strings. A missing reference or a non-number value makes a
+number comparison `false`, without failing the run. A reference waiting for an application-owned
+dependency still waits. These rules apply specifically to number comparisons;
+other operators retain their own type and missing-value behavior.
+
+Compilation rejects non-number literals. An application's binder must also
+report `condition.type` diagnostics for references whose known value-path type
+is not `core.number`; an unknown dynamic type can be checked only at runtime.
+Diagnostics keep the operand path and source location for the editor.
 
 ## Publish one version
 

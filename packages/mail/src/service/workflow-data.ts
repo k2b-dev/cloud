@@ -3,6 +3,7 @@ import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { sql } from "bun";
 import { mailKeywordSchema } from "../contracts";
 import { normalizeEmailAddress } from "./address-normalization";
+import { automatedMailReasons, autoReplyFactsFromProtocol } from "./auto-reply-policy";
 import { sha256Json } from "./canonical";
 import type { ConnectorProtocolFacts } from "./connectors";
 import { parseMessageProtocolFacts } from "./message-protocol";
@@ -30,6 +31,7 @@ export type FrozenMailMessage = {
   subject: string;
   body: string;
   bodyText: string;
+  textLength: number | null;
   bodyHtml: string;
   bodyAvailable: boolean;
   attachmentsAvailable: boolean;
@@ -39,6 +41,8 @@ export type FrozenMailMessage = {
   recipients: FrozenMailAddress[];
   attachments: FrozenMailAttachment[];
   hasAttachments: boolean;
+  attachmentCount: number;
+  isBulk: boolean;
   folderId: string;
   flags: string[];
   keywords: string[];
@@ -54,6 +58,7 @@ export type FrozenMailConversation = {
   subject: string;
   summary: string | null;
   summaryRevision: number;
+  messageCount: number;
   assigneeUserIds: string[];
   workStatus: "needs_action" | "waiting" | "done";
   revision: number;
@@ -120,6 +125,7 @@ type WorkflowSnapshotRow = {
   conversation_subject: string | null;
   conversation_summary: string | null;
   summary_revision: string | number | null;
+  message_count: number;
   collaboration_revision: string | number | null;
   link_snapshot: string;
   link_xid: string | null;
@@ -181,6 +187,7 @@ const snapshotColumns = sql`
   conversation.subject AS conversation_subject,
   conversation.summary AS conversation_summary,
   conversation.summary_revision,
+  (SELECT COUNT(*)::int FROM mail.conversation_messages count_cm WHERE count_cm.conversation_id = conversation.id) AS message_count,
   conversation.revision AS collaboration_revision,
   pg_current_snapshot()::text AS link_snapshot,
   pg_current_xact_id_if_assigned()::text AS link_xid,
@@ -237,6 +244,7 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
   const flags = normalizeWorkflowFlags(row.flags ?? []);
   const keywords = [...(row.keywords ?? [])].sort();
   const attachments = parseJson(row.attachments);
+  const protocolFacts = parseMessageProtocolFacts(parseJson(row.protocol_facts));
   const sender = parseJson<FrozenMailAddress[]>(row.sender);
   const rawFromAddress = sender.find((address) => address.role === "from")?.email ?? "";
   const fromAddress = normalizeEmailAddress(rawFromAddress) ?? rawFromAddress.trim().toLowerCase();
@@ -248,6 +256,7 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
           subject: row.conversation_subject ?? "",
           summary: row.conversation_summary,
           summaryRevision: Number(row.summary_revision ?? 1),
+          messageCount: row.message_count,
           assigneeUserIds: row.assignee_user_ids,
           workStatus: row.work_status,
           revision: Number(row.collaboration_revision),
@@ -261,6 +270,7 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
       subject: row.subject,
       body: "",
       bodyText: "",
+      textLength: null,
       bodyHtml: "",
       bodyAvailable: false,
       attachmentsAvailable: row.hydration_status === "complete",
@@ -270,6 +280,8 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
       recipients: parseJson(row.recipients),
       attachments,
       hasAttachments: attachments.length > 0,
+      attachmentCount: attachments.length,
+      isBulk: automatedMailReasons(autoReplyFactsFromProtocol(protocolFacts)).length > 0,
       folderId: row.folder_short_id,
       flags,
       keywords,
@@ -277,7 +289,7 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
       internalDate,
       receivedAt: internalDate,
       sentAt: row.sent_at ? toIso(row.sent_at) : null,
-      protocolFacts: parseMessageProtocolFacts(parseJson(row.protocol_facts)),
+      protocolFacts,
     },
     conversation,
   };

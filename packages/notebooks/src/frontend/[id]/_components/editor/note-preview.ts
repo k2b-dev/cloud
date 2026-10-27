@@ -1,6 +1,6 @@
 import { markdownLanguage } from "@codemirror/lang-markdown";
 import { highlightTree, tagHighlighter, tags } from "@lezer/highlight";
-import { chartBlockFrame, parseNotebookChartBlocks } from "../../../../lib/chart-blocks";
+import { chartBlockFrame, notebookChartHeight, parseNotebookChartBlocks } from "../../../../lib/chart-blocks";
 import { findLigatures, frontMatterLength } from "../../../../lib/ligatures";
 import { NOTEBOOK_DIRECTIVE_START } from "../../../../lib/markdown-context";
 import { codeFenceLanguage } from "../../../../lib/markdown-fences";
@@ -171,22 +171,25 @@ export const notePreviewLines = (markdown: string, mode: "rich" | "source", budg
 
 /**
  * The chart the editor draws right below the preview's last line, if any. Rich mode shows a valid chart block as a
- * widget of fixed height; the preview reserves that widget's box with the chart's title, so the editor and then the
- * drawing take its place without moving anything. An invalid block shows its source instead, whose height the preview
+ * widget of fixed height; the preview reserves that widget's box with the chart's title and drawn height, so the
+ * editor and then the drawing take its place without moving anything. An invalid block shows its source instead, whose height the preview
  * cannot know: nothing is reserved for it. The first line is never reserved: the caret there reveals the source.
  */
-export const notePreviewChart = (markdown: string, lines: NotePreviewLine[]) => {
+export const notePreviewChart = (markdown: string, lines: NotePreviewLine[], locale: string) => {
   const text = markdown.replace(/\r\n?/g, "\n");
   const line = lines.length + 1;
   if (line === 1 || !/^ {0,3}:::chart[ \t]*$/.test(text.split("\n")[line - 1] ?? "")) return null;
-  if (!parseNotebookChartBlocks(text, { line }).blocks.length) return null;
+  const block = parseNotebookChartBlocks(text, { line }).blocks[0];
+  if (!block) return null;
   const body = text.split("\n").slice(line);
-  return chartBlockFrame(
+  const frame = chartBlockFrame(
     body.slice(
       0,
       body.findIndex((entry) => /^ {0,3}:::[ \t]*$/.test(entry)),
     ),
   );
+  const height = notebookChartHeight(block.input, locale);
+  return frame && height ? { ...frame, height } : frame;
 };
 
 const lineParts = (text: string, from: number, to: number, styled: StyledRange[], hidden: Range[]): NotePreviewPart[] => {
