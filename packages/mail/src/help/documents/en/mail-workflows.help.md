@@ -599,7 +599,8 @@ allowance is used up, the request leaves the conversation unchanged.
 
 The summary shows who wrote it and marks AI text. It can include a next step
 and a date explicitly mentioned in the mail. Editing the text clears that
-suggestion and protects your words from later automation. A rule skips a
+suggestion and protects your words from later automation. Clearing the summary
+also protects it until you explicitly ask AI to write again. A rule skips a
 protected summary with `edited_by_person`. A person can explicitly ask AI to
 continue or rewrite it again.
 

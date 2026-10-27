@@ -5,6 +5,7 @@ import { requireMailboxAccess, requireVisibleConversation } from "./access";
 import { type MailRequestContext, userBackedActor } from "./auth";
 import { insertActivity, requireConversationCollaborationPermission } from "./collaboration";
 import { getConversationSummaryAiAvailability } from "./conversation-summary-ai";
+import { isUnsentOutboundMessage } from "./conversation-timeline";
 import { type MailActivityChange, mailLive } from "./live";
 
 type SqlClient = typeof sql;
@@ -53,6 +54,8 @@ export type SummaryMetadata = {
   generatedAt: string | null;
   coveredMessageCount: number | null;
   coveredThrough: string | null;
+  /** Eligible messages at capture, including those omitted by the source budget. */
+  snapshotMessageCount?: number;
   truncated: boolean;
   nextStep: ConversationContentSummary["nextStep"];
 };
@@ -87,7 +90,10 @@ export const mapConversationSummary = (row: SummaryRow): ConversationContentSumm
   coveredMessageCount: row.summary_metadata.coveredMessageCount ?? null,
   truncated: row.summary_metadata.truncated ?? false,
   nextStep: row.summary_metadata.nextStep ?? null,
-  newMessagesSince: row.summary === null || !("coveredThrough" in row.summary_metadata) ? 0 : row.new_message_count,
+  newMessagesSince:
+    row.summary === null || !("coveredThrough" in row.summary_metadata)
+      ? 0
+      : Math.max(row.new_message_count, row.message_count - (row.summary_metadata.snapshotMessageCount ?? row.message_count)),
   status:
     row.generation_status === "limited" && row.generation_limit && Date.parse(row.generation_limit.resetsAt) <= Date.now()
       ? "idle"
@@ -113,9 +119,10 @@ export const loadConversationSummary = async (params: {
     WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid FOR NO KEY UPDATE`;
   const [row] = await params.db<SummaryRow[]>`
     SELECT c.summary, c.summary_revision, c.revision, c.summary_metadata,
-      (SELECT count(*)::int FROM mail.conversation_messages m WHERE m.conversation_id = c.id) AS message_count,
-      (SELECT max(link_seq)::text FROM mail.conversation_messages m WHERE m.conversation_id = c.id) AS last_message_seq,
+      (SELECT count(*)::int FROM mail.conversation_messages m WHERE m.conversation_id = c.id AND NOT ${isUnsentOutboundMessage(sql`m.message_id`)}) AS message_count,
+      (SELECT max(link_seq)::text FROM mail.conversation_messages m WHERE m.conversation_id = c.id AND NOT ${isUnsentOutboundMessage(sql`m.message_id`)}) AS last_message_seq,
       (SELECT count(*)::int FROM mail.conversation_messages m WHERE m.conversation_id = c.id
+        AND NOT ${isUnsentOutboundMessage(sql`m.message_id`)}
         AND m.link_seq > COALESCE((c.summary_metadata->>'coveredThrough')::bigint, 0)) AS new_message_count,
       r.status AS generation_status, r.failure AS generation_failure, r.limit_info AS generation_limit
     FROM mail.conversations c LEFT JOIN mail.conversation_summary_requests r ON r.conversation_id = c.id
@@ -179,6 +186,7 @@ const applyConversationSummaryInTransaction = async (params: {
     generatedAt: new Date().toISOString(),
     coveredMessageCount: current.message_count,
     coveredThrough: current.last_message_seq,
+    snapshotMessageCount: current.message_count,
     truncated: false,
     nextStep: null,
   };

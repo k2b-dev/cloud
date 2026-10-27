@@ -37,6 +37,7 @@ suiteFor("database", "nats")("summary source snapshot", () => {
             previousSummary: null,
             effectKey: crypto.randomUUID(),
             sourceRevision: "1",
+            messageCount: 2,
             throughMessageSeq,
             signal: new AbortController().signal,
           },

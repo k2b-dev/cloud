@@ -599,7 +599,8 @@ Ist dein Kontingent aufgebraucht, bleibt die Unterhaltung unverändert.
 Die Zusammenfassung zeigt ihren Autor. KI-Text ist gekennzeichnet. Er kann
 einen nächsten Schritt und ein in der Mail genanntes Datum enthalten.
 Wenn du den Text bearbeitest, verschwindet dieser Vorschlag. Regeln dürfen
-deinen Text danach nicht mehr überschreiben. Sie überspringen ihn mit dem
+deinen Text danach nicht mehr überschreiben. Auch eine geleerte Zusammenfassung
+bleibt geschützt, bis du wieder ausdrücklich KI anforderst. Sie überspringen ihn mit dem
 Code `edited_by_person`. Du kannst die KI ausdrücklich wieder um eine
 Fortschreibung oder eine neue Fassung bitten.
 

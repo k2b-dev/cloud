@@ -742,7 +742,10 @@ export const MAIL_WORKFLOW_ACTIONS = {
     }),
     authorize: authorized,
     cost: () => ({ maxCollaborationChanges: 1 }),
-    plan: async () => planned("Replace the conversation summary."),
+    plan: async (ctx, values) => {
+      const conversation = await resolveObject(ctx, values.conversation, "conversation");
+      return planned(conversation.summarySource === "person" ? "Keep the person's summary." : "Replace the conversation summary.");
+    },
     run: (ctx, values) =>
       attempt(async () => {
         const tx = ctx.tx as SqlClient;
@@ -769,6 +772,7 @@ export const MAIL_WORKFLOW_ACTIONS = {
         if (applied) {
           conversation.summary = mutation.data.value.summary;
           conversation.summaryRevision = mutation.data.value.summaryRevision;
+          conversation.summarySource = mutation.data.value.source;
           conversation.revision = mutation.data.value.conversationRevision;
         }
         return {

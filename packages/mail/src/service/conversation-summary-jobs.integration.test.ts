@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
+import * as applicationAi from "@k2b/cloud/ai";
 import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { unwrap } from "@k2b/stdlib";
@@ -23,8 +24,9 @@ import {
   SUMMARY_QUIET_PERIOD_MS,
   scheduleConversationSummary,
 } from "./conversation-summary-jobs";
+import { discardConversationSummaries, reconcileConversationSummaryTasks } from "./conversation-summary-lifecycle";
 import { migrateConversationSummaries } from "./conversation-summary-migrate";
-import { createMailbox } from "./mailboxes";
+import { createMailbox, deleteMailbox } from "./mailboxes";
 
 const suite = suiteFor("database", "nats", "valkey");
 const NOW = new Date("2026-10-27T12:00:00.000Z");
@@ -226,9 +228,9 @@ suite("durable conversation summaries", () => {
       throw new Error("Must never call AI");
     });
     expect((await state(scope)).status).toBe("idle");
-    const [event] = await sql<{ skipped: string }[]>`SELECT metadata->>'skipped' AS skipped FROM mail.activity_events
-      WHERE conversation_id = ${scope.conversationId}::uuid ORDER BY created_at DESC, id DESC LIMIT 1`;
-    expect(event?.skipped).toBe("edited_by_person");
+    const [event] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM mail.activity_events
+      WHERE conversation_id = ${scope.conversationId}::uuid AND action = 'conversation.summary_updated'`;
+    expect(event?.count).toBe(1); // Only the person's edit; skipping is a live-state change.
   });
 
   test("rule denial leaves content and revisions unchanged and exposes the limit", async () => {
@@ -324,11 +326,13 @@ suite("durable conversation summaries", () => {
       expect((await state(scope)).status).toBe("writing");
       return output;
     });
-    const events = await sql<{ status: string }[]>`SELECT metadata->>'summaryStatus' AS status
-      FROM mail.activity_events WHERE conversation_id = ${scope.conversationId}::uuid AND action = 'conversation.summary_updated'
-      ORDER BY created_at, id`;
-    expect(events.map((event) => event.status)).toEqual(["pending", "writing", "idle"]);
-    // activity_events has the same transaction-owned live invalidation trigger as human summary edits.
+    const [event] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM mail.activity_events
+      WHERE conversation_id = ${scope.conversationId}::uuid AND action = 'conversation.summary_updated'`;
+    expect(event?.count).toBe(1);
+    const [live] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM events.outbox
+      WHERE app_id = 'mail' AND kind = 'live' AND ordering_key = ${mailboxId}
+        AND payload->'d'->>'conversationId' = (SELECT short_id FROM mail.conversations WHERE id = ${scope.conversationId}::uuid)`;
+    expect(live?.count).toBeGreaterThanOrEqual(3);
     expect((await state(scope)).status).toBe("idle");
   });
 
@@ -400,6 +404,22 @@ suite("durable conversation summaries", () => {
       return output;
     });
     expect(await state(scope)).toMatchObject({ status: "pending", newMessagesSince: 1 });
+    await ready(scope);
+    await run(scope, async (input) => {
+      expect(input.usageSubject).toBeUndefined();
+      return output;
+    });
+  });
+
+  test("a failed manual call retains an automatic follow-up for new replies", async () => {
+    const scope = await conversation();
+    unwrap(await generateConversationSummary({ ...scope, context, input: { mode: "rolling", expectedSummaryRevision: 1 } }));
+    await run(scope, async () => {
+      await addMessages(scope.conversationId, 1);
+      unwrap(await scheduleConversationSummary({ ...scope, context, source }));
+      throw new Error("Provider failed");
+    });
+    expect(await state(scope)).toMatchObject({ status: "pending", summary: null });
     await ready(scope);
     await run(scope, async (input) => {
       expect(input.usageSubject).toBeUndefined();
@@ -496,6 +516,148 @@ suite("durable conversation summaries", () => {
     expect(await state(scope)).toMatchObject({ status: "failed", summary: null });
   });
 
+  const seedTask = async (scope: { mailboxId: string; conversationId: string }, suffix: string) => {
+    const [task] = await sql<{ id: string }[]>`INSERT INTO ai.workflow_task
+      (app_id,scope_id,source_id,step_key,effect_key,kind,request,input_hash,model_profile_id,status,completed_at)
+      VALUES ('mail',${scope.mailboxId},${`${scope.conversationId}:${suffix}`},'conversation-summary',${crypto.randomUUID()},
+        'generate_text',${{ input: "Private summary source" }}::jsonb,${"0".repeat(64)},'fixture','succeeded',now()) RETURNING id`;
+    if (!task) throw new Error("Missing task fixture");
+    return task.id;
+  };
+
+  test("conversation cleanup releases holds and removes every snapshot without touching another conversation", async () => {
+    const scope = await conversation();
+    const other = await conversation();
+    const rule = { ...source, id: "cleanup-rule" };
+    unwrap(await scheduleConversationSummary({ ...scope, context, source: rule }));
+    const ids = [await seedTask(scope, "snapshot"), await seedTask(scope, "manual:request")];
+    const neighbor = await seedTask(other, "snapshot");
+    try {
+      await sql.begin(async (db) => {
+        await db`SELECT id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR NO KEY UPDATE`;
+        await discardConversationSummaries(db, scope);
+      });
+      expect(await sql`SELECT id FROM ai.workflow_task WHERE id IN (${ids[0]}::uuid,${ids[1]}::uuid)`).toHaveLength(0);
+      expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${neighbor}::uuid`).toHaveLength(1);
+      expect(unwrap(await getAiDailySourceStats({ mailboxId, sourceId: rule.id }))).toMatchObject({ reservedAiCalls: 0 });
+      expect(await state(scope)).toMatchObject({ status: "idle", summary: null });
+    } finally {
+      await sql`DELETE FROM ai.workflow_task WHERE scope_id = ${mailboxId}`;
+    }
+  });
+
+  test("mailbox deletion discards its pending summaries and AI task payloads", async () => {
+    const mailbox = unwrap(await createMailbox(context, { name: "Summary deletion" }));
+    try {
+      const [row] = await sql<{ id: string }[]>`INSERT INTO mail.conversations(short_id,mailbox_id,subject,latest_message_at)
+        VALUES (${newShortId()},${mailbox.id}::uuid,'Deletion',${NOW}) RETURNING id`;
+      if (!row) throw new Error("Missing deletion conversation");
+      const scope = { mailboxId: mailbox.id, conversationId: row.id };
+      unwrap(await scheduleConversationSummary({ ...scope, context, source }));
+      const taskId = await seedTask(scope, "snapshot");
+      unwrap(await deleteMailbox(context, mailbox.id));
+      expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${taskId}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT conversation_id FROM mail.conversation_summary_requests WHERE mailbox_id = ${mailbox.id}::uuid`).toHaveLength(
+        0,
+      );
+    } finally {
+      await sql`DELETE FROM ai.workflow_task WHERE scope_id = ${mailbox.id}`;
+      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox.id}::uuid`;
+    }
+  });
+
+  test("recovery removes crash-orphaned sources while retaining a live owner's dormant result", async () => {
+    const scope = await conversation();
+    const other = await conversation();
+    const orphanId = await seedTask(scope, "snapshot");
+    const retainedId = await seedTask(other, "snapshot");
+    try {
+      await sql`DELETE FROM mail.conversations WHERE id = ${scope.conversationId}::uuid`;
+      await reconcileConversationSummaryTasks();
+      expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${orphanId}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${retainedId}::uuid`).toHaveLength(1);
+    } finally {
+      await sql`DELETE FROM ai.workflow_task WHERE scope_id = ${mailboxId}`;
+    }
+  });
+
+  test("a late task created after conversation deletion is removed when its worker settles", async () => {
+    const scope = await conversation();
+    unwrap(await scheduleConversationSummary({ ...scope, context, source }));
+    await ready(scope);
+    let lateTaskId = "";
+    await run(scope, async () => {
+      await sql.begin(async (db) => {
+        await db`SELECT id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR NO KEY UPDATE`;
+        await discardConversationSummaries(db, scope);
+        await db`DELETE FROM mail.conversations WHERE id = ${scope.conversationId}::uuid`;
+      });
+      lateTaskId = await seedTask(scope, "late-snapshot");
+      return output;
+    });
+    expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${lateTaskId}::uuid`).toHaveLength(0);
+  });
+
+  test("shutdown after owner deletion discards a task created in the deletion race", async () => {
+    const scope = await conversation();
+    unwrap(await scheduleConversationSummary({ ...scope, context, source }));
+    await ready(scope);
+    const abort = new AbortController();
+    let lateTaskId = "";
+    await executeConversationSummary(scope, {
+      signal: abort.signal,
+      generate: async () => {
+        await sql.begin(async (db) => {
+          await db`SELECT id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR NO KEY UPDATE`;
+          await discardConversationSummaries(db, scope);
+          await db`DELETE FROM mail.conversations WHERE id = ${scope.conversationId}::uuid`;
+        });
+        lateTaskId = await seedTask(scope, "shutdown-race");
+        abort.abort(new Error("Shutdown"));
+        throw abort.signal.reason;
+      },
+    });
+    expect(await sql`SELECT id FROM ai.workflow_task WHERE id = ${lateTaskId}::uuid`).toHaveLength(0);
+  });
+
+  test("manual settlement releases its personal task while graceful interruption retains replay", async () => {
+    const release = spyOn(applicationAi, "releaseApplicationAiTask");
+    try {
+      const scope = await conversation();
+      unwrap(await generateConversationSummary({ ...scope, context, input: { mode: "rolling", expectedSummaryRevision: 1 } }));
+      await ready(scope);
+      const abort = new AbortController();
+      await executeConversationSummary(scope, {
+        signal: abort.signal,
+        generate: async () => {
+          abort.abort(new Error("Shutdown"));
+          throw abort.signal.reason;
+        },
+      });
+      expect(release).not.toHaveBeenCalled();
+      await ready(scope);
+      await run(scope);
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(release.mock.calls[0]?.[0]).toMatchObject({ appId: "mail", scopeId: mailboxId, usageSubject: context.accessSubject });
+    } finally {
+      release.mockRestore();
+    }
+  });
+
+  test("a newly eligible older link is stale and schedules a follow-up even below the captured sequence", async () => {
+    const scope = await conversation(2);
+    unwrap(await scheduleConversationSummary({ ...scope, context, source }));
+    await ready(scope);
+    await run(scope, async () => {
+      await addMessages(scope.conversationId, 1);
+      await sql`UPDATE mail.conversation_messages SET link_seq = 0
+        WHERE conversation_id = ${scope.conversationId}::uuid AND link_seq = (
+          SELECT max(link_seq) FROM mail.conversation_messages WHERE conversation_id = ${scope.conversationId}::uuid)`;
+      return output;
+    });
+    expect(await state(scope)).toMatchObject({ status: "pending", newMessagesSince: 1 });
+  });
+
   const requestApi = async (scope: { conversationId: string }, body: unknown) => {
     const [ids] = await sql<{ mailbox: string; conversation: string }[]>`SELECT m.short_id AS mailbox, c.short_id AS conversation
       FROM mail.conversations c JOIN mail.mailboxes m ON m.id = c.mailbox_id WHERE c.id = ${scope.conversationId}::uuid`;
@@ -531,13 +693,13 @@ suite("durable conversation summaries", () => {
     if (!row?.credential) throw new Error("Missing API credential");
     let calls = 0;
     try {
-      await sql`UPDATE auth.service_account_credentials SET revoked_at = now() WHERE id = ${row.credential}::uuid`;
+      await sql`UPDATE auth.service_account_credentials SET status = 'revoked', revoked_at = now() WHERE id = ${row.credential}::uuid`;
       await run(scope, async () => {
         calls++;
         return output;
       });
     } finally {
-      await sql`UPDATE auth.service_account_credentials SET revoked_at = NULL WHERE id = ${row.credential}::uuid`;
+      await sql`UPDATE auth.service_account_credentials SET status = 'active', revoked_at = NULL WHERE id = ${row.credential}::uuid`;
     }
     expect(calls).toBe(0);
     expect(await state(scope)).toMatchObject({ summary: null, status: "failed" });

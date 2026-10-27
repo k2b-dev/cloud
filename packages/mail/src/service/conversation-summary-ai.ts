@@ -16,6 +16,7 @@ export type GenerateConversationSummaryAiInput = {
   effectKey: string;
   sourceRevision: string;
   throughMessageSeq: string | null;
+  messageCount: number;
   usageSubject?: AccessSubject;
   signal: AbortSignal;
 };
@@ -221,7 +222,7 @@ export const generateConversationSummaryAi = async (
       // Each explicit personal request is a source; automatic work shares the message snapshot cap.
       sourceId: input.usageSubject
         ? `${input.conversationId}:manual:${input.effectKey}`
-        : `${input.conversationId}:${input.throughMessageSeq}`,
+        : `${input.conversationId}:${input.throughMessageSeq}:${input.messageCount}`,
       sourceRevision: input.sourceRevision,
       budget: env.WORKFLOW_AI_BUDGET,
     },

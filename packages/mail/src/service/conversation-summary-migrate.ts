@@ -5,12 +5,16 @@ export const migrateConversationSummaries = async (db: typeof sql): Promise<void
   await db`ALTER TABLE mail.conversations ADD COLUMN IF NOT EXISTS summary_metadata jsonb NOT NULL DEFAULT '{}'::jsonb`;
   // Older writers recorded the actor and exact summary revision in activity, including clears.
   await db`WITH latest AS (
-    SELECT DISTINCT ON (a.conversation_id) a.conversation_id, a.actor_kind, a.actor_id, a.created_at,
+    SELECT candidate.id AS conversation_id, a.actor_kind, a.actor_id, a.created_at,
       a.metadata->'after'->>'summaryRevision' AS summary_revision
-    FROM mail.activity_events a
-    WHERE a.action = 'conversation.summary_updated' AND a.outcome = 'confirmed'
-      AND a.metadata->'after'->>'summaryRevision' IS NOT NULL
-    ORDER BY a.conversation_id, a.id DESC
+    FROM mail.conversations candidate
+    CROSS JOIN LATERAL (
+      SELECT event.actor_kind, event.actor_id, event.created_at, event.metadata
+      FROM mail.activity_events event WHERE event.conversation_id = candidate.id
+        AND event.action = 'conversation.summary_updated' AND event.outcome = 'confirmed'
+        AND event.metadata->'after'->>'summaryRevision' IS NOT NULL
+      ORDER BY event.created_at DESC, event.id DESC LIMIT 1
+    ) a WHERE candidate.summary_metadata = '{}'::jsonb AND candidate.summary_revision > 1
   ) UPDATE mail.conversations c SET summary_metadata = jsonb_build_object(
       'source', CASE WHEN a.actor_kind = 'workflow' THEN 'workflow' ELSE 'person' END,
       'author', CASE

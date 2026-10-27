@@ -19,6 +19,7 @@ const input: GenerateConversationSummaryAiInput = {
   previousSummary: "Earlier decision",
   effectKey: "request-id",
   sourceRevision: "42",
+  messageCount: 2,
   throughMessageSeq: "9007199254740993",
   usageSubject: subject,
   signal: new AbortController().signal,
@@ -89,6 +90,28 @@ describe("bounded summary source", () => {
 });
 
 describe("summary platform bridge", () => {
+  test("automatic admission identity follows evidence rather than summary revisions", async () => {
+    const sourceIds: string[] = [];
+    for (const [revision, messageCount] of [
+      ["42", 2],
+      ["43", 2],
+      ["43", 3],
+    ] as const) {
+      await generateConversationSummaryAi(
+        { ...input, usageSubject: undefined, sourceRevision: revision, messageCount },
+        {
+          loadSource: async () => [{ ...message("A fact"), total: messageCount }],
+          runTask: async (task) => {
+            sourceIds.push(task.source.sourceId);
+            return { input: task.request.input, output: { summary: "A fact", nextStepText: "", nextStepDue: "" }, usage: null };
+          },
+        },
+      );
+    }
+    expect(sourceIds[0]).toBe(sourceIds[1]);
+    expect(sourceIds[1]).not.toBe(sourceIds[2]);
+  });
+
   test("one structured task receives stable snapshot, owner and source, returns all metadata", async () => {
     let calls = 0;
     const result = await generateConversationSummaryAi(input, {
