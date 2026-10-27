@@ -1,9 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { expect, spyOn } from "bun:test";
 import { StructuredOutputError } from "@k2b/nessi";
 import { sql } from "bun";
 import type { z } from "zod";
+import { databaseSuite, testFor } from "../../../../../scripts/fixtures/test-infra";
 import { migrate as migrateWorkflows } from "../../../../core/src/migrate/core/workflows";
+import { openSync } from "../../../test/integration/sync-contracts/harness";
 import { createWorkflowIntegrationFixture } from "../../../test/workflows/integration-fixture";
+import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "../../ai";
 import type { WorkflowBoundPlan } from "../contracts";
 import { hashWorkflowJson } from "../language/canonical";
@@ -11,26 +14,32 @@ import { defineWorkflowModule } from "../module";
 import { createWorkflow, publishWorkflowVersion } from "../store/definitions";
 import { emitWorkflowEvent } from "../store/events";
 import { requestWorkflowRunCancel } from "../store/runs";
-import { processWorkflowAiTask, settleWorkflowAiAttemptFailure } from "./runtime";
+import {
+  processWorkflowAiTask,
+  settleWorkflowAiAttemptFailure,
+  startWorkflowAiRuntime,
+  stopWorkflowAiRuntime,
+  submitWorkflowAiTask,
+} from "./runtime";
+import * as aiStore from "./store";
 import {
   claimWorkflowAiTask,
   completeWorkflowAiTask,
   createWorkflowAiTask,
+  expireWorkflowAiTasks,
   failWorkflowAiTask,
   getWorkflowAiTask,
   migrateWorkflowAi,
 } from "./store";
 
-let readiness: Promise<boolean> | null = null;
-const ready = (): Promise<boolean> => {
+const describe = databaseSuite();
+const test = testFor("database");
+
+let readiness: Promise<void> | null = null;
+const ready = (): Promise<void> => {
   readiness ??= (async () => {
-    try {
-      await migrateWorkflows();
-      await migrateWorkflowAi();
-      return true;
-    } catch {
-      return false;
-    }
+    await migrateWorkflows();
+    await migrateWorkflowAi();
   })();
   return readiness;
 };
@@ -49,10 +58,10 @@ const captureFailure = async (operation: () => Promise<void>) => {
   throw new Error("Expected workflow AI attempt to fail.");
 };
 
-const createRun = async () => {
-  const appId = `workflow-ai-${crypto.randomUUID().slice(0, 8)}`;
-  const scopeId = fixture.scope(appId);
-  const workflow = await createWorkflow({ appId, scopeId, key: "ai", name: "AI", author: { kind: "system" } });
+const createRun = async (options: { appId?: string; scopeId?: string } = {}) => {
+  const appId = options.appId ?? `workflow-ai-${crypto.randomUUID().slice(0, 8)}`;
+  const scopeId = options.scopeId ?? fixture.scope(appId);
+  const workflow = await createWorkflow({ appId, scopeId, key: `ai-${crypto.randomUUID()}`, name: "AI", author: { kind: "system" } });
   const plan: WorkflowBoundPlan = {
     schemaVersion: 2,
     languageId: module.manifest.id,
@@ -74,12 +83,12 @@ const createRun = async () => {
     activations: [{ key: "event", eventType: `${appId}.test` }],
   });
   const emitted = await emitWorkflowEvent({ appId, scopeId, type: `${appId}.test` }, { dispatch: "now" });
-  return { appId, runId: emitted.runIds[0]! };
+  return { appId, scopeId, runId: emitted.runIds[0]! };
 };
 
 describe("durable workflow AI tasks", () => {
   test("deduplicates an effect, pins its model, and stores the terminal result", async () => {
-    if (!(await ready())) return;
+    await ready();
     const { appId, runId } = await createRun();
     const input = {
       runId,
@@ -110,7 +119,7 @@ describe("durable workflow AI tasks", () => {
   });
 
   test("cancels queued work before it can be claimed", async () => {
-    if (!(await ready())) return;
+    await ready();
     const { runId } = await createRun();
     const created = await createWorkflowAiTask({
       runId,
@@ -125,7 +134,7 @@ describe("durable workflow AI tasks", () => {
   });
 
   test("keeps cancellation authoritative over a late provider failure", async () => {
-    if (!(await ready())) return;
+    await ready();
     const { runId } = await createRun();
     const created = await createWorkflowAiTask({
       runId,
@@ -147,7 +156,7 @@ describe("durable workflow AI tasks", () => {
   });
 
   test("redelivers an interrupted task with its pinned model", async () => {
-    if (!(await ready())) return;
+    await ready();
     const { runId } = await createRun();
     const created = await createWorkflowAiTask({
       runId,
@@ -182,7 +191,7 @@ describe("durable workflow AI tasks", () => {
   });
 
   test("bounds transient retries and fails invalid structured output immediately", async () => {
-    if (!(await ready())) return;
+    await ready();
     const transientRun = await createRun();
     const transient = await createWorkflowAiTask({
       runId: transientRun.runId,
@@ -230,7 +239,7 @@ describe("durable workflow AI tasks", () => {
   });
 
   test("aborts running inference when its workflow is canceled", async () => {
-    if (!(await ready())) return;
+    await ready();
     const { runId } = await createRun();
     const created = await createWorkflowAiTask({
       runId,
@@ -264,7 +273,7 @@ describe("durable workflow AI tasks", () => {
   });
 
   test("discards a late provider result after cancellation", async () => {
-    if (!(await ready())) return;
+    await ready();
     const { runId } = await createRun();
     const created = await createWorkflowAiTask({
       runId,
@@ -301,4 +310,248 @@ describe("durable workflow AI tasks", () => {
 
     expect(await getWorkflowAiTask(created.task.id)).toMatchObject({ status: "canceled", output: null });
   });
+});
+
+test("a lost queued delivery fails visibly and wakes its workflow without restarting the worker", async () => {
+  await ready();
+  const { runId, appId } = await createRun();
+  const { task } = await createWorkflowAiTask({
+    runId,
+    stepKey: "lost",
+    effectKey: `workflow:${runId}:lost`,
+    request: { kind: "classify", prompt: "Choose", input: "hello", choices: ["a", "b"] },
+    modelProfileId: "model",
+  });
+  await sql`UPDATE ai.workflow_task SET updated_at = now() - interval '61 seconds' WHERE id = ${task.id}::uuid`;
+  await expireWorkflowAiTasks(60_000);
+  expect(await getWorkflowAiTask(task.id)).toMatchObject({ status: "failed", errorCode: "WORKFLOW_AI_QUEUE_TIMEOUT" });
+  const [signal] = await sql`SELECT key FROM workflows.dependency_signal WHERE app_id = ${appId} AND key = ${task.id}`;
+  expect(signal?.key).toBe(task.id);
+  expect(await claimWorkflowAiTask(task.id)).toBeNull();
+});
+
+test("recovery repairs a missing terminal wake by following a waiting step", async () => {
+  await ready();
+  const { runId, appId } = await createRun();
+  const { task } = await createWorkflowAiTask({
+    runId,
+    stepKey: "repair-wake",
+    effectKey: `workflow:${runId}:repair-wake`,
+    request: { kind: "classify", prompt: "Choose", input: "hello", choices: ["a", "b"] },
+    modelProfileId: "model",
+  });
+  await claimWorkflowAiTask(task.id);
+  await completeWorkflowAiTask(task.id, "a", null);
+  await sql`DELETE FROM workflows.dependency_signal WHERE app_id = ${appId} AND key = ${task.id}`;
+  await sql`UPDATE workflows.run SET state = 'waiting' WHERE id = ${runId}::uuid`;
+  await sql`INSERT INTO workflows.step_outcome(run_id, step_key, source_path, kind, action, mode, state, dependency, execution_generation)
+    VALUES (${runId}::uuid, 'repair-wake', ${["steps", 0]}, 'action', 'aiClassify', 'execute', 'waiting',
+      ${{ kind: "ai.workflow-task", key: task.id }}, 1)`;
+  await expireWorkflowAiTasks(60_000);
+  expect(await getWorkflowAiTask(task.id)).toMatchObject({ status: "succeeded", output: "a" });
+  const [run] = await sql`SELECT state FROM workflows.run WHERE id = ${runId}::uuid`;
+  expect(run?.state).toBe("queued");
+});
+
+test("delivery expiry preserves requested cancellation", async () => {
+  await ready();
+  const { runId } = await createRun();
+  const { task } = await createWorkflowAiTask({
+    runId,
+    stepKey: "expired-cancel",
+    effectKey: `workflow:${runId}:expired-cancel`,
+    request: { kind: "classify", prompt: "Choose", input: "hello", choices: ["a", "b"] },
+    modelProfileId: "model",
+  });
+  await requestWorkflowRunCancel(runId);
+  await sql`UPDATE ai.workflow_task SET updated_at = now() - interval '61 seconds' WHERE id = ${task.id}::uuid`;
+  await expireWorkflowAiTasks(60_000);
+  expect(await getWorkflowAiTask(task.id)).toMatchObject({ status: "canceled", errorCode: "WORKFLOW_AI_CANCELED" });
+});
+
+test("JSONB separator and numeric expansion exceed the budget with a stable input error, before INSERT", async () => {
+  await ready();
+  const { runId } = await createRun();
+  const request = { kind: "classify" as const, prompt: "Choose", input: Array.from({ length: 400 }, () => 1e300), choices: ["a", "b"] };
+  expect(Buffer.byteLength(JSON.stringify(request))).toBeLessThan(100_000);
+  await expect(
+    createWorkflowAiTask({ runId, stepKey: "oversized", effectKey: `workflow:${runId}:oversized`, request, modelProfileId: "model" }),
+  ).rejects.toMatchObject({ code: "WORKFLOW_AI_INPUT_TOO_LARGE" });
+});
+
+const pilotBudget = {
+  maxStepsPerSource: 2,
+  tasksPerMinute: 10,
+  burst: 20,
+  sourcesPer24Hours: 2000,
+  scopeConcurrent: 1,
+  globalConcurrent: 4,
+};
+const scopedTask = async (
+  run: Awaited<ReturnType<typeof createRun>>,
+  options: {
+    sourceId?: string;
+    sourceRevision?: string;
+    prompt?: string;
+    modelConfigHash?: string;
+    recompute?: boolean;
+    budget?: Partial<typeof pilotBudget>;
+  } = {},
+) =>
+  createWorkflowAiTask({
+    runId: run.runId,
+    stepKey: "ai",
+    effectKey: `workflow:${run.runId}:ai`,
+    request: { kind: "classify", prompt: options.prompt ?? "Choose", input: { body: "hello", subject: "invoice" }, choices: ["a", "b"] },
+    modelProfileId: "model",
+    modelConfigHash: options.modelConfigHash ?? "a".repeat(64),
+    scope: {
+      sourceId: options.sourceId ?? "message",
+      sourceRevision: options.sourceRevision ?? "revision-1",
+      budget: { ...pilotBudget, ...options.budget },
+      recompute: options.recompute,
+    },
+  });
+const succeed = async (id: string) => {
+  await claimWorkflowAiTask(id);
+  await completeWorkflowAiTask(id, "a", { input: 10, output: 1 });
+};
+
+test("a new run after a later failure reuses scoped successful inference, while recompute reserves a fresh task", async () => {
+  await ready();
+  const firstRun = await createRun();
+  const first = await scopedTask(firstRun);
+  await succeed(first.task.id);
+  const retryRun = await createRun(firstRun);
+  const reused = await scopedTask(retryRun);
+  expect(reused.task).toMatchObject({ status: "succeeded", output: "a", attempts: 0, usage: null });
+  expect(reused.task.id).not.toBe(first.task.id);
+  const [count] = await sql`SELECT count(*)::int AS n FROM ai.workflow_scope_admission WHERE scope_id = ${firstRun.scopeId}`;
+  expect(count?.n).toBe(1);
+  const forced = await scopedTask(await createRun(firstRun), { recompute: true });
+  expect(forced.task.status).toBe("queued");
+  await succeed(forced.task.id);
+  await expect(scopedTask(await createRun(firstRun), { recompute: true })).rejects.toMatchObject({ code: "WORKFLOW_AI_SOURCE_BUDGET" });
+});
+
+test("changed input contract, source revision, model configuration, and mailbox never reuse a previous result", async () => {
+  await ready();
+  const firstRun = await createRun();
+  const first = await scopedTask(firstRun, { budget: { maxStepsPerSource: 10 } });
+  await succeed(first.task.id);
+  for (const changes of [{ prompt: "Changed instructions" }, { sourceRevision: "revision-2" }, { modelConfigHash: "b".repeat(64) }]) {
+    const next = await scopedTask(await createRun(firstRun), { ...changes, budget: { maxStepsPerSource: 10 } });
+    expect(next.task.status).toBe("queued");
+    await succeed(next.task.id);
+  }
+  const otherMailbox = await scopedTask(await createRun({ appId: firstRun.appId }));
+  expect(otherMailbox.task.status).toBe("queued");
+  await succeed(otherMailbox.task.id);
+});
+
+test("concurrent admission across replicas reserves one mailbox slot, and excess tasks fail explicitly", async () => {
+  await ready();
+  const firstRun = await createRun();
+  const results = await Promise.allSettled([
+    scopedTask(firstRun, { sourceId: "one" }),
+    scopedTask(await createRun(firstRun), { sourceId: "two" }),
+  ]);
+  expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+  const rejected = results.find((r) => r.status === "rejected");
+  expect(rejected?.status === "rejected" ? rejected.reason : null).toMatchObject({ code: "WORKFLOW_AI_CAPACITY" });
+  for (const r of results) if (r.status === "fulfilled") await succeed(r.value.task.id);
+});
+
+test("token bucket admits its burst, refills, and cache hits do not spend admission tokens", async () => {
+  await ready();
+  const run = await createRun();
+  const budget = { burst: 2, maxStepsPerSource: 10 };
+  const first = await scopedTask(run, { sourceId: "one", budget });
+  await succeed(first.task.id);
+  const second = await scopedTask(await createRun(run), { sourceId: "two", budget });
+  await succeed(second.task.id);
+  await expect(scopedTask(await createRun(run), { sourceId: "three", budget })).rejects.toMatchObject({ code: "WORKFLOW_AI_RATE_LIMIT" });
+  expect((await scopedTask(await createRun(run), { sourceId: "one", budget })).task.status).toBe("succeeded");
+  await sql`UPDATE ai.workflow_scope_budget SET refilled_at = now() - interval '1 minute' WHERE scope_id = ${run.scopeId}`;
+  const refilled = await scopedTask(await createRun(run), { sourceId: "three", budget });
+  await succeed(refilled.task.id);
+});
+
+test("distinct-mail rolling admission survives deleted runs and expires after 24 hours", async () => {
+  await ready();
+  const run = await createRun();
+  const budget = { sourcesPer24Hours: 2 };
+  for (const sourceId of ["one", "two"]) {
+    const current = await createRun(run);
+    const task = await scopedTask(current, { sourceId, budget });
+    await succeed(task.task.id);
+    await sql`DELETE FROM workflows.run WHERE id = ${current.runId}::uuid`;
+  }
+  await expect(scopedTask(await createRun(run), { sourceId: "three", budget })).rejects.toMatchObject({ code: "WORKFLOW_AI_DAILY_BUDGET" });
+  await sql`UPDATE ai.workflow_scope_admission SET created_at = now() - interval '25 hours' WHERE scope_id = ${run.scopeId}`;
+  const next = await scopedTask(await createRun(run), { sourceId: "three", budget });
+  await succeed(next.task.id);
+});
+
+test("global admission reserves at most four outstanding tasks across mailboxes", async () => {
+  await ready();
+  const tasks: string[] = [];
+  try {
+    for (let n = 0; n < 4; n++) tasks.push((await scopedTask(await createRun())).task.id);
+    await expect(scopedTask(await createRun())).rejects.toMatchObject({ code: "WORKFLOW_AI_CAPACITY" });
+  } finally {
+    for (const id of tasks) await succeed(id);
+  }
+});
+
+test("failed logical inference releases its source slot while daily and rate accounting remain", async () => {
+  await ready();
+  const run = await createRun();
+  const first = await scopedTask(run, { prompt: "Classify" });
+  await succeed(first.task.id);
+  const failed = await scopedTask(await createRun(run), { prompt: "Extract" });
+  await failWorkflowAiTask(failed.task.id, { code: "WORKFLOW_AI_TIMEOUT", message: "Synthetic failure" });
+  const retry = await scopedTask(await createRun(run), { prompt: "Extract" });
+  expect(retry.task.status).toBe("queued");
+  await succeed(retry.task.id);
+  const [ledger] =
+    await sql`SELECT count(*)::int AS admissions, count(DISTINCT logical_key)::int AS logical FROM ai.workflow_scope_admission WHERE scope_id = ${run.scopeId}`;
+  expect(ledger).toMatchObject({ admissions: 3, logical: 2 });
+  await expect(scopedTask(await createRun(run), { prompt: "Third step" })).rejects.toMatchObject({ code: "WORKFLOW_AI_SOURCE_BUDGET" });
+});
+
+testFor("database", "nats")("shutdown drains an interrupted attempt into queued before returning", async () => {
+  await ready();
+  const run = await createRun();
+  const created = await createWorkflowAiTask({
+    runId: run.runId,
+    stepKey: "shutdown",
+    effectKey: `workflow:${run.runId}:shutdown`,
+    request: { kind: "classify", prompt: "Choose", input: "hello", choices: ["a", "b"] },
+    modelProfileId: "model",
+  });
+  const fixture = await openSync("workflow-ai-shutdown");
+  const pending = spyOn(aiStore, "listRecoverableWorkflowAiTaskIds").mockResolvedValue([]);
+  const entered = Promise.withResolvers<void>();
+  let providerSignal: AbortSignal | undefined;
+  bindProcessSync(fixture.sync);
+  try {
+    await startWorkflowAiRuntime({
+      runStructured: async ({ signal }) => {
+        providerSignal = signal;
+        entered.resolve();
+        return new Promise(() => {});
+      },
+    });
+    await submitWorkflowAiTask(created.task.id);
+    await entered.promise;
+    await stopWorkflowAiRuntime();
+    expect(providerSignal?.aborted).toBe(true);
+    expect(await getWorkflowAiTask(created.task.id)).toMatchObject({ status: "queued", errorCode: null });
+  } finally {
+    await stopWorkflowAiRuntime();
+    unbindProcessSync();
+    pending.mockRestore();
+    await fixture.close();
+  }
 });

@@ -622,3 +622,12 @@ The Mail API manages definitions and activations only. Runtime observability and
 | References | `reference-number config show|set`, `reference-number list|ensure|find` |
 | Workflow lifecycle | `workflow list|get|validate|create|update|export|activate|deactivate`, `workflow version list|get|create|restore` |
 | Runtime operations | `cld admin workflows health|runs|show|cancel|effects|resolve|events` |
+
+Successful inference is reused for unchanged mail, input, instructions and model
+configuration within its mailbox. To deliberately request fresh inference on
+failed messages, add `--recompute-ai` to `automation backfill start --retry-failed`.
+The API equivalent is `{ retryFailed: true, recomputeAi: true }`. This bypass
+requires the existing backfill permissions and still consumes the mailbox AI
+budget; it cannot bypass capacity, rate, daily, or two-step limits. Check
+**Automations > Activity** for failures and inspect the original message or retry
+after capacity recovers.
