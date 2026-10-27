@@ -38,6 +38,7 @@ import { chooseFiles } from "@k2b/cloud/browser/files";
 import { closePanel, type getContext, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
+import { pastedCloudLink, type ResolvedCloudResourceUrl, resolveCloudUrl } from "@k2b/cloud/browser/resource-links";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
 import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
@@ -118,6 +119,7 @@ import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
+import { pastedLinkInPlace, pastedLinkPrefix, withoutPastedLink } from "./composer-cloud-link";
 import {
   assistantBuiltInCommands,
   assistantCommandScopes,
@@ -1610,7 +1612,13 @@ export default function AssistantWorkspace(props: Props) {
     return false;
   };
 
-  const addResolvedComposerResource = async (sessionKey: string, ref: { type: string; id: string }, isCurrent = () => true) => {
+  const addResolvedComposerResource = async (
+    sessionKey: string,
+    ref: { type: string; id: string },
+    isCurrent = () => true,
+    /** The resource as a pasted link resolved it, with its own title. */
+    known?: Pick<ResolvedCloudResourceUrl, "title" | "icon" | "href">,
+  ) => {
     const target = followComposerSession(sessionKey);
     const release = holdComposerSave();
     try {
@@ -1624,7 +1632,7 @@ export default function AssistantWorkspace(props: Props) {
         chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
         return;
       }
-      const resource = await resolveAssistantCloudResource(ref);
+      const resource = known ? { ref, ...known, icon: known.icon ?? "ti ti-link" } : await resolveAssistantCloudResource(ref);
       if (!isCurrent()) return;
       const key = target();
       const latest = composerAttachmentsFor(key);
@@ -1724,6 +1732,36 @@ export default function AssistantWorkspace(props: Props) {
       void addResolvedComposerResource(sessionKey, ref).catch((error) =>
         chat.setError(error instanceof Error ? error.message : t().attachResourceFailed),
       );
+      return;
+    }
+    const link = pastedCloudLink(event);
+    if (link && event.target instanceof HTMLTextAreaElement) {
+      // The link lands as text at once. Once its resource is recognized, a reference with its title takes its place;
+      // an unreadable or unknown link stays text. Ctrl+Shift+V keeps the link as text.
+      // The text before this paste's link: the link is recognized only while it is still in its place.
+      const prefix = pastedLinkPrefix(
+        composerDraft(sessionKey),
+        event.target.selectionStart,
+        event.clipboardData?.getData("text/plain") ?? "",
+        link,
+      );
+      const target = followComposerSession(sessionKey);
+      const inPlace = (key: string) => pastedLinkInPlace(composerDraft(key), prefix, link);
+      void resolveCloudUrl(link).then(async (resolved) => {
+        if (!resolved) return;
+        const key = target();
+        const attached = composerAttachmentsFor(key).some(
+          (item) => item.kind === "resource" && item.ref.type === resolved.ref.type && item.ref.id === resolved.ref.id,
+        );
+        // An edited or removed link, a reference already attached, a full draft, or attachments waiting for a
+        // response all leave the text as it is.
+        if (!inPlace(key) || attached || composerAttachmentsBlocked(key) || composerPartCount(key) >= AI_TURN_ATTACHMENT_MAX_ITEMS) return;
+        const count = composerAttachmentsFor(key).length;
+        await addResolvedComposerResource(key, resolved.ref, () => inPlace(target()), resolved).catch(() => undefined);
+        const current = target();
+        if (composerAttachmentsFor(current).length === count || !inPlace(current)) return;
+        setComposerDraft(current, withoutPastedLink(composerDraft(current), prefix, link));
+      });
       return;
     }
     const text = event.clipboardData?.getData("text/plain") ?? "";

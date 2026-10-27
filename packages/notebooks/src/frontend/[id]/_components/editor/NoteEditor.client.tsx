@@ -19,6 +19,7 @@ import { inheritPresentationMode, requestedPresentationMode } from "../../../../
 import type { Backlink } from "../../../../service/links";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
+import { cloudLinkPasteExtension } from "../../../lib/editor/cloud-link-paste";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
 import { listCommandsExtension } from "../../../lib/editor/list-commands";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
@@ -493,6 +494,7 @@ function EditorInstance(
     addExtension(() => isolateYjsHistory(undoManager));
     // The Yjs undo keys need the binding; before it, edits have no history to undo.
     addExtension(() => (syncEnded.ended() || !collabActive() ? [] : keymap.of(yUndoManagerKeymap)));
+    addExtension(cloudLinkPasteExtension());
     // Reading or switching notes needs no collaboration; the first edit starts it.
     addExtension(
       EditorView.updateListener.of((update) => {

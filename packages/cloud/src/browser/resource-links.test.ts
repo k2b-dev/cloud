@@ -9,7 +9,7 @@ const root = mkdtempSync(resolve(tmpdir(), "cloud-url-browser-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { cloudOrigin, resolveCloudUrl } = await import("./resource-links");
+const { cloudOrigin, pastedCloudLink, resolveCloudUrl } = await import("./resource-links");
 
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
 let shell: string | null;
@@ -97,6 +97,20 @@ test("root-relative links still work without configured shell origin; absolute l
   expect(await resolveCloudUrl("https://cloud.example/app/demo/id")).toBeNull();
   expect(requests).toHaveLength(0);
   expect(await resolveCloudUrl("/app/demo/id")).not.toBeNull();
+});
+
+const paste = (text: string, timeStamp = 10_000) =>
+  ({ timeStamp, clipboardData: { getData: (type: string) => (type === "text/plain" ? text : "") } }) as unknown as ClipboardEvent;
+
+test("a paste carries a Cloud link only as one absolute URL on this Cloud", () => {
+  expect(pastedCloudLink(paste(" https://cloud.example/app/demo/id\n"))).toBe("https://cloud.example/app/demo/id");
+  expect(pastedCloudLink(paste("https://cloud.example/open/demo.item/~id"))).toBe("https://cloud.example/open/demo.item/~id");
+  for (const text of ["/app/demo/id", "https://other.example/app/demo/id", "see https://cloud.example/app/demo/id", ""]) {
+    expect(pastedCloudLink(paste(text))).toBeNull();
+  }
+  shell = "{}";
+  expect(pastedCloudLink(paste("https://cloud.example/app/demo/id"))).toBeNull();
+  expect(requests).toHaveLength(0);
 });
 
 test("resource URL browser helpers keep Zod out of static imports", async () => {

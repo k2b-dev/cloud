@@ -221,3 +221,31 @@ locale? })` from `@k2b/cloud/api` for the same result or `null`. Agents and
 scripts can run `cld capabilities resolve <url>`; its text, JSON, and JSONL
 output include the ref, title, and an absolute `permalink` on the selected
 profile's server.
+
+### Turn a pasted link into a reference
+
+In a text field or editor where a reference is better than a raw link, let the
+browser paste the text as usual and replace the link once Cloud recognizes it.
+`pastedCloudLink(event)` returns the pasted text only when it is exactly one
+absolute URL on this Cloud, and `null` for other text, other origins, and a
+paste as plain text (Ctrl+Shift+V, or Cmd+Shift+V on a Mac):
+
+```ts
+import { pastedCloudLink, resolveCloudUrl } from "@k2b/cloud/browser/resource-links";
+import { cloudResourceHref } from "@k2b/cloud/contracts";
+
+editor.addEventListener("paste", (event) => {
+  const link = pastedCloudLink(event);
+  if (!link) return;
+  void resolveCloudUrl(link).then((resource) => {
+    if (resource) replacePastedText(link, `[${resource.title}](${cloudResourceHref(resource.ref)})`);
+  });
+});
+```
+
+Replace the link only where it still stands, as a separate edit, so undo
+brings back the plain link. An unknown or unreadable link stays text, and so
+does a link inside code or a Markdown link destination. Assistant's composer
+turns a recognized link into a resource reference with its title, and the
+Notebooks editor turns it into a link with the title; a note becomes a
+`note://` link.
