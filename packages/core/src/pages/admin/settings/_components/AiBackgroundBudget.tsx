@@ -30,7 +30,7 @@ export default function AiBackgroundBudget(props: {
   }
   onMount(() => void refresh());
   return (
-    <section class="paper flex flex-col gap-4 p-4">
+    <section class="flex flex-col gap-4">
       <TextInput
         label={de() ? "Recheneinheit" : "Accounting unit"}
         value={props.config.unit ?? "EUR"}

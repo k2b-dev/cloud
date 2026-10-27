@@ -302,15 +302,7 @@ function BudgetsColumn(props: { t: AiAreaMessages; locale: string; query: AiArea
   const background = props.budgets.config.background;
   return (
     <>
-      <AppWorkspace.SidebarSection
-        title={t.rules}
-        actions={
-          <ButtonLink variant="ghost" size="sm" href={aiAreaHref({ sec: "budgets", rule: "new" })}>
-            <i class="ti ti-plus" aria-hidden="true" />
-            {t.addRule}
-          </ButtonLink>
-        }
-      >
+      <AppWorkspace.SidebarSection title={t.rules}>
         {props.budgets.config.rules.length === 0 ? (
           <Placeholder icon="ti ti-gauge" title={t.noRules} description={t.noRulesSub} variant="compact" />
         ) : (
@@ -337,6 +329,9 @@ function BudgetsColumn(props: { t: AiAreaMessages; locale: string; query: AiArea
             </AppWorkspace.SidebarItem>
           ))
         )}
+        <AppWorkspace.SidebarItem href={aiAreaHref({ sec: "budgets", rule: "new" })} active={props.query.rule === "new"} icon="ti ti-plus">
+          {t.addRule}
+        </AppWorkspace.SidebarItem>
       </AppWorkspace.SidebarSection>
       <AppWorkspace.SidebarSection title={t.jobs}>
         <AppWorkspace.SidebarItem
