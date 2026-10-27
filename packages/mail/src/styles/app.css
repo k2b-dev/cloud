@@ -16,6 +16,7 @@
        height (three lines, or four with tags or "Waiting"), so a row the list
        renders anew, as after hydration, has its final height in its first
        frame (#1545). */
+    --mail-row-height-1: 2.75rem;
     --mail-row-height-3: 4.8125rem;
     --mail-row-height-4: 6.375rem;
     content-visibility: auto;
@@ -24,6 +25,10 @@
 
   .mail-list-entry[data-lines="4"] {
     contain-intrinsic-size: auto var(--mail-row-height-4);
+  }
+
+  .mail-list-entry[data-lines="1"] {
+    contain-intrinsic-size: auto var(--mail-row-height-1);
   }
 
   .mail-list-entry:hover {
@@ -102,6 +107,136 @@
     min-width: 0;
     flex-direction: column;
     gap: 1px;
+  }
+
+  /* Columns (F2): one line per conversation over the full width. The list owns the column template
+     (--mail-columns) so its header and every row line up; the row is always 2.75rem high. */
+  .mail-list-entry[data-lines="1"] .mail-list-row {
+    padding-block: 0.75rem;
+  }
+
+  .mail-row-cells {
+    display: grid;
+    grid-template-columns: var(--mail-columns);
+    align-items: center;
+    column-gap: 1rem;
+    min-width: 0;
+    height: var(--mail-row-line);
+  }
+
+  .mail-row-cell {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.375rem;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 0.875rem;
+    line-height: var(--mail-row-line);
+  }
+
+  .mail-row-sender-cell {
+    color: var(--k2b-text);
+  }
+
+  .mail-row-sender-cell .mail-row-sender {
+    flex: 0 1 auto;
+  }
+
+  .mail-row-subject-cell .mail-row-subject {
+    flex: 0 1 auto;
+  }
+
+  .mail-row-subject-cell > .mail-row-tag {
+    flex: none;
+  }
+
+  .mail-row-inline-preview {
+    min-width: 0;
+    flex: 1 1 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--k2b-text-muted);
+  }
+
+  .mail-row-assignee-cell {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--k2b-text-secondary);
+  }
+
+  .mail-row-status-cell {
+    color: var(--k2b-text-secondary);
+  }
+
+  .mail-row-status-dot {
+    flex: none;
+    width: 0.4375rem;
+    height: 0.4375rem;
+    border-radius: 9999px;
+    background: var(--color-orange-500);
+  }
+
+  .mail-row-status-cell[data-status="waiting"] .mail-row-status-dot {
+    background: var(--color-blue-500);
+  }
+
+  .mail-row-status-cell[data-status="done"] .mail-row-status-dot {
+    background: var(--color-emerald-600);
+  }
+
+  .mail-row-cells .mail-row-time {
+    justify-content: flex-end;
+    margin-left: 0;
+    padding-left: 0;
+  }
+
+  /* The column template: shared mailboxes show who is responsible and the status; personal ones do not. */
+  .mail-columns,
+  .mail-columns-head {
+    --mail-columns: minmax(8rem, 1fr) minmax(0, 2.6fr) minmax(7rem, 0.9fr) 9rem 4.5rem;
+  }
+
+  .mail-columns.mail-columns-personal,
+  .mail-columns-head.mail-columns-personal {
+    --mail-columns: minmax(8rem, 1fr) minmax(0, 3fr) 4.5rem;
+  }
+
+  /* Same horizontal geometry as a row, so every heading sits above its column. */
+  .mail-columns-head {
+    display: grid;
+    grid-template-columns: 0.4375rem minmax(0, 1fr);
+    column-gap: 0.5rem;
+    height: 1.75rem;
+    align-items: center;
+    padding: 0 0.625rem 0 0.375rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--k2b-text-secondary);
+  }
+
+  .mail-columns-head-cells {
+    display: grid;
+    grid-template-columns: var(--mail-columns);
+    column-gap: 1rem;
+    min-width: 0;
+  }
+
+  /* Day headings start where the row text starts; their fixed height keeps the list from moving as groups change. */
+  .mail-day-group {
+    display: flex;
+    height: 2rem;
+    align-items: flex-end;
+    padding: 0 0.625rem 0.25rem 1.3125rem;
+  }
+
+  .mail-day-group h3 {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1rem;
+    color: var(--k2b-text-secondary);
   }
 
   .mail-row-from,
