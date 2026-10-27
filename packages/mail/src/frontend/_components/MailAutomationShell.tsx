@@ -6,7 +6,7 @@ import type { Mailbox } from "../../contracts";
 import { openMailboxSettingsDialog } from "./MailboxSettingsDialog";
 import { mailRemainingMessages } from "./mail-remaining-messages";
 
-export type MailAutomationPageId = "overview" | "replies" | "incoming" | "activity" | "workflows";
+export type MailAutomationPageId = "overview" | "replies" | "incoming" | "log" | "activity" | "workflows";
 
 const pageHref = (mailboxId: string, page: MailAutomationPageId): string =>
   page === "overview" ? `/app/mail/${mailboxId}/automations` : `/app/mail/${mailboxId}/automations/${page}`;
@@ -31,6 +31,7 @@ function NavigationItems(props: { mailboxId: string; activePage: MailAutomationP
         {item("overview", messages().overview, "ti ti-layout-dashboard")}
         {item("replies", messages().automaticReplies, "ti ti-message-cog")}
         <Show when={props.admin}>{item("incoming", messages().incomingMail, "ti ti-mailbox")}</Show>
+        {item("log", messages().automationLog, "ti ti-history")}
       </AppWorkspace.SidebarSection>
       <Show when={props.admin}>
         <AppWorkspace.SidebarSection title={messages().advanced}>
@@ -81,12 +82,10 @@ export default function MailAutomationShell(props: {
       { id: "mailbox", label: messages().backToMailbox, icon: "ti ti-inbox", href: mailboxHref },
       link("overview", messages().overview, "ti ti-layout-dashboard"),
       link("replies", messages().automaticReplies, "ti ti-message-cog"),
+      ...(props.permission === "admin" ? [link("incoming", messages().incomingMail, "ti ti-mailbox")] : []),
+      link("log", messages().automationLog, "ti ti-history"),
       ...(props.permission === "admin"
-        ? [
-            link("incoming", messages().incomingMail, "ti ti-mailbox"),
-            link("activity", messages().activity, "ti ti-activity"),
-            link("workflows", messages().workflows, "ti ti-route"),
-          ]
+        ? [link("activity", messages().activity, "ti ti-activity"), link("workflows", messages().workflows, "ti ti-route")]
         : []),
       { id: "settings", label: messages().mailboxSettings, icon: "ti ti-settings", action: "settings", disabled: settingsOpening() },
     ],

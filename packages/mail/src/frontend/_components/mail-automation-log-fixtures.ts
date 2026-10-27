@@ -29,8 +29,8 @@ const conversation = (id: string, subject: string, name: string) => ({
   from: { name, email: `${name.toLowerCase().replace(/[^a-z]+/gu, ".")}@example.test` },
   href: `/app/mail/Box001?conversation=${id}`,
 });
-const available = { state: "available" as const, reason: null, by: null };
-const none = { state: "none" as const, reason: null, by: null };
+const available = { state: "available" as const, reason: null, by: null, at: null };
+const none = { state: "none" as const, reason: null, by: null, at: null };
 const choices = ["Reklamation", "Anfrage", "Sonstiges", "Unsicher"];
 
 export const logFixtureItems: AutomationLogItem[] = [

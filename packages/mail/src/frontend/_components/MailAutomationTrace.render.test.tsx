@@ -61,7 +61,7 @@ describe("MailAutomationTrace", () => {
 
   test("no note for a plain rule, an undone assignment, or a reader without write access to act", () => {
     expect(render([byId("Log007")], "top")).not.toContain("data-mail-automation-note");
-    expect(render([{ ...byId("Log004"), undo: { state: "done", reason: null, by: null } }], "top")).not.toContain(
+    expect(render([{ ...byId("Log004"), undo: { state: "done", reason: null, by: null, at: null } }], "top")).not.toContain(
       "data-mail-automation-note",
     );
     expect(render([byId("Log004")], "top", false)).not.toContain("Rückgängig");
