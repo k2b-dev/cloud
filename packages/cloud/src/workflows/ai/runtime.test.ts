@@ -122,3 +122,110 @@ for (const retryable of [true, false])
       requeue.mockRestore();
     }
   });
+
+test("a keepalive-only or non-settling runner cannot hold a workflow attempt past its absolute budget", async () => {
+  const claim = spyOn(store, "claimWorkflowAiTask").mockResolvedValue(task);
+  const cancel = spyOn(store, "workflowAiTaskCancellationRequested").mockResolvedValue(false);
+  let providerSignal: AbortSignal | undefined;
+  try {
+    await expect(
+      processWorkflowAiTask(
+        task.id,
+        {
+          signal: new AbortController().signal,
+          heartbeat: async () => {},
+        },
+        {
+          maxAttempts: 3,
+          cancelPollMs: 500,
+          attemptTimeoutMs: 20,
+          runStructured: async (input) => {
+            providerSignal = input.signal;
+            // An SSE provider may continue sending comments without ever completing.
+            return new Promise(() => {});
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: "WORKFLOW_AI_TIMEOUT", retryable: true });
+    expect(providerSignal?.aborted).toBe(true);
+  } finally {
+    claim.mockRestore();
+    cancel.mockRestore();
+  }
+});
+
+test("continuous SSE keepalive chunks do not extend the absolute inference deadline", async () => {
+  const claim = spyOn(store, "claimWorkflowAiTask").mockResolvedValue(task);
+  const cancel = spyOn(store, "workflowAiTaskCancellationRequested").mockResolvedValue(false);
+  let keepalive: ReturnType<typeof setInterval> | undefined;
+  let chunks = 0;
+  const server = Bun.serve({
+    port: 0,
+    fetch: () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(": keepalive\n\n"));
+            keepalive = setInterval(() => {
+              controller.enqueue(new TextEncoder().encode(": keepalive\n\n"));
+            }, 2);
+          },
+          cancel() {
+            clearInterval(keepalive);
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+  });
+  try {
+    await expect(
+      processWorkflowAiTask(
+        task.id,
+        { signal: new AbortController().signal, heartbeat: async () => {} },
+        {
+          maxAttempts: 3,
+          cancelPollMs: 500,
+          attemptTimeoutMs: 50,
+          runStructured: async ({ signal }) => {
+            const response = await fetch(server.url, { signal });
+            if (!response.body) throw new Error("Missing synthetic SSE body");
+            for await (const _chunk of response.body) chunks += 1;
+            throw new Error("SSE ended without a result");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: "WORKFLOW_AI_TIMEOUT", retryable: true });
+    expect(chunks).toBeGreaterThan(0);
+  } finally {
+    clearInterval(keepalive);
+    server.stop(true);
+    claim.mockRestore();
+    cancel.mockRestore();
+  }
+});
+
+test("shutdown before claim returns does not start another provider call", async () => {
+  const claim = spyOn(store, "claimWorkflowAiTask").mockResolvedValue(task);
+  const cancel = spyOn(store, "workflowAiTaskCancellationRequested").mockResolvedValue(false);
+  let calls = 0;
+  try {
+    await expect(
+      processWorkflowAiTask(
+        task.id,
+        { signal: AbortSignal.abort(), heartbeat: async () => {} },
+        {
+          maxAttempts: 3,
+          cancelPollMs: 500,
+          runStructured: async () => {
+            calls += 1;
+            throw new Error("must not call");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: "WORKFLOW_AI_INTERRUPTED", retryable: true });
+    expect(calls).toBe(0);
+  } finally {
+    claim.mockRestore();
+    cancel.mockRestore();
+  }
+});

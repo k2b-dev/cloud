@@ -33,7 +33,9 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
   const { migrate } = await import("../migrate");
   const annotations = await import("./annotations");
   const notes = await import("./notes");
-  const { notebooksCapabilities } = await import("../capabilities");
+  const { notebooksCapabilities, runNotebookActivity } = await import("../capabilities");
+  const { ActivityDataSchema, ActivityInputSchema } = await import("../capability-contracts");
+  const activity = await import("./activity");
   const { installFirstPartyModules } = await import("../../../cloud-cli/test/fixtures/first-party");
   const notebookId = crypto.randomUUID();
   const notebookShortId = testShortId();
@@ -235,6 +237,62 @@ if (process.env.NOTEBOOK_ANNOTATIONS_CHILD !== "1") {
       ok: true,
       data: { text: "# Handbook\n\nBefore target after\n", items: [{ canEdit: false, canDelete: false }] },
     });
+  });
+  test("new passage comments project one quiet linked row, with no rows for replies or later changes", async () => {
+    const note = await noteFixture();
+    const root = await add(note.shortId, { suggestion: "replacement" });
+    const read = async (context = reader, limit = 100) => {
+      const result = await runNotebookActivity(
+        ActivityInputSchema.parse({ notebook: notebookShortId, item: note.shortId, limit }),
+        context,
+      );
+      if (!result.ok) throw new Error(result.error.message);
+      return ActivityDataSchema.parse(result.data.data);
+    };
+    const href = `/open/notebooks.annotation/~${root.id}`;
+    const rows = () => read().then((items) => items.filter((item) => item.href !== undefined));
+    expect(await rows()).toEqual([
+      expect.objectContaining({ href, sentence: "Review agent left a comment", icon: "ti ti-message-plus", count: 1 }),
+    ]);
+    expect((await read({ ...reader, locale: "de" })).find((item) => item.href === href)?.sentence).toBe(
+      "Review agent hat einen Kommentar hinterlassen",
+    );
+    expect((await annotations.reply(note.shortId, root.id, { body: "A reply", idempotencyKey: "activity-reply" }, other)).ok).toBeTrue();
+    expect((await annotations.mutate(note.shortId, root.id, { kind: "edit", body: "Revised comment" }, writer)).ok).toBeTrue();
+    for (const kind of ["resolve", "reopen"] as const)
+      expect((await annotations.mutate(note.shortId, root.id, { kind }, writer)).ok).toBeTrue();
+    expect((await annotations.operate(note.shortId, root.id, "accept", { operationId: crypto.randomUUID() }, writer)).ok).toBeTrue();
+    expect(await rows()).toHaveLength(1);
+    // New roots stay separate even when they share an actor, note and edit bucket.
+    const beforeDeleted = await read();
+    const deleted = await add(note.shortId, { quote: "replacement" });
+    expect(await rows()).toHaveLength(2);
+    expect((await annotations.mutate(note.shortId, deleted.id, { kind: "delete" }, writer)).ok).toBeTrue();
+    expect(await rows()).toHaveLength(1);
+    // Deleted annotations are filtered before LIMIT in both timeline and ordinary activity consumers.
+    expect(await read(reader, 1)).toEqual(beforeDeleted.slice(0, 1));
+    expect(
+      (
+        await activity.list({
+          notebookId,
+          noteId: note.id,
+          serviceAccountId: reader.actor.kind === "service_account" ? reader.actor.serviceAccount.id : null,
+          actions: ["annotation.create"],
+          limit: 1,
+        })
+      ).items,
+    ).toEqual([expect.objectContaining({ metadata: expect.objectContaining({ annotationId: root.id }) })]);
+    if (reader.actor.kind !== "service_account") throw new Error("Expected service account");
+    await sql`UPDATE auth.access SET permission = 'none' WHERE service_account_id = ${reader.actor.serviceAccount.id}::uuid`;
+    try {
+      expect(await runNotebookActivity(ActivityInputSchema.parse({ notebook: notebookShortId }), reader)).toMatchObject({
+        ok: false,
+        error: { status: 404 },
+      });
+      expect((await activity.list({ notebookId, serviceAccountId: reader.actor.serviceAccount.id, timeline: true })).items).toEqual([]);
+    } finally {
+      await sql`UPDATE auth.access SET permission = 'read' WHERE service_account_id = ${reader.actor.serviceAccount.id}::uuid`;
+    }
   });
   // A held replay must be released in finally, even when a regression blocks
   // the competing request. Bound the assertion by the platform request budget.

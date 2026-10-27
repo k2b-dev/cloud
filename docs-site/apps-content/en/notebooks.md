@@ -36,7 +36,12 @@ including from Book view. Use the overview to start from a template.
 `notebook.activity` reads recorded changes for a `notebook` short ID,
 optionally one `item` (note short ID). Each edit bucket remains one row, with
 an actor, icon, localized sentence, last occurrence time, resource ref, and
-count. Comments and deleted notes are omitted. Follow `page.nextCursor` with
+count. Each new passage comment (`annotation.create`) adds one separate row,
+with count 1 and an optional `href` to its `notebooks.annotation` reader. The
+reader opens the note with `?annotation=<id>`. Replies, comment edits,
+resolution and acceptance add no comment rows. Deleted comments, deleted notes,
+and notes the caller cannot read are omitted. Comments remain available when
+Chat is unavailable; the Chat row is only a projection. Follow `page.nextCursor` with
 `cursor`; `before` and `after` are exclusive ISO datetime bounds. `limit`
 defaults to 50 and accepts 1–100. See [Chat system conversations](/en/docs/operations/chat-system-chats#read-item-events)
 for the shared event contract.
@@ -528,6 +533,11 @@ their file names carry the note ID, as in `backup--Ab12Cd.md`; this suffix
 exists only in the mirror. Each file starts with `id`, `title`, and
 `updatedAt` front matter, and `.cld-notebook.json` records one `path`,
 `contentHash`, `fileHash`, and `updatedAt` per note.
+
+The note list's `q` filter matches substrings in titles and words in saved
+page content. A final plain word of at least two characters also matches the
+start of a word: `backu` finds `backup`. A fragment from the middle of a body
+word does not match.
 
 `mv` also arranges a note among its siblings with `--before <note>`,
 `--after <note>`, `--first`, or `--last`, as in

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ItemEventsQuerySchema } from "./contracts";
+import { ItemEventSchema, ItemEventsPageSchema, ItemEventsQuerySchema } from "./contracts";
 import { activityQuery, mapItemEvent, OwnerActivitySchema } from "./item-events";
 
 const event = {
@@ -63,4 +63,27 @@ test("bounds every page and rejects invalid provider rows", () => {
   expect(OwnerActivitySchema.safeParse(Array.from({ length: 101 }, () => event)).success).toBeFalse();
   expect(OwnerActivitySchema.safeParse([{ ...event, ref: { type: "spaces.space", id: "Spc001" } }]).success).toBeFalse();
   expect(OwnerActivitySchema.safeParse([{ ...event, icon: "arbitrary-class" }]).success).toBeFalse();
+});
+
+test("preserves optional owner links through the public event page", () => {
+  const href = "/app/notebooks/Ntb001/notes/Nte001?annotation=11111111-1111-4111-8111-111111111111";
+  const [owner] = OwnerActivitySchema.parse([{ ...event, href }]);
+  const item = mapItemEvent({ ...owner!, ref: event.ref });
+  expect(ItemEventsPageSchema.parse({ items: [item], nextCursor: null }).items[0]?.href).toBe(href);
+  expect(mapItemEvent(event)).not.toHaveProperty("href");
+});
+
+test.each([
+  "https://example.invalid/passage",
+  "//example.invalid/passage",
+  "javascript:alert(1)",
+  "/\\example.invalid/passage",
+  "/path\\passage",
+  "/path\npassage",
+  "relative/path",
+  "",
+  `/${"x".repeat(2048)}`,
+])("rejects invalid activity links at both owner and browser transport boundaries: %j", (href) => {
+  expect(OwnerActivitySchema.safeParse([{ ...event, href }]).success).toBeFalse();
+  expect(ItemEventSchema.safeParse({ ...mapItemEvent(event), href }).success).toBeFalse();
 });

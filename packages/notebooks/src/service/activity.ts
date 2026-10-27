@@ -247,7 +247,21 @@ export const list = async (params: {
     }
       AND (${params.notebookId ?? null}::uuid IS NULL OR activity.notebook_id = ${params.notebookId ?? null}::uuid)
       AND (${params.noteId ?? null}::uuid IS NULL OR activity.note_id = ${params.noteId ?? null}::uuid)
-      AND ${params.timeline ? sql`note.id IS NOT NULL AND note.notebook_id = activity.notebook_id AND activity.action NOT LIKE 'comment.%'` : sql`activity.action = ANY(${actions}::text[])`}
+      AND ${
+        params.timeline
+          ? sql`note.id IS NOT NULL AND note.notebook_id = activity.notebook_id
+              AND activity.action NOT LIKE 'comment.%'
+              AND (activity.action NOT LIKE 'annotation.%' OR activity.action = 'annotation.create')`
+          : sql`activity.action = ANY(${actions}::text[])`
+      }
+      AND (activity.action <> 'annotation.create' OR (
+        note.notebook_id = activity.notebook_id AND EXISTS (
+          SELECT 1 FROM notebooks.annotations annotation
+          WHERE annotation.note_id = activity.note_id
+            AND annotation.id::text = activity.metadata->>'annotationId'
+            AND annotation.deleted_at IS NULL
+        )
+      ))
       AND (${params.before ?? null}::timestamptz IS NULL OR activity.last_occurred_at < ${params.before ?? null}::timestamptz)
       AND (${params.after ?? null}::timestamptz IS NULL OR activity.last_occurred_at > ${params.after ?? null}::timestamptz)
       AND (

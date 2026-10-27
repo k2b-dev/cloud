@@ -21,6 +21,7 @@ export type WorkflowAiTask = {
   request: WorkflowAiRequest;
   inputHash: string;
   modelProfileId: string;
+  modelConfigHash?: string;
   status: WorkflowAiTaskStatus;
   output: WorkflowJsonValue | null;
   usage: WorkflowJsonValue | null;

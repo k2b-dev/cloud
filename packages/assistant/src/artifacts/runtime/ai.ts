@@ -1,4 +1,4 @@
-import { type AiTaskRequestInput, AiTaskRequestSchema } from "@k2b/cloud/ai/browser";
+import { type AiTaskRequestInput, AiTaskRequestSchema } from "@k2b/cloud/ai/app-frame";
 import { z } from "zod";
 
 type Options<K extends AiTaskRequestInput["kind"]> = Omit<Extract<AiTaskRequestInput, { kind: K }>, "kind">;

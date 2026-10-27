@@ -122,6 +122,35 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_short_id ON notebooks.notes(short_id)`.simple();
 
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_notebook_id
+    ON notebooks.notes(notebook_id, id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_notebook_updated
+    ON notebooks.notes(notebook_id, updated_at DESC, id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_updated
+    ON notebooks.notes(updated_at DESC, id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_notebook_list
+    ON notebooks.notes(notebook_id, position, updated_at DESC, id DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_notebook_parent_list
+    ON notebooks.notes(notebook_id, parent_id, position, updated_at DESC, id DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_notebook_created
+    ON notebooks.notes(notebook_id, created_at, id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notes_created
+    ON notebooks.notes(created_at, id)
+  `.simple();
+
   // Canonical search projection. `simple` keeps mixed-language notebooks
   // predictable; title lexemes rank above body lexemes. This native GIN path
   // is always available and remains the correctness baseline even when an
@@ -348,6 +377,10 @@ export const migrate = async (): Promise<void> => {
     WHERE note_id IS NOT NULL
   `.simple();
   await sql`
+    CREATE INDEX IF NOT EXISTS idx_notebooks_activity_version
+    ON notebooks.activity_events(note_version_id) WHERE note_version_id IS NOT NULL
+  `.simple();
+  await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_notebooks_activity_bucket
     ON notebooks.activity_events(note_id, actor_kind, actor_id, action, bucket_started_at)
     WHERE bucket_started_at IS NOT NULL
@@ -424,6 +457,10 @@ export const migrate = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_note_tags_nb_prefix
     ON notebooks.note_tags(notebook_id, tag text_pattern_ops)
   `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_note_tags_tag_note
+    ON notebooks.note_tags(tag, note_id)
+  `.simple();
   console.log("  ✓ notebooks.note_tags table");
 
   // Per-user starred notes. Favorites are intentionally user-scoped
@@ -441,6 +478,10 @@ export const migrate = async (): Promise<void> => {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_note_favorites_user_notebook
     ON notebooks.note_favorites(user_id, notebook_id, created_at DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_note_favorites_note
+    ON notebooks.note_favorites(note_id)
   `.simple();
   console.log("  ✓ notebooks.note_favorites table");
 

@@ -51,24 +51,10 @@ export const NOTEBOOKS_YJS_TERMINAL_ERROR_CODES = [
   NOTEBOOKS_YJS_ERROR_CODE.backpressure,
 ] as const;
 
-const NOTEBOOKS_PRESENCE_COLORS = ["#e06c75", "#61afef", "#98c379", "#d19a66", "#c678dd", "#56b6c2", "#e5c07b"] as const;
-
-const hashSeed = (seed: string): number => {
-  let hash = 0;
-  for (const char of seed) {
-    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  }
-  return hash;
-};
-
-export const getNotebookPresenceColor = (seed: string): string =>
-  NOTEBOOKS_PRESENCE_COLORS[hashSeed(seed) % NOTEBOOKS_PRESENCE_COLORS.length]!;
-
 export const notebooksYjs = {
   maxSyncPayloadLength: 8_000_000,
   wsType: NOTEBOOKS_YJS_WS_TYPE,
   streamCursorPattern: STREAM_CURSOR_PATTERN,
   errorCode: NOTEBOOKS_YJS_ERROR_CODE,
   terminalErrorCodes: NOTEBOOKS_YJS_TERMINAL_ERROR_CODES,
-  presenceColors: NOTEBOOKS_PRESENCE_COLORS,
 } as const;

@@ -1763,22 +1763,23 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
       if (error) return error;
       const query = c.req.valid("query");
-      const entries = await notebooksService.note.paths.outline({ notebookId: notebook!.id });
       const offset = (query.page - 1) * query.per_page;
-      const pageEntries = entries.slice(offset, offset + query.per_page);
-      const shortIds = new Map(entries.map((entry) => [entry.id, entry.shortId]));
+      const result = await notebooksService.note.paths.outline({
+        notebookId: notebook!.id,
+        pagination: { limit: query.per_page, offset },
+      });
       return respond(
         c,
         ok({
-          data: pageEntries.map((entry) => ({
+          data: result.items.map((entry) => ({
             id: entry.shortId,
-            parentId: entry.parentId ? (shortIds.get(entry.parentId) ?? null) : null,
+            parentId: entry.parentShortId,
             title: entry.title,
             position: entry.position,
             hasChildren: entry.hasChildren,
             updatedAt: entry.updatedAt,
           })),
-          pagination: createPagination({ page: query.page, perPage: query.per_page, offset }, entries.length),
+          pagination: createPagination({ page: query.page, perPage: query.per_page, offset }, result.total),
         }),
       );
     },

@@ -2,7 +2,7 @@ import { lazySync } from "@k2b/cloud";
 import type { NotebookPresenceParticipant } from "@k2b/cloud/contracts";
 import { logger } from "@k2b/cloud/services";
 import { SnapshotOverflowError } from "@k2b/sync";
-import { getNotebookPresenceColor } from "../lib/yjs";
+import { personColor } from "@k2b/ui";
 import { NODE_ID } from "./yjs-sync";
 
 const log = logger("notebooks:presence");
@@ -124,7 +124,7 @@ export const join = async (config: {
       userId: config.userId,
       displayName: config.displayName,
       avatarHash: config.avatarHash,
-      color: getNotebookPresenceColor(config.userId),
+      color: personColor(config.displayName),
       peerId: config.peerId,
       nodeId: NODE_ID,
       joinedAt: Date.now(),
