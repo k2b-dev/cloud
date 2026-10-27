@@ -43,6 +43,11 @@ const toErrorResponse = (result: AnyResult): [ApiErrorBody, number] => {
   return [{ message: "Internal server error", code: "INTERNAL" }, 500];
 };
 
+export async function respond<T>(
+  c: Context,
+  resultOrFn: ResultOrFn<AnyResult<T>>,
+  successStatus: 202,
+): Promise<JsonTypedResponse<T, 202> | ApiErrorResponse>;
 export async function respond<E extends ServiceError>(
   c: Context,
   resultOrFn: ResultOrFn<Result<never, E>>,
@@ -71,8 +76,8 @@ export async function respond<T>(
 export async function respond<T>(
   c: Context,
   resultOrFn: ResultOrFn<AnyResult<T>>,
-  successStatus: SuccessStatus = 200,
-): Promise<JsonTypedResponse<T, SuccessStatus> | ApiErrorResponse> {
+  successStatus: SuccessStatus | 202 = 200,
+): Promise<JsonTypedResponse<T, SuccessStatus | 202> | ApiErrorResponse> {
   const result = typeof resultOrFn === "function" ? await resultOrFn() : await resultOrFn;
 
   if (!result.ok) {
@@ -80,7 +85,7 @@ export async function respond<T>(
     return c.json(body, status as ApiErrorStatus) as ApiErrorResponse;
   }
 
-  return c.json(result.data, successStatus as 200 | 201) as JsonTypedResponse<T, SuccessStatus>;
+  return c.json(result.data, successStatus) as JsonTypedResponse<T, SuccessStatus | 202>;
 }
 
 export const respondMessage = (c: Context, resultPromise: Promise<Result<void>>, message: string) =>

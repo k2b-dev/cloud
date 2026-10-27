@@ -775,3 +775,24 @@ Use `cld mail <group> help` for all flags. The durable day-to-day surface is:
 Message-level provider changes, junk and keyword changes, folder, attachment, and maintenance commands are documented in [Mail operations](operations.md). Compose, draft, scheduling, and command-journal operations are documented in [Mail compose and drafts](compose.md).
 
 Live presence and cursor-based WebSocket invalidation are browser transport concerns rather than durable CLI operations. Shared draft leases, recovery copies, and resumable uploads are durable CLI capabilities and are documented in [Mail compose and drafts](compose.md).
+
+## Request a conversation summary
+
+```bash
+cld mail conversation summary generate <conversation> --mailbox <mailbox> --mode rolling
+cld --json mail conversation summary generate <conversation> --mode replace
+```
+
+The command reads the current summary revision, then requests generation.
+`rolling` continues the current text; `replace` rewrites it. The request can
+replace your own edited text because you explicitly asked. It uses your
+Assistant allowance and requires conversation write permission. A conflict
+asks you to reread the summary; it never overwrites a newer edit. A second
+request while writing returns the current state.
+
+The API responds with HTTP 202 and the full `ConversationContentSummary`.
+Structured CLI output has the same shape. Read
+`GET /mailboxes/:mailboxId/conversations/:conversationId/summary` for progress
+and results. `mail.summary.allowance_exhausted` leaves the conversation
+unchanged. Allowance presentation contains only `unlimited`, `usedPercent`
+and `resetsAt`.
