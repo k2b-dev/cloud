@@ -88,6 +88,8 @@ export type {
   RichSelectStatus,
 } from "./RichSelect";
 export { RichSelect, RichSelectFacts } from "./RichSelect";
+export type { ChoiceSliderOption, ChoiceSliderProps } from "./ChoiceSlider";
+export { ChoiceSlider } from "./ChoiceSlider";
 export type { ChoiceAppearance, SelectGridSize, SelectGroup, SelectOption, SelectProps, SelectSourceOption, SelectView } from "./Select";
 export { Select } from "./Select";
 export type { SelectChipOption, SelectChipProps } from "./SelectChip";
