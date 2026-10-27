@@ -832,7 +832,9 @@ export default function MailConversationReader(props: {
 
   const keptLabel = (): string | null => {
     const keep = props.keep;
-    return keep ? t().keptSince({ name: keep.keptBy.displayName, date: dates.formatDate(keep.keptAt, props.dateConfig) }) : null;
+    if (!keep) return null;
+    const since = t().keptSince({ name: keep.keptBy.displayName, date: dates.formatDate(keep.keptAt, props.dateConfig) });
+    return keep.canLift ? since : `${since}. ${t().keptOnlyCloudAdmins}`;
   };
   // Cloud refuses these for a kept conversation; the reader says so instead of offering them.
   const keptBlocks = (actionId: MailActionId): string | null => {
@@ -842,10 +844,11 @@ export default function MailConversationReader(props: {
     return null;
   };
   const keepAction = (): { label: string; icon: string; description?: string; disabled: boolean; action: () => void } | null => {
+    // Only a Cloud administrator can stop keeping; everyone else sees the lock and its hint, never a dead action.
     if (props.keep) {
-      return props.canAdmin
+      return props.keep.canLift
         ? { label: t().stopKeeping, icon: "ti ti-lock-open", disabled: props.structurePending, action: () => void props.onStopKeeping() }
-        : { label: t().kept, icon: "ti ti-lock", description: t().keptOnlyManagers, disabled: true, action: () => undefined };
+        : null;
     }
     return props.canWrite
       ? { label: t().keep, icon: "ti ti-lock", disabled: props.structurePending, action: () => void props.onKeep() }

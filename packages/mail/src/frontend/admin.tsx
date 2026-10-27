@@ -11,6 +11,7 @@ import { localizeMailError } from "../service/error-messages";
 import MailAdminContactDirectory from "./_components/MailAdminContactDirectory.island";
 import MailAdminMailboxActions from "./_components/MailAdminMailboxActions.island";
 import MailAdminStorageActions from "./_components/MailAdminStorageActions.island";
+import { MailAdminTabs } from "./admin-tabs";
 import { mailPageMessages } from "./pages-messages";
 
 const PAGE_SIZE = 50;
@@ -86,15 +87,13 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <AdminLayout c={c} title="Mail">
       <div class="app-rows" data-scroll-preserve="mail-admin">
+        <MailAdminTabs locale={locale} current="mailboxes" />
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 class="text-base font-semibold text-primary">{t.adminMailboxes}</h1>
             <p class="text-xs text-dimmed">{t.adminDescription}</p>
           </div>
           <div class="flex flex-wrap gap-2">
-            <ButtonLink href="/admin/mail/security" variant="secondary" size="sm">
-              <i class="ti ti-shield-lock" aria-hidden="true" /> {t.security}
-            </ButtonLink>
             <MailAdminStorageActions />
           </div>
         </div>

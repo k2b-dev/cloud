@@ -3,6 +3,7 @@ import {
   ConversationKeepDataSchema,
   ConversationKeepInputSchema,
   ConversationKeepReleaseDataSchema,
+  ConversationKeepReleaseInputSchema,
   ConversationListInputSchema,
   ConversationSearchInputSchema,
   DraftPatchInputSchema,
@@ -15,10 +16,17 @@ describe("Mail agent contracts", () => {
   test("keep and release carry exact conversation identities without incidental revision state", () => {
     const input = { mailboxId: "MbA123", conversationId: "CvB456" };
     expect(ConversationKeepInputSchema.parse(input)).toEqual(input);
+    expect(ConversationKeepReleaseInputSchema.parse({ ...input, reason: "  Policy reviewed  " })).toEqual({
+      ...input,
+      reason: "Policy reviewed",
+    });
+    expect(ConversationKeepReleaseInputSchema.safeParse({ ...input, reason: "x".repeat(501) }).success).toBeFalse();
+
     expect(ConversationListInputSchema.parse({ mailboxId: "MbA123", view: "kept" }).view).toBe("kept");
     expect(
       ConversationKeepDataSchema.safeParse({
         conversationId: input.conversationId,
+        canLift: false,
         keptAt: "2026-10-09T12:00:00Z",
         keptBy: { kind: "system", id: null, displayName: "System", avatarHash: null },
       }).success,

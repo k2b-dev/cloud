@@ -1874,20 +1874,33 @@ function MailboxWorkspace(
   >({
     onBefore: ({ keep }) => ({ keep }),
     mutation: async ({ conversationId, keep }, { abortSignal }) => {
+      let reason: string | undefined;
       if (!keep) {
-        const confirmed = await prompts.confirm(conversationText().stopKeepingConsequence, {
+        // Only a Cloud administrator gets here; the reason goes into the log with the change.
+        const confirmed = await prompts.form({
           title: conversationText().stopKeepingTitle,
           icon: "ti ti-lock-open",
           confirmText: conversationText().stopKeeping,
           variant: "danger",
+          fields: {
+            consequence: { type: "info", content: () => <p class="k2b-prompt-copy">{conversationText().stopKeepingConsequence}</p> },
+            reason: {
+              type: "text",
+              multiline: true,
+              label: conversationText().stopKeepingReason,
+              description: conversationText().stopKeepingReasonDescription,
+              maxLength: 500,
+            },
+          },
         });
         if (!confirmed || abortSignal.aborted || disposed) return;
+        reason = confirmed.reason?.trim() || undefined;
       }
       const route = apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].keep;
       const request = { param: { mailboxId, conversationId } };
       const response = keep
         ? await route.$put(request, { init: { signal: abortSignal } })
-        : await route.$delete(request, { init: { signal: abortSignal } });
+        : await route.$delete({ ...request, json: reason ? { reason } : {} }, { init: { signal: abortSignal } });
       if (!response.ok) {
         throw new Error(await readApiError(response, keep ? conversationText().keepFailed : conversationText().stopKeepingFailed));
       }
@@ -1907,7 +1920,7 @@ function MailboxWorkspace(
   });
   const setConversationKept = (keep: boolean) => {
     const conversationId = data.selectedConversationId;
-    if (!conversationId || disposed || structurePending() || (keep ? !canWrite() : !canAdmin())) return Promise.resolve();
+    if (!conversationId || disposed || structurePending() || (keep ? !canWrite() : !data.keep?.canLift)) return Promise.resolve();
     return keepMutation.mutate({ conversationId, keep });
   };
 

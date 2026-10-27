@@ -5,10 +5,41 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-22
+updated: 2026-10-27
 ---
 
 # Deprecations and migrations
+
+## Only Cloud administrators stop keeping Mail conversations
+
+Stopping a Mail conversation keep now requires a current Cloud administrator:
+a person with the platform `admin` role, signed in or using their own personal
+API key or OAuth token. People who manage the mailbox, the person who kept the
+conversation, agents, standalone and resource-bound service accounts, and
+workflows or automations running under a mandate get `403 FORBIDDEN` on every
+path: the reader, `DELETE /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/keep`,
+the `conversation.keep.release` capability, and `cld mail unkeep`. A Cloud
+administrator needs no grant on the mailbox; on the command line, pass the
+mailbox's public ID: `cld mail unkeep <conversation> --mailbox <mailbox-id> --yes`.
+Keeping a conversation is unchanged. The release accepts an optional `reason` (at most 500 characters),
+which the activity and the audit log record; refused attempts are audited too.
+Cancelling a scheduled message no longer removes a kept conversation: the
+conversation stays kept with Cloud's copy of the unsent message, which the
+export marks with its delivery state.
+
+**Admin → Mail → Kept** lists the kept conversations of every mailbox and lets
+Cloud administrators read them, download them as JSON, and stop keeping them.
+This is the only place where Cloud administrators read mailbox content without
+a grant; every opening and download writes the audit events
+`mail.conversation.keep.view` and `mail.conversation.keep.export`. The export
+format is `cloud.mail.kept-conversations/v1` (`KeptConversationExportSchema`).
+It carries headers, text, sanitized HTML, and attachment metadata, never
+attachment bytes or raw MIME.
+
+Operators: no migration or configuration is needed. Tell the people who
+managed keeps before that only Cloud administrators can lift them now. Scripts
+or workflows that called `cld mail unkeep` or the release capability with a
+mailbox manager's credentials must move to a Cloud administrator.
 
 ## Weather city search uses Core geo
 

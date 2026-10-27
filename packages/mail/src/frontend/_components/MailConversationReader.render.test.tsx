@@ -56,6 +56,7 @@ const message: MessageDetail = {
 
 const keep: ConversationKeep = {
   conversationId: "Conv01",
+  canLift: false,
   keptAt: "2026-08-15T09:00:00.000Z",
   keptBy: { kind: "user", id: "user-1", displayName: "Grace Hopper", avatarHash: null },
 };
@@ -355,20 +356,23 @@ describe("Mail conversation reader keep state", () => {
     expect(html).not.toContain("data-mail-kept-indicator");
   });
 
-  test("shows who kept the conversation and refuses Trash and Junk", () => {
-    const html = renderReader([], { keep, toolbarActions: ["keep", "spam", "trash"] });
+  test("shows who kept the conversation, refuses Trash and Junk, and locks it for everyone but Cloud administrators", () => {
+    // A mailbox manager is no Cloud administrator: the lock explains who can lift it, and no dead action is offered.
+    const html = renderReader([], { keep, canAdmin: true, toolbarActions: ["keep", "spam", "trash"] });
     expect(html).toContain("data-mail-kept-indicator");
     expect(html).toContain("Kept since");
     expect(html).toContain("Grace Hopper");
+    expect(html).toContain("Only a Cloud administrator can lift this.");
     expect(html).toContain(`aria-label="Kept conversations can't be deleted."`);
     expect(html).toContain(`aria-label="Kept conversations can't be moved to Junk."`);
-    // Only people who manage the mailbox may stop keeping it.
     expect(html).not.toContain("Stop keeping");
+    expect(html).not.toContain('data-mail-toolbar-action="keep"');
   });
 
-  test("lets mailbox managers stop keeping", () => {
-    const html = renderReader([], { keep, canAdmin: true, toolbarActions: ["keep"] });
+  test("lets Cloud administrators stop keeping", () => {
+    const html = renderReader([], { keep: { ...keep, canLift: true }, toolbarActions: ["keep"] });
     expect(html).toContain('aria-label="Stop keeping"');
+    expect(html).not.toContain("Only a Cloud administrator can lift this.");
   });
 
   test("marks a message the server deleted while Cloud keeps it", () => {

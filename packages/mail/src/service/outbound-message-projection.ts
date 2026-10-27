@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
 import { normalizeEmailAddress } from "./address-normalization";
 import { sha256Json } from "./canonical";
+import { isKeptConversation } from "./conversation-keep-rules";
 import { refreshConversationTimeline } from "./conversation-timeline";
 import { enqueueMailInvalidation } from "./live";
 import { storeReadableBlob } from "./message-blobs";
@@ -358,15 +359,21 @@ export const recordSentCopyPlacement = async (
 };
 
 export const removeUnsentOutboundMessage = async (db: SqlClient, outboxId: string): Promise<void> => {
-  const [projection] = await db<{ message_id: string; conversation_id: string }[]>`
-    SELECT outbox.message_id, link.conversation_id
+  const [owner] = await db<{ mailbox_id: string }[]>`SELECT mailbox_id FROM mail.outbox_submissions WHERE id = ${outboxId}::uuid`;
+  if (!owner) return;
+  // The cancellation caller already holds the mailbox lock; retain it through this projection change.
+  await db`SELECT id FROM mail.mailboxes WHERE id = ${owner.mailbox_id}::uuid FOR UPDATE`;
+
+  const [projection] = await db<{ message_id: string; conversation_id: string; kept: boolean }[]>`
+    SELECT outbox.message_id, link.conversation_id, ${isKeptConversation(sql`link.conversation_id`)} AS kept
     FROM mail.outbox_submissions outbox
     JOIN mail.conversation_messages link ON link.message_id = outbox.message_id
     WHERE outbox.id = ${outboxId}::uuid
     FOR UPDATE OF outbox
   `;
   if (!projection) return;
-  const [removed] = await db<{ id: string }[]>`
+  if (!projection.kept) {
+    const [removed] = await db<{ id: string }[]>`
     DELETE FROM mail.message_contents message
     WHERE message.id = ${projection.message_id}::uuid
       AND NOT EXISTS (
@@ -376,16 +383,17 @@ export const removeUnsentOutboundMessage = async (db: SqlClient, outboxId: strin
       )
     RETURNING message.id
   `;
-  if (!removed) throw new Error("A provider-backed outbound message cannot be removed as unsent");
+    if (!removed) throw new Error("A provider-backed outbound message cannot be removed as unsent");
 
-  const [remaining] = await db<{ count: number }[]>`
+    const [remaining] = await db<{ count: number }[]>`
     SELECT COUNT(*)::int AS count
     FROM mail.conversation_messages
     WHERE conversation_id = ${projection.conversation_id}::uuid
   `;
-  if ((remaining?.count ?? 0) === 0) {
-    await db`DELETE FROM mail.conversations WHERE id = ${projection.conversation_id}::uuid`;
-    return;
+    if ((remaining?.count ?? 0) === 0) {
+      await db`DELETE FROM mail.conversations WHERE id = ${projection.conversation_id}::uuid`;
+      return;
+    }
   }
   await refreshConversationTimeline(db, projection.conversation_id);
   await db`UPDATE mail.conversations SET revision = revision + 1, updated_at = now() WHERE id = ${projection.conversation_id}::uuid`;

@@ -101,6 +101,27 @@ describe("Mail keep CLI", () => {
     expect(run.calls).toEqual(["DELETE /api/mail/mailboxes/Mail01/conversations/Convo1/keep"]);
     expect(run.output).toEqual([{ conversationId: "Convo1", released: true }]);
   });
+  test("release passes an optional reason in JSON", async () => {
+    const run = fixture(["unkeep", "Convo1"], { yes: true, reason: "Policy reviewed" }, async (_path, init) => {
+      expect(JSON.parse(String(init?.body))).toEqual({ reason: "Policy reviewed" });
+      expect(new Headers(init?.headers).get("Content-Type")).toBe("application/json");
+      return Response.json({ conversationId: "Convo1", released: true });
+    });
+    await mail.run(run.ctx);
+    expect(run.calls).toHaveLength(1);
+  });
+  test("release with an exact mailbox ID reaches the service without mailbox-grant resolution", async () => {
+    const run = fixture(["unkeep", "Convo1"], { yes: true, mailbox: mailbox.id }, async () =>
+      Response.json({ conversationId: "Convo1", released: true }),
+    );
+    const originalFetch = run.ctx.fetch;
+    run.ctx.fetch = async (path, init) => {
+      if (path.includes("/resolve") || path === `/api/mail/mailboxes/${mailbox.id}`) throw new Error("Cloud admin has no mailbox grant");
+      return originalFetch(path, init);
+    };
+    await mail.run(run.ctx);
+    expect(run.calls).toEqual(["DELETE /api/mail/mailboxes/Mail01/conversations/Convo1/keep"]);
+  });
   test("the kept list view reaches the conversation query", async () => {
     const run = fixture(["ls", mailbox.id], { view: "kept" }, async (path) => {
       expect(new URL(path, "https://example.test").searchParams.get("view")).toBe("kept");
@@ -111,8 +132,8 @@ describe("Mail keep CLI", () => {
   });
   test("a refusal reaches the person with the server's message", async () => {
     const run = fixture(["unkeep", "Convo1"], { yes: true }, async () =>
-      Response.json({ code: "FORBIDDEN", message: "Only people who manage this mailbox can stop keeping it." }, { status: 403 }),
+      Response.json({ code: "FORBIDDEN", message: "Only a Cloud administrator can stop keeping a conversation" }, { status: 403 }),
     );
-    await expect(mail.run(run.ctx)).rejects.toThrow("Only people who manage this mailbox can stop keeping it.");
+    await expect(mail.run(run.ctx)).rejects.toThrow("Only a Cloud administrator can stop keeping a conversation");
   });
 });

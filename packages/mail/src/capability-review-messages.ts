@@ -807,7 +807,7 @@ const copy = {
     restoreDraft: "The email will be restored as a draft.",
     discardDraft: "The draft will be permanently discarded.",
     releaseKeep:
-      "The conversation can be deleted again. Copies already deleted on the mail server disappear from view; their stored contents remain.",
+      "Requires a Cloud administrator. The conversation can be deleted again. Copies already deleted on the mail server disappear from view; their stored contents remain.",
     comment: "Comment",
     sendWithoutRecipient: "The email {subject} is being sent.",
     scheduledWithoutRecipient: "The email {subject} is scheduled for {at}.",
@@ -823,7 +823,7 @@ const copy = {
     restoreDraft: "Die Mail wird wieder als Entwurf gespeichert.",
     discardDraft: "Der Entwurf wird endgültig verworfen.",
     releaseKeep:
-      "Die Unterhaltung kann wieder gelöscht werden. Auf dem Mailserver bereits gelöschte Kopien verschwinden aus der Ansicht; ihre gespeicherten Inhalte bleiben erhalten.",
+      "Erfordert Cloud-Admin-Rechte. Die Unterhaltung kann wieder gelöscht werden. Auf dem Mailserver bereits gelöschte Kopien verschwinden aus der Ansicht; ihre gespeicherten Inhalte bleiben erhalten.",
     comment: "Kommentar",
     sendWithoutRecipient: "Mail {subject} wird gesendet.",
     scheduledWithoutRecipient: "Mail {subject} geplant für {at}.",

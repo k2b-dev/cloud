@@ -27,6 +27,8 @@ export const safeErrorDetail = (text: string, secrets: readonly string[] = []): 
 };
 
 const genericGermanMessage = (error: HumanFacingError): string => {
+  if (error.message === "Only a Cloud administrator can stop keeping a conversation")
+    return "Nur eine Cloud-Administratorin oder ein Cloud-Administrator kann die Aufbewahrung aufheben.";
   if (error.code === "SEND_CONTENT_CHANGED")
     return "Der Nachrichteninhalt hat sich geändert. Es wurde nichts eingereiht. Öffne den Entwurf, prüfe ihn erneut und gib einen neuen Sendeversuch frei.";
   if (error.code === "CONVERSATION_KEPT")

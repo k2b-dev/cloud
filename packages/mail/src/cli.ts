@@ -2230,12 +2230,18 @@ const everydayCommands = (t: Translate) => {
     }),
     command("unkeep", {
       summary: t({
-        en: "Stop keeping a conversation (Manage access required)",
-        de: "Unterhaltung nicht mehr aufbewahren (Verwaltungszugriff erforderlich)",
+        en: "Stop keeping a conversation (Cloud administrator required)",
+        de: "Unterhaltung nicht mehr aufbewahren (Cloud-Admin-Rechte erforderlich)",
       }),
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
         ...mailboxOption,
+        reason: flag.string({
+          description: t({
+            en: "Reason for lifting the keep (at most 500 characters)",
+            de: "Grund für das Aufheben der Aufbewahrung (höchstens 500 Zeichen)",
+          }),
+        }),
         yes: confirmFlag(
           t({
             en: "The conversation can be deleted again. Cloud copies already deleted on the mail server disappear from view; their stored contents remain. Stop keeping it?",
@@ -2253,11 +2259,13 @@ const everydayCommands = (t: Translate) => {
             }),
           );
         const id = requireMailResourceId(args.conversation, t({ en: "Conversation ID", de: "Unterhaltungs-ID" }));
-        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const mailboxRef = await mailboxRefOrDefault(ctx, flags.mailbox, t);
+        // Cloud admins can lift keeps without a mailbox grant; exact IDs must reach that service directly.
+        const mailboxId = MAIL_RESOURCE_ID_PATTERN.test(mailboxRef) ? mailboxRef : (await resolveMailbox(ctx, mailboxRef, t)).id;
         const result = await readApi<{ conversationId: string; released: boolean }>(
           ctx,
-          `/mailboxes/${mailbox.id}/conversations/${id}/keep`,
-          { method: "DELETE" },
+          `/mailboxes/${mailboxId}/conversations/${id}/keep`,
+          flags.reason !== undefined ? jsonRequest("DELETE", { reason: flags.reason }) : { method: "DELETE" },
         );
         if (!printStructured(ctx, result))
           ctx.print(t({ en: "The conversation is no longer kept.", de: "Die Unterhaltung wird nicht mehr aufbewahrt." }));

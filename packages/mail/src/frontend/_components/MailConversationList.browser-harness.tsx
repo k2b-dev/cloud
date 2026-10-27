@@ -168,6 +168,7 @@ window.mountMailList = (options) => {
     return item?.kept && item.conversationId
       ? {
           conversationId: item.conversationId,
+          canLift: false,
           keptAt: "2026-09-30T08:00:00.000Z",
           keptBy: { kind: "user" as const, id: "user-grace", displayName: "Grace Hopper", avatarHash: null },
         }

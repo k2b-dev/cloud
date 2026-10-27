@@ -112,6 +112,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       kept_at timestamptz NOT NULL DEFAULT now()
     )
   `.simple();
+  await tx`CREATE INDEX IF NOT EXISTS conversation_keeps_admin_page_idx
+    ON mail.conversation_keeps (kept_at DESC, conversation_id DESC)`.simple();
   await tx`CREATE INDEX IF NOT EXISTS conversation_keeps_mailbox_idx
     ON mail.conversation_keeps (mailbox_id, kept_at DESC, conversation_id)`.simple();
   await tx`

@@ -531,21 +531,31 @@ describe("mail capabilities", () => {
     expect(checkMailCapabilityMessages()).toEqual([]);
   });
 
-  test("keep release requires Manage and its review explains deletion and kept-copy visibility", async () => {
-    spyOn(messages, "listConversationMessages").mockResolvedValue({
+  test("keep release refuses non-admin review before resolving content and accepts Cloud admins without mailbox grants", async () => {
+    const allowed = spyOn(conversationKeeps, "canLiftConversationKeeps").mockResolvedValue(false);
+    const subject = spyOn(conversationKeeps, "getConversationKeepReleaseSubject").mockResolvedValue({
       ok: true,
-      data: { items: [{ id: internalMessageId, subject: "Evidence" }], nextCursor: null },
-    } as never);
-    const access = spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "admin" });
+      data: { subject: "Evidence" },
+    });
+    const access = spyOn(mailboxAccess, "requireMailboxPermission");
     const release = mailCapabilities.actions["conversation.keep.release"];
-    const review = await release.review({ mailboxId, conversationId }, context);
-    expect(access.mock.calls[0]?.[2]).toBe("admin");
+    expect(await release.review({ mailboxId, conversationId }, context)).toMatchObject({
+      ok: false,
+      error: {
+        code: "FORBIDDEN",
+        message: "Only a Cloud administrator can stop keeping a conversation",
+      },
+    });
+    expect(subject).not.toHaveBeenCalled();
+    allowed.mockResolvedValue(true);
+    const review = await release.review({ mailboxId, conversationId, reason: "Policy reviewed" }, context);
     expect(review).toMatchObject({ ok: true });
+    expect(access).not.toHaveBeenCalled();
     if (!review.ok) throw new Error(review.error.message);
     expect(review.data.sentence.action).toBe("Stop keeping the conversation {conversation}");
+    expect(review.data.consequences?.map((c) => c.text).join(" ")).toContain("Cloud administrator");
     expect(review.data.consequences?.map((c) => c.text).join(" ")).toContain("disappear from view");
     expect(release.destructive).toBeTrue();
-    expect("approval" in release).toBeFalse();
   });
   test("kept conversations cannot be reviewed for a Trash or Drafts move, by either folder role", async () => {
     spyOn(messages, "listConversationMessages").mockResolvedValue({
@@ -557,6 +567,7 @@ describe("mail capabilities", () => {
       ok: true,
       data: {
         conversationId: internalConversationId,
+        canLift: false,
         keptAt: timestamp,
         keptBy: { kind: "user", id: userId, displayName: "Ada", avatarHash: null },
       },
@@ -1436,10 +1447,12 @@ describe("mail capabilities", () => {
       ok: true,
       data: {
         conversationId: internalConversationId,
+        canLift: false,
         keptAt: timestamp,
         keptBy: { kind: "user", id: userId, displayName: "Test user", avatarHash: null },
       },
     });
+    spyOn(conversationKeeps, "getConversationKeepReleaseSubject").mockResolvedValue({ ok: true, data: { subject: "Evidence" } });
     spyOn(conversationKeeps, "releaseConversationKeep").mockResolvedValue({
       ok: true,
       data: { conversationId: internalConversationId, released: true },

@@ -111,6 +111,7 @@ import {
   updateSenderIdentityInputSchema,
   updateSenderIdentityTransportInputSchema,
 } from "../contracts";
+import { KeptConversationExportSchema } from "../kept-conversation-export";
 import { MAX_MAIL_WORKSPACE_HREF_LENGTH } from "../search-url";
 import {
   createMailProtectedIdentityInputSchema,
@@ -141,6 +142,7 @@ import {
   focus,
   folders,
   health,
+  keptConversations,
   listSubscriptions,
   type MailRequestContext,
   mailboxAccess,
@@ -354,6 +356,7 @@ const attachmentChunkQuerySchema = z.object({
   offset: z.coerce.number().int().nonnegative(),
 });
 const conversationKeepResponseSchema = z.object({
+  canLift: z.boolean(),
   conversationId: ResourceShortIdSchema,
   keptAt: z.string().datetime(),
   keptBy: z.object({
@@ -364,6 +367,47 @@ const conversationKeepResponseSchema = z.object({
   }),
 });
 const conversationKeepReleaseResponseSchema = z.object({ conversationId: ResourceShortIdSchema, released: z.boolean() });
+const releaseKeepBodySchema = z
+  .object({ reason: z.string().trim().max(500).optional() })
+  .optional()
+  .default({});
+const keptConversationSummarySchema = z.object({
+  mailboxId: ResourceShortIdSchema,
+  mailboxName: z.string(),
+  mailboxDeleted: z.boolean(),
+  conversationId: ResourceShortIdSchema,
+  subject: z.string().nullable(),
+  sender: z.object({ name: z.string().nullable(), address: z.string() }).nullable(),
+  lastMessageAt: z.string().nullable(),
+  messageCount: z.number(),
+  keptAt: z.string(),
+  keptBy: conversationKeepResponseSchema.shape.keptBy.omit({ avatarHash: true }),
+});
+const keptConversationDetailSchema = z.object({
+  document: KeptConversationExportSchema,
+  messageCount: z.number().int().nonnegative(),
+  messagesTruncated: z.boolean().describe("Only the newest 50 messages are shown; download JSON for the full conversation."),
+  history: z.array(
+    z.object({
+      action: z.string(),
+      outcome: z.enum(["allowed", "denied", "failed"]),
+      at: z.string(),
+      actor: z.object({ label: z.string() }),
+      reason: z.string().nullable(),
+    }),
+  ),
+});
+const keptConversationListQuerySchema = z.object({
+  q: z.string().max(500).optional(),
+  cursor: z.string().max(1000).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+const keptExportBodySchema = z.object({
+  items: z
+    .array(z.object({ mailboxId: ResourceShortIdSchema, conversationId: ResourceShortIdSchema }))
+    .min(1)
+    .max(50),
+});
 const acquireDraftLeaseSchema = z
   .object({
     takeover: z.boolean().default(false),
@@ -2018,7 +2062,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .delete(
     "/mailboxes/:mailboxId/conversations/:conversationId/keep",
     describeRoute({
-      summary: "Stop keeping conversation",
+      summary: "Stop keeping conversation (Cloud administrator required)",
       tags: ["Mail"],
       responses: {
         200: jsonResponse(conversationKeepReleaseResponseSchema, "Conversation keep result"),
@@ -2027,11 +2071,13 @@ const mailOperationsApi = new Hono<MailApiContext>()
       },
     }),
     v("param", mailboxAndIdParamSchema("conversationId")),
+    v("json", releaseKeepBodySchema),
     async (c) =>
       respondPublic(
         c,
         conversationKeeps.releaseConversationKeep({
           context: requestContext(c),
+          reason: c.req.valid("json").reason,
           ...internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
         }),
       ),
@@ -3250,6 +3296,125 @@ const adminApi = new Hono<MailApiContext>()
   .use("/admin/*", auth.requireRole("admin"))
   .use("/admin/mailboxes/:mailboxId", resolveMailboxParam)
   .use("/admin/mailboxes/:mailboxId/*", resolveMailboxParam)
+  .use("/admin/kept/:mailboxId/:conversationId", resolveMailboxParam, resolveConversationParam)
+  .use("/admin/kept/:mailboxId/:conversationId/*", resolveMailboxParam, resolveConversationParam)
+  .get(
+    "/admin/kept",
+    describeRoute({
+      summary: "List all kept conversations",
+      tags: ["Mail:Admin"],
+      responses: {
+        200: jsonResponse(
+          z.object({ items: z.array(keptConversationSummarySchema), nextCursor: z.string().nullable(), total: z.number() }),
+          "Kept conversations",
+        ),
+        403: jsonResponse(ErrorResponseSchema, "Cloud administrator required"),
+      },
+    }),
+    v("query", keptConversationListQuerySchema),
+    async (c) => respondPublic(c, keptConversations.listKeptConversations(requestContext(c), c.req.valid("query"))),
+  )
+  .get(
+    "/admin/kept/:mailboxId/:conversationId",
+    describeRoute({
+      summary: "Read kept conversation and audit history",
+      tags: ["Mail:Admin"],
+      responses: {
+        200: jsonResponse(keptConversationDetailSchema, "Stored contents and latest 50 keep audit events"),
+        403: jsonResponse(ErrorResponseSchema, "Cloud administrator required"),
+        404: jsonResponse(ErrorResponseSchema, "Kept conversation not found"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("conversationId")),
+    async (c) =>
+      respondPublic(
+        c,
+        keptConversations.getKeptConversation(
+          requestContext(c),
+          internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
+        ),
+      ),
+  )
+  .get(
+    "/admin/kept/:mailboxId/:conversationId/export",
+    describeRoute({
+      summary: "Export one kept conversation as JSON",
+      tags: ["Mail:Admin"],
+      responses: {
+        200: jsonResponse(KeptConversationExportSchema, "Streamed JSON; attachment metadata only"),
+        403: jsonResponse(ErrorResponseSchema, "Cloud administrator required"),
+        404: jsonResponse(ErrorResponseSchema, "Kept conversation not found"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("conversationId")),
+    async (c) => {
+      const result = await keptConversations.exportKeptConversations(requestContext(c), [
+        internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
+      ]);
+      if (!result.ok) return respondPublic(c, result);
+      return c.body(result.data, 200, {
+        "Content-Type": "application/json",
+        "Content-Disposition": `attachment; filename="kept-conversation-${c.req.param("conversationId")}.json"`,
+        "Cache-Control": "no-store",
+      });
+    },
+  )
+  .post(
+    "/admin/kept/export",
+    auth.readOnly,
+    describeRoute({
+      summary: "Export up to 50 kept conversations as one JSON document",
+      description: "Any missing or no-longer-kept reference rejects the whole request with 404.",
+      tags: ["Mail:Admin"],
+      responses: {
+        200: jsonResponse(KeptConversationExportSchema, "Streamed JSON; attachment metadata only"),
+        403: jsonResponse(ErrorResponseSchema, "Cloud administrator required"),
+        404: jsonResponse(ErrorResponseSchema, "Kept conversation not found"),
+      },
+    }),
+    v("json", keptExportBodySchema),
+    async (c) => {
+      const refs: { mailboxId: string; conversationId: string }[] = [];
+      for (const item of c.req.valid("json").items) {
+        const mailboxId = await publicResources.resolvePublicId("mailboxes", item.mailboxId);
+        const conversationId = mailboxId
+          ? await publicResources.resolveMailboxPublicId("conversations", mailboxId, item.conversationId)
+          : null;
+        if (!mailboxId || !conversationId) return respondPublic(c, fail(err.notFound("Kept conversation")));
+        refs.push({ mailboxId, conversationId });
+      }
+      const result = await keptConversations.exportKeptConversations(requestContext(c), refs);
+      if (!result.ok) return respondPublic(c, result);
+      return c.body(result.data, 200, {
+        "Content-Type": "application/json",
+        "Content-Disposition": `attachment; filename="kept-conversations-${new Date().toISOString().slice(0, 10)}.json"`,
+        "Cache-Control": "no-store",
+      });
+    },
+  )
+  .delete(
+    "/admin/kept/:mailboxId/:conversationId",
+    describeRoute({
+      summary: "Lift a conversation keep as a Cloud administrator",
+      tags: ["Mail:Admin"],
+      responses: {
+        200: jsonResponse(conversationKeepReleaseResponseSchema, "Whether the keep was released"),
+        403: jsonResponse(ErrorResponseSchema, "Cloud administrator required"),
+        404: jsonResponse(ErrorResponseSchema, "Conversation not found"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("conversationId")),
+    v("json", releaseKeepBodySchema),
+    async (c) =>
+      respondPublic(
+        c,
+        conversationKeeps.releaseConversationKeep({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
+          reason: c.req.valid("json").reason,
+        }),
+      ),
+  )
   .route("/", contactDirectoryRoutes)
   .get("/admin/operations", v("query", platformOperationsQuerySchema), async (c) =>
     respondPublic(c, operations.getPlatformMailOperations(requestContext(c), c.req.valid("query"))),

@@ -31,6 +31,7 @@ import * as folders from "./folders";
 import * as health from "./health";
 import { imapPushRuntime } from "./imap-push-runtime";
 import * as incomingAutomations from "./incoming-automations";
+import * as keptConversations from "./kept-conversations";
 import * as listSubscriptions from "./list-subscriptions";
 import * as localTags from "./local-tags";
 import * as mailboxDetails from "./mailbox-details";
@@ -117,6 +118,7 @@ export {
   folders,
   health,
   incomingAutomations,
+  keptConversations,
   listSubscriptions,
   localTags,
   mailboxAccess,
@@ -161,6 +163,7 @@ export const mailService = {
   composeTemplates,
   conversations,
   conversationKeeps,
+  keptConversations,
   conversationReferences,
   conversationSummaries,
   draftLeases,

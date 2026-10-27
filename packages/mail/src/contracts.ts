@@ -3728,3 +3728,5 @@ export type ConnectorVerification = {
   limits: ProviderLimitSnapshot;
   accounts: RemoteAccount[];
 };
+
+export { type KeptConversationExport, KeptConversationExportSchema } from "./kept-conversation-export";

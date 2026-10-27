@@ -297,6 +297,8 @@ const cancelScheduledSendBy = async (params: {
   if (!permission.ok) return permission;
   try {
     const result = await sql.begin(async (tx) => {
+      // Keep/command creation lock the mailbox before any conversation, draft or outbox row.
+      await tx`SELECT id FROM mail.mailboxes WHERE id = ${params.mailboxId}::uuid FOR UPDATE`;
       const allowed = await requireMailboxAccess(params.context, params.mailboxId, "write", tx);
       if (!allowed.ok) return allowed;
       const [outbox] = await tx<
