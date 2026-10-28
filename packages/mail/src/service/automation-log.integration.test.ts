@@ -926,7 +926,7 @@ steps:
       calls++;
       return {
         output: request.output.parse(request.task === "workflow-classify" ? { choice: "Complaint" } : { amount: 650 }),
-        modelProfileId: "fixture",
+        model: { id: "fixture" },
         structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
       };
     };
@@ -950,7 +950,7 @@ steps:
         stepKey,
         effectKey: `workflow:${runId}:step:${stepKey}`,
         request,
-        modelProfileId: "fixture",
+        modelId: "fixture",
       });
       taskIds.push(task.task.id);
     }
@@ -1006,7 +1006,7 @@ steps:
         stepKey: "steps.0",
         effectKey: `workflow:${taskRunId}:step:steps.0`,
         request: { kind: "classify", input: "650 EUR", prompt: "Classify", choices: ["Complaint", "Other"] },
-        modelProfileId: "fixture",
+        modelId: "fixture",
       });
       await sql`UPDATE ai.workflow_task SET created_at = ${fixed} WHERE id = ${task.id}::uuid`;
     };
