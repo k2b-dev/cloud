@@ -85,19 +85,17 @@ function BarNavigation(props: { currentPath: string }) {
   });
   const row = document.querySelector<HTMLElement>(".cloud-tab-bar__row");
   if (!row) return null;
-  // Once the live bar shows, it stays, so a count that clears or a return to the served URL replaces no focused link.
+  // Swapping bars keeps a focused link: the bar that takes over focuses the same destination, once CSS shows it.
   const [shown, setShown] = createSignal(false);
+  const focusIn = (selector: string, tab: string) =>
+    [...row.querySelectorAll<HTMLElement>(`${selector} a[data-tab]`)].find((link) => link.dataset.tab === tab)?.focus();
   createEffect(() => {
-    if (shown() || !(counted() || JSON.stringify(items()) !== served)) return;
-    setShown(true);
-    // The live bar takes over a focused link of the server's bar, which CSS now hides.
+    const next = counted() || JSON.stringify(items()) !== served;
+    if (next === shown()) return;
     const focused = document.activeElement;
-    if (focused instanceof HTMLElement && row.contains(focused) && focused.dataset.tab)
-      queueMicrotask(() =>
-        [...row.querySelectorAll<HTMLElement>(".cloud-tab-bar__live a[data-tab]")]
-          .find((link) => link.dataset.tab === focused.dataset.tab)
-          ?.focus(),
-      );
+    const tab = focused instanceof HTMLElement && row.contains(focused) ? focused.dataset.tab : undefined;
+    setShown(next);
+    if (tab) queueMicrotask(() => focusIn(next ? ".cloud-tab-bar__live" : ".k2b-tab-bar:not(.cloud-tab-bar__live)", tab));
   });
   return (
     <Show when={shown()}>

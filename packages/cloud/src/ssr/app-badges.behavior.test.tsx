@@ -475,10 +475,9 @@ test("the phone bar shows the rail's count on its app and names it after the lab
     responses["/api/chat/badge"] = () => Response.json({ count: 0 });
     refreshAppBadges();
     await settle();
-    // A cleared count leaves the live bar and its focused link in place.
-    expect(chat.querySelector(".cloud-app-badge")).toBeNull();
-    expect(chat.textContent).toBe("Chat");
-    expect(document.activeElement).toBe(home);
+    // Without a count the server's bar is current again, and the focused destination stays focused there.
+    expect(bar.querySelector(".cloud-tab-bar__live")).toBeNull();
+    expect(document.activeElement).toBe(bar.querySelector('a[data-tab="home"]'));
   } finally {
     dispose();
   }
