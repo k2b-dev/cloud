@@ -22,7 +22,7 @@ export const tableMessages = i18n.define({
       moveRight: ({ name }: { name: string }) => `Move ${name} right`,
       columnSettings: "Column settings",
       fieldSettings: "Field settings",
-      settingsFor: ({ kind, name }: { kind: string; name: string }) => `${kind} settings for ${name}`,
+      settingsFor: ({ kind, name }: { kind: string; name: string }) => `${kind} for ${name}`,
       computed: "computed",
       values: "values",
       empty: "empty",
