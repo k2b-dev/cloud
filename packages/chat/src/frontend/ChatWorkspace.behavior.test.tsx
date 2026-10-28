@@ -84,6 +84,7 @@ const settle = () => Bun.sleep(60);
 const message = (seq: number, body = `Message ${seq}`) =>
   MessageViewSchema.parse({
     reactions: [],
+    mentions: [],
     refs: [],
     attachments: [],
     thread: null,
@@ -405,6 +406,7 @@ describe("ChatWorkspace interactions", () => {
       Response.json(
         {
           reactions: [],
+          mentions: [],
           refs: [],
           attachments: [],
           thread: null,

@@ -17,6 +17,7 @@ import {
 } from "./contracts";
 import { conversations } from "./conversations";
 import { chatLive } from "./live";
+import { validateMentions } from "./mentions";
 import { appendMessage, type MessageRow, messageViews } from "./message-store";
 import { openParticipant } from "./read-state";
 import { canReadThread, visibleMessages, visibleThreadIdPage } from "./thread-access";
@@ -94,7 +95,10 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
       if (uploaded.length !== data.attachments.length)
         return fail({ code: "INVALID_ATTACHMENT", status: 400, message: catalog(input).attachmentUnavailable });
     }
+    const mentioned = await validateMentions(db, input, current.data, data.mentions ?? []);
+    if (!mentioned.ok) return mentioned;
     const row = await appendMessage(db, current.data, input, {
+      mentions: mentioned.data,
       kind: "text",
       clientId: data.clientId,
       body: data.body,

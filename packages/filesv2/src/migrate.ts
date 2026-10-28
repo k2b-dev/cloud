@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import { migrateActivity } from "./data/activity-migration";
+import { migrateHomeProvisioning } from "./data/home-provisioning";
 import { migrateSharing } from "./data/sharing-migration";
 import { migrateTemplates } from "./data/templates";
 import { migrateTrash } from "./migrate-trash";
@@ -124,4 +125,5 @@ export async function migrate(): Promise<void> {
   await sql`ALTER TABLE filesv2.operations ADD COLUMN IF NOT EXISTS activity_recorded boolean NOT NULL DEFAULT false`.simple();
   await migrateActivity();
   await sql`CREATE TABLE IF NOT EXISTS filesv2.entry_references(id TEXT PRIMARY KEY, base_id TEXT NOT NULL, path TEXT NOT NULL)`.simple();
+  await migrateHomeProvisioning();
 }

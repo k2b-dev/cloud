@@ -11,7 +11,6 @@ import {
   type MailDraft,
 } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess, updateMailboxAccess } from "./access";
 import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import {
@@ -107,7 +106,6 @@ suite("mail compose templates", () => {
   let collaborator: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const [ownerRow, collaboratorRow] = await sql<{ id: string; uid: string; display_name: string; mail: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, mail)
       VALUES

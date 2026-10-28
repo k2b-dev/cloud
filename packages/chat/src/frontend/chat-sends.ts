@@ -3,7 +3,7 @@ import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import type { z } from "zod";
 import type { ApiType } from "../api";
-import { type AttachmentView, AttachmentViewSchema, MessageViewSchema, type SendMessageSchema } from "../service/contracts";
+import { type AttachmentView, AttachmentViewSchema, type Mention, MessageViewSchema, type SendMessageSchema } from "../service/contracts";
 
 export type ChatSendReply = { id: string; author: string; text: string };
 export type ChatSendInput = z.input<typeof SendMessageSchema>;
@@ -11,6 +11,7 @@ export type ChatSend = {
   clientId: string;
   conversationId: string;
   body: string;
+  mentions: readonly Mention[];
   /** The thread the message goes to: a thread's ID, or "general". */
   thread: string;
   /** The answered message, shown as its quote until the stored message replaces the send. */
@@ -50,6 +51,9 @@ export const createChatSends = (dependencies: {
       const message = await dependencies.post(entry.conversationId, {
         clientId: entry.clientId,
         body: entry.body,
+        ...(entry.mentions.length
+          ? { mentions: entry.mentions.map((mention) => ({ ...mention, principal: { ...mention.principal } })) }
+          : {}),
         ...(entry.refs.length ? { refs: [...entry.refs] } : {}),
         ...(entry.attachments.length ? { attachments: entry.attachments.map((attachment) => attachment.id) } : {}),
         // A reply goes into its original's thread on the server; General needs no thread.
@@ -80,12 +84,14 @@ export const createChatSends = (dependencies: {
         replyTo?: ChatSendReply | null;
         refs?: readonly CloudResourceRef[];
         attachments?: readonly AttachmentView[];
+        mentions?: readonly Mention[];
       } = {},
     ): ChatSend => {
       const entry: ChatSend = {
         clientId: dependencies.newClientId?.() ?? crypto.randomUUID(),
         conversationId,
         body,
+        mentions: (target.mentions ?? []).map((mention) => ({ ...mention, principal: { ...mention.principal } })),
         thread: target.thread ?? "general",
         replyTo: target.replyTo ?? null,
         refs: target.refs ?? [],

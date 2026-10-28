@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-21
+updated: 2026-10-27
 ---
 
 # App capabilities
@@ -46,6 +46,7 @@ not a second complete application API.
 | REST API | Complete application behavior and specialized HTTP contracts |
 | App CLI module | Full application-specific terminal workflows |
 | Generic capability CLI | Discovering and invoking the curated capability surface |
+| [App events](/en/docs/platform/app-events) | Versioned facts that subscribing applications react to asynchronously |
 
 ## Declare the surface
 
@@ -456,6 +457,18 @@ CLI commands, and MCP tool names aligned.
 Types connect operation targets, result references, Universal Search results,
 and client presentation. Declaring a Type does not create CRUD operations.
 
+Declared [app events](/en/docs/platform/app-events) also name a local Type as
+their subject and may name a place Type with a reader. Define them with
+`events` and consume qualified event types with `subscribes` in the same
+`defineCapabilities()` surface. Cloud currently delivers service events only; resource event
+subscriptions remain blocked with `resource_events_unsupported`.
+
+`cld capabilities catalog --json` and `--jsonl` preserve the full manifests,
+including `events` and `subscribes`. The text table shows their counts per app.
+Use `cld events ls` for the event-focused catalog and `cld events subscriptions`
+for delivery readiness. Event-specific MCP discovery is not yet available;
+the current capability MCP projects tools and resources, not an event catalog.
+
 A Type may name one canonical reader Query:
 
 ```ts
@@ -525,6 +538,46 @@ Type and ID. A CLI must omit a canonical link if its reader requires access the
 caller lacks. Published Grids app commands add no permalinks: projections can
 be accessible without Base access, but canonical readers require it.
 See [CLI modules](/en/docs/platform/cli-modules).
+
+### Declare pages for pasted links
+
+Add `pages` to a Type with a canonical reader so Cloud can recognize a pasted
+application page as that resource:
+
+```ts
+types: {
+  note: {
+    title: "Note",
+    description: "A note in a notebook.",
+    reader: "note.read",
+    pages: ["/app/inventory/:notebook/notes/:id"],
+  },
+},
+```
+
+Each Type accepts up to eight patterns, each at most 300 characters. Exactly
+one `:id` captures the reader's ID, as a whole path segment or query value
+(`"/app/inventory/:notebook?note=:id"`). Other `:name` captures match one
+non-empty segment or query value. Literal segments and values must match
+exactly. Captures are percent-decoded once; malformed escapes are rejected.
+All listed query keys must occur once. Extra query keys, a trailing slash,
+and fragments do not affect matching.
+
+The match with the most required query keys wins, then the most literal path
+segments. Equal best matches for different refs return no result. This lets
+an item query override its containing page without guessing between items.
+
+Every pattern must lie under one of the app's declared route prefixes.
+Startup validates this, and Core rechecks the live registration. The gateway's
+`/app/<id>` ownership and more specific live route owners also apply; an
+ancestor prefix cannot capture another app's pages. Pages only
+identify a candidate: Core invokes its reader with the caller's authority.
+Unknown, missing, forbidden, and unavailable resources all return the same
+result, so pasted links cannot bypass authorization or reveal existence.
+See [Recognize a pasted Cloud link](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link).
+For declaration tests, pass your route prefixes as the third argument to
+`compileCapabilityManifest(appId, capabilities, routes)`; without them the
+helper checks syntax and reader contracts only.
 
 ### Test resource links
 
@@ -1373,6 +1426,10 @@ come from a newer Cloud release than the code that reads it. Every reader in
   whole, and Core logs it with the left-out entries. Whether its operations
   exist and match the contract is checked by `fileProviderIssues`; see
   [File providers](/en/docs/platform/file-providers#understand-compatibility).
+- Optional top-level `resourcePages` contains `{ type: "localId", path }`
+  entries. Older releases ignore it and retain the Types and readers. Newer
+  readers omit invalid entries and pages whose Type or reader is unavailable;
+  Core also omits pages outside the app's registered prefixes.
 - Core ignores presentation fields it does not know and skips translations of
   left-out entries; the remaining translations still apply.
 - A manifest with a different `protocolVersion` is not read at all. Core also
@@ -1725,6 +1782,63 @@ this is not a credential bridge for independently deployed application hosts.
 Never construct authority from JSON, tool arguments, workers, or browser state,
 and never mix it with credentials, a mandate or `transport`.
 
+### Read from another capability handler
+
+A Query, Action, or review handler can use `context.query()` to read one
+resource from another application under its incoming authority. For example,
+a discussion handler can ask the resource's owning application to authorize
+and read the discussed item before returning messages or writing a reply.
+Built-in and third-party applications use the same handler context:
+
+```ts
+if (!context.query) throw new Error("A live Cloud capability invocation is required");
+const item = await context.query(
+  { appId: "inventory", capabilityId: "item.read", input: { id: itemId } },
+  z.object({ id: z.string(), name: z.string() }).passthrough(),
+);
+if (!item.ok) throw new Error(item.error.message);
+```
+
+The helper sends the incoming invocation only to Core. Core checks the active
+parent, current principal and source credential, then signs a child invocation
+bound to the parent, target application, Query and current schema. The target
+still checks its application and resource permissions. No original session,
+API key or OAuth token reaches either application.
+
+Credential scopes, the mobile session restriction and the access subject stay
+unchanged. A mandate must permit the target Query and its input. An Assistant
+turn must still be active and its current `allowedTools` must include the
+target Query. Calling a discussion capability does not implicitly allow its
+resource reader: include both operations when configuring these restrictions.
+Missing or revoked authority fails closed; do not fall back to a browser
+session or an access cache.
+
+The initial budget is one child Query per parent, including concurrent
+attempts, and one application hop. This covers one resource-reader check.
+The child cannot call another capability or return a stream, and it cannot
+call the parent application. Actions are not supported as nested calls.
+Do not retry a nested call automatically; another attempt needs a new parent
+invocation.
+
+The child shares cancellation and the parent's remaining deadline. Its token
+expires no later than the parent token or source credential. Core removes
+the parent's exchange lease when dispatch ends or is cancelled; a child
+presented after revocation is rejected. The helper requires the existing
+`CLOUD_CORE_INTERNAL_ORIGIN` setting and an available shared Valkey service.
+If lease storage is unavailable, the original call can still run, but its
+nested Query fails closed. It is absent from manually constructed in-process contexts unless the host
+provides it; an in-process authority alone does not enable this exchange.
+
+The execution history preserves the original actor and adds `invocationId`,
+`parentInvocationId` and `viaAppId` to join the two calls. Both share the
+original `requestId` and `origin`. The target actor's invocation delegation
+also contains `parentInvocationId` and the calling application's ID. For a
+mandate child, `delegation.callingAppId` is this via-app, not the mandate's
+owning application. Stream handlers do not receive `context.query`. These
+fields describe the audit chain and grant no permissions.
+
+### Call Core from server-side code
+
 Framework-owned execution hosts can supply a server-only `transport(request)`
 to the capability client. It handles Queries, Actions, reviews, and binary
 continuations through Core. Managed Assistant execution uses a short-lived,
@@ -1737,12 +1851,11 @@ request credentials as shown below; background jobs use revocable mandates.
 
 This is a Core-only foreground-turn authority exchange: after verifying the
 callback and live turn, Core resumes dispatch under that user's authority.
-It does not create a session cookie or allow ordinary app invocation tokens to
-mint other invocations. Core rejects a requested cancellation immediately on
-subsequent callbacks. Stream continuations also recheck the conversation's
+It does not create a session cookie. Application invocation tokens can request
+only the bounded child Query described above. Core rejects a requested
+cancellation immediately on subsequent callbacks. Stream continuations also recheck the conversation's
 current `allowedTools`; the provider remains responsible for current resource
 permissions.
-
 
 Server-side app code uses the Core-backed adapter. Pass only credentials and
 trace data from the current request. The adapter sends them to Core's private

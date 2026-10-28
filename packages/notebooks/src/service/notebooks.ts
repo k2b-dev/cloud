@@ -312,7 +312,7 @@ export const overviewStats = async (params: { notebookIds: string[] }): Promise<
     SELECT
       n.id,
       (SELECT COUNT(*)::int FROM notebooks.notes nt WHERE nt.notebook_id = n.id) AS note_count,
-      (SELECT MAX(nt.updated_at) FROM notebooks.notes nt WHERE nt.notebook_id = n.id) AS last_note_at
+      (SELECT nt.updated_at FROM notebooks.notes nt WHERE nt.notebook_id = n.id ORDER BY nt.updated_at DESC, nt.id LIMIT 1) AS last_note_at
     FROM notebooks.notebooks n
     WHERE n.id = ANY(${toPgUuidArray(params.notebookIds)}::uuid[])
   `;

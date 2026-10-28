@@ -167,6 +167,8 @@ describe("Shared in the chat's info", () => {
       expect(await rows.nth(1).locator(".chat-shared__meta").innerText()).toContain("No access");
       await section.getByRole("button", { name: "Links", exact: true }).click();
       await section.locator(".chat-shared__row", { hasText: "Delivery cooling shelves" }).waitFor({ state: "detached" });
+      // The filter re-renders the list; wait for the remaining link row before counting.
+      await rows.filter({ hasText: "example.com/vpn" }).waitFor();
       expect(await rows.count()).toBe(1);
       await section.getByRole("button", { name: "Images", exact: true }).click();
       await section.getByText("Nothing for this filter.", { exact: true }).waitFor();

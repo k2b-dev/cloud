@@ -1,4 +1,4 @@
-import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
+import { CapabilitySemanticLinkSchema, CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 export const MEMBER_PAGE_SIZE = 100;
@@ -25,6 +25,9 @@ export const UPLOAD_WINDOW_SECONDS = 60;
 export const MAX_MESSAGE_LINKS = 20;
 export const MAX_MESSAGE_LINK_LENGTH = 2048;
 export const SHARED_PAGE_SIZE = 30;
+export const MAX_MENTIONS = 20;
+export const FOR_YOU_PAGE_SIZE = 30;
+export const FOR_YOU_COUNT_CAP = 99;
 export const MESSAGE_MAX_CODE_POINTS = 20_000;
 export const CHANGES_PAGE_SIZE = 200;
 export const SEND_CONVERSATION_LIMIT = 10;
@@ -360,7 +363,12 @@ export const SystemChatPageSchema = z.strictObject({
   spacesCursor: z.string().nullable(),
   notebooksCursor: z.string().nullable(),
 });
-export const ConversationPageSchema = z.object({ items: z.array(ConversationSchema), nextCursor: z.string().nullable() });
+export const ConversationPageSchema = z.object({
+  items: z.array(ConversationSchema),
+  nextCursor: z.string().nullable(),
+  /** Member sidebar pages include this count; channel discovery pages omit it. */
+  forYouUnread: z.number().int().min(0).max(FOR_YOU_COUNT_CAP).optional(),
+});
 export const MemberSchema = z.object({
   accessId: z.uuid(),
   principal: MemberPrincipalSchema,
@@ -453,8 +461,46 @@ export const AttachmentViewSchema = z.strictObject({
 export type AttachmentView = z.infer<typeof AttachmentViewSchema>;
 export const AttachmentParamSchema = ConversationParamSchema.extend({ attachment: ShortIdSchema });
 export const UploadAttachmentSchema = z.strictObject({ file: z.file(), thread: ThreadIdSchema.optional() });
+export const MentionPrincipalSchema = z.strictObject({
+  type: z.enum(["user", "service_account"]),
+  id: z.uuid().transform((id) => id.toLowerCase()),
+});
+export const MentionSchema = z.strictObject({
+  start: z
+    .number()
+    .int()
+    .min(0)
+    .max(MESSAGE_MAX_CODE_POINTS * 2),
+  end: z
+    .number()
+    .int()
+    .min(1)
+    .max(MESSAGE_MAX_CODE_POINTS * 2),
+  principal: MentionPrincipalSchema,
+});
+export type Mention = z.infer<typeof MentionSchema>;
+/** Offsets address the original UTF-16 body and never split a surrogate pair. */
+export const validMentionRanges = (body: string, mentions: readonly Mention[]) => {
+  const boundary = (offset: number) =>
+    offset === 0 || offset === body.length || !(/[\uD800-\uDBFF]/.test(body[offset - 1]!) && /[\uDC00-\uDFFF]/.test(body[offset]!));
+  let end = 0;
+  for (const mention of [...mentions].sort((a, b) => a.start - b.start)) {
+    if (
+      mention.start < end ||
+      mention.end <= mention.start ||
+      mention.end > body.length ||
+      !boundary(mention.start) ||
+      !boundary(mention.end) ||
+      !/\S/u.test(body.slice(mention.start, mention.end))
+    )
+      return false;
+    end = mention.end;
+  }
+  return true;
+};
 export const MessageSchema = z.object({
   attachments: z.array(AttachmentViewSchema).max(MAX_MESSAGE_ATTACHMENTS),
+  mentions: z.array(MentionSchema.extend({ name: z.string() })).max(MAX_MENTIONS),
   reactions: z.array(ReactionSchema).max(REACTIONS_PER_MESSAGE),
   refs: z.array(CloudResourceRefSchema).max(MAX_MESSAGE_REFS),
   thread: ThreadIdSchema.nullable(),
@@ -508,10 +554,50 @@ export const SendMessageSchema = z
       .max(MAX_MESSAGE_ATTACHMENTS)
       .refine((ids) => new Set(ids).size === ids.length)
       .optional(),
+    mentions: z.array(MentionSchema).max(MAX_MENTIONS).optional(),
     thread: ThreadIdSchema.optional(),
     replyTo: MessageIdSchema.optional(),
   })
-  .refine((message) => message.body !== "" || (message.refs?.length ?? 0) > 0 || (message.attachments?.length ?? 0) > 0);
+  .refine((message) => message.body !== "" || (message.refs?.length ?? 0) > 0 || (message.attachments?.length ?? 0) > 0)
+  .refine((message) => validMentionRanges(message.body, message.mentions ?? []));
+export const MentionCandidateQuerySchema = z.strictObject({
+  q: z
+    .string()
+    .trim()
+    .max(100)
+    .refine((value) => !value.includes("\u0000"))
+    .default(""),
+  thread: ThreadSelectorSchema.default("general"),
+});
+export const MentionCandidatesSchema = z.strictObject({
+  items: z
+    .array(
+      z.strictObject({
+        principal: MentionPrincipalSchema,
+        name: z.string(),
+        agent: z.boolean(),
+      }),
+    )
+    .max(PEOPLE_PAGE_SIZE),
+});
+export const ForYouQuerySchema = z.strictObject({ cursor: z.string().max(256).optional() });
+export const ForYouItemSchema = z.strictObject({
+  kind: z.enum(["mention", "reply"]),
+  conversation: z.strictObject({ id: ShortIdSchema, title: z.string(), kind: z.enum(["chat", "system"]) }),
+  thread: z.strictObject({ id: ThreadSelectorSchema, name: z.string() }),
+  message: z.strictObject({
+    id: MessageIdSchema,
+    seq: z.number().int().positive(),
+    author: AuthorSchema,
+    preview: z.string(),
+    createdAt: z.iso.datetime(),
+  }),
+  unread: z.boolean(),
+});
+export const ForYouPageSchema = z.strictObject({
+  items: z.array(ForYouItemSchema).max(FOR_YOU_PAGE_SIZE),
+  nextCursor: z.string().nullable(),
+});
 export const SharedQuerySchema = z.strictObject({
   kind: z.enum(["all", "images", "documents", "links", "elements"]).default("all"),
   thread: ThreadSelectorSchema.optional(),
@@ -578,6 +664,7 @@ export const ChatLiveEventSchema = z.discriminatedUnion("type", [
   ReadUpdateSchema.extend({ type: z.literal("read") }),
   z.object({ type: z.literal("membership"), conversationId: ShortIdSchema }),
   z.object({ type: z.literal("personal") }),
+  z.strictObject({ type: z.literal("for-you") }),
   SidebarPreferencesSchema.extend({ type: z.literal("preferences") }),
   z.strictObject({ type: z.literal("threads"), conversationId: ShortIdSchema }),
   z.strictObject({
@@ -619,6 +706,7 @@ export const ItemEventSchema = z.object({
     .regex(/^ti ti-[a-z0-9-]+$/)
     .max(80),
   sentence: z.string().max(4000),
+  href: CapabilitySemanticLinkSchema.shape.href.optional(),
   count: z.number().int().min(1),
   thread: z.union([
     z.object({ id: ShortIdSchema, name: z.string() }),

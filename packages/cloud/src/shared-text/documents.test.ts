@@ -241,3 +241,89 @@ test("an edit of fallback text without a snapshot keeps the edit in the saved st
   // A later read from the same fallback replays the published edit, too.
   expect((await f.documents.read("doc"))?.text).toBe("hello!");
 });
+
+test("prepared range transactions preserve stored relative positions and replay idempotently", async () => {
+  const clock = spyOn(Date, "now").mockReturnValue(1_790_000_000_000);
+  const f = fixture();
+  let prepared: Uint8Array | undefined;
+  let inserted: Uint8Array | undefined;
+  try {
+    await f.append("before target after");
+    const result = await f.documents.edit("doc", { actor: { kind: "service_account", id: "reviewer" } }, (current) => {
+      const doc = new Y.Doc();
+      doc.clientID = 200;
+      try {
+        Y.applyUpdate(doc, current.state());
+        const vector = Y.encodeStateVector(doc);
+        const text = doc.getText(SHARED_TEXT_NAME);
+        doc.transact(() => {
+          text.delete(7, 6);
+          text.insert(7, "replacement");
+          doc.getMap("operations").set("accept-1", true);
+        });
+        inserted = Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(text, 7, 0));
+        prepared = Y.encodeStateAsUpdate(doc, vector);
+        return { update: prepared };
+      } finally {
+        doc.destroy();
+      }
+    });
+    expect(result).toMatchObject({ status: "edited", text: "before replacement after" });
+    expect(f.saves).toHaveLength(1);
+    const replay = new Y.Doc();
+    try {
+      Y.applyUpdate(replay, f.saves[0]!.input.state);
+      const absolute = Y.createAbsolutePositionFromRelativePosition(Y.decodeRelativePosition(inserted!), replay, false);
+      expect(absolute?.index).toBe(7);
+      expect(replay.getMap("operations").get("accept-1")).toBeTrue();
+    } finally {
+      replay.destroy();
+    }
+    const retry = await f.documents.edit("doc", { actor: null }, () => ({ update: prepared! }));
+    expect(retry).toMatchObject({ status: "edited", text: "before replacement after" });
+    expect(f.saves.at(-1)?.input.text).toBe("before replacement after");
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+test("server edits preserve unchanged identities and a concurrent middle insertion between distant changes", async () => {
+  const f = fixture();
+  const before = "First old paragraph\n\nMiddle stable 😀 paragraph\n\nThird old paragraph\n";
+  await f.append(before);
+  const current = await f.documents.read("doc");
+  const browser = new Y.Doc();
+  const saved = new Y.Doc();
+  try {
+    Y.applyUpdate(browser, current!.state!);
+    const position = Y.createRelativePositionFromTypeIndex(browser.getText(SHARED_TEXT_NAME), before.indexOf("stable"));
+    const vector = Y.encodeStateVector(browser);
+    browser.getText(SHARED_TEXT_NAME).insert(before.indexOf("stable"), "client ");
+    const next = before.replaceAll("old", "NEW WORDS");
+    const expected = next.replace("stable", "client stable");
+    expect(
+      await f.documents.edit("doc", { actor: null }, ({ text }) => {
+        expect(text).toBe(before);
+        f.events.push({
+          cursor: "s6t.fixture.2",
+          data: {
+            kind: "sync",
+            payload: toBase64(Y.encodeStateAsUpdate(browser, vector)),
+            originNodeId: "browser",
+            originPeerId: "peer",
+          },
+        });
+        return next;
+      }),
+    ).toMatchObject({ status: "edited", text: expected });
+    Y.applyUpdate(saved, f.saves[0]!.input.state);
+    const savedText = saved.getText(SHARED_TEXT_NAME);
+    const resolved = Y.createAbsolutePositionFromRelativePosition(position, saved, false);
+    expect(resolved?.type === savedText).toBe(true);
+    expect(savedText.toString()).toBe(expected);
+    expect(expected.slice(resolved!.index, resolved!.index + "stable 😀".length)).toBe("stable 😀");
+  } finally {
+    browser.destroy();
+    saved.destroy();
+  }
+});

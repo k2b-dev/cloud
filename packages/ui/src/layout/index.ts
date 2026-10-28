@@ -1,3 +1,4 @@
+export { AnchoredPopover, type AnchoredPopoverProps } from "./AnchoredPopover";
 export type {
   AppOverviewCardsProps,
   AppOverviewEmptyStateProps,

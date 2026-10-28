@@ -28,7 +28,7 @@ const storedAssistant = (input: { usage: Usage; aggregate?: LoopAggregate }): Ai
     kind: "message",
     message,
     loopId: "loop-1",
-    modelProfileId: "model-1",
+    modelId: "model-1",
     providerModel: "provider/model",
     usage: input.usage,
     stopReason: "stop",
@@ -88,7 +88,7 @@ describe("AI usage selectors", () => {
 
     expect(latestUsage(messages)).toEqual(finalRequest);
     expect(latestLoopUsage(messages)).toEqual(loopUsage);
-    expect(latestUsageSnapshot(messages)).toEqual({ request: finalRequest, loop: loopUsage, modelProfileId: "model-1" });
+    expect(latestUsageSnapshot(messages)).toEqual({ request: finalRequest, loop: loopUsage, modelId: "model-1" });
   });
 
   test("falls back to stored turn usage for legacy single-turn messages", () => {

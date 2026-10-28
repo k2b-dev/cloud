@@ -31,6 +31,7 @@ const conversation = ConversationSchema.parse({
 const message = (rev: number) =>
   MessageSchema.parse({
     reactions: [],
+    mentions: [],
     refs: [],
     attachments: [],
     thread: null,
