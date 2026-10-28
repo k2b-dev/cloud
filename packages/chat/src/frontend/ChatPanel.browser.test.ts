@@ -6,7 +6,7 @@ import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
 import { createConfig } from "@k2b/ssr";
 import { ok } from "@k2b/stdlib";
-import type { Browser, Page } from "playwright";
+import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { z } from "zod";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import type { startConversationPanelFixture } from "./ChatPanel.browser-fixture";
@@ -14,6 +14,16 @@ import { nora, viewer } from "./ChatWorkspace.browser-fixture";
 
 let fixture: Awaited<ReturnType<typeof startConversationPanelFixture>>;
 let browser: Browser;
+// The real ShellRuntime reloads the page once when it first learns the browser timezone. Every context starts
+// with the matching cookie, so fixture-ready always belongs to the tested document, never to one about to reload.
+const newContext = async (options: BrowserContextOptions = {}) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en", timezoneId: "UTC", ...options });
+  await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+  return context;
+};
+// Failure diagnostics never replace the failure they describe: a panel that is gone is reported, not awaited.
+const diagnose = async (read: () => Promise<unknown>) =>
+  console.error(await read().catch((error: unknown) => `Diagnostics unavailable: ${error instanceof Error ? error.message : error}`));
 const verifyPanelGeometry = async (page: Page, width: number) => {
   await settled(page);
   const box = await page.locator("#cloud-panel").boundingBox();
@@ -52,12 +62,7 @@ for (const width of [1440, 390]) {
   test(`Chat reads and sends in the real panel, restores its draft and opens full view at ${width}px`, async () => {
     fixture.backend.reset();
     const chat = fixture.backend.addChat({ members: [viewer, nora], name: "Project planning", count: 3, end: fixture.backend.now() });
-    const context = await browser.newContext({
-      viewport: { width, height: 900 },
-      reducedMotion: "reduce",
-      locale: "en",
-      timezoneId: "UTC",
-    });
+    const context = await newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     try {
@@ -115,12 +120,7 @@ for (const width of [1440, 390]) {
   test(`Assistant saves a new panel draft, resumes it and resolves a lost send at ${width}px`, async () => {
     fixture.assistant.reset();
     fixture.allowContext(width === 1440);
-    const context = await browser.newContext({
-      viewport: { width, height: 900 },
-      reducedMotion: "reduce",
-      locale: "en",
-      timezoneId: "UTC",
-    });
+    const context = await newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     try {
@@ -259,7 +259,7 @@ for (const width of [1440, 390]) {
 test("Assistant keeps an uploading panel mounted and restores the confirmed file draft", async () => {
   fixture.assistant.reset();
   const release = fixture.assistant.holdUpload();
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en", timezoneId: "UTC" });
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
@@ -300,7 +300,7 @@ for (const provider of ["chat", "assistant"] as const) {
     fixture.backend.reset();
     fixture.assistant.reset();
     const id = fixture.backend.addChat({ members: [viewer, nora], name: "SSR guard", count: 1, end: fixture.backend.now() });
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const context = await newContext();
     const page = await context.newPage();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -349,7 +349,7 @@ test("Assistant keeps the chosen conversation when an older empty creation compl
   fixture.assistant.addExchange("Chat2A");
   fixture.assistant.addConversation("Chat2B", "Chosen conversation B");
   const release = fixture.assistant.holdCreate();
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
@@ -385,7 +385,7 @@ test("Assistant locks a lost queue receipt and checks it without saving or enque
   fixture.assistant.reset();
   fixture.assistant.addConversation("Chat2B");
   fixture.assistant.run("Chat2B");
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
@@ -425,7 +425,7 @@ test("Assistant offers a confirmed local exit when message status remains inacce
   fixture.assistant.reset();
   fixture.assistant.addConversation("Chat2A", "Other draft A");
   fixture.assistant.addConversation("Chat2B", "Unclear message B");
-  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: "en" });
+  const context = await newContext({ viewport: { width: 390, height: 900 } });
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
@@ -483,7 +483,7 @@ for (const alsoSend of [false, true]) {
     fixture.assistant.addConversation("Chat2A", "Existing A");
     fixture.assistant.addExchange("Chat2A");
     if (alsoSend) fixture.assistant.addConversation("Chat2B", "Existing B");
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const context = await newContext();
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     try {
@@ -557,7 +557,7 @@ for (const alsoSend of [false, true]) {
 test("a late server acceptance after a confirmed exit never triggers another submission", async () => {
   fixture.assistant.reset();
   const release = fixture.assistant.holdSend();
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   let accepted!: () => void;
@@ -595,7 +595,7 @@ test("a late server acceptance after a confirmed exit never triggers another sub
 
 test("Assistant protects editing while only PanelRuntime is delayed", async () => {
   fixture.assistant.reset();
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   let release!: () => void;
@@ -648,7 +648,7 @@ for (const provider of ["chat", "assistant"] as const) {
     fixture.backend.reset();
     fixture.assistant.reset();
     const id = fixture.backend.addChat({ members: [viewer, nora], name: "Storage recovery", count: 1, end: fixture.backend.now() });
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const context = await newContext();
     await context.addInitScript(() => {
       if (location.pathname.includes("/panel"))
         Object.defineProperty(window, "sessionStorage", {
@@ -691,7 +691,7 @@ for (const provider of ["chat", "assistant"] as const) {
 test("Chat protects a draft after a storage write failure and releases it only after retry", async () => {
   fixture.backend.reset();
   const id = fixture.backend.addChat({ members: [viewer, nora], name: "Storage write recovery", count: 1, end: fixture.backend.now() });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
@@ -742,7 +742,7 @@ for (const preparation of ["resource", "image"] as const) {
         fixture.assistant.addConversation("Chat2A", "Existing A");
         fixture.assistant.addExchange("Chat2A");
       }
-      const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+      const context = await newContext();
       const page = await context.newPage();
       page.setDefaultTimeout(8_000);
       let release!: () => void;
@@ -900,16 +900,18 @@ for (const preparation of ["resource", "image"] as const) {
         expect(saved).toContainEqual({ type: "text", text: "Text and attachment stay together" });
         expect(saved.some((part) => part.type !== "text")).toBe(true);
       } catch (error) {
-        console.error(await page.frameLocator("[data-cloud-panel-frame]").locator("body").innerText());
-        console.error(
-          await page
-            .frameLocator("[data-cloud-panel-frame]")
-            .locator("html")
-            .evaluate((element) => ({
+        const frame = page.frameLocator("[data-cloud-panel-frame]");
+        await diagnose(() => frame.locator("body").innerText({ timeout: 1_000 }));
+        await diagnose(() =>
+          frame.locator("html").evaluate(
+            (element) => ({
               dataset: { ...element.dataset },
               attachments: element.querySelector(".k2b-chat-composer__attachments")?.outerHTML,
               disabled: element.querySelector("textarea")?.disabled,
-            })),
+            }),
+            undefined,
+            { timeout: 1_000 },
+          ),
         );
         throw error;
       } finally {
@@ -924,7 +926,7 @@ for (const provider of ["chat", "assistant"] as const) {
   test(`${provider} opens the SSR full-view link in the host before provider scripts load`, async () => {
     fixture.backend.reset();
     fixture.assistant.reset();
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const context = await newContext();
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     let release!: () => void;
@@ -959,8 +961,7 @@ for (const provider of ["chat", "assistant"] as const) {
 for (const width of [1440, 390]) {
   test(`Assistant create replay preserves another tab's saved draft at ${width}px`, async () => {
     fixture.assistant.reset();
-    const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC" });
-    await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+    const context = await newContext({ viewport: { width, height: 900 } });
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     let releaseTarget!: () => void;
@@ -1086,10 +1087,7 @@ for (const width of [1440, 390]) {
     test(`Assistant full-view Command Escape restores editing during ${pending} at ${width}px`, async () => {
       fixture.assistant.reset();
       if (pending === "save") fixture.assistant.addConversation("Chat2B", "Command conversation");
-      const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC" });
-      // The real ShellRuntime reloads once when it first learns the browser timezone.
-      // Match the SSR fixture before navigation so that fixture-ready belongs to the tested document.
-      await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+      const context = await newContext({ viewport: { width, height: 900 } });
       const attachmentDuringCreate = pending === "create" && width === 390;
       const page = await context.newPage();
       let documents = 0;
@@ -1227,7 +1225,7 @@ for (const historyFailure of [false, true]) {
       unread: 120,
       end: fixture.backend.now(),
     });
-    const context = await browser.newContext({ viewport: { width: historyFailure ? 390 : 1440, height: 900 }, locale: "en" });
+    const context = await newContext({ viewport: { width: historyFailure ? 390 : 1440, height: 900 } });
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     let release!: () => void;
@@ -1308,7 +1306,7 @@ for (const historyFailure of [false, true]) {
 for (const editDuringSave of [false, true]) {
   test(`Assistant create replay preserves a second local draft in the same workspace (edits during save: ${editDuringSave})`, async () => {
     fixture.assistant.reset();
-    const context = await browser.newContext({ viewport: { width: editDuringSave ? 390 : 1440, height: 900 }, locale: "en" });
+    const context = await newContext({ viewport: { width: editDuringSave ? 390 : 1440, height: 900 } });
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     const writes: { path: string; body: string | null }[] = [];
@@ -1394,8 +1392,9 @@ for (const editDuringSave of [false, true]) {
       expect(fixture.assistant.conversations.size).toBe(1);
     } catch (error) {
       console.error({ writes, conversations: [...fixture.assistant.conversations.values()] });
-      console.error(await page.frameLocator("[data-cloud-panel-frame]").locator("body").innerText());
-      console.error(await page.frameLocator("[data-cloud-panel-frame]").locator('textarea:not([aria-hidden="true"])').inputValue());
+      const frame = page.frameLocator("[data-cloud-panel-frame]");
+      await diagnose(() => frame.locator("body").innerText({ timeout: 1_000 }));
+      await diagnose(() => frame.locator('textarea:not([aria-hidden="true"])').inputValue({ timeout: 1_000 }));
       throw error;
     } finally {
       await context.close();
@@ -1448,8 +1447,7 @@ for (const { embedded, width } of [
 ])
   test(`catalog and resource recovery in real ${embedded ? "panel" : "fullview"} at ${width}px`, async () => {
     fixture.assistant.reset();
-    const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC" });
-    await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+    const context = await newContext({ viewport: { width, height: 900 } });
     const page = await context.newPage();
     let documents = 0;
     page.on("request", (request) => {
@@ -1603,7 +1601,7 @@ for (const openFailure of [false, true]) {
       end: fixture.backend.now(),
     });
     const other = fixture.backend.addChat({ members: [viewer, nora], name: "Other draft", count: 3, end: fixture.backend.now() });
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const context = await newContext();
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     let releaseOpen!: () => void;
@@ -1666,8 +1664,7 @@ for (const openFailure of [false, true]) {
 test("Chat synchronizes panel and full-view drafts and preserves a simultaneous conflicting edit", async () => {
   fixture.backend.reset();
   const id = fixture.backend.addChat({ members: [viewer, nora], name: "Shared draft", count: 1, end: fixture.backend.now() });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en", timezoneId: "UTC" });
-  await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
@@ -1733,9 +1730,8 @@ for (const embedded of [false, true]) {
     fixture.assistant.reset();
     fixture.assistant.addConversation("Chat2A", "Unclear conversation");
     fixture.assistant.addConversation("Chat2B", "Other conversation");
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en", timezoneId: "UTC" });
+    const context = await newContext();
     // The shell must not replace the document while this test seeds the selected panel chat.
-    await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
     const page = await context.newPage();
     let documents = 0;
     page.on("request", (request) => {
@@ -1780,8 +1776,7 @@ for (const embedded of [false, true]) {
 
 test("Assistant offers a fresh creation after a definitive replay refusal without losing the draft", async () => {
   fixture.assistant.reset();
-  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: "en", timezoneId: "UTC" });
-  await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+  const context = await newContext({ viewport: { width: 390, height: 900 } });
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
@@ -1832,8 +1827,7 @@ test("Assistant offers a fresh creation after a definitive replay refusal withou
 test("Chat can close during a read-only conversation load and restores the saved draft", async () => {
   fixture.backend.reset();
   const id = fixture.backend.addChat({ members: [viewer, nora], name: "Slow snapshot", count: 1, end: fixture.backend.now() });
-  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: "en", timezoneId: "UTC" });
-  await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+  const context = await newContext({ viewport: { width: 390, height: 900 } });
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   let release!: () => void;
@@ -1886,7 +1880,7 @@ test("Chat can close during a read-only conversation load and restores the saved
 test("Chat keeps storage recovery visible when retry still cannot read the draft", async () => {
   fixture.backend.reset();
   const id = fixture.backend.addChat({ members: [viewer, nora], name: "Unreadable draft", count: 1, end: fixture.backend.now() });
-  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: "en", timezoneId: "UTC" });
+  const context = await newContext({ viewport: { width: 390, height: 900 } });
   await context.addInitScript(() => {
     const get = Storage.prototype.getItem;
     Storage.prototype.getItem = function (key) {
@@ -1899,7 +1893,6 @@ test("Chat keeps storage recovery visible when retry still cannot read the draft
       return get.call(this, key);
     };
   });
-  await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
