@@ -527,6 +527,7 @@ export const MessageSchema = z.object({
   contentRevision: z.number().int().nonnegative().optional(),
   editedAt: z.iso.datetime().nullable().optional(),
   deletedAt: z.iso.datetime().nullable().optional(),
+  via: z.enum(["assistant", "mcp"]).nullable().optional(),
 });
 export const MessageViewSchema = MessageSchema.extend({ systemText: z.string().nullable() });
 // Shared by the API and the composer, which must keep rejected text out of the send queue.

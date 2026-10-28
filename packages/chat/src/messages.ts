@@ -4,6 +4,8 @@ export const chatMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      viaAssistant: "via Assistant",
+      viaMcp: "via MCP",
       mutationRefreshFailed: "The message was saved, but could not be refreshed. Close this dialog and reload the chat.",
       editMessage: "Edit message",
       deleteMessage: "Delete message",
@@ -433,6 +435,8 @@ export const chatMessages = i18n.define({
       logs: "Logs",
     },
     de: {
+      viaAssistant: "über Assistant",
+      viaMcp: "über MCP",
       mutationRefreshFailed:
         "Die Nachricht wurde gespeichert, konnte aber nicht neu geladen werden. Schließe diesen Dialog und lade den Chat neu.",
       editMessage: "Nachricht bearbeiten",

@@ -1,4 +1,5 @@
 import { appAccess, defineApp } from "@k2b/cloud";
+import { SKILLS } from "./skills";
 
 export const app = defineApp({
   id: "chat",
@@ -42,6 +43,7 @@ export const app = defineApp({
       },
     },
   },
+  skills: SKILLS,
   openapi: "/api/chat/openapi.json",
   routes: ["/api/chat", "/app/chat", "/admin/chat", "/public/chat"],
 });

@@ -1787,6 +1787,10 @@ own name.
 Use `context.origin` and `context.via` only for provenance and diagnostics,
 never for authorization. Permissions belong to the actor and access subject.
 
+For throttling, providers can return status `429` with a positive integer
+`details.retryAfter` in seconds. The public HTTP capability endpoint forwards
+this value as `Retry-After`; other transports retain the structured detail.
+
 Browser and client islands use the same-origin public client:
 
 ```ts

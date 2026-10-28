@@ -739,6 +739,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         attachments: message.attachments,
         quote: quoteOf(current.id, message),
         origin: mixed && message.kind === "text" ? originOf(current.id, messageThread(message)) : undefined,
+        via: message.via,
         key: sendKeys.get(message.id) ?? message.id,
         kind: message.kind,
         authorId: message.author.id,

@@ -114,3 +114,7 @@ Eine Änderung erhält die Marke **bearbeitet**. Löschen entfernt Text, Dateien
 Scheitert das Speichern, bleibt dein Text im Dialog. Mit **Erneut versuchen** wiederholst du denselben Versuch. Wurde die Nachricht inzwischen geändert oder sind die zehn Minuten vorbei, schließe den Dialog und öffne die aktuelle Nachricht erneut.
 
 Bestehende Erwähnungen bleiben verknüpft, wenn Text und Position unverändert bleiben. Andere Verknüpfungen entfallen; erwähne die Person bei Bedarf erneut in einer neuen Nachricht.
+
+Nachrichten, die über Assistant oder MCP gesendet oder bearbeitet wurden, zeigen
+**über Assistant** oder **über MCP** neben dem Namen. Eine direkte Änderung behält
+die Marke. Sie bezeichnet den Aufrufweg, nicht die Person, die den Text verfasst hat.

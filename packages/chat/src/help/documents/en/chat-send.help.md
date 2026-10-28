@@ -114,3 +114,7 @@ Editing shows an **edited** mark. Deleting removes its text, files, shared eleme
 If saving fails, the dialog keeps your text. Choose **Try again** for the same attempt. If the message changed elsewhere or the ten minutes passed, close the dialog and open the current message again.
 
 Existing mentions remain linked when their text and position stay unchanged. Other mention links are removed; mention the person again in a new message if needed.
+
+Messages posted or edited through Assistant or MCP show **via Assistant** or
+**via MCP** beside the author. Editing a marked message directly keeps the mark.
+The label describes the calling surface; it does not identify who composed the text.

@@ -31,6 +31,7 @@ export type MessageRow = {
   content_rev?: bigint | string;
   edited_at?: Date | null;
   deleted_at?: Date | null;
+  via?: "assistant" | "mcp" | null;
   thread_id: string | null;
   reply_to_seq: bigint | string | null;
 };
@@ -58,6 +59,7 @@ export const projectMessage = (
   createdAt: row.created_at.toISOString(),
   editedAt: row.edited_at?.toISOString() ?? null,
   deletedAt: row.deleted_at?.toISOString() ?? null,
+  via: row.via ?? null,
 });
 const systemPeople = (system: SystemMessage | null) => {
   if (!system) return [];
@@ -187,7 +189,7 @@ type NewMessage =
 export const appendMessage = async (
   db: typeof sql,
   conversation: ConversationRow,
-  context: Pick<ChatContext, "accessSubject">,
+  context: Pick<ChatContext, "accessSubject" | "via">,
   message: NewMessage,
   affected: readonly string[] = [],
 ) => {
@@ -204,14 +206,14 @@ export const appendMessage = async (
   let row: MessageRow | undefined;
   for (let attempt = 0; attempt < 10 && !row; attempt++) {
     [row] = await db<MessageRow[]>`INSERT INTO chat.messages
-      (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, client_id, body_md, system_code, system_params, created_at, thread_id, reply_to_seq, refs, links)
+      (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, client_id, body_md, system_code, system_params, created_at, thread_id, reply_to_seq, refs, links, via)
       VALUES (${crypto.common.readableId(10)}, ${conversation.id}::uuid, ${head.seq_head}, ${head.rev}, ${message.kind},
         ${author.type}, ${author.id}::uuid, ${snapshot.name}, ${message.kind === "text" ? message.clientId : null},
         ${message.kind === "text" ? message.body : null}, ${message.kind === "system" ? message.system.code : null},
         ${message.kind === "system" ? JSON.stringify(message.system.params) : null}::text::jsonb,
         ${message.kind === "text" ? db`(SELECT last_activity_at FROM chat.conversations WHERE id = ${conversation.id}::uuid)` : db`clock_timestamp()`},
         ${message.threadId ?? null}::uuid, ${message.kind === "text" ? (message.replyToSeq ?? null) : null},
-        ${JSON.stringify(refs)}::text::jsonb, ${toPgTextArray(links)}::text[])
+        ${JSON.stringify(refs)}::text::jsonb, ${toPgTextArray(links)}::text[], ${message.kind === "text" ? (context.via ?? null) : null})
       ON CONFLICT (short_id) DO NOTHING RETURNING *`;
   }
   if (!row) throw new Error("Chat message ID could not be allocated");

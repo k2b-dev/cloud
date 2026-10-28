@@ -251,11 +251,17 @@ const errorResponse = (code: string, message: string, status: number, details?: 
   status,
 });
 
-const capabilityJsonResponse = (body: unknown, status: number): Response =>
-  Response.json(body, {
+const capabilityJsonResponse = (body: unknown, status: number): Response => {
+  const limited =
+    status === 429 ? z.object({ details: z.object({ retryAfter: z.number().int().positive().safe() }) }).safeParse(body) : null;
+  return Response.json(body, {
     status,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...(limited?.success ? { "retry-after": String(limited.data.details.retryAfter) } : {}),
+    },
   });
+};
 
 export type CapabilityDispatchParams = {
   /** Trusted Core continuation binding; never read from client headers. */

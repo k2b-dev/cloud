@@ -118,6 +118,8 @@ export const readResource = async (
   dependencies = resourceReaderDependencies,
   onUnavailable?: () => void,
 ): Promise<ResourceDecision | null> => {
+  if (context.authorizedResources !== undefined)
+    return context.authorizedResources.find((entry) => entry.ref.type === ref.type && entry.ref.id === ref.id)?.decision ?? null;
   const key = accessKey(contextPrincipal(context), ref);
   try {
     context.caller?.signal?.throwIfAborted();

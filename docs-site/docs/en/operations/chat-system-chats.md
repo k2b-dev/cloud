@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to Spaces and Notebooks.
-updated: 2026-10-27
+updated: 2026-10-28
 ---
 
 # Chat system conversations
@@ -16,6 +16,16 @@ Notebooks**. Their item directory and message links work in the full page
 and below `/app/chat/panel` in the universal panel. Item changes can be read
 as a separate event feed alongside messages. Existing comments stay in their
 owning application.
+
+The [item discussion capabilities](/en/docs/platform/chat-discussions) expose
+only those item threads. They require fresh incoming-authority owner reads,
+including the current container returned by Spaces and Notebooks readers.
+Deploy the updated owner applications with Chat before enabling these tools.
+Missing owner context fails closed. Chat stores the calling surface on new
+capability posts and edits; direct edits retain an existing mark. This requires
+only an additive nullable message column and does not backfill old messages.
+Comments and the `unreleased` Compose profile are retained until their separately
+coordinated release.
 
 ## Open a conversation
 
