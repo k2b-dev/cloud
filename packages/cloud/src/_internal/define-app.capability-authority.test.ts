@@ -10,6 +10,7 @@ import * as invocationActor from "../services/identity/invocation-actor";
 import * as invocationToken from "../services/identity/invocation-token";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
+import * as applicationPackage from "./application-package";
 import { compileCapabilities } from "./capabilities";
 import { defineApp } from "./define-app";
 import { inventory, person } from "./define-app.test-fixture";
@@ -179,6 +180,7 @@ test("generated capability routes hand resolved invocation authority to execute,
     resolve,
     spyOn(settingsService, "get").mockResolvedValue("en"),
     spyOn(settingsService, "loadCache").mockResolvedValue(undefined),
+    spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);
       return { sync, stop: async () => processSync.unbindProcessSync() };

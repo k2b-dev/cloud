@@ -26,6 +26,13 @@ const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) 
       group: "app" as const,
     },
     {
+      id: "storage",
+      title: t.storageSettings,
+      description: t.storageSettingsDescription,
+      icon: "ti ti-database",
+      group: "storage" as const,
+    },
+    {
       id: "user",
       title: t.userManagementSettings,
       description: t.userManagementSettingsDescription,
@@ -182,6 +189,7 @@ export default ssr<AuthContext>(async (c) => {
             approvalState={approvalState}
             signInLocations={signInLocations}
             accountSection={tab.id === "registration" ? "registration" : tab.id === "user" ? "sign-in" : undefined}
+            showTestStorageAction={tab.id === "storage"}
             showTestPdfAction={tab.id === "pdf-rendering"}
             showTestFreeIpaAction={tab.id === "freeipa"}
             showLegacySettings={tab.id === "general"}

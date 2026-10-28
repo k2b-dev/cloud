@@ -1,5 +1,6 @@
 /** Article paths are independent of the deployment's documentation website. */
 export const settingsDocumentation: Readonly<Record<string, string>> = {
+  storage: "operations/object-store",
   general: "accounts/documentation",
   places: "platform/places-and-maps",
   user: "operations/account-categories",

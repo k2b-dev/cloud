@@ -14,6 +14,7 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
   const t = platformMessages.resolve([locale]).t;
   const settingsLinks: AdminLink[] = [
     { href: "/admin/settings?tab=general", icon: "ti-app-window", label: t.general },
+    { href: "/admin/settings?tab=storage", icon: "ti-database", label: t.storage },
     { href: "/admin/outgoing-mail", icon: "ti-mail", label: t.outgoingMail },
     { href: "/admin/settings?tab=pdf-rendering", icon: "ti-file-type-pdf", label: t.pdfRendering },
     { href: "/admin/places-and-maps", icon: "ti-map-2", label: t.placesAndMaps },

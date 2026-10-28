@@ -4,6 +4,7 @@ import { env } from "../config/env";
 import type { AppRegistryEntry } from "../contracts/registry";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
+import * as applicationPackage from "./application-package";
 import { defineApp } from "./define-app";
 import * as heartbeat from "./heartbeat";
 import { clearProcessApplicationId, getProcessPlatformPermissions } from "./process-identity";
@@ -19,6 +20,7 @@ test("declared CLI modules are advertised, routed, and served behind authenticat
   // Only the methods used by startup are implemented; heartbeat transport is stubbed.
   const sync = { ephemeral: () => ({}), ready: async () => {} } as unknown as Sync;
   const spies = [
+    spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);
       return { sync, stop: async () => processSync.unbindProcessSync() };

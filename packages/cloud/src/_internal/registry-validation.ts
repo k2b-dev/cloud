@@ -19,6 +19,9 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
   for (const field of ["id", "name", "icon", "description", "baseUrl"] as const) {
     if (!isString(value[field]) || value[field].length === 0) return invalid(field, "a non-empty string");
   }
+  if (value.package !== undefined && (typeof value.package !== "string" || !/^[a-z][a-z0-9-]{0,79}$/.test(value.package))) {
+    return invalid("package", "a lowercase package name of 1–80 characters");
+  }
   try {
     const baseUrl = new URL(value.baseUrl as string);
     if (!(["http:", "https:"] as const).includes(baseUrl.protocol as "http:" | "https:") || baseUrl.username || baseUrl.password) {

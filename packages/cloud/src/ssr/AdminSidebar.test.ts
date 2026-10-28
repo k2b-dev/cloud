@@ -13,6 +13,22 @@ const app = (overrides: Partial<RuntimeAppMeta> = {}): RuntimeAppMeta => ({
 });
 
 describe("buildAdminGroups", () => {
+  it("makes storage reachable beside base settings and preserves its URL selection", () => {
+    for (const [locale, label] of [
+      ["en", "Storage"],
+      ["de", "Speicher"],
+    ] as const) {
+      const links = buildAdminGroups([], locale).flatMap((group) => group.links);
+      const href = "/admin/settings?tab=storage";
+      expect(links).toContainEqual({ href, icon: "ti-database", label });
+      expect(
+        activeAdminHref(
+          href,
+          links.map((link) => link.href),
+        ),
+      ).toBe(href);
+    }
+  });
   it("makes the places and maps page reachable and active in both locales", () => {
     const href = "/admin/places-and-maps";
     for (const [locale, label] of [

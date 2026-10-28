@@ -10,6 +10,7 @@ import { preloadLayoutHelp } from "../ssr/help";
 import { registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
 import { appAccessManagementPath } from "./app-access-path";
+import { registerApplicationPackage, resolveApplicationPackage } from "./application-package";
 import { invokeCapabilityStream } from "./capability-streams";
 import { withCapabilityRequestTimeout } from "./capability-timeout";
 import { bindProcessApplicationId, clearProcessApplicationId } from "./process-identity";
@@ -154,6 +155,8 @@ type ResolvedPageOptions = PageOptions & {
  */
 export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefinitionMap = {}, AppId extends string = string> = {
   id: AppId;
+  /** Shared object-store package. Defaults to the app ID. */
+  package?: string;
   access?: AppAccessDeclaration;
   name: string;
   icon: string;
@@ -444,6 +447,7 @@ export const defineApp = <
 >(
   opts: AppOptions<S, N, AppId>,
 ): AppDefinition<S, N, AppId> => {
+  const packageName = resolveApplicationPackage(opts.id, opts.package);
   const appSkills = opts.skills ? validateAppSkillCatalog(opts.skills) : undefined;
   const skillsManifestHash = appSkills ? appSkillManifestHash(appSkills) : undefined;
   configurePostgresApplicationName(opts.id);
@@ -619,6 +623,7 @@ export const defineApp = <
 
   // ── 2. Meta ───────────────────────────────────────────────────────────
   const baseMeta: AppMeta = {
+    package: packageName,
     id: opts.id,
     platformPermissions: opts.platformPermissions
       ? opts.platformPermissions.map((permission) => PlatformPermissionSchema.parse(permission))
@@ -688,7 +693,8 @@ export const defineApp = <
         }
       })());
     try {
-      bindProcessApplicationId(meta.id, meta.platformPermissions);
+      await registerApplicationPackage(meta.id, packageName);
+      bindProcessApplicationId(meta.id, meta.platformPermissions, packageName);
       cleanup.unshift(clearProcessApplicationId);
       const startedAt = Date.now();
 
@@ -708,6 +714,7 @@ export const defineApp = <
 
       // Registry entry
       const entry: AppRegistryEntry = {
+        package: packageName,
         id: meta.id,
         access: meta.access,
         name: meta.name,

@@ -7,6 +7,7 @@ import { defineHelp } from "../server/help";
 import * as authMiddleware from "../server/middleware/auth";
 import * as notificationCatalog from "../services/notifications/catalog";
 import * as settingsService from "../services/settings";
+import * as applicationPackage from "./application-package";
 import { defineApp } from "./define-app";
 import { inventory, person } from "./define-app.test-fixture";
 import * as heartbeat from "./heartbeat";
@@ -24,6 +25,7 @@ test("the framework gate precedes real CLI/OpenAPI/application mounts while asse
   let authenticated = 0,
     appCalls = 0;
   const spies = [
+    spyOn(applicationPackage, "registerApplicationPackage").mockResolvedValue(undefined),
     spyOn(processSync, "startProcessSync").mockImplementation(async () => {
       processSync.bindProcessSync(sync);
       return { sync, stop: async () => processSync.unbindProcessSync() };
