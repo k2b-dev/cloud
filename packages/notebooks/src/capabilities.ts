@@ -13,7 +13,10 @@ import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
+import { annotationActions, annotationQueries } from "./annotation-capabilities";
 import {
+  ActivityDataSchema,
+  ActivityInputSchema,
   CommentBrowseDataSchema,
   CommentCreateInputSchema,
   CommentDataSchema,
@@ -52,6 +55,8 @@ import { notebooksCapabilityPresentation } from "./capability-presentation";
 import { NoteComposeInputSchema } from "./commands";
 import { noteContentHash, summarizeNoteEditBlocks } from "./lib/note-edit";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "./service/access";
+import * as activity from "./service/activity";
+import { notebookActivityRow } from "./service/activity-timeline";
 import { resolveNotebookApiKeyPermission } from "./service/api-key-permissions";
 import { loadBookBlockPreview } from "./service/book";
 import * as commentStore from "./service/comments";
@@ -206,6 +211,38 @@ const requireNoteByShortId = async (shortId: string, context: CapabilityExecutio
   if (!note) return capabilityNotFound(t.noteNotFound);
   const access = await requireNotebook(note.notebookId, context, required);
   return access.ok ? ok({ note, notebook: access.data.notebook, permission: access.data.permission }) : capabilityNotFound(t.noteNotFound);
+};
+
+export const runNotebookActivity = async (input: z.output<typeof ActivityInputSchema>, context: CapabilityExecutionContext) => {
+  const access = await requireNotebookByShortId(input.notebook, context);
+  if (!access.ok) return access;
+  const note = input.item ? await requireNoteByShortId(input.item, context) : null;
+  if (note && (!note.ok || note.data.note.notebookId !== access.data.notebook.id))
+    return capabilityNotFound(capabilityMessages(context).noteNotFound);
+  try {
+    context.signal.throwIfAborted();
+    const page = await activity.list({
+      ...principalIds(context),
+      notebookId: access.data.notebook.id,
+      noteId: note?.ok ? note.data.note.id : undefined,
+      timeline: true,
+      before: input.before,
+      after: input.after,
+      cursor: input.cursor,
+      limit: input.limit,
+    });
+    const data = page.items.map((event) => notebookActivityRow(event, { viewer: activityActor(context), locale: context.locale }));
+    const result = (count: number) => ({
+      data: data.slice(0, count),
+      page: capabilityPage(count < data.length ? page.items[count - 1]!.cursor : page.nextCursor),
+    });
+    let count = data.length;
+    while (count > 1 && notebookEnvelopeBytes(result(count)) > ENVELOPE_DATA_BUDGET) count--;
+    return ok(result(count));
+  } catch (error) {
+    if (error instanceof activity.InvalidActivityCursorError) return fail(err.badInput(capabilityMessages(context).invalidCursor));
+    throw error;
+  }
 };
 
 const mapNotebook = (notebook: Notebook, permission: Exclude<PermissionLevel, "none">) => ({
@@ -547,7 +584,13 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
       blocksTruncated: blocks.length > 500,
     },
     summary: t.readNote({ title: note.title }),
-    refs: [noteRef(note, resolved.data.notebook.name), notebookRef(resolved.data.notebook)],
+    refs: [
+      {
+        ...noteRef(note, resolved.data.notebook.name),
+        context: t.noteInNotebook({ notebook: resolved.data.notebook.name }).replace(/\s+/g, " ").trim().slice(0, 200),
+      },
+      notebookRef(resolved.data.notebook),
+    ],
     links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, note) }],
   };
   while (notebookEnvelopeBytes(result) > ENVELOPE_DATA_BUDGET) {
@@ -1060,13 +1103,27 @@ export const notebooksCapabilities = defineCapabilities({
   },
   presentation: notebooksCapabilityPresentation,
   types: {
+    annotation: {
+      title: "Inline comment",
+      description: "A passage comment and its replies, owned by Notebooks.",
+      icon: "ti ti-message",
+      reader: "annotation.read",
+    },
     notebook: {
       title: "Notebook",
       description: "A permission-scoped collection of Markdown notes.",
       icon: "ti ti-notebook",
       reader: "notebook.read",
+      pages: ["/app/notebooks/:id"],
     },
-    note: { title: "Note", description: "A Markdown note in an accessible notebook.", icon: "ti ti-file-text", reader: "note.read" },
+    note: {
+      title: "Note",
+      description: "A Markdown note in an accessible notebook.",
+      icon: "ti ti-file-text",
+      color: "violet",
+      reader: "note.read",
+      pages: ["/app/notebooks/:notebook/notes/:id"],
+    },
     comment: {
       title: "Note comment",
       description: "Durable discussion context attached to one accessible note.",
@@ -1075,6 +1132,16 @@ export const notebooksCapabilities = defineCapabilities({
     },
   },
   queries: {
+    ...annotationQueries,
+    "notebook.activity": {
+      title: "Read note activity",
+      description:
+        "Read a newest-first page of authorized note changes in one notebook, optionally for one note. Sentences use the caller's locale, one row per recorded edit bucket. Comments and deleted notes are omitted. Follow page.nextCursor with cursor; before and after are exclusive time bounds.",
+      input: ActivityInputSchema,
+      data: ActivityDataSchema,
+      openWorld: false,
+      run: runNotebookActivity,
+    },
     "note.preview": {
       title: "Check note blocks",
       description:
@@ -1217,6 +1284,7 @@ export const notebooksCapabilities = defineCapabilities({
     },
   },
   actions: {
+    ...annotationActions,
     "comment.update": {
       title: "Edit note comment",
       description: "Replace the current user's own comment within ten minutes of creation. Requires write access to the notebook.",

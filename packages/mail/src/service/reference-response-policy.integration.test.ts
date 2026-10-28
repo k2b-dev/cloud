@@ -3,7 +3,6 @@ import { deleteWorkflowScope } from "@k2b/cloud/workflows/store";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import {
@@ -121,7 +120,6 @@ suite("conversation references and automatic reply policies", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const users = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES

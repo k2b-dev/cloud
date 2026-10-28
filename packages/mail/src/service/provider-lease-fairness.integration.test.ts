@@ -6,7 +6,6 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { type ConnectorVerification, type RemoteFolder, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { rediscoverProviderBinding } from "./bindings";
@@ -651,7 +650,6 @@ suite("mail provider lease fairness", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const uid = `mail-lease-fairness-${suffix}`;
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)

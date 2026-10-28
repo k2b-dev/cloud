@@ -3,6 +3,12 @@ import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 
+/** The list item of the named attachment: its open button and preview. */
+const item = (root: HTMLElement, filename: string) =>
+  [...root.querySelectorAll<HTMLElement>(".k2b-file-grid__item")].find(
+    (entry) => entry.querySelector(".k2b-file-grid__name")?.textContent === filename,
+  );
+
 describe("Spaces task attachments", () => {
   if (isServer) {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
@@ -34,8 +40,13 @@ describe("Spaces task attachments", () => {
       dom.root,
     );
 
-    const attachment = dom.root.querySelector<HTMLButtonElement>('[aria-label="Preview broken-dialog.webp"]');
+    const attachment = item(dom.root, "broken-dialog.webp")?.querySelector<HTMLButtonElement>(".k2b-file-grid__open");
     expect(attachment).not.toBeNull();
+    // The row names the file by its kind and size, and downloads it from its action slot.
+    expect(item(dom.root, "broken-dialog.webp")?.querySelector(".k2b-file-grid__meta")?.textContent).toMatch(/^Image · 41/);
+    expect(dom.root.querySelector<HTMLAnchorElement>('a[aria-label="Download broken-dialog.webp"]')?.getAttribute("href")).toBe(
+      "/api/spaces/Space1/items/Item01/attachments/File01/content?download=true",
+    );
     attachment!.click();
     await Promise.resolve();
 
@@ -89,11 +100,12 @@ describe("Spaces task attachments", () => {
     );
 
     const content = "/api/spaces/Space1/items/Item01/attachments/Reel01/content";
-    const tile = dom.root.querySelector<HTMLButtonElement>('[aria-label="Play Reel for approval.mov"]');
-    expect(tile).not.toBeNull();
-    expect(tile!.querySelector("video")?.getAttribute("src")).toBe(`${content}#t=0.001`);
-    // Only images and playable videos get a tile; the section counts them.
-    expect(dom.root.querySelectorAll("button[aria-label]").length).toBe(1);
+    const row = item(dom.root, "Reel for approval.mov");
+    expect(row).not.toBeUndefined();
+    expect(row!.querySelector(".k2b-file-grid__preview video")?.getAttribute("src")).toBe(`${content}#t=0.001`);
+    const tile = row!.querySelector<HTMLButtonElement>(".k2b-file-grid__open")!;
+    // Only images and playable videos are listed; the section counts them.
+    expect(dom.root.querySelectorAll(".k2b-file-grid__item").length).toBe(1);
     expect(dom.root.textContent).not.toContain("notes.pdf");
 
     tile!.click();

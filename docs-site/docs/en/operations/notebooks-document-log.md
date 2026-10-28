@@ -5,7 +5,7 @@ section: Operations
 order: 1138
 description: JetStream storage reserved for Notebook live editing, how it is sized, and how per-note topics from older releases are retired.
 tags: [notebooks, nats, jetstream, storage, migration]
-updated: 2026-10-19
+updated: 2026-10-26
 ---
 
 # Size and migrate the Notebook document log
@@ -179,3 +179,32 @@ on screen read-only. The bar says storage is full and whether changes are saved,
 and offers **Copy text** and **Reload**. Changes typed during the outage are
 resent on each retry, so they are saved if the broker accepts updates again
 within that minute. After the retries stop, they stay only in the open tab.
+
+## Recover a suggestion operation
+
+Passage comments, replies, and suggestion operations live in the Notebooks
+Postgres schema and follow the note's backup lifecycle. Startup creates their
+tables without rewriting existing page comments. No Chat service is required.
+
+Accept and undo store a prepared Yjs transaction before publication. A marker
+in that same transaction lets a retry recognize an edit already in the log,
+including when the Postgres snapshot write failed. A failed or uncertain
+request returns `ANNOTATION_OPERATION_PENDING` and `details.operationId`. Retry
+the same operation ID; creating a new one while an operation is pending
+returns 409. Completion updates the Markdown projection, saved history, and
+comment state and anchor. An accepted comment points to the inserted text;
+undo points it back to the restored passage. Restore and locking rules still
+apply to retries.
+
+Comment reads do not take the write lock. Writes wait for the same note's
+current write for up to five seconds, half the normal request idle budget.
+A lock timeout returns 409 with `details.retryable: true`; retry the unchanged
+request with its original identifiers. Different notes can progress concurrently.
+Annotation writes use a dedicated pool of up to ten Postgres connections per
+replica, matching Bun SQL's default pool size. Reserve those connections in
+addition to the normal application pool used by the shared text store.
+Shutdown closes the annotation pool after the workers drain.
+
+Soft-deleted comments and replies remain restorable during their author's
+original ten-minute mutation window. Later writes purge expired deleted rows
+in bounded batches for that note or thread.

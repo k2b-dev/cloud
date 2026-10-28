@@ -39,6 +39,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { closeMigratedDatabaseTemplate, integrationSchemaHash, retainMigratedDatabaseTemplate } from "./fixtures/test-database-template";
 import { applyTestRuntimeEnv, dotenvLeak, hasIntegrationTarget, noEnvFile, readTestTarget } from "./fixtures/test-infra-env";
 import { runUnderHeavyLock } from "./heavy-lock";
 import committedWeights from "./test-weights.json";
@@ -397,57 +398,68 @@ const run = async (): Promise<void> => {
     if (code !== 0) throw new Error("integration NATS housekeeping failed");
   }
 
-  if (options.integration && process.env.CLOUD_TEST_DATABASE_URL) {
-    console.log("\n=== integration database bootstrap ===");
-    const bootstrap = await runTestCommand(
-      {
-        name: "integration database bootstrap",
-        cwd: workspaceRoot,
-        command: ["bun", join(workspaceRoot, "scripts", "fixtures", "integration-bootstrap.ts")],
-      },
-      env,
-      remainingMs(),
-    );
-    if (bootstrap !== 0) {
-      console.error("integration database bootstrap failed");
-      process.exit(1);
+  try {
+    if (options.integration && env.CLOUD_TEST_DATABASE_URL) {
+      env.CLOUD_TEST_DATABASE_SCHEMA_HASH = integrationSchemaHash();
+      await retainMigratedDatabaseTemplate(readTestTarget(env, "database")!, env.CLOUD_TEST_DATABASE_SCHEMA_HASH);
     }
-  }
+    if (options.integration && process.env.CLOUD_TEST_DATABASE_URL) {
+      console.log("\n=== integration database bootstrap ===");
+      const bootstrap = await runTestCommand(
+        {
+          name: "integration database bootstrap",
+          cwd: workspaceRoot,
+          command: ["bun", join(workspaceRoot, "scripts", "fixtures", "integration-bootstrap.ts")],
+        },
+        env,
+        remainingMs(),
+      );
+      if (bootstrap !== 0) {
+        throw new Error("integration database bootstrap failed");
+      }
+    }
 
-  for (const suite of suites) {
-    console.log(`\n=== ${suite.name} ===`);
-    const started = performance.now();
-    const code = await runTestCommand(
-      suite,
-      suite.command[1] === "run" ? { ...env, BUN_OPTIONS: [env.BUN_OPTIONS, preload].filter(Boolean).join(" ") } : env,
-      remainingMs(),
-    );
-    if (code !== 0) failed.push(suite.name);
-    console.log(`=== ${suite.name}: ${((performance.now() - started) / 1000).toFixed(1)}s`);
-  }
+    for (const suite of suites) {
+      console.log(`\n=== ${suite.name} ===`);
+      const started = performance.now();
+      const code = await runTestCommand(
+        suite,
+        suite.command[1] === "run" ? { ...env, BUN_OPTIONS: [env.BUN_OPTIONS, preload].filter(Boolean).join(" ") } : env,
+        remainingMs(),
+      );
+      if (code !== 0) failed.push(suite.name);
+      console.log(`=== ${suite.name}: ${((performance.now() - started) / 1000).toFixed(1)}s`);
+    }
 
-  if (!options.integration && !options.browser && !hasIntegrationTarget()) {
-    let skipped = 0;
-    for (const suite of suites) skipped += (await listIntegrationFiles(suite.cwd)).length;
-    console.log(`\n${skipped} integration test file(s) skipped: no CLOUD_TEST_* variable is set.`);
-  }
+    if (!options.integration && !options.browser && !hasIntegrationTarget()) {
+      let skipped = 0;
+      for (const suite of suites) skipped += (await listIntegrationFiles(suite.cwd)).length;
+      console.log(`\n${skipped} integration test file(s) skipped: no CLOUD_TEST_* variable is set.`);
+    }
 
-  const minutes = (performance.now() - started) / 60_000;
-  const limit = options.maxMinutes === undefined ? "" : ` (limit ${options.maxMinutes} min)`;
-  console.log(`\n${label} took ${minutes.toFixed(1)} min${limit}`);
-  const overLimit = options.maxMinutes !== undefined && minutes > options.maxMinutes;
-  if (overLimit) {
-    console.log(
-      `::error title=Test shard over its time limit::${label} took ${minutes.toFixed(1)} min, over its ${options.maxMinutes}-min limit; refresh scripts/test-weights.json with \`bun scripts/test-weights.ts --run <id>\` or add a shard`,
-    );
-  }
-  if (failed.length > 0) {
-    console.error(`\nFailed test suites (${failed.length}): ${failed.join(", ")}`);
-    process.exit(1);
-  }
-  if (overLimit) process.exit(1);
+    const minutes = (performance.now() - started) / 60_000;
+    const limit = options.maxMinutes === undefined ? "" : ` (limit ${options.maxMinutes} min)`;
+    console.log(`\n${label} took ${minutes.toFixed(1)} min${limit}`);
+    const overLimit = options.maxMinutes !== undefined && minutes > options.maxMinutes;
+    if (overLimit) {
+      console.log(
+        `::error title=Test shard over its time limit::${label} took ${minutes.toFixed(1)} min, over its ${options.maxMinutes}-min limit; refresh scripts/test-weights.json with \`bun scripts/test-weights.ts --run <id>\` or add a shard`,
+      );
+    }
+    if (failed.length > 0) {
+      console.error(`\nFailed test suites (${failed.length}): ${failed.join(", ")}`);
+      process.exitCode = 1;
+      return;
+    }
+    if (overLimit) {
+      process.exitCode = 1;
+      return;
+    }
 
-  console.log(`\nAll ${suites.length} test suites passed.`);
+    console.log(`\nAll ${suites.length} test suites passed.`);
+  } finally {
+    await closeMigratedDatabaseTemplate();
+  }
 };
 
 if (import.meta.main) await run();

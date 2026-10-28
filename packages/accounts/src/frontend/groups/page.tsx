@@ -48,6 +48,8 @@ export default ssr<AuthContext>(async (c) => {
       })
     : { total: 0 };
   const totalPages = Math.max(1, Math.ceil(groupsPage.total / perPage));
+  // Deleting a group, or an old link, can leave the requested page past the end; open the last page instead.
+  if (listState.page > totalPages) return c.redirect(buildGroupsUrl({ ...listState, page: totalPages }, { defaultScope }));
   const paginationBaseUrl = buildGroupsPageBaseUrl(
     { search: listState.search, provider: listState.provider, scope: listState.scope },
     { defaultScope },

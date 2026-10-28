@@ -1,21 +1,17 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { sql } from "bun";
-import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { savedQueries } from "./saved-queries";
 
 suiteFor("database")("saved SQL queries", () => {
   let updateBase: typeof import("./base-management").updateBase;
-  let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
+  let database: Awaited<ReturnType<typeof useMigratedDatabase>> | undefined;
   beforeAll(async () => {
-    database = await useFreshDatabase("pulse_saved_queries");
-    const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
-    await runCoreSetup();
-    await migrate("Europe/Berlin");
+    database = await useMigratedDatabase("pulse_saved_queries");
     ({ updateBase } = await import("./base-management"));
   }, 30_000);
   afterAll(async () => {

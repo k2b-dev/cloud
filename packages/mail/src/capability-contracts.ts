@@ -1058,9 +1058,13 @@ export const ConversationStatusUpdateInputSchema = z
 export const ConversationKeepInputSchema = z
   .object({ mailboxId: MailboxIdInputSchema, conversationId: ConversationIdInputSchema })
   .strict();
+export const ConversationKeepReleaseInputSchema = ConversationKeepInputSchema.extend({
+  reason: z.string().trim().max(500).optional().describe("Optional reason for lifting the keep, recorded in the audit trail."),
+});
 export const ConversationKeepDataSchema = z
   .object({
     conversationId: ResourceShortIdSchema,
+    canLift: z.boolean(),
     keptAt: TimestampSchema,
     keptBy: z
       .object({
