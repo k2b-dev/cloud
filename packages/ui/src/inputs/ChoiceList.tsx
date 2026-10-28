@@ -1,4 +1,4 @@
-import { For, type JSX, Show } from "solid-js";
+import { Index, type JSX, Show } from "solid-js";
 import { createFieldMeta, Field, fieldDescribedBy } from "../internal/field";
 import { radioKeyTarget } from "../internal/radio-keys";
 import type { ValueFieldProps } from "./field-contract";
@@ -65,10 +65,11 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
         aria-disabled={props.disabled ? "true" : undefined}
         aria-busy={props.busy ? "true" : undefined}
       >
-        <For each={props.options}>
+        {/* Rows stay by position, so options rebuilt with new objects keep their buttons and the focus on them. */}
+        <Index each={props.options}>
           {(option, index) => {
-            const checked = () => value() === option.value;
-            const descriptionId = `${meta.controlId}-option-${index()}`;
+            const checked = () => value() === option().value;
+            const descriptionId = `${meta.controlId}-option-${index}`;
             return (
               <>
                 <button
@@ -76,12 +77,12 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
                   role="radio"
                   class="k2b-choice-list__option"
                   aria-checked={checked()}
-                  aria-describedby={option.description ? descriptionId : undefined}
+                  aria-describedby={option().description ? descriptionId : undefined}
                   disabled={props.disabled}
-                  tabIndex={tabStop(option, index()) ? 0 : -1}
-                  onClick={() => choose(index())}
+                  tabIndex={tabStop(option(), index) ? 0 : -1}
+                  onClick={() => choose(index)}
                   onKeyDown={(event) => {
-                    const target = radioKeyTarget(event.key, index(), props.options.length);
+                    const target = radioKeyTarget(event.key, index, props.options.length);
                     if (target === undefined) return;
                     event.preventDefault();
                     choose(target, true);
@@ -90,8 +91,8 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
                   <span class="k2b-choice-list__radio" aria-hidden="true" />
                   <span class="k2b-choice-list__text">
                     <span class="k2b-choice-list__label">
-                      {option.label}
-                      <Show when={option.marker}>{(marker) => <span class="k2b-choice-list__marker">{marker()}</span>}</Show>
+                      {option().label}
+                      <Show when={option().marker}>{(marker) => <span class="k2b-choice-list__marker">{marker()}</span>}</Show>
                       {/* The spinner's place is always there, so a save starting or ending moves nothing. */}
                       <span class="k2b-choice-list__busy">
                         <Show when={checked() && props.busy}>
@@ -99,9 +100,9 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
                         </Show>
                       </span>
                     </span>
-                    <Show when={option.description}>
+                    <Show when={option().description}>
                       <span class="k2b-choice-list__description" id={descriptionId}>
-                        {option.description}
+                        {option().description}
                       </span>
                     </Show>
                   </span>
@@ -112,7 +113,7 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
               </>
             );
           }}
-        </For>
+        </Index>
       </div>
     </Field>
   );
