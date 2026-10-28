@@ -16,7 +16,6 @@ import { AppWorkspace, Pagination, Placeholder, ScrollArea } from "@k2b/ui";
 import { renderToString } from "solid-js/web";
 import { notebooksService } from "@/service";
 import { ssr } from "../../../../config";
-import { orderBookTree } from "../../../../lib/book-tree";
 import { resolvePresentationMode } from "../../../../lib/presentation-mode";
 import { requestedPresentationMode, withPresentationMode } from "../../../../lib/presentation-url";
 import { parseSidebarFilter } from "../../../../lib/sidebar-filter";
@@ -30,7 +29,7 @@ import NotebookSidebar from "../../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../../_components/sidebar/types";
 import WorkspaceEventBridge from "../../_components/sidebar/WorkspaceEventBridge.island";
 import { notebookWorkspaceMessages } from "../../messages";
-import { projectNotebook, projectTree } from "../../page-data";
+import { EMPTY_NAVIGATION, loadBookNavigation, loadSidebarWithoutNote, projectNotebook } from "../../page-data";
 
 const PER_PAGE = 50;
 
@@ -66,15 +65,13 @@ export default ssr<AuthContext>(async (c) => {
   const cookieHeader = c.req.header("Cookie");
   const settings = parseSettings(cookieHeader, notebook.shortId);
 
-  // Four parallel queries:
-  //   1. Note tree for sidebar
-  //   2. Page of notes-with-tag (filtered by ?search if any)
-  //   3. Total notes-with-tag (unfiltered) for the header counter
-  //   4. Sidebar badge counts
+  // Parallel queries:
+  //   1. Page of notes-with-tag (filtered by ?search if any)
+  //   2. Total notes-with-tag (unfiltered) for the header counter
+  //   3. Sidebar badge counts
   const workspaceCursor = await notebooksService.workspaceEvents.latestCursor({ notebookId });
-  const [snapshotNotebook, tree, paginatedResult, totalNotesForTag, attachmentCount, tags, favoriteRows, appUrl] = await Promise.all([
+  const [snapshotNotebook, paginatedResult, totalNotesForTag, attachmentCount, tags, favoriteRows, appUrl] = await Promise.all([
     notebooksService.notebook.get({ id: notebookId }),
-    notebooksService.note.getTree({ notebookId }),
     notebooksService.tag.listNotesForTag({
       notebookId,
       tag: tagParam,
@@ -97,7 +94,12 @@ export default ssr<AuthContext>(async (c) => {
   });
   const isBookMode = presentationMode === "book";
   const publicNotebook = projectNotebook(notebook);
-  const publicTree = projectTree(tree, notebook.shortId);
+  const sidebarFilter = parseSidebarFilter(new URL(c.req.url).searchParams);
+  // Book shows its reading order; the other modes show the bounded sidebar.
+  const [bookNavigation, sidebar] = await Promise.all([
+    isBookMode ? loadBookNavigation(notebook, null, locale) : Promise.resolve(EMPTY_NAVIGATION),
+    loadSidebarWithoutNote({ notebook, userId: user.id, sort: settings.treeSort, locale, filter: sidebarFilter }),
+  ]);
   const totalPages = Math.max(1, Math.ceil(paginatedResult.total / PER_PAGE));
   const baseHref = buildTagPageUrl(notebook.shortId, tagParam);
   const paginationQuery = new URLSearchParams({ mode: presentationMode });
@@ -106,7 +108,7 @@ export default ssr<AuthContext>(async (c) => {
 
   const ctx: NotebookContext = {
     notebook: publicNotebook,
-    tree: publicTree,
+    ...sidebar,
     selectedNoteId: null,
     userId: user.id,
     settings,
@@ -118,7 +120,7 @@ export default ssr<AuthContext>(async (c) => {
     tags,
     workspaceCursor,
     dateConfig: getDateConfig(c),
-    sidebarFilter: parseSidebarFilter(new URL(c.req.url).searchParams),
+    sidebarFilter,
     presentationMode: requestedPresentationMode(new URL(c.req.url).searchParams),
   };
 
@@ -145,7 +147,7 @@ export default ssr<AuthContext>(async (c) => {
           notebookName={notebook.name}
           notebookIcon={notebook.icon}
           selectedNoteId={null}
-          tree={orderBookTree(publicTree, { id: (node) => node.id, homeId: publicNotebook.homepageNoteId, locale })}
+          navigation={bookNavigation}
           tags={tags}
           activeTag={tagParam}
           html={html}

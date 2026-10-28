@@ -43,7 +43,7 @@ export const isRetryableDictationError = (error: unknown): boolean => {
 export const processAiDictation = async (
   id: string,
   signal: AbortSignal,
-  run: (input: RunAiTranscriptionInput) => Promise<{ text: string; modelProfileId: string }> = runAiTranscription,
+  run: (input: RunAiTranscriptionInput) => Promise<{ text: string; modelId: string }> = runAiTranscription,
 ): Promise<void> => {
   const token = crypto.randomUUID();
   const [task] = await sql<ClaimedDictation[]>`
@@ -57,7 +57,7 @@ export const processAiDictation = async (
     name: "ai.dictation",
     source: "ai:dictations",
     category: "ai",
-    attributes: { dictationId: id, conversationId: task.conversation_id, modelProfileId: task.model_profile_id, attempt: task.attempts },
+    attributes: { dictationId: id, conversationId: task.conversation_id, modelId: task.model_profile_id, attempt: task.attempts },
   });
   let failure: AiTranscriptionError | undefined;
   const canceled = new AbortController();
@@ -92,7 +92,7 @@ export const processAiDictation = async (
       traceParent: span,
       file: new Blob([new Uint8Array(task.source_bytes)]),
       filename: task.source_path,
-      requestedModelId: task.model_profile_id,
+      model: { id: task.model_profile_id },
       language: task.language ?? undefined,
       signal: combined,
       attribution: { userId: task.user_id, conversationId: task.conversation_id },
@@ -109,7 +109,7 @@ export const processAiDictation = async (
     log[combined.aborted ? "info" : retry ? "warn" : "error"](failure.message, {
       dictationId: id,
       traceId: span.traceId,
-      modelProfileId: task.model_profile_id,
+      modelId: task.model_profile_id,
       attempt: task.attempts,
       retry,
       errorCode: failure.code,

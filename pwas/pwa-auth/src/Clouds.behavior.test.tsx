@@ -159,6 +159,8 @@ for (const scenario of [
 
 for (const scenario of ["approve", "deny", "stale", "uncertain", "expired", "load", "digest", "focus", "focus-unknown"] as const) {
   test(`Action review: ${scenario}`, async () => {
+    const time = Date.parse("2026-10-23T13:00:00.000Z");
+    const loaded = Promise.withResolvers<void>();
     const dom = createDomTestHarness();
     const { Clouds } = await import("./Clouds");
     const { closeDialogs } = await import("./dialog");
@@ -185,14 +187,14 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "expired", "loa
       truncated: true,
       argsDigest: "input",
       digest: "unused",
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      createdAt: new Date(time).toISOString(),
+      expiresAt: new Date(time + 60_000).toISOString(),
     };
     const decisions: string[] = [];
     const reads: string[] = [];
     const focusing = scenario === "focus" || scenario === "focus-unknown";
     const [actions, setActions] = createSignal(focusing ? [] : [view]);
-    const [now, setNow] = createSignal(Date.now());
+    const [now, setNow] = createSignal(time);
     const [focus, setFocus] = createSignal<import("./Clouds").ActionFocus | undefined>(
       focusing ? { actionId: "action", cloud: scenario === "focus" ? binding.issuer : undefined } : undefined,
     );
@@ -214,7 +216,7 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "expired", "loa
       decide: noop,
       action: async (_binding, actionId) => {
         reads.push(actionId);
-        await Bun.sleep(5);
+        await loaded.promise;
         if (scenario === "load") throw new Error("load failure");
         if (scenario === "digest") throw new AppApprovalClientError("INVALID_RESPONSE");
         return view;
@@ -255,6 +257,7 @@ for (const scenario of ["approve", "deny", "stale", "uncertain", "expired", "loa
         expect(dom.root.querySelector(".auth-action-row button")?.getAttribute("aria-busy")).toBe("true");
         expect(document.querySelector("dialog[open]")).toBeNull();
       }
+      loaded.resolve();
       await Bun.sleep(40);
       expect(focus()).toBeUndefined();
       if (scenario === "focus-unknown") {

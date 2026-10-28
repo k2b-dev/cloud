@@ -164,9 +164,9 @@ title: Sales 2026
 data: @sales
 x: Date
 y: [Revenue, Costs]
+format: EUR
 tooltip:
   label: Amount
-  format: EUR
 :::
 ```
 
@@ -193,7 +193,11 @@ y: Revenue
 
 Indent row items and tooltip fields by two spaces. Each row must match the column count. Do not combine `data` with inline rows. This is a small YAML-like format, not general YAML.
 
-The optional `tooltip` section accepts `label`, `format`, and `unit`. Formats are `number`, `percent`, or an uppercase three-letter currency code such as `EUR`. `unit` adds a short suffix. Pie, donut, and stat also use this format for their displayed number. A single value column supplies the tooltip label by default; y column names label the series.
+Set `format` and `unit` to write the chart's values: the value axis, values at bars, tooltips, and the table. Formats are `number`, `percent`, or an uppercase three-letter currency code such as `EUR`. `unit` adds a short suffix, such as `kg`. Pie, donut, and stat use this format for their displayed number.
+
+The chart titles its axes with the `x` column and the value name. A single value column names the value; `tooltip.label` can rename it. Two or more y columns get a legend with their names. A bar chart labels every category and shows each value next to its bar. Few short labels stand below columns. Otherwise, each category gets its own row, and the chart grows with the number of rows.
+
+The optional `tooltip` section accepts `label`, `format`, and `unit`. A tooltip `format` or `unit` applies to tooltips and the table. Without a chart `format`, it also formats the axis and the values at bars.
 
 A note can contain 20 charts. Each data list has at most 480 values, and a chart has at most 8 series. The shared chart also checks the total marks and whether the values and labels fit. Invalid settings show an error at the source line and keep the source visible. PDF export includes the chart followed by its data table.
 

@@ -6,13 +6,14 @@ import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { cssDeclarations, readShippedCssRules } from "../styles/css-contract-test-helpers";
+import { PERSON_COLORS } from "../surfaces/person-color";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-message-row-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { LocaleProvider, MessageRow, MessageSystemRow, startsMessageGroup } = await import("../index");
+const { LocaleProvider, MessageEventGroup, MessageEventRow, MessageRow, MessageSystemRow, startsMessageGroup } = await import("../index");
 type Props = Parameters<typeof MessageRow>[0];
 
 const nora = { name: "Nora Brandt" };
@@ -677,9 +678,60 @@ describe("MessageRow styles", () => {
       if (rule.selector.includes("k2b-message-row")) expect(rule.context, rule.selector).toBe(coarse);
   });
 
-  test("gives every avatar tint a rule", () => {
-    for (let tint = 0; tint < 10; tint++) {
-      expect(declarations(`.k2b-ui .k2b-avatar[data-tint="${tint}"]`).get("--k2b-avatar-hue")?.[0]).toMatch(/^#[0-9a-f]{6}$/);
-    }
+  test("gives every person color an avatar tint rule in the same order", () => {
+    PERSON_COLORS.forEach((color, tint) => {
+      expect(declarations(`.k2b-ui .k2b-avatar[data-tint="${tint}"]`).get("--k2b-avatar-hue")?.[0]).toBe(color);
+    });
+    expect(rules.some((rule) => rule.selector === `.k2b-ui .k2b-avatar[data-tint="${PERSON_COLORS.length}"]`)).toBe(false);
+  });
+});
+
+describe("MessageEventRow", () => {
+  test("shows icon, sentence, origin chip and time as one quiet line without a bubble", () => {
+    const html = renderToString(() =>
+      createComponent(MessageEventRow, {
+        icon: "ti ti-progress",
+        children: "Mara set the status to “In review”",
+        origin: { label: "Invitation", icon: "ti ti-circle", onSelect: () => {}, selectLabel: "Open thread Invitation" },
+        time: "09:50",
+        dateTime: "2026-10-22T09:50:00Z",
+      }),
+    );
+    expect(html).toMatch(/^<div class="k2b-message-event-row">/);
+    expect(textOf(html)).toBe("Mara set the status to “In review” Invitation 09:50");
+    expect(html).toContain('<i class="ti ti-progress" aria-hidden="true">');
+    expect(html).toContain('aria-label="Open thread Invitation"');
+    expect(html).not.toContain("k2b-message-row__bubble");
+  });
+
+  test("a group is one button that says whether it is open", () => {
+    const closed = renderToString(() =>
+      createComponent(MessageEventGroup, {
+        label: "4 changes to Invitation and Light test",
+        time: "09:50–09:58",
+        expanded: false,
+        onToggle: () => {},
+      }),
+    );
+    expect(closed).toMatch(/^<button type="button" class="k2b-message-event-row k2b-message-event-group" aria-expanded="false">/);
+    expect(textOf(closed)).toBe("4 changes to Invitation and Light test 09:50–09:58");
+    expect(closed).toContain("ti ti-chevron-down");
+    const open = renderToString(() => createComponent(MessageEventGroup, { label: "4 changes", expanded: true, onToggle: () => {} }));
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).toContain("ti ti-chevron-up");
+  });
+});
+
+describe("MessageEventRow link", () => {
+  test("makes the sentence a link to what the event is about, and stays plain text without one", () => {
+    const linked = renderToString(() =>
+      createComponent(MessageEventRow, { href: "/app/notebooks/book01/notes/note01?annotation=a1", children: "Mara left a comment" }),
+    );
+    expect(linked).toContain(
+      '<a class="k2b-message-event-row__text k2b-message-event-row__link" href="/app/notebooks/book01/notes/note01?annotation=a1">',
+    );
+    expect(linked).toContain("Mara left a comment</a>");
+    const plain = renderToString(() => createComponent(MessageEventRow, { children: "Mara set the status" }));
+    expect(plain).not.toContain("<a ");
   });
 });

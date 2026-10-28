@@ -57,15 +57,15 @@ test("toCsv writes Excel-friendly CSV and escapes formulas", async () => {
   expect(csv).toBe('﻿Name;Betrag;Notiz\r\n\'=SUM(A1);12,5;"sagt ""hallo""; tschüss"\r\n');
 });
 
-test("chart thins complete labels and always supplies an escaped accessible name", () => {
+test("chart keeps every complete label and always supplies an escaped accessible name", () => {
   const labels = Array.from({ length: 12 }, (_, i) => `Category ${i} long`);
   const markup = String(
     chart({ kind: "bar", width: 300, title: "A & B", subtitle: '"report"', data: labels.map((label) => ({ label, value: 1 })) }, "en-US"),
   );
   expect(markup).not.toContain("…");
-  expect(markup).toContain(labels[0]!);
+  // Every category keeps its complete label: the measured 300px frame draws one row per category.
   const axisText = [...markup.matchAll(/<text\b[^>]*>([^<]*)<\/text>/g)].map((match) => match[1]);
-  expect(labels.filter((label) => axisText.includes(label)).length).toBeLessThan(labels.length);
+  expect(labels.filter((label) => axisText.includes(label))).toEqual(labels);
   expect(markup).toContain('role="img" aria-label="A &amp; B — &quot;report&quot;"');
   expect(String(chart({ kind: "sparkline", data: [1, 2] }, "en-US"))).toContain('role="img"');
 });
@@ -441,7 +441,9 @@ test.each([false, true])("function-formatted bar ticks fit initially and after m
     expect(ticks.length).toBeGreaterThan(0);
     for (const tick of ticks) {
       const x = Number(/\bx="([^"]+)"/.exec(tick[1] ?? "")?.[1]);
-      expect(x - (tick[2]?.length ?? 0) * 6.7).toBeGreaterThanOrEqual(0);
+      // 11px sans with tabular figures: digits and letters about 6.7px, separators and spaces about 3.7px.
+      const width = [...(tick[2] ?? "")].reduce((sum, char) => sum + (/[\p{L}\p{N}€]/u.test(char) ? 6.7 : 3.7), 0);
+      expect(x - width).toBeGreaterThanOrEqual(0);
     }
     expect(svg).toContain(">12.000,00 €</text>");
   }
@@ -591,7 +593,7 @@ test("app tooltips keep German currency spacing and function formats through red
       expect(JSON.parse(decodeChartAttribute(mark[2]!))).toEqual(cloudAiChartTooltip(rows.columns(), row));
       expect(svg).toContain(
         "tooltip" in extra
-          ? "<title>Jan · Umsatz: 1.200,00\u00a0€</title>"
+          ? "<title>Jan · Umsatz: 1.200\u00a0€</title>"
           : `<title>Jan · Wert: 1200 ${"format" in extra ? "units" : "kWh"}</title>`,
       );
     }
@@ -611,7 +613,7 @@ test("chart print tables preserve German currency, custom formats and escaped te
     ),
   );
   expect(printedTable(currency).headers.map((col) => col.label)).toEqual(["Kategorie", "Umsatz"]);
-  expect(printedTable(currency).rows).toEqual([["Jan", "1.200,00\u00a0€"]]);
+  expect(printedTable(currency).rows).toEqual([["Jan", "1.200\u00a0€"]]);
 
   const custom = String(
     chart(
@@ -660,4 +662,14 @@ test("a gauge label with replacement patterns stays literal in its mark data", (
   const markup = String(chart({ kind: "gauge", title: "Margin", value: 42, label: "Profit $& costs $$" }, "en"));
   const encoded = /data-chart-datum="([^"]*)" data-chart-tooltip/.exec(markup)?.[1];
   expect(JSON.parse(decodeChartAttribute(encoded ?? "")).label).toBe("Profit $& costs $$");
+});
+
+test("a titled bar chart with many rows reserves the height of its title and every row", () => {
+  const data = Array.from({ length: 20 }, (_, index) => ({ label: `Northwestern coastal region ${index + 1}`, value: index + 1 }));
+  const markup = String(chart({ kind: "bar", title: "Regions", subtitle: "Fictional", data }, "en"));
+  const height = Number(/viewBox="0 0 480 ([\d.]+)"/.exec(markup)?.[1]);
+  expect(markup).toContain(`--k2b-chart-height:${height}px`);
+  const baselines = [...markup.matchAll(/stdlib-chart-category-label"[^>]*y="([\d.]+)"/g)].map((match) => Number(match[1]));
+  expect(baselines).toHaveLength(20);
+  expect(Math.max(...baselines)).toBeLessThan(height);
 });

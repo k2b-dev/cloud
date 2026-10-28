@@ -1,5 +1,5 @@
 import { ErrorResponseSchema } from "@k2b/cloud/contracts";
-import { type AuthContext, getLocale, jsonResponse, respond } from "@k2b/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, respond } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
@@ -86,6 +86,7 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
   return new Hono<AuthContext>()
     .post(
       "/by-base/:baseId/validate",
+      auth.readOnly,
       describeRoute({
         tags: ["Grids:Workflow"],
         summary: "Compile and bind workflow YAML",
@@ -119,6 +120,7 @@ export const createWorkflowCatalogRoutes = (overrides: Partial<WorkflowCatalogRo
     )
     .post(
       "/by-base/:baseId/autocomplete",
+      auth.readOnly,
       describeRoute({
         tags: ["Grids:Workflow"],
         summary: "Return permission-safe workflow language completions and diagnostics",

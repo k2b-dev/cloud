@@ -8,6 +8,7 @@ import { Hono } from "hono";
 import cliInstaller from "../../../cloud-cli/scripts/install.sh" with { type: "text" };
 import browserNotificationServiceWorker from "../browser-notifications/service-worker.js" with { type: "text" };
 import { ssr } from "../config";
+import aiAdminPage from "./admin/ai/page";
 import announcementsAdminPage from "./admin/announcements/page";
 import appCredentialsPage from "./admin/app-credentials/page";
 import appsAccessPage from "./admin/apps/page";
@@ -51,6 +52,8 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .use("/me/approvals/*", middleware.noTransform())
     // Several settings tabs serialize text users write (feedback, conversation titles) next to other users' records.
     .use("/admin/settings/*", middleware.noTransform())
+    .use("/admin/ai", middleware.noTransform())
+    .use("/admin/ai/*", middleware.noTransform())
     // Prevent browser from caching SSR pages (user state changes on login/logout)
     // Skip for branding assets — they set their own cache headers
     .use("*", async (c, next) => {
@@ -105,6 +108,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .get("/admin/outgoing-mail", auth.requireRole("admin", ssr.access), ...outgoingMailPage)
     .get("/admin/places-and-maps", auth.requireRole("admin", ssr.access), ...placesAndMapsPage)
     .get("/admin/settings", auth.requireRole("admin", ssr.access), ...settingsPage)
+    .get("/admin/ai", auth.requireRole("admin", ssr.access), ...aiAdminPage)
     // Keep legacy admin entry points useful when their optional UI apps are absent.
     .get("/admin/sync", auth.requireRole("admin", ssr.access), (c) => {
       const apps = getRuntimeContext(c).apps;
