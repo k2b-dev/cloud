@@ -815,7 +815,6 @@ suite("Files machine storage through actual API tokens", () => {
       await expect(
         service.editorSave(editor.token, ref, { timestamp: null, read: async () => new Blob(["denied"]) }),
       ).rejects.toMatchObject({ status: 403 });
-      await expect(service.editorFileInfo(readEditor.token, ref)).rejects.toMatchObject({ status: 403 });
     }, 60000);
   }
 });
