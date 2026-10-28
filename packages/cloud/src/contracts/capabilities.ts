@@ -58,6 +58,10 @@ export const CAPABILITY_ORIGINS = ["assistant", "mcp", "http", "app"] as const;
 export type CapabilityOrigin = (typeof CAPABILITY_ORIGINS)[number];
 export const CapabilityOriginSchema = z.enum(CAPABILITY_ORIGINS);
 
+/** Visible content provenance. It is metadata, never an authorization input. */
+export const CapabilityViaSchema = z.enum(["assistant", "mcp"]).nullable();
+export type CapabilityVia = z.infer<typeof CapabilityViaSchema>;
+
 /** Transports the resolved origin from the Cloud dispatcher to the app endpoint. */
 export const CAPABILITY_ORIGIN_HEADER = "x-cloud-capability-origin";
 
@@ -811,6 +815,8 @@ export type CapabilityExecutionContext = {
   requestId: string;
   /** Cloud surface that invoked this capability. */
   origin: CapabilityOrigin;
+  /** Framework-derived visible provenance; absent only in manually constructed contexts. */
+  via?: CapabilityVia;
   /** Caller cancellation or shared dispatch deadline; forward it to expensive work. */
   signal: AbortSignal;
 };
