@@ -5,7 +5,7 @@ import { createStore, reconcile } from "solid-js/store";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import type { ConversationPageSchema } from "../service/contracts";
-import { channelLine } from "./ChatList";
+import { ChatAvatar, channelLine } from "./ChatList";
 import { createChannelApi } from "./channel-api";
 
 type Page = z.infer<typeof ConversationPageSchema>;
@@ -183,8 +183,8 @@ export default function DiscoverChannels(props: {
                   const member = () => row.member;
                   return (
                     <li class="chat-discover__row">
-                      <span class="chat-discover__icon" aria-hidden="true">
-                        <i class={row.icon ?? "ti ti-speakerphone"} />
+                      <span class="contents" aria-hidden="true">
+                        <ChatAvatar row={row} />
                       </span>
                       <div class="min-w-0 flex-1">
                         <p class="truncate font-medium">{row.title}</p>

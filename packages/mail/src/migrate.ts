@@ -114,6 +114,8 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       kept_at timestamptz NOT NULL DEFAULT now()
     )
   `.simple();
+  await tx`CREATE INDEX IF NOT EXISTS conversation_keeps_admin_page_idx
+    ON mail.conversation_keeps (kept_at DESC, conversation_id DESC)`.simple();
   await tx`CREATE INDEX IF NOT EXISTS conversation_keeps_mailbox_idx
     ON mail.conversation_keeps (mailbox_id, kept_at DESC, conversation_id)`.simple();
   await tx`
@@ -153,6 +155,9 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`
     CREATE INDEX IF NOT EXISTS personal_mailbox_preferences_mailbox_idx ON mail.personal_mailbox_preferences USING btree (mailbox_id)
   `.simple();
+  await tx`ALTER TABLE mail.personal_mailbox_preferences
+    ADD COLUMN IF NOT EXISTS large_view text CHECK (large_view IN ('auto', 'columns', 'split')),
+    ADD COLUMN IF NOT EXISTS phone_view text CHECK (phone_view IN ('compact', 'detailed'))`.simple();
   // Body downloads in progress, so the recovery of claims a stopped worker left behind reads only
   // them instead of every message. Building it reads the table once, on the first start after the update.
   // Even when the index exists, CREATE INDEX waits for the table lock that a running BM25 build holds.

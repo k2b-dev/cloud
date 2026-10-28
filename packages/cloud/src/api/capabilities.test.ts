@@ -173,6 +173,98 @@ const dispatchCapability = (params: Parameters<typeof performDispatch>[0]) =>
   });
 
 describe("capability API", () => {
+  test("event catalog uses full literal type IDs and includes authorized subscribers outside the page", async () => {
+    const schema = z.strictObject({ id: z.uuid() });
+    const publisher = {
+      ...entry("alpha"),
+      ...compileCapabilities(
+        "alpha",
+        defineCapabilities({
+          protocolVersion: 2,
+          types: { item: { title: "Item", description: "An item." } },
+          events: {
+            created: { version: 1, title: "Created", description: "An item was created.", subject: "item", schema, automation: false },
+          },
+        }),
+      ),
+    };
+    const subscriber = {
+      ...entry("zeta"),
+      ...compileCapabilities(
+        "zeta",
+        defineCapabilities({
+          protocolVersion: 2,
+          subscribes: { "alpha.created": { version: 1, schema, run: async () => {} } },
+        }),
+      ),
+    };
+    const hidden = { ...subscriber, appId: "hidden", manifest: { ...subscriber.manifest, appId: "hidden" } };
+    const apps = [publisher, subscriber, hidden];
+    const lookups: string[] = [];
+    const result = CapabilityCatalogSchema.parse(
+      await loadCapabilityCatalogPage(
+        { limit: 1 },
+        {
+          listApps: async () =>
+            apps.map((app) => ({
+              ...summary(app),
+              ...(app.appId === "hidden" ? { access: { kind: "roles" as const, roles: ["admin"] } } : {}),
+            })),
+          eventSubscriptions: async () => [
+            {
+              appId: "zeta",
+              subscriptionId: "zeta:alpha.created@1",
+              eventType: "alpha.created",
+              version: 1,
+              state: "blocked",
+              reason: "event_not_declared",
+              firstSeenAt: "2000-01-01T00:00:00.000Z",
+            },
+            {
+              appId: "hidden",
+              subscriptionId: "hidden:alpha.created@1",
+              eventType: "alpha.created",
+              version: 1,
+              state: "active",
+              reason: null,
+              firstSeenAt: "2000-01-01T00:00:00.000Z",
+            },
+          ],
+          getCapability: async (id) => {
+            lookups.push(id);
+            return apps.find((app) => app.appId === id) ?? null;
+          },
+        },
+        "en",
+        resourceAuthority,
+      ),
+    );
+    expect(result.apps).toHaveLength(1);
+    expect(result.apps[0]?.events).toEqual([
+      {
+        type: "alpha.created",
+        version: 1,
+        title: "Created",
+        description: "An item was created.",
+        subject: "alpha.item",
+        place: null,
+        automation: false,
+        dataSchema: publisher.manifest.events![0]!.dataSchema,
+        subscribers: [
+          {
+            appId: "zeta",
+            subscriptionId: "zeta:alpha.created@1",
+            state: "blocked",
+            reason: "event_not_declared",
+            firstSeenAt: "2000-01-01T00:00:00.000Z",
+          },
+        ],
+      },
+    ]);
+    expect(lookups).toEqual(["alpha"]);
+    expect(result.page).toEqual({ hasMore: true, nextCursor: "alpha" });
+  });
+
   test("paginates the live catalog deterministically", async () => {
     const apps = [entry("zeta"), entry("alpha"), entry("middle")];
     const byId = new Map(apps.map((app) => [app.appId, app]));

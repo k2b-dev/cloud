@@ -30,6 +30,12 @@ const attachment = (id: string, filename: string, mimeType: string): SpaceItemAt
   createdAt: "2026-10-08T09:00:00.000Z",
 });
 
+/** The list item of the named attachment: its open button and preview. */
+const item = (root: HTMLElement, filename: string) =>
+  [...root.querySelectorAll<HTMLElement>(".k2b-file-grid__item")].find(
+    (entry) => entry.querySelector(".k2b-file-grid__name")?.textContent === filename,
+  );
+
 const waitFor = async (condition: () => boolean, label: string) => {
   for (let attempt = 0; attempt < 300; attempt += 1) {
     if (condition()) return;
@@ -67,8 +73,8 @@ domTest("Add image or video chooses through the shared chooser and uploads like 
     dom.root,
   );
   try {
-    // In the browser the tile names its video and reads only its start, so the first frame shows.
-    expect(dom.root.querySelector('[aria-label="Play tour.mp4"] video')?.getAttribute("src")).toBe(
+    // In the browser the preview names its video and reads only its start, so the first frame shows.
+    expect(item(dom.root, "tour.mp4")?.querySelector(".k2b-file-grid__preview video")?.getAttribute("src")).toBe(
       "/api/spaces/Space1/items/Item01/attachments/Att001/content#t=0.001",
     );
 
@@ -90,7 +96,7 @@ domTest("Add image or video chooses through the shared chooser and uploads like 
     add().click();
     await waitFor(() => changed === 1, "the upload");
     expect(uploads).toEqual(["POST /api/spaces/Space1/items/Item01/attachments walkthrough.mov video/quicktime"]);
-    expect(dom.root.querySelector('[aria-label="Play walkthrough.mov"]')).not.toBeNull();
+    expect(item(dom.root, "walkthrough.mov")?.querySelector(".k2b-file-grid__open")).not.toBeNull();
   } finally {
     dispose();
     fetchSpy.mockRestore();

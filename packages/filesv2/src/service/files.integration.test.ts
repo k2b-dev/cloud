@@ -96,7 +96,7 @@ suite("Files service and durable bindings", () => {
       groups: "groups",
       archive: "archive",
     },
-    freeipa: { enabled: true, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
+    freeipa: { autoCreate: false, enabled: true, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
     collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as DocumentFormat },
   };
   const set = async (key: string, value: unknown) => {

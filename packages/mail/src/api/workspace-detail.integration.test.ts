@@ -7,7 +7,6 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { messageForwardTextOf } from "../forward-text";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import * as access from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import * as mailboxes from "../service/mailboxes";
@@ -165,7 +164,6 @@ suite("Mail workspace conversation detail", () => {
 
   beforeAll(async () => {
     setSystemTime(anchor);
-    await migrate();
     owner = await createUser("owner");
     reader = await createUser("reader");
     revokedReader = await createUser("revoked");

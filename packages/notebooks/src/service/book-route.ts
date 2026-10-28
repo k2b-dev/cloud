@@ -4,6 +4,7 @@ import BookTagContent from "../frontend/[id]/_components/book/BookTagContent";
 import { type BookSnapshot, bookNavigationTarget } from "../frontend/[id]/_components/book/book-state";
 import { bookMessages } from "../frontend/[id]/_components/book/messages";
 import { parseQueryPages, QUERY_PAGES_PARAM } from "../lib/query-blocks";
+import { countOpenAnnotations } from "./annotation-count";
 import { loadBookNote } from "./book";
 import * as notebooks from "./notebooks";
 import * as tags from "./tags";
@@ -59,6 +60,7 @@ export const loadBookRoute = async (params: {
       selectedNoteId: null,
       locked: false,
       historyIncomplete: false,
+      openComments: 0,
       html: renderToString(() => Placeholder({ icon: "ti ti-book", description: count > 0 ? t.selectNote : t.empty })),
     };
     return { kind: "ok" as const, snapshot };
@@ -77,6 +79,7 @@ export const loadBookRoute = async (params: {
       selectedNoteId: loaded.note.shortId,
       locked: !!loaded.note.lockedAt,
       historyIncomplete: loaded.note.historyIncomplete,
+      openComments: await countOpenAnnotations(loaded.note.id).catch(() => 0),
     };
     return { kind: "ok" as const, snapshot };
   }
@@ -106,6 +109,7 @@ export const loadBookRoute = async (params: {
     activeTag: tag,
     locked: false,
     historyIncomplete: false,
+    openComments: 0,
   };
   return { kind: "ok" as const, snapshot };
 };

@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { WorkflowBoundPlan, WorkflowDependency, WorkflowInvocation, WorkflowJsonValue } from "../contracts";
+import { workflowAction } from "../definition";
+import { defineWorkflowModule } from "../module";
+import { createWorkflowDryRunPort } from "../store/actions";
 import { dryRunWorkflowPlan, executeWorkflowPlan, WorkflowLeaseLostError } from "./executor";
 import type {
   WorkflowDryRunActionHandler,
@@ -481,6 +484,40 @@ describe("workflow runtime executor", () => {
     expect(executeCalls).toBe(0);
     expect(planCalls).toBe(1);
     expect(result).toEqual({ state: "planned", output: "predicted", effects: [effect] });
+  });
+
+  test.each([undefined, null])("a planned dry-run outcome keeps output: null when the planner returns %p", async (output) => {
+    const repository = new FakeRepository();
+    const module = defineWorkflowModule({
+      id: "test",
+      version: 1,
+      inputs: [],
+      triggers: [],
+      limits: { maxSteps: 1 },
+      actions: {
+        validate: workflowAction.idempotent({
+          label: "Validate",
+          description: "Plans a validation failure without an output.",
+          config: { kind: "object", properties: {} },
+          run: async () => {
+            throw new Error("dry runs must not execute actions");
+          },
+          plan: async () => ({ summary: "Invalid request", issues: ["Invalid request"], ...(output === undefined ? {} : { output }) }),
+        }),
+      },
+    });
+    await dryRunWorkflowPlan({
+      ...runtime,
+      plan: plan([{ kind: "action", action: "validate", config: {}, sourcePath: ["steps", 0] }]),
+      invocation: invocation("dryRun"),
+      repository,
+      actions: createWorkflowDryRunPort(module),
+    });
+
+    expect(repository.finished[0]?.result).toMatchObject({
+      mode: "dryRun",
+      outcome: { state: "planned", output: null, issues: [{ reason: "Invalid request" }] },
+    });
   });
 
   test("restores a completed action and lets its hook rebuild variable state", async () => {
@@ -1374,4 +1411,91 @@ test("number comparisons wait for unresolved application dependencies", async ()
     });
     expect(result).toMatchObject({ state: "waiting", dependency, step: { key: "steps.0" } });
   }
+});
+
+test("unavailable planned outputs keep exists and copied values unknown, including restoration", async () => {
+  const repository = new FakeRepository();
+  const observations: Array<boolean | undefined> = [];
+  const workflow = plan([
+    { kind: "action", action: "ai", config: { saveAs: "answer" }, sourcePath: ["steps", 0] },
+    { kind: "action", action: "copy", config: { saveAs: "copied" }, sourcePath: ["steps", 1] },
+    {
+      kind: "if",
+      condition: { operator: "exists", reference: "copied" },
+      sourcePath: ["steps", 2],
+      then: [{ kind: "action", action: "effect", config: {}, sourcePath: ["steps", 2, "then", 0] }],
+      else: [{ kind: "action", action: "effect", config: {}, sourcePath: ["steps", 2, "else", 0] }],
+    },
+  ]);
+  const actions = dryRunActions({
+    ai: {
+      plan: async (context) => ({
+        state: "planned",
+        effects: [],
+        issues: [{ state: "indeterminate", reason: "AI unavailable", step: context.step }],
+      }),
+    },
+    copy: { plan: async (context) => ({ state: "planned", effects: [], output: await context.evaluate("${{ answer }}") }) },
+    effect: {
+      plan: async (context) => {
+        observations.push(context.dependsOnUnknown);
+        return { state: "planned", effects: [] };
+      },
+    },
+  });
+  await dryRunWorkflowPlan({ ...runtime, plan: workflow, invocation: invocation("dryRun"), repository, actions });
+  expect(observations).toEqual([true, true]);
+  observations.length = 0;
+  // Restore only the AI step, then evaluate its consumers again.
+  for (const key of repository.completed.keys()) if (!key.endsWith("steps.0")) repository.completed.delete(key);
+  await dryRunWorkflowPlan({ ...runtime, plan: workflow, invocation: invocation("dryRun"), repository, actions });
+  expect(observations).toEqual([true, true]);
+});
+
+test("restoring an unknown terminal branch preserves uncertainty in later steps", async () => {
+  const repository = new FakeRepository();
+  const observations: Array<boolean | undefined> = [];
+  const workflow = plan([
+    { kind: "action", action: "ai", config: { saveAs: "answer" }, sourcePath: ["steps", 0] },
+    { kind: "action", action: "copy", config: { saveAs: "copied" }, sourcePath: ["steps", 1] },
+    {
+      kind: "if",
+      sourcePath: ["steps", 2],
+      condition: { operator: "exists", reference: "copied" },
+      then: [{ kind: "action", action: "stop", config: {}, sourcePath: ["steps", 2, "then", 0] }],
+      else: [],
+    },
+    { kind: "action", action: "capture", config: {}, sourcePath: ["steps", 3] },
+    {
+      kind: "if",
+      sourcePath: ["steps", 4],
+      condition: { operator: "exists", reference: "copied" },
+      then: [{ kind: "action", action: "capture", config: {}, sourcePath: ["steps", 4, "then", 0] }],
+      else: [{ kind: "action", action: "capture", config: {}, sourcePath: ["steps", 4, "else", 0] }],
+    },
+  ]);
+  const actions = dryRunActions({
+    ai: {
+      plan: async (context) => ({
+        state: "planned",
+        effects: [],
+        issues: [{ state: "indeterminate", reason: "Unavailable", step: context.step }],
+      }),
+    },
+    copy: { plan: async (context) => ({ state: "planned", effects: [], output: await context.evaluate("${{ answer }}") }) },
+    stop: { plan: async () => ({ state: "terminal", status: "succeeded", effects: [] }) },
+    capture: {
+      plan: async (context) => {
+        observations.push(context.dependsOnUnknown);
+        return { state: "planned", effects: [] };
+      },
+    },
+  });
+  const options = { ...runtime, plan: workflow, invocation: invocation("dryRun"), repository, actions };
+  await dryRunWorkflowPlan(options);
+  expect(observations).toEqual([true, true, true]);
+  observations.length = 0;
+  for (const key of repository.completed.keys()) if (key.includes("steps.3") || key.includes("steps.4")) repository.completed.delete(key);
+  await dryRunWorkflowPlan(options);
+  expect(observations).toEqual([true, true, true]);
 });

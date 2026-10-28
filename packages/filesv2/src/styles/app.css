@@ -1118,3 +1118,28 @@
     transition: none;
   }
 }
+
+/* Details panel in the shared outline: the one main action in a quiet tint of
+   the app colour, a quiet line for an empty section, and image thumbnails
+   that fill the file list's preview slot. */
+.k2b-ui .k2b-button.filesv2-details-main {
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+}
+.k2b-ui .k2b-button.filesv2-details-main:not(:disabled, [aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);
+}
+.k2b-ui .filesv2-details-none {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+.k2b-file-grid__preview > .filesv2-thumbnail {
+  width: 100%;
+  height: 100%;
+  flex-basis: auto;
+}
+.k2b-file-grid__preview > .filesv2-thumbnail img {
+  border-radius: 0;
+}

@@ -23,7 +23,7 @@ is no second Cloud-specific chat component set.
 ## Compose a Cloud chat
 
 ```tsx
-import type { AiPublicModelProfile } from "@k2b/cloud/ai";
+import type { AiPeopleModels } from "@k2b/cloud/ai";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
   AiChatActionsProvider,
@@ -36,7 +36,7 @@ import { createSignal } from "solid-js";
 
 export function ItemChat(props: {
   itemId: string;
-  models: AiPublicModelProfile[];
+  models: AiPeopleModels["options"][number][];
   selectedModelId: () => string;
   selectModel: (id: string) => void;
 }) {
@@ -72,7 +72,7 @@ export function ItemChat(props: {
             const payload = aiComposerSendInput(input);
             return input.intent === "steer"
               ? chat.steer(payload.message ?? "")
-              : chat.send({ ...payload, modelProfileId: props.selectedModelId() });
+              : chat.send({ ...payload, model: { id: props.selectedModelId() } });
           }}
           onStop={async () => {
             await chat.abort();

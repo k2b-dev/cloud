@@ -41,7 +41,8 @@ export const tableMessages = i18n.define({
       overlappingGroups:
         "Groups may overlap: a record with multiple linked targets contributes to each group. Counts represent record-link pairs.",
       loadMoreGroups: "Load more groups",
-      groupDetails: "Group details",
+      group: "Group",
+      groupedBy: ({ fields }: { fields: string }) => `Grouped by ${fields}`,
       closeDetails: "Close details",
       closeGroupPanel: "Close group detail panel",
       ungroupedRecords: "Ungrouped records",
@@ -108,7 +109,8 @@ export const tableMessages = i18n.define({
       overlappingGroups:
         "Gruppen können sich überschneiden: Ein Datensatz mit mehreren verknüpften Zielen gehört zu jeder dieser Gruppen. Die Anzahl entspricht Datensatz-Verknüpfungs-Paaren.",
       loadMoreGroups: "Weitere Gruppen laden",
-      groupDetails: "Gruppendetails",
+      group: "Gruppe",
+      groupedBy: ({ fields }) => `Gruppiert nach ${fields}`,
       closeDetails: "Details schließen",
       closeGroupPanel: "Gruppendetails schließen",
       ungroupedRecords: "Nicht gruppierte Datensätze",

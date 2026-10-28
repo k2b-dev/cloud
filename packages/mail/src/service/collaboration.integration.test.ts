@@ -3,7 +3,6 @@ import { Readable } from "node:stream";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import {
@@ -68,7 +67,6 @@ suite("mail collaboration backend", () => {
   let outsiderContext: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const createUser = async (role: string) => {
       const uid = `mail-collab-${role}-${suffix}`;
       const displayName = `${role[0]!.toUpperCase()}${role.slice(1)} Collaboration Test`;

@@ -3,6 +3,12 @@ import type { AiModelProfile } from "../../ai/types";
 import { workflowAiHash, workflowAiModelHash } from "./policy";
 
 const profile: AiModelProfile = {
+  modelId: "model",
+  providerId: "model",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "model",
   label: "Model",
   provider: "openai",

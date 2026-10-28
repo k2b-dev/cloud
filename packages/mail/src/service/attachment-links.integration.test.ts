@@ -8,7 +8,6 @@ import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import {
   claimPublicAttachmentDownload,
@@ -66,7 +65,6 @@ suite("public attachment links", () => {
   let attachmentId: string;
 
   beforeAll(async () => {
-    await migrate();
     const users = await sql<{ id: string; uid: string; admin: boolean }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES

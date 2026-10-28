@@ -16,6 +16,12 @@ export const CREATE_LIMIT = 30;
 export const CREATE_WINDOW_SECONDS = 3_600;
 export const MESSAGE_PAGE_SIZE = 50;
 export const MAX_MESSAGE_REFS = 10;
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_MESSAGE_ATTACHMENTS = 10;
+export const MAX_UNSENT_ATTACHMENTS = 20;
+// One subject can fill its unsent budget per minute across conversations.
+export const UPLOAD_LIMIT = MAX_UNSENT_ATTACHMENTS;
+export const UPLOAD_WINDOW_SECONDS = 60;
 export const MAX_MESSAGE_LINKS = 20;
 export const MAX_MESSAGE_LINK_LENGTH = 2048;
 export const SHARED_PAGE_SIZE = 30;
@@ -442,6 +448,19 @@ export const ReactionSchema = z.strictObject({ emoji: EmojiSchema, count: z.numb
 export const ReactionsSchema = z.strictObject({
   items: z.array(ReactionSchema.extend({ people: z.array(z.string()).max(REACTION_PEOPLE) })).max(REACTIONS_PER_MESSAGE),
 });
+export const AttachmentViewSchema = z.strictObject({
+  id: ShortIdSchema,
+  name: z.string().min(1).max(255),
+  mimeType: z.string().min(1).max(255),
+  size: z.number().int().min(0).max(MAX_ATTACHMENT_BYTES),
+  kind: z.enum(["image", "file"]),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+  href: z.string(),
+});
+export type AttachmentView = z.infer<typeof AttachmentViewSchema>;
+export const AttachmentParamSchema = ConversationParamSchema.extend({ attachment: ShortIdSchema });
+export const UploadAttachmentSchema = z.strictObject({ file: z.file(), thread: ThreadIdSchema.optional() });
 export const MentionPrincipalSchema = z.strictObject({
   type: z.enum(["user", "service_account"]),
   id: z.uuid().transform((id) => id.toLowerCase()),
@@ -480,13 +499,19 @@ export const validMentionRanges = (body: string, mentions: readonly Mention[]) =
   return true;
 };
 export const MessageSchema = z.object({
+  attachments: z.array(AttachmentViewSchema).max(MAX_MESSAGE_ATTACHMENTS),
   mentions: z.array(MentionSchema.extend({ name: z.string() })).max(MAX_MENTIONS),
   reactions: z.array(ReactionSchema).max(REACTIONS_PER_MESSAGE),
   refs: z.array(CloudResourceRefSchema).max(MAX_MESSAGE_REFS),
   thread: ThreadIdSchema.nullable(),
   replyTo: z
     .union([
-      z.strictObject({ id: MessageIdSchema, author: AuthorSchema, preview: z.string() }),
+      z.strictObject({
+        id: MessageIdSchema,
+        author: AuthorSchema,
+        preview: z.string(),
+        attachments: z.array(AttachmentViewSchema).max(MAX_MESSAGE_ATTACHMENTS),
+      }),
       z.strictObject({ deleted: z.literal(true) }),
     ])
     .nullable(),
@@ -524,11 +549,16 @@ export const SendMessageSchema = z
     clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
     body: z.union([MessageBodySchema, z.literal("")]),
     refs: MessageRefsSchema.optional(),
+    attachments: z
+      .array(ShortIdSchema)
+      .max(MAX_MESSAGE_ATTACHMENTS)
+      .refine((ids) => new Set(ids).size === ids.length)
+      .optional(),
     mentions: z.array(MentionSchema).max(MAX_MENTIONS).optional(),
     thread: ThreadIdSchema.optional(),
     replyTo: MessageIdSchema.optional(),
   })
-  .refine((message) => message.body !== "" || (message.refs?.length ?? 0) > 0)
+  .refine((message) => message.body !== "" || (message.refs?.length ?? 0) > 0 || (message.attachments?.length ?? 0) > 0)
   .refine((message) => validMentionRanges(message.body, message.mentions ?? []));
 export const MentionCandidateQuerySchema = z.strictObject({
   q: z
@@ -581,6 +611,8 @@ const sharedMetadata = {
   createdAt: z.iso.datetime(),
 };
 export const SharedItemSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("image"), attachment: AttachmentViewSchema, ...sharedMetadata }),
+  z.strictObject({ kind: z.literal("document"), attachment: AttachmentViewSchema, ...sharedMetadata }),
   z.strictObject({ kind: z.literal("link"), url: z.url({ protocol: /^https?$/ }).max(MAX_MESSAGE_LINK_LENGTH), ...sharedMetadata }),
   z.strictObject({ kind: z.literal("element"), ref: CloudResourceRefSchema, ...sharedMetadata }),
 ]);
@@ -653,6 +685,7 @@ export const ChatLiveEventSchema = z.discriminatedUnion("type", [
     createdAt: true,
   }).extend({
     type: z.literal("summary"),
+    attachments: z.array(AttachmentViewSchema).max(MAX_MESSAGE_ATTACHMENTS).optional(),
     preview: z.string().nullable(),
     mention: z.boolean(),
   }),

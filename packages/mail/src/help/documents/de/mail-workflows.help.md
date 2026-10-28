@@ -49,6 +49,28 @@ steps:
 
 Wähle vor dem Speichern **Prüfen**. Die Validierung prüft striktes YAML, das Mail-Vokabular, Wertepfade, zugängliche Katalognamen und unvereinbare Aktionskombinationen.
 
+## Probelauf ohne KI {icon="player-play"}
+
+Wähle **Probelauf**. Er prüft die letzten 50 Mails, die neueste zuerst.
+Du kannst bis zu 100 Mails prüfen. Der Probelauf ändert keine Mail.
+Er sendet nichts, erstellt keine Entwürfe und ruft keine KI auf.
+Mit **Abbrechen** stoppst du weitere Prüfschritte.
+
+Du siehst die Werte aus den Bedingungen und die vorgesehenen Aktionen.
+**Übersprungen** bedeutet: Ein ausdrücklicher Ausschluss greift.
+Das kann etwa ein Newsletter sein, den die Regel mit `not` ausschließt.
+**Nicht** bedeutet: Die Bedingungen treffen nicht zu.
+
+Bei KI-Schritten siehst du nur, dass sie starten würden.
+KI-Ergebnisse und davon abhängige Zweige bleiben offen.
+Die Spanne der KI-Aufrufe zeigt sichere und höchstens mögliche Aufrufe.
+Ziele werden vorab geprüft. Fehlende Ziele und fehlender Postfachzugriff
+erscheinen als Probleme.
+
+Wer eine gespeicherte Regel ansehen darf, kann ihre aktuelle Version prüfen.
+Für ungespeichertes YAML brauchst du wie beim Speichern die Administration
+des Postfachs.
+
 ## Eingaben deklarieren {icon="point"}
 
 Mail unterstützt zwei Eingabetypen:
@@ -236,7 +258,7 @@ Referenzfelder namens `message`, `conversation` oder `draft` akzeptieren einen r
 | `setVariable` | beliebiger JSON-kompatibler `value` | `name` erhält `core.value` | keine |
 | `succeed`, `fail` | Meldung für Betriebspersonal: höchstens 1.000 Zeichen | Endzustand | keine |
 
-`createDraft.to` ist erforderlich. `cc` und `bcc` sind optional. `createReplyDraft` leitet Empfänger und Betreff aus der Quellnachricht ab. Das Feld `model` akzeptiert die ID eines aktivierten KI-Modellprofils mit höchstens 120 Zeichen. KI-Ausgaben, Entwurfsausgaben, Referenzausgaben und Variablen sind nur für spätere Schritte im selben erreichbaren Gültigkeitsbereich sichtbar.
+`createDraft.to` ist erforderlich. `cc` und `bcc` sind optional. `createReplyDraft` leitet Empfänger und Betreff aus der Quellnachricht ab. Das optionale Feld `model` akzeptiert `{ class: balanced }` oder `{ id: "model:variant" }`. Die Klassen heißen `fast`, `balanced`, `thorough` und `maximum`; eine explizite Varianten-ID darf höchstens 241 Zeichen haben. KI-Ausgaben, Entwurfsausgaben, Referenzausgaben und Variablen sind nur für spätere Schritte im selben erreichbaren Gültigkeitsbereich sichtbar.
 
 Auf einem erreichbaren Pfad können beliebig viele Änderungen mit `addFlag`, `removeFlag`, `addKeyword` und `removeKeyword` vor höchstens einem `moveMessage`, `copyMessage`, `archiveMessage`, `trashMessage` oder `junkMessage` für dieselbe Nachricht stehen. Nach diesem Verschieben oder Kopieren kann keine Anbieteraktion mehr folgen; Mail lehnt eine solche Definition mit `action.sequence` ab. Die erste Anbieteraktion prüft den Zustand der Nachricht beim Start des Laufs. Spätere erwarten zusätzlich die bestätigten Änderungen dieses Laufs, sodass ein Flag, das der Workflow selbst gesetzt hat, sein Verschieben nicht verhindert. Behalte diese Änderungen in einem Workflow: Ändern zwei Workflows dieselbe Nachricht, kann einer davon scheitern. Ein Schritt deines Workflows zum Verschieben, Archivieren, Löschen oder Verschieben in Spam wird nicht übersprungen: Er scheitert, wenn die Nachricht ihren Ordner bereits verlassen hat oder gerade durch eine andere Änderung verschoben wird.
 
@@ -343,7 +365,7 @@ steps:
 
 Die allgemeinen Feldtypen sind `text`, `number`, `boolean`, `date_time` und `enum`. Optionale Felder dürfen fehlen. Die Ausgabe lehnt nicht deklarierte Felder ab. Der geführte Editor für eingehende E-Mails stellt automatisch bereit: den festen Vertrag für Terminfelder, eine ausdrückliche IANA-Zeitzone, die Empfangszeit der Nachricht und die Schutzbedingung gegen erfundene Angaben.
 
-Ein optionales `model` wählt für eine Aktion ein aktiviertes Profil aus. Andernfalls verwendet Mail zuerst das Workflow-Modell der Plattform, dann das Hintergrundmodell und anschließend den Plattformstandard. Jede neu erstellte KI-Aufgabe zählt einmal gegen das Limit `maxAiCalls`. Standardmäßig liegt dieses Limit bei 10 pro Ausführung.
+Ohne `model` wird die Klasse `balanced` angefragt. Nur leere Klassenzuweisungen weichen auf eine andere Klasse aus; fehlender Zugriff, ausgeschöpfte Budgets, deaktivierte Modelle und fehlende Fähigkeiten stoppen die Aktion. Eine explizite Varianten-ID weicht nie auf ein anderes Modell aus. Jede neu erstellte KI-Aufgabe zählt einmal gegen das Limit `maxAiCalls`. Standardmäßig liegt dieses Limit bei 10 pro Ausführung.
 
 KI-Aufgaben überstehen Neustarts von Workern. Brichst du die Mail-Ausführung ab, stoppt sie die laufende Inferenz, wo das möglich ist, und verwirft verspätete Ausgaben. Eine Testausführung kann die KI-Ausgabe nicht vorhersagen. Deshalb meldet sie den nicht verfügbaren Wert, statt mit einer erfundenen Klassifizierung oder einem erfundenen Entwurf fortzufahren.
 
