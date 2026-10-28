@@ -72,10 +72,20 @@ function stubDevice({
   if (play !== "normal") {
     const original = HTMLMediaElement.prototype.play;
     let failures = play === "refuse" ? 1 : 2;
+    // Such a player does not start the picture by itself either, which WebKit does for autoplay.
+    let stalling = true;
+    document.addEventListener(
+      "play",
+      ({ target }) => {
+        if (stalling && target instanceof HTMLMediaElement) target.pause();
+      },
+      true,
+    );
     HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
-      if (failures-- <= 0) return original.call(this);
-      // Such a player does not start the picture by itself either.
-      this.autoplay = false;
+      if (failures-- <= 0) {
+        stalling = false;
+        return original.call(this);
+      }
       return play === "refuse" ? Promise.reject(new DOMException("Playback needs a gesture.", "NotAllowedError")) : new Promise(() => {});
     };
   }
