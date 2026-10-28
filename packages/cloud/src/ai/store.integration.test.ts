@@ -69,7 +69,7 @@ suite("AI conversation store integration", () => {
       const ref = { type: "spaces.item", id: "Itm001" };
       await aiConversations.submitChatTurn({
         conversationId: conversation.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig,
         userMessage: userMessage("Read the plan"),
         resources: [{ ref, title: "Plan", context: "Task in Planning", status: "Open" }],
