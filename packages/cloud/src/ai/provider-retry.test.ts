@@ -1,19 +1,30 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { Provider, ProviderEvent } from "@k2b/nessi";
 import type { AiCallDetails, AiCallStatus } from "./inference-calls";
 import { createAiProvider } from "./provider";
+import * as connections from "./provider-connections";
 import { retryAfterMs } from "./provider-fetch";
 import { type AiProviderRetry, retryTransientProviderErrors } from "./provider-retry";
 import { inferenceProvider } from "./quota-provider";
 import type { AiModelProfile } from "./types";
 
+// Adapter unit tests own HTTP fakes; provider status persistence belongs to its integration seam.
+beforeEach(() => spyOn(connections, "recordAiProviderStatus").mockResolvedValue(undefined));
+afterEach(() => mock.restore());
+
 const profile: AiModelProfile = {
+  modelId: "retry-model",
+  providerId: "retry-model",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "retry-model",
   label: "Retry model",
   provider: "openai-compatible",
   model: "mock",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "private",
   pricing: { inputPerMillion: 1, outputPerMillion: 2 },
 };
@@ -237,7 +248,7 @@ describe("retries against an HTTP provider", () => {
       responses = [rejected(status, {}), rejected(status, {})];
       const { booked, quota } = accounted();
       for await (const _ of quota.stream(prompt));
-      await expect(quota.complete(prompt)).rejects.toThrow(String(status));
+      await expect(quota.complete(prompt)).rejects.toThrow("AI provider request failed.");
       const expected = refused ? { input: 0, output: 0 } : { input: expect.any(Number), output: 0, estimated: true };
       expect({ status, usage: booked.map(({ usage }) => usage) }).toEqual({ status, usage: [expected, expected] });
       if (!refused) expect(booked.every(({ usage }) => (usage?.input ?? 0) > 0)).toBe(true);
@@ -252,7 +263,7 @@ describe("retries against an HTTP provider", () => {
     const events = [];
     for await (const event of quota.stream(prompt)) events.push(event);
     expect(events).toContainEqual({ type: "issue", issue: expect.objectContaining({ kind: "provider_error", retryable: true }) });
-    await expect(quota.complete(prompt)).rejects.toThrow("connection failed");
+    await expect(quota.complete(prompt)).rejects.toThrow("AI provider request failed.");
     expect(booked.map(({ usage }) => usage)).toEqual([
       { input: 0, output: 0 },
       { input: 0, output: 0 },

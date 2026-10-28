@@ -717,48 +717,47 @@ describe("Assistant quota administration", () => {
     await expect(adminCli.run(invalid.ctx)).rejects.toThrow();
     expect(invalid.calls).toHaveLength(0);
   });
-  test("pricing discovery and mutation preserve exact prices and optimistic concurrency", async () => {
+  test("model discovery and updates preserve exact prices and row revisions", async () => {
     const previous = { inputPerMillion: 0.25, outputPerMillion: 1.5 };
     const pricing = { inputPerMillion: 0.125001, outputPerMillion: 0 };
-    const models = { models: [{ id: "chat", label: "Chat", pricing: previous }] };
-    const read = createContext(["ai", "models", "pricing", "get"], {}, [jsonResponse(models)]);
+    const model = { id: "chat", label: "Chat", pricing: previous, revision: 7 };
+    const models = { models: [model] };
+    const read = createContext(["ai", "models", "list"], {}, [jsonResponse(models)]);
     read.ctx.options.output = "json";
     await adminCli.run(read.ctx);
+    expect(read.calls[0]?.path).toBe("/api/admin/core/ai/models");
     expect(JSON.parse(read.lines[0]!)).toEqual(models);
-    const write = createContext(["ai", "models", "pricing", "set"], { id: "chat", pricing: JSON.stringify(pricing), yes: true }, [
-      jsonResponse(models),
-      jsonResponse({ id: "chat", pricing }),
-    ]);
-    await adminCli.run(write.ctx);
-    expect(write.calls.map((call) => call.path)).toEqual([
-      "/api/admin/core/ai-quotas/models",
-      "/api/admin/core/ai-quotas/models/chat/pricing",
-    ]);
-    expect(write.calls[1]?.init?.method).toBe("PUT");
-    expect(JSON.parse(String(write.calls[1]?.init?.body))).toEqual({ pricing, expected: previous });
-    const remove = createContext(["ai", "models", "pricing", "set"], { id: "chat", pricing: "null", yes: true }, [
-      jsonResponse(models),
-      jsonResponse({ id: "chat", pricing: null }),
-    ]);
-    await adminCli.run(remove.ctx);
-    expect(JSON.parse(String(remove.calls[1]?.init?.body))).toEqual({ pricing: null, expected: previous });
+    for (const next of [pricing, null]) {
+      const write = createContext(["ai", "models", "update", "chat"], { input: JSON.stringify({ pricing: next }), yes: true }, [
+        jsonResponse(model),
+        jsonResponse({ ...model, pricing: next, revision: 8 }),
+      ]);
+      write.ctx.options.output = "json";
+      await adminCli.run(write.ctx);
+      expect(write.calls.map((call) => call.path)).toEqual(["/api/admin/core/ai/models/chat", "/api/admin/core/ai/models/chat"]);
+      expect(write.calls[1]?.init?.method).toBe("PATCH");
+      expect(JSON.parse(String(write.calls[1]?.init?.body))).toEqual({ pricing: next, revision: 7 });
+      expect(JSON.parse(write.lines[0]!)).toEqual({ ...model, pricing: next, revision: 8 });
+    }
   });
 
-  test("pricing mutation validates before requests and does not hide conflicts", async () => {
+  test("model price updates validate before requests and do not hide conflicts", async () => {
     for (const flags of [
-      { id: "chat", pricing: "null" },
-      { id: "chat", pricing: '{"inputPerMillion":-1,"outputPerMillion":1}', yes: true },
-      { id: "chat", pricing: '{"inputPerMillion":1}', yes: true },
+      { input: '{"pricing":null}' },
+      { input: '{"pricing":{"inputPerMillion":-1,"outputPerMillion":1}}', yes: true },
+      { input: '{"pricing":{"inputPerMillion":1}}', yes: true },
+      { input: '{"pricing":{"inputPerMillion":0.0000001,"outputPerMillion":1}}', yes: true },
     ]) {
-      const invalid = createContext(["ai", "models", "pricing", "set"], { ...flags, yes: flags.yes ?? false });
+      const invalid = createContext(["ai", "models", "update", "chat"], { ...flags, yes: flags.yes ?? false });
       await expect(adminCli.run(invalid.ctx)).rejects.toThrow();
       expect(invalid.calls).toHaveLength(0);
     }
-    const conflict = createContext(["ai", "models", "pricing", "set"], { id: "chat", pricing: "null", yes: true }, [
-      jsonResponse({ models: [{ id: "chat" }] }),
-      jsonResponse({ message: "Model prices changed." }, 409),
+    const conflict = createContext(["ai", "models", "update", "chat"], { input: '{"pricing":null}', yes: true }, [
+      jsonResponse({ id: "chat", revision: 7 }),
+      jsonResponse({ code: "conflict", message: "Model configuration changed.", current: { id: "chat", revision: 8 } }, 409),
     ]);
-    await expect(adminCli.run(conflict.ctx)).rejects.toThrow("Model prices changed.");
+    await expect(adminCli.run(conflict.ctx)).rejects.toThrow("Model configuration changed.");
+    expect(conflict.calls).toHaveLength(2);
     expect(conflict.lines).toHaveLength(0);
   });
 

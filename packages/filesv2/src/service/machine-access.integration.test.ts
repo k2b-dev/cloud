@@ -215,7 +215,15 @@ suite("Files machine storage through actual API tokens", () => {
         autoCreate: false,
         autoArchive: true,
       },
-      freeipa: { enabled: false, root: "freeipa", prefix, homes: "users", groups: "groups", archive: "archive" },
+      freeipa: {
+        enabled: false,
+        root: "freeipa",
+        prefix,
+        homes: "users",
+        groups: "groups",
+        archive: "archive",
+        autoCreate: false,
+      },
       collabora: { url: "https://office.example.test", internalUrl: office.url.origin, wopiOrigin: "", documentFormat: "odf" },
     });
   }, 60000);

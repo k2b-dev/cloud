@@ -20,7 +20,7 @@ const project = {
   description: "",
   icon: "",
   instructions: "",
-  defaultModelProfileId: null,
+  defaultModel: null,
   permission: "read" as const,
   revision: 1,
   createdAt: at,

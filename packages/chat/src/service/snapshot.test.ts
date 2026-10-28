@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { UserSchema } from "@k2b/cloud/contracts";
-import type { ChatContext } from "./access";
+import type { ChatRequestContext } from "../request-context";
 import { ConversationSchema } from "./contracts";
 import { conversations } from "./conversations";
 import { chatLive } from "./live";
@@ -10,7 +10,9 @@ import { loadChatView } from "./snapshot";
 const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
 
 const userId = "11111111-1111-4111-8111-111111111111";
-const context: ChatContext = {
+const context: ChatRequestContext = {
+  caller: { cookie: "test-session" },
+  credentialPrincipal: `user:${userId}`,
   accessSubject: { type: "user", userId },
   locale: "en",
   actor: {
@@ -38,6 +40,8 @@ const context: ChatContext = {
 };
 const conversation = ConversationSchema.parse({
   threads: 0,
+  channel: false,
+  member: true,
   id: "abcdef",
   name: "Private name",
   title: "Private name",
@@ -46,6 +50,8 @@ const conversation = ConversationSchema.parse({
   memberCount: 1,
   unread: 0,
   read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+  archived: false,
+  pinnedRank: null,
   withGuests: false,
   peerDeactivated: false,
   rev: 0,
@@ -118,4 +124,11 @@ test("SSR propagates failed sidebar and snapshot reads to the page's error state
   list.mockResolvedValue({ ok: true, data: { items: [], nextCursor: null } });
   spyOn(messages, "snapshot").mockResolvedValue({ ok: false, error: { code: "INTERNAL_ERROR", status: 500, message: "Snapshot failed" } });
   await expect(loadChatView(context, { conversationId: "abcdef" })).rejects.toThrow("Snapshot failed");
+});
+
+test("SSR applies archive and Unread filters before fetching the sidebar", async () => {
+  spyOn(chatLive, "cursor").mockResolvedValue("before-reads");
+  const list = spyOn(conversations, "list").mockResolvedValue({ ok: true, data: { items: [], nextCursor: null } });
+  await loadChatView(context, { archived: true, unread: true });
+  expect(list).toHaveBeenCalledWith({ ...context, query: { archived: "true", unread: "true" } });
 });

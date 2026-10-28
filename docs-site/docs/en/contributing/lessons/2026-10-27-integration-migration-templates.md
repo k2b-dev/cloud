@@ -1,0 +1,6 @@
+### Per-file migrations exhausted the integration hook budget
+
+- **What happened:** Mail integration setup and Pulse saved-query setup exceeded the 30 s hook budget under CI load, failing pull requests before their assertions ran (#1982).
+- **Root cause:** Private databases replayed the full Core migration path per file; Mail also migrated in its preload. The migration cost grew with the schema and multiplied across files.
+- **Error class:** Per-file test setup is too heavy for the hook budget.
+- **Guard:** The integration bootstrap publishes a source-keyed, fully migrated PostgreSQL template. Ordinary private fixtures clone it; schema migration tests retain empty databases. `test-database-template.integration.test.ts` measures readiness within three seconds and verifies isolation, concurrent construction, failed-build recovery, rebuilds after migration source changes, and cleanup that preserves active runs while reclaiming abandoned templates and builds. The runner computes the source hash once before launching files. `test-database-template.test.ts` covers transitive source and asset invalidation and safe database identifiers. The PWA Auth image build typechecks and runs unit tests with its selectively copied fixtures; its COPY list includes the gate's template and workspace dependencies for typechecking.

@@ -1,4 +1,5 @@
 import { redis } from "bun";
+import type { AccessSubject } from "../server/services/access";
 import { logger } from "../services/logging";
 
 const LEASE_MS = 120_000;
@@ -20,8 +21,15 @@ const SLOT_SCRIPT = `
   return 1
 `;
 
-export const acquire = async ({ userId, limit }: { userId: string; limit: number }): Promise<{ release(): Promise<void> } | null> => {
-  const key = `cloud:ai:openai-api:slots:${userId}`;
+export const acquire = async ({
+  subject,
+  limit,
+}: {
+  subject: AccessSubject;
+  limit: number;
+}): Promise<{ release(): Promise<void> } | null> => {
+  const principal = subject.type === "user" ? `user:${subject.userId}` : `service_account:${subject.serviceAccountId}`;
+  const key = `cloud:ai:openai-api:slots:${principal}`;
   const slot = crypto.randomUUID();
   const granted = await redis.send("EVAL", [SLOT_SCRIPT, "1", key, slot, String(LEASE_MS), String(limit)]);
   if (granted !== 1) return null;

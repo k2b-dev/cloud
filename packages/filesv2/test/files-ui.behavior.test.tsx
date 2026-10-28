@@ -169,7 +169,6 @@ describe("Filesv2 interactions", () => {
         createComponent(Browser, {
           directory,
           bases: [directory.base],
-          cloudUrl: "https://cloud.test",
           onNavigate: async () => {},
           onOpenDirectory: (path) => (opened = path),
         }),
@@ -251,7 +250,6 @@ describe("Filesv2 interactions", () => {
         createComponent(Browser, {
           directory,
           bases: [directory.base],
-          cloudUrl: "https://cloud.test",
           onNavigate: async () => {},
         }),
       dom.root,
@@ -316,10 +314,7 @@ describe("Filesv2 interactions", () => {
       opened.push([String(url), target, features]);
       return features === "noopener" ? null : tab;
     }) as unknown as typeof dom.window.open;
-    const dispose = render(
-      () => createComponent(Browser, { directory, bases: [directory.base], cloudUrl: "https://cloud.test", onNavigate: async () => {} }),
-      dom.root,
-    );
+    const dispose = render(() => createComponent(Browser, { directory, bases: [directory.base], onNavigate: async () => {} }), dom.root);
     cleanup = () => {
       dispose();
       dom.cleanup();
@@ -331,8 +326,9 @@ describe("Filesv2 interactions", () => {
         await Bun.sleep(0);
       }
     };
+    // The panel keeps rarer commands in its "More actions" menu.
     const openInTab = () =>
-      [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__action")].find((action) =>
+      [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((action) =>
         action.textContent?.includes("Open in new tab"),
       )!;
 
@@ -406,7 +402,6 @@ describe("Filesv2 interactions", () => {
         createComponent(Browser, {
           directory: listing,
           bases: [directory.base],
-          cloudUrl: "https://cloud.test",
           onNavigate: async () => {},
         }),
       dom.root,
@@ -416,7 +411,7 @@ describe("Filesv2 interactions", () => {
       globalThis.fetch = originalFetch;
       dom.cleanup();
     };
-    const actions = () => [...dom.root.querySelectorAll(".k2b-detail-panel__action")].map((action) => action.textContent?.trim());
+    const actions = () => [...dom.root.querySelectorAll('[role="menuitem"]')].map((action) => action.textContent?.trim());
 
     [...dom.root.querySelectorAll<HTMLElement>(".filesv2-list__row")].find((row) => row.textContent?.includes(notPdf.name))!.click();
     await flush();

@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import { accountCategory } from "../../contracts/account-categories";
+import type { PersonAvatar } from "../../contracts/avatar";
 import type {
   BaseGroup,
   BaseUser,
@@ -34,6 +35,7 @@ import { providers } from "../providers";
 import { session } from "../session";
 import { get as getSetting } from "../settings";
 import { type AccountsActor, canMutateManagedGroup, hasOnlySelfUpdateFields, isAdminActor, isSelfTarget } from "./authz";
+import type { AvatarChange, AvatarState } from "./avatar";
 import { listDuplicateEmails } from "./duplicate-emails";
 import * as entities from "./entities";
 import * as groups from "./groups";
@@ -378,6 +380,29 @@ export const accountsAppService = {
         result,
       });
     },
+    getAvatarState: async (config: { id: string }) => users.getAvatarState(config),
+    /** One save of the profile picture dialog: a photo, a built avatar, or which stored picture others see. */
+    updateAvatar: async (config: { actor: AccountsActor; id: string; change: AvatarChange }) => {
+      const target = await users.getMinimal({ id: config.id });
+      const targetInfo = userTarget(target);
+      const selfService = config.actor.userId === config.id;
+      if (!selfService) {
+        const adminError = await requireAdminActor<AvatarState<PersonAvatar>>({
+          actor: config.actor,
+          action: "accounts.user.avatar.update",
+          target: targetInfo,
+        });
+        if (adminError) return adminError;
+      }
+      const result = fromMutationResult(await users.updateAvatar({ id: config.id, change: config.change }));
+      return recordCompletedMutation({
+        action: "accounts.user.avatar.update",
+        actor: auditActor(config.actor),
+        target: targetInfo,
+        metadata: { selfService, kind: result.ok ? result.data.kind : null, avatarHash: result.ok ? result.data.avatarHash : null },
+        result,
+      });
+    },
     group: {
       list: async (config: {
         userId: string;
@@ -388,6 +413,7 @@ export const accountsAppService = {
         const userGroups = await users.getGroups({
           id: config.userId,
           recursive: config.recursive,
+          includePersonal: false,
         });
         const query = config.filter?.query?.trim().toLowerCase();
         const filtered = query ? userGroups.filter((groupName) => groupName.toLowerCase().includes(query)) : userGroups;
@@ -1629,9 +1655,9 @@ export const accountsAppService = {
           (SELECT COUNT(*)::int FROM auth.users WHERE provider = 'local') AS local_accounts_total,
           (SELECT COUNT(*)::int FROM auth.users WHERE provider = 'local' AND profile = 'user') AS local_user_accounts_total,
           (SELECT COUNT(*)::int FROM auth.users WHERE provider = 'local' AND profile = 'guest') AS local_guest_accounts_total,
-          (SELECT COUNT(*)::int FROM auth.groups) AS groups_total,
-          (SELECT COUNT(*)::int FROM auth.groups WHERE provider = 'ipa') AS ipa_groups_total,
-          (SELECT COUNT(*)::int FROM auth.groups WHERE provider = 'local') AS local_groups_total,
+          (SELECT COUNT(*)::int FROM auth.groups g WHERE NOT EXISTS (SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id)) AS groups_total,
+          (SELECT COUNT(*)::int FROM auth.groups g WHERE provider = 'ipa' AND NOT EXISTS (SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id)) AS ipa_groups_total,
+          (SELECT COUNT(*)::int FROM auth.groups g WHERE provider = 'local' AND NOT EXISTS (SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id)) AS local_groups_total,
           (SELECT COUNT(*)::int FROM auth.account_requests WHERE status = 'pending') AS open_requests,
           (
             SELECT COUNT(*)::int

@@ -108,7 +108,7 @@ describe("Filesv2 progressive navigation", () => {
           "Files",
         ),
       );
-      const dispose = render(() => createComponent(Workspace, { initial: snapshot, cloudUrl: "https://cloud.test" }), dom.root);
+      const dispose = render(() => createComponent(Workspace, { initial: snapshot }), dom.root);
       cleanup = () => {
         dispose();
         dom.cleanup();
@@ -310,7 +310,6 @@ describe("Filesv2 progressive navigation", () => {
       () =>
         createComponent(Workspace, {
           initial: { ...initial, source: "/app/filesv2", bases, selectedId: base.id, directory },
-          cloudUrl: "https://cloud.test",
         }),
       dom.root,
     );
@@ -372,10 +371,7 @@ describe("Filesv2 progressive navigation", () => {
     const missing = { ...base, id: "missing", name: "Missing group", kind: "groups" as const, status: "missing" as const };
     const bases = { items: [base, missing], issues: [], editor: null };
     const directory = { base, path: "", items: [], next: null };
-    const dispose = render(
-      () => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory }, cloudUrl: "https://cloud.test" }),
-      dom.root,
-    );
+    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory } }), dom.root);
     cleanup = () => {
       dispose();
       dom.cleanup();
@@ -440,10 +436,7 @@ describe("Filesv2 progressive navigation", () => {
     };
     const group = { ...base, id: "ipa", name: "Team", area: "freeipa" as const, kind: "groups" as const };
     const bases = { items: [base, group], issues: [{ area: "freeipa" as const, code: "unavailable" }], editor: null };
-    const dispose = render(
-      () => createComponent(Workspace, { initial: { ...initial, source: "/app/filesv2", bases }, cloudUrl: "https://cloud.test" }),
-      dom.root,
-    );
+    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, source: "/app/filesv2", bases } }), dom.root);
     cleanup = () => {
       dispose();
       dom.cleanup();
@@ -581,7 +574,6 @@ describe("Filesv2 progressive navigation", () => {
       () =>
         createComponent(Workspace, {
           initial: { ...initial, bases, selectedId: home.id, directory },
-          cloudUrl: "https://cloud.test",
         }),
       dom.root,
     );
@@ -656,10 +648,7 @@ describe("Filesv2 progressive navigation", () => {
       items: [{ name: "Documents", path: "Documents", directory: true, size: 0, modified: "2026-09-17T00:00:00Z" }],
       next: null,
     };
-    const dispose = render(
-      () => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory }, cloudUrl: "https://cloud.test" }),
-      dom.root,
-    );
+    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory } }), dom.root);
     cleanup = () => {
       dispose();
       dom.cleanup();
@@ -698,10 +687,7 @@ describe("Filesv2 progressive navigation", () => {
     const notices = () => [...dom.root.querySelectorAll(".k2b-inline-guidance")].map((node) => node.textContent);
     const mount = async (snapshot: Partial<WorkspaceSnapshot>) => {
       dom.window.history.replaceState(null, "", snapshot.source ?? initial.source);
-      const dispose = render(
-        () => createComponent(Workspace, { cloudUrl: "https://cloud.invalid", initial: { ...initial, ...snapshot } }),
-        dom.root,
-      );
+      const dispose = render(() => createComponent(Workspace, { initial: { ...initial, ...snapshot } }), dom.root);
       cleanup = () => {
         dispose();
         dom.cleanup();
@@ -816,7 +802,6 @@ describe("Filesv2 progressive navigation", () => {
       () =>
         createComponent(Workspace, {
           initial: { ...initial, bases: { items: [base], issues: [], editor: null }, selectedId: base.id, directory },
-          cloudUrl: "https://cloud.test",
         }),
       dom.root,
     );
@@ -870,7 +855,7 @@ describe("Filesv2 progressive navigation", () => {
   test("a shares deep link remains account-scoped after its requested group disappears", async () => {
     const dom = createDomTestHarness();
     const { Workspace } = modules!;
-    const dispose = render(() => createComponent(Workspace, { initial, cloudUrl: "https://cloud.test" }), dom.root);
+    const dispose = render(() => createComponent(Workspace, { initial }), dom.root);
     cleanup = () => {
       dispose();
       dom.cleanup();
@@ -911,10 +896,7 @@ describe("Filesv2 progressive navigation", () => {
     const bases = { items: [base], issues: [], editor: null };
     const directory = { base, path: "", items: [folder], next: null };
     const { Workspace } = modules!;
-    const dispose = render(
-      () => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory }, cloudUrl: "https://cloud.test" }),
-      dom.root,
-    );
+    const dispose = render(() => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory } }), dom.root);
     cleanup = () => {
       dispose();
       timerSpy.mockRestore();
@@ -990,7 +972,6 @@ describe("Filesv2 progressive navigation", () => {
       () =>
         createComponent(Workspace, {
           initial: { ...initial, source, bases, selectedId: base.id, directory: directory("Documents/Reports") },
-          cloudUrl: "https://cloud.test",
         }),
       dom.root,
     );
@@ -1039,7 +1020,6 @@ describe("Filesv2 progressive navigation", () => {
       () =>
         createComponent(Workspace, {
           initial: { ...initial, bases: { items: [base], issues: [], editor: null }, selectedId: base.id, directory },
-          cloudUrl: "https://cloud.test",
         }),
       dom.root,
     );

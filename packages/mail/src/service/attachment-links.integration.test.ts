@@ -9,7 +9,6 @@ import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import {
   claimPublicAttachmentDownload,
@@ -68,7 +67,6 @@ suite("public attachment links", () => {
   let originalAppUrl: Awaited<ReturnType<typeof coreSettings.read<string>>> | undefined;
 
   beforeAll(async () => {
-    await migrate();
     originalAppUrl = await coreSettings.read<string>("app.url");
     if (originalAppUrl.stored === "unreadable") throw new Error("Attachment-link fixture cannot read app.url");
     await coreSettings.set("app.url", "https://mail-attachments.example.test");

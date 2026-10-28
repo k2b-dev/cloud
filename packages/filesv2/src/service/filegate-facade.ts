@@ -189,28 +189,51 @@ export class FilesRoot {
     await this.guard?.check(args[3]?.move ? "write" : "read", args[0]);
     await this.guard?.target(args[1], args[2]);
     return filegateMutation(this.serverUrl, this.name, "transfer", args[0], () => this.#client.transfer(...args), {
+      kind: "transfer",
       root: args[1],
       path: args[2],
       move: args[3]?.move ?? false,
       onConflict: args[3]?.onConflict ?? "error",
     });
   }
-  restore(...args: Parameters<RootClient["restore"]>) {
-    return this.#mutate("restore", args[0], () => this.#client.restore(...args));
+  async restore(...args: Parameters<RootClient["restore"]>) {
+    await this.guard?.check("write", args[0]);
+    return filegateMutation(this.serverUrl, this.name, "restore", args[0], () => this.#client.restore(...args), {
+      kind: "version",
+      id: args[1],
+    });
   }
   async copyVersion(...args: Parameters<RootClient["copyVersion"]>) {
     await this.guard?.check("read", args[0]);
     await this.guard?.target(args[2], args[3]);
-    return filegateMutation(this.serverUrl, this.name, "copyVersion", args[0], () => this.#client.copyVersion(...args));
+    return filegateMutation(this.serverUrl, this.name, "copyVersion", args[0], () => this.#client.copyVersion(...args), {
+      kind: "version",
+      id: args[1],
+      target: { root: args[2], path: args[3] },
+      options: args[4],
+    });
   }
-  updateVersion(...args: Parameters<RootClient["updateVersion"]>) {
-    return this.#mutate("updateVersion", args[0], () => this.#client.updateVersion(...args));
+  async updateVersion(...args: Parameters<RootClient["updateVersion"]>) {
+    await this.guard?.check("write", args[0]);
+    return filegateMutation(this.serverUrl, this.name, "updateVersion", args[0], () => this.#client.updateVersion(...args), {
+      kind: "version",
+      id: args[1],
+      options: args[2],
+    });
   }
-  deleteVersion(...args: Parameters<RootClient["deleteVersion"]>) {
-    return this.#mutate("deleteVersion", args[0], () => this.#client.deleteVersion(...args));
+  async deleteVersion(...args: Parameters<RootClient["deleteVersion"]>) {
+    await this.guard?.check("write", args[0]);
+    return filegateMutation(this.serverUrl, this.name, "deleteVersion", args[0], () => this.#client.deleteVersion(...args), {
+      kind: "version",
+      id: args[1],
+    });
   }
-  remove(...args: Parameters<RootClient["remove"]>) {
-    return this.#mutate("remove", args[0], () => this.#client.remove(...args));
+  async remove(...args: Parameters<RootClient["remove"]>) {
+    await this.guard?.check("write", args[0]);
+    return filegateMutation(this.serverUrl, this.name, "remove", args[0], () => this.#client.remove(...args), {
+      kind: "remove",
+      recursive: args[1] ?? false,
+    });
   }
   // Maintenance only: these rebuild derived metadata, without changing user data.
   refreshStats(...args: Parameters<RootClient["refreshStats"]>) {

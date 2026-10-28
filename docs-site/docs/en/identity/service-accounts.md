@@ -5,7 +5,7 @@ section: Identity and access
 order: 352
 description: Give an integration or a coding agent its own principal with an OAuth client or API keys, and grant it access like a user.
 tags: [identity, service-accounts, agents, oauth, client-credentials]
-updated: 2026-09-30
+updated: 2026-10-23
 ---
 
 # Standalone service accounts and agents
@@ -58,8 +58,8 @@ user or application.
 
 ## Choose the credential
 
-A standalone account can hold both credential forms at once. Agents always use
-the OAuth client; integrations choose.
+A standalone account or agent can hold both credential forms at once. The
+agent CLI creates an OAuth client; administrators can also issue an API key.
 
 | Credential | Lifetime | Revocation | Create with |
 | --- | --- | --- | --- |
@@ -82,6 +82,11 @@ The access token carries `principal_type: "service_account"`,
 API keys are minted once; the raw token appears only in the creation response.
 Their metadata is listed and revoked like every other service-account key in the
 Accounts app and through `cld accounts service-accounts`.
+
+For an external model client, choose **AI models only** when creating a key
+in **Accounts → Service accounts → Create API key**. Grant model access to the
+machine in AI settings. See the [OpenAI-compatible API](/en/docs/ai/openai-compatible-api#connect-a-machine-account)
+for purpose, model grants, usage limits, and revocation.
 
 ## Revoke centrally
 

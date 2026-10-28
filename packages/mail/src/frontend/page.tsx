@@ -1,4 +1,6 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { coreSettings } from "@k2b/cloud/services";
+import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { mailFocusViewSchema, ResourceShortIdSchema } from "../contracts";
@@ -78,7 +80,7 @@ export default ssr<AuthContext>(async (c) => {
     (async () => focus.listFocusOverview({ context, excludedMailboxIds: (await preferencesPromise).hiddenMailboxIds }))(),
   ]);
   const initialFocus = focusResult.ok ? await projectSsrFocusOverview(focusResult.data) : null;
-  const directory = await requestContactDirectory(c);
+  const [directory, appUrl] = await Promise.all([requestContactDirectory(c), coreSettings.get<string>("app.url")]);
   return () => (
     <Layout
       c={c}
@@ -98,6 +100,7 @@ export default ssr<AuthContext>(async (c) => {
         initialHiddenMailboxIds={preferences.publicHiddenMailboxIds}
         currentUserEmail={user.mail}
         contactDirectory={directory}
+        cloudUrl={publicCloudOrigin(appUrl)}
         dateConfig={getDateConfig(c)}
       />
     </Layout>

@@ -22,6 +22,9 @@ const files: Record<string, Classification> = {
   authorizeTransfer: base(),
   uploadTarget: base(),
   maintain: mutation("lifecycle.operation"),
+  provisionUserHome: mutation("lifecycle.operation"),
+  reconcileUserHomes: mutation("lifecycle.operation"),
+  adminHomeProvisioning: read,
   provision: mutation("lifecycle.operation"),
   archive: mutation("lifecycle.operation"),
   retire: read,
@@ -30,10 +33,10 @@ const files: Record<string, Classification> = {
   adminList: read,
   adminDownload: read,
   adminVersions: read,
-  adminDeleteVersion: mutation("lifecycle.admin_delete_version"),
-  adminDelete: mutation("lifecycle.operation"),
-  deleteDirectory: mutation("lifecycle.operation"),
-  deleteArchive: mutation("lifecycle.operation"),
+  adminDeleteVersion: { kind: "mutation", coverage: "converted" },
+  adminDelete: { kind: "mutation", coverage: "converted" },
+  deleteDirectory: { kind: "mutation", coverage: "converted" },
+  deleteArchive: { kind: "mutation", coverage: "converted" },
   retry: mutation("lifecycle.operation"),
   refreshRoot: read,
   rebuildRoot: read,
@@ -50,10 +53,10 @@ const files: Record<string, Classification> = {
   publicInboxAbort: mutation("lifecycle.operation"),
   reconcileInboxUploads: mutation("lifecycle.operation"),
   adminUploadReservations: read,
-  remove: mutation("lifecycle.operation", "files.ensure_trash", "trash.transfer"),
+  remove: mutation("lifecycle.operation"),
   trash: base(),
   trashEntry: base(),
-  restoreTrash: mutation("lifecycle.operation", "trash.transfer"),
+  restoreTrash: mutation("lifecycle.operation"),
   bases: base(),
   baseNames: read,
   list: base(),
@@ -72,10 +75,10 @@ const files: Record<string, Classification> = {
   copy: { kind: "mutation", coverage: "converted" },
   bundle: base(),
   versions: base(),
-  commentVersion: mutation("lifecycle.operation", "files.version_comment"),
-  restoreVersion: mutation("lifecycle.operation", "files.version_restore"),
-  restoreVersionAs: mutation("lifecycle.operation", "files.version_restore_copy"),
-  deleteVersion: mutation("lifecycle.operation", "files.version_delete"),
+  commentVersion: mutation("lifecycle.operation"),
+  restoreVersion: mutation("lifecycle.operation"),
+  restoreVersionAs: mutation("lifecycle.operation"),
+  deleteVersion: mutation("lifecycle.operation"),
   versionDownload: base(),
   editor: base(),
   templateSource: base(),
@@ -117,28 +120,12 @@ const templates: Record<string, Classification> = {
 function unclassified(methods: readonly string[], table: Record<string, Classification>): string[] {
   return methods.filter((name) => !Object.hasOwn(table, name));
 }
-const frozen = [
-  "files.ensure_trash",
-  "files.version_comment",
-  "files.version_restore",
-  "files.version_restore_copy",
-  "files.version_delete",
-  "trash.transfer",
-  "lifecycle.operation",
-  "lifecycle.admin_delete_version",
-] as const;
+const frozen = ["lifecycle.operation"] as const;
 function addedKeys(keys: readonly string[]): string[] {
   return keys.filter((key) => !frozen.some((known) => known === key));
 }
 const frozenCallSites: Readonly<Record<string, number>> = {
-  "files.ensure_trash": 1,
-  "files.version_comment": 1,
-  "files.version_restore": 1,
-  "files.version_restore_copy": 1,
-  "files.version_delete": 1,
-  "trash.transfer": 1,
   "lifecycle.operation": 1,
-  "lifecycle.admin_delete_version": 1,
 } satisfies Record<(typeof frozen)[number], number>;
 function grownCallSites(counts: Readonly<Record<string, number>>): string[] {
   return Object.entries(counts)
@@ -151,7 +138,15 @@ function dummyService() {
     throw new Error("Classification must not invoke a dependency");
   };
   return createFilesService({
-    identities: { reconcile: unused, localLifecycle: unused, self: unused, groups: unused, inventory: unused },
+    identities: {
+      reconcile: unused,
+      localLifecycle: unused,
+      self: unused,
+      groups: unused,
+      inventory: unused,
+      provisioningUsers: unused,
+      provisioningIdentity: unused,
+    },
     bindings: { find: unused, claim: unused, byId: unused, path: unused },
     displayNames: unused,
     readConfiguration: unused,
@@ -204,8 +199,8 @@ test("pending migration call sites can only shrink", async () => {
   expect(Object.values(counts).reduce((sum, count) => sum + count, 0)).toBe(calls);
 });
 test("call site comparison reports growth and unknown keys but permits shrinking", () => {
-  expect(grownCallSites({ ...frozenCallSites, "files.version_comment": 2 })).toEqual(["files.version_comment"]);
+  expect(grownCallSites({ ...frozenCallSites, "lifecycle.operation": 2 })).toEqual(["lifecycle.operation"]);
   expect(grownCallSites({ ...frozenCallSites, "fake.new_write": 1 })).toEqual(["fake.new_write"]);
-  expect(grownCallSites({ ...frozenCallSites, "files.version_comment": 0 })).toEqual([]);
+  expect(grownCallSites({ ...frozenCallSites, "lifecycle.operation": 0 })).toEqual([]);
   expect(grownCallSites({})).toEqual([]);
 });
