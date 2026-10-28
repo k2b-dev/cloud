@@ -81,10 +81,12 @@ const showNotification = async (payload) => {
       // Older browsers and lookup failures fall back to normal display.
     }
     if (newer) {
+      // Restoring the newer notification is never a new event, so it never alerts, even if it was dismissed meanwhile.
       await self.registration.showNotification(newer.title, {
         icon: newer.icon,
         ...(newer.body ? { body: newer.body } : {}),
         tag: newer.tag,
+        silent: true,
         data: newer.data,
       });
       return true;

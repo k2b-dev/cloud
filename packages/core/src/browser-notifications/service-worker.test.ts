@@ -185,6 +185,21 @@ describe("browser notification service worker", () => {
     expect(visible.get("chat:one")?.title).toBe("Second");
   });
 
+  test("restores a quiet newer notification silently when an older push arrives late", async () => {
+    const { listeners, shown, visible } = loadWorker([]);
+    for (const [title, createdAt, alert] of [
+      ["Second", 2000, false],
+      ["First", 1000, undefined],
+    ] as const) {
+      const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title, createdAt, group: "chat:one", alert });
+      listeners.get("push")!(push.event);
+      await push.completion();
+    }
+    expect(visible.get("chat:one")?.title).toBe("Second");
+    expect(shown.map(({ options }) => options.silent)).toEqual([true, true]);
+    expect(shown.some(({ options }) => "renotify" in options)).toBe(false);
+  });
+
   test("shows an ungrouped quiet notification without sound", async () => {
     const { listeners, shown } = loadWorker([]);
     const push = pushEvent({ type: "cloud-notification", eventId: crypto.randomUUID(), title: "Ready", alert: false });
@@ -215,7 +230,13 @@ describe("browser notification service worker", () => {
     }
     expect(visible.get("chat:one")).toEqual({
       title: "Second",
-      options: { icon: "/branding/logo", tag: "chat:one", body: "Second preview", data: { targetHref: "/", createdAt: 2000 } },
+      options: {
+        icon: "/branding/logo",
+        tag: "chat:one",
+        body: "Second preview",
+        silent: true,
+        data: { targetHref: "/", createdAt: 2000 },
+      },
     });
     expect(shown[0]?.options.renotify).toBe(true);
     expect(shown[1]?.options).not.toHaveProperty("renotify");
