@@ -12,9 +12,11 @@ import { lazySync } from "@k2b/cloud";
 import { logger } from "@k2b/cloud/services";
 import { migrateWorkflowAi } from "@k2b/cloud/workflows/ai";
 import { sql } from "bun";
+import automationLogSchema from "./automation-log-schema.sql" with { type: "text" };
 import { migrateAiDailyBudget } from "./migrate-ai-daily-budget";
 import baselineSchema from "./schema.sql" with { type: "text" };
 import { migrateConversationSummaries } from "./service/conversation-summary-migrate";
+import { ensureMailWorkflowEffectOrderSchema } from "./service/workflow-effect-order-schema";
 
 type SqlClient = typeof sql;
 
@@ -63,6 +65,8 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * older Mail image, which records no version for them, still starts on it.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx.unsafe(automationLogSchema).simple();
+  await ensureMailWorkflowEffectOrderSchema(tx);
   await tx`CREATE TABLE IF NOT EXISTS mail.mailbox_logo_versions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
@@ -155,6 +159,9 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   await tx`
     CREATE INDEX IF NOT EXISTS personal_mailbox_preferences_mailbox_idx ON mail.personal_mailbox_preferences USING btree (mailbox_id)
   `.simple();
+  await tx`ALTER TABLE mail.personal_mailbox_preferences
+    ADD COLUMN IF NOT EXISTS large_view text CHECK (large_view IN ('auto', 'columns', 'split')),
+    ADD COLUMN IF NOT EXISTS phone_view text CHECK (phone_view IN ('compact', 'detailed'))`.simple();
   // Body downloads in progress, so the recovery of claims a stopped worker left behind reads only
   // them instead of every message. Building it reads the table once, on the first start after the update.
   // Even when the index exists, CREATE INDEX waits for the table lock that a running BM25 build holds.

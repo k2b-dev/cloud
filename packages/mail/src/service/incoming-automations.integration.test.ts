@@ -19,7 +19,6 @@ import incomingAutomationRoutes from "../api/incoming-automations";
 import type { MailApiContext } from "../api/public-resource-boundary";
 import type { MailAutomationAction } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { snapshotMailWorkflowCatalog } from "../workflows/catalog";
 import { grantMailboxAccess, listMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
@@ -98,7 +97,6 @@ suite("incoming automations", () => {
   let sharedAdminContext: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const createUser = async (role: string): Promise<TestUser> => {
       const uid = `incoming-automation-${role}-${suffix}`;
       const displayName = `${role} incoming automation test`;
@@ -1426,7 +1424,9 @@ suite("incoming automations", () => {
         },
       });
       if (!newer.ok) throw new Error(newer.error.message);
-      // The list is the run order.
+      // Frozen workflow priority decides placement, not the automations' creation age.
+      await sql`UPDATE mail.workflow_profile SET priority = CASE WHEN id = ${older.data.workflowId}::uuid THEN 40 ELSE 41 END
+        WHERE id IN (${older.data.workflowId}::uuid, ${newer.data.workflowId}::uuid)`;
       const listed = await listIncomingAutomations(ownerContext, mailboxId);
       const listedIds = listed.ok ? listed.data.map((item) => item.id) : [];
       expect(listedIds.indexOf(older.data.id)).toBeLessThan(listedIds.indexOf(newer.data.id));
@@ -1617,10 +1617,12 @@ suite("incoming automations", () => {
           });
           expect(await commandsFor(newerRunId)).toEqual([]);
           if (scenario === "move first") {
-            expect(await outputFor(newerRunId, "moveMessage")).toEqual({
+            expect(await outputFor(newerRunId, "moveMessage")).toMatchObject({
               action: "moveMessage",
               applied: false,
-              skipped: "earlier_automation",
+              skipped: "upper_rule",
+              workflowId: older.data.workflowId,
+              name: older.data.name,
             });
             expect(await executeMutationCommand(moveCommand.id)).toBe("confirmed");
             await runSucceeded(olderRunId);
@@ -1709,10 +1711,12 @@ suite("incoming automations", () => {
             await runSucceeded(newerRunId);
           }
           if (scenario === "read first") {
-            expect(await outputFor(newerRunId, "moveMessage")).toEqual({
+            expect(await outputFor(newerRunId, "moveMessage")).toMatchObject({
               action: "moveMessage",
               applied: false,
-              skipped: "earlier_automation",
+              skipped: "upper_rule",
+              workflowId: older.data.workflowId,
+              name: older.data.name,
             });
             expect(await executeMutationCommand(moveCommand.id)).toBe("confirmed");
             await runSucceeded(olderRunId);

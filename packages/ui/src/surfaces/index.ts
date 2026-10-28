@@ -27,7 +27,7 @@ export { ProgressBar } from "./ProgressBar";
 export type { ProgressRingProps, ProgressRingTone } from "./ProgressRing";
 export { ProgressRing } from "./ProgressRing";
 export { PERSON_COLORS, personColor } from "./person-color";
-export type { ResourceCardProps, ResourceCardState } from "./ResourceCard";
+export type { ResourceCardColor, ResourceCardProps, ResourceCardState } from "./ResourceCard";
 export { ResourceCard } from "./ResourceCard";
 export { Skeleton, type SkeletonProps } from "./Skeleton";
 export type { StatCellAccent, StatCellProps, StatCellTone } from "./StatCell";

@@ -185,14 +185,15 @@ export const venueTodayWidgetHandler = async (c: Context<AuthContext>) => {
   const nextShift = dashboard.myUpcomingShifts[0];
   const missing = dashboard.slots.reduce((sum, slot) => sum + slot.missingPeople, 0);
 
-  // Small shows whether the venue is open, medium adds the open shifts, large the person's next shift.
+  // Small shows whether the venue is open, medium adds the open shifts, large the person's next shift. Medium has
+  // room for the open shifts only beside the status line, so it leaves out today's hours.
   const { size } = getWidgetRequest(c);
   const blocks: WidgetBlock[] = [
     {
       kind: "status",
       tone: status?.open ? "ok" : "info",
       title: status?.statusLabel ?? t.widgetStatusUnavailable,
-      message: status?.todayLabel ?? t.widgetNoStatus,
+      message: size === "medium" ? undefined : (status?.todayLabel ?? t.widgetNoStatus),
       icon: status?.open ? "ti ti-door-gate-open" : "ti ti-door",
       grow: size === "small",
     },

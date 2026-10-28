@@ -1,6 +1,7 @@
 import { logger } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
+import { attachments } from "./attachments";
 import { channels } from "./channels";
 import { conversations } from "./conversations";
 import { forYou } from "./for-you";
@@ -53,6 +54,7 @@ export const chatService = {
   itemEvents,
   search,
   health,
+  attachments,
   forYou,
   mentions,
   channels,

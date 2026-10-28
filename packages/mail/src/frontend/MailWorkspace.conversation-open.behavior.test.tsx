@@ -139,6 +139,8 @@ describe("Mail workspace conversation open", () => {
   let dispose = () => {};
   let routeRequests: string[];
   let listRequests: string[];
+  // Most cases pin "list and reader"; the columns view replaces the list when a conversation opens.
+  let largeView: "auto" | "split";
   let detailRequests: { id: string; folder: string | null }[];
   let detailSignals: (AbortSignal | undefined)[];
   let actionRequests: { conversationId: string; body: unknown }[];
@@ -265,6 +267,7 @@ describe("Mail workspace conversation open", () => {
           ],
       conversationSummary: null,
       conversationDrafts: [],
+      automationTrace: [],
       detailError: null,
       collaborationState: null,
       conversationLocalTags: { conversationId, conversationRevision: revisions.get(conversationId) ?? 1, tags: [] },
@@ -288,6 +291,8 @@ describe("Mail workspace conversation open", () => {
     } = conversation ? detailFor(conversation) : { ...detailFor("none"), detailMessages: [], selectedSubject: "" };
     const unreadCount = unread.size;
     return {
+      viewPreference: { large: largeView, phone: "compact" },
+      doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
       receivingAddress: null,
       initialLiveCursor: "s6t.mail.4",
       folders: [
@@ -324,6 +329,7 @@ describe("Mail workspace conversation open", () => {
     Reflect.set(globalThis, "WebSocket", FakeWebSocket);
     routeRequests = [];
     listRequests = [];
+    largeView = "split";
     detailRequests = [];
     detailSignals = [];
     actionRequests = [];
@@ -472,6 +478,27 @@ describe("Mail workspace conversation open", () => {
     expect(routeRequests).toEqual([]);
     expect(listRequests).toEqual([]);
     expect(detailRequests.map((request) => request.id)).toEqual([A, B, A, B]);
+  });
+
+  test("in the automatic view, closing a conversation returns to the columns with every loaded row and focus on it", async () => {
+    largeView = "auto";
+    mount();
+    expect(dom.root.querySelector(".mail-columns")).not.toBeNull();
+    await loadSecondPage();
+
+    open(B);
+    await until(() => shows(B), "conversation B");
+    expect(dom.root.querySelector(".mail-columns")).toBeNull();
+    expect(rows()).toHaveLength(100);
+
+    dom.root.querySelector<HTMLAnchorElement>('a[aria-label="Back to conversation list"]')!.click();
+    await until(() => heading() === null, "the closed reader");
+    await settle();
+    expect(dom.root.querySelector(".mail-columns")).not.toBeNull();
+    expect(rows()).toHaveLength(100);
+    expect(dom.document.activeElement).toBe(rowLink(B));
+    expect(routeRequests).toEqual([]);
+    expect(listRequests).toEqual([]);
   });
 
   test("Back to a list that starts at a cursor loads that list again", async () => {

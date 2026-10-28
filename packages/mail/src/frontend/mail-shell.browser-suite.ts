@@ -1489,6 +1489,58 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
     });
 
     section("layout", () => {
+      // F2: "Automatisch" shows columns until a conversation opens; one case per page (#1966).
+      for (const width of [1440, 390])
+        test(`views: automatic shows columns without a selection at ${width}, from the server on`, async () => {
+          const page = await open(`${boxPath}?layout=auto`, width, width === 390 ? 844 : 900);
+          try {
+            const firstRow = page.locator('.mail-list-entry[data-lines="1"]').first();
+            await firstRow.waitFor({ state: "visible" });
+            // The server already drew the columns: the first row does not move once the page is interactive.
+            const before = (await firstRow.boundingBox())!;
+            await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+            expect((await firstRow.boundingBox())!.y).toBe(before.y);
+            expect(await page.locator(".mail-reader-title").count()).toBe(0);
+            expect(await page.locator("[data-mail-day-group]").count()).toBeGreaterThan(0);
+            if (width >= 768) {
+              await page.locator(".mail-columns-head").waitFor({ state: "visible" });
+              expect(before.height).toBeCloseTo(44, 0);
+              await page.locator("[data-mail-view-menu]").waitFor({ state: "visible" });
+            } else {
+              // Phones: compact two-line rows without the column header.
+              expect(await page.locator(".mail-columns-head").isVisible()).toBe(false);
+              expect(before.height).toBeCloseTo(65, 0);
+            }
+            if (screenshots) await page.screenshot({ path: join(screenshots, `views-columns-light-${width}.png`) });
+          } finally {
+            await close(page);
+          }
+        });
+      test("views: the day's done line above the list", async () => {
+        const page = await open(`${boxPath}?layout=auto&done=19,14`, 1440, 900);
+        try {
+          const line = page.locator("[data-mail-done-line]");
+          await line.getByText("Heute 19 erledigt").or(line.getByText("19 done today")).waitFor();
+          await line.getByRole("progressbar").waitFor({ state: "attached" });
+          expect((await line.boundingBox())!.height).toBeCloseTo(28, 0);
+          if (screenshots) await page.screenshot({ path: join(screenshots, "views-done-line-light-1440.png") });
+        } finally {
+          await close(page);
+        }
+      });
+      test("views: All done with the way to the log", async () => {
+        const page = await open(`${boxPath}?layout=auto&done=26,17&inbox=empty`, 1440, 900);
+        try {
+          const done = page.locator("[data-mail-all-done]");
+          await done.waitFor({ state: "visible" });
+          expect(await done.getByRole("link").getAttribute("href")).toBe("/app/mail/Box001/automations/log");
+          expect(await page.locator("[data-mail-list-count]").count()).toBe(0);
+          if (screenshots) await page.screenshot({ path: join(screenshots, "views-all-done-light-1440.png") });
+        } finally {
+          await close(page);
+        }
+      });
+
       for (const permission of ["write", "read", "admin", "assigned-only"])
         test(`${permission}: head and sidebar share the authorized mailbox menu`, async () => {
           const page = await open(`${boxPath}?permission=${permission}`);
@@ -2148,6 +2200,33 @@ export const defineMailShellTests = (part: MailShellPart, screenshots: string | 
       });
 
       section("reader", () => {
+        // One case per trace, each on its own page (#1966): the current AI assignment leads, every effect stays below.
+        for (const width of [1440, 390])
+          for (const kind of ["name", "uncertain", "manual", "normal"] as const)
+            test(`automation: rule trace ${kind} at ${width}`, async () => {
+              const page = await open(`${boxPath}?conversation=Conv01&locale=de&trace=${kind}`, width, width === 390 ? 844 : 900);
+              try {
+                if (kind === "name") await page.getByText("„Mails nach Art verteilen“ hat Nora Albrecht zugewiesen.").waitFor();
+                if (kind === "uncertain") {
+                  await page
+                    .getByText("Die KI war unsicher. „Mails nach Art verteilen“ hat die Mail an „Eingang prüfen“ gegeben.")
+                    .waitFor();
+                  await page.getByRole("button", { name: "Mir zuweisen" }).waitFor();
+                }
+                if (kind === "manual") {
+                  await page.getByText("Nora Albrecht hat um 06:40 Lisa Brandt zugewiesen.").waitFor();
+                  expect(await page.locator("[data-mail-automation-note]").count()).toBe(0);
+                }
+                if (kind === "normal") {
+                  await page.getByText("„Großkunden an Can“ hat Zuweisen übersprungen:").waitFor();
+                  await page.locator('[data-mail-automation-note="assigned"]').waitFor();
+                }
+                if (screenshots) await page.screenshot({ path: join(screenshots, `trace-${kind}-light-${width}.png`) });
+              } finally {
+                await close(page);
+              }
+            });
+
         test("Details access transfers focus across the phone breakpoint", async () => {
           const page = await open(`${boxPath}?conversation=Conv01`, 767, 900);
           try {

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
@@ -36,8 +36,7 @@ const load = async (options: BrowserContextOptions, address: { chat: string; thr
     }
     Object.defineProperty(globalThis, "Date", { value: PinnedDate, configurable: true, writable: true });
   }, chatTestNow.getTime());
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(new URL(`/app/chat/c/${address.chat}${address.thread ? `/t/${address.thread}` : ""}`, harness.url).href);
   await page.evaluate((props) => {
     document.documentElement.lang = "de";

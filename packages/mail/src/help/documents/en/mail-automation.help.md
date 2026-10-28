@@ -20,6 +20,40 @@ Open **… → Automations**. The full-width overview shows what is active and o
 
 The tools can work together, but creating one does not activate another. Reference-number settings define the format; a workflow still decides when to allocate a number. Saving a workflow does not activate it.
 
+## Rule order and existing assignees {icon="list-numbers"}
+
+Rules for the same incoming message follow mailbox priority order, from top to bottom. Lower `priority` numbers come first; equal priorities use workflow UUID ascending. Mail fixes this order when it accepts the message event, so later edits do not reorder that message's runs.
+
+Assignment, placement (move, archive, trash, or junk), and status each have one winning rule. A lower rule waits until upper rules have decided, even if an upper rule is waiting for AI. The first rule that takes one of these actions wins for that kind of change. If an upper rule finishes without that effect, a lower rule can apply it. Tags, comments, and summaries can come from all matching rules.
+
+After 24 hours, a lower rule may take over an unresolved upper decision. Once it does, the upper rule cannot apply a late exclusive effect; an existing claim still wins.
+
+No rule replaces existing assignees. If anyone is already responsible, the assignment step is skipped, whether a person or another rule made that assignment. Changing an assignment by hand does not change the rule. This also applies to existing guided automations and workflow YAML. `user: null` leaves existing assignees in place; remove the assignment by hand or undo its rule entry.
+
+For AI classification, configure the target in the rule. AI chooses a category, never a person from a name in the message. If that category has no target, this rule assigns nobody; a lower rule may still assign someone.
+
+## Check the automation log and undo rule changes {icon="history"}
+
+Open **Automations → Log** to see what rules changed, left unassigned, or skipped, and assignments changed by hand. Choose a day, filter the result, or search by subject, sender, rule, or target. Counts follow the day and search across all filters. The log covers the last 30 days and shows only conversations you may read.
+
+Open an entry for the decision chain: conditions, AI choices and available extracted values, the fixed rule row, target, effects, and AI call counts. These are recorded results; opening the entry does not ask AI again. A source quote is shown only when one was recorded.
+
+**Undo** reverses the entry's current assignments, added or removed local tags, folder moves and archives, status, read state, other flags, and keywords at once, without confirmation. You need Edit access to the whole mailbox. Changes someone made afterwards stay as they are and are reported as kept. If nothing can safely be reversed, Undo is unavailable and changes nothing. Comments remain as records; summaries keep their own version history and are not undone here.
+
+Folder, flag, and keyword changes go through the provider. Undo is done when Mail accepts those commands; provider failures appear with the other failed commands. **Redo**, by the same person, reapplies only what Undo reversed and preserves later personal changes. While provider commands are still running, wait for them to finish before undoing or redoing the group. Refresh the entry and try again.
+
+After Undo, that rule skips the reverted kinds of change for the same conversation, including on later replies. For example, undoing a tag and archive prevents that rule tagging or moving the conversation again. This protection stays after the log entry expires. Redo removes protection for the kinds it restores. Other rules follow their normal conditions.
+
+In the terminal:
+
+```bash
+cld mail automation log --mailbox Support --day 2026-10-27 --filter assignments
+cld mail automation log show <entry-id> --mailbox Support --json
+cld mail automation log undo <entry-id> --mailbox Support
+```
+
+Use `--q` to search (at most 200 characters, without case sensitivity). Calendar days and the default of today use UTC; a mailbox has no separate timezone setting. Use `--before` with `nextCursor` for another page; `--limit` accepts 1–50 entries and defaults to 50. Keep the same day, search, and filter when paging.
+
 ## Build an incoming automation {icon="mailbox"}
 
 With **Manage** access, you create one guided flow under **Automations → Incoming mail**. You can also start it directly from the organization menu of a message.
@@ -88,7 +122,7 @@ The guided editor and the CLI use the same strict definition. Mail rejects unkno
 
 Mail generates canonical workflow YAML from the flow and shows it read-only in the editor. Steps run from top to bottom through the shared workflow runtime.
 
-- **Several matching automations:** The oldest automation decides where the message goes. A later automation skips its move, trash, or junk step. Any matching automation also skips its Mark as read or keyword step if the message has left its folder or is being moved. Neither automation fails because of the other. Only incoming automations yield this way; a hand-written workflow's step fails instead. A read by one does not make the other's move fail. To make sure a message is both read and moved, put both steps in one automation.
+- **Several matching automations:** Mail uses the mailbox rule order described above. The first rule that claims placement wins; a lower rule may move the message if upper rules finish without placement. Incoming automations still skip Mark as read or keyword steps if the message has left its folder or is being moved. A read by one does not make another rule’s move fail. Keep read and move steps in one automation when both must apply.
 - **Failed step:** If a later step fails, the effects of earlier completed steps stay.
 - **Versions:** Editing the flow publishes a new unchangeable workflow version. Changing only the name or the active state does not duplicate identical source.
 - **Protected targets:** Destructive actions cannot target an identity of the mailbox, a configured internal domain, its subdomains, or an unsafe parent domain.

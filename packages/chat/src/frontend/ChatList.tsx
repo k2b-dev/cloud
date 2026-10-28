@@ -1,7 +1,7 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { dnd } from "@k2b/stdlib/solid";
-import { AppWorkspace, Dropdown, IconButton, StatusBadge, useLocale } from "@k2b/ui";
+import { AppWorkspace, Avatar, Dropdown, IconButton, StatusBadge, useLocale } from "@k2b/ui";
 import { createMemo, For, type JSX, Show } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
@@ -12,6 +12,25 @@ import { containerIcon, systemMembers } from "./system-chats";
 import { chatHasThreads } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
+
+/**
+ * A chat's face in the list: its initials in its own tint, a channel's sign in a circle, and a Space's or notebook's
+ * sign in a square, so a long list reads at a glance. A chosen icon replaces the initials. The tint follows the name, so a chat keeps it everywhere.
+ */
+export function ChatAvatar(props: { row: Pick<Conversation, "title" | "kind" | "channel" | "icon" | "resource"> }): JSX.Element {
+  return (
+    <Avatar
+      name={props.row.title}
+      size="sm"
+      shape={props.row.kind === "system" ? "square" : "circle"}
+      icon={
+        props.row.kind === "system"
+          ? containerIcon(props.row.resource?.type)
+          : (props.row.icon ?? (props.row.channel ? "ti ti-speakerphone" : undefined))
+      }
+    />
+  );
+}
 
 /** A channel's line under its name: what it is for and how many subscribe. */
 export const channelLine = (row: Pick<Conversation, "purpose" | "memberCount">, t: ReturnType<typeof chatMessages.resolve>["t"]) =>
@@ -205,13 +224,9 @@ export default function ChatList(props: {
                 </>
               }
             >
-              <AppWorkspace.SidebarItemIcon
-                icon={
-                  row().kind === "system"
-                    ? containerIcon(row().resource?.type)
-                    : (row().icon ?? (row().channel ? "ti ti-speakerphone" : row().memberCount <= 2 ? "ti ti-user" : "ti ti-users"))
-                }
-              />
+              <AppWorkspace.SidebarItemIcon>
+                <ChatAvatar row={row()} />
+              </AppWorkspace.SidebarItemIcon>
               <AppWorkspace.SidebarItemLabel marquee={false}>
                 {row().title}
                 {/* A chat with threads has more inside; open it to see them. */}

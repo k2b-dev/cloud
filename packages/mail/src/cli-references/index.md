@@ -38,7 +38,7 @@ Domain rules include subdomains. Trust rules support sender addresses and sender
 Start here for everyday mail, mailbox setup, search, and collaboration. Continue with:
 
 - [Mail compose and drafts](compose.md) for templates, signatures, shared drafts, attachments, immediate or scheduled delivery, and durable send commands.
-- [Mail automation](automation.md) for managed automatic replies, conversation references, workflow YAML, immutable versions, and central run operations.
+- [Mail automation](automation.md) for managed automatic replies, conversation references, workflow YAML, immutable versions, the automation log and rule-effect undo, and central run operations.
 - [Mail operations](operations.md) for provider credential lifecycle, folder discovery, repairs, operator actions, storage observability, the contact directory, and provider-backed message changes.
 
 ## Safety
@@ -69,6 +69,19 @@ cld --json mail ls Support:Archiv
 # {"error":{"message":"\"Archiv\" matches several folders: Archiv (Fa9x2Q), archiv (Kp3m8R). Use one of these paths or IDs.","status":409,"exitCode":1}}
 cld --json mail ls Support:Fa9x2Q
 ```
+
+## Choose your mailbox view
+
+```bash
+cld mail view get Support
+cld mail view set Support --large auto --phone compact
+cld mail view set Support --large columns
+cld mail view set Support --large split --phone detailed
+```
+
+Choices belong to the current person and mailbox. Read access, including assigned-only access, is enough. Large screens accept `auto` (columns until reading, then list + reader), `columns`, or `split`. Phones accept `compact` or `detailed`. An omitted flag keeps that device class unchanged; `set` requires at least one flag. With no stored choice, the defaults are `auto` and `compact`. JSON output is `{ "large": "auto", "phone": "compact" }`.
+
+The API exposes the same preference through `GET` and `PATCH /api/mail/mailboxes/:mailboxId/view`. A small refresh read, `GET /api/mail/mailboxes/:mailboxId/done-today`, returns `{ "doneToday": 0, "doneByAutomation": 0 }` for the caller's visible conversations. The Core time zone defines today, with Europe/Berlin as fallback. Each conversation counts once; its latest transition to done today determines the automation attribution. Reopening does not remove it from today's count.
 
 ## Read mail
 
