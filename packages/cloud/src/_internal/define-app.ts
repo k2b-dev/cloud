@@ -186,7 +186,7 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
      * Same-origin path of a `GET` route this app serves below one of its
      * `routes`. After the page loads, the shell reads it with the person's
      * session and shows the returned `AppNavBadge` count on the app's icon in
-     * the rail and the app grid. Protect it like any other route.
+     * the rail, the phone bar, and the app grid. Protect it like any other route.
      */
     badge?: string;
   };
