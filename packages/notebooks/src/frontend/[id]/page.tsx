@@ -44,7 +44,7 @@ export default ssr<AuthContext>(async (c) => {
           notebookName={data.notebook.name}
           notebookIcon={data.notebook.icon}
           selectedNoteId={data.selectedNote?.id ?? null}
-          tree={data.bookTree}
+          navigation={data.bookNavigation}
           tags={data.ctx.tags}
           currentHref={
             data.selectedNote
@@ -85,7 +85,7 @@ export default ssr<AuthContext>(async (c) => {
           notebookName={data.notebook.name}
           notebookIcon={data.notebook.icon}
           selectedNoteId={data.selectedNote?.id ?? null}
-          tree={data.bookTree}
+          navigation={data.bookNavigation}
           tags={data.ctx.tags}
           html={data.bookHtml}
           noteTitle={data.selectedNote?.title ?? null}
@@ -97,6 +97,7 @@ export default ssr<AuthContext>(async (c) => {
           cursor={data.ctx.workspaceCursor}
           navigationHidden={data.ctx.navigationHidden}
           fullWidth={data.ctx.fullWidth}
+          openComments={data.bookOpenComments}
         />
       </Layout>
     );
@@ -105,7 +106,6 @@ export default ssr<AuthContext>(async (c) => {
   const {
     user,
     notebook,
-    tree,
     isVersionsMode,
     isGraphMode,
     canWrite,
@@ -125,6 +125,7 @@ export default ssr<AuthContext>(async (c) => {
     panelAttachments,
     backlinks,
     initialCommentsPage,
+    initialAnnotations,
     dateConfig,
   } = data;
   const showsEditorToolbar = !!selectedNote && !isVersionsMode && !isGraphMode && !readonlyMode;
@@ -189,7 +190,12 @@ export default ssr<AuthContext>(async (c) => {
                 navigationHidden={ctx.navigationHidden}
               />
             ) : selectedNote ? (
-              <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col" data-full-width={ctx.fullWidth ? "" : undefined}>
+              <div
+                class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col"
+                data-full-width={ctx.fullWidth ? "" : undefined}
+                data-comments=""
+                data-detail-open={showDetailPanel && (readonlyMode || detailPanelOpen) ? "" : undefined}
+              >
                 {readonlyMode && (
                   <FloatingEditButton href={currentHref} mode="readonly" locked={!!selectedNote.lockedAt} canWrite={canWrite} />
                 )}
@@ -207,6 +213,8 @@ export default ssr<AuthContext>(async (c) => {
                   initialPanelOpen={detailPanelOpen}
                   initialRichMode={ctx.settings.richMode}
                   readOnly={readonlyMode}
+                  canWrite={canWrite}
+                  initialAnnotations={initialAnnotations}
                   initialHref={currentHref}
                   initialDetail={{
                     noteAuthors: selectedRouteState?.noteAuthors ?? { createdBy: null, lastEditedBy: null },
@@ -227,6 +235,8 @@ export default ssr<AuthContext>(async (c) => {
                 />
                 <NotePreview
                   text={selectedNote.contentMd ?? ""}
+                  annotations={initialAnnotations}
+                  me={user.id}
                   mode={ctx.settings.richMode}
                   historyIncomplete={selectedNote.historyIncomplete}
                 />
@@ -236,7 +246,7 @@ export default ssr<AuthContext>(async (c) => {
                 class="flex-1"
                 variant="panel"
                 icon="ti ti-file-text"
-                description={tree.length === 0 ? t.noNotes : t.selectNote}
+                description={ctx.sidebarTree.total === 0 ? t.noNotes : t.selectNote}
               />
             )}
           </AppWorkspace.Main>

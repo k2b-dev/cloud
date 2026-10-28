@@ -2,7 +2,7 @@ import type { Topic } from "@k2b/sync";
 import * as Y from "yjs";
 import { compareStreamCursor } from "./cursor";
 import { SHARED_TEXT_NAME, sharedTextNodeId, toBase64 } from "./events";
-import { minimalTextDiff } from "./text-diff";
+import { textDiffHunks } from "./text-diff";
 import type {
   SharedTextActor,
   SharedTextContributor,
@@ -14,6 +14,8 @@ import type {
 } from "./types";
 
 type DocumentLog = {
+  /** Omitted logs use Sync’s default message payload limit (128 KiB). */
+  maxPayloadBytes?: number;
   topic(): Pick<Topic<SharedTextSyncEvent>, "latestCursor" | "publish">;
   replay(config: {
     docId: string;
@@ -48,7 +50,10 @@ export const createDoc = (stored: SharedTextStoredState): Y.Doc => {
   }
 };
 
-export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, store: SharedTextStore<Saved, Context>) => {
+export const bindDocuments = <Saved, Context>(
+  { topic, replay, maxPayloadBytes = 128 * 1024 }: DocumentLog,
+  store: SharedTextStore<Saved, Context>,
+) => {
   return {
     async read(docId: string, options: { signal?: AbortSignal } = {}): Promise<SharedTextSnapshot | null> {
       const stored = await store.load(docId, options);
@@ -67,7 +72,11 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
     async edit(
       docId: string,
       options: { actor: SharedTextActor | null; context?: Context; signal?: AbortSignal },
-      update: (current: { text: string; contributors: SharedTextContributor[]; state(): Uint8Array }) => string | Promise<string>,
+      update: (current: {
+        text: string;
+        contributors: SharedTextContributor[];
+        state(): Uint8Array;
+      }) => string | { update: Uint8Array } | Promise<string | { update: Uint8Array }>,
     ): Promise<SharedTextEditResult<Saved>> {
       const requestedAt = Date.now();
       const stored = await store.load(docId, { signal: options.signal });
@@ -91,12 +100,20 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
         if (next === text) return { status: "unchanged", text };
         // A request cancelled while the callback ran must not publish a write.
         options.signal?.throwIfAborted();
-        const diff = minimalTextDiff(text, next);
         const beforeEditState = Y.encodeStateVector(doc);
-        doc.transact(() => {
-          if (diff.deleteCount > 0) ytext.delete(diff.index, diff.deleteCount);
-          if (diff.insert.length > 0) ytext.insert(diff.index, diff.insert);
-        }, "cli-edit");
+        if (typeof next === "string") {
+          const hunks = textDiffHunks(text, next, maxPayloadBytes);
+          doc.transact(() => {
+            for (const diff of hunks.reverse()) {
+              if (diff.deleteCount > 0) ytext.delete(diff.index, diff.deleteCount);
+              if (diff.insert.length > 0) ytext.insert(diff.index, diff.insert);
+            }
+          }, "cli-edit");
+        } else {
+          // Application-prepared transactions preserve exact item identities and
+          // may be replayed after a partial publication/persistence failure.
+          Y.applyUpdate(doc, next.update, "server-edit");
+        }
         const actor = options.actor;
         const published = await handle.publish({
           tenantId: docId,

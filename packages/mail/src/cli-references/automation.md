@@ -305,9 +305,9 @@ Activation reconciles schedules into the shared scheduler. Every delivered slot 
 
 Mail exposes two input types:
 
-- `mailMessage`: `id`, `conversationId`, `subject`, `sender`, `fromAddress`, `fromDomain`, `recipients`, `body`, `bodyText`, `bodyHtml`, `attachments`, `hasAttachments`, `folderId`, `flags`, `keywords`, `direction`, `internalDate`, and `receivedAt`.
+- `mailMessage`: `id`, `conversationId`, `subject`, `sender`, `fromAddress`, `fromDomain`, `recipients`, `body`, `bodyText`, `bodyHtml`, `attachments`, `hasAttachments`, `textLength`, `attachmentCount`, `isBulk`, `folderId`, `flags`, `keywords`, `direction`, `internalDate`, and `receivedAt`.
 - Mail resource fields in workflow inputs and outputs use stable six-character Mail IDs; provider references and database UUIDs are not part of that workflow vocabulary.
-- `mailConversation`: `id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`, `workStatus`, and `latestMessageAt`.
+- `mailConversation`: `id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`, `workStatus`, `latestMessageAt`, and `messageCount`.
 
 Mail reads `body`, `bodyText`, and `bodyHtml` when a step needs them. The step waits until Mail has loaded the message and fails if the message no longer exists. A whole message value such as `inputs.message` includes the body only when Mail has already loaded it; use a body path when a step needs the text. Run details no longer show message bodies in the event data.
 
@@ -315,11 +315,36 @@ Use `${{ inputs.<name> }}` for a whole input and `${{ inputs.<name>.<field> }}` 
 
 Conditions are recursive and contain exactly one operator:
 
+- `greaterThan` (`>`), `lessThan` (`<`), `atLeast` (`>=`), and `atMost` (`<=`) compare exactly two finite JSON numbers. Numeric strings are not converted. Missing or non-number values yield `false`; pending hydration waits. Known non-number operands produce source-located validation errors.
 - `equals` and `notEquals` compare two values.
 - `textEquals`, `contains`, `startsWith`, and `endsWith` compare two normalized, case-insensitive text values.
 - `includes` tests exact membership in an array such as an `aiClassifyMany` result.
 - `exists` accepts one reference such as `inputs.conversation.summary`.
 - `all` and `any` contain one or more conditions; `not` contains one condition.
+
+`textLength` counts Unicode code points in trimmed plain text, with CRLF/CR normalized to LF. It reuses Mail's quote stripping: `>` quotes and their attribution, original-message separators and Outlook header history are excluded. A line consisting exactly of `-- ` starts the excluded signature. Unmarked signatures remain. Internal line breaks count. For HTML-only messages, Mail counts the plain text derived during message import. The body is loaded and frozen lazily. `attachmentCount` waits for metadata and counts the same stored attachments as `hasAttachments`, including stored inline images. `hasAttachments` retains its receipt-time value and does not wait for metadata. If the message no longer exists, a number comparison using either metric evaluates to `false`. `isBulk` uses non-empty `List-Id`, `Precedence: bulk|list|junk`, or non-empty `Auto-Submitted` other than `no` (case-insensitive, trimmed). `messageCount` counts all linked messages in the source snapshot, just like the conversation list; provider copies do not add messages.
+
+Bind the whole `trigger.message` and `trigger.conversation` into inputs for steps. A schedule currently supplies neither. For example, use the existing local tag `Lang`:
+
+```yaml
+inputs:
+  message: { type: mailMessage, required: true }
+  conversation: { type: mailConversation, required: true }
+triggers:
+  messageReceived:
+    with:
+      message: "${{ trigger.message }}"
+      conversation: "${{ trigger.conversation }}"
+steps:
+  - if:
+      all:
+        - not: { equals: ["${{ inputs.message.isBulk }}", true] }
+        - any:
+            - greaterThan: ["${{ inputs.message.textLength }}", 150]
+            - greaterThan: ["${{ inputs.conversation.messageCount }}", 3]
+    then:
+      - addLocalTag: { conversation: inputs.conversation, tag: Lang }
+```
 
 Steps may use `if`/`then`/`else`. A switch uses `switch: <expression>`, `cases:` as a non-empty list of `{ when: <value>, do: [steps] }` entries, and an optional `default: [steps]`:
 
@@ -378,7 +403,9 @@ The shared parser understands `forEach`, but the Mail binder rejects it because 
 
 Literal folder, tag, sender, and user names are bound to accessible stable ids when a version is created. Unknown, inaccessible, or ambiguous names fail validation.
 
-`createDraft` and `createReplyDraft` default `format` to `markdown`; subject text is limited to 998 characters and body text to 2 MiB. `aiGenerateText.maxOutputChars` defaults to 4,000 and accepts 1–20,000. AI prompts accept 1–20,000 characters, model profile ids and identifiers accept at most 120 characters, and classification choices accept 1–200 characters each. `aiClassifyMany.minChoices` defaults to `0`; `maxChoices` defaults to the number of declared choices. Every selected variable name must be a valid identifier and is visible only to later steps in the same scope.
+`createDraft` and `createReplyDraft` default `format` to `markdown`; subject text is limited to 998 characters and body text to 2 MiB. `aiGenerateText.maxOutputChars` defaults to 4,000 and accepts 1–20,000. AI prompts accept 1–20,000 characters, identifiers accept at most 120 characters, and classification choices accept 1–200 characters each. `aiClassifyMany.minChoices` defaults to `0`; `maxChoices` defaults to the number of declared choices. Every selected variable name must be a valid identifier and is visible only to later steps in the same scope.
+
+The optional AI `model` field accepts `{ class: balanced }` or `{ id: "model:variant" }`. Classes are `fast`, `balanced`, `thorough`, and `maximum`; an explicit variant ID accepts at most 241 characters. Omitting `model` requests `balanced`. Only empty class assignments fall back to another class; access, budget, disabled-model, and capability failures stop the action. An explicit variant ID never falls back.
 
 Reference a value stored by `setVariable` or an action result as `${{ <name> }}` in later steps in the same scope. Mail validation reserves `inputs` and `trigger`.
 
@@ -597,3 +624,34 @@ The Mail API manages definitions and activations only. Runtime observability and
 | References | `reference-number config show|set`, `reference-number list|ensure|find` |
 | Workflow lifecycle | `workflow list|get|validate|create|update|export|activate|deactivate`, `workflow version list|get|create|restore` |
 | Runtime operations | `cld admin workflows health|runs|show|cancel|effects|resolve|events` |
+
+Successful inference is reused for unchanged mail, input, instructions and model
+configuration within its mailbox. To deliberately request fresh inference on
+failed messages, add `--recompute-ai` to `automation backfill start --retry-failed`.
+The API equivalent is `{ retryFailed: true, recomputeAi: true }`. This bypass
+requires the existing backfill permissions and still consumes the mailbox AI
+budget; it cannot bypass capacity, rate, daily, or two-step limits. Check
+**Automations > Activity** for failures and inspect the original message or retry
+after capacity recovers.
+
+## Try a workflow without AI
+
+```bash
+cld mail workflow try <workflow-id> --last 50
+cld --json mail workflow try <workflow-id> --last 100
+cld mail workflow try --file workflow.yaml --last 50
+```
+
+Use a stable workflow ID for the current saved version, or `--file` for unsaved
+YAML. Unsaved YAML requires mailbox administration permission. Saved versions
+require the existing workflow read permission. `--last` accepts 1–100 and
+defaults to 50. Only visible messages are checked, newest first.
+
+The command collects batches and prints a count and one line per message.
+`--json` returns the merged items and AI call range. A dry run changes no mail,
+sends nothing, creates no drafts and calls no AI. AI-dependent actions are
+marked as uncertain; no category or generated result is predicted.
+
+`match` means an action or AI step would run. `skipped` means an explicit
+exclusion matched. `none` means the conditions did not match. Target problems
+are shown per item; the preflight also checks static targets in other branches.

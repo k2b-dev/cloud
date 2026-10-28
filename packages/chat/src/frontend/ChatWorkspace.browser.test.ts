@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled, viewTransitionEnded } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { CreateConversationSchema, CreateOutcomeSchema, ReadAllOutcomeSchema } from "../service/contracts";
 import { chatTestNow, nora, pinPageClock, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
@@ -84,8 +84,7 @@ const load = async (
     await context.addInitScript(recordReadStarts);
     const page = await context.newPage();
     page.setDefaultTimeout(5_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     const base = address.embedded ? "/app/chat/panel" : "/app/chat";
     const path = address.chat ? `${base}/c/${address.chat}${address.message ? `/m/${address.message}` : ""}` : base;
     const url = new URL(path, harness.url);
@@ -398,7 +397,7 @@ const scrollFeed = async (page: Page, direction: number) => {
 /** Opens a message's menu the way each device does: "…" beside the bubble on a desktop, a long press on a phone. */
 const openMessageMenu = async (page: Page, name: string, item: Locator) => {
   // History commits before the view transition creates its animations; wait for the navigation to finish first.
-  await page.waitForFunction(() => !document.documentElement.matches(":active-view-transition"));
+  await viewTransitionEnded(page);
   await settled(page);
   if (name === "phone") {
     await item.locator(".k2b-message-row__text").scrollIntoViewIfNeeded();
@@ -1649,22 +1648,19 @@ describe("Chat info reopening", () => {
         await toggle.focus();
         await page.keyboard.press("Enter");
         await page.waitForURL("**?panel=info");
+        // Each Info link starts a view transition; WebKit sends input during one to <html>, so the next step waits.
+        await viewTransitionEnded(page);
         expect(await toggle.getAttribute("aria-expanded")).toBe("true");
         await page.getByRole("button", { name: "Close chat info", exact: true }).click();
         await page.waitForURL(`**/c/${chat}`);
-        // Keep hover changes out of the closing layout, then wait for the real hit target to settle.
-        await page.mouse.move(0, 0);
-        await page.locator("#k2b-workspace-detail-chat-info").waitFor({ state: "hidden" });
-        await settled(page);
+        await viewTransitionEnded(page);
         expect(await toggle.isVisible()).toBe(true);
         expect(await toggle.getAttribute("aria-expanded")).toBe("false");
         await toggle.click();
         await page.waitForURL("**?panel=info");
+        await viewTransitionEnded(page);
         await page.goBack();
         await page.waitForURL(`**/c/${chat}`);
-        await page.mouse.move(0, 0);
-        await page.locator("#k2b-workspace-detail-chat-info").waitFor({ state: "hidden" });
-        await settled(page);
         expect(await toggle.getAttribute("aria-expanded")).toBe("false");
         await page.reload();
         // This harness mounts explicitly rather than hydrating an island.

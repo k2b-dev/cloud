@@ -1,22 +1,36 @@
+import type { AppEventDefinition, AppEventSubscriptionDefinition } from "../contracts/app-events";
+import {
+  type CapabilityEventManifest,
+  CapabilityEventManifestSchema,
+  CapabilityQualifiedIdSchema,
+  type CapabilitySubscriptionManifest,
+  CapabilitySubscriptionManifestSchema,
+} from "../contracts/capabilities";
+import { RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "../contracts/resource-pages";
 import { hasOAuthScope } from "../server/oauth-scope";
 import { capabilityMessages } from "../shared/capability-messages";
+import { assertAppEventDeclarationSize, assertBoundedAppEventSchema, compileAppEventSchema } from "./app-event-schemas";
 import { capabilityHash, projectSchema, stableJsonValue } from "./capability-schemas";
 
 export { capabilityHash } from "./capability-schemas";
 
 import { isServiceError, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
+import { calendarSourceIssues } from "../contracts/calendar-source";
 import {
   CAPABILITY_ERROR_STATUSES,
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_RESULT_BYTES,
   CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
   CAPABILITY_PROTOCOL_VERSION,
+  CAPABILITY_RESOURCE_COLORS,
   type CapabilityActionDefinition,
   type CapabilityActionManifest,
   CapabilityActionPolicySchema,
   type CapabilityActionReviewResult,
   type CapabilityActionSentences,
+  type CapabilityCalendarSourceDeclaration,
+  CapabilityCalendarSourceManifestSchema,
   type CapabilityCommandDefinition,
   type CapabilityCommandManifest,
   CapabilityCommandManifestSchema,
@@ -39,6 +53,7 @@ import {
   type CapabilitySearchTagDefinition,
   type CapabilityStreamDefinition,
   type CapabilityUniversalSearchDefinition,
+  CloudResourceViewSchema,
   capabilityActionPolicy,
   capabilityResultSchema,
   UniversalSearchDataSchema,
@@ -79,9 +94,26 @@ const DECLARATION_FIELDS = {
   actions: true,
   commands: true,
   fileProvider: true,
+  calendarSource: true,
+  events: true,
+  subscribes: true,
 } satisfies DefinedFields<CapabilityDefinitions>;
+const CALENDAR_SOURCE_FIELDS = {
+  calendars: true,
+  events: true,
+  update: true,
+  move: true,
+  delete: true,
+} satisfies DefinedFields<CapabilityCalendarSourceDeclaration>;
 const FILE_PROVIDER_FIELDS = { list: true, read: true, save: true } satisfies DefinedFields<CapabilityFileProviderDeclaration>;
-const TYPE_FIELDS = { title: true, description: true, icon: true, reader: true } satisfies DefinedFields<CapabilityResourceTypeDefinition>;
+const TYPE_FIELDS = {
+  title: true,
+  description: true,
+  icon: true,
+  color: true,
+  reader: true,
+  pages: true,
+} satisfies DefinedFields<CapabilityResourceTypeDefinition>;
 const QUERY_FIELDS = {
   title: true,
   description: true,
@@ -149,7 +181,12 @@ export type CompiledCapabilityAction = {
   resultSchema: z.ZodType;
 };
 
+export type CompiledAppEvent = { definition: AppEventDefinition; manifest: CapabilityEventManifest };
+export type CompiledAppEventSubscription = { definition: AppEventSubscriptionDefinition; manifest: CapabilitySubscriptionManifest };
+
 export type CompiledCapabilities = {
+  events: ReadonlyMap<string, CompiledAppEvent>;
+  subscribes: ReadonlyMap<string, CompiledAppEventSubscription>;
   manifest: CapabilityManifest;
   presentation?: CapabilityPresentationCatalog;
   typeIds: ReadonlySet<string>;
@@ -432,6 +469,7 @@ export const compileCapabilityPresentation = (
   const queries = new Map(manifest.queries.map((operation) => [operation.localId, operation]));
   const actions = new Map(manifest.actions.map((operation) => [operation.localId, operation]));
   const commands = new Map(manifest.commands.map((operation) => [operation.localId, operation]));
+  const events = new Map((manifest.events ?? []).map((event) => [event.localId, event]));
   let sentences: Record<string, CapabilityActionSentences> | undefined;
   if (catalog.sentences !== undefined) {
     if (!catalog.sentences || typeof catalog.sentences !== "object" || Array.isArray(catalog.sentences)) {
@@ -459,7 +497,9 @@ export const compileCapabilityPresentation = (
       throw new Error(`Capability presentation translation ${canonical} must be an object`);
     }
     const raw = rawTranslation as Record<string, unknown>;
-    const extra = Object.keys(raw).find((key) => key !== "types" && key !== "queries" && key !== "actions" && key !== "commands");
+    const extra = Object.keys(raw).find(
+      (key) => key !== "types" && key !== "queries" && key !== "actions" && key !== "commands" && key !== "events",
+    );
     if (strict && extra) throw new Error(`Capability presentation translation ${canonical} contains unsupported field "${extra}"`);
     const compileGroup = <T>(
       group: unknown,
@@ -503,12 +543,20 @@ export const compileCapabilityPresentation = (
         ...(copy.description ? { description: String(copy.description).trim() } : {}),
       };
     });
+    const translatedEvents = compileGroup(raw.events, events, "Event", (entry, _definition, label) => {
+      const parsed = z.object({
+        title: z.string().trim().min(1).max(120).optional(),
+        description: z.string().trim().min(1).max(1000).optional(),
+      });
+      return (strict ? parsed.strict() : parsed).parse(entry);
+    });
     const operationPresentation = (entry: unknown, operation: Parameters<typeof compileOperationPresentation>[1], label: string) =>
       compileOperationPresentation(entry, operation, label, strict);
     const translatedQueries = compileGroup(raw.queries, queries, "Query", operationPresentation);
     const translatedActions = compileGroup(raw.actions, actions, "Action", operationPresentation);
     const translatedCommands = compileGroup(raw.commands, commands, "Command", operationPresentation);
     translations[canonical] = {
+      ...(translatedEvents ? { events: translatedEvents } : {}),
       ...(translatedTypes ? { types: translatedTypes } : {}),
       ...(translatedQueries ? { queries: translatedQueries } : {}),
       ...(translatedActions ? { actions: translatedActions } : {}),
@@ -623,11 +671,20 @@ const compileOperationSchemas = (definition: CapabilityQueryDefinition | Capabil
   };
 };
 
-export const compileCapabilities = (appId: string, definitions: CapabilityDefinitions): CompiledCapabilities => {
+export const compileCapabilities = (
+  appId: string,
+  definitions: CapabilityDefinitions,
+  routes?: readonly string[],
+): CompiledCapabilities => {
   if (definitions.protocolVersion !== CAPABILITY_PROTOCOL_VERSION) {
     throw new Error(`Unsupported capability protocol version ${String(definitions.protocolVersion)}`);
   }
   assertDefinedFields(definitions, DECLARATION_FIELDS, "Capability declaration");
+  if (definitions.calendarSource !== undefined) {
+    assertDefinedFields(definitions.calendarSource, CALENDAR_SOURCE_FIELDS, "calendarSource");
+    // Author declarations must fail here; the manifest reader deliberately drops unreadable declarations.
+    CapabilityCalendarSourceManifestSchema.parse(definitions.calendarSource);
+  }
   if (definitions.fileProvider) assertDefinedFields(definitions.fileProvider, FILE_PROVIDER_FIELDS, "fileProvider");
 
   const localIds = new Set<string>();
@@ -642,6 +699,15 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     .map(([localId, definition]) => {
       registerLocalId(localId, "Resource type");
       assertDefinedFields(definition, TYPE_FIELDS, `Resource type ${localId}`);
+      if (definition.pages !== undefined) {
+        if (!definition.reader) throw new Error(`Resource type ${localId}: pages require a reader`);
+        if (!Array.isArray(definition.pages) || definition.pages.length > RESOURCE_PAGES_PER_TYPE)
+          throw new Error(`Resource type ${localId}: at most ${RESOURCE_PAGES_PER_TYPE} pages are allowed`);
+        for (const path of definition.pages) {
+          const issue = typeof path === "string" ? resourcePageIssue(path, routes, appId) : "Expected a page pattern string";
+          if (issue) throw new Error(`Resource type ${localId} pages: ${issue}`);
+        }
+      }
       assertText(definition.title, `Resource type ${localId} title`, 120);
       assertText(definition.description, `Resource type ${localId} description`, 500);
       return {
@@ -649,6 +715,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
         title: definition.title.trim(),
         description: definition.description.trim(),
         ...(definition.icon ? { icon: definition.icon } : {}),
+        ...(definition.color !== undefined ? { color: z.enum(CAPABILITY_RESOURCE_COLORS).parse(definition.color) } : {}),
         ...(definition.reader !== undefined ? { reader: CapabilityLocalIdSchema.parse(definition.reader) } : {}),
       };
     });
@@ -805,19 +872,77 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
       });
     });
 
+  const events = new Map<string, CompiledAppEvent>();
+  for (const [localId, definition] of Object.entries(definitions.events ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+    registerLocalId(localId, "Event");
+    assertDefinedFields(
+      definition,
+      {
+        version: true,
+        title: true,
+        description: true,
+        subject: true,
+        place: true,
+        schema: true,
+        automation: true,
+      } satisfies DefinedFields<AppEventDefinition>,
+      `Event ${localId}`,
+    );
+    if (!types.some((type) => type.localId === definition.subject)) throw new Error(`Event ${localId} subject must reference a local Type`);
+    if (definition.place && !types.some((type) => type.localId === definition.place && type.reader))
+      throw new Error(`Event ${localId} place must reference a local Type with a reader`);
+    const schemas = compileAppEventSchema(definition.schema, `Event ${localId} data`);
+    assertAppEventDeclarationSize(appId, localId, definition, schemas.dataSchema);
+    const manifest = CapabilityEventManifestSchema.parse({
+      localId,
+      version: definition.version,
+      title: definition.title,
+      description: definition.description,
+      subject: definition.subject,
+      ...(definition.place !== undefined ? { place: definition.place } : {}),
+      ...schemas,
+      ...(definition.automation !== undefined ? { automation: definition.automation } : {}),
+    });
+    events.set(localId, { definition, manifest });
+  }
+  const subscribes = new Map<string, CompiledAppEventSubscription>();
+  for (const [type, definition] of Object.entries(definitions.subscribes ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+    CapabilityQualifiedIdSchema.parse(type);
+    assertDefinedFields(
+      definition,
+      { version: true, schema: true, run: true } satisfies DefinedFields<AppEventSubscriptionDefinition>,
+      `Subscription ${type}`,
+    );
+    if (typeof definition.run !== "function") throw new Error(`Subscription ${type} needs run`);
+    const manifest = CapabilitySubscriptionManifestSchema.parse({
+      type,
+      version: definition.version,
+      ...compileAppEventSchema(definition.schema, `Subscription ${type} data`, "reader"),
+    });
+    subscribes.set(type, { definition, manifest });
+  }
+
   const policies = Object.fromEntries(
     [...actions].flatMap(([localId, action]) => (action.definition.policy ? [[localId, action.definition.policy]] : [])),
   );
   const fileProvider = definitions.fileProvider;
+  const calendarSource = definitions.calendarSource;
+  const resourcePages = Object.entries(definitions.types ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .flatMap(([type, definition]) => (definition.pages ?? []).map((path) => ({ type, path })));
   const manifestBase = {
+    ...(resourcePages.length ? { resourcePages } : {}),
     protocolVersion: CAPABILITY_PROTOCOL_VERSION,
     appId,
     types,
     queries: [...queries.values()].map((entry) => entry.manifest),
     actions: [...actions.values()].map((entry) => entry.manifest),
     commands,
+    ...(definitions.events !== undefined ? { events: [...events.values()].map((event) => event.manifest) } : {}),
+    ...(definitions.subscribes !== undefined ? { subscribes: [...subscribes.values()].map((subscription) => subscription.manifest) } : {}),
     ...(Object.keys(policies).length ? { policies } : {}),
     // Omitted when unused so manifests without a provider keep their earlier hash.
+    ...(calendarSource ? { calendarSource: { ...calendarSource } } : {}),
     ...(fileProvider
       ? { fileProvider: { list: fileProvider.list, read: fileProvider.read, ...(fileProvider.save ? { save: fileProvider.save } : {}) } }
       : {}),
@@ -826,6 +951,11 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     ...manifestBase,
     manifestHash: capabilityHash(manifestBase),
   });
+  const calendarIssues = calendarSourceIssues(manifest);
+  if (calendarIssues.length)
+    throw new Error(
+      `calendarSource does not match the calendar-source contract:\n- ${calendarIssues.map((issue) => `${issue.function} (${issue.localId}) ${issue.path}: ${issue.message}`).join("\n- ")}`,
+    );
   const providerIssues = fileProviderIssues(manifest);
   if (providerIssues.length > 0) {
     throw new Error(
@@ -839,7 +969,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     throw new Error(`Capability manifest exceeds the ${MAX_CAPABILITY_MANIFEST_BYTES}-byte registry limit`);
   }
   const presentation = compileCapabilityPresentation(manifest, definitions.presentation);
-  return { manifest, presentation, typeIds, queries, actions };
+  return { manifest, presentation, typeIds, queries, actions, events, subscribes };
 };
 
 const applySchemaPresentation = (schema: Record<string, unknown>, descriptions: Readonly<Record<string, string>> | undefined) => {
@@ -984,6 +1114,17 @@ export const resolveCapabilityManifestPresentation = (
             }
           : operation;
       }),
+      ...(current.events
+        ? {
+            events: current.events.map((event) => {
+              const copy = translation.events?.[event.localId];
+              return copy ? { ...event, title: copy.title ?? event.title, description: copy.description ?? event.description } : event;
+            }),
+          }
+        : {}),
+      ...(current.subscribes ? { subscribes: current.subscribes } : {}),
+      ...(current.resourcePages ? { resourcePages: current.resourcePages } : {}),
+      ...(current.calendarSource ? { calendarSource: current.calendarSource } : {}),
       ...(current.fileProvider ? { fileProvider: current.fileProvider } : {}),
       ...(current.policies ? { policies: current.policies } : {}),
     };
@@ -1023,15 +1164,25 @@ const assertUsableOperation = (operation: CapabilityQueryManifest | CapabilityAc
   if (operation.schemaHash !== expectedSchemaHash) throw new Error(`Operation ${operation.localId} schemaHash does not match its schemas`);
   if ("universalSearch" in operation && operation.universalSearch) {
     const expectedInput = projectSchema(UniversalSearchInputSchema, "Universal Search input", "input");
-    const expectedData = projectSchema(UniversalSearchDataSchema, "Universal Search data", "output");
     if (
       capabilityHash(operation.inputSchema) !== capabilityHash(expectedInput) ||
-      capabilityHash(operation.dataSchema) !== capabilityHash(expectedData)
+      !universalSearchDataHashes().includes(capabilityHash(operation.dataSchema))
     ) {
       throw new Error(`Operation ${operation.localId} advertises Universal Search with non-canonical schemas`);
     }
   }
 };
+
+/**
+ * The Universal Search data schemas a live manifest may declare: the current one, and the one before results gained
+ * `context` and `status`, so an app built by the previous release keeps its search while Core is already newer. Its
+ * results still parse, because both fields are optional.
+ */
+let searchDataHashes: string[] | undefined;
+const universalSearchDataHashes = () =>
+  (searchDataHashes ??= [UniversalSearchDataSchema, z.array(CloudResourceViewSchema.omit({ context: true, status: true })).max(100)].map(
+    (schema) => capabilityHash(projectSchema(schema, "Universal Search data", "output")),
+  ));
 
 const assertUsableCommand = (command: CapabilityCommandManifest): void => {
   z.fromJSONSchema(structuredClone(command.inputSchema));
@@ -1055,7 +1206,7 @@ export const parseCapabilityManifest = (value: unknown, expectedAppId: string): 
   const sent = CapabilityManifestSchema.parse(value);
   if (sent.appId !== expectedAppId) throw new Error(`manifest appId must be ${expectedAppId}`);
   const localIds = new Set<string>();
-  for (const { localId } of [...sent.types, ...sent.queries, ...sent.actions, ...sent.commands]) {
+  for (const { localId } of [...sent.types, ...sent.queries, ...sent.actions, ...sent.commands, ...(sent.events ?? [])]) {
     if (localIds.has(localId)) throw new Error(`localId ${localId} is declared more than once across Types, Queries, and Actions`);
     localIds.add(localId);
   }
@@ -1063,15 +1214,27 @@ export const parseCapabilityManifest = (value: unknown, expectedAppId: string): 
   const { manifestHash: _sentHash, ...sentBase } = value as Record<string, unknown>;
   if (sent.manifestHash !== capabilityHash(sentBase)) throw new Error("manifestHash does not match the manifest");
 
+  const usableEventSchema = (entry: CapabilityEventManifest | CapabilitySubscriptionManifest) => {
+    assertBoundedAppEventSchema(entry.dataSchema);
+    if (entry.schemaHash !== capabilityHash({ dataSchema: entry.dataSchema }))
+      throw new Error("Event schemaHash does not match its schema");
+  };
+  const subscriptionTypes = new Set<string>();
+  for (const subscription of sent.subscribes ?? []) {
+    if (subscriptionTypes.has(subscription.type)) throw new Error(`Duplicate subscription ${subscription.type}`);
+    subscriptionTypes.add(subscription.type);
+  }
   // Reading the usable entries again leaves out what depends on an entry left out here.
   const manifest = CapabilityManifestSchema.parse({
     ...sent,
+    ...(sent.events ? { events: sent.events.filter((event) => passes(() => usableEventSchema(event))) } : {}),
+    ...(sent.subscribes ? { subscribes: sent.subscribes.filter((subscription) => passes(() => usableEventSchema(subscription))) } : {}),
     queries: sent.queries.filter((query) => passes(() => assertUsableOperation(query))),
     actions: sent.actions.filter((action) => passes(() => assertUsableOperation(action))),
     commands: sent.commands.filter((command) => passes(() => assertUsableCommand(command))),
   });
   const queries = new Map(manifest.queries.map((query) => [query.localId, query]));
-  return {
+  return CapabilityManifestSchema.parse({
     ...manifest,
     types: manifest.types.map((type) => {
       const reader = type.reader === undefined ? undefined : queries.get(type.reader);
@@ -1080,7 +1243,7 @@ export const parseCapabilityManifest = (value: unknown, expectedAppId: string): 
       const { reader: _unusable, ...withoutReader } = type;
       return withoutReader;
     }),
-  };
+  });
 };
 
 const schemaSemantics = (value: unknown): unknown => {

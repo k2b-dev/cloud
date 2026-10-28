@@ -1,6 +1,7 @@
 import { password } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { MutationResult, UserProfile } from "../../contracts/shared";
+import { coreUserEventPublisher } from "../../events/core-user-created";
 import { freeipa } from "../../server/services";
 import { writeDeletedAccountAudit } from "../account-lifecycle/audit";
 import { resolveProviderProfile } from "../accounts/base-user";
@@ -366,7 +367,7 @@ export const addIpa = async (params: {
           display_name = EXCLUDED.display_name,
           mail = EXCLUDED.mail,
           account_expires = EXCLUDED.account_expires
-        RETURNING id
+        RETURNING id, (xmax = 0) AS inserted
       `;
         id = insertRows[0]!.id as string;
         await upsertUserIpaData(
@@ -381,6 +382,8 @@ export const addIpa = async (params: {
           },
           tx,
         );
+        if (insertRows[0]?.inserted)
+          await coreUserEventPublisher().publish(tx, "user.created", { subject: id, data: { userId: id, provider: "ipa" } });
       }
     } catch (dbError) {
       log.error("CRITICAL: FreeIPA user created but local DB update failed. Manual reconciliation needed.", {

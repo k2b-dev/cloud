@@ -169,6 +169,24 @@ const readme = (params: { notebook: Notebook; exportedAt: string; noteCount: num
     "",
   ].join("\n");
 
+const noteExportFile = (
+  note: Note,
+  noteFileByShortId: Map<string, string>,
+  noteShortIdById: Map<string, string>,
+  attachmentFileByShortId: Map<string, string>,
+): NotebookExportFile => {
+  const warning = note.historyIncomplete
+    ? "> **Some note changes could not be recovered.** This note may be incomplete. Contact your administrator before relying on this content.\n\n"
+    : "";
+  const body = warning + transformPortableLinks(note.contentMd ?? "", noteFileByShortId, attachmentFileByShortId);
+  return {
+    path: `notes/${noteFileName(note)}`,
+    content: `${noteFrontmatter(note, note.parentId ? (noteShortIdById.get(note.parentId) ?? null) : null)}${
+      body.endsWith("\n") || body.length === 0 ? body : `${body}\n`
+    }`,
+  };
+};
+
 export const buildNotebookExportFiles = (params: {
   notebook: Notebook;
   notes: Note[];
@@ -226,16 +244,7 @@ export const buildNotebookExportFiles = (params: {
   ];
 
   for (const note of sortedNotes) {
-    const warning = note.historyIncomplete
-      ? "> **Some note changes could not be recovered.** This note may be incomplete. Contact your administrator before relying on this content.\n\n"
-      : "";
-    const body = warning + transformPortableLinks(note.contentMd ?? "", noteFileByShortId, attachmentFileByShortId);
-    files.push({
-      path: `notes/${noteFileName(note)}`,
-      content: `${noteFrontmatter(note, note.parentId ? (noteShortIdById.get(note.parentId) ?? null) : null)}${
-        body.endsWith("\n") || body.length === 0 ? body : `${body}\n`
-      }`,
-    });
+    files.push(noteExportFile(note, noteFileByShortId, noteShortIdById, attachmentFileByShortId));
   }
 
   for (const attachment of sortedAttachments) {
@@ -375,21 +384,57 @@ export const exportNotebookZip = async (params: { notebookId: string; exportedAt
   const notebook = await notebooks.get({ id: params.notebookId });
   if (!notebook) return null;
 
-  const [flatNotes, attachmentMetadata] = await Promise.all([
-    notes.list({ notebookId: notebook.id }),
-    attachments.list({ notebookId: notebook.id }),
-  ]);
-  const attachmentContents = (
-    await Promise.all(attachmentMetadata.map((attachment) => attachments.getContent({ id: attachment.id })))
-  ).filter((attachment): attachment is AttachmentContent => attachment !== null);
+  // Keep the notebook-wide hierarchy and link maps lightweight. Raw Markdown is read
+  // only a batch at a time; the returned files and ZIP necessarily retain the output.
+  const flatNotes: Note[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const batch = await notes.readBatch({ notebookId: notebook.id, after, includeContent: false });
+    if (batch.length === 0) break;
+    flatNotes.push(...batch);
+    after = batch.at(-1)!.id;
+  }
+  const attachmentMetadata = await attachments.list({ notebookId: notebook.id });
+  const attachmentContents: AttachmentContent[] = [];
+  // Four blob reads at once bound connection pressure and transient input memory.
+  for (let start = 0; start < attachmentMetadata.length; start += 4) {
+    const batch = await Promise.all(
+      attachmentMetadata.slice(start, start + 4).map((attachment) => attachments.getContent({ id: attachment.id })),
+    );
+    for (const attachment of batch) if (attachment) attachmentContents.push(attachment);
+  }
 
   const exportedAt = params.exportedAt ?? new Date();
-  const files = buildNotebookExportFiles({
-    notebook,
-    notes: flatNotes,
-    attachments: attachmentContents,
-    exportedAt,
-  });
+  const files = buildNotebookExportFiles({ notebook, notes: flatNotes, attachments: attachmentContents, exportedAt });
+  const fileByPath = new Map(files.map((file) => [file.path, file]));
+  const metadataById = new Map(flatNotes.map((note) => [note.id, note]));
+  const noteFileByShortId = new Map(flatNotes.map((note) => [note.shortId, noteFileName(note)]));
+  const noteShortIdById = new Map(flatNotes.map((note) => [note.id, note.shortId]));
+  const attachmentFileByShortId = new Map(attachmentContents.map((attachment) => [attachment.shortId, attachmentFileName(attachment)]));
+  // A note deleted while the export runs is left out, as if it had been gone from the start.
+  const unread = new Set(metadataById.keys());
+  after = undefined;
+  for (;;) {
+    const batch = await notes.readBatch({ notebookId: notebook.id, after });
+    if (batch.length === 0) break;
+    for (const note of batch) {
+      const metadata = metadataById.get(note.id);
+      if (!metadata) continue;
+      unread.delete(note.id);
+      const file = noteExportFile(
+        { ...metadata, contentMd: note.contentMd, historyIncomplete: note.historyIncomplete },
+        noteFileByShortId,
+        noteShortIdById,
+        attachmentFileByShortId,
+      );
+      fileByPath.get(file.path)!.content = file.content;
+    }
+    after = batch.at(-1)!.id;
+  }
+  const removed = new Set(
+    [...unread].map((id) => noteExportFile(metadataById.get(id)!, noteFileByShortId, noteShortIdById, attachmentFileByShortId).path),
+  );
+  if (removed.size > 0) files.splice(0, files.length, ...files.filter((file) => !removed.has(file.path)));
   return {
     filename: exportFilename(notebook, exportedAt),
     notebook: {

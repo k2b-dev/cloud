@@ -23,7 +23,7 @@ const MAX_CATEGORY_LABELS = 12;
 const percent = (units: number) => `${(units / CHART_WIDTH) * 100}%`;
 // The font @k2b/ui gives the chart's tick labels, which the gutter measures in; the
 // global font rule would override a font utility class.
-const axisFont = "var(--k2b-font-mono)";
+const axisFont = "var(--k2b-font-sans)";
 // Very wide tick labels overflow the block instead of squeezing the plot to zero width,
 // where @k2b/ui can no longer keep the chart's text at its pixel size. A style, because
 // @k2b/ui's own min-width rule on the chart outranks a utility class.
@@ -31,7 +31,7 @@ const plotStyle = { "min-width": "6rem" };
 
 /**
  * The y tick labels stdlib draws for these values, from the helpers and tick
- * count it uses itself. Bar values include the zero baseline stdlib adds.
+ * count it uses itself.
  */
 const yTickLabels = (values: number[], format: (value: number) => string) => {
   const [min, max] = computeDomain(values);
@@ -39,10 +39,10 @@ const yTickLabels = (values: number[], format: (value: number) => string) => {
 };
 
 /**
- * stdlib draws axis text at pixel size while the plot stretches, so long or
- * many category names overlap on narrower blocks, a long y-axis label runs
- * past the chart's fixed height or over the value labels, and its bar chart
- * has no x-axis label. Grids draws this text around the plot instead: each
+ * stdlib draws line chart axis text at pixel size while the plot stretches, so
+ * long or many category names overlap on narrower blocks and a long y-axis
+ * label runs past the chart's fixed height or over the value labels. Grids
+ * draws this text around the plot instead: each
  * category name is centred under its slot and truncated to the room it has,
  * and both axis labels are truncated to the chart, each with the full text as
  * title. Beyond MAX_CATEGORY_LABELS only every n-th category is named, with
@@ -187,25 +187,19 @@ export function CustomAppChartView(props: {
     );
   }
   if (renderData.kind === "bar") {
-    const categories = renderData.data.map((bar) => bar.label);
+    // @k2b/ui names every category, prints the values and titles both axes itself. Many or long
+    // categories become rows that scroll inside the fixed box.
     return (
-      <CartesianChart
-        categories={categories}
-        tickLabels={yTickLabels([...renderData.data.map((bar) => bar.value), 0], format)}
-        showAxes={categories.length > 0}
-        xAxisLabel={props.xAxisLabel}
-        yAxisLabel={props.yAxisLabel}
-      >
+      <div class="flex h-72 flex-col">
         <Chart
           tooltip={tooltip}
           kind="bar"
-          class={chartClass}
-          style={plotStyle}
-          data={renderData.data.map((bar) => ({ ...bar, label: "" }))}
-          padding={padding}
-          yAxis={yAxis}
+          class="min-h-0 flex-1"
+          data={renderData.data}
+          xAxis={{ label: props.xAxisLabel }}
+          yAxis={{ ...yAxis, label: props.yAxisLabel }}
         />
-      </CartesianChart>
+      </div>
     );
   }
   if (renderData.kind === "line") {

@@ -2,7 +2,10 @@ export * from "./account-categories";
 export * from "./announcements";
 export * from "./app";
 export * from "./app-approval";
+export * from "./app-details";
 export * from "./avatar";
+export * from "./calendar-source";
+export * from "./calendar-view";
 export * from "./capabilities";
 export * from "./capability-compatibility";
 export * from "./commands";
@@ -25,6 +28,7 @@ export { RailAccessSchema, type RailAdminEntry, RailAdminInputSchema, RailAdminS
 export type { RailShortcut } from "./rail-preferences";
 export * from "./registry";
 export * from "./resource-clipboard";
+export { type ResolvedCloudResourceUrl, ResolvedCloudResourceUrlSchema } from "./resource-resolution";
 export * from "./seen-hints";
 export * from "./shared";
 export * from "./user-notifications";

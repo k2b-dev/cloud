@@ -23,6 +23,7 @@ import { FilesError, filesService } from "./service";
 const EntryReadInputSchema = z
   .object({ id: z.string().min(1).max(512).describe("Entry ID from a filesv2.entry ref or search result.") })
   .strict();
+const UserCreatedDataSchema = z.object({ userId: z.uuid(), provider: z.enum(["local", "ipa"]) }).strict();
 const EntryDataSchema = z.object({
   id: z.string(),
   base: z.object({ id: z.string(), name: z.string(), area: z.enum(["cloud", "freeipa"]) }),
@@ -43,13 +44,24 @@ const entryHref = (baseId: string, path: string, directory: boolean) =>
 
 export const filesCapabilities = defineCapabilities({
   protocolVersion: 2,
+  subscribes: {
+    "core.user.created": {
+      version: 1,
+      schema: UserCreatedDataSchema,
+      async run(envelope, context) {
+        await filesService.provisionUserHome(envelope.data.userId, { eventId: envelope.id, signal: context.signal });
+      },
+    },
+  },
   presentation: filesCapabilityPresentation,
   types: {
     entry: {
       title: "File or folder",
       description: "One file or folder in an accessible Cloud or FreeIPA storage base.",
       icon: "ti ti-folders",
+      color: "blue",
       reader: "entry.read",
+      pages: ["/app/filesv2/ref/:id"],
     },
   },
   actions: fileActions,
@@ -66,8 +78,18 @@ export const filesCapabilities = defineCapabilities({
         if (!actor) return fail(err.forbidden("File entries are read on behalf of a signed-in user."));
         try {
           const result = await filesService.entryById(capabilityCall(context), input.id);
+          const folder = parent(result.entry.path).split("/").at(-1) || result.base.name;
+          const t = filesCapabilityMessages(context.locale);
+          const resourceContext = result.entry.directory ? t.folderInFolder({ folder }) : t.fileInFolder({ folder });
           return ok({
-            refs: [{ type: ENTRY_TYPE, id: input.id, title: result.entry.name }],
+            refs: [
+              {
+                type: ENTRY_TYPE,
+                id: input.id,
+                title: result.entry.name,
+                context: resourceContext.replace(/\s+/g, " ").trim().slice(0, 200),
+              },
+            ],
             links: [{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(input.id)}` }],
             data: {
               id: input.id,

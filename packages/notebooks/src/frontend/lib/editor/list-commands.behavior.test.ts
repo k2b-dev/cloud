@@ -436,7 +436,7 @@ describe("notebook structural list commands", () => {
     expect(editor.text()).toContain("B\n```");
   });
 
-  test("indent checks selected code lines beyond the main caret's parsed range", () => {
+  test.each(["available", "exhausted"] as const)("indent checks selected code lines with an %s parser budget", (budget) => {
     const prefix = "- A\n- B\n\n" + "paragraph\n\n".repeat(3000);
     const doc = prefix + "```\n- A\n  1. child\n- codeB\n```";
     using editor = mount(doc, doc.indexOf("B"), true, [], false);
@@ -444,8 +444,19 @@ describe("notebook structural list commands", () => {
       selection: EditorSelection.create([EditorSelection.cursor(doc.indexOf("B")), EditorSelection.cursor(doc.indexOf("codeB"))], 0),
     });
     expect(syntaxTreeAvailable(editor.view.state, doc.indexOf("codeB"))).toBe(false);
-    expect(editor.press("Tab")).toBe(true);
-    expect(editor.text()).toBe(doc.replace("- B", "  - B").replace("- codeB", "  - codeB"));
+    let now = Date.UTC(2026, 9, 26);
+    // CodeMirror measures its existing 50 ms parse slice with Date.now().
+    // Test lookahead and safe budget exhaustion independently of host speed.
+    const clock = spyOn(Date, "now").mockImplementation(() => {
+      if (budget === "exhausted") now += 51;
+      return now;
+    });
+    try {
+      expect(editor.press("Tab")).toBe(true);
+      expect(editor.text()).toBe(budget === "exhausted" ? doc : doc.replace("- B", "  - B").replace("- codeB", "  - codeB"));
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   test("move uses the newly parsed list at the tail of a long document", () => {

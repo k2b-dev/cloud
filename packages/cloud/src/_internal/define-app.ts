@@ -1,6 +1,9 @@
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, validateAppSkillCatalog } from "../ai/app-skills";
 import { createOwnedAppAccessRoutes } from "../api/app-access";
+import { createAppEventDeliveryRoutes } from "../api/app-event-delivery";
 import { type AppAccessDeclaration, compileAppAccess } from "../contracts/app-access";
+import { startAppEventDelivery } from "../events/app-event-delivery";
+import { bindAppEvents } from "../events/app-events";
 import { startLiveOutbox } from "../events/live";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
@@ -60,6 +63,7 @@ import { requireAppAccess, stopAppAccessConnections } from "../server/middleware
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { requireInvocation } from "../server/middleware/invocation";
 import "../events/app-access";
+import { createNestedCapabilityQuery } from "../capabilities/nested";
 import { matchedRouteTemplate, routeTemplate } from "../server/middleware/route-template";
 import { runtime as runtimeMiddleware } from "../server/middleware/runtime";
 import { preloadLayoutAnnouncements, settings as settingsMiddleware } from "../server/middleware/settings";
@@ -692,7 +696,8 @@ export const defineApp = <
       // derive the spec from. The mount block lower down uses the same
       // flag so the registry never points at a URL that 404s.
       const advertiseOpenapi = !!(opts.openapi && startOpts.openapi);
-      const compiledCapabilities = startOpts.capabilities ? compileCapabilities(meta.id, startOpts.capabilities) : undefined;
+      const compiledCapabilities = startOpts.capabilities ? compileCapabilities(meta.id, startOpts.capabilities, meta.routes) : undefined;
+      if (startOpts.capabilities) bindAppEvents(meta.id, startOpts.capabilities, compiledCapabilities);
       const compiledHelp = startOpts.help
         ? compileHelp({
             appId: meta.id,
@@ -867,6 +872,9 @@ export const defineApp = <
 
       if (installable) server.route("/", createInstallableRoutes(meta.id, installable));
 
+      if (compiledCapabilities?.subscribes.size)
+        server.route("/api/_internal/events/v1", createAppEventDeliveryRoutes(compiledCapabilities));
+
       if (compiledCapabilities) {
         const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") =>
           withCapabilityRequestTimeout(c, kind, async () => {
@@ -904,6 +912,7 @@ export const defineApp = <
               input: body.input,
               expectedSchemaHash: c.req.header("x-cloud-capability-schema-hash") ?? null,
               context: {
+                query: createNestedCapabilityQuery(c.req.raw),
                 authority: auth.getAuthority(c),
                 actor,
                 accessSubject: c.get("accessSubject"),
@@ -1098,6 +1107,8 @@ export const defineApp = <
       const startOutbox = async () => {
         const stopLiveOutbox = await startLiveOutbox(meta.id);
         if (stopLiveOutbox) cleanup.push(stopLiveOutbox);
+        const stopAppEvents = await startAppEventDelivery(meta.id);
+        if (stopAppEvents) cleanup.push(stopAppEvents);
       };
       // An application fails before any setup when Core has not created the platform outbox yet.
       // Core creates it in its own setup, so it starts publishing after that.

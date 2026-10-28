@@ -116,6 +116,12 @@ Policy values are:
 `preapproved` requires explicit non-empty app and operation allowlists. A
 wildcard mandate always requires approval. It cannot silently approve an
 operation that the product or capability contract says needs user attention.
+Unattended Actions follow the live capability policy: `ask`, `routines: false`,
+and legacy Actions without `none` or `rememberable` approval require an
+interactive workflow. Optional grants add exact capability and input
+constraints. A `require_approval` mandate without grants can execute an Action
+after its separate approval has completed through Cloud. The app invocation
+broker never supplies this approval.
 
 Background work does not inherit remembered interactive approvals, neither
 those for a chat, including a website allowed for a chat, nor those that apply

@@ -6,6 +6,7 @@ import { isAccountExpired } from "../account-model";
 import type { ServiceAccount } from "../service-accounts";
 import { buildProjectedUser, loadCurrentUser, userProjectionJoin, userProjectionSql, withoutAdminRole } from "../session/user";
 import type { CloudInvocationClaims } from "./invocation-token";
+import { isNestedSourceCurrent, nestedInvocationLeases } from "./nested-invocation";
 import { getIdentityRuntimeConfig } from "./runtime-config";
 
 type ServiceAccountRow = Record<string, unknown> & {
@@ -32,6 +33,8 @@ export type InvocationPrincipalClaims = Pick<
   CloudInvocationClaims,
   | "sub"
   | "principal_type"
+  | "access_subject_type"
+  | "access_subject_id"
   | "session_kind"
   | "scopes"
   | "credential_id"
@@ -44,6 +47,7 @@ export type InvocationPrincipalClaims = Pick<
   | "mandate_revision"
   | "workload_type"
   | "workload_id"
+  | "parent_invocation_id"
 >;
 
 const provenance = (claims: InvocationPrincipalClaims): NonNullable<RequestActor["delegation"]> => ({
@@ -51,6 +55,7 @@ const provenance = (claims: InvocationPrincipalClaims): NonNullable<RequestActor
   callingAppId: claims.act.sub.slice("app:".length),
   credentialKind: claims.credential_kind,
   invocationId: claims.jti,
+  ...(claims.parent_invocation_id ? { parentInvocationId: claims.parent_invocation_id } : {}),
   requestId: claims.request_id ?? null,
   ...(claims.mandate_id
     ? {
@@ -80,10 +85,29 @@ export const resolveInvocationAuthority = async (
   query: typeof sql = sql,
   groupsAdminOverride?: string[],
 ): Promise<ResolvedInvocationAuthority | null> => {
+  if (claims.parent_invocation_id) {
+    const lease = await nestedInvocationLeases.read(claims.parent_invocation_id).catch(() => null);
+    if (!lease || `app:${lease.appId}` !== claims.act.sub) return null;
+    if (lease.proof && !(await isNestedSourceCurrent(lease.proof, claims).catch(() => false))) return null;
+    if (claims.mandate_id) {
+      // Policy was checked under Core's issuance transaction; admission also
+      // checks the parent's current mandate state and subject.
+      const [mandate] = await query<{ id: string }[]>`
+        SELECT id FROM auth.mandates
+        WHERE id = ${claims.mandate_id}::uuid AND revision = ${claims.mandate_revision}
+          AND state = 'active' AND confirmed_at IS NOT NULL
+          AND (expires_at IS NULL OR expires_at > now())
+          AND subject_kind = ${claims.principal_type}
+          AND COALESCE(subject_user_id, subject_service_account_id) = ${claims.sub}::uuid
+      `;
+      if (!mandate) return null;
+    }
+  }
   const groupsAdmin = groupsAdminOverride ?? (await getIdentityRuntimeConfig()).groupsAdmin;
   const delegation = provenance(claims);
 
   if (claims.principal_type === "user") {
+    if (claims.access_subject_type !== "user" || claims.access_subject_id !== claims.sub) return null;
     const current = await loadCurrentUser({ userId: claims.sub, groupsAdmin }, query);
     if (!current || isAccountExpired(current.accountExpires)) return null;
     if (!(await isAccountCategoryAllowed(current, query))) return null;
@@ -124,6 +148,12 @@ export const resolveInvocationAuthority = async (
   const delegatedUser = serviceAccount.delegatedUserId ? buildProjectedUser(row) : null;
   if (serviceAccount.kind === "user_delegated" && (!delegatedUser || isAccountExpired(delegatedUser.accountExpires))) return null;
   if (delegatedUser && !(await isAccountCategoryAllowed(delegatedUser, query))) return null;
+
+  if (
+    claims.access_subject_type !== (delegatedUser ? "user" : "service_account") ||
+    claims.access_subject_id !== (delegatedUser?.id ?? serviceAccount.id)
+  )
+    return null;
 
   const actor: RequestActor = {
     kind: "service_account",

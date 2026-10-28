@@ -2,7 +2,7 @@
 id: chat-send
 title: Send a message
 icon: ti ti-send
-description: Open a chat, send a message, share Cloud elements, and retry or discard a message that was not sent.
+description: Open a chat, send a message, attach files, share Cloud elements, and retry or discard a message that was not sent.
 order: 110
 ---
 
@@ -43,6 +43,32 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 - If you leave or reload Chat with unsent messages, your browser asks first because those messages are lost when you leave.
 :::
 
+## Attach images and documents {icon="paperclip"}
+
+:::steps
+1. Choose **Attach files** next to the field, or drop files on the conversation. You can also paste an image.
+2. Choose files from this device or from an app such as Files. Each file shows above the field while it uploads.
+3. Add a few words if you like, then send the message.
+:::
+
+:::reference
+- A message takes up to 10 files of at most 10 MiB each.
+- If a file could not be uploaded, choose **Try again** on it, or remove it. The message waits until every file is uploaded.
+- Images show in the message; choose one to see it large. Documents show with their kind and size; choose one to download it.
+- To keep a copy, choose **…** on the message and save the files to an app such as Files.
+- Everyone who can read the message can open its files. Image metadata such as the location is removed when you upload.
+:::
+
+## Mention someone {icon="at"}
+
+:::steps
+1. Type **@** and the first letters of a name in the message field.
+2. Choose the person or agent in the list. With the keyboard, use the arrow keys and Enter.
+3. Send the message.
+:::
+
+The list shows the chat's members and the people who wrote in it. In a Space or Notebook chat it shows the people who wrote there. The mentioned person finds the message under **For you**, as long as they may read it.
+
 ## Share a Cloud element {icon="share"}
 
 :::steps
@@ -52,7 +78,7 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 :::
 
 :::reference
-- The element shows as a card in the message. Choose the card to open the element.
+- The element shows as a card in the message: what and where it is, such as "Task in IT planning · due 30 Oct", its title, and its status, such as **Open**. Choose the card to open the element.
 - Each person sees only what they may see. Without access to the element, the card says **Item not available** and shows no title or place.
 - Sharing an element gives nobody access to it.
 :::
@@ -61,7 +87,7 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 
 :::steps
 1. Choose **Chat info** in the chat's header.
-2. Look under **Shared**. It lists links and Cloud elements, newest first.
+2. Look under **Shared**. It lists images, documents, links and Cloud elements, newest first. **Images** shows them as a grid.
 3. Choose a kind, such as **Links** or **Cloud elements**, or a thread to narrow the list.
 4. Choose an entry to jump to its message.
 :::

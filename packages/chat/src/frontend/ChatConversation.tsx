@@ -1,3 +1,4 @@
+import { chooseFiles, SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import { type CloudResourceRef, CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
@@ -6,9 +7,13 @@ import {
   ButtonLink,
   Chat,
   type ChatAttachment,
+  type ChatComposerPeople,
   type ChatComposerReply,
+  type ChatMention,
   EmojiPicker,
+  FileDropTarget,
   IconButtonLink,
+  Lightbox,
   MessageEventGroup,
   MessageEventRow,
   MessageRow,
@@ -25,9 +30,10 @@ import {
   VirtualFeed,
   type VirtualFeedController,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { chatMessages } from "../messages";
-import { MAX_MESSAGE_REFS } from "../service/contracts";
+import { type AttachmentView, MAX_ATTACHMENT_BYTES, MAX_MESSAGE_ATTACHMENTS, MAX_MESSAGE_REFS, type Mention } from "../service/contracts";
+import { isShownImage, rowAttachments } from "./attachment-views";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
 import { dayLabel, messageTime, sameDay } from "./chat-format";
 import { followVisualViewport } from "./follow-viewport";
@@ -42,6 +48,8 @@ export type ChatFeedItem = {
   kind: "text" | "system" | "event" | "eventGroup";
   /** An event's icon. */
   icon?: string;
+  /** Optional owning-app path to the passage or resource described by an event. */
+  href?: string;
   /** A group of three or more events in a row: its line, and whether its events show below it. */
   group?: { label: string; time: string; expanded: () => boolean; toggle: () => void };
   authorId: string;
@@ -63,6 +71,8 @@ export type ChatFeedItem = {
   quote?: MessageRowQuote;
   /** The Cloud elements it shares, shown as cards. */
   refs?: readonly CloudResourceRef[];
+  /** Its images and documents. */
+  attachments?: readonly AttachmentView[];
   /** Its thread, shown under it where several threads mix. */
   origin?: MessageRowOrigin;
 };
@@ -83,7 +93,7 @@ export type ChatConversationProps = {
    * The head from a 1800 px window, where the threads stand in their own column: the open thread as the title and its
    * description below, instead of the chat's title and the picker.
    */
-  wideTitle?: { title: string; subtitle: string };
+  wideTitle?: { title: string; chat: string; subtitle: string };
   /** Where the back button leads below 64 rem; the list by default. */
   backHref?: string;
   /** Each part of a chat keeps its own draft. */
@@ -120,7 +130,18 @@ export type ChatConversationProps = {
   notice?: JSX.Element;
   draft: string;
   onDraftChange: (value: string) => void;
-  onSend: (text: string, refs: readonly CloudResourceRef[]) => boolean | Promise<boolean>;
+  onSend: (
+    text: string,
+    refs: readonly CloudResourceRef[],
+    attachments: readonly AttachmentView[],
+    mentions: readonly Mention[],
+  ) => boolean | Promise<boolean>;
+  /** Uploads one file for the next message; without it, nothing can be attached. */
+  onUpload?: (file: File, signal: AbortSignal) => Promise<AttachmentView>;
+  /** Deletes an upload the reader removed before sending, so it stops counting toward their unsent files. */
+  onDiscard?: (attachmentId: string) => void;
+  /** Suggests the people "@" can mention in this chat. */
+  people?: ChatComposerPeople;
   /** Reads shared elements for their cards; missing on the server, where cards show their placeholder. */
   cards?: ResourceCards;
   /** "Share a Cloud element" in the composer's add menu: picks one, or null when the reader cancels. */
@@ -161,16 +182,40 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   const [emojiTarget, setEmojiTarget] = createSignal<{ anchor: HTMLElement; insert: (text: string) => void }>();
   // Elements picked for the next message; they belong to the draft they were picked for.
   const [shared, setShared] = createSignal<readonly ChatAttachment[]>([]);
+  // People mentioned in the draft; their identity travels as "type:id" in the composer's mention.
+  const [mentions, setMentions] = createSignal<readonly ChatMention[]>([]);
+  // Each draft keeps its mentions while the reader looks at another thread; coming back restores the ones whose name
+  // still stands where it was in the restored text.
+  const draftMentions = new Map<string, readonly ChatMention[]>();
   createEffect(
     on(
       () => props.draftKey ?? props.chatId,
-      () => setShared([]),
+      (key, previous) => {
+        if (previous !== undefined) draftMentions.set(previous, untrack(mentions));
+        // Files picked for another thread's draft are not sent there: they are discarded with their chips.
+        for (const attachment of untrack(shared)) if (uploads.has(attachment.id)) discardUpload(attachment.id, uploadOf(attachment)?.view);
+        setShared([]);
+        setMentions([]);
+        const saved = draftMentions.get(key) ?? [];
+        draftMentions.delete(key);
+        if (saved.length)
+          queueMicrotask(() =>
+            setMentions(saved.filter((mention) => props.draft.slice(mention.start, mention.end) === mention.attachment.name)),
+          );
+      },
       { defer: true },
     ),
   );
+  const mentionsOf = (list: readonly ChatMention[]): Mention[] =>
+    list.flatMap((mention) => {
+      const [type, id] = mention.attachment.id.split(":");
+      return (type === "user" || type === "service_account") && id
+        ? [{ start: mention.start, end: mention.end, principal: { type, id } }]
+        : [];
+    });
   const pickResource = async () => {
     // The server takes at most this many elements per message; the reader learns it before picking more.
-    if (shared().length >= MAX_MESSAGE_REFS) {
+    if (shared().filter((attachment) => attachment.kind === "resource").length >= MAX_MESSAGE_REFS) {
       toast(t().tooManyResources({ count: MAX_MESSAGE_REFS }), { iconClass: "ti ti-info-circle" });
       return;
     }
@@ -179,6 +224,103 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     const id = `${picked.ref.type}:${picked.ref.id}`;
     if (shared().some((attachment) => attachment.id === id)) return;
     setShared((current) => [...current, { id, name: picked.title, kind: "resource", icon: picked.icon, data: picked.ref }]);
+  };
+  // Files picked for the next message upload at once; a chip shows each one until it is sent or removed.
+  type Upload = { upload: true; state: "pending" | "done" | "failed"; view?: AttachmentView };
+  const uploadOf = (attachment: ChatAttachment) =>
+    attachment.data && typeof attachment.data === "object" && "upload" in attachment.data ? (attachment.data as Upload) : null;
+  const uploads = new Map<string, { file: File; abort: AbortController; preview?: string }>();
+  const forgetUpload = (id: string) => {
+    const entry = uploads.get(id);
+    if (!entry) return;
+    entry.abort.abort();
+    if (entry.preview) URL.revokeObjectURL(entry.preview);
+    uploads.delete(id);
+  };
+  onCleanup(() => {
+    for (const id of [...uploads.keys()]) forgetUpload(id);
+  });
+  // The composer empties its chips before it hands a message over and puts them back if the message is not sent, also
+  // when the send is refused at once. A chip that went away is therefore released after the current task, and only
+  // when no message is being handed over.
+  let submitting = false;
+  const discardUpload = (id: string, view: AttachmentView | undefined) => {
+    forgetUpload(id);
+    if (view) props.onDiscard?.(view.id);
+  };
+  const setChips = (next: readonly ChatAttachment[]) => {
+    const kept = new Set(next.map((attachment) => attachment.id));
+    const removed = shared().filter((attachment) => uploads.has(attachment.id) && !kept.has(attachment.id));
+    setShared(next);
+    if (!removed.length) return;
+    setTimeout(() => {
+      if (submitting) return;
+      // A sent message took its uploads over (they are no longer ours); only a chip removed by hand gives one up.
+      for (const attachment of removed)
+        if (uploads.has(attachment.id) && !shared().some((current) => current.id === attachment.id))
+          discardUpload(attachment.id, uploadOf(attachment)?.view);
+    }, 0);
+  };
+  const updateChip = (id: string, change: Partial<ChatAttachment>) =>
+    setShared((current) => current.map((attachment) => (attachment.id === id ? { ...attachment, ...change } : attachment)));
+  const runUpload = (id: string) => {
+    const entry = uploads.get(id);
+    const upload = props.onUpload;
+    if (!entry || !upload) return;
+    entry.abort = new AbortController();
+    const signal = entry.abort.signal;
+    updateChip(id, { icon: "ti ti-loader-2 animate-spin", action: undefined, data: { upload: true, state: "pending" } satisfies Upload });
+    upload(entry.file, signal).then(
+      (view) => {
+        if (signal.aborted || !uploads.has(id)) return;
+        updateChip(id, { icon: undefined, data: { upload: true, state: "done", view } satisfies Upload });
+      },
+      () => {
+        if (signal.aborted || !uploads.has(id)) return;
+        toast(`${t().uploadFailed}: ${entry.file.name}`, { iconClass: "ti ti-alert-circle" });
+        updateChip(id, {
+          icon: "ti ti-alert-circle",
+          data: { upload: true, state: "failed" } satisfies Upload,
+          action: { id: "retry", label: t().retry, icon: "ti ti-refresh", onSelect: () => runUpload(id) },
+        });
+      },
+    );
+  };
+  const addFiles = (files: readonly File[]) => {
+    if (!props.onUpload || !props.canWrite) return;
+    const room = MAX_MESSAGE_ATTACHMENTS - shared().filter((attachment) => uploadOf(attachment)).length;
+    if (files.length > room) toast(t().tooManyAttachments, { iconClass: "ti ti-info-circle" });
+    const added: ChatAttachment[] = [];
+    for (const file of files.slice(0, Math.max(room, 0))) {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        toast(t().attachmentFileTooLarge({ name: file.name }), { iconClass: "ti ti-info-circle" });
+        continue;
+      }
+      const id = `upload:${crypto.randomUUID()}`;
+      const image = file.type.startsWith("image/");
+      const preview = image ? URL.createObjectURL(file) : undefined;
+      uploads.set(id, { file, abort: new AbortController(), preview });
+      added.push({ id, name: file.name, size: file.size, kind: image ? "image" : "file", previewUrl: preview, alt: file.name });
+    }
+    if (!added.length) return;
+    setShared((current) => [...current, ...added]);
+    for (const attachment of added) runUpload(attachment.id);
+  };
+  const filesOf = (attachments: readonly ChatAttachment[]) =>
+    attachments.flatMap((attachment) => {
+      const view = uploadOf(attachment)?.view;
+      return view ? [view] : [];
+    });
+  const [lightbox, setLightbox] = createSignal<{ images: AttachmentView[]; index: number }>();
+  const openImage = (item: ChatFeedItem, attachment: AttachmentView) => {
+    const images = (item.attachments ?? []).filter(isShownImage);
+    setLightbox({
+      images,
+      index: Math.max(
+        images.findIndex((image) => image.id === attachment.id),
+        0,
+      ),
+    });
   };
   const refsOf = (attachments: readonly ChatAttachment[]) =>
     attachments.flatMap((attachment) => {
@@ -294,6 +436,9 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             <div class="chat-conversation__wide-title">
               <h1 class="chat-conversation__wide-name">{wide().title}</h1>
               <p class="chat-conversation__wide-subtitle">{wide().subtitle}</p>
+              <p class="chat-conversation__phone-subtitle">
+                {wide().chat} · {props.subtitle ?? t().members({ count: props.memberCount })}
+              </p>
             </div>
           )}
         </Show>
@@ -400,7 +545,13 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               onToggle={item.group.toggle}
             />
           ) : item.kind === "event" ? (
-            <MessageEventRow icon={item.icon} origin={item.origin} time={messageTime(item.at, config())} dateTime={item.at}>
+            <MessageEventRow
+              icon={item.icon}
+              origin={item.origin}
+              href={item.href}
+              time={messageTime(item.at, config())}
+              dateTime={item.at}
+            >
               {item.body}
             </MessageEventRow>
           ) : item.kind === "system" ? (
@@ -419,6 +570,11 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               quote={item.quote}
               origin={item.origin}
               card={item.refs?.length ? <ChatResourceCards refs={item.refs} cards={props.cards} /> : undefined}
+              attachments={
+                item.attachments?.length
+                  ? rowAttachments(item.attachments, t(), locale(), (attachment) => openImage(item, attachment))
+                  : undefined
+              }
               onRetry={item.retry}
               onDiscard={item.discard}
               reactions={reactionsOf(item)}
@@ -459,6 +615,24 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
                           ]
                         : []),
                       { id: "copy", label: t().copyText, icon: "ti ti-copy", immediate: true, onSelect: () => props.onCopy(item) },
+                      ...(item.attachments?.length
+                        ? [
+                            {
+                              id: "save-files",
+                              label: saveFilesLabel(locale(), { all: item.attachments.length > 1 }),
+                              icon: SAVE_FILES_ICON,
+                              onSelect: () =>
+                                void saveFiles(
+                                  (item.attachments ?? []).map((attachment) => ({
+                                    name: attachment.name,
+                                    content: attachment.href,
+                                    mediaType: attachment.mimeType,
+                                    size: attachment.size,
+                                  })),
+                                ),
+                            },
+                          ]
+                        : []),
                       // The reader's own messages never count as unread.
                       ...(item.own
                         ? []
@@ -515,13 +689,41 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             variant="conversation"
             value={props.draft}
             onValueChange={props.onDraftChange}
-            onSubmit={async ({ text, attachments }) => {
-              const sent = await props.onSend(text, refsOf(attachments));
-              if (sent) setShared([]);
-              return sent;
+            onSubmit={async ({ text, attachments, mentions: typed }) => {
+              submitting = true;
+              try {
+                const states = attachments.map((attachment) => uploadOf(attachment)?.state);
+                if (states.includes("pending") || states.includes("failed")) {
+                  toast(states.includes("failed") ? t().attachmentsFailed : t().attachmentsUploading, { iconClass: "ti ti-info-circle" });
+                  return false;
+                }
+                const sent = await props.onSend(text, refsOf(attachments), filesOf(attachments), mentionsOf(typed ?? []));
+                if (sent) {
+                  // The message holds the files now: their chips and previews go, the stored files stay.
+                  for (const attachment of attachments) forgetUpload(attachment.id);
+                  setShared([]);
+                  setMentions([]);
+                }
+                return sent;
+              } finally {
+                submitting = false;
+              }
             }}
+            mentions={mentions()}
+            onMentionsChange={setMentions}
+            people={props.people}
             attachments={shared()}
-            onAttachmentsChange={setShared}
+            onAttachmentsChange={setChips}
+            fileSelection={
+              props.onUpload
+                ? {
+                    choose: () => chooseFiles({ multiple: true, maxBytes: MAX_ATTACHMENT_BYTES }),
+                    onSelect: addFiles,
+                    multiple: true,
+                    label: t().attachFiles,
+                  }
+                : undefined
+            }
             menuActions={
               props.onPickResource
                 ? [{ id: "share-resource", label: t().shareResource, icon: "ti ti-share", onSelect: () => pickResource() }]
@@ -536,6 +738,30 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             disabled={!props.canWrite}
             hint={props.hint}
           />
+          <Show when={props.onUpload && props.canWrite}>
+            <FileDropTarget label={t().dropToAttach} maxSize={MAX_ATTACHMENT_BYTES} onDrop={(files) => addFiles(files)} />
+          </Show>
+          <Show when={lightbox()}>
+            {(open) => (
+              <Lightbox
+                images={open().images.map((image) => ({
+                  src: image.href,
+                  alt: image.name,
+                  downloadUrl: image.href,
+                  actions: [
+                    {
+                      label: saveFilesLabel(locale(), { name: image.name }),
+                      icon: SAVE_FILES_ICON,
+                      onClick: () =>
+                        void saveFiles([{ name: image.name, content: image.href, mediaType: image.mimeType, size: image.size }]),
+                    },
+                  ],
+                }))}
+                initialIndex={open().index}
+                onClose={() => setLightbox(undefined)}
+              />
+            )}
+          </Show>
           <EmojiPicker.Popover
             anchor={emojiTarget()?.anchor}
             recent={recent()}

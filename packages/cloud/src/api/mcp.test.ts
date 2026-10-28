@@ -1069,7 +1069,10 @@ describe("capability MCP projection", () => {
       fetch: async (input, init) => {
         requestedUrl = String(input);
         requestedBody = JSON.parse(String(init?.body));
-        return Response.json({ data: { id: "one" }, refs: [{ type: "demo.item", id: "one" }] });
+        return Response.json({
+          data: { id: "one" },
+          refs: [{ type: "demo.item", id: "one", context: "Task in Planning", status: "Open" }],
+        });
       },
     });
     const response = await rpc(routes, {
@@ -1078,7 +1081,13 @@ describe("capability MCP projection", () => {
       method: "tools/call",
       params: {
         name: "cloud__resource__read",
-        arguments: { type: "demo.item", id: "one", ...(enriched ? { title: "One", href: "https://cloud.test/open/demo.item/~one" } : {}) },
+        arguments: {
+          type: "demo.item",
+          id: "one",
+          ...(enriched
+            ? { title: "One", context: "Task in Planning", status: "Open", href: "https://cloud.test/open/demo.item/~one" }
+            : {}),
+        },
       },
     });
 
@@ -1086,7 +1095,15 @@ describe("capability MCP projection", () => {
       result: {
         structuredContent: {
           data: { id: "one" },
-          refs: [{ type: "demo.item", id: "one", href: "https://cloud.example/open/demo.item/~one" }],
+          refs: [
+            {
+              type: "demo.item",
+              id: "one",
+              context: "Task in Planning",
+              status: "Open",
+              href: "https://cloud.example/open/demo.item/~one",
+            },
+          ],
         },
       },
     });

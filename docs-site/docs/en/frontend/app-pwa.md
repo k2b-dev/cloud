@@ -17,7 +17,7 @@ several applications can be installed from the same Cloud origin.
 This is separate from the Cloud mobile app's [`pwa` parts](/en/docs/frontend/mobile-app-pages).
 The declaration adds no account session, device pairing, or customer-session
 permissions. Authorize application pages and APIs through the normal server
-contracts.
+contracts. For a shared customer device, add [device pairing and visit sessions](/en/docs/identity/app-pwa-sessions).
 
 ## Declare the installation
 

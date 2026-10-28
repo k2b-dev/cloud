@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
@@ -36,8 +36,7 @@ const load = async (options: BrowserContextOptions, address: { chat: string; thr
     }
     Object.defineProperty(globalThis, "Date", { value: PinnedDate, configurable: true, writable: true });
   }, chatTestNow.getTime());
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(new URL(`/app/chat/c/${address.chat}${address.thread ? `/t/${address.thread}` : ""}`, harness.url).href);
   await page.evaluate((props) => {
     document.documentElement.lang = "de";
@@ -182,6 +181,74 @@ describe("Item events in a Space chat", () => {
       await page.getByRole("button", { name: "Erneut versuchen" }).click();
       await feed(page).getByText("Mara hat den Status auf „In Prüfung“ gesetzt").waitFor();
       await page.getByText("Die Änderungen an den Elementen konnten nicht geladen werden.").waitFor({ state: "detached" });
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a new comment shows as a quiet row whose sentence links to its passage", async () => {
+    const { chat, invitation } = seed();
+    harness.addItemEvents(chat, [
+      {
+        id: "e6",
+        // Between the messages, beside one other change, so it stays a single row and is not folded into a group.
+        at: minutesAgo(34),
+        icon: "ti ti-message-plus",
+        sentence: "Mara hat einen Kommentar hinterlassen",
+        href: "/open/notebooks.annotation/~00000000-0000-4000-9000-000000000001",
+        count: 1,
+        thread: { id: invitation, name: "Einladung freigeben" },
+      },
+    ]);
+    const { page, errors } = await load(desktop, { chat });
+    try {
+      const link = feed(page).getByRole("link", { name: "Mara hat einen Kommentar hinterlassen" });
+      await link.waitFor();
+      expect(await link.getAttribute("href")).toBe("/open/notebooks.annotation/~00000000-0000-4000-9000-000000000001");
+      // The row stays a quiet event: no bubble, never counted as a message.
+      // `has` matches inside the row, so the inner locator must not start at the feed again.
+      const row = feed(page).locator(".k2b-message-event-row", {
+        has: page.getByRole("link", { name: "Mara hat einen Kommentar hinterlassen" }),
+      });
+      expect(await row.count()).toBe(1);
+      expect(await row.locator(".k2b-message-row__bubble").count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("on a phone, a long agent name in a comment row truncates inside the row instead of running past it", async () => {
+    const { chat, invitation } = seed();
+    const sentence = "Prüfagent der Finanzabteilung für Quartalsberichte hat über Assistant einen Kommentar hinterlassen";
+    harness.addItemEvents(chat, [
+      {
+        id: "e7",
+        at: minutesAgo(34),
+        icon: "ti ti-message-plus",
+        sentence,
+        href: "/open/notebooks.annotation/~00000000-0000-4000-9000-000000000002",
+        count: 1,
+        thread: { id: invitation, name: "Einladung freigeben" },
+      },
+    ]);
+    const { page, errors } = await load(phone, { chat });
+    try {
+      const link = feed(page).getByRole("link", { name: sentence });
+      await link.waitFor();
+      const row = feed(page).locator(".k2b-message-event-row", { has: page.getByRole("link", { name: sentence }) });
+      const box = await row.evaluate((element) => {
+        const text = element.querySelector<HTMLElement>(".k2b-message-event-row__link")!;
+        const time = element.querySelector("time");
+        return {
+          inside:
+            element.scrollWidth <= element.clientWidth && element.getBoundingClientRect().right <= document.documentElement.clientWidth,
+          truncated: text.scrollWidth > text.clientWidth,
+          timeVisible: !time || time.getBoundingClientRect().right <= element.getBoundingClientRect().right,
+        };
+      });
+      expect(box).toEqual({ inside: true, truncated: true, timeVisible: true });
       expect(errors).toEqual([]);
     } finally {
       await page.context().close();
