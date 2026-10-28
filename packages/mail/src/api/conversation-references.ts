@@ -1,4 +1,4 @@
-import { v } from "@k2b/cloud/server";
+import { auth, v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
 import {
@@ -57,6 +57,7 @@ export default new Hono<MailApiContext>()
   )
   .post(
     "/mailboxes/:mailboxId/reference-number-configuration/preview",
+    auth.readOnly,
     v("param", mailboxParamSchema),
     v("json", conversationReferencePreviewInputSchema),
     async (c) =>

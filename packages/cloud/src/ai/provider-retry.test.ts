@@ -237,7 +237,7 @@ describe("retries against an HTTP provider", () => {
       responses = [rejected(status, {}), rejected(status, {})];
       const { booked, quota } = accounted();
       for await (const _ of quota.stream(prompt));
-      await expect(quota.complete(prompt)).rejects.toThrow(String(status));
+      await expect(quota.complete(prompt)).rejects.toThrow("AI provider request failed.");
       const expected = refused ? { input: 0, output: 0 } : { input: expect.any(Number), output: 0, estimated: true };
       expect({ status, usage: booked.map(({ usage }) => usage) }).toEqual({ status, usage: [expected, expected] });
       if (!refused) expect(booked.every(({ usage }) => (usage?.input ?? 0) > 0)).toBe(true);
@@ -252,7 +252,7 @@ describe("retries against an HTTP provider", () => {
     const events = [];
     for await (const event of quota.stream(prompt)) events.push(event);
     expect(events).toContainEqual({ type: "issue", issue: expect.objectContaining({ kind: "provider_error", retryable: true }) });
-    await expect(quota.complete(prompt)).rejects.toThrow("connection failed");
+    await expect(quota.complete(prompt)).rejects.toThrow("AI provider request failed.");
     expect(booked.map(({ usage }) => usage)).toEqual([
       { input: 0, output: 0 },
       { input: 0, output: 0 },

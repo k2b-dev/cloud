@@ -133,7 +133,7 @@ suite("Mail REST access for service-account credentials", () => {
     users.set("owner-session", owner);
     verifyAccessToken = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token: string) => {
       const user = users.get(token);
-      return user ? { kind: "user", payload: {}, user, scopes: [] } : null;
+      return user ? { kind: "user", payload: {}, user, scopes: ["read", "write"] } : null;
     });
 
     const ownerContext: MailRequestContext = {

@@ -1,0 +1,1 @@
+| A registry deletion leaves a visible mirror | Retention frees the Postgres series budget while the ClickHouse series remains visible. | Test: Pulse `service/retention.integration.test.ts` checks failed tombstone inserts, immediate view removal with merges stopped, and reuse of the freed budget. |

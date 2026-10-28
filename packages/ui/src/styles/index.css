@@ -9604,6 +9604,65 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-variant-numeric: tabular-nums;
 }
 
+/* A change to something the conversation is about: one quiet line, aligned with the messages' text after the avatar
+   gutter (0.75rem padding + 2rem gutter + 0.5rem gap), its time at the end. Never a bubble, never a rule. */
+.k2b-ui .k2b-message-event-row {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 1.625rem;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0.125rem 0.75rem 0.125rem 3.25rem;
+  border: 0;
+  color: var(--k2b-text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  text-align: start;
+}
+
+.k2b-ui .k2b-message-event-row > i {
+  flex: none;
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-message-event-row__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-message-event-row time {
+  flex: none;
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .k2b-message-event-row .k2b-message-row__origin {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-message-event-group {
+  cursor: pointer;
+  border-radius: var(--k2b-radius-control);
+}
+
+/* Only the ink responds; nothing moves. */
+.k2b-ui .k2b-message-event-group:hover {
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .k2b-message-event-group:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(var(--k2b-focus-offset) * -1);
+}
+
 /* Above the bubble: a forwarded marker. */
 .k2b-ui .k2b-message-row__marker {
   display: flex;

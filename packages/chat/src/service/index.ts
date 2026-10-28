@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import { channels } from "./channels";
 import { conversations } from "./conversations";
+import { itemEvents } from "./item-events";
 import { messages } from "./messages";
 import { personal } from "./personal";
 import { reactions } from "./reactions";
@@ -45,7 +46,19 @@ const health = async (): Promise<ChatHealth> => {
   return { status, observedAt: new Date().toISOString(), database: { status, latencyMs } };
 };
 
-export const chatService = { health, channels, conversations, messages, reactions, readState, personal, threads, shared, systemChats };
+export const chatService = {
+  itemEvents,
+  health,
+  channels,
+  conversations,
+  messages,
+  reactions,
+  readState,
+  personal,
+  threads,
+  shared,
+  systemChats,
+};
 
 export type ChatService = typeof chatService;
 

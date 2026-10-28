@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseSuiteTimes } from "./test-weights";
+import { jobMode, parseSuiteTimes } from "./test-weights";
 
 test("parses bare and timestamped suite times, ignoring headers and keeping the maximum", () => {
   const log = [
@@ -23,4 +23,13 @@ test("parses bare and timestamped suite times, ignoring headers and keeping the 
       ["zero", 0],
     ]),
   );
+});
+
+test("refreshes integration weights from both historical and sharded CI jobs", () => {
+  expect(jobMode("integration")).toBe("integration");
+  expect(jobMode("integration (3)")).toBe("integration");
+  expect(jobMode("unit (2)")).toBe("unit");
+  expect(jobMode("webkit (7)")).toBe("browser");
+  expect(jobMode("grids (1)")).toBeUndefined();
+  expect(jobMode("integration extra")).toBeUndefined();
 });

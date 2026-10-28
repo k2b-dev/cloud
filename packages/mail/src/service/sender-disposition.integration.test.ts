@@ -205,7 +205,7 @@ suite("sender bulk disposition", () => {
       VALUES (${newShortId()}, ${mailboxId}::uuid, 'Own', 'own@cleanup.test', 'verified')
     `;
     verifyToken = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token) =>
-      token === "owner" ? { kind: "user", payload: {}, user: required(users[0]), scopes: [] } : null,
+      token === "owner" ? { kind: "user", payload: {}, user: required(users[0]), scopes: ["read", "write"] } : null,
     );
   });
 

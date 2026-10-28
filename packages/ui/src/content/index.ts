@@ -97,6 +97,8 @@ export { MapView } from "./MapView";
 export { MapViewFrame } from "./MapViewFrame";
 export { default as MarkdownView, type MarkdownRenderOptions, type MarkdownViewProps, renderSafeMarkdown } from "./MarkdownView";
 export type {
+  MessageEventGroupProps,
+  MessageEventRowProps,
   MessageGroupEntry,
   MessageRowAction,
   MessageRowAttachment,
@@ -112,7 +114,7 @@ export type {
   MessageRowThread,
   MessageSystemRowProps,
 } from "./MessageRow";
-export { MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";
+export { MessageEventGroup, MessageEventRow, MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";
 export { type MapPaletteColors, type MapTheme, mapPalette } from "./map-palette";
 export { type MapStyleOptions, mapAttribution, mapStyle } from "./map-style";
 export type {

@@ -227,6 +227,31 @@ export type MessageSystemRowProps = {
   class?: string;
 };
 
+export type MessageEventRowProps = {
+  /** What changed, for example "Mara set the status to “In review”". */
+  children: JSX.Element;
+  /** Icon class of the kind of change; a dot by default. */
+  icon?: string;
+  /** Where the change belongs, such as its thread, where several threads mix. */
+  origin?: MessageRowOrigin;
+  /** Visible time, formatted by the caller. */
+  time?: string;
+  dateTime?: string | Date;
+  class?: string;
+};
+
+export type MessageEventGroupProps = {
+  /** What the closed group stands for, for example "4 changes to Invitation and Light test". */
+  label: string;
+  expanded: boolean;
+  onToggle: () => void;
+  /** Visible time or range, formatted by the caller, for example "09:50–09:58". */
+  time?: string;
+  /** The first event's time. */
+  dateTime?: string | Date;
+  class?: string;
+};
+
 export type MessageGroupEntry = {
   /** Stable identity of the author. */
   author: string;
@@ -801,26 +826,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
             </button>
           )}
         </Show>
-        <Show when={props.origin}>
-          {(origin) => (
-            <Show
-              when={origin().onSelect}
-              fallback={
-                <span class="k2b-message-row__origin">
-                  <Show when={origin().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-                  {origin().label}
-                </span>
-              }
-            >
-              {(select) => (
-                <button type="button" class="k2b-message-row__origin" aria-label={origin().selectLabel} onClick={() => select()()}>
-                  <Show when={origin().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-                  {origin().label}
-                </button>
-              )}
-            </Show>
-          )}
-        </Show>
+        <Show when={props.origin}>{(origin) => <OriginChip origin={origin()} />}</Show>
         <Show when={hasFooter()}>
           <div class="k2b-message-row__footer">
             <Show when={reactions()}>
@@ -904,6 +910,64 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
         {row}
       </GestureMenu>
     </Show>
+  );
+}
+
+/** Where a row belongs, such as its thread; a control when it opens that place. */
+function OriginChip(props: { origin: MessageRowOrigin }): JSX.Element {
+  return (
+    <Show
+      when={props.origin.onSelect}
+      fallback={
+        <span class="k2b-message-row__origin">
+          <Show when={props.origin.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+          {props.origin.label}
+        </span>
+      }
+    >
+      {(select) => (
+        <button type="button" class="k2b-message-row__origin" aria-label={props.origin.selectLabel} onClick={() => select()()}>
+          <Show when={props.origin.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+          {props.origin.label}
+        </button>
+      )}
+    </Show>
+  );
+}
+
+/**
+ * A quiet line for a change to something the conversation is about, such as a task's new status: no bubble, aligned
+ * with the messages' text, with its time at the end. It is no message: it never counts as unread.
+ */
+export function MessageEventRow(props: MessageEventRowProps): JSX.Element {
+  return (
+    <div class={props.class ? `k2b-message-event-row ${props.class}` : "k2b-message-event-row"}>
+      <i class={props.icon ?? "ti ti-point"} aria-hidden="true" />
+      <span class="k2b-message-event-row__text">{props.children}</span>
+      <Show when={props.origin}>{(origin) => <OriginChip origin={origin()} />}</Show>
+      <Show when={props.time}>
+        <time datetime={dateTimeOf(props.dateTime)}>{props.time}</time>
+      </Show>
+    </div>
+  );
+}
+
+/** Several event lines in a row as one line that opens them, such as "4 changes to Invitation and Light test". */
+export function MessageEventGroup(props: MessageEventGroupProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      class={props.class ? `k2b-message-event-row k2b-message-event-group ${props.class}` : "k2b-message-event-row k2b-message-event-group"}
+      aria-expanded={props.expanded}
+      onClick={() => props.onToggle()}
+    >
+      <i class="ti ti-history" aria-hidden="true" />
+      <span class="k2b-message-event-row__text">{props.label}</span>
+      <Show when={props.time}>
+        <time datetime={dateTimeOf(props.dateTime)}>{props.time}</time>
+      </Show>
+      <i class={props.expanded ? "ti ti-chevron-up" : "ti ti-chevron-down"} aria-hidden="true" />
+    </button>
   );
 }
 

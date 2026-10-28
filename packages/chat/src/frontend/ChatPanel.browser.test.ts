@@ -1221,6 +1221,8 @@ for (const historyFailure of [false, true]) {
       await panel
         .getByRole("region", { name: "Notifications", exact: true })
         .getByText("Your message is being prepared. Wait before switching chats.", { exact: true })
+        // Archive and Back can each notify after the throttle elapses; expiration is not the subject of this guard.
+        .first()
         .waitFor();
       expect(await panel.locator("html").evaluate(() => location.pathname)).toBe(`/app/chat/panel/c/${id}`);
       await page.locator("[data-cloud-panel-close]").click();

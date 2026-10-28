@@ -1,8 +1,11 @@
 import { PWA_AUTH_PATH, PWA_SCOPE } from "../contracts/pwa-paths";
+import { pwaDrafts } from "./pwa-drafts";
 
 export type AppSessionRenewal = {
   /** The page has a valid app session now. */
   ok: boolean;
+  /** Registered release identities of mobile page owners and Core shared assets. */
+  builds?: Record<string, string>;
   /** Android shares Chrome's cookies with the app, so the web session there may belong to another account. */
   otherAccount?: { name: string };
 };
@@ -26,6 +29,7 @@ const call = async (): Promise<AppSessionRenewal & { renewed: boolean }> => {
   if (response.status === 401) {
     // The phone was removed or its pairing ended. Core has already deleted the device key with this answer, so
     // a reload could only show the generic pairing view; the pairing view for a signed-out phone says why.
+    pwaDrafts.clearAll();
     location.replace(`${PWA_SCOPE}?pwa=ended`);
     return { ok: false, renewed: false };
   }
@@ -45,7 +49,11 @@ const call = async (): Promise<AppSessionRenewal & { renewed: boolean }> => {
   const other = "otherAccount" in body ? body.otherAccount : undefined;
   const otherAccount =
     typeof other === "object" && other !== null && "name" in other && typeof other.name === "string" ? { name: other.name } : undefined;
-  return { ok: true, renewed: body.renewed, otherAccount };
+  const builds =
+    "builds" in body && typeof body.builds === "object" && body.builds !== null
+      ? Object.fromEntries(Object.entries(body.builds).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+      : undefined;
+  return { ok: true, renewed: body.renewed, otherAccount, builds };
 };
 
 let running: Promise<AppSessionRenewal> | undefined;
@@ -59,8 +67,11 @@ export const renewAppSession = (): Promise<AppSessionRenewal> => {
     try {
       const first = await call();
       // After a rotation, a second call presents the new key and retires the old one.
-      if (first.renewed) await call();
-      return { ok: first.ok, otherAccount: first.otherAccount };
+      if (first.renewed) {
+        const confirmed = await call();
+        if (!confirmed.ok) return confirmed;
+      }
+      return { ok: first.ok, otherAccount: first.otherAccount, builds: first.builds };
     } finally {
       running = undefined;
     }

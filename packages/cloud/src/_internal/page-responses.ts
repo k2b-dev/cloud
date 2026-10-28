@@ -26,10 +26,11 @@ export type PageErrorOptions = {
 export type PageErrorStatus = ClientErrorStatusCode | ServerErrorStatusCode;
 
 /** Explicit document responses, bound to the owning application's SSR template. */
-export const createPageResponses = (html: HtmlFn<PageOptions>) => {
+export const createPageResponses = (html: HtmlFn<PageOptions>, appId: string) => {
   const error = async (c: Context, status: PageErrorStatus, options: PageErrorOptions = {}): Promise<Response> => {
     // Auth middleware may reject before ssr() initializes page metadata.
     c.set("page", {
+      pwaOwner: appId,
       lang: getLocale(c),
       themePreference: readThemePreferenceFromCookieHeader(c.req.header("Cookie")),
     });

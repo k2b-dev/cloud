@@ -12,7 +12,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { LocaleProvider, MessageRow, MessageSystemRow, startsMessageGroup } = await import("../index");
+const { LocaleProvider, MessageEventGroup, MessageEventRow, MessageRow, MessageSystemRow, startsMessageGroup } = await import("../index");
 type Props = Parameters<typeof MessageRow>[0];
 
 const nora = { name: "Nora Brandt" };
@@ -681,5 +681,41 @@ describe("MessageRow styles", () => {
     for (let tint = 0; tint < 10; tint++) {
       expect(declarations(`.k2b-ui .k2b-avatar[data-tint="${tint}"]`).get("--k2b-avatar-hue")?.[0]).toMatch(/^#[0-9a-f]{6}$/);
     }
+  });
+});
+
+describe("MessageEventRow", () => {
+  test("shows icon, sentence, origin chip and time as one quiet line without a bubble", () => {
+    const html = renderToString(() =>
+      createComponent(MessageEventRow, {
+        icon: "ti ti-progress",
+        children: "Mara set the status to “In review”",
+        origin: { label: "Invitation", icon: "ti ti-circle", onSelect: () => {}, selectLabel: "Open thread Invitation" },
+        time: "09:50",
+        dateTime: "2026-10-22T09:50:00Z",
+      }),
+    );
+    expect(html).toMatch(/^<div class="k2b-message-event-row">/);
+    expect(textOf(html)).toBe("Mara set the status to “In review” Invitation 09:50");
+    expect(html).toContain('<i class="ti ti-progress" aria-hidden="true">');
+    expect(html).toContain('aria-label="Open thread Invitation"');
+    expect(html).not.toContain("k2b-message-row__bubble");
+  });
+
+  test("a group is one button that says whether it is open", () => {
+    const closed = renderToString(() =>
+      createComponent(MessageEventGroup, {
+        label: "4 changes to Invitation and Light test",
+        time: "09:50–09:58",
+        expanded: false,
+        onToggle: () => {},
+      }),
+    );
+    expect(closed).toMatch(/^<button type="button" class="k2b-message-event-row k2b-message-event-group" aria-expanded="false">/);
+    expect(textOf(closed)).toBe("4 changes to Invitation and Light test 09:50–09:58");
+    expect(closed).toContain("ti ti-chevron-down");
+    const open = renderToString(() => createComponent(MessageEventGroup, { label: "4 changes", expanded: true, onToggle: () => {} }));
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).toContain("ti ti-chevron-up");
   });
 });

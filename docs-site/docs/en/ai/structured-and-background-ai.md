@@ -266,8 +266,11 @@ Keep retries around the whole task. Do not retry a schema failure forever.
 Every `runAiStructured()` attempt writes one metadata-only terminal accounting
 record for **Admin > AI > AI Usage**. The record contains the task and optional
 application id, resolved model, duration, usage, structured-output mode and
-repair state, attempts, and a bounded error. It never stores the input, prompt,
-or output. Domain-owned run tables and traces remain the detailed operational
+repair state, attempts, and an error code and message. Provider failures use
+fixed Cloud codes and text. The record never stores the input, prompt, output,
+or provider error body. Provider messages, nested causes, and diagnostic
+payloads are excluded from the two AI ledgers, traces, and logs. Retry and
+context-overflow signals remain available. Domain-owned run tables and traces remain the detailed operational
 source. Workflow inference uses this same accounting record, so task records
 do not add a second charge. Each retry that calls the model has its own record.
 See [Observability](/en/docs/operations/observability) for pricing coverage and

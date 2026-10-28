@@ -1,3 +1,4 @@
+import { hasOAuthScope } from "../server/oauth-scope";
 import { capabilityMessages } from "../shared/capability-messages";
 import { capabilityHash, projectSchema, stableJsonValue } from "./capability-schemas";
 
@@ -1386,6 +1387,8 @@ export const invokeCompiledCapability = async (params: {
   context: CapabilityExecutionContext;
   onUnexpectedError?: (error: unknown) => void;
 }): Promise<CapabilityInvocationResult<unknown>> => {
+  if (!hasOAuthScope(params.context.authority, params.kind === "query" ? "read" : "write", "admin"))
+    return { ok: false, error: { code: "FORBIDDEN", message: "Insufficient OAuth scope", status: 403 } };
   const operation = params.kind === "query" ? params.compiled.queries.get(params.localId) : params.compiled.actions.get(params.localId);
   if (!operation) {
     return {

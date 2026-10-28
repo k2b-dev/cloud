@@ -236,7 +236,7 @@ const widgetRoutes = new Hono<AuthContext>().get("/today", auth.requireRole("aut
 const CalendarLinkSchema = z.object({ href: z.string() });
 
 const calendarRoutes = new Hono<AuthContext>()
-  .get("/my", auth.requireRole("authenticated"), async (c) => {
+  .get("/my", auth.requireRole("authenticated"), auth.requireOAuthScope("write", "admin"), async (c) => {
     const user = requireUserBackedActor(c);
     if (!user.ok) return respond(c, user);
     return respond(c, ok({ href: await venueService.ical.url(await venueService.ical.getOrCreateToken(user.data.id)) }));

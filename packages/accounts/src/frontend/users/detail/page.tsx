@@ -91,10 +91,8 @@ export default ssr<AuthContext>(async (c) => {
       access: { userId: sessionUser.id, isAdmin: true },
       filter: { status: "pending" },
     }),
-    // The user's own memberships include their personal Linux group, like the direct list by ID below.
     accountsService.group.list({
       pagination: { page: 1, perPage: 1000 },
-      filter: { includePersonal: true },
       scope: { userId: id, mode: "member" },
     }),
     accountsService.group.list({
@@ -130,7 +128,7 @@ export default ssr<AuthContext>(async (c) => {
       });
 
   const allGroups = recursiveGroupsPage.items;
-  const directGroups = directGroupsPage.items;
+  const directGroups = directGroupsPage.items.filter((group) => group.personalOwner === null);
   const directGroupSet = new Set(directGroups.map((group) => group.id));
   const memberGroups = recursive ? allGroups : directGroups;
   const managedGroups = managedGroupsPage.items;

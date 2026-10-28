@@ -5,7 +5,7 @@ type Timer = ReturnType<typeof setTimeout> | number;
  * older exists.
  */
 export const seenRange = (
-  items: readonly { seq?: number; kind: "text" | "system"; own: boolean }[],
+  items: readonly { seq?: number; kind: "text" | "system" | "event" | "eventGroup"; own: boolean }[],
   firstIndex: number,
   lastIndex: number,
   hasOlder = true,

@@ -7,6 +7,7 @@ import { orderBookTree } from "@/lib/book-tree";
 import { extractNamedBlockSummaries } from "@/lib/named-blocks";
 import { isPresentationMode, type PresentationMode, resolvePresentationMode } from "@/lib/presentation-mode";
 import { requestedPresentationMode } from "@/lib/presentation-url";
+import { parseQueryPages, QUERY_PAGES_PARAM } from "@/lib/query-blocks";
 import { parseSidebarFilter } from "@/lib/sidebar-filter";
 import { notebooksService } from "@/service";
 import { loadBookNote } from "@/service/book";
@@ -96,6 +97,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     requestedMode: mode,
     defaultPresentationMode: notebook.defaultPresentationMode,
     locale,
+    queryPages: parseQueryPages(c.req.query(QUERY_PAGES_PARAM)),
   });
   if (noteParam && !selected.note) return { kind: "not_found" as const };
 
@@ -113,7 +115,7 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     locked: !!selected.note?.lockedAt,
   });
   const readonlyMode = presentationMode !== "write";
-  const graph = isGraphMode ? await notebooksService.notebook.graph({ notebookId }) : null;
+  const graph = isGraphMode ? await notebooksService.notebook.graphView({ notebookId, noteId: selected.internalNoteId }) : null;
   const versionHistory =
     isVersionsMode && selected.note && selected.internalNoteId
       ? await notebooksService.note.versions
@@ -261,6 +263,8 @@ async function loadSelectedNote(params: {
   requestedMode: string | undefined;
   defaultPresentationMode: PresentationMode;
   locale: string;
+  /** The page each query of a Book page shows, from the address. */
+  queryPages: ReadonlyMap<number, number>;
 }): Promise<{
   internalNoteId: string | null;
   note: SelectedNote | null;
@@ -281,6 +285,7 @@ async function loadSelectedNote(params: {
   });
   if (presentationMode === "book" && !params.isVersionsMode && params.requestedMode !== "graph") {
     const book = await loadBookNote({
+      pages: params.queryPages,
       notebookId: params.notebookId,
       notebookShortId: params.notebookShortId,
       noteShortId: params.selectedNoteId,
@@ -295,7 +300,6 @@ async function loadSelectedNote(params: {
         id: book.note.shortId,
         title: book.note.title,
         contentMd: null,
-        yjsSnapshot: null,
         historyIncomplete: book.note.historyIncomplete,
         lockedAt: book.note.lockedAt,
         parentId: null,
@@ -327,7 +331,6 @@ async function loadSelectedNote(params: {
         createdBy: note.createdBy,
         parentId: null,
         contentMd: null,
-        yjsSnapshot: null,
       },
       routeState: null,
       tocItems: [],
@@ -345,7 +348,6 @@ async function loadSelectedNote(params: {
       id: noteMeta.shortId,
       title: noteMeta.title,
       historyIncomplete: noteMeta.historyIncomplete,
-      yjsSnapshot: null,
       contentMd: noteMeta.contentMd,
       lockedAt: noteMeta.lockedAt,
       parentId: noteMeta.parentId
