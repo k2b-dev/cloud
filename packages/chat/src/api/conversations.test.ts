@@ -106,6 +106,8 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
     data: {
       outcome: "created",
       conversation: {
+        notifications: null,
+        mentionsUnread: 0,
         threads: 0,
         channel: false,
         member: true,
@@ -223,6 +225,8 @@ test("rejects invalid message body and conflicting history cursors before the se
 test("snapshot reads the cursor before history and tolerates invalid message links", async () => {
   authenticate(true);
   const conversation = ConversationSchema.parse({
+    notifications: null,
+    mentionsUnread: 0,
     threads: 0,
     channel: false,
     member: true,

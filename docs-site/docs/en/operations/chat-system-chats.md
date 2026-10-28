@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to Spaces and Notebooks.
-updated: 2026-10-27
+updated: 2026-10-28
 ---
 
 # Chat system conversations
@@ -316,3 +316,86 @@ base and the current list and thread selection. System-chat addresses use
 `listFilter=all|unread` for the personal list; `filter=open|done|unread` remains
 the independent system-thread directory filter.
 All is the default personal list mode and is omitted from generated system-chat URLs.
+
+## Notification choices and followed discussions
+
+Conversation responses (detail, lists and snapshots) include `notifications`
+and `mentionsUnread`. `notifications` is `null` without a participant row,
+including discovery results before participation. With a row it contains:
+
+```json
+{
+  "level": "mentions",
+  "choice": null,
+  "until": null,
+  "defaultLevel": "mentions",
+  "following": { "count": 0, "first": null }
+}
+```
+
+`level` is the effective `all`, `mentions` or `none` level. `choice: null`
+means the default. System chats default to `mentions`. In discoverable
+channels, participants with only read permission default to `all`. Other
+chats default to `all` through 20 members and `mentions` from 21. An explicit
+choice survives changes to membership and permissions. `following` is `null`
+for ordinary chats.
+
+`mentionsUnread` counts unread mentions and replies to the participant in
+this conversation, including when muted. A message that both mentions and
+replies counts once. It uses the same recipient sources, read boundaries,
+access checks and cap of 99 as **For you**. Counts scan at most five pages of
+100 candidates; inaccessible candidates can make the displayed count lower.
+
+All paths below start with `/api/chat` and require current read access and a
+participant row. Unreadable resources return 404; a readable chat without
+participation returns 403. Mutations also require write credential scope.
+Service accounts can store these preferences like users.
+
+| Request | Input or result |
+| --- | --- |
+| `GET /conversations/:conversation/notifications` | The `notifications` object. |
+| `PUT /conversations/:conversation/notifications` | `{ "level": "default" }`, `{ "level": "all" }`, `{ "level": "mentions" }`, or `{ "level": "none", "for": "1h" }`; returns the new object. |
+| `PUT /conversations/:conversation/threads/:thread/follow` | Follow an item discussion; returns `{ "following": true }`. |
+| `DELETE /conversations/:conversation/threads/:thread/follow` | Unfollow it; returns `{ "following": false }`. |
+
+Only `none` accepts `for`: `1h`, `8h`, `1w`, or `forever`. The server computes
+expiry; callers cannot supply `until`. Once expired, a mute reads as the
+current default with `choice: null` and `until: null`. The next preference
+write replaces the stored choice and clears or replaces its expiry. No
+scheduled cleanup is needed.
+
+Only item threads in system chats support following. Posting a new message
+in one follows it in the same transaction; retrying an existing message,
+reacting, or editing does not. Thread projections include `following` for
+item threads. Follow and unfollow are idempotent. Removing a participant or
+deleting a thread removes its follows. System chats have no leave route;
+access and participant cleanup remain owned by the existing resource lifecycle.
+
+The conversation's `following` summary counts its stored follows and returns
+the most recently followed thread as `first: { id, name }`. If that thread is
+no longer readable, `first` is `null`; its name and ID are not disclosed.
+
+Preference and follow changes enqueue a content-free `{ "type": "notifications" }`
+hint on the subject's personal live channel, in the same transaction. Other
+tabs refetch their authorized conversation and thread state. No item title or
+conversation ID travels on this hint.
+
+The Chat CLI module exposes:
+
+```sh
+cld chat notify <chat>
+cld chat notify <chat> all|mentions|default
+cld chat notify <chat> off [--for 1h|8h|1w]
+cld chat follow <chat> <thread>
+cld chat unfollow <chat> <thread>
+```
+
+Omitting `--for` keeps a mute until changed. All commands support `--json` and
+`--jsonl`. Capabilities `chat.notifications.read`, `chat.notifications.set`
+and `chat.thread.follow` use these same services. The read Query accepts
+`{ conversation }`; the set Action accepts `{ conversation, notifications }`
+with the PUT body above; the follow Action accepts `{ conversation, thread,
+following }`. Results contain the same notification object or `{ following }`
+in the capability data envelope.
+
+This API stores preferences and follows. It does not send notifications yet.

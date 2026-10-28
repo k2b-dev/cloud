@@ -2,6 +2,7 @@ import { appAccess, defineApp } from "@k2b/cloud";
 
 export const app = defineApp({
   id: "chat",
+  cli: { chat: { module: "src/cli.ts", references: "src/cli-references" } },
   // APIs admit roleless service accounts; navigation keeps its narrower audience.
   access: appAccess.signedIn({
     publicRoutes: ["/api/chat/openapi.json"],

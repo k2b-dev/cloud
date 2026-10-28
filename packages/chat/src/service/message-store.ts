@@ -9,7 +9,7 @@ import { messageAttachments } from "./attachment-store";
 import { type Mention, type MessageSchema, type SystemMessage, SystemMessageSchema } from "./contracts";
 import { deletedPeople } from "./former-accounts";
 import { chatLive } from "./live";
-import { chatLiveUpdates } from "./live-updates";
+import { chatLiveUpdates, publishNotificationPreferences } from "./live-updates";
 import { mentionViews, publishForYou, storeMentions } from "./mention-store";
 import { extractMessageLinks } from "./message-links";
 import { reactionGroups } from "./reaction-store";
@@ -212,6 +212,16 @@ export const appendMessage = async (
   if (message.kind === "text" && message.attachments?.length) {
     await db`UPDATE chat.attachments SET message_id = (SELECT id FROM chat.messages WHERE short_id = ${row.short_id})
       WHERE short_id = ANY(${toPgTextArray(message.attachments)}::text[]) AND conversation_id = ${conversation.id}::uuid`;
+  }
+  if (message.kind === "text" && row.thread_id && conversation.kind === "system") {
+    const [item] = await db`SELECT 1 FROM chat.threads WHERE id = ${row.thread_id}::uuid AND resource_type IS NOT NULL`;
+    if (item) {
+      await db`INSERT INTO chat.participants (principal_type, principal_id, conversation_id, origin, joined_seq)
+        VALUES (${author.type}, ${author.id}::uuid, ${conversation.id}::uuid, 'ondemand', ${row.seq}) ON CONFLICT DO NOTHING`;
+      const inserted = await db`INSERT INTO chat.thread_follows (principal_type, principal_id, conversation_id, thread_id)
+        VALUES (${author.type}, ${author.id}::uuid, ${conversation.id}::uuid, ${row.thread_id}::uuid) ON CONFLICT DO NOTHING RETURNING thread_id`;
+      if (inserted.length) await publishNotificationPreferences(db, context);
+    }
   }
   if (message.kind === "text") await storeMentions(db, row.short_id, message.mentions ?? []);
   if (row.thread_id) await db`UPDATE chat.threads SET last_activity_at = ${row.created_at} WHERE id = ${row.thread_id}::uuid`;

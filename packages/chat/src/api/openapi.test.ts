@@ -54,6 +54,10 @@ test("publishes every conversation operation with typed request and response sch
     ["/conversations", "post"],
     ["/conversations", "get"],
     ["/conversations/{conversation}", "get"],
+    ["/conversations/{conversation}/notifications", "get"],
+    ["/conversations/{conversation}/notifications", "put"],
+    ["/conversations/{conversation}/threads/{thread}/follow", "put"],
+    ["/conversations/{conversation}/threads/{thread}/follow", "delete"],
     ["/conversations/{conversation}", "patch"],
     ["/conversations/{conversation}/members", "get"],
     ["/conversations/{conversation}/members", "post"],
@@ -75,7 +79,8 @@ test("publishes every conversation operation with typed request and response sch
     const operation = spec.paths[`/api/chat${path}`]?.[method];
     expect(operation).toBeDefined();
     expect(operation?.responses[method === "post" && path === "/conversations" ? "201" : "200"]).toBeDefined();
-    if (["post", "patch", "put"].includes(method) && !path.endsWith("/join")) expect(operation?.requestBody).toBeDefined();
+    if (["post", "patch", "put"].includes(method) && !path.endsWith("/join") && !path.endsWith("/follow"))
+      expect(operation?.requestBody).toBeDefined();
     if (path.includes("{conversation}")) expect(operation?.parameters?.length).toBeGreaterThanOrEqual(1);
   }
 });
@@ -110,6 +115,8 @@ test("conversation responses require the revision used to guard live summaries",
   expect(response.content["application/json"].schema.required).toContain("rev");
   expect(response.content["application/json"].schema.required).toContain("read");
   expect(response.content["application/json"].schema.required).toContain("unread");
+  expect(response.content["application/json"].schema.required).toContain("notifications");
+  expect(response.content["application/json"].schema.required).toContain("mentionsUnread");
   expect(response.content["application/json"].schema.properties.rev).toBeDefined();
 });
 
