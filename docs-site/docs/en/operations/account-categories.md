@@ -132,7 +132,7 @@ See the [Account administration API](/en/docs/reference/account-administration#d
 
 ## Sign-in locations
 
-In **Admin → Settings → Sign-in → Sign-in locations**, inspect the City and ASN
+In **Admin → Sign-in & security → Sign-in → Sign-in locations**, inspect the City and ASN
 database source and build date, upload an IPv6 `.mmdb` or `.mmdb.gz` replacement,
 or reset a type to the bundled snapshot. Data older than about six months gets
 a hint. See [Sign-in locations](/en/docs/operations/sign-in-locations) for limits,

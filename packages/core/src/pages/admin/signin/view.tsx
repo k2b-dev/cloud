@@ -1,10 +1,11 @@
 import type { GeoIpAdminStatus } from "@k2b/cloud/contracts";
 import { AdminAreaPane } from "@k2b/cloud/ssr";
-import { SettingsSection } from "@k2b/ui";
+import { NoticeCard, SettingsSection } from "@k2b/ui";
 import ApprovalStatus from "../../app-approval/ApprovalStatus";
 import type { ApprovalAvailability } from "../../app-approval/availability";
 import RegistryForm, { type RegistryFormSection } from "../_area/RegistryForm.island";
 import DocumentationLink from "../settings/_components/DocumentationLink";
+import { settingsMessages } from "../settings/_components/messages";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import { SigninArea, type SigninSection, signinText } from "./area";
 import SignInLocationsIsland from "./SignInLocations.island";
@@ -26,6 +27,7 @@ export function SigninFormView(props: {
   signInLocations?: { status: GeoIpAdminStatus | null; actorId: string };
 }) {
   const t = signinText(props.locale);
+  const s = settingsMessages.resolve([props.locale]).t;
   const topic = TOPIC[props.section];
   return (
     <SigninArea c={props.c} locale={props.locale} section={props.section}>
@@ -40,7 +42,16 @@ export function SigninFormView(props: {
           </>
         }
       >
-        <RegistryForm groups={props.groups} sections={props.sections} entries={props.entries} />
+        {props.section === "freeipa" ? <NoticeCard tone="info" title={s.testsUseSaved} detail={s.testsUseSavedDescription} /> : null}
+        <RegistryForm
+          groups={props.groups}
+          sections={props.sections}
+          entries={props.entries}
+          // The app sign-in state below the form comes from the server and follows a saved change.
+          reloadAfter={
+            props.approvalState ? ["user.app_approval.enabled", "user.app_approval.origin", "user.app_approval.admin_pairing"] : undefined
+          }
+        />
         {props.approvalState ? (
           <SettingsSection title={t.approvalState}>
             <ApprovalStatus state={props.approvalState} admin />
