@@ -24,3 +24,29 @@ export const resolveCloudUrl = async (text: string, options: { signal?: AbortSig
     return null;
   }
 };
+
+// Ctrl+Shift+V (Cmd+Shift+V, also with Option, which changes the key's character) asks for plain text; that paste
+// keeps the link as it is.
+let plainPasteAt = -Infinity;
+if (typeof window !== "undefined")
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.shiftKey && (event.ctrlKey || event.metaKey) && (event.code === "KeyV" || event.key.toLowerCase() === "v"))
+        plainPasteAt = event.timeStamp;
+    },
+    true,
+  );
+
+/**
+ * The Cloud link a paste carries: one absolute URL on this Cloud, as copied from the address bar or "Copy Cloud ID",
+ * and nothing else. Returns null for other text, other origins, and a paste as plain text. Recognize the link with
+ * `resolveCloudUrl()`.
+ */
+export const pastedCloudLink = (event: ClipboardEvent): string | null => {
+  const plain = event.timeStamp - plainPasteAt < 1_000;
+  plainPasteAt = -Infinity;
+  const text = (event.clipboardData?.getData("text/plain") ?? "").trim();
+  if (plain || text.startsWith("/")) return null;
+  return localCloudResourceUrl(text, cloudOrigin()) ? text : null;
+};

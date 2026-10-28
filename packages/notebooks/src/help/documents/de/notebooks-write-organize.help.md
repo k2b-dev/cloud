@@ -102,6 +102,7 @@ Für Überschriften und Listen gelten die Zifferntasten auf jedem Tastaturlayout
 :::reference
 - `/` am Zeilenanfang oder nach einem Leerzeichen öffnet das Einfügemenü. Tippe einen Befehlsnamen, um es zu filtern.
 - `[[` öffnet Notizvorschläge. Die Auswahl ersetzt die getippten Klammern durch einen Markdown-Link zur Notiz.
+- Ein eingefügter Link auf etwas in dieser Cloud, etwa aus der Adressleiste oder über **Cloud-ID kopieren**, wird nach dem Erkennen zu einem Link mit Titel; eine Notiz wird zu einem Notizlink. Links, die du nicht öffnen darfst, Links in Code und Einfügen mit **Strg+Umschalt+V** (**⌘+Umschalt+V** am Mac) bleiben wie eingefügt. Rückgängig holt den ursprünglichen Link zurück.
 - `![[` öffnet Anhangsvorschläge. Die Auswahl bettet ein Bild ein; bei einer anderen Datei fügt sie einen Download-Link ein.
 - `==Text==` markiert Text farbig. Die Markierung bleibt innerhalb einer Zeile.
 - Auf Touchscreens stehen **Rückgängig** und **Wiederholen** am Anfang der Werkzeugleiste.

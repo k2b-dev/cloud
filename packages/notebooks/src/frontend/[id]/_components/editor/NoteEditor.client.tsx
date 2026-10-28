@@ -21,6 +21,7 @@ import { inheritPresentationMode, requestedPresentationMode } from "../../../../
 import type { Backlink } from "../../../../service/links";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
+import { cloudLinkPasteExtension } from "../../../lib/editor/cloud-link-paste";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
 import { listCommandsExtension } from "../../../lib/editor/list-commands";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
@@ -537,6 +538,7 @@ function EditorInstance(
   if (!props.readOnly && undoManager) {
     addExtension(collab.of([]));
     addExtension(() => isolateYjsHistory(undoManager));
+    addExtension(cloudLinkPasteExtension());
     // Reading or switching notes needs no collaboration; text edits and editable table focus start it.
     addExtension(
       EditorView.updateListener.of((update) => {
