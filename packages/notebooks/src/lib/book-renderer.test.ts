@@ -179,6 +179,58 @@ describe("Notebook Book HTML", () => {
     }
   });
 
+  test("a paged query shows one page with page buttons, and its last page keeps the height of a full one", () => {
+    const item = (index: number) => ({
+      id: `N${String(index).padStart(5, "0")}`,
+      href: `/app/notebooks/ABC123/notes/N${String(index).padStart(5, "0")}`,
+      title: `Page ${index}`,
+      values: { $title: `Page ${index}` },
+    });
+    const page = (offset: number, count: number): NoteQueryResult => ({
+      columns: ["$title"],
+      items: Array.from({ length: count }, (_, index) => item(offset + index)),
+      total: 1362,
+      limit: 20,
+      offset,
+      truncated: true,
+      diagnostics: [],
+    });
+    const html = (result: NoteQueryResult, locale = "en") =>
+      render(":::query\nsource: notes\n:::", locale, new Map([[1, result]])).blocks[0]!.html;
+
+    const first = html(page(0, 20));
+    expect(first).toContain('aria-label="Pages of this list"');
+    expect(first).toContain(">1–20 of 1,362</span>");
+    expect(first).toMatch(/<button[^>]*data-query-page="0"[^>]*disabled/);
+    expect(first).toMatch(/<button[^>]*data-query-line="1"[^>]*data-query-page="2"[^>]*aria-label="Next page"/);
+    expect(first).not.toContain("notebook-query-filler");
+
+    const last = html(page(1360, 2), "de");
+    expect(last).toContain(">1.361–1.362 von 1.362</span>");
+    expect(last).toMatch(/<button[^>]*data-query-page="70"[^>]*disabled/);
+    // Two rows and 18 blank ones that screen readers skip.
+    expect(last.match(/<li class="notebook-query-filler" aria-hidden="true">/g)).toHaveLength(18);
+
+    const table = render(
+      ":::query\nsource: notes\ncolumns:\n  - $title\n  - $updated\n:::",
+      "en",
+      new Map([[1, { ...page(1360, 2), columns: ["$title", "$updated"] }]]),
+    ).blocks[0]!.html;
+    expect(table.match(/<tr class="notebook-query-filler" aria-hidden="true"><td colspan="2">/g)).toHaveLength(18);
+  });
+
+  test("a query that fits one page, or one rendered for a PDF, shows no page buttons", () => {
+    const one = render(
+      ":::query\nsource: notes\n:::",
+      "en",
+      new Map([[1, { ...result, total: 1, limit: 20, truncated: false, offset: 0 }]]),
+    ).blocks[0]!.html;
+    expect(one).not.toContain("notebook-query-pager");
+    const pdf = render(":::query\nsource: notes\n:::", "en", new Map([[1, { ...result, total: 300, truncated: true }]])).blocks[0]!.html;
+    expect(pdf).not.toContain("notebook-query-pager");
+    expect(pdf).toContain("Showing");
+  });
+
   test("editor previews retain their presentation mode on query note and tag links", () => {
     for (const linkMode of ["write", "readonly"] as const) {
       const document = renderNotebookBook({

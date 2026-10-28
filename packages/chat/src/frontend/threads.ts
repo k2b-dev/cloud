@@ -21,7 +21,9 @@ export type Thread = z.infer<typeof ThreadSchema>;
  */
 export type ThreadView = "all" | "general" | (string & {});
 
-export const chatHasThreads = (conversation: Pick<Conversation, "threads"> | null | undefined) => (conversation?.threads ?? 0) > 0;
+export const chatHasThreads = (
+  conversation: (Pick<Conversation, "threads"> & Partial<Pick<Conversation, "channel" | "kind">>) | null | undefined,
+) => !conversation?.channel && (conversation?.kind === "system" || (conversation?.threads ?? 0) > 0);
 
 /** The address of a view; the chat's own address is "All threads". */
 export const threadHref = (chatId: string, view: ThreadView, message?: string | null, basePath = "/app/chat") =>
@@ -31,6 +33,15 @@ export const threadHref = (chatId: string, view: ThreadView, message?: string | 
 export const messageThread = (message: Pick<Message, "thread">): ThreadView => message.thread ?? "general";
 
 export const inView = (view: ThreadView, message: Pick<Message, "thread">) => view === "all" || messageThread(message) === view;
+
+/** A thread's symbol: an item thread shows its item's kind (an open or a done task, an event, a note), others "#". */
+export const threadIcon = (thread: Pick<Thread, "resource"> | null | undefined) => {
+  const resource = thread?.resource;
+  if (!resource) return "ti ti-hash";
+  if (resource.kind === "event") return "ti ti-calendar-event";
+  if (resource.kind === "note") return "ti ti-note";
+  return resource.done ? "ti ti-circle-check" : "ti ti-circle";
+};
 
 export const threadOf = (list: ThreadList | null, id: string | null | undefined) =>
   id ? (list?.items.find((thread) => thread.id === id) ?? null) : null;
@@ -81,3 +92,9 @@ export const viewReadStart = (view: ThreadView, read: z.infer<typeof ReadStateSc
   const starts = [threadReadStart(read, list, null), ...(list?.items ?? []).map((thread) => threadReadStart(read, list, thread.id))];
   return Math.min(...starts.filter((start): start is number => start !== null));
 };
+
+/** System pages arrive in cursor order; their visible rows are always ordered by activity. */
+export const byActivity = (threads: readonly Thread[]) =>
+  [...threads].sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || a.id.localeCompare(b.id));
+export const systemThreadRows = (list: ThreadList | null, selected: ThreadView | null) =>
+  byActivity(list?.items ?? []).filter((thread, index) => index < 4 || thread.unread > 0 || thread.id === selected);

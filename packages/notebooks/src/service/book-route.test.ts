@@ -2,6 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
 import * as tags from "./tags";
+import * as treeLevels from "./tree-levels";
 import * as workspaceEvents from "./workspace-events";
 
 await import("../frontend/[id]/_components/detail/ssr-test-plugin");
@@ -61,7 +62,7 @@ function fixture() {
   track(spyOn(notebooks, "canAccess")).mockResolvedValue(true);
   const cursor = track(spyOn(workspaceEvents, "latestCursor")).mockResolvedValue("100-0");
   const get = track(spyOn(notebooks, "get")).mockResolvedValue(notebook);
-  const tree = track(spyOn(notes, "getTree")).mockResolvedValue([{ ...note, children: [] }]);
+  const tree = track(spyOn(treeLevels, "countNotes")).mockResolvedValue(1);
   const content = track(spyOn(notes, "getWithContentByShortId")).mockResolvedValue(note);
   const tagList = track(spyOn(tags, "listForNotebook")).mockResolvedValue([{ tag: "team", count: 101 }]);
   const tagNotes = track(spyOn(tags, "listNotesForTag")).mockResolvedValue({
@@ -152,37 +153,12 @@ describe("authorized Book refresh routes", () => {
       locked: false,
     });
     expect(result.snapshot.html).toContain("<strong>handbook</strong>");
-    expect(result.snapshot.tree).toEqual([{ id: "note01", title: "Welcome", children: [] }]);
+    // The navigation reads its own levels; the snapshot only says whether there are pages.
+    expect(result.snapshot.hasNotes).toBe(true);
+    expect(result.snapshot).not.toHaveProperty("tree");
     const encoded = JSON.stringify(result.snapshot);
     for (const secret of ["contentMd", "yjsSnapshot", "private-collaboration-state", note.id, notebook.id, params.userId])
       expect(encoded).not.toContain(secret);
-  });
-
-  test("lists the start page first and follows a changed start page on the next refresh", async () => {
-    const calls = fixture();
-    const page = (shortId: string, title: string, children: notes.NoteTreeNode[] = []): notes.NoteTreeNode => ({
-      ...note,
-      id: `uuid-${shortId}`,
-      shortId,
-      title,
-      children,
-    });
-    calls.tree.mockResolvedValue([
-      page("note02", "Kapitel 10"),
-      page("note03", "Kapitel 2", [page("note04", "Überblick"), page("note05", "Ablauf")]),
-      page("note01", "Willkommen"),
-    ]);
-    const titles = async () => {
-      const result = await loadBookRoute({ ...params, locale: "de" });
-      if (result.kind !== "ok") throw new Error(result.kind);
-      return result.snapshot.tree.map((node) => [node.title, ...node.children.map((child) => child.title)]);
-    };
-    expect(await titles()).toEqual([["Kapitel 2", "Ablauf", "Überblick"], ["Kapitel 10"], ["Willkommen"]]);
-    calls.get.mockResolvedValue({ ...notebook, homepageNoteId: "uuid-note01", homepageNoteShortId: "note01" });
-    expect(await titles()).toEqual([["Willkommen"], ["Kapitel 2", "Ablauf", "Überblick"], ["Kapitel 10"]]);
-    // A start page below another page is listed once, at the top.
-    calls.get.mockResolvedValue({ ...notebook, homepageNoteId: "uuid-note04", homepageNoteShortId: "note04" });
-    expect(await titles()).toEqual([["Überblick"], ["Kapitel 2", "Ablauf"], ["Kapitel 10"], ["Willkommen"]]);
   });
 
   test("a valid note URL cannot render a note from another notebook", async () => {
@@ -226,18 +202,18 @@ describe("authorized Book refresh routes", () => {
 
   test("root refreshes render an empty state and expose newly added navigation without loading a note", async () => {
     const calls = fixture();
-    calls.tree.mockResolvedValue([]);
+    calls.tree.mockResolvedValue(0);
     const empty = await loadBookRoute({ ...params, href: "/app/notebooks/book01?mode=book", locale: "de" });
     expect(empty.kind).toBe("ok");
     if (empty.kind !== "ok") throw new Error(empty.kind);
-    expect(empty.snapshot).toMatchObject({ tree: [], selectedNoteId: null, title: null, locked: false });
+    expect(empty.snapshot).toMatchObject({ hasNotes: false, selectedNoteId: null, title: null, locked: false });
     expect(empty.snapshot.html).toContain("Noch keine Seiten");
 
-    calls.tree.mockResolvedValue([{ ...note, children: [] }]);
+    calls.tree.mockResolvedValue(1);
     const populated = await loadBookRoute({ ...params, href: "/app/notebooks/book01/", locale: "de" });
     expect(populated.kind).toBe("ok");
     if (populated.kind !== "ok") throw new Error(populated.kind);
-    expect(populated.snapshot.tree).toEqual([{ id: "note01", title: "Welcome", children: [] }]);
+    expect(populated.snapshot.hasNotes).toBe(true);
     expect(populated.snapshot.html).toContain("Wähle eine Seite");
     expect(calls.content).not.toHaveBeenCalled();
     expect(calls.tagNotes).not.toHaveBeenCalled();

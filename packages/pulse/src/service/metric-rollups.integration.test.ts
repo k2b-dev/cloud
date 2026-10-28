@@ -6,6 +6,7 @@ import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { installFixtureStore } from "../store/base-store.test-fixture";
 import { quoteIdentifier as q } from "../store/validation";
 import { listAdminBases } from "./base-admin";
+import { createBaseLifecycle } from "./base-lifecycle";
 import { createHourlyRollup } from "./metric-rollups";
 import { createRetention } from "./retention";
 import { assertWrite, writeFixture } from "./write.test-fixture";
@@ -37,6 +38,8 @@ suiteFor(
       f.setTime("2026-10-17T12:00:00.001Z");
       assertWrite(await f.writeB({ metrics: [{ name: "requests", type: "counter", value: 20, ts: "2026-10-15T10:15:00Z" }] }));
       await sql`UPDATE pulse.bases SET retention_days=1 WHERE id=${f.base.id}::uuid`;
+      await createBaseLifecycle(f.store)(f.base.id);
+      expect(await f.read("samples")).toHaveLength(0);
       await expire();
       // Retention must keep this raw partition until its lagging dirty hour is repaired.
       expect((await createRetention({ store: f.store })(f.base.id)).rawPartitions).toBe(0);

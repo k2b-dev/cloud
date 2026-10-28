@@ -28,6 +28,8 @@ import {
   snapshotMailWorkflowCatalog,
 } from "./catalog";
 import { mailWorkflows } from "./module";
+import { MAIL_WORKFLOW_SEND_REVIEW_MESSAGE, mailWorkflowNeedsSendReview } from "./send-policy";
+import { booleanValue, dateTimeValue, mailValueDescriptors, textValue } from "./value-descriptors";
 
 const manifest = mailWorkflows.manifest;
 
@@ -37,111 +39,11 @@ type ValueInfo = WorkflowValuePathDescriptor & { providerTarget?: string };
 
 type BindingContext = {
   ir: WorkflowIr;
+  sendReviewRequired: boolean;
   catalog: MailWorkflowCatalog;
   inputs: Map<string, ValueInfo>;
   bindings: Record<string, WorkflowJsonValue>;
   diagnostics: WorkflowDiagnostic[];
-};
-
-const textValue: WorkflowValuePathDescriptor = { kind: "scalar", type: "core.text" };
-const booleanValue: WorkflowValuePathDescriptor = { kind: "scalar", type: "core.boolean" };
-const dateTimeValue: WorkflowValuePathDescriptor = { kind: "scalar", type: "core.dateTime" };
-const textArrayValue: WorkflowValuePathDescriptor = { kind: "array", type: "core.textArray", items: textValue };
-const referenceResult: WorkflowValuePathDescriptor = {
-  kind: "object",
-  type: "mail.reference",
-  properties: {
-    value: textValue,
-    created: booleanValue,
-    conversationId: textValue,
-    conversationRevision: { kind: "scalar", type: "core.number" },
-  },
-};
-const draftResult: WorkflowValuePathDescriptor = {
-  kind: "object",
-  type: "mail.draft",
-  properties: {
-    id: textValue,
-    revision: { kind: "scalar", type: "core.number" },
-    senderIdentityId: textValue,
-    deliveryClass: textValue,
-  },
-};
-const mailAddress: WorkflowValuePathDescriptor = {
-  kind: "object",
-  type: "mail.address",
-  properties: { role: textValue, name: textValue, email: textValue },
-};
-const mailAttachment: WorkflowValuePathDescriptor = {
-  kind: "object",
-  type: "mail.attachment",
-  properties: {
-    id: textValue,
-    filename: textValue,
-    contentType: textValue,
-    disposition: textValue,
-    contentId: textValue,
-    sizeBytes: { kind: "scalar", type: "core.number" },
-  },
-};
-const mailValueDescriptors: Record<string, WorkflowValuePathDescriptor> = {
-  "mail.message": {
-    kind: "object",
-    type: "mail.message",
-    properties: {
-      id: textValue,
-      conversationId: textValue,
-      subject: textValue,
-      sender: { kind: "array", type: "core.array", items: mailAddress },
-      fromAddress: textValue,
-      fromDomain: textValue,
-      recipients: { kind: "array", type: "core.array", items: mailAddress },
-      body: textValue,
-      bodyText: textValue,
-      bodyHtml: textValue,
-      attachments: { kind: "array", type: "core.array", items: mailAttachment },
-      hasAttachments: booleanValue,
-      folderId: textValue,
-      flags: { kind: "array", type: "core.array", items: textValue },
-      keywords: { kind: "array", type: "core.array", items: textValue },
-      direction: textValue,
-      internalDate: dateTimeValue,
-      receivedAt: dateTimeValue,
-    },
-  },
-  "mail.conversation": {
-    kind: "object",
-    type: "mail.conversation",
-    properties: {
-      id: textValue,
-      subject: textValue,
-      summary: textValue,
-      summaryRevision: { kind: "scalar", type: "core.number" },
-      assigneeUserIds: { kind: "array", type: "core.array", items: textValue },
-      workStatus: textValue,
-      latestMessageAt: dateTimeValue,
-    },
-  },
-  "mail.context": {
-    kind: "object",
-    type: "mail.context",
-    properties: {
-      mailboxId: textValue,
-      actor: {
-        kind: "object",
-        type: "workflow.actor",
-        properties: {
-          userId: textValue,
-          groupIds: { kind: "array", type: "core.array", items: textValue },
-          serviceAccountId: textValue,
-        },
-      },
-      occurredAt: dateTimeValue,
-    },
-  },
-  "core.textArray": textArrayValue,
-  "mail.reference": referenceResult,
-  "mail.draft": draftResult,
 };
 
 const actionTypes = new Map(manifest.actions.map((action) => [action.kind, action.outputType]));
@@ -399,6 +301,21 @@ const bindCondition = (
     }
     operands.forEach(({ path: operandPath, value }, index) => {
       if (
+        (condition.operator === "greaterThan" ||
+          condition.operator === "lessThan" ||
+          condition.operator === "atLeast" ||
+          condition.operator === "atMost") &&
+        value.type !== "core.number" &&
+        value.type !== "core.value"
+      ) {
+        addDiagnostic(
+          context,
+          "condition.type",
+          `${condition.operator} operand ${index + 1} resolves to ${value.type}, expected core.number`,
+          operandPath,
+        );
+      }
+      if (
         (condition.operator === "textEquals" ||
           condition.operator === "contains" ||
           condition.operator === "startsWith" ||
@@ -444,6 +361,9 @@ const bindAction = (
     }
     return message;
   };
+  if (context.sendReviewRequired && (step.action === "automaticReply" || step.action === "scheduleDraftSend")) {
+    addDiagnostic(context, "send.reviewRequired", MAIL_WORKFLOW_SEND_REVIEW_MESSAGE, path);
+  }
   if (step.action === "addKeyword" || step.action === "removeKeyword") {
     bindProviderTarget();
     if (config.keyword !== undefined) bindValue(config.keyword, [...path, "keyword"], scope, context);
@@ -668,7 +588,14 @@ export const bindMailWorkflow = async (ir: WorkflowIr, catalog: MailWorkflowCata
       ],
     };
   }
-  const context: BindingContext = { ir, catalog, inputs: new Map(), bindings: {}, diagnostics: [] };
+  const context: BindingContext = {
+    ir,
+    sendReviewRequired: mailWorkflowNeedsSendReview(ir.steps, ir.inputs),
+    catalog,
+    inputs: new Map(),
+    bindings: {},
+    diagnostics: [],
+  };
   bindInputs(context);
   bindTriggers(context);
   bindSteps(ir.steps, new Map(), new Map(), context);
