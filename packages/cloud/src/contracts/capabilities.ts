@@ -99,6 +99,20 @@ export const CloudResourceReferenceSchema = CloudResourceRefSchema.extend({
   title: z.string().min(1).max(500).optional().describe("Optional current user-facing resource label."),
   preview: z.string().max(2000).optional().describe("Optional short plain-text context for the resource."),
   icon: z.string().min(1).max(120).optional().describe("Optional presentation icon for the resource."),
+  context: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe(
+      "One line in the caller's locale that says what and where the resource is and its most useful fact, for example 'Task in IT planning · due 30 Oct'.",
+    ),
+  status: z
+    .string()
+    .min(1)
+    .max(60)
+    .optional()
+    .describe("The resource's current state as a short label in the caller's locale, for example 'Open' or 'Done'."),
 }).strict();
 
 export type CloudResourceReference = z.infer<typeof CloudResourceReferenceSchema>;
@@ -662,7 +676,7 @@ const resultSchema = <T extends z.ZodType>(
       stream: CapabilityStreamSchema.optional(),
       summary: z.string().trim().min(1).max(500).optional(),
       refs: z
-        .array(options.consumer ? LinkedCloudResourceReferenceSchema : CloudResourceReferenceSchema)
+        .array(options.consumer ? LinkedCloudResourceReferenceSchema.strip() : CloudResourceReferenceSchema)
         .max(100)
         .optional(),
       page: CapabilityPageSchema.optional(),
@@ -729,6 +743,8 @@ export const CloudResourceViewSchema = z
     title: z.string().min(1).max(500).describe("Primary result label."),
     preview: z.string().max(2000).optional().describe("Short plain-text result preview."),
     icon: z.string().min(1).max(120).optional().describe("Optional presentation icon."),
+    context: CloudResourceReferenceSchema.shape.context,
+    status: CloudResourceReferenceSchema.shape.status,
     priority: z.number().int().min(0).max(9).optional().describe("App-local relevance hint from zero to nine."),
     metadata: z
       .array(
@@ -799,10 +815,16 @@ export type CapabilityExecutionContext = {
   signal: AbortSignal;
 };
 
+/** Colours a consumer may give a resource type's icon, the same palette as `@k2b/ui` cards. */
+export const CAPABILITY_RESOURCE_COLORS = ["blue", "emerald", "violet", "orange", "red", "amber", "zinc", "cyan", "rose"] as const;
+export type CapabilityResourceColor = (typeof CAPABILITY_RESOURCE_COLORS)[number];
+
 export type CapabilityResourceTypeDefinition = {
   title: string;
   description: string;
   icon?: string;
+  /** One colour per kind of resource, so a card or list shows at a glance what it stands for. */
+  color?: CapabilityResourceColor;
   reader?: string;
   /** Root-relative pages recognized when a person pastes a Cloud link. Requires a reader. */
   pages?: readonly string[];
@@ -989,6 +1011,7 @@ export const CapabilityResourceTypeManifestSchema = z
     title: z.string().min(1).max(120),
     description: z.string().min(1).max(500),
     icon: z.string().min(1).max(120).optional(),
+    color: z.enum(CAPABILITY_RESOURCE_COLORS).optional(),
     reader: CapabilityLocalIdSchema.optional(),
   })
   .strict();

@@ -44,6 +44,7 @@ test("an empty group membership change still invalidates conversation and sideba
     reactions: [],
     mentions: [],
     refs: [],
+    attachments: [],
     system: { code: "groups_added", params: { groups: [{ id: "22222222-2222-4222-8222-222222222222", name: "Empty" }] } },
     createdAt: "2026-10-12T00:00:00.000Z",
   });

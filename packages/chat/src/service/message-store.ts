@@ -5,6 +5,7 @@ import type { sql } from "bun";
 import type { z } from "zod";
 import { messagePreview, renderSystemMessage } from "../system-messages";
 import { type ChatContext, type ConversationRow, messages, subjectPrincipal } from "./access";
+import { messageAttachments } from "./attachment-store";
 import { type Mention, type MessageSchema, type SystemMessage, SystemMessageSchema } from "./contracts";
 import { deletedPeople } from "./former-accounts";
 import { chatLive } from "./live";
@@ -37,6 +38,7 @@ export const projectMessage = (
   replyTo: z.infer<typeof MessageSchema>["replyTo"] = null,
 ): z.infer<typeof MessageSchema> => ({
   reactions: [],
+  attachments: [],
   mentions: [],
   thread,
   replyTo,
@@ -99,6 +101,12 @@ export const messageViews = async (
   const replies = new Map(originals.map((row) => [String(row.seq), projectMessage(row, conversationId)]));
   const projected = rows.map((row) => projectMessage(row, conversationId, row.thread_id ? threads.get(row.thread_id)! : null));
   const all = [...projected, ...replies.values()];
+  const attachments = await messageAttachments(
+    db,
+    all.map((message) => message.id),
+    conversationId,
+  );
+  for (const message of all) message.attachments = attachments.get(message.id) ?? [];
   const absent = await Promise.all(
     (["user", "service_account"] as const).map((type) =>
       deletedPeople(
@@ -131,8 +139,11 @@ export const messageViews = async (
           ? {
               id: original.id,
               author: original.author,
+              attachments: original.attachments,
               preview: messagePreview(
                 original.system ? renderSystemMessage(original.system, original.author.name, locale) : original.body!,
+                original.attachments,
+                locale,
               ),
             }
           : { deleted: true };
@@ -161,6 +172,7 @@ type NewMessage =
       clientId: string;
       body: string;
       refs?: CloudResourceRef[];
+      attachments?: string[];
       threadId?: string;
       replyToSeq?: string | bigint;
     }
@@ -197,6 +209,10 @@ export const appendMessage = async (
       ON CONFLICT (short_id) DO NOTHING RETURNING *`;
   }
   if (!row) throw new Error("Chat message ID could not be allocated");
+  if (message.kind === "text" && message.attachments?.length) {
+    await db`UPDATE chat.attachments SET message_id = (SELECT id FROM chat.messages WHERE short_id = ${row.short_id})
+      WHERE short_id = ANY(${toPgTextArray(message.attachments)}::text[]) AND conversation_id = ${conversation.id}::uuid`;
+  }
   if (message.kind === "text") await storeMentions(db, row.short_id, message.mentions ?? []);
   if (row.thread_id) await db`UPDATE chat.threads SET last_activity_at = ${row.created_at} WHERE id = ${row.thread_id}::uuid`;
   const [view] = await messageViews(db, [row], conversation.short_id, context.accessSubject);
@@ -206,7 +222,7 @@ export const appendMessage = async (
   for (const row of chatLiveUpdates(
     conversation.short_id,
     projected,
-    message.kind === "text" ? messagePreview(message.body) : null,
+    message.kind === "text" && message.body !== "" ? messagePreview(message.body) : null,
     affected,
   ))
     await chatLive.publish(

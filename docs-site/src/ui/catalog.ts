@@ -216,6 +216,12 @@ const portableSections = [
       page("tab-bar", "TabBar", "ti ti-layout-navbar", "Bottom navigation between a phone app's top-level pages."),
       page("panel-dialog", "PanelDialog", "ti ti-app-window", "Contained or floating composition for complex editors."),
       page("floating-window", "FloatingWindow", "ti ti-window", "Movable and resizable utility content with mobile fallback."),
+      page(
+        "anchored-popover",
+        "AnchoredPopover",
+        "ti ti-message-2",
+        "A card anchored to a control that keeps its side while open and is a bottom sheet on a phone.",
+      ),
     ],
   },
   {
@@ -416,7 +422,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 163;
+export const portableUiComponentCount = 164;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({

@@ -229,6 +229,13 @@ subtree calls in tests, browser suites, and browser harnesses, or a leading
 `// animation-settle: all timelines` comment (optionally followed by a reason)
 for deliberate inspection of all timelines.
 
+Every enhanced link starts a document view transition. While one is active,
+WebKit sends pointer input to `<html>`, so a click is lost, and the transition
+can stay active after its own animations ended, so `settled()` may return
+before it. After a navigation, a test awaits `viewTransitionEnded(page)` from
+`packages/ui/test/browser.ts` before its next click or Back. See the Info and
+thread tests in `packages/chat/src/frontend`.
+
 Before a test reads styles or geometry after an action, it awaits
 `settled(page)` from `packages/ui/test/browser.ts` or waits for its own
 condition. `settled()` waits for fonts, for the running finite animations on
@@ -421,7 +428,8 @@ See the tray Undo test in
 
 Collect page errors with `pageErrors(page)` from `packages/ui/test/browser.ts`
 and assert `expect(errors).toEqual([])`; new tests do not register a
-`pageerror` listener of their own. While a page waits for its next document,
+`pageerror` listener of their own. The `page-errors` check enforces this rule;
+its baseline lists older suites that still have their own listener. While a page waits for its next document,
 WebKit refuses every load that the page starts, such as a stream that opens
 again after the navigation cancelled it. It logs the refusal as
 `Fetch API cannot load <url> due to access control checks.`, also for a
@@ -788,7 +796,8 @@ delete rows; the fixture refuses any other name. Never point them at the
 development database. `bun run test --integration` connects to the `postgres`
 maintenance database on the same server and creates the target database if
 missing, before probing it and running migrations. The configured PostgreSQL
-role needs permission to create databases when the target does not exist.
+role needs permission to create databases for templates and private fixtures,
+even when the shared target already exists.
 
 Use the token when running tests from several worktrees: migrations are
 forward-only, so sharing a database lets one branch's schema changes leak into
@@ -796,7 +805,41 @@ another branch's tests. Every suite in a checkout shares its target database,
 and it keeps what earlier runs left behind. A test that asserts on a
 database-wide listing with a limit, such as
 the oldest candidates of a background job, runs in a private database from
-`useFreshDatabase()` in `scripts/fixtures/test-infra`.
+`useMigratedDatabase()` in `scripts/fixtures/test-infra`. Call `drop()` in
+`afterAll` or `finally`.
+
+The bootstrap also prepares an immutable PostgreSQL template with Core and
+**every application's migrations**, using the same migration entry point as
+the shared target. `createMigratedDatabase()` clones it without binding Bun's
+default SQL client; `useMigratedDatabase()` also binds that client before its
+first query. Mail's integration preload uses the clone before loading its
+runtime. Ordinary file setup must not replay Core setup after cloning.
+`createDisposableDatabase()` and `useFreshDatabase()` still create empty
+databases for schema migration tests and suites that build stand-in tables.
+
+Templates are keyed by a content hash of workspace runtime sources and assets,
+the lockfile, workspace definition, and migration fixture code. Runtime inputs
+are hashed conservatively because migrations import shared helpers and assets;
+ordinary `*.test.*`, `*.spec.*`, and `*.test-fixture.*` edits do not invalidate
+them. Other runtime-adjacent fixtures are included conservatively. A PostgreSQL
+session advisory lock serializes builders across processes and shards. A template is published only
+after migrations finish and its connections close, and then refuses direct
+connections. An interrupted build is replaced by the next builder. Existing
+clones keep their schema when sources change. The runner holds a shared advisory
+lease until all its files finish, and each file holds its own lease. The last
+user drops the template; the next run also removes marked templates and builds
+whose processes died without releasing them. Cleanup takes exclusive advisory
+locks and skips active runs and builders. Templates are never cloned from the
+configured target's test data.
+
+Run through `bun run test --integration` to keep a cold template build outside
+the file's 30 s hook budget. The runner hashes sources once and forwards that
+identity to its children; file hooks only acquire a lease and clone the database.
+A direct file run without that runner may need to build the template first.
+No timeout extension is needed. The fixture regression in
+`tests/integration/test-database-template.integration.test.ts` checks that a
+migrated private database is ready within three seconds, builders serialize,
+and a migration source edit produces a new template.
 
 Each integration file must declare the settings its requests and assertions
 need. For example, call `useTestSettings({ "app.url": "http://localhost:3000" })`
@@ -878,7 +921,8 @@ Gotenberg, against the `CLOUD_TEST_*` targets.
 Mail's entry point reuses the root runner's infrastructure-gate discovery,
 including gated files without an `.integration` suffix. It also retains the
 explicitly opted-in large-mailbox performance and IMAP connector suites. All
-selected files share the existing Mail disposable database and Sync preload;
+selected files run with `--isolate`, so the Mail preload gives each file its own
+database clone and Sync runtime;
 unit and browser files run through the normal test jobs instead. Inspect the
 selection without starting infrastructure with
 `bun run --cwd packages/mail test:integration --list`.

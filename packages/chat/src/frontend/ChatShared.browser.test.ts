@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
@@ -29,8 +29,7 @@ const load = async (options: BrowserContextOptions, address: { chat: string; pan
   const context = await browser.newContext(options);
   const page = await context.newPage();
   page.setDefaultTimeout(5_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(new URL(`/app/chat/c/${address.chat}${address.panel ? "?panel=info" : ""}`, harness.url).href);
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(({ props }) => window.mountChat(props, "en"), { props: harness.props(address) });
@@ -40,7 +39,12 @@ const load = async (options: BrowserContextOptions, address: { chat: string; pan
 /** A team chat where Nora shared a task the viewer may open, a task they may not, and a link. */
 const seed = () => {
   const chat = harness.addChat({ members: [viewer, nora, tobias], name: "IT", count: 4, end: new Date(chatTestNow.getTime() - 3_600_000) });
-  const open = harness.addElement({ id: "cooling", title: "Delivery cooling shelves", preview: "Task in IT planning · due 30.10." });
+  const open = harness.addElement({
+    id: "cooling",
+    title: "Delivery cooling shelves",
+    context: "Task in IT planning · due 30.10.",
+    status: "Open",
+  });
   const hidden = harness.addElement({ id: "old-case", title: "Old case", readable: false });
   harness.receiveShared(chat, nora, "Here is the task:", [open]);
   harness.receiveShared(chat, nora, "And the old case:", [hidden]);
@@ -60,11 +64,25 @@ describe("Shared Cloud elements", () => {
         const card = page.locator(".k2b-message-row", { hasText: "Here is the task:" }).locator(".k2b-resource-card");
         await card.getByText("Delivery cooling shelves", { exact: true }).waitFor();
         expect(await card.getAttribute("href")).toBe("/app/spaces/task/cooling");
+        // What and where above the title, the state at the end, the kind's colour on the icon (Chat v12).
+        expect(
+          (await card.innerText())
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean),
+        ).toEqual(["Task in IT planning · due 30.10.", "Delivery cooling shelves", "Open"]);
+        expect(await card.getAttribute("data-color")).toBe("emerald");
         const hidden = page.locator(".k2b-message-row", { hasText: "And the old case:" }).locator(".k2b-resource-card");
         await page.locator('.k2b-resource-card[data-state="no_access"]').waitFor();
         await until(() => harness.readerCalls() >= 2);
         // Without access, nothing of the element shows: no title, no place.
         expect(await hidden.innerText()).not.toContain("Old case");
+        expect(
+          (await hidden.innerText())
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean),
+        ).toEqual(["Cloud element", "Item not available", "You have no access. Title and content stay hidden."]);
         expect(errors).toEqual([]);
       } finally {
         await page.context().close();
@@ -77,8 +95,7 @@ describe("Shared Cloud elements", () => {
     const context = await browser.newContext(desktop);
     const page = await context.newPage();
     page.setDefaultTimeout(5_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     // The page's clock moves only when the test moves it, so a minute passes at once.
     await page.clock.install({ time: chatTestNow });
     await page.goto(new URL(`/app/chat/c/${chat}`, harness.url).href);
@@ -98,7 +115,7 @@ describe("Shared Cloud elements", () => {
 
   test("the composer shares an element from the picker; a message may be only the element", async () => {
     const chat = harness.addChat({ members: [viewer, nora], count: 3, end: new Date(chatTestNow.getTime() - 3_600_000) });
-    harness.addElement({ id: "inventory", title: "Inventory hall 3", preview: "Event in Warehouse · Mon 27.10." });
+    harness.addElement({ id: "inventory", title: "Inventory hall 3", context: "Event in Warehouse · Mon 27.10." });
     const { page, errors } = await load(desktop, { chat });
     try {
       await page.getByRole("button", { name: "Add to chat", exact: true }).click();
@@ -129,7 +146,7 @@ test("a message shares at most ten elements; the eleventh is refused before the 
       await page.getByRole("button", { name: "Add to chat", exact: true }).click();
       await page.getByRole("menuitem", { name: "Share a Cloud element" }).click();
       await page.locator('input[role="combobox"]').fill(`Task number ${index}`);
-      await page.getByRole("option", { name: new RegExp(`Task number ${index}$`) }).click();
+      await page.getByRole("option", { name: new RegExp(`^Task number ${index}(?!\\d)`) }).click();
       await page.getByRole("dialog").getByRole("button", { name: "Add", exact: true }).click();
       await page.locator(".k2b-chat-composer").getByText(`Task number ${index}`, { exact: true }).waitFor();
     };

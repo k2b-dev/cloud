@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled, viewTransitionEnded } from "../../../ui/test/browser";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
@@ -30,8 +30,7 @@ const load = async (options: BrowserContextOptions, address: { chat?: string; th
   const context = await browser.newContext(options);
   const page = await context.newPage();
   page.setDefaultTimeout(5_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   const path = address.chat
     ? `/app/chat/c/${address.chat}${address.threadsPage ? "/threads" : address.thread ? `/t/${address.thread}` : ""}`
     : "/app/chat";
@@ -91,7 +90,22 @@ describe("Chat threads on a desktop", () => {
       expect(await sidebar(page).locator(`a[href="/app/chat/c/${chat}"]`).first().textContent()).toContain("3 members");
       await threadRow(page, problems).click();
       await page.waitForURL(`**/c/${chat}/t/${problems}`);
+      // Each thread link starts a view transition; WebKit sends input during one to <html>, so Back and the next click wait.
+      await viewTransitionEnded(page);
       await page.locator(".chat-thread-picker", { hasText: "Problems" }).waitFor();
+      // The picker stands right beside the chat's title text, not at the far end of the head.
+      const titleEnd = await page.locator(".chat-conversation__header > .k2b-page-title").evaluate((title) => {
+        const walker = document.createTreeWalker(title, NodeFilter.SHOW_TEXT);
+        const range = document.createRange();
+        let end = 0;
+        while (walker.nextNode()) {
+          range.selectNodeContents(walker.currentNode);
+          end = Math.max(end, range.getBoundingClientRect().right);
+        }
+        return end;
+      });
+      const picker = await page.locator(".chat-conversation__picker").boundingBox();
+      expect(picker!.x - titleEnd).toBeLessThan(24);
       expect(await page.getByRole("feed").getByText("Problems: update 1", { exact: true }).count()).toBe(1);
       expect(await page.getByRole("feed").getByText("Updates: update 1", { exact: true }).count()).toBe(0);
       // "All threads" read everything it showed; the open thread reports reads for itself only.
@@ -105,6 +119,7 @@ describe("Chat threads on a desktop", () => {
       await page.goBack();
       await page.waitForURL(`**/c/${chat}`);
       await threadRow(page, "all").and(page.locator('[aria-current="page"]')).waitFor();
+      await viewTransitionEnded(page);
       await threadRow(page, updates).click();
       await page.waitForURL(`**/t/${updates}`);
       expect(errors).toEqual([]);
@@ -384,7 +399,14 @@ describe("Chat threads on a phone", () => {
       await threads.getByText("Old network", { exact: true }).waitFor();
       await threads.getByText("Problems", { exact: true }).click();
       await page.waitForURL(`**/t/${problems}`);
-      await page.locator(".chat-conversation__thread-name", { hasText: "Problems" }).waitFor();
+      // The thread is the title, the chat and its members stand below it, and neither is cut off.
+      const head = page.locator(".chat-conversation__wide-title");
+      await head.locator(".chat-conversation__wide-name", { hasText: "Problems" }).waitFor();
+      expect(await head.locator(".chat-conversation__phone-subtitle").innerText()).toBe("IT · 3 members");
+      expect(await page.locator(".chat-conversation__header > .k2b-page-title").isVisible()).toBe(false);
+      expect(await head.locator("h1, p:visible").evaluateAll((lines) => lines.every((line) => line.scrollWidth <= line.clientWidth))).toBe(
+        true,
+      );
       await page.getByRole("link", { name: "Back to the threads", exact: true }).click();
       await page.waitForURL(`**/c/${chat}/threads`);
       await threads.getByText("Problems", { exact: true }).waitFor();
@@ -464,8 +486,7 @@ for (const system of [false, true])
       const context = await browser.newContext({ ...desktop, reducedMotion: "reduce" });
       const page = await context.newPage();
       page.setDefaultTimeout(5_000);
-      const errors: string[] = [];
-      page.on("pageerror", (error) => errors.push(error.message));
+      const errors = pageErrors(page);
       const view = selected === "all" ? "all" : thread;
       const path = `/app/chat/panel/c/${chat}${view === "all" ? "" : `/t/${view}`}`;
       const suffix = system ? "?listFilter=unread&filter=done" : "?list=archive&filter=unread";
