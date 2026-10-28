@@ -66,8 +66,8 @@ import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
-import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 import { mailSummaryMessages } from "./mail-summary-messages";
+import { openMailUserDraftStorage } from "./mail-user-draft-storage";
 import type { MailReadingFormat } from "./mail-user-preferences";
 import { captureMailWorkspaceRefreshError } from "./mail-workspace-refresh";
 
