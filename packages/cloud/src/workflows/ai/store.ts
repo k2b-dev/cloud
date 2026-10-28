@@ -1,6 +1,7 @@
 import { type SQL, sql } from "bun";
 import { AI_TASK_REQUEST_MAX_BYTES, AiTaskInputTooLargeError, assertAiTaskRequestSize } from "../../ai/task-contracts";
 import type { AccessSubject } from "../../server/services/access";
+import { type AiResolvedModelRef, AiResolvedModelRefSchema } from "../../shared/ai-models";
 import type { WorkflowJsonValue } from "../contracts";
 import { wakeWorkflowRunsWaitingOn } from "../store/runs";
 import { withTransaction } from "../store/transaction";
@@ -31,6 +32,7 @@ type WorkflowAiTaskRow = {
   request: unknown;
   input_hash: string;
   model_profile_id: string;
+  model_ref: unknown;
   model_config_hash: string | null;
   status: WorkflowAiTaskStatus;
   output: unknown;
@@ -67,7 +69,8 @@ const taskFromRow = (row: WorkflowAiTaskRow): WorkflowAiTask => ({
   kind: row.kind,
   request: workflowAiRequestSchema.parse(json(row.request)) as WorkflowAiRequest,
   inputHash: row.input_hash,
-  modelProfileId: row.model_profile_id,
+  modelId: row.model_profile_id,
+  modelRef: row.model_ref ? AiResolvedModelRefSchema.parse(row.model_ref) : undefined,
   modelConfigHash: row.model_config_hash ?? undefined,
   status: row.status,
   output: json(row.output) as WorkflowJsonValue | null,
@@ -94,6 +97,7 @@ const TASK_COLUMNS = `
   task.request,
   task.input_hash,
   task.model_profile_id,
+  task.model_ref,
   task.model_config_hash,
   task.status,
   task.output,
@@ -149,11 +153,13 @@ export const migrateWorkflowAi = async (db: SQL = sql): Promise<void> => {
     ALTER TABLE ai.workflow_task ADD COLUMN IF NOT EXISTS source_id TEXT;
     ALTER TABLE ai.workflow_task ADD COLUMN IF NOT EXISTS cache_key TEXT;
     ALTER TABLE ai.workflow_task ADD COLUMN IF NOT EXISTS model_config_hash TEXT;
+    ALTER TABLE ai.workflow_task ADD COLUMN IF NOT EXISTS model_ref JSONB;
     ALTER TABLE ai.workflow_task ADD COLUMN IF NOT EXISTS released_at TIMESTAMPTZ;
     CREATE INDEX IF NOT EXISTS idx_ai_application_task_sources ON ai.workflow_task(app_id, scope_id, source_id)
       WHERE run_id IS NULL AND released_at IS NULL;
     CREATE INDEX IF NOT EXISTS idx_ai_application_task_retention ON ai.workflow_task(released_at, id)
       WHERE run_id IS NULL AND released_at IS NOT NULL AND status IN ('succeeded', 'failed', 'canceled');
+
     CREATE INDEX IF NOT EXISTS idx_ai_workflow_task_cache ON ai.workflow_task(app_id, scope_id, cache_key, completed_at DESC) WHERE status = 'succeeded';
     CREATE INDEX IF NOT EXISTS idx_ai_workflow_task_active_scope ON ai.workflow_task(app_id, scope_id) WHERE status IN ('queued', 'running');
     CREATE TABLE IF NOT EXISTS ai.workflow_scope_budget (
@@ -254,7 +260,8 @@ export const createWorkflowAiTask = async (
     stepKey: string;
     effectKey: string;
     request: WorkflowAiRequestInput;
-    modelProfileId: string;
+    modelId: string;
+    modelRef?: AiResolvedModelRef;
     modelConfigHash?: string;
     scope?: WorkflowAiScope;
   },
@@ -304,8 +311,8 @@ export const createWorkflowAiTask = async (
     }
     if (input.scope && !cached) await reserveWorkflowAiBudget(db, run, input.scope);
     const rows = await db<WorkflowAiTaskRow[]>`
-    INSERT INTO ai.workflow_task (app_id, run_id, usage_subject, step_key, effect_key, kind, request, input_hash, model_profile_id, scope_id, source_id, cache_key, model_config_hash, status, output, completed_at)
-    VALUES (${run.app_id}, ${input.runId ?? null}::uuid, ${input.owner?.usageSubject ?? null}, ${input.stepKey}, ${input.effectKey}, ${request.kind}, ${request}, ${requestHash(request)}, ${input.modelProfileId},
+    INSERT INTO ai.workflow_task (app_id, run_id, usage_subject, step_key, effect_key, kind, request, input_hash, model_profile_id, model_ref, scope_id, source_id, cache_key, model_config_hash, status, output, completed_at)
+    VALUES (${run.app_id}, ${input.runId ?? null}::uuid, ${input.owner?.usageSubject ?? null}, ${input.stepKey}, ${input.effectKey}, ${request.kind}, ${request}, ${requestHash(request)}, ${input.modelId}, ${input.modelRef ? JSON.stringify(AiResolvedModelRefSchema.parse(input.modelRef)) : null}::text::jsonb,
       ${run.scope_id}, ${input.scope?.sourceId ?? null}, ${cacheKey}, ${input.modelConfigHash ?? null},
       ${cached ? "succeeded" : "queued"}, ${cached?.output ?? null}, ${cached ? new Date() : null})
     ON CONFLICT (effect_key) DO NOTHING

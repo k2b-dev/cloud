@@ -1,5 +1,6 @@
 import { assertAiTaskRequestSize } from "../ai/task-contracts";
 import type { AiResolvedModel } from "../ai/types";
+import { type AiModelRequest, AiModelRequestSchema, type AiResolvedModelRef } from "../shared/ai-models";
 import { WorkflowAiAdmissionError, type WorkflowAiScope, workflowAiModelHash } from "./ai/policy";
 import type { WorkflowAiRequestInput, WorkflowAiTask } from "./ai/types";
 import type { WorkflowFieldSchema, WorkflowJsonValue } from "./contracts";
@@ -9,7 +10,14 @@ import { workflowAction } from "./definition";
 const text = (description: string, optional = false, maxLength = 20_000) =>
   ({ kind: "string", minLength: 1, maxLength, optional, description }) as const;
 const identifier = (description: string) => ({ kind: "string", format: "identifier", minLength: 1, maxLength: 120, description }) as const;
-const model = text("Optional enabled AI model profile ID.", true, 120);
+const model = {
+  kind: "union",
+  optional: true,
+  variants: [
+    { kind: "object", properties: { class: { kind: "string", enum: ["fast", "balanced", "thorough", "maximum"] } } },
+    { kind: "object", properties: { id: text("Explicit model variant ID.", false, 241) } },
+  ],
+} as const satisfies WorkflowFieldSchema;
 const prompt = text("Instructions for the AI task.");
 const choices = {
   kind: "array",
@@ -60,12 +68,13 @@ type WorkflowAiActionDependencies = {
     stepKey: string;
     effectKey: string;
     request: WorkflowAiRequestInput;
-    modelProfileId: string;
+    modelId: string;
+    modelRef?: AiResolvedModelRef;
     modelConfigHash?: string;
     scope?: WorkflowAiScope;
   }): Promise<{ task: WorkflowAiTask; created: boolean }>;
   exists(effectKey: string): Promise<boolean>;
-  resolveModel(requestedModelId?: string): Promise<AiResolvedModel>;
+  resolveModel(model?: AiModelRequest): Promise<AiResolvedModel>;
   submit(taskId: string): Promise<void>;
 };
 
@@ -123,14 +132,15 @@ export const runWorkflowAiAction = async (
 
     if (!task) {
       assertAiTaskRequestSize(request);
-      const resolved = await deps.resolveModel(request.modelProfileId?.trim() || undefined);
+      const resolved = await deps.resolveModel(request.model);
       task = (
         await deps.create({
           runId: ctx.runId,
           stepKey: ctx.stepKey,
           effectKey: ctx.effectKey,
           request,
-          modelProfileId: resolved.profile.id,
+          modelId: resolved.profile.id,
+          modelRef: resolved.model,
           ...(scope ? { scope: await scope(), modelConfigHash: workflowAiModelHash(resolved.profile) } : {}),
         })
       ).task;
@@ -181,7 +191,7 @@ export const createWorkflowAiActions = (options?: { scope(ctx: WorkflowActionCon
           input: values.input,
           prompt: values.prompt,
           fields: values.fields,
-          ...(values.model ? { modelProfileId: values.model } : {}),
+          ...(values.model ? { model: AiModelRequestSchema.parse(values.model) } : {}),
         }),
     }),
     aiGenerateText: workflowAction.idempotent({
@@ -212,7 +222,7 @@ export const createWorkflowAiActions = (options?: { scope(ctx: WorkflowActionCon
           kind: "generate_text",
           prompt: values.prompt,
           ...(values.input === undefined ? {} : { input: values.input }),
-          ...(values.model ? { modelProfileId: values.model } : {}),
+          ...(values.model ? { model: AiModelRequestSchema.parse(values.model) } : {}),
           ...(values.maxOutputChars === undefined ? {} : { maxOutputChars: values.maxOutputChars }),
         }),
     }),
@@ -238,7 +248,7 @@ export const createWorkflowAiActions = (options?: { scope(ctx: WorkflowActionCon
           input: values.input,
           prompt: values.prompt,
           choices: values.choices,
-          ...(values.model ? { modelProfileId: values.model } : {}),
+          ...(values.model ? { model: AiModelRequestSchema.parse(values.model) } : {}),
         }),
     }),
     aiClassifyMany: workflowAction.idempotent({
@@ -281,7 +291,7 @@ export const createWorkflowAiActions = (options?: { scope(ctx: WorkflowActionCon
           choices: values.choices,
           ...(values.minChoices === undefined ? {} : { minChoices: values.minChoices }),
           ...(values.maxChoices === undefined ? {} : { maxChoices: values.maxChoices }),
-          ...(values.model ? { modelProfileId: values.model } : {}),
+          ...(values.model ? { model: AiModelRequestSchema.parse(values.model) } : {}),
         }),
     }),
   } as const;

@@ -572,7 +572,7 @@ const ResourceCardDemo = () => (
   <DemoCard
     id="resource-cards"
     chip={{ kind: "component", name: "ResourceCard", from: "@k2b/ui" }}
-    description="ResourceCard keeps one size while it loads, shows the element, or says that the reader has no access, the element is deleted, or it is not available right now. Outside ok it shows nothing of the element."
+    description="ResourceCard keeps one size while it loads, shows the element, or says that the reader has no access, the element is deleted, or it is not available right now. A coloured icon chip, a context line and a status show what the element is. Outside ok it shows nothing of the element."
     code={`import { ResourceCard } from "@k2b/ui";
 
 <ResourceCard
@@ -599,6 +599,14 @@ const ResourceCardDemo = () => (
           />
         )}
       </For>
+      <ResourceCard
+        title="Hand out laptops"
+        icon="ti ti-circle"
+        color="emerald"
+        context="Task in IT planning · due 30 Oct"
+        status="Open"
+        href="#resource-cards"
+      />
     </div>
   </DemoCard>
 );
@@ -791,6 +799,7 @@ const ProgressDemo = () => (
 <ProgressRing value={35} label="Usage" />
 <ProgressRing value={92} tone="warning" label="Usage, almost used up" />
 <ProgressRing value={100} tone="danger" label="Usage, used up" />
+<ProgressRing value={60} tone="accent" label="Today's work done" />
 <DotStrip dots={dotStripOutcomes} length={50} label="Last 50 mails: 17 matched, 6 skipped, 27 not" />
 <DotStrip dots={dotStripOutcomes.slice(0, 23)} length={50} size="lg" label="23 of 50 checked" />`}
   >
@@ -802,6 +811,7 @@ const ProgressDemo = () => (
         <ProgressRing value={35} label="Usage" />
         <ProgressRing value={92} tone="warning" label="Usage, almost used up" />
         <ProgressRing value={100} tone="danger" label="Usage, used up" />
+        <ProgressRing value={60} tone="accent" label="Today's work done" />
       </div>
       <DotStrip dots={dotStripOutcomes} length={50} label="Last 50 mails: 17 matched, 6 skipped, 27 not" />
       <DotStrip dots={dotStripOutcomes.slice(0, 23)} length={50} size="lg" label="23 of 50 checked" />

@@ -18,10 +18,14 @@ describe("Weather internationalization", () => {
     const german = weatherMessages.resolve(["de-CH"]).t;
     expect(weatherConditionLabel("sleet", german)).toBe("Schneeregen");
     expect(weatherConditionLabel("unknown-provider-code", german)).toBe("bewölkt");
-    expect(weatherWidgetEmptyBody("de-CH")).toMatchObject({
+    expect(weatherWidgetEmptyBody("de-CH", "medium")).toMatchObject({
       title: "Wetter",
-      blocks: [{ title: "Noch keine Orte gespeichert" }],
+      blocks: [{ title: "Noch keine Orte gespeichert", subtitle: "Füge in Wetter einen Ort hinzu, um hier Vorhersagen zu sehen" }],
     });
+    // A small widget has room for the title only.
+    expect(weatherWidgetEmptyBody("de-CH", "small").blocks).toEqual([
+      { kind: "hero", icon: "ti ti-map-pin-plus", tone: "blue", title: "Noch keine Orte gespeichert" },
+    ]);
     expect(weatherWidgetUnavailableBody("de-CH")).toMatchObject({
       title: "Wetter",
       blocks: [{ title: "Wetter nicht verfügbar", message: "Gespeicherte Orte konnten nicht geladen werden." }],

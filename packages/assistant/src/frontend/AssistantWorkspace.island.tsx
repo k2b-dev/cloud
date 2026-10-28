@@ -6,7 +6,6 @@ import type {
   AiOpenQuestion,
   AiOpenQuestions,
   AiProject,
-  AiPublicModelProfile,
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
@@ -19,6 +18,9 @@ import {
   AiChatTurnNavigator,
   type AiComposerAttachment,
   type AiComposerSendInput,
+  AiModelChooser,
+  type AiModelChooserState,
+  AiModelNote,
   aiChatAttachments,
   aiChatModelOptions,
   aiComposerAttachmentRecords,
@@ -27,9 +29,12 @@ import {
   aiComposerFileAccept,
   aiComposerSendInput,
   aiLatestUsageSnapshot,
+  aiModelBlocksSending,
+  aiModelRequestFor,
   createAiChatTimeline,
   createAiPastedTextFile,
   readAiComposerFiles,
+  resolveAiModelChoice,
   shouldAttachAiPastedText,
 } from "@k2b/cloud/ai/ui";
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
@@ -40,6 +45,7 @@ import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
 import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
+import { type AiModelRequest, type AiPeopleModels, aiModelClassFallbackChain } from "@k2b/cloud/shared";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
@@ -148,14 +154,12 @@ import { assistantTaskTitle } from "./scheduled-task-format";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import { waitingQuestionsView } from "./waiting-questions";
 
-type Status = {
+type Status = AiPeopleModels & {
   ok: boolean;
   enabled: boolean;
-  defaultModelId: string;
   visionModelConfigured: boolean;
   audioModelConfigured?: boolean;
   error: AiSettingsError | null;
-  models: AiPublicModelProfile[];
 };
 
 type InitialDetail = {
@@ -173,9 +177,8 @@ type Props = {
   userId: string;
   cloudUrl: string;
   status: Status;
-  models: AiPublicModelProfile[];
+  models: AiPeopleModels["options"];
   /** Model of the user's most recent turn (any chat) — preselected for new chats. */
-  lastModelId: string;
   /** The viewer's time zone from the request; the chat list's day sections use it on the server and in the browser. */
   timeZone: string;
   /** The server's render time, so hydration builds the same day sections as the server. */
@@ -277,8 +280,6 @@ export default function AssistantWorkspace(props: Props) {
       : []),
   ];
   const audioCopy = () => audioMessages.resolve([locale()]).t;
-  const isSelectable = (modelId: string | null | undefined): modelId is string =>
-    Boolean(modelId && props.models.some((model) => model.id === modelId));
 
   const [liveError, setLiveError] = createSignal<string | null>(null);
   const liveHub = createAssistantLiveHub();
@@ -381,29 +382,43 @@ export default function AssistantWorkspace(props: Props) {
   // was made in. Without a pick, a chat shows the model of its own last
   // assistant turn; new chats start on the user's last-used model.
   const projectComposerKey = (projectId: string) => `project:${projectId}`;
-  const [modelChoices, setModelChoices] = createSignal<Record<string, string>>({});
+  const [modelChoices, setModelChoices] = createSignal<Record<string, AiModelRequest>>({});
   const modelSessionKey = () => chat.activeConversationId() ?? (activeProject() ? projectComposerKey(activeProject()!.id) : "__new__");
   const modelOfActiveChat = createMemo(() => {
     if (!chat.activeConversationId()) return null;
     const entry = chat
       .messages()
-      .findLast((message) => message.kind === "message" && message.message.role === "assistant" && isSelectable(message.modelProfileId));
-    return entry?.modelProfileId ?? null;
+      .findLast((message) => message.kind === "message" && message.message.role === "user" && message.meta?.modelRequest);
+    return entry?.meta?.modelRequest ?? null;
   });
-  const fallbackModelId = () => {
-    if (isSelectable(props.lastModelId)) return props.lastModelId;
-    if (isSelectable(props.status.defaultModelId)) return props.status.defaultModelId;
-    return props.models[0]?.id ?? "";
-  };
-  const selectedModelId = createMemo(() => {
+  const selectedModelRequest = createMemo<AiModelRequest>(() => {
     const explicit = modelChoices()[modelSessionKey()];
-    if (isSelectable(explicit)) return explicit;
-    return modelOfActiveChat() ?? fallbackModelId();
+    if (explicit) return explicit;
+    const previous = modelOfActiveChat();
+    return previous ?? props.status.selection ?? props.status.effectiveDefault;
   });
-  const setSelectedModelId = (modelId: string) => {
+  const selectedModelId = createMemo(() => {
+    const request = selectedModelRequest();
+    if ("id" in request) return request.id;
+    for (const modelClass of [request.class, ...aiModelClassFallbackChain(request.class)]) {
+      const id = props.status.classes.find((option) => option.class === modelClass)?.variantId;
+      if (id) return id;
+    }
+    return "";
+  });
+  /** A class when the person chose one, so the chat follows the administration's assignment. */
+  const setSelectedModelRequest = (request: AiModelRequest) => {
     const key = modelSessionKey();
-    setModelChoices((current) => ({ ...current, [key]: modelId }));
+    setModelChoices((current) => ({ ...current, [key]: request }));
   };
+  /** `/model` picks a model; like the card, a model inside a class keeps the class. */
+  const setSelectedModelId = (modelId: string) =>
+    setSelectedModelRequest(props.status.ok ? aiModelRequestFor(props.status, modelId) : { id: modelId });
+  const modelState = (): AiModelChooserState => (props.status.ok ? { status: "ready", models: props.status } : { status: "error" });
+  const modelNote = () =>
+    aiModelBlocksSending(modelState(), selectedModelRequest()) || resolveAiModelChoice(props.status, selectedModelRequest()).unavailable ? (
+      <AiModelNote state={modelState()} value={selectedModelRequest()} onChange={setSelectedModelRequest} />
+    ) : undefined;
 
   const [composerFocusToken, setComposerFocusToken] = createSignal(0);
   const [composerDrafts, setComposerDrafts] = createSignal<Record<string, string>>({});
@@ -517,7 +532,7 @@ export default function AssistantWorkspace(props: Props) {
   const usageSnapshot = createMemo(() => aiLatestUsageSnapshot(chat.usageMessages()));
   const usageModel = createMemo(() => {
     const snapshot = usageSnapshot();
-    const modelId = snapshot ? snapshot.modelProfileId : selectedModelId();
+    const modelId = snapshot ? snapshot.modelId : selectedModelId();
     return props.models.find((model) => model.id === modelId) ?? null;
   });
   const composerSessionKey = () => chat.activeConversationId() ?? (activeProject() ? projectComposerKey(activeProject()!.id) : "__new__");
@@ -677,12 +692,7 @@ export default function AssistantWorkspace(props: Props) {
     });
   };
 
-  const selectedModel = createMemo(() => props.models.find((model) => model.id === selectedModelId()) ?? null);
-  const acceptsImages = () =>
-    Boolean(
-      selectedModel()?.capabilities.includes("vision") ||
-        (selectedModel()?.capabilities.includes("tools") && props.status.visionModelConfigured),
-    );
+  const acceptsImages = () => true;
   const focusComposer = () => setComposerFocusToken((value) => value + 1);
   const commitConversationUrl = (conversationId: string, replace = false) => {
     const href = assistantConversationHref(window.location.href, conversationId);
@@ -1254,7 +1264,7 @@ export default function AssistantWorkspace(props: Props) {
             ...input,
             conversationId: target,
             expectedDraftRevision: local.baseRevision,
-            modelProfileId: selectedModelId() || undefined,
+            model: selectedModelRequest(),
           });
           const draft = chat.conversation()?.id === target ? chat.conversation()?.draft : undefined;
           if (draft) local.baseRevision = draft.revision;
@@ -1273,11 +1283,11 @@ export default function AssistantWorkspace(props: Props) {
   const sendProjectMessage = async (projectId: string, input: AiComposerSendInput) => {
     if (!canSend() || dictation.busy()) return false;
     dictation.invalidateAutomatic();
-    const modelProfileId = selectedModelId() || undefined;
+    const model = selectedModelRequest();
     return submitAssistantProjectMessage({
       projectId,
       message: input,
-      modelProfileId,
+      model,
       pendingConversation: pendingProjectChats()[projectId],
       activeConversationId: chat.activeConversationId,
       openConversation: chat.openConversation,
@@ -1352,7 +1362,7 @@ export default function AssistantWorkspace(props: Props) {
             ...input,
             conversationId,
             expectedDraftRevision: local.baseRevision,
-            modelProfileId: selectedModelId() || undefined,
+            model: selectedModelRequest(),
           });
           if (accepted && chat.conversation()?.id === conversationId) local.baseRevision = chat.conversation()!.draft.revision;
           // Acceptance is durable even if refreshing the visible queue fails.
@@ -2130,7 +2140,7 @@ export default function AssistantWorkspace(props: Props) {
               hasAssistantMessage: chat.messages().some((message) => message.message.role === "assistant"),
               compact: async () => {
                 const key = sessionKey();
-                if (!(await chat.compactConversation({ modelProfileId: selectedModelId() || undefined })))
+                if (!(await chat.compactConversation({ model: selectedModelRequest() })))
                   throw commandFailure(key, commandCopy().compactFailed);
                 // The request queues a compaction turn; the chat shows its progress and result, so this only says it started.
                 return { done: commandCopy().compactDone };
@@ -2222,7 +2232,18 @@ export default function AssistantWorkspace(props: Props) {
             ]);
             return rows;
           }}
-          submitTools={<dictation.Control />}
+          submitTools={
+            <>
+              <AiModelChooser
+                state={modelState()}
+                value={selectedModelRequest()}
+                onChange={setSelectedModelRequest}
+                locked={!projectComposer() && chat.running()}
+                lockedReason={t().modelLockedWhileRunning}
+              />
+              <dictation.Control />
+            </>
+          }
           footerContent={dictation.recording() ? <dictation.RecordingFooter /> : undefined}
           value={composerDraft(sessionKey())}
           onValueChange={(value) => setComposerDraft(sessionKey(), value)}
@@ -2239,9 +2260,6 @@ export default function AssistantWorkspace(props: Props) {
             disabled: !projectComposer() && chat.running(),
             label: t().attachFiles,
           }}
-          models={aiChatModelOptions(props.models)}
-          selectedModelId={selectedModelId()}
-          onModelChange={setSelectedModelId}
           modelDetails={
             <AssistantQuota
               snapshot={quotas.data()}
@@ -2272,6 +2290,7 @@ export default function AssistantWorkspace(props: Props) {
                   : "idle"
           }
           focusToken={projectComposer() ? undefined : composerFocusToken()}
+          submitDisabled={aiModelBlocksSending(modelState(), selectedModelRequest())}
           runningSubmitIntent={!projectComposer() ? "queue" : undefined}
           placeholder={
             props.status.enabled && props.models.length === 0
@@ -2337,7 +2356,7 @@ export default function AssistantWorkspace(props: Props) {
                   disabled: chat.running(),
                   onSelect: async () => {
                     if (!chat.activeConversationId()) return;
-                    await chat.compactConversation({ modelProfileId: selectedModelId() || undefined });
+                    await chat.compactConversation({ model: selectedModelRequest() });
                   },
                 }
               : undefined
@@ -2348,7 +2367,6 @@ export default function AssistantWorkspace(props: Props) {
               : {
                   usage: usageSnapshot()?.request ?? null,
                   loopUsage: usageSnapshot()?.loop ?? null,
-                  contextWindow: usageModel()?.contextWindow,
                   modelLabel: usageModel()?.label,
                 }
           }
@@ -2646,7 +2664,7 @@ export default function AssistantWorkspace(props: Props) {
                                     onRetryMessage: async (entry, input) => {
                                       const retried = await chat.retryUserMessage(entry.id, {
                                         ...input,
-                                        modelProfileId: selectedModelId() || undefined,
+                                        model: selectedModelRequest(),
                                       });
                                       if (!retried) throw new Error(chat.error() ?? t().retryMessageFailed);
                                     },
@@ -2691,6 +2709,7 @@ export default function AssistantWorkspace(props: Props) {
                               <AssistantEmptyChat
                                 composer={<AssistantComposer />}
                                 notices={<ComposerNotices />}
+                                modelNote={modelNote()}
                                 projects={projects()}
                                 selectedProjectId={emptyProjectId()}
                                 choosingProject={choosingProject()}
@@ -2708,6 +2727,7 @@ export default function AssistantWorkspace(props: Props) {
                             <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
                               <div class="mx-auto flex max-w-3xl flex-col gap-2">
                                 <ComposerNotices />
+                                {modelNote()}
                                 <AssistantComposer />
                                 <Show when={props.embedded}>
                                   <PanelRow />
@@ -2752,6 +2772,7 @@ export default function AssistantWorkspace(props: Props) {
                           initialContext={view.context}
                           composer={
                             <div class="flex flex-col gap-2">
+                              {modelNote()}
                               <AssistantComposer projectId={project().id} projectName={project().name} />
                               <Show when={props.embedded}>
                                 <PanelRow />
