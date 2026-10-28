@@ -84,7 +84,7 @@ export default function ContactFavoriteButton(props: Props) {
     <IconButton
       size={props.size}
       label={favorite() ? t().removeFromFavorites : t().addToFavorites}
-      classList={{ "app-accent-text": favorite(), "text-dimmed": !favorite() }}
+      class={favorite() ? "app-accent-text" : "text-dimmed"}
       aria-pressed={favorite()}
       disabled={saving()}
       onClick={(event) => {

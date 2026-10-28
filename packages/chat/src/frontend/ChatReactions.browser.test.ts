@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { chatTestNow, nora, pinPageClock, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
@@ -32,8 +32,7 @@ const load = async (options: BrowserContextOptions, chat: string) => {
   await context.addInitScript(pinPageClock, chatTestNow.getTime());
   const page = await context.newPage();
   page.setDefaultTimeout(5_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(new URL(`/app/chat/c/${chat}`, harness.url).href);
   await page.evaluate(() => document.fonts.ready);
   await page.evaluate(({ props }) => window.mountChat(props, "en"), { props: harness.props({ chat }) });
