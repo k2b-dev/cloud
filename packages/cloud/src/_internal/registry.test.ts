@@ -114,7 +114,7 @@ describe("resolveLiveCapabilityRegistryEntry", () => {
     expect(entry!.manifest.manifestHash).toBe(manifest.manifestHash);
     expect(entry!.manifest).not.toHaveProperty("fileProvider");
     expect(entry!.manifest).not.toHaveProperty("calendarSource");
-    expect(entry!.manifest).not.toHaveProperty("events");
+    expect(entry!.manifest).not.toHaveProperty("futureSignals");
     expect(entry!.manifest.queries.map((query) => query.localId)).toEqual(["book.read"]);
     expect(entry!.manifest.actions.map((action) => action.localId)).toEqual(["book.rename"]);
     expect(entry!.manifest.commands.map((command) => command.localId)).toEqual(["book.open"]);

@@ -267,6 +267,8 @@ export type ChatComposerProps = {
   label?: string;
   inputLabel?: string;
   disabled?: boolean;
+  /** Keeps the draft editable but holds it back, such as while the chosen model cannot answer. */
+  submitDisabled?: boolean;
   error?: string;
   focusToken?: unknown;
   draftKey?: unknown;
@@ -1004,7 +1006,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const editBlocked = () => (conversation() ? busy() : blocked());
   const hasDraft = () => Boolean(props.value.trim() || (!running() && attachments().length > 0));
   /** The draft may go out now, apart from a submission that is already on its way. */
-  const submittable = () => !busy() && hasDraft() && !(running() && runningSubmitIntent() === "steer" && mentions().length);
+  const submittable = () =>
+    !busy() && !props.submitDisabled && hasDraft() && !(running() && runningSubmitIntent() === "steer" && mentions().length);
   const canSubmit = () => !submitting() && submittable();
   const canSelectFiles = () => Boolean(props.fileSelection && !props.fileSelection.disabled && !running() && !blocked());
   const hasAddMenu = () => Boolean(props.fileSelection || props.menuActions?.length);

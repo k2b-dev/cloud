@@ -511,6 +511,15 @@ export const settled = async (page: Page): Promise<void> => {
 };
 
 /**
+ * Waits until no document view transition is active. Every enhanced link starts one. While it is active, WebKit
+ * sends pointer input to `<html>`, so a click is lost, and it can stay active after its own animations ended, so
+ * `settled()` may return before it. Await this after a navigation before the next click or Back.
+ */
+export const viewTransitionEnded = async (page: Page): Promise<void> => {
+  await page.waitForFunction(() => !(document as Document & { activeViewTransition?: unknown }).activeViewTransition);
+};
+
+/**
  * Runs `change` and reports whether `locator` keeps its element and how much its height changes.
  * A mutation's refresh must keep the elements of the items it keeps: replacement loses focus and hover,
  * flickers, and can leave a box read detached (#1391). Waits before and after; reads boxes in the page.

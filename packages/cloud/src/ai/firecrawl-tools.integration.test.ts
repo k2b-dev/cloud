@@ -54,7 +54,7 @@ databaseSuite()("web_extract provenance", () => {
       );
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig: { kind: "chat", input: "Read", signedInSession: true },
         userMessage: { role: "user", content: [{ type: "text", text: "Read" }] },
       });

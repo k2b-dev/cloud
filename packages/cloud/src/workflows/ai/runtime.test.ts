@@ -2,6 +2,10 @@ import { describe, expect, spyOn, test } from "bun:test";
 import type { z } from "zod";
 import type { RunAiStructuredInput, RunAiStructuredResult } from "../../ai";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../../ai/inference-calls";
+import { aiModelFixture } from "../../ai/model-fixture";
+import { createAiProvider } from "../../ai/provider";
+import * as structured from "../../ai/structured";
+import * as taskModel from "../../ai/task-model";
 import { executeWorkflowAiRequest, processWorkflowAiTask, settleWorkflowAiAttemptFailure } from "./runtime";
 import * as store from "./store";
 import type { WorkflowAiTask } from "./types";
@@ -14,7 +18,7 @@ const task = {
   stepKey: "step:extract",
   effectKey: "workflow:extract",
   kind: "extract_data",
-  modelProfileId: "model",
+  modelId: "model",
   request: {
     kind: "extract_data",
     prompt: "Extract event data",
@@ -46,7 +50,7 @@ describe("workflow structured AI runtime", () => {
       expect(input.attribution).toEqual({ userId: task.usageUserId, workflowRunId: task.runId, stepKey: task.stepKey });
       return {
         output: input.output.parse({ ready: true, startsAt: "2026-08-22T09:00:00+02:00" }),
-        modelProfileId: "model",
+        model: { id: "model" },
         structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
       };
     }) as typeof import("../../ai")["runAiStructured"];
@@ -227,5 +231,70 @@ test("shutdown before claim returns does not start another provider call", async
   } finally {
     claim.mockRestore();
     cancel.mockRestore();
+  }
+});
+
+test("workflow execution keeps its admitted variant and class trace after a class reassignment", async () => {
+  const pinned = {
+    ...task,
+    modelRef: { requestedClass: "thorough", class: "balanced", id: "model" },
+    request: { ...task.request, model: { class: "thorough" } },
+  } satisfies WorkflowAiTask;
+  const profile = aiModelFixture({ id: "model" });
+  const resolve = spyOn(structured, "resolveAiWorkflowModel").mockResolvedValue({
+    model: { id: "model" },
+    profile,
+    provider: createAiProvider(profile),
+  });
+  const run: typeof structured.runAiStructured = async (input) => {
+    expect(input.model).toEqual({ id: "model" });
+    const resolved = await input.resolveModel?.(input.model);
+    expect(resolved?.model).toEqual(pinned.modelRef);
+    return {
+      output: input.output.parse({ ready: true }),
+      model: pinned.modelRef,
+      structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
+    };
+  };
+  try {
+    expect(await executeWorkflowAiRequest(pinned, run, new AbortController().signal)).toMatchObject({ output: { ready: true } });
+    expect(resolve).toHaveBeenCalledWith({ id: "model" });
+  } finally {
+    resolve.mockRestore();
+  }
+});
+
+test("application retries reauthorize the admitted variant and preserve the original class trace", async () => {
+  const pinned = {
+    ...task,
+    runId: null,
+    usageSubject: { type: "user", userId: "person" },
+    modelRef: { requestedClass: "fast", class: "balanced", id: "model" },
+    request: { ...task.request, model: { class: "fast" } },
+  } satisfies WorkflowAiTask;
+  const profile = aiModelFixture({ id: "model" });
+  const resolve = spyOn(taskModel, "resolveApplicationAiTaskModel").mockResolvedValue({
+    model: { id: "model" },
+    profile,
+    provider: createAiProvider(profile),
+  });
+  const run: typeof structured.runAiStructured = async (input) => {
+    expect(input.usageSubject).toEqual(pinned.usageSubject);
+    expect(input.model).toEqual({ id: "model" });
+    const resolved = await input.resolveModel?.(input.model);
+    expect(resolved?.model).toEqual(pinned.modelRef);
+    return {
+      output: input.output.parse({ ready: true }),
+      model: pinned.modelRef,
+      structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
+    };
+  };
+  try {
+    expect(await executeWorkflowAiRequest(pinned, run, new AbortController().signal)).toMatchObject({ output: { ready: true } });
+    expect(resolve).toHaveBeenCalledWith(pinned.usageSubject, { id: "model" });
+    resolve.mockRejectedValue(new Error("Model grant revoked"));
+    await expect(executeWorkflowAiRequest(pinned, run, new AbortController().signal)).rejects.toThrow("Model grant revoked");
+  } finally {
+    resolve.mockRestore();
   }
 });

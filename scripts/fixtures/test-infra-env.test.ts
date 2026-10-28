@@ -183,6 +183,27 @@ describe("dotenv leak", () => {
   });
 });
 
+test("the infrastructure preload leaves template and workspace modules unloaded until a migrated database is requested", () => {
+  for (const target of [undefined, "postgres://fixture:fake@127.0.0.1:1/fixture_test"]) {
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        "--no-env-file",
+        "--preload",
+        join(import.meta.dir, "test-infra.ts"),
+        "-e",
+        "console.log(JSON.stringify(Object.keys(require.cache).filter(path => /\\/(?:test-database-template|workspace)\\.ts$/.test(path))))",
+      ],
+      {
+        cwd: workspaceRoot,
+        env: { PATH: process.env.PATH, BUN_OPTIONS: "--no-env-file", ...(target ? { CLOUD_TEST_DATABASE_URL: target } : {}) },
+      },
+    );
+    expect(child.exitCode, child.stderr.toString()).toBe(0);
+    expect(JSON.parse(child.stdout.toString())).toEqual([]);
+  }
+});
+
 describe("ClickHouse test gate", () => {
   test("has an explicit admin URL and no runtime aliases", () => {
     expect(infraMappings.clickhouse).toEqual({ test: "CLOUD_TEST_CLICKHOUSE_URL", runtime: [] });

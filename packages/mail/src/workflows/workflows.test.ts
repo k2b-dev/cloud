@@ -109,7 +109,8 @@ describe("Mail workflow manifest", () => {
   });
 
   test("preserves the published manifest hash", async () => {
-    expect(await hashWorkflowJson(mailWorkflowManifest)).toBe("a518b07287b83cae90e3d4df3d60847d34618994354d0493bd8d2b67259dcceb");
+    // The breaking model field now accepts a class request or an explicit variant ID.
+    expect(await hashWorkflowJson(mailWorkflowManifest)).toBe("f8ea7e3e1b0e8bc7c41382de324b31aaedc448182a340712a294aeefeb7a8ff7");
   });
 
   test("classifies provider, collaboration, and terminal effects", () => {

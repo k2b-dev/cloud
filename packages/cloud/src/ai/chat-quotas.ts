@@ -16,14 +16,15 @@ const usage = (b: AiQuotaBalance): AiChatQuotaBalance => {
 export async function getAiChatQuotas(subject: AccessSubject): Promise<AiChatQuotaSnapshot> {
   const config = await aiQuotas.config();
   if (!config.enabled) return { enabled: false, balances: [] };
-  const models = await listAssistantAiModels(subject);
-  const snapshot = await aiQuotas.snapshot(subject);
-  const profiles = (await readAiSettingsState()).profiles;
+  const state = await readAiSettingsState();
+  const models = await listAssistantAiModels(subject, undefined, state);
+  const snapshot = await aiQuotas.snapshot(subject, undefined, undefined, undefined, { state, config });
+  const profiles = state.profiles;
   return {
     enabled: snapshot.enabled,
     unlimitedModels: models
       .filter((model) => !hasBillableAiPricing(profiles.find((profile) => profile.id === model.id)?.pricing))
       .map((model) => model.id),
-    balances: snapshot.balances.filter((b) => b.scope === "*" || models.some((m) => m.id === b.scope)).map(usage),
+    balances: snapshot.balances.filter((b) => b.scope === "*" || models.some((m) => m.modelId === b.scope)).map(usage),
   };
 }

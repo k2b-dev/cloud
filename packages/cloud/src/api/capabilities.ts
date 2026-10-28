@@ -1,6 +1,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { type CatalogSubscription, projectAppEventCatalog, readCatalogSubscriptions } from "../_internal/app-event-catalog";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import {
@@ -112,6 +113,7 @@ const CapabilityCatalogQuerySchema = z
   .strict();
 export type CapabilityRouteDependencies = {
   listApps?: () => Promise<AppRegistryEntry[]>;
+  eventSubscriptions?: () => Promise<CatalogSubscription[]>;
   getCapability?: (appId: string) => Promise<CapabilityRegistryEntry | null>;
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   authenticate?: MiddlewareHandler<AuthContext>;
@@ -165,7 +167,7 @@ const invocationAuthorityFromMandate = (authority: {
 
 export const loadCapabilityCatalogPage = async (
   query: { cursor?: string; limit: number },
-  dependencies: Pick<CapabilityRouteDependencies, "listApps" | "getCapability"> = {},
+  dependencies: Pick<CapabilityRouteDependencies, "listApps" | "getCapability" | "eventSubscriptions"> = {},
   locale?: string,
   authority: RequestAuthority | null = null,
 ): Promise<CapabilityCatalog> => {
@@ -178,6 +180,21 @@ export const loadCapabilityCatalogPage = async (
   const liveApps = entries
     .filter((entry) => entry.capabilities?.protocolVersion === CAPABILITY_PROTOCOL_VERSION)
     .sort((left, right) => left.id.localeCompare(right.id));
+  const resolved = new Map<string, CapabilityRegistryEntry | null>();
+  const lookup = async (appId: string) => {
+    if (!resolved.has(appId)) resolved.set(appId, await capabilityLookup(appId));
+    return resolved.get(appId) ?? null;
+  };
+  let subscriptions: CatalogSubscription[] | undefined;
+  const loadSubscribers = async () => {
+    if (!subscriptions) {
+      const visibleApps = new Set(liveApps.map((entry) => entry.id));
+      subscriptions = (await (dependencies.eventSubscriptions ?? readCatalogSubscriptions)()).filter((subscription) =>
+        visibleApps.has(subscription.appId),
+      );
+    }
+    return subscriptions;
+  };
   const start = query.cursor ? liveApps.findIndex((entry) => entry.id > query.cursor!) : 0;
   const offset = start < 0 ? liveApps.length : start;
   const apps: CapabilityCatalog["apps"] = [];
@@ -192,22 +209,29 @@ export const loadCapabilityCatalogPage = async (
   ).byteLength;
   for (const entry of liveApps.slice(offset)) {
     if (apps.length === query.limit) break;
-    const capability = await capabilityLookup(entry.id);
+    const capability = await lookup(entry.id);
     if (!capability || capability.manifest.manifestHash !== entry.capabilities?.manifestHash) {
       lastScannedAppId = entry.id;
       continue;
     }
     const presentedEntry = locale ? resolveAppPresentation(entry, locale) : entry;
+    const manifest = locale
+      ? resolveCapabilityManifestPresentation(capability.manifest, capability.presentation, locale)
+      : capability.manifest;
     const projected = {
       appId: capability.appId,
       appName: presentedEntry.name,
       appIcon: capability.appIcon,
       appDescription: presentedEntry.description,
-      manifest: locale ? resolveCapabilityManifestPresentation(capability.manifest, capability.presentation, locale) : capability.manifest,
+      manifest,
+      ...(manifest.events ? { events: projectAppEventCatalog(manifest, manifest.events.length ? await loadSubscribers() : []) } : {}),
     };
     const projectedBytes = new TextEncoder().encode(JSON.stringify(projected)).byteLength;
     const separatingCommas = apps.length;
-    if (apps.length > 0 && envelopeBytes + bytes + separatingCommas + projectedBytes > CAPABILITY_MAX_CATALOG_BYTES) break;
+    if (envelopeBytes + bytes + separatingCommas + projectedBytes > CAPABILITY_MAX_CATALOG_BYTES) {
+      if (!apps.length) throw new RangeError("An app's event catalog exceeds the catalog response byte limit");
+      break;
+    }
     apps.push(projected);
     bytes += projectedBytes;
     lastScannedAppId = entry.id;

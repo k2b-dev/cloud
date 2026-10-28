@@ -33,6 +33,7 @@ export const chatLiveUpdates = (
         author: message.author,
         createdAt: message.createdAt,
         preview,
+        ...(message.attachments.length ? { attachments: message.attachments } : {}),
         mention: false,
       },
       ...(access ? { access: true } : {}),
