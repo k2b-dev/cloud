@@ -5,6 +5,65 @@ const models: AiPeopleModels["options"] = [
   { id: "standard", label: "Standard", description: "", icon: { kind: "mark", text: "AI", color: "0" }, classes: ["balanced"] },
 ];
 
+/** The approved AI area prototype's catalog: four classes and two models outside them; `?models=v9`. */
+const classModels = (state: string | null): Pick<AiPeopleModels, "classes" | "options"> => {
+  const mark = (text: string, color: string) => ({ kind: "mark" as const, text, color });
+  const budget = { code: "budget_exhausted" as const, resetsAt: "2026-11-02T00:00:00.000Z" };
+  const options: AiPeopleModels["options"] = [
+    {
+      id: "mistral-small",
+      label: "Mistral Small",
+      description: "Kurze Antworten, schnell",
+      icon: mark("CO", "#0f766e"),
+      classes: ["fast"],
+    },
+    {
+      id: "gpt-oss-120b",
+      label: "GPT-OSS",
+      variantLabel: "Ausgewogen",
+      description: "Für die meisten Aufgaben",
+      icon: mark("CO", "#0f766e"),
+      classes: ["balanced"],
+    },
+    {
+      id: "gpt-oss-120b:gruendlich",
+      label: "GPT-OSS",
+      variantLabel: "Gründlich",
+      description: "Für komplexe Aufgaben",
+      icon: mark("CO", "#0f766e"),
+      classes: ["thorough"],
+    },
+    {
+      id: "claude:maximal",
+      label: "Claude",
+      variantLabel: "Maximal",
+      description: "Lange Texte und Code",
+      icon: mark("OR", "#6d28d9"),
+      classes: ["maximum"],
+      ...(state === "budget" ? { unavailable: budget } : {}),
+    },
+    { id: "gemini-flash", label: "Gemini Flash", description: "Schnell bei Bildern", icon: mark("OR", "#6d28d9"), classes: [] },
+    {
+      id: "qwen",
+      label: "Qwen",
+      variantLabel: "Gründlich",
+      description: "Wenn Inhalte im Haus bleiben sollen",
+      icon: mark("RE", "#475569"),
+      classes: [],
+    },
+  ];
+  const classes: AiPeopleModels["classes"] = [
+    { class: "fast", variantId: "mistral-small" },
+    { class: "balanced", variantId: "gpt-oss-120b" },
+    { class: "thorough", variantId: "gpt-oss-120b:gruendlich" },
+    ...(state === "unassigned"
+      ? []
+      : [{ class: "maximum" as const, variantId: "claude:maximal", ...(state === "budget" ? { unavailable: budget } : {}) }]),
+  ];
+  if (state === "empty") return { classes: [], options: [] };
+  return { classes, options };
+};
+
 const conversation = (id: string): AiConversation => ({
   id,
   shortId: id,
@@ -91,12 +150,14 @@ export function assistantPanelFixture() {
         ok: true,
         enabled: true,
         status: "ok" as const,
-        selection: null,
+        selection:
+          url.searchParams.get("models") === "v9" && url.searchParams.get("state") === "budget" ? { class: "maximum" as const } : null,
         effectiveDefault: { class: "balanced" as const },
         classes: [],
         visionModelConfigured: false,
         error: null,
         options: models,
+        ...(url.searchParams.get("models") === "v9" ? classModels(url.searchParams.get("state")) : {}),
       },
       models,
       selection: null,
