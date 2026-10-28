@@ -50,11 +50,6 @@ export const reconcile = async (run: { signal: AbortSignal; heartbeat: () => unk
     attachmentsRemoved: 0,
   };
   if (!run.signal.aborted) result.attachmentsRemoved = await cleanupAttachments();
-  while (!run.signal.aborted) {
-    const removed = await cleanupMessageMutations();
-    await run.heartbeat();
-    if (removed < BATCH_SIZE) break;
-  }
   let cursor: string | null = null;
   while (!run.signal.aborted) {
     const rows: { id: string }[] = await sql<{ id: string }[]>`SELECT id FROM chat.conversations
@@ -163,6 +158,11 @@ export const reconcile = async (run: { signal: AbortSignal; heartbeat: () => unk
     }
     cursor = rows.at(-1)!.id;
     if (rows.length < BATCH_SIZE) break;
+  }
+  while (!run.signal.aborted) {
+    const removed = await cleanupMessageMutations();
+    if (removed > 0) await run.heartbeat();
+    if (removed < BATCH_SIZE) break;
   }
   return result;
 };

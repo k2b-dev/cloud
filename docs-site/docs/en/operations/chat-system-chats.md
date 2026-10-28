@@ -329,6 +329,6 @@ Use a fresh `clientId` per edit or deletion and retain it with the same input
 when retrying a lost response. Receipts remain replayable for 24 hours, then bounded maintenance batches remove them. Reactions never change the content revision. A stale revision returns `MESSAGE_CHANGED`;
 an expired window returns `MESSAGE_MUTATION_EXPIRED`. Both are HTTP 409.
 Successful message views include `editedAt` and `deletedAt`. Deletion clears
-text and attachments while preserving the message's position and a placeholder
+text and attachments while preserving the message's position and a deleted-message marker
 for replies. The revision stream and live invalidation refresh other tabs
 without counting the edit as a new message.
