@@ -5,10 +5,13 @@ import { unwrap } from "@k2b/stdlib";
 import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import type { AutomationLogItem } from "../contracts";
 import { messageForwardTextOf } from "../forward-text";
+import { projectMailConversationDetail } from "../frontend/ssr-public-boundary";
 import { newShortId } from "../lib/short-id";
 import * as access from "../service/access";
 import type { MailRequestContext } from "../service/auth";
+import { automationConversationSnapshot } from "../service/automation-log-recording";
 import * as mailboxes from "../service/mailboxes";
 import * as messages from "../service/messages";
 import { loadMailboxConversationDetail, type MailboxPageData, type MailConversationDetailData } from "../service/workspace";
@@ -37,6 +40,7 @@ const selectionPart = (page: MailboxPageData): MailConversationDetailData => {
     conversationRowState: page.conversationRowState,
     conversationSummary: page.conversationSummary,
     conversationDrafts: page.conversationDrafts,
+    automationTrace: page.automationTrace,
     detailError: page.detailError,
     collaborationState: page.collaborationState,
     conversationLocalTags: page.conversationLocalTags,
@@ -249,6 +253,44 @@ suite("Mail workspace conversation detail", () => {
       }
     });
   }
+
+  test("detail, refresh snapshots and SSR keep newly recorded trace items and their public conversation links", async () => {
+    const conversation = await automationConversationSnapshot(sql, mailboxId, visible.id);
+    if (!conversation) throw new Error("Trace conversation missing");
+    const item: AutomationLogItem = {
+      id: crypto.randomUUID(),
+      at: anchor.toISOString(),
+      conversation,
+      by: { kind: "person", userId: owner.id, name: owner.displayName },
+      outcome: "manual_change",
+      effects: [{ kind: "unassign" }],
+      reasons: [],
+      undo: { state: "none", reason: null, by: null, at: null },
+    };
+    const projectedItem: AutomationLogItem = { ...item, undo: { ...item.undo, kept: [], reverted: [] } };
+    expect(await (await detailRequest()).json()).toMatchObject({ automationTrace: [] });
+    try {
+      await sql`INSERT INTO mail.automation_log (id, mailbox_id, conversation_id, item, created_at)
+        VALUES (${item.id}::uuid, ${mailboxId}::uuid, ${visible.id}::uuid, ${item}, ${anchor})`;
+      for (const token of ["owner", "reader"]) {
+        const detailResponse = await detailRequest(visible, folderA, token);
+        const snapshotResponse = await routeRequest(folderA, token);
+        expect(detailResponse.status).toBe(200);
+        expect(snapshotResponse.status).toBe(200);
+        const detail: MailConversationDetailData = await detailResponse.json();
+        const snapshot: MailboxPageData = await snapshotResponse.json();
+        expect(detail.automationTrace).toEqual([projectedItem]);
+        expect(snapshot.automationTrace).toEqual(detail.automationTrace);
+        expect(detail.automationTrace[0]?.conversation.id).toBe(visible.shortId);
+        expect(detail.automationTrace[0]?.conversation.href).toBe(`/app/mail/${mailboxShortId}?conversation=${visible.shortId}`);
+        expect((await projectMailConversationDetail(detail)).automationTrace).toEqual([projectedItem]);
+      }
+      const hiddenResponse = await detailRequest(hidden, folderA, "reader");
+      expect(hiddenResponse.status).toBe(404);
+    } finally {
+      await sql`DELETE FROM mail.automation_log WHERE id = ${item.id}::uuid`;
+    }
+  });
 
   test("complete row state includes older messages and all live placements beyond the 100-body page", async () => {
     const long = await createConversation("Long thread", 101, 1000);

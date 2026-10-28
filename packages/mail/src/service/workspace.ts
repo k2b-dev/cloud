@@ -1,6 +1,7 @@
 import { logger } from "@k2b/cloud/services";
 import { fail, i18n, ok, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
+import type { AutomationLogItem } from "../contracts";
 import {
   type ConversationDraftSummary,
   type ConversationView,
@@ -23,6 +24,7 @@ import {
 } from "../search-state";
 import { type MailboxAccess, requireMailboxAccess, requireVisibleConversation, requireVisibleMessages } from "./access";
 import type { MailRequestContext } from "./auth";
+import * as automationLog from "./automation-log";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "./collaboration";
 import * as collaboration from "./collaboration";
 import type { ConversationKeep } from "./conversation-keeps";
@@ -186,6 +188,8 @@ export type MailboxPageData = {
   conversationRowState: ConversationRowState | null;
   conversationSummary: ConversationContentSummary | null;
   conversationDrafts: ConversationDraftSummary[];
+  /** What rules did with the selected conversation, newest first (at most 10). */
+  automationTrace: AutomationLogItem[];
   detailError: string | null;
   collaborationState: ConversationCollaboration | null;
   localTags: LocalTag[];
@@ -221,6 +225,7 @@ export type MailSelectionDetail = Pick<
   | "conversationRowState"
   | "conversationSummary"
   | "conversationDrafts"
+  | "automationTrace"
   | "detailError"
   | "collaborationState"
   | "conversationLocalTags"
@@ -253,6 +258,7 @@ const EMPTY_SELECTION_DETAIL: MailSelectionDetail = {
   conversationRowState: null,
   conversationSummary: null,
   conversationDrafts: [],
+  automationTrace: [],
   detailError: null,
   collaborationState: null,
   conversationLocalTags: null,
@@ -379,6 +385,7 @@ const loadConversationDetails = async (
     referenceResult,
     summaryResult,
     draftsResult,
+    traceResult,
   ] = await Promise.all([
     messages.listConversationMessageDetails({ ...params, limit: 100 }),
     messages.getConversationRowState(params),
@@ -398,6 +405,7 @@ const loadConversationDetails = async (
     conversationReferences.listConversationReferences(params),
     conversationSummaries.getConversationSummary(params),
     drafts.listConversationDrafts({ ...params, limit: 20 }),
+    automationLog.getConversationAutomationTrace(params.context, params.mailboxId, params.conversationId),
   ]);
 
   return {
@@ -405,6 +413,7 @@ const loadConversationDetails = async (
     conversationRowState: rowStateResult.ok ? rowStateResult.data : null,
     conversationSummary: summaryResult.ok ? summaryResult.data : null,
     conversationDrafts: draftsResult.ok ? draftsResult.data : [],
+    automationTrace: traceResult.ok ? traceResult.data.items : [],
     detailError: !detailResult.ok ? errorMessage(detailResult.error) : !rowStateResult.ok ? errorMessage(rowStateResult.error) : null,
     collaborationState: stateResult.ok ? stateResult.data : null,
     conversationLocalTags: tagResult.ok ? tagResult.data : null,
