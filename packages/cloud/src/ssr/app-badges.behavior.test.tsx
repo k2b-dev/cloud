@@ -454,11 +454,15 @@ test("the phone bar shows the rail's count on its app and names it after the lab
   script.textContent = JSON.stringify(data);
   const bar = document.createElement("div");
   bar.className = "cloud-tab-bar__row";
+  // The server's bar, with a focused link that the live bar takes over.
+  bar.innerHTML = '<nav class="k2b-tab-bar"><ul><li><a href="/" data-tab="home">Home</a></li></ul></nav>';
   const mount = document.createElement("div");
   dom.root.append(script, bar, mount);
+  bar.querySelector<HTMLAnchorElement>('a[data-tab="home"]')!.focus();
   const dispose = render(() => createComponent(CloudShell, { slot: "rail", currentPath: "/" }), mount);
   try {
     await settle();
+    expect(document.activeElement).toBe(bar.querySelector('.cloud-tab-bar__live a[data-tab="home"]'));
     const chat = bar.querySelector<HTMLAnchorElement>('.cloud-tab-bar__live a[href="/app/chat"]')!;
     expect(chat.querySelector(".k2b-tab-bar__badge .cloud-app-badge")?.textContent).toBe("3");
     expect(chat.textContent).toBe("Chat3, 3 new");
@@ -466,11 +470,15 @@ test("the phone bar shows the rail's count on its app and names it after the lab
     // A failing app and an app without a badge show no mark.
     expect(bar.querySelector('.cloud-tab-bar__live a[href="/app/notes"] .cloud-app-badge')).toBeNull();
     expect(bar.querySelector('.cloud-tab-bar__live a[href="/app/mail"] .cloud-app-badge')).toBeNull();
+    const home = bar.querySelector<HTMLAnchorElement>('.cloud-tab-bar__live a[data-tab="home"]')!;
+    home.focus();
     responses["/api/chat/badge"] = () => Response.json({ count: 0 });
     refreshAppBadges();
     await settle();
-    // Without a count, the live bar gives way to the server's again.
-    expect(bar.querySelector(".cloud-tab-bar__live")).toBeNull();
+    // A cleared count leaves the live bar and its focused link in place.
+    expect(chat.querySelector(".cloud-app-badge")).toBeNull();
+    expect(chat.textContent).toBe("Chat");
+    expect(document.activeElement).toBe(home);
   } finally {
     dispose();
   }

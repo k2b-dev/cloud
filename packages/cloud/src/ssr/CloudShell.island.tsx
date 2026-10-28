@@ -85,8 +85,22 @@ function BarNavigation(props: { currentPath: string }) {
   });
   const row = document.querySelector<HTMLElement>(".cloud-tab-bar__row");
   if (!row) return null;
+  // Once the live bar shows, it stays, so a count that clears or a return to the served URL replaces no focused link.
+  const [shown, setShown] = createSignal(false);
+  createEffect(() => {
+    if (shown() || !(counted() || JSON.stringify(items()) !== served)) return;
+    setShown(true);
+    // The live bar takes over a focused link of the server's bar, which CSS now hides.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && row.contains(focused) && focused.dataset.tab)
+      queueMicrotask(() =>
+        [...row.querySelectorAll<HTMLElement>(".cloud-tab-bar__live a[data-tab]")]
+          .find((link) => link.dataset.tab === focused.dataset.tab)
+          ?.focus(),
+      );
+  });
   return (
-    <Show when={counted() || JSON.stringify(items()) !== served}>
+    <Show when={shown()}>
       <Portal mount={row}>
         <TabBar variant="floating" class="cloud-tab-bar__live" label={t().apps} items={live()} />
       </Portal>
