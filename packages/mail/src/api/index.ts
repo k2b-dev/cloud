@@ -2430,7 +2430,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
       }),
     );
   })
-  .post("/mailboxes/:mailboxId/search", v("param", mailboxParamSchema), v("json", searchRequestSchema), async (c) =>
+  .post("/mailboxes/:mailboxId/search", auth.readOnly, v("param", mailboxParamSchema), v("json", searchRequestSchema), async (c) =>
     respondMessages(
       c,
       search.searchMessages({
@@ -2588,35 +2588,50 @@ const mailOperationsApi = new Hono<MailApiContext>()
       }),
     ),
   )
-  .post("/mailboxes/:mailboxId/compose-preview", v("param", mailboxParamSchema), v("json", composePreviewInputSchema), async (c) =>
-    respondPublic(
-      c,
-      composeTemplates.previewComposeDraft({
-        context: requestContext(c),
-        mailboxId: internalMailboxId(c),
-        input: await internalInput(c, c.req.valid("json")),
-      }),
-    ),
+  .post(
+    "/mailboxes/:mailboxId/compose-preview",
+    auth.readOnly,
+    v("param", mailboxParamSchema),
+    v("json", composePreviewInputSchema),
+    async (c) =>
+      respondPublic(
+        c,
+        composeTemplates.previewComposeDraft({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          input: await internalInput(c, c.req.valid("json")),
+        }),
+      ),
   )
-  .post("/mailboxes/:mailboxId/compose-snippet", v("param", mailboxParamSchema), v("json", renderComposeSnippetInputSchema), async (c) =>
-    respondPublic(
-      c,
-      composeTemplates.renderComposeSnippet({
-        context: requestContext(c),
-        mailboxId: internalMailboxId(c),
-        input: await internalInput(c, c.req.valid("json")),
-      }),
-    ),
+  .post(
+    "/mailboxes/:mailboxId/compose-snippet",
+    auth.readOnly,
+    v("param", mailboxParamSchema),
+    v("json", renderComposeSnippetInputSchema),
+    async (c) =>
+      respondPublic(
+        c,
+        composeTemplates.renderComposeSnippet({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          input: await internalInput(c, c.req.valid("json")),
+        }),
+      ),
   )
-  .post("/mailboxes/:mailboxId/compose-suggestions", v("param", mailboxParamSchema), v("json", composeSuggestionsInputSchema), async (c) =>
-    respondPublic(
-      c,
-      composeTemplates.renderComposeSuggestions({
-        context: requestContext(c),
-        mailboxId: internalMailboxId(c),
-        input: await internalInput(c, c.req.valid("json")),
-      }),
-    ),
+  .post(
+    "/mailboxes/:mailboxId/compose-suggestions",
+    auth.readOnly,
+    v("param", mailboxParamSchema),
+    v("json", composeSuggestionsInputSchema),
+    async (c) =>
+      respondPublic(
+        c,
+        composeTemplates.renderComposeSuggestions({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          input: await internalInput(c, c.req.valid("json")),
+        }),
+      ),
   )
   .post("/mailboxes/:mailboxId/sender-identities", v("param", mailboxParamSchema), v("json", createSenderIdentityInputSchema), async (c) =>
     respondSenderIdentities(
@@ -3170,6 +3185,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
   )
   .post(
     "/mailboxes/:mailboxId/commands/outcomes",
+    auth.readOnly,
     describeRoute({
       tags: ["Mail:Commands"],
       summary: "Read the current state of queued commands",

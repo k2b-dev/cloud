@@ -402,7 +402,7 @@ describe("malformed tool call steering", () => {
     expect(result.outcome).toMatchObject({
       kind: "finished",
       status: "failed",
-      failure: { error: { code: "failed" }, detail: malformedToolCallMessage(issue) },
+      failure: { error: { code: "failed" }, detail: "AI execution failed." },
     });
   });
 

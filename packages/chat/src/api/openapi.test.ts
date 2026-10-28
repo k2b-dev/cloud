@@ -38,6 +38,7 @@ test("publishes every conversation operation with typed request and response sch
   const spec = SpecSchema.parse(await generateSpecs(app));
   for (const [path, method] of [
     ["/people", "get"],
+    ["/people/{userId}", "get"],
     ["/channels", "get"],
     ["/channels/options", "get"],
     ["/channels/preview", "post"],
@@ -60,6 +61,7 @@ test("publishes every conversation operation with typed request and response sch
     ["/conversations/{conversation}/messages", "post"],
     ["/conversations/{conversation}/messages", "get"],
     ["/conversations/{conversation}/shared", "get"],
+    ["/conversations/{conversation}/events", "get"],
     ["/conversations/{conversation}/messages/{message}", "get"],
     ["/conversations/{conversation}/changes", "get"],
     ["/conversations/{conversation}/snapshot", "get"],
@@ -293,4 +295,14 @@ test("attachments expose typed multipart upload, guarded download, and message/s
   expect(JSON.stringify(spec.paths[`${base}/messages`]?.post?.requestBody)).toContain('"attachments"');
   expect(JSON.stringify(spec.paths[`${base}/messages/{message}`]?.get?.responses["200"])).toContain('"attachments"');
   expect(JSON.stringify(spec.paths[`${base}/shared`]?.get?.responses["200"])).toContain('"document"');
+});
+
+test("item events document selection, bounded paging and unavailable responses", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const operation = spec.paths["/api/chat/conversations/{conversation}/events"]?.get;
+  expect(operation?.responses["200"]).toBeDefined();
+  expect(operation?.responses["404"]).toBeDefined();
+  const parameters = z.array(z.object({ name: z.string() })).parse(operation?.parameters);
+  for (const name of ["conversation", "thread", "before", "after", "cursor", "limit"])
+    expect(parameters.some((parameter) => parameter.name === name)).toBeTrue();
 });

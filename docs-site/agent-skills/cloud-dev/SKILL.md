@@ -48,12 +48,12 @@ and durable data.
   Read **App access** (`/en/docs/identity/app-access`) for public routes and migration.
 - Keep declared prefixes, mounted routes, and registration aligned. A running
   process alone does not prove route readiness.
-- Cloud authenticates and resolves access subjects. The application checks
-  resource permissions in every service path: `actor` for identity and audit,
-  `accessSubject` for grants; UI visibility and page context refs are not
-  authorization. Grant changes keep a manager (`ensureManagerRemains()`). Only a `resource_bound`
-  service account carries `appId`, `resourceType`, and `resourceId`;
-  `standalone` and `agent` accounts hold their own grants, capped by scopes.
+- Cloud authenticates requests and resolves `actor` (identity and audit) and `accessSubject` (grants). Application services enforce resource permissions on every path;
+  UI visibility and page context refs never grant access. Grant changes keep a manager (`ensureManagerRemains()`).
+  Only `resource_bound` service accounts carry `appId`, `resourceType`, and `resourceId`; `standalone` and `agent` accounts use their own grants, capped by scopes.
+- OAuth mutations require `write` or `admin`, including resource routes and forwarded capabilities; sessions and personal API keys keep their contracts.
+  For read-only POST routes, put `auth.readOnly` first in the route's handlers; never use it for mutations or subtrees.
+  Read **Route policies** (`/en/docs/identity/route-policies`).
 - Send an interactive credential only to Core. Framework-owned cross-app calls
   exchange it for a short-lived target- and operation-bound invocation; never
   forward a cookie, OAuth token, or API key directly to another application.

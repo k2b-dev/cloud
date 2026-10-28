@@ -1,5 +1,7 @@
-import type { Context } from "hono";
+import type { Context, Env, MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
+import { matchedRoutes } from "hono/route";
+import { findTargetHandler } from "hono/utils/handler";
 import { measureServerPhase } from "../../_internal/server-timing";
 import {
   AI_INFERENCE_SCOPE,
@@ -239,7 +241,7 @@ const loadAuthenticatedActorUncached = async (
   return { token: null, user: null, actor: null };
 };
 
-const loadAuthenticatedActor = (
+export const loadAuthenticatedActor = (
   c: Context<AuthContext>,
   options: Pick<RoleOptions, "oauthAudience"> = {},
 ): Promise<AuthenticatedActorResult> => {
@@ -289,8 +291,24 @@ export const isRequestCredentialCurrent = async (
   return false;
 };
 
+const readOnlyMiddlewares = new WeakSet<object>();
+
+/**
+ * Declare middleware that only authenticates, authorizes, validates or reads.
+ * A read-only route cannot exempt another unmarked ALL handler: Hono uses
+ * ALL for both `.use()` middleware and terminal `.all()` routes.
+ * This declaration never exempts an endpoint from the default write requirement.
+ */
+const readOnlyMiddleware = <E extends Env = AuthContext>(handler: MiddlewareHandler<E>): MiddlewareHandler<E> => {
+  readOnlyMiddlewares.add(handler);
+  return handler;
+};
+
 /**
  * Universal auth middleware. Handles authentication AND authorization.
+ * OAuth requests require `write` or `admin` scope for methods other than GET,
+ * HEAD and OPTIONS, unless the route explicitly declares `auth.readOnly`.
+ * Browser sessions and personal API keys keep their existing authority.
  *
  * @param args - Roles to check (OR logic) + optional RoleOptions at the end. Special roles:
  *   - "*": No check, always passes (like optionalAuth)
@@ -320,45 +338,49 @@ const requireRole = (...args: (RoleOrSpecial | RoleOptions)[]) => {
   const options: RoleOptions = hasOptions ? (args.pop() as RoleOptions) : {};
   const roles = args as RoleOrSpecial[];
 
-  return createMiddleware<AuthContext>(async (c, next) => {
-    // "*" = no check at all, pass through (but try to load user)
-    if (roles.includes("*")) {
-      await loadAuthenticatedActor(c, options);
-      return next();
-    }
+  return readOnlyMiddleware(
+    createMiddleware<AuthContext>(async (c, next) => {
+      const continueRequest = () => requireOAuthMutationScope(c, next);
 
-    const { user, actor } = await loadAuthenticatedActor(c, options);
+      // "*" skips role checks but still resolves any credential and its scopes.
+      if (roles.includes("*")) {
+        await loadAuthenticatedActor(c, options);
+        return continueRequest();
+      }
 
-    // "anonymous" = must NOT be logged in
-    if (roles.includes("anonymous")) {
-      if (actor) {
+      const { user, actor } = await loadAuthenticatedActor(c, options);
+
+      // "anonymous" = must NOT be logged in
+      if (roles.includes("anonymous")) {
+        if (actor) {
+          return handleReject(c, options, "forbidden");
+        }
+        return continueRequest();
+      }
+
+      // All other roles require authentication
+      if (!actor) {
+        return handleReject(c, options, "unauthenticated");
+      }
+
+      // "authenticated" = any logged-in user
+      if (roles.includes("authenticated")) {
+        return continueRequest();
+      }
+
+      if (!user) {
         return handleReject(c, options, "forbidden");
       }
-      return next();
-    }
 
-    // All other roles require authentication
-    if (!actor) {
-      return handleReject(c, options, "unauthenticated");
-    }
+      // Check if user has at least one required role
+      const hasRequiredRole = roles.some((role) => user.roles.includes(role as Role));
+      if (!hasRequiredRole) {
+        return handleReject(c, options, "forbidden");
+      }
 
-    // "authenticated" = any logged-in user
-    if (roles.includes("authenticated")) {
-      return next();
-    }
-
-    if (!user) {
-      return handleReject(c, options, "forbidden");
-    }
-
-    // Check if user has at least one required role
-    const hasRequiredRole = roles.some((role) => user.roles.includes(role as Role));
-    if (!hasRequiredRole) {
-      return handleReject(c, options, "forbidden");
-    }
-
-    return next();
-  });
+      return continueRequest();
+    }),
+  );
 };
 
 /**
@@ -376,23 +398,59 @@ const requireRole = (...args: (RoleOrSpecial | RoleOptions)[]) => {
  * turns into further down.
  */
 const requireUser = (options: RoleOptions = {}) =>
-  createMiddleware<AuthContext>(async (c, next) => {
-    const { user } = await loadAuthenticatedActor(c);
-    if (user) return next();
-    // A caller that reaches here is authenticated but has no user, so the
-    // generic "Insufficient permissions" would send them looking for a missing
-    // role. `onReject` still wins, which is what keeps SSR redirects working.
-    if (options.onReject) return handleReject(c, options, "forbidden");
-    return c.json({ message: "Self-service endpoints require a user-backed actor", code: "FORBIDDEN" }, 403);
-  });
+  readOnlyMiddleware(
+    createMiddleware<AuthContext>(async (c, next) => {
+      const { user } = await loadAuthenticatedActor(c);
+      if (user) return requireOAuthMutationScope(c, next);
+      // A caller that reaches here is authenticated but has no user, so the
+      // generic "Insufficient permissions" would send them looking for a missing
+      // role. `onReject` still wins, which is what keeps SSR redirects working.
+      if (options.onReject) return handleReject(c, options, "forbidden");
+      return c.json({ message: "Self-service endpoints require a user-backed actor", code: "FORBIDDEN" }, 403);
+    }),
+  );
 
 /** Require one OAuth scope when the caller uses OAuth. Sessions and API credentials are unaffected. */
 const requireOAuthScope = (...requiredScopes: string[]) =>
-  createMiddleware<AuthContext>(async (c, next) => {
-    const scopes = c.get("oauthScopes");
-    if (!scopes || requiredScopes.some((scope) => scopes.includes(scope))) return next();
-    return c.json({ code: "FORBIDDEN", message: `OAuth scope ${requiredScopes.join(" or ")} is required` }, 403);
-  });
+  readOnlyMiddleware(
+    createMiddleware<AuthContext>(async (c, next) => {
+      const scopes = c.get("oauthScopes");
+      if (!scopes || requiredScopes.some((scope) => scopes.includes(scope))) return next();
+      return c.json({ code: "FORBIDDEN", message: `OAuth scope ${requiredScopes.join(" or ")} is required` }, 403);
+    }),
+  );
+
+/**
+ * Explicitly declare a read-only POST route. Register on the route itself,
+ * as its first handler, never with `.use()`: authentication can see the declaration before it runs.
+ * This does not replace resource authorization or make a handler read-only.
+ */
+const readOnly = requireOAuthScope("read", "admin");
+
+/** Internal protocol dispatchers check scope against the resolved operation. */
+export const oauthScopeByOperation = createMiddleware<AuthContext>(async (_c, next) => next());
+
+export const requireOAuthMutationScope = createMiddleware<AuthContext>(async (c, next) => {
+  if (["GET", "HEAD", "OPTIONS"].includes(c.req.method)) return next();
+  // Only an explicit method registration can relax the default. A declaration
+  // accidentally mounted with `.use()` or on a wildcard cannot exempt a subtree.
+  const matched = matchedRoutes(c);
+  const lastMethod = matched.findLastIndex((route) => route.method !== "ALL");
+  const unguardedAllHandler = matched
+    .slice(c.req.routeIndex + 1, lastMethod)
+    .some((route) => route.method === "ALL" && !readOnlyMiddlewares.has(findTargetHandler(route.handler)));
+  const routes = matched.filter((route) => route.method !== "ALL");
+  const first = routes[0];
+  const handler = first && findTargetHandler(first.handler);
+  const declared =
+    !unguardedAllHandler &&
+    first?.method === c.req.method &&
+    !first.path.includes("*") &&
+    (handler === readOnly || handler === oauthScopeByOperation) &&
+    routes.every((route) => route.method === first.method && route.path === first.path);
+  if (declared) return handler === readOnly ? requireOAuthScope("read", "admin")(c, next) : next();
+  return requireOAuthScope("write", "admin")(c, next);
+});
 
 const getAuthority = <E extends AuthContext>(c: Context<E>): RequestAuthority => {
   const actor = c.get("actor");
@@ -444,23 +502,25 @@ const redirectToLogin: RoleOptions = {
 };
 
 const requireAccount = (options: AccountOptions) =>
-  createMiddleware<AuthContext>(async (c, next) => {
-    const { user } = await loadAuthenticatedActor(c);
+  readOnlyMiddleware(
+    createMiddleware<AuthContext>(async (c, next) => {
+      const { user } = await loadAuthenticatedActor(c);
 
-    if (!user) {
-      return handleReject(c, options, "unauthenticated");
-    }
+      if (!user) {
+        return handleReject(c, options, "unauthenticated");
+      }
 
-    if (options.provider && user.provider !== options.provider) {
-      return handleReject(c, options, "forbidden");
-    }
+      if (options.provider && user.provider !== options.provider) {
+        return handleReject(c, options, "forbidden");
+      }
 
-    if (options.profile && user.profile !== options.profile) {
-      return handleReject(c, options, "forbidden");
-    }
+      if (options.profile && user.profile !== options.profile) {
+        return handleReject(c, options, "forbidden");
+      }
 
-    return next();
-  });
+      return requireOAuthMutationScope(c, next);
+    }),
+  );
 
 // ==========================
 // Export
@@ -474,6 +534,8 @@ export const auth = {
   browserSignIn,
   rejectAppSession,
   requireOAuthScope,
+  readOnly,
+  readOnlyMiddleware,
   getAuthority,
   requireAccount,
   redirect,

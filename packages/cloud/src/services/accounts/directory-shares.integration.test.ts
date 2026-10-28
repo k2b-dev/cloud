@@ -120,8 +120,11 @@ suite("machine directory shares", () => {
             })
           ).status,
         ).toBe(201);
-        expect((await list("?per_page=1")).pagination.total).toBe(2);
-        expect(await list("?per_page=1&page=3")).toMatchObject({ items: [], pagination: { total: 2 } });
+        // Removing the mutable POSIX projection must not reclassify a personal group.
+        expect((await list("?per_page=1")).pagination.total).toBe(1);
+        expect(await list("?per_page=1&page=3")).toMatchObject({ items: [], pagination: { total: 1 } });
+        expect((await list("?include_personal=true&per_page=1")).pagination.total).toBe(2);
+        expect(await list("?include_personal=true&per_page=1&page=3")).toMatchObject({ items: [], pagination: { total: 2 } });
         expect(await directoryShares.list({ actor: admin, recipientId: machineId, page: 3, perPage: 1 })).toMatchObject({
           ok: true,
           data: { items: [], total: 2 },

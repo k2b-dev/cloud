@@ -63,7 +63,7 @@ suite("Mail API for recently deleted mailboxes", () => {
     const reader = await userWithToken("reader");
     verifyAccessToken = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token: string) => {
       const user = tokens.get(token);
-      return user ? { kind: "user", payload: {}, user, scopes: [] } : null;
+      return user ? { kind: "user", payload: {}, user, scopes: ["read", "write"] } : null;
     });
     const ownerContext: MailRequestContext = {
       actor: { kind: "user", user: owner },

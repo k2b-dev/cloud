@@ -84,7 +84,7 @@ suite("Mail search by public folder and tag IDs", () => {
     owner = userFor(row!);
     context = { actor: { kind: "user", user: owner }, accessSubject: { type: "user", userId: owner.id }, requestId: null };
     verifyAccessToken = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token: string) =>
-      token === "owner" ? { kind: "user", payload: {}, user: owner, scopes: [] } : null,
+      token === "owner" ? { kind: "user", payload: {}, user: owner, scopes: ["read", "write"] } : null,
     );
 
     const mailbox = await createMailbox(context, { name: `Search IDs ${suffix}` });

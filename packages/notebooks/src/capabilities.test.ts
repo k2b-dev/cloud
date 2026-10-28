@@ -37,6 +37,7 @@ import {
 } from "./capability-contracts";
 import { notebookCapabilityMessages } from "./capability-messages";
 import { noteContentHash } from "./lib/note-edit";
+import * as activity from "./service/activity";
 import * as bookStore from "./service/book";
 import * as commentStore from "./service/comments";
 import * as noteLinks from "./service/links";
@@ -650,6 +651,7 @@ describe("notebooks capabilities", () => {
       "note.read",
       "note.search",
       "note.tree",
+      "notebook.activity",
       "notebook.browse",
       "notebook.list",
       "notebook.read",
@@ -1216,4 +1218,50 @@ test("panel place refs select the owning app's public resource reader", () => {
   const reader = resolveCapabilityResourceReader(manifest, ref);
   expect(reader?.localId).toBe("notebook.read");
   expect(notebooksCapabilities.queries["notebook.read"].input.parse({ id: ref.id })).toEqual({ id: ref.id });
+});
+
+test("notebook.activity bounds escaped actor labels and resumes without dropping bucket positions", async () => {
+  trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+  trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("read");
+  const rows = Array.from({ length: 100 }, (_, index) => ({
+    id: String(index + 1),
+    cursor: `position-${index + 1}`,
+    notebook: { id: notebookId, shortId: notebook.shortId, name: notebook.name, icon: null },
+    note: { id: noteId, shortId: note.shortId, title: note.title },
+    noteVersionId: null,
+    actor: { kind: "user" as const, id: serviceAccountId, displayName: "\u0001".repeat(5000), avatarHash: null },
+    action: "note.edited",
+    metadata: {},
+    occurrenceCount: 1,
+    createdAt,
+    lastOccurredAt: createdAt,
+  }));
+  trackedSpy(spyOn(activity, "list")).mockImplementation(async (input) => {
+    const offset = input.cursor ? Number(input.cursor.replace("position-", "")) : 0;
+    return { items: rows.slice(offset), nextCursor: null };
+  });
+  const operation = notebooksCapabilities.queries["notebook.activity"];
+  const ids: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const result = await operation.run(operation.input.parse({ notebook: notebook.shortId, limit: 100, cursor }), userContext);
+    if (!result.ok) throw new Error("Expected an activity page");
+    expect(notebookEnvelopeBytes(result.data)).toBeLessThanOrEqual(256 * 1024 - 1024);
+    expect(capabilityResultSchema(operation.data).safeParse(result.data).success).toBeTrue();
+    ids.push(...result.data.data.map((row) => row.id));
+    cursor = result.data.page?.hasMore ? result.data.page.nextCursor : undefined;
+    if (ids.length > rows.length) throw new Error("Activity cursor repeated a page");
+  } while (cursor);
+  expect(ids).toEqual(rows.map((row) => row.id));
+});
+
+test("notebook.activity stops before listing when the owning reader denies the container", async () => {
+  trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+  trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("none");
+  const list = trackedSpy(spyOn(activity, "list")).mockResolvedValue({ items: [], nextCursor: null });
+  const operation = notebooksCapabilities.queries["notebook.activity"];
+  const result = await operation.run(operation.input.parse({ notebook: notebook.shortId }), userContext);
+  expect(result.ok).toBeFalse();
+  if (!result.ok) expect(result.error.status).toBe(404);
+  expect(list).not.toHaveBeenCalled();
 });

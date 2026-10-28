@@ -31,13 +31,20 @@ type PreviewSnapshot = {
   failed: boolean;
   locale: string;
   retry: () => void;
+  /** Shows another page of the query that starts on this line. */
+  turnPage: (line: number, page: number) => void;
+  /** What a paged query keeps when its widget is replaced: the focused page button and the tallest height shown. */
+  pager: QueryPagerMemory;
 };
+
+type QueryPagerMemory = { focus: { line: number; index: number } | null; heights: Map<number, number> };
 
 const previewEffect = StateEffect.define<PreviewSnapshot>();
 
 class QueryBlockWidget extends WidgetType {
   private dispose?: () => void;
   private restoreCharts?: () => void;
+  private content?: HTMLElement;
 
   constructor(
     private block: BlockRange,
@@ -98,6 +105,25 @@ class QueryBlockWidget extends WidgetType {
       content.textContent = this.snapshot.failed ? t.failed : this.staleReadOnly ? t.savedChanged : (this.diagnostic ?? t.loading);
     }
     wrapper.append(controls, content);
+    this.content = content;
+    const memory = this.snapshot.pager;
+    // A paged list never gets shorter while it stays open, so turning to a short last page moves nothing below it.
+    const height = memory.heights.get(this.block.line);
+    if (height && content.querySelector(".notebook-query-pager")) content.style.minHeight = `${height}px`;
+    if (content.querySelector(".notebook-query-pager")) {
+      // The replaced widget records its focused button while the editor removes it, after this one is built.
+      queueMicrotask(() => {
+        const pending = memory.focus;
+        if (pending?.line !== this.block.line) return;
+        memory.focus = null;
+        // Focus returns only if it was lost with the old buttons; a reader who moved on keeps their place.
+        const active = document.activeElement;
+        if (active && active !== document.body && active.isConnected) return;
+        const buttons = content.querySelectorAll<HTMLButtonElement>("button[data-query-page]");
+        const button = buttons[pending.index]?.disabled ? buttons[1 - pending.index] : buttons[pending.index];
+        if (button?.isConnected) button.focus({ preventScroll: true });
+      });
+    }
     const reveal = () => {
       view.dispatch({ selection: { anchor: this.block.from }, scrollIntoView: true });
       view.focus();
@@ -126,6 +152,17 @@ class QueryBlockWidget extends WidgetType {
     // cursor through a rendered link or control underneath the widget.
     wrapper.addEventListener("mousedown", (event) => event.stopPropagation());
     wrapper.addEventListener("click", (event) => {
+      const pager = event.target instanceof Element ? event.target.closest<HTMLButtonElement>("button[data-query-page]") : null;
+      if (pager) {
+        event.preventDefault();
+        event.stopPropagation();
+        const page = Number(pager.dataset.queryPage);
+        if (pager.disabled || !Number.isInteger(page) || page < 1) return;
+        // Safari does not focus a clicked button; the page that arrives returns focus to it.
+        pager.focus({ preventScroll: true });
+        this.snapshot.turnPage(this.block.line, page);
+        return;
+      }
       const anchor = event.target instanceof Element ? event.target.closest("a") : null;
       const href = anchor?.getAttribute("href");
       if (!href?.startsWith("#")) return;
@@ -148,6 +185,14 @@ class QueryBlockWidget extends WidgetType {
   }
 
   override destroy() {
+    const content = this.content;
+    const pagerButtons = content ? [...content.querySelectorAll<HTMLButtonElement>("button[data-query-page]")] : [];
+    if (content && pagerButtons.length > 0) {
+      const memory = this.snapshot.pager;
+      memory.heights.set(this.block.line, Math.max(memory.heights.get(this.block.line) ?? 0, content.offsetHeight));
+      const focused = pagerButtons.indexOf(document.activeElement as HTMLButtonElement);
+      if (focused >= 0) memory.focus = { line: this.block.line, index: focused };
+    }
     this.dispose?.();
     this.restoreCharts?.();
   }
@@ -165,7 +210,12 @@ class QueryBlockWidget extends WidgetType {
     // from app.css. Its top margin collapses with the table's bottom margin,
     // so it adds one line plus one 16px margin: 41.6px.
     const rows = this.snapshot.failed ? 0 : (this.html?.match(/<tr(?:\s|>)/g)?.length ?? 0);
-    const countHeight = this.html?.includes('<p class="notebook-book-empty">') ? 41.6 : 0;
+    // The page buttons of a paged query add a 28px row and its 8px top margin.
+    const countHeight = this.html?.includes('<p class="notebook-book-empty">')
+      ? 41.6
+      : this.html?.includes('class="notebook-query-pager"')
+        ? 36
+        : 0;
     return rows ? rows * 38 + 65 + countHeight : 120;
   }
 }
@@ -181,15 +231,27 @@ export function createQueryBlockPreviews(options: {
   view: Accessor<EditorView | undefined>;
   enabled: Accessor<boolean>;
   locale: Accessor<string>;
-  load: (markdown: string | undefined, signal: AbortSignal) => Promise<BlockPreviewResult>;
+  load: (markdown: string | undefined, pages: ReadonlyMap<number, number>, signal: AbortSignal) => Promise<BlockPreviewResult>;
 }): { extension: Extension; listener: Extension } {
   const [markdown, setMarkdown] = createSignal(options.initialMarkdown.replace(/\r\n?/g, "\n"));
+  // The page each query shows, by its source line, while this note is open.
+  const [pages, setPages] = createSignal<ReadonlyMap<number, number>>(new Map());
+  const pager: QueryPagerMemory = { focus: null, heights: new Map() };
+  // Only the queries in the note keep a page; lines left behind by edits are dropped before the next request.
+  const currentPages = () => {
+    const lines = new Set(
+      extractNotebookDirectiveRanges(markdown())
+        .filter((block) => block.type === "query")
+        .map((block) => block.line),
+    );
+    return new Map([...pages()].filter(([line]) => lines.has(line)));
+  };
   const [ready, setReady] = createSignal(true);
   const hasBlocks = createMemo(() => extractNotebookDirectiveRanges(markdown()).length > 0);
   const previews = query.create({
     source: () => `${options.notebookId}/${options.noteId}`,
     enabled: () => options.enabled() && hasBlocks() && ready(),
-    load: (_source, { abortSignal }) => options.load(options.readOnly ? undefined : markdown(), abortSignal),
+    load: (_source, { abortSignal }) => options.load(options.readOnly ? undefined : markdown(), currentPages(), abortSignal),
     subscribe: ({ invalidate }) => {
       const handle = (raw: Event) => {
         const detail = (raw as CustomEvent<WorkspaceEventDetail>).detail;
@@ -206,7 +268,19 @@ export function createQueryBlockPreviews(options: {
     if (hasBlocks()) void previews.invalidate().catch(() => undefined);
     else previews.abort();
   }, 300);
-  let snapshot: PreviewSnapshot = { failed: false, locale: options.locale(), retry: () => void previews.refresh() };
+  const turnPage = (line: number, page: number) => {
+    setPages(() => currentPages().set(line, page));
+    void previews.invalidate().catch(() => undefined);
+  };
+  const snapshotOf = (result: BlockPreviewResult | undefined, failed: boolean): PreviewSnapshot => ({
+    result,
+    failed,
+    locale: options.locale(),
+    retry: () => void previews.refresh(),
+    turnPage,
+    pager,
+  });
+  let snapshot: PreviewSnapshot = snapshotOf(undefined, false);
   // The last drawing of each chart, by its source: an edit elsewhere keeps it in place until the new preview arrives.
   let drawnCharts = new Map<string, string>();
   const build = (state: EditorState, next: PreviewSnapshot): BlockState => {
@@ -275,7 +349,7 @@ export function createQueryBlockPreviews(options: {
     disposed = true;
   });
   createEffect(() => {
-    snapshot = { result: previews.data(), failed: !!previews.error(), locale: options.locale(), retry: () => void previews.refresh() };
+    snapshot = snapshotOf(previews.data(), !!previews.error());
     const view = options.view();
     options.enabled();
     markdown();

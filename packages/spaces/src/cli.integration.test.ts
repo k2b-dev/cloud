@@ -97,7 +97,7 @@ if (process.env.SPACES_CLI_CHILD !== "1") {
       managesGroupIds: [],
     };
     userId = user.id;
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     await migrate();
     await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name) VALUES (${user.id}::uuid, ${user.uid}, 'local', 'user', 'Cli Agent')`;
 

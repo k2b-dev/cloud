@@ -4,6 +4,7 @@ import { z } from "zod";
 import { attachments } from "./attachments";
 import { channels } from "./channels";
 import { conversations } from "./conversations";
+import { itemEvents } from "./item-events";
 import { messages } from "./messages";
 import { personal } from "./personal";
 import { reactions } from "./reactions";
@@ -47,6 +48,7 @@ const health = async (): Promise<ChatHealth> => {
 };
 
 export const chatService = {
+  itemEvents,
   health,
   attachments,
   channels,

@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { createServer, type Socket } from "node:net";
 import { join } from "node:path";
+import { z } from "zod";
 import { hasIntegrationTarget } from "./fixtures/test-infra-env";
 import {
   behaviorIgnore,
   discoverTestSuites,
   parseArgs,
   planShards,
+  runTestCommand,
   selectSuites,
   suiteWeight,
   type TestSuite,
@@ -123,7 +126,7 @@ describe("root test orchestration", () => {
       command: [],
     }));
   const names = (suites: TestSuite[]) => suites.map((suite) => suite.name);
-  const weights: TestWeights = { browser: {}, unit: { a: 10, b: 1, c: 10, d: 1, e: 10, f: 1 } };
+  const weights: TestWeights = { integration: {}, browser: {}, unit: { a: 10, b: 1, c: 10, d: 1, e: 10, f: 1 } };
 
   test("filters and shards deterministically by measured suite time", () => {
     const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
@@ -198,14 +201,20 @@ describe("root test orchestration", () => {
 
   test("selects weights for the requested mode", () => {
     const suites = makeSuites(["a", "b", "c", "d", "e", "f"]);
-    const tables: TestWeights = { unit: weights.unit, browser: { a: 1, b: 10, c: 1, d: 10, e: 1, f: 10 } };
-    const select = (browser: boolean) =>
-      [1, 2].map((index) =>
-        names(selectSuites(suites, { integration: false, browser, shard: { index, total: 2 } }, workspaceRoot, tables)),
-      );
+    const tables: TestWeights = {
+      integration: { a: 1, b: 1, c: 1, d: 10, e: 10, f: 10 },
+      unit: weights.unit,
+      browser: { a: 1, b: 10, c: 1, d: 10, e: 1, f: 10 },
+    };
+    const select = (browser: boolean, integration = false) =>
+      [1, 2].map((index) => names(selectSuites(suites, { integration, browser, shard: { index, total: 2 } }, workspaceRoot, tables)));
     expect(select(false)).toEqual([
       ["a", "e"],
       ["b", "c", "d", "f"],
+    ]);
+    expect(select(false, true)).toEqual([
+      ["d", "f"],
+      ["a", "b", "c", "e"],
     ]);
     expect(select(true)).toEqual([
       ["b", "f"],
@@ -217,7 +226,15 @@ describe("root test orchestration", () => {
     for (const maxMinutes of ["0.000001", "60"]) {
       const run = Bun.spawnSync(
         ["bun", "--no-env-file", join(workspaceRoot, "scripts", "run-tests.ts"), "--filter", "no-such-suite", "--max-minutes", maxMinutes],
-        { cwd: workspaceRoot, env: { ...process.env, CLOUD_HEAVY_LOCK: "held" }, stdout: "pipe", stderr: "pipe" },
+        {
+          cwd: workspaceRoot,
+          env: {
+            ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("CLOUD_TEST_"))),
+            CLOUD_HEAVY_LOCK: "held",
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
       );
       const stdout = run.stdout.toString();
       expect(stdout).toMatch(/test run took \d+\.\d min \(limit /);
@@ -234,9 +251,11 @@ describe("root test orchestration", () => {
   });
 
   test("parses arguments and rejects malformed shards", () => {
-    expect(parseArgs(["--integration", "--filter", "gateway", "--shard", "2/3"])).toEqual({
+    expect(parseArgs(["--integration", "--filter", "gateway", "--shard", "2/3", "--max-minutes", "20", "--list"])).toEqual({
       integration: true,
       filter: "gateway",
+      maxMinutes: 20,
+      list: true,
       shard: { index: 2, total: 3 },
     });
     expect(parseArgs(["--browser", "--shard", "1/2"])).toEqual({ integration: false, browser: true, shard: { index: 1, total: 2 } });
@@ -282,4 +301,197 @@ test("discovers ClickHouse and versioned Pulse migration files as isolated integ
   expect(suites.some((suite) => suite.name.endsWith("src/schema.integration.test.ts") && suite.name.includes("cloud-app-pulse"))).toBe(
     false,
   );
+});
+
+test("keeps the Mail workflow kernel in Cloud's isolated CI integration suites with Mail's fixture setup", async () => {
+  const suites = await discoverTestSuites(workspaceRoot, { integration: true, filter: "mail-workflow-kernel" });
+  expect(suites).toEqual([
+    {
+      name: "@k2b/cloud test/integration/mail-workflow-kernel.integration.test.ts",
+      cwd: join(workspaceRoot, "packages/cloud"),
+      command: ["bun", "test", "--preload", preload, "--timeout", "30000", "test/integration/mail-workflow-kernel.integration.test.ts"],
+    },
+  ]);
+  expect(await Bun.file(join(suites[0]!.cwd, suites[0]!.command.at(-1)!)).text()).toContain(
+    'import "../../../mail/test/integration-preload";',
+  );
+});
+
+test("CI integration shards cover the unsharded selection exactly once and fit the measured budget", async () => {
+  const workflow = z
+    .object({
+      jobs: z.object({
+        integration: z.object({
+          "timeout-minutes": z.number(),
+          strategy: z.object({ "fail-fast": z.boolean(), matrix: z.object({ shard: z.array(z.number().int().positive()) }) }),
+          steps: z.array(z.object({ run: z.string().optional() })),
+        }),
+        gate: z.object({ needs: z.array(z.string()) }),
+      }),
+    })
+    .parse(Bun.YAML.parse(await Bun.file(join(workspaceRoot, ".github/workflows/ci.yml")).text()));
+  const job = workflow.jobs.integration;
+  const shards: number[] = job.strategy.matrix.shard;
+  const command = job.steps.find((step) => step.run?.startsWith("bun run test --integration"))?.run;
+  if (!command) throw new Error("integration job needs its test runner command");
+  const options = parseArgs(command.replace("${{ matrix.shard }}", "1").split(" ").slice(3));
+  expect(options.integration).toBeTrue();
+  expect(options.exclude).toBe("grids");
+  expect(options.shard?.total).toBe(shards.length);
+  expect(shards).toEqual(Array.from({ length: shards.length }, (_, index) => index + 1));
+  expect(job.strategy["fail-fast"]).toBeFalse();
+  expect(options.maxMinutes).toBeGreaterThan(15);
+  expect(options.maxMinutes).toBeLessThan(job["timeout-minutes"]);
+  const all = await discoverTestSuites(workspaceRoot, { ...options, shard: undefined });
+  const selected = await Promise.all(
+    shards.map((index) =>
+      discoverTestSuites(workspaceRoot, {
+        ...options,
+        shard: { index, total: shards.length },
+      }),
+    ),
+  );
+  const names = selected.flat().map((suite) => suite.name);
+  expect(names.toSorted()).toEqual(all.map((suite) => suite.name).toSorted());
+  expect(new Set(names).size).toBe(all.length);
+  const weights = (await import("./test-weights.json")).default.integration;
+  for (const shard of selected) {
+    expect(shard.length).toBeGreaterThan(0);
+    expect(shard.reduce((sum, suite) => sum + suiteWeight(suite.name, weights), 0)).toBeLessThanOrEqual(15 * 60);
+  }
+  expect(workflow.jobs.gate.needs).toContain("integration");
+});
+
+test("integration --list prints the exact selection without a target, heavy slot or bootstrap", async () => {
+  const args = ["--integration", "--exclude", "grids", "--shard", "2/3", "--list"];
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("CLOUD_TEST_") && key !== "CLOUD_HEAVY_LOCK"),
+  );
+  const run = Bun.spawnSync(["bun", "--no-env-file", join(workspaceRoot, "scripts/run-tests.ts"), ...args], {
+    cwd: workspaceRoot,
+    env,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect(run.exitCode).toBe(0);
+  expect(run.stderr.toString()).toBe("");
+  const suites = await discoverTestSuites(workspaceRoot, parseArgs(args));
+  expect(run.stdout.toString().trim().split("\n")).toEqual(suites.map((suite) => suite.name));
+});
+
+test("an active command fails at its budget instead of waiting for the job timeout", async () => {
+  const suite: TestSuite = {
+    name: "stalled suite",
+    cwd: workspaceRoot,
+    command: [process.execPath, "--no-env-file", "-e", "setInterval(() => {}, 1000)"],
+  };
+  // Capture the expected annotation so a passing regression test does not annotate the CI job as failed.
+  const run = Bun.spawn(
+    [
+      process.execPath,
+      "--no-env-file",
+      "-e",
+      `import { runTestCommand } from ${JSON.stringify(join(workspaceRoot, "scripts/run-tests.ts"))};
+     await runTestCommand(${JSON.stringify(suite)}, process.env, 50);`,
+    ],
+    { cwd: workspaceRoot, env: process.env, stdout: "pipe", stderr: "pipe" },
+  );
+  const [code, stderr] = await Promise.all([run.exited, new Response(run.stderr).text()]);
+  expect(code).toBe(1);
+  expect(stderr).toContain("::error title=Test shard over its time limit::");
+  expect(stderr).toContain("test run exceeded its time budget");
+  await expect(runTestCommand({ name: "late suite", cwd: workspaceRoot, command: [] }, process.env, 0)).rejects.toThrow("time budget");
+});
+
+test("deadline cleanup also stops descendants that start a separate session", async () => {
+  if (process.platform === "win32") return;
+  const leaf = 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);';
+  const suite: TestSuite = {
+    name: "detached browser fixture",
+    cwd: workspaceRoot,
+    command: [
+      process.execPath,
+      "--no-env-file",
+      "-e",
+      `
+      const leaf = Bun.spawn([process.execPath, "--no-env-file", "-e", ${JSON.stringify(leaf)}], {
+        detached: true, stdin: "ignore", stdout: "ignore", stderr: "ignore",
+      });
+      leaf.unref();
+      console.log("OWNED_LEAF_PID=" + leaf.pid);
+      setInterval(() => {}, 1000);`,
+    ],
+  };
+  const run = Bun.spawn(
+    [
+      process.execPath,
+      "--no-env-file",
+      "-e",
+      `import { runTestCommand } from ${JSON.stringify(join(workspaceRoot, "scripts/run-tests.ts"))};
+     await runTestCommand(${JSON.stringify(suite)}, process.env, 500);`,
+    ],
+    { cwd: workspaceRoot, env: process.env, stdout: "pipe", stderr: "pipe" },
+  );
+  const [code, stdout, stderr] = await Promise.all([run.exited, new Response(run.stdout).text(), new Response(run.stderr).text()]);
+  const pid = Number(/OWNED_LEAF_PID=(\d+)/.exec(stdout)?.[1]);
+  expect(pid).toBeGreaterThan(0);
+  try {
+    expect(code).toBe(1);
+    expect(stderr).toContain("test run exceeded its time budget");
+    let alive = true;
+    try {
+      process.kill(pid, 0);
+      if (process.platform === "linux") {
+        const stat = await Bun.file(`/proc/${pid}/stat`).text();
+        alive = !["Z", "X"].includes(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0]!);
+      }
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && ["ESRCH", "ENOENT"].includes(String(error.code)))) throw error;
+      alive = false;
+    }
+    expect(alive).toBeFalse();
+  } finally {
+    if (pid) {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+      }
+    }
+  }
+});
+
+test("integration NATS housekeeping is stopped by the shard deadline", async () => {
+  const sockets = new Set<Socket>();
+  // A local broker that accepts the connection but never replies to the NATS handshake.
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("error", () => {});
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("missing test broker port");
+  try {
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("CLOUD_TEST_")));
+    const run = Bun.spawn(
+      [
+        process.execPath,
+        "--no-env-file",
+        join(workspaceRoot, "scripts/run-tests.ts"),
+        "--integration",
+        "--filter",
+        "no-such-suite",
+        "--max-minutes",
+        "0.02",
+      ],
+      { cwd: workspaceRoot, env: { ...env, CLOUD_TEST_NATS_SERVERS: `nats://127.0.0.1:${address.port}` }, stdout: "pipe", stderr: "pipe" },
+    );
+    const [code, stderr] = await Promise.all([run.exited, new Response(run.stderr).text()]);
+    expect(code).toBe(1);
+    expect(stderr).toContain("::error title=Test shard over its time limit::Time budget exhausted during integration NATS housekeeping");
+    expect(sockets.size).toBeGreaterThan(0);
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
 });

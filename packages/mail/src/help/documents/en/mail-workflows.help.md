@@ -238,7 +238,7 @@ On one reachable path, any number of `addFlag`, `removeFlag`, `addKeyword`, and 
 
 ## Classify mail and create drafts with AI {icon="sparkles"}
 
-Mail explicitly enables the shared AI actions. AI produces only a value. Mail actions still perform tagging, assignment, folder, draft, and send effects, with the normal mailbox access and budgets.
+Mail enables the shared AI actions for classification, tagging, assignment, summaries, and draft creation, with the normal mailbox access and budgets. Workflows containing any AI action cannot use `automaticReply` or `scheduleDraftSend`, even when the AI action is in another branch or only chooses between fixed replies. A person must review and send the resulting draft. The send review binds the complete content, recipients, attachments, and schedule.
 
 This example classifies one message into several labels. It uses exact array membership to tag and assign the conversation, and it creates a draft without sending it:
 
@@ -339,7 +339,7 @@ An optional `model` selects an enabled profile for one action. Otherwise, Mail u
 
 AI tasks survive worker restarts. Cancelling the Mail run stops running inference where possible and discards late output. A dry run cannot predict AI output. It reports the missing value and does not continue with an invented classification or draft.
 
-Mail stores prompts, inputs, and outputs with the durable task. Include only the message fields that the decision needs. Keep generated replies as drafts when a person needs to review them. Add `scheduleDraftSend` only when sending without review is approved on purpose.
+Mail stores prompts, inputs, and outputs with the durable task. Include only the message fields that the decision needs. Use `createDraft` or `createReplyDraft` for generated messages, then let a person review and send them. Automatic sends also cannot read conversation summaries or copy a whole conversation into a value: another AI workflow may have written its summary. These restrictions cover the whole definition, including unused branches. Older saved versions and queued sends are checked again before sending; a refused send fails with `MAIL_WORKFLOW_SEND_REVIEW_REQUIRED`.
 
 A workflow triggered by `messageReceived` cannot use `scheduleDraftSend` at all. Replies to incoming mail must go through `automaticReply` and its loop protection.
 
@@ -404,7 +404,7 @@ You can repeat the action safely. It does not allocate a second reference for th
 
 ## Send a guarded automatic reply {icon="send"}
 
-`automaticReply` is valid only when every trigger in the workflow is `messageReceived`.
+`automaticReply` is valid only when every trigger in the workflow is `messageReceived`. Use an operator-approved template in a workflow without AI actions or conversation summary reads. Non-AI templates can still use message fields, such as the incoming subject. Generated replies must remain drafts for human review.
 
 ```yaml
 inputs:

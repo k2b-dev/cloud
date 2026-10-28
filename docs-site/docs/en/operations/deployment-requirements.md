@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-22
+updated: 2026-10-26
 ---
 
 # Deployment requirements
@@ -26,6 +26,50 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 `app-mail`; the routing service is named `gateway`. The shared library, UI
 package, CLI and desktop development tools are not additional server apps in
 this service set.
+
+## Upgrade personal Linux group retirement
+
+This security fix changes account deletion: the account and its personal Linux
+group now retire atomically. For application authors, a `RESTRICT` or `NO ACTION`
+foreign key referencing that group blocks the entire account deletion and rolls
+it back. Use `ON DELETE CASCADE` for dependent grants or memberships that must
+retire with the group. Review other references deliberately before upgrading;
+see [Personal Linux groups](/en/docs/operations/linux-identities#personal-linux-groups).
+
+Apply Core's migration before starting updated applications: shared group
+queries now require `auth.personal_groups`. Production Compose only orders
+OAuth after Core, so a plain parallel `up` does not enforce this upgrade order.
+In a maintenance window, stop the existing application services, set the new
+release tag and start Core alone:
+
+```bash
+docker compose -f compose.prod.yml up -d --wait app-core
+```
+
+Use the same environment and infrastructure overlay files as your normal
+deployment. Check Core's migration logs and health before starting the rest of
+the release with your normal Compose command. Keep old application processes
+stopped during this step. This sequence also applies to a fresh installation.
+The background historical scan is not a Core health prerequisite.
+
+After Core is ready, operators must review `auth.personal_group_review` and
+resolve orphaned groups through the normal Accounts group deletion path.
+Referenced or uncertain historical groups remain usable until resolved;
+upgrading alone does not remove their authority. Follow
+[Review historical groups after upgrading](/en/docs/operations/linux-identities#review-historical-groups-after-upgrading).
+
+## Review Mail workflows that send automatically
+
+Mail refuses automatic send effects in workflows containing AI actions or
+reading conversation summaries, which another AI workflow may have written.
+The rule covers the entire definition, including unused branches and AI actions
+after a send. It applies to existing versions, queued sends, and retries;
+blocked sends fail with `MAIL_WORKFLOW_SEND_REVIEW_REQUIRED` before SMTP.
+
+Replace generated replies with `createDraft` or `createReplyDraft` and have a
+person review and send the complete message. Fixed operator-approved reply
+templates in workflows without AI or summary reads keep working. Direct
+machine-token Mail permissions retain their documented authorization contract.
 
 ## Size Mail for large messages
 

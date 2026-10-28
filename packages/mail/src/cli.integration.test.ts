@@ -114,7 +114,7 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
       manages: [],
       managesGroupIds: [],
     } as User;
-    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     const context = {
       actor: { kind: "user" as const, user: { ...user, givenName: "Cli", memberofGroups: [] } as never },
       accessSubject: { type: "user" as const, userId: user.id },
