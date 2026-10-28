@@ -1,15 +1,11 @@
+import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
-import { describeRoute } from "hono-openapi";
-import { z } from "zod";
 import { AiBackgroundCostError, backgroundCostState, releaseBackgroundCostStop } from "../ai/inference-calls";
-import { setAiModelPricing } from "../ai/model-pricing";
-import { AiModelRequestSettingsInvalid, getAiModelRequestSettings, setAiModelRequestSettings } from "../ai/model-request-settings";
 import { quotaAdminConfig, quotaReport } from "../ai/quota-report";
 import { AiQuotaError, aiQuotas } from "../ai/quotas";
 import { readAiSettingsState } from "../ai/settings";
-import { type AuthContext, auth, jsonResponse, requiresAdmin, v } from "../server";
-import { AiModelPricingSchema, hasBillableAiPricing } from "../shared/ai-costs";
-import { AiModelRequestSettingsSchema, AiModelRequestSettingsUpdateSchema } from "../shared/ai-model-request-settings";
+import { type AuthContext, auth, v } from "../server";
+import { hasBillableAiPricing } from "../shared/ai-costs";
 import {
   AiQuotaConfigSchema,
   AiQuotaIdentitySchema,
@@ -23,8 +19,22 @@ const subject = (p: { type: "user" | "service_account"; id: string }) =>
 export const createAdminAiQuotaRoutes = (authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin")) =>
   new Hono<AuthContext>()
     .use("*", authenticate)
-    .onError((error, c) => {
-      if (error instanceof AiModelRequestSettingsInvalid) return c.json({ message: error.message }, 400);
+    .onError(async (error, c) => {
+      if (error instanceof AiQuotaError && error.code === "quota_conflict") {
+        const current = await quotaAdminConfig();
+        const [change] = await sql<
+          { id: string | null; name: string | null; changedAt: string }[]
+        >`SELECT u.id,COALESCE(NULLIF(u.display_name,''),u.uid) AS name,to_char(c.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "changedAt" FROM ai.cost_changes c LEFT JOIN auth.users u ON u.id=c.actor_id WHERE c.revision=${current.revision} ORDER BY c.created_at DESC LIMIT 1`;
+        return c.json(
+          {
+            code: "conflict",
+            current,
+            changedBy: change?.id ? { id: change.id, name: change.name ?? change.id } : null,
+            changedAt: change?.changedAt ?? new Date(0).toISOString(),
+          },
+          409,
+        );
+      }
       if (error instanceof AiQuotaError || error instanceof AiBackgroundCostError)
         return c.json({ error: error.code, message: error.message }, 409);
       throw error;
@@ -33,53 +43,21 @@ export const createAdminAiQuotaRoutes = (authenticate: MiddlewareHandler<AuthCon
     .get("/models", async (c) =>
       c.json({
         unit: (await aiQuotas.config()).unit ?? "EUR",
-        models: (await readAiSettingsState()).profiles.map((m) => ({
-          id: m.id,
-          label: m.label,
-          pricing: m.pricing,
-          enabled: m.enabled,
-          capabilities: m.capabilities,
-        })),
+        models: (await readAiSettingsState()).profiles
+          .filter((m, index, profiles) => {
+            const representative =
+              profiles.find((candidate) => candidate.modelId === m.modelId && hasBillableAiPricing(candidate.pricing)) ??
+              profiles.find((candidate) => candidate.modelId === m.modelId);
+            return profiles.indexOf(representative!) === index;
+          })
+          .map((m) => ({
+            id: m.modelId,
+            label: m.label,
+            pricing: m.pricing,
+            enabled: m.enabled,
+            capabilities: m.capabilities,
+          })),
       }),
-    )
-    .put(
-      "/models/:id/pricing",
-      v("json", z.object({ pricing: AiModelPricingSchema.nullable(), expected: AiModelPricingSchema.nullable() }).strict()),
-      async (c) => {
-        const data = c.req.valid("json");
-        return c.json(await setAiModelPricing(c.req.param("id")!, data.pricing, data.expected, c.get("user")!.id));
-      },
-    )
-    .get(
-      "/models/:id/settings",
-      describeRoute({
-        tags: ["Administration"],
-        summary: "Read masked model request settings",
-        ...requiresAdmin,
-        responses: { 200: jsonResponse(AiModelRequestSettingsSchema, "Model request settings (header names only)") },
-      }),
-      async (c) => {
-        c.header("Cache-Control", "no-store");
-        return c.json(await getAiModelRequestSettings(c.req.param("id")!));
-      },
-    )
-    .put(
-      "/models/:id/settings",
-      describeRoute({
-        tags: ["Administration"],
-        summary: "Patch model request settings with a revision guard",
-        ...requiresAdmin,
-        responses: {
-          200: jsonResponse(AiModelRequestSettingsSchema, "Updated model request settings (header names only)"),
-          400: jsonResponse(z.object({ message: z.string() }), "Invalid model request settings"),
-          409: jsonResponse(z.object({ message: z.string(), error: z.string() }), "Model request settings changed"),
-        },
-      }),
-      v("json", AiModelRequestSettingsUpdateSchema),
-      async (c) => {
-        c.header("Cache-Control", "no-store");
-        return c.json(await setAiModelRequestSettings(c.req.param("id")!, c.req.valid("json"), c.get("user")!.id));
-      },
     )
     .get("/background", async (c) => c.json(await backgroundCostState()))
     .post("/background/release", async (c) => c.json(await releaseBackgroundCostStop(c.get("user")!.id)))
@@ -92,7 +70,7 @@ export const createAdminAiQuotaRoutes = (authenticate: MiddlewareHandler<AuthCon
         previous = await aiQuotas.config();
       if (
         config.rules.some(
-          (r) => r.scope !== "*" && !models.some((m) => m.id === r.scope) && !previous.rules.some((old) => old.scope === r.scope),
+          (r) => r.scope !== "*" && !models.some((m) => m.modelId === r.scope) && !previous.rules.some((old) => old.scope === r.scope),
         )
       )
         return c.json({ message: "Select an enabled chat model with nonzero prices or all chat models." }, 400);

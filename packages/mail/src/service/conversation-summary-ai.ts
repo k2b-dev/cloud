@@ -1,4 +1,4 @@
-import { getAiChatQuotas, personalAiModelPolicy, resolveAiModel, runApplicationAiTask, selectAssistantAiModelId } from "@k2b/cloud/ai";
+import { getAiChatQuotas, personalAiModelPolicy, resolveAiModel, runApplicationAiTask, selectAssistantAiModel } from "@k2b/cloud/ai";
 import { env } from "@k2b/cloud/config";
 import type { AccessSubject } from "@k2b/cloud/server";
 import { sql } from "bun";
@@ -234,6 +234,7 @@ export const generateConversationSummaryAi = async (
     },
     request: {
       kind: "extract_data",
+      model: { class: "fast" },
       prompt: summaryPrompt(input),
       input: source.input,
       fields: [
@@ -294,12 +295,12 @@ export const getConversationSummaryAiAvailability = async (
   canGenerate: boolean;
 }> => {
   try {
-    const modelId = await selectAssistantAiModelId(usageSubject);
-    await resolveAiModel(personalAiModelPolicy, modelId);
+    const selection = await selectAssistantAiModel(usageSubject, { class: "fast" });
+    const { profile } = await resolveAiModel(personalAiModelPolicy, selection);
     const snapshot = await getAiChatQuotas(usageSubject);
-    if (!snapshot.enabled || snapshot.unlimitedModels?.includes(modelId))
+    if (!snapshot.enabled || snapshot.unlimitedModels?.includes(profile.id))
       return { allowance: { unlimited: true, usedPercent: null, resetsAt: null }, canGenerate: true };
-    const balances = snapshot.balances.filter((balance) => balance.scope === "*" || balance.scope === modelId);
+    const balances = snapshot.balances.filter((balance) => balance.scope === "*" || balance.scope === profile.modelId);
     if (balances.some((balance) => balance.scope === "*" && balance.unlimited) || balances.every((balance) => balance.unlimited))
       return { allowance: { unlimited: true, usedPercent: null, resetsAt: null }, canGenerate: true };
     const finite = balances.filter((balance) => !balance.unlimited);
