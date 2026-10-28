@@ -96,7 +96,7 @@ if (process.env.NOTEBOOKS_TABLE_ACTION_API_TEST !== "1") {
       body: JSON.stringify(body),
     });
   beforeEach(() => {
-    token.mockReset().mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    token.mockReset().mockResolvedValue({ kind: "user", payload: {}, user, scopes: ["read", "write"] });
     getNotebook.mockReset().mockResolvedValue(notebook);
     permission.mockReset().mockResolvedValue("write");
     getNote.mockReset().mockResolvedValue(note);

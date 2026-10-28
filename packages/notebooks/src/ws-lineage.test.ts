@@ -74,6 +74,7 @@ if (process.env.NOTEBOOKS_WS_LINEAGE_CHILD !== "1") {
     guardAppAccessSocket: async (_c: Context, _appId: string, events: WSEvents) => events,
     getLocale: () => "en",
     auth: {
+      requireRole: () => async (_c: Context, next: () => Promise<void>) => next(),
       session: {
         resolveToken: async () => "session",
         authenticate: async () => ({ user: { id: "user", displayName: "User", avatarHash: null } }),
