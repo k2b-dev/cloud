@@ -15,6 +15,7 @@ const message = {
   author: { type: "user", id, name: "Owner" },
   body: "😀 Mara",
   refs: [],
+  attachments: [],
   reactions: [],
   thread: null,
   replyTo: null,

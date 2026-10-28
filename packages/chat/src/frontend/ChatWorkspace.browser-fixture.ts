@@ -5,6 +5,7 @@ import type { ServerWebSocket } from "bun";
 import { z } from "zod";
 import {
   AddMembersSchema,
+  type AttachmentView,
   CHANGES_PAGE_SIZE,
   ChangeSchema,
   CONVERSATION_PAGE_SIZE,
@@ -208,6 +209,10 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
   let failingUnread = 0;
   let failingThreads = 0;
   let failingShared = 0;
+  // Uploaded files of the made-up server: bytes and view, like chat.attachments; the next uploads can fail.
+  const uploads = new Map<string, { view: AttachmentView; bytes: ArrayBuffer }>();
+  let failingUploads = 0;
+  const discarded: string[] = [];
   // Changes the owning app reports for a Space or notebook chat, as GET …/events answers them.
   const itemEvents = new Map<string, z.infer<typeof ItemEventSchema>[]>();
   let failingItemEvents = 0;
@@ -223,7 +228,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     {
       id: string;
       title: string;
-      preview: string;
+      context: string;
       readable: boolean;
       type?: string;
       parent?: CloudResourceRef;
@@ -255,7 +260,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           appId: "spaces",
           manifestHash: "0".repeat(64),
           types: [
-            { localId: "task", title: "Task", description: "A task.", icon: "ti ti-circle", reader: "task.read" },
+            { localId: "task", title: "Task", description: "A task.", icon: "ti ti-circle", color: "emerald", reader: "task.read" },
             { localId: "item", title: "Item", description: "An item.", icon: "ti ti-circle", reader: "task.read" },
           ],
           queries: [query("task.read")],
@@ -276,6 +281,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     thread?: string;
     replyTo?: string;
     refs?: CloudResourceRef[];
+    attachments?: string[];
     mentions?: { start: number; end: number; principal: { type: string; id: string } }[];
   }[] = [];
   const discoveryUpdates: { entries: unknown[]; name?: string; purpose?: string; revision?: string }[] = [];
@@ -468,7 +474,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     body: string,
     at: Date,
     kind: "text" | "system" = "text",
-    target: { thread?: string | null; replyTo?: string; refs?: CloudResourceRef[] } = {},
+    target: { thread?: string | null; replyTo?: string; refs?: CloudResourceRef[]; attachments?: AttachmentView[] } = {},
   ) => {
     const entry = chats.get(chat)!;
     const seq = entry.messages.length + 1;
@@ -479,8 +485,11 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
       reactions: [],
       mentions: [],
       refs: target.refs ?? [],
+      attachments: target.attachments ?? [],
       thread,
-      replyTo: original ? { id: original.id, author: original.author, preview: original.body ?? "" } : null,
+      replyTo: original
+        ? { id: original.id, author: original.author, preview: original.body ?? "", attachments: original.attachments }
+        : null,
       id: messageId(chat, seq),
       conversationId: chat,
       seq,
@@ -964,7 +973,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
             readable: true,
             ref: { type: element.type ?? "spaces.task", id: element.id },
             title: element.title,
-            preview: element.preview,
+            preview: element.context || undefined,
             href: `/app/spaces/task/${element.id}`,
           }));
         const lines = [
@@ -984,7 +993,16 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
         if (!element?.readable) return Response.json({ code: "FORBIDDEN", message: "No access" }, { status: 403 });
         return Response.json({
           data: { id: element.id },
-          refs: [{ type: "spaces.task", id: element.id, title: element.title, preview: element.preview, icon: "ti ti-circle" }],
+          refs: [
+            {
+              type: "spaces.task",
+              id: element.id,
+              title: element.title,
+              icon: "ti ti-circle",
+              ...(element.context ? { context: element.context } : {}),
+              ...(element.status ? { status: element.status } : {}),
+            },
+          ],
           links: [{ rel: "open", href: `/app/spaces/task/${element.id}` }],
         });
       }
@@ -1287,7 +1305,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
               thread = {
                 id: threadId(id!, chat.threads.length + 1),
                 name: element.title,
-                description: element.preview,
+                description: element.context,
                 archived: false,
                 read: null,
                 createdAt: chatTestNow.toISOString(),
@@ -1519,6 +1537,38 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           const data = markUnread(id!, message);
           return data ? Response.json(data) : Response.json({ code: "NOT_FOUND", message: "Message not found." }, { status: 404 });
         }
+        if (part === "attachments" && request.method === "POST" && !accessId) {
+          if (failingUploads > 0) {
+            failingUploads -= 1;
+            return Response.json({ message: "Unavailable" }, { status: 503 });
+          }
+          const file = (await request.formData()).get("file");
+          if (!(file instanceof File)) return Response.json({ code: "BAD_INPUT", message: "Invalid input." }, { status: 400 });
+          const attachment = `A${String(uploads.size + 1).padStart(5, "0")}`;
+          const image = file.type.startsWith("image/");
+          const view: AttachmentView = {
+            id: attachment,
+            name: file.name,
+            mimeType: file.type || "application/octet-stream",
+            size: file.size,
+            kind: image ? "image" : "file",
+            ...(image ? { width: 400, height: 300 } : {}),
+            href: `/api/chat/conversations/${id}/attachments/${attachment}`,
+          };
+          uploads.set(attachment, { view, bytes: await file.arrayBuffer() });
+          return Response.json(view, { status: 201 });
+        }
+        if (part === "attachments" && request.method === "DELETE" && accessId) {
+          discarded.push(accessId);
+          uploads.delete(accessId);
+          return Response.json({ success: true });
+        }
+        if (part === "attachments" && request.method === "GET" && accessId) {
+          const stored = uploads.get(accessId);
+          return stored
+            ? new Response(stored.bytes, { headers: { "Content-Type": stored.view.mimeType } })
+            : Response.json({ code: "NOT_FOUND", message: "Attachment not found." }, { status: 404 });
+        }
         if (part === "events" && request.method === "GET") {
           if (failingItemEvents > 0) {
             failingItemEvents -= 1;
@@ -1563,7 +1613,19 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
                 ...meta,
               }));
               const elements = message.refs.map((ref) => ({ kind: "element" as const, ref, ...meta }));
-              return [...(kind === "all" || kind === "elements" ? elements : []), ...(kind === "all" || kind === "links" ? links : [])];
+              const files = message.attachments.map((attachment) => ({
+                kind: attachment.kind === "image" ? ("image" as const) : ("document" as const),
+                attachment,
+                ...meta,
+              }));
+              return [
+                ...(kind === "all" || kind === "elements" ? elements : []),
+                ...(kind === "all" || kind === "links" ? links : []),
+                ...files.filter(
+                  (file) =>
+                    kind === "all" || (kind === "images" ? file.kind === "image" : kind === "documents" && file.kind === "document"),
+                ),
+              ];
             });
           const offset = Number(url.searchParams.get("cursor") ?? 0);
           const next = offset + 30 < items.length ? String(offset + 30) : null;
@@ -1596,6 +1658,10 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
             thread: input.thread ?? null,
             replyTo: input.replyTo,
             refs: input.refs ?? [],
+            attachments: (input.attachments ?? []).flatMap((attachment) => {
+              const stored = uploads.get(attachment);
+              return stored ? [stored.view] : [];
+            }),
           });
           publish(message);
           return Response.json(message, { status: 201 });
@@ -1681,7 +1747,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     }) => {
       elements.set(element.id, {
         ...element,
-        preview: element.title,
+        context: element.title,
         readable: true,
         type: element.parent.type === "notebooks.notebook" ? "notebooks.note" : "spaces.item",
       });
@@ -1767,8 +1833,8 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
       chats.get(chat)!.discovery = entries;
     },
     /** An element of the made-up "spaces" app; `readable: false` makes its card "not available". */
-    addElement: (element: { id: string; title: string; preview?: string; readable?: boolean }) => {
-      elements.set(element.id, { preview: "", readable: true, ...element });
+    addElement: (element: { id: string; title: string; context?: string; status?: string; readable?: boolean }) => {
+      elements.set(element.id, { context: "", readable: true, ...element });
       return { type: "spaces.task", id: element.id } satisfies CloudResourceRef;
     },
     /** Grants or takes away the viewer's access to an element of the made-up "spaces" app. */
@@ -1806,6 +1872,12 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     failShared: (times = 1) => {
       failingShared = times;
     },
+    /** Uploads the reader removed before sending, as the server was asked to discard them. */
+    discarded,
+    /** The next uploads fail. */
+    failUploads: (times = 1) => {
+      failingUploads = times;
+    },
     readerCalls: () => readerCalls,
     reads,
     readViews,
@@ -1822,6 +1894,9 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
       failingItemEvents = times;
     },
     reset: () => {
+      uploads.clear();
+      discarded.length = 0;
+      failingUploads = 0;
       itemEvents.clear();
       failingItemEvents = 0;
       forYou = [];

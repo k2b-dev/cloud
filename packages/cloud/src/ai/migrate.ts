@@ -560,6 +560,8 @@ export const migrateCloudAi = async (): Promise<void> => {
     )
   `.simple();
   await sql`ALTER TABLE ai.conversation_resource_refs DROP COLUMN IF EXISTS occurrences`.simple();
+  await sql`ALTER TABLE ai.conversation_resource_refs ADD COLUMN IF NOT EXISTS context VARCHAR(200)`.simple();
+  await sql`ALTER TABLE ai.conversation_resource_refs ADD COLUMN IF NOT EXISTS status VARCHAR(60)`.simple();
 
   await sql`
     CREATE INDEX IF NOT EXISTS idx_ai_conversation_resource_refs_recent
