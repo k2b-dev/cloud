@@ -55,15 +55,18 @@ export type NotificationRenderContext = {
 export type NotificationDeliveryPolicy = {
   recommended?: readonly NotificationChannelId[];
   required?: readonly NotificationChannelId[];
+  /** Channels this kind never prepares for delivery, even when a saved preference selects them. */
+  excluded?: readonly NotificationChannelId[];
 };
 
 export type NotificationDefinitionPresentationTranslation = {
   label?: string;
   description?: string;
+  excludedReason?: string;
 };
 
 export type NotificationDefinitionPresentationCatalog = {
-  /** Locale of the complete `label` and `description` declaration. */
+  /** Locale of the base label, description, and optional excluded reason. */
   baseLocale: string;
   /** Partial presentation overlays with exact -> ancestor -> base fallback. */
   translations: Readonly<Record<string, NotificationDefinitionPresentationTranslation>>;
@@ -73,6 +76,8 @@ export type NotificationDefinitionInput<R extends NotificationRecipientKind, S e
   recipient: R;
   label: string;
   description: string;
+  /** Explanation shown beside excluded channels; required when delivery.excluded is non-empty. */
+  excludedReason?: string;
   presentation?: NotificationDefinitionPresentationCatalog;
   data: S;
   delivery?: NotificationDeliveryPolicy;
@@ -92,6 +97,7 @@ type AnyNotificationDefinition = Readonly<{
   recipient: NotificationRecipientKind;
   label: string;
   description: string;
+  excludedReason?: string;
   presentation?: NotificationDefinitionPresentationCatalog;
   data: ZodType;
   delivery?: NotificationDeliveryPolicy;
@@ -165,6 +171,9 @@ const compileDefinitionPresentation = (
       ...(translation.description !== undefined
         ? { description: requiredPresentationText(translation.description, `${canonical}.description`) }
         : {}),
+      ...(translation.excludedReason !== undefined
+        ? { excludedReason: requiredPresentationText(translation.excludedReason, `${canonical}.excludedReason`) }
+        : {}),
     });
   }
   return Object.freeze({ baseLocale, translations: Object.freeze(translations) });
@@ -174,20 +183,23 @@ export const resolveNotificationDefinitionPresentation = (
   definition: {
     label: string;
     description: string;
+    excludedReason?: string;
     presentation?: NotificationDefinitionPresentationCatalog | null;
   },
   requestedLocale?: string | null,
-): { label: string; description: string } => {
+): { label: string; description: string; excludedReason?: string } => {
   const catalog = definition.presentation;
-  if (!catalog || !requestedLocale) return { label: definition.label, description: definition.description };
+  const base = {
+    label: definition.label,
+    description: definition.description,
+    ...(definition.excludedReason !== undefined ? { excludedReason: definition.excludedReason } : {}),
+  };
+  if (!catalog || !requestedLocale) return base;
   const translations = new Map(Object.entries(catalog.translations));
   return localeFallbackChain(requestedLocale, catalog.baseLocale)
     .filter((locale) => locale !== catalog.baseLocale)
     .reverse()
-    .reduce((resolved, locale) => ({ ...resolved, ...translations.get(locale) }), {
-      label: definition.label,
-      description: definition.description,
-    });
+    .reduce((resolved, locale) => ({ ...resolved, ...translations.get(locale) }), base);
 };
 
 export const notification = <const R extends NotificationRecipientKind, const S extends ZodType>(
@@ -200,12 +212,19 @@ export const notification = <const R extends NotificationRecipientKind, const S 
 
   const recommended = [...(input.delivery?.recommended ?? [])];
   const required = [...(input.delivery?.required ?? [])];
-  if (hasDuplicates(recommended) || hasDuplicates(required)) {
+  const excluded = [...(input.delivery?.excluded ?? [])];
+  const excludedReason = input.excludedReason === undefined ? undefined : requiredPresentationText(input.excludedReason, "excludedReason");
+  if (excluded.length > 0 && !excludedReason) throw new Error(`Notification "${label}" excludedReason is required for excluded channels`);
+  if (hasDuplicates(recommended) || hasDuplicates(required) || hasDuplicates(excluded)) {
     throw new Error(`Notification "${label}" contains duplicate delivery channels`);
   }
   const overlappingChannel = recommended.find((channel) => required.includes(channel));
   if (overlappingChannel) {
     throw new Error(`Notification "${label}" cannot recommend and require the "${overlappingChannel}" channel`);
+  }
+  const excludedOverlap = excluded.find((channel) => recommended.includes(channel) || required.includes(channel));
+  if (excludedOverlap) {
+    throw new Error(`Notification "${label}" cannot exclude the recommended or required "${excludedOverlap}" channel`);
   }
   if (input.recipient === "email" && !required.includes("email")) {
     throw new Error(`Email-recipient notification "${label}" must require the email channel`);
@@ -216,8 +235,13 @@ export const notification = <const R extends NotificationRecipientKind, const S 
     ...input,
     label,
     description,
+    ...(excludedReason !== undefined ? { excludedReason } : {}),
     ...(presentation ? { presentation } : {}),
-    delivery: Object.freeze({ recommended: Object.freeze(recommended), required: Object.freeze(required) }),
+    delivery: Object.freeze({
+      recommended: Object.freeze(recommended),
+      required: Object.freeze(required),
+      excluded: Object.freeze(excluded),
+    }),
     [notificationDefinitionMarker]: true,
   };
   return Object.freeze(definition);

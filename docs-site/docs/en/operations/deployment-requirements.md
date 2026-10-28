@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-27
+updated: 2026-10-28
 ---
 
 # Deployment requirements
@@ -39,6 +39,18 @@ Browser recognition compares absolute links with the canonical origin from
 `app.url`, supplied in `Layout` shell data. Configure that setting for absolute
 pasted links; root-relative links work without it. No additional service or
 secret is required. See [Resource copy and paste](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link).
+
+## Upgrade notification channel exclusions
+
+Core's startup migration adds `excluded_channels` (default `[]`) and
+`excluded_reason` (default `null`) to the notification catalog. Apply it before
+starting updated applications. Catalog registration retries while the new
+columns are missing. No new service or configuration is required.
+
+An application's excluded channels override older saved preferences for new
+sends; existing queued deliveries are unchanged. See
+[User preferences](/en/docs/platform/notifications#user-preferences) for the
+application contract.
 
 ## Upgrade personal Linux group retirement
 

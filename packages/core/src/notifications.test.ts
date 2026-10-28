@@ -21,7 +21,7 @@ describe("Core notification definitions", () => {
     const notice = app.notifications.appDevicePaired;
     expect(notice.id).toBe("core.appDevicePaired");
     expect(notice.recipient).toBe("user");
-    expect(notice.delivery).toEqual({ recommended: ["email", "browser"], required: [] });
+    expect(notice.delivery).toEqual({ recommended: ["email", "browser"], required: [], excluded: [] });
     // The payload names the phone only; pairing codes, secrets and keys have no field to travel in.
     expect(Object.keys(notice.data.shape).sort()).toEqual(["name", "pairedAt", "platform"]);
   });
@@ -79,7 +79,7 @@ test("pending approval notifications are browser-recommended, localized, and ope
 
 test("new-access notices are user-bound and localize command line and application access", async () => {
   const notice = app.notifications.oauthNewAccess;
-  expect(notice.delivery).toEqual({ recommended: ["email", "browser"], required: [] });
+  expect(notice.delivery).toEqual({ recommended: ["email", "browser"], required: [], excluded: [] });
   expect(notice.recipient).toBe("user");
   expect(Object.keys(notice.data.shape).sort()).toEqual(["clientName", "createdAt", "kind"]);
   const setting = spyOn(settings, "get").mockResolvedValue("Europe/Berlin");
@@ -146,7 +146,7 @@ describe("new-browser sign-in notice", () => {
   test("is user-bound and optional, email first with browser fallback", () => {
     expect(definition.id).toBe("core.newBrowserSignIn");
     expect(definition.recipient).toBe("user");
-    expect(definition.delivery).toEqual({ recommended: ["email", "browser"], required: [] });
+    expect(definition.delivery).toEqual({ recommended: ["email", "browser"], required: [], excluded: [] });
     // Cloud bounds the greeting name to 100 characters before the handoff.
     expect(definition.data.safeParse({ ...data, firstName: "J".repeat(100) }).success).toBe(true);
   });
