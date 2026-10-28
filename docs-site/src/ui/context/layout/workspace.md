@@ -6,9 +6,11 @@ The application owns the content and which regions are open.
 
 For browser printing, mark the complete readable content with `data-print-region`, or provide an export hint through Cloud Layout `printHint`. See [Browser printing](/en/ui/layout/print) for the region and fallback contract.
 
-The sidebar and `Main` share one base surface, white in the light theme,
-separated by space. A Detail column is part of that surface, with no fill or
-frame and a subtle leading shadow. The bottom drawer uses the subtle surface.
+The sidebar and `Main` share one base surface, white in the light theme. A
+Detail column is part of that surface, with no fill or frame. From 48 rem, every
+column boundary (after the sidebar, between panes and levels, and before
+Detail) has the same quiet shadow and no line. The bottom drawer uses the
+subtle surface.
 Keep region wrappers transparent. A view that fills `Main`—a canvas, graph,
 editor, or empty state—is `Main`'s surface and draws no radius or border of its
 own. Placeholders in `Main` draw no box, and new views add no inset cards or
@@ -203,6 +205,18 @@ inset, and the inset keeps the end of that fade. A Detail column keeps its 0.5 r
 sets the property on the outermost workspace of its tablet and laptop shell, so
 applications need nothing.
 
+### Column boundaries
+
+From 48 rem, every boundary between two columns has the same quiet shadow: after
+the sidebar, between MainPanes, between shown levels, and before a Detail
+column. The column on the right lies slightly higher, so the shadow lies on the
+column before the boundary. It is 24 px wide, darkest at the boundary
+(`--k2b-shadow-column-edge`, through `--k2b-shadow-column-mid`), and becomes
+lighter over the final 96 px. No line, fill, or frame separates the columns.
+The shadow is paint only: it does not move content, take pointer input, or
+scroll with a column. A waiting Detail keeps its stronger drawer shadow, and a
+phone, which shows one column at a time, has none.
+
 ## Host width
 
 The nearest `k2b-app-area` inline-size container supplies the app's width.
@@ -314,9 +328,9 @@ description. Selecting a row keeps every visible level where it is.
 
 The levels draw no lines between them. The last visible level fills the
 remaining width, whatever its content: a long title or text in the selected
-item never narrows the levels before it. When another level shows before it,
-it is a raised surface with an 8 px inset. On a
-phone the one level is flat. Levels do not animate.
+item never narrows the levels before it. Every level is a flat column on the
+same surface, edge to edge, at every width and in both themes; the deepest
+level is never a raised or inset card. Levels do not animate.
 
 Inside a [`MobileShell`](/en/ui/layout/mobile-shell) with `scroll={false}`,
 levels follow the touch app instead: one level, with its back step, below
@@ -448,11 +462,10 @@ panel, continuing around that corner in light and dark. The drawer size and
 Main stay unchanged.
 
 The column shares the workspace surface without its own fill, frame, or radius.
-A subtle 24 px shadow extends to its left, from the workspace's top to its
-bottom. Over the final 96 px it becomes lighter while retaining a visible
-edge. The panel content keeps its 8 px top, right, and bottom inset. This
-paint does not move content or alter the resize handle; it disappears when
-Detail closes or becomes a drawer or phone sheet.
+Its boundary has the workspace's column shadow, from the workspace's top to its
+bottom (see [Column boundaries](#column-boundaries)). The panel content keeps
+its 8 px top, right, and bottom inset. The shadow disappears when Detail closes
+or becomes a drawer or phone sheet.
 
 A waiting Detail stays mounted and `open` stays true. Its **Details** button
 in the head controls it through `aria-controls` and `aria-expanded`. The head
@@ -546,7 +559,10 @@ that now shows the selection so the workspace can reveal it and return focus.
 F6 switches between the remembered item and the Detail title. Keyboard
 selection also waits for a title that arrives after loading. Pointer selection
 focuses the title only on phones. Closing returns focus to the remembered item
-when focus was inside the Detail. The application owns `open`.
+when focus was inside the Detail. Open menus and dialogs keep the workspace
+keys; passive tooltips allow J, K and F6. Tooltip and reaction hints handle Escape
+first to dismiss themselves.
+The application owns `open`.
 
 Use `scrollClass="k2b-detail-trail"` on DataTable to preserve its column widths
 beside Detail. Mark a board's horizontal scroller with `k2b-detail-trail` too.
@@ -998,6 +1014,14 @@ Expansion can be uncontrolled with `defaultExpandedIds`, or controlled with
 `expandedIds` and `onExpandedIdsChange`. Persistence remains application-owned:
 if an application stores expansion in a cookie or another store, pass the same
 initial ids during SSR to avoid a layout shift when the component mounts.
+
+A tree too large to render whole loads a branch when it opens. Set
+`hasChildren` on a `NavTree.Item` whose children are not rendered yet: the row
+shows its disclosure and `aria-expanded`, and opening it reports the id
+through `onExpandedIdsChange`. Render a disabled item that says the rows load
+until they arrive. Show a long level a page at a time and end it with an item
+that loads the next page through `onSelect`, such as "4,900 more notes"; keep
+such items out of reordering.
 
 Branches normally keep their leading icon and receive a trailing disclosure
 chevron. For folder navigation, set both `icon` and `expandedIcon`; the leading
@@ -1451,7 +1475,7 @@ The package exports parse, normalize, serialize, and style helpers for layout st
 From 48 rem, 12 px of space separates adjacent MainPanes. The last pane has no
 trailing gap. Every resize handle (sidebar, panes, Detail, and drawer) shows the
 same short grip and soft shadow on the region it resizes during hover, keyboard
-focus, and drag. Keyboard focus gives the grip the focus color. Only the drawer
+focus, and drag, on top of the column shadow. Keyboard focus gives the grip the focus color. Only the drawer
 also draws its edge line. These cues move no content, and their transitions stop
 under reduced motion. Set `resizeShadow={false}` on `Sidebar` or `MainPane` to
 turn its shadow off.

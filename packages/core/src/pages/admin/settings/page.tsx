@@ -1,47 +1,18 @@
-import {
-  type AiAppSkillIssue,
-  type AiEnrichmentOverview,
-  type AiProjectAdminListItem,
-  type AiProjectAdminSummary,
-  type AiSkillAdminListItem,
-  type AiSkillAdminSummary,
-  aiAppSkills,
-  aiConversations,
-  aiProjects,
-  aiSkills,
-  listAiCredentialProfileIds,
-  readAiSettingsState,
-} from "@k2b/cloud/ai";
-import {
-  AI_BACKGROUND_TASK_PROMPTS,
-  type AiModelAccessMap,
-  type AiUsageReport,
-  aiModelAccess,
-  aiQuotas,
-  aiUsage,
-  listAiRequestHeaderNames,
-  quotaAdminConfig,
-  quotaReport,
-} from "@k2b/cloud/ai/admin";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { appApproval, coreSettings, geoip, linuxIdentities, settingsService } from "@k2b/cloud/services";
-import { AiUsageQuerySchema } from "@k2b/cloud/shared";
-import { AdminLayout, getLocalizedRuntimeContext, getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
+import { appApproval, coreSettings, geoip, linuxIdentities } from "@k2b/cloud/services";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { SettingsPage } from "@k2b/ui";
 import { z } from "zod";
 import { ssr } from "../../../config";
 import { approvalAvailability } from "../../app-approval/availability";
+import { aiSettingsRedirectHref } from "../ai/area";
 import { adminMessages } from "../messages";
 import AccountOperations from "./_components/AccountOperations.island";
-import AiProjectsAdminPanel from "./_components/AiProjectsAdminPanel";
-import AiQuotaAdmin from "./_components/AiQuotaAdmin.island";
-import AiSkillsAdminPanel from "./_components/AiSkillsAdminPanel";
-import AiUsageAdminPanel from "./_components/AiUsageAdminPanel";
-import { quotaMessages } from "./_components/ai-quota-messages";
 import CoreSettingsForm, { type SettingFieldDef } from "./_components/CoreSettingsForm.island";
 import DocumentationLink from "./_components/DocumentationLink";
 import LegalSettingsForm, { type LegalInitial } from "./_components/LegalSettingsForm.island";
 import LinuxIdentityPanel from "./_components/LinuxIdentityPanel.island";
+import { buildEntries } from "./entries";
 
 // Flat tab list. Each tab maps either to a core-settings group (`group` prop)
 // or a dedicated immediate-action view such as Projects or Legal.
@@ -77,55 +48,6 @@ const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) 
       group: "user" as const,
     },
     { id: "account-operations", title: t.accountOperations, description: t.accountOperationsDescription, icon: "ti ti-tool", group: null },
-    {
-      id: "ai-general",
-      title: t.aiGeneral,
-      description: t.aiGeneralDescription,
-      icon: "ti ti-adjustments",
-      group: "ai" as const,
-    },
-    {
-      id: "ai-providers",
-      title: t.aiProviders,
-      description: t.aiProvidersDescription,
-      icon: "ti ti-sparkles",
-      group: "ai" as const,
-    },
-    {
-      id: "ai-quotas",
-      title: quotaMessages.resolve([locale]).t.title,
-      description: quotaMessages.resolve([locale]).t.description,
-      icon: "ti ti-gauge",
-      group: null,
-    },
-    {
-      id: "ai-usage",
-      title: t.aiUsage,
-      description: t.aiUsageDescription,
-      icon: "ti ti-chart-histogram",
-      group: null,
-    },
-    {
-      id: "ai-jobs",
-      title: t.aiBackgroundJobs,
-      description: t.aiBackgroundJobsDescription,
-      icon: "ti ti-activity",
-      group: "ai" as const,
-    },
-    {
-      id: "ai-skills",
-      title: t.aiSkills,
-      description: t.aiSkillsDescription,
-      icon: "ti ti-wand",
-      group: null,
-    },
-    {
-      id: "ai-projects",
-      title: t.aiProjects,
-      description: t.aiProjectsDescription,
-      icon: "ti ti-folders",
-      group: null,
-    },
     {
       id: "pdf-rendering",
       title: t.pdfRenderingSettings,
@@ -168,33 +90,6 @@ type TabId = ReturnType<typeof tabs>[number]["id"];
 const isTabId = (value: string | undefined, availableTabs: ReturnType<typeof tabs>): value is TabId =>
   !!value && availableTabs.some((tab) => tab.id === value);
 
-/**
- * Pull the SettingFieldDef list for a given group from the global settings
- * registry. Returns entries with current values resolved (DB → env → default).
- */
-const buildEntries = async (group: string, locale: string): Promise<SettingFieldDef[]> => {
-  const result = await settingsService.entry.list({ filter: { group }, locale });
-  return result.items.map((item) => ({
-    key: item.key,
-    label: item.label,
-    description: item.description,
-    kind: item.kind as SettingFieldDef["kind"],
-    value: item.value,
-    default: item.default,
-    resetValue: item.resetValue,
-    valueSource: item.valueSource,
-    resetValueSource: item.resetValueSource,
-    isCustom: item.isCustom,
-    unreadable: item.unreadable,
-    group: item.group,
-    options: item.options,
-    min: item.min,
-    max: item.max,
-    placeholder: item.placeholder,
-    templateVars: item.templateVars,
-  }));
-};
-
 /** Read all 9 legal.* entries into the LegalSettingsForm initial shape. */
 const buildLegalInitial = (entries: SettingFieldDef[]): LegalInitial => {
   const value = (key: keyof LegalInitial) => entries.find((entry) => entry.key === key)?.value;
@@ -225,9 +120,10 @@ export default ssr<AuthContext>(async (c) => {
   if (rawTab === "mail") return c.redirect("/admin/outgoing-mail", 302);
   // Places and maps has its own page that checks the key with the provider — keep old links working.
   if (rawTab === "places") return c.redirect("/admin/places-and-maps", 302);
-  // "ai" predates the split into the AI sidebar group — keep old links working.
-  const legacyTab = rawTab === "ai" ? "ai-general" : rawTab;
-  const tabId: TabId = isTabId(legacyTab, availableTabs) ? legacyTab : "general";
+  // The AI tabs moved into the AI area; old links land on the same section with their filters.
+  const aiHref = aiSettingsRedirectHref(rawTab, c.req.query());
+  if (aiHref) return c.redirect(aiHref, 302);
+  const tabId: TabId = isTabId(rawTab, availableTabs) ? rawTab : "general";
   const tab = availableTabs.find((item) => item.id === tabId)!;
   const documentationBase = await coreSettings.get<string>("app.documentation_url");
   const approvalState = tab.id === "user" ? approvalAvailability(await appApproval.config(false).catch(() => null)) : undefined;
@@ -235,10 +131,6 @@ export default ssr<AuthContext>(async (c) => {
   const signInLocations =
     tab.id === "user" ? { status: await geoip.status(c.get("user")).catch(() => null), actorId: c.get("user").id } : undefined;
   const operationsFreeIpaEnabled = tab.id === "account-operations" && (await coreSettings.get<boolean>("freeipa.enable"));
-  const showAiJobsLink = hasDedicatedRuntimeRoute(getRuntimeContext(c).apps, "/admin/observability/jobs", "core");
-
-  const aiSection =
-    tab.id === "ai-general" ? "general" : tab.id === "ai-providers" ? "providers" : tab.id === "ai-jobs" ? "jobs" : undefined;
 
   let entries: SettingFieldDef[] = [];
   const linuxCursor = z.uuid().safeParse(c.req.query("after"));
@@ -248,95 +140,18 @@ export default ssr<AuthContext>(async (c) => {
   const linuxOverview =
     tab.id === "linux" ? await linuxIdentities.overview(c.get("user"), linuxAfter, { search: linuxSearch, scope: linuxScope }) : null;
   let legalInitial: LegalInitial | null = null;
-  let aiEnrichmentOverview: AiEnrichmentOverview | null = null;
-  // Which profiles have a stored provider key. The keys themselves never leave
-  // the server, so the form shows presence instead of a value.
-  let aiCredentialProfileIds: string[] = [];
-  let aiRequestHeaderNames: Record<string, string[]> = {};
-  let aiAccountingUnit: string | undefined;
-  let modelAccess: AiModelAccessMap = {};
-  let aiProjectItems: AiProjectAdminListItem[] = [];
-  let aiProjectSummary: AiProjectAdminSummary | null = null;
-  let aiProjectTotal = 0;
-  let aiProjectPage = 1;
-  let aiProjectPerPage = 100;
-  let aiSkillItems: AiSkillAdminListItem[] = [];
-  let aiSkillSummary: AiSkillAdminSummary | null = null;
-  let aiSkillTotal = 0;
-  let aiSkillPage = 1;
-  let aiSkillPerPage = 100;
-  let aiAppSkillIssues: AiAppSkillIssue[] = [];
-  const quotaReportData = tab.id === "ai-quotas" ? await quotaReport(c.req.query()) : null;
-  const quotaData = quotaReportData
-    ? {
-        config: await quotaAdminConfig(),
-        models: (await readAiSettingsState()).profiles.map((m) => ({
-          id: m.id,
-          label: m.label,
-          pricing: m.pricing,
-          enabled: m.enabled,
-          capabilities: m.capabilities,
-        })),
-        report: quotaReportData,
-      }
-    : null;
-  let aiUsageReport: AiUsageReport | null = null;
-  const search = (c.req.query("search") ?? "").trim();
-  const requestedPage = Number.parseInt(c.req.query("page") ?? "1", 10);
 
   if (tab.group) {
     entries = await buildEntries(tab.group, locale);
     if (tab.id === "email-templates") entries = entries.filter((entry) => entry.kind === "template");
-    if (tab.id === "ai-jobs") aiEnrichmentOverview = await aiConversations.getEnrichmentOverview();
-    if (tab.id === "ai-providers") {
-      const [credentials, access, costConfig, headerNames] = await Promise.all([
-        listAiCredentialProfileIds(),
-        aiModelAccess.listForAdmin(),
-        aiQuotas.config(),
-        listAiRequestHeaderNames(),
-      ]);
-      aiCredentialProfileIds = credentials;
-      aiRequestHeaderNames = headerNames;
-      modelAccess = access;
-      aiAccountingUnit = costConfig.unit;
-    }
   } else if (tab.id === "legal") {
     entries = await buildEntries("legal", locale);
     legalInitial = buildLegalInitial(entries);
-  } else if (tab.id === "ai-skills") {
-    const [skills, summary, appSkillIssues] = await Promise.all([
-      aiSkills.admin.list({ search: search || undefined, page: Number.isFinite(requestedPage) ? requestedPage : 1, perPage: 100 }),
-      aiSkills.admin.summary({ search: search || undefined }),
-      aiAppSkills.appSkillIssues(),
-    ]);
-    aiAppSkillIssues = appSkillIssues;
-    aiSkillItems = skills.items;
-    aiSkillSummary = summary;
-    aiSkillTotal = skills.total;
-    aiSkillPage = skills.page;
-    aiSkillPerPage = skills.perPage;
-  } else if (tab.id === "ai-usage") {
-    const parsed = AiUsageQuerySchema.safeParse(c.req.query());
-    if (!parsed.success) return c.text("Invalid AI usage filters", 400);
-    aiUsageReport = await aiUsage.report(parsed.data.range, parsed.data);
-  } else if (tab.id === "ai-projects") {
-    const [projects, summary] = await Promise.all([
-      aiProjects.admin.list({ search: search || undefined, page: Number.isFinite(requestedPage) ? requestedPage : 1, perPage: 100 }),
-      aiProjects.admin.summary({ search: search || undefined }),
-    ]);
-    aiProjectItems = projects.items;
-    aiProjectSummary = summary;
-    aiProjectTotal = projects.total;
-    aiProjectPage = projects.page;
-    aiProjectPerPage = projects.perPage;
   }
 
   return () => (
-    <AdminLayout c={c} title={tab.title} scroll={tab.id === "ai-usage" || tab.id === "ai-quotas"}>
-      <div
-        class={tab.id === "ai-usage" || tab.id === "ai-quotas" ? "flex min-w-0 flex-none flex-col" : "flex min-h-0 flex-1 flex-col"}
-        style="view-transition-name: admin-settings-content"
-      >
+    <AdminLayout c={c} title={tab.title} scroll={false}>
+      <div class="flex min-h-0 flex-1 flex-col" style="view-transition-name: admin-settings-content">
         {linuxOverview ? (
           <LinuxIdentityPanel
             initial={linuxOverview}
@@ -370,47 +185,12 @@ export default ssr<AuthContext>(async (c) => {
             showTestPdfAction={tab.id === "pdf-rendering"}
             showTestFreeIpaAction={tab.id === "freeipa"}
             showLegacySettings={tab.id === "general"}
-            aiEnrichmentOverview={aiEnrichmentOverview}
-            backgroundTaskPrompts={tab.id === "ai-jobs" ? AI_BACKGROUND_TASK_PROMPTS : undefined}
-            aiCredentialProfileIds={aiCredentialProfileIds}
-            aiRequestHeaderNames={aiRequestHeaderNames}
-            aiModelAccess={modelAccess}
-            aiAccountingUnit={aiAccountingUnit}
-            aiSection={aiSection}
-            showAiJobsLink={showAiJobsLink}
           />
         ) : null}
 
         {tab.id === "legal" && legalInitial ? (
           <LegalSettingsForm title={tab.title} subtitle={tab.description} icon={tab.icon} initial={legalInitial} entries={entries} />
         ) : null}
-
-        {tab.id === "ai-projects" && aiProjectSummary ? (
-          <AiProjectsAdminPanel
-            projects={aiProjectItems}
-            summary={aiProjectSummary}
-            total={aiProjectTotal}
-            page={aiProjectPage}
-            perPage={aiProjectPerPage}
-            search={search}
-          />
-        ) : null}
-
-        {tab.id === "ai-skills" && aiSkillSummary ? (
-          <AiSkillsAdminPanel
-            skills={aiSkillItems}
-            summary={aiSkillSummary}
-            appSkillIssues={aiAppSkillIssues}
-            appNames={Object.fromEntries(getLocalizedRuntimeContext(c).apps.map((app) => [app.id, app.name]))}
-            total={aiSkillTotal}
-            page={aiSkillPage}
-            perPage={aiSkillPerPage}
-            search={search}
-          />
-        ) : null}
-
-        {quotaData ? <AiQuotaAdmin config={quotaData.config} models={quotaData.models} report={quotaData.report} /> : null}
-        {tab.id === "ai-usage" && aiUsageReport ? <AiUsageAdminPanel report={aiUsageReport} /> : null}
       </div>
     </AdminLayout>
   );

@@ -257,7 +257,7 @@ document.documentElement.dataset.fixtureReady = "true";
             .replace("</head>", '<link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/styles.css"></head>')
             .replace(
               "</body>",
-              `<script type="module" src="${outputUrl(script)}"></script>${html.includes("data-cloud-panel-page") ? `<script type="module" src="${outputUrl(panelScript)}"></script>` : ""}</body>`,
+              `<script type="module" src="${outputUrl(script)}"></script>${html.includes("data-cloud-panel-page") ? `<script type="module" src="${outputUrl(panelScript)}?provider=${url.pathname.startsWith("/app/assistant") ? "assistant" : "chat"}"></script>` : ""}</body>`,
             ),
           { headers: { "content-type": "text/html" } },
         );
@@ -289,7 +289,7 @@ document.documentElement.dataset.fixtureReady = "true";
         contextAllowed = allowed;
       },
       url: server.url.href,
-      panelRuntimePath: outputUrl(panelScript),
+      panelRuntimePath: `${outputUrl(panelScript)}?provider=assistant`,
       stop: () => {
         server.stop(true);
         backend.stop();

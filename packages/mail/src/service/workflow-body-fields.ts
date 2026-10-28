@@ -19,7 +19,7 @@ export const markMailWorkflowBodyFieldsLoaded = (message: JsonObject, fields: re
 };
 
 /**
- * Runs a synchronous template render while every body field Mail has not loaded yet throws on read.
+ * Runs a synchronous template render while unloaded body and metric fields throw on read.
  * Returns the first such reference, so a caller can load it or fail instead of rendering "".
  */
 export const withMailWorkflowBodyGuard = <T>(
@@ -29,16 +29,20 @@ export const withMailWorkflowBodyGuard = <T>(
   const notLoaded = Symbol("Mail workflow body not loaded");
   const messages = new Map<JsonObject, string>();
   for (const [name, value] of Object.entries(inputs)) {
-    const isMessage = value !== null && typeof value === "object" && !Array.isArray(value) && value.bodyAvailable === false;
+    const isMessage = value !== null && typeof value === "object" && !Array.isArray(value) && typeof value.bodyAvailable === "boolean";
     if (isMessage && !messages.has(value)) messages.set(value, name);
   }
   let unloaded: string | undefined;
   const restore: Array<() => void> = [];
   try {
     for (const [message, name] of messages) {
-      for (const field of BODY_FIELDS) {
-        if (mailWorkflowBodyFieldLoaded(message, field)) continue;
-        const value = message[field];
+      for (const field of [...BODY_FIELDS, "textLength", "attachmentCount"] as const) {
+        const loaded =
+          field === "attachmentCount"
+            ? message.attachmentsAvailable === true
+            : mailWorkflowBodyFieldLoaded(message, field === "textLength" ? "bodyText" : field);
+        if (loaded) continue;
+        const descriptor = Object.getOwnPropertyDescriptor(message, field);
         Object.defineProperty(message, field, {
           enumerable: true,
           configurable: true,
@@ -47,7 +51,10 @@ export const withMailWorkflowBodyGuard = <T>(
             throw notLoaded;
           },
         });
-        restore.push(() => Object.defineProperty(message, field, { value, writable: true, enumerable: true, configurable: true }));
+        restore.push(() => {
+          if (descriptor) Object.defineProperty(message, field, descriptor);
+          else delete message[field];
+        });
       }
     }
     // Renderers wrap the thrown sentinel; the local reference identifies it without inspecting errors.

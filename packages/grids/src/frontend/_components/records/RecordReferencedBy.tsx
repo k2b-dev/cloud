@@ -63,23 +63,18 @@ export default function RecordReferencedBy(props: { baseId: string; tableId: str
   onMount(() => setMounted(true));
 
   return (
-    <DetailPanel.Section title={t().referencedBy} icon="ti ti-link-plus" tone="accent">
+    <DetailPanel.Section title={t().referencedBy}>
       <div class="flex flex-col gap-3">
         <Show when={pages.loading() && pages.pages().length === 0}>
-          <Placeholder align="left" class="px-0 py-2" description={<>{t().loadingReferences}</>} />
+          <Placeholder state="loading" variant="compact" align="left" title={t().loadingReferences} />
         </Show>
         <Show when={pages.error()}>
           {(error) => (
-            <div class="flex items-center gap-2 text-sm text-red-600 dark:text-red-400" role="alert">
-              <span>{error().message}</span>
-              <Button size="xs" variant="ghost" onClick={() => void pages.invalidate()}>
-                {t().retry}
-              </Button>
-            </div>
+            <Placeholder state="error" variant="compact" align="left" title={error().message} onRetry={() => void pages.invalidate()} />
           )}
         </Show>
         <Show when={!pages.loading() && !pages.error() && groups().length === 0}>
-          <Placeholder align="left" class="px-0 py-2" description={<>{t().noReferences}</>} />
+          <p class="grids-details-none">{t().noReferences}</p>
         </Show>
         <For each={groups()}>
           {(group) => (
@@ -90,7 +85,6 @@ export default function RecordReferencedBy(props: { baseId: string; tableId: str
                   title={referencedByActionTitle(item)}
                   description={item.sourceTableName}
                   leading={<i class="ti ti-table-row" aria-hidden="true" />}
-                  trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
                 />
               )}
             </For>

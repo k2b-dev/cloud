@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { AiResolvedModel } from "../ai/types";
+import { WorkflowAiAdmissionError } from "./ai/policy";
 import type { WorkflowAiTask } from "./ai/types";
 import { AI_WORKFLOW_ACTIONS, runWorkflowAiAction, workflowAiActionCost } from "./ai-actions";
+import type { WorkflowDiagnostic, WorkflowFieldSchema, WorkflowJsonValue } from "./contracts";
+import { validateWorkflowField } from "./language/schema";
 
 const task = (overrides: Partial<WorkflowAiTask> = {}): WorkflowAiTask => ({
   id: "00000000-0000-0000-0000-000000000001",
@@ -12,7 +15,7 @@ const task = (overrides: Partial<WorkflowAiTask> = {}): WorkflowAiTask => ({
   kind: "classify",
   request: { kind: "classify", prompt: "Choose", input: "mail", choices: ["a", "b"] },
   inputHash: "a".repeat(64),
-  modelProfileId: "workflow-model",
+  modelId: "workflow-model",
   status: "queued",
   output: null,
   usage: null,
@@ -27,7 +30,7 @@ const task = (overrides: Partial<WorkflowAiTask> = {}): WorkflowAiTask => ({
   ...overrides,
 });
 
-const context = { runId: task().runId, stepKey: "step:ai", effectKey: task().effectKey };
+const context = { runId: "00000000-0000-0000-0000-000000000002", stepKey: "step:ai", effectKey: task().effectKey };
 const resolved = { profile: { id: "workflow-model" } } as AiResolvedModel;
 
 describe("shared workflow AI actions", () => {
@@ -42,16 +45,16 @@ describe("shared workflow AI actions", () => {
     const created = task();
     const result = await runWorkflowAiAction(
       context,
-      { kind: "classify", prompt: "Choose", input: "mail", choices: ["a", "b"], modelProfileId: "override" },
+      { kind: "classify", prompt: "Choose", input: "mail", choices: ["a", "b"], model: { id: "override" } },
       {
         getByEffectKey: async () => null,
         create: async (input) => {
-          expect(input.modelProfileId).toBe("workflow-model");
+          expect(input.modelId).toBe("workflow-model");
           return { task: created, created: true };
         },
         exists: async () => false,
         resolveModel: async (requested) => {
-          expect(requested).toBe("override");
+          expect(requested).toEqual({ id: "override" });
           return resolved;
         },
         submit: async (id) => {
@@ -90,4 +93,77 @@ describe("shared workflow AI actions", () => {
     expect(await workflowAiActionCost(context, { exists: async () => false })).toEqual({ maxAiCalls: 1 });
     expect(await workflowAiActionCost(context, { exists: async () => true })).toEqual({});
   });
+});
+
+test("oversized UTF-8 input fails permanently before model resolution or task insertion", async () => {
+  const result = await runWorkflowAiAction(
+    context,
+    { kind: "classify", prompt: "Choose", input: "😀".repeat(25_000), choices: ["a", "b"] },
+    {
+      getByEffectKey: async () => null,
+      create: async () => {
+        throw new Error("must not insert");
+      },
+      exists: async () => false,
+      resolveModel: async () => {
+        throw new Error("must not resolve");
+      },
+      submit: async () => {
+        throw new Error("must not submit");
+      },
+    },
+  );
+  expect(result).toMatchObject({ state: "failed", code: "WORKFLOW_AI_INPUT_TOO_LARGE", retryable: false });
+});
+
+for (const [code, retryable] of [
+  ["WORKFLOW_AI_CAPACITY", true],
+  ["WORKFLOW_AI_RATE_LIMIT", true],
+  ["WORKFLOW_AI_SOURCE_BUDGET", false],
+  ["WORKFLOW_AI_DAILY_BUDGET", false],
+] as const) {
+  test(`${code} preserves bounded step retry policy`, async () => {
+    const result = await runWorkflowAiAction(
+      context,
+      { kind: "classify", prompt: "Choose", input: "mail", choices: ["a", "b"] },
+      {
+        getByEffectKey: async () => null,
+        create: async () => {
+          throw new WorkflowAiAdmissionError(code);
+        },
+        exists: async () => false,
+        resolveModel: async () => resolved,
+        submit: async () => {
+          throw new Error("rejected work must not submit");
+        },
+      },
+    );
+    expect(result).toMatchObject({ state: "failed", code, retryable });
+  });
+}
+
+test("workflow validation rejects classification and enum choices longer than the task contract", () => {
+  for (const length of [200, 201]) {
+    const choice = "x".repeat(length);
+    const cases: Array<{ config: WorkflowFieldSchema; value: WorkflowJsonValue }> = [
+      {
+        config: AI_WORKFLOW_ACTIONS.aiClassify.config,
+        value: { input: "mail", prompt: "Choose", choices: ["other", choice], saveAs: "result" },
+      },
+      {
+        config: AI_WORKFLOW_ACTIONS.aiExtractData.config,
+        value: {
+          input: "mail",
+          prompt: "Extract",
+          fields: [{ name: "category", type: "enum", description: "Category", choices: [choice] }],
+          saveAs: "result",
+        },
+      },
+    ];
+    for (const { config, value } of cases) {
+      const diagnostics: WorkflowDiagnostic[] = [];
+      validateWorkflowField(value, config, [], {}, diagnostics);
+      expect(diagnostics.length === 0).toBe(length === 200);
+    }
+  }
 });
