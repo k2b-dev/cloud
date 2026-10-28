@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import { type ChatContext, messages, requireConversation } from "./access";
 import {
+  MAX_MESSAGE_ATTACHMENTS,
   MAX_MESSAGE_LINKS,
   MAX_MESSAGE_REFS,
   SHARED_PAGE_SIZE,
@@ -15,7 +16,7 @@ import { visibleMessages } from "./thread-access";
 import { findThread, threadNotFound } from "./threads";
 
 // A sequence alone would skip items when a page ends inside a message. Positions are stable across kind filters:
-// refs occupy 0..9, links 10..29. Clients treat this bounded, versioned cursor as opaque.
+// refs occupy 0..9, links 10..29, attachments 30..39. Clients treat this bounded, versioned cursor as opaque.
 const CursorSchema = z.strictObject({
   v: z.literal(1),
   seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
@@ -23,7 +24,7 @@ const CursorSchema = z.strictObject({
     .number()
     .int()
     .min(0)
-    .max(MAX_MESSAGE_REFS + MAX_MESSAGE_LINKS - 1),
+    .max(MAX_MESSAGE_REFS + MAX_MESSAGE_LINKS + MAX_MESSAGE_ATTACHMENTS - 1),
 });
 const decodeCursor = (cursor: string) => {
   try {
@@ -46,14 +47,17 @@ const list = async (
     if (!allowed.ok) return allowed;
     const thread = query.thread && query.thread !== "general" ? await findThread(db, allowed.data.id, query.thread, input) : null;
     if (query.thread && query.thread !== "general" && !thread) return threadNotFound(input);
-    if (query.kind === "images" || query.kind === "documents") return ok({ items: [], nextCursor: null });
     const threadFilter = query.thread === undefined ? db`true` : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
+    const attachmentFilter = db`EXISTS (SELECT 1 FROM chat.attachments a WHERE a.message_id = chat.messages.id
+      AND ${query.kind === "images" ? db`a.kind = 'image'` : query.kind === "documents" ? db`a.kind = 'file'` : db`true`})`;
     const kindFilter =
       query.kind === "elements"
         ? db`refs <> '[]'::jsonb`
         : query.kind === "links"
           ? db`links <> '{}'`
-          : db`(refs <> '[]'::jsonb OR links <> '{}')`;
+          : query.kind === "images" || query.kind === "documents"
+            ? attachmentFilter
+            : db`(refs <> '[]'::jsonb OR links <> '{}' OR ${attachmentFilter})`;
     // At most the cursor's message contributes no remaining items. One message per item plus that message and
     // one lookahead bounds the read, even for sparse chats; no scan of unrelated message bodies is needed.
     const scanned = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid
@@ -72,12 +76,21 @@ const list = async (
         author: message.author,
         createdAt: message.createdAt,
       };
-      if (query.kind !== "links")
+      if (query.kind === "all" || query.kind === "elements")
         row.refs.forEach((ref, position) => candidates.push({ item: { kind: "element", ref, ...metadata }, position }));
-      if (query.kind !== "elements")
+      if (query.kind === "all" || query.kind === "links")
         row.links.forEach((url, index) =>
           candidates.push({ item: { kind: "link", url, ...metadata }, position: MAX_MESSAGE_REFS + index }),
         );
+      if (query.kind === "all" || query.kind === "images" || query.kind === "documents")
+        message.attachments.forEach((attachment, index) => {
+          if (query.kind === "images" && attachment.kind !== "image") return;
+          if (query.kind === "documents" && attachment.kind !== "file") return;
+          candidates.push({
+            item: { kind: attachment.kind === "image" ? "image" : "document", attachment, ...metadata },
+            position: MAX_MESSAGE_REFS + MAX_MESSAGE_LINKS + index,
+          });
+        });
     }
     const remaining = candidates.filter(({ item, position }) => !cursor || item.seq < cursor.seq || position > cursor.position);
     const page = remaining.slice(0, SHARED_PAGE_SIZE);
@@ -89,7 +102,11 @@ const list = async (
           ? Buffer.from(JSON.stringify({ v: 1, seq: last.item.seq, position: last.position })).toString("base64url")
           : scanned.length === SHARED_PAGE_SIZE + 2
             ? Buffer.from(
-                JSON.stringify({ v: 1, seq: Number(scanned.at(-1)!.seq), position: MAX_MESSAGE_REFS + MAX_MESSAGE_LINKS - 1 }),
+                JSON.stringify({
+                  v: 1,
+                  seq: Number(scanned.at(-1)!.seq),
+                  position: MAX_MESSAGE_REFS + MAX_MESSAGE_LINKS + MAX_MESSAGE_ATTACHMENTS - 1,
+                }),
               ).toString("base64url")
             : null,
     });

@@ -20,7 +20,7 @@ import { fileAction, filegateException, journalAction, pendingMigration, type Us
 import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import type { FilesFilegate, FilesRoot } from "./filegate-facade";
-import { joinPath, relativePath } from "./paths";
+import { basePath, joinPath, relativePath, strictName } from "./paths";
 import { rootSummary as summary } from "./root-summary";
 
 type Config = Awaited<ReturnType<typeof readConfiguration>>;
@@ -32,17 +32,6 @@ type Dependencies = {
 };
 const provider = (area: Area) => (area === "cloud" ? ("local" as const) : ("ipa" as const));
 const PAGE_SIZE = 50;
-const strictName = (value: string) => {
-  const name = relativePath(value, false);
-  if (name.includes("/")) throw new FilesError("invalid_path");
-  return name;
-};
-const basePath = (config: Config, input: DirectoryTarget) =>
-  joinPath(
-    config[input.area].prefix,
-    input.kind === "users" ? config[input.area].homes : config[input.area].groups,
-    strictName(input.name),
-  );
 const within = (path: string, parent: string) => path === parent || path.startsWith(`${parent}/`);
 const result = (operation: Operation): OperationResult => ({
   id: operation.id,

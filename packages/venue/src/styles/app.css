@@ -11,3 +11,23 @@
     display: none !important;
   }
 }
+
+/* Shift detail: the header's main action reads in the panel accent, as in every app's details panel. */
+.k2b-ui .k2b-button.venue-details-main {
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent);
+}
+.k2b-ui .k2b-button.venue-details-main:not(:disabled, [aria-disabled="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent);
+}
+/* Staffing as a property value: the count, then a short bar on the same line. */
+.venue-detail-staffing {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+}
+.venue-detail-staffing > div {
+  flex: 1;
+  max-width: 8rem;
+}

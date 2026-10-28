@@ -59,6 +59,7 @@
     "./cli/account": "./src/cli/account.ts",
     "./cli/apps": "./src/cli/apps.ts",
     "./cli/capabilities": "./src/cli/capabilities.ts",
+    "./cli/events": "./src/cli/events.ts",
     "./cli/admin": "./src/cli/admin/index.ts",
     "./shared": "./src/shared/index.ts",
     "./shared-text": "./src/shared-text/index.ts",

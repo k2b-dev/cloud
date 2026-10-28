@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled, viewTransitionEnded } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { CreateConversationSchema, CreateOutcomeSchema, ReadAllOutcomeSchema } from "../service/contracts";
 import { chatTestNow, nora, pinPageClock, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
@@ -84,8 +84,7 @@ const load = async (
     await context.addInitScript(recordReadStarts);
     const page = await context.newPage();
     page.setDefaultTimeout(5_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     const base = address.embedded ? "/app/chat/panel" : "/app/chat";
     const path = address.chat ? `${base}/c/${address.chat}${address.message ? `/m/${address.message}` : ""}` : base;
     const url = new URL(path, harness.url);
@@ -1633,13 +1632,17 @@ describe("Chat info reopening", () => {
         await toggle.focus();
         await page.keyboard.press("Enter");
         await page.waitForURL("**?panel=info");
+        // Each Info link starts a view transition; WebKit sends input during one to <html>, so the next step waits.
+        await viewTransitionEnded(page);
         expect(await toggle.getAttribute("aria-expanded")).toBe("true");
         await page.getByRole("button", { name: "Close chat info", exact: true }).click();
         await page.waitForURL(`**/c/${chat}`);
+        await viewTransitionEnded(page);
         expect(await toggle.isVisible()).toBe(true);
         expect(await toggle.getAttribute("aria-expanded")).toBe("false");
         await toggle.click();
         await page.waitForURL("**?panel=info");
+        await viewTransitionEnded(page);
         await page.goBack();
         await page.waitForURL(`**/c/${chat}`);
         expect(await toggle.getAttribute("aria-expanded")).toBe("false");

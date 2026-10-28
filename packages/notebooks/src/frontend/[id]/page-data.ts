@@ -10,6 +10,8 @@ import { parseQueryPages, QUERY_PAGES_PARAM } from "@/lib/query-blocks";
 import { parseSidebarFilter, type SidebarFilter } from "@/lib/sidebar-filter";
 import { SIDEBAR_PAGE_SIZE, type SidebarTreeState } from "@/lib/sidebar-tree";
 import { notebooksService } from "@/service";
+import { countOpenAnnotations } from "@/service/annotation-count";
+import * as annotations from "@/service/annotations";
 import { loadBookNote } from "@/service/book";
 import { loadSelectedNoteRouteState, type SelectedNoteRouteState } from "@/service/route-state";
 import { resolveNotebookNoteIds } from "@/service/tree-levels";
@@ -147,6 +149,24 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
         })
       : Promise.resolve(null),
   ]);
+  // The margin's comments arrive with the page, so its first render already shows them where they belong.
+  const initialAnnotations =
+    selectedCommentNote?.notebookId === notebookId && selected.note
+      ? await annotations
+          .list(
+            selected.note.id,
+            {},
+            {
+              actor: c.get("actor"),
+              accessSubject: c.get("accessSubject"),
+              locale: getLocale(c),
+              requestId: c.req.raw.headers.get("x-request-id")?.slice(0, 200) ?? crypto.randomUUID(),
+              signal: c.req.raw.signal,
+            },
+          )
+          .then((result) => (result.ok ? result.data : null))
+          .catch(() => null)
+      : null;
   const initialCommentsPage =
     commentsPage && selected.note
       ? {
@@ -219,6 +239,9 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     panelAttachments: selected.routeState?.panelAttachments ?? [],
     backlinks: selected.routeState?.backlinks ?? [],
     initialCommentsPage,
+    initialAnnotations,
+    // Without the count Book just leaves out its comments entry; the note itself still opens.
+    bookOpenComments: isBookMode && selected.internalNoteId ? await countOpenAnnotations(selected.internalNoteId).catch(() => 0) : 0,
     dateConfig: ctx.dateConfig,
   };
 }

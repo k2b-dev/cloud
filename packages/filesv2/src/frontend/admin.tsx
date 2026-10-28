@@ -19,6 +19,7 @@ export default ssr<AuthContext>(async (c) => {
   let initial: AdminSnapshot;
   try {
     const result = await filesService.admin(requestCall(c), {
+      view: location.view,
       includeEntries: location.view === "directories" && !location.name && !location.archiveId ? "true" : "false",
       area: location.area,
       kind: location.kind,

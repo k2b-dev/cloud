@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { type Browser, errors } from "playwright";
-import { browserName, launchBrowser, pageErrors, settled } from "../test/browser";
+import { browserName, launchBrowser, pageErrors, settled, viewTransitionEnded } from "../test/browser";
 
 if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
   await import("./browser-recovery.browser-suite");
@@ -243,6 +243,43 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
           .filter((animation) => animation.playState === "running").length,
       }));
       expect(state).toEqual({ text: "after", viewTransitionAnimations: 0 });
+    } finally {
+      await context.close();
+    }
+  }, 20_000);
+
+  test("viewTransitionEnded() waits for a transition that stays active after its animations stopped", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.setContent('<!doctype html><p id="state">before</p>');
+      await page.evaluate(() => {
+        const transition = document.startViewTransition(() => {
+          document.querySelector("#state")!.textContent = "after";
+        });
+        // settled() does not wait for paused animations, so it returns while this transition is still active.
+        void transition.ready.then(() => {
+          const own = document
+            .getAnimations()
+            .filter((animation) => animation.timeline === document.timeline)
+            .filter((animation) => animation.effect instanceof KeyframeEffect && animation.effect.pseudoElement);
+          for (const animation of own) animation.pause();
+          setTimeout(() => {
+            for (const animation of own) animation.play();
+          }, 300);
+        });
+      });
+      await settled(page);
+      expect(await page.evaluate(() => Boolean((document as Document & { activeViewTransition?: unknown }).activeViewTransition))).toBe(
+        true,
+      );
+      await viewTransitionEnded(page);
+      expect(
+        await page.evaluate(() => ({
+          text: document.querySelector("#state")?.textContent,
+          active: Boolean((document as Document & { activeViewTransition?: unknown }).activeViewTransition),
+        })),
+      ).toEqual({ text: "after", active: false });
     } finally {
       await context.close();
     }

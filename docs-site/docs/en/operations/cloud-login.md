@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1090
 description: Build and host the standalone authenticator for multiple Cloud installations.
 tags: [authentication, pwa, deployment]
-updated: 2026-10-19
+updated: 2026-10-26
 ---
 
 # Run Cloud Login
@@ -27,7 +27,8 @@ Decide [Action approvals](/en/docs/identity/approvals) in Cloud.
 Cloud Login ships with every Cloud release as `ghcr.io/k2b-dev/cloud-pwa-auth:vX.Y.Z`.
 Pin the digest from the release's `release.json` in your deployment; see
 [Release process](/en/docs/contributing/release-process). The image
-supports AMD64 and ARM64, listens on port 3000, and exposes `/health`.
+supports `linux/amd64` only, listens on port 3000, and exposes `/health`.
+On ARM hosts, [build from source or keep an earlier ARM64 release](./build-and-deploy.md#container-architectures).
 Without push configuration it runs without a database, volume, Cloud
 credentials or runtime dependencies. [Push notifications](#send-push-notifications)
 additionally need Postgres and NATS JetStream.

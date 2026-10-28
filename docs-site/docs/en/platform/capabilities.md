@@ -46,6 +46,7 @@ not a second complete application API.
 | REST API | Complete application behavior and specialized HTTP contracts |
 | App CLI module | Full application-specific terminal workflows |
 | Generic capability CLI | Discovering and invoking the curated capability surface |
+| [App events](/en/docs/platform/app-events) | Versioned facts that subscribing applications react to asynchronously |
 
 ## Declare the surface
 
@@ -456,6 +457,18 @@ CLI commands, and MCP tool names aligned.
 Types connect operation targets, result references, Universal Search results,
 and client presentation. Declaring a Type does not create CRUD operations.
 
+Declared [app events](/en/docs/platform/app-events) also name a local Type as
+their subject and may name a place Type with a reader. Define them with
+`events` and consume qualified event types with `subscribes` in the same
+`defineCapabilities()` surface. Cloud currently delivers service events only; resource event
+subscriptions remain blocked with `resource_events_unsupported`.
+
+`cld capabilities catalog --json` and `--jsonl` preserve the full manifests,
+including `events` and `subscribes`. The text table shows their counts per app.
+Use `cld events ls` for the event-focused catalog and `cld events subscriptions`
+for delivery readiness. Event-specific MCP discovery is not yet available;
+the current capability MCP projects tools and resources, not an event catalog.
+
 A Type may name one canonical reader Query:
 
 ```ts
@@ -467,6 +480,12 @@ types: {
   },
 }
 ```
+
+A Type may also name a `color` for its icon from the palette `blue`, `emerald`,
+`violet`, `orange`, `red`, `amber`, `zinc`, `cyan` and `rose`. Consumers such as
+Chat's element cards show the icon in a chip of that colour, so a card says at a
+glance what it stands for. Choose one colour per kind of resource and keep it
+stable; omit it and consumers show a neutral chip.
 
 `reader` is the Query's local ID inside the same app. Its presence tells a
 consumer that a `CloudResourceRef` of this Type can be read programmatically.
@@ -1506,6 +1525,8 @@ type CapabilityResult<T> = {
     title?: string;
     preview?: string;
     icon?: string;
+    context?: string;
+    status?: string;
   }>;
   page?:
     | { hasMore: true; nextCursor: string }
@@ -1520,10 +1541,20 @@ type CapabilityResult<T> = {
 
 Every result reference contains the stable identity fields `type` and `id`.
 When the provider already knows a useful current label, it may add `title`, a
-short plain-text `preview`, and an `icon`. These presentation fields are an
-optional snapshot for generic clients; they do not participate in identity,
+short plain-text `preview`, an `icon`, `context`, and `status`. These
+presentation fields are an optional snapshot for generic clients; they do not participate in identity,
 authorization, deduplication, or canonical-reader resolution. A bare
 `{ type, id }` reference remains valid.
+
+The owning application's canonical reader fills `context` and `status` from
+current authorized state in the request locale. Both are optional final display
+strings, never message keys; consumers show them as given. `context` has 1–200
+characters: one line saying what and where the resource is, with its most useful
+fact, such as `Task in IT planning · due 30 Oct`. `status` has 1–60 characters:
+a short current-state label, such as `Open` or `Done`. Omit it when a state label
+does not apply. Linked references and `CloudResourceView` carry the same fields.
+Consumers ignore unfamiliar optional reference fields while retaining the
+resource identity.
 
 Prefer the name a person sees in the owning app: a mailbox name, note title,
 contact name, or mail subject. Use `preview` only for concise secondary context
