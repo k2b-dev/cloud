@@ -1,5 +1,6 @@
 import { CLOUD_CLI_MODULE_NAME } from "../cli/plugin";
 import { AppAccessRuleSchema } from "../contracts/app-access";
+import { validateInstallable } from "../contracts/installable";
 import { PlatformPermissionSchema } from "../contracts/outgoing-mail";
 import type { AppRegistryEntry } from "../contracts/registry";
 import { isOwnAppPath, SAME_ORIGIN_PATH } from "./app-path";
@@ -28,6 +29,9 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
   }
   if (!isStringArray(value.routes) || value.routes.some((route) => !route.startsWith("/"))) {
     return invalid("routes", "an array of absolute paths");
+  }
+  if (value.installable !== undefined && !validateInstallable(String(value.id), value.routes, value.installable)) {
+    return invalid("installable", "a canonical standalone surface covered by the app's own declared routes");
   }
   if (value.access !== undefined && !AppAccessRuleSchema.safeParse(value.access).success)
     return invalid("access", "a declarative app access rule");

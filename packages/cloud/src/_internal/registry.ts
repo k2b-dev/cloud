@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import type { EphemeralConfig, MutexConfig } from "@k2b/sync";
 import type { AppAppearanceColor } from "../contracts/app";
+import { calendarSourceIssues } from "../contracts/calendar-source";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "../contracts/capabilities";
 import { fileProviderIssues } from "../contracts/file-provider";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { resourcePageIssue } from "../contracts/resource-pages";
 import { type Role, RoleSchema } from "../contracts/shared";
 import {
   type DashboardWidgetPresentation,
@@ -233,6 +235,7 @@ const reportLeftOutEntries = (sent: unknown, manifest: CapabilityManifest): void
       return typeof localId === "string" && !kept.has(localId) ? [`${group}/${localId}`] : [];
     });
   });
+  if (groups.calendarSource !== undefined && !manifest.calendarSource) leftOut.push("calendarSource");
   if (groups.fileProvider !== undefined && !manifest.fileProvider) leftOut.push("fileProvider");
   if (leftOut.length === 0) return;
   console.warn(
@@ -283,6 +286,40 @@ const withValidFileProvider = (manifest: CapabilityManifest): CapabilityManifest
   return rest;
 };
 
+const checkedCalendarSources = new Map<string, { manifestHash: string; valid: boolean }>();
+
+/**
+ * Ignores a calendar source that does not match the contract, logging once per manifest; the app's other
+ * capabilities stay available. The delivered `manifestHash` stays, because it identifies what the app registered.
+ */
+const withValidCalendarSource = (manifest: CapabilityManifest): CapabilityManifest => {
+  if (!manifest.calendarSource) return manifest;
+  const checked = checkedCalendarSources.get(manifest.appId);
+  let valid = checked?.manifestHash === manifest.manifestHash ? checked.valid : undefined;
+  if (valid === undefined) {
+    const issues = calendarSourceIssues(manifest);
+    valid = issues.length === 0;
+    checkedCalendarSources.set(manifest.appId, { manifestHash: manifest.manifestHash, valid });
+    if (!valid) {
+      console.error(
+        JSON.stringify({
+          level: "error",
+          source: "capability-registry",
+          message: "Ignored a calendar source that does not match the calendar-source contract",
+          appId: manifest.appId,
+          manifestHash: manifest.manifestHash,
+          issues: issues
+            .slice(0, 10)
+            .map(({ function: name, localId, code, path, message }) => ({ function: name, localId, code, path, message })),
+        }),
+      );
+    }
+  }
+  if (valid) return manifest;
+  const { calendarSource: _ignored, ...rest } = manifest;
+  return rest;
+};
+
 /** Ignores record fields from a newer release; the endpoint always comes from the live app registry. */
 export const resolveLiveCapabilityRegistryEntry = (
   key: string,
@@ -297,7 +334,13 @@ export const resolveLiveCapabilityRegistryEntry = (
   if (!endpoint) return null;
   try {
     const read = parseCapabilityManifest(record.manifest, app.id);
-    const manifest = withValidFileProvider(read);
+    const supported = withValidCalendarSource(withValidFileProvider(read));
+    const manifest = supported.resourcePages
+      ? {
+          ...supported,
+          resourcePages: supported.resourcePages.filter((page) => !resourcePageIssue(page.path, app.routes, app.id)),
+        }
+      : supported;
     const presentation = compileCapabilityPresentation(manifest, record.presentation, "reader");
     if (app.capabilities.protocolVersion !== manifest.protocolVersion || app.capabilities.manifestHash !== manifest.manifestHash) {
       return null;

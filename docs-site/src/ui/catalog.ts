@@ -92,6 +92,12 @@ const portableSections = [
       page("color", "ColorInput", "ti ti-palette", "Native color selection with controlled value and optional transparency."),
       page("pin", "PinInput", "ti ti-password", "Grouped one-time-code entry with paste and arrow-key navigation."),
       page("slider", "Slider", "ti ti-adjustments-horizontal", "Range input with value labels and optional centered scale."),
+      page(
+        "choice-slider",
+        "ChoiceSlider",
+        "ti ti-adjustments-alt",
+        "A slider over a few named stops with a fixed description line and unavailable stops.",
+      ),
       page("icon", "IconInput", "ti ti-icons", "Searchable controlled icon selection."),
       page("image", "ImageInput", "ti ti-photo", "Controlled image selection, preview, transform, and removal."),
       page(
@@ -210,6 +216,12 @@ const portableSections = [
       page("tab-bar", "TabBar", "ti ti-layout-navbar", "Bottom navigation between a phone app's top-level pages."),
       page("panel-dialog", "PanelDialog", "ti ti-app-window", "Contained or floating composition for complex editors."),
       page("floating-window", "FloatingWindow", "ti ti-window", "Movable and resizable utility content with mobile fallback."),
+      page(
+        "anchored-popover",
+        "AnchoredPopover",
+        "ti ti-message-2",
+        "A card anchored to a control that keeps its side while open and is a bottom sheet on a phone.",
+      ),
     ],
   },
   {
@@ -410,7 +422,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 157;
+export const portableUiComponentCount = 163;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -450,6 +462,8 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  personColor: "Documented person color for avatars, cursors and comments in Colors and selection (/en/ui/surfaces/color).",
+  PERSON_COLORS: "Documented person color palette in Colors and selection (/en/ui/surfaces/color).",
   MapAttribution: "Linked credits for OpenMapTiles maps; documented with the host tile and glyph setup on the MapView page.",
   mapAttribution: "Plain attribution data for custom map credits; documented on the MapView page.",
   mapStyle: "OpenMapTiles style builder requiring host tile and glyph templates; documented on the MapView page.",
@@ -457,6 +471,7 @@ export const documentedOnlyUiCatalogExports = {
   truncateMiddle: "Documented ReferenceChip helper for shortening titles by whole graphemes.",
   REFERENCE_CHIP_MAX_CHARACTERS: "Documented ReferenceChip maximum visible title length.",
   prefersReducedMotion: "Documented OS and host preference helper in the Motion guide (/en/ui/motion).",
+  measureScrollFade: "Documented ScrollArea helper that measures a scrollport's fades at once for a reader in the same frame.",
   formatShortcut: "Documented Kbd formatter for plain text labels and spoken names.",
   keyboardPlatform: "Documented Kbd platform detection for browser and server hosts.",
   reconcileChatMentions: "Documented Chat composer helper for preserving reference ranges during external text edits.",

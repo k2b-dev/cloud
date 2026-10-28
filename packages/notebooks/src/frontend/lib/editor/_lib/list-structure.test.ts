@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { syntaxTree } from "@codemirror/language";
+import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import * as namedBlocks from "../../../../lib/named-blocks";
 import * as queryBlocks from "../../../../lib/query-blocks";
@@ -8,7 +8,13 @@ import { markdownExtension } from "../markdown";
 import { excludedSpans, listItemAtLine, listStructure, markerChanges, orderedLabel, renumberChanges, siblingIndex } from "./list-structure";
 import { type ItemTuple, listStructureCases } from "./list-structure.fixture";
 
-const stateFor = (doc: string) => EditorState.create({ doc, extensions: [markdownExtension()] });
+// A new state parses only within a short time budget, so a busy runner can see
+// a partial tree. Finish the parse, then apply it to a state the tree belongs to.
+const stateFor = (doc: string) => {
+  const state = EditorState.create({ doc, extensions: [markdownExtension()] });
+  if (!ensureSyntaxTree(state, doc.length, 5000)) throw new Error("Markdown parse did not finish");
+  return state.update({}).state;
+};
 
 const labelCases: Array<[number, number, string]> = [
   [1, 0, "1."],

@@ -5,7 +5,6 @@ import { unwrap } from "@k2b/stdlib";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { applyConversationAssignments, applyConversationCompletions } from "./collaboration";
@@ -66,7 +65,6 @@ suite("batch conversation completion", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     owner = await createUser("owner");
     writer = await createUser("writer");
     reader = await createUser("reader");

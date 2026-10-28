@@ -53,12 +53,11 @@ const expected = {
     createLoginToken: 200,
     regenerateClientSecret: 200,
   },
-  // These routes require no OAuth scope today.
   "read-only cld OAuth token of an admin": {
-    createServiceAccount: 201,
-    saveSecuritySetting: 204,
-    createLoginToken: 200,
-    regenerateClientSecret: 200,
+    createServiceAccount: 403,
+    saveSecuritySetting: 403,
+    createLoginToken: 403,
+    regenerateClientSecret: 403,
   },
   "personal API key of an admin": {
     createServiceAccount: 201,
@@ -420,11 +419,19 @@ suite("Admin credential matrix", () => {
         return routes(path, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
       };
       // POST /api/admin/identity/service-accounts
+      const accountName = `${prefix}-${crypto.randomUUID()}`;
       const created = await request("core", identityRoutes.request, "/service-accounts", "POST", {
-        name: `${prefix}-${crypto.randomUUID()}`,
+        name: accountName,
         kind: "standalone",
       });
+      const createdAccounts = await sql<{ id: string }[]>`
+        SELECT id FROM auth.service_accounts WHERE name = ${accountName}
+      `;
       // PUT /api/admin/core/settings
+      // Pin the database fixture's time so successive saves cannot share the comparison baseline's clock tick.
+      await sql`
+        UPDATE settings.entries SET updated_at = '2000-01-01T00:00:00Z'::timestamptz WHERE key = ${settingKey}
+      `;
       const [settingBefore] = await sql<{ updated_at: number }[]>`
         SELECT extract(epoch FROM updated_at)::double precision AS updated_at FROM settings.entries WHERE key = ${settingKey}
       `;
@@ -432,12 +439,6 @@ suite("Admin credential matrix", () => {
       const [settingAfter] = await sql<{ updated_at: number }[]>`
         SELECT extract(epoch FROM updated_at)::double precision AS updated_at FROM settings.entries WHERE key = ${settingKey}
       `;
-      if (statuses.saveSecuritySetting === 204) {
-        if (!settingAfter) throw new Error("Successful settings save did not write a row");
-        if (settingBefore) expect(settingAfter.updated_at).toBeGreaterThan(settingBefore.updated_at);
-      } else {
-        expect(settingAfter).toEqual(settingBefore);
-      }
       // POST /api/accounts/users/:id/login-token
       const login = await request("accounts", accountsRoutes.request, `/users/${targetId}/login-token`, "POST");
       // Read only to remove the one-time credential from Valkey; never assert or print it.
@@ -456,6 +457,13 @@ suite("Admin credential matrix", () => {
         createLoginToken: login.status,
         regenerateClientSecret: regenerated.status,
       }).toEqual(statuses);
+      expect(createdAccounts).toHaveLength(statuses.createServiceAccount === 201 ? 1 : 0);
+      if (statuses.saveSecuritySetting === 204) {
+        if (!settingAfter) throw new Error("Successful settings save did not write a row");
+        if (settingBefore) expect(settingAfter.updated_at).toBeGreaterThan(settingBefore.updated_at);
+      } else {
+        expect(settingAfter).toEqual(settingBefore);
+      }
     });
   }
 });

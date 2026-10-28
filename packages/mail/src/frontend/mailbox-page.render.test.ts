@@ -186,6 +186,8 @@ test.each([
 
 test("mailbox scope uses the public ID and Focus has no mailbox scope (#1471)", async () => {
   const snapshot: MailboxPageData = {
+    viewPreference: { large: "auto", phone: "compact" },
+    doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
     receivingAddress: null,
     mailbox: {
       id: mailboxId,
@@ -232,6 +234,7 @@ test("mailbox scope uses the public ID and Focus has no mailbox scope (#1471)", 
     detailMessages: [],
     conversationSummary: null,
     conversationDrafts: [],
+    automationTrace: [],
     detailError: null,
     collaborationState: null,
     localTags: [],

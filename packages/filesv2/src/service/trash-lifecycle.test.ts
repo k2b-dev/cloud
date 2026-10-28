@@ -65,10 +65,21 @@ function fixture() {
   let serverUrl = "http://filegate:4000";
   let beforeLock: (() => Promise<void>) | undefined;
   const store: typeof trash = {
+    async history(id) {
+      return { id, state: "pending", path_before: "", path_after: "" };
+    },
     async create(input) {
       calls.push("intent");
       if (failInsert) throw new Error("db unavailable");
-      const row: TrashRow = { ...input, restore_path: null, error_code: null, deleted_at: new Date(), updated_at: new Date() };
+      const row: TrashRow = {
+        activity_recorded: false,
+        restore_activity_recorded: false,
+        ...input,
+        restore_path: null,
+        error_code: null,
+        deleted_at: new Date(),
+        updated_at: new Date(),
+      };
       rows.set(row.id, row);
       return structuredClone(row);
     },
@@ -169,12 +180,17 @@ function fixture() {
       },
     };
   };
-  const service = createTrashLifecycle(authorize, store, async (_key, run) => {
-    const callback = beforeLock;
-    beforeLock = undefined;
-    await callback?.();
-    return run();
-  });
+  const service = createTrashLifecycle(
+    authorize,
+    store,
+    async (_key, run) => {
+      const callback = beforeLock;
+      beforeLock = undefined;
+      await callback?.();
+      return run();
+    },
+    async (_id, effect) => effect(),
+  );
   return {
     service,
     nodes,
@@ -255,13 +271,19 @@ describe("recoverable trash lifecycle", () => {
     expect([...f.rows.values()][0]?.state).toBe("trashed");
     expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
   });
-  test("restore records its intent and recovers a lost response without overwriting", async () => {
+  test("a lost restore response stays unresolved and is never repeated from target appearance", async () => {
     const f = fixture();
     const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     f.setLostResponse(true);
-    const result = await f.service.restoreTrash(testCall(actor), { baseId: base.id, id: removed.entries[0]!.id, path: "restored.txt" });
-    expect(result.entry.path).toBe("restored.txt");
-    expect([...f.rows.values()][0]?.state).toBe("restored");
+    const id = removed.entries[0]!.id;
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id, path: "restored.txt" })).rejects.toMatchObject({
+      code: "operation_unresolved",
+    });
+    expect([...f.rows.values()][0]?.state).toBe("restoring");
+    expect(f.nodes.has("home/alice/restored.txt")).toBe(true);
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).rejects.toMatchObject({ code: "operation_unresolved" });
+    expect((await f.service.trash(testCall(actor), { baseId: base.id })).entries[0]?.state).toBe("restoring");
+    expect(f.calls.filter((call) => call === "move")).toHaveLength(2);
   });
   test("a pending restore receipt is not finalized by the next listing or retry", async () => {
     const f = fixture();
@@ -285,6 +307,31 @@ describe("recoverable trash lifecycle", () => {
       code: "path_conflict",
     });
     expect([...f.rows.values()][0]?.state).toBe("trashed");
+  });
+  test("restore refuses a replacement in the recorded trash slot before changing the journal", async () => {
+    const f = fixture();
+    const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
+    const id = removed.entries[0]!.id;
+    const journal = structuredClone(f.rows.get(id)!);
+    f.nodes.set(`home/alice/trash/${id}`, { ...node(`home/alice/trash/${id}`), size: 99 });
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).rejects.toMatchObject({ code: "source_changed" });
+    expect(f.rows.get(id)).toEqual(journal);
+    expect(f.nodes.has("home/alice/report.txt")).toBe(false);
+    expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
+  });
+  test("a restore cancelled while waiting never changes the journal or publishes", async () => {
+    const f = fixture();
+    const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
+    const id = removed.entries[0]!.id;
+    const journal = structuredClone(f.rows.get(id)!);
+    const controller = new AbortController();
+    f.setBeforeLock(async () => controller.abort(new Error("client left")));
+    await expect(f.service.restoreTrash({ ...testCall(actor), requestAbort: controller.signal }, { baseId: base.id, id })).rejects.toThrow(
+      "client left",
+    );
+    expect(f.rows.get(id)).toEqual(journal);
+    expect(f.nodes.has("home/alice/report.txt")).toBe(false);
+    expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
   });
   test("completed restores replay only while the freshly authorized destination still matches", async () => {
     const f = fixture();
@@ -314,14 +361,16 @@ describe("recoverable trash lifecycle", () => {
       code: "source_changed",
     });
   });
-  test("a restored file is recovered after the completion write failed", async () => {
+  test("a failed restore completion write leaves a visible unresolved journal", async () => {
     const f = fixture();
     const removed = await f.service.remove(testCall(actor), { baseId: base.id, paths: ["report.txt"] });
     const id = removed.entries[0]!.id;
     f.setFailFinish(true);
     await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id, path: "recovered.txt" })).rejects.toThrow();
     f.setFailFinish(false);
-    expect((await f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).entry.path).toBe("recovered.txt");
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).rejects.toMatchObject({ code: "operation_unresolved" });
+    expect(f.nodes.has("home/alice/recovered.txt")).toBe(true);
+    expect([...f.rows.values()][0]?.state).toBe("restoring");
     expect(f.calls.filter((call) => call === "move")).toHaveLength(2);
   });
   test("journal records cannot act on a different file server with matching root names", async () => {
@@ -348,6 +397,21 @@ describe("recoverable trash lifecycle", () => {
     const restored = await f.service.restoreTrash(testCall(actor), { baseId: base.id, id, path: "manual.txt" });
     expect(restored.entry.path).toBe("manual.txt");
     expect((await f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).entry.path).toBe("manual.txt");
+    expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
+  });
+  test("a conflicting filesystem-only restore leaves no stale adoption snapshot", async () => {
+    const f = fixture();
+    const path = "home/alice/trash/manual.txt";
+    f.nodes.set(path, node(path));
+    const id = `fs:${Buffer.from("trash/manual.txt").toString("base64url")}`;
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id, path: "report.txt" })).rejects.toMatchObject({
+      code: "path_conflict",
+    });
+    expect(f.rows.size).toBe(0);
+    expect(f.calls).not.toContain("intent");
+    f.nodes.set(path, { ...node(path), size: 9, modified: "2026-09-20T10:00:00Z" });
+    const restored = await f.service.restoreTrash(testCall(actor), { baseId: base.id, id, path: "recovered.txt" });
+    expect(restored.entry.path).toBe("recovered.txt");
     expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
   });
   test("rechecks location identity after taking the root lock", async () => {

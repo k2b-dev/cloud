@@ -12,7 +12,7 @@ export { appAccessMessages } from "./app-access-messages";
 export { isManagerEntry, type ManagerCandidate } from "./managers";
 export type { AllowedLevel, GrantableLevel } from "./PermissionEditor";
 export { default as PermissionEditor } from "./PermissionEditor";
-export { default as PrincipalPicker, principalKey } from "./PrincipalPicker";
+export { default as PrincipalPicker, type PrincipalPickerServiceAccount, principalKey } from "./PrincipalPicker";
 export { principalLabel } from "./principal-label";
 export type {
   ResourceApiKey,

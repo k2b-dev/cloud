@@ -239,6 +239,16 @@ describe("changing the profile picture in a browser", () => {
 
           await dialog.getByRole("tab", { name: t.hair }).click();
           const hairstyles = dialog.getByRole("radiogroup", { name: t.hairstyle });
+          // Fail directly if the harness no longer starts on the draft that exposed this regression.
+          expect(await hairstyles.getByRole("radio", { name: t.option({ part: "hair", id: "afro" }) }).getAttribute("aria-checked")).toBe(
+            "true",
+          );
+          expect(
+            await dialog
+              .getByRole("radiogroup", { name: t.hairColor })
+              .getByRole("radio", { name: t.option({ part: "hairColor", id: "red" }) })
+              .getAttribute("aria-checked"),
+          ).toBe("true");
           await hairstyles.getByRole("radio", { name: t.option({ part: "hair", id: "curly" }) }).click();
           await hairstyles.getByRole("radio", { name: t.option({ part: "hair", id: "curly" }) }).press("ArrowRight");
           expect(await hairstyles.getByRole("radio", { name: t.option({ part: "hair", id: "afro" }) }).getAttribute("aria-checked")).toBe(
@@ -248,9 +258,15 @@ describe("changing the profile picture in a browser", () => {
             .getByRole("radiogroup", { name: t.hairColor })
             .getByRole("radio", { name: t.option({ part: "hairColor", id: "red" }) })
             .click();
-          await dialog.getByText(t.unsaved).waitFor();
+          // Returning to the seeded first draft is not an edit.
+          await dialog.getByText(t.visiblePerson).waitFor();
           // Switching parts or ways never resizes the frame or moves the save button.
           await dialog.getByRole("tab", { name: t.glasses }).click();
+          await dialog
+            .getByRole("radiogroup", { name: t.glasses })
+            .getByRole("radio", { name: t.option({ part: "glasses", id: "round" }) })
+            .click();
+          await dialog.getByText(t.unsaved).waitFor();
           await settled(tab);
           expect(await frame()).toEqual(before);
           await shoot(tab, `${view.name}-${lang}-2-hair`);
@@ -261,7 +277,7 @@ describe("changing the profile picture in a browser", () => {
           await dialog.getByRole("button", { name: t.save }).click();
           await waitUntil(() => api.pages === 2, "the page to reload");
           expect(api.puts).toHaveLength(1);
-          expect(api.puts[0]).toMatchObject({ built: { kind: "person", hair: "afro", hairColor: "red" } });
+          expect(api.puts[0]).toMatchObject({ built: { kind: "person", hair: "afro", hairColor: "red", glasses: "round" } });
         } finally {
           await context.close();
         }

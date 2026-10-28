@@ -130,6 +130,7 @@ export default function SpacesOverview(props: Props) {
         current: { kind: "overview" },
         canCreate: canCreate(),
         myWorkLabel: t.myWork,
+        calendarLabel: t.calendar,
         newSpaceLabel: t.newSpace,
       }),
     onAction: async (action) => {

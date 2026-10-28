@@ -267,6 +267,11 @@ const germanText: Record<string, string> = {
   "Project file could not be loaded.": "Die Projektdatei konnte nicht geladen werden.",
   "Project file is no longer available.": "Die Projektdatei ist nicht mehr verfügbar.",
   "Project saved": "Projekt gespeichert",
+  "Default model": "Standardmodell",
+  "Routines in this Project use it. Without a default, they use the person's choice, otherwise Balanced.":
+    "Routinen in diesem Projekt nutzen es. Ohne Standard gilt die Wahl der Person, sonst „Ausgewogen“.",
+  "No Project default": "Kein Projekt-Standard",
+  "Models could not be loaded.": "Modelle konnten nicht geladen werden.",
   "Reference name": "Name der Referenz",
   "Relevant personal facts, preferences, and workflow defaults are added to new turns.":
     "Relevante persönliche Tatsachen, Präferenzen und Abläufe werden neuen Anfragen hinzugefügt.",

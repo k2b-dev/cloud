@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-10-22
+updated: 2026-10-26
 ---
 
 # Configuration reference
@@ -33,6 +33,9 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `NATS_CREDS_FILE` | string | runtime | unset | no | Path to a mounted NATS `.creds` file (JWT and NKey); unset means server-side no-auth. |
 | `NATS_TLS_CA_FILE` | string | runtime | unset | no | Path to a mounted CA certificate that enables TLS to NATS; unset means plain TCP. |
 | `NATS_IGNORE_CLUSTER_UPDATES` | boolean | runtime | `true` | no | Only dial the listed servers and ignore cluster-advertised peer addresses; set to `false` when every advertised address is reachable. |
+| `WORKFLOW_AI_BUDGET` | JSON | runtime | `{"maxStepsPerSource":2,"tasksPerMinute":10,"burst":20,"sourcesPer24Hours":2000,"scopeConcurrent":1,"globalConcurrent":4}` | no | JSON scoped workflow inference budget: active or successful logical requests per source/24h, token-bucket admission per minute and burst, distinct sources per rolling 24h, outstanding tasks per scope and globally; capacity/rate overload uses bounded workflow retries, daily/source limits fail visibly, and cache hits consume no reservation. |
+| `WORKFLOW_AI_ATTEMPT_TIMEOUT_MS` | number | runtime | `60000` | no | Absolute workflow AI attempt budget in milliseconds, including admission and repair; expiry aborts the provider and follows the bounded retry policy. |
+| `WORKFLOW_AI_QUEUE_TIMEOUT_MS` | number | runtime | `60000` | no | Maximum workflow AI queue wait in milliseconds; recovery fails overdue or lost deliveries visibly so an operator can retry the workflow. |
 | `APP_URL` | string | runtime | unset | no | Public Cloud URL used to bootstrap the `app.url` setting; the stored setting wins once written. |
 | `GOTENBERG_URL` | string | runtime | unset | no | Internal Gotenberg base URL used to bootstrap the `gotenberg.url` PDF rendering setting; the stored setting wins once written. |
 | `APP_SECRET` | string | secret | empty | no | Deployment-wide secret for at-rest settings encryption and signed cursors; generate once with `openssl rand -hex 32` and never change it after data has been written. |
@@ -78,6 +81,14 @@ Declared in `packages/gateway/src/env.ts`.
 | --- | --- | --- | --- | --- | --- |
 | `GATEWAY_INSTANCE_ID` | string | runtime | unset | no | Stable identity of this gateway router instance in the registry; defaults to `HOSTNAME`, then `gateway-router`. |
 | `GATEWAY_TRUSTED_PROXIES` | list | runtime | `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7` | no | Comma-separated IP addresses or CIDR ranges of the reverse proxies allowed to name the client in `X-Forwarded-For`; the default trusts loopback and private networks, which covers Traefik on a Docker network. Set the proxy's exact address or subnet when clients on private networks reach the gateway directly or through a proxy that appends to their `X-Forwarded-For`. An invalid entry stops the gateway at startup. |
+
+## Application: mail
+
+Declared in `packages/mail/src/env.ts`.
+
+| Variable | Type | Scope | Default | Required | Description |
+| --- | --- | --- | --- | --- | --- |
+| `MAIL_WORKFLOW_AI_BODY_MAX_CHARS` | number | runtime | `20000` | no | Maximum Mail body characters loaded for an AI workflow step; the pilot budget rejects larger bodies visibly without truncation and preserves the original for manual inspection. |
 
 ## Application: notebooks
 

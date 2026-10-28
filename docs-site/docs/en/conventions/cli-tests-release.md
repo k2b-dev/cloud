@@ -5,7 +5,7 @@ section: Conventions
 order: 1286
 description: Look up CLI, testing, and release rules with their canonical owners and checks.
 tags: [conventions, cli, testing, release, audit]
-updated: 2026-10-16
+updated: 2026-10-24
 ---
 
 # CLI, test, and release conventions
@@ -48,6 +48,7 @@ for the complete contract.
 | TEST-12 | Test realtime cursor recovery, duplicates, resync, access revocation, and disposal, advancing the cursor only after covering snapshots commit. | Reconnect and in-flight invalidation do not lose affected updates. | Manual: read recovery tests for an event during invalidation, a returning tab, reconnect, and revoked access. | [Realtime tests](/en/docs/frontend/testing#test-realtime-recovery) |
 | TEST-13 | Built-in apps: keep every repository check green. | Shared dependency, boundary, configuration, CI, formatting, and type contracts remain consistent. | `bun run check`; Manual: inspect each reported finding against its owning repository rule and verify the complete check result. | [Repository checks](/en/docs/contributing/testing#run-every-check) |
 | TEST-14 | In Playwright tests and browser suites, await promises directly and assert on their values or captured rejection reasons; never use `.resolves` or `.rejects`. | Bun's matcher runs a nested event loop that can reorder Playwright's channel messages and close the browser connection. | `bun scripts/check.ts browser-test-promises` | [Promise assertions](/en/docs/contributing/testing#test-in-chromium-and-webkit) |
+| TEST-15 | In Playwright tests and browser suites, collect page errors with `pageErrors(page)` from `packages/ui/test/browser.ts`, not with an own `pageerror` listener. | WebKit reports a load it refuses during a test's own navigation as a page error, so an own listener fails at random; `pageErrors()` ignores only that report. | `bun scripts/check.ts page-errors` | [Page errors](/en/docs/contributing/testing#test-in-chromium-and-webkit) |
 
 ## Release and deployment (REL)
 
@@ -58,4 +59,4 @@ for the complete contract.
 | REL-03 | Built-in apps: give runtime-contract changes a `feat` or approved `feat!` title and a note on the matching Operations page. | Configuration, route, permission, data-format, and deployment changes land in the next Cloud release with operational guidance. | Manual: compare the runtime diff with the PR title and the matching Operations note. | [Runtime contract releases](/en/docs/contributing/release-process#branch-and-merge) |
 | REL-04 | Built-in apps: derive the application set from the workspace through `scripts/workspace.ts` and keep both Compose files aligned with it. | Image names, the release set, and the CI matrix share one application source. | `bun scripts/check.ts app-set`; Manual: compare `workspaces.packages` with `compose.dev.yml` and `compose.prod.yml` and inspect workflow application lists for workspace derivation. | [Application set](/en/docs/operations/monorepo-development#add-a-built-in-application) |
 | REL-05 | Built-in apps: show PR screenshots in light mode with demo data and only changed or decision-relevant states, using dark mode only for dark-rendering changes. | Public review exposes no person's data and uses a comparable baseline theme. | Manual: inspect each PR screenshot's theme, data, and relevance to the change or decision. | [PR screenshots](/en/docs/contributing/release-process#branch-and-merge) |
-| REL-06 | Built-in apps: answer “How do we prevent this next time?” in a fix PR and add a lesson with what happened, root cause, error class, and guard. | The fix records its prevention, or explicitly names the pending guard or why none fits. | Manual: compare the fix PR with its lesson entry and verify suspected causes and pending guards are labelled as the guide requires. | [Add a lesson](/en/docs/contributing/lessons-learned#add-a-lesson) |
+| REL-06 | Built-in apps: answer “How do we prevent this next time?” in a fix PR and add a separate dated file under `docs-site/docs/en/contributing/lessons/` with what happened, root cause, error class, and guard. | Each PR adds its own lesson without editing the shared generated page. | Manual: compare the fix PR with its lesson file and verify suspected causes and pending guards are labelled as the guide requires. | [Add a lesson](/en/docs/contributing/lessons-learned#add-a-lesson) |

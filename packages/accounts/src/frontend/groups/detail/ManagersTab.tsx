@@ -27,7 +27,8 @@ type ManagersTabProps = {
 export default function ManagersTab(props: ManagersTabProps) {
   const messages = useAccountsMessages();
   const locale = useLocale();
-  const isEmpty = props.items.length === 0;
+  // The total decides: an empty page of a non-empty list is not an empty list.
+  const isEmpty = props.pagination.total === 0;
   const columns: DataTableColumn<EntityListItem>[] = [
     { id: "type", header: messages().type, value: (item) => item.kind, cellClass: "whitespace-nowrap" },
     {

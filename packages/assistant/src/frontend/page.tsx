@@ -1,12 +1,4 @@
-import {
-  aiConversations,
-  aiProjects,
-  aiUserPrefs,
-  assistantAiSettingsState,
-  getAiChatQuotas,
-  listAssistantAiModels,
-  loadAiStreamState,
-} from "@k2b/cloud/ai";
+import { aiConversations, aiProjects, assistantAiSettingsState, getAiChatQuotas, loadAiStreamState } from "@k2b/cloud/ai";
 import { aiLive } from "@k2b/cloud/ai/live";
 import type { AuthContext } from "@k2b/cloud/server";
 import { auth, expectUserBackedActor, getLocale, getTimeZone, loadPendingApprovals } from "@k2b/cloud/server";
@@ -36,10 +28,8 @@ export default ssr<AuthContext>(async (c) => {
   const approvalsOpen = url.searchParams.get("approvals") === "1" && !requestedConversationId && !requestedProjectId;
   const subject = { type: "user" as const, userId: user.id };
   const initialLiveCursor = await aiLive.cursor();
-  const [status, models, prefs, sidebar, appUrl, initialQuotas, approvals] = await Promise.all([
+  const [status, sidebar, appUrl, initialQuotas, approvals] = await Promise.all([
     assistantAiSettingsState(subject),
-    listAssistantAiModels(subject),
-    aiUserPrefs.get(user.id),
     loadAssistantSidebarSnapshot(user.id, { locale, timeZone }),
     coreSettings.get<string>("app.url"),
     getAiChatQuotas(subject).catch(() => null),
@@ -105,8 +95,7 @@ export default ssr<AuthContext>(async (c) => {
       userId={user.id}
       cloudUrl={publicCloudOrigin(appUrl)}
       status={status}
-      models={models}
-      lastModelId={prefs.lastModelId}
+      models={status.options}
       timeZone={timeZone}
       renderedAt={new Date().toISOString()}
       initialLiveCursor={initialLiveCursor}
