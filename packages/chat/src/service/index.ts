@@ -8,12 +8,14 @@ import { forYou } from "./for-you";
 import { itemEvents } from "./item-events";
 import { mentions } from "./mentions";
 import { messages } from "./messages";
+import { notificationPreferences } from "./notification-preferences";
 import { personal } from "./personal";
 import { reactions } from "./reactions";
 import { readState } from "./read-state";
 import { search } from "./search";
 import { shared } from "./shared";
 import { systemChats } from "./system-chats";
+import { threadFollows } from "./thread-follows";
 import { threads } from "./threads";
 
 const log = logger("chat:api");
@@ -51,6 +53,8 @@ const health = async (): Promise<ChatHealth> => {
 };
 
 export const chatService = {
+  notificationPreferences,
+  threadFollows,
   itemEvents,
   search,
   health,

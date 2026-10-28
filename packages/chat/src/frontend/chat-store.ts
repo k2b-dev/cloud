@@ -945,6 +945,13 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
                 collapsed = data.collapsed;
                 notify();
               }
+            if (events.some(({ data }) => data.type === "notifications")) {
+              await reloadSidebar();
+              if (current && active(current)) {
+                await refreshMetadata(current);
+                await refreshThreads(current);
+              }
+            }
             for (const { data } of events) if (data.type === "read") await applyRead(data);
           }),
         resync: () =>

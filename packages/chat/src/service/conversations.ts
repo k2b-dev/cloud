@@ -36,7 +36,8 @@ import {
 } from "./access";
 import { titles } from "./conversation-titles";
 import { validateDiscovery, writeDiscovery } from "./discovery";
-import { forYouUnread } from "./for-you";
+import { forYouUnread, mentionsUnread } from "./for-you";
+import { notificationProjection } from "./notification-projection";
 import { TransactionFailure, value } from "./transaction-failure";
 
 export { value };
@@ -338,14 +339,18 @@ const lifecycleFlags = async (rows: ConversationRow[], context: ChatContext, db:
     : [];
   return new Map(found.map((row) => [row.id, { withGuests: row.with_guests, peerDeactivated: row.peer_deactivated }]));
 };
-const project = (
+const project = async (
+  db: typeof sql,
+  context: ChatContext,
   row: ConversationRow,
   permission: Exclude<PermissionLevel, "none">,
   title: string,
   lastMessage: z.infer<typeof ConversationSchema>["lastMessage"],
   flags: { withGuests: boolean; peerDeactivated: boolean },
   state: Pick<z.infer<typeof ConversationSchema>, "archived" | "pinnedRank" | "read" | "unread" | "threads" | "channel" | "member">,
-): z.infer<typeof ConversationSchema> => ({
+): Promise<z.infer<typeof ConversationSchema>> => ({
+  notifications: await notificationProjection(db, context, { ...row, permission }),
+  mentionsUnread: await mentionsUnread(context, row.id, db),
   id: row.short_id,
   ...(row.kind === "system" && row.resource_type && row.resource_id
     ? { kind: row.kind, resource: { type: row.resource_type, id: row.resource_id } }
@@ -381,15 +386,20 @@ export const projectConversations = async (
       )}`
     ).map((row) => [row.conversation_id, projectRead(row)]),
   );
-  return rows.map((row) =>
-    project(
-      row,
-      z.enum(["read", "write", "admin"]).parse(capPermission(permissionFromRank(row.permission_rank), context.actor)),
-      names.get(row.id)!,
-      latest.get(row.id) ?? null,
-      flags.get(row.id)!,
-      states.get(row.id)!,
-    ),
+  return readerBatch(
+    rows,
+    (row) =>
+      project(
+        db,
+        context,
+        row,
+        z.enum(["read", "write", "admin"]).parse(capPermission(permissionFromRank(row.permission_rank), context.actor)),
+        names.get(row.id)!,
+        latest.get(row.id) ?? null,
+        flags.get(row.id)!,
+        states.get(row.id)!,
+      ),
+    context.caller?.signal,
   );
 };
 
@@ -538,7 +548,9 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
       const latest = await lastMessages([row], input, db);
       return ok({
         outcome: "created",
-        conversation: project(
+        conversation: await project(
+          db,
+          input,
           { ...row, rev: latestMessage.rev },
           "admin",
           names.get(row.id)!,
@@ -583,7 +595,9 @@ const getInSnapshot = async (
   const latest = await lastMessages([row], input, db, visibleIds);
   return ok({
     ...(row.kind === "system" ? { summaryCursor: page.nextCursor } : {}),
-    ...project(
+    ...(await project(
+      db,
+      input,
       resource
         ? {
             ...row,
@@ -597,7 +611,7 @@ const getInSnapshot = async (
       latest.get(row.id) ?? null,
       (await lifecycleFlags([row], input, db)).get(row.id)!,
       read,
-    ),
+    )),
   });
 };
 const get = (
@@ -683,7 +697,9 @@ const update = async (input: ChatContext & { conversationId: string; input: unkn
     const names = await titles([row], input, db);
     const latest = await lastMessages([row], input, db);
     return ok(
-      project(
+      await project(
+        db,
+        input,
         row,
         before.permission,
         names.get(before.id)!,

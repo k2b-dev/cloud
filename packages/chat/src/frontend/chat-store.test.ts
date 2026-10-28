@@ -7,6 +7,8 @@ import { ChatRequestError, type ChatStoreApi, createChatStore, createChatStoreAp
 const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
 
 const conversation = ConversationSchema.parse({
+  notifications: null,
+  mentionsUnread: 0,
   threads: 0,
   channel: false,
   member: true,
@@ -2459,6 +2461,31 @@ test("personal list changes retain and refresh nonmember system rows independent
     expect(store.sidebar).toContainEqual(system);
     await connection.get("me").apply({ type: "membership", conversationId: conversation.id });
     expect(store.sidebar).toContainEqual(system);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("notification hints refresh the canonical list, open metadata and thread following state", async () => {
+  const next = {
+    ...conversation,
+    notifications: { level: "mentions" as const, choice: "mentions" as const, until: null, defaultLevel: "all" as const, following: null },
+  };
+  let threadReads = 0;
+  const { store, connection } = fixture({
+    conversations: async () => ({ items: [next], nextCursor: null }),
+    conversation: async () => next,
+    threads: async () => {
+      threadReads++;
+      return noThreads;
+    },
+  });
+  try {
+    const before = threadReads;
+    await connection.get("me").apply({ type: "notifications" });
+    expect(store.sidebar[0]?.notifications).toEqual(next.notifications);
+    expect(store.openConversation?.conversation?.notifications).toEqual(next.notifications);
+    expect(threadReads).toBeGreaterThan(before);
   } finally {
     store.dispose();
   }

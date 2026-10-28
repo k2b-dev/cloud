@@ -154,6 +154,23 @@ export const migrate = async (): Promise<void> => {
         REFERENCES chat.participants(principal_type, principal_id, conversation_id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_chat_thread_reads_participant ON chat.thread_reads(principal_type, principal_id, conversation_id);
+    CREATE TABLE IF NOT EXISTS chat.thread_follows (
+      principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
+      principal_id uuid NOT NULL,
+      conversation_id uuid NOT NULL,
+      thread_id uuid NOT NULL REFERENCES chat.threads(id) ON DELETE CASCADE,
+      since timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (principal_type, principal_id, thread_id),
+      FOREIGN KEY (principal_type, principal_id, conversation_id)
+        REFERENCES chat.participants(principal_type, principal_id, conversation_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_thread_follows_participant
+      ON chat.thread_follows(principal_type, principal_id, conversation_id, since DESC, thread_id);
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'chat.participants'::regclass AND conname = 'notify_until_only_none') THEN
+        ALTER TABLE chat.participants ADD CONSTRAINT notify_until_only_none CHECK (notify_until IS NULL OR notify = 'none');
+      END IF;
+    END $$;
     CREATE TABLE IF NOT EXISTS chat.account_prefs (
       principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
       principal_id uuid NOT NULL,
