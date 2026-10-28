@@ -27,6 +27,10 @@ export function SidebarRailHint(props: {
   focusTarget?: () => HTMLElement | undefined;
   /** The visible label text inside `target`. */
   labelSelector: string;
+  /** The entry renders a native `title`, which the hint replaces from the first hover or focus. */
+  titled?: boolean;
+  /** Called once the hint takes over; the entry stops rendering its native `title`. */
+  onArm?: () => void;
 }): JSX.Element {
   const needed = () => {
     const target = props.target();
@@ -37,7 +41,8 @@ export function SidebarRailHint(props: {
   // A long sidebar carries no hint for entries nobody points at: the hint
   // mounts on the first hover or focus that needs it (or that would show a
   // native title), before the tooltip's own pointerenter and focusin
-  // listeners see that same gesture.
+  // listeners see that same gesture. `target` must stay the same element;
+  // key the hint to it when the element can change.
   const [armed, setArmed] = createSignal(false);
   onMount(() => {
     const target = props.target();
@@ -45,7 +50,9 @@ export function SidebarRailHint(props: {
     if (!target || !focusHost) return;
     const arm = (event: Event) => {
       if (armed() || (event as PointerEvent).pointerType === "touch") return;
-      if (target.hasAttribute("title") || needed()) setArmed(true);
+      if (!props.titled && !needed()) return;
+      setArmed(true);
+      props.onArm?.();
     };
     target.addEventListener("pointerover", arm);
     focusHost.addEventListener("focus", arm);

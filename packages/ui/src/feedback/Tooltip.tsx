@@ -110,12 +110,11 @@ function TooltipSurface(props: TooltipProps): JSX.Element {
     const originalTitle = target.getAttribute("title");
     target.removeAttribute("title");
     // A hint that only repeats the control's accessible name adds nothing for
-    // assistive technology, so it does not become a description. Without an
-    // aria-label, the name comes from the visible text the hint repeats.
+    // assistive technology, so it does not become a description. A focus
+    // container without an aria-label is named by the target's own label text.
     const hint = surface?.textContent?.trim();
     const label = focusHost.getAttribute("aria-label");
-    const text = [focusHost, target].find((element) => surface && !element.contains(surface))?.textContent;
-    const repeatsName = label !== null ? hint === label.trim() : Boolean(hint && text?.includes(hint));
+    const repeatsName = label !== null ? hint === label.trim() : Boolean(props.focusTarget && hint && target.textContent?.includes(hint));
     const originalDescription = focusHost.getAttribute("aria-describedby");
     const descriptions = new Set(originalDescription?.split(/\s+/).filter(Boolean) ?? []);
     if (!repeatsName) descriptions.add(tooltipId);

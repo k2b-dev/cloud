@@ -81,6 +81,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
   const [open, setOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
   let trigger: HTMLButtonElement | undefined;
+  const [hinted, setHinted] = createSignal(false);
   let panel: HTMLDivElement | undefined;
   let search: HTMLInputElement | undefined;
   let keyboardOpened = true;
@@ -268,7 +269,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
         aria-expanded={open()}
         aria-controls={id}
         // The full name without JavaScript; the hydrated hint replaces it.
-        title={props.label}
+        title={hinted() ? undefined : props.label}
         onPointerEnter={load}
         onFocus={load}
         onPointerDown={() => (openAtPress = panel?.matches(":popover-open"))}
@@ -297,7 +298,13 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
           {[props.description, props.switchLabel].filter(Boolean).join(", ")}
         </span>
       </button>
-      <SidebarRailHint target={() => trigger} label={props.label} labelSelector=".k2b-sidebar-switcher__copy > span" />
+      <SidebarRailHint
+        target={() => trigger}
+        label={props.label}
+        labelSelector=".k2b-sidebar-switcher__copy > span"
+        titled
+        onArm={() => setHinted(true)}
+      />
       <div
         ref={panel}
         id={id}

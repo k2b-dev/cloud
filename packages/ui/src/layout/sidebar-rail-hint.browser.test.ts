@@ -13,10 +13,14 @@ const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "sidebar-rail-hint.fixture.ts");
 const fixture = `
+import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
 import { AppWorkspace, LocaleProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const collapsed = new URLSearchParams(window.fixtureParams ?? "").has("collapsed");
+// Live data such as a mailbox's counts changes a title after the hint took over.
+const [openTitle, setOpenTitle] = createSignal("Open invoices: due this week");
+window.setOpenTitle = setOpenTitle;
 const item = (props, label) => createComponent(AppWorkspace.SidebarItem, { ...props, children: label });
 const node = (props) => createComponent(AppWorkspace.NavTree.Item, props);
 render(
@@ -46,7 +50,16 @@ render(
                               options: [{ id: "north", label: "North Studio", href: "#north" }],
                             }),
                             item({ href: "#invoices", icon: "ti ti-file-invoice", active: true }, "Invoices"),
-                            item({ href: "#open", icon: "ti ti-arrow-up-right", title: "Open invoices: due this week" }, "Open invoices"),
+                            item(
+                              {
+                                href: "#open",
+                                icon: "ti ti-arrow-up-right",
+                                get title() {
+                                  return openTitle();
+                                },
+                              },
+                              "Open invoices",
+                            ),
                             item({ href: "#drafts", icon: "ti ti-file", title: "Drafts", actionIcon: "ti ti-dots", actionLabel: "Draft actions" }, "Drafts"),
                             createComponent(AppWorkspace.NavTree, {
                               ariaLabel: "Folders",
@@ -111,11 +124,7 @@ const entries = (page: Page) => [
   { control: page.getByRole("button", { name: "North Studio", exact: true }), hint: "North Studio" },
   { control: page.getByRole("link", { name: "Invoices", exact: true }), hint: "Invoices" },
   { control: page.getByRole("link", { name: "Open invoices", exact: true }), hint: "Open invoices: due this week" },
-  {
-    control: page.locator(".k2b-app-workspace__sidebar-item:has(> [href='#drafts'])"),
-    focus: page.getByRole("link", { name: "Drafts", exact: true }),
-    hint: "Drafts",
-  },
+  { control: page.getByRole("link", { name: "Drafts", exact: true }), hint: "Drafts" },
   {
     control: page.locator("[data-k2b-nav-tree-id='archive'] > .k2b-app-workspace__sidebar-item"),
     focus: page.getByRole("treeitem", { name: "Archive", exact: true }),
@@ -213,11 +222,11 @@ describe("collapsed sidebar rail hints", () => {
 
       // A title that only repeats the whole label gives way without a hint.
       for (const { control, hint } of [entries(page)[0]!, entries(page)[3]!]) {
-        expect(await control.getAttribute("title")).toBe(hint);
+        expect(await page.locator(`#navigation [title="${hint}"]`).count()).toBe(1);
         await control.hover();
         await pastDelay(page);
         expect(await openHints(page)).toEqual([]);
-        expect(await control.getAttribute("title")).toBeNull();
+        expect(await page.locator(`#navigation [title="${hint}"]`).count()).toBe(0);
       }
     } finally {
       await page.close();
@@ -234,6 +243,14 @@ describe("collapsed sidebar rail hints", () => {
       const shown = await openHints(page);
       expect(shown.map((hint) => hint.text)).toEqual(["Open invoices: due this week"]);
       expect(shown[0]!.bottom).toBeLessThanOrEqual((await box(open)).rect.y);
+      expect(await open.getAttribute("title")).toBeNull();
+
+      // A new title updates the hint and never brings the native title back.
+      await page.mouse.move(1200, 600);
+      await page.evaluate(() => (window as unknown as { setOpenTitle: (title: string) => void }).setOpenTitle("Open invoices: 4 due"));
+      await open.hover();
+      await pastDelay(page);
+      expect((await openHints(page)).map((hint) => hint.text)).toEqual(["Open invoices: 4 due"]);
       expect(await open.getAttribute("title")).toBeNull();
     } finally {
       await page.close();

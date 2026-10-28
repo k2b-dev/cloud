@@ -1529,8 +1529,8 @@ function observeSidebarRowCover(row: HTMLElement): void {
 
 /** Shared visual and semantic row frame for flat sidebar items and tree items. */
 function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element {
-  let link: HTMLElement | undefined;
-  let row: HTMLElement | undefined;
+  const [link, setLink] = createSignal<HTMLElement>();
+  const [hinted, setHinted] = createSignal(false);
   const className = () =>
     `k2b-app-workspace__sidebar-item ${props.hasActions ? "has-action" : ""} ${props.active ? (props.activeClass ?? "is-active") : ""} ${props.class ?? ""}`;
   const data = () =>
@@ -1541,7 +1541,7 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
     );
   const common = () => ({
     class: className(),
-    title: props.title,
+    title: hinted() ? undefined : props.title,
     "data-tone": props.tone,
     style: {
       "view-transition-name": props.viewTransitionName,
@@ -1554,7 +1554,7 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
   const Control = (control: { grouped: boolean }) => {
     const attrs = () => ({
       ...(control.grouped ? { class: "k2b-app-workspace__sidebar-item-main" } : common()),
-      ref: (element: HTMLElement) => (link = element),
+      ref: setLink,
     });
     return (
       <Show
@@ -1589,31 +1589,28 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
       </Show>
     );
   };
-  // The hint replaces the title on the element that carries it; keyboard focus stays on the link or button.
-  const hint = () => (
-    <SidebarRailHint
-      target={() => (props.hasActions ? row : link)}
-      label={props.title ?? props.hint}
-      focusTarget={props.focusTarget ?? (() => link)}
-      labelSelector=".k2b-app-workspace__sidebar-item-label-text"
-    />
-  );
   return (
     <>
       <Show when={props.hasActions} fallback={<Control grouped={false} />}>
-        <div
-          {...common()}
-          ref={(element) => {
-            row = element;
-            onMount(() => observeSidebarRowCover(element));
-          }}
-          data-disabled={props.disabled ? "true" : undefined}
-        >
+        <div {...common()} ref={(row) => onMount(() => observeSidebarRowCover(row))} data-disabled={props.disabled ? "true" : undefined}>
           <Control grouped />
           {props.actions}
         </div>
       </Show>
-      {hint()}
+      {/* The hint follows the row's link or button, also when actions or `disabled` replace it, and leaves the
+          row's own actions their own hints. */}
+      <Show when={link()} keyed>
+        {(element) => (
+          <SidebarRailHint
+            target={() => element}
+            label={props.title ?? props.hint}
+            focusTarget={props.focusTarget ?? (() => element)}
+            labelSelector=".k2b-app-workspace__sidebar-item-label-text"
+            titled={props.title !== undefined}
+            onArm={() => setHinted(true)}
+          />
+        )}
+      </Show>
     </>
   );
 }
