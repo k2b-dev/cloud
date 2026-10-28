@@ -40,6 +40,18 @@ Browser recognition compares absolute links with the canonical origin from
 pasted links; root-relative links work without it. No additional service or
 secret is required. See [Resource copy and paste](/en/docs/platform/resource-references#recognize-a-pasted-cloud-link).
 
+## Upgrade notification channel exclusions
+
+Core's startup migration adds `excluded_channels` (default `[]`) and
+`excluded_reason` (default `null`) to the notification catalog. Apply it before
+starting updated applications. Catalog registration retries while the new
+columns are missing. No new service or configuration is required.
+
+An application's excluded channels override older saved preferences for new
+sends; existing queued deliveries are unchanged. See
+[User preferences](/en/docs/platform/notifications#user-preferences) for the
+application contract.
+
 ## Upgrade personal Linux group retirement
 
 This security fix changes account deletion: the account and its personal Linux
