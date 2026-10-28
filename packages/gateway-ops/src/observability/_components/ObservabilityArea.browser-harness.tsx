@@ -1,3 +1,4 @@
+import SettingsSaveStatus from "@k2b/cloud/ssr/SettingsSaveStatus.island";
 import { LocaleProvider } from "@k2b/ui";
 import { fromJSON } from "seroval";
 import type { Component } from "solid-js";
@@ -9,12 +10,11 @@ import HealthCheckForm from "../health-check/HealthCheckForm.island";
 import LogEntryDetail from "../logs/_components/LogEntryDetail.island";
 import LogTable from "../logs/_components/LogTable.island";
 import RetentionForm from "../retention/RetentionForm.island";
-import AreaSaveStatus from "./AreaSaveStatus.island";
 
 /** Mounts the area's islands the way @k2b/ssr does: the server-rendered wrapper carries its props. */
 const islands: Record<string, Component<never>> = {
   "AddWebhookButton.island.tsx": AddWebhookButton as Component<never>,
-  "AreaSaveStatus.island.tsx": AreaSaveStatus as Component<never>,
+  "SettingsSaveStatus.island.tsx": SettingsSaveStatus as Component<never>,
   "HealthCheckForm.island.tsx": HealthCheckForm as Component<never>,
   "LogEntryDetail.island.tsx": LogEntryDetail as Component<never>,
   "LogTable.island.tsx": LogTable as Component<never>,

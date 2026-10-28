@@ -1,8 +1,8 @@
 import { AdminLayout, getDisplayRuntimeContext } from "@k2b/cloud/ssr";
+import SettingsSaveStatus from "@k2b/cloud/ssr/SettingsSaveStatus.island";
 import { AppWorkspace, StatusBadge, ViewTabs } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { buildGatewayHealth, type GatewayHealth } from "../../health";
-import AreaSaveStatus from "./AreaSaveStatus.island";
 import { type AreaMessages, areaMessages } from "./area-messages";
 
 /** Every section of the Observability area, in the order of its first column. */
@@ -177,12 +177,12 @@ type AreaProps = {
 /** The save status in a level head. A phone has no room there; it shows the status at the bottom of the level instead. */
 export const SaveStatusHead = () => (
   <div class="hidden md:block">
-    <AreaSaveStatus />
+    <SettingsSaveStatus />
   </div>
 );
 export const SaveStatusFoot = () => (
   <div class="sticky bottom-0 flex justify-end bg-(--k2b-surface) px-4 py-3 md:hidden">
-    <AreaSaveStatus />
+    <SettingsSaveStatus />
   </div>
 );
 

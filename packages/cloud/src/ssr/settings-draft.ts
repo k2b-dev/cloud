@@ -1,6 +1,23 @@
 import type { SaveStatusState } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
-import { setAreaSaveControls } from "./save-controls";
+
+/**
+ * A settings form saves with the button in its level head, outside the form island. Both islands read this store: the
+ * form registers its state and actions, `SettingsSaveStatus` renders them. One form per page registers at a time.
+ */
+export type SettingsSaveControls = {
+  state: SaveStatusState;
+  savedAt?: string;
+  invalidCount?: number;
+  save: () => void;
+  discard: () => void;
+};
+
+const [controls, setControls] = createSignal<SettingsSaveControls | null>(null);
+export const settingsSaveControls = controls;
+
+/** A save that did not succeed: refused with a reason, or with an unclear outcome. */
+export type SettingsDraftOutcome = { kind: "failed" | "unknown"; message: string };
 
 /** Thrown by `save` when the server refused the write; anything else counts as an unclear outcome. */
 export class SaveRejected extends Error {}
@@ -39,11 +56,11 @@ type Options<T> = {
  * with the level head, which shows the status with Discard and Save. A failed save keeps the draft; when the
  * connection breaks, the outcome stays unclear and the person checks the current state instead of saving twice.
  */
-export const createDraftForm = <T>(options: Options<T>) => {
+export const createSettingsDraft = <T>(options: Options<T>) => {
   const [stored, setStored] = createSignal<T>(options.initial);
   const [draft, setDraft] = createSignal<T>(options.initial);
   const [saving, setSaving] = createSignal(false);
-  const [outcome, setOutcome] = createSignal<{ kind: "failed" | "unknown"; message: string } | null>(null);
+  const [outcome, setOutcome] = createSignal<SettingsDraftOutcome | null>(null);
   const [savedAt, setSavedAt] = createSignal<string | undefined>(undefined);
   const errors = createMemo(() => options.validate?.(draft()) ?? {});
   const dirty = createMemo(() => JSON.stringify(draft()) !== JSON.stringify(stored()) || options.pending?.() === true);
@@ -84,7 +101,7 @@ export const createDraftForm = <T>(options: Options<T>) => {
   };
 
   createEffect(() =>
-    setAreaSaveControls({
+    setControls({
       state: state(),
       savedAt: savedAt(),
       invalidCount: Object.keys(errors()).length,
@@ -92,7 +109,7 @@ export const createDraftForm = <T>(options: Options<T>) => {
       discard,
     }),
   );
-  onCleanup(() => setAreaSaveControls(null));
+  onCleanup(() => setControls(null));
 
   return {
     draft,
