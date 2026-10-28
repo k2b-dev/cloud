@@ -240,7 +240,8 @@ export const notification = <const R extends NotificationRecipientKind, const S 
     delivery: Object.freeze({
       recommended: Object.freeze(recommended),
       required: Object.freeze(required),
-      excluded: Object.freeze(excluded),
+      // Only kinds that exclude a channel carry the field, so every other definition keeps its shape.
+      ...(excluded.length > 0 ? { excluded: Object.freeze(excluded) } : {}),
     }),
     [notificationDefinitionMarker]: true,
   };
