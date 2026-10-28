@@ -16,7 +16,7 @@ export type AccountIdentityUser = {
   profile: UserProfile;
   posix: { uidNumber: number; primaryGidNumber: number } | null;
 };
-/** `personal` marks a user's personal Linux group (their stored primary group). */
+/** `personal` marks a user's durably owned personal Linux group. */
 export type AccountIdentityGroup = { id: string; provider: UserProvider; name: string; gidNumber: number | null; personal: boolean };
 export type AccountIdentityPage<T> = { items: T[]; nextCursor: string | null };
 export type AccountIdentityAvailability = { localLinuxEnabled: boolean; freeipaEnabled: boolean };
@@ -122,7 +122,7 @@ export const createAccountIdentityService = (db: typeof sql = sql, upstreamIdent
   const groupRows = async (filter: SQLQuery) => {
     const rows = await db<{ id: string; provider: UserProvider; name: string; gid_number: number | null; personal: boolean }[]>`
       SELECT g.id, g.provider, g.name, g.gid_number,
-        EXISTS(SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id) AS personal
+        EXISTS(SELECT 1 FROM auth.personal_groups p WHERE p.group_id = g.id) AS personal
       FROM auth.groups g
       WHERE ${filter} ORDER BY g.id LIMIT ${PAGE_SIZE + 1}
     `;
@@ -207,22 +207,74 @@ export const createAccountIdentityService = (db: typeof sql = sql, upstreamIdent
     if ((input.kind !== "users" && input.kind !== "groups") || typeof input.name !== "string" || !input.name || input.name.includes("\0"))
       throw new AccountIdentityError("invalid_identity_lookup", 400);
   };
+  const reconcileIdentity = async (
+    input: { kind: "users" | "groups"; provider: UserProvider; name: string; identityId?: string; signal?: AbortSignal },
+    state: AccountIdentityAvailability,
+  ): Promise<AccountIdentityReconciliation> => {
+    validateLookup(input);
+    if (input.provider !== "local" && input.provider !== "ipa") throw new AccountIdentityError("invalid_identity_lookup", 400);
+    if (input.identityId !== undefined) cursor(input.identityId);
+    if (input.signal?.aborted) return { state: "unknown", reason: "provider_unavailable" };
+    if (input.provider === "ipa") {
+      if (!state.freeipaEnabled) return { state: "unknown", reason: "provider_disabled" };
+      return upstreamIdentity(input);
+    }
+    const result = await readLocalIdentity(input);
+    return input.signal?.aborted ? { state: "unknown", reason: "provider_unavailable" } : result;
+  };
   return {
+    /** Trusted application provisioning only; no profile, grants, credentials, or administrator impersonation. */
+    async provisioningUsers(input: { provider?: UserProvider; id?: string; after?: string }) {
+      if (input.provider !== undefined && input.provider !== "local" && input.provider !== "ipa")
+        throw new AccountIdentityError("invalid_provider", 400);
+      const id = cursor(input.id);
+      const after = cursor(input.after);
+      const state = await availability();
+      const [localAllowed, ipaAllowed] = await Promise.all([
+        isAccountCategoryAllowed({ provider: "local", profile: "user" }, db),
+        isAccountCategoryAllowed({ provider: "ipa", profile: "user" }, db),
+      ]);
+      const rows = await db<
+        {
+          id: string;
+          provider: UserProvider;
+          uid: string;
+          managed_by: UserProvider | null;
+          uid_number: number | null;
+          primary_gid_number: number | null;
+        }[]
+      >`SELECT u.id,u.provider,u.uid,p.managed_by,p.uid_number,p.primary_gid_number
+        FROM auth.users u LEFT JOIN auth.user_posix p ON p.user_id=u.id
+        WHERE u.provider IN ('local','ipa') AND (${input.provider ?? null}::text IS NULL OR u.provider=${input.provider ?? null})
+          AND u.profile='user'
+          AND (u.account_expires IS NULL OR u.account_expires>now())
+          AND (${id}::uuid IS NULL OR u.id=${id}::uuid)
+          AND (${after}::uuid IS NULL OR u.id>${after}::uuid)
+        ORDER BY u.id LIMIT ${PAGE_SIZE + 1}`;
+      const source = page(rows);
+      const items = source.items
+        .filter((row) => (row.provider === "local" ? localAllowed : ipaAllowed && state.freeipaEnabled))
+        .map((row) => ({
+          id: row.id,
+          provider: row.provider,
+          username: row.uid,
+          posix:
+            row.managed_by === row.provider && positiveId(row.uid_number) && positiveId(row.primary_gid_number)
+              ? { uidNumber: row.uid_number, primaryGidNumber: row.primary_gid_number }
+              : null,
+        }));
+      return { items, nextCursor: source.nextCursor, availability: state };
+    },
     async reconcile(
       actor: RequestActor,
       input: { kind: "users" | "groups"; provider: UserProvider; name: string; identityId?: string; signal?: AbortSignal },
     ): Promise<AccountIdentityReconciliation> {
       const { state } = await requireAdmin(actor);
-      validateLookup(input);
-      if (input.provider !== "local" && input.provider !== "ipa") throw new AccountIdentityError("invalid_identity_lookup", 400);
-      if (input.identityId !== undefined) cursor(input.identityId);
-      if (input.signal?.aborted) return { state: "unknown", reason: "provider_unavailable" };
-      if (input.provider === "ipa") {
-        if (!state.freeipaEnabled) return { state: "unknown", reason: "provider_disabled" };
-        return upstreamIdentity(input);
-      }
-      const result = await readLocalIdentity(input);
-      return input.signal?.aborted ? { state: "unknown", reason: "provider_unavailable" } : result;
+      return reconcileIdentity(input, state);
+    },
+    /** Trusted provisioning services use the same live identity check as administrator provisioning. */
+    async provisioningIdentity(input: { kind: "users"; provider: UserProvider; name: string; identityId: string; signal?: AbortSignal }) {
+      return reconcileIdentity(input, await availability());
     },
     /** Trusted application jobs only; this read does not authorize an HTTP caller or a filesystem mutation. */
     async localLifecycle(input: { kind: "users" | "groups"; identityId: string; name: string }) {

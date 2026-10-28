@@ -29,7 +29,7 @@ for (const providerName of ["anthropic", "gemini", "openrouter"]) {
       kind: "message",
       message: JSON.parse(JSON.stringify(assistant)),
       loopId: "old-turn",
-      modelProfileId: null,
+      modelId: null,
       providerModel: "fixture",
       usage: null,
       stopReason: "tool_use",

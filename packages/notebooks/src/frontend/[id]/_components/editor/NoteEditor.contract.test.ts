@@ -24,7 +24,7 @@ describe("Note editor surface", () => {
     expect(observer).toContain("scheduleDerivedEmit()");
     expect(observer).not.toMatch(/extractHeadingLines|toString\(\)|schedulePanelLocations/);
     expect(source).toMatch(
-      /const emitDerivedDocState = \(\) => \{\s*const md = ytext\.toString\(\);\s*headingLines = extractHeadingLines\(md\);/,
+      /const emitDerivedDocState = \(\) => \{\s*const md = currentText\(\);\s*headingLines = extractHeadingLines\(md\);/,
     );
   });
   test("jumps to a heading found in the current document, not the debounced index", async () => {

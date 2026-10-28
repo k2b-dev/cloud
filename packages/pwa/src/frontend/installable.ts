@@ -45,7 +45,7 @@ export const manifestResponse = async (c: Context) => {
     id: PWA_SCOPE,
     name,
     short_name: name,
-    start_url: PWA_SCOPE,
+    start_url: `${PWA_SCOPE}?launch`,
     scope: PWA_SCOPE,
     display: "standalone",
     background_color: PWA_CANVAS_COLORS.light,

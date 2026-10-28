@@ -743,17 +743,24 @@ test.each(
   const local = join(await directory(), "report.txt");
   await writeFile(local, "report");
   const nativeFetch = globalThis.fetch;
-  const nativeTimeout = AbortSignal.timeout;
   const deadlines: number[] = [];
+  const deadlineControllers: AbortController[] = [];
   let stalledRequests = 0;
   const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
     deadlines.push(ms);
-    return nativeTimeout(40);
+    const controller = new AbortController();
+    deadlineControllers.push(controller);
+    return controller.signal;
   });
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       if (new URL(String(input)).pathname.includes(route)) {
         stalledRequests++;
+        // Expire this request only after it reaches the intended stall. A short
+        // wall-clock timer can expire a prerequisite request on a busy machine.
+        const deadline = deadlineControllers.at(-1);
+        if (!deadline) throw new Error("Expected a request deadline");
+        const expire = () => deadline.abort(new DOMException("Test deadline", "TimeoutError"));
         if (stall === "body" || stall === "503 body")
           return new Response(
             new ReadableStream({
@@ -761,12 +768,16 @@ test.each(
                 controller.enqueue(new TextEncoder().encode('{"items":'));
                 init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason), { once: true });
               },
+              pull() {
+                queueMicrotask(expire);
+              },
             }),
             { status: stall === "503 body" ? 503 : 200, headers: { "content-type": "application/json" } },
           );
         return new Promise<Response>((_, reject) => {
           init?.signal?.throwIfAborted();
           init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+          queueMicrotask(expire);
         });
       }
       return nativeFetch(input, init);
@@ -791,6 +802,7 @@ test.each(
     expect(sessions.size).toBe(0);
   } finally {
     globalThis.fetch = nativeFetch;
+    for (const controller of deadlineControllers) controller.abort();
     timeout.mockRestore();
   }
 });

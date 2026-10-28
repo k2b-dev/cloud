@@ -4,7 +4,7 @@ import { z } from "zod";
 import { type TraceContext, trace } from "../services/logging";
 import { AiBackgroundCostError } from "./inference-calls";
 import * as quotaProvider from "./quota-provider";
-import { runAiStructured, selectAiWorkflowModelId, structuredProviderFailure } from "./structured";
+import { runAiStructured, structuredProviderFailure } from "./structured";
 import * as structuredRuns from "./structured-runs";
 
 describe("structured provider failures", () => {
@@ -46,21 +46,6 @@ describe("structured provider failures", () => {
   });
 });
 
-describe("workflow AI model selection", () => {
-  test("uses action, workflow, background, then platform default precedence", () => {
-    expect(selectAiWorkflowModelId({ requestedModelId: "action", workflowModelId: "workflow", backgroundModelId: "background" })).toBe(
-      "action",
-    );
-    expect(selectAiWorkflowModelId({ workflowModelId: "workflow", backgroundModelId: "background" })).toBe("workflow");
-    expect(selectAiWorkflowModelId({ backgroundModelId: "background" })).toBe("background");
-    expect(selectAiWorkflowModelId({})).toBeUndefined();
-  });
-
-  test("ignores blank overrides", () => {
-    expect(selectAiWorkflowModelId({ requestedModelId: " ", workflowModelId: "", backgroundModelId: "background" })).toBe("background");
-  });
-});
-
 for (const [family, reasoningEffort] of [
   ["openai-compatible", "low"],
   ["gemini", "none"],
@@ -93,18 +78,28 @@ for (const [family, reasoningEffort] of [
         task: "test",
         input: "Answer",
         output: z.object({ answer: z.string() }),
-        resolveModel: async () => ({
-          provider,
-          profile: {
-            id: "fixture",
-            label: "Fixture",
-            provider: "openai",
-            model: "fixture",
-            enabled: true,
-            capabilities: [],
-            dataBoundary: "hosted",
-          },
-        }),
+        resolveModel: async (request) => {
+          expect(request).toEqual({ class: "balanced" });
+          return {
+            model: { id: "fixture" },
+            provider,
+            profile: {
+              modelId: "fixture",
+              providerId: "fixture",
+              variantLabel: "Standard",
+              description: "",
+              icon: { kind: "provider" },
+              showInPicker: true,
+              id: "fixture",
+              label: "Fixture",
+              provider: "openai",
+              model: "fixture",
+              enabled: true,
+              capabilities: [],
+              dataBoundary: "hosted",
+            },
+          };
+        },
       });
       expect(result.output).toEqual({ answer: "ok" });
       expect(requests).toHaveLength(1);

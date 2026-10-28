@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type AutoReplyFacts, evaluateAutoReplyPolicy, parseReturnPathAddress } from "./auto-reply-policy";
+import { type AutoReplyFacts, automatedMailReasons, evaluateAutoReplyPolicy, parseReturnPathAddress } from "./auto-reply-policy";
 
 const inbound = (overrides: Partial<AutoReplyFacts> = {}): AutoReplyFacts => ({
   senderAddresses: ["customer@example.test"],
@@ -57,4 +57,18 @@ describe("evaluateAutoReplyPolicy", () => {
     expect(parseReturnPathAddress("<>")).toBeNull();
     expect(parseReturnPathAddress("first@example.test, second@example.test")).toBeNull();
   });
+});
+
+test.each([
+  { facts: {}, bulk: false },
+  { facts: { autoSubmitted: " NO " }, bulk: false },
+  { facts: { autoSubmitted: " Auto-Generated " }, bulk: true },
+  { facts: { precedence: " BULK " }, bulk: true },
+  { facts: { precedence: "list" }, bulk: true },
+  { facts: { precedence: "Junk" }, bulk: true },
+  { facts: { precedence: "normal" }, bulk: false },
+  { facts: { listId: "Updates <updates.example.test>" }, bulk: true },
+  { facts: { listId: " " }, bulk: false },
+])("shares bulk classification with automatic-reply guards: %j", ({ facts, bulk }) => {
+  expect(automatedMailReasons(facts).length > 0).toBe(bulk);
 });

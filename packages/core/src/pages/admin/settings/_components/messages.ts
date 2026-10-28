@@ -4,6 +4,12 @@ export const settingsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      settingConflictBy: ({ name, setting, time }: { name: string; setting: string; time: string }) =>
+        `${name} changed “${setting}” at ${time}`,
+      settingConflict: ({ setting }: { setting: string }) => `Someone else changed “${setting}” in the meantime`,
+      settingConflictDetail: "Your changes are not saved yet. Save yours over theirs, or take their value and keep your other changes.",
+      settingConflictKeepMine: "Save my change",
+      settingConflictTakeTheirs: "Take their value",
       skillProjectAccessTitle: "Access through projects",
       skillProjectAccessHelp: "Members of these projects can read and use this Skill. Editing permissions stay unchanged.",
       skillProjectUnavailable: "Project without access to its details",
@@ -244,6 +250,12 @@ export const settingsMessages = i18n.define({
       templatePreview: ({ label }: { label: string }) => `${label} preview`,
     },
     de: {
+      settingConflictBy: ({ name, setting, time }) => `${name} hat „${setting}“ um ${time} geändert`,
+      settingConflict: ({ setting }) => `Jemand anderes hat „${setting}“ inzwischen geändert`,
+      settingConflictDetail:
+        "Deine Änderungen sind noch nicht gespeichert. Speichere deine über ihre, oder übernimm ihren Wert und behalte deine übrigen Änderungen.",
+      settingConflictKeepMine: "Meine Änderung speichern",
+      settingConflictTakeTheirs: "Ihren Wert übernehmen",
       skillProjectAccessTitle: "Zugriff über Projekte",
       skillProjectAccessHelp: "Mitglieder dieser Projekte können diesen Skill lesen und nutzen. Bearbeitungsrechte bleiben unverändert.",
       skillProjectUnavailable: "Projekt ohne Zugriff auf Details",
