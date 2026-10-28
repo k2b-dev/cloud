@@ -138,8 +138,8 @@ export const deliverMessage = async (messageId: string): Promise<boolean> => {
         message.kind === "system" ? "added" : person.mention ? "mention" : person.reply ? "reply" : person.follow ? "follow" : "message";
       if (level === "none" || (reason === "message" && level !== "all")) continue;
       if (reason === "added") {
-        await db`INSERT INTO chat.notification_outbox (message_id, conversation_id, user_id, ordering_key)
-          VALUES (${message.id}::uuid, ${conversation.id}::uuid, ${person.id}::uuid, ${pushKey(person.id, conversation.id)}) ON CONFLICT DO NOTHING`;
+        await db`INSERT INTO chat.notification_outbox (message_id, conversation_id, user_id, ordering_key, due_at)
+          VALUES (${message.id}::uuid, ${conversation.id}::uuid, ${person.id}::uuid, ${pushKey(person.id, conversation.id)}, ${message.created_at}::timestamptz + interval '3 seconds') ON CONFLICT DO NOTHING`;
         continue;
       }
       await db`INSERT INTO chat.notification_push_state (user_id, conversation_id)
@@ -239,7 +239,7 @@ export const sendPush = async (userId: string, conversationId: string, addedMess
     if (!state) return null;
     const [pending] = addedMessageId
       ? await db<Pending[]>`SELECT ${userId}::uuid AS user_id, ${conversationId}::uuid AS conversation_id,
-          id AS message_id, NULL::uuid AS personal_message_id, 'added' AS reason, 1 AS message_count, clock_timestamp() AS due_at
+          id AS message_id, NULL::uuid AS personal_message_id, 'added' AS reason, 1 AS message_count, created_at + interval '3 seconds' AS due_at
           FROM chat.messages WHERE id = ${addedMessageId}::uuid AND conversation_id = ${conversationId}::uuid
             AND kind = 'system' AND ${userId}::uuid = ANY(notification_added_users) AND system_code IN ('conversation_created', 'members_added', 'groups_added')`
       : await db<
@@ -304,7 +304,7 @@ export const sendPush = async (userId: string, conversationId: string, addedMess
     if (
       level === "none" ||
       (pending.reason === "message" && level !== "all") ||
-      (latest.kind === "text" && Number(participant?.read_seq ?? 0) >= Number(latest.seq)) ||
+      Number(participant?.read_seq ?? 0) >= Number(latest.seq) ||
       (!addedMessageId && Number(state.last_seq) >= Number(latest.seq))
     ) {
       await clear();

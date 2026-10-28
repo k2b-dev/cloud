@@ -207,9 +207,25 @@ suiteFor(
       { id: string }[]
     >`SELECT id FROM chat.messages WHERE conversation_id = ${chat.id}::uuid AND system_code = 'conversation_created'`;
     await deliverMessage(message!.id);
-    await due(chat.id);
+    expect(await sendPush(recipient.id, chat.id, message!.id)).toBeGreaterThan(0);
+    await sql`UPDATE chat.messages SET created_at = clock_timestamp() - interval '4 seconds' WHERE id = ${message!.id}::uuid`;
     await sendPush(recipient.id, chat.id, message!.id);
     expect(sent.map((entry) => entry.key)).toEqual(["added"]);
+  });
+  test("reading an addition during its delay also suppresses the added push", async () => {
+    const author = await person("Nora Weber"),
+      recipient = await person("Lea Müller");
+    capture();
+    const chat = await f.create(author, [recipient]);
+    const [message] = await sql<{ id: string; seq: string }[]>`SELECT id, seq FROM chat.messages
+      WHERE conversation_id = ${chat.id}::uuid AND system_code = 'conversation_created'`;
+    await deliverMessage(message!.id);
+    expect((await f.request(recipient.headers, `/${chat.shortId}/read`, "POST", { seq: Number(message!.seq), thread: "all" })).status).toBe(
+      200,
+    );
+    await sql`UPDATE chat.messages SET created_at = clock_timestamp() - interval '4 seconds' WHERE id = ${message!.id}::uuid`;
+    await sendPush(recipient.id, chat.id, message!.id);
+    expect(sent).toHaveLength(0);
   });
   test("self-joining a channel does not create an added notification", async () => {
     const author = await person("Nora Weber"),
@@ -234,6 +250,7 @@ suiteFor(
       SELECT id, to_jsonb(notification_added_users) AS notification_added_users FROM chat.messages WHERE conversation_id = ${chat.id}::uuid AND system_code = 'groups_added'`;
     expect(message!.notification_added_users).toEqual([newcomer.id]);
     await deliverMessage(message!.id);
+    await sql`UPDATE chat.messages SET created_at = clock_timestamp() - interval '4 seconds' WHERE id = ${message!.id}::uuid`;
     await sendPush(newcomer.id, chat.id, message!.id);
     await sendPush(recipient.id, chat.id, message!.id);
     expect(sent.map((entry) => entry.key)).toEqual(["added"]);
