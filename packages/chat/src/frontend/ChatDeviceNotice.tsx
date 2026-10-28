@@ -23,7 +23,8 @@ const dismissed = () => {
 /**
  * One line above the chats about this device: do not disturb with "End", the offer to turn notifications on (once per
  * device), or, on iPhone in Safari, that Cloud needs to be on the Home Screen. At most one shows, always in the same
- * place. The server draws the one this device showed last, and the browser checks it again.
+ * place. The server draws the one this device found last, and the browser checks it again; a new line waits for the
+ * next visit, so it never moves the chats.
  */
 export default function ChatDeviceNotice(props: { initial: DeviceNotice; dateConfig: DateContext; now: () => Date }): JSX.Element {
   const t = useChatMessages();
@@ -43,15 +44,18 @@ export default function ChatDeviceNotice(props: { initial: DeviceNotice; dateCon
     ]);
     // A failed read keeps what shows; only an answer changes it.
     if (!quiet && !device) return;
-    show(
+    const next: DeviceNotice =
       quiet?.active && quiet.reason
         ? { kind: "quiet", reason: quiet.reason, until: quiet.until }
         : device?.homeScreenRequired
           ? { kind: "home-screen" }
           : device?.supported && device.permission === "default" && !dismissed()
             ? { kind: "ask" }
-            : { kind: "none" },
-    );
+            : { kind: "none" };
+    // A line never pushes the chats down after they are shown: an empty place only remembers it for the next visit,
+    // where the server draws it in the first picture. A shown line changes or goes away at once.
+    if (notice().kind === "none" && next.kind !== "none") document.cookie = deviceNoticeCookie(next);
+    else show(next);
   };
   onMount(() => {
     void read().catch(() => {});

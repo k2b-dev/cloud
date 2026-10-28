@@ -47,32 +47,39 @@ export default function ChatNotificationSettings(props: {
       .catch(() => {});
   });
 
-  const save = async (input: Update) => {
+  // Saves run one after another, and the last choice wins: a choice made while one saves waits for it, and only the
+  // last one's outcome shows.
+  let queue = Promise.resolve();
+  let latest = 0;
+  const save = (input: Update) => {
+    const mine = ++latest;
     setPending(input.level === "default" ? props.notifications.defaultLevel : input.level);
     setFailed(null);
-    try {
-      await props.save(input);
-    } catch {
-      setFailed(input);
-    } finally {
-      setPending(null);
-    }
+    queue = queue.then(async () => {
+      try {
+        await props.save(input);
+      } catch {
+        if (mine === latest) setFailed(input);
+      } finally {
+        if (mine === latest) setPending(null);
+      }
+    });
   };
   const choose = (level: Level) => {
-    if (pending() || level === props.notifications.level) return;
+    if (level === value()) return;
     if (level === "none") {
       const duration = muteFor() ?? "8h";
       setMuteFor(duration);
-      void save({ level: "none", for: duration });
+      save({ level: "none", for: duration });
       return;
     }
     // The marked default follows the chat, so choosing it gives the choice back to the chat's rule.
-    void save(level === props.notifications.defaultLevel ? { level: "default" } : { level });
+    save(level === props.notifications.defaultLevel ? { level: "default" } : { level });
   };
   const chooseDuration = (duration: MuteFor) => {
-    if (pending()) return;
+    if (duration === muteFor()) return;
     setMuteFor(duration);
-    void save({ level: "none", for: duration });
+    save({ level: "none", for: duration });
   };
   const description = (level: Level) =>
     level === "all"
@@ -95,7 +102,7 @@ export default function ChatNotificationSettings(props: {
   };
 
   return (
-    <DetailPanel.Section title={t().notificationsLabel} icon="ti ti-bell">
+    <DetailPanel.Section title={t().notificationsLabel}>
       <div class="chat-notifications">
         <ChoiceList
           aria-label={t().notificationsLabel}
@@ -145,7 +152,7 @@ export default function ChatNotificationSettings(props: {
             {(input) => (
               <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
                 {t().notificationsNotSaved({ level: label(props.notifications.level) })}{" "}
-                <Button variant="text" size="xs" onClick={() => void save(input())}>
+                <Button variant="text" size="xs" onClick={() => save(input())}>
                   {t().retry}
                 </Button>
               </InlineGuidance>

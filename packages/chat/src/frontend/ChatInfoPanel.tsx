@@ -46,7 +46,7 @@ export default function ChatInfoPanel(props: {
   onCreateThread?: () => void;
   /** What the chat shared, below its members. */
   shared?: JSX.Element;
-  /** The reader's notifications for this chat, below what it shared. */
+  /** The reader's notifications for this chat, above its members. */
   notifications?: JSX.Element;
   onDiscovery?: () => void;
   onLeave: () => void;
@@ -236,6 +236,8 @@ export default function ChatInfoPanel(props: {
               {(purpose) => <p class="chat-info__purpose">{purpose()}</p>}
             </Show>
           </DetailPanel.Section>
+          {/* Above the members, whose pages load and grow: the level stands in the first picture and never moves. */}
+          {props.notifications}
           <DetailPanel.Section title={t().membersTitle}>
             <div class="flex flex-col gap-2" aria-busy={status() === "loading"}>
               <TextInput
@@ -307,12 +309,10 @@ export default function ChatInfoPanel(props: {
           <p class="chat-system-chats__membership">
             {systemMembers(props.conversation.resource?.type, t())}. {t().systemAccessHint}
           </p>
-        </Show>
-        {/* The first member page owns this space. Showing shared items before it arrives would push them out of view. */}
-        <Show when={system() || status() !== "loading" || rows.length > 0}>
-          {props.shared}
           {props.notifications}
         </Show>
+        {/* The first member page owns this space. Showing shared items before it arrives would push them out of view. */}
+        <Show when={system() || status() !== "loading" || rows.length > 0}>{props.shared}</Show>
       </DetailPanel.Body>
     </DetailPanel>
   );

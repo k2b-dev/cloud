@@ -30,6 +30,8 @@ import {
   MemberRemovalSchema,
   MemberSchema,
   type MessageViewSchema,
+  type NotificationsSchema,
+  NotificationUpdateSchema,
   PEOPLE_PAGE_SIZE,
   PeoplePageSchema,
   PeopleQuerySchema,
@@ -70,6 +72,7 @@ type Permission = z.infer<typeof PermissionSchema>;
 /** A thread as the in-memory server keeps it: the viewer's read state lives on the thread. */
 type ThreadEntry = {
   resource?: z.infer<typeof ThreadSchema>["resource"];
+  following?: boolean;
   id: string;
   name: string;
   description: string | null;
@@ -207,6 +210,9 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
   let failingReactions = 0;
   const reactionRequests: { method: string; messageId: string; emoji?: string }[] = [];
   let failingUnread = 0;
+  // Notification level writes; the next ones can fail.
+  let failingNotifications = 0;
+  const notificationWrites: z.infer<typeof NotificationUpdateSchema>[] = [];
   let failingThreads = 0;
   let failingShared = 0;
   // Uploaded files of the made-up server: bytes and view, like chat.attachments; the next uploads can fail.
@@ -375,6 +381,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
       )
       .map(
         (thread): z.infer<typeof ThreadSchema> => ({
+          ...(thread.following === undefined ? {} : { following: thread.following }),
           resource: thread.resource,
           id: thread.id,
           name: thread.name,
@@ -869,6 +876,40 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           deliver("me", "", { type: "preferences", collapsed });
         }
         return Response.json({ collapsed });
+      }
+      const notificationsMatch = /^\/api\/chat\/conversations\/([^/]+)\/notifications$/.exec(url.pathname);
+      if (notificationsMatch && request.method === "PUT") {
+        const chat = chats.get(notificationsMatch[1]!);
+        if (!chat?.conversation.notifications) return Response.json({ message: "Not found" }, { status: 404 });
+        const input = NotificationUpdateSchema.parse(await request.json());
+        notificationWrites.push(input);
+        if (failingNotifications > 0) {
+          failingNotifications--;
+          return Response.json({ code: "INTERNAL", message: "The level was not saved." }, { status: 500 });
+        }
+        const current = chat.conversation.notifications;
+        const hours = input.level === "none" ? { "1h": 1, "8h": 8, "1w": 168, forever: null }[input.for] : null;
+        const next: z.infer<typeof NotificationsSchema> =
+          input.level === "default"
+            ? { ...current, level: current.defaultLevel, choice: null, until: null }
+            : input.level === "none"
+              ? {
+                  ...current,
+                  level: "none",
+                  choice: "none",
+                  until: hours === null ? null : new Date(now().getTime() + hours * 3_600_000).toISOString(),
+                }
+              : { ...current, level: input.level, choice: input.level, until: null };
+        chat.conversation = { ...chat.conversation, notifications: next };
+        deliver("me", "", { type: "notifications" });
+        return Response.json(next);
+      }
+      const followMatch = /^\/api\/chat\/conversations\/([^/]+)\/threads\/([^/]+)\/follow$/.exec(url.pathname);
+      if (followMatch && (request.method === "PUT" || request.method === "DELETE")) {
+        const thread = chats.get(followMatch[1]!)?.threads.find((item) => item.id === followMatch[2]);
+        if (!thread) return Response.json({ message: "Not found" }, { status: 404 });
+        thread.following = request.method === "PUT";
+        return Response.json({ following: thread.following });
       }
       const personalMatch = /^\/api\/chat\/conversations\/([^/]+)\/personal$/.exec(url.pathname);
       if (personalMatch && request.method === "PUT") {
@@ -1754,6 +1795,18 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
         type: element.parent.type === "notebooks.notebook" ? "notebooks.note" : "spaces.item",
       });
     },
+    /** The viewer's level in a chat, as the server derives it; `null` hides the Info section. */
+    setNotifications: (id: string, notifications: z.infer<typeof NotificationsSchema> | null, mentionsUnread = 0) => {
+      const chat = chats.get(id)!;
+      chat.conversation = { ...chat.conversation, notifications, mentionsUnread };
+    },
+    failNotifications: (count = 1) => {
+      failingNotifications = count;
+    },
+    notificationWrites,
+    followThread: (chat: string, thread: string, following: boolean) => {
+      chats.get(chat)!.threads.find((item) => item.id === thread)!.following = following;
+    },
     resourceThread: (chat: string, thread: string, resource: NonNullable<z.infer<typeof ThreadSchema>["resource"]>) => {
       chats.get(chat)!.threads.find((item) => item.id === thread)!.resource = resource;
     },
@@ -1897,6 +1950,8 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     },
     reset: () => {
       uploads.clear();
+      notificationWrites.length = 0;
+      failingNotifications = 0;
       discarded.length = 0;
       failingUploads = 0;
       itemEvents.clear();

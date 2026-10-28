@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { CHAT_DEVICE_NOTICE_COOKIE, type DeviceNotice, deviceNoticeCookie, parseDeviceNotice, serializeDeviceNotice } from "./device-notice";
+import {
+  CHAT_DEVICE_NOTICE_COOKIE,
+  type DeviceNotice,
+  deviceNoticeCookie,
+  parseDeviceNotice,
+  serializeDeviceNotice,
+} from "./device-notice";
 
 const now = new Date("2026-10-28T10:42:00Z");
 
