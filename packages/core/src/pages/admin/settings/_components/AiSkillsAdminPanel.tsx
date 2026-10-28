@@ -25,9 +25,7 @@ export default function AiSkillsAdminPanel(props: Props) {
   const t = () => settingsMessages.resolve([locale()]).t;
   const appName = (source: { appId: string; appName: string }) => props.appNames[source.appId] ?? source.appName;
   const totalPages = Math.ceil(props.total / props.perPage);
-  const baseUrl = props.search
-    ? `/admin/settings?tab=ai-skills&search=${encodeURIComponent(props.search)}&page=`
-    : "/admin/settings?tab=ai-skills&page=";
+  const baseUrl = props.search ? `/admin/ai?sec=skills&search=${encodeURIComponent(props.search)}&page=` : "/admin/ai?sec=skills&page=";
   const columns: DataTableColumn<AiSkillAdminListItem>[] = [
     { id: "skill", header: t().skill, value: (skill) => skill.name },
     { id: "source", header: t().skillSource, value: (skill) => (skill.source ? appName(skill.source) : "") },
@@ -59,12 +57,7 @@ export default function AiSkillsAdminPanel(props: Props) {
 
       <div class="flex items-center gap-2">
         <div class="min-w-0 flex-1">
-          <SearchBar
-            action="/admin/settings?tab=ai-skills"
-            value={props.search}
-            placeholder={t().searchSkills}
-            ariaLabel={t().searchAiSkills}
-          />
+          <SearchBar action="/admin/ai?sec=skills" value={props.search} placeholder={t().searchSkills} ariaLabel={t().searchAiSkills} />
         </div>
         <span class="shrink-0 text-xs tabular-nums text-dimmed">
           {t().shownOfTotal({ shown: props.skills.length, total: props.total })}

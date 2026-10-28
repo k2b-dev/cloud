@@ -143,7 +143,9 @@ class World {
   message(id: string, m: ModelMessage) {
     return MessageSchema.parse({
       reactions: [],
+      mentions: [],
       refs: [],
+      attachments: [],
       thread: null,
       replyTo: null,
       id: id + String(m.seq).padStart(4, "0"),

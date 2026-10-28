@@ -74,7 +74,7 @@ import {
 import { batch, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { DemoCard } from "../DemoCard";
-import { ChartDemo } from "./charts";
+import { BarChartStatesDemo, ChartDemo } from "./charts";
 import { FileGridDemo } from "./file-grid";
 import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
@@ -1973,6 +1973,7 @@ const demos: DemoSection = {
   charts: (props) => (
     <DemoGrid columns="one">
       <ChartDemo window={new URLSearchParams(props.search).get("window") === "1h" ? "1h" : "24h"} />
+      <BarChartStatesDemo />
       <DemoCard
         id="line-top-legend"
         chip={{ kind: "component", name: "Chart", from: "@k2b/ui" }}

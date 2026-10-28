@@ -55,6 +55,17 @@ Press **Esc** in an open chat to mark that chat read.
 
 If messages arrive while you are away from the tab, **New messages** takes you back to the unread messages you skipped. It loads the missing history if needed. Skipped messages stay unread until you see them.
 
+## See what is for you {icon="at"}
+
+**For you** at the top of the list shows messages that mention you and replies to your messages, from every chat, also from Spaces and Notebooks. The newest come first, and the number shows how many you have not read yet.
+
+:::steps
+1. Choose **For you** in the list.
+2. Choose an entry to open its thread at the message.
+:::
+
+Reading the message in its thread marks it read here too. You only see messages you may read.
+
 ## Filter the list {icon="filter"}
 
 Choose **Unread** above the list to show chats with new messages or your unread mark. A chat stays in that view after you read it, until you leave the filter. **All** returns to the whole list. The address keeps your filter when you reload or go back.

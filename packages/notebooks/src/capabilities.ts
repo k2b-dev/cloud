@@ -13,6 +13,7 @@ import { hasPermission, type PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit, isStandaloneServiceAccountKind } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { z } from "zod";
+import { annotationActions, annotationQueries } from "./annotation-capabilities";
 import {
   ActivityDataSchema,
   ActivityInputSchema,
@@ -583,7 +584,13 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
       blocksTruncated: blocks.length > 500,
     },
     summary: t.readNote({ title: note.title }),
-    refs: [noteRef(note, resolved.data.notebook.name), notebookRef(resolved.data.notebook)],
+    refs: [
+      {
+        ...noteRef(note, resolved.data.notebook.name),
+        context: t.noteInNotebook({ notebook: resolved.data.notebook.name }).replace(/\s+/g, " ").trim().slice(0, 200),
+      },
+      notebookRef(resolved.data.notebook),
+    ],
     links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, note) }],
   };
   while (notebookEnvelopeBytes(result) > ENVELOPE_DATA_BUDGET) {
@@ -1096,13 +1103,27 @@ export const notebooksCapabilities = defineCapabilities({
   },
   presentation: notebooksCapabilityPresentation,
   types: {
+    annotation: {
+      title: "Inline comment",
+      description: "A passage comment and its replies, owned by Notebooks.",
+      icon: "ti ti-message",
+      reader: "annotation.read",
+    },
     notebook: {
       title: "Notebook",
       description: "A permission-scoped collection of Markdown notes.",
       icon: "ti ti-notebook",
       reader: "notebook.read",
+      pages: ["/app/notebooks/:id"],
     },
-    note: { title: "Note", description: "A Markdown note in an accessible notebook.", icon: "ti ti-file-text", reader: "note.read" },
+    note: {
+      title: "Note",
+      description: "A Markdown note in an accessible notebook.",
+      icon: "ti ti-file-text",
+      color: "violet",
+      reader: "note.read",
+      pages: ["/app/notebooks/:notebook/notes/:id"],
+    },
     comment: {
       title: "Note comment",
       description: "Durable discussion context attached to one accessible note.",
@@ -1111,6 +1132,7 @@ export const notebooksCapabilities = defineCapabilities({
     },
   },
   queries: {
+    ...annotationQueries,
     "notebook.activity": {
       title: "Read note activity",
       description:
@@ -1262,6 +1284,7 @@ export const notebooksCapabilities = defineCapabilities({
     },
   },
   actions: {
+    ...annotationActions,
     "comment.update": {
       title: "Edit note comment",
       description: "Replace the current user's own comment within ten minutes of creation. Requires write access to the notebook.",

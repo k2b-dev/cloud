@@ -1,4 +1,5 @@
 import {
+  AnchoredPopover,
   AppOverview,
   AppWorkspace,
   type AppWorkspaceNavTreeMove,
@@ -52,6 +53,7 @@ import {
 } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
+import { DetailPanelOutlineDemo } from "./detail-outline";
 import { BottomSheetDemo, MobileShellDemo, NavigationDemo, TabBarDemo } from "./mobile-navigation";
 import { ResizeSeparatorDemo } from "./resize-separator";
 import { DemoGrid, type DemoSection } from "./types";
@@ -1545,8 +1547,13 @@ const DetailPanelDemo = () => {
               <DetailPanel.Header
                 title="Bug report"
                 subtitle="No preview · 5 minutes ago"
+                menu={[
+                  { label: "Duplicate request", icon: "ti ti-copy-plus", action: () => {} },
+                  { items: [{ label: "Copy Cloud ID", icon: "ti ti-id", action: () => {} }] },
+                ]}
+                menuLabel="Request actions"
                 actions={
-                  <IconButton variant="ghost" size="xs" label="Close request details">
+                  <IconButton variant="ghost" size="sm" label="Close request details">
                     <i class="ti ti-x" aria-hidden="true" />
                   </IconButton>
                 }
@@ -2056,6 +2063,40 @@ const DetailPanelActionDemo = () => (
   </DemoCard>
 );
 
+const AnchoredPopoverDemo = () => {
+  const [anchor, setAnchor] = createSignal<HTMLElement | null>(null);
+  return (
+    <DemoCard
+      id="anchored-popover"
+      chip={{ kind: "component", name: "AnchoredPopover", from: "@k2b/ui" }}
+      description="A card anchored to a control, such as a model card with a slider. It keeps the side it opened on while its content changes, returns focus on close, and is a bottom sheet on a phone."
+      code={`const [anchor, setAnchor] = createSignal<HTMLElement | null>(null);
+
+<Button aria-expanded={anchor() !== null} onClick={(event) => setAnchor(anchor() ? null : event.currentTarget)}>
+  Model
+</Button>
+<AnchoredPopover anchor={anchor()} onClose={() => setAnchor(null)} label="Choose a model" width="21rem">
+  …
+</AnchoredPopover>`}
+    >
+      <Button
+        variant="secondary"
+        aria-haspopup="dialog"
+        aria-expanded={anchor() !== null}
+        onClick={(event) => setAnchor(anchor() ? null : event.currentTarget)}
+      >
+        Model
+      </Button>
+      <AnchoredPopover anchor={anchor()} onClose={() => setAnchor(null)} label="Choose a model" width="21rem">
+        <div class="grid gap-2 p-4 text-sm">
+          <strong>Balanced</strong>
+          <span class="text-dimmed">For most tasks</span>
+        </div>
+      </AnchoredPopover>
+    </DemoCard>
+  );
+};
+
 const FloatingDemo = () => {
   const [open, setOpen] = createSignal(false);
   let scope: HTMLDivElement | undefined;
@@ -2224,6 +2265,7 @@ const items = [
   ),
   "detail-panel": () => (
     <DemoGrid columns="one">
+      <DetailPanelOutlineDemo />
       <DetailPanelActionDemo />
       <DetailPanelDemo />
     </DemoGrid>
@@ -2249,6 +2291,11 @@ const items = [
   "floating-window": () => (
     <DemoGrid columns="one">
       <FloatingDemo />
+    </DemoGrid>
+  ),
+  "anchored-popover": () => (
+    <DemoGrid columns="one">
+      <AnchoredPopoverDemo />
     </DemoGrid>
   ),
 };

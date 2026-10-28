@@ -5,6 +5,7 @@ import type { ServerWebSocket } from "bun";
 import { z } from "zod";
 import {
   AddMembersSchema,
+  type AttachmentView,
   CHANGES_PAGE_SIZE,
   ChangeSchema,
   CONVERSATION_PAGE_SIZE,
@@ -14,6 +15,7 @@ import {
   CreateOutcomeSchema,
   CreateThreadSchema,
   ExistingMatchSchema,
+  type ForYouItemSchema,
   type ItemEventSchema,
   LeaveResultSchema,
   LeaveSchema,
@@ -177,15 +179,17 @@ const messageId = (chat: string, seq: number) => `${chat}${String(seq).padStart(
  * the live socket. Tests add messages from others with `receive`, which the server stores and delivers live like
  * the chat app does, and make the next sends fail with `failSends`.
  */
-export const startChatHarness = async (options: { autoMount?: boolean } = {}) => {
+export const startChatHarness = async (options: { autoMount?: boolean; renderPage?: (request: Request) => Promise<Response> } = {}) => {
   const started = performance.now();
   const now = () => new Date(chatTestNow.getTime() + (performance.now() - started));
   const [harness, css, fontAssets] = await Promise.all([
     buildHarness(),
     Promise.all([
-      buildCss(resolve(import.meta.dir, "../../../../styles.css")),
+      // Production order (define-app.ts): the layer statement, the app's stylesheet, then Cloud's global one, so an
+      // app selector that only ties with a shared one loses here as it does in production.
       buildCss(resolve(import.meta.dir, "../styles/app.css")),
-    ]).then((parts) => parts.join("\n")),
+      buildCss(resolve(import.meta.dir, "../../../../styles.css")),
+    ]).then((parts) => ["@layer properties, theme, base, components, utilities;", ...parts].join("\n")),
     fonts(),
   ]);
   const chats = new Map<string, Chat>();
@@ -205,6 +209,10 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   let failingUnread = 0;
   let failingThreads = 0;
   let failingShared = 0;
+  // Uploaded files of the made-up server: bytes and view, like chat.attachments; the next uploads can fail.
+  const uploads = new Map<string, { view: AttachmentView; bytes: ArrayBuffer }>();
+  let failingUploads = 0;
+  const discarded: string[] = [];
   // Changes the owning app reports for a Space or notebook chat, as GET …/events answers them.
   const itemEvents = new Map<string, z.infer<typeof ItemEventSchema>[]>();
   let failingItemEvents = 0;
@@ -220,7 +228,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     {
       id: string;
       title: string;
-      preview: string;
+      context: string;
       readable: boolean;
       type?: string;
       parent?: CloudResourceRef;
@@ -252,7 +260,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
           appId: "spaces",
           manifestHash: "0".repeat(64),
           types: [
-            { localId: "task", title: "Task", description: "A task.", icon: "ti ti-circle", reader: "task.read" },
+            { localId: "task", title: "Task", description: "A task.", icon: "ti ti-circle", color: "emerald", reader: "task.read" },
             { localId: "item", title: "Item", description: "An item.", icon: "ti ti-circle", reader: "task.read" },
           ],
           queries: [query("task.read")],
@@ -266,7 +274,16 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   const reads: { chat: string; seq: number }[] = [];
   // Which part of the chat each read named: "general", "all", or a thread.
   const readViews: { chat: string; seq: number; thread: string }[] = [];
-  const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string; refs?: CloudResourceRef[] }[] = [];
+  const posted: {
+    chat: string;
+    clientId: string;
+    body: string;
+    thread?: string;
+    replyTo?: string;
+    refs?: CloudResourceRef[];
+    attachments?: string[];
+    mentions?: { start: number; end: number; principal: { type: string; id: string } }[];
+  }[] = [];
   const discoveryUpdates: { entries: unknown[]; name?: string; purpose?: string; revision?: string }[] = [];
 
   const principalId = (principal: MemberPrincipal) =>
@@ -457,7 +474,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     body: string,
     at: Date,
     kind: "text" | "system" = "text",
-    target: { thread?: string | null; replyTo?: string; refs?: CloudResourceRef[] } = {},
+    target: { thread?: string | null; replyTo?: string; refs?: CloudResourceRef[]; attachments?: AttachmentView[] } = {},
   ) => {
     const entry = chats.get(chat)!;
     const seq = entry.messages.length + 1;
@@ -466,9 +483,13 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     const thread = original ? original.thread : (target.thread ?? null);
     const message: Message = {
       reactions: [],
+      mentions: [],
       refs: target.refs ?? [],
+      attachments: target.attachments ?? [],
       thread,
-      replyTo: original ? { id: original.id, author: original.author, preview: original.body ?? "" } : null,
+      replyTo: original
+        ? { id: original.id, author: original.author, preview: original.body ?? "", attachments: original.attachments }
+        : null,
       id: messageId(chat, seq),
       conversationId: chat,
       seq,
@@ -650,6 +671,20 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
   };
   let allowAuthenticated = true;
   let collapsed: string[] = [];
+  // "For you" as the server answers it, set by the test; failing reads answer 503.
+  let forYou: z.infer<typeof ForYouItemSchema>[] = [];
+  let failingForYou = 0;
+  const forYouFails = () => {
+    if (failingForYou <= 0) return false;
+    failingForYou -= 1;
+    return true;
+  };
+  // The list's search as the server answers it: member chats and Space or notebook chats by title, their named threads,
+  // and the Spaces and notebooks without a chat that a test adds; at most eight.
+  let emptyContainerHits: { ref: { type: "spaces.space" | "notebooks.notebook"; id: string }; name: string }[] = [];
+  let searchSystemUnavailable = false;
+  let failingSearch = 0;
+  const searchQueries: string[] = [];
   const list = (archived = false, unread = false, ids?: string[], cursor?: z.infer<typeof ConversationQuerySchema>["cursor"]) => {
     const items = [...chats.values()]
       .map((chat) => chat.conversation)
@@ -675,6 +710,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     const last = page.at(-1);
     return {
       items: page,
+      forYouUnread: forYou.filter((item) => item.unread).length,
       nextCursor:
         items.length > CONVERSATION_PAGE_SIZE && last
           ? JSON.stringify({ at: last.lastActivityAt, id: last.id, rank: last.pinnedRank ?? 2147483647 })
@@ -722,6 +758,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
       thread?: string;
       threadsPage?: boolean;
       channelsPage?: boolean;
+      /** The "For you" page; the server read its first page unless "For you" fails. */
+      forYouPage?: boolean;
       query?: string;
       archived?: boolean;
       filter?: "all" | "unread";
@@ -733,6 +771,9 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     return {
       channelsPage: address.channelsPage,
       channelQuery: address.query,
+      forYouPage: address.forYouPage,
+      // The server's first page is a read like any other, so a failing read makes it absent.
+      forYouInitial: address.forYouPage ? (forYouFails() ? null : { items: forYou, nextCursor: null }) : undefined,
       cursor: `c.${cursor}`,
       sidebar: list(address.archived, address.filter === "unread"),
       archived: address.archived,
@@ -935,7 +976,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
             readable: true,
             ref: { type: element.type ?? "spaces.task", id: element.id },
             title: element.title,
-            preview: element.preview,
+            preview: element.context || undefined,
             href: `/app/spaces/task/${element.id}`,
           }));
         const lines = [
@@ -955,7 +996,16 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
         if (!element?.readable) return Response.json({ code: "FORBIDDEN", message: "No access" }, { status: 403 });
         return Response.json({
           data: { id: element.id },
-          refs: [{ type: "spaces.task", id: element.id, title: element.title, preview: element.preview, icon: "ti ti-circle" }],
+          refs: [
+            {
+              type: "spaces.task",
+              id: element.id,
+              title: element.title,
+              icon: "ti ti-circle",
+              ...(element.context ? { context: element.context } : {}),
+              ...(element.status ? { status: element.status } : {}),
+            },
+          ],
           links: [{ rel: "open", href: `/app/spaces/task/${element.id}` }],
         });
       }
@@ -983,6 +1033,62 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
             .sort((a, b) => a.title.localeCompare(b.title)),
           nextCursor: null,
         });
+      }
+      if (url.pathname === "/api/chat/search" && request.method === "GET") {
+        const q = (url.searchParams.get("q") ?? "").trim();
+        searchQueries.push(q);
+        if (failingSearch > 0) {
+          failingSearch -= 1;
+          return Response.json({ message: "Unavailable" }, { status: 503 });
+        }
+        const match = (name: string) => name.toLowerCase().includes(q.toLowerCase());
+        const items: unknown[] = [];
+        for (const chat of chats.values()) {
+          const row = chat.conversation;
+          const ref = row.resource;
+          // Without Spaces and Notebooks, their chats and item threads cannot be checked, so none come back.
+          if (row.kind === "system" && searchSystemUnavailable) continue;
+          if (row.kind === "system" && (ref?.type === "spaces.space" || ref?.type === "notebooks.notebook")) {
+            if (match(row.title)) items.push({ kind: "system", ref, name: row.title, conversation: row });
+          } else if (row.member && match(row.title)) items.push({ kind: "chat", conversation: row });
+          if (row.kind !== "system" && !row.member) continue;
+          for (const thread of chat.threads)
+            if (!thread.archived && match(thread.name))
+              items.push({
+                kind: "thread",
+                conversation: { id: row.id, title: row.title, kind: row.kind === "system" ? "system" : "chat" },
+                thread: {
+                  id: thread.id,
+                  name: thread.name,
+                  ...(thread.resource ? { resource: { kind: thread.resource.kind, done: thread.resource.done } } : {}),
+                },
+              });
+        }
+        if (!searchSystemUnavailable)
+          for (const hit of emptyContainerHits) if (match(hit.name)) items.push({ kind: "system", ...hit, conversation: null });
+        return Response.json({ items: items.slice(0, 8), ...(searchSystemUnavailable ? { systemUnavailable: true } : {}) });
+      }
+      if (url.pathname === "/api/chat/for-you" && request.method === "GET") {
+        if (forYouFails()) return Response.json({ message: "Unavailable" }, { status: 503 });
+        return Response.json({ items: forYou, nextCursor: null });
+      }
+      const candidates = /^\/api\/chat\/conversations\/([^/]+)\/mention-candidates$/.exec(url.pathname);
+      if (candidates && request.method === "GET") {
+        const query = (url.searchParams.get("q") ?? "").toLowerCase();
+        const chat = chats.get(candidates[1]!);
+        const items = (chat?.members ?? [])
+          .flatMap((member) =>
+            member.principal.type === "user" && member.principal.userId !== viewer.id
+              ? [{ principal: { type: "user" as const, id: member.principal.userId }, name: member.displayName, agent: false }]
+              : [],
+          )
+          .filter((candidate) =>
+            candidate.name
+              .toLowerCase()
+              .split(/\s+/)
+              .some((word) => word.startsWith(query)),
+          );
+        return Response.json({ items });
       }
       if (url.pathname === "/api/chat/conversations" && request.method === "GET") {
         const query = ConversationQuerySchema.parse(Object.fromEntries(url.searchParams));
@@ -1202,7 +1308,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
               thread = {
                 id: threadId(id!, chat.threads.length + 1),
                 name: element.title,
-                description: element.preview,
+                description: element.context,
                 archived: false,
                 read: null,
                 createdAt: chatTestNow.toISOString(),
@@ -1418,6 +1524,9 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
         }
         if (part === "read" && request.method === "POST") {
           const { seq, thread } = ReadSchema.parse(await request.json());
+          // Closing a browser context does not drain a read whose body is still arriving.
+          // A reset may have removed this chat while request.json() yielded.
+          if (chats.get(id!) !== chat) return Response.json({ code: "NOT_FOUND", message: "Chat not found." }, { status: 404 });
           reads.push({ chat: id!, seq });
           readViews.push({ chat: id!, seq, thread });
           return Response.json(read(id!, seq, thread));
@@ -1430,6 +1539,38 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
           const { message } = MarkUnreadSchema.parse(await request.json());
           const data = markUnread(id!, message);
           return data ? Response.json(data) : Response.json({ code: "NOT_FOUND", message: "Message not found." }, { status: 404 });
+        }
+        if (part === "attachments" && request.method === "POST" && !accessId) {
+          if (failingUploads > 0) {
+            failingUploads -= 1;
+            return Response.json({ message: "Unavailable" }, { status: 503 });
+          }
+          const file = (await request.formData()).get("file");
+          if (!(file instanceof File)) return Response.json({ code: "BAD_INPUT", message: "Invalid input." }, { status: 400 });
+          const attachment = `A${String(uploads.size + 1).padStart(5, "0")}`;
+          const image = file.type.startsWith("image/");
+          const view: AttachmentView = {
+            id: attachment,
+            name: file.name,
+            mimeType: file.type || "application/octet-stream",
+            size: file.size,
+            kind: image ? "image" : "file",
+            ...(image ? { width: 400, height: 300 } : {}),
+            href: `/api/chat/conversations/${id}/attachments/${attachment}`,
+          };
+          uploads.set(attachment, { view, bytes: await file.arrayBuffer() });
+          return Response.json(view, { status: 201 });
+        }
+        if (part === "attachments" && request.method === "DELETE" && accessId) {
+          discarded.push(accessId);
+          uploads.delete(accessId);
+          return Response.json({ success: true });
+        }
+        if (part === "attachments" && request.method === "GET" && accessId) {
+          const stored = uploads.get(accessId);
+          return stored
+            ? new Response(stored.bytes, { headers: { "Content-Type": stored.view.mimeType } })
+            : Response.json({ code: "NOT_FOUND", message: "Attachment not found." }, { status: 404 });
         }
         if (part === "events" && request.method === "GET") {
           if (failingItemEvents > 0) {
@@ -1475,7 +1616,19 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
                 ...meta,
               }));
               const elements = message.refs.map((ref) => ({ kind: "element" as const, ref, ...meta }));
-              return [...(kind === "all" || kind === "elements" ? elements : []), ...(kind === "all" || kind === "links" ? links : [])];
+              const files = message.attachments.map((attachment) => ({
+                kind: attachment.kind === "image" ? ("image" as const) : ("document" as const),
+                attachment,
+                ...meta,
+              }));
+              return [
+                ...(kind === "all" || kind === "elements" ? elements : []),
+                ...(kind === "all" || kind === "links" ? links : []),
+                ...files.filter(
+                  (file) =>
+                    kind === "all" || (kind === "images" ? file.kind === "image" : kind === "documents" && file.kind === "document"),
+                ),
+              ];
             });
           const offset = Number(url.searchParams.get("cursor") ?? 0);
           const next = offset + 30 < items.length ? String(offset + 30) : null;
@@ -1508,12 +1661,17 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
             thread: input.thread ?? null,
             replyTo: input.replyTo,
             refs: input.refs ?? [],
+            attachments: (input.attachments ?? []).flatMap((attachment) => {
+              const stored = uploads.get(attachment);
+              return stored ? [stored.view] : [];
+            }),
           });
           publish(message);
           return Response.json(message, { status: 201 });
         }
       }
       if (url.pathname.startsWith("/api/")) return Response.json({ message: "Not part of this harness" }, { status: 404 });
+      if (options.renderPage) return options.renderPage(request);
       const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
       return new Response(
         `<!doctype html><html class="${theme}" style="--app-accent:#7c3aed"><head><meta charset="utf-8">` +
@@ -1571,6 +1729,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
 
   return {
     url: server.url.href,
+    // Exercise request-body races directly, without relying on browser/network timing.
+    fetch: (request: Request) => server.fetch(request),
     now,
     addChat,
     systemRequests,
@@ -1590,7 +1750,7 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     }) => {
       elements.set(element.id, {
         ...element,
-        preview: element.title,
+        context: element.title,
         readable: true,
         type: element.parent.type === "notebooks.notebook" ? "notebooks.note" : "spaces.item",
       });
@@ -1676,8 +1836,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
       chats.get(chat)!.discovery = entries;
     },
     /** An element of the made-up "spaces" app; `readable: false` makes its card "not available". */
-    addElement: (element: { id: string; title: string; preview?: string; readable?: boolean }) => {
-      elements.set(element.id, { preview: "", readable: true, ...element });
+    addElement: (element: { id: string; title: string; context?: string; status?: string; readable?: boolean }) => {
+      elements.set(element.id, { context: "", readable: true, ...element });
       return { type: "spaces.task", id: element.id } satisfies CloudResourceRef;
     },
     /** Grants or takes away the viewer's access to an element of the made-up "spaces" app. */
@@ -1688,10 +1848,38 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
     /** A message from someone else that shares elements, delivered live. */
     receiveShared: (chat: string, author: Person, body: string, refs: CloudResourceRef[]) =>
       publish(append(chat, author, body, now(), "text", { refs })),
+    /** What "For you" answers from now on; `notify` sends the reader's content-free live hint. */
+    setForYou: (items: z.infer<typeof ForYouItemSchema>[], notify = false) => {
+      forYou = items;
+      if (notify) deliver("me", "", { type: "for-you" });
+    },
+    /** A Space or notebook nobody has written in yet, found by the list's search. */
+    searchContainer: (ref: { type: "spaces.space" | "notebooks.notebook"; id: string }, name: string) => {
+      emptyContainerHits.push({ ref, name });
+    },
+    /** Spaces and Notebooks do not answer the list's search; the other hits still come. */
+    failSearchSystem: (failing = true) => {
+      searchSystemUnavailable = failing;
+    },
+    /** The next searches fail as a whole. */
+    failSearch: (times = 1) => {
+      failingSearch = times;
+    },
+    searchQueries,
+    /** The next "For you" reads fail. */
+    failForYou: (times = 1) => {
+      failingForYou = times;
+    },
     sharedReads,
     /** The next shared lists fail. */
     failShared: (times = 1) => {
       failingShared = times;
+    },
+    /** Uploads the reader removed before sending, as the server was asked to discard them. */
+    discarded,
+    /** The next uploads fail. */
+    failUploads: (times = 1) => {
+      failingUploads = times;
     },
     readerCalls: () => readerCalls,
     reads,
@@ -1709,8 +1897,17 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
       failingItemEvents = times;
     },
     reset: () => {
+      uploads.clear();
+      discarded.length = 0;
+      failingUploads = 0;
       itemEvents.clear();
       failingItemEvents = 0;
+      forYou = [];
+      failingForYou = 0;
+      emptyContainerHits = [];
+      searchSystemUnavailable = false;
+      failingSearch = 0;
+      searchQueries.length = 0;
       sharedReads.length = 0;
       collapsed = [];
       allowAuthenticated = true;

@@ -51,6 +51,8 @@ const msg = (
   body: string,
   time: string,
 ): NonNullable<ChatView["open"]>["page"]["items"][number] => ({
+  attachments: [],
+  mentions: [],
   reactions: [],
   refs: [],
   thread: null,

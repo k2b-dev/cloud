@@ -36,7 +36,7 @@ const viewUrl = (baseId: string | null | undefined, view: "trash" | "shares" | "
 const LIVE_REFRESH_MS = 20_000;
 const fingerprint = (items: readonly FileEntry[]) => JSON.stringify(items);
 
-export default function Workspace(props: { initial: WorkspaceSnapshot; preferences?: Record<string, ViewPreference>; cloudUrl: string }) {
+export default function Workspace(props: { initial: WorkspaceSnapshot; preferences?: Record<string, ViewPreference> }) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
   const locale = useLocale();
@@ -770,7 +770,6 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                         <Browser
                           directory={directory()}
                           bases={snapshot().bases.items}
-                          cloudUrl={props.cloudUrl}
                           after={after()}
                           source={snapshot().source}
                           detail={snapshot().detail}

@@ -1,18 +1,16 @@
 import { expect, test } from "bun:test";
+import type { SidebarNote } from "../../../../lib/sidebar-tree";
 import { notebookWorkspaceMessages } from "../../messages";
 import { type NoteOrderContext, type NotePlacement, noteActionItems, type useNoteActions } from "./NoteTree";
-import type { NoteTreeNode } from "./types";
 
-const node: NoteTreeNode = {
+type FixtureNote = SidebarNote & { children: SidebarNote[] };
+
+const node: FixtureNote = {
   id: "Note01",
-  notebookId: "Book01",
   parentId: null,
   title: "Plan",
   position: 0,
   hasChildren: false,
-  yjsSnapshotAt: null,
-  contentMd: null,
-  createdBy: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
   lockedAt: null,
@@ -33,16 +31,16 @@ const actions = {
     sorted.push(parentId);
   },
   handleCopy: async () => undefined,
-  handleDelete: async (target: NoteTreeNode) => {
+  handleDelete: async (target: SidebarNote) => {
     deleted.push(target.id);
   },
-  handleLock: async (target: NoteTreeNode) => {
+  handleLock: async (target: SidebarNote) => {
     locked.push(target.id);
   },
   loading: () => false,
 } satisfies ReturnType<typeof useNoteActions>;
 
-const menu = (target: NoteTreeNode, canDeleteOrLock: boolean, locale: string, order?: NoteOrderContext) => {
+const menu = (target: SidebarNote, canDeleteOrLock: boolean, locale: string, order?: NoteOrderContext) => {
   const { t } = notebookWorkspaceMessages.resolve([locale]);
   return noteActionItems(target, actions, t, canDeleteOrLock, order).flatMap((item) => ("items" in item ? item.items : [item]));
 };
@@ -86,7 +84,7 @@ test("people who may lock keep the lock action; a locked note offers none", () =
   expect(actionItem("ti ti-lock", false, "en", { ...node, lockedAt: "2026-01-02T00:00:00.000Z" })).toBeUndefined();
 });
 
-const sibling = (id: string, position = 0, children: NoteTreeNode[] = []): NoteTreeNode => ({
+const sibling = (id: string, position = 0, children: SidebarNote[] = []): FixtureNote => ({
   ...node,
   id,
   title: id,
@@ -125,16 +123,23 @@ test("a level arranged by hand offers the way back to the title order", () => {
     { ...sibling("Child2", 1), parentId: "Folder" },
   ]);
   const level = [folder, sibling("Other1", 2)];
-  const labels = (target: NoteTreeNode, context: NoteOrderContext) => menu(target, true, "en", context).map((entry) => entry.label);
+  const labels = (target: SidebarNote, context: NoteOrderContext) => menu(target, true, "en", context).map((entry) => entry.label);
 
-  expect(labels(folder, { level, homepageId: null })).toEqual(
+  expect(labels(folder, { level, children: folder.children, homepageId: null })).toEqual(
     expect.arrayContaining(["Sort subnotes alphabetically", "Sort top level alphabetically"]),
   );
   expect(labels(folder.children[0]!, { level: folder.children, homepageId: null })).not.toContain("Sort top level alphabetically");
   const alphabetical = [sibling("Plain1", 0, [sibling("Child3")]), sibling("Plain2")];
-  expect(labels(alphabetical[0]!, { level: alphabetical, homepageId: null }).filter((label) => label.startsWith("Sort"))).toEqual([]);
+  expect(
+    labels(alphabetical[0]!, { level: alphabetical, children: alphabetical[0]!.children, homepageId: null }).filter((label) =>
+      label.startsWith("Sort"),
+    ),
+  ).toEqual([]);
 
-  menu(folder, true, "en", { level, homepageId: null })
+  // Sub-notes that are not loaded give no order to judge, so their sort stays out of the menu.
+  expect(labels(folder, { level, homepageId: null })).not.toContain("Sort subnotes alphabetically");
+
+  menu(folder, true, "en", { level, children: folder.children, homepageId: null })
     .filter((entry) => entry.label.startsWith("Sort"))
     .forEach((entry) => entry.action?.());
   expect(sorted).toEqual(["Folder", null]);
@@ -145,7 +150,7 @@ test("every action in a note's menu has its own label, which keys the action in 
   const folder = sibling("Folder", 1, children);
   const level = [folder, sibling("Other1", 2)];
   for (const locale of ["en", "de"]) {
-    const labels = menu(folder, true, locale, { level, homepageId: null }).map((entry) => entry.label);
+    const labels = menu(folder, true, locale, { level, children, homepageId: null }).map((entry) => entry.label);
     expect(labels).toContain(locale === "en" ? "Sort top level alphabetically" : "Oberste Ebene alphabetisch sortieren");
     expect(new Set(labels).size).toBe(labels.length);
   }

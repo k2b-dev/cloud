@@ -79,6 +79,7 @@ export const buildRuntimeFromRegistry = (entries: AppRegistryEntry[], capabiliti
             ...(e.pwa.summary ? { summary: e.pwa.summary } : {}),
           }
         : undefined,
+      installable: e.installable ? structuredClone(e.installable) : undefined,
       openapi: e.openapi,
     };
   }),

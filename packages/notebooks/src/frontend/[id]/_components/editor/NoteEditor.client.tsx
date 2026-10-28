@@ -4,14 +4,15 @@ import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
-import { FileDropTarget, NoticeCard, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
+import { FileDropTarget, NoticeCard, personColor, prompts, ScrollArea, toast, useLocale } from "@k2b/ui";
 import { createCodeMirror } from "solid-codemirror";
-import { type Accessor, createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { type Accessor, createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { apiClient } from "@/api/client";
 import type { NoteAuthors } from "../../../../lib/activity-actions";
+import type { AnnotationProjection } from "../../../../lib/annotation-contracts";
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "../../../../lib/named-blocks";
 import { extractHeadingLines, headingAtLine } from "../../../../lib/note-insights";
 import { deriveNoteTitle } from "../../../../lib/note-title";
@@ -19,6 +20,7 @@ import { inheritPresentationMode, requestedPresentationMode } from "../../../../
 import type { Backlink } from "../../../../service/links";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
+import { cloudLinkPasteExtension } from "../../../lib/editor/cloud-link-paste";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
 import { listCommandsExtension } from "../../../lib/editor/list-commands";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
@@ -26,10 +28,11 @@ import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
 import { remoteCursors } from "../../../lib/editor/remote-cursors";
 import { pressMissedEditor } from "../../../lib/editor/surface-press";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
-import { getNotebookPresenceColor, yjs } from "../../../lib/yjs";
+import { yjs } from "../../../lib/yjs";
 import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { applyToYText, changesBetween, rebaseOnto } from "../../../lib/yjs/lazy-collab";
 import { notebookWorkspaceMessages } from "../../messages";
+import { createEditorComments } from "../comments/EditorComments";
 import {
   ACTIVE_HEADING_EVENT,
   type ActiveHeadingEventDetail,
@@ -108,6 +111,10 @@ type EditorInstanceProps = {
   initialPanelOpen: boolean;
   initialRichMode: "rich" | "source";
   readOnly?: boolean;
+  /** Write access to the note: commenting needs it, also where the editor only shows the text. */
+  canWrite: boolean;
+  /** The note's comments from the server response; a note opened in the page loads its own. */
+  initialAnnotations?: AnnotationProjection | null;
 };
 
 const CURSOR_IDLE_TIMEOUT_MS = 8_000;
@@ -197,6 +204,7 @@ export default function NoteEditor(props: Props) {
         noteLockedAt: note.lockedAt,
         historyIncomplete: note.historyIncomplete,
         initialContent: note.contentMd,
+        initialAnnotations: null,
       },
       eventDetail: detail,
     };
@@ -444,7 +452,7 @@ function EditorInstance(
   let baseText = (props.initialContent ?? "").replace(/\r\n?/g, "\n");
   const awareness = new Awareness(doc);
 
-  const color = getNotebookPresenceColor(props.userId);
+  const color = personColor(props.displayName);
   awareness.setLocalStateField("user", { userId: props.userId, name: props.displayName, color });
 
   const {
@@ -454,6 +462,26 @@ function EditorInstance(
   } = createCodeMirror({
     value: baseText,
   });
+  const comments = createEditorComments({
+    notebookId: props.notebookId,
+    noteId: props.noteId,
+    me: { id: props.userId, name: props.displayName },
+    canWrite: props.canWrite,
+    editable: () => !props.readOnly && !syncEnded.ended(),
+    readOnly: !!props.readOnly,
+    initial: props.initialAnnotations,
+    view: editorView,
+  });
+  addExtension(comments.extension);
+  let commentsHost: HTMLDivElement | undefined;
+  const [commentsExtent, setCommentsExtent] = createSignal(0);
+  // With the detail panel open, comments show as dots beside the lines (the server renders the first state).
+  createEffect(
+    on(panelOpen, (open) => commentsHost?.closest(".notebook-document-surface")?.toggleAttribute("data-detail-open", open), {
+      defer: true,
+    }),
+  );
+
   /** The note as the editor shows it; while collaboration runs, the editor mirrors Yjs. */
   const currentText = () => editorView()?.state.doc.toString() ?? baseText;
 
@@ -493,6 +521,7 @@ function EditorInstance(
     addExtension(() => isolateYjsHistory(undoManager));
     // The Yjs undo keys need the binding; before it, edits have no history to undo.
     addExtension(() => (syncEnded.ended() || !collabActive() ? [] : keymap.of(yUndoManagerKeymap)));
+    addExtension(cloudLinkPasteExtension());
     // Reading or switching notes needs no collaboration; the first edit starts it.
     addExtension(
       EditorView.updateListener.of((update) => {
@@ -1224,8 +1253,16 @@ function EditorInstance(
         tabIndex={-1}
         aria-label={props.readOnly || syncEnded.ended() ? t().readonlySurface : t().editorSurface}
       >
-        <div ref={editorRef} />
+        <div ref={commentsHost} class="notebook-comments-host" style={{ "min-height": `${commentsExtent()}px` }}>
+          <div ref={editorRef} />
+          {comments.margin(
+            () => commentsHost,
+            () => commentsHost?.closest<HTMLElement>(".notebook-document-surface") ?? undefined,
+            setCommentsExtent,
+          )}
+        </div>
       </ScrollArea>
+      {comments.toolbar(() => scrollPort)}
       {/* Files dropped anywhere on the note's page upload and land at the cursor. */}
       <FileDropTarget
         label={t().dropToInsert}
@@ -1250,6 +1287,7 @@ function EditorInstance(
               format={format()}
               onUndo={() => undoManager?.undo()}
               onRedo={() => undoManager?.redo()}
+              comments={{ open: comments.openCount(), onOpen: comments.ui.requestList }}
             />
           }
         >

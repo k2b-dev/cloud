@@ -31,7 +31,9 @@ const conversation = ConversationSchema.parse({
 const message = (rev: number) =>
   MessageSchema.parse({
     reactions: [],
+    mentions: [],
     refs: [],
+    attachments: [],
     thread: null,
     replyTo: null,
     id: String(rev).padStart(10, "0"),
@@ -472,6 +474,51 @@ test("sidebar text summaries sort rows, guard revisions, and fetch missing and s
   expect(fetched).toEqual(["ghijkl", "abcdef"]);
   await connection.get("me").apply({ type: "membership", conversationId: "abcdef" });
   expect(store.sidebar.map((row) => row.id)).toEqual(["abcdef"]);
+  store.dispose();
+});
+
+test("an attachment-only summary reloads the canonical localized preview", async () => {
+  let reads = 0;
+  const { store, connection } = fixture({
+    conversation: async () => {
+      reads++;
+      return {
+        ...conversation,
+        rev: 2,
+        lastMessage: {
+          id: message(2).id,
+          author: message(2).author,
+          preview: "Foto",
+          thread: null,
+          createdAt: message(2).createdAt,
+        },
+      };
+    },
+  });
+  const update = chatLiveUpdates(
+    conversation.id,
+    {
+      ...message(2),
+      body: "",
+      attachments: [
+        {
+          id: "photo1",
+          name: "photo.png",
+          kind: "image",
+          mimeType: "image/png",
+          size: 10,
+          href: "/api/chat/conversations/abcdef/attachments/photo1",
+          width: 1,
+          height: 1,
+        },
+      ],
+    },
+    null,
+    [],
+  )[1]!.data;
+  await connection.get("list").apply(update);
+  expect(reads).toBe(1);
+  expect(store.sidebar[0]?.lastMessage?.preview).toBe("Foto");
   store.dispose();
 });
 

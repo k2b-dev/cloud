@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
+  CalendarEventsDataSchema,
+  CalendarEventsInputSchema,
+  CalendarListDataSchema,
+  CalendarListInputSchema,
   type CapabilityActionReview,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
@@ -138,6 +142,7 @@ import { spacesService } from "./service";
 import { isSpaceResourceId, resolveSpaceApiKeyPermission, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./service/access";
 import * as activity from "./service/activity";
 import { spaceActivityRow } from "./service/activity-timeline";
+import { CalendarSourceError, listSourceCalendars, readSourceEvents } from "./service/calendar-source";
 import type { CommentAuthor } from "./service/comments";
 import { localizeSpacesError, type SpacesMessages, spacesMessages } from "./service/messages";
 import { spacesPublicResources } from "./service/public-resources";
@@ -332,7 +337,14 @@ const requireItemUuid = async (
   if (!access.ok) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
   const [publicItem] = await spacesPublicResources.projectItems([item]);
   return publicItem
-    ? ok({ item: publicItem, internalId, internalSpaceId: item.spaceId, permission: access.data.permission })
+    ? ok({
+        item: publicItem,
+        internalId,
+        internalSpaceId: item.spaceId,
+        internalColumnId: item.columnId,
+        space: access.data.space,
+        permission: access.data.permission,
+      })
     : capabilityFail(context, err.notFound("Item"), "itemNotFound");
 };
 
@@ -1030,6 +1042,25 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
           mapAttachment(resolved.data.item, attachment),
         ),
       };
+  const t = spacesMessages(context.locale);
+  const dateConfig = await capabilityDateConfig(context);
+  const place = (
+    data.kind === "event" ? t.eventInSpace({ space: resolved.data.space.name }) : t.taskInSpace({ space: resolved.data.space.name })
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+  const fact =
+    data.kind === "event"
+      ? data.allDay
+        ? dates.formatDate(data.startsAt, dateConfig)
+        : dates.formatDateTime(data.startsAt, dateConfig)
+      : data.deadline && !data.completedAt
+        ? t.dueDate({
+            date: dates.formatDate(data.deadline, { ...dateConfig, ...(isDateOnlyDeadline(data.deadline) ? { timeZone: "UTC" } : {}) }),
+          })
+        : null;
+  const column = data.kind === "task" && !data.completedAt ? await spacesService.column.get({ id: resolved.data.internalColumnId }) : null;
+  const status = data.kind === "task" ? (data.completedAt ? t.done : column?.name)?.replace(/\s+/g, " ").trim() : undefined;
   const result = {
     data,
     summary: boundedCapabilitySummary(
@@ -1038,7 +1069,13 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
         title: data.title,
       }),
     ),
-    refs: [itemRef(data, data.kind)],
+    refs: [
+      {
+        ...itemRef(data, data.kind),
+        context: `${place.slice(0, 200 - (fact ? fact.length + 3 : 0))}${fact ? ` · ${fact}` : ""}`,
+        ...(status ? { status: status.slice(0, 60) } : {}),
+      },
+    ],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
   };
   // Reactor names are the one relation added after the other bounds were sized; a full item drops them, keeping the counts.
@@ -2213,6 +2250,7 @@ const runEventInvitationCommit = async (input: z.infer<typeof EventInvitationCom
 
 export const spacesCapabilities = defineCapabilities({
   protocolVersion: 2,
+  calendarSource: { calendars: "calendar.list", events: "calendar.events" },
   presentation: spacesCapabilityPresentation,
   commands: {
     "event.invite": {
@@ -2240,8 +2278,21 @@ export const spacesCapabilities = defineCapabilities({
     },
   },
   types: {
-    space: { title: "Space", description: "A permission-scoped collaboration space.", icon: "ti ti-layout-kanban", reader: "space.read" },
-    item: { title: "Space item", description: "A task or event inside a space.", icon: "ti ti-checkbox", reader: "item.read" },
+    space: {
+      title: "Space",
+      description: "A permission-scoped collaboration space.",
+      icon: "ti ti-layout-kanban",
+      reader: "space.read",
+      pages: ["/app/spaces/:id"],
+    },
+    item: {
+      title: "Space item",
+      description: "A task or event inside a space.",
+      icon: "ti ti-checkbox",
+      color: "emerald",
+      reader: "item.read",
+      pages: ["/app/spaces/:space?item=:id"],
+    },
     comment: {
       title: "Space comment",
       description: "A user-authored comment attached to a Space item.",
@@ -2325,6 +2376,43 @@ export const spacesCapabilities = defineCapabilities({
       run: async (input, context) => {
         const access = await workQueryContext(input, context);
         return access.ok ? ok(await runTaskFocus(input, access.data)) : access;
+      },
+    },
+    "calendar.list": {
+      title: "List calendars",
+      description: "List readable Space calendars; member calendars are suggested. Read only in this version.",
+      input: CalendarListInputSchema,
+      data: CalendarListDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const access = await workQueryContext({ assignedTo: "all" }, context, true);
+        if (!access.ok) return access;
+        try {
+          return ok({ data: await listSourceCalendars(input, access.data) });
+        } catch (error) {
+          if (error instanceof CalendarSourceError) return fail({ ...err.badInput("Invalid calendar cursor"), code: error.code });
+          throw error;
+        }
+      },
+    },
+    "calendar.events": {
+      title: "Read calendar items",
+      description:
+        "Read open events and deadlines in readable Space calendars. Recurrences are expanded by Spaces; pages are chronological. Range is half-open and at most 31 elapsed days.",
+      input: CalendarEventsInputSchema,
+      data: CalendarEventsDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const access = await workQueryContext({ assignedTo: "all" }, context, true);
+        if (!access.ok) return access;
+        try {
+          return ok({ data: await readSourceEvents(input, access.data) });
+        } catch (error) {
+          if (error instanceof CalendarSourceError) return fail({ ...err.badInput("Calendar data could not be read"), code: error.code });
+          if (error instanceof CalendarReadLimitError)
+            return fail({ ...err.badInput("Calendar expansion exceeded its complete-read budget"), code: "CALENDAR_READ_LIMIT" });
+          throw error;
+        }
       },
     },
     "event.agenda": {

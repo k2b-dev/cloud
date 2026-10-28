@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-23
+updated: 2026-10-28
 ---
 
 # Build and deploy
@@ -201,6 +201,20 @@ from the public mirror `ghcr.io/k2b-dev/mirror`, pinned to the same digests as
 on Docker Hub. A build from source needs no Docker Hub or GitHub login, but it
 must be able to reach `ghcr.io`.
 
+## Container architectures
+
+Published Cloud container images support `linux/amd64` only. This includes
+every application, the documentation website, and Cloud Login. Tags remain
+image indexes with build provenance and SBOMs.
+
+Before upgrading an ARM host, build the images from the release's source for
+that host, or stay on an earlier release that provides `linux/arm64` images.
+Existing ARM64 images remain available under their previous release tags.
+ARM container builds are no longer built or tested in Cloud's CI.
+
+The `cld` CLI still ships all four binaries: `darwin_arm64`, `darwin_x64`,
+`linux_arm64`, and `linux_x64`. ARM clients can connect to an AMD64 deployment.
+
 ## Deploy the service
 
 First select the required services, secrets and feature integrations in
@@ -277,7 +291,7 @@ No configuration or external resource fetch is required.
 
 `POST /api/chat/conversations/:conversation/messages` accepts up to 10 Cloud
 resource refs (`{ type, id }`), removes duplicates and preserves their order.
-A body of `""` is accepted only with at least one ref. Refs identify resources;
+A body of `""` is accepted with at least one ref or attachment. Refs identify resources;
 clients resolve each card with the reader's session. Sharing grants no access
 to the referenced resource. Message responses and live message events always
 include `refs`, including an empty array for messages without refs. A retry
@@ -286,20 +300,74 @@ reactions.
 
 `GET /api/chat/conversations/:conversation/shared` requires chat read access.
 It returns `{ items, nextCursor }`, with up to 30 items, newest message first.
-Within each message, refs precede links, each in stored order. Each item contains
-`kind` (`element` or `link`), `ref` or `url`, `messageId`, `seq`, `thread`,
-`author`, and `createdAt`. `thread` is `null` for General.
+Within each message, refs precede links, then attachments in upload order.
+Each item contains `kind` (`element`, `link`, `image`, or `document`),
+`ref`, `url`, or `attachment`, plus `messageId`, `seq`, `thread`, `author`,
+and `createdAt`. `thread` is `null` for General.
 
 Use `kind=all|elements|links|images|documents` (default `all`) and optionally
 `thread=<thread ID>|general`. Without `thread`, the list covers the whole chat.
-Images and documents currently return empty lists. Unknown threads and chats
-the reader cannot access return 404. Pass `nextCursor` unchanged as `cursor`
+Images and documents come from visible messages; unsent uploads are excluded.
+Unknown threads and chats the reader cannot access return 404. Pass `nextCursor` unchanged as `cursor`
 with the same filters; `null` marks the end. Invalid queries return 400.
 
 New messages retain up to 20 distinct absolute HTTP/HTTPS links from Markdown
 links, autolinks and bare URLs. URLs longer than 2,048 characters are excluded.
 The shared list reads the messages themselves, so deleting a message removes
 its items from subsequent reads.
+
+## Chat message attachments after the upgrade
+
+Chat's startup migration adds `chat.attachments`; no new configuration or
+external storage service is needed. Back up this table with the Chat database.
+Message and conversation deletion also delete their attachments.
+
+1. Upload one `file` with multipart `POST /api/chat/conversations/:conversation/attachments`.
+   Optionally include a `thread` ID. Upload requires the same conversation and
+   thread access as sending, including container write and item-reader access
+   in a system chat. Archived threads reject uploads.
+2. Send the returned short IDs in the message's optional `attachments` array.
+   Include at most 10 unique IDs, all unsent, uploaded by the same access subject,
+   and in that conversation. A different, already sent, or unavailable ID returns
+   400 `INVALID_ATTACHMENT`. Binding and message insertion commit together.
+   A `clientId` retry returns the original message and attachments.
+3. Read bytes with `GET /api/chat/conversations/:conversation/attachments/:attachment`.
+   The caller needs current message visibility. Before sending, only the
+   uploader can download the file. Unavailable attachments return 404.
+4. Discard an upload removed before sending with
+   `DELETE /api/chat/conversations/:conversation/attachments/:attachment`. Only
+   the uploader's own unsent file is deleted, so it stops counting toward the
+   pending limit; a sent file or another person's upload stays, and every
+   answer is `{ "success": true }`.
+
+Each file is limited to 10 MiB, with 20 pending uploads per access subject per
+conversation (409 `ATTACHMENT_LIMIT`). Uploads are limited to 20 per subject
+per minute across conversations; 429 includes `Retry-After`. Oversized files
+return 413 `ATTACHMENT_TOO_LARGE`, including early rejection when the declared
+request exceeds 10 MiB plus 64 KiB of multipart overhead. Filenames and MIME
+types are limited to 255 characters. The existing 15-minute Chat maintenance
+removes at most 100 unsent uploads older than 24 hours per run.
+
+Every message response, history snapshot, live message and available reply quote includes
+`attachments: [{ id, name, mimeType, size, kind, width?, height?, href }]` in
+upload order. `size` is the stored byte count. `kind` is `image` or `file`.
+Supported image previews are PNG, JPEG, WebP and GIF, identified from bytes;
+images include positive pixel dimensions. Uploads use the shared
+[image metadata filter](/en/docs/platform/image-upload-privacy); unreadable
+image containers return 422 `MALFORMED_IMAGE`. Other content is a document.
+Empty-text list previews use the reader's locale: “Photo” / “Foto” or
+“File: name” / “Datei: name”.
+
+Downloads stream in bounded slices. Raster images use their image MIME type and
+an inline filename; other files use `application/octet-stream` and an attachment
+filename. Responses include `nosniff`, a sandbox Content Security Policy and
+`Cache-Control: private, no-store`. Active document formats are never inline.
+
+`kind=images` and `kind=documents` in the shared list filter attachment items;
+`kind=all` includes both alongside refs and links. Attachment items contain
+`{ kind: "image" | "document", attachment, messageId, seq, thread, author, createdAt }`.
+The opaque cursor covers all 40 possible positions within one message: 10 refs,
+20 links and 10 attachments. Keep the same filters when continuing a page.
 
 ## Chat channels after the upgrade
 
@@ -542,6 +610,88 @@ cookie list in your privacy notice if you keep one.
 No data migration or configuration change is required. See
 [Follow the person's theme](/en/docs/frontend/styling-and-accessibility#follow-the-persons-theme).
 
+## Deploy App-PWA support
+
+Applications can declare one independent [App-PWA](/en/docs/frontend/app-pwa)
+under `/app/<id>/<surface>/`. Deploy the gateway with App-PWA support before
+applications that declare `installable`; older gateways do not enforce its
+worker and path boundaries. Registry readers on the new runtime validate the
+complete declaration. A malformed declaration makes that application
+unavailable through the gateway until its configuration is corrected.
+
+The gateway now reserves `/app/<id>` and every descendant for app `<id>`,
+including prefixes published by older applications. A root or ancestor fallback
+cannot answer for a missing or rejected owner. Check custom deployments for
+foreign claims in that namespace before upgrading and move those routes to
+the owning application. Existing `/pwa` parts keep their own routing contract.
+
+Only a declared App-PWA's exact `sw.js`, the Cloud mobile app's `/pwa/sw.js`,
+and Core's existing `/service-worker.js` can load as service-worker scripts.
+Custom workers at other paths are refused. Only Core's exact root push worker
+keeps `Service-Worker-Allowed`; generated App-PWA workers cannot broaden their
+scope. Path scopes do not isolate scripts from other trusted code on the
+same origin, and these guards do not remove workers already installed by an
+older deployment.
+
+Build each declaring application with the standard `scripts/build.ts`, or use
+`preload.ts` during development, from its pinned Cloud package. Ship the
+complete `dist/public` directory: it includes both themes of its generated
+PNG icons. Rendering runs in the existing bounded Linux native-worker process
+during the build, not in the application server. An unknown Tabler icon or a
+failed renderer fails the build. No new runtime service or environment variable
+is required.
+
+Verify the public manifest, icon, and `sw.js` below the declared scope without
+a session cookie. The manifest's `id`, `start_url`, and `scope` must all equal
+the neutral trailing-slash path. Verify that a different worker URL is refused,
+and that `Service-Worker-Allowed` is absent from the generated worker response.
+
+Use HTTPS and preserve service-worker request headers through any external
+proxy. The generated worker keeps no private offline cache. A failed navigation
+shows a neutral document; API calls and writes still need a network. Updated
+workers wait until all windows of that installation close, so a deployment does
+not replace a running customer page. Installation, Safari storage separation,
+and Home Screen behavior still need verification on the target devices.
+
+### Paired App-PWA devices and visits
+
+Applications that opt into [App-PWA sessions](/en/docs/identity/app-pwa-sessions)
+run their service's `setup()` in the normal application startup lifecycle. The
+reserved `_cloud_pwa_*` tables live in that application's Postgres schema and
+need the same backup coverage as its domain data. Pairing secrets are stored
+as hashes. This contract supports the platform's PostgreSQL 15–17 range.
+
+Configure the existing canonical public Cloud URL as HTTPS. The service uses
+that origin for QR validation and same-origin requests, even when the upstream
+request arrives over internal HTTP. Forward the `Origin`, `Cookie`, and
+`X-App-Pwa-CSRF` headers unchanged through the trusted gateway. The application
+must expose its explicit guest routes while keeping staff operations subject
+to current web-session and application authorization.
+
+The device can live at most 12 hours. Its initiating web session and owner
+validity can shorten that lifetime. Customer visits last at most 60 minutes,
+with a 15-minute idle deadline; status traffic does not renew them. Logout,
+authority invalidation and device revocation close access to its visits.
+Revocation and domain completion serialize in Postgres. Audit records include
+app, owner, device and visit identifiers, without QR or signature content.
+
+Guest operations hold authority locks only for their bounded request
+transaction. Category-policy reads also hold a shared settings-table lock, and
+local device resource operations hold shared permission-table locks, so policy
+or grant writes can briefly wait for the command. Handlers must finish within
+the existing request budget and keep external work outside this transaction.
+A timeout or database failure returns a recoverable error rather than a
+successful completion.
+
+Cancelling an active transaction can open one short-lived control connection
+with the same configured database identity. Include these connections in the
+Postgres connection budget. The database role must retain permission to cancel
+its own backends; no superuser permission is required.
+
+Use a separate browser profile without an employee sign-in on shared devices.
+Installing under another path does not create a separate origin. The example
+and this release do not migrate existing application share links or change
+Cloud mobile-app pairing.
 ## Chat reactions after the upgrade
 
 Chat's additive startup migration creates the message reaction table and indexes.

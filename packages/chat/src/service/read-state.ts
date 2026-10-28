@@ -26,6 +26,7 @@ import {
   UNREAD_TOTAL_CAP,
 } from "./contracts";
 import { chatLive } from "./live";
+import { publishForYouRead } from "./mention-store";
 import { canReadThread, messageCondition, SUMMARY_TRAVERSAL_BUDGET, visibleThreadIdPage } from "./thread-access";
 import { threadStates } from "./thread-state";
 import { findThread } from "./threads";
@@ -155,8 +156,9 @@ const update = async (
 };
 const publish = async (db: typeof sql, context: ChatContext, data: z.infer<typeof ReadUpdateSchema>) => {
   const [conversation] = await db<{ kind: string }[]>`SELECT kind FROM chat.conversations WHERE short_id = ${data.conversationId}`;
+  const forYouChanged = await publishForYouRead(db, context, data.conversationId);
   // Personal channels cannot reauthorize the container or item for each receiver's credential.
-  if (conversation?.kind === "system") return false;
+  if (conversation?.kind === "system") return forYouChanged;
   await chatLive.publish(db, { key: personalChannelKey(context.accessSubject), data: { type: "read", ...data } });
 
   return true;

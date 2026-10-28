@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled, viewTransitionEnded } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { CreateConversationSchema, CreateOutcomeSchema, ReadAllOutcomeSchema } from "../service/contracts";
 import { chatTestNow, nora, pinPageClock, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
@@ -92,8 +92,7 @@ const load = async (
     await context.addInitScript(recordReadStarts);
     const page = await context.newPage();
     page.setDefaultTimeout(5_000);
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     const base = address.app ? "/pwa/chat" : address.embedded ? "/app/chat/panel" : "/app/chat";
     const path = address.chat ? `${base}/c/${address.chat}${address.message ? `/m/${address.message}` : ""}` : base;
     const url = new URL(path, harness.url);
@@ -424,6 +423,8 @@ const scrollFeed = async (page: Page, direction: number) => {
 };
 /** Opens a message's menu the way each device does: "…" beside the bubble on a desktop, a long press on a phone. */
 const openMessageMenu = async (page: Page, name: string, item: Locator) => {
+  // History commits before the view transition creates its animations; wait for the navigation to finish first.
+  await viewTransitionEnded(page);
   await settled(page);
   if (name === "phone") {
     await item.locator(".k2b-message-row__text").scrollIntoViewIfNeeded();
@@ -679,7 +680,11 @@ describe("ChatWorkspace browser read state", () => {
             // An unfocused tab keeps receiving. Confirm each delivery batch before returning;
             // otherwise a slow renderer receives the rest after focus, changing what the test exercises.
             if (inactive === "unfocused" && index % 10 === 0)
-              await page.locator(`[data-key="${harness.messageId(chat, 8 + index)}"] .k2b-message-row__text`).waitFor();
+              await page
+                .getByRole("feed")
+                .locator(`[role="article"][aria-setsize="${8 + index}"]`)
+                .first()
+                .waitFor();
           }
           await noReportsForBatch(page, chat, before);
           const newest = page.locator(`[data-key="${harness.messageId(chat, 68)}"] .k2b-message-row__text`);
@@ -701,7 +706,7 @@ describe("ChatWorkspace browser read state", () => {
           ).toBe(true);
           await page.getByRole("button", { name: "New messages", exact: true }).click();
           await inFeed(page, `[data-key="${harness.messageId(chat, 9)}"]`);
-          await until(() => chatReads(chat).at(-1)!.seq > 8);
+          await until(() => (chatReads(chat).at(-1)?.seq ?? 0) > 8);
           expect(chatReads(chat).at(-1)!.seq).toBeLessThan(68);
           expect(errors).toEqual([]);
         } finally {
@@ -721,7 +726,12 @@ describe("ChatWorkspace browser read state", () => {
         });
         for (let index = 1; index <= 40; index++) {
           harness.receive(chat, nora, `Unread arrival ${index}`);
-          if (index % 10 === 0) await page.locator(`[data-key="${harness.messageId(chat, 8 + index)}"] .k2b-message-row__text`).waitFor();
+          if (index % 10 === 0)
+            await page
+              .getByRole("feed")
+              .locator(`[role="article"][aria-setsize="${8 + index}"]`)
+              .first()
+              .waitFor();
         }
         await page.evaluate(() => {
           document.hasFocus = () => true;
@@ -777,10 +787,15 @@ describe("ChatWorkspace browser read state", () => {
             document.hasFocus = () => false;
           });
           // Recovery is independent of hidden-tab replay, which the burst cases cover separately.
-          // Confirm delivery while unfocused before forcing the expired-replay snapshot below.
+          // The feed's set size confirms delivery even when the batch's last row is outside its virtual window.
           for (let index = 1; index <= 60; index++) {
             harness.receive(chat, nora, `Resync arrival ${index}`);
-            if (index % 10 === 0) await page.locator(`[data-key="${harness.messageId(chat, 8 + index)}"] .k2b-message-row__text`).waitFor();
+            if (index % 10 === 0)
+              await page
+                .getByRole("feed")
+                .locator(`[role="article"][aria-setsize="${8 + index}"]`)
+                .first()
+                .waitFor();
           }
           await page.evaluate(() => {
             Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
@@ -853,7 +868,7 @@ describe("ChatWorkspace browser read state", () => {
             expect(fullView.searchParams.get("filter")).toBe("unread");
           }
           expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(openingMarker);
-          await until(() => chatReads(chat).at(-1)!.seq > 8);
+          await until(() => (chatReads(chat).at(-1)?.seq ?? 0) > 8);
           expect(chatReads(chat).at(-1)!.seq).toBeLessThan(68);
           expect(errors).toEqual([]);
         } finally {
@@ -1660,13 +1675,17 @@ describe("Chat info reopening", () => {
         await toggle.focus();
         await page.keyboard.press("Enter");
         await page.waitForURL("**?panel=info");
+        // Each Info link starts a view transition; WebKit sends input during one to <html>, so the next step waits.
+        await viewTransitionEnded(page);
         expect(await toggle.getAttribute("aria-expanded")).toBe("true");
         await page.getByRole("button", { name: "Close chat info", exact: true }).click();
         await page.waitForURL(`**/c/${chat}`);
+        await viewTransitionEnded(page);
         expect(await toggle.isVisible()).toBe(true);
         expect(await toggle.getAttribute("aria-expanded")).toBe("false");
         await toggle.click();
         await page.waitForURL("**?panel=info");
+        await viewTransitionEnded(page);
         await page.goBack();
         await page.waitForURL(`**/c/${chat}`);
         expect(await toggle.getAttribute("aria-expanded")).toBe("false");

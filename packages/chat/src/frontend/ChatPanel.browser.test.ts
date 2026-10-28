@@ -6,7 +6,7 @@ import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
 import { createConfig } from "@k2b/ssr";
 import { ok } from "@k2b/stdlib";
-import type { Browser, Page } from "playwright";
+import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { z } from "zod";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import type { startConversationPanelFixture } from "./ChatPanel.browser-fixture";
@@ -14,6 +14,16 @@ import { nora, viewer } from "./ChatWorkspace.browser-fixture";
 
 let fixture: Awaited<ReturnType<typeof startConversationPanelFixture>>;
 let browser: Browser;
+// The real ShellRuntime reloads the page once when it first learns the browser timezone. Every context starts
+// with the matching cookie, so fixture-ready always belongs to the tested document, never to one about to reload.
+const newContext = async (options: BrowserContextOptions = {}) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en", timezoneId: "UTC", ...options });
+  await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+  return context;
+};
+// Failure diagnostics never replace the failure they describe: a panel that is gone is reported, not awaited.
+const diagnose = async (read: () => Promise<unknown>) =>
+  console.error(await read().catch((error: unknown) => `Diagnostics unavailable: ${error instanceof Error ? error.message : error}`));
 const verifyPanelGeometry = async (page: Page, width: number) => {
   await settled(page);
   const box = await page.locator("#cloud-panel").boundingBox();
@@ -22,6 +32,18 @@ const verifyPanelGeometry = async (page: Page, width: number) => {
   if (width < 768) expect(box!.height).toBe(522);
   expect(box!.x >= 0 && box!.x + box!.width <= width).toBe(true);
   console.info("panel geometry", JSON.stringify({ viewport: width, ...box }));
+};
+// The Assistant panel has no chat list. Back and Forward still switch its chat in place, through the same
+// opening path the full view uses; the tests drive that path for chats the panel has no visible control for.
+const switchPanelChat = async (page: Page, id: string) => {
+  const frame = page.frames().find((frame) => frame.url().includes("/app/assistant/panel"));
+  if (!frame) throw new Error("Missing Assistant panel frame");
+  await frame.evaluate((id) => {
+    const url = new URL(location.href);
+    url.searchParams.set("conversation", id);
+    history.pushState(history.state, "", url);
+    window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
+  }, id);
 };
 const root = mkdtempSync(resolve(tmpdir(), "conversation-panel-ssr-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -40,12 +62,7 @@ for (const width of [1440, 390]) {
   test(`Chat reads and sends in the real panel, restores its draft and opens full view at ${width}px`, async () => {
     fixture.backend.reset();
     const chat = fixture.backend.addChat({ members: [viewer, nora], name: "Project planning", count: 3, end: fixture.backend.now() });
-    const context = await browser.newContext({
-      viewport: { width, height: 900 },
-      reducedMotion: "reduce",
-      locale: "en",
-      timezoneId: "UTC",
-    });
+    const context = await newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     try {
@@ -103,12 +120,7 @@ for (const width of [1440, 390]) {
   test(`Assistant saves a new panel draft, resumes it and resolves a lost send at ${width}px`, async () => {
     fixture.assistant.reset();
     fixture.allowContext(width === 1440);
-    const context = await browser.newContext({
-      viewport: { width, height: 900 },
-      reducedMotion: "reduce",
-      locale: "en",
-      timezoneId: "UTC",
-    });
+    const context = await newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     try {
@@ -120,7 +132,20 @@ for (const width of [1440, 390]) {
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
       const composer = panel.locator('textarea:not([aria-hidden="true"])');
       if (width === 1440) expect(await page.locator("[data-cloud-panel-frame]").getAttribute("src")).toContain("cloud_panel_context");
+      // The empty panel shows no suggestions; "All chats" sits at the end of the Project row and takes keyboard focus.
+      expect(await panel.locator(".assistant-starters").count()).toBe(0);
+      const project = panel.getByRole("button", { name: "No Project", exact: true });
+      const allChats = panel.getByRole("link", { name: "All chats", exact: true });
+      const [projectBox, allChatsBox] = [await project.boundingBox(), await allChats.boundingBox()];
+      expect(allChatsBox!.x).toBeGreaterThan(projectBox!.x + projectBox!.width);
+      expect(Math.abs(allChatsBox!.y + allChatsBox!.height / 2 - (projectBox!.y + projectBox!.height / 2))).toBeLessThan(1);
       const idleBox = await composer.boundingBox();
+      await project.focus();
+      await page.keyboard.press("Tab");
+      await settled(page);
+      expect(await allChats.evaluate((element) => element === document.activeElement && element.matches(":focus-visible"))).toBe(true);
+      expect(await allChats.boundingBox()).toEqual(allChatsBox);
+      expect(await composer.boundingBox()).toEqual(idleBox);
       await composer.fill("Assistant draft from this panel");
       await settled(page);
       expect(await composer.inputValue()).toBe("Assistant draft from this panel");
@@ -140,6 +165,9 @@ for (const width of [1440, 390]) {
             .querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")
             ?.contentDocument?.querySelector<HTMLTextAreaElement>("textarea")?.value === "Assistant draft from this panel",
       );
+      // The panel now holds a saved chat without messages: the row also offers a new chat, without moving "All chats".
+      await panel.getByRole("button", { name: "New chat", exact: true }).waitFor();
+      expect(await allChats.boundingBox()).toEqual(allChatsBox);
       if (width === 1440) fixture.assistant.loseSend();
       else fixture.assistant.rejectSend();
       await panel.getByRole("button", { name: "Send message", exact: true }).click();
@@ -180,10 +208,10 @@ for (const width of [1440, 390]) {
             .querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")
             ?.contentDocument?.querySelector<HTMLTextAreaElement>("textarea")?.value === "Next unsent draft",
       );
-      await panel.getByRole("button", { name: "Recent and all chats", exact: true }).click();
-      await panel.getByRole("dialog").waitFor();
-      await panel.getByRole("dialog").press("Escape");
-      await panel.getByRole("dialog").waitFor({ state: "hidden" });
+      // No head row: the open chat's quiet row under the composer starts a new chat or opens the application.
+      expect(await panel.getByRole("button", { name: "Recent and all chats", exact: true }).count()).toBe(0);
+      expect(await panel.getByRole("link", { name: "Open full view", exact: true }).count()).toBe(0);
+      expect(await panel.getByRole("button", { name: "New chat", exact: true }).isVisible()).toBe(true);
       expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("assistant");
       const box = await composer.boundingBox();
       expect(box && box.y >= 0 && box.y + box.height <= 900).toBe(true);
@@ -211,7 +239,7 @@ for (const width of [1440, 390]) {
       await panel.locator("html.dark").waitFor();
       if (process.env.PANEL_SCREENSHOTS)
         await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, `assistant-result-dark-${width}.png`) });
-      await panel.getByRole("link", { name: "Open full view", exact: true }).click();
+      await panel.getByRole("link", { name: "All chats", exact: true }).click();
       await page.waitForURL("**/app/assistant?conversation=*");
       await page.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
       expect(await page.locator('textarea:not([aria-hidden="true"])').inputValue()).toBe("Next unsent draft");
@@ -231,7 +259,7 @@ for (const width of [1440, 390]) {
 test("Assistant keeps an uploading panel mounted and restores the confirmed file draft", async () => {
   fixture.assistant.reset();
   const release = fixture.assistant.holdUpload();
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en", timezoneId: "UTC" });
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
@@ -272,7 +300,7 @@ for (const provider of ["chat", "assistant"] as const) {
     fixture.backend.reset();
     fixture.assistant.reset();
     const id = fixture.backend.addChat({ members: [viewer, nora], name: "SSR guard", count: 1, end: fixture.backend.now() });
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const context = await newContext();
     const page = await context.newPage();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -301,10 +329,11 @@ for (const provider of ["chat", "assistant"] as const) {
       await composer.waitFor();
       expect(await composer.isDisabled()).toBe(true);
       expect(await panel.locator('html[data-fixture-ready="true"]').count()).toBe(0);
-      expect(await panel.getByRole("link", { name: "Open full view", exact: true }).getAttribute("target")).toBe("_top");
+      const fullView = panel.getByRole("link", { name: provider === "chat" ? "Open full view" : "All chats", exact: true });
+      expect(await fullView.getAttribute("target")).toBe("_top");
       release();
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
-      expect(await panel.getByRole("link", { name: "Open full view", exact: true }).getAttribute("target")).toBeNull();
+      expect(await fullView.getAttribute("target")).toBeNull();
       await composer.fill("Input after guard registration");
       expect(await composer.inputValue()).toBe("Input after guard registration");
     } finally {
@@ -316,27 +345,28 @@ for (const provider of ["chat", "assistant"] as const) {
 
 test("Assistant keeps the chosen conversation when an older empty creation completes", async () => {
   fixture.assistant.reset();
+  fixture.assistant.addConversation("Chat2A", "Ongoing conversation A");
+  fixture.assistant.addExchange("Chat2A");
   fixture.assistant.addConversation("Chat2B", "Chosen conversation B");
   const release = fixture.assistant.holdCreate();
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
     await page.goto(fixture.url + "app/fixture");
     await page.locator('html[data-fixture-ready="true"]').waitFor();
+    await page.evaluate(() => sessionStorage.setItem("cloud.assistant.panel:fixture-user", "Chat2A"));
     await page.locator("#open-chat").click();
     await page.locator('[data-cloud-panel-provider="assistant"]').click();
     const panel = page.frameLocator("[data-cloud-panel-frame]");
     await panel.locator('html[data-fixture-ready="true"]').waitFor();
-    await panel.getByRole("button", { name: "Recent and all chats", exact: true }).click();
-    await panel.getByRole("dialog").getByText("New chat", { exact: true }).click();
+    await panel.getByRole("button", { name: "New chat", exact: true }).click();
     await page.waitForFunction(
       () =>
         document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")?.contentDocument?.querySelector("textarea")?.disabled ===
         true,
     );
-    await panel.getByRole("button", { name: "Recent and all chats", exact: true }).click();
-    await panel.getByRole("dialog").getByText("Chosen conversation B", { exact: true }).click();
+    await switchPanelChat(page, "Chat2B");
     await panel.locator('a[href="/app/assistant?conversation=Chat2B"]').waitFor();
     release();
     await panel.locator('textarea:not([aria-hidden="true"]):enabled').waitFor();
@@ -344,7 +374,7 @@ test("Assistant keeps the chosen conversation when an older empty creation compl
     await page.locator('#cloud-panel[data-provider="second"][data-state="ready"]').waitFor();
     await page.locator('[data-cloud-panel-provider="assistant"]').click();
     await panel.locator('a[href="/app/assistant?conversation=Chat2B"]').waitFor();
-    expect(fixture.assistant.conversations.size).toBe(2);
+    expect(fixture.assistant.conversations.size).toBe(3);
   } finally {
     release();
     await context.close();
@@ -355,7 +385,7 @@ test("Assistant locks a lost queue receipt and checks it without saving or enque
   fixture.assistant.reset();
   fixture.assistant.addConversation("Chat2B");
   fixture.assistant.run("Chat2B");
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
@@ -395,7 +425,7 @@ test("Assistant offers a confirmed local exit when message status remains inacce
   fixture.assistant.reset();
   fixture.assistant.addConversation("Chat2A", "Other draft A");
   fixture.assistant.addConversation("Chat2B", "Unclear message B");
-  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: "en" });
+  const context = await newContext({ viewport: { width: 390, height: 900 } });
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
@@ -407,8 +437,7 @@ test("Assistant offers a confirmed local exit when message status remains inacce
     const panel = page.frameLocator("[data-cloud-panel-frame]");
     const composer = panel.locator('textarea:not([aria-hidden="true"])');
     await composer.fill("Other conversation keeps this draft");
-    await panel.getByRole("button", { name: "Recent and all chats", exact: true }).click();
-    await panel.getByRole("dialog").getByText("Unclear message B", { exact: true }).click();
+    await switchPanelChat(page, "Chat2B");
     await panel.locator('a[href="/app/assistant?conversation=Chat2B"]').waitFor();
     await composer.fill("Message with permanently unclear status");
     fixture.assistant.rejectSend();
@@ -451,20 +480,22 @@ test("Assistant offers a confirmed local exit when message status remains inacce
 for (const alsoSend of [false, true]) {
   test(`Assistant retains an unknown empty creation until an explicit exit (unknown send: ${alsoSend})`, async () => {
     fixture.assistant.reset();
+    fixture.assistant.addConversation("Chat2A", "Existing A");
+    fixture.assistant.addExchange("Chat2A");
     if (alsoSend) fixture.assistant.addConversation("Chat2B", "Existing B");
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const context = await newContext();
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     try {
       await page.goto(fixture.url + "app/fixture");
       await page.locator('html[data-fixture-ready="true"]').waitFor();
+      await page.evaluate(() => sessionStorage.setItem("cloud.assistant.panel:fixture-user", "Chat2A"));
       await page.locator("#open-chat").click();
       await page.locator('[data-cloud-panel-provider="assistant"]').click();
       const panel = page.frameLocator("[data-cloud-panel-frame]");
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
       fixture.assistant.loseCreate();
-      await panel.getByRole("button", { name: "Recent and all chats", exact: true }).click();
-      await panel.getByRole("dialog").getByText("New chat", { exact: true }).click();
+      await panel.getByRole("button", { name: "New chat", exact: true }).click();
       await panel.getByText("Conversation creation is unclear", { exact: true }).waitFor();
       await page.locator("[data-cloud-panel-close]").click();
       expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("assistant");
@@ -480,8 +511,7 @@ for (const alsoSend of [false, true]) {
       expect(creations).toHaveLength(2);
       expect(creations[1]!.body).toEqual(creations[0]!.body);
       if (alsoSend) {
-        await panel.getByRole("button", { name: "Recent and all chats", exact: true }).click();
-        await panel.getByRole("dialog").getByText("Existing B", { exact: true }).click();
+        await switchPanelChat(page, "Chat2B");
         await composer.fill("Another uncertain send");
         fixture.assistant.rejectSend();
         await panel.getByRole("button", { name: "Send message", exact: true }).click();
@@ -527,7 +557,7 @@ for (const alsoSend of [false, true]) {
 test("a late server acceptance after a confirmed exit never triggers another submission", async () => {
   fixture.assistant.reset();
   const release = fixture.assistant.holdSend();
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   let accepted!: () => void;
@@ -565,15 +595,19 @@ test("a late server acceptance after a confirmed exit never triggers another sub
 
 test("Assistant protects editing while only PanelRuntime is delayed", async () => {
   fixture.assistant.reset();
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   let release!: () => void;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
+  let runtimeHeld = false;
   await page.route(`**${fixture.panelRuntimePath}`, async (route) => {
-    if (route.request().frame().url().includes("/app/assistant/panel")) await gate;
+    // WebKit can still report the frame’s initial URL while its scripts load.
+    // The fixture marks the requested script by provider before navigation.
+    runtimeHeld = true;
+    await gate;
     await route.continue();
   });
   const releaseCreate = fixture.assistant.holdCreate();
@@ -586,18 +620,19 @@ test("Assistant protects editing while only PanelRuntime is delayed", async () =
     await panel.locator('html[data-fixture-ready="true"]').waitFor();
     const composer = panel.locator('textarea:not([aria-hidden="true"])');
     await composer.fill("Input before the runtime is ready");
+    expect(runtimeHeld).toBe(true);
     expect(await panel.locator("[data-cloud-panel-ready]").count()).toBe(0);
     await page.locator('[data-cloud-panel-provider="second"]').click();
     expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("assistant");
     await page.locator("[data-cloud-panel-close]").click();
     expect(await page.locator("[data-cloud-panel-frame]").count()).toBe(1);
     expect(await composer.inputValue()).toBe("Input before the runtime is ready");
-    await panel.getByRole("link", { name: "Open full view", exact: true }).click();
+    await panel.getByRole("link", { name: "All chats", exact: true }).click();
     expect(await composer.inputValue()).toBe("Input before the runtime is ready");
     expect(new URL(page.url()).pathname).toBe("/app/fixture");
     releaseCreate();
     await panel.getByText("Draft not saved yet", { exact: true }).waitFor({ state: "hidden" });
-    await panel.getByRole("link", { name: "Open full view", exact: true }).click();
+    await panel.getByRole("link", { name: "All chats", exact: true }).click();
     await page.waitForURL("**/app/assistant?conversation=*", { waitUntil: "domcontentloaded" });
     await page.locator('html[data-fixture-ready="true"]').waitFor();
     expect(await page.locator('textarea:not([aria-hidden="true"])').inputValue()).toBe("Input before the runtime is ready");
@@ -613,7 +648,7 @@ for (const provider of ["chat", "assistant"] as const) {
     fixture.backend.reset();
     fixture.assistant.reset();
     const id = fixture.backend.addChat({ members: [viewer, nora], name: "Storage recovery", count: 1, end: fixture.backend.now() });
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const context = await newContext();
     await context.addInitScript(() => {
       if (location.pathname.includes("/panel"))
         Object.defineProperty(window, "sessionStorage", {
@@ -656,7 +691,7 @@ for (const provider of ["chat", "assistant"] as const) {
 test("Chat protects a draft after a storage write failure and releases it only after retry", async () => {
   fixture.backend.reset();
   const id = fixture.backend.addChat({ members: [viewer, nora], name: "Storage write recovery", count: 1, end: fixture.backend.now() });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
@@ -702,7 +737,12 @@ for (const preparation of ["resource", "image"] as const) {
   for (const unknownCreation of [false, true]) {
     test(`Assistant protects pending ${preparation} preparation (unknown creation: ${unknownCreation})`, async () => {
       fixture.assistant.reset();
-      const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+      // A new chat starts from an open one: the empty panel already is a new chat.
+      if (unknownCreation) {
+        fixture.assistant.addConversation("Chat2A", "Existing A");
+        fixture.assistant.addExchange("Chat2A");
+      }
+      const context = await newContext();
       const page = await context.newPage();
       page.setDefaultTimeout(8_000);
       let release!: () => void;
@@ -762,14 +802,14 @@ for (const preparation of ["resource", "image"] as const) {
       try {
         await page.goto(fixture.url + "app/fixture");
         await page.locator('html[data-fixture-ready="true"]').waitFor();
+        if (unknownCreation) await page.evaluate(() => sessionStorage.setItem("cloud.assistant.panel:fixture-user", "Chat2A"));
         await page.locator("#open-chat").click();
         await page.locator('[data-cloud-panel-provider="assistant"]').click();
         const panel = page.frameLocator("[data-cloud-panel-frame]");
         await panel.locator('html[data-fixture-ready="true"]').waitFor();
         if (unknownCreation) {
           fixture.assistant.loseCreate();
-          await panel.getByRole("button", { name: "Recent and all chats", exact: true }).click();
-          await panel.getByRole("dialog").getByText("New chat", { exact: true }).click();
+          await panel.getByRole("button", { name: "New chat", exact: true }).click();
           await panel.getByText("Conversation creation is unclear", { exact: true }).waitFor();
         }
         const composer = panel.locator('textarea:not([aria-hidden="true"])');
@@ -819,13 +859,13 @@ for (const preparation of ["resource", "image"] as const) {
           await panel.locator('html[data-image-reading="true"]').waitFor();
         }
         expect(await composer.isDisabled()).toBe(true);
-        await panel.getByRole("button", { name: "Recent and all chats", exact: true }).click();
-        const newChat = panel.getByRole("dialog").getByRole("button", { name: "New chat", exact: true });
-        expect(await newChat.isDisabled()).toBe(true);
-        // Even a synthetic activation cannot change the identity of the draft being prepared.
-        await newChat.dispatchEvent("click");
-        expect(fixture.assistant.conversations.size).toBe(unknownCreation ? 1 : 0);
-        await panel.getByRole("dialog").press("Escape");
+        const newChat = panel.getByRole("button", { name: "New chat", exact: true });
+        if (unknownCreation) {
+          // The open chat's "New chat" waits for the draft being prepared; even a synthetic activation cannot change its identity.
+          expect(await newChat.isDisabled()).toBe(true);
+          await newChat.dispatchEvent("click");
+        } else expect(await newChat.count()).toBe(0);
+        expect(fixture.assistant.conversations.size).toBe(unknownCreation ? 2 : 0);
         await page.locator('[data-cloud-panel-provider="second"]').click();
         expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("assistant");
         expect(await panel.getByRole("button", { name: "Save drafts", exact: true }).isDisabled()).toBe(true);
@@ -847,23 +887,31 @@ for (const preparation of ["resource", "image"] as const) {
         await page.locator('[data-cloud-panel-provider="second"]').click();
         await page.locator('#cloud-panel[data-provider="second"][data-state="ready"]').waitFor();
         await page.locator('[data-cloud-panel-provider="assistant"]').click();
-        await panel.getByText(preparation === "resource" ? "Synthetic note" : "synthetic.png", { exact: true }).waitFor();
-        expect(fixture.assistant.conversations.size).toBe(1);
-        expect(await composer.inputValue()).toBe("Text and attachment stay together");
-        const saved = [...fixture.assistant.conversations.values()][0]!.draft.content;
+        if (unknownCreation) {
+          // Saving confirms the unclear creation, so the panel moves on to the new chat; the open chat kept the prepared draft.
+          await panel.getByText("What should we work on?", { exact: true }).waitFor();
+        } else {
+          await panel.getByText(preparation === "resource" ? "Synthetic note" : "synthetic.png", { exact: true }).waitFor();
+          expect(await composer.inputValue()).toBe("Text and attachment stay together");
+        }
+        expect(fixture.assistant.conversations.size).toBe(unknownCreation ? 2 : 1);
+        const saved = (unknownCreation ? fixture.assistant.conversations.get("Chat2A") : [...fixture.assistant.conversations.values()][0])!
+          .draft.content;
         expect(saved).toContainEqual({ type: "text", text: "Text and attachment stay together" });
         expect(saved.some((part) => part.type !== "text")).toBe(true);
       } catch (error) {
-        console.error(await page.frameLocator("[data-cloud-panel-frame]").locator("body").innerText());
-        console.error(
-          await page
-            .frameLocator("[data-cloud-panel-frame]")
-            .locator("html")
-            .evaluate((element) => ({
+        const frame = page.frameLocator("[data-cloud-panel-frame]");
+        await diagnose(() => frame.locator("body").innerText({ timeout: 1_000 }));
+        await diagnose(() =>
+          frame.locator("html").evaluate(
+            (element) => ({
               dataset: { ...element.dataset },
               attachments: element.querySelector(".k2b-chat-composer__attachments")?.outerHTML,
               disabled: element.querySelector("textarea")?.disabled,
-            })),
+            }),
+            undefined,
+            { timeout: 1_000 },
+          ),
         );
         throw error;
       } finally {
@@ -878,7 +926,7 @@ for (const provider of ["chat", "assistant"] as const) {
   test(`${provider} opens the SSR full-view link in the host before provider scripts load`, async () => {
     fixture.backend.reset();
     fixture.assistant.reset();
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const context = await newContext();
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     let release!: () => void;
@@ -895,7 +943,7 @@ for (const provider of ["chat", "assistant"] as const) {
       await page.locator("#open-chat").click();
       if (provider === "assistant") await page.locator('[data-cloud-panel-provider="assistant"]').click();
       const panel = page.frameLocator("[data-cloud-panel-frame]");
-      const link = panel.getByRole("link", { name: "Open full view", exact: true });
+      const link = panel.getByRole("link", { name: provider === "chat" ? "Open full view" : "All chats", exact: true });
       await link.waitFor();
       expect(await panel.locator('html[data-fixture-ready="true"]').count()).toBe(0);
       await link.click();
@@ -913,8 +961,7 @@ for (const provider of ["chat", "assistant"] as const) {
 for (const width of [1440, 390]) {
   test(`Assistant create replay preserves another tab's saved draft at ${width}px`, async () => {
     fixture.assistant.reset();
-    const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC" });
-    await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+    const context = await newContext({ viewport: { width, height: 900 } });
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     let releaseTarget!: () => void;
@@ -1040,10 +1087,7 @@ for (const width of [1440, 390]) {
     test(`Assistant full-view Command Escape restores editing during ${pending} at ${width}px`, async () => {
       fixture.assistant.reset();
       if (pending === "save") fixture.assistant.addConversation("Chat2B", "Command conversation");
-      const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC" });
-      // The real ShellRuntime reloads once when it first learns the browser timezone.
-      // Match the SSR fixture before navigation so that fixture-ready belongs to the tested document.
-      await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+      const context = await newContext({ viewport: { width, height: 900 } });
       const attachmentDuringCreate = pending === "create" && width === 390;
       const page = await context.newPage();
       let documents = 0;
@@ -1181,7 +1225,7 @@ for (const historyFailure of [false, true]) {
       unread: 120,
       end: fixture.backend.now(),
     });
-    const context = await browser.newContext({ viewport: { width: historyFailure ? 390 : 1440, height: 900 }, locale: "en" });
+    const context = await newContext({ viewport: { width: historyFailure ? 390 : 1440, height: 900 } });
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     let release!: () => void;
@@ -1262,24 +1306,13 @@ for (const historyFailure of [false, true]) {
 for (const editDuringSave of [false, true]) {
   test(`Assistant create replay preserves a second local draft in the same workspace (edits during save: ${editDuringSave})`, async () => {
     fixture.assistant.reset();
-    const context = await browser.newContext({ viewport: { width: editDuringSave ? 390 : 1440, height: 900 }, locale: "en" });
+    const context = await newContext({ viewport: { width: editDuringSave ? 390 : 1440, height: 900 } });
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     const writes: { path: string; body: string | null }[] = [];
     page.on("request", (request) => {
       if (["POST", "PUT"].includes(request.method())) writes.push({ path: new URL(request.url()).pathname, body: request.postData() });
     });
-    await page.route("**/api/ai/conversations/page?*", (route) =>
-      route.fulfill({
-        json: {
-          items: [...fixture.assistant.conversations.values()],
-          total: fixture.assistant.conversations.size,
-          page: 1,
-          perPage: 20,
-          hasNext: false,
-        },
-      }),
-    );
     try {
       await page.goto(fixture.url + "app/fixture");
       await page.locator('html[data-fixture-ready="true"]').waitFor();
@@ -1294,9 +1327,7 @@ for (const editDuringSave of [false, true]) {
       await panel.getByRole("button", { name: "Save drafts", exact: true }).click();
       await panel.getByText("Conversation creation is unclear", { exact: true }).waitFor();
       const created = [...fixture.assistant.conversations.values()][0]!;
-      await panel.getByRole("button", { name: "Recent and all chats", exact: true }).click();
-      await panel.getByRole("dialog").getByText("All chats", { exact: true }).click();
-      await panel.locator(`a[href="/app/assistant/panel?conversation=${created.id}"]`).click();
+      await switchPanelChat(page, created.id);
       await page.waitForFunction(
         (id) =>
           new URL(document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")!.contentWindow!.location.href).searchParams.get(
@@ -1361,8 +1392,9 @@ for (const editDuringSave of [false, true]) {
       expect(fixture.assistant.conversations.size).toBe(1);
     } catch (error) {
       console.error({ writes, conversations: [...fixture.assistant.conversations.values()] });
-      console.error(await page.frameLocator("[data-cloud-panel-frame]").locator("body").innerText());
-      console.error(await page.frameLocator("[data-cloud-panel-frame]").locator('textarea:not([aria-hidden="true"])').inputValue());
+      const frame = page.frameLocator("[data-cloud-panel-frame]");
+      await diagnose(() => frame.locator("body").innerText({ timeout: 1_000 }));
+      await diagnose(() => frame.locator('textarea:not([aria-hidden="true"])').inputValue({ timeout: 1_000 }));
       throw error;
     } finally {
       await context.close();
@@ -1415,8 +1447,7 @@ for (const { embedded, width } of [
 ])
   test(`catalog and resource recovery in real ${embedded ? "panel" : "fullview"} at ${width}px`, async () => {
     fixture.assistant.reset();
-    const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC" });
-    await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+    const context = await newContext({ viewport: { width, height: 900 } });
     const page = await context.newPage();
     let documents = 0;
     page.on("request", (request) => {
@@ -1570,7 +1601,7 @@ for (const openFailure of [false, true]) {
       end: fixture.backend.now(),
     });
     const other = fixture.backend.addChat({ members: [viewer, nora], name: "Other draft", count: 3, end: fixture.backend.now() });
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const context = await newContext();
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     let releaseOpen!: () => void;
@@ -1633,8 +1664,7 @@ for (const openFailure of [false, true]) {
 test("Chat synchronizes panel and full-view drafts and preserves a simultaneous conflicting edit", async () => {
   fixture.backend.reset();
   const id = fixture.backend.addChat({ members: [viewer, nora], name: "Shared draft", count: 1, end: fixture.backend.now() });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en", timezoneId: "UTC" });
-  await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+  const context = await newContext();
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
@@ -1700,9 +1730,8 @@ for (const embedded of [false, true]) {
     fixture.assistant.reset();
     fixture.assistant.addConversation("Chat2A", "Unclear conversation");
     fixture.assistant.addConversation("Chat2B", "Other conversation");
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en", timezoneId: "UTC" });
+    const context = await newContext();
     // The shell must not replace the document while this test seeds the selected panel chat.
-    await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
     const page = await context.newPage();
     let documents = 0;
     page.on("request", (request) => {
@@ -1724,10 +1753,8 @@ for (const embedded of [false, true]) {
       await view.getByRole("button", { name: "Send message", exact: true }).click();
       await view.getByText("Message status is unclear", { exact: true }).waitFor();
       expect(await composer.isDisabled()).toBe(true);
-      if (embedded) {
-        await view.getByRole("button", { name: "Recent and all chats", exact: true }).click();
-        await view.getByRole("dialog").getByText("Other conversation", { exact: true }).click();
-      } else await view.getByRole("link", { name: "Other conversation", exact: true }).click();
+      if (embedded) await switchPanelChat(page, "Chat2B");
+      else await view.getByRole("link", { name: "Other conversation", exact: true }).click();
       await composer.fill("Independent draft");
       expect(await composer.isEnabled()).toBe(true);
       await view.getByRole("button", { name: "Unclear conversation", exact: true }).click();
@@ -1737,10 +1764,8 @@ for (const embedded of [false, true]) {
       await view.getByRole("button", { name: "Retry the same message", exact: true }).click();
       await view.getByText("Message status is unclear", { exact: true }).waitFor({ state: "hidden" });
       expect(fixture.assistant.submitted()).toBe(1);
-      if (embedded) {
-        await view.getByRole("button", { name: "Recent and all chats", exact: true }).click();
-        await view.getByRole("dialog").getByText("Other conversation", { exact: true }).click();
-      } else await view.getByRole("link", { name: "Other conversation", exact: true }).click();
+      if (embedded) await switchPanelChat(page, "Chat2B");
+      else await view.getByRole("link", { name: "Other conversation", exact: true }).click();
       expect(await composer.inputValue()).toBe("Independent draft");
       if (embedded) expect(documents).toBe(1);
     } finally {
@@ -1751,8 +1776,7 @@ for (const embedded of [false, true]) {
 
 test("Assistant offers a fresh creation after a definitive replay refusal without losing the draft", async () => {
   fixture.assistant.reset();
-  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: "en", timezoneId: "UTC" });
-  await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+  const context = await newContext({ viewport: { width: 390, height: 900 } });
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
@@ -1803,8 +1827,7 @@ test("Assistant offers a fresh creation after a definitive replay refusal withou
 test("Chat can close during a read-only conversation load and restores the saved draft", async () => {
   fixture.backend.reset();
   const id = fixture.backend.addChat({ members: [viewer, nora], name: "Slow snapshot", count: 1, end: fixture.backend.now() });
-  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: "en", timezoneId: "UTC" });
-  await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
+  const context = await newContext({ viewport: { width: 390, height: 900 } });
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   let release!: () => void;
@@ -1857,7 +1880,7 @@ test("Chat can close during a read-only conversation load and restores the saved
 test("Chat keeps storage recovery visible when retry still cannot read the draft", async () => {
   fixture.backend.reset();
   const id = fixture.backend.addChat({ members: [viewer, nora], name: "Unreadable draft", count: 1, end: fixture.backend.now() });
-  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: "en", timezoneId: "UTC" });
+  const context = await newContext({ viewport: { width: 390, height: 900 } });
   await context.addInitScript(() => {
     const get = Storage.prototype.getItem;
     Storage.prototype.getItem = function (key) {
@@ -1870,7 +1893,6 @@ test("Chat keeps storage recovery visible when retry still cannot read the draft
       return get.call(this, key);
     };
   });
-  await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
   try {
