@@ -230,7 +230,7 @@ suite("version activity with real Filegate", () => {
         autoCreate: false,
         autoArchive: false,
       },
-      freeipa: { enabled: false, root: "freeipa", prefix, homes: "users", groups: "groups", archive: "archive" },
+      freeipa: { autoCreate: false, enabled: false, root: "freeipa", prefix, homes: "users", groups: "groups", archive: "archive" },
       collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
     };
     client = new Filegate({ baseUrl: config.url, transferBaseUrl: config.url, token });

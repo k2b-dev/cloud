@@ -83,7 +83,9 @@ const listCanonical = async (params: {
     OFFSET ${offset}
   `;
 
-  const total = rows.length > 0 ? Number((rows[0] as Record<string, unknown>).total) : 0;
+  // A page past the end has no rows to carry the window count; the total still counts every match.
+  let total = rows.length > 0 ? Number((rows[0] as Record<string, unknown>).total) : 0;
+  if (!rows.length && page > 1) total = (await listCanonical({ ...params, page: 1, perPage: 1 })).total;
   return {
     groups: rows.map(buildBaseGroup),
     total,

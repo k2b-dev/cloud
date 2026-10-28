@@ -227,18 +227,8 @@ describe("lossless image metadata privacy", () => {
     rejects(webpRiff(riffChunk("VP8X", vp8x), animation, riffChunk("ANMF", brokenFrame)));
   });
 
-  test("HEIC, AVIF, TIFF, GIF, BMP, SVG, video and unknown bytes pass through by identity", () => {
-    for (const magic of [
-      "\0\0\0\x18ftypheic",
-      "\0\0\0\x18ftypavif",
-      "II*\0",
-      "GIF89a",
-      "BM",
-      "<svg/>",
-      "\0\0\0\x18ftypmp42",
-      "unknown",
-      "",
-    ]) {
+  test("HEIC, AVIF, TIFF, BMP, SVG, video and unknown bytes pass through by identity", () => {
+    for (const magic of ["\0\0\0\x18ftypheic", "\0\0\0\x18ftypavif", "II*\0", "BM", "<svg/>", "\0\0\0\x18ftypmp42", "unknown", ""]) {
       const bytes = imageText(magic);
       expect(stripImageMetadata(bytes)).toBe(bytes);
     }
@@ -342,4 +332,31 @@ test("100k WebP ICC chunks retain their order with canonical RIFF length and VP8
   expect(out[20]).toBe(0x20);
   expect(new DataView(out.buffer, out.byteOffset).getUint32(4, true)).toBe(out.length - 8);
   expect(out.length).toBeLessThanOrEqual(input.length);
+});
+
+test("GIF retains palettes, frames, timing and loop data while filtering ancillary blocks", async () => {
+  const gif = new Uint8Array(Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64"));
+  const loop = imageBytes(new Uint8Array([0x21, 0xff, 11]), imageText("NETSCAPE2.0"), new Uint8Array([3, 1, 0, 0, 0]));
+  const timing = new Uint8Array([0x21, 0xf9, 4, 0, 10, 0, 0, 0]);
+  const comment = imageBytes(new Uint8Array([0x21, 0xfe, 7]), imageText("comment"), new Uint8Array([0]));
+  const application = imageBytes(
+    new Uint8Array([0x21, 0xff, 11]),
+    imageText("PRIVATE1234"),
+    new Uint8Array([4]),
+    imageText("data"),
+    new Uint8Array([0]),
+  );
+  const input = imageBytes(gif.subarray(0, 19), comment, application, loop, timing, gif.subarray(19), imageText("trailer"));
+  const expected = imageBytes(gif.subarray(0, 19), loop, timing, gif.subarray(19));
+  const clean = stripImageMetadata(input);
+  expect(clean).toEqual(expected);
+  expect(stripImageMetadata(clean)).toEqual(clean);
+  expect(await new Bun.Image(clean).metadata()).toMatchObject({ width: 1, height: 1 });
+  for (let end = 6; end < gif.length; end++) rejects(gif.subarray(0, end));
+  for (const bytes of [
+    imageText("GIF89a"),
+    gif.subarray(0, gif.length - 1),
+    imageBytes(gif.subarray(0, 19), new Uint8Array([0x21, 0xf9, 5, 0])),
+  ])
+    rejects(bytes);
 });

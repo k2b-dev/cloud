@@ -91,6 +91,13 @@ import {
   WormholeTransferResultSchema,
 } from "@/contracts";
 import { SpaceApiKeySchema, SpaceSettingsContextSchema } from "@/settings-context";
+import {
+  CalendarEventsResponseSchema,
+  CalendarRangeSchema,
+  CalendarSourcesResponseSchema,
+  CalendarViewQuerySchema,
+  parseCalendarSelections,
+} from "../calendar-contracts";
 import { CALENDAR_MAX_DAYS } from "../frontend/[id]/_components/calendar/range";
 import { loadSpaceSettingsContext } from "../frontend/[id]/_components/edit/settings-state";
 import { parseSpaceSettings } from "../frontend/[id]/_components/settings/SpaceSettingsStore";
@@ -107,6 +114,7 @@ import { spacesService } from "../service";
 import { getActorsSpacePermissions, isSpaceResourceId, permissionFromScopes, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "../service/access";
 import { InvalidActivityCursorError } from "../service/activity";
 import { resolveByteRange } from "../service/byte-range";
+import { loadCalendarEvents, loadCalendarSources } from "../service/calendar-view";
 import type { BoardOrderEntry } from "../service/columns";
 import type { CommentAuthor } from "../service/comments";
 import { spacesLive } from "../service/live";
@@ -1119,6 +1127,7 @@ const app = new Hono<AuthContext>()
             mimeType: file.type || "application/octet-stream",
             content: new Uint8Array(await file.arrayBuffer()),
             userId: access.user?.id ?? null,
+            actor: getSpaceActivityActor(c),
           }),
         );
       } catch (error) {
@@ -1202,6 +1211,7 @@ const app = new Hono<AuthContext>()
           shortId: c.req.param("attachmentId") ?? "",
           itemId: item.data.id,
           spaceId: access.internalId!,
+          actor: getSpaceActivityActor(c),
         }),
         "attachmentDeleted",
       );
@@ -3261,6 +3271,80 @@ const OverlapItemListSchema = z.array(OverlapItemSchema);
 const calendarApp = new Hono<AuthContext>()
   .use("*", middleware.noTransform())
   .use(auth.requireRole("authenticated"))
+
+  .get(
+    "/sources",
+    describeRoute({
+      tags: ["Calendar"],
+      summary: "List Cloud calendar sources",
+      description: "List calendars offered to an unbound user-backed actor by their discoverable apps.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(CalendarSourcesResponseSchema, "Calendar sources"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        503: jsonResponse(ErrorResponseSchema, "Calendar discovery is unavailable for now; try again later"),
+      },
+    }),
+    async (c) => {
+      const access = getScopedSpaceAccess(c);
+      if (!access.ok) return respond(c, access);
+      if (access.data.boundSpaceId) return respond(c, fail(err.forbidden("The calendar view requires an unbound user-backed actor")));
+      const user = requireUserBackedActor(c);
+      if (!user.ok) return respond(c, user);
+      try {
+        return respond(c, ok({ sources: await loadCalendarSources(c, { deadlineMs: 10_000 }) }));
+      } catch {
+        // A temporary outage: callers, such as a later subscription feed, retry instead of treating it as a fault.
+        return respond(c, { ok: false, status: 503, code: "CALENDAR_DISCOVERY_FAILED", error: "Calendar discovery is unavailable" });
+      }
+    },
+  )
+  .get(
+    "/events",
+    describeRoute({
+      tags: ["Calendar"],
+      summary: "Read Cloud calendar items",
+      description:
+        "Read a half-open range of at most 42 elapsed days. Repeat cal=appId:calendarId to select calendars. Empty selection returns no items.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(CalendarEventsResponseSchema, "Calendar items and source states"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid calendar range or selection"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+      },
+    }),
+    v("query", CalendarViewQuerySchema, () => ({
+      code: "CALENDAR_INVALID_RANGE",
+      message: "Provide from and to with explicit offsets and at most 42 elapsed days",
+    })),
+    async (c) => {
+      const access = getScopedSpaceAccess(c);
+      if (!access.ok) return respond(c, access);
+      if (access.data.boundSpaceId) return respond(c, fail(err.forbidden("The calendar view requires an unbound user-backed actor")));
+      const user = requireUserBackedActor(c);
+      if (!user.ok) return respond(c, user);
+      const { from, to } = c.req.valid("query");
+      const range = CalendarRangeSchema.safeParse({ from, to });
+      if (!range.success)
+        return respond(
+          c,
+          fail({
+            ...err.badInput("Use an ordered range of at most 42 elapsed days with explicit offsets"),
+            code: "CALENDAR_INVALID_RANGE",
+          }),
+        );
+      let calendars: ReturnType<typeof parseCalendarSelections>;
+      try {
+        calendars = parseCalendarSelections(c.req.queries("cal") ?? []);
+      } catch {
+        return respond(
+          c,
+          fail({ ...err.badInput("Select at most 100 calendars as appId:calendarId"), code: "CALENDAR_INVALID_SELECTION" }),
+        );
+      }
+      return respond(c, ok(await loadCalendarEvents(c, { ...range.data, calendars, deadlineMs: 10_000 })));
+    },
+  )
 
   .get(
     "/",

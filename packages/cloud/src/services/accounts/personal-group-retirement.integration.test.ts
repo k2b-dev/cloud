@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "bun";
-import { suiteFor, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
-import { runCoreSetup } from "../../../../core/src/runtime-helpers";
+import { suiteFor, useMigratedDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { freeipa } from "../../server/services";
 import { createAccess, getEffectivePermission, updateAccess } from "../../server/services/access";
 import { accountLifecycle } from "../account-lifecycle";
@@ -26,7 +25,7 @@ const ipaConfig = {
 };
 
 suiteFor("database", "valkey")("personal group retirement", () => {
-  let disposable: Awaited<ReturnType<typeof useFreshDatabase>>;
+  let disposable: Awaited<ReturnType<typeof useMigratedDatabase>>;
   let admin: string;
   let other: string;
   let sequence = 0;
@@ -52,8 +51,7 @@ suiteFor("database", "valkey")("personal group retirement", () => {
   };
   beforeAll(async () => {
     setSystemTime(new Date("2026-10-26T00:00:00Z"));
-    disposable = await useFreshDatabase("personal_retirement");
-    await runCoreSetup();
+    disposable = await useMigratedDatabase("personal_retirement");
     await set("linux.identity_config", JSON.stringify(config));
     admin = (await person(true)).id;
     other = (await person()).id;

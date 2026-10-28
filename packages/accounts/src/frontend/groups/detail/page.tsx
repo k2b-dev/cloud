@@ -2,7 +2,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { accountsAppService as accountsService, coreSettings, linuxIdentities } from "@k2b/cloud/services";
 import { canManageGroup, getDefaultGroupScope, groupDisplayName, isAdminUser } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
+import { Layout, requestPath } from "@k2b/cloud/ssr";
 import { NoticeCard, Tag, ViewTabs } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { z } from "zod";
@@ -182,6 +182,18 @@ export default ssr<AuthContext>(async (c) => {
 
     parentItems = parentGroupsPage.items;
     memberOfPagination = createPagination({ page, perPage, offset: (page - 1) * perPage }, parentGroupsPage.total);
+  }
+
+  // A page past the end, from an old link or after the last entries of a page were removed, opens the last page instead
+  // of an empty one that reads as "no members". The URL then names the page shown, so a reload or Back shows it again.
+  const activeTotal =
+    tab === "members" ? membersPagination.total : tab === "managers" ? managersPagination.total : memberOfPagination.total;
+  const lastPage = Math.max(1, Math.ceil(activeTotal / perPage));
+  if (page > lastPage) {
+    const url = new URL(requestPath(c), "https://local.invalid");
+    if (lastPage === 1) url.searchParams.delete("page");
+    else url.searchParams.set("page", String(lastPage));
+    return c.redirect(`${url.pathname}${url.search}`);
   }
 
   const facts: Array<{ label: string; value: JSX.Element }> = [

@@ -16,6 +16,7 @@ export default function AdminIssue(props: { code: string | null }) {
         return a().missingHint;
       case "ownership_mismatch":
       case "binding_conflict":
+      case "path_conflict":
       case "not_directory":
       case "conflict":
         return a().conflictHint;

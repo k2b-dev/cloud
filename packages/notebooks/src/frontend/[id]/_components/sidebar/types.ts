@@ -2,6 +2,7 @@ import type { DateContext } from "@k2b/stdlib";
 import type { NoteDeletePermission } from "../../../../lib/note-delete-permission";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { SidebarFilter } from "../../../../lib/sidebar-filter";
+import type { SidebarList, SidebarTreeState } from "../../../../lib/sidebar-tree";
 import type { NotebookSettings } from "../settings/NotebookSettingsStore";
 
 /** Notebook metadata (matches backend NotebookSchema) */
@@ -19,23 +20,6 @@ export type Notebook = {
   updatedAt: string;
 };
 
-/** Note tree node (matches backend NoteTreeNodeSchema) */
-export type NoteTreeNode = {
-  id: string;
-  notebookId: string;
-  parentId: string | null;
-  title: string;
-  position: number;
-  hasChildren: boolean;
-  yjsSnapshotAt: string | null;
-  contentMd: string | null;
-  createdBy: string | null;
-  createdAt: string;
-  updatedAt: string;
-  lockedAt: string | null;
-  children: NoteTreeNode[];
-};
-
 export type TagSummary = {
   tag: string;
   count: number;
@@ -44,7 +28,10 @@ export type TagSummary = {
 /** Shared context for notebook components */
 export type NotebookContext = {
   notebook: Notebook;
-  tree: NoteTreeNode[];
+  /** The levels of the note tree the sidebar shows on arrival. */
+  sidebarTree: SidebarTreeState;
+  /** The first page of the sidebar filter in the address, if any. */
+  sidebarList: SidebarList | null;
   selectedNoteId: string | null;
   userId: string;
   settings: NotebookSettings;

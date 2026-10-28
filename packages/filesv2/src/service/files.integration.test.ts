@@ -96,7 +96,7 @@ suite("Files service and durable bindings", () => {
       groups: "groups",
       archive: "archive",
     },
-    freeipa: { enabled: true, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
+    freeipa: { autoCreate: false, enabled: true, root: "freeipa", prefix: "", homes: "users", groups: "groups", archive: "archive" },
     collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as DocumentFormat },
   };
   const set = async (key: string, value: unknown) => {
@@ -2379,6 +2379,13 @@ suite("Files service and durable bindings", () => {
     const bases = await service.bases(testCall(actor));
     expect(bases.issues).toEqual([]);
     expect(bases.items.map((item) => [item.area, item.kind, item.name])).toEqual([
+      ["cloud", "users", "quinn"],
+      ["cloud", "groups", "team"],
+    ]);
+    await sql`DELETE FROM auth.user_posix WHERE user_id=${id(actor)}`;
+    const removedPosix = await service.bases(testCall(actor));
+    expect(removedPosix.issues).toEqual([]);
+    expect(removedPosix.items.map((item) => [item.area, item.kind, item.name])).toEqual([
       ["cloud", "users", "quinn"],
       ["cloud", "groups", "team"],
     ]);
