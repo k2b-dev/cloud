@@ -454,7 +454,7 @@ test("canonical entry reader exposes an authorized stable open link", async () =
   const result = await filesCapabilities.queries["entry.read"].run({ id: "entry-id" }, context);
   expect(result.ok).toBe(true);
   if (!result.ok) throw new Error("Expected entry");
-  expect(result.data.refs).toEqual([{ type: "filesv2.entry", id: "entry-id", title: "report" }]);
+  expect(result.data.refs).toEqual([{ type: "filesv2.entry", id: "entry-id", title: "report", context: "File in Home" }]);
   expect(result.data.links).toEqual([{ rel: "open", href: "/app/filesv2/ref/entry-id" }]);
 });
 
@@ -471,7 +471,7 @@ test("stable refs pass through listing, universal search and the reader unchange
   expect(found.data.data[0]!.ref).toEqual({ type: "filesv2.entry", id: stable });
   const read = await filesCapabilities.queries["entry.read"].run({ id: stable }, context);
   if (!read.ok) throw new Error("expected reader success");
-  expect(read.data.refs).toEqual([{ type: "filesv2.entry", id: stable, title: "report" }]);
+  expect(read.data.refs).toEqual([{ type: "filesv2.entry", id: stable, title: "report", context: "File in Docs" }]);
   expect(read.data.links).toEqual([{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(stable)}` }]);
 });
 
@@ -1009,3 +1009,26 @@ test("every declared Type has a reader open-link case or an explicit reason", as
     assertResourceOpenLink(result.data);
   }
 });
+
+for (const [locale, file, folder] of [
+  ["en", "File", "Folder"],
+  ["de", "Datei", "Ordner"],
+] as const) {
+  for (const directory of [false, true]) {
+    test(`entry reader describes ${directory ? "folders" : "files"} in ${locale}`, async () => {
+      for (const [path, place] of [
+        ["Docs/Planning/report", "Planning"],
+        ["report", "Home"],
+        ["Docs/Plan\nning/report", "Plan ning"],
+        [`${"x".repeat(200)}/report`, "x".repeat(200)],
+      ] as const) {
+        ids.set("entry-id", { baseId: "base", path });
+        items = [{ ...entry(path), directory }];
+        const result = await filesCapabilities.queries["entry.read"].run({ id: "entry-id" }, { ...context, locale });
+        if (!result.ok) throw new Error("Expected entry");
+        expect(result.data.refs![0]).toMatchObject({ context: `${directory ? folder : file} in ${place}`.slice(0, 200) });
+        expect(result.data.refs![0]).not.toHaveProperty("status");
+      }
+    });
+  }
+}

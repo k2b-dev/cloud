@@ -27,7 +27,7 @@ const project = {
   description: "Shared support context",
   icon: "ti ti-folders",
   instructions: "",
-  defaultModelProfileId: null,
+  defaultModel: null,
   permission: "read",
   revision: 1,
   createdAt: "2026-08-15T08:00:00.000Z",

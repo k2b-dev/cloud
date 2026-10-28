@@ -48,6 +48,8 @@ describe("@k2b/ui Cloud-faithful widget composition", () => {
     expect(parityCss).toContain('.k2b-ui .k2b-widget[data-size="standard"] { height: 25rem; }');
     expect(parityCss).toContain('.k2b-ui .k2b-widget[data-size="fill"] { height: 100%; }');
     expect(parityCss).toContain('.k2b-ui .k2b-widget:not([data-size="content"]) .k2b-widget__body { overflow-y: auto; }');
+    // Only a frame whose width its host gives contains its body's width, so other frames keep their intrinsic width.
+    expect(parityCss).toContain('.k2b-ui .k2b-widget[data-size="fill"] .k2b-widget__body { container: k2b-widget-body / inline-size; }');
     expect(parityCss).not.toMatch(/\.k2b-widget[^{]*\{[^}]*overscroll-behavior/);
   });
 
@@ -130,9 +132,15 @@ describe("@k2b/ui Cloud-faithful widget composition", () => {
     expect(parityCss).toContain('.k2b-widget-status[data-tone="danger"] { color: #991b1b; background: transparent; }');
     expect(parityCss).toMatch(/\.k2b-widget-status \{[^}]*border-radius: 0/);
     expect(parityCss).toContain('.k2b-widget-status[data-tone="warning"] .k2b-widget-status__icon');
-    // Only `grow` blocks may claim the leftover height inside a fixed widget.
+    // Only `grow` blocks may claim the leftover height inside a fixed widget; only a list gives height up, and then
+    // scrolls its rows beside a scrollbar place it reserves from the start.
     expect(parityCss).toMatch(/\.k2b-widget-stat \{[^}]*flex: 0 0 auto/);
-    expect(parityCss).toMatch(/\.k2b-widget-list \{[^}]*flex: 0 0 auto/);
+    expect(parityCss).toMatch(
+      /\.k2b-widget-list \{[^}]*min-height: 2\.875rem; flex: 0 1 auto[^}]*overflow-y: auto; scrollbar-gutter: stable/,
+    );
+    // The header keeps one height with and without meta, and the body owns the spacing between blocks.
+    expect(parityCss).toMatch(/\.k2b-widget__header \{[^}]*height: 2\.75rem/);
+    expect(parityCss).toMatch(/\.k2b-widget__body \{[^}]*gap: 0\.5rem; padding: 0\.5rem 0 0\.75rem/);
     expect(parityCss).toMatch(/\.k2b-widget-pills \{[^}]*margin-top: 0/);
   });
 

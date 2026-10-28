@@ -262,6 +262,17 @@
         "The 48 rem phone split and pointer capability rules keep their viewport semantics.",
         "Verification compares a narrow host in a wide window with a window as wide as the host and checks host-only resize."
       ]
+    },
+    {
+      "id": 23,
+      "prompt": "Add a structured classification task to a Cloud application without hardcoding an operator model. Explain defaults and policy failures.",
+      "expected_output": "Uses model: { class: \"fast\" } explicitly for short classification, knows omitted requests mean balanced, consumes result.model, and never downgrades on access or budget failures.",
+      "files": [],
+      "expectations": [
+        "Requests a class through the supported AiModelRequest union.",
+        "Distinguishes explicit fast background work from the balanced public default.",
+        "Fallback applies only to empty assignments."
+      ]
     }
   ]
 }

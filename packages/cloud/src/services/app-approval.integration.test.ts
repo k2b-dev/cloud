@@ -2370,7 +2370,7 @@ suite("isolated app approval protocol", () => {
       const chat = await aiConversations.createConversation({ ownerUserId: owner.id, title: "Send a letter" });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,
-        modelProfileId: "mock",
+        modelId: "mock",
         runConfig: {
           kind: "chat",
           input: "Send",

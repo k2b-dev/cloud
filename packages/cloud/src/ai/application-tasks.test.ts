@@ -8,7 +8,22 @@ import * as model from "./task-model";
 import type { AiResolvedModel } from "./types";
 
 const resolved: AiResolvedModel = {
-  profile: { id: "pinned", label: "Pinned", provider: "openai", model: "test", enabled: true, capabilities: [], dataBoundary: "hosted" },
+  model: { id: "pinned" },
+  profile: {
+    modelId: "pinned",
+    providerId: "test",
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
+    id: "pinned",
+    label: "Pinned",
+    provider: "openai",
+    model: "test",
+    enabled: true,
+    capabilities: [],
+    dataBoundary: "hosted",
+  },
   provider: {
     name: "test",
     family: "openai-compatible",
@@ -31,7 +46,7 @@ const task: WorkflowAiTask = {
   kind: "generate_text",
   request: { kind: "generate_text", prompt: "Summarize", maxOutputChars: 100 },
   inputHash: "a".repeat(64),
-  modelProfileId: "pinned",
+  modelId: "pinned",
   status: "succeeded",
   output: "Summary",
   usage: null,
@@ -92,7 +107,7 @@ test("new application task uses shared admission/cache and pins an authorized pe
   expect(create).toHaveBeenCalledWith(
     expect.objectContaining({
       owner: { appId: "example", scopeId: "mailbox", usageSubject },
-      modelProfileId: "pinned",
+      modelId: "pinned",
       modelConfigHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       scope: input.source,
       effectKey: expect.stringMatching(/^application:/),
