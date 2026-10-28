@@ -101,27 +101,29 @@ test("notification delivery page renders charts inside the SSR and request-local
       c.set("runtime", { apps: [] });
       await next();
     });
-    server.get("/admin/observability/notifications", ...handler);
+    server.get("/admin/observability/deliveries", ...handler);
     for (const locale of ["en", "de"]) {
-      const response = await server.request("/admin/observability/notifications", { headers: { "Accept-Language": locale } });
+      const response = await server.request("/admin/observability/deliveries", { headers: { "Accept-Language": locale } });
       const html = await response.text();
       expect(response.status, html).toBe(200);
       expect(html).toContain("k2b-chart-explorer");
       expect(html).toContain("k2b-chart__svg");
       expect(html).toContain("<svg");
-      expect(html).toContain(locale === "de" ? "Benachrichtigungen" : "Notifications");
+      expect(html).toContain(locale === "de" ? "Zustellungen" : "Deliveries");
       // Mail status appears only where it adds to the delivery status.
       expect(html).toContain(locale === "de" ? "E-Mail: Unzustellbar" : "Mail: Bounced");
       expect(html).toContain(locale === "de" ? "E-Mail: In Warteschlange" : "Mail: Queued");
       expect(html).not.toContain(locale === "de" ? "E-Mail: Gesendet" : "Mail: Sent");
       expect(html).toContain('title="00000000-0000-4000-8000-000000000001"');
-      const channel = [...html.matchAll(/<span\b[^>]*>[\s\S]*?<\/span>/g)].find((match) => match[0].includes("ti ti-route"))?.[0];
+      // The channel chip in the table, not the area's Gateway section with the same icon.
+      const table = html.slice(html.indexOf("<table"));
+      const channel = [...table.matchAll(/<span\b[^>]*>[\s\S]*?<\/span>/g)].find((match) => match[0].includes("ti ti-route"))?.[0];
       expectNeutralChip(channel);
       for (const view of ["registry", "legacy"]) {
-        const other = await server.request(`/admin/observability/notifications?view=${view}`, { headers: { "Accept-Language": locale } });
+        const other = await server.request(`/admin/observability/deliveries?view=${view}`, { headers: { "Accept-Language": locale } });
         expect(other.status, await other.text()).toBe(200);
       }
-      const searched = await server.request("/admin/observability/notifications?view=legacy&search=fixture", {
+      const searched = await server.request("/admin/observability/deliveries?view=legacy&search=fixture", {
         headers: { "Accept-Language": locale },
       });
       const searchedHtml = await searched.text();
