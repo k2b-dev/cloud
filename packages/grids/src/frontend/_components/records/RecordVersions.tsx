@@ -151,63 +151,68 @@ export default function RecordVersions(props: { tableId: string; recordId: strin
   const revisions = createMemo(() => pages.pages().flatMap((page) => page.items));
   onMount(() => setMounted(true));
 
+  const revisionTitle = (revision: PublicRecordRevision) =>
+    `${t().version({ revision: revision.revision })} · ${actionLabel()[revision.action]}`;
+
   return (
     <Show when={status()?.enabled !== false}>
-      <DetailPanel.Group label={t().recordVersions}>
-        <DetailPanel.Section
-          title={t().durableHistory}
-          icon="ti ti-history"
-          tone="accent"
-          // No count: revisions load page by page, so a count would only be the pages loaded so far.
-          meta={enabledStatus() ? <StatusBadge tone="ok" variant="text" label={t().on} /> : undefined}
-          description={
-            enabledStatus() ? t().historyProvable({ date: new Date(enabledStatus()!.activatedAt).toLocaleString(locale()) }) : undefined
-          }
-        >
-          <div class="flex flex-col gap-2">
-            <Show when={pages.loading() && revisions().length === 0}>
-              <Placeholder align="left" class="px-0 py-2" description={<>{t().loadingVersions}</>} />
-            </Show>
-            <Show when={pages.error()}>
-              {(error) => (
-                <div class="flex items-center gap-2 text-sm text-danger" role="alert">
-                  <span>{error().message}</span>
-                  <Button size="xs" variant="ghost" onClick={() => void pages.invalidate()}>
-                    {t().retry}
-                  </Button>
-                </div>
-              )}
-            </Show>
-            <For each={revisions()}>
-              {(revision) => {
-                const names = new Map(revision.fields.map((field) => [field.id, field.name]));
-                const changed = revision.changedFieldIds.flatMap((fieldId) => (names.get(fieldId) ? [names.get(fieldId)!] : [])).join(", ");
-                return (
-                  <DetailPanel.Action
-                    onClick={() => void openRevision({ tableId: props.tableId, recordId: props.recordId, revision })}
-                    title={`${t().version({ revision: revision.revision })} · ${actionLabel()[revision.action]}`}
-                    description={`${changed ? `${changed} · ` : ""}${revision.actorDisplayName ?? t().systemActor} · ${new Date(revision.createdAt).toLocaleString(locale())}`}
-                    leading={<i class="ti ti-history" aria-hidden="true" />}
-                    trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
-                  />
-                );
-              }}
-            </For>
-            <Show when={pages.hasMore()}>
-              <Button
-                variant="ghost"
-                size="sm"
-                class="w-fit"
-                loading={pages.loadingMore()}
-                loadingLabel={t().loadingMore}
-                onClick={() => void pages.loadMore()}
-              >
-                {t().loadingMore}
-              </Button>
-            </Show>
-          </div>
-        </DetailPanel.Section>
-      </DetailPanel.Group>
+      <DetailPanel.Section
+        title={t().durableHistory}
+        collapsible
+        // No count: revisions load page by page, so a count would only be the pages loaded so far.
+        meta={enabledStatus() ? <StatusBadge tone="ok" variant="text" label={t().on} /> : undefined}
+        summary={
+          pages.error()
+            ? t().versionsFailed
+            : revisions()[0]
+              ? t().latestVersion({ label: revisionTitle(revisions()[0]!) })
+              : pages.loading()
+                ? t().loadingVersions
+                : undefined
+        }
+      >
+        <div class="flex flex-col gap-2">
+          <Show when={enabledStatus()}>
+            {(enabled) => (
+              <p class="grids-details-none">{t().historyProvable({ date: new Date(enabled().activatedAt).toLocaleString(locale()) })}</p>
+            )}
+          </Show>
+          <Show when={pages.loading() && revisions().length === 0}>
+            <Placeholder state="loading" variant="compact" align="left" title={t().loadingVersions} />
+          </Show>
+          <Show when={pages.error()}>
+            {(error) => (
+              <Placeholder state="error" variant="compact" align="left" title={error().message} onRetry={() => void pages.invalidate()} />
+            )}
+          </Show>
+          <For each={revisions()}>
+            {(revision) => {
+              const names = new Map(revision.fields.map((field) => [field.id, field.name]));
+              const changed = revision.changedFieldIds.flatMap((fieldId) => (names.get(fieldId) ? [names.get(fieldId)!] : [])).join(", ");
+              return (
+                <DetailPanel.Action
+                  onClick={() => void openRevision({ tableId: props.tableId, recordId: props.recordId, revision })}
+                  title={revisionTitle(revision)}
+                  description={`${changed ? `${changed} · ` : ""}${revision.actorDisplayName ?? t().systemActor} · ${new Date(revision.createdAt).toLocaleString(locale())}`}
+                  leading={<i class="ti ti-history" aria-hidden="true" />}
+                />
+              );
+            }}
+          </For>
+          <Show when={pages.hasMore()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              class="w-fit"
+              loading={pages.loadingMore()}
+              loadingLabel={t().loadingMore}
+              onClick={() => void pages.loadMore()}
+            >
+              {t().loadingMore}
+            </Button>
+          </Show>
+        </div>
+      </DetailPanel.Section>
     </Show>
   );
 }

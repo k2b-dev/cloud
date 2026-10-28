@@ -8,7 +8,6 @@ import { mailCapabilities } from "../capabilities";
 import { ConversationGetDataSchema } from "../capability-contracts";
 import { unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess, listMailboxAccess, revokeMailboxAccess } from "./access";
 import { MAIL_ATTACHMENT_EXTRACTOR_VERSION } from "./attachment-extraction-contract";
 import type { MailRequestContext } from "./auth";
@@ -89,8 +88,6 @@ suite("mail PostgreSQL foundation", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
-    await migrate();
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-test-${suffix}`}, 'local', 'user', 'Mail Integration Test', true)

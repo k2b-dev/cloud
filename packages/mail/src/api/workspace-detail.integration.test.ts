@@ -9,7 +9,6 @@ import type { AutomationLogItem } from "../contracts";
 import { messageForwardTextOf } from "../forward-text";
 import { projectMailConversationDetail } from "../frontend/ssr-public-boundary";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import * as access from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import { automationConversationSnapshot } from "../service/automation-log-recording";
@@ -169,7 +168,6 @@ suite("Mail workspace conversation detail", () => {
 
   beforeAll(async () => {
     setSystemTime(anchor);
-    await migrate();
     owner = await createUser("owner");
     reader = await createUser("reader");
     revokedReader = await createUser("revoked");

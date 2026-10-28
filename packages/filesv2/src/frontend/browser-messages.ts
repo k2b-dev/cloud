@@ -330,6 +330,19 @@ export const browserMessages = i18n.define({
         n === 1
           ? "The browser left out 1 hidden file. Upload it on its own."
           : `The browser left out ${n} hidden files. Upload them on their own.`,
+      share: "Share",
+      readOnly: "Read only",
+      moreActions: "More actions",
+      properties: "Properties",
+      contents: "Contents",
+      contentsFailed: "The contents of this folder cannot be loaded right now. The folder itself is up to date.",
+      moreInFolder: "Open the folder for the rest",
+      versionsFailed: "The versions cannot be loaded right now. The file itself is up to date.",
+      moreAboutFile: "More about this file",
+      moreAboutFolder: "More about this folder",
+      technicalDetails: "Technical details",
+      technicalSummary: "Type, size, modified",
+      downloadNamed: (name: string) => `Download ${name}`,
     },
     de: {
       personal: "Persönlich",
@@ -661,6 +674,19 @@ export const browserMessages = i18n.define({
         n === 1
           ? "Der Browser hat 1 versteckte Datei ausgelassen. Lade sie separat hoch."
           : `Der Browser hat ${n} versteckte Dateien ausgelassen. Lade sie separat hoch.`,
+      share: "Teilen",
+      readOnly: "Nur lesen",
+      moreActions: "Weitere Aktionen",
+      properties: "Eigenschaften",
+      contents: "Inhalt",
+      contentsFailed: "Der Inhalt dieses Ordners lässt sich gerade nicht laden. Der Ordner selbst ist aktuell.",
+      moreInFolder: "Den Rest zeigt der Ordner",
+      versionsFailed: "Die Versionen lassen sich gerade nicht laden. Die Datei selbst ist aktuell.",
+      moreAboutFile: "Mehr zu dieser Datei",
+      moreAboutFolder: "Mehr zu diesem Ordner",
+      technicalDetails: "Technische Details",
+      technicalSummary: "Art, Größe, geändert",
+      downloadNamed: (name: string) => `${name} herunterladen`,
     },
   },
 });

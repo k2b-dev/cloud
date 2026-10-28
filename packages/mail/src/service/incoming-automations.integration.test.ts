@@ -19,7 +19,6 @@ import incomingAutomationRoutes from "../api/incoming-automations";
 import type { MailApiContext } from "../api/public-resource-boundary";
 import type { MailAutomationAction } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { snapshotMailWorkflowCatalog } from "../workflows/catalog";
 import { grantMailboxAccess, listMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
@@ -98,7 +97,6 @@ suite("incoming automations", () => {
   let sharedAdminContext: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const createUser = async (role: string): Promise<TestUser> => {
       const uid = `incoming-automation-${role}-${suffix}`;
       const displayName = `${role} incoming automation test`;
