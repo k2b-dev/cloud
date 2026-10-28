@@ -119,7 +119,7 @@ const description = (summary: string, schema: z.ZodType) =>
 const app = new Hono<AuthContext>()
   .use(rateLimit())
   .get("/badge", auth.requireRole("authenticated"), description("Read the Chat badge count", BadgeSchema), async (c) =>
-    c.json({ count: await badgeCount(context(c)) }),
+    respond(c, ok({ count: await badgeCount(context(c)) })),
   )
   .get(
     "/admin/health",
