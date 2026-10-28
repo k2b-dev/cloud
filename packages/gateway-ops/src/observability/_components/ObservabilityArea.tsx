@@ -144,7 +144,7 @@ type AreaProps = {
   children: JSX.Element;
 };
 
-export { AdminAreaSaveStatusFoot as SaveStatusFoot, AdminAreaSaveStatusHead as SaveStatusHead, AdminAreaPane as ObservabilityPane };
+export { AdminAreaPane as ObservabilityPane, AdminAreaSaveStatusFoot as SaveStatusFoot, AdminAreaSaveStatusHead as SaveStatusHead };
 
 /**
  * The Observability area on the shared admin area frame: its sections as the first column with attention marks, other

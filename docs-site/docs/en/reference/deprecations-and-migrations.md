@@ -10,6 +10,28 @@ updated: 2026-10-28
 
 # Deprecations and migrations
 
+## Base settings are one administration area with new addresses
+
+**Administration → Base settings** collects General, Legal, PDF rendering,
+Places & maps, and CLI. The old addresses return `404` or another settings tab
+and do not redirect:
+
+| Before | Now |
+| --- | --- |
+| `/admin/settings?tab=general` | `/admin/base` |
+| `/admin/settings?tab=legal` | `/admin/base/legal` |
+| `/admin/settings?tab=pdf-rendering` | `/admin/base/pdf` |
+| `/admin/settings?tab=cli` | `/admin/base/cli` |
+| `/admin/places-and-maps`, `/admin/settings?tab=places` | `/admin/base/places` |
+
+The sections save with the button in the column head. A value someone else
+changed in the meantime shows at its field with **Take their value** and
+**Save my value**. `GET /api/admin/core/settings/entries?group=<group>` returns
+the current values and versions of one settings group for administrators.
+
+Operators: no migration is needed. Update bookmarks and links in your own
+runbooks.
+
 ## Observability is one administration area with new addresses
 
 **Administration → Observability** is now one area: the sidebar shows one

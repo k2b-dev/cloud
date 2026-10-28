@@ -13,7 +13,7 @@
 import type { AiEnrichmentOverview } from "@k2b/cloud/ai";
 import { coreClient } from "@k2b/cloud/clients/core";
 import type { GeoIpAdminStatus } from "@k2b/cloud/contracts";
-import { AI_LOCAL_CLIENT_DEFAULT_INSTRUCTIONS, AI_PLATFORM_PROMPT_TEMPLATE, formatBytes } from "@k2b/cloud/shared";
+import { AI_LOCAL_CLIENT_DEFAULT_INSTRUCTIONS, AI_PLATFORM_PROMPT_TEMPLATE } from "@k2b/cloud/shared";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -43,13 +43,11 @@ import { createMemo, createSignal, For, Show } from "solid-js";
 import ApprovalStatus from "../../../app-approval/ApprovalStatus";
 import type { ApprovalAvailability } from "../../../app-approval/availability";
 import { appApprovalMessages } from "../../../app-approval/messages";
-import CacheNotice from "../../CacheNotice";
 import { adminMessages } from "../../messages";
 import { settingsDocumentationHref } from "../documentation";
 import { accountSettingsSection } from "./account-settings";
 import { aiSettingsMessages } from "./ai-settings-messages";
 import DocumentationLink from "./DocumentationLink";
-import { LegacySettingsSection } from "./LegacySettingsSection";
 import { settingsMessages } from "./messages";
 import SignInLocations from "./SignInLocations";
 import { localizeSettingField } from "./setting-copy";
@@ -70,9 +68,7 @@ type Props = {
   approvalState?: ApprovalAvailability;
   /** Present on the sign-in tab; `status` is null when the server could not read it. */
   signInLocations?: { status: GeoIpAdminStatus | null; actorId: string };
-  showTestPdfAction?: boolean;
   showTestFreeIpaAction?: boolean;
-  showLegacySettings?: boolean;
   aiEnrichmentOverview?: AiEnrichmentOverview | null;
   backgroundTaskPrompts?: Record<string, string[]>;
   /** Profile ids with a stored provider key. The keys themselves stay server-side. */
@@ -333,39 +329,6 @@ export default function CoreSettingsForm(props: Props) {
     setConflict(null);
   };
 
-  const testPdf = mutations.create<{ bytes: number; contentType: string }, void>({
-    mutation: async () => {
-      const response = await coreClient.admin.core.settings["test-pdf"].$post();
-      const body = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message =
-          body && typeof body === "object" && "message" in body && typeof body.message === "string"
-            ? body.message
-            : t().pdfTestFailed({ status: response.status });
-        throw new Error(message);
-      }
-      return body as { bytes: number; contentType: string };
-    },
-    onSuccess: (result) => {
-      void prompts.dialog<void>(
-        (close) => (
-          <div class="flex flex-col gap-4">
-            <p class="text-sm text-secondary">
-              {t().pdfResponse({ size: formatBytes(result.bytes, { locale: locale() }), type: result.contentType })}
-            </p>
-            <div class="flex justify-end">
-              <Button type="button" size="sm" onClick={() => close()}>
-                {t().close}
-              </Button>
-            </div>
-          </div>
-        ),
-        { title: t().pdfReachable, icon: "ti ti-check" },
-      );
-    },
-    onError: (e) => prompts.error(e.message),
-  });
-
   const testFreeIpa = mutations.create<void, void>({
     mutation: async () => {
       const response = await coreClient.admin.core.settings["test-freeipa"].$post();
@@ -384,23 +347,6 @@ export default function CoreSettingsForm(props: Props) {
 
   const headerActions = () => (
     <>
-      <Show when={props.showTestPdfAction}>
-        <Tooltip.Anchor content={hasChanges() ? t().testPdfPending : t().testPdfSaved}>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            class="justify-center"
-            onClick={() => testPdf.mutate()}
-            loading={testPdf.loading()}
-            loadingLabel={t().testingRenderer}
-            disabled={hasChanges()}
-          >
-            <i class="ti ti-file-type-pdf" /> {t().testRenderer}
-          </Button>
-        </Tooltip.Anchor>
-      </Show>
-
       <Show when={props.showTestFreeIpaAction}>
         <Tooltip.Anchor content={hasChanges() ? t().testFreeIpaPending : t().testFreeIpaSaved}>
           <Button
@@ -457,7 +403,7 @@ export default function CoreSettingsForm(props: Props) {
       actions={
         <>
           <DocumentationLink base={props.documentationBase} topic={props.documentationTopic ?? ""} />
-          {props.showTestPdfAction || props.showTestFreeIpaAction ? headerActions() : undefined}
+          {props.showTestFreeIpaAction ? headerActions() : undefined}
         </>
       }
       footer={
@@ -547,7 +493,7 @@ export default function CoreSettingsForm(props: Props) {
         }}
       />
 
-      <Show when={props.showTestPdfAction || props.showTestFreeIpaAction}>
+      <Show when={props.showTestFreeIpaAction}>
         <NoticeCard tone="info" title={t().testsUseSaved} detail={t().testsUseSavedDescription} />
       </Show>
 
@@ -581,10 +527,6 @@ export default function CoreSettingsForm(props: Props) {
             {renderFieldSections(genericEntries())}
             <Show when={props.signInLocations}>
               {(locations) => <SignInLocations initial={locations().status} actorId={locations().actorId} />}
-            </Show>
-            <Show when={props.showLegacySettings}>
-              <CacheNotice area="settings" />
-              <LegacySettingsSection />
             </Show>
           </>
         }
