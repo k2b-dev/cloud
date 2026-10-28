@@ -1,8 +1,8 @@
 import { X509Certificate } from "node:crypto";
-import type { sql } from "bun";
+import type { SQL } from "bun";
 import { setFreeIpaTlsResolver } from "../server/services/freeipa/tls";
 import { coreSettings } from "./settings/api";
-import { decryptValue } from "./settings/crypto";
+import { readKeyState, SettingUnreadableError } from "./settings/store";
 
 const MAX_CA_CERT_BYTES = 256 * 1024;
 const PEM_CERTIFICATE_PATTERN = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
@@ -84,14 +84,11 @@ const normalizeStringList = (value: unknown, fallback: string[] = []): string[] 
   return normalized.length > 0 ? normalized : fallback;
 };
 
-/** Durable authority reads bypass the settings cache; callers own transaction locks. */
-export const getFreeIpaAdminGroups = async (db: typeof sql): Promise<string[]> => {
-  const [row] = await db<{ value: string }[]>`SELECT value FROM settings.entries WHERE key='freeipa.groups.admin'`;
-  if (!row) return ["admins"];
-  const value = await decryptValue(row.value);
-  if (!Array.isArray(value) || !value.every((entry): entry is string => typeof entry === "string"))
-    throw new Error("Invalid FreeIPA administrator configuration");
-  return normalizeStringList(value, ["admins"]);
+/** Read the role mapping on the caller's connection during authorization. */
+export const getFreeIpaAdminGroups = async (db: SQL): Promise<string[]> => {
+  const state = await readKeyState("freeipa.groups.admin", db);
+  if (state.stored === "unreadable") throw new SettingUnreadableError("freeipa.groups.admin");
+  return normalizeStringList(state.value, ["admins"]);
 };
 
 /**

@@ -52,7 +52,7 @@ describe("duplicate a note", () => {
     const treeActions: ReturnType<typeof useNoteActions>[] = [];
     let standalone!: ReturnType<typeof useDuplicateNote>;
     function Harness() {
-      for (let index = 0; index < trees; index++) treeActions.push(useNoteActions("book01", () => []));
+      for (let index = 0; index < trees; index++) treeActions.push(useNoteActions("book01"));
       standalone = useDuplicateNote("book01");
       return createComponent(Panel, {
         mode: "edit",
@@ -152,14 +152,9 @@ describe("duplicate a note", () => {
         id: "tree01",
         title: "Tree note",
         parentId: null,
-        children: [],
         lockedAt: null,
         position: 0,
-        notebookId: "book01",
         hasChildren: false,
-        yjsSnapshotAt: null,
-        contentMd: null,
-        createdBy: "me",
         createdAt: "2026-10-13T19:30:00.000Z",
         updatedAt: "2026-10-16T19:18:00.000Z",
       });

@@ -312,7 +312,9 @@ export const validateDraftComposeSafety = async (params: {
    * and its recipients come from the message it answers, not from a choice
    * someone made and might regret. Requiring an approval token there refused
    * every automatic reply instead of protecting anyone, so the warnings stay
-   * advisory for a draft the platform wrote itself.
+   * advisory for a draft the platform wrote itself. Workflow send policy separately
+   * excludes definitions with AI steps or conversation summary reads, both when
+   * queuing and immediately before SMTP.
    */
   if (source.data.origin !== "user") return ok(review);
   const expectedIds = review.warnings.map((warning) => warning.id).sort();

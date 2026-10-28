@@ -263,7 +263,7 @@ export default function RevokeDevice(props: {
           closeDialog = close;
           return content(close);
         },
-        { ...panelDialogOptions, panelClassName: `${panelDialogOptions.panelClassName} app-revoke-dialog` },
+        { ...panelDialogOptions, cancelBehavior: "ignore", panelClassName: `${panelDialogOptions.panelClassName} app-revoke-dialog` },
       )
       .then(() => {
         dismissed = true;

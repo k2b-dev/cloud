@@ -915,6 +915,23 @@ const bindCondition = (
   }
   const operands = condition.operands.map((operand, index) => bindValue(operand, [...path, condition.operator, index], scope, context));
   if (condition.operator === "equals" || condition.operator === "notEquals") return;
+  if (
+    condition.operator === "greaterThan" ||
+    condition.operator === "lessThan" ||
+    condition.operator === "atLeast" ||
+    condition.operator === "atMost"
+  ) {
+    operands.forEach((operand, index) => {
+      if (operand.type !== "core.number" && operand.type !== "core.value") {
+        addDiagnostic(context, "condition.type", `${condition.operator} operand has type ${operand.type}, expected core.number`, [
+          ...path,
+          condition.operator,
+          index,
+        ]);
+      }
+    });
+    return;
+  }
   if (condition.operator === "includes") {
     const left = operands[0]!;
     const right = operands[1]!;

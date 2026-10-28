@@ -90,7 +90,7 @@ export type AiTurnFinishedStatus = "completed" | "failed" | "aborted";
 export type AiWireEvent =
   | (AiWireEventBase & {
       type: "turn_started";
-      modelProfileId: string;
+      modelId: string;
       providerModel: string;
       /** Authoritative ordered baseline for this attempt. Optional for older senders. */
       blocks?: AiTurnBlock[];
@@ -116,7 +116,7 @@ export type AiTurnSnapshot = {
   /** Last wire seq reflected in `blocks` (attempt-scoped). */
   seq: number;
   blocks: AiTurnBlock[];
-  modelProfileId: string | null;
+  modelId: string | null;
   createdAt: string;
   /** Time the turn already waited for answered user actions such as approvals. Absent from older servers. */
   actionWaitMs?: number;

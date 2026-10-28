@@ -53,6 +53,12 @@ describe("app approval wire encoding", () => {
       parseAppPairingLink(appPairingLink(authenticator, { ...pairing, issuer: "https://other-cloud.example" }), authenticator).issuer,
     ).toBe("https://other-cloud.example");
   });
+  test("optional label survives link transport; earlier unlabeled links still parse", () => {
+    const named = { ...pairing, label: "Hoffmann Druck" };
+    expect(parseAppPairingLink(appPairingLink(authenticator, named), authenticator)).toEqual(named);
+    expect(parseAppPairingLink(appPairingLink(authenticator, pairing), authenticator)).toEqual(pairing);
+    expect(() => appPairingLink(authenticator, { ...pairing, label: "x".repeat(81) })).toThrow();
+  });
   test("copied links reject other authenticators, query secrets and malformed payloads", () => {
     const link = appPairingLink(authenticator, pairing);
     for (const invalid of [

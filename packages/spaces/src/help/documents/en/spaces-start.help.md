@@ -68,7 +68,7 @@ Spaces owns the imported meeting state, recurrence, organizers, attendees, and i
 
 ## Link resources and pages to work {icon="link"}
 
-Every item has one **Links & resources** list for Cloud resources and external pages. In an editable item, you have two options:
+Every item shows Cloud resources and external pages in its **Linked** section. In an editable item, you have two options:
 
 - Choose **Add link** to attach an `http(s)` URL with an optional label. Each item holds up to 20 external links.
 - Choose **Link Cloud resource** to find and attach a resource from Cloud search. You can attach any supported resource that you can currently access.
@@ -81,4 +81,4 @@ An item can keep stable references to resources that other Cloud apps own. Mail 
 
 The reference belongs to the shared item, not to the person who created it. Access to the Space controls who can see or remove the link. The target app checks its own current access whenever someone opens the resource. If the target is removed or access changes, everyone who can see the Space still sees the stored label. With **Edit** access, you can remove the unavailable reference.
 
-Links to other tasks appear separately as **Related tasks**, directly above this list. These links give context only: they do not block either task. A link can point to a task in another Space when both items are accessible.
+Links to other tasks come first in the same **Linked** section. These links give context only: they do not block either task. A link can point to a task in another Space when both items are accessible.

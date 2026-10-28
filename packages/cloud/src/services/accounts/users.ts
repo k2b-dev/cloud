@@ -21,7 +21,7 @@ import { session } from "../session";
 import * as settings from "../settings";
 import { buildRoles } from "./authz";
 import { buildBaseUser, resolveProviderProfile } from "./base-user";
-import { managedGroupIdsSubquery, managedGroupsNamesSubquery, recursiveGroupIdsSubquery, recursiveGroupNamesSubquery } from "./group-sql";
+import { managedGroupIdsSubquery, managedGroupsNamesSubquery, recursiveGroupIdsSubquery, recursiveUserGroupsSubquery } from "./group-sql";
 import { buildIpaUserData, emptyIpaUserData, userIpaDataColumns, userIpaDataJoin } from "./ipa-data";
 import {
   canPersistStoredAdmin,
@@ -177,11 +177,12 @@ const buildUser = (row: DbRow, groupsAdmin: string[]): User => {
   };
 };
 
-export const get = async (params: { id: string } | { uid: string }): Promise<User | null> => {
-  const whereClause = "id" in params ? sql`u.id = ${params.id}` : sql`u.uid = ${params.uid}`;
-  const userIdExpr = "id" in params ? sql`${params.id}` : sql`u.id`;
-  const { groupsAdmin } = await getFreeIpaConfig();
-  const rows = await sql<DbRow[]>`
+export const get = async (params: { id: string } | { uid: string }, options: { db?: SQL } = {}): Promise<User | null> => {
+  const db = options.db ?? sql;
+  const whereClause = "id" in params ? db`u.id = ${params.id}` : db`u.uid = ${params.uid}`;
+  const userIdExpr = "id" in params ? db`${params.id}` : db`u.id`;
+  const groupsAdmin = options.db ? await getFreeIpaAdminGroups(db) : (await getFreeIpaConfig()).groupsAdmin;
+  const rows = await db<DbRow[]>`
     SELECT u.*,
       ${userIpaDataColumns()},
       CASE
@@ -376,17 +377,24 @@ export const list = async (params: {
   };
 };
 
-export const getGroups = async (params: { id: string; recursive?: boolean }): Promise<string[]> => {
+/** Technical membership reads stay complete; human-facing lists exclude personal groups explicitly. */
+export const getGroups = async (params: { id: string; recursive?: boolean; includePersonal?: boolean }): Promise<string[]> => {
   if (params.recursive) {
-    const rows = await sql<DbRow[]>`${recursiveGroupNamesSubquery(params.id)}`;
+    const rows = await sql<DbRow[]>`${recursiveUserGroupsSubquery({
+      userId: params.id,
+      select: sql`
+        SELECT DISTINCT g.name FROM user_all_groups ag
+        JOIN auth.groups g ON g.id = ag.group_id
+        WHERE (${params.includePersonal !== false} OR NOT EXISTS (SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id))
+        ORDER BY g.name
+      `,
+    })}`;
     return rows.map((row) => row.name as string);
   }
-
   const rows = await sql<DbRow[]>`
-    SELECT g.name
-    FROM auth.user_groups_v2 ug
-    JOIN auth.groups g ON g.id = ug.group_id
-    WHERE ug.user_id = ${params.id}::uuid
+    SELECT g.name FROM auth.groups g
+    WHERE g.id IN (SELECT group_id FROM auth.user_groups_v2 WHERE user_id = ${params.id}::uuid)
+      AND (${params.includePersonal !== false} OR NOT EXISTS (SELECT 1 FROM auth.user_posix p WHERE p.primary_group_id = g.id))
     ORDER BY g.name
   `;
   return rows.map((row) => row.name as string);

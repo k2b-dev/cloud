@@ -1,12 +1,14 @@
 import { expect, spyOn, test } from "bun:test";
+import { SHARED_TEXT_NAME } from "@k2b/cloud/shared-text";
 import { sql } from "bun";
+import * as Y from "yjs";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 
 // Isolate the notes module's default SQL handle and process Sync binding.
 if (process.env.NOTEBOOKS_SHARED_TEXT_EDIT_CHILD !== "1") {
   testFor("database", "nats")(
-    "shared text edits preserve service-account attribution in Notebooks",
+    "shared text edits preserve attribution and unchanged anchors in Notebooks",
     async () => {
       const child = Bun.spawn([process.execPath, "test", import.meta.path], {
         env: { ...process.env, NOTEBOOKS_SHARED_TEXT_EDIT_CHILD: "1" },
@@ -23,7 +25,7 @@ if (process.env.NOTEBOOKS_SHARED_TEXT_EDIT_CHILD !== "1") {
     60_000,
   );
 } else {
-  test("editContent credits a service account in the log, version and activity", async () => {
+  test("editContent credits a service account and restoring in place preserves unchanged anchors", async () => {
     const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
     const { createSync } = await import("@k2b/sync");
     const { jetstreamManager } = await import("@nats-io/jetstream");
@@ -71,6 +73,53 @@ if (process.env.NOTEBOOKS_SHARED_TEXT_EDIT_CHILD !== "1") {
         WHERE note_id = ${noteId}::uuid AND action = 'note.edited'
       `;
       expect(activities).toEqual([{ actor_kind: "service_account", actor_id: actor.id, last_occurred_at: new Date(requestedAt) }]);
+
+      const original = "First old paragraph\n\nMiddle stable 😀 paragraph\n\nThird old paragraph\n";
+      expect(
+        await notes.editContent({
+          noteId,
+          createdBy: null,
+          actor,
+          data: { operations: [{ kind: "set-content", content: original }] },
+        }),
+      ).toMatchObject({ ok: true });
+      const [initial] = await sql<{ yjs_snapshot: Uint8Array }[]>`
+        SELECT yjs_snapshot FROM notebooks.notes WHERE id = ${noteId}::uuid
+      `;
+      const versionId = crypto.randomUUID();
+      await sql`INSERT INTO notebooks.note_versions (id, note_id, yjs_snapshot, content_md)
+        VALUES (${versionId}::uuid, ${noteId}::uuid, ${Buffer.from(initial!.yjs_snapshot)}, ${original})`;
+      const browser = new Y.Doc();
+      const restored = new Y.Doc();
+      try {
+        Y.applyUpdate(browser, initial!.yjs_snapshot);
+        const anchor = Y.createRelativePositionFromTypeIndex(browser.getText(SHARED_TEXT_NAME), original.indexOf("stable"));
+        expect(
+          await notes.editContent({
+            noteId,
+            createdBy: null,
+            actor,
+            data: { operations: [{ kind: "set-content", content: original.replaceAll("old", "new longer") }] },
+          }),
+        ).toMatchObject({ ok: true });
+        expect(await notes.restoreInPlace({ noteId, versionId, createdBy: null, actor })).toMatchObject({
+          ok: true,
+          data: { changed: true },
+        });
+        const [row] = await sql<{ yjs_snapshot: Uint8Array; content_md: string; yjs_restore_revision: string }[]>`
+          SELECT yjs_snapshot, content_md, yjs_restore_revision::text FROM notebooks.notes WHERE id = ${noteId}::uuid
+        `;
+        Y.applyUpdate(restored, row!.yjs_snapshot);
+        expect(row!.content_md).toBe(original);
+        expect(row!.yjs_restore_revision).toBe("0");
+        const restoredText = restored.getText(SHARED_TEXT_NAME);
+        const resolved = Y.createAbsolutePositionFromRelativePosition(anchor, restored, false);
+        expect(resolved?.type === restoredText).toBe(true);
+        expect(restoredText.toString().slice(resolved!.index, resolved!.index + "stable 😀".length)).toBe("stable 😀");
+      } finally {
+        browser.destroy();
+        restored.destroy();
+      }
     } finally {
       clock.mockRestore();
       try {

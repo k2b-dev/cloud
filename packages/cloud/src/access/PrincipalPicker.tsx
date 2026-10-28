@@ -24,8 +24,11 @@ type Entity =
         appId: string | null;
         resourceType: string | null;
         resourceId: string | null;
+        status: "active" | "disabled";
       };
     };
+/** The service-account facts a consumer can check before offering an account. */
+export type PrincipalPickerServiceAccount = Extract<Entity, { kind: "service_account" }>["serviceAccount"];
 /** Shared identity selector; the consumer owns the meaning of the assignment. */
 export default function PrincipalPicker(props: {
   existing?: Principal[];
@@ -36,6 +39,8 @@ export default function PrincipalPicker(props: {
   /** Optional directory filters for the resource's accepted credential kinds. */
   serviceAccountKinds?: ServiceAccountKind[];
   serviceAccountStatus?: ServiceAccountStatus;
+  /** Offers only the service accounts this returns `true` for, such as active accounts the resource can accept. */
+  serviceAccountFilter?: (account: PrincipalPickerServiceAccount) => boolean;
   disabled?: boolean;
   readOnly?: boolean;
   /** Replaces the default placeholder, which lists the principal kinds on offer. */
@@ -113,7 +118,7 @@ export default function PrincipalPicker(props: {
             icon: "ti ti-users-group",
             description: e.group.description ?? undefined,
           });
-        else {
+        else if (!props.serviceAccountFilter || props.serviceAccountFilter(e.serviceAccount)) {
           const account = e.serviceAccount;
           const kind = serviceAccountKindDisplay(account.kind, t());
           entries.push({

@@ -1,6 +1,8 @@
 # Tooltip
 
 `Tooltip` adds a concise, non-interactive hint to an existing control. It opens for pointer hover and visible keyboard focus and keeps the surface inside the viewport.
+Pressing the target with a pointer, Space or Enter dismisses its hint and cancels a pending hint. It can open again after the pointer or focus leaves the target.
+Escape dismisses an open tooltip before an enclosing panel or dialog closes.
 
 ## Use Tooltip
 
