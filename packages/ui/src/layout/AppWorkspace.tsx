@@ -21,6 +21,7 @@ import { Dynamic, isServer } from "solid-js/web";
 import { Button, ButtonLink, IconButton, IconButtonLink } from "../actions/Button";
 import { useFilterMessages } from "../actions/filter-messages";
 import { dialogCore } from "../feedback/dialog-core";
+import { Tooltip } from "../feedback/Tooltip";
 import { RenderErrorBoundary } from "../internal/render-error";
 import {
   APP_WORKSPACE_DETAIL_CLOSE_EVENT,
@@ -60,6 +61,7 @@ import BottomSheet, { bottomSheetAdaptiveOptions } from "./BottomSheet";
 import { PageTitle, usePageTrail } from "./PageTitle";
 import type { ScrollAreaProps } from "./ScrollArea";
 import { SidebarItemPreview } from "./SidebarItemPreview";
+import { inSidebarRail, SidebarRailHint } from "./SidebarRailHint";
 import { AppWorkspaceSidebarSwitcher, type AppWorkspaceSidebarSwitcherProps } from "./SidebarSwitcher";
 import { createScrollFade, scrollFadeEdges } from "./scroll-fade";
 import { rememberSidebarScroll } from "./sidebar-scroll-memory";
@@ -1484,6 +1486,10 @@ type AppWorkspaceSidebarRowProps = {
   disabled?: boolean;
   tone?: AppWorkspaceSidebarItemTone;
   title?: string;
+  /** The plain label, which names the row in the collapsed rail when it has no `title`. */
+  hint?: string;
+  /** The element that holds keyboard focus for this row, when that is not the row itself. */
+  focusTarget?: () => HTMLElement | undefined;
   viewTransitionName?: string;
   class?: string;
   depth?: number;
@@ -1556,6 +1562,8 @@ function observeSidebarRowCover(row: HTMLElement): void {
 
 /** Shared visual and semantic row frame for flat sidebar items and tree items. */
 function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element {
+  const [link, setLink] = createSignal<HTMLElement>();
+  const [hinted, setHinted] = createSignal(false);
   const className = () =>
     `k2b-app-workspace__sidebar-item ${props.hasActions ? "has-action" : ""} ${props.active ? (props.activeClass ?? "is-active") : ""} ${props.class ?? ""}`;
   const data = () =>
@@ -1566,7 +1574,7 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
     );
   const common = () => ({
     class: className(),
-    title: props.title,
+    title: hinted() ? undefined : props.title,
     "data-tone": props.tone,
     style: {
       "view-transition-name": props.viewTransitionName,
@@ -1577,7 +1585,10 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
   const current = (): "page" | "true" | undefined => (props.active === "ancestor" ? "true" : props.active ? "page" : undefined);
 
   const Control = (control: { grouped: boolean }) => {
-    const attrs = () => (control.grouped ? { class: "k2b-app-workspace__sidebar-item-main" } : common());
+    const attrs = () => ({
+      ...(control.grouped ? { class: "k2b-app-workspace__sidebar-item-main" } : common()),
+      ref: setLink,
+    });
     return (
       <Show
         when={Boolean(props.href && !props.disabled)}
@@ -1612,12 +1623,28 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
     );
   };
   return (
-    <Show when={props.hasActions} fallback={<Control grouped={false} />}>
-      <div {...common()} ref={(row) => onMount(() => observeSidebarRowCover(row))} data-disabled={props.disabled ? "true" : undefined}>
-        <Control grouped />
-        {props.actions}
-      </div>
-    </Show>
+    <>
+      <Show when={props.hasActions} fallback={<Control grouped={false} />}>
+        <div {...common()} ref={(row) => onMount(() => observeSidebarRowCover(row))} data-disabled={props.disabled ? "true" : undefined}>
+          <Control grouped />
+          {props.actions}
+        </div>
+      </Show>
+      {/* The hint follows the row's link or button, also when actions or `disabled` replace it, and leaves the
+          row's own actions their own hints. */}
+      <Show when={link()} keyed>
+        {(element) => (
+          <SidebarRailHint
+            target={() => element}
+            label={props.title ?? props.hint}
+            focusTarget={props.focusTarget ?? (() => element)}
+            labelSelector=".k2b-app-workspace__sidebar-item-label-text"
+            titled={props.title !== undefined}
+            onArm={() => setHinted(true)}
+          />
+        )}
+      </Show>
+    </>
   );
 }
 
@@ -1790,6 +1817,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
       disabled={props.disabled}
       tone={props.tone}
       title={props.title}
+      hint={typeof label() === "string" ? (label() as string) : undefined}
       viewTransitionName={props.viewTransitionName}
       class={props.class}
       depth={props.depth}
@@ -2067,6 +2095,8 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
             disabled={item.disabled}
             tone={item.tone}
             title={item.title}
+            hint={typeof item.label === "string" ? item.label : undefined}
+            focusTarget={() => treeItem}
             viewTransitionName={item.viewTransitionName}
             class={`k2b-app-workspace__nav-tree-row ${item.class ?? ""}`}
             depth={props.indented === false ? 0 : depth}
@@ -2211,38 +2241,51 @@ const AppWorkspaceSidebarIconGrid = (props: AppWorkspaceSidebarIconGridProps) =>
 );
 
 const AppWorkspaceSidebarIconAction = (props: AppWorkspaceSidebarIconActionProps) => {
+  let target: HTMLElement | undefined;
   const content = <i class={iconClass(props.icon)} aria-hidden="true" />;
   const attrs = () => ({
+    ref: (element: HTMLElement) => (target = element),
     class: `k2b-app-workspace__sidebar-icon-action ${props.active ? "is-active" : ""}`,
-    title: props.label,
     "aria-label": props.label,
     "data-tone": props.tone,
     style: { "view-transition-name": props.viewTransitionName },
     ...modeAttrs(props.sidebarMode),
   });
+  // The icon never shows its label, so the hint names it in every state; in the collapsed rail it sits beside the
+  // icon like the rail's other entries.
+  const hint = <Tooltip target={() => target} content={props.label} placement={inSidebarRail(target) ? "right" : undefined} delay={0} />;
   if (!props.href || props.disabled)
     return (
-      <button type="button" {...attrs()} disabled={props.disabled} onClick={props.onClick}>
-        {content}
-      </button>
+      <>
+        <button type="button" {...attrs()} disabled={props.disabled} onClick={props.onClick}>
+          {content}
+        </button>
+        {hint}
+      </>
     );
   if (props.navigation !== "enhanced" || !props.onNavigate)
     return (
-      <a href={props.href} {...attrs()} onClick={props.onClick}>
-        {content}
-      </a>
+      <>
+        <a href={props.href} {...attrs()} onClick={props.onClick}>
+          {content}
+        </a>
+        {hint}
+      </>
     );
   return (
-    <Link
-      href={props.href}
-      {...attrs()}
-      replace={props.replace}
-      scroll={props.scroll}
-      onNavigate={props.onNavigate}
-      onClick={props.onClick}
-    >
-      {content}
-    </Link>
+    <>
+      <Link
+        href={props.href}
+        {...attrs()}
+        replace={props.replace}
+        scroll={props.scroll}
+        onNavigate={props.onNavigate}
+        onClick={props.onClick}
+      >
+        {content}
+      </Link>
+      {hint}
+    </>
   );
 };
 
