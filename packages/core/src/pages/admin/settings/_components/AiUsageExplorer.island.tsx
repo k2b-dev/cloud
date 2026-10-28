@@ -91,7 +91,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
       onValueChange={(values) => change(key, values[0] || fallback || undefined)}
     />
   );
-  const facets = (field: "userId" | "modelProfileId" | "providerModel" | "appId" | "task", label: string) => (
+  const facets = (field: "userId" | "modelId" | "providerModel" | "appId" | "task", label: string) => (
     <Select
       class={`ai-usage-filter ${q()[field] ? "ai-usage-filter--active" : ""}`}
       aria-label={label}
@@ -193,7 +193,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
           ? principalLabel({ principal: { type: "user", userId: row.userId }, displayName: row.userLabel }, locale())
           : t().unassigned,
       },
-      { label: t().model, value: row.modelProfileId },
+      { label: t().model, value: row.modelId },
       { label: t().providerModel, value: row.providerModel },
       { label: t().application, value: row.appId },
       { label: t().runId, value: row.id },
@@ -227,7 +227,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
           ? principalLabel({ principal: { type: "user", userId: row.userId }, displayName: row.userLabel }, locale())
           : t().unassigned,
       },
-      { label: t().model, value: row.modelProfileId },
+      { label: t().model, value: row.modelId },
       { label: t().providerModel, value: row.providerModel },
       { label: t().message, value: row.conversationTitle },
       { label: t().conversationId, value: row.conversationId },
@@ -274,7 +274,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
       dimension === "users"
         ? { userId: row.id ?? "unassigned" }
         : dimension === "models"
-          ? { modelProfileId: row.id ?? undefined, providerModel: row.providerModel ?? undefined }
+          ? { modelId: row.id ?? undefined, providerModel: row.providerModel ?? undefined }
           : dimension === "tasks"
             ? { task: row.id ?? undefined, view: "runs" }
             : { appId: row.id ?? undefined };
@@ -360,7 +360,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
   const runColumns: DataTableColumn<AiUsageRun>[] = [
     { id: "task", header: t().backgroundTask, value: (row) => row.task },
     { id: "status", header: t().status, value: (row) => row.status },
-    { id: "model", header: t().model, value: (row) => row.modelProfileId },
+    { id: "model", header: t().model, value: (row) => row.modelId },
     { id: "user", header: t().user, value: (row) => row.userLabel },
     { id: "when", header: t().received, value: (row) => row.createdAt },
     { id: "details", header: t().details, value: (row) => row.error },
@@ -368,7 +368,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
   const feedbackColumns: DataTableColumn<AiUsageFeedback>[] = [
     { id: "rating", header: t().rating, value: (row) => row.rating },
     { id: "user", header: t().user, value: (row) => row.userLabel },
-    { id: "model", header: t().model, value: (row) => row.modelProfileId },
+    { id: "model", header: t().model, value: (row) => row.modelId },
     { id: "reason", header: t().reason, value: (row) => row.reasons.join(", ") },
     { id: "comment", header: t().comment, value: (row) => row.comment },
     { id: "details", header: t().details, value: (row) => row.id },
@@ -432,7 +432,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
             "30d",
           )}
           {facets("userId", t().user)}
-          {facets("modelProfileId", t().model)}
+          {facets("modelId", t().model)}
           <Disclosure summary={t().moreFilters} defaultValue={!!(q().providerModel || q().appId)}>
             <div class="flex flex-wrap gap-2 py-2">
               {facets("providerModel", t().providerModel)}
@@ -601,9 +601,9 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
                   <ButtonLink
                     size="sm"
                     variant="text"
-                    href={href({ modelProfileId: row.modelProfileId ?? undefined, providerModel: row.providerModel ?? undefined })}
+                    href={href({ modelId: row.modelId ?? undefined, providerModel: row.providerModel ?? undefined })}
                   >
-                    {row.modelProfileId ?? t().unknown}
+                    {row.modelId ?? t().unknown}
                   </ButtonLink>
                 );
               if (col.id === "reason")
@@ -652,7 +652,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
               if (col.id === "model")
                 return (
                   <div>
-                    {row.modelProfileId ?? t().unknown}
+                    {row.modelId ?? t().unknown}
                     <div class="text-xs text-dimmed">{row.providerModel}</div>
                   </div>
                 );

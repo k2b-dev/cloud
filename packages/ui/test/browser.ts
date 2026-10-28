@@ -469,8 +469,23 @@ export const settled = async (page: Page): Promise<void> => {
             animation.playState === "running" &&
             Number.isFinite(animation.effect?.getComputedTiming().endTime),
         );
+    const frames = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    // A navigation the test triggered can start a document view transition a frame after it commits.
+    // Its user-agent animations belong to that navigation, not to a page that keeps animating, so they
+    // are awaited too, a bounded number of times. Any other animation that starts meanwhile still fails.
+    const viewTransition = (animation: Animation) =>
+      animation instanceof CSSAnimation &&
+      animation.animationName.startsWith("-ua-") &&
+      animation.effect instanceof KeyframeEffect &&
+      animation.effect.target === document.documentElement;
     await Promise.allSettled(running().map((animation) => animation.finished));
-    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    await frames();
+    for (let round = 0; round < 3; round++) {
+      const pending = running();
+      if (!pending.length || !pending.every(viewTransition)) break;
+      await Promise.allSettled(pending.map((animation) => animation.finished));
+      await frames();
+    }
     return running().map((animation) => {
       const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
       return {

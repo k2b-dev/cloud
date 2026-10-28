@@ -83,12 +83,9 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
     const server = await import("@k2b/cloud/server");
     const { oauthTokens } = await import("@k2b/cloud/services");
     spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());
-    const { migrate } = await import("./migrate");
     const { newShortId } = await import("./lib/short-id");
     const { createMailbox } = await import("./service/mailboxes");
     const { default: app } = await import("./api");
-
-    await migrate();
 
     const [row] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)

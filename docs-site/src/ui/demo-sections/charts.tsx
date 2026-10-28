@@ -53,16 +53,17 @@ const examples = {
     },
   },
   bar: {
-    description: "Bar · Compare daily jobs by queue. Imports has the highest volume at 42 jobs.",
+    description: "Bar · Compare daily jobs by queue. Every queue keeps its label and its value; long names become rows.",
     chart: {
       kind: "bar",
       data: [
         { label: "Imports", value: 42 },
-        { label: "Exports", value: 28 },
-        { label: "Reports", value: 18 },
+        { label: "Nightly exports", value: 28 },
+        { label: "Monthly reports", value: 18 },
+        { label: "Search index rebuilds", value: 7 },
       ],
-      colorByBar: true,
-      showValues: true,
+      xAxis: { label: "Queue" },
+      yAxis: { label: "Jobs today" },
     },
   },
   pie: {
@@ -415,4 +416,85 @@ export const ChartDemo = (props: { window: "1h" | "24h" }) => (
       );
     }}
   </For>
+);
+
+const euro = new Intl.NumberFormat("en", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+
+/** Bar labels in every state: few short labels as columns, rows for long labels, negative values, many categories. */
+const barStates = [
+  {
+    title: "Few short labels stand below columns with their values",
+    chart: {
+      kind: "bar",
+      data: [
+        { label: "Organic", value: 42 },
+        { label: "Mixed", value: 17 },
+        { label: "Other", value: 9 },
+      ],
+      xAxis: { label: "Farming" },
+      yAxis: { label: "Farms" },
+    },
+  },
+  {
+    title: "Long labels become rows and wrap; values carry their unit",
+    chart: {
+      kind: "bar",
+      data: [
+        { label: "Northwestern coastal region", value: 184000 },
+        { label: "Eastern uplands", value: 97000 },
+        { label: "Lake district and foothills", value: 63000 },
+      ],
+      xAxis: { label: "Region" },
+      yAxis: { label: "Revenue", format: (value: number) => euro.format(value) },
+    },
+  },
+  {
+    title: "Negative values grow left of the zero line",
+    chart: {
+      kind: "bar",
+      data: [
+        { label: "January", value: -4200 },
+        { label: "February", value: -3100 },
+        { label: "March", value: 800 },
+        { label: "April", value: 5400 },
+        { label: "May", value: 9800 },
+        { label: "June", value: 14200 },
+      ],
+      yAxis: { label: "Balance", format: (value: number) => euro.format(value) },
+    },
+  },
+  {
+    title: "32 categories: the chart grows instead of dropping labels",
+    chart: {
+      kind: "bar",
+      data: Array.from({ length: 32 }, (_, index) => ({ label: `Plot ${index + 1}`, value: 40 + ((index * 37) % 61) })),
+      xAxis: { label: "Plot" },
+      yAxis: { label: "Crates" },
+    },
+  },
+  { title: "One bar", chart: { kind: "bar", data: [{ label: "Apples", value: 128 }], yAxis: { label: "Crates" } } },
+  { title: "No data", chart: { kind: "bar", data: [], style: { height: "8rem" } } },
+] satisfies { title: string; chart: Extract<ChartProps, { kind: "bar" }> }[];
+
+export const BarChartStatesDemo = () => (
+  <DemoCard
+    id="charts-bar-states"
+    chip={{ kind: "component", name: "Chart · bar", from: "@k2b/ui" }}
+    description="Bar charts label every category: columns when all labels fit a phone, otherwise one row per category with its value."
+    code={`<Chart kind="bar"
+  data={[{ label: "Northwestern coastal region", value: 184000 }, { label: "Eastern uplands", value: 97000 }]}
+  xAxis={{ label: "Region" }}
+  yAxis={{ label: "Revenue", format: (value) => euro.format(value) }} />`}
+  >
+    <div class="ui-chart-demo">
+      <For each={barStates}>
+        {(state) => (
+          <section>
+            <p>{state.title}</p>
+            <Chart {...state.chart} />
+          </section>
+        )}
+      </For>
+    </div>
+  </DemoCard>
 );

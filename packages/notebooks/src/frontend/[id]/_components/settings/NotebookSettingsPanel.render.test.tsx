@@ -26,7 +26,6 @@ const renderSettings = (isAdmin: boolean) =>
   renderToString(() => (
     <NotebookSettingsBody
       notebook={notebook}
-      tree={[]}
       isAdmin={isAdmin}
       canWrite={isAdmin}
       dateConfig={{ locale: "en", timeZone: "Europe/Berlin" }}

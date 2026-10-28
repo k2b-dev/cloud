@@ -20,6 +20,7 @@ import type {
   CloudResourceRef,
 } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
+import type { AiModelRequest, AiResolvedModelRef } from "../shared/ai-models";
 import type { AiActionCheck, AiStoredActionReview } from "./action-review";
 import type { AiLocalClient, AiLocalContext, AiLocalToolName } from "./local-tool-contracts";
 import type { AiTurnBlock } from "./protocol";
@@ -44,7 +45,7 @@ export type AiRecentSentResourceRef = {
   conversationId: string;
 };
 
-export const AI_MODEL_CAPABILITIES = ["streaming", "tools", "vision", "transcription"] as const;
+export const AI_MODEL_CAPABILITIES = ["tools", "vision", "transcription"] as const;
 export type AiModelCapability = (typeof AI_MODEL_CAPABILITIES)[number];
 
 export const AI_IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"] as const;
@@ -62,11 +63,15 @@ export type AiDataPolicy = AiDataBoundary;
 export type AiModelProfile = {
   id: string;
   label: string;
+  modelId: string;
+  providerId: string;
+  variantLabel: string;
+  description: string;
+  icon: import("../shared/ai-models").AiModelIcon;
+  showInPicker: boolean;
   provider: AiProviderId;
   model: string;
   enabled: boolean;
-  /** Small logo (data URL, hard-compressed) shown in the admin card and the composer model picker. */
-  image?: string;
   capabilities: AiModelCapability[];
   dataBoundary: AiDataBoundary;
   baseURL?: string;
@@ -82,67 +87,34 @@ export type AiModelProfile = {
   pricing?: import("../shared/ai-costs").AiModelPricing;
 };
 
-export type AiPublicModelProfile = Pick<
-  AiModelProfile,
-  "id" | "label" | "provider" | "model" | "image" | "capabilities" | "dataBoundary" | "contextWindow"
->;
-
 export type AiUserContentPart = ContentPart;
 
-export type AiSettingsErrorCode =
-  | "ai_disabled"
-  | "invalid_model_profiles"
-  | "missing_default_model"
-  | "default_model_disabled"
-  | "missing_provider_credential"
-  | "model_policy_mismatch"
-  | "model_access_denied";
-
-export type AiSettingsError = {
-  code: AiSettingsErrorCode;
-  message: string;
-  fields?: Record<string, string>;
+export type AiSettingsErrorCode = "ai_disabled" | "ai_no_model" | "model_policy_mismatch";
+export type AiSettingsError = { code: AiSettingsErrorCode; message: string; fields?: Record<string, string> };
+export type AiSettingsState = {
+  ok: true;
+  enabled: boolean;
+  assignments: import("../shared/ai-models").AiModelAssignment[];
+  globalInstructions: string;
+  localClientInstructions: string;
+  compactionInstructions: string;
+  maxToolResultChars: number;
+  firecrawlConfigured: boolean;
+  profiles: AiModelProfile[];
 };
-
-export type AiSettingsState =
-  | {
-      ok: true;
-      enabled: boolean;
-      defaultModelId: string;
-      visionModelId?: string;
-      globalInstructions: string;
-      localClientInstructions: string;
-      compactionInstructions: string;
-      maxToolResultChars: number;
-      firecrawlConfigured: boolean;
-      profiles: AiModelProfile[];
-    }
-  | {
-      ok: false;
-      enabled: boolean;
-      defaultModelId: string;
-      visionModelId?: string;
-      globalInstructions: string;
-      localClientInstructions: string;
-      compactionInstructions: string;
-      maxToolResultChars: number;
-      firecrawlConfigured: boolean;
-      profiles: AiModelProfile[];
-      error: AiSettingsError;
-    };
 
 export type AiModelPolicy =
   | { kind: "platform-default"; allowedDataBoundaries?: AiDataBoundary[]; requiredCapabilities?: AiModelCapability[] }
   | { kind: "locked"; modelId: string; allowedDataBoundaries?: AiDataBoundary[]; requiredCapabilities?: AiModelCapability[] }
   | {
       kind: "selectable";
-      defaultModelId?: string;
       allowedModelIds?: string[];
       allowedDataBoundaries?: AiDataBoundary[];
       requiredCapabilities?: AiModelCapability[];
     };
 
 export type AiResolvedModel = {
+  model: import("../shared/ai-models").AiResolvedModelRef;
   profile: AiModelProfile;
   provider: Provider;
 };
@@ -230,7 +202,7 @@ export type AiEnrichmentRun = {
   conversationId: string;
   status: AiEnrichmentRunStatus;
   trigger: AiEnrichmentTrigger;
-  modelProfileId: string | null;
+  modelId: string | null;
   /** nessi structured mode of the successful call: native | fallback | repair. */
   mode: string | null;
   durationMs: number | null;
@@ -298,7 +270,7 @@ export type AiStoredMessage = {
   kind: "message" | "summary";
   message: Message;
   loopId: string | null;
-  modelProfileId: string | null;
+  modelId: string | null;
   providerModel: string | null;
   usage: Usage | null;
   stopReason: string | null;
@@ -313,6 +285,9 @@ export type AiStoredMessage = {
   meta: {
     /** The atomically consumed composer revision, used to confirm a local send. */
     submittedDraftRevision?: number;
+    modelRequest?: AiModelRequest;
+    modelResolved?: AiResolvedModelRef;
+    modelReplacement?: { kind: "model_replaced"; previousLabel: string; nextLabel: string };
     compactedCount?: number;
     todoPlan?: import("./todo-contracts").AiTodoPlan;
     steerId?: string;
@@ -353,6 +328,7 @@ export type AiConversationTimelineEntry = {
   id: string;
   seq: number;
   loopId: string | null;
+  modelReplacement?: { kind: "model_replaced"; previousLabel: string; nextLabel: string };
   userPreview: string;
   assistantPreview: string;
   isSteer: boolean;
@@ -418,7 +394,7 @@ export type AiTurn = {
   conversationId: string;
   status: AiTurnStatus;
   attempt: number;
-  modelProfileId: string | null;
+  modelId: string | null;
   createdAt: string;
   completedAt: string | null;
   error: string | null;
@@ -534,7 +510,7 @@ export type AiProjectPromptSnapshot = {
   instructions: string;
   context: string;
   references: CloudResourceRef[];
-  defaultModelProfileId: string | null;
+  defaultModel: import("../shared/ai-models").AiModelRequest | null;
 };
 
 export type AiProjectFileToolStat = {
@@ -683,7 +659,10 @@ export type AiChatTurnRunConfig = {
   /** Request locale persisted with the turn so async execution keeps the caller preference. */
   locale?: string;
   modelPolicy?: AiModelPolicy;
-  requestedModelId?: string;
+  model?: AiModelRequest;
+  modelResolved?: AiResolvedModelRef;
+  modelLabel?: string;
+  modelReplacement?: { kind: "model_replaced"; previousLabel: string; nextLabel: string };
   /** Optional instructions that apply only to this turn. */
   systemPrompt?: string;
   project?: AiProjectPromptSnapshot;
@@ -708,7 +687,8 @@ export type AiCompactionTurnRunConfig = {
   kind: "compact";
   actor?: RequestActor;
   modelPolicy?: AiModelPolicy;
-  requestedModelId?: string;
+  model?: AiModelRequest;
+  modelResolved?: AiResolvedModelRef;
 };
 
 export type AiTurnRunConfig = AiChatTurnRunConfig | AiCompactionTurnRunConfig;
@@ -851,7 +831,7 @@ export type AiConversationService = {
   failInterChatMessage(input: { messageId: string; error: string }): Promise<boolean>;
   deliverInterChatMessage(input: {
     messageId: string;
-    modelProfileId: string;
+    modelId: string;
     runConfig: AiChatTurnRunConfig;
     userMessage: Message;
     sourceHref?: string;
@@ -909,7 +889,7 @@ export type AiConversationService = {
     conversationId: string;
     status: AiEnrichmentRunStatus;
     trigger: AiEnrichmentTrigger;
-    modelProfileId?: string;
+    modelId?: string;
     mode?: string;
     durationMs?: number;
     titleUpdated?: boolean;
@@ -954,7 +934,7 @@ export type AiConversationService = {
     turnId?: string;
     checkpointSeq: number;
     summary: Message;
-    modelProfileId?: string | null;
+    modelId?: string | null;
   }): Promise<void>;
   listTurnMessages(input: { conversationId: string; loopId: string; includeCompacted?: boolean }): Promise<AiStoredMessage[]>;
   setMessageFeedback(input: {
@@ -964,12 +944,12 @@ export type AiConversationService = {
   }): Promise<AiMessageFeedback | null>;
   clearMessageFeedback(input: { conversationId: string; messageShortId: string }): Promise<boolean>;
   /** Create a queued compaction turn. Chat turns must use submitChatTurn. */
-  createCompactionTurn(input: { conversationId: string; modelProfileId: string; runConfig: AiCompactionTurnRunConfig }): Promise<AiTurn>;
+  createCompactionTurn(input: { conversationId: string; modelId: string; runConfig: AiCompactionTurnRunConfig }): Promise<AiTurn>;
   /** Persist the user message and create its turn in one transaction. */
   submitChatTurn(input: {
     queuedMessageId?: string;
     conversationId: string;
-    modelProfileId: string;
+    modelId: string;
     runConfig: AiChatTurnRunConfig;
     userMessage: Message;
     /** Atomically consume this saved draft revision when present. */
@@ -984,7 +964,7 @@ export type AiConversationService = {
     retrySourceTurnId?: string;
   }): Promise<{ turn: AiTurn; message: AiStoredMessage }>;
   getTurnRunConfig(input: { conversationId: string; turnId: string }): Promise<AiTurnRunConfig | null>;
-  getLatestTurn(input: { conversationId: string }): Promise<AiTurn | null>;
+  getLatestTurn(input: { conversationId: string; kind?: AiTurnRunConfig["kind"] }): Promise<AiTurn | null>;
   getTurn(input: { conversationId: string; turnId: string }): Promise<AiTurn | null>;
   getTurnByShortId(input: { conversationId: string; shortId: string }): Promise<AiTurn | null>;
   getActiveTurn(input: { conversationId: string }): Promise<{
@@ -1076,7 +1056,7 @@ export type AiConversationService = {
     /** Called after a durable append, for incremental usage/history projection. */
     onMessage?: (message: AiStoredMessage) => Promise<void>;
     conversationId: string;
-    modelProfileId?: string | null;
+    modelId?: string | null;
     turnId?: string | null;
     leaseOwner?: string | null;
     /** Ephemeral provider input for this turn; user-message persistence remains reference-only. */

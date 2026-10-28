@@ -29,6 +29,11 @@ const notificationMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      modelChanged: "AI model removed",
+      modelChangedBody: ({ name, retargeted }: { name: string; retargeted: boolean }) =>
+        retargeted
+          ? `The AI model for “${name}” was removed. A replacement is configured.`
+          : `The AI model for “${name}” was removed. Choose a replacement before running it again.`,
       costWarning: "Background AI cost warning",
       costStop: "Background AI stopped",
       costBody: ({ cost, unit }: { cost: string; unit: string }) =>
@@ -45,6 +50,11 @@ const notificationMessages = i18n.define({
       taskAttention: ({ name }: { name: string }) => `“${name}” needs you`,
     },
     de: {
+      modelChanged: "KI-Modell entfernt",
+      modelChangedBody: ({ name, retargeted }) =>
+        retargeted
+          ? `Das KI-Modell für „${name}“ wurde entfernt. Ein Ersatz ist eingerichtet.`
+          : `Das KI-Modell für „${name}“ wurde entfernt. Wähle vor dem nächsten Lauf einen Ersatz.`,
       costWarning: "Kostenwarnung für Hintergrund-AI",
       costStop: "Hintergrund-AI angehalten",
       costBody: ({ cost, unit }) =>
@@ -76,6 +86,20 @@ const absoluteUrl = async (path: string): Promise<string> => {
 };
 
 export const AI_NOTIFICATIONS = {
+  modelChanged: notification({
+    recipient: "user",
+    label: "AI model changes",
+    description: "A configured model was removed or replaced.",
+    presentation: presentation("KI-Modell geändert", "Ein eingerichtetes Modell wurde entfernt oder ersetzt."),
+    delivery: { recommended: ["browser"] },
+    data: z.object({ name: z.string(), retargeted: z.boolean() }),
+    render: (data, { locale }) => ({
+      title: text(locale).modelChanged,
+      body: text(locale).modelChangedBody(data),
+      targetHref: "/assistant",
+    }),
+    email: (data, { locale }) => ({ subject: text(locale).modelChanged, content: text(locale).modelChangedBody(data) }),
+  }),
   approvalWaiting: notification({
     recipient: "user",
     label: "Pending approvals",
@@ -428,21 +452,47 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     return { scanned: candidates.length, sent, failed };
   };
 
+  const recoverModelChanges = async (): Promise<AiNotificationRecoverySummary> => {
+    const candidates = await sql<
+      { id: string; user_id: string; name: string; retargeted: boolean }[]
+    >`SELECT id,user_id,name,retargeted FROM ai.model_change_notices ORDER BY created_at,id LIMIT ${RECOVERY_BATCH_SIZE}`;
+    const locale = await coreSettings.get<string>("app.locale");
+    let sent = 0,
+      failed = 0;
+    for (const row of candidates) {
+      try {
+        await notifications.send(definitions.modelChanged, {
+          recipient: { userId: row.user_id },
+          data: { name: row.name, retargeted: row.retargeted },
+          idempotencyKey: `model-change:${row.id}`,
+          locale,
+        });
+        await sql`DELETE FROM ai.model_change_notices WHERE id=${row.id}::uuid`;
+        sent += 1;
+      } catch {
+        failed += 1;
+        console.error("AI model change notification failed", { noticeId: row.id });
+      }
+    }
+    return { scanned: candidates.length, sent, failed };
+  };
   const recover = async (): Promise<AiNotificationRecoverySummary> => {
-    const [completions, tasks, costs, approvals] = await Promise.all([
+    const [completions, tasks, costs, approvals, modelChanges] = await Promise.all([
       recoverCompletions(),
       recoverTaskAttention(),
       recoverCostAlerts(),
       recoverApprovalWaiting(),
+      recoverModelChanges(),
     ]);
     return {
-      scanned: completions.scanned + tasks.scanned + costs.scanned + approvals.scanned,
-      sent: completions.sent + tasks.sent + costs.sent + approvals.sent,
-      failed: completions.failed + tasks.failed + costs.failed + approvals.failed,
+      scanned: completions.scanned + tasks.scanned + costs.scanned + approvals.scanned + modelChanges.scanned,
+      sent: completions.sent + tasks.sent + costs.sent + approvals.sent + modelChanges.sent,
+      failed: completions.failed + tasks.failed + costs.failed + approvals.failed + modelChanges.failed,
     };
   };
 
   return {
+    recover,
     notifyApprovalWaiting: (approvalId: string): Promise<AiNotificationRecoverySummary> => recoverApprovalWaiting({ approvalId, limit: 1 }),
     notifyTurnCompleted: (turnId: string): Promise<AiNotificationRecoverySummary> => recoverCompletions({ turnId, limit: 1 }),
     notifyTaskNeedsAttention: (occurrenceId: string): Promise<AiNotificationRecoverySummary> =>

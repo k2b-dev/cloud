@@ -4,11 +4,13 @@ import {
   CapabilityStreamPolicySchema,
   CapabilityStreamSchema,
 } from "./capability-streams";
+import { RESOURCE_PAGE_MAX_LENGTH, RESOURCE_PAGES_PER_TYPE, resourcePageIssue } from "./resource-pages";
 
 export * from "./capability-streams";
 
 import { z } from "zod";
 import type { RequestAuthority } from "../server/middleware/auth";
+import type { AppEventDefinition, AppEventSubscriptionDefinition } from "./app-events";
 import { CommandPathSchema } from "./commands";
 import type { AccessSubject, RequestActor, User } from "./shared";
 
@@ -763,6 +765,11 @@ export const UniversalSearchDataSchema = z.array(CloudResourceViewSchema).max(10
 export type UniversalSearchData = z.infer<typeof UniversalSearchDataSchema>;
 
 export type CapabilityExecutionContext = {
+  /** One read-only cross-app dependency under this invocation, through Core. */
+  query?: <T extends z.ZodType>(
+    invocation: { appId: string; capabilityId: string; input: unknown; signal?: AbortSignal },
+    dataSchema: T,
+  ) => Promise<import("../capabilities/types").CapabilityClientResult<z.output<T>>>;
   /**
    * Resolved request authority, supplied by the framework for execution, review
    * and streams. Optional for existing in-process callers; authority-aware
@@ -797,6 +804,8 @@ export type CapabilityResourceTypeDefinition = {
   description: string;
   icon?: string;
   reader?: string;
+  /** Root-relative pages recognized when a person pastes a Cloud link. Requires a reader. */
+  pages?: readonly string[];
 };
 
 export type CapabilitySearchTagDefinition = {
@@ -850,6 +859,7 @@ export type CapabilityOperationPresentationTranslation = {
 };
 
 export type CapabilityPresentationTranslation = {
+  events?: Readonly<Record<string, { title?: string; description?: string }>>;
   types?: Readonly<Record<string, { title?: string; description?: string }>>;
   queries?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
   actions?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
@@ -951,13 +961,27 @@ export type CapabilityDefinitions = {
   commands?: CapabilityDefinitionCatalog<CapabilityCommandDefinition>;
   fileProvider?: CapabilityFileProviderDeclaration;
   calendarSource?: CapabilityCalendarSourceDeclaration;
+  events?: CapabilityDefinitionCatalog<AppEventDefinition>;
+  subscribes?: CapabilityDefinitionCatalog<AppEventSubscriptionDefinition>;
 };
 
 /**
  * Declares one app's public capability surface. Runtime compilation happens
  * in defineApp.start(), where the app id is available for namespacing.
  */
-export const defineCapabilities = <const T extends CapabilityDefinitions>(definitions: T): T => definitions;
+export function defineCapabilities<
+  const Schemas extends Readonly<Record<string, z.ZodType>>,
+  const Definitions extends Omit<CapabilityDefinitions, "subscribes">,
+>(
+  definitions: Definitions & { subscribes: { readonly [Key in keyof Schemas]: AppEventSubscriptionDefinition<Schemas[Key]> } },
+): Definitions & { subscribes: { readonly [Key in keyof Schemas]: AppEventSubscriptionDefinition<Schemas[Key]> } };
+export function defineCapabilities<const Definitions extends Omit<CapabilityDefinitions, "subscribes">>(
+  definitions: Definitions & { subscribes?: never },
+): Definitions;
+export function defineCapabilities<const Definitions extends CapabilityDefinitions>(definitions: Definitions): Definitions;
+export function defineCapabilities(definitions: CapabilityDefinitions): CapabilityDefinitions {
+  return definitions;
+}
 
 export const CapabilityResourceTypeManifestSchema = z
   .object({
@@ -1028,6 +1052,41 @@ export const CapabilityCalendarSourceManifestSchema = z
   })
   .strict();
 
+export const CapabilityEventManifestSchema = z
+  .object({
+    localId: CapabilityLocalIdSchema,
+    version: z.number().int().positive(),
+    title: z.string().trim().min(1).max(120),
+    description: z.string().trim().min(1).max(1000),
+    subject: CapabilityLocalIdSchema,
+    place: CapabilityLocalIdSchema.optional(),
+    dataSchema: z.record(z.string(), z.unknown()),
+    schemaHash: z.string().regex(/^[a-f0-9]{64}$/),
+    automation: z.literal(false).optional(),
+  })
+  .strict();
+export type CapabilityEventManifest = z.infer<typeof CapabilityEventManifestSchema>;
+
+export const CapabilitySubscriptionManifestSchema = z
+  .object({
+    type: CapabilityQualifiedIdSchema,
+    version: z.number().int().positive(),
+    dataSchema: z.record(z.string(), z.unknown()),
+    schemaHash: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+export type CapabilitySubscriptionManifest = z.infer<typeof CapabilitySubscriptionManifestSchema>;
+export const CapabilityResourcePageManifestSchema = z
+  .object({
+    type: CapabilityLocalIdSchema,
+    path: z
+      .string()
+      .min(1)
+      .max(RESOURCE_PAGE_MAX_LENGTH)
+      .refine((path) => !resourcePageIssue(path), "Invalid resource page pattern"),
+  })
+  .strict();
+
 /** Keeps the sent entries this release reads completely. */
 const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T>[] | null => {
   // Not a bounded list: leave the value to the manifest schema, which rejects it.
@@ -1054,6 +1113,8 @@ const readEntries = <T extends z.ZodType>(values: unknown, entry: T): z.output<T
  * - An unreadable policy or one inconsistent with derived approval, review, or effect flags leaves
  *   out its Action. Policies for unknown Actions are dropped.
  *
+ * Resource pages live at the top level so older releases keep the Type and reader. Unreadable
+ * pages and pages without a readable Type/reader are omitted; live prefix ownership is checked separately.
  * Every other entry stays available.
  */
 const readableManifest = (value: unknown): unknown => {
@@ -1064,6 +1125,9 @@ const readableManifest = (value: unknown): unknown => {
   const actions = readEntries(sent.actions, CapabilityActionManifestSchema);
   const commands = readEntries(sent.commands, CapabilityCommandManifestSchema);
   if (!types || !queries || !actions || !commands) return value;
+  const events = sent.events === undefined ? undefined : readEntries(sent.events, CapabilityEventManifestSchema);
+  const subscribes = sent.subscribes === undefined ? undefined : readEntries(sent.subscribes, CapabilitySubscriptionManifestSchema);
+  if (events === null || subscribes === null) return value;
   const typeIds = new Set(types.map((type) => type.localId));
   const readableQueries = queries.filter((query) => query.universalSearch?.scopeTypes?.every((type) => typeIds.has(type)) ?? true);
   const queryIds = new Set(readableQueries.map((query) => query.localId));
@@ -1087,11 +1151,25 @@ const readableManifest = (value: unknown): unknown => {
     policies[action.localId] = policy;
     return true;
   });
-  const { calendarSource: sentCalendarSource, fileProvider: sentProvider, policies: _policies, ...rest } = sent;
+  const { calendarSource: sentCalendarSource, fileProvider: sentProvider, policies: _policies, resourcePages: sentPages, ...rest } = sent;
   const provider = CapabilityFileProviderManifestSchema.safeParse(sentProvider);
   const calendar = CapabilityCalendarSourceManifestSchema.safeParse(sentCalendarSource);
+  const pageCounts = new Map<string, number>();
+  const resourcePages =
+    Array.isArray(sentPages) && sentPages.length <= MAX_MANIFEST_ENTRIES * RESOURCE_PAGES_PER_TYPE
+      ? sentPages.flatMap((value) => {
+          const page = CapabilityResourcePageManifestSchema.safeParse(value);
+          if (!page.success) return [];
+          const type = types.find((type) => type.localId === page.data.type);
+          const count = pageCounts.get(page.data.type) ?? 0;
+          if (!type?.reader || !queryIds.has(type.reader) || count >= RESOURCE_PAGES_PER_TYPE) return [];
+          pageCounts.set(page.data.type, count + 1);
+          return [page.data];
+        })
+      : [];
   return {
     ...rest,
+    ...(sentPages !== undefined ? { resourcePages } : {}),
     ...(provider.success ? { fileProvider: provider.data } : {}),
     ...(calendar.success ? { calendarSource: calendar.data } : {}),
     types: types.map((type) => {
@@ -1103,6 +1181,16 @@ const readableManifest = (value: unknown): unknown => {
     actions: readableActions,
     ...(sentPolicies !== undefined ? { policies } : {}),
     commands,
+    ...(events
+      ? {
+          events: events.filter(
+            (event) =>
+              typeIds.has(event.subject) &&
+              (!event.place || types.some((type) => type.localId === event.place && type.reader && queryIds.has(type.reader))),
+          ),
+        }
+      : {}),
+    ...(subscribes ? { subscribes } : {}),
   };
 };
 
@@ -1124,6 +1212,12 @@ export const CapabilityManifestSchema = z.preprocess(
     fileProvider: CapabilityFileProviderManifestSchema.optional(),
     calendarSource: CapabilityCalendarSourceManifestSchema.optional(),
     policies: z.record(CapabilityLocalIdSchema, CapabilityActionPolicySchema).optional(),
+    events: z.array(CapabilityEventManifestSchema).max(MAX_MANIFEST_ENTRIES).optional(),
+    subscribes: z.array(CapabilitySubscriptionManifestSchema).max(MAX_MANIFEST_ENTRIES).optional(),
+    resourcePages: z
+      .array(CapabilityResourcePageManifestSchema)
+      .max(MAX_MANIFEST_ENTRIES * RESOURCE_PAGES_PER_TYPE)
+      .optional(),
   }),
 );
 
@@ -1148,12 +1242,34 @@ export const resolveCapabilityResourceReader = (manifest: CapabilityManifest, re
 };
 
 /** Like the manifest, catalog entries, pages, and their pagination ignore fields that a newer Cloud release added. */
+export const CapabilityEventCatalogEntrySchema = z.object({
+  type: CapabilityQualifiedIdSchema,
+  version: z.number().int().positive(),
+  title: z.string().min(1).max(120),
+  description: z.string().min(1).max(1000),
+  subject: CapabilityQualifiedIdSchema,
+  place: CapabilityQualifiedIdSchema.nullable(),
+  automation: z.boolean(),
+  dataSchema: z.record(z.string(), z.unknown()),
+  subscribers: z.array(
+    z.object({
+      appId: CapabilityAppIdSchema,
+      subscriptionId: z.string(),
+      state: z.enum(["active", "blocked", "cancelled"]),
+      reason: z.string().nullable(),
+      firstSeenAt: z.iso.datetime({ offset: true }).optional(),
+    }),
+  ),
+});
+export type CapabilityEventCatalogEntry = z.infer<typeof CapabilityEventCatalogEntrySchema>;
+
 export const CapabilityCatalogAppSchema = z.object({
   appId: CapabilityAppIdSchema,
   appName: z.string().min(1).max(200),
   appIcon: z.string().min(1).max(120),
   appDescription: z.string().max(1000),
   manifest: CapabilityManifestSchema,
+  events: z.array(CapabilityEventCatalogEntrySchema).max(MAX_MANIFEST_ENTRIES).optional(),
 });
 
 export const CapabilityCatalogSchema = z.object({

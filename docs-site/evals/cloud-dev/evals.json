@@ -265,6 +265,17 @@
     },
     {
       "id": 23,
+      "prompt": "Add a structured classification task to a Cloud application without hardcoding an operator model. Explain defaults and policy failures.",
+      "expected_output": "Uses model: { class: \"fast\" } explicitly for short classification, knows omitted requests mean balanced, consumes result.model, and never downgrades on access or budget failures.",
+      "files": [],
+      "expectations": [
+        "Requests a class through the supported AiModelRequest union.",
+        "Distinguishes explicit fast background work from the balanced public default.",
+        "Fallback applies only to empty assignments."
+      ]
+    },
+    {
+      "id": 24,
       "prompt": "Make the customer counter in our Cloud application installable on a shared shop iPad. An employee pairs the iPad and opens a customer visit; the customer signs an offered document without signing into Cloud.",
       "expected_output": "Reads the App-PWA installation and session contracts, declares one installable surface, uses scan-only pairing and visits, keeps device and customer authority separate from employee identity, and commits the signature and visit completion together with recovery after a lost response.",
       "files": [],

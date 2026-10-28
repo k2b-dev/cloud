@@ -14,7 +14,7 @@ const snapshot: BookSnapshot = {
   title: "Guide",
   notebookName: "Handbook",
   selectedNoteId: "note01",
-  tree: [{ id: "note01", title: "Renamed guide", children: [] }],
+  hasNotes: true,
   tags: [],
   canWrite: false,
   locked: false,
@@ -77,7 +77,7 @@ describe("Book graph live updates", () => {
       expect(app.requests.map(({ path, href }) => ({ path, href }))).toEqual([{ path: "/api/notebooks/book01/book", href: bookHref }]);
       app.requests[0]!.resolve(Response.json(snapshot));
       await coverage;
-      expect(metadata?.tree[0]?.title).toBe("Renamed guide");
+      expect(metadata?.title).toBe("Guide");
       expect(metadata).not.toHaveProperty("html");
     } finally {
       window.removeEventListener(BOOK_SNAPSHOT_EVENT, onSnapshot);

@@ -14,12 +14,11 @@ Use Bun and a Cloud installation with the matching App-PWA public API:
 `@k2b/cloud/app-pwa/browser` (the strict QR parser).
 
 **This source accompanies an unreleased Cloud change.** The manifest currently
-uses the checkout's package versions; an older registry package with the same
-version does not contain these new exports. Until the release containing
-App-PWA is available, install a package archive produced from this change
-instead. After that release, pin the matching published Cloud version and
-commit your application's lockfile. Do not assume the older registry package
-implements this API.
+uses the checkout's package versions, but the published Cloud package does
+not yet support the transaction-aware `accounts.users.get(..., { db })` used
+here. Install a Cloud package archive produced from this change until the
+release containing that API is available. After that release, pin the matching
+published Cloud version and commit your application's lockfile.
 
 From the copied example directory:
 

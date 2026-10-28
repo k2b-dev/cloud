@@ -7,6 +7,12 @@
 Use `Dropdown` for secondary actions that need an explicit, keyboard-accessible trigger.
 
 Use `ContextMenu` as a pointer shortcut on a record or canvas. Do not make it the only way to reach an action.
+Give it the same items as the element's visible "…" `Dropdown`, so right-click and the button never disagree.
+
+Set `keepNativeMenu` when the host wraps readable content, such as a message or a document. Links, form fields,
+editable text, and a text selection inside it then keep the browser's own menu with Copy, Paste, and Open link, and
+an enclosing `ContextMenu` does not take it over. Shift+F10 and the context menu key still open the app menu, except
+in a field. A `ContextMenu` nested in another opens its own menu, by pointer and by keyboard.
 
 Do not use either menu as a select input. Choose the control from the state the
 user is editing:
@@ -113,7 +119,11 @@ for a form or richer workflow. Use `Select`, `MultiSelectInput`, `SelectChip`,
 or `FilterChip` when the interaction edits a value or filter.
 
 `Dropdown.Root` accepts `items`, `open`, `onOpenChange`, `position`, `align`,
-`width`, `class`, `menuClass`, `label`, `disabled`, `phone`, and `onClose`.
+`width`, `class`, `menuClass`, `label`, `disabled`, `phone`, `lazy`, and `onClose`.
+Set `lazy` on a menu that repeats on every row of a long list, such as a tree
+or sidebar: its entries render when the menu first opens, so the page carries
+each row's trigger but not each row's entries. Opening, focus, and keyboard use
+stay the same.
 `Dropdown.Trigger` owns the native button and its SSR-visible menu semantics.
 Use its normal button appearance by default. Set `appearance="plain"` only
 when a specialized component class owns the complete visual treatment.
@@ -203,6 +213,7 @@ type DropdownProps = {
   position?: DropdownPosition | (() => DropdownPosition); variant?: "default" | "touch"; width?: string;
   class?: string; menuClass?: string; onClose?: () => void; open?: boolean;
   onOpenChange?: (open: boolean) => void; disabled?: boolean; label?: string; align?: "start" | "end"; phone?: "menu" | "sheet";
+  lazy?: boolean;
 };
 
 type ContextMenuProps = {

@@ -2246,8 +2246,20 @@ export const spacesCapabilities = defineCapabilities({
     },
   },
   types: {
-    space: { title: "Space", description: "A permission-scoped collaboration space.", icon: "ti ti-layout-kanban", reader: "space.read" },
-    item: { title: "Space item", description: "A task or event inside a space.", icon: "ti ti-checkbox", reader: "item.read" },
+    space: {
+      title: "Space",
+      description: "A permission-scoped collaboration space.",
+      icon: "ti ti-layout-kanban",
+      reader: "space.read",
+      pages: ["/app/spaces/:id"],
+    },
+    item: {
+      title: "Space item",
+      description: "A task or event inside a space.",
+      icon: "ti ti-checkbox",
+      reader: "item.read",
+      pages: ["/app/spaces/:space?item=:id"],
+    },
     comment: {
       title: "Space comment",
       description: "A user-authored comment attached to a Space item.",

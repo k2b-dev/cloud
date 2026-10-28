@@ -8,7 +8,7 @@ export const AiUsageQuerySchema = z.object({
   range: z.enum(AI_USAGE_RANGES).default("30d"),
   until: z.iso.datetime({ offset: true }).optional(),
   userId: z.union([z.uuid(), z.literal("unassigned")]).optional(),
-  modelProfileId: text,
+  modelId: text,
   providerModel: text,
   appId: text,
   workflowId: z.uuid().optional(),
