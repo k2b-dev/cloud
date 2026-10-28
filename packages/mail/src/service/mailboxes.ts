@@ -516,6 +516,8 @@ export const deleteMailbox = async (context: MailRequestContext, mailboxId: stri
               updated_at = now()
             WHERE id = ${mailboxId}::uuid
           `;
+          await tx`UPDATE mail.personal_mailbox_preferences SET large_view = NULL, phone_view = NULL WHERE mailbox_id = ${mailboxId}::uuid`;
+          await tx`DELETE FROM mail.personal_mailbox_preferences WHERE mailbox_id = ${mailboxId}::uuid AND pinned_at IS NULL AND hidden_at IS NULL`;
           await tx`
             UPDATE mail.attachment_links
             SET revoked_at = COALESCE(revoked_at, now())

@@ -9,7 +9,7 @@ Use `LinkCard` when the complete surface leads to one destination. Use `Resource
 ## Import
 
 ```tsx
-import { Avatar, LinkCard, ResourceCard, type ResourceCardState } from "@k2b/ui";
+import { Avatar, LinkCard, ResourceCard, type ResourceCardColor, type ResourceCardState } from "@k2b/ui";
 ```
 
 `LinkCard` accepts a title, description, icon, destination, optional semantic color, and one optional trailing `meta` fact. Its icon sits in a soft chip of its color. Without `color`, the glyph uses `--k2b-app-workspace-active`, the same optional accent hook as `AppOverview`'s icon, which defaults to the action color; Cloud maps it to the active application's accent. For navigation in place, pass `navigation="enhanced"` and `onNavigate`, as with `ButtonLink`. Without both, the card follows its link with a full page load. Use `meta` for one count or one non-interactive badge, such as a role; counts render with tabular figures. `Avatar` accepts a name, optional image URL or icon, fallback, size, shape, and loading behavior. `shape="circle"` is the default for people;
@@ -23,13 +23,13 @@ Use `Avatar`'s `ring` for a live status such as someone working on a task, or a 
 
 `ResourceCard` shows an element in one of five `state`s:
 
-- `"ok"` (the default) shows the element's `icon`, `title`, a line with its `source` and `location` joined by " · ", and one line of `preview` text. Empty lines are left out; a blank title shows "Untitled", so a card that opens always has a name.
+- `"ok"` (the default) shows the element's `icon`, a small `context` line above the title that says what and where it is (for example "Task in IT planning · due 30 Oct"), the `title`, a line with its `source` and `location` joined by " · ", and one line of `preview` text. A short `status` such as "Open" stands at the end. `color` puts the icon in a chip of that colour, from the `LinkCard` palette; use one colour per kind of element. Empty lines are left out; a blank title shows "Untitled", so a card that opens always has a name.
 - `"loading"` shows a quiet placeholder while the application looks the element up.
-- `"no_access"` shows "Item not available" without saying whether the item exists, `"deleted"` shows "Item deleted", and `"unavailable"` shows "Not available right now", each with a neutral icon.
+- `"no_access"` shows "Cloud element", "Item not available" and "You have no access. Title and content stay hidden." without saying whether the item exists; `"deleted"` shows "Cloud element" and "Item deleted", and `"unavailable"` shows "Cloud element" and "Not available right now", each with a neutral icon.
 
 The card has the same width and height in every state, at most the width of its container, so a card that resolves, loses access, or is deleted moves nothing around it. Long text is cut off with an ellipsis. The labels follow the inherited `@k2b/ui` locale.
 
-Outside `"ok"`, the card renders none of the element's fields and opens nothing, even when the caller passes them. A mistake in the caller therefore never shows a reader without access the element's name, source, location, or preview. The card is the last line of defense: the server still sends each reader only what that reader may see.
+Outside `"ok"`, the card renders none of the element's fields and opens nothing, even when the caller passes them. A mistake in the caller therefore never shows a reader without access the element's name, context, status, source, location, or preview. The card is the last line of defense: the server still sends each reader only what that reader may see.
 
 In `"ok"`, `onOpen` makes the card a button, for example to open the element in a panel; otherwise `href` makes it a link. `href` must be absolute `https` or `http`, or relative; other links, such as `javascript:`, render a card that opens nothing. In [message rows](/en/ui/content/message-rows), pass the card as `card`.
 
@@ -45,9 +45,11 @@ type LinkCardProps = {
 
 type ResourceCardState = "ok" | "loading" | "no_access" | "deleted" | "unavailable";
 
+type ResourceCardColor = LinkCardColor;
+
 type ResourceCardProps = {
-  state?: ResourceCardState; title?: string; icon?: string; source?: string; location?: string; preview?: string;
-  onOpen?: () => void; href?: string; class?: string;
+  state?: ResourceCardState; title?: string; icon?: string; color?: ResourceCardColor; context?: string; status?: string;
+  source?: string; location?: string; preview?: string; onOpen?: () => void; href?: string; class?: string;
 };
 
 type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
@@ -92,6 +94,15 @@ All three components render on the server. Link navigation works without browser
   location="Team handbook"
   preview="Laptop, accounts, and the first week"
   href="/notebooks/onboarding"
+/>
+
+<ResourceCard
+  title="Hand out laptops"
+  icon="ti ti-circle"
+  color="emerald"
+  context="Task in IT planning · due 30 Oct"
+  status="Open"
+  href="/open/spaces.item/~Ab12Cd"
 />
 
 <ResourceCard state="no_access" />

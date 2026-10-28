@@ -3,7 +3,6 @@ import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { MailLiveEventSchema } from "../live-events";
-import { migrate } from "../migrate";
 import { enqueueMailInvalidation, mailLive } from "./live";
 
 type Pending = { payload: { v: number; k: string; d: unknown } };
@@ -20,7 +19,6 @@ suite("Mail live updates", () => {
   ] as const;
 
   beforeAll(async () => {
-    await migrate();
     await sql`INSERT INTO mail.mailboxes (id, short_id, name) VALUES (${mailboxId}::uuid, ${mailboxShortId}, 'Live updates')`;
     for (const conversation of conversations) {
       await sql`
