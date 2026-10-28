@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to Spaces and Notebooks.
-updated: 2026-10-27
+updated: 2026-10-28
 ---
 
 # Chat system conversations
@@ -316,3 +316,12 @@ base and the current list and thread selection. System-chat addresses use
 `listFilter=all|unread` for the personal list; `filter=open|done|unread` remains
 the independent system-thread directory filter.
 All is the default personal list mode and is omitted from generated system-chat URLs.
+
+## Item reader container context
+
+`spaces.item.read` and `notebooks.note.read` return a `container` object with
+the owning container's `ref`, `name`, and the caller's resolved `permission`
+(`read`, `write`, or `admin`). This context comes from the same authorized
+read as the item itself. A consuming capability must use a fresh nested
+reader under the incoming authority; this metadata never grants access to
+other items or replaces credential scope and resource binding checks.
