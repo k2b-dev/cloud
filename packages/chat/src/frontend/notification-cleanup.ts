@@ -1,0 +1,67 @@
+import type { z } from "zod";
+import type { ConversationSchema } from "../service/contracts";
+
+type Row = Pick<z.infer<typeof ConversationSchema>, "id" | "unread" | "mentionsUnread">;
+
+/** Chat's badge route; the same count the rail, the phone bar, and a push carry. */
+export const CHAT_BADGE_PATH = "/api/chat/badge";
+/** Several reads in a row settle before the badge is read again. */
+const BADGE_SETTLE_MS = 1_000;
+
+/**
+ * Keeps this device in step with what the person read anywhere. A chat without unread messages closes its
+ * notification here, at start for every listed chat and later for each chat that becomes read; then the app badge,
+ * the rail, and the phone bar read the count again. Web Push cannot remove a notification from another device, so
+ * every device cleans up when Chat opens on it. Returns a function that takes the current rows; call it whenever they
+ * change, and `dispose` when the list goes away.
+ */
+export const createNotificationCleanup = () => {
+  const closed = new Set<string>();
+  let signature: string | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let disposed = false;
+  const client = () => import("@k2b/cloud/browser/notifications").then((module) => module.browserNotificationClient);
+
+  const refreshBadge = () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      if (disposed) return;
+      const { refreshAppBadges } = await import("@k2b/cloud/browser/app-badges");
+      refreshAppBadges();
+      try {
+        const response = await fetch(CHAT_BADGE_PATH, { credentials: "same-origin", headers: { accept: "application/json" } });
+        if (!response.ok) return void (await response.body?.cancel());
+        const body: unknown = await response.json();
+        const count = typeof body === "object" && body !== null && "count" in body ? body.count : null;
+        if (typeof count === "number" && Number.isSafeInteger(count) && count >= 0 && !disposed) await (await client()).setBadge(count);
+      } catch {
+        // The badge is a hint; the next read or push sets it again.
+      }
+    }, BADGE_SETTLE_MS);
+  };
+
+  const update = (rows: readonly Row[]) => {
+    if (disposed) return;
+    for (const row of rows) {
+      if (row.unread > 0 || row.mentionsUnread > 0) {
+        closed.delete(row.id);
+        continue;
+      }
+      if (closed.has(row.id)) continue;
+      closed.add(row.id);
+      void client()
+        .then((notifications) => notifications.closeGroup("chat", row.id))
+        .catch(() => {});
+    }
+    const next = rows.map((row) => `${row.id}:${row.unread}:${row.mentionsUnread}`).join(",");
+    if (next !== signature) {
+      signature = next;
+      refreshBadge();
+    }
+  };
+  update.dispose = () => {
+    disposed = true;
+    clearTimeout(timer);
+  };
+  return update;
+};

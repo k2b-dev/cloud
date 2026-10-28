@@ -52,8 +52,10 @@ import { openAddPeopleDialog } from "./AddPeopleDialog";
 import { openChannelDialog } from "./ChannelDialogs";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
+import ChatDeviceNotice from "./ChatDeviceNotice";
 import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
+import ChatNotificationSettings, { FollowToggle } from "./ChatNotificationSettings";
 import ChatSearch, { createChatSearch } from "./ChatSearch";
 import ChatSharedSection from "./ChatSharedSection";
 import ChatSystemChats, { createSystemChatList } from "./ChatSystemChats";
@@ -73,6 +75,7 @@ import { createItemEventsApi } from "./item-events-api";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import type { ChosenMember } from "./MemberPicker";
 import { openNewChatDialog } from "./NewChatDialog";
+import { createNotificationCleanup } from "./notification-cleanup";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
 import { panelHref as conversationHref, parseRoute, type Route, threadsPageHref as threadsPageAddress } from "./route";
@@ -438,6 +441,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const conversation = () => openChat()?.conversation ?? null;
   const system = () => conversation()?.kind === "system";
   const systemList = createSystemChatList();
+  // Read chats close their notifications on this device, and the badges follow the counts.
+  const cleanup = createNotificationCleanup();
+  createEffect(() => cleanup(rows()));
+  onCleanup(cleanup.dispose);
   createEffect(
     on([liveStore, systemList.page], ([live, page]) => {
       if (live && page) live.includeSystemChats(page.items.flatMap((item) => (item.conversation ? [item.conversation] : [])));
@@ -2208,6 +2215,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           </>
         }
       >
+        {/* Without chats, or when they did not load, the list has more important things to say. */}
+        <Show when={rows().length > 0 && !listError()}>
+          <ChatDeviceNotice dateConfig={props.dateConfig} now={now} />
+        </Show>
         <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
           {t().newChat}
         </AppWorkspace.SidebarItem>
@@ -2475,10 +2486,21 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                                 </Dropdown.Trigger>
                               </Dropdown.Root>
                             </Show>
+                            <Show when={system() && openThread()?.resource && openThread()?.following !== undefined ? openThread() : null}>
+                              {(thread) => (
+                                <FollowToggle
+                                  following={thread().following === true}
+                                  onToggle={(on) =>
+                                    store ? store.follow(current().id, thread().id, on) : Promise.reject(new Error("Chat is not live yet"))
+                                  }
+                                />
+                              )}
+                            </Show>
                             {infoLink(current())}
                           </>
                         }
                         chatId={current().id}
+                        muted={current().notifications?.level === "none"}
                         title={system() && openThread() ? openThread()!.name : current().title}
                         resource={system() ? (openThread()?.resource ?? undefined) : undefined}
                         // A wider window picks the thread beside the title; a phone and a window with the thread column
@@ -2696,6 +2718,21 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         load={(query) => (store ? store.shared(current().id, query) : Promise.reject(new Error("Chat is not live yet")))}
                         onJump={jumpToShared}
                       />
+                    }
+                    notifications={
+                      <Show when={current().notifications}>
+                        {(notifications) => (
+                          <ChatNotificationSettings
+                            conversation={current()}
+                            notifications={notifications()}
+                            dateConfig={props.dateConfig}
+                            now={now}
+                            save={(input) =>
+                              store ? store.setNotifications(current().id, input) : Promise.reject(new Error("Chat is not live yet"))
+                            }
+                          />
+                        )}
+                      </Show>
                     }
                     onLeave={() => void (current().channel ? unsubscribe() : leaveChat())}
                   />

@@ -227,6 +227,56 @@
   line-height: 1.25rem;
 }
 
+/* Notifications in Info: the levels, one reserved line for a failed save or a blocked device, and the way to the
+   settings for every app. */
+.chat-notifications {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.chat-notifications__mute {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.chat-notifications__status {
+  min-height: 2.25rem;
+}
+
+.chat-notifications__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.78125rem;
+  line-height: 1.35;
+}
+
+.chat-notifications__note > i {
+  margin-top: 0.0625rem;
+}
+
+.chat-notifications__following {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.75rem;
+}
+
+.chat-notifications__subtitle {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.chat-notifications__following i {
+  color: var(--k2b-action);
+}
+
 /* Add people: the panel's one main action, a quiet tint of the app colour. */
 .k2b-ui .k2b-button.chat-info__main {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
@@ -431,6 +481,64 @@
     padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
   }
 }
+/* One line about this device above the chats: flat on the sidebar, no box. */
+.chat-device-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.chat-device-notice > i {
+  margin-top: 0.0625rem;
+  color: var(--k2b-action);
+  font-size: 1rem;
+}
+
+.chat-device-notice[data-kind="home-screen"] > i,
+.chat-device-notice[data-kind="quiet"] > i {
+  color: var(--k2b-warning-text);
+}
+
+.chat-device-notice[data-kind="quiet"] {
+  align-items: center;
+}
+
+.chat-device-notice__body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.chat-device-notice__text {
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-device-notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+/* "Off" stands quietly right beside the title. */
+.chat-conversation__muted {
+  flex: none;
+  margin-inline: 0.25rem;
+  color: var(--k2b-text-muted);
+  font-size: 1rem;
+}
+
+/* "You follow" in an item discussion's head carries the app colour while on, like a chosen chip. */
+.k2b-ui .k2b-button.chat-follow[aria-pressed="true"] {
+  color: var(--k2b-action);
+}
+
 /* The title keeps its own width, so the thread picker stands right beside it. Cloud's global stylesheet loads after
    this one, so the selector outweighs the shared `.k2b-ui .k2b-page-title` instead of tying with it. */
 .k2b-ui .chat-conversation__header > .k2b-page-title {

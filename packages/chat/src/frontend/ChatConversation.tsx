@@ -87,6 +87,8 @@ export type ChatConversationProps = {
   memberCount: number;
   /** The line under the title; the member count by default. */
   subtitle?: string;
+  /** The reader turned notifications off for this chat: a crossed bell beside the title. */
+  muted?: boolean;
   /** Beside the title, such as the thread picker. */
   titleExtra?: JSX.Element;
   /**
@@ -430,6 +432,9 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
           </IconButtonLink>
         </span>
         <PageTitle trail={{ title: props.title, ancestors: [] }} subtitle={props.subtitle ?? t().members({ count: props.memberCount })} />
+        <Show when={props.muted}>
+          <i class="ti ti-bell-off chat-conversation__muted" role="img" aria-label={t().notificationsOffMark} />
+        </Show>
         {props.titleExtra}
         <Show when={props.wideTitle}>
           {(wide) => (

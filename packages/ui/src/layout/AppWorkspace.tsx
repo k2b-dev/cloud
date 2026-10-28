@@ -508,7 +508,10 @@ export type AppWorkspaceSidebarItemStatusProps = {
   unread?: number | boolean;
   /** Marks unread items that mention the person with "@". */
   mention?: boolean;
-  /** Shows a muted bell. */
+  /**
+   * Shows a muted bell, and the item reads as set aside: its label in the muted ink without unread weight, and a
+   * mention count without its fill.
+   */
   muted?: boolean;
   /**
    * Items that wait for the person, such as requests to approve, in the unread slot instead of `unread`. `label` is
@@ -1404,6 +1407,7 @@ const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps
       class="k2b-app-workspace__sidebar-status"
       data-unread={waiting() !== null ? undefined : count() ? "count" : dot() ? "dot" : undefined}
       data-waiting={waiting() === null ? undefined : waiting() ? "count" : "zero"}
+      data-muted={props.muted ? "true" : undefined}
     >
       <Show when={description()}>
         <Show when={props.mention}>

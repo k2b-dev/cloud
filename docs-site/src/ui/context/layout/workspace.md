@@ -962,7 +962,8 @@ Put `SidebarItemStatus` in `meta`, `SidebarItemMeta`, or a `NavTree.Item`
   attention, such as in a muted conversation or a channel that notifies only
   on mentions; the label keeps its regular weight;
 - `mention` adds "@" and accents the count;
-- `muted` adds a muted bell;
+- `muted` adds a muted bell and sets the item aside: its label turns to the
+  muted ink without unread weight, and a mention count loses its fill;
 - `waiting={{ count, label }}` shows how many items wait for the person, such
   as requests to approve, in the same slot instead of `unread`. `label` is the
   phrase screen readers hear, for example "3 waiting". The label keeps its

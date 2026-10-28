@@ -39,7 +39,12 @@ test("push registration preserves opt-in, rebinding, disable, and failure behavi
       },
     }});
     mock.module(${JSON.stringify(new URL("../clients/core.ts", import.meta.url).pathname)}, () => ({
-      apiClient: { me: { notifications: { browser: {
+      apiClient: { me: { notifications: { quiet: {
+        $patch: async ({ json }) => {
+          calls.push(["quiet", json]);
+          return Response.json({ doNotDisturbUntil: null, state: { active: false, reason: null, until: null, nextStart: null } });
+        },
+      }, browser: {
         configuration: { $get: async () => { calls.push("configuration"); return Response.json({ publicKey: "AQID" }); } },
         endpoints: {
           $post: async ({ json }) => {
@@ -51,6 +56,9 @@ test("push registration preserves opt-in, rebinding, disable, and failure behavi
       } } } },
     }));
     const { browserNotificationClient: client } = await import(${JSON.stringify(new URL("./notifications.ts", import.meta.url).pathname)});
+    assert.deepEqual(await client.endDoNotDisturb(), { active: false, reason: null, until: null, nextStart: null });
+    assert.deepEqual(calls, [["quiet", { doNotDisturbUntil: null }]]);
+    calls.length = 0;
     for (const permission of ["default", "denied"]) {
       Notification.permission = permission;
       assert.equal((await client.refreshExisting()).enabled, false);
@@ -77,6 +85,17 @@ test("push registration preserves opt-in, rebinding, disable, and failure behavi
     registrationFailure = true;
     await assert.rejects(client.refreshExisting(), /Worker failed/);
     registrationFailure = false;
+    calls.length = 0;
+    // An iPhone in Safari needs the Home Screen app; an installed one and other browsers do not get the flag.
+    navigator.userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)";
+    const iphone = await client.state();
+    assert.equal(iphone.supported, false);
+    assert.equal(iphone.homeScreenRequired, true);
+    window.matchMedia = () => ({ matches: true });
+    assert.equal("homeScreenRequired" in (await client.state()), false);
+    window.matchMedia = () => ({ matches: false });
+    navigator.userAgent = "Test";
+    assert.equal("homeScreenRequired" in (await client.state()), false);
     calls.length = 0;
     window.isSecureContext = false;
     assert.equal((await client.refreshExisting()).supported, false);

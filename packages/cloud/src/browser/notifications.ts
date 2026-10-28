@@ -13,6 +13,8 @@ export type BrowserNotificationState = {
   permission: NotificationPermission;
   enabled: boolean;
   reason?: string;
+  /** On iPhone and iPad outside the Home Screen app: notifications start working once Cloud is added to the Home Screen. */
+  homeScreenRequired?: true;
 };
 
 const isIos = (): boolean =>
@@ -21,7 +23,7 @@ const isIos = (): boolean =>
 const isStandalone = (): boolean =>
   window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
 
-const support = (): { supported: boolean; reason?: string } => {
+const support = (): { supported: boolean; reason?: string; homeScreenRequired?: true } => {
   if (
     typeof window === "undefined" ||
     !window.isSecureContext ||
@@ -35,6 +37,7 @@ const support = (): { supported: boolean; reason?: string } => {
     return {
       supported: false,
       reason: "On iPhone and iPad, add Cloud to your Home Screen before enabling browser notifications.",
+      homeScreenRequired: true,
     };
   }
   return { supported: true };
@@ -101,7 +104,13 @@ const pushSubscriptionError = (cause: unknown): Error => {
 const currentState = async (registration?: ServiceWorkerRegistration): Promise<BrowserNotificationState> => {
   const capability = support();
   if (!capability.supported) {
-    return { supported: false, permission: "denied", enabled: false, reason: capability.reason };
+    return {
+      supported: false,
+      permission: "denied",
+      enabled: false,
+      reason: capability.reason,
+      ...(capability.homeScreenRequired ? { homeScreenRequired: true } : {}),
+    };
   }
   return withNotificationTimeout(
     (async () => {
@@ -128,6 +137,13 @@ export const browserNotificationClient = {
   quietState: async (): Promise<NotificationQuietState> => {
     const response = await apiClient.me.notifications.quiet.$get();
     if (!response.ok) throw await responseError(response, "Failed to load the notification quiet state.");
+    return (await response.json()).state;
+  },
+
+  /** End do not disturb now, for every app. Quiet hours keep their schedule. Returns the quiet state afterwards. */
+  endDoNotDisturb: async (): Promise<NotificationQuietState> => {
+    const response = await apiClient.me.notifications.quiet.$patch({ json: { doNotDisturbUntil: null } });
+    if (!response.ok) throw await responseError(response, "Failed to end do not disturb.");
     return (await response.json()).state;
   },
 

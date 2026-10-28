@@ -46,6 +46,8 @@ export default function ChatInfoPanel(props: {
   onCreateThread?: () => void;
   /** What the chat shared, below its members. */
   shared?: JSX.Element;
+  /** The reader's notifications for this chat, below what it shared. */
+  notifications?: JSX.Element;
   onDiscovery?: () => void;
   onLeave: () => void;
 }): JSX.Element {
@@ -307,7 +309,10 @@ export default function ChatInfoPanel(props: {
           </p>
         </Show>
         {/* The first member page owns this space. Showing shared items before it arrives would push them out of view. */}
-        <Show when={system() || status() !== "loading" || rows.length > 0}>{props.shared}</Show>
+        <Show when={system() || status() !== "loading" || rows.length > 0}>
+          {props.shared}
+          {props.notifications}
+        </Show>
       </DetailPanel.Body>
     </DetailPanel>
   );

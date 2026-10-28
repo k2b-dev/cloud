@@ -42,6 +42,22 @@ export const chatHref = (id: string, message?: string | null) => `/app/chat/c/${
 const unreadMark = (row: Conversation): number | true | undefined =>
   row.unread > 0 ? row.unread : row.read?.unreadFromSeq != null ? true : undefined;
 
+/**
+ * The row's marks by its notification level: "All messages" shows the unread count, "Mentions only" an "@" count for
+ * unread mentions and replies or else a quiet dot, and "Off" a crossed bell with a quiet "@" count. A hidden mark (the
+ * open chat being read) leaves only the bell.
+ */
+export const notificationMarks = (
+  row: Pick<Conversation, "notifications" | "mentionsUnread">,
+  unread: number | true | undefined,
+): { unread?: number | boolean; mention?: boolean; muted?: boolean } => {
+  const level = row.notifications?.level ?? "all";
+  const mentions = unread === undefined ? 0 : row.mentionsUnread;
+  if (level === "none") return { muted: true, ...(mentions > 0 ? { unread: mentions, mention: true } : {}) };
+  if (level === "mentions") return mentions > 0 ? { unread: mentions, mention: true } : unread === undefined ? {} : { unread: true };
+  return unread === undefined ? {} : { unread };
+};
+
 /** A partial authorized summary is a lower bound, even when its inspected page has no unread messages. */
 export function IncompleteUnread(props: { count: number }) {
   const locale = useLocale();
@@ -246,9 +262,12 @@ export default function ChatList(props: {
                       when={row().summaryCursor != null}
                       fallback={
                         <AppWorkspace.SidebarItemStatus
-                          unread={
-                            row().id === props.activeId && (expanded() || row().read?.unreadFromSeq == null) ? undefined : unreadMark(row())
-                          }
+                          {...notificationMarks(
+                            row(),
+                            row().id === props.activeId && (expanded() || row().read?.unreadFromSeq == null)
+                              ? undefined
+                              : unreadMark(row()),
+                          )}
                         />
                       }
                     >

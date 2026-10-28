@@ -99,6 +99,12 @@ class ManualConnection implements LiveConnection {
 const self = { accessId: "11111111-1111-4111-8111-111111111111", permission: "write" as const, active: true };
 const memberApi = {
   threads: async () => noThreads,
+  notifications: async () => {
+    throw new Error("Unused notification write");
+  },
+  follow: async () => {
+    throw new Error("Unused follow write");
+  },
   react: async () => {},
   reactions: async () => ({ items: [] }),
   shared: async () => ({ items: [], nextCursor: null }),
