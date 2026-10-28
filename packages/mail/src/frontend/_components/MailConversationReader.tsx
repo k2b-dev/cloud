@@ -31,6 +31,7 @@ import { batch, createEffect, createMemo, createSignal, For, onCleanup, onMount,
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
 import type {
+  AutomationLogItem,
   ConversationDraftSummary,
   DeriveDraftFromMessageInput,
   DraftDerivationKind,
@@ -44,6 +45,7 @@ import type { ConversationKeep } from "../../service/conversation-keeps";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
 import type { MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
+import MailAutomationTrace from "./MailAutomationTrace";
 import MailConversationSummaryCard, { type MailSummaryGenerateMode, showsConversationSummary } from "./MailConversationSummaryCard";
 import { openMailConversationToolbarDialog } from "./MailConversationToolbarDialog";
 import MailMessageCard from "./MailMessageCard";
@@ -140,6 +142,12 @@ export default function MailConversationReader(props: {
   onManageTags: () => void | Promise<void>;
   onMergeConversation: () => void | Promise<void>;
   onReassignMessage: (messageId: string) => void | Promise<void>;
+  /** What rules did with this conversation, newest first. */
+  automationTrace: AutomationLogItem[];
+  onUndoAutomation: (item: AutomationLogItem) => void | Promise<void>;
+  onAssignConversation: () => void | Promise<void>;
+  onAssignConversationToMe: () => void | Promise<void>;
+  automationPending?: boolean;
   onSplitMessage: (messageId: string) => void | Promise<void>;
   onKeep: () => void | Promise<void>;
   onStopKeeping: () => void | Promise<void>;
@@ -273,6 +281,10 @@ export default function MailConversationReader(props: {
     });
   };
   const summarySaving = summarySave.loading;
+  const automationOrderHref = () => `/app/mail/${props.mailboxId}/automations/workflows`;
+  /** The Protokoll entry with the whole chain, from rule to the fixed row that decided. */
+  const automationWhyHref = (item: AutomationLogItem) =>
+    `/app/mail/${props.mailboxId}/automations/log?entry=${encodeURIComponent(item.id)}`;
   type SummaryGenerate = { mailboxId: string; conversationId: string; expectedSummaryRevision: number; mode: MailSummaryGenerateMode };
   /** A person asks the AI for this conversation's summary; the card shows "being written" until the live update arrives. */
   const summaryGenerate = mutations.create<void, SummaryGenerate, { request: SummaryGenerate }>({
@@ -860,7 +872,9 @@ export default function MailConversationReader(props: {
 
   const keptLabel = (): string | null => {
     const keep = props.keep;
-    return keep ? t().keptSince({ name: keep.keptBy.displayName, date: dates.formatDate(keep.keptAt, props.dateConfig) }) : null;
+    if (!keep) return null;
+    const since = t().keptSince({ name: keep.keptBy.displayName, date: dates.formatDate(keep.keptAt, props.dateConfig) });
+    return keep.canLift ? since : `${since}. ${t().keptOnlyCloudAdmins}`;
   };
   // Cloud refuses these for a kept conversation; the reader says so instead of offering them.
   const keptBlocks = (actionId: MailActionId): string | null => {
@@ -870,10 +884,11 @@ export default function MailConversationReader(props: {
     return null;
   };
   const keepAction = (): { label: string; icon: string; description?: string; disabled: boolean; action: () => void } | null => {
+    // Only a Cloud administrator can stop keeping; everyone else sees the lock and its hint, never a dead action.
     if (props.keep) {
-      return props.canAdmin
+      return props.keep.canLift
         ? { label: t().stopKeeping, icon: "ti ti-lock-open", disabled: props.structurePending, action: () => void props.onStopKeeping() }
-        : { label: t().kept, icon: "ti ti-lock", description: t().keptOnlyManagers, disabled: true, action: () => undefined };
+        : null;
     }
     return props.canWrite
       ? { label: t().keep, icon: "ti ti-lock", disabled: props.structurePending, action: () => void props.onKeep() }
@@ -964,6 +979,8 @@ export default function MailConversationReader(props: {
       };
     }
     if (id === "keep") {
+      // A chosen toolbar slot keeps its place: for everyone but Cloud administrators it shows the lock as a status.
+      if (props.keep && !props.keep.canLift) return { id, label: t().kept, icon: "ti ti-lock", disabled: true, action: () => undefined };
       const keep = keepAction();
       return keep ? { id, label: keep.label, icon: keep.icon, disabled: keep.disabled, action: keep.action } : null;
     }
@@ -1423,6 +1440,18 @@ export default function MailConversationReader(props: {
               onScroll={handleReaderScroll}
             >
               <div class="mail-reading-column" data-mail-reading-column>
+                <MailAutomationTrace
+                  items={props.automationTrace}
+                  where="top"
+                  canWrite={props.canWrite}
+                  whyHref={automationWhyHref}
+                  timeZone={props.dateConfig.timeZone}
+                  orderHref={automationOrderHref()}
+                  onUndo={(item) => void props.onUndoAutomation(item)}
+                  onAssign={() => void props.onAssignConversation()}
+                  onAssignToMe={() => void props.onAssignConversationToMe()}
+                  busy={props.automationPending}
+                />
                 <Show when={showsConversationSummary(props.conversationSummary) && props.conversationSummary}>
                   {(state) => (
                     <MailConversationSummaryCard
@@ -1552,6 +1581,20 @@ export default function MailConversationReader(props: {
                     )}
                   </Show>
                 </div>
+                <Show when={props.automationTrace.length > 0}>
+                  <MailAutomationTrace
+                    items={props.automationTrace}
+                    where="bottom"
+                    canWrite={props.canWrite}
+                    whyHref={automationWhyHref}
+                    timeZone={props.dateConfig.timeZone}
+                    orderHref={automationOrderHref()}
+                    onUndo={(item) => void props.onUndoAutomation(item)}
+                    onAssign={() => void props.onAssignConversation()}
+                    onAssignToMe={() => void props.onAssignConversationToMe()}
+                    busy={props.automationPending}
+                  />
+                </Show>
               </div>
             </ScrollArea>
             <Show when={pendingNewMessages()}>

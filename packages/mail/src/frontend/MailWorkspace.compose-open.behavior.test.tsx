@@ -97,6 +97,8 @@ const seed: MailDraftSeed = {
 const MAILBOX_ID = "Box001";
 
 const data: MailboxPageData = {
+  viewPreference: { large: "auto", phone: "compact" },
+  doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
   receivingAddress: null,
   mailbox: {
     id: MAILBOX_ID,
@@ -160,6 +162,7 @@ const data: MailboxPageData = {
   detailMessages: [],
   conversationSummary: null,
   conversationDrafts: [],
+  automationTrace: [],
   detailError: null,
   collaborationState: null,
   localTags: [],

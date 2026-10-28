@@ -4,6 +4,9 @@ import {
   DetailPanel,
   dialogCore,
   FileDropTarget,
+  FileGrid,
+  fileKindLabel,
+  formatFileViewSize,
   IconButton,
   IconButtonLink,
   Lightbox,
@@ -16,7 +19,7 @@ import {
   useLocale,
   VideoPlayer,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { apiClient } from "@/api/client";
 import {
@@ -64,8 +67,9 @@ export default function TaskAttachmentsSection(props: {
   });
   const isVideo = (attachment: SpaceItemAttachment) => isPlayableVideoType(attachment.mimeType);
   const images = createMemo(() => attachments().filter((attachment) => attachment.kind === "image"));
-  /** Images and playable videos, in upload order; other files have no tile. */
-  const media = createMemo(() => attachments().filter((attachment) => attachment.kind === "image" || isVideo(attachment)));
+  const videos = createMemo(() => attachments().filter(isVideo));
+  /** Images and playable videos; other files are not shown. */
+  const media = createMemo(() => [...videos(), ...images()]);
   const lightboxImages = createMemo<LightboxImage[]>(() =>
     images().map((attachment) => ({
       src: contentUrl(attachment),
@@ -217,80 +221,87 @@ export default function TaskAttachmentsSection(props: {
     }
   };
 
+  const openAttachment = (attachment: SpaceItemAttachment) => {
+    if (isVideo(attachment)) openVideo(attachment);
+    else setLightboxIndex(images().findIndex((image) => image.id === attachment.id));
+  };
+  const meta = (attachment: SpaceItemAttachment) =>
+    `${fileKindLabel({ name: attachment.filename, mediaType: attachment.mimeType }, locale())} · ${formatFileViewSize(attachment.sizeBytes, locale())}`;
+
   return (
     <>
-      <DetailPanel.Section title={t.attachments} icon="ti ti-paperclip" tone="neutral" count={media().length || undefined}>
+      <DetailPanel.Section title={t.attachments} count={media().length || undefined}>
         <div class="flex flex-col gap-2">
           <Show when={media().length > 0}>
-            <div class="flex flex-wrap gap-2">
-              <For each={media()}>
-                {(attachment) => (
-                  <div
-                    class="k2b-progressive-row relative overflow-hidden rounded-[var(--ui-radius-control)] bg-[var(--k2b-surface-muted)] shadow-xs ring-1 ring-[var(--k2b-border)]"
-                    style="width:5rem;height:5rem;min-width:5rem;min-height:5rem;flex:0 0 5rem"
-                  >
-                    <Show
-                      when={isVideo(attachment)}
-                      fallback={
-                        <button
-                          type="button"
-                          class="absolute inset-0 size-full focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--k2b-focus-ring)]"
-                          aria-label={t.previewAttachment({ filename: attachment.filename })}
-                          title={attachment.filename}
-                          onClick={() => setLightboxIndex(images().findIndex((image) => image.id === attachment.id))}
-                        >
-                          <img src={contentUrl(attachment)} alt="" loading="lazy" class="size-full object-contain" />
-                        </button>
-                      }
+            {/* Videos as rows first, then images as tiles: the short list keeps the order of the full one. */}
+            <FileGrid
+              rows={[...videos(), ...images()]}
+              getRowId={(attachment) => attachment.id}
+              label={t.attachments}
+              layout="list"
+              limit={5}
+              actionVisibility="progressive"
+              groups={() => [
+                { id: "videos", label: t.videos, rows: videos() },
+                { id: "images", label: t.images, rows: images(), layout: "tiles" },
+              ]}
+              renderPreview={(attachment) =>
+                isVideo(attachment) ? (
+                  /*
+                    The first frame shows what the video is; the browser reads only its start. The island replaces its
+                    server HTML when it mounts, so only the browser's preview names the video: a server preview would
+                    start a load that is cut off and repeated, and in WebKit on Linux (GStreamer) stopping a video while
+                    it loads can freeze the page.
+                  */
+                  <span class="spaces-attachment-video">
+                    <video
+                      src={isServer ? undefined : `${contentUrl(attachment)}#t=0.001`}
+                      preload="metadata"
+                      muted
+                      playsinline
+                      tabIndex={-1}
+                      aria-hidden="true"
+                    />
+                    <i class="ti ti-player-play-filled spaces-attachment-video__play" aria-hidden="true" />
+                  </span>
+                ) : (
+                  <img src={contentUrl(attachment)} alt="" loading="lazy" decoding="async" />
+                )
+              }
+              renderLabel={(attachment) => attachment.filename}
+              renderMeta={meta}
+              renderActions={(attachment) => (
+                <>
+                  <Tooltip.Anchor content={t.downloadAttachment}>
+                    <IconButtonLink
+                      size="sm"
+                      variant="ghost"
+                      href={contentUrl(attachment, true)}
+                      download={attachment.filename}
+                      label={t.downloadAttachmentNamed({ filename: attachment.filename })}
                     >
-                      {/*
-                        The first frame shows what the video is; the browser reads only its start. The island replaces
-                        its server HTML when it mounts, so only the browser's tile names the video: a server tile would
-                        start a load that is cut off and repeated, and in WebKit on Linux (GStreamer) stopping a video
-                        while it loads can freeze the page.
-                      */}
-                      <button
-                        type="button"
-                        class="absolute inset-0 size-full focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--k2b-focus-ring)]"
-                        aria-label={t.playVideo({ filename: attachment.filename })}
-                        title={attachment.filename}
-                        onClick={() => openVideo(attachment)}
+                      <i class="ti ti-download" aria-hidden="true" />
+                    </IconButtonLink>
+                  </Tooltip.Anchor>
+                  <SaveFilesButton size="sm" variant="ghost" files={() => [saveSource(attachment)]} />
+                  <Show when={props.canWrite}>
+                    <Tooltip.Anchor content={t.deleteAttachment}>
+                      <IconButton
+                        label={t.deleteAttachmentNamed({ filename: attachment.filename })}
+                        size="sm"
+                        variant="ghost"
+                        class="spaces-attachment-delete"
+                        disabled={deletingId() !== null}
+                        onClick={() => void removeAttachment(attachment)}
                       >
-                        <video
-                          src={isServer ? undefined : `${contentUrl(attachment)}#t=0.001`}
-                          class="pointer-events-none size-full object-contain"
-                          preload="metadata"
-                          muted
-                          playsinline
-                          tabIndex={-1}
-                          aria-hidden="true"
-                        />
-                        <span class="pointer-events-none absolute inset-0 grid place-items-center" aria-hidden="true">
-                          <span class="grid size-7 place-items-center rounded-full bg-black/55 text-white">
-                            <i class="ti ti-player-play-filled text-sm" />
-                          </span>
-                        </span>
-                      </button>
-                    </Show>
-                    <Show when={props.canWrite}>
-                      <div class="k2b-progressive-action absolute right-1 top-1">
-                        <Tooltip.Anchor content={t.deleteAttachment}>
-                          <IconButton
-                            label={t.deleteAttachmentNamed({ filename: attachment.filename })}
-                            size="xs"
-                            class="bg-white/90 text-dimmed backdrop-blur-sm dark:bg-zinc-950/80"
-                            disabled={deletingId() !== null}
-                            onClick={() => void removeAttachment(attachment)}
-                          >
-                            <i class="ti ti-trash text-xs" aria-hidden="true" />
-                          </IconButton>
-                        </Tooltip.Anchor>
-                      </div>
-                    </Show>
-                  </div>
-                )}
-              </For>
-            </div>
+                        <i class="ti ti-trash" aria-hidden="true" />
+                      </IconButton>
+                    </Tooltip.Anchor>
+                  </Show>
+                </>
+              )}
+              onOpen={openAttachment}
+            />
           </Show>
           <Show when={props.canWrite}>
             {/* Images and videos dropped anywhere on the open task attach to it. */}

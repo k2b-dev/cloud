@@ -16,7 +16,7 @@ the standard GUI; another application may create a conversation and redirect
 the user there.
 
 Interactive submissions and retries enforce the caller's
-[Assistant model access](/en/docs/ai/models-and-providers#restrict-a-model-in-assistant).
+[Assistant model access](/en/docs/ai/models-and-providers#add-models-and-variants).
 The model list and status return only permitted models. A denied explicit model
 selection returns HTTP 403 before a retry changes the conversation.
 

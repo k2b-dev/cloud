@@ -22,6 +22,8 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 - Create with `notebooks.note.create` only after choosing a writable notebook. A parent must be a returned note in that same notebook. Use `notebooks.note.move` for later hierarchy changes.
 - Comments on the text are `notebooks.annotation.*` (below; `cld notebooks comments`). The page discussion, not tied to a passage, is `notebooks.comment.*` (`cld notebooks discussion`): start with `notebooks.comment.browse`; read truncated posts with `notebooks.comment.read` before replying or editing. Both are separate from the note body. Page discussion mutations require a user-backed actor and write access; update/delete are limited to your own posts within ten minutes. Never retry an uncertain mutation blindly.
 
+- When asked to turn highlight markers such as `==MK: question …==` into comments, comment the same passage with the marker's text, then remove only the marker syntax from the note with the smallest edit. Do it marker by marker and report any passage you could not place.
+
 ## Review my comments and propose suggestions
 
 1. List with `notebooks.annotation.list`, `state: "open"`, `author: <person-uuid>`. `author: "me"` means the authenticated actor, including an agent. Follow `nextCursor`.

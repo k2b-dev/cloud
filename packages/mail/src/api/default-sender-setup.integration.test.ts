@@ -5,7 +5,6 @@ import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import { sha256Json } from "../service/canonical";
@@ -102,7 +101,6 @@ suite("Mail default sender setup through the API", () => {
     request(token, "/sender-identities/default/setup", { method: "POST", body: { bindingId, savesSentAutomatically: true }, locale });
 
   beforeAll(async () => {
-    await migrate();
     const rows = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES

@@ -67,7 +67,7 @@ Spaces ist zuständig für den importierten Terminstatus, Wiederholungen, organi
 
 ## Ressourcen und Seiten mit Arbeit verknüpfen {icon="link"}
 
-Jeder Eintrag hat eine Liste **Links & Ressourcen** für Cloud-Ressourcen und externe Seiten. In einem bearbeitbaren Eintrag hast du zwei Möglichkeiten:
+Jeder Eintrag zeigt Cloud-Ressourcen und externe Seiten im Abschnitt **Verknüpft**. In einem bearbeitbaren Eintrag hast du zwei Möglichkeiten:
 
 - Wähle **Link hinzufügen**, um eine `http(s)`-URL mit optionaler Bezeichnung anzuhängen. Ein Eintrag fasst bis zu 20 externe Links.
 - Wähle **Cloud-Ressource verknüpfen**, um eine Ressource über die Cloud-Suche zu finden und anzuhängen. Du kannst jede unterstützte Ressource anhängen, auf die du aktuell zugreifen kannst.
@@ -80,4 +80,4 @@ Ein Eintrag kann dauerhafte Verweise auf Ressourcen enthalten, die anderen Cloud
 
 Der Verweis gehört zum gemeinsamen Eintrag, nicht zu der Person, die ihn erstellt hat. Der Zugriff auf den Space bestimmt, wer den Verweis sehen oder entfernen kann. Beim Öffnen prüft die Ziel-App zusätzlich den aktuellen Zugriff auf ihre Ressource. Wird das Ziel entfernt oder ändert sich der Zugriff, sehen alle, die den Space sehen, weiter die gespeicherte Bezeichnung. Mit Zugriff **Bearbeiten** kannst du den nicht mehr verfügbaren Verweis entfernen.
 
-Verknüpfungen zu anderen Aufgaben erscheinen getrennt unter **Verwandte Aufgaben**, direkt über dieser Liste. Sie liefern nur Kontext und blockieren keine der beiden Aufgaben. Eine Verknüpfung kann auf eine Aufgabe in einem anderen Space zeigen, wenn beide Einträge zugänglich sind.
+Verknüpfungen zu anderen Aufgaben stehen im selben Abschnitt **Verknüpft** zuerst. Sie liefern nur Kontext und blockieren keine der beiden Aufgaben. Eine Verknüpfung kann auf eine Aufgabe in einem anderen Space zeigen, wenn beide Einträge zugänglich sind.

@@ -4,6 +4,7 @@ import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import type { ConversationView, MailFocusPage, MailFocusView } from "../contracts";
 import { resolveMailSearchRoute } from "../search-state";
 import type { MailboxListView, MailboxPageData } from "../service/workspace";
+import { logFixtureItems } from "./_components/mail-automation-log-fixtures";
 import { normalizeMailConversationToolbarActions } from "./_components/mail-conversation-toolbar";
 import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtures";
 import { summaryState } from "./_components/mail-summary-fixtures";
@@ -13,6 +14,24 @@ import MailOverview from "./MailOverview.island";
 import MailWorkspace from "./MailWorkspace.island";
 
 export const MAIL_SHELL_NOW = "2026-10-14T10:00:00.000Z";
+/** `?trace=` picks what rules did with the open conversation (fictional, from the approved mockup). */
+const traceFixture = (kind: string | null) => {
+  const [sortUncertain, sortNora, sortAngebote, skippedCan, , , , manual] = [
+    logFixtureItems[4]!,
+    logFixtureItems[3]!,
+    logFixtureItems[1]!,
+    logFixtureItems[2]!,
+    null,
+    null,
+    null,
+    logFixtureItems[7]!,
+  ];
+  if (kind === "name") return [sortNora];
+  if (kind === "uncertain") return [sortUncertain];
+  if (kind === "manual") return [manual, sortAngebote];
+  if (kind === "normal") return [skippedCan, sortAngebote];
+  return [];
+};
 const summaryRule = { id: "Wf001", name: "Lange Mails zusammenfassen" };
 /** `?summary=` picks the summary state the reader shows; without it the conversation has a person's short text. */
 const summaryFixture = (kind: string | null) => {
@@ -227,6 +246,16 @@ export function mailboxData(url: URL): MailboxPageData {
   const selectedConversationId = url.searchParams.get("conversation");
   const selectedMailbox = mailboxes.find((box) => box.id === url.pathname.split("/").at(-1)) ?? mailboxes[0]!;
   return {
+    // Older shell tests pin "list and reader"; the columns view (F2) opts in with ?layout=auto|columns.
+    viewPreference: {
+      large: url.searchParams.get("layout") === "auto" ? "auto" : url.searchParams.get("layout") === "columns" ? "columns" : "split",
+      phone: "compact",
+    },
+    // ?done=19,14 sets today's completed conversations and how many automations completed.
+    doneTodayCounts: (() => {
+      const [done = 0, automated = 0] = (url.searchParams.get("done") ?? "").split(",").map((value) => Number(value) || 0);
+      return { doneToday: done, doneByAutomation: automated };
+    })(),
     receivingAddress: selectedMailbox.id === "Box001" ? "support@example.test" : selectedMailbox.receivingAddress,
     mailbox: selectedMailbox,
     permission,
@@ -282,7 +311,7 @@ export function mailboxData(url: URL): MailboxPageData {
     selectedConversationId,
     selectedMessageId: url.searchParams.get("message"),
     listItems:
-      scheduledMode || draftsMode
+      scheduledMode || draftsMode || url.searchParams.get("inbox") === "empty"
         ? []
         : selectedMailbox.id === "Box001"
           ? listRows
@@ -365,6 +394,7 @@ export function mailboxData(url: URL): MailboxPageData {
       : [],
     conversationSummary: selectedConversationId ? summaryFixture(url.searchParams.get("summary")) : null,
     conversationDrafts: [],
+    automationTrace: selectedConversationId ? traceFixture(url.searchParams.get("trace")) : [],
     detailError: null,
     collaborationState: selectedConversationId
       ? { conversationId: selectedConversationId, assignees: [], workStatus: "needs_action", snoozedUntil: null, revision: 1 }

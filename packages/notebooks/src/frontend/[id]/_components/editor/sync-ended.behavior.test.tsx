@@ -212,6 +212,7 @@ const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = 
           initialHref={editorHref.split("#")[0]!}
           initialDetail={detail("Note01")}
           readOnly={readOnly}
+          canWrite={!readOnly}
         />
       </LocaleProvider>
     ),

@@ -55,6 +55,8 @@ type PanelWidth = "md" | "lg" | "xl";
 const eventOf = (page: Page, title = "Sunday meeting") => page.locator("[data-calendar-event]", { hasText: title });
 const motion: BrowserContextOptions = { reducedMotion: "no-preference" };
 const touch: BrowserContextOptions = { hasTouch: true, isMobile: true };
+/** A workspace a quarter pixel short of the viewport, which gives the xl drawer a width three quarters into a pixel. */
+const fractionalDrawer = "#app{width:calc(100% - 0.25px)}";
 // Main's 0.5 rem padding is the one Spaces gives its calendar, so the surface ends one gap before the panel.
 const load = async (
   width: number,
@@ -64,6 +66,7 @@ const load = async (
   panel: PanelWidth = "md",
   hours = false,
   lane?: string,
+  extraStyle = "",
 ) => {
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce", ...options });
   await page.setContent(
@@ -71,6 +74,7 @@ const load = async (
     .k2b-ui .k2b-app-workspace{border:0;--k2b-workspace-radius:0px}
     .fixture-main{padding:0.5rem;display:flex;flex-direction:column}
     .fixture-calendar{flex:1;min-height:0}
+    ${extraStyle}
     </style></head><body class="k2b-ui" style="margin:0"><div id="app" style="height:100vh"></div></body></html>`,
   );
   await page.evaluate(
@@ -403,6 +407,20 @@ describe("dayHours calendar beside the workspace detail", () => {
     const { page } = await load(820, 1180, "week", { ...touch, ...motion }, "xl", true);
     try {
       const shape = await hoursPlacement(page);
+      expect(Math.abs(shape.columnRight! - shape.trailEnd)).toBeLessThan(0.5);
+      expect(shape.right).toBeLessThanOrEqual(shape.panelLeft);
+      expect(shape.hit).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+  // A drawer can measure a fractional width, which puts the day end the strip settles on between two pixels. WebKit
+  // drops the fraction of a scroll position, so a target off the pixel left the strip short of every place it rests.
+  test("820×1180 touch tablet with motion, a drawer of fractional width: the dayHours week settles Sunday's end beside it", async () => {
+    const { page } = await load(820, 1180, "week", { ...touch, ...motion }, "xl", true, undefined, fractionalDrawer);
+    try {
+      const shape = await hoursPlacement(page);
+      expect(shape.scrollLeft % 1).toBe(0);
       expect(Math.abs(shape.columnRight! - shape.trailEnd)).toBeLessThan(0.5);
       expect(shape.right).toBeLessThanOrEqual(shape.panelLeft);
       expect(shape.hit).toBe(true);

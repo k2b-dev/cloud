@@ -153,8 +153,7 @@ export const drainQueuedMessages = async (
   for (const row of rows) {
     try {
       const quotaSubject = aiChatAccessSubject(row.submission.runConfig.actor);
-      if (isAssistantChatTurn(row.submission.runConfig) && quotaSubject)
-        await aiQuotas.assertAllowed(quotaSubject, row.submission.modelProfileId);
+      if (isAssistantChatTurn(row.submission.runConfig) && quotaSubject) await aiQuotas.assertAllowed(quotaSubject, row.submission.modelId);
       await sql`UPDATE ai.queued_messages SET status='pending', error=NULL WHERE id=${row.id}::uuid AND status='failed' AND error IN ('quota_exhausted','quota_usage_unknown')`;
       const result = await aiConversations.submitChatTurn({ ...row.submission, queuedMessageId: row.id });
       await enqueue({ conversationId: row.conversation_id, turnId: result.turn.id });

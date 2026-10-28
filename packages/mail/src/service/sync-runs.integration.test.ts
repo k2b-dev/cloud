@@ -3,7 +3,6 @@ import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
@@ -79,7 +78,6 @@ suite("mail sync runs", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const owner = await createUser("owner");
     ownerContext = owner.context;
     const mailbox = await createMailbox(ownerContext, { name: `Sync runs ${suffix}` });

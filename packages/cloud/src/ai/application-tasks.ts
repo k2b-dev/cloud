@@ -55,7 +55,7 @@ export const runApplicationAiTask = async (input: ApplicationAiTaskInput) => {
   const effectKey = applicationEffectKey(input);
   let task = await getWorkflowAiTaskByEffectKey(effectKey);
   if (!task) {
-    const resolved = await resolveApplicationAiTaskModel(input.usageSubject, input.request.modelProfileId);
+    const resolved = await resolveApplicationAiTaskModel(input.usageSubject, input.request.model);
     const admissionSignal = AbortSignal.any([input.signal, AbortSignal.timeout(env.WORKFLOW_AI_QUEUE_TIMEOUT_MS)]);
     for (;;) {
       input.signal.throwIfAborted();
@@ -67,7 +67,8 @@ export const runApplicationAiTask = async (input: ApplicationAiTaskInput) => {
             stepKey: input.task,
             effectKey,
             request: input.request,
-            modelProfileId: resolved.profile.id,
+            modelId: resolved.profile.id,
+            modelRef: resolved.model,
             modelConfigHash: workflowAiModelHash(resolved.profile),
             scope: input.source,
           })

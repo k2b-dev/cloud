@@ -106,6 +106,17 @@
 .spaces-priority-value { display: inline-flex; align-items: center; gap: .5rem; }
 .spaces-priority-value__dot { width: .5rem; height: .5rem; flex: none; border-radius: 999px; }
 
+/* Detail panel: a video attachment previews its first frame like an image, with a small play mark. */
+.spaces-attachment-video { position: relative; display: block; width: 100%; height: 100%; }
+.spaces-attachment-video video { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.spaces-attachment-video__play { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: .875rem; text-shadow: 0 0 .25rem rgb(0 0 0 / .6); }
+.k2b-ui .spaces-attachment-delete:not(:disabled):hover { color: var(--k2b-danger-text); }
+
+/* The header's one main action reads in the panel accent, as in every app's details panel. */
+.k2b-ui .k2b-button.spaces-details-done { color: var(--k2b-detail-panel-accent, var(--k2b-action)); background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 11%, transparent); }
+.k2b-ui .k2b-button.spaces-details-done:not(:disabled, [aria-disabled="true"]):hover { background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 17%, transparent); }
+.k2b-ui .k2b-button.spaces-details-done[data-blocked] { color: var(--k2b-warning-text); background: var(--k2b-warning-surface); }
+
 /* Mobile app, "My tasks": one column of flat rows that spacing alone separates. A task leads with its 44 px check
    button; an event keeps the same slot for its icon, so every title starts at the same edge. */
 .spaces-pwa { display: flex; max-width: 32rem; flex-direction: column; gap: 1rem; margin: 0 auto; }
