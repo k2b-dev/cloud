@@ -23,6 +23,7 @@ import { FilesError, filesService } from "./service";
 const EntryReadInputSchema = z
   .object({ id: z.string().min(1).max(512).describe("Entry ID from a filesv2.entry ref or search result.") })
   .strict();
+const UserCreatedDataSchema = z.object({ userId: z.uuid(), provider: z.enum(["local", "ipa"]) }).strict();
 const EntryDataSchema = z.object({
   id: z.string(),
   base: z.object({ id: z.string(), name: z.string(), area: z.enum(["cloud", "freeipa"]) }),
@@ -43,6 +44,15 @@ const entryHref = (baseId: string, path: string, directory: boolean) =>
 
 export const filesCapabilities = defineCapabilities({
   protocolVersion: 2,
+  subscribes: {
+    "core.user.created": {
+      version: 1,
+      schema: UserCreatedDataSchema,
+      async run(envelope, context) {
+        await filesService.provisionUserHome(envelope.data.userId, { eventId: envelope.id, signal: context.signal });
+      },
+    },
+  },
   presentation: filesCapabilityPresentation,
   types: {
     entry: {
@@ -51,6 +61,7 @@ export const filesCapabilities = defineCapabilities({
       icon: "ti ti-folders",
       color: "blue",
       reader: "entry.read",
+      pages: ["/app/filesv2/ref/:id"],
     },
   },
   actions: fileActions,

@@ -107,7 +107,7 @@ function SearchIndexSection(props: { conversationId: string }) {
     { id: "when", header: text("When"), value: (run) => formatRunTime(run.createdAt) },
     { id: "status", header: text("Status"), value: "status" },
     { id: "trigger", header: text("Trigger"), value: "trigger" },
-    { id: "model", header: text("Model"), value: (run) => run.modelProfileId ?? "–" },
+    { id: "model", header: text("Model"), value: (run) => run.modelId ?? "–" },
     { id: "duration", header: text("Duration"), value: (run) => formatRunDuration(run.durationMs), cellClass: "tabular-nums" },
     {
       id: "result",

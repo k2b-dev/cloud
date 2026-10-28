@@ -97,6 +97,8 @@ const seed: MailDraftSeed = {
 const MAILBOX_ID = "Box001";
 
 const data: MailboxPageData = {
+  viewPreference: { large: "auto", phone: "compact" },
+  doneTodayCounts: { doneToday: 0, doneByAutomation: 0 },
   receivingAddress: null,
   mailbox: {
     id: MAILBOX_ID,
@@ -294,6 +296,7 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
           currentUserId: "user-1",
           currentUserEmail: "reader@example.test",
           contactDirectory: m.contacts.DEFAULT_MAIL_CONTACT_DIRECTORY,
+          cloudUrl: "https://cloud.example",
           dateConfig: { timeZone: "Europe/Berlin", locale: "en" },
           initialPreferences: m.workspacePreferences.readMailWorkspacePreferences(""),
           initialUserPreferences: m.userPreferences.readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),
@@ -411,6 +414,7 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
             mailto: null,
             returnHref: null,
             contactDirectory: m.contacts.DEFAULT_MAIL_CONTACT_DIRECTORY,
+            cloudUrl: "https://cloud.example",
             currentUserEmail: null,
           }),
         dom.root,

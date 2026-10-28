@@ -150,7 +150,7 @@ export default function ChatSharedSection(props: {
   };
 
   return (
-    <DetailPanel.Section icon="ti ti-share" title={t().shared}>
+    <DetailPanel.Section title={t().shared}>
       <div class="chat-shared">
         <div class="chat-shared__kinds" role="group" aria-label={t().sharedKinds}>
           <For each={KINDS}>

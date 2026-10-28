@@ -1,3 +1,4 @@
+import { useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { Button, ButtonLink, Dropdown, Tooltip, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
@@ -45,6 +46,7 @@ type Props = {
 export default function RecordsPrimaryToolbar(props: Props) {
   const locale = useLocale();
   const t = () => recordsViewMessages.resolve([locale()]).t;
+  const cloudId = useCloudIdCopy();
   return (
     <div class="flex flex-wrap items-center gap-2 shrink-0">
       {/* The search keeps at least 24rem on the row; below that, the count and actions move to their own line together. */}
@@ -155,6 +157,7 @@ export default function RecordsPrimaryToolbar(props: Props) {
                     : []),
                 ],
               },
+              ...cloudId.section({ type: "grids.table", id: props.tableId }),
             ]}
           >
             <Dropdown.Trigger variant="secondary" size="sm">

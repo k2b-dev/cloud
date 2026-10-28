@@ -2,12 +2,13 @@ import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { dates } from "@k2b/stdlib";
-import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, Placeholder, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
+import { DataTable, type DataTableColumn, NoticeCard, Placeholder, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
 import { ssr } from "../config";
 import type { MailProtectedIdentity, MailSecurityPolicy, MailSecurityReport } from "../security-contracts";
 import { type MailRequestContext, security } from "../service";
 import { localizeMailError } from "../service/error-messages";
 import MailAdminSecurityActions from "./_components/MailAdminSecurityActions.island";
+import { MailAdminTabs } from "./admin-tabs";
 import { mailPageMessages } from "./pages-messages";
 
 const matchesSearch = (query: string, values: readonly (string | null | undefined)[]): boolean => {
@@ -107,14 +108,10 @@ export default ssr<AuthContext>(async (c) => {
   return () => (
     <AdminLayout c={c} title={t.securityTitle}>
       <div class="app-rows" data-scroll-preserve="mail-admin-security">
+        <MailAdminTabs locale={locale} current="security" />
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div class="flex items-center gap-2">
-              <ButtonLink href="/admin/mail" variant="subtle" size="sm">
-                <i class="ti ti-arrow-left" aria-hidden="true" /> Mail
-              </ButtonLink>
-              <h1 class="text-base font-semibold text-primary">{t.phishingProtection}</h1>
-            </div>
+            <h1 class="text-base font-semibold text-primary">{t.phishingProtection}</h1>
             <p class="mt-1 text-xs text-dimmed">{t.securityDescription}</p>
           </div>
           <MailAdminSecurityActions kind="toolbar" trustedAuthservIds={settingsResult.ok ? settingsResult.data.trustedAuthservIds : null} />

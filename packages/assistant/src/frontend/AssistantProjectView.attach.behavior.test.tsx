@@ -85,7 +85,7 @@ domTest("Add images and Add files open the shared chooser at once, and drops on 
             description: "",
             icon: "ti ti-tent",
             instructions: "",
-            defaultModelProfileId: null,
+            defaultModel: null,
             permission: "write",
             revision: 1,
             createdAt: "2026-10-08T09:00:00.000Z",

@@ -738,8 +738,12 @@ describe("capability v1 compilation", () => {
       compileCapabilities("example", defineCapabilities({ ...base, queries: { ...base.queries, search }, commands: { open } })),
     ).not.toThrow();
     rejects(
-      defineCapabilities({ ...base, events: { changed: { title: "Changed" } } }),
-      'Capability declaration contains unsupported field "events"',
+      defineCapabilities({ ...base, futureEvents: { changed: { title: "Changed" } } }),
+      'Capability declaration contains unsupported field "futureEvents"',
+    );
+    rejects(
+      defineCapabilities({ ...base, calendarSource: { calendars: "get", events: "get", subscribe: "rename" } }),
+      'calendarSource contains unsupported field "subscribe"',
     );
     rejects(
       defineCapabilities({ ...base, fileProvider: { list: "get", read: "get", trash: "rename" } }),

@@ -154,7 +154,10 @@
   --k2b-shadow-frame:
     0 -3px 10px -8px rgb(15 23 19 / 0.16), 0 0 16px -9px rgb(15 23 19 / 0.16), 0 14px 36px -32px rgb(15 23 19 / 0.22),
     0 1px 5px rgb(15 23 19 / 0.04);
-  --k2b-shadow-workspace-edge: -3px 0 6px -5px rgb(0 0 0 / 0.1), 3px 0 6px -5px rgb(0 0 0 / 0.1);
+  /* The quiet shadow at every workspace column boundary: centre and edge of
+     its 24 px gradient. */
+  --k2b-shadow-column-mid: rgb(24 24 27 / 0.0055);
+  --k2b-shadow-column-edge: rgb(24 24 27 / 0.022);
   --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
   --k2b-shadow-toast: 0 8px 24px -12px rgb(9 9 11 / 0.28);
   --k2b-shadow-side: -14px 0 36px rgb(9 9 11 / 0.16);
@@ -300,7 +303,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-shadow-surface: none;
   --k2b-shadow-frame:
     0 -3px 10px -8px rgb(0 0 0 / 0.32), 0 0 16px -9px rgb(0 0 0 / 0.56), 0 16px 40px -30px rgb(0 0 0 / 0.48), 0 1px 7px rgb(0 0 0 / 0.14);
-  --k2b-shadow-workspace-edge: -3px 0 6px -5px rgb(0 0 0 / 0.28), 3px 0 6px -5px rgb(0 0 0 / 0.28);
+  --k2b-shadow-column-mid: rgb(0 0 0 / 0.014);
+  --k2b-shadow-column-edge: rgb(0 0 0 / 0.055);
   --k2b-shadow-float: 0 22px 56px rgb(0 0 0 / 0.52);
   --k2b-shadow-toast: 0 10px 28px -14px rgb(0 0 0 / 0.58);
   --k2b-shadow-side: -16px 0 40px rgb(0 0 0 / 0.5);
@@ -457,7 +461,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    clamp instead of dimming every label.
    `--k2b-truncate-fade-inset` (inherited) is the length of the end that a
    control overlays, such as a row's hover actions, including a 0.75rem fade
-   before it: text under that control fades out whether it overflows or not. */
+   before it: text under that control fades out whether it overflows or not.
+   It is registered as a length, so a derived inset computes to one too. */
+@property --k2b-truncate-fade-inset {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 @property --k2b-truncate-fade-on {
   syntax: "<number>";
   inherits: false;
@@ -1495,7 +1506,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: auto;
   scrollbar-gutter: stable;
   background: var(--k2b-surface);
-  box-shadow: var(--k2b-shadow-workspace-edge);
 }
 
 .k2b-ui .k2b-app-workspace__main[data-scroll="false"] {
@@ -1639,6 +1649,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: visible;
 }
 
+/* Labels below columns keep their pixel distance from the axis; in a box shorter
+ * than the drawing they hang below it instead of crossing the axis. */
+.k2b-ui .k2b-chart__svg > svg[data-bar-layout="columns"] {
+  overflow: visible;
+}
+
+/* Horizontal bar rows keep their own height: one row per category never shrinks
+ * below its text. A shorter box scrolls; a taller one leaves room below. */
+.k2b-ui .k2b-chart:has(> .k2b-chart__svg > svg[data-bar-layout="rows"]) {
+  overflow-y: auto;
+}
+.k2b-ui .k2b-chart__svg:has(> svg[data-bar-layout="rows"]) {
+  flex: none;
+  height: var(--k2b-chart-height);
+}
+
 /* Labels and guide strokes leave hit testing to the data geometry below. */
 .k2b-ui .k2b-chart[data-interactive] .k2b-chart__svg :is(.stdlib-chart-heatmap-label, .stdlib-chart-box-median, .stdlib-chart-box-whisker, .stdlib-chart-box-cap) {
   pointer-events: none;
@@ -1677,11 +1703,25 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: inherit;
 }
 
+/* Axis and value text uses the UI font; tabular figures keep numbers aligned. */
 .k2b-ui .k2b-chart .stdlib-chart-tick-label,
 .k2b-ui .k2b-chart .stdlib-chart-bar-value,
 .k2b-ui .k2b-chart .stdlib-chart-axis-label {
-  font-family: var(--k2b-font-mono);
+  font-family: var(--k2b-font-sans);
   font-variant-numeric: tabular-nums;
+}
+
+/* Category labels and printed values read like text, not like recessive ticks. */
+.k2b-ui .k2b-chart .stdlib-chart-category-label {
+  font-size: 11px;
+  opacity: 0.8;
+}
+.k2b-ui .k2b-chart .stdlib-chart-bar-value {
+  font-size: 11px;
+  opacity: 0.9;
+}
+.k2b-ui .k2b-chart .stdlib-chart-axis-label {
+  font-weight: 500;
 }
 
 .k2b-ui .k2b-chart .stdlib-chart a {
@@ -3041,6 +3081,41 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-clamp: 2;
 }
 
+/* The kind line names what the panel shows, then its state, in the quiet
+   meta type; badges keep their own size. */
+.k2b-ui .k2b-detail-panel__kind {
+  display: flex;
+  min-width: 0;
+  min-height: 1.25rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  grid-row: 1;
+  grid-column: -3 / -2;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+/* With a kind line, it takes the first row beside the compact actions, and
+   the title and subtitle move one row down. */
+.k2b-ui .k2b-detail-panel__header-main:has(> .k2b-detail-panel__heading > .k2b-detail-panel__kind) > .k2b-detail-panel__heading > h2 {
+  grid-row: 2;
+}
+
+.k2b-ui
+  .k2b-detail-panel__header-main:has(> .k2b-detail-panel__heading > .k2b-detail-panel__kind)
+  > .k2b-detail-panel__heading
+  > .k2b-detail-panel__supporting {
+  grid-row: 3;
+}
+
+.k2b-ui
+  .k2b-detail-panel__header-main:has(> .k2b-detail-panel__heading > .k2b-detail-panel__kind)
+  > :is(.k2b-detail-panel__header-icon, .k2b-detail-panel__header-leading) {
+  grid-row: 1 / span 2;
+}
+
 .k2b-ui .k2b-detail-panel__heading p {
   overflow: hidden;
   color: var(--k2b-text-muted);
@@ -3734,6 +3809,52 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-width: 0;
 }
 
+/* A closed secondary section can say in one line what it holds. The line
+   takes the room the title leaves and fades at its end; it is gone while the
+   section is open. Such rows are 2.75rem tall in both states, so opening
+   moves nothing. */
+.k2b-ui .k2b-detail-panel__section-preview {
+  min-width: 0;
+  flex: 1 1 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-detail-panel__section-summary .k2b-detail-panel__section-heading > .k2b-detail-panel__section-title {
+  flex: 0 1 auto;
+}
+
+.k2b-ui
+  .k2b-detail-panel__section[data-summary="true"]
+  :is(.k2b-detail-panel__section-header, .k2b-button.k2b-detail-panel__section-summary) {
+  min-height: 2.75rem;
+}
+
+/* A titled group: a quiet title over secondary sections that stand flush as
+   rows, such as "More about this conversation". */
+.k2b-ui .k2b-detail-panel__group-title {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-detail-panel__group[data-titled="true"],
+.k2b-ui :is(.k2b-app-workspace__detail, .k2b-detail-panel[data-surface="plain"]) .k2b-detail-panel__group[data-titled="true"] {
+  gap: 0;
+}
+
+.k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-detail-panel__group-title {
+  margin-bottom: 0.25rem;
+}
+
+.k2b-ui .k2b-detail-panel__group[data-titled="true"] > .k2b-detail-panel__section[data-open="true"] {
+  padding-bottom: 0.5rem;
+}
+
 /* One text edge: in a panel section with an icon, content starts where the
    title does. Rows with their own leading column (actions and discussion
    entries with an avatar) step back, so their icon or avatar sits in the
@@ -3832,9 +3953,39 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-detail-panel__action-row {
+  position: relative;
+  isolation: isolate;
   display: flex;
   min-width: 0;
   align-items: center;
+}
+
+/* A row with a secondary action or a menu is one surface: hover and the
+   current mark fill the whole row, its trailing buttons included, and reach
+   0.5rem into the panel gutter like a single action's fill. The buttons
+   appear inside that surface, so nothing moves. */
+.k2b-ui .k2b-detail-panel__action-row::before {
+  position: absolute;
+  z-index: -1;
+  inset-block: 0;
+  inset-inline: -0.5rem;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  content: "";
+  pointer-events: none;
+  transition: background-color 120ms ease-out;
+}
+
+.k2b-ui .k2b-detail-panel__action-row:hover::before {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-detail-panel__action-row:has(> .k2b-detail-panel__action[data-current="true"])::before {
+  background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-accent-600)) 13%, transparent);
+}
+
+.k2b-ui .k2b-detail-panel__action-row > .k2b-detail-panel__action > .k2b-button__label::before {
+  display: none;
 }
 
 .k2b-ui .k2b-detail-panel__action-row > .k2b-detail-panel__action {
@@ -3893,6 +4044,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 100%;
   gap: 0.625rem;
   justify-content: flex-start;
+}
+
+/* Without a section icon there is no icon column: a row without `leading`
+   starts its title on the section's text edge. */
+.k2b-ui .k2b-detail-panel__section:not([data-icon="true"]) .k2b-detail-panel__action-leading:empty {
+  display: none;
 }
 
 /* The section icon's column: icons and 20 px avatars center in it, and the
@@ -5146,6 +5303,21 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   pointer-events: auto;
 }
 
+/* While a control overlays the row's end, `--k2b-sidebar-item-overlay` is the
+   end it covers from the count, including a 0.75rem fade before it. The row
+   measures what its hover actions cover (`--k2b-sidebar-item-cover`), and
+   the label ends before the count and its gap
+   (`--k2b-sidebar-item-label-trail`), so it gives up only the rest. */
+.k2b-ui .k2b-app-workspace__sidebar-item-main {
+  --k2b-truncate-fade-inset: var(--k2b-sidebar-item-overlay, 0px);
+}
+
+.k2b-ui
+  .k2b-app-workspace__sidebar-item-main
+  > :is(.k2b-app-workspace__sidebar-item-copy, .k2b-app-workspace__sidebar-item-label) {
+  --k2b-truncate-fade-inset: max(0px, var(--k2b-sidebar-item-overlay, 0px) - var(--k2b-sidebar-item-label-trail, 0px));
+}
+
 /* The overlay layout follows the pointer capability, never the recorded input
    mode, so a mode change moves nothing. */
 @media (any-hover: hover) {
@@ -5179,7 +5351,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 2.5rem;
+    --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 1.75rem) + 0.75rem);
   }
 
   .k2b-ui
@@ -5189,10 +5361,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
         > .k2b-app-workspace__nav-tree-row,
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions [aria-haspopup][aria-expanded="true"])
     ):not([data-variant="object"]:has(.k2b-app-workspace__sidebar-item-meta)):has(
-      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child > :nth-child(2)
+      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child > :nth-child(2 of :not([popover]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 4.25rem;
+    --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 3.5rem) + 0.75rem);
   }
 
   /* Hover actions and the row chevron overlay the row's trailing edge:
@@ -5235,7 +5407,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 2.5rem;
+    --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 1.75rem) + 0.75rem);
   }
 
   .k2b-ui
@@ -5246,7 +5418,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
     ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 4.25rem;
+    --k2b-sidebar-item-overlay: calc(var(--k2b-sidebar-item-cover, 3.5rem) + 0.75rem);
   }
 
   /* Without a touch screen, an action preview opens on hover, so its button
@@ -5276,7 +5448,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     .k2b-ui
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
       > .k2b-app-workspace__sidebar-item-main {
-      --k2b-truncate-fade-inset: 2.5rem;
+      --k2b-sidebar-item-overlay: 2.5rem;
     }
   }
 
@@ -5777,6 +5949,89 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: min(var(--k2b-focus-offset), 1px);
 }
 
+/* A row with a secondary action, such as "Only": the action keeps its place while hidden, so the row never changes
+   width, and shows while the row is hovered or focused, and always where the pointer is coarse. */
+.k2b-ui .k2b-dropdown__pair {
+  display: flex;
+  align-items: center;
+  border-radius: 0.375rem;
+  transition: background-color 150ms ease-out;
+}
+
+.k2b-ui .k2b-dropdown__pair:hover,
+.k2b-ui .k2b-dropdown__pair:focus-within {
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .k2b-dropdown__pair > .k2b-dropdown__item {
+  min-width: 0;
+  flex: 1;
+}
+
+.k2b-ui .k2b-dropdown__pair > .k2b-dropdown__item:hover,
+.k2b-ui .k2b-dropdown__pair > .k2b-dropdown__item:focus-visible {
+  background: transparent;
+}
+
+.k2b-ui :is(.k2b-dropdown__secondary, .k2b-dropdown__label-action) {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-muted);
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-dropdown__secondary {
+  margin-inline-end: 0.25rem;
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-dropdown__pair:is(:hover, :focus-within) > .k2b-dropdown__secondary {
+  visibility: visible;
+}
+
+/* On a touch screen the second action is always there and as tall as its row, the 44 px of a touch target. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-dropdown__secondary {
+    visibility: visible;
+    align-self: stretch;
+    min-height: 2.75rem;
+  }
+
+  .k2b-ui .k2b-dropdown__label-action {
+    min-height: 2.75rem;
+  }
+}
+
+.k2b-ui :is(.k2b-dropdown__secondary, .k2b-dropdown__label-action):hover {
+  color: var(--k2b-text);
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui :is(.k2b-dropdown__secondary, .k2b-dropdown__label-action):focus-visible {
+  color: var(--k2b-text);
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
+}
+
+/* The label row keeps the label's own spacing; its action sits at the end without making the row taller. */
+.k2b-ui .k2b-dropdown__label--action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-block: 0.25rem 0;
+  padding-inline-end: 0.25rem;
+}
+
 /* Opt-in touch menus leave the compact default and shared ContextMenu rows unchanged. */
 .k2b-ui .k2b-dropdown__menu[data-variant="touch"] {
   min-width: min(18rem, 100vw - 2rem);
@@ -5893,6 +6148,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* A tag's colour sits beside its name, never alone. */
+/* The colors of the chosen options, overlapping a little, in the place of the icon. */
+.k2b-ui .k2b-filter-chip__swatches {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding-inline-end: 0.125rem;
+}
+
+.k2b-ui .k2b-filter-chip__swatches > .k2b-filter-chip__dot {
+  margin: 0;
+  box-shadow: 0 0 0 1.5px var(--k2b-surface);
+  vertical-align: middle;
+}
+
+.k2b-ui .k2b-filter-chip__swatches > .k2b-filter-chip__dot + .k2b-filter-chip__dot {
+  margin-inline-start: -0.1875rem;
+}
+
 .k2b-ui .k2b-filter-chip__dot {
   display: inline-block;
   width: 0.5rem;
@@ -6329,6 +6602,183 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 @media (pointer: coarse) {
   .k2b-ui .k2b-choice-chips .k2b-choice-groups > button {
     min-height: 2.75rem;
+  }
+}
+
+/* ChoiceTiles: a preview over its label; choosing changes only paint, so no tile moves. */
+.k2b-ui .k2b-choice-tiles__group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.75rem, 1fr));
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-choice-tiles__tile {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.25rem 0.5rem;
+  border: 0;
+  border-radius: 0.875rem;
+  color: var(--k2b-text-secondary);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Only real hover: a tap on a touch screen must not leave a tile looking chosen. */
+@media (hover: hover) {
+  .k2b-ui .k2b-choice-tiles__tile:hover:not(:disabled) {
+    background: var(--k2b-hover);
+  }
+}
+
+.k2b-ui .k2b-choice-tiles__tile[aria-checked="true"] {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
+
+.k2b-ui .k2b-choice-tiles__tile:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
+}
+
+.k2b-ui .k2b-choice-tiles__tile:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.k2b-ui .k2b-choice-tiles__visual {
+  display: inline-flex;
+  line-height: 0;
+}
+
+.k2b-ui .k2b-choice-tiles__group[data-dimmed="true"] .k2b-choice-tiles__visual {
+  opacity: 0.55;
+}
+
+.k2b-ui .k2b-choice-tiles__text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.k2b-ui .k2b-choice-tiles__label {
+  font-size: 0.71875rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+/* Row: the preview beside its label, with a status line that always keeps its height. */
+.k2b-ui .k2b-choice-tiles__group[data-layout="row"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.k2b-ui .k2b-choice-tiles__group[data-layout="row"] .k2b-choice-tiles__tile {
+  flex-direction: row;
+  gap: 0.625rem;
+  padding: 0.375rem 0.875rem 0.375rem 0.375rem;
+  border-radius: 0.75rem;
+  text-align: start;
+}
+
+.k2b-ui .k2b-choice-tiles__group[data-layout="row"] .k2b-choice-tiles__label {
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: start;
+}
+
+.k2b-ui .k2b-choice-tiles__group[data-layout="row"] .k2b-choice-tiles__tile[aria-checked="true"] .k2b-choice-tiles__label {
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-choice-tiles__status {
+  min-height: 0.9375rem;
+  color: var(--k2b-success-text);
+  font-size: 0.71875rem;
+  font-weight: 550;
+  line-height: 1.3;
+}
+
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-choice-tiles__group[data-layout="row"] {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    gap: 0.25rem;
+  }
+
+  .k2b-ui .k2b-choice-tiles__group[data-layout="row"] .k2b-choice-tiles__tile {
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem 0.25rem;
+  }
+
+  .k2b-ui .k2b-choice-tiles__group[data-layout="row"] :is(.k2b-choice-tiles__label, .k2b-choice-tiles__text) {
+    align-items: center;
+    text-align: center;
+  }
+}
+
+/* ColorChoices: named round swatches; the chosen one carries a check and a ring that does not change its size. */
+.k2b-ui .k2b-color-choices__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  padding: 0.25rem;
+}
+
+.k2b-ui .k2b-color-choices__swatch {
+  position: relative;
+  display: inline-grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 9999px;
+  color: #ffffff;
+  background: var(--k2b-color-choice);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.08);
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-color-choices__swatch > i {
+  visibility: hidden;
+  font-size: 1rem;
+  text-shadow: 0 0 2px rgb(0 0 0 / 0.55);
+}
+
+.k2b-ui .k2b-color-choices__swatch[aria-checked="true"] > i {
+  visibility: visible;
+}
+
+.k2b-ui .k2b-color-choices__swatch[aria-checked="true"]::after {
+  position: absolute;
+  inset: -0.25rem;
+  border: 2px solid var(--k2b-action);
+  border-radius: 9999px;
+  content: "";
+}
+
+.k2b-ui .k2b-color-choices__swatch:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(var(--k2b-focus-offset) + 0.25rem);
+}
+
+.k2b-ui .k2b-color-choices__swatch:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+@media (pointer: coarse) {
+  .k2b-ui .k2b-color-choices__swatch {
+    width: 2.75rem;
+    height: 2.75rem;
   }
 }
 
@@ -8083,6 +8533,131 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: not-allowed;
 }
 
+/* ChoiceSlider: a few named stops. The line keeps one height whatever it
+   says, so moving the thumb or showing a reason moves nothing. */
+.k2b-ui .k2b-choice-slider {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-choice-slider__line {
+  display: flex;
+  height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.k2b-ui .k2b-choice-slider__line[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-choice-slider__track {
+  position: relative;
+  height: 1.875rem;
+  margin: 0 0.75rem;
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+}
+
+.k2b-ui .k2b-choice-slider__track[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.k2b-ui .k2b-choice-slider__segment {
+  position: absolute;
+  top: 50%;
+  height: 0.375rem;
+  margin-top: -0.1875rem;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-choice-slider__stop {
+  position: absolute;
+  top: 50%;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  margin: -0.21875rem 0 0 -0.21875rem;
+  border-radius: 999px;
+  background: var(--k2b-border-strong);
+}
+
+.k2b-ui .k2b-choice-slider__segment[data-on],
+.k2b-ui .k2b-choice-slider__stop[data-on] {
+  background: var(--k2b-action-solid);
+}
+
+.k2b-ui .k2b-choice-slider__stop[data-unavailable] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--k2b-border-strong);
+}
+
+.k2b-ui .k2b-choice-slider__stop[data-current] {
+  visibility: hidden;
+}
+
+.k2b-ui .k2b-choice-slider__thumb {
+  position: absolute;
+  top: 50%;
+  width: 1.375rem;
+  height: 1.375rem;
+  margin: -0.6875rem 0 0 -0.6875rem;
+  border-radius: 999px;
+  background: var(--k2b-action-solid);
+  box-shadow: 0 0 0 3px var(--k2b-surface-elevated);
+}
+
+.k2b-ui .k2b-choice-slider__thumb[hidden] {
+  display: none;
+}
+
+.k2b-ui .k2b-choice-slider__thumb[data-tone="warning"] {
+  background: var(--k2b-warning-text);
+}
+
+/* Without a thumb, for a choice outside the stops, the track carries the focus ring. */
+.k2b-ui .k2b-choice-slider__track:focus-visible:has(> .k2b-choice-slider__thumb[hidden]) {
+  border-radius: var(--k2b-radius-control);
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+.k2b-ui .k2b-choice-slider__track:focus-visible .k2b-choice-slider__thumb {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+.k2b-ui .k2b-choice-slider[data-size="lg"] .k2b-choice-slider__track {
+  height: 2.75rem;
+  margin: 0 1rem;
+}
+
+.k2b-ui .k2b-choice-slider[data-size="lg"] .k2b-choice-slider__segment {
+  height: 0.5rem;
+  margin-top: -0.25rem;
+}
+
+.k2b-ui .k2b-choice-slider[data-size="lg"] .k2b-choice-slider__stop {
+  width: 0.5625rem;
+  height: 0.5625rem;
+  margin: -0.28125rem 0 0 -0.28125rem;
+}
+
+.k2b-ui .k2b-choice-slider[data-size="lg"] .k2b-choice-slider__thumb {
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: -0.875rem 0 0 -0.875rem;
+}
+
 .k2b-ui .k2b-slider output,
 .k2b-ui .k2b-color-input code {
   min-width: 3.5rem;
@@ -9652,6 +10227,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A row that opens what it is about: only the ink responds, nothing moves. */
+.k2b-ui .k2b-message-event-row__link {
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--k2b-radius-control);
+}
+.k2b-ui .k2b-message-event-row__link:hover {
+  color: var(--k2b-text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.k2b-ui .k2b-message-event-row__link:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 .k2b-ui .k2b-message-event-row time {
@@ -12678,6 +13269,46 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-overflow: ellipsis;
 }
 
+/* AnchoredPopover: a non-modal panel at a control. A bottom sheet on a phone, with the safe area kept clear. */
+.k2b-ui .k2b-anchored-popover {
+  position: fixed;
+  z-index: 1000;
+  inset: unset;
+  width: min(var(--k2b-anchored-popover-width, 21rem), calc(100vw - 1rem));
+  max-height: var(--k2b-anchored-popover-room, calc(100dvh - 1rem));
+  margin: 0;
+  overflow: auto;
+  padding: 0;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  color: var(--k2b-text);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  outline: none;
+}
+
+.k2b-ui .k2b-anchored-popover:not(:popover-open) {
+  display: none;
+}
+
+.k2b-ui .k2b-anchored-popover::backdrop {
+  background: transparent;
+}
+
+.k2b-ui .k2b-anchored-popover[data-sheet] {
+  inset: auto 0 0 0;
+  width: 100%;
+  max-width: none;
+  max-height: calc(100dvh - 3rem);
+  padding-bottom: env(safe-area-inset-bottom);
+  border-width: 1px 0 0;
+  border-radius: var(--k2b-radius-surface) var(--k2b-radius-surface) 0 0;
+}
+
+.k2b-ui .k2b-anchored-popover[data-sheet]::backdrop {
+  background: var(--k2b-feedback-backdrop);
+}
+
 .k2b-ui .k2b-emoji-picker-popover {
   position: fixed;
   z-index: 1000;
@@ -13684,6 +14315,81 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__separator {
   height: 1.5rem;
 }
+/* A toolbar at a text selection (SelectionToolbar): in the top layer, so no scroll container clips it. */
+.k2b-ui .k2b-selection-toolbar {
+  position: fixed;
+  inset: unset;
+  margin: 0;
+  border: 0;
+  padding: 0.25rem;
+  overflow: visible;
+  border-radius: 0.6875rem;
+  color: var(--k2b-text);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--k2b-motion-fast) var(--k2b-ease-out),
+    transform var(--k2b-motion-fast) var(--k2b-ease-out),
+    display var(--k2b-motion-fast) allow-discrete,
+    overlay var(--k2b-motion-fast) allow-discrete;
+}
+.k2b-ui .k2b-selection-toolbar:not(:popover-open) {
+  display: none;
+  opacity: 0;
+  transform: translateY(2px);
+}
+@starting-style {
+  .k2b-ui .k2b-selection-toolbar:popover-open {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+/* Compact: 30 px buttons with 16 px icons, a 4 px frame and tight gaps, so the bar stays small over the text it
+   acts on. Touch screens keep their 44 px hit areas through the buttons' own coarse-pointer rule, without growing
+   the bar. Shortcuts show in the tooltips; the hints under the icons that a floating toolbar has would not fit. */
+.k2b-ui .k2b-selection-toolbar > .k2b-toolbar {
+  gap: 0.125rem;
+}
+.k2b-ui .k2b-selection-toolbar .k2b-button {
+  block-size: 1.875rem;
+  min-block-size: 1.875rem;
+  border-radius: var(--k2b-radius-control);
+}
+.k2b-ui .k2b-selection-toolbar .k2b-toolbar__action {
+  inline-size: 1.875rem;
+  min-inline-size: 1.875rem;
+  padding: 0;
+}
+.k2b-ui .k2b-selection-toolbar .k2b-button:not(.k2b-toolbar__action) {
+  padding-inline: 0.5rem;
+}
+.k2b-ui .k2b-selection-toolbar .k2b-button i {
+  font-size: 1rem;
+  line-height: 1;
+}
+.k2b-ui .k2b-selection-toolbar .k2b-button:not(.k2b-toolbar__action) i {
+  font-size: 0.875rem;
+}
+.k2b-ui .k2b-selection-toolbar .k2b-toolbar__hint {
+  display: none;
+}
+.k2b-ui .k2b-selection-toolbar .k2b-toolbar__separator {
+  height: 1rem;
+  margin: 0 0.1875rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-selection-toolbar {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .k2b-ui .k2b-selection-toolbar {
+    border: 1px solid CanvasText;
+  }
+}
+
 .k2b-ui .k2b-toolbar__label {
   min-inline-size: 0;
   max-inline-size: 10rem;
@@ -14250,7 +14956,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 2.5rem;
+    --k2b-sidebar-item-overlay: 2.5rem;
   }
   .k2b-ui
     .k2b-app-workspace__sidebar-item:not(
@@ -14260,7 +14966,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
     ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
     > .k2b-app-workspace__sidebar-item-main {
-    --k2b-truncate-fade-inset: 4.25rem;
+    --k2b-sidebar-item-overlay: 4.25rem;
   }
 }
 

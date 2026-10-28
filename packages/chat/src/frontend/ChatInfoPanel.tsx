@@ -2,7 +2,6 @@ import { isManagerEntry } from "@k2b/cloud/access/ui";
 import {
   Button,
   DetailPanel,
-  Dropdown,
   type DropdownItem,
   IconButton,
   InlineGuidance,
@@ -19,7 +18,7 @@ import type { z } from "zod";
 import type { MemberSchema, PermissionSchema } from "../service/contracts";
 import { type ChatDialogStore, type Conversation, errorMessage, useChatMessages } from "./chat-dialog";
 import { MemberAvatar } from "./MemberPicker";
-import { containerIcon, systemMembers } from "./system-chats";
+import { systemMembers } from "./system-chats";
 
 type Member = z.infer<typeof MemberSchema>;
 type Permission = z.infer<typeof PermissionSchema>;
@@ -181,7 +180,7 @@ export default function ChatInfoPanel(props: {
     }
   };
 
-  // The chat's own commands sit in the header: below a member list that loads, they would move.
+  // The chat's own commands sit in the header's "…": below a member list that loads, they would move.
   const commands = (): DropdownItem[] =>
     system()
       ? []
@@ -209,36 +208,19 @@ export default function ChatInfoPanel(props: {
   return (
     <DetailPanel>
       <DetailPanel.Header
-        icon={
-          system()
-            ? containerIcon(props.conversation.resource?.type)
-            : (props.conversation.icon ?? (props.conversation.memberCount <= 2 ? "ti ti-user" : "ti ti-users"))
-        }
+        kind={<span>{props.conversation.channel ? t().channelChoice : t().chatChoice}</span>}
         title={props.conversation.title}
         subtitle={system() ? systemMembers(props.conversation.resource?.type, t()) : t().members({ count: props.conversation.memberCount })}
+        menu={commands()}
+        menuLabel={t().chatActions({ title: props.conversation.title })}
         actions={
-          <>
-            <Show when={commands().length > 0}>
-              <Dropdown.Root position="bottom-right" items={commands()}>
-                <Dropdown.Trigger
-                  iconOnly
-                  label={t().chatActions({ title: props.conversation.title })}
-                  tooltip={t().chatActions({ title: props.conversation.title })}
-                  size="sm"
-                  variant="ghost"
-                >
-                  <i class="ti ti-dots" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
-            </Show>
-            <IconButton label={t().closeChatInfo} size="sm" variant="ghost" onClick={props.onClose}>
-              <i class="ti ti-x" aria-hidden="true" />
-            </IconButton>
-          </>
+          <IconButton label={t().closeChatInfo} size="sm" variant="ghost" onClick={props.onClose}>
+            <i class="ti ti-x" aria-hidden="true" />
+          </IconButton>
         }
         primaryActions={
           manager() ? (
-            <Button size="sm" variant="secondary" onClick={props.onAddPeople}>
+            <Button size="sm" variant="subtle" class="chat-info__main" onClick={props.onAddPeople}>
               <i class="ti ti-user-plus" aria-hidden="true" />
               {t().addPeople}
             </Button>
@@ -247,12 +229,12 @@ export default function ChatInfoPanel(props: {
       />
       <DetailPanel.Body scrollPreserveKey={`chat-info-${props.conversation.id}`}>
         <Show when={!system()}>
-          <DetailPanel.Section icon="ti ti-target-arrow" title={t().purpose}>
-            <Show when={props.conversation.purpose} fallback={<p class="text-sm text-dimmed">{t().noPurpose}</p>}>
+          <DetailPanel.Section title={t().purpose}>
+            <Show when={props.conversation.purpose} fallback={<p class="chat-info__none">{t().noPurpose}</p>}>
               {(purpose) => <p class="chat-info__purpose">{purpose()}</p>}
             </Show>
           </DetailPanel.Section>
-          <DetailPanel.Section icon="ti ti-users" title={t().membersTitle}>
+          <DetailPanel.Section title={t().membersTitle}>
             <div class="flex flex-col gap-2" aria-busy={status() === "loading"}>
               <TextInput
                 type="search"
