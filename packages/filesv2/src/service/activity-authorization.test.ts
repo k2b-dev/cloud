@@ -50,7 +50,7 @@ const config = {
   unreadable: false,
   activityRetentionDays: 365,
   cloud: { ...area, autoCreate: true, autoArchive: true },
-  freeipa: { ...area, root: "freeipa" },
+  freeipa: { ...area, root: "freeipa", autoCreate: false },
   collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" as const },
 };
 function fixture(ipa = false) {
