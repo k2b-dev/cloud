@@ -717,21 +717,22 @@
   color: var(--k2b-text-secondary);
 }
 
-/* System chats use the existing flat list; counts and async actions keep their places. */
+/* System chats use the existing flat list; counts and async actions keep their places. Cloud's global stylesheet loads
+   after this one, so the section rules are anchored at `.k2b-ui` to outweigh the shared section rules. */
 .chat-system-chats {
   margin-block-start: 0.75rem;
 }
-.chat-system-chats .k2b-app-workspace__sidebar-section-count {
+.k2b-ui .chat-system-chats .k2b-app-workspace__sidebar-section-count {
   order: 2;
   width: 1.75rem;
   min-width: 1.75rem;
   margin-inline-start: auto;
   text-align: end;
 }
-.chat-system-chats .k2b-app-workspace__sidebar-section-toggle > i {
+.k2b-ui .chat-system-chats .k2b-app-workspace__sidebar-section-toggle > i {
   margin-inline-start: 0;
 }
-.chat-system-chats--read .k2b-app-workspace__sidebar-section-count {
+.k2b-ui .chat-system-chats--read .k2b-app-workspace__sidebar-section-count {
   visibility: hidden;
 }
 .chat-system-chats__count {
