@@ -18,14 +18,14 @@ test("blank text and invalid optional dates fail the provider-facing schema befo
   for (const output of [{ summary: " " }, { summary: "Meeting", due: "2026-10-28" }]) {
     const runner = async <T extends z.ZodType>(input: RunAiStructuredInput<T>): Promise<RunAiStructuredResult<T>> => ({
       output: input.output.parse(output),
-      modelProfileId: "fake",
+      model: { id: "fake" },
       structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
     });
     await expect(executeAiTask(request, { taskPrefix: "application" }, runner)).rejects.toThrow();
   }
   const runner = async <T extends z.ZodType>(input: RunAiStructuredInput<T>): Promise<RunAiStructuredResult<T>> => ({
     output: input.output.parse({ summary: "  Meeting agreed  " }),
-    modelProfileId: "fake",
+    model: { id: "fake" },
     structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
   });
   expect((await executeAiTask(request, { taskPrefix: "application" }, runner)).output).toEqual({ summary: "Meeting agreed" });

@@ -235,7 +235,10 @@ test("sixteen pins scroll without a cap and pointer and keyboard drag both save"
     await page.keyboard.press("Space");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
-    await page.waitForFunction(() => document.querySelector(".chat-list-pins")?.textContent?.startsWith("Room 02"));
+    // The first row's name, not the list's text: the avatar's initials stand before each name.
+    await page.waitForFunction(
+      () => document.querySelector(".chat-list-pins .k2b-app-workspace__sidebar-item-label")?.textContent === "Room 02",
+    );
     expect(await handle.evaluate((element) => element === document.activeElement)).toBe(true);
     await handle.and(page.locator('[aria-disabled="false"]')).waitFor();
     await pins.getByRole("link", { name: /Room 01/ }).hover();

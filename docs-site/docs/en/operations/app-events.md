@@ -37,6 +37,41 @@ created or reverse completed handler effects.
 
 ## Inspect readiness and failures
 
+Open **Administration → Apps** (`/admin/apps`) and select an app to inspect
+its access rule, requested platform permissions, sent events, subscriptions,
+and active notification definitions. Deploying an app approves its declared
+subscriptions; the detail view makes them visible rather than asking for a
+second approval. Subscriptions first observed in the last seven days are marked
+**New**. Blocked subscriptions show their reason and failed deliveries offer
+**Deliver again** after the underlying problem is fixed.
+
+The same administrator read is available from the CLI:
+
+```sh
+cld apps show filesv2
+cld apps show filesv2 --json
+```
+
+`GET /api/app-events/apps/:appId` returns `{ app, access, sends, hears,
+notifications, totals }`. It requires the administrator role and, for OAuth,
+the `admin` scope. Unknown app IDs return 404. Offline apps remain inspectable
+while Core has declarations, subscriptions, notification definitions or access
+records for them. Their saved, non-retired declarations remain visible; metadata
+Core does not hold is unknown, with the app ID used as its name. An offline app's unknown
+access rule is `null`; a live app without an access declaration is `legacy`.
+
+Each detail list contains at most **100 entries**; `totals` shows each full
+count so a truncated list is visible. `cld apps show` reports how many entries
+each list omits; use `cld events subscriptions --app <app-id>` for the full
+subscription list. Subscriptions appear newest first, sent events by type and
+version, and notifications by ID. Each subscription includes
+delivery counts for every state and at most **five** recent failed deliveries,
+ordered by last attempt. Error text is limited to **1000 characters**. Their
+delivery IDs work with `cld events redeliver <id> --yes` and the existing
+redelivery endpoint. Subscriber counts include active and blocked subscriptions,
+excluding cancelled ones. Notification labels and event titles use the request
+locale where translations are available.
+
 ```sh
 cld events ls
 cld events subscriptions --app filesv2

@@ -265,7 +265,7 @@ Reference fields named `message`, `conversation`, or `draft` accept a raw value 
 | `setVariable` | any JSON-compatible `value` | `name` receives `core.value` | none |
 | `succeed`, `fail` | operator-facing message: at most 1,000 characters | terminal state | none |
 
-`createDraft.to` is required. `cc` and `bcc` are optional. `createReplyDraft` takes recipients and subject from the source message. The `model` field accepts the ID of an enabled AI model profile, at most 120 characters. AI outputs, draft outputs, reference outputs, and variables are visible only to later steps in the same reachable scope.
+`createDraft.to` is required. `cc` and `bcc` are optional. `createReplyDraft` takes recipients and subject from the source message. The optional `model` field accepts `{ class: balanced }` or `{ id: "model:variant" }`. Classes are `fast`, `balanced`, `thorough`, and `maximum`; an explicit variant ID accepts at most 241 characters. AI outputs, draft outputs, reference outputs, and variables are visible only to later steps in the same reachable scope.
 
 On one reachable path, any number of `addFlag`, `removeFlag`, `addKeyword`, and `removeKeyword` changes can come before at most one `moveMessage`, `copyMessage`, `archiveMessage`, `trashMessage`, or `junkMessage` for the same message. No provider action can follow that move or copy; Mail rejects such a definition with `action.sequence`. The first provider action checks the message state from the start of the run. Later ones also expect this run's confirmed changes, so a flag the workflow set itself does not stop its move. Keep these changes in one workflow: when two workflows change the same message, one of them can fail. A workflow's move, archive, trash, or junk step does not skip: it fails if the message has already left its folder or another change is moving it.
 
@@ -372,7 +372,7 @@ steps:
 
 The generic field types are `text`, `number`, `boolean`, `date_time`, and `enum`. Optional fields can be absent. The output rejects undeclared fields. The guided editor for incoming mail supplies these automatically: the fixed event field contract, an explicit IANA time zone, the time the message arrived, and the guard against invented data.
 
-An optional `model` selects an enabled profile for one action. Otherwise, Mail uses the platform workflow model, then the background model, then the platform default. Each newly created AI task uses one unit of the `maxAiCalls` budget. By default, this budget is 10 per run.
+Omitting `model` requests the `balanced` class. Only empty class assignments fall back to another class; access, budget, disabled-model, and capability failures stop the action. An explicit variant ID never falls back. Each newly created AI task uses one unit of the `maxAiCalls` budget. By default, this budget is 10 per run.
 
 AI tasks survive worker restarts. Cancelling the Mail run stops running inference where possible and discards late output. A dry run cannot predict AI output. It reports the missing value and does not continue with an invented classification or draft.
 

@@ -3,7 +3,7 @@ import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import type { z } from "zod";
 import type { ApiType } from "../api";
-import { type Mention, MessageViewSchema, type SendMessageSchema } from "../service/contracts";
+import { type AttachmentView, AttachmentViewSchema, type Mention, MessageViewSchema, type SendMessageSchema } from "../service/contracts";
 
 export type ChatSendReply = { id: string; author: string; text: string };
 export type ChatSendInput = z.input<typeof SendMessageSchema>;
@@ -18,6 +18,8 @@ export type ChatSend = {
   replyTo: ChatSendReply | null;
   /** Shared Cloud elements, shown as cards from the first frame. */
   refs: readonly CloudResourceRef[];
+  /** Uploaded images and documents, shown from the first frame; the message takes them when it is stored. */
+  attachments: readonly AttachmentView[];
   createdAt: string;
   status: "pending" | "sent" | "failed";
   /** The stored message once the server accepted it. */
@@ -53,6 +55,7 @@ export const createChatSends = (dependencies: {
           ? { mentions: entry.mentions.map((mention) => ({ ...mention, principal: { ...mention.principal } })) }
           : {}),
         ...(entry.refs.length ? { refs: [...entry.refs] } : {}),
+        ...(entry.attachments.length ? { attachments: entry.attachments.map((attachment) => attachment.id) } : {}),
         // A reply goes into its original's thread on the server; General needs no thread.
         ...(entry.replyTo ? { replyTo: entry.replyTo.id } : entry.thread !== "general" ? { thread: entry.thread } : {}),
       });
@@ -76,7 +79,13 @@ export const createChatSends = (dependencies: {
     send: (
       conversationId: string,
       body: string,
-      target: { thread?: string; replyTo?: ChatSendReply | null; refs?: readonly CloudResourceRef[]; mentions?: readonly Mention[] } = {},
+      target: {
+        thread?: string;
+        replyTo?: ChatSendReply | null;
+        refs?: readonly CloudResourceRef[];
+        attachments?: readonly AttachmentView[];
+        mentions?: readonly Mention[];
+      } = {},
     ): ChatSend => {
       const entry: ChatSend = {
         clientId: dependencies.newClientId?.() ?? crypto.randomUUID(),
@@ -86,6 +95,7 @@ export const createChatSends = (dependencies: {
         thread: target.thread ?? "general",
         replyTo: target.replyTo ?? null,
         refs: target.refs ?? [],
+        attachments: target.attachments ?? [],
         createdAt: (dependencies.now?.() ?? new Date()).toISOString(),
         status: "pending",
         message: null,
@@ -137,4 +147,23 @@ export const createChatSendsApi = () => {
     if (!response.ok) throw new Error(`Chat request failed (${response.status})`);
     return MessageViewSchema.parse(await response.json());
   };
+};
+
+/** Uploads one file for the next message of a chat, into its open thread when it has one, and discards one removed. */
+export const createAttachmentUpload = () => {
+  const client = createApiClient<ApiType>({ baseUrl: "/api/chat" });
+  const discard = async (conversationId: string, attachmentId: string) => {
+    await client.conversations[":conversation"].attachments[":attachment"].$delete({
+      param: { conversation: conversationId, attachment: attachmentId },
+    });
+  };
+  const upload = async (conversationId: string, thread: string | null, file: File, signal: AbortSignal): Promise<AttachmentView> => {
+    const response = await client.conversations[":conversation"].attachments.$post(
+      { param: { conversation: conversationId }, form: { file, ...(thread ? { thread } : {}) } },
+      { init: { signal } },
+    );
+    if (!response.ok) throw new Error(`Chat upload failed (${response.status})`);
+    return AttachmentViewSchema.parse(await response.json());
+  };
+  return { upload, discard };
 };

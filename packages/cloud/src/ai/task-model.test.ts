@@ -7,7 +7,14 @@ import { resolveApplicationAiTaskModel } from "./task-model";
 import type { AiResolvedModel } from "./types";
 
 const resolved: AiResolvedModel = {
+  model: { id: "personal" },
   profile: {
+    modelId: "personal",
+    providerId: "test",
+    variantLabel: "Standard",
+    description: "",
+    icon: { kind: "provider" },
+    showInPicker: true,
     id: "personal",
     label: "Personal",
     provider: "openai",
@@ -31,17 +38,17 @@ const resolved: AiResolvedModel = {
 };
 
 test("personal tasks authorize the pinned model with Assistant grants and the personal data policy", async () => {
-  const select = spyOn(assistant, "selectAssistantAiModelId").mockResolvedValue("personal");
+  const select = spyOn(assistant, "selectAssistantAiModel").mockResolvedValue({ id: "personal" });
   const resolve = spyOn(settings, "resolveAiModel").mockResolvedValue(resolved);
   const background = spyOn(structured, "resolveAiWorkflowModel");
   try {
     const subject = { type: "user", userId: "person" } as const;
-    expect(await resolveApplicationAiTaskModel(subject, "personal")).toBe(resolved);
-    expect(select).toHaveBeenCalledWith(subject, "personal");
-    expect(resolve).toHaveBeenCalledWith(personalAiModelPolicy, "personal");
+    expect(await resolveApplicationAiTaskModel(subject, { id: "personal" })).toBe(resolved);
+    expect(select).toHaveBeenCalledWith(subject, { id: "personal" });
+    expect(resolve).toHaveBeenCalledWith(personalAiModelPolicy, { id: "personal" });
     expect(background).not.toHaveBeenCalled();
     select.mockRejectedValue(new Error("Model grant revoked"));
-    await expect(resolveApplicationAiTaskModel(subject, "personal")).rejects.toThrow("Model grant revoked");
+    await expect(resolveApplicationAiTaskModel(subject, { id: "personal" })).rejects.toThrow("Model grant revoked");
     expect(resolve).toHaveBeenCalledTimes(1);
   } finally {
     select.mockRestore();
@@ -50,12 +57,12 @@ test("personal tasks authorize the pinned model with Assistant grants and the pe
   }
 });
 
-test("background tasks retain the shared workflow/background/default selection", async () => {
-  const select = spyOn(assistant, "selectAssistantAiModelId");
+test("background tasks retain the requested class", async () => {
+  const select = spyOn(assistant, "selectAssistantAiModel");
   const background = spyOn(structured, "resolveAiWorkflowModel").mockResolvedValue(resolved);
   try {
-    expect(await resolveApplicationAiTaskModel(undefined, "background")).toBe(resolved);
-    expect(background).toHaveBeenCalledWith("background");
+    expect(await resolveApplicationAiTaskModel(undefined, { class: "balanced" })).toBe(resolved);
+    expect(background).toHaveBeenCalledWith({ class: "balanced" });
     expect(select).not.toHaveBeenCalled();
   } finally {
     select.mockRestore();

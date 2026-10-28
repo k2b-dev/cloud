@@ -481,6 +481,12 @@ types: {
 }
 ```
 
+A Type may also name a `color` for its icon from the palette `blue`, `emerald`,
+`violet`, `orange`, `red`, `amber`, `zinc`, `cyan` and `rose`. Consumers such as
+Chat's element cards show the icon in a chip of that colour, so a card says at a
+glance what it stands for. Choose one colour per kind of resource and keep it
+stable; omit it and consumers show a neutral chip.
+
 `reader` is the Query's local ID inside the same app. Its presence tells a
 consumer that a `CloudResourceRef` of this Type can be read programmatically.
 The referenced Query is the only read implementation; do not publish a second
@@ -1519,6 +1525,8 @@ type CapabilityResult<T> = {
     title?: string;
     preview?: string;
     icon?: string;
+    context?: string;
+    status?: string;
   }>;
   page?:
     | { hasMore: true; nextCursor: string }
@@ -1533,10 +1541,20 @@ type CapabilityResult<T> = {
 
 Every result reference contains the stable identity fields `type` and `id`.
 When the provider already knows a useful current label, it may add `title`, a
-short plain-text `preview`, and an `icon`. These presentation fields are an
-optional snapshot for generic clients; they do not participate in identity,
+short plain-text `preview`, an `icon`, `context`, and `status`. These
+presentation fields are an optional snapshot for generic clients; they do not participate in identity,
 authorization, deduplication, or canonical-reader resolution. A bare
 `{ type, id }` reference remains valid.
+
+The owning application's canonical reader fills `context` and `status` from
+current authorized state in the request locale. Both are optional final display
+strings, never message keys; consumers show them as given. `context` has 1–200
+characters: one line saying what and where the resource is, with its most useful
+fact, such as `Task in IT planning · due 30 Oct`. `status` has 1–60 characters:
+a short current-state label, such as `Open` or `Done`. Omit it when a state label
+does not apply. Linked references and `CloudResourceView` carry the same fields.
+Consumers ignore unfamiliar optional reference fields while retaining the
+resource identity.
 
 Prefer the name a person sees in the owning app: a mailbox name, note title,
 contact name, or mail subject. Use `preview` only for concise secondary context
