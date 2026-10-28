@@ -473,8 +473,9 @@ export const getSpaceAudiences = async (params: {
     return fail(err.forbidden("Access denied"));
   const ids = [...new Set(params.spaceIds)];
   if (!ids.length) return ok({});
+  // `text[]`, not `uuid[]`: the driver returns a uuid array as its Postgres text form, which would reach JSON as a string.
   const rows = await sql<{ space_id: string; access_ids: string[] }[]>`
-    SELECT sa.space_id, array_agg(sa.access_id) AS access_ids FROM spaces.space_access sa
+    SELECT sa.space_id, array_agg(sa.access_id::text) AS access_ids FROM spaces.space_access sa
     WHERE sa.space_id = ANY(${toPgUuidArray(ids)}::uuid[]) AND EXISTS (
       SELECT 1 FROM spaces.space_access own JOIN auth.access a ON a.id = own.access_id
       WHERE own.space_id = sa.space_id AND a.permission IN ('read', 'write', 'admin') AND ${buildSpacePrincipalCondition(params.subject)}

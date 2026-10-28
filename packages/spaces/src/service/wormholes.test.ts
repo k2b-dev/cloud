@@ -174,6 +174,8 @@ suite("Spaces wormholes", () => {
       const preview = await previewTransfer({ sourceSpaceId: fixture.sourceSpaceId, itemId: item!.id, actor: actorFor(fixture) });
       expect(preview.ok).toBe(true);
       if (!preview.ok) throw new Error(preview.error);
+      // Before toMatchObject: Bun's asymmetric matchers replace the matched values in the received object.
+      expect(preview.data[0]!.removedDependencies).toHaveLength(3);
       expect(preview.data).toMatchObject([
         {
           id: created.data.id,
@@ -187,7 +189,6 @@ suite("Spaces wormholes", () => {
           audience: { memberCount: 2, guestCount: 0, public: false, authenticated: false },
         },
       ]);
-      expect(preview.data[0]!.removedDependencies).toHaveLength(3);
       // The dry run changes neither the card nor its relations.
       const [beforeMove] = await sql<{ space_id: string; tags: number }[]>`
         SELECT space_id, (SELECT COUNT(*)::int FROM spaces.item_tags WHERE item_id = ${item!.id}::uuid) AS tags
