@@ -228,7 +228,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     {
       id: string;
       title: string;
-      preview: string;
+      context: string;
       readable: boolean;
       type?: string;
       parent?: CloudResourceRef;
@@ -260,7 +260,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           appId: "spaces",
           manifestHash: "0".repeat(64),
           types: [
-            { localId: "task", title: "Task", description: "A task.", icon: "ti ti-circle", reader: "task.read" },
+            { localId: "task", title: "Task", description: "A task.", icon: "ti ti-circle", color: "emerald", reader: "task.read" },
             { localId: "item", title: "Item", description: "An item.", icon: "ti ti-circle", reader: "task.read" },
           ],
           queries: [query("task.read")],
@@ -973,7 +973,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
             readable: true,
             ref: { type: element.type ?? "spaces.task", id: element.id },
             title: element.title,
-            preview: element.preview,
+            preview: element.context || undefined,
             href: `/app/spaces/task/${element.id}`,
           }));
         const lines = [
@@ -993,7 +993,16 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
         if (!element?.readable) return Response.json({ code: "FORBIDDEN", message: "No access" }, { status: 403 });
         return Response.json({
           data: { id: element.id },
-          refs: [{ type: "spaces.task", id: element.id, title: element.title, preview: element.preview, icon: "ti ti-circle" }],
+          refs: [
+            {
+              type: "spaces.task",
+              id: element.id,
+              title: element.title,
+              icon: "ti ti-circle",
+              ...(element.context ? { context: element.context } : {}),
+              ...(element.status ? { status: element.status } : {}),
+            },
+          ],
           links: [{ rel: "open", href: `/app/spaces/task/${element.id}` }],
         });
       }
@@ -1296,7 +1305,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
               thread = {
                 id: threadId(id!, chat.threads.length + 1),
                 name: element.title,
-                description: element.preview,
+                description: element.context,
                 archived: false,
                 read: null,
                 createdAt: chatTestNow.toISOString(),
@@ -1738,7 +1747,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     }) => {
       elements.set(element.id, {
         ...element,
-        preview: element.title,
+        context: element.title,
         readable: true,
         type: element.parent.type === "notebooks.notebook" ? "notebooks.note" : "spaces.item",
       });
@@ -1824,8 +1833,8 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
       chats.get(chat)!.discovery = entries;
     },
     /** An element of the made-up "spaces" app; `readable: false` makes its card "not available". */
-    addElement: (element: { id: string; title: string; preview?: string; readable?: boolean }) => {
-      elements.set(element.id, { preview: "", readable: true, ...element });
+    addElement: (element: { id: string; title: string; context?: string; status?: string; readable?: boolean }) => {
+      elements.set(element.id, { context: "", readable: true, ...element });
       return { type: "spaces.task", id: element.id } satisfies CloudResourceRef;
     },
     /** Grants or takes away the viewer's access to an element of the made-up "spaces" app. */

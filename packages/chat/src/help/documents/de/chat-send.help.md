@@ -78,7 +78,7 @@ Die Liste zeigt die Mitglieder des Chats und die Personen, die darin geschrieben
 :::
 
 :::reference
-- Das Element erscheint als Karte in der Nachricht. Wähle die Karte, um das Element zu öffnen.
+- Das Element erscheint als Karte in der Nachricht: was und wo es ist, zum Beispiel „Aufgabe in IT-Planung · fällig 30.10.“, sein Titel und sein Status, zum Beispiel **Offen**. Wähle die Karte, um das Element zu öffnen.
 - Jede Person sieht nur, was sie sehen darf. Ohne Zugriff auf das Element zeigt die Karte **Element nicht verfügbar**, ohne Titel und Ort.
 - Teilen gibt niemandem Zugriff auf das Element.
 :::
