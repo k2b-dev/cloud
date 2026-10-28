@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import { cancelPendingAutomaticRepliesInTransaction } from "./automatic-reply";
+import { discardConversationSummaries } from "./conversation-summary-lifecycle";
 
 type SqlClient = typeof sql;
 
@@ -137,6 +138,7 @@ export const pauseDeletedMailboxExecution = async (mailboxId: string, db: SqlCli
     FROM changed
   `;
   await cancelPendingAutomaticRepliesInTransaction({ db, mailboxId, code, message });
+  await discardConversationSummaries(db, { mailboxId });
 
   return {
     resources,

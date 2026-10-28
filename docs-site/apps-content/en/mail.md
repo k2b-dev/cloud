@@ -360,7 +360,8 @@ and replaces the whole set with `assigneeUserIds` on the collaboration
 `mailConversation` report `assigneeUserIds`; collaboration reports
 `assignees`. The workflow action `assignConversation` keeps its single `user`:
 it accepts an eligible person or machine account by exact name or UUID,
-and `null` removes all assignees.
+assigns only when nobody is assigned, and leaves existing assignees in place
+when given `null`.
 Merging two conversations keeps the assignees of both, and splitting one gives
 the new conversation the same assignees.
 
@@ -807,6 +808,11 @@ Both mutations require the current revision; sending still requires the existing
 send-safety review and approval.
 
 ## Check failed synchronization
+
+When the provider limits requests, Mail retries unconfirmed flag changes and
+incomplete message downloads. Read state, flags, and labels are not skipped,
+and a partial body is not marked complete. A provider that reports a larger
+message size remains supported when Mail can confirm the end of its source.
 
 `cld mail status` counts the sync runs that failed in the last 24 hours. Each
 attempt to sync a batch of one folder is a run, so a failure that a retry

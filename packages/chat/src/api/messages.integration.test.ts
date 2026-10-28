@@ -294,7 +294,8 @@ suite("chat messages", () => {
     expect(delta.conversation).not.toBeNull();
     expect(delta.conversation!.lastActivityAt).toBe(message.createdAt);
     const rows = await sql<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${chat.id}::uuid`;
-    const shared = projectMessage(rows[0]!, chat.shortId);
+    // Live events carry no per-reader reactions.
+    const { reactions: _shared, ...shared } = projectMessage(rows[0]!, chat.shortId);
     expect(await outbox(chat.shortId)).toEqual([
       { ordering_key: `c:${chat.shortId}`, payload: { v: 1, k: `c:${chat.shortId}`, d: { type: "message", message: shared } } },
       {
@@ -374,7 +375,7 @@ suite("chat messages", () => {
         MessageRow[]
       >`SELECT * FROM chat.messages WHERE conversation_id = ${chat.id}::uuid ORDER BY seq DESC LIMIT 1`;
       if (!last) throw new Error("Missing mutation message");
-      const message = projectMessage(last, chat.shortId);
+      const { reactions: _message, ...message } = projectMessage(last, chat.shortId);
       const expected = chatLiveUpdates(
         chat.shortId,
         message,

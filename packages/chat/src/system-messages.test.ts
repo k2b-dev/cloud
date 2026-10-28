@@ -89,3 +89,12 @@ test("group removal and automatic succession render in EN and DE", () => {
     "Lea verwaltet diesen Chat jetzt, weil das Konto der letzten verwaltenden Person gelöscht wurde.",
   );
 });
+
+test("discovery changes and removal render in EN and DE", () => {
+  const changed: SystemMessage = { code: "discovery_changed", params: { count: 1 } };
+  const removed: SystemMessage = { code: "discovery_changed", params: { count: 0 } };
+  expect(renderSystemMessage(changed, "Alex", "en")).toBe("Alex changed who can discover this channel.");
+  expect(renderSystemMessage(changed, "Alex", "de")).toBe("Alex hat die Auffindbarkeit geändert.");
+  expect(renderSystemMessage(removed, "Alex", "en")).toBe("Alex removed discovery. Members keep their access.");
+  expect(renderSystemMessage(removed, "Alex", "de")).toBe("Alex hat die Auffindbarkeit entfernt. Mitglieder behalten ihren Zugriff.");
+});

@@ -13,8 +13,9 @@ export class AiTurnFailure extends Error {
 }
 
 /**
- * Why a turn failed. `error` is what a person reads, worded by the reader's client; `detail` is the raw cause, which
- * only the log keeps. `message`, when set, is Cloud's own wording for the stored error instead of the worded reason.
+ * Why a turn failed. `error` is what a person reads, worded by the reader's client; `detail` is the diagnostic cause, which
+ * only the log keeps. Provider diagnostics have already been reduced to fixed text. `message`, when set, is Cloud's
+ * own wording for the stored error instead of the worded reason.
  */
 export type AiTurnFailureInfo = { error: AiTurnError; detail: string; message?: string };
 
@@ -101,4 +102,25 @@ export const rememberProviderErrors = (provider: Provider, remember: (reason: Ai
       }
     },
   };
+};
+
+/** nessi may construct issue messages from model tool arguments or names after the adapter returns. */
+export const aiIssueDiagnostic = (issue: NessiIssue): { code: string; message: string } => {
+  switch (issue.kind) {
+    case "provider_error":
+      return { code: "provider_error", message: "AI provider request failed." };
+    case "timeout":
+      return issue.scope === "tool"
+        ? { code: "tool_timeout", message: "AI tool execution timed out." }
+        : { code: "provider_timeout", message: "AI provider request timed out." };
+    case "malformed_tool_call":
+    case "cancelled_tool_call":
+      return { code: issue.kind, message: "AI provider returned an incomplete or invalid tool call." };
+    case "tool_execution_error":
+      return { code: "tool_execution_error", message: "AI tool execution failed." };
+    case "tool_historical_result_error":
+      return { code: "tool_historical_result_error", message: "AI tool history could not be prepared." };
+    default:
+      return { code: "runtime_error", message: "AI execution failed." };
+  }
 };

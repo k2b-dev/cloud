@@ -143,7 +143,7 @@ export type AiQuotaReport = {
   perPage: number;
 };
 export const aiQuotaHref = (query: Partial<AiQuotaReportQuery>) => {
-  const params = new URLSearchParams({ tab: "ai-quotas" });
+  const params = new URLSearchParams({ sec: "budgets", ...(query.view === "rules" ? {} : { rule: "people" }) });
   for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== "") params.set(key, String(value));
-  return `/admin/settings?${params}`;
+  return `/admin/ai?${params}`;
 };

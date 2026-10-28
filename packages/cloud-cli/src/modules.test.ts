@@ -8,7 +8,7 @@ import { join, resolve } from "node:path";
 // name grantees with, and the embedded core skill may load for host commands;
 // no plugin from the store or the plugins directory may.
 const hostFile =
-  /\/packages\/(cloud-cli\/src\/[^/]+|cloud\/src\/cli\/(?!(account|apps|capabilities)\.ts$)[^/]+|cloud\/src\/contracts\/resource-href|cloud\/src\/access\/(principal-label|messages)|cloud\/src\/shared\/account-display)\.ts$|\/skills\/cloud-cli\/.+\.(md|yaml)$/;
+  /\/packages\/(cloud-cli\/src\/[^/]+|cloud\/src\/cli\/(?!(account|apps|capabilities|events)\.ts$)[^/]+|cloud\/src\/contracts\/resource-href|cloud\/src\/access\/(principal-label|messages)|cloud\/src\/shared\/account-display)\.ts$|\/skills\/cloud-cli\/.+\.(md|yaml)$/;
 
 test("host commands load no module", async () => {
   const directory = await mkdtemp(join(tmpdir(), "cld-modules-test-"));

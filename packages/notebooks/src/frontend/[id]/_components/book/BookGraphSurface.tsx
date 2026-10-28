@@ -27,7 +27,7 @@ export default function BookGraphSurface(props: Props) {
           notebookName={props.notebookName}
           notebookIcon={props.notebookIcon}
           selectedNoteId={props.selectedNoteId}
-          tree={props.tree}
+          navigation={props.navigation}
           tags={props.tags}
           currentHref={props.currentHref}
           canWrite={props.canWrite}

@@ -32,7 +32,7 @@ test("DDL names are derived from UUIDs, validated again and every view has a def
 });
 
 test("v2 orders states by observation then acceptance and hides source and series tombstones", () => {
-  expect(BASE_SCHEMA_VERSIONS.map((v) => v.version)).toEqual([1, 2, 3]);
+  expect(BASE_SCHEMA_VERSIONS.map((v) => v.version)).toEqual([1, 2, 3, 4]);
   const statements = BASE_SCHEMA_VERSIONS[1]!.statements(ctx);
   expect(statements[0]).toContain("ADD COLUMN IF NOT EXISTS deleted UInt8 DEFAULT 0");
   expect(statements[1]).toContain("ReplacingMergeTree(merge_version)");

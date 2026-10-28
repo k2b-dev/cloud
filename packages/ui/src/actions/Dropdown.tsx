@@ -17,7 +17,7 @@ import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
-import { focusRowSegment } from "./menu-rows";
+import { focusMenuRow, focusRowSegment } from "./menu-rows";
 import { openMenuSheet, prefersMenuSheet } from "./menu-sheet";
 
 // Resolved outside JSX: a conditional attribute compiles to a lazy memo, which would be created inside the click handler.
@@ -72,6 +72,14 @@ export type DropdownAction =
       external?: never;
     });
 
+/** A second, smaller action at the end of a row, such as "Only" beside a checkbox; it keeps the menu open. */
+export type DropdownSecondaryAction = {
+  label: string;
+  /** Accessible name when the visible label alone does not say what it acts on, such as "Only Team Logistik". */
+  ariaLabel?: string;
+  action: () => void;
+};
+
 /** Declarative radio or checkbox row for compact action menus. */
 export type DropdownChoice = DropdownActionBase & {
   action: () => void;
@@ -80,6 +88,11 @@ export type DropdownChoice = DropdownActionBase & {
   href?: string;
   closeOnSelect?: boolean;
   color?: string;
+  /**
+   * A second action at the end of the row. It shows while the row is hovered or focused, always on a touch screen,
+   * and keeps its place when hidden, so the row never changes width. Right and Left move between the two.
+   */
+  secondary?: DropdownSecondaryAction;
 };
 
 export type DropdownSection = {
@@ -89,6 +102,8 @@ export type DropdownSection = {
    * `sectionLabel`: the label names the choice above the row and for screen readers.
    */
   layout?: "row";
+  /** A quiet action at the end of the section label, such as "All"; it needs a `sectionLabel` and keeps the menu open. */
+  labelAction?: DropdownSecondaryAction;
   items: readonly (DropdownAction | DropdownChoice)[];
 };
 
@@ -119,6 +134,11 @@ export type DropdownProps = {
    * Defaults to `menu`. A controlled menu (`open`) always stays a menu.
    */
   phone?: "menu" | "sheet";
+  /**
+   * Renders the entries only once the menu first opens, for a menu repeated on every row of a long list: the page
+   * then carries each row's trigger, not each row's entries. Fixed for the menu's lifetime.
+   */
+  lazy?: boolean;
 };
 
 export type DropdownTriggerProps = Omit<
@@ -187,7 +207,7 @@ const actionableItems = (menu: HTMLElement | undefined): HTMLElement[] =>
     : [];
 
 const focusMenuItem = (menu: HTMLElement | undefined, index: number): void => {
-  const items = actionableItems(menu);
+  const items = actionableItems(menu).filter((item) => !item.classList.contains("k2b-dropdown__secondary"));
   if (items.length === 0) return;
   items[(index + items.length) % items.length]?.focus();
 };
@@ -292,6 +312,38 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
 }
 
 function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
+  return (
+    <Show when={props.secondary} fallback={<DropdownChoiceRow {...props} />}>
+      {(secondary) => (
+        <div class="k2b-dropdown__pair">
+          <DropdownChoiceRow {...props} />
+          <DropdownSecondaryButton {...secondary()} class="k2b-dropdown__secondary" />
+        </div>
+      )}
+    </Show>
+  );
+}
+
+function DropdownSecondaryButton(props: DropdownSecondaryAction & { class: string }): JSX.Element {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      tabIndex={-1}
+      class={props.class}
+      aria-label={props.ariaLabel}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        props.action();
+      }}
+    >
+      {props.label}
+    </button>
+  );
+}
+
+function DropdownChoiceRow(props: DropdownChoice): JSX.Element {
   const menu = useContext(MenuContext);
   const checked = () => (typeof props.checked === "function" ? props.checked() : props.checked);
   let element: HTMLElement | undefined;
@@ -392,7 +444,18 @@ export function DropdownItems(props: { items: readonly DropdownItem[]; close: (r
                 (item as DropdownSection).sectionLabel ?? ((item as DropdownSection).layout === "row" ? undefined : messages().actions)
               }
             >
-              <Show when={(item as DropdownSection).sectionLabel}>{(label) => <div class="k2b-dropdown__label">{label()}</div>}</Show>
+              <Show when={(item as DropdownSection).sectionLabel}>
+                {(label) => (
+                  <Show when={(item as DropdownSection).labelAction} fallback={<div class="k2b-dropdown__label">{label()}</div>}>
+                    {(action) => (
+                      <div class="k2b-dropdown__label k2b-dropdown__label--action">
+                        <span>{label()}</span>
+                        <DropdownSecondaryButton {...action()} class="k2b-dropdown__label-action" />
+                      </div>
+                    )}
+                  </Show>
+                )}
+              </Show>
               <Show
                 when={(item as DropdownSection).layout === "row"}
                 fallback={<For each={(item as DropdownSection).items}>{renderItem}</For>}
@@ -514,6 +577,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   const id = createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-");
   const menuId = `k2b-dropdown-${id}`;
   const [internalOpen, setInternalOpen] = createSignal(false);
+  const [entriesShown, setEntriesShown] = createSignal(!props.lazy);
   let triggerRef: HTMLButtonElement | undefined;
   let menuRef: HTMLDivElement | undefined;
   let triggerRing = true;
@@ -569,6 +633,8 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   const open = (focus: "first" | "last" | false = "first") => {
     if (props.disabled || !menuRef || menuRef.matches(":popover-open")) return;
     triggerRing = ringOnReturn(triggerRef);
+    // A lazy menu's entries exist before it shows, so it places and focuses them as any other.
+    setEntriesShown(true);
     menuRef.showPopover();
     // The toggle event arrives a task later; expose the open state before focus moves into the menu.
     setInternalOpen(true);
@@ -610,15 +676,8 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   };
   const handleMenuKeyDown = (event: KeyboardEvent) => {
     const items = actionableItems(menuRef);
-    const current = items.indexOf(document.activeElement as HTMLElement);
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (focusMenuRow(items, event.key) || focusRowSegment(items, event.key)) {
       event.preventDefault();
-      focusMenuItem(menuRef, current + (event.key === "ArrowDown" ? 1 : -1));
-    } else if (focusRowSegment(items, event.key)) {
-      event.preventDefault();
-    } else if (event.key === "Home" || event.key === "End") {
-      event.preventDefault();
-      focusMenuItem(menuRef, event.key === "Home" ? 0 : -1);
     } else if (event.key === "Escape") {
       event.preventDefault();
       returnFocus(triggerRef, triggerRing);
@@ -688,6 +747,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
             const nextOpen = (event as ToggleEvent).newState === "open";
             const wasOpen = (event as ToggleEvent).oldState === "open";
             setInternalOpen(nextOpen);
+            if (nextOpen) setEntriesShown(true);
             if (nextOpen) attachViewportListeners();
             else detachViewportListeners();
             if (props.open === undefined || props.open !== nextOpen) props.onOpenChange?.(nextOpen);
@@ -695,7 +755,9 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
             if (!nextOpen && props.open === true) queueMicrotask(() => props.open === true && open(false));
           }}
         >
-          <DropdownItems items={props.items} close={close} />
+          <Show when={entriesShown()}>
+            <DropdownItems items={props.items} close={close} />
+          </Show>
         </div>
       </span>
     </DropdownContext.Provider>

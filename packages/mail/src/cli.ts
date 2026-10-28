@@ -38,6 +38,9 @@ import {
   type AcquiredDraftLease,
   type AttachmentLink,
   type AttachmentLinkPage,
+  type AutomationLogDetail,
+  type AutomationLogItem,
+  type AutomationLogPage,
   type CancelScheduledSendResult,
   type ComposeFormattingWarning,
   type ComposePreview,
@@ -107,11 +110,13 @@ import {
   savedConversationViewFilterSchema,
   type UnsubscribeMailingListResult,
   type WorkflowEffectBudget,
+  type WorkflowTryResult,
   type WorkflowValidation,
 } from "./contracts";
 import { mailFolderPaths } from "./folder-tree";
 import { forwardMessageBody } from "./frontend/_components/mail-compose-derivation";
 import { incomingAutomationIssues } from "./incoming-automation-issues";
+import { LARGE_MAIL_VIEWS, type MailViewPreference, PHONE_MAIL_VIEWS } from "./mail-view-preference";
 import type { MailProtectedIdentity, MailSecurityPolicy, MailSecurityReport, MailSecuritySettings } from "./security-contracts";
 import type { AutomaticReplyConfiguration, AutomaticReplySetup } from "./service/automatic-reply-configuration";
 import type {
@@ -1999,6 +2004,7 @@ const everydayCommands = (t: Translate) => {
           return;
         const none = t({ en: "none", de: "keine" });
         ctx.print(`${t({ en: "Conversation", de: "Unterhaltung" })}: ${conversationId}`);
+        ctx.print(`${t({ en: "Cloud ID", de: "Cloud-ID" })}: ${cloudResourceUrl(ctx, { type: "mail.conversation", id: conversationId })}`);
         ctx.print(
           `${t({ en: "Summary", de: "Zusammenfassung" })}: ${value.summary ?? t({ en: "No shared summary", de: "Keine gemeinsame Zusammenfassung" })}`,
         );
@@ -2043,6 +2049,38 @@ const everydayCommands = (t: Translate) => {
         }
         ctx.print("");
         ctx.print(message.plainText ?? t({ en: "[Body not loaded yet]", de: "[Text noch nicht geladen]" }));
+      },
+    }),
+    command("conversation summary generate", {
+      summary: t({
+        en: "Request an AI summary using your Assistant allowance",
+        de: "Eine KI-Zusammenfassung mit dem eigenen Assistant-Kontingent anfordern",
+      }),
+      args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
+      flags: {
+        ...mailboxOption,
+        mode: flag.enum(["rolling", "replace"], {
+          default: "rolling",
+          description: t({ en: "Continue or rewrite the summary", de: "Die Zusammenfassung fortschreiben oder neu schreiben" }),
+        }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const conversationId = requireMailResourceId(args.conversation, "Conversation id");
+        const path = `/mailboxes/${mailbox.id}/conversations/${conversationId}/summary`;
+        const current = await readApi<ConversationContentSummary>(ctx, path);
+        const result = await readApi<ConversationContentSummary>(
+          ctx,
+          `${path}/generate`,
+          jsonRequest("POST", { mode: flags.mode ?? "rolling", expectedSummaryRevision: current.summaryRevision }),
+        );
+        if (!printStructured(ctx, result))
+          ctx.print(
+            t({
+              en: "Summary requested. Open the conversation to see its progress.",
+              de: "Zusammenfassung angefordert. Der Fortschritt steht in der Unterhaltung.",
+            }),
+          );
       },
     }),
     command("conversation update", {
@@ -2250,12 +2288,18 @@ const everydayCommands = (t: Translate) => {
     }),
     command("unkeep", {
       summary: t({
-        en: "Stop keeping a conversation (Manage access required)",
-        de: "Unterhaltung nicht mehr aufbewahren (Verwaltungszugriff erforderlich)",
+        en: "Stop keeping a conversation (Cloud administrator required)",
+        de: "Unterhaltung nicht mehr aufbewahren (Cloud-Admin-Rechte erforderlich)",
       }),
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
         ...mailboxOption,
+        reason: flag.string({
+          description: t({
+            en: "Reason for lifting the keep (at most 500 characters)",
+            de: "Grund für das Aufheben der Aufbewahrung (höchstens 500 Zeichen)",
+          }),
+        }),
         yes: confirmFlag(
           t({
             en: "The conversation can be deleted again. Cloud copies already deleted on the mail server disappear from view; their stored contents remain. Stop keeping it?",
@@ -2273,11 +2317,13 @@ const everydayCommands = (t: Translate) => {
             }),
           );
         const id = requireMailResourceId(args.conversation, t({ en: "Conversation ID", de: "Unterhaltungs-ID" }));
-        const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+        const mailboxRef = await mailboxRefOrDefault(ctx, flags.mailbox, t);
+        // Cloud admins can lift keeps without a mailbox grant; exact IDs must reach that service directly.
+        const mailboxId = MAIL_RESOURCE_ID_PATTERN.test(mailboxRef) ? mailboxRef : (await resolveMailbox(ctx, mailboxRef, t)).id;
         const result = await readApi<{ conversationId: string; released: boolean }>(
           ctx,
-          `/mailboxes/${mailbox.id}/conversations/${id}/keep`,
-          { method: "DELETE" },
+          `/mailboxes/${mailboxId}/conversations/${id}/keep`,
+          flags.reason !== undefined ? jsonRequest("DELETE", { reason: flags.reason }) : { method: "DELETE" },
         );
         if (!printStructured(ctx, result))
           ctx.print(t({ en: "The conversation is no longer kept.", de: "Die Unterhaltung wird nicht mehr aufbewahrt." }));
@@ -2893,6 +2939,142 @@ const composeLogoCommands = (t: Translate) => [
   }),
 ];
 
+/** Read and reverse mailbox-scoped rule effects through the public log API. */
+const automationLogCommands = (t: Translate) => {
+  const mailbox = {
+    mailbox: flag.string({
+      description: t({
+        en: "Mailbox id or exact name; defaults to `cld mail use`",
+        de: "Postfach-ID oder exakter Name; Standard aus `cld mail use`",
+      }),
+    }),
+  };
+  const itemArgs = { id: arg.required({ description: t({ en: "Automation log entry id", de: "ID des Protokolleintrags" }) }) };
+  const printItem = (ctx: CloudCliContext, item: AutomationLogItem) => {
+    ctx.print(`${item.conversation.subject} (${item.id})`);
+    ctx.print(`${item.at} · ${item.by.name} · ${item.outcome}`);
+    ctx.print(`${t({ en: "Sender", de: "Absender" })}: ${item.conversation.from.name ?? ""} <${item.conversation.from.email}>`);
+    ctx.print(`${t({ en: "Effects", de: "Änderungen" })}: ${JSON.stringify(item.effects)}`);
+    ctx.print(`${t({ en: "Reasons", de: "Gründe" })}: ${JSON.stringify(item.reasons)}`);
+    ctx.print(`${t({ en: "Undo", de: "Rückgängig" })}: ${item.undo.state}${item.undo.reason ? ` (${item.undo.reason})` : ""}`);
+  };
+  return [
+    command("automation log", {
+      summary: t({ en: "List the mailbox automation log", de: "Das Automatisierungsprotokoll des Postfachs anzeigen" }),
+      flags: {
+        ...mailbox,
+        day: flag.string({
+          description: t({
+            en: "UTC day as YYYY-MM-DD; defaults to today's UTC date",
+            de: "UTC-Tag als YYYY-MM-DD; Standard ist das heutige UTC-Datum",
+          }),
+        }),
+        filter: flag.enum(["all", "assignments", "uncertain", "skipped", "manual"] as const, {
+          description: t({ en: "Outcome filter", de: "Ergebnisfilter" }),
+        }),
+        q: flag.string({
+          description: t({
+            en: "Search subject, sender, rule, or target (at most 200 characters)",
+            de: "Betreff, Absender, Regel oder Ziel suchen (höchstens 200 Zeichen)",
+          }),
+        }),
+        before: flag.string({ description: t({ en: "Cursor from nextCursor", de: "Cursor aus nextCursor" }) }),
+        limit: flag.int({
+          min: 1,
+          max: 50,
+          default: 50,
+          description: t({ en: "Maximum entries per page (1–50)", de: "Höchstzahl der Einträge pro Seite (1–50)" }),
+        }),
+      },
+      run: async ({ ctx, flags }) => {
+        if (flags.day !== undefined && !z.iso.date().safeParse(flags.day).success)
+          throw new Error(t({ en: "--day must be a valid date as YYYY-MM-DD.", de: "--day muss ein gültiges Datum als YYYY-MM-DD sein." }));
+        if (flags.q !== undefined && flags.q.length > 200)
+          throw new Error(t({ en: "--q accepts at most 200 characters.", de: "--q erlaubt höchstens 200 Zeichen." }));
+        const resolved = await resolveMailbox(ctx, flags.mailbox, t);
+        const query = new URLSearchParams({ limit: String(flags.limit) });
+        for (const [key, value] of Object.entries({ day: flags.day, filter: flags.filter, q: flags.q, before: flags.before }))
+          if (value !== undefined) query.set(key, value);
+        const page = await readApi<AutomationLogPage>(ctx, `/mailboxes/${resolved.id}/automation-log?${query}`);
+        printTable(
+          ctx,
+          page,
+          page.items.map((item) => ({
+            id: item.id,
+            at: item.at,
+            subject: item.conversation.subject,
+            sender: item.conversation.from.email,
+            by: item.by.name,
+            outcome: item.outcome,
+            undo: item.undo.state,
+          })),
+          [
+            { key: "at", label: t({ en: "TIME", de: "ZEIT" }) },
+            { key: "subject", label: t({ en: "SUBJECT", de: "BETREFF" }) },
+            { key: "sender", label: t({ en: "SENDER", de: "ABSENDER" }) },
+            { key: "by", label: t({ en: "BY", de: "DURCH" }) },
+            { key: "outcome", label: t({ en: "OUTCOME", de: "ERGEBNIS" }) },
+            { key: "undo", label: t({ en: "UNDO", de: "RÜCKGÄNGIG" }) },
+            { key: "id", label: "ID" },
+          ],
+        );
+        if (ctx.options.output !== "text") return;
+        ctx.print(`${page.day}: ${JSON.stringify(page.counts)}`);
+        if (page.items.length === 0) ctx.print(t({ en: "No automation log entries match.", de: "Keine passenden Protokolleinträge." }));
+        if (page.nextCursor) {
+          const next = new URLSearchParams(query);
+          next.set("day", page.day);
+          next.set("before", page.nextCursor);
+          const argumentsText = [...next].map(([key, value]) => `--${key} '${value.replaceAll("'", "'\\''")}'`).join(" ");
+          ctx.print(`${t({ en: "Next page", de: "Nächste Seite" })}: cld mail automation log --mailbox '${resolved.id}' ${argumentsText}`);
+        }
+      },
+    }),
+    command("automation log show", {
+      summary: t({
+        en: "Show a rule's effects, decision chain, and AI call counts",
+        de: "Änderungen, Entscheidungskette und KI-Aufrufe einer Regel anzeigen",
+      }),
+      args: itemArgs,
+      flags: mailbox,
+      run: async ({ ctx, args, flags }) => {
+        const resolved = await resolveMailbox(ctx, flags.mailbox, t);
+        const detail = await readApi<AutomationLogDetail>(ctx, `/mailboxes/${resolved.id}/automation-log/${encodeURIComponent(args.id)}`);
+        if (printStructured(ctx, detail)) return;
+        printItem(ctx, detail);
+        ctx.print(`${t({ en: "Decision chain", de: "Entscheidungskette" })}: ${JSON.stringify(detail.chain, null, 2)}`);
+        ctx.print(`${t({ en: "AI calls", de: "KI-Aufrufe" })}: ${JSON.stringify(detail.aiCalls)}`);
+      },
+    }),
+    command("automation log undo", {
+      summary: t({
+        en: "Undo current rule effects and prevent this rule repeating those effects on the conversation",
+        de: "Aktuelle Regeländerungen rückgängig machen und deren Wiederholung für diese Unterhaltung verhindern",
+      }),
+      args: itemArgs,
+      flags: mailbox,
+      run: async ({ ctx, args, flags }) => {
+        const resolved = await resolveMailbox(ctx, flags.mailbox, t);
+        const result = await readApi<{ item: AutomationLogItem }>(
+          ctx,
+          `/mailboxes/${resolved.id}/automation-log/${encodeURIComponent(args.id)}/undo`,
+          { method: "POST" },
+        );
+        if (printStructured(ctx, result)) return;
+        printItem(ctx, result.item);
+        ctx.print(`${t({ en: "Reverted", de: "Rückgängig gemacht" })}: ${JSON.stringify(result.item.undo.reverted ?? [])}`);
+        ctx.print(`${t({ en: "Kept", de: "Beibehalten" })}: ${JSON.stringify(result.item.undo.kept ?? [])}`);
+        ctx.print(
+          t({
+            en: "This rule will not repeat the reverted effect classes on this conversation, including on later replies, unless you redo the undo.",
+            de: "Diese Regel führt die rückgängig gemachten Änderungsarten auch bei späteren Antworten nicht erneut aus. „Wiederholen“ stellt nur die rückgängig gemachten Änderungen wieder her.",
+          }),
+        );
+      },
+    }),
+  ];
+};
+
 /** Commands whose help stays in English; `mailCommands` adds the localized everyday commands. */
 const specialistCommands = {
   groupSummaries: {
@@ -2917,6 +3099,7 @@ const specialistCommands = {
     repair: "Repair mailbox folder and message hydration state",
     automation: "Create, inspect, and run guided incoming automations",
     "saved-view": "Create and manage saved conversation views",
+    view: "Choose how a mailbox looks on large screens and phones",
     scheduled: "Inspect and cancel scheduled message delivery",
     sender: "Preview and update messages from one sender or domain",
     subscription: "Inspect and manage mailing-list subscriptions",
@@ -3064,6 +3247,35 @@ const specialistCommands = {
         const restored = await readApi<Mailbox>(ctx, `/mailboxes/${mailboxId}/restore`, { method: "POST" });
         if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.mailbox", restored))) return;
         ctx.print(`Restored ${restored.name} in paused state. Verify the provider, then explicitly resume synchronization.`);
+      },
+    }),
+    command("view get", {
+      summary: "Read your view for a mailbox on large screens and phones",
+      args: { mailbox: arg.required({ description: "Mailbox id or exact name" }) },
+      run: async ({ ctx, args }) => {
+        const mailbox = await resolveMailbox(ctx, args.mailbox);
+        const view = await readApi<MailViewPreference>(ctx, `/mailboxes/${mailbox.id}/view`);
+        if (printStructured(ctx, view)) return;
+        ctx.print(`Large: ${view.large} · Phone: ${view.phone}`);
+      },
+    }),
+    command("view set", {
+      summary: "Choose your view for a mailbox; omitted device classes keep their value",
+      args: { mailbox: arg.required({ description: "Mailbox id or exact name" }) },
+      flags: {
+        large: flag.enum(LARGE_MAIL_VIEWS, { description: "Large-screen view" }),
+        phone: flag.enum(PHONE_MAIL_VIEWS, { description: "Phone view" }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        if (!flags.large && !flags.phone) throw new Error("Pass --large, --phone, or both.");
+        const mailbox = await resolveMailbox(ctx, args.mailbox);
+        const view = await readApi<MailViewPreference>(
+          ctx,
+          `/mailboxes/${mailbox.id}/view`,
+          jsonRequest("PATCH", { large: flags.large, phone: flags.phone }),
+        );
+        if (printStructured(ctx, view)) return;
+        ctx.print(`Large: ${view.large} · Phone: ${view.phone}`);
       },
     }),
     command("mailbox preferences", {
@@ -7522,6 +7734,7 @@ const specialistCommands = {
       flags: {
         ...mailboxFlag,
         revision: flag.int({ required: true, min: 1, description: "Expected current revision" }),
+        "recompute-ai": flag.boolean({ description: "Recompute successful inference during --retry-failed; consumes the mailbox budget" }),
         "retry-failed": flag.boolean({
           description: "Re-run only messages whose latest run of this automation version failed or was canceled",
         }),
@@ -7529,6 +7742,7 @@ const specialistCommands = {
       },
       run: async ({ ctx, args, flags }) => {
         if (!flags.yes) throw new Error("Pass --yes to start the incoming-automation backfill.");
+        if (flags["recompute-ai"] && !flags["retry-failed"]) throw new Error("--recompute-ai requires --retry-failed.");
         if (flags.revision === undefined) throw new Error("Missing expected incoming-automation revision.");
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
         const current = await readApi<IncomingAutomation>(
@@ -7544,6 +7758,7 @@ const specialistCommands = {
             operationId: crypto.randomUUID(),
             expectedRevision: flags.revision,
             ...(flags["retry-failed"] ? { retryFailed: true } : {}),
+            ...(flags["recompute-ai"] ? { recomputeAi: true } : {}),
           }),
         );
         if (printStructured(ctx, result)) return;
@@ -7628,6 +7843,54 @@ const specialistCommands = {
             ctx.print(`${diagnostic.severity}: ${diagnostic.path}: ${diagnostic.message}`);
           }
         }
+      },
+    }),
+    command("workflow try", {
+      summary: "Try a workflow on recent messages without making changes or calling AI",
+      args: { workflowId: arg.optional({ description: "Stable workflow id (omit with --file)" }) },
+      flags: {
+        ...mailboxFlag,
+        last: flag.int({ min: 1, max: 100, default: 50, description: "Number of recent messages (1–100)" }),
+        file: flag.string({ description: "Unsaved YAML file (mailbox admin)" }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        if (Boolean(args.workflowId) === Boolean(flags.file)) throw new Error("Provide a workflow id or --file, exclusively.");
+        const mailbox = await resolveMailbox(ctx, flags.mailbox);
+        const definition = flags.file ? { source: await Bun.file(flags.file).text() } : { workflowId: args.workflowId };
+        let merged: WorkflowTryResult | undefined;
+        let cursor: string | null = null;
+        do {
+          const result: WorkflowTryResult = await readApi<WorkflowTryResult>(
+            ctx,
+            `/mailboxes/${mailbox.id}/workflows/try`,
+            jsonRequest("POST", { ...definition, last: flags.last, cursor, batch: 25 }),
+          );
+          if (merged && result.checked <= merged.checked) throw new Error("Workflow preview did not advance; run it again.");
+          merged = merged
+            ? {
+                ...result,
+                items: [...merged.items, ...result.items],
+                aiCalls: {
+                  min: merged.aiCalls.min + result.aiCalls.min,
+                  max: merged.aiCalls.max + result.aiCalls.max,
+                },
+              }
+            : result;
+          cursor = result.cursor;
+        } while (cursor !== null);
+        if (printStructured(ctx, merged)) return;
+        const count = (outcome: string) => merged.items.filter((item) => item.outcome === outcome).length;
+        const calls =
+          merged.aiCalls.min === merged.aiCalls.max ? String(merged.aiCalls.min) : `${merged.aiCalls.min}–${merged.aiCalls.max}`;
+        ctx.print(
+          `${count("match")} match · ${count("skipped")} skipped · ${count("none")} none · ${calls} AI calls would be needed, none made`,
+        );
+        for (const item of merged.items)
+          ctx.print(
+            `${item.outcome} · ${item.from.name ?? item.from.email} · ${item.subject} · ${item.messageId}${
+              item.problems.length ? ` · ${item.problems.map((problem) => problem.code).join(", ")}` : ""
+            }`,
+          );
       },
     }),
     command("workflow list", {
@@ -8003,15 +8266,23 @@ const mailCommands = (locale?: string) => {
     }),
     groupSummaries: {
       ...specialistCommands.groupSummaries,
+      automation: t({
+        en: "Manage incoming automations and inspect rule effects",
+        de: "Eingehende Automatisierungen verwalten und Regeländerungen prüfen",
+      }),
       "compose logo": t({
         en: "Inspect and replace the mailbox signature logo",
         de: "Das Signaturlogo des Postfachs anzeigen und ersetzen",
       }),
       comments: t({ en: "Discuss a conversation internally", de: "Eine Unterhaltung intern besprechen" }),
       tag: t({ en: "Tag conversations and manage mailbox tags", de: "Unterhaltungen taggen und Postfach-Tags verwalten" }),
+      "conversation summary": t({
+        en: "Request and inspect conversation summaries",
+        de: "Zusammenfassungen von Unterhaltungen anfordern und prüfen",
+      }),
       conversation: t({ en: "Inspect, merge, and split conversations", de: "Unterhaltungen prüfen, zusammenführen und teilen" }),
     },
-    commands: [...everydayCommands(t), ...specialistCommands.commands, ...composeLogoCommands(t)],
+    commands: [...everydayCommands(t), ...specialistCommands.commands, ...composeLogoCommands(t), ...automationLogCommands(t)],
   });
 };
 

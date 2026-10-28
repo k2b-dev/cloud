@@ -134,7 +134,9 @@ afterAll(async () => {
 const figures = (page: Page) => page.locator("figure.notebook-book-chart");
 const drawing = (figure: Locator) => figure.locator(".k2b-chart");
 const tooltip = (figure: Locator) => drawing(figure).getByRole("tooltip");
-const currency = (value: number) => new Intl.NumberFormat("de", { style: "currency", currency: "EUR" }).format(value);
+// Every amount of the note is whole, so a currency without decimals writes no cents.
+const currency = (value: number) =>
+  new Intl.NumberFormat("de", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
 const normalized = (text: string) => text.replace(/[\s\u00a0\u202f]+/g, " ").trim();
 const open = async (options: BrowserContextOptions = {}) => {
   const context = await browser.newContext({ viewport: { width: 1200, height: 900 }, ...options });

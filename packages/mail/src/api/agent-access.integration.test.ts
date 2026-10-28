@@ -8,7 +8,6 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { mailCapabilities } from "../capabilities";
 import { MailboxListInputSchema } from "../capability-contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { getMailboxAccess } from "../service/access";
 import type { MailRequestContext } from "../service/auth";
 import { loadAssignmentReviewChange } from "../service/capability-review-readers";
@@ -127,7 +126,6 @@ suite("Mail REST access for service-account credentials", () => {
   };
 
   beforeAll(async () => {
-    await migrate();
     const rows = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-agent-owner-${suffix}`}, 'local', 'user', 'Owner', false)
@@ -140,7 +138,7 @@ suite("Mail REST access for service-account credentials", () => {
     users.set("owner-session", owner);
     verifyAccessToken = spyOn(oauthTokens, "verifyAccessToken").mockImplementation(async (token: string) => {
       const user = users.get(token);
-      return user ? { kind: "user", payload: {}, user, scopes: [] } : null;
+      return user ? { kind: "user", payload: {}, user, scopes: ["read", "write"] } : null;
     });
 
     const ownerContext: MailRequestContext = {

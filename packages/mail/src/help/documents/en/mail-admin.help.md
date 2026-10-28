@@ -214,7 +214,9 @@ Only Cloud administrators can open **Admin → Mail**. **Manage** access to a ma
 
 Open **Security** from this page to review reported suspicious messages and keep exact organization-wide protection rules. For what users see and safe rules, see [Recognize and report suspicious mail](/app/mail/help/mail-security).
 
-Use **Manage permissions** on a mailbox to recover a mailbox without a manager or to correct an accidental access entry. This is an explicit, audited access change. Cloud administrators do not get access to mailbox content implicitly. Add a replacement manager before you remove the last person with **Manage** access.
+Open **Kept** to see every kept conversation of every mailbox, including deleted mailboxes, with mailbox, subject, sender, date, who kept it, and since when. Search finds subject, sender, and mailbox. Open a conversation to read its messages, attachment names, and its history: who kept it, who opened or downloaded it here, and who tried to stop keeping it. **Download as JSON** saves the conversation in the documented export format, and selecting several conversations downloads them in one file. The export holds headers, text, sanitized HTML, and attachment details, but no attachment files. **Stop keeping** lifts the protection after you confirm, with an optional reason. Only Cloud administrators can stop keeping a conversation, also in the mailbox itself. Opening, downloading, and stopping are recorded in the Cloud audit log.
+
+Use **Manage permissions** on a mailbox to recover a mailbox without a manager or to correct an accidental access entry. This is an explicit, audited access change. Cloud administrators do not get access to mailbox content implicitly; the one exception is kept conversations under **Kept**, and each opening there is logged. Add a replacement manager before you remove the last person with **Manage** access.
 
 The CLI offers the same recovery tools:
 
