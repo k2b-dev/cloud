@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to Spaces and Notebooks.
-updated: 2026-10-27
+updated: 2026-10-28
 ---
 
 # Chat system conversations
@@ -168,6 +168,13 @@ falling back to the installation zone. Each query returns a data array of
 continuation in `page.nextCursor`. Item reads and activity queries use the
 same owning application's grants and credential scope checks. A notebook edit
 bucket remains one row; the query does not create additional edit records.
+
+## Spaces inactivity
+
+Spaces marks an open task inactive after 30 days without changes to the task
+or its checklist. Comments and Chat discussion messages do not count as
+activity. Spaces does not query Chat for this filter; an active discussion can
+therefore accompany an inactive task.
 
 ## Follow pages
 
