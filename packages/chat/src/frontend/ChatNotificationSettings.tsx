@@ -20,7 +20,7 @@ export const NOTIFICATION_SETTINGS_HREF = "/me/notifications";
  * so in a fixed place below, with a retry, so nothing moves.
  */
 export default function ChatNotificationSettings(props: {
-  conversation: Conversation;
+  conversation: Pick<Conversation, "kind" | "channel">;
   notifications: Notifications;
   dateConfig: DateContext;
   now: () => Date;

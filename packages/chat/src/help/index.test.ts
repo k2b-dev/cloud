@@ -11,6 +11,7 @@ describe("chatHelp", () => {
       "chat-threads",
       "chat-system-chats",
       "chat-unread",
+      "chat-notifications",
       "chat-members",
     ]);
     expect(german.map((document) => document.id)).toEqual(english.map((document) => document.id));
