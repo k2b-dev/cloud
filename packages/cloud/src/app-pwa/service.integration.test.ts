@@ -1,9 +1,15 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import * as bun from "bun";
 import { SQL, sql } from "bun";
 import { z } from "zod";
-import { databaseSuite, requireDatabaseUrl } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, requireDatabaseUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import autocompleteFixture from "../services/geo/fixtures/autocomplete.json";
+import { geoTestConfig } from "../services/geo/geo.test-fixture";
+import { GeoapifyAdapter } from "../services/geo/geoapify";
+import { coreGeo, createGeoService } from "../services/geo/service";
+import * as geoSettings from "../services/geo/settings";
 import { createTestBrowserSignIn } from "../services/session/session.test-fixture";
+import * as settings from "../services/settings";
 import { encryptValue } from "../services/settings/crypto";
 import { type AppPwaOptions, type AppPwaWebSignIn, appPwaCommand, appPwaDeviceOperation, appPwaQuery } from "./contracts";
 import { createAppPwaService } from "./service";
@@ -136,6 +142,203 @@ suite("App-PWA durable service", () => {
     await sql`DELETE FROM auth.access WHERE id=${grantId}::uuid`;
     await sql`DELETE FROM auth.users WHERE id=${ownerId}::uuid`;
     await sql`DELETE FROM settings.entries WHERE key='user.category.login.enabled'`;
+  });
+
+  suiteFor("database", "valkey")("allowlisted Core autocomplete", () => {
+    const instant = new Date("2038-02-10T10:00:00.000Z");
+    const allowed = createAppPwaService({ ...base, coreQueries: ["address.autocomplete"] });
+    let runGeo: typeof coreGeo.autocompleteForAppPwa;
+    let geoCall: ReturnType<typeof spyOn<typeof coreGeo, "autocompleteForAppPwa">>;
+    let rate: ReturnType<typeof spyOn<typeof settings, "get">>;
+    let plan: ReturnType<typeof spyOn<typeof geoSettings, "readGeoConfig">>;
+    beforeAll(async () => {
+      await allowed.setup();
+    });
+    beforeEach(async () => {
+      await sql`DELETE FROM geo.usage WHERE subject=${`user:${ownerId}`}`;
+      await sql`DELETE FROM geo.shares WHERE subject=${`user:${ownerId}`}`;
+      const geo = createGeoService({
+        now: () => instant,
+        config: async () => ({ ...geoTestConfig, personDailyCredits: 1 }),
+        adapter: new GeoapifyAdapter({ now: () => instant, fetch: async () => Response.json(autocompleteFixture) }),
+        cache: { get: async () => null, put: async () => {} },
+        bucket: { acquire: async () => async () => {} },
+      });
+      runGeo = geo.autocompleteForAppPwa;
+      geoCall = spyOn(coreGeo, "autocompleteForAppPwa").mockImplementation(runGeo);
+      rate = spyOn(settings, "get").mockResolvedValue(100);
+      plan = spyOn(geoSettings, "readGeoConfig").mockResolvedValue({ ...geoTestConfig, plan: "custom", customRps: 100 });
+    });
+    afterEach(() => {
+      geoCall.mockRestore();
+      rate.mockRestore();
+      plan.mockRestore();
+    });
+    afterAll(async () => {
+      await sql`DELETE FROM geo.usage WHERE subject=${`user:${ownerId}`}`;
+      await sql`DELETE FROM geo.shares WHERE subject=${`user:${ownerId}`}`;
+    });
+    test("valid visit charges its owner, preserves provenance, audits via, and never renews idle time", async () => {
+      const current = await visiting();
+      const before = await idle(current.visit.id);
+      const result = await allowed.coreQuery(
+        current.boot.credential,
+        current.visit.id,
+        "address.autocomplete",
+        { text: "Orle" },
+        undefined,
+        "de",
+      );
+      expect(result.suggestions.length).toBeGreaterThan(0);
+      expect(result.provenance.provider).toBe("geoapify");
+      expect(await idle(current.visit.id)).toBe(before);
+      const rows = await sql<
+        { used: number }[]
+      >`SELECT used::int AS used FROM geo.usage WHERE subject=${`user:${ownerId}`} AND period='2038-02-10'`;
+      expect(rows[0]?.used).toBe(1000);
+      const events = await sql<
+        { actor_user_id: string | null; metadata: Record<string, unknown> }[]
+      >`SELECT actor_user_id,metadata FROM audit.events
+        WHERE action='app_pwa.core.query' AND metadata->'via'->>'visitId'=${current.visit.id}`;
+      expect(events[0]?.actor_user_id).toBeNull();
+      expect(events[0]?.metadata.via).toEqual({ kind: "visit", appId: "signing", deviceId: current.device.id, visitId: current.visit.id });
+      await expect(
+        allowed.coreQuery(current.boot.credential, current.visit.id, "address.autocomplete", { text: "Another" }),
+      ).rejects.toMatchObject({ code: "GEO_BUDGET_EXHAUSTED", details: { scope: "person" } });
+    });
+    test("a paired device can query before a visit; undeclared and writing queries are denied", async () => {
+      const current = await paired();
+      await expect(allowed.coreQuery(current.boot.credential, undefined, "address.autocomplete", { text: "Orle" })).resolves.toHaveProperty(
+        "suggestions",
+      );
+      for (const query of ["address.geocode", "message.send", "__proto__"]) {
+        await expect(allowed.coreQuery(current.boot.credential, undefined, query, {})).rejects.toMatchObject({ code: "FORBIDDEN" });
+      }
+      await expect(service.coreQuery(current.boot.credential, undefined, "address.autocomplete", { text: "Orle" })).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+      expect(geoCall).toHaveBeenCalledTimes(1);
+    });
+    test("unpaired, revoked and expired devices never call geo", async () => {
+      const boot = await service.bootstrap();
+      await expect(allowed.coreQuery(boot.credential, undefined, "address.autocomplete", { text: "Orle" })).rejects.toMatchObject({
+        code: "BROWSER_REQUIRED",
+      });
+      const expired = await paired();
+      await sql`UPDATE app_pwa_b_service_test._cloud_pwa_devices SET expires_at='2000-01-01T00:00:00Z' WHERE id=${expired.device.id}::uuid`;
+      await expect(allowed.coreQuery(expired.boot.credential, undefined, "address.autocomplete", { text: "Orle" })).rejects.toMatchObject({
+        code: "EXPIRED",
+      });
+      const revoked = await paired();
+      await service.revokeDevice(signIn, revoked.device.id);
+      await expect(allowed.coreQuery(revoked.boot.credential, undefined, "address.autocomplete", { text: "Orle" })).rejects.toMatchObject({
+        code: "REVOKED",
+      });
+      expect(geoCall).not.toHaveBeenCalled();
+    });
+    test("explicit terminal visits fail; device mode resumes after expiry or completion", async () => {
+      const expired = await visiting();
+      await sql`UPDATE app_pwa_b_service_test._cloud_pwa_visits SET last_used_at='2000-01-01T00:00:00Z' WHERE id=${expired.visit.id}::uuid`;
+      await expect(
+        allowed.coreQuery(expired.boot.credential, expired.visit.id, "address.autocomplete", { text: "Orle" }),
+      ).rejects.toMatchObject({ code: "EXPIRED" });
+      expect((await service.status(expired.boot.credential)).visit).toBeNull();
+      await allowed.coreQuery(expired.boot.credential, undefined, "address.autocomplete", { text: "Orle" });
+      expect(geoCall.mock.calls[0]?.[1].actor.kind).toBe("device");
+      const ended = await visiting();
+      await service.endVisit(ended.boot.credential, ended.visit.id);
+      await expect(
+        allowed.coreQuery(ended.boot.credential, ended.visit.id, "address.autocomplete", { text: "Orle" }),
+      ).rejects.toMatchObject({ code: "REVOKED" });
+      // Reset this test's owner budget to exercise another valid device-mode request.
+      await sql`DELETE FROM geo.usage WHERE subject=${`user:${ownerId}`}`;
+      await allowed.coreQuery(ended.boot.credential, undefined, "address.autocomplete", { text: "Orle" });
+      expect(geoCall.mock.calls[1]?.[1].actor.kind).toBe("device");
+    });
+    test("omitted visitId still binds a live visit", async () => {
+      const current = await visiting();
+      await allowed.coreQuery(current.boot.credential, undefined, "address.autocomplete", { text: "Orle" });
+      expect(geoCall.mock.calls[0]?.[1].actor).toMatchObject({ kind: "visit", visitId: current.visit.id });
+    });
+    test("provider work releases authority and pool connections; revocation denies the late response", async () => {
+      const current = await visiting();
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const call = runGeo;
+      let enteredCount = 0;
+      geoCall.mockImplementation(async (...args) => {
+        if (++enteredCount === 12) entered.resolve();
+        await release.promise;
+        return call(...args);
+      });
+      const responses = Array.from({ length: 12 }, () =>
+        allowed.coreQuery(current.boot.credential, current.visit.id, "address.autocomplete", { text: "Orle" }),
+      );
+      // Observe every rejection from the start, including admission refusals.
+      const settled = Promise.allSettled(responses);
+      try {
+        await Promise.race([
+          entered.promise,
+          settled.then(() => {
+            throw new Error("All parallel queries ended before reaching the provider barrier");
+          }),
+        ]);
+        expect(enteredCount).toBe(12);
+        // These must complete while provider work is still blocked, without waiting for the request timeout.
+        await service.revokeDevice(signIn, current.device.id);
+        await sql`INSERT INTO settings.entries(key,value) VALUES ('app_pwa.pool_test','false') ON CONFLICT(key) DO UPDATE SET value='false'`;
+      } finally {
+        release.resolve();
+      }
+      const results = await settled;
+      expect(results.every((result) => result.status === "rejected")).toBe(true);
+      expect(results.some((result) => result.status === "rejected" && result.reason.code === "REVOKED")).toBe(true);
+      await sql`DELETE FROM settings.entries WHERE key='app_pwa.pool_test'`;
+    });
+    test("a visit opened during a device query asks for retry without invalidating the browser", async () => {
+      const current = await paired();
+      const call = runGeo;
+      geoCall.mockImplementationOnce(async (...args) => {
+        const issued = await service.issueVisit(signIn, {
+          requestId: id(),
+          deviceId: current.device.id,
+          subject: { documentId, revision: 1 },
+        });
+        if (!issued.qr) throw new Error("fixture has no visit QR");
+        await service.claimVisit(current.boot.credential, issued.qr);
+        return call(...args);
+      });
+      await expect(allowed.coreQuery(current.boot.credential, undefined, "address.autocomplete", { text: "Orle" })).rejects.toMatchObject({
+        code: "UNAVAILABLE",
+      });
+      expect((await service.status(current.boot.credential)).visit?.state).toBe("active");
+    });
+    test("Valkey limits are shared across instances and visits on a device", async () => {
+      rate.mockResolvedValue(1);
+      const clock = spyOn(Date, "now").mockReturnValue(instant.getTime());
+      try {
+        const current = await paired();
+        await allowed.coreQuery(current.boot.credential, undefined, "address.autocomplete", { text: "Orle" });
+        const other = createAppPwaService({ ...base, coreQueries: ["address.autocomplete"] });
+        await other.setup();
+        await expect(other.coreQuery(current.boot.credential, undefined, "address.autocomplete", { text: "Orle" })).rejects.toMatchObject({
+          code: "RATE_LIMITED",
+        });
+        expect(geoCall).toHaveBeenCalledTimes(1);
+      } finally {
+        clock.mockRestore();
+      }
+    });
+    test("oversized and invalid inputs fail before geo", async () => {
+      const current = await paired();
+      await expect(
+        allowed.coreQuery(current.boot.credential, undefined, "address.autocomplete", { text: "x".repeat(9000) }),
+      ).rejects.toMatchObject({ code: "TOO_LARGE" });
+      await expect(
+        allowed.coreQuery(current.boot.credential, undefined, "address.autocomplete", { text: "Orle", ownerUserId: ownerId }),
+      ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      expect(geoCall).not.toHaveBeenCalled();
+    });
   });
 
   test("bootstrap cannot select an identity, and a recreated service uses the same database authority", async () => {
