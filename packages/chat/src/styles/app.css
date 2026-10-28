@@ -115,6 +115,10 @@
   grid-row: 1;
   font-variant-numeric: tabular-nums;
 }
+/* A chat row's avatar takes the icon's place at its own size. */
+.k2b-ui .k2b-app-workspace__sidebar-item-icon:has(> .k2b-avatar) {
+  width: 2rem;
+}
 .chat-list__unread {
   display: flex;
   grid-row: 2;
@@ -905,7 +909,6 @@
   visibility: hidden;
 }
 .chat-for-you__row[data-unread] .chat-for-you__count { visibility: visible; }
-.chat-discover__icon { display: flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; flex-shrink: 0; border-radius: 50%; background: var(--k2b-surface-muted); }
 .chat-discover__subscribe { width: 8.5rem; flex-shrink: 0; }
 
 /* The audience line keeps its height while it counts, shows the count, or offers Try again. */
