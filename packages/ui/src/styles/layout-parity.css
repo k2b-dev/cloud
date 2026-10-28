@@ -4465,6 +4465,10 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   font-size: 0.8125rem;
 }
 
+.k2b-ui .k2b-qr-scanner > .k2b-qr-scanner__retry {
+  justify-self: start;
+}
+
 /* The camera picture is dark in both themes. */
 .k2b-ui .k2b-qr-scanner__preview {
   position: relative;
