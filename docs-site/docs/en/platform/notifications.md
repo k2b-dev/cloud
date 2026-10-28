@@ -141,6 +141,7 @@ domain payload schema. `render()` returns:
 | `targetHref` | No | Canonical same-origin absolute path beginning with `/` |
 | `group` | No | Stable browser group key: 1–128 characters matching `^[A-Za-z0-9._:-]+$`, with no whitespace; grouping requires an application ID that starts with a lowercase letter and contains only lowercase letters, digits, and hyphens |
 | `badge` | No | Non-negative safe integer for the app badge; `0` clears it |
+| `alert` | No | Boolean, default `true`; `false` shows or replaces the browser notification without sound or vibration |
 
 `targetHref` must point to a route on the same Cloud origin. External URLs are
 rejected.
@@ -292,14 +293,21 @@ a newer one in the same group, for example after a delivery retry, the device
 keeps the newer notification without a new alert. Without `group`, notifications
 keep their event ID as the tag.
 
+Set `alert: false` to update a group quietly. The notification replaces the
+visible one, or appears, without sound or vibration (`silent: true` instead of
+`renotify: true`). Use it for follow-ups the person has not yet seen, for
+example the fifth unread message in a chat whose first message already
+alerted. Whether the device honours silence is up to the browser and operating
+system.
+
 Set `badge` to the application's current unread count. A positive count calls
 the Badging API; `0` clears the badge. Omitting it leaves the badge unchanged.
 The device applies a badge only when it was rendered at or after the last badge
 it applied. Badge support is optional: unsupported browsers and rejected badge
 requests silently leave it absent or unchanged, and the notification still appears.
 The badge belongs to the installed Cloud application, so applications that
-set it must decide which count to use. Email ignores `group` and `badge`.
-None of `group`, `badge`, and `preview` is stored on the notification event.
+set it must decide which count to use. Email ignores `group`, `badge`, and `alert`.
+None of `group`, `badge`, `alert`, and `preview` is stored on the notification event.
 The presentation `body` still stays out of the browser payload; applications
 opt into notification text through `preview`.
 
@@ -575,7 +583,7 @@ failures before event creation include:
 - an empty or overlong idempotency key;
 - payload data rejected by the Zod schema;
 - an error from `render()`;
-- an empty or overlong title, overlong body, unsafe `targetHref`, invalid `group`, or invalid `badge`;
+- an empty or overlong title, overlong body, unsafe `targetHref`, invalid `group`, invalid `badge`, or non-boolean `alert`;
 - a user ID that does not exist;
 - an invalid direct email address.
 
