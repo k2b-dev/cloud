@@ -93,6 +93,19 @@ describe("Chat threads on a desktop", () => {
       // Each thread link starts a view transition; WebKit sends input during one to <html>, so Back and the next click wait.
       await viewTransitionEnded(page);
       await page.locator(".chat-thread-picker", { hasText: "Problems" }).waitFor();
+      // The picker stands right beside the chat's title text, not at the far end of the head.
+      const titleEnd = await page.locator(".chat-conversation__header > .k2b-page-title").evaluate((title) => {
+        const walker = document.createTreeWalker(title, NodeFilter.SHOW_TEXT);
+        const range = document.createRange();
+        let end = 0;
+        while (walker.nextNode()) {
+          range.selectNodeContents(walker.currentNode);
+          end = Math.max(end, range.getBoundingClientRect().right);
+        }
+        return end;
+      });
+      const picker = await page.locator(".chat-conversation__picker").boundingBox();
+      expect(picker!.x - titleEnd).toBeLessThan(24);
       expect(await page.getByRole("feed").getByText("Problems: update 1", { exact: true }).count()).toBe(1);
       expect(await page.getByRole("feed").getByText("Updates: update 1", { exact: true }).count()).toBe(0);
       // "All threads" read everything it showed; the open thread reports reads for itself only.
@@ -386,7 +399,14 @@ describe("Chat threads on a phone", () => {
       await threads.getByText("Old network", { exact: true }).waitFor();
       await threads.getByText("Problems", { exact: true }).click();
       await page.waitForURL(`**/t/${problems}`);
-      await page.locator(".chat-conversation__thread-name", { hasText: "Problems" }).waitFor();
+      // The thread is the title, the chat and its members stand below it, and neither is cut off.
+      const head = page.locator(".chat-conversation__wide-title");
+      await head.locator(".chat-conversation__wide-name", { hasText: "Problems" }).waitFor();
+      expect(await head.locator(".chat-conversation__phone-subtitle").innerText()).toBe("IT · 3 members");
+      expect(await page.locator(".chat-conversation__header > .k2b-page-title").isVisible()).toBe(false);
+      expect(await head.locator("h1, p:visible").evaluateAll((lines) => lines.every((line) => line.scrollWidth <= line.clientWidth))).toBe(
+        true,
+      );
       await page.getByRole("link", { name: "Back to the threads", exact: true }).click();
       await page.waitForURL(`**/c/${chat}/threads`);
       await threads.getByText("Problems", { exact: true }).waitFor();

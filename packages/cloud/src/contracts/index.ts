@@ -2,6 +2,7 @@ export * from "./account-categories";
 export * from "./announcements";
 export * from "./app";
 export * from "./app-approval";
+export * from "./app-details";
 export * from "./avatar";
 export * from "./calendar-source";
 export * from "./calendar-view";
