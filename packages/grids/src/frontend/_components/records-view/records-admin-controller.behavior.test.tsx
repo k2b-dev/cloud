@@ -229,6 +229,8 @@ const createDefaultTableView = async (initial: {
     setDisableDirectInsert,
     fields,
     setFields,
+    tableFields: fields,
+    setTableFields: () => {},
     hiddenFields: columns.hiddenFlatFields,
     showColumns: columns.showFlatViewColumns,
     forms,
@@ -257,6 +259,8 @@ const renderAdminToolbar = async (root: HTMLElement, view: DefaultTableView) => 
         hiddenViewColumnCount={view.columns.hiddenViewColumnCount()}
         allowForms
         formsButtonLabel="Forms"
+        tableFields={view.fields()}
+        onFieldSettings={view.admin.openFieldSettings}
         onOpenTableSettings={() => {}}
         onAddField={() => void view.admin.openAddField()}
         onOpenForms={() => {}}

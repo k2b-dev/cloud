@@ -542,7 +542,7 @@ const mountTableEditor = async (overrides: Partial<RecordsViewProps>) => {
     await waitFor(() => !dialogCore.isOpen());
   };
   const deleteField = async (name: string) => {
-    document.querySelector<HTMLButtonElement>(`button[aria-label="Field settings settings for ${name}"]`)!.click();
+    document.querySelector<HTMLButtonElement>(`button[aria-label="Field settings for ${name}"]`)!.click();
     await waitFor(() => Boolean(buttonNamed("Delete field")));
     buttonNamed("Delete field")!.click();
     await waitFor(() => Boolean(buttonNamed("Delete")));
@@ -700,6 +700,122 @@ domTest("a field restored elsewhere returns to the search scope with the table's
     // The restored field is offered again, but the search that dropped it stays as the person left it.
     expect(page.readScope()).toEqual({ offered: ["Title", "Notes", "Due"], selected: [] });
     expect(page.searchInput()?.value).toBe("venue");
+  } finally {
+    page.cleanup();
+  }
+});
+
+/** A saved view that shows only the Title column; the table's other fields stay outside it. */
+const titleOnlyView = (): Partial<RecordsViewProps> => {
+  const query: RecordQuery = { columns: [{ fieldId: titleField.id }] };
+  const view: PublicView & { query: RecordQuery; displayConfig: { mode: "cards" } } = {
+    id: "VIEW01",
+    tableId: "TABLE1",
+    name: "Task cards",
+    description: null,
+    icon: null,
+    source: `from table {TABLE1} select {${titleField.id}}`,
+    ui: {},
+    ownerUserId: null,
+    position: 0,
+    deletedAt: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    query,
+    displayConfig: { mode: "cards" },
+  };
+  return {
+    viewId: view.id,
+    fields: [titleField],
+    activeView: view,
+    viewMode: true,
+    canEditActiveView: true,
+    activeRecordQuery: query,
+    workspaceRouteKey: "records:TABLE1:VIEW01:true",
+  };
+};
+
+const groupedByStatus = (): Partial<RecordsViewProps> => {
+  const groupBy: GroupBySpec[] = [{ fieldId: statusField.id }];
+  return {
+    initialState: { ...recordsViewProps({}).initialState, query: { groupBy } },
+    initialData: { items: [], buckets: [{ keys: ["open"], values: { "*__count": 2 } }], nextCursor: null },
+  };
+};
+
+/** Opens a page in edit mode and returns the fields its toolbar's "Fields" menu offers, or null without that menu. */
+const mountFieldsMenu = async (overrides: Partial<RecordsViewProps>) => {
+  const dom = createDomTestHarness();
+  delegateEvents(["click", "input"], dom.document);
+  const previousObserver = globalThis.IntersectionObserver;
+  Object.assign(globalThis, {
+    IntersectionObserver: class {
+      observe() {}
+      disconnect() {}
+    },
+  });
+  const { RecordsView } = modules!;
+  const { dialogCore } = await import("@k2b/ui");
+  const dispose = render(
+    () => createComponent(RecordsView, recordsViewProps({ canWrite: true, canManageTable: true, initialAdminMode: true, ...overrides })),
+    dom.root,
+  );
+  const document = dom.document;
+  const trigger = () =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>("button[aria-haspopup]")).find((node) => node.textContent?.trim() === "Fields");
+  const menuItems = () => Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="Fields"] [role="menuitem"]'));
+  return {
+    document,
+    trigger,
+    /** Opens the menu and lists its entries by accessible name. */
+    openMenu: async () => {
+      trigger()!.click();
+      await waitFor(() => menuItems().length > 0);
+      return menuItems().map((item) => item.getAttribute("aria-label"));
+    },
+    /** Chooses a field in the open menu and returns the title of the dialog it opens. */
+    choose: async (name: string) => {
+      menuItems()
+        .find((item) => item.getAttribute("aria-label") === `Field settings for ${name}`)!
+        .click();
+      await waitFor(() => dialogCore.isOpen());
+      return document.body.textContent?.includes(`Edit field — ${name}`) ?? false;
+    },
+    cleanup: () => {
+      while (dialogCore.isOpen()) dialogCore.close();
+      dispose();
+      dom.cleanup();
+      Object.assign(globalThis, { IntersectionObserver: previousObserver });
+    },
+  };
+};
+
+for (const [label, overrides] of [
+  ["the table view", {}],
+  ["the card view", { displayConfig: { mode: "cards" } }],
+  ["the calendar view", { displayConfig: { mode: "calendar" } }],
+  ["a grouped table", groupedByStatus()],
+  ["a saved view", titleOnlyView()],
+] as Array<[string, Partial<RecordsViewProps>]>) {
+  domTest(`edit mode in ${label} opens the settings of every table field from the toolbar`, async () => {
+    const page = await mountFieldsMenu(overrides);
+    try {
+      await waitFor(() => page.trigger() !== undefined);
+      // A saved view narrows its columns, but field settings belong to the table and list all of its fields.
+      expect(await page.openMenu()).toEqual(["Field settings for Title", "Field settings for People", "Field settings for Status"]);
+      expect(await page.choose("Status")).toBe(true);
+    } finally {
+      page.cleanup();
+    }
+  });
+}
+
+domTest("only people who manage the table get the fields menu", async () => {
+  // Someone who may edit a saved view but not the table works in edit mode without the table's field settings.
+  const page = await mountFieldsMenu({ ...titleOnlyView(), canManageTable: false });
+  try {
+    await waitFor(() => Boolean(page.document.body.textContent?.includes("Done")));
+    expect(page.trigger()).toBeUndefined();
   } finally {
     page.cleanup();
   }
