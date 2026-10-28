@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { SecretSave } from "./http-contracts";
 import { MachineRights } from "./machine-contracts";
 
@@ -93,8 +93,7 @@ test("Studio machine rights recover from load/save failure and fit phone, tablet
   try {
     browser = await launchBrowser({ headless: true });
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
+    const errors = pageErrors(page);
     await page.goto(server.url.href);
     await page.getByText("Machine rights could not be loaded.", { exact: true }).waitFor();
     failLoad = false;
