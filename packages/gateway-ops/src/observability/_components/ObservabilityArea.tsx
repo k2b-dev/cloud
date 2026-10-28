@@ -1,4 +1,4 @@
-import { AdminLayout } from "@k2b/cloud/ssr";
+import { AdminLayout, getDisplayRuntimeContext } from "@k2b/cloud/ssr";
 import { AppWorkspace, StatusBadge, ViewTabs } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { buildGatewayHealth, type GatewayHealth } from "../../health";
@@ -33,10 +33,10 @@ export const OBSERVABILITY_SECTION_HREF: Record<ObservabilitySection, string> = 
   capabilities: "/admin/observability/capabilities",
   telemetry: "/admin/observability/telemetry",
   metrics: "/admin/observability/metrics",
-  deliveries: "/admin/observability/notifications",
-  gateway: "/admin/gateway/apps",
+  deliveries: "/admin/observability/deliveries",
+  gateway: "/admin/observability/gateway",
   postgres: "/admin/observability/postgres",
-  valkey: "/admin/observability/redis",
+  valkey: "/admin/observability/valkey",
   nats: "/admin/observability/nats",
   alerts: "/admin/observability/alerts",
   healthCheck: "/admin/observability/health-check",
@@ -105,7 +105,23 @@ export const readAttention = (): Promise<Attention> => loadAttention().catch(() 
 
 export const areaText = (locale: string): AreaMessages => areaMessages.resolve([locale]).t;
 
-function AreaColumn(props: { t: AreaMessages; section: ObservabilitySection; attention: Attention }) {
+type ContributedLink = { href: string; label: string; icon: string; app: string };
+
+/** Links other apps the person may use add to the area with `adminNav[].section: "observability"`. Gateway Ops owns the sections above. */
+const contributedLinks = (c: AreaProps["c"]): ContributedLink[] =>
+  getDisplayRuntimeContext(c).apps.flatMap((app) =>
+    app.id === "gateway-ops"
+      ? []
+      : (app.adminNav ?? [])
+          .filter((group) => group.section === "observability")
+          .flatMap((group) =>
+            group.links
+              .filter((link) => link.href.startsWith("/admin/"))
+              .map((link) => ({ href: link.href, label: link.label, icon: link.icon.replace(/^ti\s+/, ""), app: app.name })),
+          ),
+  );
+
+function AreaColumn(props: { t: AreaMessages; section: ObservabilitySection; attention: Attention; contributed: ContributedLink[] }) {
   return (
     <>
       {GROUPS.map((group) => (
@@ -133,6 +149,15 @@ function AreaColumn(props: { t: AreaMessages; section: ObservabilitySection; att
           })}
         </AppWorkspace.SidebarSection>
       ))}
+      {props.contributed.length > 0 ? (
+        <AppWorkspace.SidebarSection title={props.t.fromApps}>
+          {props.contributed.map((link) => (
+            <AppWorkspace.SidebarItem href={link.href} navigation="document" icon={`ti ${link.icon}`} description={link.app}>
+              {link.label}
+            </AppWorkspace.SidebarItem>
+          ))}
+        </AppWorkspace.SidebarSection>
+      ) : null}
     </>
   );
 }
@@ -211,7 +236,7 @@ export function ObservabilityArea(props: AreaProps) {
           maxSize={320}
         >
           <nav aria-label={t.sections}>
-            <AreaColumn t={t} section={props.section} attention={props.attention} />
+            <AreaColumn t={t} section={props.section} attention={props.attention} contributed={contributedLinks(props.c)} />
           </nav>
         </AppWorkspace.MainPane>
         {props.children}
@@ -229,7 +254,7 @@ export function NatsSyncTabs(props: { current: "nats" | "sync"; locale: string }
       current={props.current}
       items={[
         { id: "nats", label: "NATS", href: OBSERVABILITY_SECTION_HREF.nats },
-        { id: "sync", label: "Sync", href: "/admin/observability/sync" },
+        { id: "sync", label: "Sync", href: "/admin/observability/nats/sync" },
       ]}
     />
   );

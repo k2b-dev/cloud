@@ -114,6 +114,13 @@ test("an empty schedule is invalid at its field and blocks Save; an unreadable v
   expect(await visible("Save").isDisabled()).toBe(true);
   expect(await page.getByText("Enter a schedule.").isVisible()).toBe(true);
 
+  await goto("/admin/observability/health-check?state=unreadable");
+  expect(await page.getByRole("textbox", { name: /^Check schedule/ }).isDisabled()).toBe(true);
+  expect(await visible("Save").isDisabled()).toBe(true);
+  await page.getByRole("checkbox", { name: "Replace stored value: Check schedule" }).check();
+  // The displayed fallback can be saved as it is once the replacement is confirmed.
+  expect(await visible("Save").isDisabled()).toBe(false);
+
   await goto("/admin/observability/retention?state=unreadable");
   expect(await page.getByText("Stored settings cannot be read").isVisible()).toBe(true);
   expect(await visible("Save").isDisabled()).toBe(true);

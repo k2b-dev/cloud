@@ -114,6 +114,9 @@ export const WebhookFields = (props: {
   data: () => HealthWebhookInput;
   update: (change: Partial<HealthWebhookInput>) => void;
   apps: HealthApp[];
+  /** Field errors by name: `name`, `url`. */
+  errors?: () => Record<string, string>;
+  disabled?: boolean;
 }) => {
   const { t } = gatewayOpsMessages.resolve([useLocale()()]);
   return (
@@ -124,6 +127,7 @@ export const WebhookFields = (props: {
         icon="ti ti-power"
         value={() => props.data().enabled}
         onValueChange={(enabled) => props.update({ enabled })}
+        disabled={props.disabled}
       />
       <TextInput
         label={t.name}
@@ -131,6 +135,8 @@ export const WebhookFields = (props: {
         icon="ti ti-tag"
         value={() => props.data().name}
         onValueChange={(name) => props.update({ name })}
+        error={() => props.errors?.().name}
+        disabled={props.disabled}
         required
       />
 
@@ -142,6 +148,7 @@ export const WebhookFields = (props: {
             icon="ti ti-send"
             value={() => props.data().method}
             onValueChange={(method) => props.update({ method: method as "GET" | "POST" })}
+            disabled={props.disabled}
             options={methodOptions(t)}
           />
           <TextInput
@@ -151,6 +158,8 @@ export const WebhookFields = (props: {
             icon="ti ti-link"
             value={() => props.data().url}
             onValueChange={(url) => props.update({ url })}
+            error={() => props.errors?.().url}
+            disabled={props.disabled}
             required
           />
         </div>
@@ -161,6 +170,7 @@ export const WebhookFields = (props: {
             icon="ti ti-activity"
             value={() => props.data().minStatus}
             onValueChange={(minStatus) => props.update({ minStatus: minStatus as "ok" | "warn" | "error" })}
+            disabled={props.disabled}
             options={statusOptions(t)}
           />
           <NumberInput
@@ -171,6 +181,7 @@ export const WebhookFields = (props: {
             suffix="min"
             value={() => Math.round(props.data().repeatIntervalMs / 60_000)}
             onValueChange={(minutes) => props.update({ repeatIntervalMs: Math.max(1, minutes ?? 1) * 60_000 })}
+            disabled={props.disabled}
           />
         </div>
       </FieldSection>
@@ -185,6 +196,7 @@ export const WebhookFields = (props: {
                 icon={item.icon}
                 value={() => props.data().sendOn.includes(item.id)}
                 onValueChange={(checked) => props.update({ sendOn: toggle(props.data().sendOn, item.id, checked) })}
+                disabled={props.disabled}
               />
             )}
           </For>
@@ -195,6 +207,7 @@ export const WebhookFields = (props: {
           icon="ti ti-filter"
           value={() => props.data().scopeKind}
           onValueChange={(scopeKind) => props.update({ scopeKind: scopeKind as "all" | "include" | "exclude" })}
+          disabled={props.disabled}
           options={scopeOptions(t)}
         />
         <Show when={props.data().scopeKind !== "all"}>
@@ -207,6 +220,7 @@ export const WebhookFields = (props: {
                   icon={app.icon}
                   value={() => props.data().scopeAppIds.includes(app.id)}
                   onValueChange={(checked) => props.update({ scopeAppIds: toggle(props.data().scopeAppIds, app.id, checked) })}
+                  disabled={props.disabled}
                 />
               )}
             </For>

@@ -191,10 +191,14 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
             name: "Gateway",
             description: "Operations",
             icon: "ti ti-route",
-            routes: ["/admin/gateway", "/admin/observability"],
-            adminHref: "/admin/gateway",
+            routes: ["/admin/observability"],
+            adminHref: "/admin/observability",
             adminNav: [
-              { section: "observability", label: "Gateway", links: [{ href: "/admin/gateway/apps", icon: "ti-apps", label: "Apps" }] },
+              {
+                section: "observability",
+                label: "Gateway",
+                links: [{ href: "/admin/observability/gateway", icon: "ti-apps", label: "Apps" }],
+              },
               {
                 section: "observability",
                 label: "Observability",

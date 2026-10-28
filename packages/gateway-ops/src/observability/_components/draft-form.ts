@@ -2,8 +2,23 @@ import type { SaveStatusState } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { setAreaSaveControls } from "./save-controls";
 
-/** Thrown by `save` when the server answered with a reason; anything else counts as an unclear outcome. */
+/** Thrown by `save` when the server refused the write; anything else counts as an unclear outcome. */
 export class SaveRejected extends Error {}
+
+/**
+ * The error for a non-OK save response. A 4xx refused the write. A 5xx can come after the value was stored (for
+ * example when a follow-up step failed), so its outcome stays unclear and the person checks the current state.
+ */
+export const saveFailure = (status: number, message: string): Error =>
+  status >= 400 && status < 500 ? new SaveRejected(message) : new Error(message);
+
+/**
+ * For endpoints that write in one step and answer afterwards: an error body with a message comes from the handler,
+ * which did not store the value, so the save is refused and can be tried again. A response without one (a proxy
+ * page, a crash) leaves the outcome unclear.
+ */
+export const oneStepFailure = (status: number, body: { message?: string } | null, fallback: string): Error =>
+  body?.message ? new SaveRejected(body.message) : saveFailure(status, fallback);
 
 type Options<T> = {
   initial: T;
@@ -11,10 +26,11 @@ type Options<T> = {
   validate?: (value: T) => Record<string, string>;
   /** True when saving is needed although the values did not change, such as a confirmed replacement. */
   pending?: () => boolean;
-  /** True while Save must wait for the person, for example to confirm replacing an unreadable value. */
-  blocked?: () => boolean;
-  /** Writes the draft and returns what is stored now. */
-  save: (value: T) => Promise<T>;
+  /**
+   * Writes the draft and returns what is stored now. A save that writes several values one after another reports
+   * each stored step with `commit`, so a later failure keeps what already reached the server as the saved state.
+   */
+  save: (value: T, commit: (stored: T) => void) => Promise<T>;
   locale: () => string;
 };
 
@@ -40,13 +56,18 @@ export const createDraftForm = <T>(options: Options<T>) => {
   });
 
   const save = async () => {
-    if (saving() || !dirty() || Object.keys(errors()).length > 0 || outcome()?.kind === "unknown" || options.blocked?.()) return;
+    if (saving() || !dirty() || Object.keys(errors()).length > 0 || outcome()?.kind === "unknown") return;
     setSaving(true);
     setOutcome(null);
-    try {
-      const next = await options.save(draft());
+    const submitted = draft();
+    // Edits made while the request runs stay; only an untouched draft takes the stored values.
+    const settle = (next: T) => {
       setStored(() => next);
-      setDraft(() => next);
+      if (draft() === submitted) setDraft(() => next);
+    };
+    try {
+      // A step only moves the saved state; the draft keeps the values still on their way.
+      settle(await options.save(submitted, (step) => setStored(() => step)));
       setSavedAt(new Intl.DateTimeFormat(options.locale(), { hour: "2-digit", minute: "2-digit" }).format(new Date()));
     } catch (error) {
       setOutcome({
@@ -67,7 +88,6 @@ export const createDraftForm = <T>(options: Options<T>) => {
       state: state(),
       savedAt: savedAt(),
       invalidCount: Object.keys(errors()).length,
-      saveDisabled: options.blocked?.() === true,
       save: () => void save(),
       discard,
     }),

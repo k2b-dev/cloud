@@ -168,7 +168,7 @@ export default ssr<AuthContext>(async (c) => {
             label={t.appsOnline}
             value={health.value ? `${health.value.apps.length - offlineApps.length}/${health.value.apps.length}` : "—"}
             sub={health.error ? t.unavailable : t.registeredAppsLabel}
-            href="/admin/gateway/apps"
+            href="/admin/observability/gateway"
             accent={offlineApps.length > 0 ? { tone: "red", icon: "ti ti-plug-connected-x" } : { tone: "emerald", icon: "ti ti-check" }}
           />
           <StatCell

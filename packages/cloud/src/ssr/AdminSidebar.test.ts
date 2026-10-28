@@ -80,9 +80,9 @@ describe("buildAdminGroups", () => {
     const groups = buildAdminGroups([
       app({
         id: "gateway-ops",
-        adminHref: "/admin/gateway",
+        adminHref: "/admin/observability",
         adminNav: [
-          { section: "observability", label: "Gateway", links: [{ href: "/admin/gateway/apps", icon: "ti-apps", label: "Apps" }] },
+          { section: "observability", label: "Gateway", links: [{ href: "/admin/observability/gateway", icon: "ti-apps", label: "Apps" }] },
           {
             section: "observability",
             label: "Observability",
@@ -99,7 +99,7 @@ describe("buildAdminGroups", () => {
     expect(groups.some((group) => group.label === "Gateway" || group.label === "Observability")).toBe(false);
     expect(groups.some((group) => group.label === "App administration")).toBe(false);
     const links = groups.flatMap((group) => group.links);
-    for (const path of ["/admin/observability", "/admin/observability/logs?level=error", "/admin/gateway/apps"]) {
+    for (const path of ["/admin/observability", "/admin/observability/logs?level=error", "/admin/observability/gateway"]) {
       expect(activeAdminLink(path, links)?.href).toBe("/admin/observability");
     }
     expect(activeAdminLink("/admin/ai", links)?.href).toBe("/admin/ai");
@@ -108,6 +108,18 @@ describe("buildAdminGroups", () => {
         .find((group) => group.label === "Cloud")
         ?.links.map((link) => link.label),
     ).toEqual(["KI"]);
+  });
+
+  it("opens the first contributed Observability page when no app owns the area start", () => {
+    const groups = buildAdminGroups([
+      app({
+        id: "inventory",
+        adminNav: [
+          { section: "observability", label: "Stock", links: [{ href: "/admin/inventory/health", icon: "ti-box", label: "Stock health" }] },
+        ],
+      }),
+    ]);
+    expect(groups.find((group) => group.label === "Cloud")?.links.at(-1)?.href).toBe("/admin/inventory/health");
   });
 
   it("keeps adminHref as the single-link fallback", () => {

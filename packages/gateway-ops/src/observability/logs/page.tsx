@@ -53,9 +53,10 @@ export default ssr<AuthContext>(async (c) => {
   const retentionState = await read("logs.retention_days");
   const retentionDays = Number(retentionState.value);
 
-  // The entry open in the detail column. Ids are row numbers; anything else opens nothing.
+  // The entry open in the detail column. Ids are positive BIGINT row numbers; anything else opens nothing.
   const entryParam = url.searchParams.get("entry");
-  const selectedId = entryParam && /^\d{1,19}$/.test(entryParam) ? entryParam : null;
+  const selectedId =
+    entryParam && /^[1-9]\d{0,18}$/.test(entryParam) && BigInt(entryParam) <= 9_223_372_036_854_775_807n ? entryParam : null;
   const [attention, selected] = await Promise.all([
     readAttention(),
     selectedId

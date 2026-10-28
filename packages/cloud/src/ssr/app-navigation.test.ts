@@ -135,7 +135,7 @@ describe("runtime route matching", () => {
   });
 
   test("distinguishes a dedicated cross-app route from the current app fallback", () => {
-    expect(hasDedicatedRuntimeRoute(routeApps, "/admin/gateway/apps", "core")).toBe(true);
+    expect(hasDedicatedRuntimeRoute(routeApps, "/admin/observability/gateway", "core")).toBe(true);
     expect(hasDedicatedRuntimeRoute(routeApps, "/admin/missing", "core")).toBe(false);
     expect(hasDedicatedRuntimeRoute(routeApps, "/app/missing", "core")).toBe(false);
   });

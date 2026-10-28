@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-10-20
+updated: 2026-10-28
 ---
 
 # Define an application
@@ -150,7 +150,7 @@ instead of adding a group of its own:
 | `section` | Area | What the sidebar shows |
 | --- | --- | --- |
 | `"ai"` | AI | The AI area lists the links among its own sections. |
-| `"observability"` | Observability | One entry, Observability, that stays active on every contributed link. The owning app renders the area's columns itself. |
+| `"observability"` | Observability | One entry, Observability, that stays active on every contributed link. The area lists other apps' links under **From apps** in its first column. |
 
 Route and resource authorization still belong to the application; this field
 only selects where authorized navigation is displayed.

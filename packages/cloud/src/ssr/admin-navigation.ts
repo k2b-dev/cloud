@@ -54,7 +54,15 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
   const areaLinks: AdminLink[] = [
     { href: "/admin/ai", icon: "ti-sparkles", label: t.ai },
     ...(observabilityPaths.length > 0
-      ? [{ href: "/admin/observability", icon: "ti-heart-rate-monitor", label: t.observability, match: observabilityPaths }]
+      ? [
+          {
+            // Gateway Ops owns the area's start; without it, the entry opens the first contributed page.
+            href: observabilityPaths.includes("/admin/observability") ? "/admin/observability" : observabilityPaths[0]!,
+            icon: "ti-heart-rate-monitor",
+            label: t.observability,
+            match: observabilityPaths,
+          },
+        ]
       : []),
   ];
 

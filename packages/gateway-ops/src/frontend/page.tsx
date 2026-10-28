@@ -217,8 +217,8 @@ export default ssr<AuthContext>(async (c) => {
           label={areaText(locale).gateway}
           current={isRoutesPage ? "routes" : "apps"}
           items={[
-            { id: "apps", label: t.gatewayAppsTitle, href: rangeUrl(new URL("/admin/gateway/apps", url), range) },
-            { id: "routes", label: t.gatewayRoutesTitle, href: rangeUrl(new URL("/admin/gateway/routes", url), range) },
+            { id: "apps", label: t.gatewayAppsTitle, href: rangeUrl(new URL("/admin/observability/gateway", url), range) },
+            { id: "routes", label: t.gatewayRoutesTitle, href: rangeUrl(new URL("/admin/observability/gateway/routes", url), range) },
           ]}
         />
         <RangeTabs
@@ -416,7 +416,7 @@ export default ssr<AuthContext>(async (c) => {
               <SearchBar
                 placeholder={t.filterRoutes}
                 ariaLabel={t.filterRoutesLabel}
-                action={rangeUrl(new URL("/admin/gateway/routes", url), range)}
+                action={rangeUrl(new URL("/admin/observability/gateway/routes", url), range)}
                 value={searchQuery}
               />
             </DataTable.Controls>

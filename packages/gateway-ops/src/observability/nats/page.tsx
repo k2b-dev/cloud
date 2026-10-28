@@ -179,7 +179,7 @@ export default ssr<AuthContext>(async (c) => {
                   {row.replicas} · {replicaState(row.cluster, row.replicas)}
                 </span>
               ) : col.id === "owner" && row.sync ? (
-                <a class="link" href={`/admin/observability/sync?resource=${encodeURIComponent(row.sync.id)}`}>
+                <a class="link" href={`/admin/observability/nats/sync?resource=${encodeURIComponent(row.sync.id)}`}>
                   {render(value)}
                 </a>
               ) : (

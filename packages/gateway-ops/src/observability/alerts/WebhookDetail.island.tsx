@@ -12,7 +12,7 @@ import {
 import { toInput, WebhookFields } from "../../frontend/webhook-editor";
 import { gatewayOpsMessages } from "../../messages";
 import { areaMessages } from "../_components/area-messages";
-import { createDraftForm, SaveRejected } from "../_components/draft-form";
+import { createDraftForm, oneStepFailure } from "../_components/draft-form";
 import { SaveOutcome } from "../_components/SaveOutcome";
 
 /** One alert in the detail column: its fields save with the button in the level head; test and delete act at once. */
@@ -26,12 +26,17 @@ export default function WebhookDetail(props: { webhook: HealthWebhook; apps: Hea
     initial: toInput(props.webhook),
     locale,
     validate: (value): Record<string, string> => ({
-      ...(value.name.trim() ? {} : { name: g().webhookNameDescription }),
-      ...(value.url.trim() ? {} : { url: g().urlDescription }),
+      ...(value.name.trim() ? {} : { name: t().nameRequired }),
+      ...(value.url.trim() ? {} : { url: t().urlRequired }),
     }),
     save: async (value) => {
       const response = await apiClient.health.webhooks[":id"].$put({ param: { id: props.webhook.id }, json: value });
-      if (!response.ok) throw new SaveRejected(await responseErrorMessage(response, g().saveWebhookFailed));
+      if (!response.ok)
+        throw oneStepFailure(
+          response.status,
+          (await response.json().catch(() => null)) as { message?: string } | null,
+          g().saveWebhookFailed,
+        );
       return toInput(await readHealthWebhookResponse(response, g().unexpectedWebhookResponse));
     },
   });
@@ -86,7 +91,7 @@ export default function WebhookDetail(props: { webhook: HealthWebhook; apps: Hea
           </InlineGuidance>
         )}
       </Show>
-      <WebhookFields data={form.draft} update={form.update} apps={props.apps} />
+      <WebhookFields data={form.draft} update={form.update} apps={props.apps} errors={form.errors} disabled={form.saving()} />
       <div class="flex flex-wrap items-center gap-3">
         <Button type="button" variant="secondary" size="sm" loading={testing()} onClick={() => void test()} disabled={form.saving()}>
           <i class="ti ti-plug" aria-hidden="true" />

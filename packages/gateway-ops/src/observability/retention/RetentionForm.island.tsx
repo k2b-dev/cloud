@@ -3,7 +3,7 @@ import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { gatewayOpsMessages } from "../../messages";
 import { areaMessages } from "../_components/area-messages";
-import { createDraftForm, SaveRejected } from "../_components/draft-form";
+import { createDraftForm, oneStepFailure, SaveRejected } from "../_components/draft-form";
 import { SaveOutcome } from "../_components/SaveOutcome";
 import { apiClient as loggingClient } from "../logs/api-client";
 
@@ -45,7 +45,7 @@ export default function RetentionForm(props: { values: RetentionValues; unreadab
       rollups: entries.find((entry) => entry.key === SETTING.rollups)?.unreadable ?? false,
     });
   };
-  const rejected = async (key: Key, response: Pick<Response, "json">): Promise<never> => {
+  const rejected = async (key: Key, response: Pick<Response, "json" | "status">): Promise<never> => {
     const body = (await response.json().catch(() => null)) as { message?: string; code?: string } | null;
     const message = body?.message ?? t().notSaved;
     if (body?.code === "setting_unreadable") {
@@ -55,7 +55,7 @@ export default function RetentionForm(props: { values: RetentionValues; unreadab
         throw new SaveRejected(`${message} ${error instanceof Error ? error.message : ""}`.trim());
       }
     }
-    throw new SaveRejected(message);
+    throw oneStepFailure(response.status, body, message);
   };
   const confirmed = (key: Key) => unreadable()[key] === true && replace()[key] === true;
 
@@ -69,8 +69,7 @@ export default function RetentionForm(props: { values: RetentionValues; unreadab
           .map((key) => [key, t().atLeastOneDay]),
       ),
     pending: () => (Object.keys(unreadable()) as Key[]).some((key) => confirmed(key)),
-    blocked: () => (Object.keys(unreadable()) as Key[]).some((key) => unreadable()[key] && !replace()[key]),
-    save: async (value) => {
+    save: async (value, commit) => {
       // Each value is written on its own; after a partial failure the stored state is what reached the server.
       if (value.logs !== stored.logs || confirmed("logs")) {
         const response = await loggingClient.settings.retention.$put({
@@ -78,6 +77,8 @@ export default function RetentionForm(props: { values: RetentionValues; unreadab
         });
         if (!response.ok) await rejected("logs", response);
         stored = { ...stored, logs: value.logs };
+        setUnreadable({ ...unreadable(), logs: false });
+        commit(stored);
       }
       for (const key of ["events", "rollups"] as const) {
         if (value[key] === stored[key] && !confirmed(key)) continue;
@@ -87,9 +88,9 @@ export default function RetentionForm(props: { values: RetentionValues; unreadab
         });
         if (!response.ok) await rejected(key, response);
         stored = { ...stored, [key]: value[key] };
+        setUnreadable({ ...unreadable(), [key]: false });
+        commit(stored);
       }
-      setUnreadable({});
-      setReplace({});
       return stored;
     },
   });
