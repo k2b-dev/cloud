@@ -69,6 +69,22 @@ export const CORE_SETTINGS = {
       "Trusted HTTPS origin of the authenticator, used for app installation and pairing links. Changing this origin requires reviewing existing devices; never use a wildcard.",
     default: "https://cloud-login.pwa.k2b.dev",
   },
+  "user.app_approval.label": {
+    kind: "string",
+    label: "Name in Cloud Login",
+    description:
+      "Suggested label for new Cloud Login connections. Empty uses the application display name. People can change it; existing connections keep their names.",
+    default: "",
+    presentation: {
+      translations: {
+        de: {
+          label: "Name in Cloud Login",
+          description:
+            "Namensvorschlag für neue Cloud-Login-Verbindungen. Leer übernimmt den Anzeigenamen der Anwendung. Bestehende Verbindungen behalten ihren Namen; Nutzer können den Vorschlag ändern.",
+        },
+      },
+    },
+  },
   "user.app_approval.admin_pairing": {
     kind: "boolean",
     label: "Allow administrator-assisted pairing",
@@ -298,48 +314,6 @@ export const CORE_SETTINGS = {
     label: "Enable AI",
     default: false,
     description: "Enable Cloud AI features including personal conversations, Assistant, and app Capabilities.",
-  },
-  "ai.default_model_id": {
-    kind: "string",
-    label: "Default Model ID",
-    default: "",
-    description: "Model profile id used when an app asks for the platform default AI model.",
-    placeholder: "e.g. openrouter-fast",
-  },
-  "ai.model_profiles_json": {
-    kind: "text",
-    label: "Model Profiles",
-    default: "[]",
-    description: "JSON array of model profiles. Provider API keys are stored on the profile they belong to.",
-    placeholder:
-      '[{"id":"openrouter-fast","label":"OpenRouter Fast","provider":"openrouter","model":"openai/gpt-4.1-mini","enabled":true,"dataBoundary":"hosted","capabilities":["streaming"],"apiKey":"sk-or-..."}]',
-  },
-  "ai.background_model_id": {
-    kind: "string",
-    label: "Background Model ID",
-    default: "",
-    description: "Model profile id used for background AI jobs. Empty = platform default model.",
-    placeholder: "e.g. openrouter-fast",
-  },
-  "ai.audio_model_id": {
-    kind: "string",
-    label: "Audio Model ID",
-    default: "",
-    description: "Audio transcription model profile for dictation and audio files. Empty disables transcription.",
-  },
-  "ai.vision_model_id": {
-    kind: "string",
-    label: "Vision Model ID",
-    default: "",
-    description: "Vision-capable model profile used by the view_image tool. Empty disables the tool fallback.",
-    placeholder: "e.g. openrouter-vision",
-  },
-  "ai.workflow_model_id": {
-    kind: "string",
-    label: "Workflow Model ID",
-    default: "",
-    description: "Model profile id used for AI workflow actions. Empty = background model, then platform default.",
-    placeholder: "e.g. openrouter-fast",
   },
   "ai.enrich_cron": {
     kind: "cron",

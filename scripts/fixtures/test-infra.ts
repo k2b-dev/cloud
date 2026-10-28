@@ -41,7 +41,14 @@
  */
 import { afterAll, beforeAll, describe, test } from "bun:test";
 import { SQL, sql } from "bun";
-import { applyTestRuntimeEnv, dotenvLeak, type InfraKind, infraMappings as mappings, readTestTarget } from "./test-infra-env";
+import {
+  applyTestRuntimeEnv,
+  dotenvLeak,
+  type InfraKind,
+  infraMappings as mappings,
+  quoteTestDatabase,
+  readTestTarget,
+} from "./test-infra-env";
 import { connectTestNats } from "./test-nats";
 
 export type { InfraKind } from "./test-infra-env";
@@ -66,13 +73,14 @@ const read = (key: string): string | undefined => process.env[key]?.trim() || un
 const processNamespace = `test-${crypto.randomUUID().slice(0, 8)}`;
 
 const assertTestDatabaseName = (url: string): void => {
-  const name = new URL(url).pathname.replace(/^\//, "");
+  const name = decodeURIComponent(new URL(url).pathname.slice(1));
   if (!name.endsWith("_test")) {
     throw new Error(
       `CLOUD_TEST_DATABASE_URL must point to a database whose name ends with "_test" (got "${name}"). ` +
         "Integration tests create and delete rows; never run them against a development or production database.",
     );
   }
+  quoteTestDatabase(name);
 };
 
 const assertValkeyUrlWithoutIndex = (url: string): void => {
@@ -226,7 +234,30 @@ export const databaseSuite = (): typeof describe => suiteFor("database");
  * test database. Call `drop()` in `afterAll`.
  */
 export const useFreshDatabase = async (prefix: string): Promise<{ url: string; name: string; drop: () => Promise<void> }> => {
-  const database = await createDisposableDatabase(prefix);
+  return bindDefaultDatabase(prefix, await createDisposableDatabase(prefix));
+};
+
+const migratedDatabaseUrls = new Set<string>();
+// Unit tests and their subprocesses preload this gate without needing workspace discovery.
+let databaseTemplate: Promise<typeof import("./test-database-template")> | undefined;
+
+/** Whether the currently selected database was cloned with all production schemas. */
+export const usesMigratedDatabase = (): boolean => migratedDatabaseUrls.has(process.env.DATABASE_URL ?? "");
+
+/** A private clone of all migrated Core and application schemas, without replaying setup. */
+export const createMigratedDatabase = async (prefix: string) => {
+  const target = requireDatabaseUrl();
+  databaseTemplate ??= import("./test-database-template");
+  const { migratedDatabaseTemplate } = await databaseTemplate;
+  const database = await createDisposableDatabase(prefix, await migratedDatabaseTemplate(target));
+  migratedDatabaseUrls.add(database.url);
+  return database;
+};
+
+/** Like useFreshDatabase, but starts with the migrated schema instead of an empty database. */
+export const useMigratedDatabase = async (prefix: string) => bindDefaultDatabase(prefix, await createMigratedDatabase(prefix));
+
+const bindDefaultDatabase = async (prefix: string, database: Awaited<ReturnType<typeof createDisposableDatabase>>) => {
   process.env.DATABASE_URL = database.url;
   const [row] = await sql<{ name: string }[]>`SELECT current_database() AS name`;
   if (row?.name !== database.name) {
@@ -271,6 +302,14 @@ if (testInfra.nats) {
   }
 }
 
+try {
+  afterAll(async () => {
+    if (databaseTemplate) await (await databaseTemplate).closeMigratedDatabaseTemplate();
+  });
+} catch {
+  // Bootstrap scripts outside bun test close their lease explicitly.
+}
+
 /** The configured target for one infrastructure kind; throws when it is not set. */
 export const requireInfraUrl = (kind: InfraKind): string => {
   const url = testInfra[kind];
@@ -285,24 +324,29 @@ export const requireDatabaseUrl = (): string => requireInfraUrl("database");
  * Creates a private database on the configured test server. The name always
  * ends with `_test`. Callers must `drop()` in a `finally` or `afterAll`.
  */
-export const createDisposableDatabase = async (prefix: string): Promise<{ url: string; name: string; drop: () => Promise<void> }> => {
+export const createDisposableDatabase = async (
+  prefix: string,
+  template?: string,
+): Promise<{ url: string; name: string; drop: () => Promise<void> }> => {
   const admin = new URL(requireDatabaseUrl());
   const name = `${prefix}_${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}_test`;
+  const identifier = quoteTestDatabase(name);
+  const source = template ? ` TEMPLATE ${quoteTestDatabase(template)}` : "";
   const sql = new SQL(admin.toString());
   try {
-    await sql.unsafe(`CREATE DATABASE "${name}"`);
+    await sql.unsafe(`CREATE DATABASE ${identifier}${source}`);
   } finally {
     await sql.close();
   }
   const url = new URL(admin.toString());
-  url.pathname = `/${name}`;
+  url.pathname = `/${encodeURIComponent(name)}`;
   return {
     url: url.toString(),
     name,
     drop: async () => {
       const drop = new SQL(admin.toString());
       try {
-        await drop.unsafe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+        await drop.unsafe(`DROP DATABASE IF EXISTS ${identifier} WITH (FORCE)`);
       } finally {
         await drop.close();
       }

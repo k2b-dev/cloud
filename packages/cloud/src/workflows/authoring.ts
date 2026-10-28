@@ -64,6 +64,37 @@ export const buildWorkflowManifestCompletions = (
 ): WorkflowCompletionItem[] => {
   const manifest = workflows.manifest;
   const context = workflowCompletionContext(source, caret);
+  const indentation = context.line.match(/^\s*/)?.[0].length ?? 0;
+  const preceding = source
+    .slice(0, context.caret - context.line.length)
+    .trimEnd()
+    .split("\n");
+  const parent = preceding.findLast((line) => line.trim() && (line.match(/^\s*/)?.[0].length ?? 0) < indentation);
+  const inlineCondition = /^\s*(?:-\s*)?(?:if|not):\s*[A-Za-z]*$/.test(context.line);
+  const parentCondition = /^(\s*(?:-\s*)?)(?:if|all|any|not):\s*$/.exec(parent ?? "");
+  const blockCondition =
+    !context.key && /^\s*(?:-\s*)?[A-Za-z]*$/.test(context.line) && parentCondition && indentation > parentCondition[1]!.length;
+  if (inlineCondition || blockCondition) {
+    return [
+      "equals",
+      "notEquals",
+      "includes",
+      "textEquals",
+      "contains",
+      "startsWith",
+      "endsWith",
+      "greaterThan",
+      "lessThan",
+      "atLeast",
+      "atMost",
+      "exists",
+      "all",
+      "any",
+      "not",
+    ].map((operator) =>
+      workflowCompletionItem(context, "keyword", operator, inlineCondition ? `{ ${operator}: [] }` : `${operator}: `, "Workflow condition"),
+    );
+  }
   if (context.key === "type") {
     return manifest.inputs.map((input) => workflowCompletionItem(context, "literal", input.kind, input.kind, input.description));
   }

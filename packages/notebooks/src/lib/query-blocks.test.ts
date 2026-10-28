@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { parseNotebookQueryBlocks, parseNotebookTocBlocks, QUERY_MAX_COLUMNS, QUERY_MAX_FILTERS } from "./query-blocks";
+import {
+  formatQueryPages,
+  parseNotebookQueryBlocks,
+  parseNotebookTocBlocks,
+  parseQueryPages,
+  QUERY_MAX_BLOCKS,
+  QUERY_MAX_COLUMNS,
+  QUERY_MAX_FILTERS,
+  QUERY_PAGE_SIZE,
+  queryPageSize,
+} from "./query-blocks";
 
 describe("notebook query blocks", () => {
   const filterQuery = (value: string) =>
@@ -225,5 +235,35 @@ describe("notebook toc blocks", () => {
     expect(result.blocks).toEqual([]);
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "unknown-key", path: "toc.layout" }));
     expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "invalid-type", path: "toc.max-depth" }));
+  });
+});
+
+describe("query pages in the address", () => {
+  test("reads `<line>.<page>` pairs, keeps pages above the first and drops anything malformed", () => {
+    expect([...parseQueryPages("12.4,30.2")]).toEqual([
+      [12, 4],
+      [30, 2],
+    ]);
+    expect([...parseQueryPages("12.1,0.3,7.x,9.-2,abc,,5.3")]).toEqual([[5, 3]]);
+    expect(parseQueryPages(null).size).toBe(0);
+    expect(parseQueryPages(Array.from({ length: 50 }, (_, index) => `${index + 1}.2`).join(",")).size).toBe(QUERY_MAX_BLOCKS);
+  });
+
+  test("writes pages in line order and leaves first pages out", () => {
+    expect(
+      formatQueryPages(
+        new Map([
+          [30, 2],
+          [12, 4],
+          [5, 1],
+        ]),
+      ),
+    ).toBe("12.4,30.2");
+    expect(formatQueryPages(new Map([[3, 1]]))).toBe("");
+  });
+
+  test("a page holds the query's limit, at most 20 rows", () => {
+    expect(queryPageSize({ limit: 100 })).toBe(QUERY_PAGE_SIZE);
+    expect(queryPageSize({ limit: 5 })).toBe(5);
   });
 });

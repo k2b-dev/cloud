@@ -10,7 +10,6 @@ import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { logoPng } from "../../test/mailbox-logo-fixtures";
 import { type ConnectorVerification, type RemoteFolder, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { rediscoverProviderBinding } from "./bindings";
@@ -452,7 +451,6 @@ suite("mail sent message projection", () => {
   let context: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const uid = `mail-sent-projection-${suffix}`;
     const [user] = await sql<{ id: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)

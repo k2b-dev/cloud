@@ -222,6 +222,7 @@ type IncomingAutomationBackfillInput = {
   cutoffAt: string;
   /** Re-run only messages whose latest run of this version failed or was canceled, once per operation. */
   retryFailed?: boolean;
+  recomputeAi?: boolean;
   /** Candidate and already-accepted counts frozen at start, so reported progress stays monotonic. */
   startCounts?: { candidates: number; accepted: number };
 };
@@ -877,7 +878,7 @@ const getIncomingAutomationBackfillPump = lazySync((sync) =>
               message: snapshot.source.message as unknown as WorkflowJsonValue,
               conversation: snapshot.source.conversation as unknown as WorkflowJsonValue,
             },
-            context: mailWorkflowEventContext(snapshot),
+            context: { ...mailWorkflowEventContext(snapshot), ...(input.recomputeAi ? { recomputeAi: true } : {}) },
             dedupeKey: incomingAutomationBackfillDedupeKey(input, snapshot.targetKey),
             occurredAt: new Date(snapshot.internalDate),
           },
@@ -1039,7 +1040,8 @@ export const startIncomingAutomationBackfill = async (params: {
               existing.input.automationId !== automation.id ||
               existing.input.operationId !== parsed.data.operationId ||
               existing.input.workflowVersionId !== automation.workflowVersionId ||
-              (existing.input.retryFailed === true) !== (parsed.data.retryFailed === true))
+              (existing.input.retryFailed === true) !== (parsed.data.retryFailed === true) ||
+              (existing.input.recomputeAi === true) !== (parsed.data.recomputeAi === true))
           ) {
             return fail(err.conflict("Backfill operation id is already in use"));
           }
@@ -1090,6 +1092,7 @@ export const startIncomingAutomationBackfill = async (params: {
                 scope: automation.scope,
                 cutoffAt: new Date().toISOString(),
                 retryFailed: parsed.data.retryFailed === true,
+                recomputeAi: parsed.data.recomputeAi === true,
               };
               await pump.start({
                 key: incomingAutomationBackfillKey(automation.id, parsed.data.operationId),

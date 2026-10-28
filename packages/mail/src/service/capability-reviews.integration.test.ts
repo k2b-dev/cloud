@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { assertCapabilityReview } from "@k2b/cloud/capabilities/testing";
 import { CapabilityActionReviewDataSchema, type CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { accounts, encryptSecret } from "@k2b/cloud/services";
@@ -10,7 +10,6 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { mailCapabilities } from "../capabilities";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { draftReviewAudience, grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
@@ -67,8 +66,6 @@ suite("Mail per-call reviews with real grants and draft state", () => {
     grantIds.push(entry.id);
     return entry.id;
   };
-
-  beforeAll(migrate, 30_000);
 
   beforeEach(async () => {
     setSystemTime(new Date(at));

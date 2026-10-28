@@ -967,8 +967,21 @@
   }
 
   .stdlib-chart :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value, .stdlib-chart-axis-label) {
-    font-family: var(--k2b-font-mono);
     font-variant-numeric: tabular-nums;
+  }
+
+  .stdlib-chart .stdlib-chart-category-label { font-size: 11px; opacity: 0.8; }
+  .stdlib-chart .stdlib-chart-bar-value { font-size: 11px; opacity: 0.9; }
+  .stdlib-chart .stdlib-chart-axis-label { font-weight: 500; }
+
+  /* Horizontal bar rows keep their own height; a shorter box scrolls. */
+  .k2b-chart:has(> .k2b-chart__svg > svg[data-bar-layout="rows"]) {
+    overflow-y: auto;
+  }
+
+  .k2b-chart__svg:has(> svg[data-bar-layout="rows"]) {
+    flex: none;
+    height: var(--k2b-chart-height);
   }
 
   .stdlib-chart-series-0 { fill: var(--stdlib-chart-c1); stroke: var(--stdlib-chart-c1); }

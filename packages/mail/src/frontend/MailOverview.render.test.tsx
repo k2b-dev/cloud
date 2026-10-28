@@ -52,6 +52,7 @@ const renderOverview = (
           initialFocusError,
           currentUserEmail: "user@example.com",
           contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
+          cloudUrl: "https://cloud.example",
           dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
           initialFocus: initialFocusError
             ? null

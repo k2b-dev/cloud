@@ -3,8 +3,7 @@ import type { AccessSubject, RequestActor } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { sql } from "bun";
 import { Hono } from "hono";
-import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
-import { migrate } from "../migrate";
+import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { seedActiveBaseStore } from "./base-store.test-fixture";
 import { createOverviewQueries, OVERVIEW_WORK_MS } from "./overview-queries";
@@ -36,12 +35,9 @@ const result = (value = 42): Awaited<ReturnType<typeof runBaseSql>> => ({
   },
 });
 suiteFor("database")("overview execution persists the base budget and last good values", () => {
-  let database: Awaited<ReturnType<typeof useFreshDatabase>> | undefined;
+  let database: Awaited<ReturnType<typeof useMigratedDatabase>> | undefined;
   beforeAll(async () => {
-    database = await useFreshDatabase("pulse_overview");
-    const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
-    await runCoreSetup();
-    await migrate();
+    database = await useMigratedDatabase("pulse_overview");
   }, 30_000);
   afterAll(async () => {
     if (database) {

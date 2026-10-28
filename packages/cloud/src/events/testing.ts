@@ -1,6 +1,8 @@
 import { CursorMismatchError, RetentionGapError, type TopicEvent } from "@k2b/sync";
 import type { LiveEnvelope, LiveTopic } from "./live-engine";
 
+export { appEventFixture, createAppEventTestHarness, deliverAppEvent } from "./app-events.testing";
+
 /** Publishes an application's real outbox without starting its application. */
 export { startLiveOutbox } from "./live";
 export {

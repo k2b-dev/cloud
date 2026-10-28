@@ -49,20 +49,23 @@ test("graph nodes document hierarchy, manual position, and last change", async (
   ).toBe(true);
 });
 
-test("the note tree and the book tree are separate OpenAPI components", async () => {
+test("the note tree is its own component, and Book's snapshot carries no tree", async () => {
   const spec = (await generateSpecs(app)) as Spec;
   const schemas = spec.components?.schemas ?? {};
 
   const noteTree = responseSchema(spec, "/{id}/tree")?.items?.$ref;
   expect(noteTree).toBe("#/components/schemas/NoteTreeNode");
-  expect(responseSchema(spec, "/{id}/workspace-state")?.properties?.tree?.items?.$ref).toBe(noteTree);
+  // The workspace state carries no tree; the sidebar reads bounded levels instead.
+  expect(responseSchema(spec, "/{id}/workspace-state")?.properties?.tree).toBeUndefined();
+  expect(responseSchema(spec, "/{id}/tree/levels")?.properties?.levels?.items?.properties?.items?.items?.$ref).toBe(
+    "#/components/schemas/SidebarNote",
+  );
   expect(Object.keys(schemas.NoteTreeNode?.properties ?? {})).toContain("notebookId");
   expect(schemas.NoteTreeNode?.properties?.children?.items?.$ref).toBe(noteTree);
 
-  const bookTree = responseSchema(spec, "/{id}/book")?.properties?.tree?.items?.$ref;
-  expect(bookTree).toBe("#/components/schemas/BookTreeNode");
-  expect(Object.keys(schemas.BookTreeNode?.properties ?? {})).toEqual(["id", "title", "children"]);
-  expect(schemas.BookTreeNode?.properties?.children?.items?.$ref).toBe(bookTree);
+  // Book's navigation reads the same bounded levels as the sidebar.
+  expect(responseSchema(spec, "/{id}/book")?.properties?.tree).toBeUndefined();
+  expect(responseSchema(spec, "/{id}/book")?.properties?.hasNotes?.type).toBe("boolean");
 });
 
 test("a notebook created from a template documents the same fields as every other notebook", async () => {
@@ -127,4 +130,47 @@ test("PDF response documents the optional bounded omission report header", async
   expect(header?.description).toContain("UTF-8 JSON {items:[{code,kind,label}],more}");
   expect(header?.description).toContain("marked in place");
   expect(header?.description).toContain("did not fit");
+});
+
+test("inline comment routes expose every action and one Markdown snapshot projection", async () => {
+  const spec = (await generateSpecs(app)) as Spec;
+  const base = "/notes/{noteId}/annotations";
+  const actions = [
+    [base, "get"],
+    ["/annotations/{annotationId}", "get"],
+    [base, "post"],
+    [`${base}/{annotationId}`, "get"],
+    [`${base}/{annotationId}`, "patch"],
+    [`${base}/{annotationId}`, "delete"],
+    ...["restore", "resolve", "reject", "accept", "undo-accept"].map((action) => [`${base}/{annotationId}/${action}`, "post"]),
+    [`${base}/{annotationId}/replies`, "get"],
+    [`${base}/{annotationId}/replies`, "post"],
+    [`${base}/{annotationId}/replies/{replyId}`, "patch"],
+    [`${base}/{annotationId}/replies/{replyId}`, "delete"],
+    [`${base}/{annotationId}/replies/{replyId}/restore`, "post"],
+  ];
+  for (const [path, method] of actions) expect(spec.paths[path!]).toHaveProperty(method!);
+  const projection = responseSchema(spec, base);
+  expect(Object.keys(projection?.properties ?? {}).sort()).toEqual([
+    "contentHash",
+    "cursor",
+    "items",
+    "nextCursor",
+    "restoreRevision",
+    "text",
+  ]);
+  for (const key of ["startRel", "suggestionState", "suggestionStateBy", "suggestionStateAt", "suggestionStateVia", "stateVia"])
+    expect(projection?.properties?.items?.items?.properties).toHaveProperty(key);
+  for (const key of ["suggestion", "suggestionState", "suggestionStateBy", "suggestionStateAt", "suggestionStateVia"])
+    expect(projection?.properties?.items?.items?.properties?.replies?.items?.properties).toHaveProperty(key);
+  expect(projection?.properties?.items?.items?.properties).toHaveProperty("repliesNextCursor");
+  const requests: string[] = [];
+  const client = hc<typeof app>("http://example.test", {
+    fetch: async (input: RequestInfo | URL) => {
+      requests.push(String(input));
+      return Response.json({});
+    },
+  });
+  await client.notes[":noteId"].annotations.$get({ param: { noteId: "note01" }, query: {} });
+  expect(requests).toEqual(["http://example.test/notes/note01/annotations"]);
 });

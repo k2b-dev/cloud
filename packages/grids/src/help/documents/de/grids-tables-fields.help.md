@@ -11,6 +11,8 @@ Die [Feldkonfiguration](/app/grids/help/grids-field-configuration) beschreibt al
 
 Unter **Base-Einstellungen → Tabellen** suchen Personen mit Zugriff **Verwalten** nach Name oder öffentlicher ID. Sie vergleichen die Anzahl der Felder, Indizes und eindeutigen Felder sowie Verlauf, Finalisierung und Schreibwege. Öffne eine Tabelle für ihre Datensätze und Einstellungen. Die Übersicht zählt keine Datensätze.
 
+Um ein Feld zu ändern, schalten Personen mit Zugriff **Verwalten** auf die Tabelle den Bearbeitungsmodus ein und wählen das Feld in der Werkzeugleiste unter **Felder**. Dieses Menü gibt es in jeder Ansicht: Tabelle, Karten, Kalender, gruppierte Tabellen und gespeicherte Ansichten. In der Tabellenansicht öffnet die Einstellungsschaltfläche in jedem Spaltenkopf dieselben Einstellungen.
+
 ## Eingegebene Werte speichern {icon="table"}
 
 | Feldtyp | Verwendung | Wichtiges Verhalten |
