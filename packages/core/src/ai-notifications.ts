@@ -146,7 +146,7 @@ export const AI_NOTIFICATIONS = {
     render: (data, { locale }) => ({
       title: data.kind === "stop" ? text(locale).costStop : text(locale).costWarning,
       body: text(locale).costBody({ ...data, cost: data.cost.toLocaleString(locale, { maximumFractionDigits: 6 }) }),
-      targetHref: "/admin/settings?tab=ai-quotas&view=rules",
+      targetHref: "/admin/ai?sec=budgets&view=rules",
     }),
     email: (data, { locale }) => ({
       subject: data.kind === "stop" ? text(locale).costStop : text(locale).costWarning,

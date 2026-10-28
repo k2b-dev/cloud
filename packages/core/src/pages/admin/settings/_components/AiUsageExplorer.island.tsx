@@ -507,7 +507,7 @@ export default function AiUsageExplorer(props: { report: AiUsageReport }) {
         <ButtonLink
           size="sm"
           variant="ghost"
-          href={`/admin/settings?tab=ai-quotas&search=${q().userId}&identity=${q().userId}&identityType=user&range=${q().range}`}
+          href={`/admin/ai?sec=budgets&search=${q().userId}&identity=${q().userId}&identityType=user&range=${q().range}`}
         >
           {t().allowances}
         </ButtonLink>

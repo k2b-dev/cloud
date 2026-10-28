@@ -2,7 +2,7 @@ import { sql } from "bun";
 import { z } from "zod";
 import { recursiveGroupIdsSubquery } from "../services/accounts/group-sql";
 import { toPgTextArray } from "../services/postgres";
-import type { AiDeleteModelInput, AiModel, AiModelSlot, AiProvider } from "../shared/ai-models";
+import { type AiDeleteModelInput, type AiModel, type AiModelSlot, type AiProvider, aiReplacementProblem } from "../shared/ai-models";
 import type { WorkflowBoundPlan, WorkflowIrStep, WorkflowJsonValue } from "../workflows/contracts";
 import { hashWorkflowSource } from "../workflows/language/canonical";
 import { publishWorkflowVersion, type WorkflowActivationInput } from "../workflows/store/definitions";
@@ -10,14 +10,10 @@ import { aiModelAccess } from "./model-access";
 import { AiConfigError, aiModelCatalog, assertAiRevision, lockAiModelCatalog, validateAiSlot } from "./model-catalog";
 
 export const validateAiReplacement = (source: AiProvider, target: AiProvider, original: AiModel, replacement: AiModel): void => {
-  if (source.dataBoundary === "private" && target.dataBoundary !== "private")
+  const problem = aiReplacementProblem(source, target, original, replacement);
+  if (problem === "private_boundary")
     throw new AiConfigError("invalid_configuration", "A private model cannot be replaced with a hosted model.");
-  if (
-    !target.enabled ||
-    !replacement.enabled ||
-    original.kind !== replacement.kind ||
-    original.capabilities.some((capability) => !replacement.capabilities.includes(capability))
-  )
+  if (problem === "incompatible_model")
     throw new AiConfigError(
       "invalid_configuration",
       "The replacement must be enabled and support the original model's kind and capabilities.",

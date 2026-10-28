@@ -2,9 +2,12 @@ import { sql } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { AppDetailsSchema } from "../contracts/app-details";
 import { AppEventEnvelopeSchema } from "../contracts/app-events";
 import { CapabilityQualifiedIdSchema } from "../contracts/capabilities";
 import { type AuthContext, auth, expectUserBackedActor, getLocale, v } from "../server";
+import { AppAccessManagementError } from "../services/app-access-management";
+import { appDetails } from "../services/app-details";
 import { appEventShape, appEventShapeId, recordedAppEventShape } from "../services/app-event-shapes";
 import { appEventBroker } from "../services/app-events";
 
@@ -16,10 +19,28 @@ const Filter = z.object({
   offset: z.coerce.number().int().min(0).default(0),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
-export const createAppEventRoutes = (authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin"), service = appEventBroker) =>
+export const createAppEventRoutes = (
+  authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin"),
+  service = appEventBroker,
+  details = appDetails,
+) =>
   new Hono<AuthContext>()
     .use(authenticate)
     .use(auth.requireOAuthScope("admin"))
+    .get(
+      "/apps/:appId",
+      describeRoute({ tags: ["App events"], summary: "Inspect one application's access, events and notifications" }),
+      v("param", z.object({ appId: App })),
+      async (c) => {
+        try {
+          const result = await details(c.req.valid("param").appId, { authority: auth.getAuthority(c), locale: getLocale(c) });
+          return result ? c.json(AppDetailsSchema.parse(result)) : c.json({ code: "app_not_found" }, 404);
+        } catch (error) {
+          if (error instanceof AppAccessManagementError) return c.json({ code: error.code, message: error.message }, error.status);
+          throw error;
+        }
+      },
+    )
     .get("/catalog", describeRoute({ tags: ["App events"], summary: "List declared event types and subscribers" }), async (c) =>
       c.json(await service.catalog(getLocale(c))),
     )

@@ -23,6 +23,8 @@ export const assistantStarterActions: readonly AssistantStarterAction[] = (() =>
 export default function AssistantEmptyChat(props: {
   composer: JSX.Element;
   notices?: JSX.Element;
+  /** A note about the chosen model; it takes the heading's place, so the composer stays where it is. */
+  modelNote?: JSX.Element;
   projects: readonly AiProject[];
   selectedProjectId: string | null;
   choosingProject?: boolean;
@@ -45,9 +47,19 @@ export default function AssistantEmptyChat(props: {
   return (
     <section class="flex min-h-full items-center justify-center px-[var(--ui-space-section)] py-10" aria-labelledby="assistant-empty-title">
       <div class="w-full max-w-3xl -translate-y-[3vh] sm:-translate-y-[9vh]">
-        <h1 id="assistant-empty-title" class="mb-8 text-center text-2xl font-semibold tracking-tight text-[var(--k2b-text)] sm:mb-12">
-          {t().workOn}
-        </h1>
+        {/* A fixed height: a long note grows upward into the free space and never moves the composer. */}
+        <div class="relative mb-8 h-28 sm:mb-12 sm:h-20">
+          <div class="absolute inset-x-0 bottom-0 flex flex-col justify-end">
+            <h1
+              id="assistant-empty-title"
+              class="text-center text-2xl font-semibold tracking-tight text-[var(--k2b-text)]"
+              classList={{ "sr-only": Boolean(props.modelNote) }}
+            >
+              {t().workOn}
+            </h1>
+            {props.modelNote}
+          </div>
+        </div>
 
         {props.notices ? <div class="mb-2">{props.notices}</div> : null}
         {props.composer}

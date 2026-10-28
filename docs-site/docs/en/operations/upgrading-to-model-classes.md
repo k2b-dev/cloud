@@ -21,8 +21,10 @@ conversation and inference history remain.
 
 1. Before upgrading, record the old configuration using a JSON export without
    secrets. Have the provider API keys ready separately.
-2. After upgrading, create and test providers, then add models, prices, access
-   grants and variants. Follow [Models and providers](/en/docs/ai/models-and-providers).
+2. After upgrading, open **Administration → AI** (`/admin/ai`). The old AI tabs
+   under Administration → Settings lead there. Create and test providers, then
+   add models, prices, access grants and variants. Follow
+   [Models and providers](/en/docs/ai/models-and-providers).
 3. Assign at least balanced under model classes. Configure the vision and
    audio slots where those tools are needed.
 4. Recreate model-specific budget rules and project default model requests.

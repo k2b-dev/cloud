@@ -129,8 +129,10 @@ type Props = {
   backgroundTaskPrompts?: Record<string, string[]>;
   /** Profile ids with a stored provider key. The keys themselves stay server-side. */
   /** Which slice of the AI settings this page shows (the AI sidebar group splits them). */
-  aiSection?: "general" | "jobs";
+  aiSection?: AiSection;
   showAiJobsLink?: boolean;
+  /** Rendered inside a titled workspace level, which already shows the title. */
+  embedded?: boolean;
 };
 
 const AI_ENABLED_SETTING_KEY = "ai.enabled";
@@ -145,10 +147,12 @@ const AI_ENRICH_CRON_SETTING_KEY = "ai.enrich_cron";
 const AI_MEMORY_LEARNING_CRON_SETTING_KEY = "ai.memory_learning_cron";
 const AI_MEMORY_LEARNING_MONTHLY_TOKEN_BUDGET_SETTING_KEY = "ai.memory_learning_monthly_token_budget";
 
-type AiSection = "general" | "jobs";
+type AiSection = "general" | "jobs" | "tools";
 
 /** Where the AI panel renders each setting a save can reject, so the error summary can point there. */
 const AI_SETTING_SECTIONS: Readonly<Record<string, AiSection>> = {};
+
+class SettingsConflictError extends Error {}
 
 const settingControlId = (key: string) => `setting-${key.replaceAll(".", "-")}`;
 
@@ -176,6 +180,10 @@ export default function CoreSettingsForm(props: Props) {
   const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
   // Title of the rejected save; the listed problems are the live field errors.
   const [saveProblem, setSaveProblem] = createSignal<string | null>(null);
+  // Someone saved a setting this page changed: their value, who and when, until the person decides.
+  const [conflict, setConflict] = createSignal<{ key: string; current: unknown; changedBy: string | null; changedAt: string } | null>(null);
+  // The stored version each key was last read at; a conflict moves it to the other person's save.
+  const [seenAt, setSeenAt] = createSignal<Record<string, string | null>>({});
   let saveProblemNotice: HTMLElement | undefined;
 
   const entryMap = createMemo(() => {
@@ -280,7 +288,7 @@ export default function CoreSettingsForm(props: Props) {
   const problemLabel = (key: string): string | undefined => entryMap()[key]?.label;
   const sectionTitle = (section: AiSection) => {
     const admin = adminMessages.resolve([locale()]).t;
-    return { general: admin.aiGeneral, jobs: admin.aiBackgroundJobs }[section];
+    return { general: admin.aiGeneral, jobs: admin.aiBackgroundJobs, tools: admin.aiToolsApi }[section];
   };
   const focusSetting = (key: string): boolean => {
     const control = document.getElementById(settingControlId(key));
@@ -321,12 +329,28 @@ export default function CoreSettingsForm(props: Props) {
           replaceUnreadable,
           expectedUpdatedAt: Object.fromEntries(
             changedKeys()
-              .filter((key) => entryMap()[key]?.updatedAt !== undefined)
-              .map((key) => [key, entryMap()[key]!.updatedAt ?? null]),
+              .filter((key) => key in seenAt() || entryMap()[key]?.updatedAt !== undefined)
+              .map((key) => [key, key in seenAt() ? (seenAt()[key] ?? null) : (entryMap()[key]!.updatedAt ?? null)]),
           ),
         },
       });
 
+      if (response.status === 409) {
+        const body: unknown = await response
+          .clone()
+          .json()
+          .catch(() => null);
+        const read = (key: string): unknown =>
+          body && typeof body === "object" && key in body ? (body as Record<string, unknown>)[key] : undefined;
+        const key = read("key");
+        const by = read("changedBy");
+        const changedAt = read("changedAt");
+        if (read("code") === "conflict" && typeof key === "string") {
+          const name = by && typeof by === "object" && "name" in by && typeof by.name === "string" ? by.name : null;
+          setConflict({ key, current: read("current"), changedBy: name, changedAt: typeof changedAt === "string" ? changedAt : "" });
+          throw new SettingsConflictError();
+        }
+      }
       if (!response.ok) {
         const { message, fields } = await readSettingsError(response, t().saveFailed({ status: response.status }));
         setFieldErrors(fields);
@@ -343,9 +367,25 @@ export default function CoreSettingsForm(props: Props) {
       window.location.reload();
     },
     onError: (e) => {
+      if (e instanceof SettingsConflictError) return;
       if (!saveProblem()) prompts.error(e.message);
     },
   });
+
+  const keepMine = () => {
+    const current = conflict();
+    if (!current) return;
+    setSeenAt((prev) => ({ ...prev, [current.key]: current.changedAt || null }));
+    setConflict(null);
+    save.mutate();
+  };
+  const takeTheirs = () => {
+    const current = conflict();
+    if (!current) return;
+    setSeenAt((prev) => ({ ...prev, [current.key]: current.changedAt || null }));
+    if (current.current !== undefined) setDraft(current.key, current.current);
+    setConflict(null);
+  };
 
   const testPdf = mutations.create<{ bytes: number; contentType: string }, void>({
     mutation: async () => {
@@ -465,6 +505,7 @@ export default function CoreSettingsForm(props: Props) {
   return (
     <SettingsPage
       title={props.title}
+      header={!props.embedded}
       subtitle={props.subtitle}
       icon={props.icon}
       actions={
@@ -483,6 +524,37 @@ export default function CoreSettingsForm(props: Props) {
         />
       }
     >
+      <Show when={conflict()}>
+        {(current) => (
+          <NoticeCard
+            tone="warning"
+            icon="ti ti-git-merge"
+            role="alert"
+            title={
+              current().changedBy
+                ? t().settingConflictBy({
+                    name: current().changedBy!,
+                    setting: problemLabel(current().key) ?? current().key,
+                    time: current().changedAt
+                      ? new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit" }).format(new Date(current().changedAt))
+                      : "",
+                  })
+                : t().settingConflict({ setting: problemLabel(current().key) ?? current().key })
+            }
+            detail={t().settingConflictDetail}
+          >
+            <div class="flex flex-wrap gap-2">
+              <Button type="button" size="sm" onClick={keepMine} disabled={save.loading()}>
+                {t().settingConflictKeepMine}
+              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={takeTheirs} disabled={save.loading()}>
+                {t().settingConflictTakeTheirs}
+              </Button>
+            </div>
+          </NoticeCard>
+        )}
+      </Show>
+
       <Show when={saveProblem() && Object.keys(fieldErrors()).length > 0}>
         <NoticeCard ref={saveProblemNotice} tabIndex={-1} tone="danger" title={saveProblem()}>
           <ul class="flex flex-col gap-2">
@@ -503,7 +575,7 @@ export default function CoreSettingsForm(props: Props) {
                             </Button>
                           }
                         >
-                          <ButtonLink variant="text" size="sm" class="self-start" href={`/admin/settings?tab=ai-${owner()}`}>
+                          <ButtonLink variant="text" size="sm" class="self-start" href={`/admin/ai?sec=${owner()}`}>
                             {t().openSettingsPage({ page: sectionTitle(owner()) })}
                           </ButtonLink>
                         </Show>
@@ -581,7 +653,9 @@ export default function CoreSettingsForm(props: Props) {
           section={props.aiSection ?? "general"}
           showJobsLink={props.showAiJobsLink}
         />
-        <Show when={(props.aiSection ?? "general") === "general"}>{renderFieldSections(genericEntries())}</Show>
+        <Show when={aiSection() !== "jobs"}>
+          {renderFieldSections(genericEntries().filter((entry) => (aiSection() === "tools") === entry.key.startsWith("ai.openai_api_")))}
+        </Show>
       </Show>
     </SettingsPage>
   );
@@ -1083,7 +1157,7 @@ function AiSettingsPanel(props: {
         </SettingsSection>
       </Show>
 
-      <Show when={props.section === "general"}>
+      <Show when={props.section === "tools"}>
         <SettingsSection title={t().webTools} subtitle={t().webToolsDescription} icon="ti ti-world-search">
           <TextInput
             variant="ai"

@@ -29,10 +29,12 @@ import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onC
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import {
+  type AttachmentView,
   type ConversationPageSchema,
   type ConversationSchema,
   type ForYouPageSchema,
   type ItemEventSchema,
+  MAX_MESSAGE_ATTACHMENTS,
   MAX_MESSAGE_REFS,
   MESSAGE_MAX_CODE_POINTS,
   type Mention,
@@ -62,7 +64,7 @@ import { createChannelApi } from "./channel-api";
 import { createChatCommands } from "./chat-commands";
 import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { messageTime, sameDay } from "./chat-format";
-import { createChatSends, createChatSendsApi } from "./chat-sends";
+import { createAttachmentUpload, createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
 import DiscoverChannels from "./DiscoverChannels";
 import ForYou from "./ForYou";
@@ -719,7 +721,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         known.at === item.at &&
         known.seq === item.seq &&
         known.origin?.label === item.origin?.label &&
-        known.quote?.text === item.quote?.text
+        known.quote?.text === item.quote?.text &&
+        known.attachments?.map((attachment) => attachment.id).join() === item.attachments?.map((attachment) => attachment.id).join()
         ? known
         : item;
     };
@@ -731,6 +734,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       return reuse({
         thread: message.thread,
         refs: message.refs,
+        attachments: message.attachments,
         quote: quoteOf(current.id, message),
         origin: mixed && message.kind === "text" ? originOf(current.id, messageThread(message)) : undefined,
         key: sendKeys.get(message.id) ?? message.id,
@@ -791,6 +795,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             kind: "text",
             thread: send.thread === "general" ? null : send.thread,
             refs: send.refs,
+            attachments: send.attachments,
             origin: mixed ? originOf(current.id, send.thread) : undefined,
             quote: send.replyTo ? { author: send.replyTo.author, text: send.replyTo.text } : undefined,
             authorId: props.viewerId,
@@ -1735,16 +1740,24 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [reply, setReply] = createSignal<ChatFeedItem | null>(null);
   const replies = new Map<string, ChatFeedItem | null>();
   // A message that only shares Cloud elements has no text.
+  const uploads = createAttachmentUpload();
   const forYouApi = createForYouApi();
-  const send = async (text: string, refs: readonly CloudResourceRef[] = [], mentions: readonly Mention[] = []): Promise<boolean> => {
+  const send = async (
+    text: string,
+    refs: readonly CloudResourceRef[] = [],
+    attachments: readonly AttachmentView[] = [],
+    mentions: readonly Mention[] = [],
+  ): Promise<boolean> => {
     const current = openChat();
     const id = draftId(route());
-    const body = refs.length > 0 && !text.trim() ? "" : text;
+    const shares = refs.length + attachments.length;
+    const body = shares > 0 && !text.trim() ? "" : text;
     if (
       !current ||
       !outbox ||
       refs.length > MAX_MESSAGE_REFS ||
-      (body === "" ? refs.length === 0 : !MessageBodySchema.safeParse(body).success) ||
+      attachments.length > MAX_MESSAGE_ATTACHMENTS ||
+      (body === "" ? shares === 0 : !MessageBodySchema.safeParse(body).success) ||
       draftStorageFailed() ||
       (id !== null && draftConflicts()[id] !== undefined) ||
       pendingOpen !== 0
@@ -1759,6 +1772,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       outbox.send(current.id, body, {
         thread,
         refs,
+        attachments,
         mentions,
         replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
       });
@@ -2330,7 +2344,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           <AppWorkspace.Main
             scroll={false}
             aria-busy={busy()}
-            class={threaded() && !route().threads ? "chat-main chat-main--threads" : "chat-main"}
+            class={`chat-workspace__main ${threaded() && !route().threads ? "chat-main chat-main--threads" : "chat-main"}`}
           >
             {/* From a 1800 px window, a chat with threads shows them in a column of their own; CSS decides, so the server
                 render and the first frame agree, and crossing the width moves nothing in the reading column. The pane
@@ -2467,37 +2481,33 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         chatId={current().id}
                         title={system() && openThread() ? openThread()!.name : current().title}
                         resource={system() ? (openThread()?.resource ?? undefined) : undefined}
-                        // A wider window picks the thread beside the title; a phone names it there and goes back to the
-                        // chat's thread page for another one. CSS decides, so server and browser render the same head.
+                        // A wider window picks the thread beside the title; a phone and a window with the thread column
+                        // name the thread as the title instead. CSS decides, so server and browser render the same head.
                         titleExtra={
                           threaded() ? (
-                            <>
-                              <Show when={!system() || !openThread()}>
-                                <span class="chat-conversation__thread-name">· {viewTitle()}</span>
-                              </Show>
-                              <span class="chat-conversation__picker">
-                                <ThreadPicker
-                                  chatId={current().id}
-                                  threads={openChat()?.threads ?? null}
-                                  unread={current().unread}
-                                  view={openChat()?.view ?? "all"}
-                                  basePath={basePath}
-                                  canAdmin={canCreateThread()}
-                                  system={system()}
-                                  total={current().summaryCursor == null ? current().threads : undefined}
-                                  creating={creatingThread()}
-                                  onOverview={openOverview}
-                                  onSelect={(view) => void openView(current().id, view)}
-                                  onCreate={() => void createThread()}
-                                />
-                              </span>
-                            </>
+                            <span class="chat-conversation__picker">
+                              <ThreadPicker
+                                chatId={current().id}
+                                threads={openChat()?.threads ?? null}
+                                unread={current().unread}
+                                view={openChat()?.view ?? "all"}
+                                basePath={basePath}
+                                canAdmin={canCreateThread()}
+                                system={system()}
+                                total={current().summaryCursor == null ? current().threads : undefined}
+                                creating={creatingThread()}
+                                onOverview={openOverview}
+                                onSelect={(view) => void openView(current().id, view)}
+                                onCreate={() => void createThread()}
+                              />
+                            </span>
                           ) : undefined
                         }
                         wideTitle={
                           threaded()
                             ? {
                                 title: viewTitle(),
+                                chat: current().title,
                                 subtitle:
                                   openChat()?.view === "all"
                                     ? `${current().title} · ${t().allThreadsHint}`
@@ -2572,6 +2582,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         draft={draft()}
                         onDraftChange={changeDraft}
                         onSend={send}
+                        // A discard that fails leaves the file to the nightly cleanup of unsent uploads (24 hours).
+                        onDiscard={(attachment) => void uploads.discard(current().id, attachment).catch(() => {})}
+                        onUpload={(file, signal) =>
+                          uploads.upload(
+                            current().id,
+                            openChat()?.view && !["all", "general"].includes(openChat()!.view) ? openChat()!.view : null,
+                            file,
+                            signal,
+                          )
+                        }
                         people={{
                           search: async (query, signal) =>
                             (

@@ -21,15 +21,8 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
     { href: "/admin/settings?tab=security", icon: "ti-shield-lock", label: t.security },
     { href: "/admin/settings?tab=legal", icon: "ti-file-text", label: t.legal },
   ];
-  const aiLinks: AdminLink[] = [
-    { href: "/admin/settings?tab=ai-general", icon: "ti-adjustments", label: t.general },
-    { href: "/admin/settings?tab=ai-providers", icon: "ti-sparkles", label: t.providers },
-    { href: "/admin/settings?tab=ai-quotas", icon: "ti-gauge", label: t.aiQuotas },
-    { href: "/admin/settings?tab=ai-usage", icon: "ti-chart-histogram", label: t.aiUsage },
-    { href: "/admin/settings?tab=ai-skills", icon: "ti-wand", label: t.skills },
-    { href: "/admin/settings?tab=ai-projects", icon: "ti-folders", label: t.projects },
-    { href: "/admin/settings?tab=ai-jobs", icon: "ti-activity", label: t.backgroundJobs },
-  ];
+  // One AI area: providers, models, classes, settings and the AI pages apps contribute all live under /admin/ai.
+  const aiLinks: AdminLink[] = [{ href: "/admin/ai", icon: "ti-sparkles", label: t.ai }];
   const contributedApps = apps
     .map((app) => ({
       app,
@@ -45,10 +38,6 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
         .filter((group) => group.links.length > 0),
     }))
     .sort((a, b) => a.app.name.localeCompare(b.app.name));
-
-  aiLinks.push(
-    ...contributedApps.flatMap(({ groups }) => groups.filter((group) => group.section === "ai").flatMap((group) => group.links)),
-  );
 
   const appsWithGroups = new Set(contributedApps.filter(({ groups }) => groups.length > 0).map(({ app }) => app.id));
   const appLinks = apps

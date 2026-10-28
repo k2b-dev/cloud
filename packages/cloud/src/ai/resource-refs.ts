@@ -13,7 +13,7 @@ import type { AiConversationResourceObservation } from "./types";
 
 const LinkedResourceReferenceSchema = CloudResourceReferenceSchema.extend({
   href: CloudResourceHrefSchema.optional(),
-});
+}).strip();
 
 export const addCloudResourceHrefs = <T>(
   value: T,
@@ -67,12 +67,14 @@ export const collectConversationResourceObservations = (...values: unknown[]): A
       return;
     }
 
-    const view = CloudResourceViewSchema.safeParse(value);
+    const view = CloudResourceViewSchema.strip().safeParse(value);
     if (view.success) {
       const resource: CloudResourceView = view.data;
       observations.set(observationKey(resource.ref), {
         ref: resource.ref,
         title: resource.title,
+        context: resource.context,
+        status: resource.status,
         preview: resource.preview,
         icon: resource.icon,
         href: resource.links.find((link) => link.rel === "open")?.href,
@@ -87,6 +89,8 @@ export const collectConversationResourceObservations = (...values: unknown[]): A
           ...previous,
           ref,
           ...(resource.title !== undefined ? { title: resource.title } : {}),
+          ...(resource.context !== undefined ? { context: resource.context } : {}),
+          ...(resource.status !== undefined ? { status: resource.status } : {}),
           ...(resource.preview !== undefined ? { preview: resource.preview } : {}),
           ...(resource.icon !== undefined ? { icon: resource.icon } : {}),
           ...(resource.href !== undefined ? { href: resource.href } : {}),
