@@ -389,7 +389,7 @@ export default function Welcome(props: WelcomeProps) {
           }
         >
           {(current) => (
-            <div class="pwa-welcome__block" aria-labelledby="pwa-device-confirmation">
+            <section class="pwa-welcome__block" aria-labelledby="pwa-device-confirmation">
               <h2 id="pwa-device-confirmation" tabindex="-1">
                 {t().adminConfirmTitle({ name: current().account })}
               </h2>
@@ -401,7 +401,7 @@ export default function Welcome(props: WelcomeProps) {
               <Button variant="secondary" disabled={busy()} onClick={() => void decide("reject")}>
                 {t().adminReject}
               </Button>
-            </div>
+            </section>
           )}
         </Show>
       </div>
