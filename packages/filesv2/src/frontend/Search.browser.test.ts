@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { appHostCss } from "../../../ui/test/app-host-fixture";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 
 // The real Browser in its search states, with fictional data; marks, chips and row geometry need a layout engine.
 const ui = new URL("../../../ui/", import.meta.url).pathname;
@@ -62,8 +62,7 @@ const page = (lang: string) =>
 const open = async (options: BrowserContextOptions, hash: string, lang = "en") => {
   const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
   const tab = await context.newPage();
-  const errors: string[] = [];
-  tab.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(tab);
   await tab.route("http://files-search.test/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/app/filesv2") return route.fulfill({ contentType: "text/html", body: page(lang) });
