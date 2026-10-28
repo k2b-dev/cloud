@@ -733,8 +733,9 @@
     display: none;
   }
 }
+/* Beats the shared `.k2b-ui .k2b-button` display, which ties with two classes and wins as Cloud's stylesheet comes later. */
 @container k2b-app-area (min-width: 64rem) {
-  .chat-app__to-list {
+  .chat-app .k2b-button.chat-app__to-list {
     display: none;
   }
 }
