@@ -8,7 +8,8 @@ export const awaitDraftDocumentQuery = async <T>(
   query: Pick<SQL.Query<T>, "then"> & { cancel(): unknown },
   signal?: AbortSignal,
 ): Promise<T> => {
-  const abort = () => query.cancel();
+  // A cancel after the reservation closed settles with "Connection closed"; the awaited query reports the outcome.
+  const abort = () => void Promise.resolve(query.cancel()).catch(() => undefined);
   signal?.addEventListener("abort", abort, { once: true });
   try {
     if (signal?.aborted) abort();
@@ -33,14 +34,20 @@ export const withDraftDocumentTransaction = async <T>(
   if (!signal) return sql.begin(operation);
   signal.throwIfAborted();
   const reserved = await sql.reserve({ signal });
-  // Query cancellation alone can leave a reserved transaction waiting on a row
-  // lock. Closing this reservation ends its backend without closing the pool.
+  // A closed client socket does not wake a backend waiting on a row lock: it
+  // notices only when it next writes. Cancel that backend's statement through
+  // the pool first, then close the reservation without closing the pool.
+  let pid: number | undefined;
   let closing: Promise<void> | undefined;
   const abort = () => {
-    closing ??= reserved.close({ timeout: 0 });
+    const cancel = pid === undefined ? Promise.resolve() : sql`SELECT pg_cancel_backend(${pid})`.then(() => undefined);
+    // Ending the backend is the intent: "Connection closed" rejections are expected; the query reports the abort.
+    closing ??= cancel.catch(() => undefined).then(() => reserved.close({ timeout: 0 }).catch(() => undefined));
   };
   signal.addEventListener("abort", abort, { once: true });
   try {
+    const [backend] = await reserved<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+    pid = backend?.pid;
     if (signal.aborted) abort();
     signal.throwIfAborted();
     return await reserved.begin(async (db) => {
