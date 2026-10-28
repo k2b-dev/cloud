@@ -6,6 +6,7 @@ import {
   CHART_MAX_BLOCKS,
   chartBlockFrame,
   notebookChartFrameHtml,
+  notebookChartHeight,
   parseNotebookChartBlocks,
   renderNotebookChartFigure,
 } from "./chart-blocks";
@@ -72,8 +73,79 @@ describe("notebook chart mapping", () => {
         { label: "Jan", value: 12 },
         { label: "Feb", value: 18 },
       ],
+      xAxis: { label: "Month" },
+      yAxis: { label: "Revenue" },
       tooltip: { label: "Revenue" },
     });
+  });
+
+  test("the chart format and unit write the value axis and tooltips; the tooltip label names the value axis", () => {
+    expect(
+      input(
+        chart(`${inline}
+format: EUR
+unit: netto`),
+      ),
+    ).toMatchObject({
+      yAxis: { label: "Revenue", format: { style: "currency", currency: "EUR", unit: "netto" } },
+      tooltip: { label: "Revenue", format: { style: "currency", currency: "EUR", unit: "netto" } },
+    });
+    // An existing tooltip format also reaches the axis; a chart format wins there.
+    expect(
+      input(
+        chart(`${inline}
+tooltip:
+  label: Umsatz
+  format: EUR`),
+      ),
+    ).toMatchObject({
+      yAxis: { label: "Umsatz", format: { style: "currency", currency: "EUR" } },
+    });
+    expect(
+      input(
+        chart(`${inline}
+format: number
+tooltip:
+  format: EUR`),
+      ),
+    ).toMatchObject({
+      yAxis: { format: { style: "number" } },
+      tooltip: { format: { style: "currency", currency: "EUR" } },
+    });
+    expect(
+      parseNotebookChartBlocks(
+        chart(`${inline}
+format: euro`),
+      ).diagnostics,
+    ).toEqual([{ code: "invalid-type", line: 2 + inline.split("\n").length, path: "chart.format" }]);
+  });
+
+  test("several series get a legend with their column names; one named series titles the value axis", () => {
+    const series = (y: string) =>
+      chart(`type: line\ntitle: Ernte\ncolumns: [Tag, Äpfel, Birnen]\nrows:\n  - [1, 12, 8]\n  - [2, 18, 11]\nx: Tag\ny: ${y}`);
+    const two = renderNotebookChartFigure(parseNotebookChartBlocks(series("[Äpfel, Birnen]")).blocks[0]!.input, "de")!;
+    const legend = /<ul class="k2b-chart-legend"[^>]*>([\s\S]*?)<\/ul>/.exec(two)?.[1] ?? "";
+    expect([...legend.matchAll(/<\/span>([^<]*)<\/li>/g)].map((match) => match[1])).toEqual(["Äpfel", "Birnen"]);
+    const one = renderNotebookChartFigure(parseNotebookChartBlocks(series("Äpfel")).blocks[0]!.input, "de")!;
+    expect(one).not.toContain("k2b-chart-legend");
+    expect([...one.matchAll(/stdlib-chart-axis-label"[^>]*>([^<]*)</g)].map((match) => match[1]).sort()).toEqual(["Tag", "Äpfel"]);
+  });
+
+  test("the drawn figure labels every category and titles both axes", () => {
+    const rows = Array.from({ length: 15 }, (_, index) => `  - [Sorte ${index + 1}, ${(index + 1) * 1000}]`).join("\n");
+    const markdown = chart(`type: bar\ntitle: Obst\ncolumns: [Sorte, Umsatz]\nrows:\n${rows}\nx: Sorte\ny: Umsatz\nformat: EUR`);
+    const figure = renderNotebookChartFigure(parseNotebookChartBlocks(markdown).blocks[0]!.input, "de")!;
+    const labels = [...figure.matchAll(/stdlib-chart-category-label"[^>]*>([^<]*)</g)].map((match) => match[1]);
+    expect(labels).toEqual(Array.from({ length: 15 }, (_, index) => `Sorte ${index + 1}`));
+    // Whole euros print without cents.
+    expect(figure).toMatch(/>15\.000\s€</);
+    expect([...figure.matchAll(/stdlib-chart-axis-label"[^>]*>([^<]*)</g)].map((match) => match[1])).toEqual(["Sorte", "Umsatz"]);
+    expect(figure).toContain('data-bar-layout="rows"');
+    // The frame takes the drawing's height, which an editor placeholder reads from the same block.
+    const height = notebookChartHeight(parseNotebookChartBlocks(markdown).blocks[0]!.input, "de");
+    expect(height).toBeGreaterThan(288);
+    expect(figure).toContain(`style="--notebook-chart-height:${height}px"`);
+    expect(figure).toContain(`--k2b-chart-height:${height}px`);
   });
 
   test("keeps raw numeric-looking table labels and evaluates formula labels", () => {

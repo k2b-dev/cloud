@@ -13,6 +13,7 @@ const previousSecret = process.env.APP_SECRET;
 const month = "geo.monthly_budget_credits",
   day = "geo.person_daily_credits";
 const clients: SQL[] = [];
+const actorId = "00000000-0000-4000-8000-000000000003";
 beforeAll(() => {
   process.env.APP_SECRET = "test-only-geo-budget";
 });
@@ -23,7 +24,7 @@ afterAll(() => {
 beforeEach(() => {
   spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-02T03:04:05Z"));
   const user = buildProjectedUser({
-    id: "00000000-0000-4000-8000-000000000003",
+    id: actorId,
     provider: "local",
     profile: "user",
     effective_admin: true,
@@ -45,6 +46,7 @@ const transaction = async (values: Record<string, number | "unreadable"> = {}) =
   for (const [key, value] of Object.entries(values))
     rows.set(key, value === "unreadable" ? "broken-ciphertext" : await encryptValue(value));
   const queries: Array<{ query: string; key?: string }> = [];
+  const updatedBy = new Map<string, string>();
   const client = Object.assign(new SQL("postgres://localhost/unused_test"), {
     savepoint: () => {
       throw new Error("Unexpected savepoint");
@@ -54,10 +56,16 @@ const transaction = async (values: Record<string, number | "unreadable"> = {}) =
   const db = new Proxy(client, {
     apply(_target, _receiver, args) {
       const query: string = args[0].join("?").replace(/\s+/g, " ").trim();
-      const key: unknown = query.startsWith("UPDATE settings.entries SET value = ?,") ? args[2] : args[1];
+      const attribution = query === "UPDATE settings.entries SET updated_by=?::uuid WHERE key=?";
+      const key: unknown = query.startsWith("UPDATE settings.entries SET value = ?,") || attribution ? args[2] : args[1];
       queries.push({ query, key: typeof key === "string" ? key : undefined });
       if (query.includes("pg_advisory_xact_lock")) return Promise.resolve([]);
       if (typeof key !== "string") throw new Error("Expected a setting key");
+      if (attribution) {
+        if (typeof args[1] !== "string" || !rows.has(key)) throw new Error("Expected an actor and a saved setting");
+        updatedBy.set(key, args[1]);
+        return Promise.resolve([]);
+      }
       const value = rows.get(key);
       if (query.startsWith("SELECT value") || query.startsWith("UPDATE settings.entries SET value = value"))
         return Promise.resolve(value === undefined ? [] : [{ value }]);
@@ -93,7 +101,7 @@ const transaction = async (values: Record<string, number | "unreadable"> = {}) =
         ),
       ),
   );
-  return { db, queries, rows, begin };
+  return { db, queries, rows, begin, updatedBy };
 };
 const save = (body: unknown) =>
   routes.request("/", {
@@ -163,7 +171,10 @@ test("bulk updates validate the final pair once in either field order", async ()
     expect((await save({ updates })).status).toBe(204);
     expect(tx.queries.filter(({ query }) => query.includes("pg_advisory_xact_lock"))).toHaveLength(1);
     expect(tx.queries.some(({ query }) => query.startsWith("SELECT value"))).toBeFalse();
-    for (const [key, value] of Object.entries(updates!)) expect(await decryptValue(tx.rows.get(key)!)).toBe(value);
+    for (const [key, value] of Object.entries(updates!)) {
+      expect(await decryptValue(tx.rows.get(key)!)).toBe(value);
+      expect(tx.updatedBy.get(key)).toBe(actorId);
+    }
     tx.begin.mockRestore();
   }
 });
@@ -216,6 +227,7 @@ test("bulk repairs unreadable monthly values with replacement or reset and still
       expect(await response.json()).toMatchObject({ code: "geo_budget_invalid" });
       expect(mutations(tx.queries)).toEqual([]);
     } else {
+      for (const key of Object.keys("updates" in body ? body.updates : {})) expect(tx.updatedBy.get(key)).toBe(actorId);
       expect(tx.rows.has(month) ? await decryptValue(tx.rows.get(month)!) : SETTINGS_MAP.get(month)?.default).toBe(expectedMonth);
       expect(tx.rows.has(day) ? await decryptValue(tx.rows.get(day)!) : SETTINGS_MAP.get(day)?.default).toBe(expectedDay);
     }

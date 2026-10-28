@@ -1,3 +1,4 @@
+export { AnchoredPopover, type AnchoredPopoverProps } from "./AnchoredPopover";
 export type {
   AppOverviewCardsProps,
   AppOverviewEmptyStateProps,
@@ -214,6 +215,7 @@ export {
   type AppWorkspaceSwitcherAction,
   type AppWorkspaceSwitcherOption,
 } from "./SidebarSwitcher";
+export { measureScrollFade } from "./scroll-fade";
 export type { TabBarItem, TabBarProps } from "./TabBar";
 export { default as TabBar } from "./TabBar";
 export type { TableOfContentsItem, TableOfContentsProps } from "./TableOfContents";

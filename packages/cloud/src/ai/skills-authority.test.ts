@@ -79,7 +79,7 @@ test("every Skill mutation keeps the resolved authority and stops before effects
     description: "",
     icon: "",
     instructions: "",
-    defaultModelProfileId: null,
+    defaultModel: null,
     revision: 1,
     createdAt: row.created_at.toString(),
     updatedAt: row.updated_at.toString(),

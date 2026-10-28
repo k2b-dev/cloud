@@ -1,0 +1,6 @@
+### Closing a sheet triggered application navigation
+
+- **What happened:** Closing a dialog or the phone composer command sheet could reload the page, lose its draft, or reopen a message anchor or artifact.
+- **Root cause:** Same-URL dialog history traversals reached application `popstate` listeners, including the synthetic Back after dismissal and Forward onto an entry a closed sheet left behind. A submit handler that navigated before the sheet's entry had left could leave that entry behind.
+- **Error class:** State lost on navigation or reload.
+- **Guard:** The dialog core suppresses same-URL traversals involving its entries only when the Navigation API or its own synthetic Back establishes the departure. `dialog-history.behavior.test.ts` runs with and without the Navigation API and covers retired markers, foreign pushes, replaced addresses, and several cores. `chat-slash.behavior.test.ts` checks that touch-only submission waits for pending or in-flight Back while desktop submission stays synchronous. `chat-composer.browser.test.ts` covers phone sheet history in Chromium and WebKit, with the application's listener added before the first sheet opens: Chromium runs a window's `popstate` listeners in the order they were added, capture or not, so the shared dialog core listens from the moment it is created.

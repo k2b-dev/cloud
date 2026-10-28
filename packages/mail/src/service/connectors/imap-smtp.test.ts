@@ -535,7 +535,9 @@ describe("IMAP reads under throttling", () => {
     throttleFetches?: number;
     throttleFetchWindows?: Array<[number, number]>;
     throttleSearch?: boolean;
-    uids?: number[];
+    changedUids?: number[];
+    partialFlags?: boolean;
+    uids?: readonly number[];
     phantoms?: number[];
   }) => {
     const uids = options.uids ?? [7];
@@ -552,7 +554,7 @@ describe("IMAP reads under throttling", () => {
       socket: {
         open(socket) {
           socket.data = { buffer: "" };
-          socket.write("* OK [CAPABILITY IMAP4rev1] fixture ready\r\n");
+          socket.write("* OK [CAPABILITY IMAP4rev1 ENABLE CONDSTORE] fixture ready\r\n");
         },
         data(socket, data) {
           socket.data.buffer += data.toString();
@@ -566,13 +568,15 @@ describe("IMAP reads under throttling", () => {
             commands.push(words.join(" "));
             const throttle = () => socket.write(`${tag} BAD Request is throttled. Suggested Backoff Time: 1 milliseconds\r\n`);
             if (command === "LOGIN") {
-              socket.write(`${tag} OK [CAPABILITY IMAP4rev1] logged in\r\n`);
+              socket.write(`${tag} OK [CAPABILITY IMAP4rev1 ENABLE CONDSTORE] logged in\r\n`);
+            } else if (command === "ENABLE") {
+              socket.write(`* ENABLED CONDSTORE\r\n${tag} OK done\r\n`);
             } else if (command === "LIST") {
               socket.write(`* LIST () "/" "INBOX"\r\n${tag} OK done\r\n`);
             } else if (command === "SELECT" || command === "EXAMINE") {
               // Keep EXISTS nonzero even when the requested UID was expunged, so ImapFlow sends FETCH.
               socket.write(
-                `* FLAGS (\\Seen)\r\n* ${Math.max(1, uids.length)} EXISTS\r\n* OK [UIDVALIDITY 10] ok\r\n* OK [UIDNEXT 10] ok\r\n${tag} OK [READ-WRITE] done\r\n`,
+                `* FLAGS (\\Seen)\r\n* ${Math.max(1, uids.length)} EXISTS\r\n* OK [UIDVALIDITY 10] ok\r\n* OK [UIDNEXT 10] ok\r\n* OK [HIGHESTMODSEQ 20] ok\r\n${tag} OK [READ-WRITE] done\r\n`,
               );
             } else if (command === "UID FETCH") {
               fetches += 1;
@@ -586,6 +590,8 @@ describe("IMAP reads under throttling", () => {
               }
               for (const [index, uid] of uids.entries()) {
                 if (!matches(words[2] ?? "", uid)) continue;
+                if (line.includes("CHANGEDSINCE") && !(options.changedUids ?? uids).includes(uid)) continue;
+                if (options.partialFlags && index > 0) continue;
                 const source = `Message-ID: ${messageIdFor(uid)}\r\n\r\nBody ${uid}\r\n`;
                 const body =
                   line.includes("BODY.PEEK[]") && !options.phantoms?.includes(uid)
@@ -603,7 +609,9 @@ describe("IMAP reads under throttling", () => {
               }
               const found = line.includes("HEADER")
                 ? uids.filter((uid) => messageIdFor(uid) === messageId)
-                : uids.filter((uid) => matches(words[3] ?? "", uid));
+                : uids
+                    .filter((uid) => matches(/\bUID ([\d:,]+)/.exec(words.slice(2).join(" "))?.[1] ?? "", uid))
+                    .filter((uid) => !line.includes("MODSEQ") || (options.changedUids ?? uids).includes(uid));
               socket.write(`* SEARCH ${found.join(" ")}\r\n${tag} OK done\r\n`);
             } else if (command === "LOGOUT") {
               socket.write(`* BYE\r\n${tag} OK done\r\n`);
@@ -631,6 +639,38 @@ describe("IMAP reads under throttling", () => {
     Object.assign(client, { throttleWait: async () => false });
     return trackImapSession(client);
   };
+
+  test.each([
+    { throttleFetch: true },
+    { throttleFetch: true, throttleSearch: true },
+    { throttleFetch: false, partialFlags: true, uids: [7, 9] },
+  ])("flag windows reject unconfirmed changes: %j", async (options) => {
+    const fixture = serverFor(options);
+    try {
+      await expect(
+        withSharedImapSession(config, sessionFor(fixture.server.port), (session) =>
+          imapSmtpConnector.fetchFlagChanges(session, "INBOX", "10", "10", 1, 9),
+        ),
+      ).rejects.toMatchObject({ code: "ETHROTTLE" });
+    } finally {
+      fixture.server.stop(true);
+    }
+  });
+
+  test("flag windows accept confirmed empty and complete changes", async () => {
+    for (const changedUids of [[], [7]]) {
+      const fixture = serverFor({ throttleFetch: false, changedUids });
+      try {
+        const changes = await withSharedImapSession(config, sessionFor(fixture.server.port), (session) =>
+          imapSmtpConnector.fetchFlagChanges(session, "INBOX", "10", "10", 1, 9),
+        );
+        expect(changes.map((change) => change.uid)).toEqual(changedUids);
+        expect(fixture.commands.filter((command) => command.startsWith("UID SEARCH "))).toEqual(["UID SEARCH UID 1:9 MODSEQ 11"]);
+      } finally {
+        fixture.server.stop(true);
+      }
+    }
+  });
 
   test.each(reads)("%s confirms an empty FETCH answer before it reports a message as gone", async (name, read) => {
     const fixture = serverFor({ throttleFetch: true });
@@ -783,7 +823,7 @@ describe("IMAP reads under throttling", () => {
 describe("IMAP source download interruption", () => {
   // Serves one 1 MiB source in the partial windows ImapFlow requests, like a real server.
   const source = Buffer.alloc(1024 * 1024, "x");
-  const serve = () => {
+  const serve = (options: { throttleAfterFirst?: boolean; recoverProbe?: boolean; sizeExtra?: number } = {}) => {
     const sockets: Socket<{ buffer: string }>[] = [];
     let fetches = 0;
     const server = Bun.listen<{ buffer: string }>({
@@ -814,8 +854,12 @@ describe("IMAP source download interruption", () => {
               fetches += 1;
               const window = /BODY\.PEEK\[\]<(\d+)\.(\d+)>/.exec(line);
               const start = Number(window?.[1] ?? 0);
+              if (options.throttleAfterFirst && start > 0 && (!options.recoverProbe || Number(window?.[2]) > 1)) {
+                socket.write(`${tag} BAD Request is throttled. Suggested Backoff Time: 1 milliseconds\r\n`);
+                continue;
+              }
               const chunk = source.subarray(start, start + Number(window?.[2] ?? source.length));
-              const size = line.includes("RFC822.SIZE") ? ` RFC822.SIZE ${source.length}` : "";
+              const size = line.includes("RFC822.SIZE") ? ` RFC822.SIZE ${source.length + (options.sizeExtra ?? 0)}` : "";
               socket.write(`* 1 FETCH (UID 7${size} BODY[]<${start}> {${chunk.length}}\r\n`);
               socket.write(chunk);
               socket.write(`)\r\n${tag} OK done\r\n`);
@@ -842,6 +886,7 @@ describe("IMAP source download interruption", () => {
       disableAutoIdle: true,
       socketTimeout: 2_000,
     });
+    Object.assign(client, { throttleWait: async () => false });
     client.on("error", () => undefined);
     await client.connect();
     const lock = await client.getMailboxLock("INBOX", { readOnly: true });
@@ -856,6 +901,40 @@ describe("IMAP source download interruption", () => {
       return { bytes, error };
     }
   };
+
+  test.each([false, true])("midstream throttling rejects EOF on a usable connection (probe recovers: %s)", async (recoverProbe) => {
+    const fixture = serve({ throttleAfterFirst: true, recoverProbe });
+    const { client, lock } = await connect(fixture.server.port);
+    try {
+      const results: Array<{ bytes: number; error: unknown }> = [];
+      await downloadSelectedSources(client, [{ key: "message-7", uidValidity: "10", uid: 7 }], async (download) => {
+        results.push(await drain(download.stream));
+      });
+      expect(client.usable).toBe(true);
+      expect(results).toMatchObject([{ error: { code: "ETHROTTLE" } }]);
+      expect(results[0]!.bytes).toBe(64 * 1024);
+    } finally {
+      lock.release();
+      await client.logout().catch(() => undefined);
+      fixture.server.stop(true);
+    }
+  });
+
+  test("accepts an overstated size when an offset probe confirms source EOF", async () => {
+    const fixture = serve({ sizeExtra: 1024 });
+    const { client, lock } = await connect(fixture.server.port);
+    try {
+      const results: Array<{ bytes: number; error: unknown }> = [];
+      await downloadSelectedSources(client, [{ key: "message-7", uidValidity: "10", uid: 7 }], async (download) => {
+        results.push(await drain(download.stream));
+      });
+      expect(results).toEqual([{ bytes: source.length, error: null }]);
+    } finally {
+      lock.release();
+      await client.logout().catch(() => undefined);
+      fixture.server.stop(true);
+    }
+  });
 
   test("fails a real download that the connection loss cut short while the consumer waited", async () => {
     const fixture = serve();

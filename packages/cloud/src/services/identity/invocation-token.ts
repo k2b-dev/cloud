@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { createRemoteJWKSet, decodeProtectedHeader, errors, type JWTVerifyGetKey, jwtVerify, SignJWT } from "jose";
 import { z } from "zod";
 import {
@@ -9,6 +11,7 @@ import {
   IDENTITY_MAX_COMPACT_TOKEN_BYTES,
   INVOCATION_CLOCK_TOLERANCE_SECONDS,
 } from "./constants";
+import { authorityFromParentInvocation } from "./invocation-authority";
 import { type PreparedIdentitySigner, prepareIdentitySigner } from "./key-ring";
 import { identityMetrics } from "./metrics";
 import { getIdentityRuntimeConfig } from "./runtime-config";
@@ -71,6 +74,7 @@ const InvocationPayloadSchema = z
     mandate_revision: z.number().int().positive().optional(),
     workload_type: BoundedIdentifierSchema.optional(),
     workload_id: BoundedIdentifierSchema.optional(),
+    parent_invocation_id: z.uuid().optional(),
     jti: z.string().uuid(),
     iat: z.number().int().nonnegative(),
     nbf: z.number().int().nonnegative(),
@@ -78,7 +82,14 @@ const InvocationPayloadSchema = z
   })
   .strict()
   .superRefine((claims, context) => {
-    if (claims.exp - claims.iat !== CLOUD_INVOCATION_TOKEN_TTL_SECONDS || claims.nbf !== claims.iat) {
+    if (
+      (claims.parent_invocation_id
+        ? claims.exp <= claims.iat ||
+          claims.exp - claims.iat > CLOUD_INVOCATION_TOKEN_TTL_SECONDS ||
+          !claims.op.startsWith("capability.query:")
+        : claims.exp - claims.iat !== CLOUD_INVOCATION_TOKEN_TTL_SECONDS) ||
+      claims.nbf !== claims.iat
+    ) {
       context.addIssue({ code: "custom", message: "Invocation lifetime is invalid" });
     }
 
@@ -181,11 +192,23 @@ export const signInvocationToken = async (params: {
   schemaHash: string | null;
   authority: InvocationAuthority;
   requestId?: string;
+  parent?: CloudInvocationClaims;
+  expiresAt?: number;
   issuedAt?: Date;
   jti?: string;
   signer?: PreparedIdentitySigner;
   issuer?: string;
 }): Promise<{ token: string; kid: string; claims: CloudInvocationClaims }> => {
+  if (
+    params.parent &&
+    (params.parent.parent_invocation_id ||
+      params.parent.aud !== `app:${params.callingAppId}` ||
+      params.parent.aud === `app:${params.targetAppId}` ||
+      !params.operation.startsWith("capability.query:") ||
+      !isDeepStrictEqual(authorityFromParentInvocation(params.parent), params.authority))
+  ) {
+    throw new Error("Child invocation cannot widen or change its parent authority");
+  }
   const issuer = params.issuer ?? (await getIdentityRuntimeConfig()).issuer;
   const signer = params.signer ?? (await prepareIdentitySigner("invocation"));
   const issuedAt = params.issuedAt ?? new Date();
@@ -204,7 +227,8 @@ export const signInvocationToken = async (params: {
     jti: params.jti ?? crypto.randomUUID(),
     iat: issuedAtSeconds,
     nbf: issuedAtSeconds,
-    exp: issuedAtSeconds + CLOUD_INVOCATION_TOKEN_TTL_SECONDS,
+    ...(params.parent ? { parent_invocation_id: params.parent.jti } : {}),
+    exp: Math.min(issuedAtSeconds + CLOUD_INVOCATION_TOKEN_TTL_SECONDS, params.parent?.exp ?? Infinity, params.expiresAt ?? Infinity),
   });
 
   try {
@@ -221,6 +245,26 @@ export const signInvocationToken = async (params: {
     throw error;
   }
 };
+
+async function verifyWithKeyRefresh(
+  verify: (key: JWTVerifyGetKey) => ReturnType<typeof jwtVerify>,
+  key: JWTVerifyGetKey,
+  remote: { url: URL; state: RemoteSetState } | null,
+) {
+  try {
+    return await verify(key);
+  } catch (error) {
+    if (!(error instanceof errors.JWKSNoMatchingKey) || !remote) throw error;
+    const now = Date.now();
+    if (now - remote.state.lastForcedRefreshAt < 30_000) throw error;
+    remote.state.lastForcedRefreshAt = now;
+    identityMetrics.increment("unknown_kid_refresh");
+    const refreshed = createRemoteSet(remote.url);
+    const verified = await verify(refreshed);
+    remote.state.key = refreshed;
+    return verified;
+  }
+}
 
 /** With deferSchemaBinding, the caller must compare schema_hash after resolving live authority. */
 export const verifyInvocationToken = async (
@@ -239,7 +283,7 @@ export const verifyInvocationToken = async (
     const jwksUrl = options.jwksUrl ?? runtime?.invocationJwksUrl;
     const state = options.key || !jwksUrl ? null : remoteSet(jwksUrl);
     if (state && jwksUrl) remote = { url: jwksUrl, state };
-    let key = options.key ?? state?.key;
+    const key = options.key ?? state?.key;
     if (!key) throw new Error("Cloud invocation verifier has no public key source");
     assertProtectedHeader(decodeProtectedHeader(token));
     const verify = (candidate: JWTVerifyGetKey) =>
@@ -251,19 +295,7 @@ export const verifyInvocationToken = async (
         clockTolerance: INVOCATION_CLOCK_TOLERANCE_SECONDS,
         currentDate: options.now,
       });
-    let verified: Awaited<ReturnType<typeof jwtVerify>>;
-    try {
-      verified = await verify(key);
-    } catch (error) {
-      if (!(error instanceof errors.JWKSNoMatchingKey) || !remote) throw error;
-      const now = Date.now();
-      if (now - remote.state.lastForcedRefreshAt < 30_000) throw error;
-      remote.state.lastForcedRefreshAt = now;
-      identityMetrics.increment("unknown_kid_refresh");
-      key = createRemoteSet(remote.url);
-      verified = await verify(key);
-      remote.state.key = key;
-    }
+    const verified = await verifyWithKeyRefresh(verify, key, remote);
     const parsed = InvocationPayloadSchema.safeParse(verified.payload);
     if (!parsed.success || parsed.data.op !== operation || (!options.deferSchemaBinding && parsed.data.schema_hash !== schemaHash)) {
       throw new Error("Cloud invocation JWT claims do not match the target operation");
@@ -279,4 +311,95 @@ export const verifyInvocationToken = async (
 
 export const clearInvocationVerifierCachesForTest = (): void => {
   remoteSets.clear();
+};
+
+const AppEventInvocationClaimsSchema = z
+  .object({
+    iss: z.string().url(),
+    aud: z.string(),
+    token_use: z.literal("app_event_delivery"),
+    act: z.literal("app:core"),
+    op: z.literal("app-event.deliver"),
+    subscription_id: z.string().min(1).max(400),
+    event_id: z.uuid(),
+    payload_hash: z.string().regex(/^[a-f0-9]{64}$/),
+    iat: z.number().int(),
+    nbf: z.number().int(),
+    exp: z.number().int(),
+    jti: z.uuid(),
+  })
+  .strict();
+
+export const appEventPayloadHash = (payload: unknown): string => createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+
+/** Core-to-app invocation, bound to one subscription, event and exact request body. */
+export const signAppEventInvocation = async (input: {
+  appId: string;
+  subscriptionId: string;
+  eventId: string;
+  payload: unknown;
+  issuer?: string;
+  signer?: PreparedIdentitySigner;
+  now?: Date;
+  jti?: string;
+}) => {
+  const issuer = input.issuer ?? (await getIdentityRuntimeConfig()).issuer;
+  const signer = input.signer ?? (await prepareIdentitySigner("invocation"));
+  const now = Math.floor((input.now?.getTime() ?? Date.now()) / 1_000);
+  if (signer.signUntil.getTime() < (now + CLOUD_INVOCATION_TOKEN_TTL_SECONDS) * 1000)
+    throw new Error("Invocation signing key expires before the delivery token");
+  const claims = AppEventInvocationClaimsSchema.parse({
+    iss: issuer,
+    aud: `app:${AppIdSchema.parse(input.appId)}`,
+    token_use: "app_event_delivery",
+    act: "app:core",
+    op: "app-event.deliver",
+    subscription_id: input.subscriptionId,
+    event_id: input.eventId,
+    payload_hash: appEventPayloadHash(input.payload),
+    iat: now,
+    nbf: now,
+    exp: now + CLOUD_INVOCATION_TOKEN_TTL_SECONDS,
+    jti: input.jti ?? crypto.randomUUID(),
+  });
+  return new SignJWT(claims)
+    .setProtectedHeader({ alg: CLOUD_IDENTITY_ALGORITHM, typ: CLOUD_INVOCATION_TOKEN_TYPE, kid: signer.kid })
+    .sign(signer.key);
+};
+
+export const verifyAppEventInvocation = async (
+  token: string,
+  input: { appId: string; subscriptionId: string; eventId: string; payload: unknown },
+  options: { issuer?: string; key?: JWTVerifyGetKey; jwksUrl?: URL; now?: Date } = {},
+): Promise<boolean> => {
+  if (new TextEncoder().encode(token).byteLength > IDENTITY_MAX_COMPACT_TOKEN_BYTES) return false;
+  try {
+    assertProtectedHeader(decodeProtectedHeader(token));
+    const runtime = options.issuer && (options.key || options.jwksUrl) ? null : await getIdentityRuntimeConfig();
+    const issuer = options.issuer ?? runtime!.issuer;
+    const url = options.jwksUrl ?? runtime?.invocationJwksUrl;
+    const state = options.key || !url ? null : remoteSet(url);
+    const key = options.key ?? state?.key;
+    if (!key) return false;
+    const verify = (key: JWTVerifyGetKey) =>
+      jwtVerify(token, key, {
+        algorithms: [CLOUD_IDENTITY_ALGORITHM],
+        audience: `app:${AppIdSchema.parse(input.appId)}`,
+        issuer,
+        typ: CLOUD_INVOCATION_TOKEN_TYPE,
+        clockTolerance: INVOCATION_CLOCK_TOLERANCE_SECONDS,
+        currentDate: options.now,
+      });
+    const result = await verifyWithKeyRefresh(verify, key, state && url ? { url, state } : null);
+    const claims = AppEventInvocationClaimsSchema.parse(result.payload);
+    return (
+      claims.exp - claims.iat === CLOUD_INVOCATION_TOKEN_TTL_SECONDS &&
+      claims.nbf === claims.iat &&
+      claims.subscription_id === input.subscriptionId &&
+      claims.event_id === input.eventId &&
+      claims.payload_hash === appEventPayloadHash(input.payload)
+    );
+  } catch {
+    return false;
+  }
 };

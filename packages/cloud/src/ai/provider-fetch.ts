@@ -13,6 +13,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
  */
 export type ProviderFetchMarks = {
   headersAt?: number;
+  httpStatus?: number;
+  networkFailure?: boolean;
   firstByteAt?: number;
   /** The request never reached the provider, or the provider answered with a status that says it did not process it. */
   refused?: boolean;
@@ -74,6 +76,7 @@ const install = (): void => {
     try {
       response = await realFetch(input, init);
     } catch (error) {
+      for (const store of stores) store.networkFailure = true;
       // A reset, an abort, or a timeout can follow delivery, so only an unsent request counts as refused.
       if (unsent(error))
         for (const store of stores) {
@@ -85,6 +88,7 @@ const install = (): void => {
     const wait = response.ok ? undefined : retryAfterMs(response.headers, headersAt);
     for (const store of stores) {
       store.headersAt = headersAt;
+      store.httpStatus = response.status;
       store.refused = refusedStatus(response.status);
       if (wait !== undefined) store.retryAfterMs = wait;
     }

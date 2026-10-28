@@ -1,4 +1,4 @@
-import type { AiPublicModelProfile } from "@k2b/cloud/ai";
+import type { AiPeopleModels } from "@k2b/cloud/ai";
 import { AiChatActionsProvider, aiChatModelOptions, createAiChatTimeline } from "@k2b/cloud/ai/ui";
 import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance.ts";
 import { Chat, type ChatCommand, Widget, WidgetHero, WidgetList, WidgetPills, WidgetStat, WidgetStatus } from "@k2b/ui";
@@ -6,24 +6,20 @@ import { createSignal } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
 
-const cloudComposerModels: AiPublicModelProfile[] = [
+const cloudComposerModels: AiPeopleModels["options"] = [
   {
-    id: "fast",
-    label: "vLLM Qwen 3.6",
-    provider: "vllm",
-    model: "qwen3.6",
-    capabilities: ["streaming", "tools"],
-    dataBoundary: "private",
-    contextWindow: 262000,
+    id: "local-chat",
+    label: "Local chat",
+    description: "For everyday questions",
+    icon: { kind: "mark", text: "LI", color: "3" },
+    classes: ["fast", "balanced"],
   },
   {
     id: "vision",
-    label: "OpenRouter Vision",
-    provider: "openrouter",
-    model: "openai/gpt-4.1-mini",
-    capabilities: ["streaming", "tools", "vision"],
-    dataBoundary: "hosted",
-    contextWindow: 128000,
+    label: "Thorough chat",
+    description: "For difficult questions",
+    icon: { kind: "emoji", emoji: "🔎" },
+    classes: ["thorough"],
   },
 ];
 
@@ -71,7 +67,7 @@ const AssistantDemo = () => {
           { kind: "component", name: "Chat.Composer", from: "@k2b/ui" },
           { kind: "component", name: "aiChatModelOptions", from: "@k2b/cloud/ai/ui" },
         ]}
-        description="The generic composer owns interaction and accessibility. Cloud only adapts model profiles and outgoing payloads."
+        description="The generic composer owns interaction and accessibility. Cloud adapts the People model options and outgoing payloads."
         code={`<Chat.Composer
   value={draft()}
   onValueChange={setDraft}
@@ -83,7 +79,7 @@ const AssistantDemo = () => {
     usage: latestUsage,
     loopUsage: latestLoopUsage,
     contextWindow: 262_000,
-    modelLabel: "vLLM Qwen 3.6",
+    modelLabel: "Local chat",
   }}
   onSubmit={(input) => sendMessage(aiComposerSendInput(input))}
 />`}
@@ -101,7 +97,7 @@ const AssistantDemo = () => {
               usage: { input: 15_876, output: 32, total: 15_908 },
               loopUsage: { input: 69_944, output: 819, total: 70_763 },
               contextWindow: 262_000,
-              modelLabel: "vLLM Qwen 3.6",
+              modelLabel: "Local chat",
             }}
           />
         </div>

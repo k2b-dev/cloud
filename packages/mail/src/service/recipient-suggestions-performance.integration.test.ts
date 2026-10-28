@@ -3,7 +3,6 @@ import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { anchor, fixtureTables, planLargeMailbox, seedLargeMailbox } from "../../test/fixtures/large-mailbox";
 import { createRecipientMailboxFixture, recipientSuggestionNow as now } from "../../test/fixtures/recipient-suggestions";
-import { migrate } from "../migrate";
 import {
   listRecipientSuggestions,
   MAIL_RECIPIENT_SUGGESTION_P95_BUDGET_MS,
@@ -18,7 +17,6 @@ const messages = Number.isFinite(requested) ? Math.min(100_000, Math.max(20_000,
 suite("mailbox recipient suggestion performance", () => {
   let fixture: Awaited<ReturnType<typeof createRecipientMailboxFixture>>;
   beforeAll(async () => {
-    await migrate();
     fixture = await createRecipientMailboxFixture();
     const plan = planLargeMailbox({ seed: 42, anchor, messages, conversations: 3_000, folders: 40 });
     expect(plan.messages.some((message) => message.from === "perf@example.test")).toBe(true);

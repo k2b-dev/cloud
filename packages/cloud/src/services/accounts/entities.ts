@@ -682,9 +682,9 @@ export const list = async (
     OFFSET ${offset}
   `;
 
+  // A page past the end has no rows to carry the window count; the total still counts every match.
   let total = rows.length > 0 ? Number(rows[0]!.total) : 0;
-  if (params.visibility.type === "directory_shares" && !rows.length && page > 1)
-    total = (await list({ ...params, page: 1, perPage: 1 })).total;
+  if (!rows.length && page > 1) total = (await list({ ...params, page: 1, perPage: 1 })).total;
   return {
     items: rows.map((row) => {
       const entity = mapEntityRow(row);

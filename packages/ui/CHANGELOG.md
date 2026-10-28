@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.33.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.32.0...npm-ui-v0.33.0) (2026-10-27)
+
+
+### Features
+
+* **apps:** declare access rules for every built-in application ([#1852](https://github.com/k2b-dev/cloud/issues/1852)) ([4cf7b8e](https://github.com/k2b-dev/cloud/commit/4cf7b8eca70615fccc6f10ccbd7e0f2782804ab0))
+* **chat:** changes to Space items and notes show as quiet rows ([#1903](https://github.com/k2b-dev/cloud/issues/1903)) ([ee1c216](https://github.com/k2b-dev/cloud/commit/ee1c2164ad7aaaf36b3162215dbb7badc1dfbed5))
+* **chat:** threads with All threads, replies, and a thread column from 1800 px ([#1856](https://github.com/k2b-dev/cloud/issues/1856)) ([470f6b4](https://github.com/k2b-dev/cloud/commit/470f6b481af518e0e566a56a9a7a58ee73c3bb17))
+* **cloud:** let apps offer calendars and show them all in one Spaces calendar ([#1955](https://github.com/k2b-dev/cloud/issues/1955)) ([00c8503](https://github.com/k2b-dev/cloud/commit/00c85034c22cce71a7cc84dcbc0de6bf1b492093))
+* **pwa:** the Cloud app uses iPad and monitor widths, and Spaces opens a task beside the list ([#1802](https://github.com/k2b-dev/cloud/issues/1802)) ([c1026c1](https://github.com/k2b-dev/cloud/commit/c1026c1452a9cfef0545657d24be447b59e1d3e9)), closes [#1104](https://github.com/k2b-dev/cloud/issues/1104)
+
+
+### Bug Fixes
+
+* **ui:** keep focus in text inputs after clearing ([#1936](https://github.com/k2b-dev/cloud/issues/1936)) ([2373758](https://github.com/k2b-dev/cloud/commit/237375836d270e86891d1b6734fd91c558cd338c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.20.0 to 0.20.1
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0 to ^0.20.1
+
 ## [0.32.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.31.0...npm-ui-v0.32.0) (2026-10-23)
 
 

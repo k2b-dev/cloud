@@ -1,0 +1,1 @@
+| A seal outruns a pending retry | Retention seals an hour that a still valid idempotency reservation may replay, so the retry of a partly stored batch is refused for good. | Test: Pulse `service/retention.integration.test.ts` fails a keyed batch after its first insert, lets the lease expire, runs retention and completes the retry before the hour is sealed. |
