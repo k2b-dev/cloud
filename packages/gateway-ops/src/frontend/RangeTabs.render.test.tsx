@@ -12,7 +12,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: RangeTabs } = await import("./RangeTabs");
 
 test("range tabs retain links and expose just the current range as a page", () => {
-  const items = ["1h", "6h", "24h", "7d", "30d"].map((id) => ({ id, href: `/admin/gateway/apps?keep=yes&range=${id}` }));
+  const items = ["1h", "6h", "24h", "7d", "30d"].map((id) => ({ id, href: `/admin/observability/gateway?keep=yes&range=${id}` }));
   const html = renderToString(() => createComponent(RangeTabs, { caption: "Window", label: "Traffic window", current: "24h", items }));
   expect(html).toMatch(/<span[^>]*aria-hidden="true"[^>]*>Window<\/span>/);
   expect(html).toMatch(/<nav[^>]*class="k2b-view-tabs[^>]*aria-label="Traffic window"/);

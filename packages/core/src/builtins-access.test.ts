@@ -291,7 +291,7 @@ const protectedPaths: Record<string, string[]> = {
   filesv2: ["/api/filesv2/bases", "/api/filesv2/admin/shares", "/api/filesv2/wopi/other"],
   "gateway-ops": [
     "/api/gateway/health",
-    "/admin/gateway/apps",
+    "/admin/observability/gateway",
     "/metrics/other",
     "/api/notifications/pending-system/count",
     "/api/notifications/pending-system/send-all",
