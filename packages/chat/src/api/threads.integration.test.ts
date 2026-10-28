@@ -8,6 +8,7 @@ import { requireConversation } from "../service/access";
 import {
   ChatLiveEventSchema,
   ChatSnapshotSchema,
+  ConversationPageSchema,
   ConversationSchema,
   MAX_THREADS,
   MESSAGE_PAGE_SIZE,
@@ -71,6 +72,44 @@ suite("chat threads API", () => {
     >`SELECT payload FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ${key} ORDER BY seq`;
     return rows.map((row) => z.object({ d: ChatLiveEventSchema }).parse(row.payload).d);
   };
+
+  test("Unread filters on each thread's read state before pagination, including explicit unread marks", async () => {
+    const owner = await f.person(),
+      writer = await f.person();
+    const chat = await f.fixture(owner, [{ person: writer, permission: "write" }]);
+    const thread = await create(owner, chat.shortId, "Personal unread");
+    const message = await send(writer, chat.shortId, { thread: thread.id });
+    // General can be ahead while this thread remains unread.
+    await read(owner, chat.shortId, message.seq, "general");
+    const unread = async () => ConversationPageSchema.parse(await (await f.request(owner.headers, "?unread=true")).json()).items;
+    expect((await unread()).map((row) => row.id)).toContain(chat.shortId);
+    await read(owner, chat.shortId, message.seq, thread.id);
+    expect((await unread()).map((row) => row.id)).not.toContain(chat.shortId);
+    expect((await f.request(owner.headers, `/${chat.shortId}/unread`, "POST", { message: message.id })).status).toBe(200);
+    expect((await unread()).map((row) => row.id)).toContain(chat.shortId);
+    expect((await f.request(owner.headers, `/${chat.shortId}/personal`, "PUT", { archived: true, pinned: true })).status).toBe(200);
+    expect((await unread()).map((row) => row.id)).not.toContain(chat.shortId);
+    const archive = ConversationPageSchema.parse(await (await f.request(owner.headers, "?unread=true&archived=true")).json());
+    expect(archive.items).toEqual([expect.objectContaining({ id: chat.shortId, archived: true, pinnedRank: 0 })]);
+  });
+
+  test("channels retain personal pins and archive without changing their subscription", async () => {
+    const owner = await f.person();
+    const chat = await f.fixture(owner);
+    expect((await f.request(owner.headers, `/${chat.shortId}`, "PATCH", { name: "News", purpose: "Team news" })).status).toBe(200);
+    expect(
+      (
+        await f.request(owner.headers, `/${chat.shortId}/discovery`, "PUT", {
+          entries: [{ principal: { type: "authenticated" }, permission: "read" }],
+        })
+      ).status,
+    ).toBe(200);
+    const saved = await f.request(owner.headers, `/${chat.shortId}/personal`, "PUT", { pinned: true, archived: true });
+    expect(saved.status).toBe(200);
+    expect(ConversationSchema.parse(await saved.json())).toMatchObject({ channel: true, member: true, pinnedRank: 0, archived: true });
+    const restored = await f.request(owner.headers, `/${chat.shortId}/personal`, "PUT", { archived: false });
+    expect(ConversationSchema.parse(await restored.json())).toMatchObject({ channel: true, member: true, pinnedRank: 0, archived: false });
+  });
 
   test("admin creates once per intent; General gets the localized system message and readers cannot manage", async () => {
     const owner = await f.person("Nora"),
@@ -219,8 +258,12 @@ suite("chat threads API", () => {
     expect(limited.status).toBe(409);
     expect((await limited.json()).code).toBe("THREAD_LIMIT");
     expect((await list(owner, chat.shortId)).items).toHaveLength(MAX_THREADS);
+    // A channel: its owner stays a member, and everyone with an account may discover it.
     const channel = await f.fixture(owner);
-    await sql`UPDATE chat.conversation_access SET role = 'discoverable' WHERE conversation_id = ${channel.id}::uuid`;
+    const audience = await createAccess({ principal: { type: "authenticated" }, permission: "read" });
+    if (!audience.ok) throw new Error(audience.error.message);
+    await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
+      VALUES (${channel.id}::uuid, ${audience.data.id}::uuid, 'discoverable', 'user', ${owner.id}::uuid)`;
     const unavailable = await f.request(owner.headers, `/${channel.shortId}/threads`, "POST", { name: "No" });
     expect(unavailable.status).toBe(409);
     expect((await unavailable.json()).code).toBe("THREADS_UNAVAILABLE");

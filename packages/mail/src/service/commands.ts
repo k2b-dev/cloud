@@ -19,6 +19,7 @@ import { withShortIdDb } from "../lib/short-id";
 import { requireDraftAccess, requireMailboxAccess, requireMailboxPermission, requireVisibleMessages } from "./access";
 import { enqueueAttachmentExtractionsForMessage, logAttachmentExtractionEnqueueFailure } from "./attachment-extraction";
 import { actorRefFromRequest, auditActorFromRequest, durableCredentialSnapshot, type MailRequestContext } from "./auth";
+import { invalidateAutomationEffects } from "./automation-effect-state";
 import { sha256Json } from "./canonical";
 import { commandTargetVisibleTo, commandVisibleTo, conversationCommandKinds } from "./command-authorization";
 import { enqueueMailCommand } from "./command-runtime";
@@ -807,6 +808,24 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
   `;
   if (!row) throw new Error("Mail command insert returned no row");
   let command = mapCommand(row);
+  if ("messageId" in params.input && ["move", "delete", "set_flags", "change_message_state"].includes(params.input.kind)) {
+    const owners = await tx<
+      { conversation_id: string }[]
+    >`SELECT conversation_id FROM mail.conversation_messages WHERE message_id = ${params.input.messageId}::uuid`;
+    for (const owner of owners) {
+      if (params.input.kind === "move" || params.input.kind === "delete")
+        await invalidateAutomationEffects(tx, owner.conversation_id, "placement", [params.input.messageId]);
+      if (params.input.kind === "set_flags") await invalidateAutomationEffects(tx, owner.conversation_id, "flag", [params.input.messageId]);
+      if (params.input.kind === "change_message_state") {
+        const change = params.input.change;
+        const providerFlags: Record<string, string> = { seen: "\\Seen", answered: "\\Answered", flagged: "\\Flagged", draft: "\\Draft" };
+        for (const flag of [...change.addFlags, ...change.removeFlags])
+          await invalidateAutomationEffects(tx, owner.conversation_id, "flag", [params.input.messageId], providerFlags[flag]);
+        for (const keyword of [...change.addKeywords, ...change.removeKeywords])
+          await invalidateAutomationEffects(tx, owner.conversation_id, "keyword", [params.input.messageId], keyword);
+      }
+    }
+  }
   await params.afterCreate?.(tx, command);
   const projection = await createSendOutbox({
     db: tx,

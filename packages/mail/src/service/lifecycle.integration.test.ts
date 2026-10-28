@@ -18,7 +18,6 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { countPostgresRoundTrips } from "../../test/postgres-round-trips";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
-import { migrate } from "../migrate";
 import { grantMailboxAccess, revokeMailboxAccess, updateMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { attachProviderBinding, rediscoverProviderBinding } from "./bindings";
@@ -157,7 +156,6 @@ suite("mail lifecycle control plane", () => {
   let collaboratorContext: MailRequestContext;
 
   beforeAll(async () => {
-    await migrate();
     const [admin] = await sql<{ id: string; uid: string }[]>`
       INSERT INTO auth.users (uid, provider, profile, display_name, admin)
       VALUES (${`mail-lifecycle-admin-${suffix}`}, 'local', 'user', 'Mail Lifecycle Admin', true)

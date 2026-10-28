@@ -1,8 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { AttachmentContent } from "./attachments";
-import { buildNotebookExportFiles, createZip, exportFilename } from "./export";
+import * as attachmentStore from "./attachments";
+import { buildNotebookExportFiles, createZip, exportFilename, exportNotebookZip } from "./export";
 import type { Notebook } from "./notebooks";
+import * as notebookStore from "./notebooks";
 import type { Note } from "./notes";
+import * as noteStore from "./notes";
 
 const notebook: Notebook = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -176,4 +179,90 @@ test("export trees follow hand order, numeric titles, and public IDs", () => {
     "noteA1",
     "noteB1",
   ]);
+});
+
+test("exports multiple keyset batches with bounded blob reads and identical portable files", async () => {
+  const exportedAt = new Date("2026-05-28T00:00:00.000Z");
+  const pages = Array.from({ length: 205 }, (_, index) => ({
+    ...notes[index % 2]!,
+    id: String(index).padStart(6, "0"),
+    shortId: `n${String(index).padStart(5, "0")}`,
+    parentId: index === 0 ? null : "000000",
+  }));
+  pages[0]!.contentMd = "# First\n[Last](note://n00204) ![Blob](attach://a00012)\n";
+  const blobs = Array.from({ length: 13 }, (_, index) => ({
+    ...attachment,
+    id: `blob-${index}`,
+    shortId: `a${String(index).padStart(5, "0")}`,
+  }));
+  const expectedAttachments = blobs.filter((_, index) => index !== 5);
+  const lookup = spyOn(notebookStore, "get").mockResolvedValue(notebook);
+  const list = spyOn(noteStore, "list").mockImplementation(async () => {
+    throw new Error("unbounded content read");
+  });
+  const batches = spyOn(noteStore, "readBatch").mockImplementation(async (params) => {
+    const start = params.after === undefined ? 0 : Number(params.after) + 1;
+    return pages.slice(start, start + 100).map((note) => ({ ...note, contentMd: params.includeContent === false ? null : note.contentMd }));
+  });
+  const metadata = spyOn(attachmentStore, "list").mockResolvedValue(blobs);
+  let active = 0;
+  let peak = 0;
+  const contents = spyOn(attachmentStore, "getContent").mockImplementation(async ({ id }) => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await Promise.resolve();
+    active -= 1;
+    return id === "blob-5" ? null : blobs.find((blob) => blob.id === id)!;
+  });
+  try {
+    const result = await exportNotebookZip({ notebookId: notebook.id, exportedAt });
+    const expectedFiles = buildNotebookExportFiles({ notebook, notes: pages, attachments: expectedAttachments, exportedAt });
+    expect(result?.files).toEqual(expectedFiles);
+    expect(result?.zip).toEqual(createZip(expectedFiles, exportedAt));
+    expect(peak).toBe(4);
+    expect(active).toBe(0);
+    expect(list).not.toHaveBeenCalled();
+    expect(batches.mock.calls.map(([params]) => [params.includeContent === false, params.after])).toEqual([
+      [true, undefined],
+      [true, "000099"],
+      [true, "000199"],
+      [true, "000204"],
+      [false, undefined],
+      [false, "000099"],
+      [false, "000199"],
+      [false, "000204"],
+    ]);
+  } finally {
+    lookup.mockRestore();
+    list.mockRestore();
+    batches.mockRestore();
+    metadata.mockRestore();
+    contents.mockRestore();
+  }
+});
+
+test("a note deleted while the export reads its text is left out", async () => {
+  const exportedAt = new Date("2026-05-28T00:00:00.000Z");
+  const pages = notes.map((note, index) => ({ ...note, id: String(index).padStart(6, "0"), shortId: `n${index}`, parentId: null }));
+  const [kept] = pages;
+  const lookup = spyOn(notebookStore, "get").mockResolvedValue(notebook);
+  // The first pass still sees both notes; by the second one, the other one is gone.
+  const batches = spyOn(noteStore, "readBatch").mockImplementation(async (params) =>
+    params.after !== undefined ? [] : params.includeContent === false ? pages.map((note) => ({ ...note, contentMd: null })) : [kept!],
+  );
+  const metadata = spyOn(attachmentStore, "list").mockResolvedValue([]);
+  try {
+    const result = await exportNotebookZip({ notebookId: notebook.id, exportedAt });
+    const full = buildNotebookExportFiles({ notebook, notes: pages, attachments: [], exportedAt });
+    const expected = buildNotebookExportFiles({ notebook, notes: [kept!], attachments: [], exportedAt });
+    expect(full.length).toBe(expected.length + 1);
+    expect(result?.files.map((file) => file.path)).toEqual(expected.map((file) => file.path));
+    // The kept note still carries its text.
+    const text = (result?.files ?? []).map((file) => (typeof file.content === "string" ? file.content : ""));
+    expect(text.some((content) => content.includes("# API Overview"))).toBe(true);
+  } finally {
+    lookup.mockRestore();
+    batches.mockRestore();
+    metadata.mockRestore();
+  }
 });

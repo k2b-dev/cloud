@@ -1,4 +1,13 @@
+export * from "../shared/ai-models";
 export { type AiAppSkillIssue, aiAppSkills, appSkillsRegistryState, reconcileAppSkills } from "./app-skill-store";
+export {
+  type ApplicationAiTaskInput,
+  type ApplicationAiTaskKey,
+  deleteApplicationAiTasks,
+  listUnreleasedApplicationAiTaskSources,
+  releaseApplicationAiTask,
+  runApplicationAiTask,
+} from "./application-tasks";
 export { type AiApprovalPreferenceRoutes, type AiApprovalPreferenceView, createAiApprovalPreferenceRoutes } from "./approval-routes";
 export {
   AI_WEBSITE_APPROVAL_TOOL,
@@ -19,7 +28,7 @@ export {
   rememberAiToolApproval,
   revokeAiToolApprovalPreference,
 } from "./approvals";
-export { assistantAiSettingsState, listAssistantAiModels, selectAssistantAiModelId } from "./assistant-models";
+export { assistantAiSettingsState, listAssistantAiModels, peopleAiModels, selectAssistantAiModel } from "./assistant-models";
 export { type AiAttachmentRef, aiAttachmentMarker, formatAiFileSize, parseAiAttachmentMarkers } from "./attachments";
 export { CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema, createCloudAiTranscribeAudioTool } from "./audio-tool";
 export { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
@@ -65,7 +74,7 @@ export { parseAiSse } from "./client/transport";
 export { CODE_CAPABILITY_TOKEN_HEADER, createCodeCapabilityTransport } from "./code-capability-transport";
 export { authorizeCodeExecution } from "./code-execution";
 export { CODE_SOURCE_TOOLS, type CodeSourceToolName } from "./code-source-contracts";
-export { listAiCredentialProfileIds } from "./credentials";
+export { listAiCredentialProviderIds } from "./credentials";
 export {
   CLOUD_AI_CHART_MAX_SERIES,
   CLOUD_AI_CHART_MAX_VALUES,
@@ -306,7 +315,6 @@ export {
   listAiModels,
   readAiSettingsState,
   resolveAiModel,
-  resolveAiSettingsStateFromRaw,
   resolveAiVisionModel,
   selectAiModelProfile,
   toPublicAiSettingsState,
@@ -365,7 +373,6 @@ export {
   streamAiConversationEvents,
 } from "./stream";
 export {
-  AI_BACKGROUND_MODEL_SETTING_KEY,
   type RunAiStructuredInput,
   type RunAiStructuredResult,
   resolveAiBackgroundModel,
@@ -420,7 +427,6 @@ export type {
   AiPendingTurnAction,
   AiProjectPromptSnapshot,
   AiProviderId,
-  AiPublicModelProfile,
   AiRecentResource,
   AiResolvedModel,
   AiRuntimeTool,

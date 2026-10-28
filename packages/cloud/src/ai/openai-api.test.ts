@@ -14,12 +14,18 @@ import type { AiModelProfile } from "./types";
 
 const user = buildProjectedUser({ id: "11111111-1111-4111-8111-111111111111", uid: "api-user", provider: "local", profile: "user" });
 const profile: AiModelProfile = {
+  modelId: "text-model",
+  providerId: "text-model",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "text-model",
   label: "Text model",
   provider: "openai",
   model: "provider-model",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "hosted",
   contextWindow: 1000,
   maxOutputTokens: 40,
@@ -64,6 +70,7 @@ function accounting(onBegin = () => {}) {
 function fixture(
   options: {
     enabled?: boolean;
+    classes?: boolean;
     auth?: boolean;
     slots?: boolean;
     family?: Provider["family"];
@@ -107,6 +114,10 @@ function fixture(
     },
   };
   const app = createAiOpenAiRoutes({
+    assignments: async () =>
+      options.classes
+        ? [{ slot: "balanced", variantId: profile.id, revision: 1, updatedAt: "2026-10-16T00:00:00.000Z", updatedBy: null }]
+        : [],
     keepaliveMs: options.keepaliveMs,
     limit: async (_c, next) => next(),
     authenticate:
@@ -123,8 +134,8 @@ function fixture(
     resolveModel: async (policy, id) => {
       if (options.resolutionError) throw options.resolutionError;
       expect(policy?.kind).toBe("selectable");
-      expect(id).toBe(profile.id);
-      return { profile, provider: withProviderErrors(options.provider ?? provider) };
+      expect(id).toEqual(options.classes ? { class: "balanced" } : { id: profile.id });
+      return { model: { id: profile.id }, profile, provider: withProviderErrors(options.provider ?? provider) };
     },
     acquire: async ({ subject, limit }) => {
       expect(subject).toEqual({ type: "user", userId: user.id });
@@ -140,7 +151,13 @@ function fixture(
           };
     },
     inferenceProvider: (provider, _profile, context) => {
-      expect(context).toEqual({ kind: "chat", task: "openai-api", subject: { type: "user", userId: user.id }, credentialId: "credential" });
+      expect(context).toEqual({
+        kind: "chat",
+        task: "openai-api",
+        subject: { type: "user", userId: user.id },
+        credentialId: "credential",
+        modelRef: { id: profile.id },
+      });
       return options.wrap ? options.wrap(provider, profile, context) : provider;
     },
   });
@@ -169,13 +186,13 @@ describe("models-only OpenAI-compatible API", () => {
           assertModelAccess: async () => {
             if (reserved && denial === "model-access")
               throw Object.assign(new Error("Model access revoked"), {
-                aiError: { code: "model_access_denied", message: "Model access revoked" },
+                aiError: { code: "model_policy_mismatch", message: "Model access revoked" },
               });
           },
         });
         const response = await f.call({ stream });
-        expect(response.status).toBe(denial === "credential" ? 401 : 403);
-        expect((await response.json()).error.code).toBe(denial === "credential" ? "invalid_api_key" : "model_access_denied");
+        expect(response.status).toBe(denial === "credential" ? 401 : 404);
+        expect((await response.json()).error.code).toBe(denial === "credential" ? "invalid_api_key" : "model_not_found");
         expect(f.requests).toHaveLength(0);
         expect(f.releases()).toBe(1);
         expect(a.bookings).toHaveLength(1);
@@ -722,10 +739,9 @@ describe("models-only OpenAI-compatible API", () => {
   });
   for (const [code, status, mapped] of [
     ["ai_disabled", 403, "ai_disabled"],
-    ["model_access_denied", 403, "model_access_denied"],
-    ["missing_provider_credential", 502, "missing_provider_credential"],
+    ["ai_no_model", 404, "model_not_found"],
     ["model_policy_mismatch", 404, "model_not_found"],
-    ["invalid_model_profiles", 500, "internal_error"],
+    ["unexpected_configuration_error", 500, "internal_error"],
   ] as const) {
     test(`maps safe model resolution error ${code}`, async () => {
       const f = fixture({ resolutionError: Object.assign(new Error("secret"), { aiError: { code, message: "secret" } }) });
@@ -928,4 +944,14 @@ describe("models-only OpenAI-compatible API", () => {
     expect(response.status).toBe(404);
     expect((await response.json()).error).toMatchObject({ code: "not_found", type: "invalid_request_error" });
   });
+});
+
+test("OpenAI model lists include allowed assigned classes and class requests resolve through the public union", async () => {
+  const { app, call, requests } = fixture({ classes: true });
+  const response = await app.request("/models", { headers: { authorization: "Bearer models-key" } });
+  expect((await response.json()).data.map((model: { id: string }) => model.id)).toEqual([profile.id, "cloud/balanced"]);
+  const result = await call({ model: "cloud/balanced" });
+  expect(result.status).toBe(200);
+  await result.text();
+  expect(requests).toHaveLength(1);
 });

@@ -1,19 +1,30 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { Provider, ProviderEvent } from "@k2b/nessi";
 import type { AiCallDetails, AiCallStatus } from "./inference-calls";
 import { createAiProvider } from "./provider";
+import * as connections from "./provider-connections";
 import { retryAfterMs } from "./provider-fetch";
 import { type AiProviderRetry, retryTransientProviderErrors } from "./provider-retry";
 import { inferenceProvider } from "./quota-provider";
 import type { AiModelProfile } from "./types";
 
+// Adapter unit tests own HTTP fakes; provider status persistence belongs to its integration seam.
+beforeEach(() => spyOn(connections, "recordAiProviderStatus").mockResolvedValue(undefined));
+afterEach(() => mock.restore());
+
 const profile: AiModelProfile = {
+  modelId: "retry-model",
+  providerId: "retry-model",
+  variantLabel: "Standard",
+  description: "",
+  icon: { kind: "provider" },
+  showInPicker: true,
   id: "retry-model",
   label: "Retry model",
   provider: "openai-compatible",
   model: "mock",
   enabled: true,
-  capabilities: ["streaming"],
+  capabilities: [],
   dataBoundary: "private",
   pricing: { inputPerMillion: 1, outputPerMillion: 2 },
 };

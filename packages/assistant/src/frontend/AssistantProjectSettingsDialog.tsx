@@ -1,7 +1,9 @@
 import { PermissionEditor } from "@k2b/cloud/access/ui";
 import type { AiProject, AiProjectAccess } from "@k2b/cloud/ai";
+import { AiModelField } from "@k2b/cloud/ai/ui";
 import { coreClient } from "@k2b/cloud/clients/core";
 import { AuthenticatedPrincipalSchema } from "@k2b/cloud/contracts";
+import type { AiModelRequest, AiPeopleModels } from "@k2b/cloud/shared";
 import { query } from "@k2b/stdlib/solid";
 import {
   Button,
@@ -34,13 +36,24 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
   const [name, setName] = createSignal(props.project.name);
   const [description, setDescription] = createSignal(props.project.description);
   const [instructions, setInstructions] = createSignal(props.project.instructions);
+  // F8: scheduled tasks of this Project use this model; it is set where the Project is set up.
+  const [defaultModel, setDefaultModel] = createSignal<AiModelRequest | null>(props.project.defaultModel ?? null);
+  const models = query.create({
+    source: () => props.project.id,
+    load: async (_, { abortSignal }) => {
+      const response = await coreClient.ai.models.$get({}, { init: { signal: abortSignal } });
+      if (!response.ok) throw new Error(text("Models could not be loaded."));
+      return (await response.json()) as AiPeopleModels;
+    },
+  });
   const [saving, setSaving] = createSignal(false);
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const changeCount = createMemo(
     () =>
       Number(name().trim() !== props.project.name) +
       Number(description().trim() !== props.project.description) +
-      Number(instructions().trim() !== props.project.instructions),
+      Number(instructions().trim() !== props.project.instructions) +
+      Number(JSON.stringify(defaultModel()) !== JSON.stringify(props.project.defaultModel ?? null)),
   );
   const access = query.create<string | null, AiProjectAccess[], AssistantLiveInvalidation>({
     source: () => (props.project.permission === "admin" ? props.project.id : null),
@@ -62,6 +75,7 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
     setName(props.project.name);
     setDescription(props.project.description);
     setInstructions(props.project.instructions);
+    setDefaultModel(props.project.defaultModel ?? null);
     setSaveError(null);
   };
   const requestClose = async () => {
@@ -75,7 +89,7 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
     try {
       const response = await coreClient.ai.projects[":projectId"].$patch({
         param: { projectId: props.project.id },
-        json: { name: name().trim(), description: description().trim(), instructions: instructions().trim() },
+        json: { name: name().trim(), description: description().trim(), instructions: instructions().trim(), defaultModel: defaultModel() },
       });
       if (!response.ok) throw new Error(await readError(response, text("Failed to save Project")));
       toast.success(text("Project saved"));
@@ -129,6 +143,18 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
                 onValueChange={setInstructions}
                 maxLength={16_000}
                 disabled={saving()}
+              />
+              <AiModelField
+                label={text("Default model")}
+                description={text("Routines in this Project use it. Without a default, they use the person's choice, otherwise Balanced.")}
+                noneLabel={text("No Project default")}
+                state={
+                  models.data() ? { status: "ready", models: models.data()! } : models.error() ? { status: "error" } : { status: "loading" }
+                }
+                onRetry={() => void models.refresh()}
+                value={defaultModel()}
+                onChange={setDefaultModel}
+                disabled={saving() || props.project.permission === "read"}
               />
               <Show when={saveError()}>
                 {(message) => <Placeholder state="error" align="left" title={text("Could not save Project")} description={message()} />}

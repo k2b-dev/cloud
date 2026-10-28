@@ -189,8 +189,7 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
             <div class="grid">
               <InlineGuidance
                 icon="ti ti-server"
-                class="[grid-area:1/1]"
-                classList={{ invisible: Boolean(report()) }}
+                class={report() ? "invisible [grid-area:1/1]" : "[grid-area:1/1]"}
                 aria-hidden={report() ? "true" : undefined}
               >
                 {t().pdfDataNotice}
@@ -198,8 +197,7 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
               <InlineGuidance
                 tone="warning"
                 icon="ti ti-alert-triangle"
-                class="[grid-area:1/1]"
-                classList={{ invisible: !report() }}
+                class={report() ? "[grid-area:1/1]" : "invisible [grid-area:1/1]"}
                 aria-hidden={report() ? undefined : "true"}
                 data-pdf-omissions={report() ? "" : undefined}
               >

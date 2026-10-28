@@ -1,3 +1,5 @@
+import type { AppInstallable } from "@k2b/cloud/contracts";
+
 // ─── Prefix Trie for O(segments) route matching ─────────────────────────────
 
 export type TrieNode = {
@@ -11,6 +13,7 @@ export type RouteEntry = { prefix: string; appId: string };
 
 export type RouteTable = {
   root: TrieNode;
+  installables: ReadonlyArray<{ appId: string; declaration: AppInstallable }>;
   version: number;
   builtAt: number;
   routeCount: number;
@@ -27,6 +30,7 @@ type AppWithRoutes = {
   prefix: string;
   appId: string;
   baseUrl: string;
+  installable?: AppInstallable;
 };
 
 let tableVersion = 0;
@@ -44,8 +48,10 @@ const createNode = (segment: string): TrieNode => ({
  */
 export const buildRouteTable = (routes: AppWithRoutes[]): RouteTable => {
   const root = createNode("");
+  const installables = new Map<string, AppInstallable>();
 
-  for (const { prefix, appId, baseUrl } of routes) {
+  for (const { prefix, appId, baseUrl, installable } of routes) {
+    if (installable) installables.set(appId, installable);
     const segments = prefix.split("/").filter(Boolean);
     let current = root;
 
@@ -67,6 +73,7 @@ export const buildRouteTable = (routes: AppWithRoutes[]): RouteTable => {
 
   return {
     root,
+    installables: [...installables].map(([appId, declaration]) => ({ appId, declaration })),
     version: tableVersion,
     builtAt: Date.now(),
     routeCount: routes.length,
@@ -101,5 +108,7 @@ export const matchRoute = (table: RouteTable, pathname: string): MatchResult => 
     }
   }
 
+  // Never let an ancestor (including Core's / fallback) answer another app's namespace.
+  if (segments[0] === "app" && segments[1] && bestMatch?.appId !== segments[1]) return null;
   return bestMatch;
 };
