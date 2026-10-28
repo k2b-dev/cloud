@@ -317,6 +317,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
         },
         {
           ...panelDialogFixedOptions,
+          cancelBehavior: "ignore",
           panelClassName: `${panelDialogFixedOptions.panelClassName} app-pairing-dialog`,
           // The step owns focus, also when the first answer arrives before the dialog's first frame.
           initialFocus: focusTarget,

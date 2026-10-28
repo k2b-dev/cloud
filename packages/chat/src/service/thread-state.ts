@@ -1,4 +1,5 @@
 import type { AccessSubject } from "@k2b/cloud/server";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import type { SQLQuery, sql } from "bun";
 import { subjectPrincipal } from "./access";
 import { UNREAD_CAP } from "./contracts";
@@ -15,13 +16,14 @@ export type ThreadState = {
   first_unread_seq: string | bigint | null;
 };
 /** One bounded grouped query for General and every named thread, including archived ones. */
-export const threadStates = (db: typeof sql, subject: AccessSubject, conversationId: string | SQLQuery) => {
+export const threadStates = (db: typeof sql, subject: AccessSubject, conversationId: string | SQLQuery, ids?: string[]) => {
   const self = subjectPrincipal(subject);
   return db<ThreadState[]>`SELECT t.id, t.short_id,
       CASE WHEN t.id IS NULL THEN p.last_read_seq ELSE tr.last_read_seq END AS last_read_seq,
       CASE WHEN t.id IS NULL THEN p.unread_from_seq ELSE tr.unread_from_seq END AS unread_from_seq,
       p.joined_seq, count(unread.seq)::int AS unread, min(unread.seq) AS first_unread_seq
     FROM (SELECT id, short_id FROM chat.threads WHERE conversation_id = ${conversationId}::uuid
+      AND ${ids ? db`id = ANY(${toPgUuidArray(ids)}::uuid[])` : db`true`}
       UNION ALL SELECT NULL::uuid, NULL::text) t
     LEFT JOIN chat.participants p ON p.conversation_id = ${conversationId}::uuid
       AND p.principal_type = ${self.type} AND p.principal_id = ${self.id}::uuid

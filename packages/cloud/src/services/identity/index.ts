@@ -8,7 +8,7 @@ export {
   CLOUD_SESSION_TOKEN_TYPE,
 } from "./constants";
 export { type ResolvedInvocationAuthority, resolveInvocationAuthority } from "./invocation-actor";
-export { invocationAuthorityFromRequest } from "./invocation-authority";
+export { authorityFromParentInvocation, invocationAuthorityFromRequest, matchesInvocationSubject } from "./invocation-authority";
 export { capabilityInvocationOperation, searchInvocationOperation, widgetInvocationOperation } from "./invocation-operations";
 export {
   type CloudInvocationClaims,
@@ -36,6 +36,7 @@ export {
   withActiveIdentitySigner,
 } from "./key-ring";
 export { identityMetrics } from "./metrics";
+export { isNestedSourceCurrent, type NestedInvocationLease, nestedInvocationLeases } from "./nested-invocation";
 export { createIdentityPublicRoutes } from "./routes";
 export {
   type CloudSessionClaims,

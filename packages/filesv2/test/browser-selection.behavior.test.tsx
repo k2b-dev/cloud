@@ -57,9 +57,7 @@ test("view changes preserve selection; superseded details cannot replace current
   const [directory, setDirectory] = createSignal(initial);
   const [source, setSource] = createSignal("/app/filesv2?base=home");
   const dispose = render(
-    () => (
-      <Browser directory={directory()} bases={[initial.base]} cloudUrl="https://cloud.test" source={source()} onNavigate={async () => {}} />
-    ),
+    () => <Browser directory={directory()} bases={[initial.base]} source={source()} onNavigate={async () => {}} />,
     dom.root,
   );
   cleanup = () => {
@@ -110,7 +108,6 @@ test("favorite action is beside primary actions, suppresses duplicate requests a
     () => (
       <FileInspector
         base={base()}
-        cloudUrl="https://cloud.test"
         selected={[entry]}
         paths={[entry.path]}
         initial={{ base: initial.base, entry, favorite: false }}
@@ -163,16 +160,75 @@ test("favorite action is beside primary actions, suppresses duplicate requests a
   expect(button().getAttribute("aria-pressed")).toBe("true");
 });
 
+test("a folder lists its contents, files before images, and keeps rarer commands in its menu", async () => {
+  const dom = createDomTestHarness();
+  const { default: FileInspector } = await import("../src/frontend/FileInspector");
+  const folder = { name: "Fotos", path: "Fotos", directory: true, size: 0, modified: "2026-09-18T00:00:00Z" };
+  const opened: string[] = [];
+  const trashed: string[] = [];
+  const noop = () => {};
+  const dispose = render(
+    () => (
+      <FileInspector
+        base={initial.base}
+        cloudUrl="https://cloud.test"
+        selected={[folder]}
+        paths={[folder.path]}
+        initial={{ base: initial.base, entry: folder, favorite: false }}
+        onClose={noop}
+        onOpen={(entry) => opened.push(entry.path)}
+        onPreview={noop}
+        onDownload={noop}
+        onRename={noop}
+        onDuplicate={noop}
+        onMove={noop}
+        onCopy={noop}
+        onTrash={(entry) => trashed.push(entry.path)}
+        onChanged={noop}
+      />
+    ),
+    dom.root,
+  );
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  await flush();
+  expect(dom.root.querySelector(".k2b-detail-panel__header")?.textContent).toContain("Folder");
+  // The first page fails: the section says so and retries; the rest of the panel stays usable.
+  expect(branchRequests).toHaveLength(1);
+  expect(branchRequests[0]!.input).toEqual({ param: { baseId: "home" }, query: { path: "Fotos" } });
+  branchRequests[0]!.resolve(Response.json({ code: "unavailable", message: "Offline" }, { status: 503 }));
+  await flush();
+  const retry = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Try again"));
+  expect(retry).toBeDefined();
+  retry!.click();
+  await flush();
+  expect(branchRequests).toHaveLength(2);
+  const entry = (name: string) => ({ name, path: `Fotos/${name}`, directory: false, size: 2048, modified: "2026-09-18T00:00:00Z" });
+  const items = ["a.jpg", "b.jpg", "Plan.pdf", "c.png", "Notes.txt", "Liste.xlsx", "d.jpg"].map(entry);
+  branchRequests[1]!.resolve(Response.json({ base: initial.base, path: "Fotos", items, next: null }));
+  await flush();
+  const names = () => [...dom.root.querySelectorAll(".k2b-file-grid__name")].map((name) => name.textContent);
+  // The short list shows the first five in the full list's order: files first, then images.
+  expect(names()).toEqual(["Plan.pdf", "Notes.txt", "Liste.xlsx", "a.jpg", "b.jpg"]);
+  expect(dom.root.textContent).toContain("Show all 7");
+  dom.root.querySelector<HTMLButtonElement>(".k2b-file-grid__open")?.click();
+  expect(opened).toEqual(["Fotos/Plan.pdf"]);
+  // Rename, move, trash and the other rarer commands stay one click away in "More actions".
+  const menu = [...dom.root.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim());
+  expect(menu).toEqual(["Rename", "Duplicate", "Move to…", "Copy to…", "Move to trash"]);
+  [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].at(-1)!.click();
+  expect(trashed).toEqual(["Fotos"]);
+});
+
 test("tree branches cannot cross full cloud base identities or accept a superseded branch response", async () => {
   const dom = createDomTestHarness();
   const Browser = await browserWithUploads();
   const folder = { name: "Docs", path: "Docs", directory: true, size: 0, modified: "2026-01-01T00:00:00Z" };
   const first = { ...initial, base: { ...initial.base, id: "cloud:groups:first" }, items: [folder] };
   const [directory, setDirectory] = createSignal(first);
-  const dispose = render(
-    () => <Browser directory={directory()} bases={[directory().base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />,
-    dom.root,
-  );
+  const dispose = render(() => <Browser directory={directory()} bases={[directory().base]} onNavigate={async () => {}} />, dom.root);
   cleanup = () => {
     dispose();
     dom.cleanup();
@@ -221,7 +277,6 @@ test("tree navigation keeps loaded ancestors and current files through folder ch
       <Browser
         directory={directory()}
         bases={[initial.base]}
-        cloudUrl="https://cloud.test"
         source={`/app/filesv2?base=home&path=${directory().path}`}
         onNavigate={async () => {}}
       />
@@ -255,10 +310,7 @@ test("a slow or failed tree root never hides the loaded folder and can be retrie
   const dom = createDomTestHarness();
   const Browser = await browserWithUploads();
   const current = { ...initial, path: "Bilder", items: [{ ...initial.items[0]!, path: "Bilder/A.txt" }] };
-  const dispose = render(
-    () => <Browser directory={current} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />,
-    dom.root,
-  );
+  const dispose = render(() => <Browser directory={current} bases={[initial.base]} onNavigate={async () => {}} />, dom.root);
   cleanup = () => {
     dispose();
     dom.cleanup();
@@ -290,9 +342,7 @@ test("tree query changes reject late ancestor replies and navigation supersedes 
   const [directory, setDirectory] = createSignal<DirectoryResult>(current);
   const [source, setSource] = createSignal("/app/filesv2?base=home&path=Bilder&sort=name");
   const dispose = render(
-    () => (
-      <Browser directory={directory()} source={source()} bases={[initial.base]} cloudUrl="https://cloud.test" onNavigate={async () => {}} />
-    ),
+    () => <Browser directory={directory()} source={source()} bases={[initial.base]} onNavigate={async () => {}} />,
     dom.root,
   );
   cleanup = () => {
@@ -340,15 +390,7 @@ test("list and tree mark their active row with one class; checked rows in select
     items: [folder("Projects/Drafts"), { ...initial.items[0]!, name: "Notes.md", path: "Projects/Notes.md" }],
   };
   const dispose = render(
-    () => (
-      <Browser
-        directory={current}
-        bases={[initial.base]}
-        cloudUrl="https://cloud.test"
-        source="/app/filesv2?base=home&path=Projects"
-        onNavigate={async () => {}}
-      />
-    ),
+    () => <Browser directory={current} bases={[initial.base]} source="/app/filesv2?base=home&path=Projects" onNavigate={async () => {}} />,
     dom.root,
   );
   cleanup = () => {
@@ -405,15 +447,7 @@ test("outside select mode Shift+Arrow moves the one active row; in select mode i
   const Browser = await browserWithUploads();
   const items = ["A.txt", "B.txt", "C.txt"].map((name) => ({ ...initial.items[0]!, name, path: name }));
   const dispose = render(
-    () => (
-      <Browser
-        directory={{ ...initial, items }}
-        bases={[initial.base]}
-        cloudUrl="https://cloud.test"
-        source="/app/filesv2?base=home"
-        onNavigate={async () => {}}
-      />
-    ),
+    () => <Browser directory={{ ...initial, items }} bases={[initial.base]} source="/app/filesv2?base=home" onNavigate={async () => {}} />,
     dom.root,
   );
   cleanup = () => {

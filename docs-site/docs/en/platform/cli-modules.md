@@ -396,6 +396,15 @@ module.
 
 ## Design commands
 
+The platform's `cld events` module follows these patterns for declared app
+events: `ls`, `subscriptions`, `deliveries`, `status`, and confirmed
+`redeliver`. `record <eventType> --shape-only [--limit 100] [--out <path>]`
+exports synthetic JSONL fixtures. `replay <fixtures> --handler <path[#export]>`
+validates them against the current catalog and calls a local handler; it
+never sends fixture envelopes to a server. See
+[App events](/en/docs/platform/app-events) and
+[Operate app events](/en/docs/operations/app-events).
+
 Every `cld` module uses the same verbs, addresses, and
 flags, so a user or agent who knows one module can guess the basics of the
 next one.

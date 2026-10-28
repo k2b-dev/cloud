@@ -47,7 +47,15 @@ test("uses matching reader ref, current presentation and exact request authority
         data: { title: "Wrong data title" },
         refs: [
           { type: "demo.item", id: "other", title: "Wrong ref" },
-          { type: "demo.item", id: "one", title: "Reader title", preview: " First line\nSecond", icon: "ti ti-user" },
+          {
+            type: "demo.item",
+            id: "one",
+            title: "Reader title",
+            context: "Aufgabe in Planung",
+            status: "Offen",
+            preview: " First line\nSecond",
+            icon: "ti ti-user",
+          },
         ],
       });
     },
@@ -57,6 +65,8 @@ test("uses matching reader ref, current presentation and exact request authority
       ref: { type: "demo.item", id: "one" },
       count: 3,
       title: "Reader title",
+      context: "Aufgabe in Planung",
+      status: "Offen",
       icon: "ti ti-user",
       kind: "Eintrag",
       appName: "Beispiel",

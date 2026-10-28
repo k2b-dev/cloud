@@ -44,6 +44,7 @@ export default function Pairing(props: {
   const awaitingApproval = () => state() === "waiting" && !needsAuthentication() && inspection()?.approval?.state === "pending";
   const canCancelResume = () =>
     state() === "waiting" && !needsAuthentication() && ((!link() && !inspection()?.comparison) || awaitingApproval());
+  const canRestart = () => !needsAuthentication() && (state() === "expired" || state() === "denied" || (state() === "idle" && !!error()));
   const canConfirm = () =>
     state() === "waiting" &&
     !needsAuthentication() &&
@@ -148,7 +149,7 @@ export default function Pairing(props: {
           closeDialog = close;
           return content(close);
         },
-        { ...panelDialogOptions, panelClassName: `${panelDialogOptions.panelClassName} app-pairing-dialog` },
+        { ...panelDialogOptions, cancelBehavior: "ignore", panelClassName: `${panelDialogOptions.panelClassName} app-pairing-dialog` },
       )
       .then(() => {
         if (!disposed) {
@@ -415,9 +416,14 @@ export default function Pairing(props: {
           </div>
         </Show>
       </PanelDialog.Body>
-      <Show when={!checkingIdentity() && (needsAuthentication() || canConfirm() || canCancelResume())}>
+      <Show when={!checkingIdentity() && (needsAuthentication() || canConfirm() || canCancelResume() || canRestart())}>
         <PanelDialog.Footer>
           <div class="flex w-full justify-end">
+            <Show when={canRestart()}>
+              <Button loading={busy()} onClick={() => void start()}>
+                {t().tryAgain}
+              </Button>
+            </Show>
             <Show when={canCancelResume()}>
               <Button variant="danger" onClick={close}>
                 {t().cancel}

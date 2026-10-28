@@ -3,9 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
+import { barChartLayout } from "@k2b/ui/charts";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { cloudAiChartTable } from "../chart-block";
+import { cloudAiChartRenderOptions, cloudAiChartTable } from "../chart-block";
 import { cloudAiChartSchema } from "../default-tool-contracts";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-chart-block-tests-"));
@@ -57,7 +58,7 @@ describe("chart chat block", () => {
     const input = cloudAiChartSchema().parse({
       kind: "bar",
       title: "Umsatz",
-      data: [{ label: "Jan", value: 1200 }],
+      data: [{ label: "Jan", value: 1200.5 }],
       tooltip: { label: "Umsatz", format: { style: "currency", currency: "EUR" } },
     });
     const html = render(input, { locale: "de" });
@@ -66,8 +67,8 @@ describe("chart chat block", () => {
       { id: "label", label: "Kategorie", numeric: false },
       { id: "value", label: "Umsatz", numeric: true },
     ]);
-    expect(table.rows[0]?.cells).toEqual({ label: "Jan", value: "1.200,00\u00a0€" });
-    expect(html).toContain("<title>Jan · Umsatz: 1.200,00\u00a0€</title>");
+    expect(table.rows[0]?.cells).toEqual({ label: "Jan", value: "1.200,50\u00a0€" });
+    expect(html).toContain("<title>Jan · Umsatz: 1.200,50\u00a0€</title>");
     expect(html).toContain("Daten kopieren");
     // The table mounts when selected; SSR exposes its formatted row through the mark's accessible title.
     expect(html).not.toContain("Jan · Wert:");
@@ -85,6 +86,28 @@ describe("chart chat block", () => {
     expect(render(invalid, { completed: false })).not.toContain("<");
     expect(render(invalid)).toContain("This chart cannot be shown.");
     expect(render(invalid, { locale: "de" })).toContain("Dieses Diagramm kann nicht angezeigt werden.");
+  });
+
+  test("a tall single bar chart grows its frame up to 40rem; a group keeps the usual height", () => {
+    const bars = (count: number) => ({
+      kind: "bar",
+      title: "Visits per site",
+      data: Array.from({ length: count }, (_, index) => ({ label: `Site ${index + 1}`, value: (index + 1) * 10 })),
+    });
+    const viewport = (html: string) => html.match(/k2b-chart-explorer__viewport[^>]*?height:\s*([^;"]+)/)?.[1];
+    expect(viewport(render(bars(3)))).toBe("18rem");
+    for (const count of [15, 40]) {
+      const options = cloudAiChartRenderOptions(cloudAiChartSchema().parse(bars(count)), "en", { legend: "outside" });
+      if (options.kind !== "bar") throw new Error("Expected bar options.");
+      const { height } = barChartLayout(options);
+      expect(height).toBeGreaterThan(288);
+      expect(viewport(render(bars(count)))).toBe(`min(40rem, max(18rem, ${height}px))`);
+    }
+    const group = { title: "Sites", charts: [bars(40), bars(3)] };
+    expect([...render(group).matchAll(/k2b-chart-explorer__viewport[^>]*?height:\s*([^;"]+)/g)].map((match) => match[1])).toEqual([
+      "18rem",
+      "18rem",
+    ]);
   });
 
   test("a sparkline keeps a low frame", () => {

@@ -4,6 +4,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { env } from "../config";
 import { ChangeExpiredPasswordSchema } from "../contracts";
+import { coreUserEventPublisher } from "../events/core-user-created";
 import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, respond, v } from "../server";
 import { accounts, audit, authFlows, getFreeIpaConfig, logger, webauthn } from "../services";
 import { isAccountCategoryAllowed } from "../services/account-category-policy";
@@ -413,14 +414,22 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         // prior `DO NOTHING` could log into a pre-existing `uid='admin'` row that
         // was locally demoted (non-admin local user, or even an IPA row named
         // admin), silently bypassing the intent of the emergency endpoint.
-        await sql`
+        await sql.begin(async (tx) => {
+          const [created] = await tx<{ id: string; inserted: boolean }[]>`
         INSERT INTO auth.users (uid, provider, profile, admin, given_name, sn, display_name)
         VALUES ('admin', 'local', 'user', true, 'Admin', '', 'Admin')
         ON CONFLICT (uid) DO UPDATE SET
           provider = 'local',
           profile = 'user',
           admin = true
+        RETURNING id, (xmax = 0) AS inserted
       `;
+          if (created?.inserted)
+            await coreUserEventPublisher().publish(tx, "user.created", {
+              subject: created.id,
+              data: { userId: created.id, provider: "local" },
+            });
+        });
 
         const user = await accounts.users.get({ uid: "admin" });
         if (!user) return jsonError(c, "Failed to resolve admin user.", 500);

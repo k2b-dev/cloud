@@ -128,12 +128,12 @@ const dialogs: Record<string, { open: (page: Page) => Promise<void>; close: (pag
     },
     close: (page) => page.getByRole("button", { name: "Done" }).click(),
   },
-  "PIN dialog": {
+  "pairing dialog": {
     open: async (page) => {
       await page.getByRole("button", { name: "Add Cloud" }).click();
       await page.getByRole("dialog").waitFor();
     },
-    close: (page) => page.keyboard.press("Escape"),
+    close: (page) => page.getByRole("button", { name: "Close", exact: true }).first().click(),
   },
   "bottom sheet": {
     open: async (page) => {
