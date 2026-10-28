@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { appColorStyle } from "@k2b/cloud/ssr/app-color";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
 import type { LogHarnessOptions } from "./MailAutomationLog.browser-harness";
 
 // Row heights, the inline notes and the detail panel are layout, which only a real engine answers.
@@ -92,8 +92,7 @@ const keep = async (page: Page, name: string) => {
 const open = async (context: BrowserContextOptions, options: LogHarnessOptions, hold = false) => {
   const page = await (await browser.newContext(context)).newPage();
   page.setDefaultTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(server.url.href);
   await page.evaluate(
     ({ harnessOptions, hold }) => {
